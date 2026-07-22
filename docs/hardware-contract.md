@@ -40,16 +40,22 @@ Companion negotiation:
 - Devices ship with firmware installed.
 - Fresh or failed WiFi devices start an open `VibeTV-Setup` access point.
 - Setup UI is served at `http://192.168.4.1` through the setup access point and captive DNS.
+- The device setup screen tells the customer to join the open `VibeTV-Setup`
+  access point manually and open `192.168.4.1`.
+- The setup UI lists only 2.4 GHz scan results, supports an explicit re-scan,
+  and keeps manual SSID entry available for hidden networks.
+- `Troubleshooting: vibetv.shop/pages/setup` links to the public support page
+  delivered by issue #192 at `https://vibetv.shop/pages/setup`.
 - The setup flow stores home WiFi credentials and restarts the device.
 - Connected devices expose their current IP in `/hello` discovery, show `WiFi connected!` plus `app.vibetv.shop`, serve the local setup hub on that IP, and wait for the Mac App.
-- Connected devices expose customer-facing display settings directly on their current IP. The MVP setting is brightness on supported hardware.
+- Connected devices expose read-only status on their current IP. Customer-facing writes are performed by the authenticated Control Center.
 - `POST /api/settings` accepts form field `b` as a brightness percentage and updates supported settings without reflashing firmware. Include `api=1` for a JSON/CORS response; omit it for the built-in IP-based form redirect. `GET /health` is the readback and support-diagnostics path.
-- Connected devices expose `POST /api/pair` to create or rotate a local LAN pairing token. After pairing, write APIs require `X-VibeTV-Token` or the built-in form/raw-OTA `token` query parameter. Read-only diagnostics (`/hello`, `/health`, `GET /assets`) remain open.
+- Connected devices expose `POST /api/pair` only during the physical first-pair/recovery window or with the current token for rotation. After pairing, write APIs require `X-VibeTV-Token` or the native-tool/raw-OTA query fallback. Read-only diagnostics (`/hello`, `/health`, `GET /assets`) remain open.
 - Companion runtime discovers the current device IP and verifies the stable `deviceId`; it does not use a hostname default.
-- Saved WiFi credentials can be cleared from the local web UI with `POST /reset-wifi`.
-- If a connected device loses WiFi, it retries in station mode first. After a persistent outage it starts `VibeTV-Setup` again so the user can choose a different network.
+- Saved WiFi credentials can be cleared by authenticated Control Center requests or the physical three-reset recovery flow.
+- If a connected device loses WiFi, it retries in station mode first. An automatically started setup AP does not authorize credential or pairing changes.
 - If the device is not reachable on WiFi, three interrupted early boots clear saved WiFi credentials and return the device to `VibeTV-Setup`.
-- Generic theme assets can be managed over WiFi with `GET /assets`, `POST /assets?path=...`, and `DELETE /assets?path=...`.
+- Theme assets can be managed over WiFi only below `/themes/`; internal filesystem paths are never mutable through the asset API.
 - `GET /assets` returns `filesystem.mounted` plus an `assets` array. Every asset entry includes `path` and `sizeBytes`; `sha256` is optional so small ESP8266 builds do not need to carry hashing code.
 - `GET /health` returns `display.activeTheme`, compact `display.themeSpec` render health, and `display.gif` so provisioning can see the active GIF path, file presence, decoder state, blocked state, and the last GIF open/decode error.
 - `GET /health` returns `settings.display.brightnessPercent` for support diagnostics.

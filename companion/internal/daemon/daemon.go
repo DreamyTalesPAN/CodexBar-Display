@@ -922,16 +922,7 @@ func selectFirmwareUpdate(caps protocol.DeviceCapabilities, manifest firmwareMan
 }
 
 func firmwareReleaseNewerThanCurrent(latest, current versioning.SemVer) bool {
-	if latest.Major != current.Major {
-		return latest.Major > current.Major
-	}
-	if latest.Minor != current.Minor {
-		return latest.Minor > current.Minor
-	}
-	if latest.Patch != current.Patch {
-		return latest.Patch > current.Patch
-	}
-	return false
+	return latest.Compare(current) > 0
 }
 
 func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.ParsedFrame, now time.Time, deps runtimeDeps, emptyProvidersOp, emptyReason, emptyDetail, errorSource string) cycleResult {
@@ -945,7 +936,16 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		result.failureKind = runtimeErrorNoProviders
 		result.failureOp = emptyProvidersOp
 		result.failureErr = codexbar.ErrNoProviders
-		return finalizeCycleResult(state, result)
+		return finalizeCycleResult(state, result, now)
+	}
+	allProviders = preferAvailableProviders(allProviders)
+	if allProviders[0].Frame.UsageUnavailable && state != nil && state.hasLastGood && isLastGoodFreshAt(state.lastGoodAt, now, lastGoodMaxAge()) {
+		result.frame = state.lastGood
+		result.usedLastGood = true
+		result.selectionReason = "stale-last-good"
+		result.selectionDetail = "provider-unavailable"
+		result.usageSource = "last-good"
+		return result
 	}
 
 	decision, ok := state.selector.SelectWithDecision(allProviders)
@@ -953,31 +953,49 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		result.failureKind = runtimeErrorNoProviders
 		result.failureOp = "select-provider"
 		result.failureErr = codexbar.ErrNoProviders
-		return finalizeCycleResult(state, result)
+		return finalizeCycleResult(state, result, now)
 	}
 
 	result.frame = decision.Selected.Frame
 	result.selectionReason = string(decision.Reason)
 	result.selectionDetail = decision.Detail
 	result.usageSource = usageSourceOrDefault(decision.Selected.Source, "codexbar")
-	result.usageFresh = !decision.Selected.Stale
+	result.usageFresh = !decision.Selected.Stale && !result.frame.UsageUnavailable
 	collectedAt := decision.Selected.CollectedAt
 	if collectedAt.IsZero() {
 		collectedAt = now
 		decision.Selected.CollectedAt = collectedAt
 	}
-	updateLastGoodState(state, result.frame, collectedAt, deps)
+	if !result.frame.UsageUnavailable {
+		updateLastGoodState(state, result.frame, collectedAt, deps)
+	}
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
 }
 
-func finalizeCycleResult(state *runtimeState, result cycleResult) cycleResult {
+func preferAvailableProviders(all []codexbar.ParsedFrame) []codexbar.ParsedFrame {
+	available := make([]codexbar.ParsedFrame, 0, len(all))
+	for _, parsed := range all {
+		if !parsed.Frame.UsageUnavailable {
+			available = append(available, parsed)
+		}
+	}
+	if len(available) > 0 {
+		return available
+	}
+	return all
+}
+
+func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time) cycleResult {
 	if result.failureErr == nil {
 		return result
 	}
 
 	if state != nil && state.hasLastGood {
 		result.frame = state.lastGood
+		if !isLastGoodFreshAt(state.lastGoodAt, now, lastGoodMaxAge()) {
+			result.frame.UsageUnavailable = true
+		}
 		result.usedLastGood = true
 		result.selectionReason = "stale-last-good"
 		result.selectionDetail = fmt.Sprintf("kind=%s", result.failureKind)
@@ -1281,7 +1299,11 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 		result.failureKind = runtimeErrorKindFromFetchErr(fetchErr)
 		result.failureOp = "fetch-usage"
 		result.failureErr = fetchErr
-		result = finalizeCycleResult(state, result)
+		var now time.Time
+		if state.hasLastGood {
+			now = deps.now()
+		}
+		result = finalizeCycleResult(state, result, now)
 	} else {
 		result = selectCycleFrameFromProviders(
 			state,

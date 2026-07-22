@@ -1,6 +1,6 @@
 "use client";
 
-import { RefreshCw } from "lucide-react";
+import { CircleAlert, RefreshCw } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -10,6 +10,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Tooltip,
   TooltipContent,
@@ -110,7 +111,10 @@ type InstallResponse = {
   logs?: string[];
 };
 
-type InstallableTheme = Pick<ThemeProduct, "packUrl" | "themeId" | "title"> & {
+type InstallableTheme = Pick<
+  ThemeProduct,
+  "packUrl" | "packSha256" | "packSizeBytes" | "themeId" | "title"
+> & {
   packBytes?: Uint8Array;
 };
 
@@ -169,7 +173,13 @@ type FirmwareUpdateStatus = {
   error?: string;
 };
 
-type RepairConnectionOutcome = "ready" | "waiting" | "failed" | "stale";
+type RepairConnectionOutcome =
+  | "ready"
+  | "waiting"
+  | "failed"
+  | "pairing-recovery"
+  | "pairing-rate-limited"
+  | "stale";
 type DeviceSearchMode = "onboarding" | "configured";
 
 type FirmwareUpdateResponse = {
@@ -275,6 +285,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<SupportDiagnostics | null>(null);
   const hasEnteredControlCenterRef = useRef(readInitialKnownDeviceContext());
   const setupGenerationRef = useRef(0);
+  const deviceSearchAttemptRef = useRef(0);
   const didRunInitialConnectionCheck = useRef(false);
   const didRunAutomaticDeviceSearch = useRef(false);
   const didRunAutoDisplayReload = useRef(false);
@@ -1188,9 +1199,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (setupGeneration !== setupGenerationRef.current) {
           return "stale" as RepairConnectionOutcome;
         }
-        const normalized = normalizeCaughtError(
-          error,
-          "VibeTV connection needs attention.",
+        const normalized = pairingErrorForCustomer(
+          normalizeCaughtError(
+            error,
+            "VibeTV connection needs attention.",
+          ),
         );
         if (isLocalNetworkAccessError(normalized)) {
           markCompanionAccessBlocked();
@@ -1238,13 +1251,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setDevice((current) => markDeviceDisconnected(current, target));
           setDeviceState("offline");
         }
-        if (!quiet) {
+        if (!quiet || isPairingAttentionError(normalized)) {
           setLastError(normalized);
           addEvent({
             label: "Fix connection needs attention",
             detail: normalized.nextAction,
             tone: "attention",
           });
+        }
+        if (isPhysicalPairingRecoveryError(normalized)) {
+          return "pairing-recovery" as RepairConnectionOutcome;
+        }
+        if (normalized.code === "pairing_rate_limited") {
+          return "pairing-rate-limited" as RepairConnectionOutcome;
         }
         return "failed" as RepairConnectionOutcome;
       } finally {
@@ -1270,6 +1289,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const searchAndConnect = useCallback(
     async (mode: DeviceSearchMode = "onboarding") => {
       const setupGeneration = setupGenerationRef.current;
+      const searchAttempt = ++deviceSearchAttemptRef.current;
+      const searchIsCurrent = () =>
+        setupGeneration === setupGenerationRef.current &&
+        searchAttempt === deviceSearchAttemptRef.current;
       setBusyAction("search");
       setDeviceCandidates([]);
       setDeviceSearchState("searching");
@@ -1280,7 +1303,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           { method: "POST" },
           { timeoutMs: DEVICE_SEARCH_REQUEST_TIMEOUT_MS },
         );
-        if (setupGeneration !== setupGenerationRef.current) {
+        if (!searchIsCurrent()) {
           return;
         }
         const candidates = (payload.devices || []).filter(
@@ -1307,7 +1330,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             undefined,
             { preserveLastError: true },
           );
-          if (setupGeneration !== setupGenerationRef.current) {
+          if (!searchIsCurrent()) {
             return;
           }
           if (
@@ -1330,12 +1353,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           });
           if (
             outcome === "stale" ||
-            setupGeneration !== setupGenerationRef.current
+            !searchIsCurrent()
           ) {
             return;
           }
           if (outcome === "waiting") {
             setDeviceSearchState("waiting");
+          } else if (
+            outcome === "pairing-recovery" ||
+            outcome === "pairing-rate-limited"
+          ) {
+            setDeviceSearchState("idle");
           } else if (outcome === "failed") {
             setDeviceSearchState("repair-failed");
           }
@@ -1349,7 +1377,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setDeviceSearchState("not-found");
         setDeviceState("offline");
       } catch (error) {
-        if (setupGeneration !== setupGenerationRef.current) {
+        if (!searchIsCurrent()) {
           return;
         }
         const normalized = normalizeCaughtError(
@@ -1368,7 +1396,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setLastError(normalized);
         }
       } finally {
-        if (setupGeneration === setupGenerationRef.current) {
+        if (searchIsCurrent()) {
           setBusyAction(null);
         }
       }
@@ -1435,12 +1463,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (setupGeneration !== setupGenerationRef.current) {
           return;
         }
-        const normalized = normalizeCaughtError(
-          error,
-          "The selected VibeTV could not be connected.",
+        const normalized = pairingErrorForCustomer(
+          normalizeCaughtError(
+            error,
+            "The selected VibeTV could not be connected.",
+          ),
         );
         setLastError(normalized);
-        setDeviceSearchState("repair-failed");
+        setDeviceSearchState(
+          isPairingAttentionError(normalized) ? "idle" : "repair-failed",
+        );
         addEvent({
           label: "VibeTV selection failed",
           detail: normalized.nextAction,
@@ -1455,6 +1487,70 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [addEvent, loadSettings, mergeDevice, providerSetup, runCompanion],
   );
 
+  const connectManualTarget = useCallback(
+    async (targetOverride: string) => {
+      const setupGeneration = setupGenerationRef.current;
+      const searchAttempt = ++deviceSearchAttemptRef.current;
+      const searchIsCurrent = () =>
+        setupGeneration === setupGenerationRef.current &&
+        searchAttempt === deviceSearchAttemptRef.current;
+      const target = normalizeDeviceTarget(targetOverride);
+      setBusyAction("manual-target");
+      setDeviceCandidates([]);
+      setDeviceSearchState("not-found");
+      setLastError(null);
+      try {
+        const payload = await runCompanion<{ devices?: DeviceCandidate[] }>(
+          "/v1/device/search",
+          {
+            method: "POST",
+            body: JSON.stringify({ target }),
+          },
+          { timeoutMs: DEVICE_SEARCH_REQUEST_TIMEOUT_MS },
+        );
+        if (!searchIsCurrent()) {
+          return;
+        }
+        const candidate = (payload.devices || []).find(
+          (entry) =>
+            entry.networkMode !== "setup" &&
+            Boolean(entry.deviceId?.trim()) &&
+            normalizeDeviceTarget(entry.target) === target,
+        );
+        if (!candidate) {
+          setLastError({
+            code: "device_not_found",
+            message: "No VibeTV answered at that IP address.",
+            nextAction:
+              "Check the IP address shown on the VibeTV screen, then try again.",
+          });
+          return;
+        }
+        await selectAndConnectDevice(candidate);
+      } catch (error) {
+        if (!searchIsCurrent()) {
+          return;
+        }
+        const normalized = normalizeCaughtError(
+          error,
+          "That IP address did not answer as a VibeTV.",
+        );
+        setLastError(normalized);
+        setDeviceSearchState("not-found");
+        addEvent({
+          label: "Manual VibeTV connection failed",
+          detail: normalized.nextAction,
+          tone: "attention",
+        });
+      } finally {
+        if (searchIsCurrent()) {
+          setBusyAction(null);
+        }
+      }
+    },
+    [addEvent, runCompanion, selectAndConnectDevice],
+  );
+
   useEffect(() => {
     const pairingRequired =
       device?.stream?.errorCode === "device_pairing_required";
@@ -1465,7 +1561,25 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     if (
-      device?.connected !== true ||
+      deviceNeedsPhysicalPairingRecovery(
+        device?.stream?.errorCode,
+        device?.capabilities?.auth?.pairingWindowOpen,
+        device?.capabilities?.auth?.pairingWindowSeconds,
+      )
+    ) {
+      automaticPairingRepairKey.current = `${device.deviceId || "unknown"}:${
+        device.target || "unknown"
+      }`;
+      const recoveryCode = device.capabilities?.auth?.paired
+        ? "pairing_token_rejected"
+        : "pairing_window_closed";
+      const timer = window.setTimeout(() => {
+        setDeviceSearchState("idle");
+        setLastError(physicalPairingRecoveryError(recoveryCode));
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+    if (
       !device?.deviceId ||
       !device.target ||
       busyAction ||
@@ -1489,6 +1603,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setDeviceSearchState("waiting");
         return;
       }
+      if (
+        outcome === "pairing-recovery" ||
+        outcome === "pairing-rate-limited"
+      ) {
+        setDeviceSearchState("idle");
+        return;
+      }
       setDeviceSearchState("repair-failed");
       setLastError({
         code: "device_pairing_repair_failed",
@@ -1501,6 +1622,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus,
     device?.connected,
     device?.deviceId,
+    device?.capabilities?.auth?.paired,
+    device?.capabilities?.auth?.pairingWindowOpen,
+    device?.capabilities?.auth?.pairingWindowSeconds,
     device?.ready,
     device?.stream?.errorCode,
     device?.target,
@@ -1792,6 +1916,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               themeId: theme.themeId,
               themeName: theme.title,
               packUrl: localizeCompanionAssetUrl(theme.packUrl),
+              packSha256: theme.packSha256,
+              packSizeBytes: theme.packSizeBytes,
               skipFirmwareUpdate: true,
               async: true,
             }),
@@ -2543,6 +2669,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const controlCenterAvailable = Boolean(
     deviceOperational || hasEnteredControlCenter,
   );
+  const pairingAttention = isPairingAttentionError(lastError)
+    ? lastError
+    : null;
   const disabledTabs: ActiveTab[] = controlCenterAvailable
     ? imageNeedsReload
       ? ["settings", "theme-library", "updates"]
@@ -2742,7 +2871,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }}
       onRepairConnection={(targetOverride) => {
         didRunSetupVerification.current = true;
-        repairConnection({ targetOverride });
+        if (targetOverride) {
+          void connectManualTarget(targetOverride);
+        }
       }}
       onResetSetup={resetSetup}
       onOpenCodexBar={() => runProviderAction("open-codexbar")}
@@ -2815,6 +2946,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         diagnostics={supportDiagnostics}
         deviceCandidates={deviceCandidates}
         deviceSearchState={deviceSearchState}
+        deviceTarget={deviceTarget}
         hasConfiguredDevice={hasConfiguredDevice}
         lastError={lastError}
         onDecline={() => {
@@ -2824,6 +2956,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           hasEnteredControlCenterRef.current = true;
           setHasEnteredControlCenter(true);
           setActiveTab("overview");
+        }}
+        onDeviceTargetChange={handleDeviceTargetChange}
+        onManualTarget={(target) => {
+          didRunSetupVerification.current = true;
+          void connectManualTarget(target);
         }}
         onCreateSupportReport={loadSupportDiagnostics}
         onSearch={() => {
@@ -2875,6 +3012,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setActiveTab(tab);
       }}
     >
+      {pairingAttention ? (
+        <PairingAttentionNotice error={pairingAttention} />
+      ) : null}
       {activeShellTab === "overview" ? (
         <OverviewScreen
           companionRelease={companionRelease}
@@ -2962,6 +3102,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         />
       ) : null}
     </ControlCenterShell>
+  );
+}
+
+function PairingAttentionNotice({ error }: { error: ApiError }) {
+  return (
+    <section
+      aria-labelledby="pairing-attention-title"
+      className="mx-auto mt-6 max-w-[1180px]"
+    >
+      <Alert variant="destructive">
+        <CircleAlert aria-hidden />
+        <AlertTitle>
+          <h2 id="pairing-attention-title">{error.message}</h2>
+        </AlertTitle>
+        <AlertDescription>{error.nextAction}</AlertDescription>
+      </Alert>
+    </section>
   );
 }
 
@@ -3244,6 +3401,62 @@ function normalizeCaughtError(
   };
 }
 
+function pairingErrorForCustomer(error: ApiError): ApiError {
+  if (isPhysicalPairingRecoveryError(error)) {
+    return physicalPairingRecoveryError(error.code);
+  }
+  if (error.code === "pairing_rate_limited") {
+    return {
+      code: error.code,
+      message: "Pairing is paused for a moment.",
+      nextAction: "Wait one minute, then try pairing again.",
+    };
+  }
+  return error;
+}
+
+function physicalPairingRecoveryError(code: string): ApiError {
+  return {
+    code,
+    message: "Pairing needs physical recovery.",
+    nextAction:
+      "Unplug VibeTV during early boot three times in a row. Then connect VibeTV to WiFi again and pair it in Control Center.",
+  };
+}
+
+function isPhysicalPairingRecoveryError(
+  error?: ApiError | null,
+): boolean {
+  return (
+    error?.code === "pairing_window_closed" ||
+    error?.code === "pairing_token_rejected"
+  );
+}
+
+function isPairingAttentionError(error?: ApiError | null): boolean {
+  return (
+    isPhysicalPairingRecoveryError(error) ||
+    error?.code === "pairing_rate_limited"
+  );
+}
+
+function deviceNeedsPhysicalPairingRecovery(
+  pairingErrorCode?: string,
+  pairingWindowOpen?: boolean,
+  pairingWindowSeconds?: number,
+): boolean {
+  if (pairingErrorCode !== "device_pairing_required") {
+    return false;
+  }
+  const windowStateKnown =
+    typeof pairingWindowOpen === "boolean" ||
+    typeof pairingWindowSeconds === "number";
+  const windowOpen =
+    pairingWindowOpen === true &&
+    (pairingWindowSeconds === undefined || pairingWindowSeconds > 0);
+  return windowStateKnown && !windowOpen;
+}
+
 function normalizeUsageError(error: ApiError): ApiError {
   if (error.code === "HTTP_404") {
     return {
@@ -3457,6 +3670,7 @@ function mergeDeviceCapabilities(
   return {
     ...current,
     ...next,
+    auth: next.auth ? { ...current.auth, ...next.auth } : current.auth,
     display: next.display
       ? {
           ...current.display,

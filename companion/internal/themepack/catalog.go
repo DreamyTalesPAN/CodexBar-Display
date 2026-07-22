@@ -1,6 +1,8 @@
 package themepack
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,7 +61,14 @@ func readCatalog(catalogRef string) ([]byte, error) {
 		return os.ReadFile(catalogRef)
 	}
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	if err := validatePublicHTTPSReference(catalogRef); err != nil {
+		return nil, fmt.Errorf("download theme catalog: %w", err)
+	}
+	client := secureRemoteClient(15 * time.Second)
+	return readRemoteCatalog(client, catalogRef)
+}
+
+func readRemoteCatalog(client *http.Client, catalogRef string) ([]byte, error) {
 	resp, err := client.Get(catalogRef)
 	if err != nil {
 		return nil, fmt.Errorf("download theme catalog: %w", err)
@@ -98,6 +107,16 @@ func validateCatalog(catalog Catalog) error {
 		seen[id] = struct{}{}
 		if strings.TrimSpace(theme.DownloadURL) == "" && strings.TrimSpace(theme.DownloadAsset) == "" {
 			return fmt.Errorf("themes[%d] needs downloadUrl or downloadAsset", index)
+		}
+		checksum := strings.ToLower(strings.TrimSpace(theme.SHA256))
+		if len(checksum) != sha256.Size*2 {
+			return fmt.Errorf("themes[%d].sha256 must contain a SHA-256 digest", index)
+		}
+		if _, err := hex.DecodeString(checksum); err != nil {
+			return fmt.Errorf("themes[%d].sha256 must contain a SHA-256 digest", index)
+		}
+		if theme.Bytes <= 0 || theme.Bytes > MaxZipBytes {
+			return fmt.Errorf("themes[%d].bytes must be between 1 and %d", index, MaxZipBytes)
 		}
 	}
 	return nil

@@ -47,9 +47,17 @@ type TransportCapabilities struct {
 	Mode      string   `json:"mode,omitempty"`
 }
 
+type AuthCapabilities struct {
+	Paired               bool   `json:"paired"`
+	TokenHeader          string `json:"tokenHeader"`
+	PairingWindowOpen    bool   `json:"pairingWindowOpen"`
+	PairingWindowSeconds uint32 `json:"pairingWindowSeconds"`
+}
+
 type CapabilityBlock struct {
 	Display   DisplayCapabilities   `json:"display,omitempty"`
 	Theme     ThemeCapabilities     `json:"theme,omitempty"`
+	Auth      *AuthCapabilities     `json:"auth,omitempty"`
 	Transport TransportCapabilities `json:"transport,omitempty"`
 }
 
@@ -87,6 +95,12 @@ func (h DeviceHello) Normalize() DeviceHello {
 		h.Capabilities.Theme.SupportedPrimitiveTypes[i] = strings.TrimSpace(strings.ToLower(h.Capabilities.Theme.SupportedPrimitiveTypes[i]))
 	}
 	h.Capabilities.Theme.CachedThemeID = strings.TrimSpace(h.Capabilities.Theme.CachedThemeID)
+	if h.Capabilities.Auth != nil {
+		h.Capabilities.Auth.TokenHeader = strings.TrimSpace(h.Capabilities.Auth.TokenHeader)
+		if !h.Capabilities.Auth.PairingWindowOpen {
+			h.Capabilities.Auth.PairingWindowSeconds = 0
+		}
+	}
 	h.Capabilities.Transport.Active = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Active))
 	h.Capabilities.Transport.Mode = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Mode))
 	for i := range h.Capabilities.Transport.Supported {

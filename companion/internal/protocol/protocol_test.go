@@ -82,6 +82,24 @@ func TestFrameNormalizeKeepsNegotiatedV2(t *testing.T) {
 	}
 }
 
+func TestFrameMarshalUsageUnavailableIsOptional(t *testing.T) {
+	available, err := (Frame{V: 2, Provider: "gemini"}).MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal available frame: %v", err)
+	}
+	if strings.Contains(string(available), "usageUnavailable") {
+		t.Fatalf("expected false availability field to stay omitted, got %s", available)
+	}
+
+	unavailable, err := (Frame{V: 2, Provider: "gemini", UsageUnavailable: true}).MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal unavailable frame: %v", err)
+	}
+	if !strings.Contains(string(unavailable), `"usageUnavailable":true`) {
+		t.Fatalf("expected unavailable field, got %s", unavailable)
+	}
+}
+
 func TestFrameNormalizeKeepsSafeActivity(t *testing.T) {
 	frame := Frame{
 		Provider: "codex",

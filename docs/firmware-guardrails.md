@@ -18,7 +18,7 @@ Rules:
 ## Protocol/Theme Rules
 - Companion->device frame `v` is negotiated (prefer v2, fallback v1).
 - ThemeSpec is declarative data only. Never execute scripts on device.
-- ThemeSpec update notices must use the existing label binding. Do not draw the global bottom update bar over ThemeSpec layouts.
+- ThemeSpec update notices prefer the existing label binding (permanent rotating text swap). Themes without a label binding get a bounded edge overlay bar in timed visible/hidden windows, placed where no animated primitive repaints and removed with a region repaint — never a full-screen redraw. Update copy points to the VibeTV Mac App only; no hosted URLs. Showing the notice must never trigger a firmware write.
 - `themeId/themeRev` cache keys are required to detect unchanged ThemeSpec payloads.
 - Live theme removal is destructive. Firmware must ignore `themeSpec:null` unless the same frame also sets `confirmClearThemeSpec:true`.
 - Companion code must not emit `themeSpec:null` unless the caller explicitly marks that clear as confirmed. Normal recovery paths should reactivate a stored ThemeSpec or repair assets instead of clearing the live theme.

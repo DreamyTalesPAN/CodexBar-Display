@@ -5,16 +5,16 @@
     {
       "firmwareEnv": "esp8266_smalltv_st7789",
       "board": "esp8266-smalltv-st7789",
-      "firmwareVersion": "1.0.37",
+      "firmwareVersion": "1.0.38",
       "severity": "recommended",
-      "message": "Firmware update available. Open app.vibetv.shop."
+      "message": "Firmware update available. Open the VibeTV Mac App."
     },
     {
       "firmwareEnv": "lilygo_t_display_s3",
       "board": "esp32-lilygo-t-display-s3",
       "firmwareVersion": "1.0.35",
       "severity": "recommended",
-      "message": "Firmware update available. Open app.vibetv.shop."
+      "message": "Firmware update available. Open the VibeTV Mac App."
     }
   ]
 }

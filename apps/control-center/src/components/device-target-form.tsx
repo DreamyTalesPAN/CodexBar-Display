@@ -26,6 +26,7 @@ type DeviceTargetFormProps = {
   disabled?: boolean;
   id: string;
   lastError?: ApiError | null;
+  minimal?: boolean;
   onChange?: (target: string) => void;
   onSubmit?: (target: string) => void;
   searchingLabel?: string;
@@ -35,10 +36,11 @@ type DeviceTargetFormProps = {
 export function DeviceTargetForm({
   busy = false,
   buttonLabel = "Connect VibeTV",
-  className = "grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end",
+  className,
   disabled = false,
   id,
   lastError,
+  minimal = false,
   onChange,
   onSubmit,
   searchingLabel = "Searching",
@@ -46,6 +48,11 @@ export function DeviceTargetForm({
 }: DeviceTargetFormProps) {
   const formDisabled = disabled || busy;
   const [validationError, setValidationError] = useState("");
+  const formClassName =
+    className ||
+    (minimal
+      ? "grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"
+      : "grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end");
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -60,34 +67,42 @@ export function DeviceTargetForm({
     onSubmit?.(normalized);
   }
 
+  const descriptionId = minimal ? undefined : `${id}-description`;
+  const describedBy = [descriptionId, validationError ? `${id}-error` : null]
+    .filter(Boolean)
+    .join(" ") || undefined;
+
   return (
     <form onSubmit={handleSubmit}>
-      <FieldGroup className={className}>
+      <FieldGroup className={formClassName}>
         <Field className="min-w-0" data-invalid={Boolean(validationError)}>
-          <FieldLabel htmlFor={id}>
-          VibeTV address
+          <FieldLabel className={minimal ? "sr-only" : undefined} htmlFor={id}>
+            VibeTV address
           </FieldLabel>
-          <FieldDescription id={`${id}-description`}>
-            {deviceTargetHelpText(lastError)}
-          </FieldDescription>
+          {!minimal ? (
+            <FieldDescription id={descriptionId}>
+              {deviceTargetHelpText(lastError)}
+            </FieldDescription>
+          ) : null}
           <Input
-          className="h-12 font-mono"
-          disabled={formDisabled}
-          id={id}
-          aria-invalid={Boolean(validationError)}
-          aria-describedby={`${id}-description${validationError ? ` ${id}-error` : ""}`}
-          onChange={(event) => {
-            setValidationError("");
-            onChange?.(event.target.value);
-          }}
-          placeholder={DEVICE_TARGET_PLACEHOLDER}
-          spellCheck={false}
-          type="text"
-          value={value}
-        />
+            aria-describedby={describedBy}
+            aria-invalid={Boolean(validationError)}
+            className="h-12 font-mono text-base"
+            disabled={formDisabled}
+            id={id}
+            inputMode="decimal"
+            onChange={(event) => {
+              setValidationError("");
+              onChange?.(event.target.value);
+            }}
+            placeholder={DEVICE_TARGET_PLACEHOLDER}
+            spellCheck={false}
+            type="text"
+            value={value}
+          />
           {validationError ? (
             <FieldError id={`${id}-error`}>
-            {validationError}
+              {validationError}
             </FieldError>
           ) : null}
         </Field>
