@@ -7,8 +7,10 @@ import {
   CircleHelp,
   Download,
   Monitor,
+  WifiOff,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +39,7 @@ import type {
   DeviceInfo,
   UsageSnapshot,
 } from "./control-center-types";
+import { deviceIsActive, deviceIsReady } from "./control-center-types";
 import { LiveVibeTVPreview } from "./live-vibetv-preview";
 
 type OverviewScreenProps = {
@@ -58,11 +61,10 @@ export function OverviewScreen({
   usage,
   requiresMacAppMigration = false,
 }: OverviewScreenProps) {
-  const pairingRequired =
-    device?.stream?.errorCode === "device_pairing_required" ||
-    device?.paired === false;
-  const connected = deviceIsConnected(device);
-  const displayReady = Boolean(device?.ready && !pairingRequired);
+  const pairingRejected = device?.paired === false;
+  const connected = deviceIsReady(device);
+  const displayReady = connected;
+  const reconnecting = deviceIsActive(device) && !connected && !pairingRejected;
   const hero = buildHeroCopy(companionStatus, connected);
   const firmwareUpdateAvailable = hasFirmwareUpdate(firmwareUpdate);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
@@ -86,6 +88,8 @@ export function OverviewScreen({
               {connected ? "VibeTV is connected" : "VibeTV status"}
             </h2>
           </div>
+
+          {reconnecting ? <ReconnectNotice device={device} /> : null}
 
           <div className="flex justify-center">
             <LiveVibeTVPreview device={device} usage={usage || null} />
@@ -113,9 +117,7 @@ export function OverviewScreen({
               detail={
                 displayReady
                   ? undefined
-                  : pairingRequired
-                    ? "Pair VibeTV again to resume display updates."
-                    : "Start using any AI provider."
+                  : "Waiting for a fresh image from VibeTV."
               }
               icon={<Monitor aria-hidden />}
               label="Display"
@@ -135,6 +137,22 @@ export function OverviewScreen({
         ) : null}
       </section>
     </div>
+  );
+}
+
+function ReconnectNotice({ device }: { device: DeviceInfo | null }) {
+  const wifiSetupLikely =
+    device?.connected === false || device?.connectionState === "setup_required";
+  return (
+    <Alert className="w-full max-w-[1040px]">
+      <WifiOff aria-hidden />
+      <AlertTitle>Reconnecting to VibeTV</AlertTitle>
+      <AlertDescription>
+        {wifiSetupLikely
+          ? "If VibeTV shows VibeTV-Setup, connect your phone to it and choose the new WiFi. Your pairing and settings stay saved."
+          : "VibeTV is online, but its display is still reconnecting."}
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -224,13 +242,4 @@ function labelForCompanion(
     return "Not reachable";
   }
   return "Waiting for Mac App";
-}
-
-function deviceIsConnected(device: DeviceInfo | null): boolean {
-  return Boolean(
-    device?.connected &&
-      device.paired !== false &&
-      device.stream?.errorCode !== "device_pairing_required" &&
-      (device.deviceId || device.target),
-  );
 }

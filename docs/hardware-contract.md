@@ -46,15 +46,30 @@ Companion negotiation:
   and keeps manual SSID entry available for hidden networks.
 - `Troubleshooting: vibetv.shop/pages/setup` links to the public support page
   delivered by issue #192 at `https://vibetv.shop/pages/setup`.
-- The setup flow stores home WiFi credentials and restarts the device.
+- Fresh setup and automatic fallback after a lasting WiFi failure use the same
+  writable setup form. The setup flow stores the selected home WiFi credentials
+  and restarts the device.
+- Saving a different network changes only the WiFi SSID/password. A paired
+  device keeps its device ID, pairing token, themes/assets, active theme,
+  brightness, and other settings.
 - Connected devices expose their current IP in `/hello` discovery, show `WiFi connected!` plus `app.vibetv.shop`, serve the local setup hub on that IP, and wait for the Mac App.
 - Connected devices expose read-only status on their current IP. Customer-facing writes are performed by the authenticated Control Center.
 - `POST /api/settings` accepts form field `b` as a brightness percentage and updates supported settings without reflashing firmware. Include `api=1` for a JSON/CORS response; omit it for the built-in IP-based form redirect. `GET /health` is the readback and support-diagnostics path.
-- Connected devices expose `POST /api/pair` only during the physical first-pair/recovery window or with the current token for rotation. After pairing, write APIs require `X-VibeTV-Token` or the native-tool/raw-OTA query fallback. Read-only diagnostics (`/hello`, `/health`, `GET /assets`) remain open.
+- Connected devices expose `POST /api/pair` only during the first-pair window or with the current token for rotation. Saving WiFi opens that one-use window only when the device has no pairing token yet. After pairing, write APIs require `X-VibeTV-Token` or the native-tool/raw-OTA query fallback. Read-only diagnostics (`/hello`, `/health`, `GET /assets`) remain open.
+- Firmware and filesystem uploads always require the current pairing token,
+  including on fresh devices and while `VibeTV-Setup` is active. The public
+  `/update` page never embeds that token or exposes a direct upload form.
 - Companion runtime discovers the current device IP and verifies the stable `deviceId`; it does not use a hostname default.
-- Saved WiFi credentials can be cleared by authenticated Control Center requests or the physical three-reset recovery flow.
-- If a connected device loses WiFi, it retries in station mode first. An automatically started setup AP does not authorize credential or pairing changes.
-- If the device is not reachable on WiFi, three interrupted early boots clear saved WiFi credentials and return the device to `VibeTV-Setup`.
+- Saved WiFi credentials can be cleared by an authenticated Control Center request.
+- If a connected device loses WiFi, it retries in station mode first. After a
+  lasting failure it returns to the same open, writable `VibeTV-Setup` portal,
+  where the customer can choose the new network without resetting the device.
+- Short or repeated power interruptions never clear saved WiFi credentials.
+- Three deliberately interrupted early boots open the existing 30-minute
+  pairing window without deleting WiFi, pairing, themes, assets, brightness, or
+  other settings. This is the last-resort physical path to establish a new
+  token before an authenticated WiFi firmware update when the local token was
+  lost. It never authorizes a firmware upload directly.
 - Theme assets can be managed over WiFi only below `/themes/`; internal filesystem paths are never mutable through the asset API.
 - `GET /assets` returns `filesystem.mounted` plus an `assets` array. Every asset entry includes `path` and `sizeBytes`; `sha256` is optional so small ESP8266 builds do not need to carry hashing code.
 - `GET /health` returns `display.activeTheme`, compact `display.themeSpec` render health, and `display.gif` so provisioning can see the active GIF path, file presence, decoder state, blocked state, and the last GIF open/decode error.

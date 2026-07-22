@@ -95,7 +95,7 @@ void test_page_uses_inline_band_guidance_and_links_to_public_support() {
   SetConnectionError(state, ConnectionError::WrongPassword, "Home");
 
   ESP8266WebServer server;
-  SendSetupPage(server, state, kSupportUrl, "192.168.4.1", "setup-nonce");
+  SendSetupPage(server, state, kSupportUrl, "192.168.4.1");
 
   TEST_ASSERT_EQUAL_INT(200, server.status);
   TEST_ASSERT_FALSE(contains(server.output, "Choose a 2.4 GHz Wi-Fi network."));
@@ -118,7 +118,7 @@ void test_page_uses_inline_band_guidance_and_links_to_public_support() {
   TEST_ASSERT_FALSE(contains(server.output, "Band Steering"));
   TEST_ASSERT_FALSE(contains(server.output, "5 GHz"));
   TEST_ASSERT_FALSE(contains(server.output, "compatible"));
-  TEST_ASSERT_TRUE(contains(server.output, "name=\"setup_token\" value=\"setup-nonce\""));
+  TEST_ASSERT_FALSE(contains(server.output, "setup_token"));
 }
 
 void test_page_publishes_no_placeholder_without_support_url() {
@@ -127,7 +127,7 @@ void test_page_publishes_no_placeholder_without_support_url() {
   FinishScan(state, 0);
 
   ESP8266WebServer server;
-  SendSetupPage(server, state, nullptr, "192.168.4.1", "setup-nonce");
+  SendSetupPage(server, state, nullptr, "192.168.4.1");
 
   TEST_ASSERT_TRUE(contains(server.output, "No networks found."));
   TEST_ASSERT_FALSE(contains(server.output, "Troubleshooting:"));
@@ -141,29 +141,34 @@ void test_generic_reconnect_error_does_not_render_an_empty_ssid() {
   SetConnectionError(state, ConnectionError::ConnectionFailed);
 
   ESP8266WebServer server;
-  SendSetupPage(server, state, nullptr, "192.168.4.1", "setup-nonce");
+  SendSetupPage(server, state, nullptr, "192.168.4.1");
 
   TEST_ASSERT_TRUE(contains(server.output, "Could not reconnect to Wi-Fi."));
   TEST_ASSERT_FALSE(contains(server.output, "<strong></strong>"));
 }
 
-void test_automatic_setup_ap_renders_read_only_recovery_page() {
+void test_automatic_setup_ap_renders_normal_writable_setup_page() {
+  State state;
+  TEST_ASSERT_TRUE(BeginScan(state));
+  TEST_ASSERT_TRUE(AddScanResult(state, "New Home", -45, 6));
+  FinishScan(state, 1);
+
   ESP8266WebServer server;
-  SendRecoveryPage(server, kSupportUrl, "192.168.4.1");
+  SendSetupPage(server, state, kSupportUrl, "192.168.4.1");
 
   TEST_ASSERT_EQUAL_INT(200, server.status);
-  TEST_ASSERT_TRUE(contains(server.output, "Wi-Fi recovery required"));
-  TEST_ASSERT_TRUE(contains(server.output, "Wi-Fi changes are locked"));
-  TEST_ASSERT_TRUE(contains(server.output, "three interrupted early boots"));
-  TEST_ASSERT_TRUE(contains(server.output, "VibeTV-Setup"));
+  TEST_ASSERT_TRUE(contains(server.output, "Connect to Wi-Fi"));
+  TEST_ASSERT_TRUE(contains(server.output, "New Home"));
   TEST_ASSERT_TRUE(contains(server.output, "http://192.168.4.1"));
   TEST_ASSERT_TRUE(contains(server.output, "https://vibetv.shop/pages/setup"));
-  TEST_ASSERT_FALSE(contains(server.output, "<form"));
-  TEST_ASSERT_FALSE(contains(server.output, "action=\"/save\""));
-  TEST_ASSERT_FALSE(contains(server.output, "action=\"/scan\""));
-  TEST_ASSERT_FALSE(contains(server.output, "name=\"password\""));
-  TEST_ASSERT_FALSE(contains(server.output, "Search again"));
-  TEST_ASSERT_FALSE(contains(server.output, "Connect</button>"));
+  TEST_ASSERT_TRUE(contains(server.output, "action=\"/save\""));
+  TEST_ASSERT_TRUE(contains(server.output, "action=\"/scan\""));
+  TEST_ASSERT_TRUE(contains(server.output, "name=\"password\""));
+  TEST_ASSERT_TRUE(contains(server.output, "Search again"));
+  TEST_ASSERT_TRUE(contains(server.output, "Connect</button>"));
+  TEST_ASSERT_FALSE(contains(server.output, "Wi-Fi recovery required"));
+  TEST_ASSERT_FALSE(contains(server.output, "Wi-Fi changes are locked"));
+  TEST_ASSERT_FALSE(contains(server.output, "three interrupted early boots"));
 }
 
 }  // namespace
@@ -180,7 +185,7 @@ int main(int, char**) {
     AddScanResult(state, "Guest", -81, 1);
     FinishScan(state, 3);
     ESP8266WebServer server;
-    SendSetupPage(server, state, kSupportUrl, "192.168.4.1", "setup-nonce");
+    SendSetupPage(server, state, kSupportUrl, "192.168.4.1");
     std::fwrite(server.output.data(), 1, server.output.size(), stdout);
     return 0;
   }
@@ -194,6 +199,6 @@ int main(int, char**) {
   RUN_TEST(test_page_uses_inline_band_guidance_and_links_to_public_support);
   RUN_TEST(test_page_publishes_no_placeholder_without_support_url);
   RUN_TEST(test_generic_reconnect_error_does_not_render_an_empty_ssid);
-  RUN_TEST(test_automatic_setup_ap_renders_read_only_recovery_page);
+  RUN_TEST(test_automatic_setup_ap_renders_normal_writable_setup_page);
   return UNITY_END();
 }

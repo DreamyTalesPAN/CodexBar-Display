@@ -7,6 +7,7 @@ import type {
   DeviceInfo,
   UsageSnapshot,
 } from "./control-center-types";
+import { deviceIsReady } from "./control-center-types";
 import {
   companionRequestUrl,
   needsLoopbackTargetAddressSpace,
@@ -179,11 +180,7 @@ type SpriteRect = {
 export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   const themeId = activeThemeId(device);
   const themeSpecPath = device?.display?.themeSpec?.path || "";
-  const deviceConnected = Boolean(
-    device?.connected &&
-      device.paired !== false &&
-      device.stream?.errorCode !== "device_pairing_required",
-  );
+  const deviceConnected = deviceIsReady(device);
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
     null,
   );

@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  BarChart3,
   Check,
   CircleHelp,
   Clipboard,
@@ -14,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 import { useMemo, useState, type ReactNode } from "react";
 import {
   availableMacAppDmgDownloadUrl,
@@ -26,12 +26,11 @@ import type {
   DeviceSearchState,
   DeviceState,
   DeviceInfo,
-  ProviderSetupInfo,
   SupportDiagnostics,
 } from "./control-center-types";
+import { deviceIsReady } from "./control-center-types";
 import { DeviceTargetForm } from "./device-target-form";
 import { ControlCenterStatusIcon } from "./control-center-status-icon";
-import { ProviderSetupCard, providerSetupIsReady } from "./provider-setup-card";
 import { SupportReportActions } from "./support-report-actions";
 import {
   DeviceCandidateList,
@@ -52,16 +51,11 @@ type SetupScreenProps = {
   onDeviceTargetChange?: (target: string) => void;
   onSearchDevices?: () => void;
   onSelectDevice?: (candidate: DeviceCandidate) => void;
-  onDeclineDevice?: () => void;
   onRepairConnection?: (targetOverride?: string) => void;
   onResetSetup?: () => void;
-  onOpenCodexBar?: () => void;
-  onRepairCodexBar?: () => void;
-  onRetryProviders?: () => void;
   hostedMode?: boolean;
   macAppRelease?: CompanionReleaseInfo | null;
   previewStep?: "mac-app" | null;
-  providerSetup?: ProviderSetupInfo | null;
   diagnostics?: SupportDiagnostics | null;
   onCreateSupportReport?: () => void;
   requiresMacAppMigration?: boolean;
@@ -69,7 +63,7 @@ type SetupScreenProps = {
   setupComplete: boolean;
 };
 
-type StepId = "wifi" | "mac-app" | "finish" | "provider";
+type StepId = "wifi" | "mac-app" | "finish";
 type StepState = "active" | "blocked" | "complete" | "pending";
 
 export function SetupScreen({
@@ -86,16 +80,11 @@ export function SetupScreen({
   onDeviceTargetChange,
   onSearchDevices,
   onSelectDevice,
-  onDeclineDevice,
   onRepairConnection,
   onResetSetup,
-  onOpenCodexBar,
-  onRepairCodexBar,
-  onRetryProviders,
   hostedMode = false,
   macAppRelease = null,
   previewStep,
-  providerSetup,
   diagnostics,
   onCreateSupportReport,
   requiresMacAppMigration = false,
@@ -114,19 +103,10 @@ export function SetupScreen({
     !macAppMissing &&
     (macAppConfirmedState || macAppReady || setupComplete);
   const deviceSelectionInProgress = deviceSearchState !== "idle";
-  const deviceConnectionComplete = Boolean(
-    setupComplete ||
-    (device?.connected &&
-      device.paired &&
-      device.connectionState !== "reconnecting"),
-  );
-  const providerPending = Boolean(
-    providerSetup && !providerSetupIsReady(providerSetup),
-  );
+  const deviceConnectionComplete = setupComplete || deviceIsReady(device);
   const wifiConfirmed =
     wifiConfirmedState ||
     deviceSelectionInProgress ||
-    (providerPending && deviceConnectionComplete) ||
     setupComplete ||
     previewStep === "mac-app" ||
     hostedMode;
@@ -160,14 +140,10 @@ export function SetupScreen({
         : previewStep ||
           (!wifiConfirmed
             ? "wifi"
-            : deviceConnectionComplete && providerPending
-              ? "provider"
-              : "finish"),
+            : "finish"),
     [
       hostedMode,
       previewStep,
-      deviceConnectionComplete,
-      providerPending,
       wifiConfirmed,
     ],
   );
@@ -179,8 +155,6 @@ export function SetupScreen({
         macAppConfirmed,
         macAppReady,
         deviceConnectionComplete,
-        providerReady: providerSetupIsReady(providerSetup),
-        providerVisible: Boolean(providerSetup),
         setupComplete,
         wifiConfirmed,
       }),
@@ -190,7 +164,6 @@ export function SetupScreen({
       macAppConfirmed,
       macAppReady,
       deviceConnectionComplete,
-      providerSetup,
       setupComplete,
       wifiConfirmed,
     ],
@@ -297,7 +270,7 @@ export function SetupScreen({
                     </div>
                   ) : (
                     <div className="grid gap-3 border border-border bg-card p-4">
-                      <p className="text-sm leading-6 text-[#444933]">
+                      <p className="text-sm leading-6 text-muted-foreground">
                         The signed Mac App download is not ready yet. Please try
                         again later.
                       </p>
@@ -362,7 +335,6 @@ export function SetupScreen({
                   onDeviceTargetChange={onDeviceTargetChange}
                   onSearchDevices={onSearchDevices}
                   onSelectDevice={onSelectDevice}
-                  onDeclineDevice={onDeclineDevice}
                   onRepairConnection={retryConnect}
                   setupComplete={setupComplete}
                 />
@@ -370,27 +342,9 @@ export function SetupScreen({
             </SetupStep>
           ) : null}
 
-          {!hostedMode && !forceMacAppStep && providerSetup ? (
-            <SetupStep
-              icon={<BarChart3 size={22} aria-hidden />}
-              index={3}
-              state={stepStates.provider}
-              title="Connect an AI provider"
-            >
-              {activeStep === "provider" ? (
-                <ProviderSetupCard
-                  busyAction={busyAction}
-                  onOpenCodexBar={onOpenCodexBar}
-                  onRepairCodexBar={onRepairCodexBar}
-                  onRetry={onRetryProviders}
-                  providerSetup={providerSetup}
-                />
-              ) : null}
-            </SetupStep>
-          ) : null}
         </ol>
 
-        <div className="border-t border-[#747A60] py-6">
+        <div className="border-t border-border py-6">
           <SupportReportActions
             busyAction={busyAction}
             diagnostics={diagnostics}
@@ -428,7 +382,7 @@ function SetupIntro({
           )}
         </ControlCenterStatusIcon>
         <div className="min-w-0">
-          <h2 className="max-w-[520px] text-[clamp(2.8rem,5vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
+          <h2 className="max-w-[520px] text-[clamp(2.8rem,5vw,4.5rem)] font-black leading-[1.05] tracking-normal text-foreground">
             {setupComplete
               ? "Setup complete"
               : hostedMode
@@ -481,7 +435,7 @@ function LegacyMacAppMigrationNotice({
             <Download size={22} aria-hidden />
           </ControlCenterStatusIcon>
           <div className="min-w-0">
-            <h2 className="text-2xl font-black text-[#1B1B1B]">
+            <h2 className="text-2xl font-black text-foreground">
               {downloadUrl ? "Update available" : "Update not ready"}
             </h2>
           </div>
@@ -521,7 +475,6 @@ function FinishSetupContent({
   onDeviceTargetChange,
   onSearchDevices,
   onSelectDevice,
-  onDeclineDevice,
   onRepairConnection,
   setupComplete,
 }: {
@@ -534,7 +487,6 @@ function FinishSetupContent({
   onDeviceTargetChange?: (target: string) => void;
   onSearchDevices?: () => void;
   onSelectDevice?: (candidate: DeviceCandidate) => void;
-  onDeclineDevice?: () => void;
   onRepairConnection?: (targetOverride?: string) => void;
   setupComplete: boolean;
 }) {
@@ -565,8 +517,8 @@ function FinishSetupContent({
     return (
       <div className="grid gap-4">
         <div className="grid gap-2">
-          <h4 className="text-xl font-black text-[#1B1B1B]">Choose a VibeTV</h4>
-          <p className="text-sm leading-6 text-[#444933]">
+          <h4 className="text-xl font-black text-foreground">Choose a VibeTV</h4>
+          <p className="text-sm leading-6 text-muted-foreground">
             More than one VibeTV was found. Choose the one you want to connect.
           </p>
         </div>
@@ -577,17 +529,7 @@ function FinishSetupContent({
           onSelect={(candidate) => onSelectDevice?.(candidate)}
           selecting={busyAction === "select"}
         />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Button
-            className="w-full"
-            disabled={Boolean(busyAction)}
-            onClick={onDeclineDevice}
-            size="lg"
-            type="button"
-            variant="outline"
-          >
-            Not now
-          </Button>
+        <div className="grid gap-3">
           <Button
             className="w-full"
             disabled={Boolean(busyAction)}
@@ -614,7 +556,7 @@ function FinishSetupContent({
   if (deviceSearchState === "not-found") {
     return (
       <div className="grid gap-5">
-        <p className="text-sm font-semibold leading-6 text-[#444933]">
+        <p className="text-sm font-semibold leading-6 text-muted-foreground">
           We couldn&apos;t find your VibeTV. Enter the IP address shown on your
           VibeTV screen:
         </p>
@@ -730,7 +672,7 @@ function ManualDeviceTargetOption({
     busyAction === "manual-target" || busyAction === "select";
   return (
     <div className="grid gap-3">
-      <p className="text-sm font-semibold leading-6 text-[#444933]">
+      <p className="text-sm font-semibold leading-6 text-muted-foreground">
         {prompt}
       </p>
       <DeviceTargetForm
@@ -776,9 +718,10 @@ function SetupStep({
     <li
       aria-current={active ? "step" : undefined}
       aria-disabled={state === "blocked" || undefined}
-      className={`grid gap-4 border-b border-border px-0 py-5 last:border-b-0 md:grid-cols-[54px_minmax(0,1fr)] ${
-        state === "blocked" ? "opacity-70" : ""
-      }`}
+      className={cn(
+        "grid gap-4 border-b border-border px-0 py-5 last:border-b-0 md:grid-cols-[54px_minmax(0,1fr)]",
+        state === "blocked" && "opacity-70",
+      )}
     >
       <ControlCenterStatusIcon
         size="step"
@@ -788,10 +731,10 @@ function SetupStep({
       </ControlCenterStatusIcon>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-3">
-          <p className="text-sm font-bold uppercase text-[#506600]">
+          <p className="text-sm font-bold uppercase text-muted-foreground">
             Step {index}<span className="sr-only">, {stateLabel}</span>
           </p>
-          <h3 className="text-xl font-black text-[#1B1B1B]">{title}</h3>
+          <h3 className="text-xl font-black text-foreground">{title}</h3>
         </div>
         {children ? <div className="mt-4 min-w-0">{children}</div> : null}
       </div>
@@ -830,8 +773,6 @@ function buildStepStates({
   macAppConfirmed,
   macAppReady,
   deviceConnectionComplete,
-  providerReady,
-  providerVisible,
   setupComplete,
   wifiConfirmed,
 }: {
@@ -840,8 +781,6 @@ function buildStepStates({
   macAppConfirmed: boolean;
   macAppReady: boolean;
   deviceConnectionComplete: boolean;
-  providerReady: boolean;
-  providerVisible: boolean;
   setupComplete: boolean;
   wifiConfirmed: boolean;
 }): Record<StepId, StepState> {
@@ -868,15 +807,6 @@ function buildStepStates({
         : activeStep === "finish"
           ? "active"
           : "blocked",
-    provider: !providerVisible
-      ? "blocked"
-      : setupComplete || providerReady
-        ? "complete"
-        : activeStep === "provider"
-          ? "active"
-          : deviceConnectionComplete
-            ? "pending"
-            : "blocked",
   };
 }
 

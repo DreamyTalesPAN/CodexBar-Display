@@ -188,7 +188,7 @@ issue scope, or release permission never implies UI permission.
 ## 2026-07-21 — Physical pairing recovery and Mac-App-first updates
 
 - User approval: After the security sweep described the visible recovery problem, the user explicitly answered `dann ... fixen` and approved implementing that customer-visible fix in the Codex task on 2026-07-21.
-- Approved customer-visible result: A closed pairing window or rejected saved token no longer tells the customer to check the same WiFi and retry. Control Center explains the three-restart recovery: interrupt early boot three times, connect VibeTV to WiFi again, then pair it again. A temporary pairing rate limit only asks the customer to wait briefly. When Mac App and VibeTV firmware updates are both available, the single Update action updates the Mac App first and exposes the firmware update only afterward.
+- Approved customer-visible result at that time: A closed pairing window or rejected saved token used a destructive physical recovery. The WiFi/pairing recovery part of this decision is superseded by the 2026-07-22 KISS WiFi-change decision below. A temporary pairing rate limit only asks the customer to wait briefly. When Mac App and VibeTV firmware updates are both available, the single Update action updates the Mac App first and exposes the firmware update only afterward.
 - Approved files: `control-center-types.ts`, `control-center-app.tsx`, `updates-screen.tsx`, `protocol/compatibility_matrix.json`, `docs/customer-setup.md`, and their customer-flow assertions.
 
 ## 2026-07-22 — Manual IP alongside WiFi discovery
@@ -200,11 +200,24 @@ issue scope, or release permission never implies UI permission.
 ## 2026-07-22 — Shadcn manual IP and secure pairing integration
 
 - User approval: After merging the manual-IP work to `main`, the user explicitly ordered its functionality to be carried into the new Shadcn setup screens, rejected the old presentation, and requested a new preview in the Codex task on 2026-07-22.
-- Approved customer-visible result: Automatic discovery stays the default, while startup and setup expose the same manual VibeTV address path through the existing Shadcn Card, Field, Input, Button, Spinner, and Alert components. The search spinner remains before the address field, and the no-result flow keeps WiFi instructions and `Scan WiFi again` before manual entry. Rejected pairing tokens and closed pairing windows show customer-safe physical recovery in a Shadcn Alert without raw device errors or credentials.
+- Approved customer-visible result at that time: Automatic discovery stays the default, while startup and setup expose the same manual VibeTV address path through the existing Shadcn Card, Field, Input, Button, Spinner, and Alert components. The search spinner remains before the address field, and the no-result flow keeps WiFi instructions and `Scan WiFi again` before manual entry. The customer-visible destructive WiFi-reset instructions from this decision are superseded by the 2026-07-22 KISS WiFi-change decision below.
 - Approved files: `control-center-app.tsx`, `device-startup-screen.tsx`, `device-target-form.tsx`, `setup-screen.tsx`, `updates-screen.tsx`, and their unit and customer-flow assertions.
 
 ## 2026-07-22 — Pairing recovery and truthful usage state
 
 - User approval: While testing preview 99.0.61, the user reported the rotating `Starting Control Center`, `Reconnecting to your VibeTV`, and first-time WiFi screens plus stale Usage values, and explicitly ordered an independent cleanup and review including the Usage problem.
-- Approved customer-visible result: A reachable VibeTV whose local pairing key is missing is never presented as connected, as needing first-time WiFi setup, or as waiting for an AI provider. Control Center shows the existing physical pairing recovery and hides the stale last-sent usage frame until pairing is restored. The initial Control Center check is not held open by a slow provider usage probe.
+- Approved customer-visible result at that time: A reachable VibeTV whose local pairing key is missing is never presented as connected, as needing first-time WiFi setup, or as waiting for an AI provider. The customer-visible destructive WiFi-reset instructions from this decision are superseded by the 2026-07-22 KISS WiFi-change decision below. The stale last-sent usage frame stays hidden until pairing is restored, and the initial Control Center check is not held open by a slow provider usage probe.
 - Approved files: `control-center-app.tsx`, `device-startup-screen.tsx`, `overview-screen.tsx`, `live-vibetv-preview.tsx`, Companion provider setup status handling, and their unit and customer-flow assertions.
+
+## 2026-07-22 — KISS WiFi change without device reset
+
+- User approval: During physical preview testing, the user explicitly rejected
+  the read-only automatic setup hotspot and any WPA2/PIN recovery design.
+- Approved customer-visible result: If saved WiFi credentials fail, VibeTV
+  returns to the ordinary open `VibeTV-Setup` hotspot and immediately shows the
+  normal writable WiFi form. Choosing a new network changes only SSID/password;
+  pairing, themes and device settings remain intact. A normal WiFi change never
+  asks the customer to reset the device and never opens a new pairing window on
+  an already paired device.
+- Approved files: ESP8266 setup-AP/portal behavior, firmware WiFi/pairing policy,
+  native firmware regression tests, and the WiFi hardware/customer contract.

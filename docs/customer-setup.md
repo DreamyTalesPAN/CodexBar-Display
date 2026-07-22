@@ -171,15 +171,15 @@ curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s
 - If the app shows one clear action, use that action before trying support
   commands.
 
-## Reset WiFi
+## Change WiFi
 
-Use the recovery or setup action shown in Control Center while the paired
-VibeTV is reachable.
+If VibeTV cannot reconnect to its saved network, wait until the display shows
+`VibeTV-Setup`. Join that open WiFi on a phone, open `192.168.4.1`, and choose
+the new 2.4 GHz network. This changes only the WiFi name and password. Existing
+pairing, themes, brightness, and other VibeTV settings stay unchanged.
 
-If the pairing window has closed or the saved pairing token was lost, unplug
-VibeTV during early boot three times in a row. On the next boot, VibeTV clears
-saved WiFi credentials and starts `VibeTV-Setup`. Connect it to WiFi again,
-then pair it in Control Center.
+An authenticated WiFi reset remains available as an explicit support action
+while the paired VibeTV is reachable. It is not needed for a normal WiFi change.
 
 ## Important
 

@@ -169,6 +169,44 @@ func TestNoProvidersStreamErrorIsProviderSetupRequired(t *testing.T) {
 	}
 }
 
+func TestProviderSetupDoesNotChangeDeviceReadiness(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","deviceId":"provider-independent","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":3,"partialCount":1,"lastKind":"usage"}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "paired-token",
+		DeviceID:     "provider-independent",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    device.URL,
+			ErrorCode: "provider_setup_required",
+			Detail:    "No provider is ready.",
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Device.Active || !got.Device.Ready || got.Device.ConnectionState != deviceConnectionReady {
+		t.Fatalf("provider setup incorrectly changed device readiness: %+v", got.Device)
+	}
+}
+
 func TestProviderDiagnosticsNeverRecommendFixConnection(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: "http://127.0.0.1:1", DeviceToken: "paired"})
 	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {

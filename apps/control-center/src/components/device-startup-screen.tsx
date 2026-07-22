@@ -27,14 +27,12 @@ type Props = {
   busyAction?: string | null;
   deviceCandidates: DeviceCandidate[];
   deviceSearchState: DeviceSearchState;
-  deviceTarget: string;
-  hasConfiguredDevice: boolean;
+  deviceTarget?: string;
   lastError?: ApiError | null;
   diagnostics?: SupportDiagnostics | null;
   onCreateSupportReport?: () => void;
-  onDecline: () => void;
-  onDeviceTargetChange: (target: string) => void;
-  onManualTarget: (target: string) => void;
+  onDeviceTargetChange?: (target: string) => void;
+  onManualTarget?: (target: string) => void;
   onSearch: () => void;
   onSelect: (candidate: DeviceCandidate) => void;
 };
@@ -43,12 +41,10 @@ export function DeviceStartupScreen({
   busyAction,
   deviceCandidates,
   deviceSearchState,
-  deviceTarget,
-  hasConfiguredDevice,
+  deviceTarget = "",
   lastError,
   diagnostics,
   onCreateSupportReport,
-  onDecline,
   onDeviceTargetChange,
   onManualTarget,
   onSearch,
@@ -62,35 +58,27 @@ export function DeviceStartupScreen({
   const waiting = deviceSearchState === "waiting";
   const choosing =
     deviceSearchState === "multiple" && deviceCandidates.length > 0;
-  const singleReplacement =
-    choosing && hasConfiguredDevice && deviceCandidates.length === 1;
   const pairingAttention = isPairingAttentionError(lastError);
   const wifiSetupNeeded =
     deviceSearchState === "not-found" &&
-    !hasConfiguredDevice &&
     !manualConnecting &&
     !selecting &&
     !pairingAttention;
-  const configuredDeviceNotFound =
-    deviceSearchState === "not-found" && hasConfiguredDevice && !pairingAttention;
   const repairFailed = deviceSearchState === "repair-failed";
   const searchFailed = deviceSearchState === "failed";
   const manualEntryAvailable =
     searching ||
     choosing ||
     wifiSetupNeeded ||
-    configuredDeviceNotFound ||
     searchFailed ||
     repairFailed;
 
-  let title = "Reconnecting to your VibeTV";
-  let detail = "Checking your last connected VibeTV and your WiFi.";
+  let title = "Set up your VibeTV";
+  let detail = "Choose a VibeTV on your WiFi.";
 
   if (searching) {
     title = "Looking for your VibeTV";
-    detail = hasConfiguredDevice
-      ? "Searching your WiFi for your last connected VibeTV and alternatives."
-      : "Searching your WiFi for a VibeTV.";
+    detail = "Searching your WiFi for a VibeTV.";
   } else if (selecting || manualConnecting) {
     title = "Connecting to VibeTV";
     detail = "Checking the selected VibeTV and waiting for a fresh image.";
@@ -100,20 +88,14 @@ export function DeviceStartupScreen({
   } else if (waiting) {
     title = "Connecting to VibeTV";
     detail = "VibeTV was found. Waiting for the first usage data.";
-  } else if (singleReplacement) {
-    title = "Another VibeTV was found";
-    detail =
-      "Your last connected VibeTV is not available. Connect to this VibeTV instead?";
   } else if (choosing) {
     title = "Choose a VibeTV";
-    detail = hasConfiguredDevice
-      ? "Your last connected VibeTV is not available. Choose another VibeTV to connect."
-      : "More than one VibeTV was found. Choose the one you want to connect.";
+    detail = "Choose the VibeTV you want to connect.";
   } else if (pairingAttention) {
     title =
       lastError?.code === "pairing_rate_limited"
         ? "Pairing is paused for a moment"
-        : "Pairing needs physical recovery";
+        : "VibeTV needs to be paired again";
     detail = "VibeTV is reachable, but the secure connection needs attention.";
   } else if (wifiSetupNeeded) {
     title = "We couldn't find your VibeTV";
@@ -125,10 +107,6 @@ export function DeviceStartupScreen({
   } else if (searchFailed) {
     title = "VibeTV search could not finish";
     detail = "Check the Mac App and your WiFi, then search again.";
-  } else if (configuredDeviceNotFound) {
-    title = "We couldn't find your VibeTV";
-    detail =
-      "Make sure VibeTV and this Mac are on the same WiFi, then search again.";
   }
 
   const statusLabel = reconnecting
@@ -143,7 +121,7 @@ export function DeviceStartupScreen({
     <Monitor aria-hidden />
   ) : wifiSetupNeeded ? (
     <Wifi aria-hidden />
-  ) : configuredDeviceNotFound || searchFailed ? (
+  ) : searchFailed ? (
     <WifiOff aria-hidden />
   ) : repairFailed || pairingAttention ? (
     <CircleAlert aria-hidden />
@@ -152,16 +130,12 @@ export function DeviceStartupScreen({
   const actions = choosing ? (
     <StartupActions
       busy={Boolean(busyAction)}
-      hasConfiguredDevice={hasConfiguredDevice}
-      onDecline={onDecline}
       onSearch={onSearch}
       searchVariant="outline"
     />
-  ) : configuredDeviceNotFound || searchFailed || repairFailed || pairingAttention ? (
+  ) : searchFailed || repairFailed || pairingAttention ? (
     <StartupActions
       busy={Boolean(busyAction)}
-      hasConfiguredDevice={hasConfiguredDevice}
-      onDecline={onDecline}
       onSearch={onSearch}
       searchLabel={pairingAttention ? "Pair again" : "Search again"}
     />
@@ -237,7 +211,11 @@ export function DeviceStartupScreen({
         {lastError && !searching ? (
           <Alert variant={pairingAttention ? "destructive" : "default"}>
             <CircleAlert aria-hidden />
-            <AlertTitle>{lastError.message}</AlertTitle>
+            <AlertTitle>
+              {pairingAttention
+                ? "VibeTV needs to be paired again."
+                : lastError.message}
+            </AlertTitle>
             <AlertDescription>
               {startupErrorNextAction(lastError, repairFailed)}
             </AlertDescription>
@@ -252,25 +230,17 @@ export function DeviceStartupScreen({
 
 function StartupActions({
   busy,
-  hasConfiguredDevice,
-  onDecline,
   onSearch,
   searchLabel = "Search again",
   searchVariant = "default",
 }: {
   busy: boolean;
-  hasConfiguredDevice: boolean;
-  onDecline: () => void;
   onSearch: () => void;
   searchLabel?: string;
   searchVariant?: "default" | "outline";
 }) {
   return (
-    <div
-      className={
-        hasConfiguredDevice ? "grid gap-3 sm:grid-cols-2" : "grid gap-3"
-      }
-    >
+    <div className="grid gap-3">
       <Button
         className="w-full"
         disabled={busy}
@@ -281,22 +251,16 @@ function StartupActions({
         <RefreshCw data-icon="inline-start" aria-hidden />
         <span>{searchLabel}</span>
       </Button>
-      {hasConfiguredDevice ? (
-        <Button
-          className="w-full"
-          disabled={busy}
-          onClick={onDecline}
-          size="lg"
-          variant="outline"
-        >
-          Open Control Center
-        </Button>
-      ) : null}
     </div>
   );
 }
 
 function startupErrorNextAction(error: ApiError, repairFailed: boolean) {
+  if (isPairingAttentionError(error)) {
+    return error.code === "pairing_rate_limited"
+      ? "Wait one minute, then try pairing again."
+      : "Keep VibeTV powered on, then try pairing again.";
+  }
   if (repairFailed && error.code === "pair_failed") {
     return "Keep VibeTV powered on, then search again.";
   }

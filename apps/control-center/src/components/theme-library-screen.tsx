@@ -93,6 +93,7 @@ export type ThemeLibraryCompanionStatus = "unknown" | "online" | "missing";
 export type ThemeLibraryDeviceInfo = {
   connected: boolean;
   paired?: boolean;
+  ready?: boolean;
   board?: string;
   firmware?: string;
   activeTheme?: string;
@@ -1002,7 +1003,7 @@ function buildCustomThemeInstallBlocker({
   themeInstallBlockedReason: string;
   themeInstallEnabled: boolean;
 }): ThemeInstallBlocker | null {
-  if (!device?.connected) {
+  if (device?.ready !== true) {
     return { reason: themeInstallBlockedReason || "Connect VibeTV first." };
   }
   if (!device.paired) {
@@ -1083,7 +1084,7 @@ function buildInstallReadiness({
       icon: <Wifi size={22} aria-hidden />,
     };
   }
-  if (!device?.connected) {
+  if (device?.ready !== true) {
     return {
       title: "VibeTV not found",
       detail:
@@ -1180,7 +1181,7 @@ function buildThemeInstallBlocker({
   if (metadataBlocker) {
     return metadataBlocker;
   }
-  if (!device?.connected) {
+  if (device?.ready !== true) {
     return { reason: themeInstallBlockedReason || "Connect VibeTV first." };
   }
   if (!device.paired) {

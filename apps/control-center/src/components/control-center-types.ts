@@ -188,6 +188,7 @@ export type DeviceInfo = {
   target?: string;
   deviceId?: string;
   known?: boolean;
+  active?: boolean;
   connected: boolean;
   paired?: boolean;
   ready?: boolean;
@@ -456,38 +457,13 @@ export function deviceImageIsStuck(device: DeviceInfo | null | undefined) {
 }
 
 export function deviceStreamIsReady(device: DeviceInfo | null | undefined) {
-  return Boolean(device?.paired && device.stream?.healthy);
+  return deviceIsReady(device);
 }
 
-export function deviceSetupIsUsable(device: DeviceInfo | null | undefined) {
-  if (device?.connectionState) {
-    return (
-      device.connectionState === "ready" ||
-      device.connectionState === "reconnecting"
-    );
-  }
+export function deviceIsReady(device: DeviceInfo | null | undefined) {
   return device?.ready === true;
 }
 
-export function normalizeDeviceConnection(device: DeviceInfo): DeviceInfo {
-  if (device.connected === true && device.stream?.healthy === true) {
-    return {
-      ...device,
-      paired: true,
-      ready: true,
-      connectionState: "ready",
-    };
-  }
-  return device;
-}
-
-export function deviceStartupConnectionIsReady(
-  device: DeviceInfo | null | undefined,
-) {
-  const normalized = device ? normalizeDeviceConnection(device) : device;
-  return Boolean(
-    deviceSetupIsUsable(normalized) &&
-      normalized?.connectionState !== "reconnecting" &&
-      normalized?.connected !== false,
-  );
+export function deviceIsActive(device: DeviceInfo | null | undefined) {
+  return device?.active === true;
 }

@@ -9,8 +9,6 @@ describe("DeviceStartupScreen", () => {
         busyAction="search"
         deviceCandidates={[]}
         deviceSearchState="searching"
-        hasConfiguredDevice={false}
-        onDecline={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
       />,
@@ -34,8 +32,6 @@ describe("DeviceStartupScreen", () => {
           },
         ]}
         deviceSearchState="multiple"
-        hasConfiguredDevice
-        onDecline={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
       />,
@@ -52,9 +48,7 @@ describe("DeviceStartupScreen", () => {
         busyAction="repair"
         deviceCandidates={[]}
         deviceSearchState="waiting"
-        hasConfiguredDevice
         onCreateSupportReport={vi.fn()}
-        onDecline={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
       />,
@@ -71,13 +65,11 @@ describe("DeviceStartupScreen", () => {
       <DeviceStartupScreen
         deviceCandidates={[]}
         deviceSearchState="repair-failed"
-        hasConfiguredDevice={false}
         lastError={{
           code: "pair_failed",
           message: "VibeTV pairing failed.",
           nextAction: "Keep VibeTV powered on, then retry Fix connection.",
         }}
-        onDecline={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
       />,
@@ -96,8 +88,6 @@ describe("DeviceStartupScreen", () => {
         deviceCandidates={[]}
         deviceSearchState="not-found"
         deviceTarget="172.30.0.31"
-        hasConfiguredDevice={false}
-        onDecline={vi.fn()}
         onDeviceTargetChange={vi.fn()}
         onManualTarget={vi.fn()}
         onSearch={vi.fn()}
@@ -110,20 +100,18 @@ describe("DeviceStartupScreen", () => {
     expect(html).not.toContain("Scan WiFi again");
   });
 
-  it("shows pairing recovery instead of WiFi setup for a reachable device", () => {
+  it("never exposes destructive recovery copy for a pairing error", () => {
     const html = renderToStaticMarkup(
       <DeviceStartupScreen
         deviceCandidates={[]}
         deviceSearchState="not-found"
         deviceTarget="172.30.0.31"
-        hasConfiguredDevice={false}
         lastError={{
           code: "pairing_window_closed",
           message: "Pairing needs physical recovery.",
           nextAction:
             "Unplug VibeTV during early boot three times in a row. Then connect VibeTV to WiFi again and pair it in Control Center.",
         }}
-        onDecline={vi.fn()}
         onDeviceTargetChange={vi.fn()}
         onManualTarget={vi.fn()}
         onSearch={vi.fn()}
@@ -131,7 +119,9 @@ describe("DeviceStartupScreen", () => {
       />,
     );
 
-    expect(html).toContain("Pairing needs physical recovery");
+    expect(html).toContain("VibeTV needs to be paired again");
+    expect(html).not.toContain("Unplug VibeTV");
+    expect(html).not.toContain("three times");
     expect(html).not.toContain("We couldn&#x27;t find your VibeTV");
     expect(html).not.toContain("Open WiFi settings");
   });
