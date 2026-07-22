@@ -263,6 +263,8 @@ type repairStageError struct {
 	err   error
 }
 
+var errDeviceIdentityChanged = errors.New("VibeTV identity changed")
+
 type deviceHTTPError struct {
 	statusCode int
 	body       string
@@ -2718,7 +2720,7 @@ func (s *Server) selectDevice(
 	if !strings.EqualFold(expectedDeviceID, strings.TrimSpace(hello.DeviceID)) {
 		return deviceInfo{}, &repairStageError{
 			stage: "discovery",
-			err:   errors.New("selected VibeTV identity changed before pairing"),
+			err:   errDeviceIdentityChanged,
 		}
 	}
 
@@ -5506,13 +5508,13 @@ func validateRepairIdentity(
 	}
 	expectedDeviceID = strings.TrimSpace(expectedDeviceID)
 	if expectedDeviceID != "" && !strings.EqualFold(expectedDeviceID, strings.TrimSpace(hello.DeviceID)) {
-		return &repairStageError{stage: "discovery", err: errors.New("selected VibeTV identity changed before pairing")}
+		return &repairStageError{stage: "discovery", err: errDeviceIdentityChanged}
 	}
 	if explicit || strings.TrimSpace(cfg.DeviceID) == "" {
 		return nil
 	}
 	if !strings.EqualFold(strings.TrimSpace(cfg.DeviceID), strings.TrimSpace(hello.DeviceID)) {
-		return &repairStageError{stage: "discovery", err: errors.New("discovered VibeTV does not match the saved device identity")}
+		return &repairStageError{stage: "discovery", err: errDeviceIdentityChanged}
 	}
 	return nil
 }
@@ -6168,6 +6170,16 @@ func writeRepairError(w http.ResponseWriter, err error) {
 	var multiple *multipleDevicesError
 	if errors.As(err, &multiple) {
 		writeDiscoveryError(w, err)
+		return
+	}
+	if errors.Is(err, errDeviceIdentityChanged) {
+		writeError(
+			w,
+			http.StatusConflict,
+			"device_identity_changed",
+			"That address answered as a different VibeTV.",
+			"Check the IP on the VibeTV screen, then try again.",
+		)
 		return
 	}
 	var stageErr *repairStageError

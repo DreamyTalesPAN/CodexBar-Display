@@ -864,8 +864,17 @@ func TestDeviceRepairRejectsIdentitySwapBetweenSearchAndPair(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	server.Handler().ServeHTTP(rec, req)
 
-	if rec.Code == http.StatusOK {
-		t.Fatalf("identity swap was accepted: %s", rec.Body.String())
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("identity swap status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode identity swap response: %v", err)
+	}
+	if got.OK || got.Error.Code != "device_identity_changed" ||
+		got.Error.Message != "That address answered as a different VibeTV." ||
+		got.Error.NextAction != "Check the IP on the VibeTV screen, then try again." {
+		t.Fatalf("unexpected identity swap response: %+v", got)
 	}
 	if pairCalls.Load() != 0 {
 		t.Fatalf("identity swap triggered %d pairing writes", pairCalls.Load())
@@ -907,8 +916,17 @@ func TestDeviceSelectRejectsIdentitySwapBeforePairing(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	server.Handler().ServeHTTP(rec, req)
 
-	if rec.Code == http.StatusOK {
-		t.Fatalf("identity swap was accepted: %s", rec.Body.String())
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("identity swap status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode identity swap response: %v", err)
+	}
+	if got.OK || got.Error.Code != "device_identity_changed" ||
+		got.Error.Message != "That address answered as a different VibeTV." ||
+		got.Error.NextAction != "Check the IP on the VibeTV screen, then try again." {
+		t.Fatalf("unexpected identity swap response: %+v", got)
 	}
 	if pairCalls.Load() != 0 {
 		t.Fatalf("identity swap triggered %d pairing writes", pairCalls.Load())

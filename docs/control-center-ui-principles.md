@@ -24,13 +24,16 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
 2. The installed Mac App never asks the customer to download itself during
    normal onboarding. A fresh setup searches the current WiFi for VibeTVs
    before showing setup instructions.
-3. If the initial search finds no VibeTV, the same full-screen startup gate
-   shows the VibeTV WiFi instructions and one `VibeTV is on WiFi` action. That
-   action starts a fresh device search. The Control Center shell and navigation
-   remain hidden. On a later app start, a saved but unavailable VibeTV uses a
-   separate reconnect screen without first-time WiFi instructions. It searches
-   only for the active saved identity and allows the customer to open Control
-   Center without replacing that identity.
+3. During the initial search, the same full-screen startup gate shows the active
+   search first and an always-visible alternative to enter the IP address shown
+   on the VibeTV screen. If the search finds no VibeTV, it shows `We couldn't
+   find your VibeTV`, followed by the VibeTV WiFi instructions and `Scan WiFi
+   again`. Below those steps, the manual alternative reads `Or enter the IP
+   address shown on your VibeTV screen:`. The Control Center shell and
+   navigation remain hidden. On a later app start, a saved but unavailable
+   VibeTV uses a separate reconnect screen without first-time WiFi instructions.
+   It searches only for the active saved identity and allows the customer to
+   open Control Center without replacing that identity.
 4. An existing healthy setup opens Overview without setup writes or extra
    confirmation. If VibeTV or the Mac App becomes unavailable after Control
    Center was entered, the current tab and navigation remain visible. Overview
