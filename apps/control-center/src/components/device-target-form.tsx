@@ -17,6 +17,7 @@ type DeviceTargetFormProps = {
   disabled?: boolean;
   id: string;
   lastError?: ApiError | null;
+  minimal?: boolean;
   onChange?: (target: string) => void;
   onSubmit?: (target: string) => void;
   searchingLabel?: string;
@@ -26,10 +27,11 @@ type DeviceTargetFormProps = {
 export function DeviceTargetForm({
   busy = false,
   buttonLabel = "Connect VibeTV",
-  className = "grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end",
+  className,
   disabled = false,
   id,
   lastError,
+  minimal = false,
   onChange,
   onSubmit,
   searchingLabel = "Searching",
@@ -37,6 +39,17 @@ export function DeviceTargetForm({
 }: DeviceTargetFormProps) {
   const formDisabled = disabled || busy;
   const [validationError, setValidationError] = useState("");
+  const formClassName =
+    className ||
+    (minimal
+      ? "grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"
+      : "grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end");
+  const labelClassName = minimal
+    ? "sr-only"
+    : "text-sm font-bold text-[#1B1B1B]";
+  const inputClassName = minimal
+    ? "h-12 w-full border border-[#747A60] bg-[#F9F9F9] px-3 font-mono text-base text-[#1B1B1B] outline-none transition placeholder:text-[#747A60] focus:border-[#5E7200] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
+    : "mt-3 h-12 w-full border border-[#747A60] bg-[#F9F9F9] px-3 font-mono text-sm text-[#1B1B1B] outline-none transition placeholder:text-[#747A60] focus:border-[#5E7200] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]";
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -52,16 +65,18 @@ export function DeviceTargetForm({
   }
 
   return (
-    <form className={className} onSubmit={handleSubmit}>
+    <form className={formClassName} onSubmit={handleSubmit}>
       <div className="min-w-0">
-        <label className="text-sm font-bold text-[#1B1B1B]" htmlFor={id}>
+        <label className={labelClassName} htmlFor={id}>
           VibeTV address
         </label>
-        <p className="mt-1 max-w-[720px] text-sm leading-6 text-[#444933]">
-          {deviceTargetHelpText(lastError)}
-        </p>
+        {!minimal ? (
+          <p className="mt-1 max-w-[720px] text-sm leading-6 text-[#444933]">
+            {deviceTargetHelpText(lastError)}
+          </p>
+        ) : null}
         <input
-          className="mt-3 h-12 w-full border border-[#747A60] bg-[#F9F9F9] px-3 font-mono text-sm text-[#1B1B1B] outline-none transition placeholder:text-[#747A60] focus:border-[#5E7200] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933]"
+          className={inputClassName}
           disabled={formDisabled}
           id={id}
           aria-invalid={Boolean(validationError)}

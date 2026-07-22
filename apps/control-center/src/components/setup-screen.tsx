@@ -330,7 +330,7 @@ export function SetupScreen({
                   <PrimaryButton
                     fullWidth
                     icon={<Check size={18} aria-hidden />}
-                    label="VibeTV is on WiFi"
+                    label="Scan WiFi again"
                     onClick={confirmWifi}
                     size="large"
                   />
@@ -540,8 +540,6 @@ function FinishSetupContent({
   onRepairConnection?: (targetOverride?: string) => void;
   setupComplete: boolean;
 }) {
-  const [manualEntryOpen, setManualEntryOpen] = useState(false);
-
   if (setupComplete) {
     return <StatusNote>VibeTV is ready.</StatusNote>;
   }
@@ -559,9 +557,7 @@ function FinishSetupContent({
           deviceTarget={deviceTarget}
           lastError={lastError}
           onChange={onDeviceTargetChange}
-          onOpen={() => setManualEntryOpen(true)}
           onSubmit={onRepairConnection}
-          open={manualEntryOpen}
         />
       </div>
     );
@@ -617,9 +613,7 @@ function FinishSetupContent({
           deviceTarget={deviceTarget}
           lastError={lastError}
           onChange={onDeviceTargetChange}
-          onOpen={() => setManualEntryOpen(true)}
           onSubmit={onRepairConnection}
-          open={manualEntryOpen}
         />
       </div>
     );
@@ -628,9 +622,9 @@ function FinishSetupContent({
   if (deviceSearchState === "not-found") {
     return (
       <div className="grid gap-5">
-        <p className="text-sm leading-6 text-[#444933]">
-          No VibeTV was found automatically. Enter the address shown on the
-          VibeTV screen.
+        <p className="text-sm font-semibold leading-6 text-[#444933]">
+          We couldn&apos;t find your VibeTV. Enter the IP address shown on your
+          VibeTV screen:
         </p>
         <DeviceTargetForm
           busy={busyAction === "manual-target" || busyAction === "select"}
@@ -644,6 +638,7 @@ function FinishSetupContent({
           }
           id="setup-device-target"
           lastError={lastError}
+          minimal
           onChange={onDeviceTargetChange}
           onSubmit={onRepairConnection}
           searchingLabel="Connecting"
@@ -656,25 +651,20 @@ function FinishSetupContent({
   if (deviceSearchState === "failed") {
     return (
       <div className="grid gap-4">
-        <p className="text-sm leading-6 text-[#444933]">
-          Automatic search could not finish. Make sure VibeTV and this Mac are
-          on the same WiFi, then try again.
-        </p>
+        <ManualDeviceTargetOption
+          busyAction={busyAction}
+          deviceTarget={deviceTarget}
+          lastError={lastError}
+          onChange={onDeviceTargetChange}
+          onSubmit={onRepairConnection}
+          prompt="We couldn't find your VibeTV. Enter the IP address shown on your VibeTV screen:"
+        />
         <PrimaryButton
           fullWidth
           icon={<RefreshCw size={18} aria-hidden />}
           label="Try again"
           onClick={onSearchDevices}
           size="large"
-        />
-        <ManualDeviceTargetOption
-          busyAction={busyAction}
-          deviceTarget={deviceTarget}
-          lastError={lastError}
-          onChange={onDeviceTargetChange}
-          onOpen={() => setManualEntryOpen(true)}
-          onSubmit={onRepairConnection}
-          open={manualEntryOpen}
         />
       </div>
     );
@@ -683,25 +673,20 @@ function FinishSetupContent({
   if (deviceSearchState === "repair-failed") {
     return (
       <div className="grid gap-4">
-        <p className="text-sm leading-6 text-[#444933]">
-          VibeTV could not reconnect automatically. Make sure it is on the same
-          WiFi as this Mac, then try again.
-        </p>
+        <ManualDeviceTargetOption
+          busyAction={busyAction}
+          deviceTarget={deviceTarget}
+          lastError={lastError}
+          onChange={onDeviceTargetChange}
+          onSubmit={onRepairConnection}
+          prompt="We couldn't reconnect your VibeTV. Enter the IP address shown on your VibeTV screen:"
+        />
         <PrimaryButton
           fullWidth
           icon={<RefreshCw size={18} aria-hidden />}
           label="Try again"
           onClick={onSearchDevices}
           size="large"
-        />
-        <ManualDeviceTargetOption
-          busyAction={busyAction}
-          deviceTarget={deviceTarget}
-          lastError={lastError}
-          onChange={onDeviceTargetChange}
-          onOpen={() => setManualEntryOpen(true)}
-          onSubmit={onRepairConnection}
-          open={manualEntryOpen}
         />
       </div>
     );
@@ -734,9 +719,7 @@ function FinishSetupContent({
         deviceTarget={deviceTarget}
         lastError={lastError}
         onChange={onDeviceTargetChange}
-        onOpen={() => setManualEntryOpen(true)}
         onSubmit={onRepairConnection}
-        open={manualEntryOpen}
       />
     </div>
   );
@@ -747,39 +730,22 @@ function ManualDeviceTargetOption({
   deviceTarget,
   lastError,
   onChange,
-  onOpen,
   onSubmit,
-  open,
+  prompt = "Or enter the IP address shown on your VibeTV screen:",
 }: {
   busyAction?: string | null;
   deviceTarget: string;
   lastError?: ApiError | null;
   onChange?: (target: string) => void;
-  onOpen: () => void;
   onSubmit?: (targetOverride?: string) => void;
-  open: boolean;
+  prompt?: string;
 }) {
-  if (!open) {
-    return (
-      <ControlCenterButton
-        aria-expanded={false}
-        fullWidth
-        icon={<Monitor size={18} aria-hidden />}
-        label="Enter VibeTV IP"
-        onClick={onOpen}
-        size="large"
-        variant="secondary"
-      />
-    );
-  }
-
   const connecting =
     busyAction === "manual-target" || busyAction === "select";
   return (
-    <div className="grid gap-3 border border-[#747A60] bg-[#F9F9F9] p-4">
-      <p className="text-sm leading-6 text-[#444933]">
-        Enter the IP address shown on the VibeTV screen. Automatic search can
-        keep running in the background.
+    <div className="grid gap-3">
+      <p className="text-sm font-semibold leading-6 text-[#444933]">
+        {prompt}
       </p>
       <DeviceTargetForm
         busy={connecting}
@@ -788,6 +754,7 @@ function ManualDeviceTargetOption({
         disabled={Boolean(busyAction) && busyAction !== "search" && !connecting}
         id="setup-device-target"
         lastError={lastError}
+        minimal
         onChange={onChange}
         onSubmit={onSubmit}
         searchingLabel="Connecting"
