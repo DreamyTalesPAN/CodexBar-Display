@@ -997,7 +997,7 @@ private final class ShadcnSpinnerView: NSView {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     private var window: NSWindow?
     private var webView: WKWebView?
     private var activeNavigation: WKNavigation?
@@ -3327,6 +3327,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
 
+        if navigationAction.shouldPerformDownload {
+            decisionHandler(.download)
+            return
+        }
+
         if let action = nativeControlCenterAction(for: url) {
             decisionHandler(.cancel)
             switch action {
@@ -3355,6 +3360,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         decisionHandler(.cancel)
         if !NSWorkspace.shared.open(url) {
             NSLog("VibeTV Control Center could not open verified DMG URL in the default browser")
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        navigationAction: WKNavigationAction,
+        didBecome download: WKDownload
+    ) {
+        download.delegate = self
+    }
+
+    func download(
+        _ download: WKDownload,
+        decideDestinationUsing response: URLResponse,
+        suggestedFilename: String,
+        completionHandler: @escaping @MainActor (URL?) -> Void
+    ) {
+        let panel = NSSavePanel()
+        let fileExtension = URL(fileURLWithPath: suggestedFilename).pathExtension
+        if let contentType = UTType(filenameExtension: fileExtension) {
+            panel.allowedContentTypes = [contentType]
+        }
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = suggestedFilename
+        panel.directoryURL = FileManager.default.urls(
+            for: .downloadsDirectory,
+            in: .userDomainMask
+        ).first
+        let finish: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard response == .OK, let destination = panel.url else {
+                completionHandler(nil)
+                return
+            }
+            do {
+                if FileManager.default.fileExists(atPath: destination.path) {
+                    try FileManager.default.removeItem(at: destination)
+                }
+                completionHandler(destination)
+            } catch {
+                self?.presentSupportReportError(
+                    title: "Download could not be saved",
+                    detail: (error as NSError).localizedDescription
+                )
+                completionHandler(nil)
+            }
+        }
+        if let window {
+            panel.beginSheetModal(for: window, completionHandler: finish)
+        } else {
+            finish(panel.runModal())
         }
     }
 
