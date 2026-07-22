@@ -834,7 +834,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setCompanionStatus("online");
         setCompanionInfo(payload.companion || null);
         setProviderSetup(payload.providerSetup || null);
-        setLastError(null);
+        if (!quiet || deviceConnectionIsOperational(payload.device)) {
+          setLastError(null);
+        }
         setThemeInstallEnabled(
           Boolean(payload.companion?.features?.themeInstallEnabled),
         );
@@ -3626,7 +3628,12 @@ function deviceConnectionIsReadyForProviderSetup(
 function deviceConnectionIsOperational(
   device: DeviceInfo | null | undefined,
 ): boolean {
-  return Boolean(device?.connected && (device.deviceId || device.target));
+  return Boolean(
+    device?.connected &&
+      device.paired !== false &&
+      device.stream?.errorCode !== "device_pairing_required" &&
+      (device.deviceId || device.target),
+  );
 }
 
 function isCompanionConnectionError(error: Error): boolean {

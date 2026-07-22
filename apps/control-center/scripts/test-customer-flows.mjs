@@ -296,6 +296,14 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
+        browser,
+        appContext.appUrl,
+      );
+      await testRunningPairingFailureHidesStaleUsageFrame(
+        browser,
+        appContext.appUrl,
+      );
       await testLocalReachableWithoutFrameOpensOverview(
         browser,
         appContext.appUrl,
@@ -362,6 +370,10 @@ async function main() {
       { expectDmg: true },
     );
     await testLocalFreshAppSearchesBeforeWifiSetup(browser, appContext.appUrl);
+    await testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
+      browser,
+      appContext.appUrl,
+    );
     await testLocalWifiVerificationOpensOverview(browser, appContext.appUrl);
     await testLocalWifiVerificationFailureStaysInSetup(
       browser,
@@ -406,6 +418,10 @@ async function main() {
       appContext.appUrl,
     );
     await testClosedPairingWindowShowsPhysicalRecovery(
+      browser,
+      appContext.appUrl,
+    );
+    await testRunningPairingFailureHidesStaleUsageFrame(
       browser,
       appContext.appUrl,
     );
@@ -1538,6 +1554,57 @@ async function testManualVibeTVTargetShowsPairingRecovery(browser, appUrl) {
   await page.close();
 }
 
+async function testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const repairRequests = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false, ready: false },
+    searchDevices: [
+      {
+        target: "http://172.30.0.31",
+        deviceId: "14799300",
+        networkMode: "station",
+        known: false,
+        active: false,
+      },
+    ],
+    repairError: {
+      status: 409,
+      code: "pairing_window_closed",
+      message: "VibeTV is already paired.",
+      nextAction: "Restart VibeTV to reopen pairing.",
+    },
+    onRequest: (pathname, method) => {
+      if (pathname === "/v1/device/repair" && method === "POST") {
+        repairRequests.push(pathname);
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "Pairing needs physical recovery" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    repairRequests.length === 1,
+    `A fresh install may try pairing once, got ${repairRequests.length}`,
+  );
+  assert(
+    (await page.getByText("Open WiFi settings and join", { exact: false }).count()) ===
+      0,
+    "A discovered VibeTV with closed pairing must not fall into WiFi setup",
+  );
+  assert(
+    (await page.getByText("Starting Control Center", { exact: true }).count()) ===
+      0,
+    "Pairing recovery must terminate the boot state",
+  );
+  await page.close();
+}
+
 async function testOfflineActiveDeviceOffersExplicitReplacement(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
@@ -2000,10 +2067,14 @@ async function testClosedPairingWindowShowsPhysicalRecovery(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page
-    .getByRole("heading", { name: "Pairing needs physical recovery." })
+    .getByRole("heading", { name: "Pairing needs physical recovery" })
     .waitFor({
     timeout: 10_000,
   });
+  await page.waitForTimeout(5_500);
+  await page
+    .getByRole("heading", { name: "Pairing needs physical recovery" })
+    .waitFor();
   assert(
     repairRequests === 0,
     `A clearly closed pairing window must not trigger a doomed repair, got ${repairRequests}`,
@@ -2071,6 +2142,68 @@ async function testRejectedPairingTokenUsesTypedRecovery(browser, appUrl) {
     "A rejected token must not fall back to generic WiFi retry copy",
   );
   assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testRunningPairingFailureHidesStaleUsageFrame(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "vibetv.controlCenter.deviceTarget",
+      "http://172.30.0.31",
+    );
+  });
+  await routeCompanionOnline(page, [], () => {}, {
+    device: {
+      ...companionDevice,
+      target: "http://172.30.0.31",
+      deviceId: "14799300",
+      paired: false,
+      ready: false,
+      capabilities: {
+        ...companionDevice.capabilities,
+        auth: {
+          ...companionDevice.capabilities.auth,
+          paired: true,
+          pairingWindowOpen: false,
+          pairingWindowSeconds: 0,
+        },
+      },
+      stream: {
+        healthy: false,
+        running: true,
+        errorCode: "device_pairing_required",
+      },
+    },
+    displayFrameResponse: {
+      ok: true,
+      savedAt: "2026-07-22T08:00:00Z",
+      frame: {
+        v: 1,
+        provider: "codex",
+        label: "Codex",
+        session: 0,
+        weekly: 20,
+        usageMode: "used",
+      },
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByText("Pair VibeTV again to resume display updates.", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("Start using any AI provider.", { exact: true }).count()) ===
+      0,
+    "A pairing failure must not be described as missing provider usage",
+  );
+  assert(
+    (await page.getByRole("img", { name: /showing Codex/i }).count()) === 0,
+    "A pairing failure must not present the stale last-sent frame as current usage",
+  );
   await page.close();
 }
 

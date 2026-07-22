@@ -64,13 +64,17 @@ export function DeviceStartupScreen({
     deviceSearchState === "multiple" && deviceCandidates.length > 0;
   const singleReplacement =
     choosing && hasConfiguredDevice && deviceCandidates.length === 1;
+  const pairingAttention = isPairingAttentionError(lastError);
   const wifiSetupNeeded =
-    deviceSearchState === "not-found" && !hasConfiguredDevice;
+    deviceSearchState === "not-found" &&
+    !hasConfiguredDevice &&
+    !manualConnecting &&
+    !selecting &&
+    !pairingAttention;
   const configuredDeviceNotFound =
-    deviceSearchState === "not-found" && hasConfiguredDevice;
+    deviceSearchState === "not-found" && hasConfiguredDevice && !pairingAttention;
   const repairFailed = deviceSearchState === "repair-failed";
   const searchFailed = deviceSearchState === "failed";
-  const pairingAttention = isPairingAttentionError(lastError);
   const manualEntryAvailable =
     searching ||
     choosing ||
@@ -105,16 +109,16 @@ export function DeviceStartupScreen({
     detail = hasConfiguredDevice
       ? "Your last connected VibeTV is not available. Choose another VibeTV to connect."
       : "More than one VibeTV was found. Choose the one you want to connect.";
-  } else if (wifiSetupNeeded) {
-    title = "We couldn't find your VibeTV";
-    detail =
-      "Connect VibeTV to WiFi, scan again, or enter the address shown on its screen.";
   } else if (pairingAttention) {
     title =
       lastError?.code === "pairing_rate_limited"
         ? "Pairing is paused for a moment"
-        : "Confirm pairing on your VibeTV";
+        : "Pairing needs physical recovery";
     detail = "VibeTV is reachable, but the secure connection needs attention.";
+  } else if (wifiSetupNeeded) {
+    title = "We couldn't find your VibeTV";
+    detail =
+      "Connect VibeTV to WiFi, scan again, or enter the address shown on its screen.";
   } else if (repairFailed) {
     title = "VibeTV could not connect";
     detail = "The VibeTV was found, but the connection could not be completed.";

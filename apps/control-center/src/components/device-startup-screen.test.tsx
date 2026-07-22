@@ -88,4 +88,51 @@ describe("DeviceStartupScreen", () => {
     expect(html).toContain("Keep VibeTV powered on, then search again.");
     expect(html).not.toContain("retry Fix connection");
   });
+
+  it("does not flash WiFi setup while a manual target is connecting", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        busyAction="manual-target"
+        deviceCandidates={[]}
+        deviceSearchState="not-found"
+        deviceTarget="172.30.0.31"
+        hasConfiguredDevice={false}
+        onDecline={vi.fn()}
+        onDeviceTargetChange={vi.fn()}
+        onManualTarget={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Connecting to VibeTV");
+    expect(html).not.toContain("Open WiFi settings");
+    expect(html).not.toContain("Scan WiFi again");
+  });
+
+  it("shows pairing recovery instead of WiFi setup for a reachable device", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="not-found"
+        deviceTarget="172.30.0.31"
+        hasConfiguredDevice={false}
+        lastError={{
+          code: "pairing_window_closed",
+          message: "Pairing needs physical recovery.",
+          nextAction:
+            "Unplug VibeTV during early boot three times in a row. Then connect VibeTV to WiFi again and pair it in Control Center.",
+        }}
+        onDecline={vi.fn()}
+        onDeviceTargetChange={vi.fn()}
+        onManualTarget={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Pairing needs physical recovery");
+    expect(html).not.toContain("We couldn&#x27;t find your VibeTV");
+    expect(html).not.toContain("Open WiFi settings");
+  });
 });

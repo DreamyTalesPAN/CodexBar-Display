@@ -211,6 +211,7 @@ type Server struct {
 	probeProviderSetup     func(context.Context, string) codexbar.ProviderSetup
 	openCodexBar           func(context.Context) error
 	providerSetupMu        sync.Mutex
+	providerSetupRefresh   atomic.Bool
 	providerSetupCache     codexbar.ProviderSetup
 	providerSetupCachedAt  time.Time
 	providerPreferences    providerPreferencesState
@@ -1179,7 +1180,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		OK:             true,
 		Companion:      s.companionInfo(r.Context()),
 		Device:         device,
-		ProviderSetup:  s.currentProviderSetup(r.Context(), false),
+		ProviderSetup:  s.providerSetupForStatus(),
 		ThemeInstall:   themeInstall,
 		FirmwareUpdate: firmwareUpdate,
 	})

@@ -58,8 +58,11 @@ export function OverviewScreen({
   usage,
   requiresMacAppMigration = false,
 }: OverviewScreenProps) {
+  const pairingRequired =
+    device?.stream?.errorCode === "device_pairing_required" ||
+    device?.paired === false;
   const connected = deviceIsConnected(device);
-  const displayReady = Boolean(device?.ready);
+  const displayReady = Boolean(device?.ready && !pairingRequired);
   const hero = buildHeroCopy(companionStatus, connected);
   const firmwareUpdateAvailable = hasFirmwareUpdate(firmwareUpdate);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
@@ -107,7 +110,13 @@ export function OverviewScreen({
               value={connected ? "Connected" : "Not connected"}
             />
             <StatusItem
-              detail={displayReady ? undefined : "Start using any AI provider."}
+              detail={
+                displayReady
+                  ? undefined
+                  : pairingRequired
+                    ? "Pair VibeTV again to resume display updates."
+                    : "Start using any AI provider."
+              }
               icon={<Monitor aria-hidden />}
               label="Display"
               value={displayReady ? "Live" : "Waiting for first image"}
@@ -218,5 +227,10 @@ function labelForCompanion(
 }
 
 function deviceIsConnected(device: DeviceInfo | null): boolean {
-  return Boolean(device?.connected && (device.deviceId || device.target));
+  return Boolean(
+    device?.connected &&
+      device.paired !== false &&
+      device.stream?.errorCode !== "device_pairing_required" &&
+      (device.deviceId || device.target),
+  );
 }

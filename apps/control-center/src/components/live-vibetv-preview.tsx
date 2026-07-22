@@ -179,7 +179,11 @@ type SpriteRect = {
 export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   const themeId = activeThemeId(device);
   const themeSpecPath = device?.display?.themeSpec?.path || "";
-  const deviceConnected = Boolean(device?.connected);
+  const deviceConnected = Boolean(
+    device?.connected &&
+      device.paired !== false &&
+      device.stream?.errorCode !== "device_pairing_required",
+  );
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
     null,
   );
