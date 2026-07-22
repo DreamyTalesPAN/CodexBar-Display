@@ -518,7 +518,7 @@ expected_arguments = [
     "--transport",
     "wifi",
     "--interval",
-    "30s",
+    "5s",
     "--api-addr",
     "127.0.0.1:47832",
     "--api-dev-origin",
