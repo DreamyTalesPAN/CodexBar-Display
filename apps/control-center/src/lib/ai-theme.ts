@@ -178,7 +178,7 @@ function nearestColor(color: string, palette: string[]): string {
   }, { color: palette[0] || "#000000", distance: Number.POSITIVE_INFINITY }).color;
 }
 
-function paletteToken(color: string, palette: string[]): string { return String.fromCharCode(65 + Math.max(0, palette.indexOf(color))); }
+function paletteToken(color: string, palette: string[]): string { return String.fromCharCode(97 + Math.max(0, palette.indexOf(color))); }
 function encodeRle(tokens: string[]): string {
   let output = "";
   for (let index = 0; index < tokens.length;) {

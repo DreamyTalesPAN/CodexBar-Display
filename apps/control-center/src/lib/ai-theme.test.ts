@@ -47,7 +47,10 @@ describe("AI theme history", () => {
     const lines = encoded.split("\n");
     expect(lines[0]).toBe("CBI1");
     expect(lines[1]).toBe("240 128");
-    expect(Number(lines[2])).toBeLessThanOrEqual(26);
+    const paletteSize = Number(lines[2]);
+    expect(paletteSize).toBeLessThanOrEqual(26);
+    expect(lines.slice(3 + paletteSize, 3 + paletteSize + 128)).toHaveLength(128);
+    expect(lines.slice(3 + paletteSize, 3 + paletteSize + 128).every((row) => /^[0-9a-z.]+$/.test(row))).toBe(true);
   });
 
   it("builds both Remaining bars and percentage labels without changing the concept", () => {
