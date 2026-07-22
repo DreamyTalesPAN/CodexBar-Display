@@ -248,7 +248,10 @@ function ShellNavButton({
         <span className="min-w-0 truncate">{item.label}</span>
       </SidebarMenuButton>
       {notify ? (
-        <SidebarMenuBadge aria-label="Update available">
+        <SidebarMenuBadge
+          aria-label="Update available"
+          className="top-1/2! -translate-y-1/2"
+        >
           <span className="size-2 rounded-full bg-sidebar-primary" />
         </SidebarMenuBadge>
       ) : null}

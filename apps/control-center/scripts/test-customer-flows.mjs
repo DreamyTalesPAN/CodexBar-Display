@@ -3013,12 +3013,25 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   let settingsCalls = 0;
+  let settingsReads = 0;
+  const settingsWrites = [];
   await routeCompanionOnline(
     page,
     installRequests,
     () => {},
     {
-      settingsBrightnessSequence: [null, 50],
+      settingsBrightnessSequence: [null, 50, 100, 42],
+      settingsDelayMs: 150,
+      onRequest: (pathname, method, body) => {
+        if (pathname !== "/v1/settings") {
+          return;
+        }
+        if (method === "POST") {
+          settingsWrites.push(JSON.parse(body));
+        } else {
+          settingsReads += 1;
+        }
+      },
       onSettingsResponse: () => {
         settingsCalls += 1;
       },
@@ -3030,19 +3043,53 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     () => settingsCalls >= 1,
     "expected settings refresh before opening Settings",
   );
-
   await clickNavigation(page, "Settings");
   await page.getByRole("heading", { name: "Display" }).waitFor({
     timeout: 10_000,
   });
   await waitForCondition(
     () => settingsCalls >= 2,
-    "opening Settings should retry brightness loading",
+    "opening Settings should load brightness",
   );
   await page.getByText("50%", { exact: true }).waitFor({ timeout: 10_000 });
+  const brightnessSlider = page.getByRole("slider", { name: "Brightness" });
   assert(
-    await page.getByRole("slider", { name: "Brightness" }).isEnabled(),
+    await brightnessSlider.isEnabled(),
     "brightness slider should be enabled after the Settings retry",
+  );
+
+  await clickNavigation(page, "Overview");
+  await clickNavigation(page, "Settings");
+  await waitForCondition(
+    () => settingsReads >= 3,
+    "reopening Settings should refresh saved brightness",
+  );
+  await brightnessSlider.press("Home");
+  for (let step = 0; step < 32; step += 1) {
+    await brightnessSlider.press("ArrowRight");
+  }
+  await page.getByText("42%", { exact: true }).waitFor({ timeout: 10_000 });
+  await waitForCondition(
+    () => settingsCalls >= 3,
+    "expected delayed brightness refresh to finish",
+  );
+  assert(
+    (await page.getByText("42%", { exact: true }).count()) === 1,
+    "a delayed device refresh must not replace the unsaved slider value",
+  );
+  assert(
+    settingsWrites.length === 0,
+    "moving the brightness slider must not write to VibeTV",
+  );
+
+  await page.getByRole("button", { name: "Save brightness" }).click();
+  await waitForCondition(
+    () => settingsWrites.length === 1,
+    "Save brightness should write once",
+  );
+  assert(
+    settingsWrites[0]?.brightnessPercent === 42,
+    `Save brightness should write 42, got ${JSON.stringify(settingsWrites[0])}`,
   );
 
   const hiddenCustomerText = [
@@ -3200,6 +3247,20 @@ async function testUsagePrioritizesProviderTokenHistory(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  const updatesButton = await getNavigationButton(page, "Updates");
+  const updateBadge = page.getByLabel("Update available", { exact: true });
+  await updateBadge.waitFor({ timeout: 10_000 });
+  const updatesButtonBox = await updatesButton.boundingBox();
+  const updateBadgeBox = await updateBadge.boundingBox();
+  assert(
+    updatesButtonBox &&
+      updateBadgeBox &&
+      Math.abs(
+        updatesButtonBox.y + updatesButtonBox.height / 2 -
+          (updateBadgeBox.y + updateBadgeBox.height / 2),
+      ) < 1,
+    "the Updates notification must be vertically centered",
+  );
   await clickNavigation(page, "Usage");
   const tokenChartHeading = page.getByRole("heading", {
     name: "Tokens used over time",
@@ -3216,6 +3277,22 @@ async function testUsagePrioritizesProviderTokenHistory(browser, appUrl) {
       { exact: true },
     )
     .waitFor({ timeout: 10_000 });
+  const tokenUsageRefresh = page.getByRole("button", {
+    name: "Refresh token usage",
+  });
+  const refreshResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname.endsWith("/v1/usage") &&
+      new URL(response.url()).searchParams.get("refresh") === "1",
+  );
+  await tokenUsageRefresh.click();
+  const usageResponse = await refreshResponse;
+  assert(usageResponse.ok(), "Token usage refresh should return successfully");
+  await tokenUsageRefresh.click({ trial: true });
+  assert(
+    await tokenUsageRefresh.isEnabled(),
+    "Token usage refresh should become available again after the request finishes",
+  );
   assert(
     (await page.getByText("Daily tokens by provider", { exact: false }).count()) ===
       0,

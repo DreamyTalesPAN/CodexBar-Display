@@ -293,6 +293,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
+  const brightnessDirtyRef = useRef(false);
   const setupGenerationRef = useRef(0);
   const deviceSearchAttemptRef = useRef(0);
   const didRunInitialConnectionCheck = useRef(false);
@@ -616,7 +617,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       const loadedBrightness =
         payload.settings?.display?.brightnessPercent ?? null;
-      setBrightness(loadedBrightness);
+      if (!brightnessDirtyRef.current) {
+        setBrightness(loadedBrightness);
+      }
       if (payload.device) {
         if (
           !initialThemeId &&
@@ -669,15 +672,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runCompanion,
   ]);
 
+  const deviceReadyForSettings = deviceIsReady(device);
+
   useEffect(() => {
-    if (activeTab !== "settings" || !deviceIsReady(device)) {
+    if (activeTab !== "settings" || !deviceReadyForSettings) {
       return;
     }
     const timer = window.setTimeout(() => {
       void loadSettings();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [activeTab, device, loadSettings]);
+  }, [activeTab, device?.target, deviceReadyForSettings, loadSettings]);
 
   const applyThemeInstallJob = useCallback(
     (
@@ -1565,6 +1570,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setDeviceState("unknown");
       setDeviceCandidates([]);
       setDeviceSearchState("idle");
+      brightnessDirtyRef.current = false;
       setBrightness(null);
       setLastInstall(undefined);
       setThemeInstallStatus(null);
@@ -1625,6 +1631,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const saveBrightness = useCallback(
     async (value: number) => {
       const setupGeneration = setupGenerationRef.current;
+      brightnessDirtyRef.current = true;
       setBrightness(value);
       setBusyAction("brightness");
       try {
@@ -1637,6 +1644,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         const savedValue =
           payload.settings?.display?.brightnessPercent ?? value;
+        brightnessDirtyRef.current = false;
         setBrightness(savedValue);
         addEvent({
           label: "Brightness saved",
@@ -1675,6 +1683,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       runCompanion,
     ],
   );
+
+  const changeBrightness = useCallback((value: number) => {
+    brightnessDirtyRef.current = true;
+    setBrightness(value);
+  }, []);
 
   const installTheme = useCallback(
     async (
@@ -2891,7 +2904,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           brightness={brightness}
           busyAction={busyAction}
           device={device}
-          onBrightnessChange={setBrightness}
+          onBrightnessChange={changeBrightness}
           onResetSetup={resetSetup}
           onSaveBrightness={saveBrightness}
         />

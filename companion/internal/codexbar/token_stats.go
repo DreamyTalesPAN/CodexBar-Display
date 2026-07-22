@@ -15,7 +15,9 @@ import (
 const (
 	tokenStatsRefreshInterval = 30 * time.Second
 	tokenStatsStaleMaxAge     = 15 * time.Minute
-	tokenStatsCommandTimeout  = 45 * time.Second
+	tokenStatsCommandTimeout  = 2 * time.Second
+	tokenStatsRepairTimeout   = 5 * time.Minute
+	tokenStatsRepairCooldown  = 1 * time.Minute
 )
 
 type ProviderTokenStats struct {
@@ -38,6 +40,14 @@ type providerTokenStatsCache struct {
 }
 
 var tokenStatsCache providerTokenStatsCache
+
+var loadProviderTokenStatsCacheFn = loadProviderTokenStatsFromCostCache
+
+var tokenStatsRepair = struct {
+	sync.Mutex
+	running     bool
+	nextAttempt time.Time
+}{}
 
 func FetchProviderTokenStats(ctx context.Context) (map[string]ProviderTokenStats, bool) {
 	bin, err := FindBinary()
@@ -122,6 +132,17 @@ func fetchProviderTokenStats(ctx context.Context, bin string) (map[string]Provid
 		return cached, true
 	}
 
+	// CodexBar writes its incremental cost scan before the CLI prints the final
+	// JSON payload. Reading that cache keeps Usage responsive even when a very
+	// large active session makes `cost --json` take longer than the foreground
+	// budget. One longer scan continues in the background and refreshes both the
+	// disk cache and this in-memory snapshot when it finishes.
+	if cached, ok := loadProviderTokenStatsCacheFn(now); ok {
+		tokenStatsCache.store(now, cached)
+		startProviderTokenStatsRepair(ctx, bin, now)
+		return copyProviderTokenStats(cached), true
+	}
+
 	raw, err := runCostCommandFn(ctx, tokenStatsCommandTimeout, bin, "cost", "--json")
 	if err == nil {
 		parsed, parseErr := parseProviderTokenStats(raw)
@@ -132,12 +153,59 @@ func fetchProviderTokenStats(ctx context.Context, bin string) (map[string]Provid
 		err = fmt.Errorf("parse codexbar cost --json: %w", parseErr)
 	}
 
+	// A first run can create the incremental cache before it reaches stdout.
+	// Pick it up immediately instead of waiting for the next collector cycle.
+	if cached, ok := loadProviderTokenStatsCacheFn(now); ok {
+		tokenStatsCache.store(now, cached)
+		startProviderTokenStatsRepair(ctx, bin, now)
+		return copyProviderTokenStats(cached), true
+	}
+
 	if cached, ok := tokenStatsCache.loadStale(now); ok {
+		startProviderTokenStatsRepair(ctx, bin, now)
 		return cached, true
 	}
 
+	startProviderTokenStatsRepair(ctx, bin, now)
 	_ = err
 	return nil, false
+}
+
+func startProviderTokenStatsRepair(parent context.Context, bin string, now time.Time) {
+	tokenStatsRepair.Lock()
+	if tokenStatsRepair.running || now.Before(tokenStatsRepair.nextAttempt) {
+		tokenStatsRepair.Unlock()
+		return
+	}
+	tokenStatsRepair.running = true
+	tokenStatsRepair.nextAttempt = now.Add(tokenStatsRepairCooldown)
+	tokenStatsRepair.Unlock()
+
+	run := runCostCommandFn
+	if parent == nil {
+		parent = context.Background()
+	} else {
+		parent = context.WithoutCancel(parent)
+	}
+	go func() {
+		defer func() {
+			tokenStatsRepair.Lock()
+			tokenStatsRepair.running = false
+			tokenStatsRepair.Unlock()
+		}()
+
+		ctx, cancel := context.WithTimeout(parent, tokenStatsRepairTimeout)
+		defer cancel()
+		raw, err := run(ctx, tokenStatsRepairTimeout, bin, "cost", "--json")
+		if err != nil {
+			return
+		}
+		parsed, err := parseProviderTokenStats(raw)
+		if err != nil || len(parsed) == 0 {
+			return
+		}
+		tokenStatsCache.store(time.Now().UTC(), parsed)
+	}()
 }
 
 func (c *providerTokenStatsCache) loadFresh(now time.Time) (map[string]ProviderTokenStats, bool) {
