@@ -233,6 +233,8 @@ function aiErrorMessage(code?: string): string {
     case "provider_timeout": return "OpenAI took too long. Try again.";
     case "provider_response_too_large": return "The generated image is too large for VibeTV.";
     case "provider_invalid_response": return "OpenAI returned an invalid concept.";
+    case "request_too_large": return "The previous concept image is too large to refine.";
+    case "request_invalid": return "The concept request is invalid. Start a new concept and try again.";
     default: return "AI Theme Builder could not complete this request.";
   }
 }

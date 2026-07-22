@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"os"
 	"regexp"
@@ -265,7 +266,7 @@ func (s *Server) handleAIThemeConcept(w http.ResponseWriter, r *http.Request) {
 	defer s.aiTheme.endGeneration()
 	r.Body = http.MaxBytesReader(w, r.Body, aiThemeConceptRequestLimit)
 	var req aiThemeConceptRequest
-	if !decodeJSON(w, r, &req) {
+	if !decodeAIThemeConceptJSON(w, r, &req) {
 		return
 	}
 	req.Prompt = strings.TrimSpace(req.Prompt)
@@ -307,6 +308,23 @@ func (s *Server) handleAIThemeConcept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, aiThemeConcept{ImageBase64: image, ImageContentType: "image/png", Style: style})
+}
+
+func decodeAIThemeConceptJSON(w http.ResponseWriter, r *http.Request, value any) bool {
+	if r.Body == nil {
+		writeAIThemeError(w, http.StatusBadRequest, "request_invalid")
+		return false
+	}
+	if err := json.NewDecoder(r.Body).Decode(value); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeAIThemeError(w, http.StatusRequestEntityTooLarge, "request_too_large")
+			return false
+		}
+		writeAIThemeError(w, http.StatusBadRequest, "request_invalid")
+		return false
+	}
+	return true
 }
 
 func (a *aiThemeState) beginGeneration() bool {
@@ -393,7 +411,10 @@ func (a *aiThemeState) createConceptImage(ctx context.Context, key string, style
 		_ = writer.WriteField("size", "1920x1024")
 		_ = writer.WriteField("quality", "high")
 		_ = writer.WriteField("output_format", "png")
-		part, err := writer.CreateFormFile("image", "previous.png")
+		header := make(textproto.MIMEHeader)
+		header.Set("Content-Disposition", `form-data; name="image"; filename="previous.png"`)
+		header.Set("Content-Type", "image/png")
+		part, err := writer.CreatePart(header)
 		if err != nil {
 			return "", err
 		}

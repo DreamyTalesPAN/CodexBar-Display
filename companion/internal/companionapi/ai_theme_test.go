@@ -189,8 +189,35 @@ func TestAIThemeConceptEditUsesPreviousPNGWithoutLoggingIt(t *testing.T) {
 	body, _ := json.Marshal(request)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, aiRequest(http.MethodPost, "/v1/ai-theme/concepts", string(body)))
-	if w.Code != 200 || !strings.HasPrefix(contentType, "multipart/form-data;") || !bytes.Contains(editBody, []byte(`filename="previous.png"`)) || !bytes.Contains(editBody, []byte(openAIImageModel)) {
+	if w.Code != 200 || !strings.HasPrefix(contentType, "multipart/form-data;") || !bytes.Contains(editBody, []byte(`filename="previous.png"`)) || !bytes.Contains(editBody, []byte("Content-Type: image/png")) || !bytes.Contains(editBody, []byte(openAIImageModel)) {
 		t.Fatalf("edit=%d content-type=%s", w.Code, contentType)
+	}
+}
+
+func TestAIThemeConceptEditAcceptsHardwareImageRequestOverOneMiB(t *testing.T) {
+	store := newMemorySecretStore()
+	_ = store.Set("openai", "sk-test-12345678901234567890")
+	calls := 0
+	server := newAIThemeTestServer(t, store, aiRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			payload, _ := json.Marshal(map[string]any{"output": []any{map[string]any{"content": []any{map[string]any{"type": "output_text", "text": validAIStyleJSON()}}}}})
+			return response(200, payload, r), nil
+		}
+		payload, _ := json.Marshal(map[string]any{"data": []any{map[string]any{"b64_json": tinyPNGBase64()}}})
+		return response(200, payload, r), nil
+	}))
+	largePNG := make([]byte, 900<<10)
+	copy(largePNG, []byte{137, 80, 78, 71, 13, 10, 26, 10})
+	request := map[string]any{"prompt": "Make the cat larger", "previous": map[string]any{"imageBase64": base64.StdEncoding.EncodeToString(largePNG), "imageContentType": "image/png", "style": json.RawMessage(validAIStyleJSON())}}
+	body, _ := json.Marshal(request)
+	if len(body) <= 1<<20 || len(body) >= aiThemeConceptRequestLimit {
+		t.Fatalf("test request size=%d", len(body))
+	}
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, aiRequest(http.MethodPost, "/v1/ai-theme/concepts", string(body)))
+	if w.Code != http.StatusOK || calls != 2 {
+		t.Fatalf("edit=%d calls=%d body=%s", w.Code, calls, w.Body.String())
 	}
 }
 
