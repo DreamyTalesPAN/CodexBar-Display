@@ -12,6 +12,7 @@
 #include "../../firmware_shared/theme_spec_renderer_core.h"
 #include "boot_recovery_policy.h"
 #include "asset_path_policy.h"
+#include "connected_setup_policy.h"
 #include "wifi_security_policy.h"
 #include "gif_asset_validator_file.h"
 #include "renderer_esp8266.h"
@@ -189,6 +190,7 @@ bool setupMode = false;
 bool physicalSetupAuthorized = false;
 String setupAuthorizationToken;
 bool waitStatusRendered = false;
+String lastConnectedSetupIp;
 bool otaUploadSucceeded = false;
 bool otaUploadInProgress = false;
 bool otaUploadNeedsReboot = false;
@@ -694,9 +696,15 @@ void applyFrameUpdateState() {
 }
 
 void drawWaitingForCompanionStatus() {
+  String stationIp = WiFi.localIP().toString();
+  if (WiFi.status() != WL_CONNECTED ||
+      !codexbar_display::esp8266::ConnectedSetupPolicy::IsStationIPv4(stationIp.c_str())) {
+    stationIp = "";
+  }
   const unsigned long renderStartUs = micros();
-  renderer.DrawConnectedSetupInstructions(runtimeCtx, kCustomerAppHost, WiFi.localIP().toString());
+  renderer.DrawConnectedSetupInstructions(runtimeCtx, kCustomerAppHost, stationIp);
   recordRenderFull("connected_setup", micros() - renderStartUs);
+  lastConnectedSetupIp = stationIp;
   waitStatusRendered = true;
 }
 
@@ -2741,6 +2749,15 @@ void maintainWifiConnection() {
     if (wifiDisconnectedAtMs != 0) {
       Serial.printf("wifi_reconnected ip=%s\n", WiFi.localIP().toString().c_str());
       drawWaitingForCompanionStatus();
+    } else if (waitStatusRendered) {
+      String stationIp = WiFi.localIP().toString();
+      if (!codexbar_display::esp8266::ConnectedSetupPolicy::IsStationIPv4(stationIp.c_str())) {
+        stationIp = "";
+      }
+      if (stationIp != lastConnectedSetupIp) {
+        Serial.printf("wifi_station_ip_changed ip=%s\n", stationIp.c_str());
+        drawWaitingForCompanionStatus();
+      }
     }
     resetWifiReconnectState();
     return;

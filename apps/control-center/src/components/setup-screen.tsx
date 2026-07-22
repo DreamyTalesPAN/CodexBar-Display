@@ -330,7 +330,7 @@ export function SetupScreen({
                   <PrimaryButton
                     fullWidth
                     icon={<Check size={18} aria-hidden />}
-                    label="VibeTV is on WiFi"
+                    label="Scan WiFi again"
                     onClick={confirmWifi}
                     size="large"
                   />
@@ -546,11 +546,20 @@ function FinishSetupContent({
 
   if (deviceSearchState === "searching" || busyAction === "search") {
     return (
-      <StatusNote
-        icon={<Loader2 className="animate-spin" size={16} aria-hidden />}
-      >
-        Searching for VibeTVs on your WiFi...
-      </StatusNote>
+      <div className="grid gap-4">
+        <StatusNote
+          icon={<Loader2 className="animate-spin" size={16} aria-hidden />}
+        >
+          Searching for VibeTVs on your WiFi...
+        </StatusNote>
+        <ManualDeviceTargetOption
+          busyAction={busyAction}
+          deviceTarget={deviceTarget}
+          lastError={lastError}
+          onChange={onDeviceTargetChange}
+          onSubmit={onRepairConnection}
+        />
+      </div>
     );
   }
 
@@ -599,6 +608,13 @@ function FinishSetupContent({
             size="large"
           />
         </div>
+        <ManualDeviceTargetOption
+          busyAction={busyAction}
+          deviceTarget={deviceTarget}
+          lastError={lastError}
+          onChange={onDeviceTargetChange}
+          onSubmit={onRepairConnection}
+        />
       </div>
     );
   }
@@ -606,17 +622,23 @@ function FinishSetupContent({
   if (deviceSearchState === "not-found") {
     return (
       <div className="grid gap-5">
-        <p className="text-sm leading-6 text-[#444933]">
-          No VibeTV was found automatically. Enter the address shown on the
-          VibeTV screen.
+        <p className="text-sm font-semibold leading-6 text-[#444933]">
+          We couldn&apos;t find your VibeTV. Enter the IP address shown on your
+          VibeTV screen:
         </p>
         <DeviceTargetForm
-          busy={busyAction === "repair"}
+          busy={busyAction === "manual-target" || busyAction === "select"}
           buttonLabel="Connect VibeTV"
           className="grid gap-4"
-          disabled={Boolean(busyAction)}
+          disabled={
+            Boolean(busyAction) &&
+            busyAction !== "search" &&
+            busyAction !== "manual-target" &&
+            busyAction !== "select"
+          }
           id="setup-device-target"
           lastError={lastError}
+          minimal
           onChange={onDeviceTargetChange}
           onSubmit={onRepairConnection}
           searchingLabel="Connecting"
@@ -629,10 +651,14 @@ function FinishSetupContent({
   if (deviceSearchState === "failed") {
     return (
       <div className="grid gap-4">
-        <p className="text-sm leading-6 text-[#444933]">
-          Automatic search could not finish. Make sure VibeTV and this Mac are
-          on the same WiFi, then try again.
-        </p>
+        <ManualDeviceTargetOption
+          busyAction={busyAction}
+          deviceTarget={deviceTarget}
+          lastError={lastError}
+          onChange={onDeviceTargetChange}
+          onSubmit={onRepairConnection}
+          prompt="We couldn't find your VibeTV. Enter the IP address shown on your VibeTV screen:"
+        />
         <PrimaryButton
           fullWidth
           icon={<RefreshCw size={18} aria-hidden />}
@@ -647,10 +673,14 @@ function FinishSetupContent({
   if (deviceSearchState === "repair-failed") {
     return (
       <div className="grid gap-4">
-        <p className="text-sm leading-6 text-[#444933]">
-          VibeTV could not reconnect automatically. Make sure it is on the same
-          WiFi as this Mac, then try again.
-        </p>
+        <ManualDeviceTargetOption
+          busyAction={busyAction}
+          deviceTarget={deviceTarget}
+          lastError={lastError}
+          onChange={onDeviceTargetChange}
+          onSubmit={onRepairConnection}
+          prompt="We couldn't reconnect your VibeTV. Enter the IP address shown on your VibeTV screen:"
+        />
         <PrimaryButton
           fullWidth
           icon={<RefreshCw size={18} aria-hidden />}
@@ -678,11 +708,59 @@ function FinishSetupContent({
   }
 
   return (
-    <StatusNote>
-      {deviceState === "offline"
-        ? "VibeTV is offline. Run setup again to search for it."
-        : "Waiting for automatic VibeTV search."}
-    </StatusNote>
+    <div className="grid gap-4">
+      <StatusNote>
+        {deviceState === "offline"
+          ? "VibeTV is offline. Run setup again to search for it."
+          : "Waiting for automatic VibeTV search."}
+      </StatusNote>
+      <ManualDeviceTargetOption
+        busyAction={busyAction}
+        deviceTarget={deviceTarget}
+        lastError={lastError}
+        onChange={onDeviceTargetChange}
+        onSubmit={onRepairConnection}
+      />
+    </div>
+  );
+}
+
+function ManualDeviceTargetOption({
+  busyAction,
+  deviceTarget,
+  lastError,
+  onChange,
+  onSubmit,
+  prompt = "Or enter the IP address shown on your VibeTV screen:",
+}: {
+  busyAction?: string | null;
+  deviceTarget: string;
+  lastError?: ApiError | null;
+  onChange?: (target: string) => void;
+  onSubmit?: (targetOverride?: string) => void;
+  prompt?: string;
+}) {
+  const connecting =
+    busyAction === "manual-target" || busyAction === "select";
+  return (
+    <div className="grid gap-3">
+      <p className="text-sm font-semibold leading-6 text-[#444933]">
+        {prompt}
+      </p>
+      <DeviceTargetForm
+        busy={connecting}
+        buttonLabel="Connect VibeTV"
+        className="grid gap-4"
+        disabled={Boolean(busyAction) && busyAction !== "search" && !connecting}
+        id="setup-device-target"
+        lastError={lastError}
+        minimal
+        onChange={onChange}
+        onSubmit={onSubmit}
+        searchingLabel="Connecting"
+        value={deviceTarget}
+      />
+    </div>
   );
 }
 

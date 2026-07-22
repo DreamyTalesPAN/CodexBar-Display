@@ -7,6 +7,7 @@
 #include "../src/gif_core_policy.h"
 #include "../src/boot_recovery_policy.h"
 #include "../src/asset_path_policy.h"
+#include "../src/connected_setup_policy.h"
 #include "../src/theme_spec_runtime_policy.h"
 #include "../src/wifi_security_policy.h"
 
@@ -18,6 +19,7 @@ using codexbar_display::esp8266::BootRecoveryPolicy;
 using codexbar_display::esp8266::ThemeSpecRuntimePolicy;
 using codexbar_display::esp8266::AssetPathPolicy;
 using codexbar_display::esp8266::WifiSecurityPolicy;
+using codexbar_display::esp8266::ConnectedSetupPolicy;
 
 std::string readFile(const char* path);
 
@@ -635,6 +637,36 @@ bool testFirmwareUsesIPDiscoveryInsteadOfMdns(const char* mainPath) {
       "firmware must expose setup and station endpoints by IP without mDNS");
 }
 
+bool testConnectedSetupAddressPolicy() {
+  return expect(
+             ConnectedSetupPolicy::IsStationIPv4("172.30.12.34") &&
+                 ConnectedSetupPolicy::IsStationIPv4("192.168.178.163"),
+             "connected setup must accept readable station IPv4 addresses") &&
+         expect(
+             !ConnectedSetupPolicy::IsStationIPv4("") &&
+                 !ConnectedSetupPolicy::IsStationIPv4("0.0.0.0") &&
+                 !ConnectedSetupPolicy::IsStationIPv4("192.168.4.1") &&
+                 !ConnectedSetupPolicy::IsStationIPv4("999.1.2.3") &&
+                 !ConnectedSetupPolicy::IsStationIPv4("not-an-ip"),
+             "connected setup must hide unavailable, AP-mode, and invalid IPv4 values");
+}
+
+bool testConnectedSetupRendererShowsSafeIpFallback(const char* rendererPath) {
+  const std::string renderer = readFile(rendererPath);
+  const std::size_t start = renderer.find("void RendererESP8266::DrawConnectedSetupInstructions(");
+  const std::size_t end = renderer.find("\n}\n\n#ifndef CODEXBAR_DISPLAY_PROBE_ONLY", start);
+  if (!expect(start != std::string::npos && end != std::string::npos, "connected setup renderer must remain testable")) {
+    return false;
+  }
+  const std::string function = renderer.substr(start, end - start);
+  return expect(
+      function.find("ConnectedSetupPolicy::IsStationIPv4") != std::string::npos &&
+          function.find("IP: ") != std::string::npos &&
+          function.find("IP unavailable") != std::string::npos &&
+          function.find("tft.print(ipLine)") != std::string::npos,
+      "connected setup renderer must display a validated IP line and an unavailable state");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -705,6 +737,12 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testFirmwareUsesIPDiscoveryInsteadOfMdns(argv[3])) {
+    return 1;
+  }
+  if (!testConnectedSetupAddressPolicy()) {
+    return 1;
+  }
+  if (!testConnectedSetupRendererShowsSafeIpFallback(argv[4])) {
     return 1;
   }
 

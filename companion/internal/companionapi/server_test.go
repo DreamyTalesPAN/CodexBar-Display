@@ -378,6 +378,82 @@ func TestDeviceSearchRetriesTransientKnownDeviceFailure(t *testing.T) {
 	}
 }
 
+func TestDeviceSearchExplicitTargetOnlyProbesThatAddress(t *testing.T) {
+	var explicitHelloCalls atomic.Int32
+	explicit := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		explicitHelloCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"manual-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
+	defer explicit.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.0.2.10",
+		DeviceID:     "remembered-device",
+	})
+	server.defaultWiFiTarget = func() string {
+		t.Fatal("manual target validation must not probe the default target")
+		return ""
+	}
+	server.subnetTargets = func() []string {
+		t.Fatal("manual target validation must not scan the subnet")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/device/search",
+		strings.NewReader(`{"target":`+strconv.Quote(explicit.URL)+`}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Devices []deviceSearchEntry `json:"devices"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Devices) != 1 || got.Devices[0].Target != explicit.URL || got.Devices[0].DeviceID != "manual-device" {
+		t.Fatalf("unexpected targeted search response: %+v", got.Devices)
+	}
+	if explicitHelloCalls.Load() != 1 {
+		t.Fatalf("manual target must receive one bounded hello probe, got %d", explicitHelloCalls.Load())
+	}
+}
+
+func TestDeviceSearchRejectsInvalidExplicitTargetWithoutSubnetScan(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.subnetTargets = func() []string {
+		t.Fatal("invalid manual target must not scan the subnet")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/device/search",
+		strings.NewReader(`{"target":"http://192.0.2.10/hello"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error.Code != "invalid_device_target" {
+		t.Fatalf("unexpected invalid target response: %+v", got)
+	}
+}
+
 func TestDeviceSearchReportsDeniedLocalNetworkAccess(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.defaultWiFiTarget = func() string { return "" }
@@ -788,8 +864,17 @@ func TestDeviceRepairRejectsIdentitySwapBetweenSearchAndPair(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	server.Handler().ServeHTTP(rec, req)
 
-	if rec.Code == http.StatusOK {
-		t.Fatalf("identity swap was accepted: %s", rec.Body.String())
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("identity swap status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode identity swap response: %v", err)
+	}
+	if got.OK || got.Error.Code != "device_identity_changed" ||
+		got.Error.Message != "That address answered as a different VibeTV." ||
+		got.Error.NextAction != "Check the IP on the VibeTV screen, then try again." {
+		t.Fatalf("unexpected identity swap response: %+v", got)
 	}
 	if pairCalls.Load() != 0 {
 		t.Fatalf("identity swap triggered %d pairing writes", pairCalls.Load())
@@ -831,8 +916,17 @@ func TestDeviceSelectRejectsIdentitySwapBeforePairing(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	server.Handler().ServeHTTP(rec, req)
 
-	if rec.Code == http.StatusOK {
-		t.Fatalf("identity swap was accepted: %s", rec.Body.String())
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("identity swap status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode identity swap response: %v", err)
+	}
+	if got.OK || got.Error.Code != "device_identity_changed" ||
+		got.Error.Message != "That address answered as a different VibeTV." ||
+		got.Error.NextAction != "Check the IP on the VibeTV screen, then try again." {
+		t.Fatalf("unexpected identity swap response: %+v", got)
 	}
 	if pairCalls.Load() != 0 {
 		t.Fatalf("identity swap triggered %d pairing writes", pairCalls.Load())
