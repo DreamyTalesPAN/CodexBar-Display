@@ -397,7 +397,7 @@ func (a *aiThemeState) planConcept(ctx context.Context, key string, req aiThemeC
 func (a *aiThemeState) createConceptImage(ctx context.Context, key string, style aiThemeStyle, previous []byte) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, aiThemeTimeout)
 	defer cancel()
-	prompt := "Create only the illustration for a tiny physical 240x240 desk display. Make a text-free, front-on 15:8 composition with one strong recognizable silhouette, large simple shapes, few details and a limited cohesive palette. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. The image will occupy the top 240x128 pixels. " + style.ArtPrompt
+	prompt := "Create only the illustration for a tiny physical 240x240 desk display. Make a text-free, front-on 15:8 composition with one strong recognizable subject, clearly readable defining features, large simple shapes and a limited cohesive palette. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. The image will occupy the top 240x128 pixels. " + style.ArtPrompt
 	var request *http.Request
 	if len(previous) == 0 {
 		body, _ := json.Marshal(map[string]any{"model": openAIImageModel, "prompt": prompt, "size": "1920x1024", "quality": "high", "output_format": "png", "n": 1})
@@ -476,7 +476,7 @@ func extractOpenAIText(body []byte) (string, error) {
 	return "", errors.New("provider_malformed_response")
 }
 
-const aiThemeSystemPrompt = `You are the lead UI designer for a physical 240 by 240 pixel desk display, not an app or product mock-up. Plan one premium static firmware theme. The client owns all geometry, text and live data. You only choose a concise title, colors, atmosphere, bar treatment and a text-free illustration prompt. The illustration must use a strong silhouette, large simple shapes, minimal details and remain readable from across a desk. Never request text, numbers, UI, progress bars, a device, a desk or product photography in the illustration. Return only the strict JSON blueprint.`
+const aiThemeSystemPrompt = `You are the lead UI designer for a physical 240 by 240 pixel desk display, not an app or product mock-up. Plan one premium static firmware theme. The client owns all geometry, text and live data. You only choose a concise title, colors, atmosphere, bar treatment and a text-free illustration prompt. The illustration must use one strong recognizable subject with clearly readable defining features, large simple shapes, minimal details and remain readable from across a desk. Never request text, numbers, UI, progress bars, a device, a desk or product photography in the illustration. Return only the strict JSON blueprint.`
 
 func buildAIThemePlanningPrompt(req aiThemeConceptRequest, repair string) string {
 	if repair != "" {
@@ -486,7 +486,7 @@ func buildAIThemePlanningPrompt(req aiThemeConceptRequest, repair string) string
 	if req.Previous == nil {
 		b.WriteString("Create one new static screenmaster concept.\n")
 	} else {
-		b.WriteString("Refine the existing concept while preserving what the user did not ask to change.\nPrevious blueprint: ")
+		b.WriteString("Refine the existing concept. The latest user request has priority over the previous blueprint. Change every explicitly requested visual property, including subject visibility, scale, pose, lighting, color, composition, or detail level. Preserve only what the user did not ask to change.\nPrevious blueprint: ")
 		previous, _ := json.Marshal(req.Previous.Style)
 		b.Write(previous)
 		b.WriteByte('\n')

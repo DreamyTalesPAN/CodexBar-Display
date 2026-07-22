@@ -189,8 +189,24 @@ func TestAIThemeConceptEditUsesPreviousPNGWithoutLoggingIt(t *testing.T) {
 	body, _ := json.Marshal(request)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, aiRequest(http.MethodPost, "/v1/ai-theme/concepts", string(body)))
-	if w.Code != 200 || !strings.HasPrefix(contentType, "multipart/form-data;") || !bytes.Contains(editBody, []byte(`filename="previous.png"`)) || !bytes.Contains(editBody, []byte("Content-Type: image/png")) || !bytes.Contains(editBody, []byte(openAIImageModel)) {
+	if w.Code != 200 || !strings.HasPrefix(contentType, "multipart/form-data;") || !bytes.Contains(editBody, []byte(`filename="previous.png"`)) || !bytes.Contains(editBody, []byte("Content-Type: image/png")) || !bytes.Contains(editBody, []byte(openAIImageModel)) || !bytes.Contains(editBody, []byte("clearly readable defining features")) || bytes.Contains(editBody, []byte("recognizable silhouette")) {
 		t.Fatalf("edit=%d content-type=%s", w.Code, contentType)
+	}
+}
+
+func TestAIThemeRefinePrioritizesExplicitVisualRequests(t *testing.T) {
+	var style aiThemeStyle
+	if err := json.Unmarshal([]byte(validAIStyleJSON()), &style); err != nil {
+		t.Fatal(err)
+	}
+	prompt := buildAIThemePlanningPrompt(aiThemeConceptRequest{
+		Prompt:   "Show the cat's face clearly instead of a silhouette.",
+		Previous: &aiThemePreviousConcept{Style: style},
+	}, "")
+	for _, required := range []string{"latest user request has priority", "subject visibility", "detail level", "Show the cat's face clearly instead of a silhouette."} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("refine prompt missing %q: %s", required, prompt)
+		}
 	}
 }
 
