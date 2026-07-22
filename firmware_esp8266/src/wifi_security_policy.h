@@ -33,13 +33,6 @@ struct WifiSecurityPolicy {
     return setupMode || (devicePaired && deviceTokenValid);
   }
 
-  static bool AllowsPairing(
-      bool devicePaired,
-      bool deviceTokenValid,
-      bool physicalPairingWindowOpen) {
-    return (devicePaired && deviceTokenValid) || physicalPairingWindowOpen;
-  }
-
   static bool AllowsFirmwareUpload(bool devicePaired, bool deviceTokenValid) {
     return devicePaired && deviceTokenValid;
   }

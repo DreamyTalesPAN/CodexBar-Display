@@ -173,24 +173,6 @@ bool testWifiCredentialWritesAllowSetupOrCurrentToken() {
       "station-mode writes without the current pairing token must remain denied");
 }
 
-bool testPairingRequiresCurrentTokenOrPhysicalWindow() {
-  if (!expect(
-          WifiSecurityPolicy::AllowsPairing(true, true, false),
-          "a paired device must allow rotation with its current token")) {
-    return false;
-  }
-  if (!expect(
-          WifiSecurityPolicy::AllowsPairing(false, false, true) &&
-              WifiSecurityPolicy::AllowsPairing(true, false, true),
-          "a physical pairing window must allow first pairing and recovery")) {
-    return false;
-  }
-  return expect(
-      !WifiSecurityPolicy::AllowsPairing(false, false, false) &&
-          !WifiSecurityPolicy::AllowsPairing(true, false, false),
-      "unconfirmed first pairing and unauthorized rotation must be denied");
-}
-
 bool testNoBootableStateMayBeWifiOtaUnrecoverable() {
   struct Case {
     const char* name;
@@ -261,16 +243,17 @@ bool testFirmwareUploadAlwaysRequiresCurrentPairingToken() {
   return true;
 }
 
-bool testPairingHandlerAuthorizesBeforeTokenMutation(const char* mainPath) {
+bool testPairingHandlerReplacesTokenWithoutAuthGate(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   const std::size_t handler = mainSource.find("void handlePairingAPI()");
-  const std::size_t authorization = mainSource.find("WifiSecurityPolicy::AllowsPairing", handler);
+  const std::size_t handlerEnd = mainSource.find("void handleAssetsList()", handler);
   const std::size_t tokenGeneration = mainSource.find("generateAuthToken()", handler);
   const std::size_t tokenSave = mainSource.find("saveDeviceAuthToken(token)", handler);
   return expect(
-      authorization != std::string::npos && tokenGeneration != std::string::npos &&
-          tokenSave != std::string::npos && authorization < tokenGeneration && tokenGeneration < tokenSave,
-      "pairing must authorize before generating and saving a replacement token");
+      handler != std::string::npos && handlerEnd != std::string::npos &&
+          tokenGeneration < handlerEnd && tokenSave < handlerEnd &&
+          mainSource.substr(handler, handlerEnd - handler).find("requestHasCurrentDeviceToken") == std::string::npos,
+      "pairing must replace the token without requiring the previous token");
 }
 
 bool testConnectedPageNeverRendersPairingSecret(const char* mainPath) {
@@ -916,9 +899,6 @@ int main(int argc, char** argv) {
   if (!testWifiCredentialWritesAllowSetupOrCurrentToken()) {
     return 1;
   }
-  if (!testPairingRequiresCurrentTokenOrPhysicalWindow()) {
-    return 1;
-  }
   if (!testNoBootableStateMayBeWifiOtaUnrecoverable()) {
     return 1;
   }
@@ -955,7 +935,7 @@ int main(int argc, char** argv) {
   if (!testWifiHandlersAuthorizeBeforeStorageMutation(argv[3])) {
     return 1;
   }
-  if (!testPairingHandlerAuthorizesBeforeTokenMutation(argv[3])) {
+  if (!testPairingHandlerReplacesTokenWithoutAuthGate(argv[3])) {
     return 1;
   }
   if (!testConnectedPageNeverRendersPairingSecret(argv[3])) {

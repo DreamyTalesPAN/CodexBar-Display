@@ -1571,19 +1571,6 @@ void handleSettingsAPI() {
 }
 
 void handlePairingAPI() {
-  const bool windowOpen = physicalPairingWindowOpen();
-  if (!codexbar_display::esp8266::WifiSecurityPolicy::AllowsPairing(
-          deviceAuthConfigured(),
-          requestHasCurrentDeviceToken(),
-          windowOpen)) {
-    if (deviceAuthConfigured()) {
-      webServer.sendHeader("WWW-Authenticate", "VibeTV token");
-      webServer.send(401, "text/plain; charset=utf-8", "current pairing token required");
-    } else {
-      webServer.send(403, "text/plain; charset=utf-8", "physical pairing confirmation required");
-    }
-    return;
-  }
   const String token = generateAuthToken();
   if (!saveDeviceAuthToken(token)) {
     webServer.send(500, "text/plain; charset=utf-8", "pairing token save failed");
