@@ -156,7 +156,7 @@ textarea {
 }
 
 .vibetv-status-icon {
-  align-items: center;
+  align-items: center !important;
   border-radius: 9999px;
   border-style: solid;
   border-width: 1px;
@@ -198,6 +198,78 @@ textarea {
   background: #F9F9F9;
   border-color: var(--border);
   color: #506600;
+}
+
+.vibetv-support-chat {
+  --chat--border-radius: 0.75rem;
+  --chat--body--background: #F9F9F9;
+  --chat--color--primary: #506600;
+  --chat--color--primary-shade-50: #3B4C00;
+  --chat--color--primary--shade-100: #1B1B1B;
+  --chat--color--secondary: #1B1B1B;
+  --chat--color-secondary-shade-50: #343434;
+  --chat--color-dark: #1B1B1B;
+  --chat--color-light: #F9F9F9;
+  --chat--color-light-shade-50: #EEEEEE;
+  --chat--color-light-shade-100: #D5D5D5;
+  --chat--color-white: #FFFFFF;
+  --chat--font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --chat--footer--background: #FFFFFF;
+  --chat--footer--border-top: 1px solid #D5D5D5;
+  --chat--input--border-radius: 0.75rem;
+  --chat--input--container--background: #FFFFFF;
+  --chat--input--container--border: 1px solid #D5D5D5;
+  --chat--input--container--border-radius: 0.875rem;
+  --chat--input--container--padding: 0.25rem 0.375rem;
+  --chat--input--send--button--color: #506600;
+  --chat--input--send--button--color-hover: #1B1B1B;
+  --chat--input--text-color: #1B1B1B;
+  --chat--message--bot--border: 1px solid #D5D5D5;
+  --chat--message--padding: 0.875rem 1rem;
+  --chat--message--user--background: #1B1B1B;
+  --chat--message--user--color: #EDEDED;
+  --chat--messages-list--padding: 1.25rem;
+}
+
+.vibetv-support-chat [data-support-chat-target] > *,
+.vibetv-support-chat .chat-layout {
+  height: 100%;
+  min-height: 0;
+}
+
+.vibetv-support-chat .chat-layout {
+  overflow: hidden;
+}
+
+.vibetv-support-chat .chat-header {
+  display: none !important;
+}
+
+.vibetv-support-chat .chat-body {
+  overscroll-behavior: contain;
+}
+
+.vibetv-support-chat [data-support-chat-target] .chat-footer {
+  border-top: 0;
+  padding: 0.875rem 1rem 1rem;
+}
+
+.vibetv-support-chat [data-support-chat-target] .chat-inputs {
+  align-items: center;
+  border-color: #D5D5D5;
+  box-shadow: 0 1px 2px rgb(27 27 27 / 5%);
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.vibetv-support-chat [data-support-chat-target] .chat-inputs:focus-within {
+  border-color: #506600;
+  box-shadow: 0 0 0 3px rgb(80 102 0 / 12%);
+}
+
+.vibetv-support-chat .chat-inputs textarea:focus-visible {
+  outline: none;
 }
 
 .dark {

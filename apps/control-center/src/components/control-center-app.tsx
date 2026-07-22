@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ReactNode,
 } from "react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -21,6 +22,7 @@ import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import { buildThemePack } from "@/lib/theme-studio";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
+import { CustomerServiceChat } from "./customer-service-chat";
 import {
   companionRequestUrl,
   isLocalCompanionOrigin,
@@ -2883,6 +2885,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     />
   );
 
+  const withCustomerService = (
+    content: ReactNode,
+    surface: "hosted-setup" | "local-control-center" | "recovery",
+  ) => (
+    <>
+      {content}
+      <CustomerServiceChat
+        appVersion={companionInfo?.app?.version}
+        companionVersion={companionInfo?.version}
+        deviceConnected={deviceOperational}
+        surface={surface}
+      />
+    </>
+  );
+
   if (runtimeSurface === "unknown") {
     return (
       <ControlCenterBootScreen
@@ -2894,34 +2911,37 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }
 
   if (runtimeSurface === "hosted-setup") {
-    return (
+    return withCustomerService(
       <HostedSetupShell
         companionStatus={companionStatus}
         setupComplete={setupComplete}
       >
         {renderSetupScreen(true)}
-      </HostedSetupShell>
+      </HostedSetupShell>,
+      "hosted-setup",
     );
   }
 
   if (!initialCompanionCheckComplete) {
-    return (
+    return withCustomerService(
       <ControlCenterBootScreen
         busyAction={busyAction}
         diagnostics={supportDiagnostics}
         onCreateSupportReport={loadSupportDiagnostics}
-      />
+      />,
+      "local-control-center",
     );
   }
 
   if (needsRuntimeRecovery) {
-    return (
+    return withCustomerService(
       <MacAppRecoveryScreen
         checking={busyAction === "status"}
         phase={runtimeRecoveryPhase}
         onRestart={restartLocalControlCenterApp}
         onRetry={requestRuntimeRepair}
-      />
+      />,
+      "recovery",
     );
   }
 
@@ -2931,7 +2951,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       (requiresMacAppMigration && !deviceStartupConnectionIsReady(device)) ||
       Boolean(setupPreviewStep))
   ) {
-    return renderSetupScreen(true);
+    return withCustomerService(renderSetupScreen(true), "local-control-center");
   }
 
   if (
@@ -2940,7 +2960,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     !deviceOperational &&
     !hasEnteredControlCenter
   ) {
-    return (
+    return withCustomerService(
       <DeviceStartupScreen
         busyAction={busyAction}
         diagnostics={supportDiagnostics}
@@ -2971,11 +2991,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         onSelect={(candidate) => {
           void selectAndConnectDevice(candidate);
         }}
-      />
+      />,
+      "local-control-center",
     );
   }
 
-  return (
+  return withCustomerService(
     <ControlCenterShell
       activeTab={activeShellTab}
       disabledTabs={disabledTabs}
@@ -3101,7 +3122,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onRunSetupAgain={resetSetup}
         />
       ) : null}
-    </ControlCenterShell>
+    </ControlCenterShell>,
+    "local-control-center",
   );
 }
 

@@ -147,6 +147,7 @@ Important entry points:
 - Themes: [docs/themes.md](docs/themes.md)
 - Theme development: [docs/theme-dev-guide.md](docs/theme-dev-guide.md)
 - Control Center readiness: [docs/control-center-customer-readiness.md](docs/control-center-customer-readiness.md)
+- Customer Service Chat: [docs/customer-service-chat.md](docs/customer-service-chat.md)
 - Hardware contract: [docs/hardware-contract.md](docs/hardware-contract.md)
 - Operator runbook: [docs/operator-runbook.md](docs/operator-runbook.md)
 - Protocol: [protocol/PROTOCOL.md](protocol/PROTOCOL.md)
