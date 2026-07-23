@@ -71,11 +71,11 @@ func aiRequest(method, path, body string) *http.Request {
 }
 
 func validAIStyleJSON() string {
-	return `{"packName":"Moon Cat","title":"CAT MODE","notes":"Warm moonlit cat.","artPrompt":"A large orange pixel cat beneath a cream moon on deep navy.","animationMode":"static","animationPrompt":"","backgroundColor":"#081426","panelColor":"#101F36","textColor":"#FFF3CF","sessionColor":"#F6B85F","weeklyColor":"#EF6A8A","progressStyle":"segments","borderRadius":3}`
+	return `{"packName":"Moon Cat","title":"CAT MODE","notes":"Warm moonlit cat.","artPrompt":"A large orange pixel cat beneath a cream moon on deep navy.","environmentPrompt":"A moonlit forest clearing in deep navy with a calm open center.","animationMode":"static","animationPrompt":"","backgroundColor":"#081426","panelColor":"#101F36","textColor":"#FFF3CF","sessionColor":"#F6B85F","weeklyColor":"#EF6A8A","progressStyle":"segments","borderRadius":3}`
 }
 
 func animatedAIStyleJSON() string {
-	return `{"packName":"Moon Cat","title":"CAT MODE","notes":"Warm moonlit cat.","artPrompt":"A large orange pixel cat.","animationMode":"four_frame","animationPrompt":"The cat gently swishes its tail and blinks once.","backgroundColor":"#081426","panelColor":"#101F36","textColor":"#FFF3CF","sessionColor":"#F6B85F","weeklyColor":"#EF6A8A","progressStyle":"segments","borderRadius":3}`
+	return `{"packName":"Moon Cat","title":"CAT MODE","notes":"Warm moonlit cat.","artPrompt":"A large orange pixel cat.","environmentPrompt":"A moonlit forest clearing in deep navy with a calm open center and no animals.","animationMode":"four_frame","animationPrompt":"The cat gently swishes its tail and blinks once.","backgroundColor":"#081426","panelColor":"#101F36","textColor":"#FFF3CF","sessionColor":"#F6B85F","weeklyColor":"#EF6A8A","progressStyle":"segments","borderRadius":3}`
 }
 
 func tinyPNGBase64() string {
@@ -178,6 +178,9 @@ func TestAIThemeAnimationCreatesStaticBackgroundAndFourFrameSprite(t *testing.T)
 	edits := 0
 	backgrounds := 0
 	keyedSheets := 0
+	backgroundPNG := []byte{137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4}
+	backgroundBase64 := base64.StdEncoding.EncodeToString(backgroundPNG)
+	var sheetEditBody []byte
 	server := newAIThemeTestServer(t, store, aiRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		mu.Lock()
 		calls++
@@ -197,23 +200,59 @@ func TestAIThemeAnimationCreatesStaticBackgroundAndFourFrameSprite(t *testing.T)
 		mu.Lock()
 		if bytes.Contains(body, []byte("complete static background illustration")) {
 			backgrounds++
+			if !bytes.Contains(body, []byte("moonlit forest clearing")) || bytes.Contains(body, []byte("large orange pixel cat")) {
+				t.Fatalf("background prompt must use the subject-free environment: %s", body)
+			}
 		}
 		if bytes.Contains(body, []byte("#FF00FF")) {
 			keyedSheets++
 		}
 		mu.Unlock()
-		payload, _ := json.Marshal(map[string]any{"data": []any{map[string]any{"b64_json": tinyPNGBase64()}}})
+		image := tinyPNGBase64()
+		if bytes.Contains(body, []byte("complete static background illustration")) {
+			image = backgroundBase64
+		}
+		if r.URL.String() == openAIImageEditEndpoint {
+			sheetEditBody = append([]byte(nil), body...)
+		}
+		payload, _ := json.Marshal(map[string]any{"data": []any{map[string]any{"b64_json": image}}})
 		return response(200, payload, r), nil
 	}))
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, aiRequest(http.MethodPost, "/v1/ai-theme/concepts", `{"prompt":"Animate the cat as a four-frame sprite"}`))
 	mu.Lock()
 	defer mu.Unlock()
-	if w.Code != http.StatusOK || calls != 3 || generations != 2 || edits != 0 || backgrounds != 1 || keyedSheets != 1 {
+	if w.Code != http.StatusOK || calls != 3 || generations != 1 || edits != 1 || backgrounds != 1 || keyedSheets != 1 {
 		t.Fatalf("animation=%d calls=%d generations=%d edits=%d backgrounds=%d keyed=%d body=%s", w.Code, calls, generations, edits, backgrounds, keyedSheets, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), `"fps":4`) || !strings.Contains(w.Body.String(), `"spriteSheetBase64"`) || strings.Count(w.Body.String(), tinyPNGBase64()) != 2 {
+	if !bytes.Contains(sheetEditBody, backgroundPNG) || !bytes.Contains(sheetEditBody, []byte(`filename="previous.png"`)) {
+		t.Fatalf("sprite sheet edit does not reference generated background")
+	}
+	if !strings.Contains(w.Body.String(), `"fps":4`) || !strings.Contains(w.Body.String(), `"spriteSheetBase64"`) || !strings.Contains(w.Body.String(), backgroundBase64) || strings.Count(w.Body.String(), tinyPNGBase64()) != 1 {
 		t.Fatalf("animation response=%s", w.Body.String())
+	}
+}
+
+func TestAIThemeAnimationRefinementKeepsPreviousSpriteReference(t *testing.T) {
+	var style aiThemeStyle
+	if err := json.Unmarshal([]byte(animatedAIStyleJSON()), &style); err != nil {
+		t.Fatal(err)
+	}
+	previousSprite := []byte{137, 80, 78, 71, 13, 10, 26, 10, 9, 8, 7, 6}
+	var editBody []byte
+	state := newAIThemeState(newMemorySecretStore(), &http.Client{Transport: aiRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(r.Body)
+		if r.URL.String() == openAIImageEditEndpoint {
+			editBody = append([]byte(nil), body...)
+		}
+		payload, _ := json.Marshal(map[string]any{"data": []any{map[string]any{"b64_json": tinyPNGBase64()}}})
+		return response(http.StatusOK, payload, r), nil
+	})})
+	if _, err := state.createConceptImages(context.Background(), "sk-test", style, nil, previousSprite); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(editBody, previousSprite) {
+		t.Fatal("refined sprite sheet did not use the previous sprite as its visual reference")
 	}
 }
 

@@ -5,6 +5,7 @@ const baseStyle = {
   animationPrompt: "",
   backgroundColor: "#081426",
   borderRadius: 3,
+  environmentPrompt: "A matching atmospheric environment without duplicate subjects.",
   panelColor: "#101F36",
   progressStyle: "segments" as const,
   sessionColor: "#F6B85F",

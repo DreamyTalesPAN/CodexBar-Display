@@ -15,6 +15,7 @@ export type AIThemeStyle = {
   animationMode: "four_frame" | "static";
   animationPrompt: string;
   artPrompt: string;
+  environmentPrompt: string;
   backgroundColor: string;
   borderRadius: number;
   notes: string;

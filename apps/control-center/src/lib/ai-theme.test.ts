@@ -72,7 +72,7 @@ describe("AI theme history", () => {
       imageBase64,
       imageContentType: "image/png",
       style: {
-        animationMode: "static", animationPrompt: "", artPrompt: "A large cat under a moon.", backgroundColor: "#081426", borderRadius: 3,
+        animationMode: "static", animationPrompt: "", artPrompt: "A large cat.", environmentPrompt: "A moonlit clearing.", backgroundColor: "#081426", borderRadius: 3,
         notes: "Moon cat", packName: "Moon Cat", panelColor: "#101F36",
         progressStyle: "segments", sessionColor: "#F6B85F", textColor: "#FFF3CF",
         title: "CAT MODE", weeklyColor: "#EF6A8A",
@@ -106,6 +106,7 @@ describe("AI theme history", () => {
         animationMode: "four_frame" as const,
         animationPrompt: "The cat swishes its tail.",
         artPrompt: "A large orange cat.",
+        environmentPrompt: "A moonlit clearing with no animals.",
         backgroundColor: "#081426",
         borderRadius: 3,
         notes: "Moon cat",

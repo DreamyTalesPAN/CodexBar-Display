@@ -48,19 +48,20 @@ type aiThemeMessage struct {
 }
 
 type aiThemeStyle struct {
-	PackName        string `json:"packName"`
-	Title           string `json:"title"`
-	Notes           string `json:"notes"`
-	ArtPrompt       string `json:"artPrompt"`
-	AnimationMode   string `json:"animationMode"`
-	AnimationPrompt string `json:"animationPrompt"`
-	BackgroundColor string `json:"backgroundColor"`
-	PanelColor      string `json:"panelColor"`
-	TextColor       string `json:"textColor"`
-	SessionColor    string `json:"sessionColor"`
-	WeeklyColor     string `json:"weeklyColor"`
-	ProgressStyle   string `json:"progressStyle"`
-	BorderRadius    int    `json:"borderRadius"`
+	PackName          string `json:"packName"`
+	Title             string `json:"title"`
+	Notes             string `json:"notes"`
+	ArtPrompt         string `json:"artPrompt"`
+	EnvironmentPrompt string `json:"environmentPrompt"`
+	AnimationMode     string `json:"animationMode"`
+	AnimationPrompt   string `json:"animationPrompt"`
+	BackgroundColor   string `json:"backgroundColor"`
+	PanelColor        string `json:"panelColor"`
+	TextColor         string `json:"textColor"`
+	SessionColor      string `json:"sessionColor"`
+	WeeklyColor       string `json:"weeklyColor"`
+	ProgressStyle     string `json:"progressStyle"`
+	BorderRadius      int    `json:"borderRadius"`
 }
 
 type aiThemePreviousConcept struct {
@@ -295,6 +296,9 @@ func (s *Server) handleAIThemeConcept(w http.ResponseWriter, r *http.Request) {
 	var previousAnimation []byte
 	if req.Previous != nil {
 		var err error
+		if strings.TrimSpace(req.Previous.Style.EnvironmentPrompt) == "" {
+			req.Previous.Style.EnvironmentPrompt = req.Previous.Style.ArtPrompt
+		}
 		previous, err = validateConceptImage(req.Previous.ImageBase64, req.Previous.ImageContentType)
 		if err != nil || validateAIThemeStyle(req.Previous.Style) != nil {
 			writeAIThemeError(w, http.StatusBadRequest, "previous_concept_invalid")
@@ -431,7 +435,7 @@ func (a *aiThemeState) createConceptImages(ctx context.Context, key string, styl
 	ctx, cancel := context.WithTimeout(ctx, aiThemeTimeout)
 	defer cancel()
 	if style.AnimationMode != "four_frame" {
-		prompt := "Create only the illustration for a tiny physical 240x240 desk display. Make a text-free, front-on 15:8 composition with one strong recognizable subject, clearly readable defining features, large simple shapes and a limited cohesive palette. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. The image will occupy the top 240x128 pixels. " + style.ArtPrompt
+		prompt := "Create only the illustration for a tiny physical 240x240 desk display. Make a text-free, front-on 15:8 composition with one strong recognizable subject, clearly readable defining features, large simple shapes and a limited cohesive palette. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. The image will occupy the top 240x128 pixels. Environment: " + style.EnvironmentPrompt + ". Subject: " + style.ArtPrompt
 		image, err := a.createConceptImage(ctx, key, prompt, previous)
 		if err != nil {
 			return aiThemeGeneratedImages{}, err
@@ -440,35 +444,27 @@ func (a *aiThemeState) createConceptImages(ctx context.Context, key string, styl
 	}
 
 	const keyColor = "#FF00FF"
-	backgroundPrompt := "Create a complete static background illustration for the top 240x128 pixels of a tiny physical desk display. Make it a text-free, front-on 15:8 scene with a strong atmosphere, large simple shapes and a limited cohesive palette. Do not show the main animated subject; leave the central area visually calm so a 72x72 animated sprite can be placed over it. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. Theme: " + style.ArtPrompt
-	sheetPrompt := "Create one high-resolution sprite sheet containing exactly four frames of one seamless looping animation. Arrange the frames as four equal vertical cells in one horizontal row, ordered left to right. Keep the same isolated subject, identity, scale, front-on camera, lighting and palette in every cell; only the pose may change. Center each complete subject inside the square middle area of its cell. Use a perfectly flat pure magenta " + keyColor + " background across the entire image with no borders, separators, gradient, texture, shadow or reflection. Make every pose clearly readable after reduction to 72x72 pixels. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets, labels or extra objects. Subject: " + style.ArtPrompt + ". Motion: " + style.AnimationPrompt
-	var background, sheet string
-	var firstErr error
-	var firstMu sync.Mutex
-	var firstWG sync.WaitGroup
-	setFirstErr := func(createErr error) {
-		firstMu.Lock()
-		defer firstMu.Unlock()
-		if createErr != nil && firstErr == nil {
-			firstErr = createErr
-		}
+	backgroundPrompt := "Create a complete static background illustration for the top 240x128 pixels of a tiny physical desk display. Make it a text-free, front-on 15:8 scene with a strong atmosphere, large simple shapes and a limited cohesive palette. This image is environment only: do not show any character, creature, person, animal or main subject. Leave the central area visually calm so a 72x72 animated sprite can be placed over it. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. Environment: " + style.EnvironmentPrompt
+	sheetReferenceInstruction := "Using the supplied background scene as the authoritative style reference"
+	if len(previousAnimation) > 0 {
+		sheetReferenceInstruction = "Using the supplied previous sprite sheet as the authoritative subject identity reference"
 	}
-	firstWG.Add(2)
-	go func() {
-		defer firstWG.Done()
-		var createErr error
-		background, createErr = a.createConceptImage(ctx, key, backgroundPrompt, previous)
-		setFirstErr(createErr)
-	}()
-	go func() {
-		defer firstWG.Done()
-		var createErr error
-		sheet, createErr = a.createConceptImage(ctx, key, sheetPrompt, previousAnimation)
-		setFirstErr(createErr)
-	}()
-	firstWG.Wait()
-	if firstErr != nil {
-		return aiThemeGeneratedImages{}, firstErr
+	sheetPrompt := sheetReferenceInstruction + ", create one high-resolution sprite sheet containing exactly four frames of one seamless looping animation. The animated subject must belong naturally in the planned environment: match its art style, perspective, lighting direction, contrast and palette. Arrange the frames as four equal vertical cells in one horizontal row, ordered left to right. Keep the same isolated subject, identity, scale and camera in every cell; only the pose may change. Center each complete subject inside the square middle area of its cell. Use a perfectly flat pure magenta " + keyColor + " background across the entire image with no borders, separators, gradient, texture, shadow or reflection. Make every pose clearly readable after reduction to 72x72 pixels. Do not copy any scenery into the sprite cells. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets, labels or extra objects. Environment: " + style.EnvironmentPrompt + ". Subject: " + style.ArtPrompt + ". Motion: " + style.AnimationPrompt
+	background, err := a.createConceptImage(ctx, key, backgroundPrompt, previous)
+	if err != nil {
+		return aiThemeGeneratedImages{}, err
+	}
+	backgroundBytes, err := validateConceptImage(background, "image/png")
+	if err != nil {
+		return aiThemeGeneratedImages{}, err
+	}
+	sheetReference := backgroundBytes
+	if len(previousAnimation) > 0 {
+		sheetReference = previousAnimation
+	}
+	sheet, err := a.createConceptImage(ctx, key, sheetPrompt, sheetReference)
+	if err != nil {
+		return aiThemeGeneratedImages{}, err
 	}
 	if background == "" || sheet == "" {
 		return aiThemeGeneratedImages{}, errors.New("provider_malformed_response")
@@ -555,7 +551,7 @@ func extractOpenAIText(body []byte) (string, error) {
 	return "", errors.New("provider_malformed_response")
 }
 
-const aiThemeSystemPrompt = `You are the lead UI designer for a physical 240 by 240 pixel desk display, not an app or product mock-up. Plan one premium firmware theme. The client owns all geometry, text and live data. You only choose a concise title, colors, atmosphere, bar treatment and a text-free illustration prompt. For a new concept, set animationMode to four_frame only when the latest user request explicitly asks for animation, movement, a GIF or a sprite; otherwise set it to static. When refining, preserve the previous animationMode and animationPrompt unless the latest request explicitly asks to add, remove or change animation. For four_frame, animationPrompt must describe one subtle seamless motion loop. For static, animationPrompt must be an empty string. The illustration must use one strong recognizable subject with clearly readable defining features, large simple shapes, minimal details and remain readable from across a desk. Never request text, numbers, UI, progress bars, a device, a desk or product photography in the illustration. Return only the strict JSON blueprint.`
+const aiThemeSystemPrompt = `You are the lead UI designer for a physical 240 by 240 pixel desk display, not an app or product mock-up. Plan one premium firmware theme. The client owns all geometry, text and live data. You only choose a concise title, colors, atmosphere, bar treatment and text-free illustration prompts. artPrompt describes only the main recognizable subject with clearly readable defining features, large simple shapes and minimal details. environmentPrompt describes the matching scenery without that subject or any duplicate character; it must share the subject's art style, perspective, lighting and palette. For a new concept, set animationMode to four_frame only when the latest user request explicitly asks for animation, movement, a GIF or a sprite; otherwise set it to static. When refining, preserve the previous animationMode and animationPrompt unless the latest request explicitly asks to add, remove or change animation. For four_frame, animationPrompt must describe one subtle seamless motion loop. For static, animationPrompt must be an empty string. Never request text, numbers, UI, progress bars, a device, a desk or product photography in either illustration prompt. Return only the strict JSON blueprint.`
 
 func buildAIThemePlanningPrompt(req aiThemeConceptRequest, repair string) string {
 	if repair != "" {
@@ -585,10 +581,10 @@ func buildAIThemePlanningPrompt(req aiThemeConceptRequest, repair string) string
 }
 
 func validateAIThemeStyle(style aiThemeStyle) error {
-	if strings.TrimSpace(style.PackName) == "" || strings.TrimSpace(style.Title) == "" || strings.TrimSpace(style.Notes) == "" || strings.TrimSpace(style.ArtPrompt) == "" {
+	if strings.TrimSpace(style.PackName) == "" || strings.TrimSpace(style.Title) == "" || strings.TrimSpace(style.Notes) == "" || strings.TrimSpace(style.ArtPrompt) == "" || strings.TrimSpace(style.EnvironmentPrompt) == "" {
 		return errors.New("blueprint_missing_fields")
 	}
-	if len([]rune(style.PackName)) > 48 || len([]rune(style.Title)) > 18 || len([]rune(style.Notes)) > 300 || len([]rune(style.ArtPrompt)) > 1000 {
+	if len([]rune(style.PackName)) > 48 || len([]rune(style.Title)) > 18 || len([]rune(style.Notes)) > 300 || len([]rune(style.ArtPrompt)) > 1000 || len([]rune(style.EnvironmentPrompt)) > 1000 {
 		return errors.New("blueprint_fields_too_large")
 	}
 	for _, color := range []string{style.BackgroundColor, style.PanelColor, style.TextColor, style.SessionColor, style.WeeklyColor} {
@@ -635,13 +631,14 @@ func aiThemeStyleSchema() map[string]any {
 		"properties": map[string]any{
 			"packName": map[string]any{"type": "string", "maxLength": 48}, "title": map[string]any{"type": "string", "maxLength": 18},
 			"notes": map[string]any{"type": "string", "maxLength": 300}, "artPrompt": map[string]any{"type": "string", "maxLength": 1000},
-			"animationMode":   map[string]any{"type": "string", "enum": []string{"static", "four_frame"}},
-			"animationPrompt": map[string]any{"type": "string", "maxLength": 300},
-			"backgroundColor": color, "panelColor": color, "textColor": color, "sessionColor": color, "weeklyColor": color,
+			"environmentPrompt": map[string]any{"type": "string", "maxLength": 1000},
+			"animationMode":     map[string]any{"type": "string", "enum": []string{"static", "four_frame"}},
+			"animationPrompt":   map[string]any{"type": "string", "maxLength": 300},
+			"backgroundColor":   color, "panelColor": color, "textColor": color, "sessionColor": color, "weeklyColor": color,
 			"progressStyle": map[string]any{"type": "string", "enum": []string{"solid", "segments"}},
 			"borderRadius":  map[string]any{"type": "integer", "minimum": 0, "maximum": 7},
 		},
-		"required": []string{"packName", "title", "notes", "artPrompt", "animationMode", "animationPrompt", "backgroundColor", "panelColor", "textColor", "sessionColor", "weeklyColor", "progressStyle", "borderRadius"},
+		"required": []string{"packName", "title", "notes", "artPrompt", "environmentPrompt", "animationMode", "animationPrompt", "backgroundColor", "panelColor", "textColor", "sessionColor", "weeklyColor", "progressStyle", "borderRadius"},
 	}
 }
 

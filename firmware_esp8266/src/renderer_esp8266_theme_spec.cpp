@@ -61,6 +61,7 @@ struct AnimatedSpriteCache {
   int fps = 0;
   uint16_t palette[26] = {0};
   int paletteSize = 0;
+  uint16_t transparentColor = 0;
   uint32_t frameOffsets[64] = {0};
   int indexedFrameCount = 0;
   int frameIndex = -1;
@@ -468,6 +469,24 @@ bool readSpritePalette(File& file, uint16_t* palette, int& paletteSize) {
   return true;
 }
 
+uint16_t unusedAnimatedSpriteTransparentColor(
+    const uint16_t* palette,
+    int paletteSize) {
+  for (uint32_t candidate = 0; candidate <= 0xFFFFUL; ++candidate) {
+    bool used = false;
+    for (int index = 0; index < paletteSize; ++index) {
+      if (palette[index] == static_cast<uint16_t>(candidate)) {
+        used = true;
+        break;
+      }
+    }
+    if (!used) {
+      return static_cast<uint16_t>(candidate);
+    }
+  }
+  return 0;
+}
+
 void drawStaticSpriteAsset(
     File& file,
     int x,
@@ -579,6 +598,9 @@ bool loadAnimatedSpriteCache(File& file, AnimatedSpriteCache& cache) {
   for (int i = 0; i < paletteSize; ++i) {
     cache.palette[i] = palette[i];
   }
+  cache.transparentColor = unusedAnimatedSpriteTransparentColor(
+      cache.palette,
+      cache.paletteSize);
   cache.frameIndex = -1;
   cache.renderingFrameIndex = 0;
   cache.nextRow = 0;
@@ -601,15 +623,13 @@ bool loadAnimatedSpriteCache(File& file, AnimatedSpriteCache& cache) {
 bool prepareAnimatedSpriteBuffer(
     AnimatedSpriteCache& cache,
     int targetWidth,
-    int targetHeight,
-    bool hasClearColor,
-    uint16_t clearColor) {
+    int targetHeight) {
   const int bufferWidth = targetWidth > 0 ? targetWidth : cache.width;
   const int bufferHeight = targetHeight > 0 ? targetHeight : cache.height;
   const uint32_t bufferBytes = ThemeSpecRuntimePolicy::CbaBufferBytes(
       bufferWidth,
       bufferHeight);
-  if (!hasClearColor || bufferBytes == 0 ||
+  if (bufferBytes == 0 ||
       (cbaFrameBufferOwner != nullptr && cbaFrameBufferOwner != &cache)) {
     return false;
   }
@@ -645,7 +665,7 @@ bool prepareAnimatedSpriteBuffer(
     cbaFrameBufferCapacityPixels = requiredPixels;
   }
   for (uint32_t i = 0; i < requiredPixels; ++i) {
-    cbaFrameBuffer[i] = clearColor;
+    cbaFrameBuffer[i] = cache.transparentColor;
   }
   cbaFrameBufferOwner = &cache;
   cache.frameBufferWidth = bufferWidth;
@@ -661,6 +681,16 @@ void pushCompletedAnimatedSpriteFrame(
       cbaFrameBufferOwner != &cache) {
     return;
   }
+  if (!RenderThemeSpecRegion(
+          x,
+          y,
+          cache.frameBufferWidth,
+          cache.frameBufferHeight)) {
+    cache.frameReadyToPush = false;
+    cache.nextFrameAtMs = millis() + kThemeSpecFullRenderRetryMs;
+    releaseAnimatedSpriteBuffer(cache);
+    return;
+  }
   const unsigned long pushStartUs = micros();
   {
     DisplayTransaction transaction;
@@ -671,7 +701,8 @@ void pushCompletedAnimatedSpriteFrame(
         y,
         cache.frameBufferWidth,
         cache.frameBufferHeight,
-        cbaFrameBuffer);
+        cbaFrameBuffer,
+        cache.transparentColor);
     Tft().setSwapBytes(previousSwapBytes);
   }
   cbaLastPushDurationUs = micros() - pushStartUs;
@@ -696,9 +727,7 @@ bool drawAnimatedSpriteAsset(
     AnimatedSpriteCache& cache,
     File& file,
     int targetWidth,
-    int targetHeight,
-    bool hasClearColor,
-    uint16_t clearColor) {
+    int targetHeight) {
   if (!cache.valid && !loadAnimatedSpriteCache(file, cache)) {
     return false;
   }
@@ -720,9 +749,7 @@ bool drawAnimatedSpriteAsset(
     if (!prepareAnimatedSpriteBuffer(
             cache,
             targetWidth,
-            targetHeight,
-            hasClearColor,
-            clearColor)) {
+            targetHeight)) {
       cache.nextFrameAtMs = millis() + kThemeSpecFullRenderRetryMs;
       return false;
     }
@@ -750,7 +777,7 @@ bool drawAnimatedSpriteAsset(
             cache.width,
             row,
             cache.height,
-            clearColor,
+            cache.transparentColor,
             cbaFrameBuffer,
             cache.frameBufferWidth,
             cache.frameBufferHeight)) {
@@ -823,9 +850,7 @@ void drawSpriteAsset(
             *animatedCache,
             file,
             targetWidth,
-            targetHeight,
-            hasClearColor,
-            clearColor);
+            targetHeight);
       }
     }
   }

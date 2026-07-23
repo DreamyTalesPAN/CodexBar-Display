@@ -4757,6 +4757,7 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
             title: "CAT MODE",
             notes: "A warm moonlit cat screenmaster.",
             artPrompt: "A large orange pixel cat beneath a cream moon.",
+            environmentPrompt: "A moonlit clearing with no animals.",
             animationMode: animated ? "four_frame" : "static",
             animationPrompt: animated ? "The cat gently swishes its tail." : "",
             backgroundColor: "#081426",
