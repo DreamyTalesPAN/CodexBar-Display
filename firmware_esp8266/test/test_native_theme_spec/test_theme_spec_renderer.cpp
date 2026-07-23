@@ -1419,6 +1419,17 @@ void testFrameActivityDefaultsToCodingWhenUsageChanges() {
   TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
 }
 
+void testFramePreservesTokenCountsAbove32BitRange() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* frame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":677219205,"weekTokens":5172099667,"totalTokens":15374976739})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, frame, 1000, event));
+  TEST_ASSERT_EQUAL_INT64(677219205LL, state.current.sessionTokens);
+  TEST_ASSERT_EQUAL_INT64(5172099667LL, state.current.weekTokens);
+  TEST_ASSERT_EQUAL_INT64(15374976739LL, state.current.totalTokens);
+}
+
 void testThemeSpecActivityChangeUsesPartialRenderEvent() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -1832,6 +1843,7 @@ int main() {
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
   RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
+  RUN_TEST(testFramePreservesTokenCountsAbove32BitRange);
   RUN_TEST(testThemeSpecActivityChangeUsesPartialRenderEvent);
   RUN_TEST(testLegacyThemeFieldsAreIgnored);
   RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);

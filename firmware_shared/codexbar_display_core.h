@@ -511,9 +511,9 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   out.usageUnavailable = doc["usageUnavailable"] | false;
   out.timeText = String(doc["time"] | "");
   out.dateText = String(doc["date"] | "");
-  out.sessionTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["sessionTokens"] | 0));
-  out.weekTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["weekTokens"] | 0));
-  out.totalTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["totalTokens"] | 0));
+  out.sessionTokens = ClampNonNegativeInt64(doc["sessionTokens"].as<int64_t>());
+  out.weekTokens = ClampNonNegativeInt64(doc["weekTokens"].as<int64_t>());
+  out.totalTokens = ClampNonNegativeInt64(doc["totalTokens"].as<int64_t>());
   out.hasUsageMode = hasUsageMode;
   out.usageMode = usageMode;
   out.activity = activity;
