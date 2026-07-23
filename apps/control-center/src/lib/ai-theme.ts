@@ -1,4 +1,4 @@
-import { companionOrigin } from "@/components/control-center-runtime";
+import { companionRequestUrl } from "@/components/control-center-runtime";
 import {
   validateThemeSpec,
   type ThemeStudioAsset,
@@ -12,6 +12,8 @@ export type AIThemeMessage = {
   role: "assistant" | "user";
 };
 export type AIThemeStyle = {
+  animationMode: "four_frame" | "static";
+  animationPrompt: string;
   artPrompt: string;
   backgroundColor: string;
   borderRadius: number;
@@ -25,6 +27,11 @@ export type AIThemeStyle = {
   weeklyColor: string;
 };
 export type AIThemeConcept = {
+  animation?: {
+    additionalFramesBase64: string[];
+    fps: number;
+    keyColor: string;
+  };
   imageBase64: string;
   imageContentType: "image/png";
   style: AIThemeStyle;
@@ -46,8 +53,11 @@ export type AIThemeCapabilities = {
 
 const HISTORY_PREFIX = "vibetv.aiTheme.history.v1.";
 export const AI_THEME_SCREENMASTER_ASSET_PATH = "/themes/u/ai-screen.cbi";
+export const AI_THEME_ANIMATION_ASSET_PATH = "/themes/u/ai-animation.cba";
 const SCREENMASTER_WIDTH = 240;
 const SCREENMASTER_ART_HEIGHT = 128;
+const ANIMATION_FRAME_SIZE = 64;
+const ANIMATION_FRAME_COUNT = 4;
 const MAX_COLORS = 26;
 export const AI_THEME_LOCAL_HISTORY_LIMIT = 20;
 export const AI_THEME_TRANSMITTED_HISTORY_LIMIT = 10;
@@ -78,16 +88,30 @@ export async function generateAIThemeConcept(
     body: JSON.stringify({
       prompt: input.prompt,
       history: input.history.slice(-AI_THEME_TRANSMITTED_HISTORY_LIMIT).map(({ content, role }) => ({ content, role })),
-      previous: input.previous,
+      previous: input.previous ? {
+        imageBase64: input.previous.imageBase64,
+        imageContentType: input.previous.imageContentType,
+        style: input.previous.style,
+      } : undefined,
     }),
     headers: { "Content-Type": "application/json" }, method: "POST", signal,
   });
 }
 
 export async function buildAIThemeCandidate(concept: AIThemeConcept): Promise<AIThemeCandidate> {
-  const bytes = Uint8Array.from(atob(concept.imageBase64), (value) => value.charCodeAt(0));
-  const bitmap = await createImageBitmap(new Blob([bytes], { type: concept.imageContentType }));
+  const encodedFrames = [
+    concept.imageBase64,
+    ...(concept.animation?.additionalFramesBase64 ?? []),
+  ];
+  if (concept.animation && encodedFrames.length !== ANIMATION_FRAME_COUNT) {
+    throw new Error("Animated concepts must contain exactly four frames.");
+  }
+  const bitmaps = await Promise.all(encodedFrames.map((value) => conceptBitmap(value, concept.imageContentType)));
   try {
+    if (concept.animation) {
+      const frames = normalizeAnimationFrames(bitmaps, concept.animation.keyColor);
+      return buildAIThemeAnimationCandidateFromRGBA(concept, frames, concept.animation.fps);
+    }
     const canvas = document.createElement("canvas");
     canvas.width = SCREENMASTER_WIDTH;
     canvas.height = SCREENMASTER_ART_HEIGHT;
@@ -95,11 +119,11 @@ export async function buildAIThemeCandidate(concept: AIThemeConcept): Promise<AI
     if (!context) throw new Error("The concept image could not be prepared.");
     context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = "high";
-    context.drawImage(bitmap, 0, 0, SCREENMASTER_WIDTH, SCREENMASTER_ART_HEIGHT);
+    context.drawImage(bitmaps[0]!, 0, 0, SCREENMASTER_WIDTH, SCREENMASTER_ART_HEIGHT);
     const rgba = context.getImageData(0, 0, SCREENMASTER_WIDTH, SCREENMASTER_ART_HEIGHT).data;
     return buildAIThemeCandidateFromRGBA(concept, rgba);
   } finally {
-    bitmap.close();
+    bitmaps.forEach((bitmap) => bitmap.close());
   }
 }
 
@@ -112,6 +136,43 @@ export function buildAIThemeCandidateFromRGBA(
     data: encodeAIThemeCBI1(rgba, SCREENMASTER_WIDTH, SCREENMASTER_ART_HEIGHT),
     encoding: "text",
   };
+  return buildCandidate(concept, { [AI_THEME_SCREENMASTER_ASSET_PATH]: asset }, {
+    type: "sprite", x: 0, y: 0, width: 240, height: 128, assetPath: AI_THEME_SCREENMASTER_ASSET_PATH,
+  });
+}
+
+export function buildAIThemeAnimationCandidateFromRGBA(
+  concept: AIThemeConcept,
+  frames: ArrayLike<number>[],
+  fps = 4,
+): AIThemeCandidate {
+  if (frames.length !== ANIMATION_FRAME_COUNT) {
+    throw new Error("Animated concepts must contain exactly four frames.");
+  }
+  const asset: ThemeStudioAsset = {
+    contentType: "text/plain",
+    data: encodeAIThemeCBA1(frames, ANIMATION_FRAME_SIZE, ANIMATION_FRAME_SIZE, fps),
+    encoding: "text",
+  };
+  return buildCandidate(concept, { [AI_THEME_ANIMATION_ASSET_PATH]: asset }, {
+    type: "sprite",
+    x: 88,
+    y: 32,
+    width: ANIMATION_FRAME_SIZE,
+    height: ANIMATION_FRAME_SIZE,
+    assetPath: AI_THEME_ANIMATION_ASSET_PATH,
+    frameCount: ANIMATION_FRAME_COUNT,
+    fps,
+    sheetColumns: ANIMATION_FRAME_COUNT,
+  }, true);
+}
+
+function buildCandidate(
+  concept: AIThemeConcept,
+  assets: Record<string, ThemeStudioAsset>,
+  artPrimitive: ThemeStudioSpec["primitives"][number],
+  fixedArtBackground = false,
+): AIThemeCandidate {
   const style = concept.style;
   const spec: ThemeStudioSpec = {
     themeSpecVersion: 1,
@@ -119,7 +180,8 @@ export function buildAIThemeCandidateFromRGBA(
     themeRev: 1,
     bgColor: style.backgroundColor,
     primitives: [
-      { type: "sprite", x: 0, y: 0, width: 240, height: 128, assetPath: AI_THEME_SCREENMASTER_ASSET_PATH },
+      ...(fixedArtBackground ? [{ type: "rect" as const, x: 0, y: 0, width: 240, height: 128, color: style.backgroundColor, bgColor: style.backgroundColor, borderColor: style.backgroundColor, borderRadius: 0 }] : []),
+      artPrimitive,
       { type: "rect", x: 0, y: 128, width: 240, height: 112, color: style.panelColor, bgColor: style.panelColor, borderColor: style.panelColor, borderRadius: 0 },
       { type: "text", x: 12, y: 134, text: "SESSION", fontSize: 2, color: style.textColor },
       { type: "text", x: 152, y: 134, width: 76, text: "{session}%", align: "right", fontSize: 2, color: style.sessionColor },
@@ -131,10 +193,119 @@ export function buildAIThemeCandidateFromRGBA(
       { type: "text", x: 12, y: 220, text: "REMAINING", fontSize: 1, color: style.textColor },
     ],
   };
-  const assets = { [AI_THEME_SCREENMASTER_ASSET_PATH]: asset };
   const validation = validateThemeSpec(spec, assets);
   if (validation.errors.length > 0) throw new Error(validation.errors[0]);
   return { assets, notes: style.notes, packName: style.packName, spec };
+}
+
+export function encodeAIThemeCBA1(
+  frames: ArrayLike<number>[],
+  width = ANIMATION_FRAME_SIZE,
+  height = ANIMATION_FRAME_SIZE,
+  fps = 4,
+): string {
+  if (frames.length !== ANIMATION_FRAME_COUNT || width !== ANIMATION_FRAME_SIZE || height !== ANIMATION_FRAME_SIZE || !Number.isInteger(fps) || fps < 1 || fps > 30 || frames.some((frame) => frame.length !== width * height * 4)) {
+    throw new Error("Animation must contain exactly four 64x64 RGBA frames.");
+  }
+  const colors: Array<Array<string | null>> = [];
+  const counts = new Map<string, number>();
+  for (const rgba of frames) {
+    const frameColors: Array<string | null> = [];
+    for (let offset = 0; offset < rgba.length; offset += 4) {
+      if ((rgba[offset + 3] ?? 0) < 128) {
+        frameColors.push(null);
+        continue;
+      }
+      const color = quantizedColor(rgba[offset] ?? 0, rgba[offset + 1] ?? 0, rgba[offset + 2] ?? 0);
+      frameColors.push(color);
+      counts.set(color, (counts.get(color) ?? 0) + 1);
+    }
+    colors.push(frameColors);
+  }
+  const palette = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, MAX_COLORS).map(([color]) => color);
+  if (palette.length === 0) palette.push("#FFFFFF");
+  const rows = colors.flatMap((frame) => Array.from({ length: height }, (_, y) => {
+    const tokens = Array.from({ length: width }, (_, x) => {
+      const color = frame[y * width + x];
+      return color ? paletteToken(nearestColor(color, palette), palette) : ".";
+    });
+    return encodeRle(tokens);
+  }));
+  return ["CBA1", `${width} ${height} ${frames.length} ${fps}`, String(palette.length), ...palette, ...rows, ""].join("\n");
+}
+
+async function conceptBitmap(value: string, contentType: string): Promise<ImageBitmap> {
+  const bytes = Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+  return createImageBitmap(new Blob([bytes], { type: contentType }));
+}
+
+function normalizeAnimationFrames(bitmaps: ImageBitmap[], keyColor: string): Uint8ClampedArray[] {
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = SCREENMASTER_WIDTH;
+  sourceCanvas.height = SCREENMASTER_ART_HEIGHT;
+  const sourceContext = sourceCanvas.getContext("2d", { willReadFrequently: true });
+  if (!sourceContext) throw new Error("The animation frames could not be prepared.");
+  const sourceFrames = bitmaps.map((bitmap) => {
+    sourceContext.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+    sourceContext.drawImage(bitmap, 0, 0, sourceCanvas.width, sourceCanvas.height);
+    return sourceContext.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+  });
+  const key = hexRGB(keyColor);
+  const bounds = sourceFrames.reduce((current, frame) => {
+    for (let y = 0; y < frame.height; y += 1) {
+      for (let x = 0; x < frame.width; x += 1) {
+        const offset = (y * frame.width + x) * 4;
+        if (!isKeyPixel(frame.data, offset, key)) {
+          current.left = Math.min(current.left, x);
+          current.top = Math.min(current.top, y);
+          current.right = Math.max(current.right, x);
+          current.bottom = Math.max(current.bottom, y);
+        }
+      }
+    }
+    return current;
+  }, { bottom: -1, left: SCREENMASTER_WIDTH, right: -1, top: SCREENMASTER_ART_HEIGHT });
+  if (bounds.right < bounds.left || bounds.bottom < bounds.top) {
+    throw new Error("OpenAI returned empty animation frames.");
+  }
+  const padding = 3;
+  const left = Math.max(0, bounds.left - padding);
+  const top = Math.max(0, bounds.top - padding);
+  const cropWidth = Math.min(SCREENMASTER_WIDTH - left, bounds.right - bounds.left + 1 + padding * 2);
+  const cropHeight = Math.min(SCREENMASTER_ART_HEIGHT - top, bounds.bottom - bounds.top + 1 + padding * 2);
+  const scale = Math.min(60 / cropWidth, 60 / cropHeight);
+  const targetWidth = Math.max(1, Math.round(cropWidth * scale));
+  const targetHeight = Math.max(1, Math.round(cropHeight * scale));
+  return sourceFrames.map((frame) => {
+    sourceContext.putImageData(frame, 0, 0);
+    const target = document.createElement("canvas");
+    target.width = ANIMATION_FRAME_SIZE;
+    target.height = ANIMATION_FRAME_SIZE;
+    const context = target.getContext("2d", { willReadFrequently: true });
+    if (!context) throw new Error("The animation frame could not be prepared.");
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(sourceCanvas, left, top, cropWidth, cropHeight, Math.round((ANIMATION_FRAME_SIZE - targetWidth) / 2), Math.round((ANIMATION_FRAME_SIZE - targetHeight) / 2), targetWidth, targetHeight);
+    const normalized = context.getImageData(0, 0, ANIMATION_FRAME_SIZE, ANIMATION_FRAME_SIZE);
+    for (let offset = 0; offset < normalized.data.length; offset += 4) {
+      if (isKeyPixel(normalized.data, offset, key)) normalized.data[offset + 3] = 0;
+    }
+    return normalized.data;
+  });
+}
+
+function hexRGB(value: string): [number, number, number] {
+  const match = /^#([0-9A-F]{2})([0-9A-F]{2})([0-9A-F]{2})$/i.exec(value);
+  if (!match) throw new Error("The animation key color is invalid.");
+  return [Number.parseInt(match[1]!, 16), Number.parseInt(match[2]!, 16), Number.parseInt(match[3]!, 16)];
+}
+
+function isKeyPixel(data: ArrayLike<number>, offset: number, key: [number, number, number]): boolean {
+  const r = data[offset] ?? 0;
+  const g = data[offset + 1] ?? 0;
+  const b = data[offset + 2] ?? 0;
+  const distance = Math.sqrt((r - key[0]) ** 2 + (g - key[1]) ** 2 + (b - key[2]) ** 2);
+  return distance < 105 || (r > 170 && b > 170 && g < Math.min(r, b) * 0.72);
 }
 
 export function encodeAIThemeCBI1(
@@ -215,7 +386,7 @@ function historyKey(themeId: string): string { return `${HISTORY_PREFIX}${themeI
 function browserStorage(): Storage | null { return typeof window === "undefined" ? null : window.localStorage; }
 
 async function aiRequest<T = unknown>(path: string, init: RequestInit): Promise<T> {
-  const response = await fetch(`${companionOrigin()}${path}`, init);
+  const response = await fetch(companionRequestUrl(path), init);
   const payload = (await response.json().catch(() => null)) as { error?: { code?: string } } | T | null;
   if (!response.ok) {
     const code = payload && typeof payload === "object" && "error" in payload ? payload.error?.code : undefined;

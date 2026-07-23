@@ -52,6 +52,8 @@ type aiThemeStyle struct {
 	Title           string `json:"title"`
 	Notes           string `json:"notes"`
 	ArtPrompt       string `json:"artPrompt"`
+	AnimationMode   string `json:"animationMode"`
+	AnimationPrompt string `json:"animationPrompt"`
 	BackgroundColor string `json:"backgroundColor"`
 	PanelColor      string `json:"panelColor"`
 	TextColor       string `json:"textColor"`
@@ -74,9 +76,16 @@ type aiThemeConceptRequest struct {
 }
 
 type aiThemeConcept struct {
-	ImageBase64      string       `json:"imageBase64"`
-	ImageContentType string       `json:"imageContentType"`
-	Style            aiThemeStyle `json:"style"`
+	ImageBase64      string            `json:"imageBase64"`
+	ImageContentType string            `json:"imageContentType"`
+	Style            aiThemeStyle      `json:"style"`
+	Animation        *aiThemeAnimation `json:"animation,omitempty"`
+}
+
+type aiThemeAnimation struct {
+	AdditionalFramesBase64 []string `json:"additionalFramesBase64"`
+	FPS                    int      `json:"fps"`
+	KeyColor               string   `json:"keyColor"`
 }
 
 type aiThemeCredentialRequest struct {
@@ -304,12 +313,20 @@ func (s *Server) handleAIThemeConcept(w http.ResponseWriter, r *http.Request) {
 		writeAIThemeError(w, providerStatusFromError(err), providerErrorCode(err, 0))
 		return
 	}
-	image, err := s.aiTheme.createConceptImage(r.Context(), key, style, previous)
+	images, err := s.aiTheme.createConceptImages(r.Context(), key, style, previous)
 	if err != nil {
 		writeAIThemeError(w, providerStatusFromError(err), providerErrorCode(err, 0))
 		return
 	}
-	writeJSON(w, http.StatusOK, aiThemeConcept{ImageBase64: image, ImageContentType: "image/png", Style: style})
+	concept := aiThemeConcept{ImageBase64: images[0], ImageContentType: "image/png", Style: style}
+	if len(images) == 4 {
+		concept.Animation = &aiThemeAnimation{
+			AdditionalFramesBase64: images[1:],
+			FPS:                    4,
+			KeyColor:               "#FF00FF",
+		}
+	}
+	writeJSON(w, http.StatusOK, concept)
 }
 
 func decodeAIThemeConceptJSON(w http.ResponseWriter, r *http.Request, value any) bool {
@@ -396,10 +413,60 @@ func (a *aiThemeState) planConcept(ctx context.Context, key string, req aiThemeC
 	return style, text, nil
 }
 
-func (a *aiThemeState) createConceptImage(ctx context.Context, key string, style aiThemeStyle, previous []byte) (string, error) {
+func (a *aiThemeState) createConceptImages(ctx context.Context, key string, style aiThemeStyle, previous []byte) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, aiThemeTimeout)
 	defer cancel()
-	prompt := "Create only the illustration for a tiny physical 240x240 desk display. Make a text-free, front-on 15:8 composition with one strong recognizable subject, clearly readable defining features, large simple shapes and a limited cohesive palette. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. The image will occupy the top 240x128 pixels. " + style.ArtPrompt
+	if style.AnimationMode != "four_frame" {
+		prompt := "Create only the illustration for a tiny physical 240x240 desk display. Make a text-free, front-on 15:8 composition with one strong recognizable subject, clearly readable defining features, large simple shapes and a limited cohesive palette. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. The image will occupy the top 240x128 pixels. " + style.ArtPrompt
+		image, err := a.createConceptImage(ctx, key, prompt, previous)
+		if err != nil {
+			return nil, err
+		}
+		return []string{image}, nil
+	}
+
+	const keyColor = "#FF00FF"
+	masterPrompt := "Create frame 1 of a four-frame looping sprite animation for a tiny physical desk display. Show one isolated, centered subject with clearly readable defining features, identical scale and front-on camera, large simple shapes and a limited palette. Use a perfectly flat pure magenta " + keyColor + " background with no gradient, texture, shadow or reflection. Keep the complete subject inside a square-safe central area. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. Subject: " + style.ArtPrompt + ". Motion: " + style.AnimationPrompt
+	master, err := a.createConceptImage(ctx, key, masterPrompt, previous)
+	if err != nil {
+		return nil, err
+	}
+	masterBytes, err := validateConceptImage(master, "image/png")
+	if err != nil {
+		return nil, err
+	}
+	images := make([]string, 4)
+	images[0] = master
+	frameDirections := []string{
+		"Move clearly into the first quarter of the loop.",
+		"Show the most distinct midpoint pose of the loop.",
+		"Move clearly into the return pose just before frame 1.",
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 3)
+	for frame := 2; frame <= 4; frame++ {
+		frame := frame
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			prompt := fmt.Sprintf("Create frame %d of the same four-frame looping sprite. Preserve the exact subject identity, palette, scale, camera, lighting and flat pure magenta %s background from the reference. %s The pose change must be visibly different at 64 by 64 pixels while remaining subtle and loopable. Keep the subject centered and fully visible. No text, UI, shadow, gradient or extra object. Motion: %s", frame, keyColor, frameDirections[frame-2], style.AnimationPrompt)
+			image, createErr := a.createConceptImage(ctx, key, prompt, masterBytes)
+			if createErr != nil {
+				errs <- createErr
+				return
+			}
+			images[frame-1] = image
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	if createErr := <-errs; createErr != nil {
+		return nil, createErr
+	}
+	return images, nil
+}
+
+func (a *aiThemeState) createConceptImage(ctx context.Context, key, prompt string, previous []byte) (string, error) {
 	var request *http.Request
 	if len(previous) == 0 {
 		body, _ := json.Marshal(map[string]any{"model": openAIImageModel, "prompt": prompt, "size": openAIImageSize, "quality": openAIImageQuality, "output_format": "png", "n": 1})
@@ -478,7 +545,7 @@ func extractOpenAIText(body []byte) (string, error) {
 	return "", errors.New("provider_malformed_response")
 }
 
-const aiThemeSystemPrompt = `You are the lead UI designer for a physical 240 by 240 pixel desk display, not an app or product mock-up. Plan one premium static firmware theme. The client owns all geometry, text and live data. You only choose a concise title, colors, atmosphere, bar treatment and a text-free illustration prompt. The illustration must use one strong recognizable subject with clearly readable defining features, large simple shapes, minimal details and remain readable from across a desk. Never request text, numbers, UI, progress bars, a device, a desk or product photography in the illustration. Return only the strict JSON blueprint.`
+const aiThemeSystemPrompt = `You are the lead UI designer for a physical 240 by 240 pixel desk display, not an app or product mock-up. Plan one premium firmware theme. The client owns all geometry, text and live data. You only choose a concise title, colors, atmosphere, bar treatment and a text-free illustration prompt. For a new concept, set animationMode to four_frame only when the latest user request explicitly asks for animation, movement, a GIF or a sprite; otherwise set it to static. When refining, preserve the previous animationMode and animationPrompt unless the latest request explicitly asks to add, remove or change animation. For four_frame, animationPrompt must describe one subtle seamless motion loop. For static, animationPrompt must be an empty string. The illustration must use one strong recognizable subject with clearly readable defining features, large simple shapes, minimal details and remain readable from across a desk. Never request text, numbers, UI, progress bars, a device, a desk or product photography in the illustration. Return only the strict JSON blueprint.`
 
 func buildAIThemePlanningPrompt(req aiThemeConceptRequest, repair string) string {
 	if repair != "" {
@@ -486,9 +553,9 @@ func buildAIThemePlanningPrompt(req aiThemeConceptRequest, repair string) string
 	}
 	var b strings.Builder
 	if req.Previous == nil {
-		b.WriteString("Create one new static screenmaster concept.\n")
+		b.WriteString("Create one new screenmaster concept. Use four_frame only for an explicit animation request.\n")
 	} else {
-		b.WriteString("Refine the existing concept. The latest user request has priority over the previous blueprint. Change every explicitly requested visual property, including subject visibility, scale, pose, lighting, color, composition, or detail level. Preserve only what the user did not ask to change.\nPrevious blueprint: ")
+		b.WriteString("Refine the existing concept. The latest user request has priority over the previous blueprint. Change every explicitly requested visual property, including subject visibility, scale, pose, lighting, color, composition, or detail level. Preserve the existing animation mode and motion unless the user explicitly asks to change or remove animation. Preserve only what the user did not ask to change.\nPrevious blueprint: ")
 		previous, _ := json.Marshal(req.Previous.Style)
 		b.Write(previous)
 		b.WriteByte('\n')
@@ -522,6 +589,18 @@ func validateAIThemeStyle(style aiThemeStyle) error {
 	if style.ProgressStyle != "solid" && style.ProgressStyle != "segments" {
 		return errors.New("blueprint_invalid_progress_style")
 	}
+	if style.AnimationMode != "static" && style.AnimationMode != "four_frame" {
+		return errors.New("blueprint_invalid_animation_mode")
+	}
+	if style.AnimationMode == "four_frame" && strings.TrimSpace(style.AnimationPrompt) == "" {
+		return errors.New("blueprint_missing_animation_prompt")
+	}
+	if style.AnimationMode == "static" && style.AnimationPrompt != "" {
+		return errors.New("blueprint_static_animation_prompt")
+	}
+	if len([]rune(style.AnimationPrompt)) > 300 {
+		return errors.New("blueprint_animation_prompt_too_large")
+	}
 	if style.BorderRadius < 0 || style.BorderRadius > 7 {
 		return errors.New("blueprint_invalid_radius")
 	}
@@ -546,11 +625,13 @@ func aiThemeStyleSchema() map[string]any {
 		"properties": map[string]any{
 			"packName": map[string]any{"type": "string", "maxLength": 48}, "title": map[string]any{"type": "string", "maxLength": 18},
 			"notes": map[string]any{"type": "string", "maxLength": 300}, "artPrompt": map[string]any{"type": "string", "maxLength": 1000},
+			"animationMode":   map[string]any{"type": "string", "enum": []string{"static", "four_frame"}},
+			"animationPrompt": map[string]any{"type": "string", "maxLength": 300},
 			"backgroundColor": color, "panelColor": color, "textColor": color, "sessionColor": color, "weeklyColor": color,
 			"progressStyle": map[string]any{"type": "string", "enum": []string{"solid", "segments"}},
 			"borderRadius":  map[string]any{"type": "integer", "minimum": 0, "maximum": 7},
 		},
-		"required": []string{"packName", "title", "notes", "artPrompt", "backgroundColor", "panelColor", "textColor", "sessionColor", "weeklyColor", "progressStyle", "borderRadius"},
+		"required": []string{"packName", "title", "notes", "artPrompt", "animationMode", "animationPrompt", "backgroundColor", "panelColor", "textColor", "sessionColor", "weeklyColor", "progressStyle", "borderRadius"},
 	}
 }
 

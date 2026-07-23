@@ -1,6 +1,8 @@
 import type { AIThemeConcept } from "./ai-theme";
 
 const baseStyle = {
+  animationMode: "static" as const,
+  animationPrompt: "",
   backgroundColor: "#081426",
   borderRadius: 3,
   panelColor: "#101F36",

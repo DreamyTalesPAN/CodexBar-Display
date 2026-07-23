@@ -55,7 +55,7 @@ async function proxyLocalMacApp(request: NextRequest, context: RouteContext) {
     const upstream = await fetch(targetUrl, {
       body: request.method === "GET" ? undefined : await request.arrayBuffer(),
       cache: "no-store",
-      headers: localRequestHeaders(request.headers),
+      headers: localRequestHeaders(request.headers, targetUrl.origin),
       method: request.method,
     });
     return new Response(upstream.body, {
@@ -81,7 +81,7 @@ function isLoopbackHostname(hostname: string): boolean {
   return ["127.0.0.1", "localhost", "::1"].includes(hostname);
 }
 
-function localRequestHeaders(source: Headers): Headers {
+function localRequestHeaders(source: Headers, targetOrigin: string): Headers {
   const headers = new Headers();
   const accept = source.get("accept");
   const contentType = source.get("content-type");
@@ -91,6 +91,7 @@ function localRequestHeaders(source: Headers): Headers {
   if (contentType) {
     headers.set("content-type", contentType);
   }
+  headers.set("origin", targetOrigin);
   return headers;
 }
 

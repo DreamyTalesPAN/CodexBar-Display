@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   AI_THEME_LOCAL_HISTORY_LIMIT,
+  AI_THEME_ANIMATION_ASSET_PATH,
+  buildAIThemeAnimationCandidateFromRGBA,
   buildAIThemeCandidateFromRGBA,
   clearAIThemeHistory,
   encodeAIThemeCBI1,
+  encodeAIThemeCBA1,
   loadAIThemeHistory,
   saveAIThemeHistory,
   type AIThemeMessage,
@@ -68,7 +71,7 @@ describe("AI theme history", () => {
       imageBase64,
       imageContentType: "image/png",
       style: {
-        artPrompt: "A large cat under a moon.", backgroundColor: "#081426", borderRadius: 3,
+        animationMode: "static", animationPrompt: "", artPrompt: "A large cat under a moon.", backgroundColor: "#081426", borderRadius: 3,
         notes: "Moon cat", packName: "Moon Cat", panelColor: "#101F36",
         progressStyle: "segments", sessionColor: "#F6B85F", textColor: "#FFF3CF",
         title: "CAT MODE", weeklyColor: "#EF6A8A",
@@ -80,5 +83,53 @@ describe("AI theme history", () => {
     expect(candidate.spec.primitives.filter((item) => item.type === "text").map((item) => item.text)).not.toContain("CAT MODE");
     expect(Object.values(candidate.assets)[0]?.data.startsWith("CBI1\n240 128\n")).toBe(true);
     expect(JSON.stringify(candidate)).not.toContain(imageBase64);
+  });
+
+  it("creates an editable CBA1 sprite with exactly four 64x64 frames", () => {
+    const frames = Array.from({ length: 4 }, (_, frame) => {
+      const rgba = new Uint8ClampedArray(64 * 64 * 4);
+      const offset = ((24 + frame) * 64 + 30) * 4;
+      rgba[offset] = 255;
+      rgba[offset + 1] = 128;
+      rgba[offset + 2] = 0;
+      rgba[offset + 3] = 255;
+      return rgba;
+    });
+    const concept = {
+      animation: { additionalFramesBase64: ["two", "three", "four"], fps: 4, keyColor: "#FF00FF" },
+      imageBase64: "one",
+      imageContentType: "image/png" as const,
+      style: {
+        animationMode: "four_frame" as const,
+        animationPrompt: "The cat swishes its tail.",
+        artPrompt: "A large orange cat.",
+        backgroundColor: "#081426",
+        borderRadius: 3,
+        notes: "Moon cat",
+        packName: "Moon Cat",
+        panelColor: "#101F36",
+        progressStyle: "segments" as const,
+        sessionColor: "#F6B85F",
+        textColor: "#FFF3CF",
+        title: "CAT MODE",
+        weeklyColor: "#EF6A8A",
+      },
+    };
+    const encoded = encodeAIThemeCBA1(frames);
+    expect(encoded).toMatch(/^CBA1\n64 64 4 4\n/);
+    expect(encoded.split("\n").filter((line) => line.includes(".")).length).toBeGreaterThan(0);
+    const candidate = buildAIThemeAnimationCandidateFromRGBA(concept, frames);
+    expect(candidate.assets[AI_THEME_ANIMATION_ASSET_PATH]?.data).toBe(encoded);
+    expect(candidate.spec.primitives[1]).toMatchObject({
+      assetPath: AI_THEME_ANIMATION_ASSET_PATH,
+      fps: 4,
+      frameCount: 4,
+      height: 64,
+      sheetColumns: 4,
+      type: "sprite",
+      width: 64,
+      x: 88,
+      y: 32,
+    });
   });
 });

@@ -4686,6 +4686,7 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
   const localAppUrl = "http://127.0.0.1:47832/control-center";
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
   const conceptRequests = [];
+  let conceptResponses = 0;
   let credential = "";
   let verificationShouldFail = false;
   let verificationRequests = 0;
@@ -4729,19 +4730,34 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
       return;
     }
     if (pathname === "/v1/ai-theme/concepts") {
-      conceptRequests.push(JSON.parse(route.request().postData() || "{}"));
+      const conceptRequest = JSON.parse(route.request().postData() || "{}");
+      conceptRequests.push(conceptRequest);
+      const animated =
+        /animate|sprite|gif/i.test(conceptRequest.prompt || "") ||
+        (
+          conceptRequest.previous?.style?.animationMode === "four_frame" &&
+          !/static|still|stop animat/i.test(conceptRequest.prompt || "")
+        );
       await new Promise((resolve) => setTimeout(resolve, 250));
+      conceptResponses += 1;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
           imageBase64: conceptPNG,
           imageContentType: "image/png",
+          animation: animated ? {
+            additionalFramesBase64: [conceptPNG, conceptPNG, conceptPNG],
+            fps: 4,
+            keyColor: "#FF00FF",
+          } : undefined,
           style: {
             packName: "Moon Cat",
             title: "CAT MODE",
             notes: "A warm moonlit cat screenmaster.",
             artPrompt: "A large orange pixel cat beneath a cream moon.",
+            animationMode: animated ? "four_frame" : "static",
+            animationPrompt: animated ? "The cat gently swishes its tail." : "",
             backgroundColor: "#081426",
             panelColor: "#101F36",
             textColor: "#FFF3CF",
@@ -4863,10 +4879,21 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
     "clamped geometry inputs should not create an avoidable validation error",
   );
 
-  await prompt.fill("Make the moon larger");
+  await prompt.fill("Animate the cat as a four-frame sprite");
   await page.getByRole("button", { name: "Send change", exact: true }).click();
-  await page.getByText("Theme updated. You can edit it now or ask for more changes.").waitFor();
+  await page.getByText("4-frame animation created. Drag or resize the sprite, or ask for another change.").waitFor();
   assert(conceptRequests.at(-1)?.previous?.imageBase64 === conceptPNG, "Refine must send the previous concept image only for the edit request");
+  assert(conceptRequests.at(-1)?.previous?.animation === undefined, "Refine must not upload all previous animation frames");
+  const animatedSprite = editablePreview.locator('[aria-label^="Select sprite"]').last();
+  await animatedSprite.click();
+  assert((await page.getByLabel("Frames", { exact: true }).inputValue()) === "4", "AI animation should expose exactly four editable sprite frames");
+  assert((await page.getByLabel("FPS", { exact: true }).inputValue()) === "4", "AI animation should play at four frames per second");
+  await prompt.fill("Make the animated cat larger");
+  await page.getByRole("button", { name: "Send change", exact: true }).click();
+  await waitForCondition(() => conceptResponses >= 3, "animated chat refinement should complete");
+  await page.getByRole("button", { name: "Send change", exact: true }).waitFor();
+  assert(conceptRequests.at(-1)?.previous?.style?.animationMode === "four_frame", "Chat refinements should preserve the four-frame animation mode");
+  assert(conceptRequests.at(-1)?.previous?.animation === undefined, "Animated refinements should still upload only the reference frame");
   await page.waitForTimeout(400);
   assert(
     !(await page.evaluate(() => Object.values(window.localStorage).some((entry) => String(entry).includes("CBI1")))),
@@ -4885,7 +4912,7 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
     "Start over must clear the chat without changing the editable document",
   );
   assert(
-    (await page.getByText("Make the moon larger", { exact: true }).count()) === 0,
+    (await page.getByText("Make the animated cat larger", { exact: true }).count()) === 0,
     "Start over should remove old prompt history from the panel",
   );
 

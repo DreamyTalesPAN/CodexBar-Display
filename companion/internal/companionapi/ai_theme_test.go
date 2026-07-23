@@ -71,7 +71,11 @@ func aiRequest(method, path, body string) *http.Request {
 }
 
 func validAIStyleJSON() string {
-	return `{"packName":"Moon Cat","title":"CAT MODE","notes":"Warm moonlit cat.","artPrompt":"A large orange pixel cat beneath a cream moon on deep navy.","backgroundColor":"#081426","panelColor":"#101F36","textColor":"#FFF3CF","sessionColor":"#F6B85F","weeklyColor":"#EF6A8A","progressStyle":"segments","borderRadius":3}`
+	return `{"packName":"Moon Cat","title":"CAT MODE","notes":"Warm moonlit cat.","artPrompt":"A large orange pixel cat beneath a cream moon on deep navy.","animationMode":"static","animationPrompt":"","backgroundColor":"#081426","panelColor":"#101F36","textColor":"#FFF3CF","sessionColor":"#F6B85F","weeklyColor":"#EF6A8A","progressStyle":"segments","borderRadius":3}`
+}
+
+func animatedAIStyleJSON() string {
+	return `{"packName":"Moon Cat","title":"CAT MODE","notes":"Warm moonlit cat.","artPrompt":"A large orange pixel cat.","animationMode":"four_frame","animationPrompt":"The cat gently swishes its tail and blinks once.","backgroundColor":"#081426","panelColor":"#101F36","textColor":"#FFF3CF","sessionColor":"#F6B85F","weeklyColor":"#EF6A8A","progressStyle":"segments","borderRadius":3}`
 }
 
 func tinyPNGBase64() string {
@@ -165,6 +169,47 @@ func TestAIThemeConceptUsesFixedPlannerAndImageModels(t *testing.T) {
 	}
 }
 
+func TestAIThemeAnimationCreatesOneMasterAndThreeConsistentEdits(t *testing.T) {
+	store := newMemorySecretStore()
+	_ = store.Set("openai", "sk-test-12345678901234567890")
+	var mu sync.Mutex
+	calls := 0
+	generations := 0
+	edits := 0
+	server := newAIThemeTestServer(t, store, aiRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		mu.Lock()
+		calls++
+		call := calls
+		if r.URL.String() == openAIImageEndpoint {
+			generations++
+		}
+		if r.URL.String() == openAIImageEditEndpoint {
+			edits++
+		}
+		mu.Unlock()
+		if call == 1 {
+			payload, _ := json.Marshal(map[string]any{"output": []any{map[string]any{"content": []any{map[string]any{"type": "output_text", "text": animatedAIStyleJSON()}}}}})
+			return response(200, payload, r), nil
+		}
+		body, _ := io.ReadAll(r.Body)
+		if !bytes.Contains(body, []byte("#FF00FF")) {
+			t.Fatalf("animation request does not fix the key background: %s", body)
+		}
+		payload, _ := json.Marshal(map[string]any{"data": []any{map[string]any{"b64_json": tinyPNGBase64()}}})
+		return response(200, payload, r), nil
+	}))
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, aiRequest(http.MethodPost, "/v1/ai-theme/concepts", `{"prompt":"Animate the cat as a four-frame sprite"}`))
+	mu.Lock()
+	defer mu.Unlock()
+	if w.Code != http.StatusOK || calls != 5 || generations != 1 || edits != 3 {
+		t.Fatalf("animation=%d calls=%d generations=%d edits=%d body=%s", w.Code, calls, generations, edits, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"fps":4`) || strings.Count(w.Body.String(), tinyPNGBase64()) != 4 {
+		t.Fatalf("animation response=%s", w.Body.String())
+	}
+}
+
 func TestAIThemeConceptEditUsesPreviousPNGWithoutLoggingIt(t *testing.T) {
 	store := newMemorySecretStore()
 	_ = store.Set("openai", "sk-test-12345678901234567890")
@@ -203,7 +248,7 @@ func TestAIThemeRefinePrioritizesExplicitVisualRequests(t *testing.T) {
 		Prompt:   "Show the cat's face clearly instead of a silhouette.",
 		Previous: &aiThemePreviousConcept{Style: style},
 	}, "")
-	for _, required := range []string{"latest user request has priority", "subject visibility", "detail level", "Show the cat's face clearly instead of a silhouette."} {
+	for _, required := range []string{"latest user request has priority", "subject visibility", "detail level", "Preserve the existing animation mode", "Show the cat's face clearly instead of a silhouette."} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("refine prompt missing %q: %s", required, prompt)
 		}

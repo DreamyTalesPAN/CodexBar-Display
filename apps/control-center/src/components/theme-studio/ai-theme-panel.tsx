@@ -116,14 +116,16 @@ export function AIThemePanel({ currentSpec, onApply, onSessionChange, session }:
     const controller = new AbortController(); abortRef.current = controller;
     const resetVersion = resetVersionRef.current;
     const refining = Boolean(session);
-    const assistantMessage = refining
-      ? "Theme updated. You can edit it now or ask for more changes."
-      : "Theme created. You can edit it now or ask for changes.";
     setGenerationError("");
     const userMessage: AIThemeMessage = { content: prompt.trim(), createdAt: new Date().toISOString(), role: "user" };
     try {
       const concept = await generateAIThemeConcept({ history: [...history, userMessage], previous: session?.concept, prompt: prompt.trim() }, controller.signal);
       const candidate = await buildAIThemeCandidate(concept);
+      const assistantMessage = concept.animation
+        ? "4-frame animation created. Drag or resize the sprite, or ask for another change."
+        : refining
+          ? "Theme updated. You can edit it now or ask for more changes."
+          : "Theme created. You can edit it now or ask for changes.";
       if (resetVersionRef.current !== resetVersion) return;
       onApply(candidate);
       onSessionChange({ candidate, concept });
