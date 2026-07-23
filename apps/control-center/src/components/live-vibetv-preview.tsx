@@ -939,6 +939,9 @@ function formatCompactTokens(value: number): string {
 
 const COUNT_UP_PREVIEW_STEPS = 12;
 const COUNT_UP_PREVIEW_TICK_MS = 100;
+const COUNT_UP_PREVIEW_FLICKER_DIM_MS = 110;
+const COUNT_UP_PREVIEW_FLICKER_RESTORE_MS = 210;
+const COUNT_UP_PREVIEW_START_MS = 340;
 
 export function countUpPreviewValue(target: number, step: number): number {
   const safeTarget = Math.max(0, Math.trunc(target));
@@ -961,27 +964,64 @@ function ThemeCountUpText({
   const [step, setStep] = useState(
     animate ? 0 : COUNT_UP_PREVIEW_STEPS,
   );
+  const [phase, setPhase] = useState<"flicker" | "counting">(
+    animate ? "flicker" : "counting",
+  );
+  const [flickerDimmed, setFlickerDimmed] = useState(false);
 
   useEffect(() => {
     if (!animate) {
+      setPhase("counting");
+      setFlickerDimmed(false);
+      setStep(COUNT_UP_PREVIEW_STEPS);
       return;
     }
 
-    let nextStep = 0;
-    const timer = window.setInterval(() => {
-      nextStep += 1;
-      setStep(nextStep);
-      if (nextStep >= COUNT_UP_PREVIEW_STEPS) {
-        window.clearInterval(timer);
+    setPhase("flicker");
+    setFlickerDimmed(false);
+    setStep(0);
+
+    const dimTimer = window.setTimeout(
+      () => setFlickerDimmed(true),
+      COUNT_UP_PREVIEW_FLICKER_DIM_MS,
+    );
+    const restoreTimer = window.setTimeout(
+      () => setFlickerDimmed(false),
+      COUNT_UP_PREVIEW_FLICKER_RESTORE_MS,
+    );
+    let countTimer: number | undefined;
+    const startTimer = window.setTimeout(() => {
+      setPhase("counting");
+      let nextStep = 0;
+      countTimer = window.setInterval(() => {
+        nextStep += 1;
+        setStep(nextStep);
+        if (nextStep >= COUNT_UP_PREVIEW_STEPS) {
+          window.clearInterval(countTimer);
+        }
+      }, COUNT_UP_PREVIEW_TICK_MS);
+    }, COUNT_UP_PREVIEW_START_MS);
+
+    return () => {
+      window.clearTimeout(dimTimer);
+      window.clearTimeout(restoreTimer);
+      window.clearTimeout(startTimer);
+      if (countTimer !== undefined) {
+        window.clearInterval(countTimer);
       }
-    }, COUNT_UP_PREVIEW_TICK_MS);
-    return () => window.clearInterval(timer);
+    };
   }, [animate]);
 
   const value = animate
-    ? countUpPreviewValue(target, step)
+    ? phase === "flicker"
+      ? target
+      : countUpPreviewValue(target, step)
     : countUpPreviewValue(target, COUNT_UP_PREVIEW_STEPS);
-  return numberFormat === "compact" ? formatCompactTokens(value) : String(value);
+  const label =
+    numberFormat === "compact" ? formatCompactTokens(value) : String(value);
+  return (
+    <tspan opacity={animate && flickerDimmed ? 0.2 : 1}>{label}</tspan>
+  );
 }
 
 function tokenBindingValue(binding: string, frame: FrameData): number | null {
