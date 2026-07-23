@@ -310,17 +310,15 @@ type runtimeEndpoint struct {
 	PID    int    `json:"pid"`
 }
 
-func addressHostsVibeTVService(addr string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+const vibeTVServiceProbeTimeout = 12 * time.Second
 
+func addressHostsVibeTVService(addr string) bool {
 	statusURL := url.URL{
 		Scheme: "http",
 		Host:   addr,
 		Path:   "/v1/status",
 	}
-	request, err := http.NewRequestWithContext(
-		ctx,
+	request, err := http.NewRequest(
 		http.MethodGet,
 		statusURL.String(),
 		nil,
@@ -329,7 +327,7 @@ func addressHostsVibeTVService(addr string) bool {
 		return false
 	}
 	client := &http.Client{
-		Timeout: time.Second,
+		Timeout: vibeTVServiceProbeTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -343,12 +341,17 @@ func addressHostsVibeTVService(addr string) bool {
 		return false
 	}
 
-	var status map[string]json.RawMessage
+	var status struct {
+		Companion struct {
+			Status  string `json:"status"`
+			Version string `json:"version"`
+		} `json:"companion"`
+	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&status); err != nil {
 		return false
 	}
-	companion := strings.TrimSpace(string(status["companion"]))
-	return companion != "" && companion != "null" && companion != "{}"
+	return strings.TrimSpace(status.Companion.Status) != "" &&
+		strings.TrimSpace(status.Companion.Version) != ""
 }
 
 func listenCompanionAPI(addr string, allowFallback bool) (net.Listener, error) {

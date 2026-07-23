@@ -89,7 +89,8 @@ func TestParseDaemonCommandOptionsAllowsAPIFallback(t *testing.T) {
 
 func TestListenCompanionAPIFallsBackWithoutStoppingForeignListener(t *testing.T) {
 	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"companion":"unrelated"}`)
 	}))
 	defer foreign.Close()
 	foreignAddr := foreign.Listener.Addr().String()
@@ -116,6 +117,7 @@ func TestListenCompanionAPIRejectsSecondVibeTVService(t *testing.T) {
 			http.NotFound(w, request)
 			return
 		}
+		time.Sleep(1100 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(
 			w,
