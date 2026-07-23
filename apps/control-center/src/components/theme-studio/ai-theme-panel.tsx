@@ -24,10 +24,19 @@ import type { ThemeStudioSpec } from "@/lib/theme-studio";
 
 type CredentialFeedback = { message: string; state: "stored" | "testing" | "verified" | "error" };
 
-export function AIThemePanel({ currentSpec, onApply, onPreviewReady, onSessionChange, session }: {
+function displayMessage(content: string): string {
+  if (content === "Theme draft ready. Review the preview, then apply it.") {
+    return "Theme created. You can edit it now or ask for changes.";
+  }
+  if (content === "Draft refined. Review the updated preview, then apply it.") {
+    return "Theme updated. You can edit it now or ask for more changes.";
+  }
+  return content;
+}
+
+export function AIThemePanel({ currentSpec, onApply, onSessionChange, session }: {
   currentSpec: ThemeStudioSpec;
   onApply: (candidate: AIThemeCandidate) => void;
-  onPreviewReady?: () => void;
   onSessionChange: (session: AIThemeSession | null) => void;
   session: AIThemeSession | null;
 }) {
@@ -108,18 +117,18 @@ export function AIThemePanel({ currentSpec, onApply, onPreviewReady, onSessionCh
     const resetVersion = resetVersionRef.current;
     const refining = Boolean(session);
     const assistantMessage = refining
-      ? "Draft refined. Review the updated preview, then apply it."
-      : "Theme draft ready. Review the preview, then apply it.";
+      ? "Theme updated. You can edit it now or ask for more changes."
+      : "Theme created. You can edit it now or ask for changes.";
     setGenerationError("");
     const userMessage: AIThemeMessage = { content: prompt.trim(), createdAt: new Date().toISOString(), role: "user" };
     try {
       const concept = await generateAIThemeConcept({ history: [...history, userMessage], previous: session?.concept, prompt: prompt.trim() }, controller.signal);
       const candidate = await buildAIThemeCandidate(concept);
       if (resetVersionRef.current !== resetVersion) return;
+      onApply(candidate);
       onSessionChange({ candidate, concept });
       setHistory((value) => [...value, userMessage, { content: assistantMessage, createdAt: new Date().toISOString(), role: "assistant" }]);
       setPrompt("");
-      window.setTimeout(() => onPreviewReady?.(), 0);
     } catch (error) {
       if (resetVersionRef.current !== resetVersion) return;
       setGenerationError(controller.signal.aborted ? "Concept creation cancelled." : error instanceof Error ? error.message : "Concept creation failed.");
@@ -154,8 +163,8 @@ export function AIThemePanel({ currentSpec, onApply, onPreviewReady, onSessionCh
   }
 
   return (
-    <aside className="grid min-h-0 gap-3 rounded-[var(--radius-card)] border bg-card p-4 lg:h-full lg:grid-rows-[auto_auto_minmax(0,1fr)_auto]">
-      <div><h3 className="flex items-center gap-2 font-bold"><Bot className="size-4" />AI Theme Builder</h3><p className="text-xs text-muted-foreground">Create one hardware-ready theme draft, refine it, then apply.</p></div>
+    <aside className="grid min-h-[280px] max-h-[360px] gap-3 rounded-[var(--radius-card)] border bg-card p-4 grid-rows-[auto_auto_minmax(0,1fr)_auto]">
+      <div><h3 className="flex items-center gap-2 font-bold"><Bot className="size-4" />AI Theme Builder</h3><p className="text-xs text-muted-foreground">Create a theme, edit it on the canvas, then ask for more changes.</p></div>
       <div className="grid gap-2">
         {!configured ? (
           <div className="flex gap-2"><Input aria-label="OpenAI key" autoComplete="off" disabled={credentialBusy || generationBusy} onChange={(event) => setAPIKey(event.target.value)} placeholder="OpenAI key" type="password" value={apiKey} /><Button disabled={credentialBusy || generationBusy || !apiKey.trim()} onClick={() => void storeCredential()} size="sm"><KeyRound />{credentialAction === "storing" ? "Storing…" : "Store key"}</Button></div>
@@ -165,16 +174,15 @@ export function AIThemePanel({ currentSpec, onApply, onPreviewReady, onSessionCh
         {credentialFeedback ? <p aria-live="polite" className={`rounded-md border px-3 py-2 text-xs ${credentialFeedback.state === "error" ? "border-destructive/40 text-destructive" : "bg-muted text-foreground"}`}>{credentialFeedback.state === "testing" ? <Spinner className="mr-1 inline" /> : credentialFeedback.state === "verified" ? <Check className="mr-1 inline size-3" /> : null}{credentialFeedback.message}</p> : null}
       </div>
       <div className="min-h-0 space-y-2 overflow-y-auto">
-        {history.slice(-6).map((message, index) => <div className="rounded-md bg-muted p-2 text-xs" key={`${message.createdAt}-${index}`}><strong>{message.role === "user" ? "You" : "AI"}</strong><p>{message.content}</p></div>)}
+        {history.slice(-6).map((message, index) => <div className="rounded-md bg-muted p-2 text-xs" key={`${message.createdAt}-${index}`}><strong>{message.role === "user" ? "You" : "AI"}</strong><p>{displayMessage(message.content)}</p></div>)}
       </div>
       <div className="grid gap-2">
         <Textarea aria-label="AI theme prompt" disabled={generationBusy} maxLength={2000} onChange={(event) => setPrompt(event.target.value)} onKeyDown={submitPromptFromKeyboard} placeholder={session ? "Make the cat larger and the colors warmer…" : "Create a premium synthwave cat theme…"} value={prompt} />
         {generationError ? <p aria-live="polite" className="rounded-md border border-destructive/40 px-3 py-2 text-sm font-medium text-destructive">{generationError}</p> : null}
         <div className="grid gap-2">
           <div className="grid grid-cols-2 gap-2">
-            <Button className={session || generationBusy ? "" : "col-span-2"} disabled={!canCreateOrRefine} onClick={() => void createOrRefineConcept()} size="sm">{generationBusy ? <Spinner /> : <Send />}{generationBusy ? (session ? "Refining…" : "Creating…") : (session ? "Refine draft" : "Create theme draft")}</Button>
+            <Button className={generationBusy ? "" : "col-span-2"} disabled={!canCreateOrRefine} onClick={() => void createOrRefineConcept()} size="sm">{generationBusy ? <Spinner /> : <Send />}{generationBusy ? (session ? "Updating…" : "Creating…") : (session ? "Send change" : "Create theme")}</Button>
             {generationBusy ? <Button onClick={() => abortRef.current?.abort()} size="sm" variant="outline"><X />Cancel</Button> : null}
-            {session && !generationBusy ? <Button onClick={() => { onApply(session.candidate); onSessionChange(null); setGenerationError(""); }} size="sm" variant="secondary"><Check />Apply</Button> : null}
           </div>
           <Button className="w-full" disabled={generationBusy && !session} onClick={startOver} size="sm" variant="outline"><RefreshCw />Start over</Button>
         </div>

@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Download,
   LoaderCircle,
   Redo2,
   Save,
@@ -13,12 +12,10 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function ThemeStudioToolbar({
-  canExport,
   canRedo,
   canSave,
   canSend,
   canUndo,
-  onExport,
   onRedo,
   onSave,
   onSend,
@@ -27,12 +24,10 @@ export function ThemeStudioToolbar({
   sending,
   showSave,
 }: {
-  canExport: boolean;
   canRedo: boolean;
   canSave: boolean;
   canSend: boolean;
   canUndo: boolean;
-  onExport: () => void;
   onRedo: () => void;
   onSave: () => void;
   onSend: () => void;
@@ -55,21 +50,6 @@ export function ThemeStudioToolbar({
         label="Redo"
         onClick={onRedo}
       />
-      <Button
-        disabled={!canExport}
-        onClick={onExport}
-        variant="secondary"
-      >
-        <Download data-icon="inline-start" /> Export ZIP
-      </Button>
-      <Button
-        disabled={!canSend}
-        onClick={onSend}
-        variant="secondary"
-      >
-        {sending ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : <Send data-icon="inline-start" />}
-        {sending ? "Sending" : "Send to VibeTV"}
-      </Button>
       {showSave ? (
         <Button disabled={!canSave} onClick={onSave}>
           {saving ? (
@@ -80,6 +60,14 @@ export function ThemeStudioToolbar({
           {saving ? "Saving" : "Save theme"}
         </Button>
       ) : null}
+      <Button
+        disabled={!canSend}
+        onClick={onSend}
+        variant="secondary"
+      >
+        {sending ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : <Send data-icon="inline-start" />}
+        {sending ? "Sending" : "Send to VibeTV"}
+      </Button>
     </div>
   );
 }

@@ -47,11 +47,13 @@ export function TextField({
 export function NumberField({
   label,
   max,
+  min = 0,
   onChange,
   value,
 }: {
   label: string;
   max?: number;
+  min?: number;
   onChange: (value: number) => void;
   value: number;
 }) {
@@ -62,8 +64,11 @@ export function NumberField({
       <Input
         id={id}
         max={max}
-        min={0}
-        onChange={(event) => onChange(integerOrDefault(event.target.value, 0))}
+        min={min}
+        onChange={(event) => {
+          const next = integerOrDefault(event.target.value, min);
+          onChange(Math.max(min, Math.min(max ?? next, next)));
+        }}
         type="number"
         value={value}
       />

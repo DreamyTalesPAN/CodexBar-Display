@@ -14,17 +14,24 @@ import { LoaderCircle } from "lucide-react";
 export function LeaveEditorDialog({
   onDiscard,
   onKeepEditing,
+  onReturnFocus,
   onSaveAndReturn,
   saving,
 }: {
   onDiscard: () => void;
   onKeepEditing: () => void;
+  onReturnFocus: () => void;
   onSaveAndReturn: () => Promise<void>;
   saving: boolean;
 }) {
   return (
     <Dialog open onOpenChange={(open) => !open && onKeepEditing()}>
-      <DialogContent onCloseAutoFocus={(event) => event.preventDefault()}>
+      <DialogContent
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          onReturnFocus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Save your changes?</DialogTitle>
           <DialogDescription>

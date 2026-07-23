@@ -4384,10 +4384,17 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     await page.getByRole("button", { name: "Save theme" }).isEnabled(),
     "published themes with validated large static sprites should remain saveable",
   );
+  const toolsButton = page.getByRole("button", { name: "Tools" });
+  await toolsButton.click();
+  const themeToolsDialog = page.getByRole("dialog", { name: "Theme tools" });
+  const exportButton = themeToolsDialog.getByRole("button", {
+    name: "Export ZIP",
+  });
   assert(
-    await page.getByRole("button", { name: "Export ZIP" }).isEnabled(),
+    await exportButton.isEnabled(),
     "published themes with validated large static sprites should remain exportable",
   );
+  await themeToolsDialog.getByRole("button", { name: "Close" }).click();
   assert(
     browserRequests.some(
       (url) => new URL(url).pathname === "/theme-packs/render/synthwave.json",
@@ -4416,7 +4423,6 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     "retired AI provider settings should be removed from local storage",
   );
 
-  await page.getByText("Advanced", { exact: true }).click();
   const previewSelection = page.locator('[aria-label^="Select "]').nth(1);
   await previewSelection.click();
   const undoButton = page.getByRole("button", { name: "Undo" });
@@ -4424,31 +4430,34 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     await undoButton.isDisabled(),
     "selecting an element should not create an undo step",
   );
-  await page.getByRole("tab", { name: "Project" }).press("ArrowRight");
+  await page.getByRole("tab", { name: "Layers" }).press("ArrowRight");
   await page.waitForFunction(
     () =>
-      document
-        .getElementById("theme-studio-tab-assets")
-        ?.getAttribute("aria-selected") === "true",
+      Array.from(document.querySelectorAll('[role="tab"]')).some(
+        (tab) =>
+          tab.textContent?.trim() === "Assets" &&
+          tab.getAttribute("aria-selected") === "true",
+      ),
   );
   assert(
     (await page
       .getByRole("tab", { name: "Assets" })
       .getAttribute("aria-selected")) === "true",
-    "ArrowRight should switch the Advanced tab",
+    "ArrowRight should switch the left editor panel",
   );
   assert(
     await undoButton.isDisabled(),
-    "Advanced tab keyboard navigation must not move preview elements",
+    "panel keyboard navigation must not move preview elements",
   );
-  await page.getByRole("tab", { name: "Project" }).click();
+  await page.getByRole("tab", { name: "Theme" }).click();
   await page
     .getByLabel("Name", { exact: true })
     .fill("Synthwave Customer Copy");
   await page.getByLabel("ID", { exact: true }).fill("synthwave-copy");
+  await toolsButton.click();
   const [download] = await Promise.all([
     page.waitForEvent("download"),
-    page.getByRole("button", { name: "Export ZIP" }).click(),
+    exportButton.click(),
   ]);
   assert(
     download.suggestedFilename() === "vibetv-theme-synthwave-copy.zip",
@@ -4469,6 +4478,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     "Theme Studio export should start with the ZIP PK signature",
   );
   await runCommand("unzip", ["-t", downloadPath], { cwd: root });
+  await themeToolsDialog.getByRole("button", { name: "Close" }).click();
   await page.getByRole("button", { name: "Save theme" }).click();
   await page.getByText("Saved to library.", { exact: true }).waitFor({
     timeout: 10_000,
@@ -4502,9 +4512,15 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     "Clippy's validated large static background should remain saveable",
   );
   assert(
-    await page.getByRole("button", { name: "Export ZIP" }).isEnabled(),
+    await toolsButton.isEnabled(),
     "Clippy's validated large static background should remain exportable",
   );
+  await toolsButton.click();
+  assert(
+    await exportButton.isEnabled(),
+    "Clippy's validated large static background should expose an enabled export action",
+  );
+  await themeToolsDialog.getByRole("button", { name: "Close" }).click();
   await page.getByRole("button", { name: "Library", exact: true }).click();
   await page.getByRole("button", { name: "Create Theme" }).click();
   const blankThemeSendButton = page.getByRole("button", {
@@ -4557,7 +4573,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     `Theme Studio must not write directly to a device: ${JSON.stringify(unsafeRequests)}`,
   );
 
-  await page.getByText("Advanced", { exact: true }).click();
+  await page.getByRole("tab", { name: "Theme" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Recovery scratch");
   const closeRecovery = await page.evaluate(() => {
     window.dispatchEvent(new Event("vibetv:native-window-will-close"));
@@ -4624,6 +4640,11 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   await page.getByRole("button", { name: "Library", exact: true }).click();
   await page.getByRole("dialog", { name: "Save your changes?" }).waitFor();
   await page.getByRole("button", { name: "Keep editing", exact: true }).click();
+  await page.waitForFunction(
+    () =>
+      document.activeElement instanceof HTMLButtonElement &&
+      document.activeElement.textContent?.trim() === "Library",
+  );
   assert(
     await page
       .getByRole("button", { name: "Library", exact: true })
@@ -4739,7 +4760,18 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
   await page.goto(localAppUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /^(Themes|Theme Library)$/ }).click();
   await page.getByRole("button", { name: "Create Theme" }).click();
-  await page.getByRole("heading", { name: "AI Theme Builder" }).waitFor();
+  const aiHeading = page.getByRole("heading", { name: "AI Theme Builder" });
+  await aiHeading.waitFor();
+  assert(
+    (await page.getByRole("button", { name: "AI Draft", exact: true }).count()) === 0,
+    "AI chat should be visible without a separate header action",
+  );
+  const aiHeadingBox = await aiHeading.boundingBox();
+  const inspectorBox = await page.getByText("Inspector", { exact: true }).boundingBox();
+  assert(
+    aiHeadingBox && inspectorBox && aiHeadingBox.y < inspectorBox.y,
+    "AI chat should sit above the Inspector in the right column",
+  );
   const originalName = await page.locator("[data-theme-studio-root] h3").first().textContent();
   const keyInput = page.getByLabel("OpenAI key");
   await keyInput.fill("sk-playwright-temporary-key-123456789");
@@ -4769,7 +4801,7 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
 
   const prompt = page.getByLabel("AI theme prompt");
   await prompt.fill("Create a neon usage theme");
-  const create = page.getByRole("button", { name: "Create theme draft", exact: true });
+  const create = page.getByRole("button", { name: "Create theme", exact: true });
   await create.evaluate((button) => {
     button.click();
     button.click();
@@ -4777,95 +4809,99 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
   const creating = page.locator('button:has-text("Creating…")').first();
   await creating.waitFor();
   assert(await creating.isDisabled(), "generation should become busy immediately");
-  await page.getByText("Theme draft ready. Review the preview, then apply it.").waitFor();
-  assert((await prompt.inputValue()) === "", "successful AI draft creation should clear the prompt input");
+  assert(conceptRequests.length === 1, "double-clicking Create theme must start only one request");
+  await page.getByRole("heading", { name: "Moon Cat" }).waitFor();
+  await page.getByText("Theme created. You can edit it now or ask for changes.").waitFor();
+  const editablePreview = page.getByLabel("Editable 240x240 preview");
+  await editablePreview.waitFor();
   assert(
-    (await page.getByText("Draft creation started. Preparing preview…", { exact: true }).count()) === 0,
-    "busy state should stay in the Create button instead of a duplicate status box",
+    (await page.getByLabel("AI candidate theme preview").count()) === 0,
+    "AI generation should not create an isolated preview stage",
   );
-  assert(conceptRequests.length === 1, "double-clicking Create theme draft must start only one request");
+  assert(
+    (await editablePreview.locator('[aria-label^="Select "]').count()) > 0,
+    "generated AI layers should be editable immediately",
+  );
+  assert((await prompt.inputValue()) === "", "successful AI draft creation should clear the prompt input");
+  const undo = page.getByRole("button", { name: "Undo" });
+  const redo = page.getByRole("button", { name: "Redo" });
+  assert(await undo.isEnabled(), "creating an AI theme should add one undo step");
+  await undo.click();
   assert(
     (await page.locator("[data-theme-studio-root] h3").first().textContent()) === originalName,
-    "AI candidate must remain isolated before Apply",
+    "one Undo should restore the document from before AI generation",
   );
-  await page.getByText("AI Theme Draft – not applied", { exact: true }).waitFor();
-  const candidatePreview = page.getByLabel("AI candidate theme preview");
-  await candidatePreview.getByLabel(/Rendered VibeTV theme ai-moon-cat/).waitFor();
-  assert(
-    (await candidatePreview.getByText("CAT MODE", { exact: true }).count()) === 0,
-    "AI draft should not overlay the generated art with the blueprint title",
-  );
-  await candidatePreview.getByText("SESSION", { exact: true }).waitFor();
-  await candidatePreview.getByText("WEEKLY", { exact: true }).waitFor();
-  assert((await candidatePreview.getByText("REMAINING", { exact: true }).count()) === 2, "screenmaster must show Remaining for both periods");
-  assert(!(await candidatePreview.textContent()).includes("{"), "rendered screenmaster must not expose template brackets");
-  assert(
-    (await candidatePreview.getByLabel("Editable 240x240 preview").count()) === 0,
-    "candidate preview must not expose editable overlays",
-  );
-  assert((await page.getByRole("button", { name: "Build theme", exact: true }).count()) === 0, "AI draft should not need a separate Build theme step");
-  await prompt.fill("Make the moon larger");
-  await page.getByRole("button", { name: "Refine draft", exact: true }).click();
-  await page.getByText("Draft refined. Review the updated preview, then apply it.").waitFor();
-  assert(conceptRequests.at(-1)?.previous?.imageBase64 === conceptPNG, "Refine must send the previous concept image only for the edit request");
-  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  assert(await undo.isDisabled(), "AI generation should add exactly one undo step");
+  await redo.click();
   await page.getByRole("heading", { name: "Moon Cat" }).waitFor();
+  const generatedSprite = editablePreview.getByLabel("Select sprite 1");
+  await generatedSprite.click();
+  const spriteBox = await generatedSprite.boundingBox();
+  assert(spriteBox, "generated sprite should expose a canvas drag target");
+  await page.mouse.move(
+    spriteBox.x + spriteBox.width / 2,
+    spriteBox.y + spriteBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    spriteBox.x + spriteBox.width / 2,
+    spriteBox.y + spriteBox.height / 2 + 20,
+    { steps: 4 },
+  );
+  await page.mouse.up();
+  assert(
+    Number(await page.getByLabel("Y", { exact: true }).inputValue()) > 0,
+    "generated image layers should move by dragging on the canvas",
+  );
+  await page.getByLabel("X", { exact: true }).fill("999");
+  assert(
+    (await page.getByLabel("X", { exact: true }).inputValue()) === "0",
+    "geometry inputs should clamp values that would move a layer outside 240x240",
+  );
+  assert(
+    (await page.getByText(/must stay inside 240x240/).count()) === 0,
+    "clamped geometry inputs should not create an avoidable validation error",
+  );
+
+  await prompt.fill("Make the moon larger");
+  await page.getByRole("button", { name: "Send change", exact: true }).click();
+  await page.getByText("Theme updated. You can edit it now or ask for more changes.").waitFor();
+  assert(conceptRequests.at(-1)?.previous?.imageBase64 === conceptPNG, "Refine must send the previous concept image only for the edit request");
   await page.waitForTimeout(400);
   assert(
     !(await page.evaluate(() => Object.values(window.localStorage).some((entry) => String(entry).includes("CBI1")))),
     "AI screenmaster image data must never be written to localStorage",
   );
   assert(
-    (await page.getByText("AI Theme Draft – not applied", { exact: true }).count()) === 0,
-    "Apply should restore the editable preview",
+    (await page.getByRole("button", { name: "Apply", exact: true }).count()) === 0,
+    "AI updates should not require a separate Apply action",
   );
-  const undo = page.getByRole("button", { name: "Undo" });
-  assert(await undo.isEnabled(), "Apply should create one undo step");
-  await undo.click();
-  assert(
-    (await page.locator("[data-theme-studio-root] h3").first().textContent()) === originalName,
-    "one Undo should restore the document from before Apply",
-  );
-  assert(await undo.isDisabled(), "Apply should add exactly one undo step");
 
-  await prompt.fill("Create another isolated cat concept");
-  await prompt.press("Enter");
-  await page.getByText("Theme draft ready. Review the preview, then apply it.").waitFor();
   const nameBeforeStartOver = await page.locator("[data-theme-studio-root] h3").first().textContent();
   await page.getByRole("button", { name: "Start over", exact: true }).click();
   await page.getByLabel("Editable 240x240 preview").waitFor();
   assert(
     (await page.locator("[data-theme-studio-root] h3").first().textContent()) === nameBeforeStartOver,
-    "Start over must not change the editor document",
+    "Start over must clear the chat without changing the editable document",
   );
   assert(
-    (await page.getByText("AI Theme Draft – not applied", { exact: true }).count()) === 0,
-    "Start over should restore the normal preview",
-  );
-  assert(
-    (await page.getByText("Create another isolated cat concept", { exact: true }).count()) === 0,
+    (await page.getByText("Make the moon larger", { exact: true }).count()) === 0,
     "Start over should remove old prompt history from the panel",
-  );
-  assert(
-    (await page.evaluate(() => Object.values(window.localStorage).some((entry) => String(entry).includes("Create another isolated cat concept")))) === false,
-    "Start over should remove old prompt history from localStorage",
   );
 
   await page.setViewportSize({ width: 800, height: 900 });
-  await page.getByRole("button", { name: "AI Theme", exact: true }).click();
-  const aiSheet = page.getByRole("dialog");
-  await aiSheet.getByText("Key stored securely. Test it before creating a concept.").waitFor();
-  await aiSheet.getByLabel("AI theme prompt").fill("Create a compact mobile theme");
-  await aiSheet.getByRole("button", { name: "Create theme draft", exact: true }).click();
-  await aiSheet.waitFor({ state: "detached" });
-  await page.getByText("AI Theme Draft – not applied", { exact: true }).waitFor();
-  await page.getByLabel("AI candidate theme preview").waitFor();
-  await page.getByRole("button", { name: "AI Theme", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Start over", exact: true }).click();
   assert(
-    (await page.getByText("AI Theme Draft – not applied", { exact: true }).count()) === 0,
-    "mobile Sheet should keep and reset the shared candidate consistently",
+    (await page.getByRole("button", { name: "AI Draft", exact: true }).count()) === 0,
+    "mobile layout should not add a separate AI action",
   );
+  await page.getByRole("button", { name: "Properties", exact: true }).click();
+  const aiSheet = page.getByRole("dialog", { name: "Inspector" });
+  await aiSheet.getByRole("heading", { name: "AI Theme Builder" }).waitFor();
+  await aiSheet.getByLabel("AI theme prompt").fill("Create a compact mobile theme");
+  await aiSheet.getByRole("button", { name: "Create theme", exact: true }).click();
+  await aiSheet.getByText("Theme created. You can edit it now or ask for changes.").waitFor();
+  await aiSheet.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByLabel("Editable 240x240 preview").waitFor();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.close();

@@ -4,7 +4,11 @@ import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ThemeStudioPrimitive } from "@/lib/theme-studio";
 import { ColorField, NumberField, SelectField, TextField } from "./editor-fields";
-import { primitiveBounds, type FieldKey } from "./editor-geometry";
+import {
+  DISPLAY_SIZE,
+  primitiveBounds,
+  type FieldKey,
+} from "./editor-geometry";
 
 const DEFAULT_SPRITE_FPS = 8;
 
@@ -29,16 +33,34 @@ export function PrimitiveInspector({
   primitive: ThemeStudioPrimitive;
 }) {
   const bounds = primitiveBounds(primitive);
+  const maxX = Math.max(0, DISPLAY_SIZE - bounds.width);
+  const maxY = Math.max(0, DISPLAY_SIZE - bounds.height);
+  const maxWidth = Math.max(1, DISPLAY_SIZE - primitive.x);
+  const maxHeight = Math.max(1, DISPLAY_SIZE - primitive.y);
+  const maxEditableWidth =
+    primitive.type === "gif"
+      ? Math.min(80, maxWidth)
+      : primitive.type === "pixels"
+        ? Math.min(maxWidth, Math.floor(1024 / Math.max(1, bounds.height)))
+        : maxWidth;
+  const maxEditableHeight =
+    primitive.type === "gif"
+      ? Math.min(80, maxHeight)
+      : primitive.type === "pixels"
+        ? Math.min(maxHeight, Math.floor(1024 / Math.max(1, bounds.width)))
+        : maxHeight;
   return (
     <div className="grid gap-3">
       <div className="grid grid-cols-2 gap-2">
         <NumberField
           label="X"
+          max={maxX}
           value={primitive.x}
           onChange={(value) => onChange("x", value)}
         />
         <NumberField
           label="Y"
+          max={maxY}
           value={primitive.y}
           onChange={(value) => onChange("y", value)}
         />
@@ -53,11 +75,15 @@ export function PrimitiveInspector({
         <div className="grid grid-cols-2 gap-2">
           <NumberField
             label="Width"
+            max={maxEditableWidth}
+            min={1}
             value={primitive.type === "text" ? bounds.width : primitive.width ?? bounds.width}
             onChange={(value) => onChange("width", value)}
           />
           <NumberField
             label="Height"
+            max={maxEditableHeight}
+            min={1}
             value={primitive.height ?? bounds.height}
             onChange={(value) => onChange("height", value)}
           />
@@ -99,6 +125,8 @@ export function PrimitiveInspector({
           <div className="grid grid-cols-2 gap-2">
             <NumberField
               label="Font size"
+              max={30}
+              min={1}
               value={primitive.fontSize ?? 2}
               onChange={(value) => onChange("fontSize", value)}
             />
@@ -168,6 +196,8 @@ export function PrimitiveInspector({
             <div className="grid grid-cols-2 gap-2">
               <NumberField
                 label="Segments"
+                max={32}
+                min={1}
                 value={primitive.segments ?? 12}
                 onChange={(value) => onChange("segments", value)}
               />
@@ -230,16 +260,21 @@ export function PrimitiveInspector({
         <div className="grid grid-cols-3 gap-2">
           <NumberField
             label="Frames"
+            max={32}
+            min={1}
             value={primitive.frameCount ?? 1}
             onChange={(value) => onChange("frameCount", value)}
           />
           <NumberField
             label="FPS"
+            max={30}
             value={primitive.fps ?? DEFAULT_SPRITE_FPS}
             onChange={(value) => onChange("fps", value)}
           />
           <NumberField
             label="Columns"
+            max={primitive.frameCount ?? 1}
+            min={1}
             value={primitive.sheetColumns ?? primitive.frameCount ?? 1}
             onChange={(value) => onChange("sheetColumns", value)}
           />

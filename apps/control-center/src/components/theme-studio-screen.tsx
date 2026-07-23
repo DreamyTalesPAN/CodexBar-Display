@@ -7,6 +7,7 @@ import {
   ArrowUp,
   CheckCircle2,
   Code2,
+  Download,
   FileUp,
   Film,
   ImagePlus,
@@ -14,7 +15,7 @@ import {
   Palette,
   RefreshCw,
   Send,
-  Sparkles,
+  Settings2,
   Square,
   Type,
 } from "lucide-react";
@@ -31,9 +32,7 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import {
   Empty,
@@ -60,6 +59,12 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
@@ -103,14 +108,9 @@ import {
   themeStudioEditorReducer,
   type ThemeStudioDocument,
 } from "./theme-studio/theme-studio-editor-state";
-import {
-  AdvancedPanel,
-  type ThemeStudioAdvancedTab,
-} from "./theme-studio/advanced-panel";
 import { ColorField, TextField } from "./theme-studio/editor-fields";
 import {
   StatusLine,
-  StatusPill,
   type EditorStatus,
 } from "./theme-studio/editor-status";
 import { LeaveEditorDialog } from "./theme-studio/leave-editor-dialog";
@@ -240,8 +240,6 @@ export function ThemeStudioScreen({
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
-  const [advancedTab, setAdvancedTab] =
-    useState<ThemeStudioAdvancedTab>("project");
   const [jsonStatus, setJsonStatus] = useState<EditorStatus>({
     tone: "unknown",
     message: "Draft ready.",
@@ -264,10 +262,7 @@ export function ThemeStudioScreen({
       : null,
   );
   const [aiThemeAvailable, setAIThemeAvailable] = useState(false);
-  const [aiThemeSheetOpen, setAIThemeSheetOpen] = useState(false);
-  const [mobileAIThemeSheetOpen, setMobileAIThemeSheetOpen] = useState(false);
   const [aiThemeSession, setAIThemeSession] = useState<AIThemeSession | null>(null);
-  const aiThemeCandidate = aiThemeSession?.candidate || null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -306,19 +301,6 @@ export function ThemeStudioScreen({
     }),
     [assets, packName, spec],
   );
-  const candidatePreviewPack = useMemo<ThemeRenderPack | null>(
-    () =>
-      aiThemeCandidate
-        ? {
-            assets: aiThemeCandidate.assets,
-            name: aiThemeCandidate.packName,
-            ok: true,
-            spec: aiThemeCandidate.spec,
-            themeId: aiThemeCandidate.spec.themeId,
-          }
-        : null,
-    [aiThemeCandidate],
-  );
   const referencedAssets = useMemo(() => referencedThemeAssetPaths(spec), [spec]);
 
   useEffect(() => {
@@ -355,12 +337,14 @@ export function ThemeStudioScreen({
 
   function replaceLoadedTheme({
     assets: nextAssets,
+    clearAIThemeSession = true,
     markSaved = false,
     packName: nextPackName,
     spec: nextSpec,
     status,
   }: {
     assets?: Record<string, ThemeStudioAsset>;
+    clearAIThemeSession?: boolean;
     markSaved?: boolean;
     packName: string;
     spec: ThemeStudioSpec;
@@ -376,7 +360,9 @@ export function ThemeStudioScreen({
       type: markSaved ? "load" : "update",
     });
     setSelectedIndices(normalized.primitives.length > 0 ? [0] : []);
-    setAIThemeSession(null);
+    if (clearAIThemeSession) {
+      setAIThemeSession(null);
+    }
     setJsonText(prettyJson(normalized));
     setJsonDirty(false);
     if (status) {
@@ -388,26 +374,17 @@ export function ThemeStudioScreen({
     });
   }
 
-  function applyAIThemeCandidate(nextCandidate: AIThemeCandidate) {
+  function applyGeneratedAITheme(nextCandidate: AIThemeCandidate) {
     replaceLoadedTheme({
       assets: nextCandidate.assets,
+      clearAIThemeSession: false,
       packName: nextCandidate.packName,
       spec: nextCandidate.spec,
       status: {
         tone: "ready",
-        message: "AI candidate applied as one undo step.",
+        message: "AI theme added to the editable canvas.",
       },
     });
-  }
-
-  function revealAIThemePreview() {
-    setAIThemeSheetOpen(false);
-    setMobileAIThemeSheetOpen(false);
-    window.setTimeout(() => {
-      document
-        .querySelector("[data-ai-candidate-preview]")
-        ?.scrollIntoView({ block: "center", behavior: "smooth" });
-    }, 0);
   }
 
   const updateDocument = useCallback(
@@ -541,9 +518,6 @@ export function ThemeStudioScreen({
 
   function keepEditing() {
     setLeaveDialogOpen(false);
-    window.setTimeout(() => {
-      libraryButtonRef.current?.querySelector("button")?.focus();
-    }, 0);
   }
 
   function selectPrimitiveIndex(index: number, additive = false) {
@@ -1073,7 +1047,6 @@ export function ThemeStudioScreen({
         tone: "attention",
         message: deviceValidation.errors[0],
       });
-      setAdvancedTab("device");
       return;
     }
 
@@ -1133,105 +1106,190 @@ export function ThemeStudioScreen({
     >
       <h2 className="sr-only">Theme Studio</h2>
       <section className="grid gap-4 py-4 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)]">
-        <header className="grid gap-4 border-b pb-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <div className="min-w-0">
-            <div className="grid justify-items-start gap-3">
-              {onBackToLibrary ? (
-                <div ref={libraryButtonRef}>
-                  <Button onClick={requestBackToLibrary} type="button" variant="outline">
-                    <ArrowLeft data-icon="inline-start" aria-hidden />
-                    <span>Library</span>
-                  </Button>
-                </div>
-              ) : null}
-              <h3 className="truncate text-3xl font-black leading-tight text-foreground">
+        <header className="flex flex-wrap items-center gap-3 border-b pb-3">
+          <div className="flex w-full min-w-0 flex-1 items-center gap-3 lg:w-auto">
+            {onBackToLibrary ? (
+              <div ref={libraryButtonRef}>
+                <Button
+                  onClick={requestBackToLibrary}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <ArrowLeft data-icon="inline-start" aria-hidden />
+                  <span>Library</span>
+                </Button>
+              </div>
+            ) : null}
+            <div className="min-w-0">
+              <h3 className="truncate text-xl font-black leading-tight text-foreground">
                 {packName || "Untitled theme"}
               </h3>
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <StatusPill
-                  icon={
-                    validationOk ? (
-                      <CheckCircle2 size={14} aria-hidden />
-                    ) : (
-                      <AlertTriangle size={14} aria-hidden />
-                    )
-                  }
-                  label={validationOk ? "Valid" : "Fix"}
-                  tone={validationOk ? "ready" : "attention"}
-                />
-                <StatusPill
-                  label={`${validation.bytes} B`}
-                  tone={validation.bytes > 4096 ? "attention" : "neutral"}
-                />
-                <StatusPill
-                  label={`${validation.primitiveCount} elements`}
-                  tone={validation.primitiveCount > 32 ? "attention" : "neutral"}
-                />
-                <StatusPill
-                  label={`${assetCount} ${assetCount === 1 ? "asset" : "assets"}`}
-                  tone={assetCount > 0 ? "warn" : "neutral"}
-                />
-                <StatusPill
-                  label={dirty ? "Unsaved changes" : "Saved"}
-                  tone={dirty ? "warn" : "ready"}
-                />
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 font-semibold",
+                    validationOk ? "text-foreground" : "text-destructive",
+                  )}
+                >
+                  {validationOk ? (
+                    <CheckCircle2 size={12} aria-hidden />
+                  ) : (
+                    <AlertTriangle size={12} aria-hidden />
+                  )}
+                  {validationOk ? "Valid" : "Needs attention"}
+                </span>
+                <span aria-hidden>·</span>
+                <span>{validation.bytes} B</span>
+                <span aria-hidden>·</span>
+                <span>
+                  {validation.primitiveCount}{" "}
+                  {validation.primitiveCount === 1 ? "layer" : "layers"}
+                </span>
+                <span aria-hidden>·</span>
+                <span>
+                  {assetCount} {assetCount === 1 ? "asset" : "assets"}
+                </span>
+                <span aria-hidden>·</span>
+                <span className={dirty ? "font-semibold text-foreground" : ""}>
+                  {dirty ? "Unsaved changes" : "Saved"}
+                </span>
               </div>
             </div>
           </div>
 
-          <ThemeStudioToolbar
-            canExport={validation.errors.length === 0}
-            canRedo={editorState.future.length > 0}
-            canSave={
-              validation.errors.length === 0 && !saveBlockedReason
-            }
-            canSend={
-              !dirty &&
-              validation.errors.length === 0 &&
-              (deviceValidation?.errors.length || 0) === 0
-            }
-            canUndo={editorState.past.length > 0}
-            onExport={exportThemePack}
-            onRedo={() => dispatchEditor({ type: "redo" })}
-            onSave={() => void saveThemeToLibrary()}
-            onSend={() => void sendTheme()}
-            onUndo={() => dispatchEditor({ type: "undo" })}
-            saving={saving}
-            sending={sending}
-            showSave={Boolean(onSaveToLibrary)}
-          />
-          {aiThemeAvailable ? (
-            <div className="hidden lg:block 2xl:hidden">
-              <Sheet onOpenChange={setAIThemeSheetOpen} open={aiThemeSheetOpen}>
-                <SheetTrigger asChild>
-                  <Button type="button" variant="outline">
-                    <Sparkles data-icon="inline-start" aria-hidden />
-                    AI Theme
-                  </Button>
-                </SheetTrigger>
-                <SheetContent
-                  className="w-[380px] overflow-y-auto sm:max-w-[380px]"
-                  side="right"
-                >
-                  <SheetHeader>
-                    <SheetTitle>AI Theme Builder</SheetTitle>
-                    <SheetDescription>Create or improve an isolated candidate.</SheetDescription>
-                  </SheetHeader>
-                  <div className="p-4">
-                    <AIThemePanel
-                      currentSpec={spec}
-                      key={`sheet-${spec.themeId}`}
-                      onApply={applyAIThemeCandidate}
-                      onPreviewReady={revealAIThemePreview}
-                      onSessionChange={setAIThemeSession}
-                      session={aiThemeSession}
+          <div className="flex w-full flex-wrap items-center justify-end gap-2 lg:w-auto">
+            <ThemeStudioToolbar
+              canRedo={editorState.future.length > 0}
+              canSave={
+                validation.errors.length === 0 && !saveBlockedReason
+              }
+              canSend={
+                !dirty &&
+                validation.errors.length === 0 &&
+                (deviceValidation?.errors.length || 0) === 0
+              }
+              canUndo={editorState.past.length > 0}
+              onRedo={() => dispatchEditor({ type: "redo" })}
+              onSave={() => void saveThemeToLibrary()}
+              onSend={() => void sendTheme()}
+              onUndo={() => dispatchEditor({ type: "undo" })}
+              saving={saving}
+              sending={sending}
+              showSave={Boolean(onSaveToLibrary)}
+            />
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button type="button" variant="outline">
+                  <Settings2 data-icon="inline-start" aria-hidden />
+                  Tools
+                </Button>
+              </SheetTrigger>
+              <SheetContent
+                className="w-[440px] overflow-y-auto sm:max-w-[440px]"
+                side="right"
+              >
+                <SheetHeader>
+                  <SheetTitle>Theme tools</SheetTitle>
+                  <SheetDescription>
+                    Export, device readiness, and developer JSON.
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="grid gap-6 px-4 pb-6">
+                  <section className="grid gap-3">
+                    <PanelTitle
+                      icon={<Download size={16} aria-hidden />}
+                      title="Export"
                     />
-                  </div>
-                </SheetContent>
-              </Sheet>
-            </div>
-          ) : null}
-          <div className="grid grid-cols-2 gap-2 lg:hidden">
+                    <Button
+                      disabled={validation.errors.length > 0}
+                      onClick={exportThemePack}
+                      type="button"
+                      variant="outline"
+                    >
+                      <Download data-icon="inline-start" aria-hidden />
+                      Export ZIP
+                    </Button>
+                  </section>
+                  <section className="grid gap-3 border-t pt-5">
+                    <PanelTitle
+                      icon={<Send size={16} aria-hidden />}
+                      title="VibeTV readiness"
+                    />
+                    <StatusLine
+                      detail={
+                        deviceValidation?.errors[0] ||
+                        deviceValidation?.warnings[0] ||
+                        deviceStatus.message
+                      }
+                      icon={<Send size={16} aria-hidden />}
+                      title="Device"
+                      tone={
+                        deviceValidation?.errors.length
+                          ? "attention"
+                          : deviceStatus.tone
+                      }
+                    />
+                  </section>
+                  <section className="grid gap-3 border-t pt-5">
+                    <PanelTitle
+                      icon={<Code2 size={16} aria-hidden />}
+                      title="Developer JSON"
+                    />
+                    <Textarea
+                      aria-label="Theme JSON"
+                      className="min-h-[280px] resize-y font-mono text-xs leading-5"
+                      onChange={(event) => {
+                        setJsonText(event.target.value);
+                        setJsonDirty(true);
+                        setJsonStatus({
+                          tone: "unknown",
+                          message: "JSON has local edits.",
+                        });
+                      }}
+                      spellCheck={false}
+                      value={jsonText || prettyJson(spec)}
+                    />
+                    {jsonDirty || showJsonStatus ? (
+                      <StatusLine
+                        detail={jsonStatus.message}
+                        icon={<Code2 size={16} aria-hidden />}
+                        title="JSON"
+                        tone={jsonStatus.tone}
+                      />
+                    ) : null}
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        onClick={applyJson}
+                        type="button"
+                        variant="outline"
+                      >
+                        <Code2 data-icon="inline-start" aria-hidden />
+                        Apply
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          setJsonText(prettyJson(spec));
+                          setJsonDirty(false);
+                          setJsonStatus({
+                            tone: "ready",
+                            message: "JSON reset.",
+                          });
+                        }}
+                        type="button"
+                        variant="outline"
+                      >
+                        <RefreshCw data-icon="inline-start" aria-hidden />
+                        Reset
+                      </Button>
+                    </div>
+                  </section>
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
+
+          <div className="grid w-full grid-cols-2 gap-2 lg:hidden">
             <Sheet>
               <SheetTrigger asChild>
                 <Button variant="outline"><LayoutGrid data-icon="inline-start" />Layers & assets</Button>
@@ -1278,6 +1336,14 @@ export function ThemeStudioScreen({
                   <SheetDescription>Adjust the selected element and project settings.</SheetDescription>
                 </SheetHeader>
                 <div className="grid gap-6 px-4 pb-6">
+                  {aiThemeAvailable ? (
+                    <AIThemePanel
+                      currentSpec={spec}
+                      onApply={applyGeneratedAITheme}
+                      onSessionChange={setAIThemeSession}
+                      session={aiThemeSession}
+                    />
+                  ) : null}
                   {selectedPrimitive ? (
                     <PrimitiveInspector
                       key={`mobile-${selectedPrimitive.type}-${selectedIndex}`}
@@ -1301,351 +1367,211 @@ export function ThemeStudioScreen({
                 </div>
               </SheetContent>
             </Sheet>
-            {aiThemeAvailable ? (
-              <Sheet onOpenChange={setMobileAIThemeSheetOpen} open={mobileAIThemeSheetOpen}>
-                <SheetTrigger asChild>
-                  <Button className="col-span-2" variant="outline">
-                    <Sparkles data-icon="inline-start" />AI Theme
-                  </Button>
-                </SheetTrigger>
-                <SheetContent className="overflow-y-auto" side="right">
-                  <SheetHeader>
-                    <SheetTitle>AI Theme Builder</SheetTitle>
-                    <SheetDescription>Create or improve an isolated candidate.</SheetDescription>
-                  </SheetHeader>
-                  <div className="p-4">
-                    <AIThemePanel
-                      currentSpec={spec}
-                      key={`mobile-ai-${spec.themeId}`}
-                      onApply={applyAIThemeCandidate}
-                      onPreviewReady={revealAIThemePreview}
-                      onSessionChange={setAIThemeSession}
-                      session={aiThemeSession}
-                    />
-                  </div>
-                </SheetContent>
-              </Sheet>
-            ) : null}
           </div>
         </header>
 
-        <section className="grid min-h-0 items-start gap-4 lg:h-full lg:grid-cols-[240px_minmax(360px,1fr)_300px] lg:overflow-hidden 2xl:grid-cols-[260px_minmax(460px,1fr)_300px_340px]">
+        <section className="grid min-h-0 items-start gap-4 lg:h-full lg:grid-cols-[260px_minmax(420px,1fr)_320px] lg:overflow-hidden">
           <aside className="order-2 hidden lg:order-1 lg:block lg:h-full lg:min-h-0">
-            <Card className="h-full min-h-0" size="sm">
-              <CardHeader>
-                <CardTitle>Layers</CardTitle>
-                <CardDescription>Add and arrange elements.</CardDescription>
-              </CardHeader>
-              <CardContent className="min-h-0 flex-1">
-                <ScrollArea className="h-full">
-                  <div className="flex flex-col gap-4 pr-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <AddButton
-                    icon={Type}
-                    label="Text"
-                    onClick={() => addPrimitive("text")}
-                  />
-                  <AddButton
-                    icon={LayoutGrid}
-                    label="Bar"
-                    onClick={() => addPrimitive("progress")}
-                  />
-                  <AddButton
-                    icon={Square}
-                    label="Rect"
-                    onClick={() => addPrimitive("rect")}
-                  />
-                  <AddButton
-                    icon={Film}
-                    label="GIF"
-                    onClick={() => gifInputRef.current?.click()}
-                  />
-                  <AddButton
-                    icon={ImagePlus}
-                    label="Sprite"
-                    onClick={() => spriteInputRef.current?.click()}
-                  />
-                </div>
-
-                <ItemGroup>
-                    {spec.primitives.map((primitive, index) => {
-                      const selected = visibleSelectedIndices.includes(index);
-
-                      return (
-                        <Item
-                          asChild
-                          key={`${primitive.type}-${index}`}
-                          size="sm"
-                          variant={selected ? "muted" : "outline"}
-                        >
-                          <button
-                            aria-pressed={selected}
-                            onClick={(event) =>
-                              selectPrimitiveIndex(
-                                index,
-                                event.shiftKey ||
-                                  event.metaKey ||
-                                  event.ctrlKey,
-                              )
-                            }
-                            type="button"
-                          >
-                            <ItemContent className="min-w-0">
-                              <ItemTitle>{primitiveTypeLabel(primitive)}</ItemTitle>
-                              <ItemDescription className="truncate">
-                                {primitiveTitle(primitive)}
-                              </ItemDescription>
-                            </ItemContent>
-                            <ItemActions>
-                              <Badge variant={selected ? "default" : "outline"}>
-                                {index + 1}
-                              </Badge>
-                            </ItemActions>
-                          </button>
-                        </Item>
-                      );
-                    })}
-                </ItemGroup>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    aria-label="Bring selected layers forward"
-                    disabled={visibleSelectedIndices.length === 0}
-                    onClick={() => reorderSelectedPrimitives("forward")}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <ArrowUp data-icon="inline-start" aria-hidden />
-                    <span>Forward</span>
-                  </Button>
-                  <Button
-                    aria-label="Send selected layers backward"
-                    disabled={visibleSelectedIndices.length === 0}
-                    onClick={() => reorderSelectedPrimitives("backward")}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <ArrowDown data-icon="inline-start" aria-hidden />
-                    <span>Backward</span>
-                  </Button>
-                </div>
-
-                <AdvancedPanel
-              activeTab={advancedTab}
-              onTabChange={setAdvancedTab}
-              panels={{
-                project: (
-                <section
-                  aria-labelledby="theme-studio-tab-project"
-                  className="grid gap-3"
-                  id="theme-studio-panel-project"
-                  role="tabpanel"
-                >
-                  <TextField label="Name" value={packName} onChange={setPackName} />
-                  <TextField
-                    label="ID"
-                    value={spec.themeId}
-                    onChange={(value) =>
-                      updateSpec((draft) => {
-                        draft.themeId = value;
-                      })
-                    }
-                  />
-                  <ColorField
-                    label="Background"
-                    value={spec.bgColor || COLOR_FALLBACK}
-                    onChange={(value) =>
-                      updateSpec((draft) => {
-                        Object.assign(
-                          draft,
-                          updateThemeColors(draft, { background: value }),
-                        );
-                      })
-                    }
-                  />
-                  <Button
-                    className="w-full"
-                    disabled={loadingPreset}
-                    onClick={() => void loadBuiltInTheme("mini-classic")}
-                    type="button"
-                    variant="outline"
-                  >
-                    {loadingPreset ? (
-                      <Spinner data-icon="inline-start" />
-                    ) : (
-                      <RefreshCw data-icon="inline-start" aria-hidden />
-                    )}
-                    <span>{loadingPreset ? "Loading" : "Mini theme"}</span>
-                  </Button>
-                  <Button
-                    className="w-full"
-                    onClick={() => fileInputRef.current?.click()}
-                    type="button"
-                    variant="outline"
-                  >
-                    <FileUp data-icon="inline-start" aria-hidden />
-                    <span>Import theme JSON</span>
-                  </Button>
-                </section>
-                ),
-
-                assets: (
-                <section
-                  aria-labelledby="theme-studio-tab-assets"
-                  className="grid min-w-0 gap-2"
-                  id="theme-studio-panel-assets"
-                  role="tabpanel"
-                >
-                  <div className="grid min-w-0 gap-2">
-                    <Button
-                      className="min-w-0 w-full justify-start"
-                      onClick={() => gifInputRef.current?.click()}
-                      type="button"
-                      variant="outline"
-                    >
-                      <Film data-icon="inline-start" aria-hidden />
-                      <span>Upload GIF</span>
-                    </Button>
-                    <Button
-                      className="min-w-0 w-full justify-start"
-                      onClick={() => spriteInputRef.current?.click()}
-                      type="button"
-                      variant="outline"
-                    >
+            <Card className="h-full min-h-0 gap-0" size="sm">
+              <Tabs className="h-full min-h-0 gap-0" defaultValue="layers">
+                <CardHeader className="border-b pb-3">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="layers">
+                      <LayoutGrid data-icon="inline-start" aria-hidden />
+                      Layers
+                    </TabsTrigger>
+                    <TabsTrigger value="assets">
                       <ImagePlus data-icon="inline-start" aria-hidden />
-                      <span>Upload sprite</span>
-                    </Button>
-                  </div>
-                  {Object.entries(assets).length > 0 ? (
-                    Object.entries(assets).map(([assetPath, asset]) => (
-                      <AssetRow
-                        asset={asset}
-                        key={assetPath}
-                        path={assetPath}
-                        referenced={referencedAssets.includes(assetPath)}
-                        onRemove={() => removeAsset(assetPath)}
-                        onUse={() => assignAssetPath(assetPath)}
-                      />
-                    ))
-                  ) : (
-                    <Empty className="gap-2 border bg-muted/30 p-4">
-                      <EmptyHeader className="gap-1">
-                        <EmptyMedia variant="icon">
-                          <FileUp aria-hidden />
-                        </EmptyMedia>
-                        <EmptyTitle>No custom assets</EmptyTitle>
-                        <EmptyDescription className="text-xs">
-                          Upload a GIF or sprite to add it to this draft.
-                        </EmptyDescription>
-                      </EmptyHeader>
-                    </Empty>
-                  )}
-                  {assetStatus.message ? (
-                    <StatusLine
-                      detail={assetStatus.message}
-                      icon={<FileUp size={16} aria-hidden />}
-                      title="Assets"
-                      tone={assetStatus.tone}
-                    />
-                  ) : null}
-                </section>
-                ),
+                      Assets
+                    </TabsTrigger>
+                  </TabsList>
+                </CardHeader>
+                <CardContent className="min-h-0 flex-1">
+                  <TabsContent className="h-full min-h-0" value="layers">
+                    <ScrollArea className="h-full">
+                      <div className="flex flex-col gap-4 pr-3">
+                        <div>
+                          <p className="mb-2 text-xs font-semibold text-muted-foreground">
+                            Add layer
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <AddButton
+                              icon={Type}
+                              label="Text"
+                              onClick={() => addPrimitive("text")}
+                            />
+                            <AddButton
+                              icon={LayoutGrid}
+                              label="Bar"
+                              onClick={() => addPrimitive("progress")}
+                            />
+                            <AddButton
+                              icon={Square}
+                              label="Rect"
+                              onClick={() => addPrimitive("rect")}
+                            />
+                            <AddButton
+                              icon={Film}
+                              label="GIF"
+                              onClick={() => gifInputRef.current?.click()}
+                            />
+                            <AddButton
+                              icon={ImagePlus}
+                              label="Sprite"
+                              onClick={() => spriteInputRef.current?.click()}
+                            />
+                          </div>
+                        </div>
 
-                device: (
-                  <section
-                    aria-labelledby="theme-studio-tab-device"
-                    id="theme-studio-panel-device"
-                    role="tabpanel"
-                  >
-                  <StatusLine
-                    icon={<Send size={16} aria-hidden />}
-                    tone={
-                      deviceValidation?.errors.length
-                        ? "attention"
-                        : deviceStatus.tone
-                    }
-                    title="VibeTV"
-                    detail={
-                      deviceValidation?.errors[0] ||
-                      deviceValidation?.warnings[0] ||
-                      deviceStatus.message
-                    }
-                  />
-                  </section>
-                ),
+                        <div>
+                          <p className="mb-2 text-xs font-semibold text-muted-foreground">
+                            Layer order
+                          </p>
+                          <ItemGroup>
+                            {spec.primitives.map((primitive, index) => {
+                              const selected =
+                                visibleSelectedIndices.includes(index);
 
-                json: (
-                <section
-                  aria-labelledby="theme-studio-tab-json"
-                  className="grid gap-3"
-                  id="theme-studio-panel-json"
-                  role="tabpanel"
-                >
-                  <Textarea
-                    aria-label="Theme JSON"
-                    className="min-h-[220px] resize-y font-mono text-xs leading-5"
-                    onChange={(event) => {
-                      setJsonText(event.target.value);
-                      setJsonDirty(true);
-                      setJsonStatus({
-                        tone: "unknown",
-                        message: "JSON has local edits.",
-                      });
-                    }}
-                    spellCheck={false}
-                    value={jsonText || prettyJson(spec)}
-                  />
-                  <div className="grid gap-2">
-                    {jsonDirty || showJsonStatus ? (
-                      <StatusLine
-                        detail={jsonStatus.message}
-                        icon={<Code2 size={16} aria-hidden />}
-                        title="JSON"
-                        tone={jsonStatus.tone}
-                      />
-                    ) : null}
-                    <Button
-                      className="w-full"
-                      onClick={applyJson}
-                      type="button"
-                      variant="outline"
-                    >
-                      <Code2 data-icon="inline-start" aria-hidden />
-                      <span>Apply JSON</span>
-                    </Button>
-                    <Button
-                      className="w-full"
-                      onClick={() => {
-                        setJsonText(prettyJson(spec));
-                        setJsonDirty(false);
-                        setJsonStatus({ tone: "ready", message: "JSON reset." });
-                      }}
-                      type="button"
-                      variant="outline"
-                    >
-                      <RefreshCw data-icon="inline-start" aria-hidden />
-                      <span>Reset JSON</span>
-                    </Button>
-                  </div>
-                </section>
-                ),
-              }}
-                />
-                  </div>
-                </ScrollArea>
-              </CardContent>
+                              return (
+                                <Item
+                                  asChild
+                                  key={`${primitive.type}-${index}`}
+                                  size="sm"
+                                  variant={selected ? "muted" : "outline"}
+                                >
+                                  <button
+                                    aria-pressed={selected}
+                                    onClick={(event) =>
+                                      selectPrimitiveIndex(
+                                        index,
+                                        event.shiftKey ||
+                                          event.metaKey ||
+                                          event.ctrlKey,
+                                      )
+                                    }
+                                    type="button"
+                                  >
+                                    <ItemContent className="min-w-0">
+                                      <ItemTitle>
+                                        {primitiveTypeLabel(primitive)}
+                                      </ItemTitle>
+                                      <ItemDescription className="truncate">
+                                        {primitiveTitle(primitive)}
+                                      </ItemDescription>
+                                    </ItemContent>
+                                    <ItemActions>
+                                      <Badge
+                                        variant={
+                                          selected ? "default" : "outline"
+                                        }
+                                      >
+                                        {index + 1}
+                                      </Badge>
+                                    </ItemActions>
+                                  </button>
+                                </Item>
+                              );
+                            })}
+                          </ItemGroup>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            aria-label="Bring selected layers forward"
+                            disabled={visibleSelectedIndices.length === 0}
+                            onClick={() =>
+                              reorderSelectedPrimitives("forward")
+                            }
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            <ArrowUp data-icon="inline-start" aria-hidden />
+                            <span>Forward</span>
+                          </Button>
+                          <Button
+                            aria-label="Send selected layers backward"
+                            disabled={visibleSelectedIndices.length === 0}
+                            onClick={() =>
+                              reorderSelectedPrimitives("backward")
+                            }
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            <ArrowDown data-icon="inline-start" aria-hidden />
+                            <span>Backward</span>
+                          </Button>
+                        </div>
+                      </div>
+                    </ScrollArea>
+                  </TabsContent>
+
+                  <TabsContent className="h-full min-h-0" value="assets">
+                    <ScrollArea className="h-full">
+                      <div className="grid min-w-0 gap-3 pr-3">
+                        <div className="grid min-w-0 gap-2">
+                          <Button
+                            className="min-w-0 w-full justify-start"
+                            onClick={() => gifInputRef.current?.click()}
+                            type="button"
+                            variant="outline"
+                          >
+                            <Film data-icon="inline-start" aria-hidden />
+                            <span>Upload GIF</span>
+                          </Button>
+                          <Button
+                            className="min-w-0 w-full justify-start"
+                            onClick={() => spriteInputRef.current?.click()}
+                            type="button"
+                            variant="outline"
+                          >
+                            <ImagePlus data-icon="inline-start" aria-hidden />
+                            <span>Upload sprite</span>
+                          </Button>
+                        </div>
+                        {Object.entries(assets).length > 0 ? (
+                          Object.entries(assets).map(([assetPath, asset]) => (
+                            <AssetRow
+                              asset={asset}
+                              key={assetPath}
+                              path={assetPath}
+                              referenced={referencedAssets.includes(assetPath)}
+                              onRemove={() => removeAsset(assetPath)}
+                              onUse={() => assignAssetPath(assetPath)}
+                            />
+                          ))
+                        ) : (
+                          <Empty className="gap-2 border bg-muted/30 p-4">
+                            <EmptyHeader className="gap-1">
+                              <EmptyMedia variant="icon">
+                                <FileUp aria-hidden />
+                              </EmptyMedia>
+                              <EmptyTitle>No custom assets</EmptyTitle>
+                              <EmptyDescription className="text-xs">
+                                Upload a GIF or sprite to add it to this draft.
+                              </EmptyDescription>
+                            </EmptyHeader>
+                          </Empty>
+                        )}
+                        {assetStatus.message ? (
+                          <StatusLine
+                            detail={assetStatus.message}
+                            icon={<FileUp size={16} aria-hidden />}
+                            title="Assets"
+                            tone={assetStatus.tone}
+                          />
+                        ) : null}
+                      </div>
+                    </ScrollArea>
+                  </TabsContent>
+                </CardContent>
+              </Tabs>
             </Card>
           </aside>
 
-          <main className="order-1 grid min-h-0 min-w-0 place-items-center lg:order-2 lg:h-full">
+          <main className="order-1 grid min-h-[420px] min-w-0 place-items-center rounded-[var(--radius-card)] border bg-muted/30 p-6 lg:order-2 lg:h-full">
             <div className="grid w-full justify-items-center gap-2">
-              {aiThemeSession ? (
-                <Badge data-ai-candidate-preview variant="secondary">
-                  AI Theme Draft – not applied
-                </Badge>
-              ) : null}
               <EditableThemePreview
                 onInteractionCancel={() =>
                   dispatchEditor({ type: "cancel_transaction" })
@@ -1691,118 +1617,185 @@ export function ThemeStudioScreen({
                 }
                 onSelect={selectPrimitiveIndex}
                 onSelectMany={selectPrimitiveIndices}
-                pack={candidatePreviewPack || previewPack}
-                readOnly={Boolean(aiThemeCandidate)}
-                selectedIndex={aiThemeCandidate ? -1 : selectedIndex}
-                selectedIndices={aiThemeCandidate ? [] : visibleSelectedIndices}
-                spec={aiThemeCandidate?.spec || spec}
+                pack={previewPack}
+                selectedIndex={selectedIndex}
+                selectedIndices={visibleSelectedIndices}
+                spec={spec}
               />
             </div>
           </main>
 
-          <aside className="order-3 hidden gap-4 rounded-[var(--radius-card)] border bg-card p-4 lg:grid lg:max-h-full lg:overflow-y-auto">
-            <div>
-              <PanelTitle
-                icon={<LayoutGrid size={16} aria-hidden />}
-                title="Inspector"
-              />
-              {selectedPrimitive ? (
-                <PrimitiveInspector
-                  key={`${selectedPrimitive.type}-${selectedIndex}`}
-                  onChange={(field, value) =>
-                    updateSelectedPrimitive((primitive) => {
-                      setPrimitiveField(primitive, field, value);
-                    })
-                  }
-                  onDelete={deleteSelectedPrimitives}
-                  onInsertToken={insertToken}
-                  primitive={selectedPrimitive}
-                />
-              ) : (
-                <p className="rounded-[var(--radius-control)] border bg-muted p-3 text-sm text-muted-foreground">
-                  Select an element.
-                </p>
-              )}
-            </div>
-
-            {validation.errors.length > 0 || validation.warnings.length > 0 ? (
-              <Card className="gap-0 bg-muted p-3">
-                <PanelTitle
-                  icon={<AlertTriangle size={16} aria-hidden />}
-                  title="Validation"
-                />
-                <div className="grid gap-2">
-                  {validation.errors.map((error) => (
-                    <StatusLine
-                      detail={error}
-                      icon={<AlertTriangle size={16} aria-hidden />}
-                      key={error}
-                      title="Error"
-                      tone="attention"
-                    />
-                  ))}
-                  {validation.warnings.map((warning) => (
-                    <StatusLine
-                      detail={warning}
-                      icon={<AlertTriangle size={16} aria-hidden />}
-                      key={warning}
-                      title="Warning"
-                      tone="unknown"
-                    />
-                  ))}
-                </div>
-              </Card>
-            ) : null}
-            {libraryStatus ? (
-              <StatusLine
-                detail={libraryStatus.message}
-                icon={
-                  libraryStatus.tone === "attention" ? (
-                    <AlertTriangle size={16} aria-hidden />
-                  ) : (
-                    <CheckCircle2 size={16} aria-hidden />
-                  )
-                }
-                title="Library"
-                tone={libraryStatus.tone}
-              />
-            ) : null}
-            {exportStatus.message !== "Export is ready after validation." ? (
-              <StatusLine
-                detail={exportStatus.message}
-                icon={
-                  exportStatus.tone === "attention" ? (
-                    <AlertTriangle size={16} aria-hidden />
-                  ) : (
-                    <CheckCircle2 size={16} aria-hidden />
-                  )
-                }
-                title="Export"
-                tone={exportStatus.tone}
-              />
-            ) : null}
-            {showDeviceStatus ? (
-              <StatusLine
-                detail={deviceStatus.message}
-                icon={<Send size={16} aria-hidden />}
-                title="VibeTV"
-                tone={deviceStatus.tone}
-              />
-            ) : null}
-          </aside>
-
-          <div className="order-4 hidden min-h-0 2xl:block 2xl:h-full">
+          <aside className="order-3 hidden gap-4 lg:grid lg:max-h-full lg:overflow-y-auto">
             {aiThemeAvailable ? (
               <AIThemePanel
                 currentSpec={spec}
-                key={spec.themeId}
-                onApply={applyAIThemeCandidate}
-                onPreviewReady={revealAIThemePreview}
+                onApply={applyGeneratedAITheme}
                 onSessionChange={setAIThemeSession}
                 session={aiThemeSession}
               />
             ) : null}
-          </div>
+            <div className="grid gap-4 rounded-[var(--radius-card)] border bg-card p-4">
+              <Tabs defaultValue="layer">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="layer">
+                  <LayoutGrid data-icon="inline-start" aria-hidden />
+                  Layer
+                </TabsTrigger>
+                <TabsTrigger value="theme">
+                  <Palette data-icon="inline-start" aria-hidden />
+                  Theme
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent className="grid gap-3 pt-2" value="layer">
+                <div>
+                  <PanelTitle
+                    icon={<LayoutGrid size={16} aria-hidden />}
+                    title="Inspector"
+                  />
+                  {selectedPrimitive ? (
+                    <PrimitiveInspector
+                      key={`${selectedPrimitive.type}-${selectedIndex}`}
+                      onChange={(field, value) =>
+                        updateSelectedPrimitive((primitive) => {
+                          setPrimitiveField(primitive, field, value);
+                        })
+                      }
+                      onDelete={deleteSelectedPrimitives}
+                      onInsertToken={insertToken}
+                      primitive={selectedPrimitive}
+                    />
+                  ) : (
+                    <p className="rounded-[var(--radius-control)] border bg-muted p-3 text-sm text-muted-foreground">
+                      Select an element.
+                    </p>
+                  )}
+                </div>
+              </TabsContent>
+              <TabsContent className="grid gap-3 pt-2" value="theme">
+                <PanelTitle
+                  icon={<Palette size={16} aria-hidden />}
+                  title="Theme settings"
+                />
+                <TextField
+                  label="Name"
+                  value={packName}
+                  onChange={setPackName}
+                />
+                <TextField
+                  label="ID"
+                  value={spec.themeId}
+                  onChange={(value) =>
+                    updateSpec((draft) => {
+                      draft.themeId = value;
+                    })
+                  }
+                />
+                <ColorField
+                  label="Background"
+                  value={spec.bgColor || COLOR_FALLBACK}
+                  onChange={(value) =>
+                    updateSpec((draft) => {
+                      Object.assign(
+                        draft,
+                        updateThemeColors(draft, { background: value }),
+                      );
+                    })
+                  }
+                />
+                <div className="grid gap-2 border-t pt-4">
+                  <Button
+                    className="w-full"
+                    disabled={loadingPreset}
+                    onClick={() => void loadBuiltInTheme("mini-classic")}
+                    type="button"
+                    variant="outline"
+                  >
+                    {loadingPreset ? (
+                      <Spinner data-icon="inline-start" />
+                    ) : (
+                      <RefreshCw data-icon="inline-start" aria-hidden />
+                    )}
+                    <span>{loadingPreset ? "Loading" : "Load Mini theme"}</span>
+                  </Button>
+                  <Button
+                    className="w-full"
+                    onClick={() => fileInputRef.current?.click()}
+                    type="button"
+                    variant="outline"
+                  >
+                    <FileUp data-icon="inline-start" aria-hidden />
+                    <span>Import theme JSON</span>
+                  </Button>
+                </div>
+              </TabsContent>
+              </Tabs>
+
+              {validation.errors.length > 0 || validation.warnings.length > 0 ? (
+                <Card className="gap-0 bg-muted p-3">
+                  <PanelTitle
+                    icon={<AlertTriangle size={16} aria-hidden />}
+                    title="Validation"
+                  />
+                  <div className="grid gap-2">
+                    {validation.errors.map((error) => (
+                      <StatusLine
+                        detail={error}
+                        icon={<AlertTriangle size={16} aria-hidden />}
+                        key={error}
+                        title="Error"
+                        tone="attention"
+                      />
+                    ))}
+                    {validation.warnings.map((warning) => (
+                      <StatusLine
+                        detail={warning}
+                        icon={<AlertTriangle size={16} aria-hidden />}
+                        key={warning}
+                        title="Warning"
+                        tone="unknown"
+                      />
+                    ))}
+                  </div>
+                </Card>
+              ) : null}
+              {libraryStatus ? (
+                <StatusLine
+                  detail={libraryStatus.message}
+                  icon={
+                    libraryStatus.tone === "attention" ? (
+                      <AlertTriangle size={16} aria-hidden />
+                    ) : (
+                      <CheckCircle2 size={16} aria-hidden />
+                    )
+                  }
+                  title="Library"
+                  tone={libraryStatus.tone}
+                />
+              ) : null}
+              {exportStatus.message !== "Export is ready after validation." ? (
+                <StatusLine
+                  detail={exportStatus.message}
+                  icon={
+                    exportStatus.tone === "attention" ? (
+                      <AlertTriangle size={16} aria-hidden />
+                    ) : (
+                      <CheckCircle2 size={16} aria-hidden />
+                    )
+                  }
+                  title="Export"
+                  tone={exportStatus.tone}
+                />
+              ) : null}
+              {showDeviceStatus ? (
+                <StatusLine
+                  detail={deviceStatus.message}
+                  icon={<Send size={16} aria-hidden />}
+                  title="VibeTV"
+                  tone={deviceStatus.tone}
+                />
+              ) : null}
+            </div>
+          </aside>
         </section>
       </section>
 
@@ -1847,6 +1840,9 @@ export function ThemeStudioScreen({
             onBackToLibrary?.();
           }}
           onKeepEditing={keepEditing}
+          onReturnFocus={() =>
+            libraryButtonRef.current?.querySelector("button")?.focus()
+          }
           onSaveAndReturn={async () => {
             if (await saveThemeToLibrary()) {
               setLeaveDialogOpen(false);
