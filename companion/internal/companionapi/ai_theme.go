@@ -66,7 +66,7 @@ type aiThemeStyle struct {
 type aiThemePreviousConcept struct {
 	ImageBase64          string       `json:"imageBase64"`
 	ImageContentType     string       `json:"imageContentType"`
-	AnimationFrameBase64 string       `json:"animationFrameBase64,omitempty"`
+	AnimationSheetBase64 string       `json:"animationSheetBase64,omitempty"`
 	Style                aiThemeStyle `json:"style"`
 }
 
@@ -84,14 +84,14 @@ type aiThemeConcept struct {
 }
 
 type aiThemeAnimation struct {
-	FramesBase64 []string `json:"framesBase64"`
-	FPS          int      `json:"fps"`
-	KeyColor     string   `json:"keyColor"`
+	SpriteSheetBase64 string `json:"spriteSheetBase64"`
+	FPS               int    `json:"fps"`
+	KeyColor          string `json:"keyColor"`
 }
 
 type aiThemeGeneratedImages struct {
 	BackgroundBase64 string
-	AnimationFrames  []string
+	AnimationSheet   string
 }
 
 type aiThemeCredentialRequest struct {
@@ -300,8 +300,8 @@ func (s *Server) handleAIThemeConcept(w http.ResponseWriter, r *http.Request) {
 			writeAIThemeError(w, http.StatusBadRequest, "previous_concept_invalid")
 			return
 		}
-		if req.Previous.AnimationFrameBase64 != "" {
-			previousAnimation, err = validateConceptImage(req.Previous.AnimationFrameBase64, "image/png")
+		if req.Previous.AnimationSheetBase64 != "" {
+			previousAnimation, err = validateConceptImage(req.Previous.AnimationSheetBase64, "image/png")
 			if err != nil {
 				writeAIThemeError(w, http.StatusBadRequest, "previous_concept_invalid")
 				return
@@ -333,11 +333,11 @@ func (s *Server) handleAIThemeConcept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	concept := aiThemeConcept{ImageBase64: images.BackgroundBase64, ImageContentType: "image/png", Style: style}
-	if len(images.AnimationFrames) == 4 {
+	if images.AnimationSheet != "" {
 		concept.Animation = &aiThemeAnimation{
-			FramesBase64: images.AnimationFrames,
-			FPS:          4,
-			KeyColor:     "#FF00FF",
+			SpriteSheetBase64: images.AnimationSheet,
+			FPS:               4,
+			KeyColor:          "#FF00FF",
 		}
 	}
 	writeJSON(w, http.StatusOK, concept)
@@ -440,9 +440,9 @@ func (a *aiThemeState) createConceptImages(ctx context.Context, key string, styl
 	}
 
 	const keyColor = "#FF00FF"
-	backgroundPrompt := "Create a complete static background illustration for the top 240x128 pixels of a tiny physical desk display. Make it a text-free, front-on 15:8 scene with a strong atmosphere, large simple shapes and a limited cohesive palette. Do not show the main animated subject; leave the central area visually calm so a 64x64 animated sprite can be placed over it. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. Theme: " + style.ArtPrompt
-	masterPrompt := "Create frame 1 of a four-frame looping sprite animation for a tiny physical desk display. Show one isolated, centered subject with clearly readable defining features, identical scale and front-on camera, large simple shapes and a limited palette. Use a perfectly flat pure magenta " + keyColor + " background with no gradient, texture, shadow or reflection. Keep the complete subject inside a square-safe central area. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. Subject: " + style.ArtPrompt + ". Motion: " + style.AnimationPrompt
-	var background, master string
+	backgroundPrompt := "Create a complete static background illustration for the top 240x128 pixels of a tiny physical desk display. Make it a text-free, front-on 15:8 scene with a strong atmosphere, large simple shapes and a limited cohesive palette. Do not show the main animated subject; leave the central area visually calm so a 72x72 animated sprite can be placed over it. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. Theme: " + style.ArtPrompt
+	sheetPrompt := "Create one high-resolution sprite sheet containing exactly four frames of one seamless looping animation. Arrange the frames as four equal vertical cells in one horizontal row, ordered left to right. Keep the same isolated subject, identity, scale, front-on camera, lighting and palette in every cell; only the pose may change. Center each complete subject inside the square middle area of its cell. Use a perfectly flat pure magenta " + keyColor + " background across the entire image with no borders, separators, gradient, texture, shadow or reflection. Make every pose clearly readable after reduction to 72x72 pixels. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets, labels or extra objects. Subject: " + style.ArtPrompt + ". Motion: " + style.AnimationPrompt
+	var background, sheet string
 	var firstErr error
 	var firstMu sync.Mutex
 	var firstWG sync.WaitGroup
@@ -463,49 +463,17 @@ func (a *aiThemeState) createConceptImages(ctx context.Context, key string, styl
 	go func() {
 		defer firstWG.Done()
 		var createErr error
-		master, createErr = a.createConceptImage(ctx, key, masterPrompt, previousAnimation)
+		sheet, createErr = a.createConceptImage(ctx, key, sheetPrompt, previousAnimation)
 		setFirstErr(createErr)
 	}()
 	firstWG.Wait()
 	if firstErr != nil {
 		return aiThemeGeneratedImages{}, firstErr
 	}
-	if background == "" || master == "" {
+	if background == "" || sheet == "" {
 		return aiThemeGeneratedImages{}, errors.New("provider_malformed_response")
 	}
-	masterBytes, err := validateConceptImage(master, "image/png")
-	if err != nil {
-		return aiThemeGeneratedImages{}, err
-	}
-	images := make([]string, 4)
-	images[0] = master
-	frameDirections := []string{
-		"Move clearly into the first quarter of the loop.",
-		"Show the most distinct midpoint pose of the loop.",
-		"Move clearly into the return pose just before frame 1.",
-	}
-	var wg sync.WaitGroup
-	errs := make(chan error, 3)
-	for frame := 2; frame <= 4; frame++ {
-		frame := frame
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			prompt := fmt.Sprintf("Create frame %d of the same four-frame looping sprite. Preserve the exact subject identity, palette, scale, camera, lighting and flat pure magenta %s background from the reference. %s The pose change must be visibly different at 64 by 64 pixels while remaining subtle and loopable. Keep the subject centered and fully visible. No text, UI, shadow, gradient or extra object. Motion: %s", frame, keyColor, frameDirections[frame-2], style.AnimationPrompt)
-			image, createErr := a.createConceptImage(ctx, key, prompt, masterBytes)
-			if createErr != nil {
-				errs <- createErr
-				return
-			}
-			images[frame-1] = image
-		}()
-	}
-	wg.Wait()
-	close(errs)
-	if createErr := <-errs; createErr != nil {
-		return aiThemeGeneratedImages{}, createErr
-	}
-	return aiThemeGeneratedImages{BackgroundBase64: background, AnimationFrames: images}, nil
+	return aiThemeGeneratedImages{BackgroundBase64: background, AnimationSheet: sheet}, nil
 }
 
 func (a *aiThemeState) createConceptImage(ctx context.Context, key, prompt string, previous []byte) (string, error) {

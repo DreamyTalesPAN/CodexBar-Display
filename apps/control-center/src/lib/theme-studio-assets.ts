@@ -1,8 +1,8 @@
 import type { ThemeStudioAsset } from "@/lib/theme-studio";
 
 const DEFAULT_SPRITE_FPS = 8;
-const MAX_SPRITE_FRAME_WIDTH = 64;
-const MAX_SPRITE_FRAME_HEIGHT = 64;
+const MAX_SPRITE_FRAME_WIDTH = 72;
+const MAX_SPRITE_FRAME_HEIGHT = 72;
 const MAX_SPRITE_FRAMES = 32;
 const MAX_SPRITE_TOTAL_PIXELS = 32768;
 
@@ -91,7 +91,7 @@ function inferSpriteSheetFrame(width: number, height: number) {
     width > MAX_SPRITE_FRAME_WIDTH ||
     height > MAX_SPRITE_FRAME_HEIGHT
   ) {
-    const commonSizes = [64, 48, 32, 24, 16, 8];
+    const commonSizes = [72, 64, 48, 32, 24, 16, 8];
     const squareCell = commonSizes.find((size) => {
       const frames = (width / size) * (height / size);
       return (

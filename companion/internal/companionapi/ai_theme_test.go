@@ -177,7 +177,7 @@ func TestAIThemeAnimationCreatesStaticBackgroundAndFourFrameSprite(t *testing.T)
 	generations := 0
 	edits := 0
 	backgrounds := 0
-	keyedFrames := 0
+	keyedSheets := 0
 	server := newAIThemeTestServer(t, store, aiRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		mu.Lock()
 		calls++
@@ -199,7 +199,7 @@ func TestAIThemeAnimationCreatesStaticBackgroundAndFourFrameSprite(t *testing.T)
 			backgrounds++
 		}
 		if bytes.Contains(body, []byte("#FF00FF")) {
-			keyedFrames++
+			keyedSheets++
 		}
 		mu.Unlock()
 		payload, _ := json.Marshal(map[string]any{"data": []any{map[string]any{"b64_json": tinyPNGBase64()}}})
@@ -209,10 +209,10 @@ func TestAIThemeAnimationCreatesStaticBackgroundAndFourFrameSprite(t *testing.T)
 	server.Handler().ServeHTTP(w, aiRequest(http.MethodPost, "/v1/ai-theme/concepts", `{"prompt":"Animate the cat as a four-frame sprite"}`))
 	mu.Lock()
 	defer mu.Unlock()
-	if w.Code != http.StatusOK || calls != 6 || generations != 2 || edits != 3 || backgrounds != 1 || keyedFrames != 4 {
-		t.Fatalf("animation=%d calls=%d generations=%d edits=%d backgrounds=%d keyed=%d body=%s", w.Code, calls, generations, edits, backgrounds, keyedFrames, w.Body.String())
+	if w.Code != http.StatusOK || calls != 3 || generations != 2 || edits != 0 || backgrounds != 1 || keyedSheets != 1 {
+		t.Fatalf("animation=%d calls=%d generations=%d edits=%d backgrounds=%d keyed=%d body=%s", w.Code, calls, generations, edits, backgrounds, keyedSheets, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), `"fps":4`) || strings.Count(w.Body.String(), tinyPNGBase64()) != 5 {
+	if !strings.Contains(w.Body.String(), `"fps":4`) || !strings.Contains(w.Body.String(), `"spriteSheetBase64"`) || strings.Count(w.Body.String(), tinyPNGBase64()) != 2 {
 		t.Fatalf("animation response=%s", w.Body.String())
 	}
 }

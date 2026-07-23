@@ -4748,9 +4748,9 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
           imageBase64: conceptPNG,
           imageContentType: "image/png",
           animation: animated ? {
-            framesBase64: [conceptPNG, conceptPNG, conceptPNG, conceptPNG],
             fps: 4,
             keyColor: "#FF00FF",
+            spriteSheetBase64: conceptPNG,
           } : undefined,
           style: {
             packName: "Moon Cat",
@@ -4884,7 +4884,7 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
   await page.getByRole("button", { name: "Send change", exact: true }).click();
   await page.getByText("4-frame animation created. Drag or resize the sprite, or ask for another change.").waitFor();
   assert(conceptRequests.at(-1)?.previous?.imageBase64 === conceptPNG, "Refine must send the previous concept image only for the edit request");
-  assert(conceptRequests.at(-1)?.previous?.animationFrameBase64 === undefined, "A static refine should not upload an animation frame");
+  assert(conceptRequests.at(-1)?.previous?.animationSheetBase64 === undefined, "A static refine should not upload an animation sheet");
   assert((await editablePreview.locator('[aria-label^="Select sprite"]').count()) === 2, "AI animation should be embedded over a separate static theme image");
   const animatedSprite = editablePreview.locator('[aria-label^="Select sprite"]').last();
   await animatedSprite.click();
@@ -4895,8 +4895,8 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
   await waitForCondition(() => conceptResponses >= 3, "animated chat refinement should complete");
   await page.getByRole("button", { name: "Send change", exact: true }).waitFor();
   assert(conceptRequests.at(-1)?.previous?.style?.animationMode === "four_frame", "Chat refinements should preserve the four-frame animation mode");
-  assert(conceptRequests.at(-1)?.previous?.animationFrameBase64 === conceptPNG, "Animated refinements should upload only the first sprite frame as reference");
-  assert(conceptRequests.at(-1)?.previous?.framesBase64 === undefined, "Animated refinements must not upload all sprite frames");
+  assert(conceptRequests.at(-1)?.previous?.animationSheetBase64 === conceptPNG, "Animated refinements should upload the sprite sheet as reference");
+  assert(conceptRequests.at(-1)?.previous?.spriteSheetBase64 === undefined, "Animated refinements must keep the sprite sheet inside the previous concept envelope");
   await page.waitForTimeout(400);
   assert(
     !(await page.evaluate(() => Object.values(window.localStorage).some((entry) => String(entry).includes("CBI1")))),

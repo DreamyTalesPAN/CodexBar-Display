@@ -28,9 +28,9 @@ export type AIThemeStyle = {
 };
 export type AIThemeConcept = {
   animation?: {
-    framesBase64: string[];
     fps: number;
     keyColor: string;
+    spriteSheetBase64: string;
   };
   imageBase64: string;
   imageContentType: "image/png";
@@ -56,8 +56,9 @@ export const AI_THEME_SCREENMASTER_ASSET_PATH = "/themes/u/ai-screen.cbi";
 export const AI_THEME_ANIMATION_ASSET_PATH = "/themes/u/ai-animation.cba";
 const SCREENMASTER_WIDTH = 240;
 const SCREENMASTER_ART_HEIGHT = 128;
-const ANIMATION_FRAME_SIZE = 64;
+const ANIMATION_FRAME_SIZE = 72;
 const ANIMATION_FRAME_COUNT = 4;
+const ANIMATION_CONTENT_SIZE = 68;
 const MAX_COLORS = 26;
 export const AI_THEME_LOCAL_HISTORY_LIMIT = 20;
 export const AI_THEME_TRANSMITTED_HISTORY_LIMIT = 10;
@@ -89,7 +90,7 @@ export async function generateAIThemeConcept(
       prompt: input.prompt,
       history: input.history.slice(-AI_THEME_TRANSMITTED_HISTORY_LIMIT).map(({ content, role }) => ({ content, role })),
       previous: input.previous ? {
-        animationFrameBase64: input.previous.animation?.framesBase64[0],
+        animationSheetBase64: input.previous.animation?.spriteSheetBase64,
         imageBase64: input.previous.imageBase64,
         imageContentType: input.previous.imageContentType,
         style: input.previous.style,
@@ -102,16 +103,16 @@ export async function generateAIThemeConcept(
 export async function buildAIThemeCandidate(concept: AIThemeConcept): Promise<AIThemeCandidate> {
   const encodedFrames = [
     concept.imageBase64,
-    ...(concept.animation?.framesBase64 ?? []),
+    ...(concept.animation ? [concept.animation.spriteSheetBase64] : []),
   ];
-  if (concept.animation && concept.animation.framesBase64.length !== ANIMATION_FRAME_COUNT) {
-    throw new Error("Animated concepts must contain exactly four frames.");
+  if (concept.animation && !concept.animation.spriteSheetBase64) {
+    throw new Error("Animated concepts must contain a sprite sheet.");
   }
   const bitmaps = await Promise.all(encodedFrames.map((value) => conceptBitmap(value, concept.imageContentType)));
   try {
     if (concept.animation) {
       const background = bitmapRGBA(bitmaps[0]!, SCREENMASTER_WIDTH, SCREENMASTER_ART_HEIGHT);
-      const frames = normalizeAnimationFrames(bitmaps.slice(1), concept.animation.keyColor);
+      const frames = normalizeAnimationSpriteSheet(bitmaps[1]!, concept.animation.keyColor);
       return buildAIThemeAnimationCandidateFromRGBA(concept, background, frames, concept.animation.fps);
     }
     const rgba = bitmapRGBA(bitmaps[0]!, SCREENMASTER_WIDTH, SCREENMASTER_ART_HEIGHT);
@@ -161,8 +162,8 @@ export function buildAIThemeAnimationCandidateFromRGBA(
     { type: "sprite", x: 0, y: 0, width: 240, height: 128, assetPath: AI_THEME_SCREENMASTER_ASSET_PATH },
     {
       type: "sprite",
-      x: 88,
-      y: 32,
+      x: Math.round((SCREENMASTER_WIDTH - ANIMATION_FRAME_SIZE) / 2),
+      y: Math.round((SCREENMASTER_ART_HEIGHT - ANIMATION_FRAME_SIZE) / 2),
       width: ANIMATION_FRAME_SIZE,
       height: ANIMATION_FRAME_SIZE,
       assetPath: AI_THEME_ANIMATION_ASSET_PATH,
@@ -209,7 +210,7 @@ export function encodeAIThemeCBA1(
   fps = 4,
 ): string {
   if (frames.length !== ANIMATION_FRAME_COUNT || width !== ANIMATION_FRAME_SIZE || height !== ANIMATION_FRAME_SIZE || !Number.isInteger(fps) || fps < 1 || fps > 30 || frames.some((frame) => frame.length !== width * height * 4)) {
-    throw new Error("Animation must contain exactly four 64x64 RGBA frames.");
+    throw new Error("Animation must contain exactly four 72x72 RGBA frames.");
   }
   const colors: Array<Array<string | null>> = [];
   const counts = new Map<string, number>();
@@ -255,23 +256,30 @@ function bitmapRGBA(bitmap: ImageBitmap, width: number, height: number): Uint8Cl
   return context.getImageData(0, 0, width, height).data;
 }
 
-function normalizeAnimationFrames(bitmaps: ImageBitmap[], keyColor: string): Uint8ClampedArray[] {
-  const sourceCanvas = document.createElement("canvas");
-  sourceCanvas.width = SCREENMASTER_WIDTH;
-  sourceCanvas.height = SCREENMASTER_ART_HEIGHT;
-  const sourceContext = sourceCanvas.getContext("2d", { willReadFrequently: true });
-  if (!sourceContext) throw new Error("The animation frames could not be prepared.");
-  const sourceFrames = bitmaps.map((bitmap) => {
-    sourceContext.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
-    sourceContext.drawImage(bitmap, 0, 0, sourceCanvas.width, sourceCanvas.height);
-    return sourceContext.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+function normalizeAnimationSpriteSheet(bitmap: ImageBitmap, keyColor: string): Uint8ClampedArray[] {
+  const cellWidths = Array.from({ length: ANIMATION_FRAME_COUNT }, (_, frame) =>
+    Math.max(1, Math.round(((frame + 1) * bitmap.width) / ANIMATION_FRAME_COUNT) - Math.round((frame * bitmap.width) / ANIMATION_FRAME_COUNT)),
+  );
+  const sourceSize = Math.max(1, Math.min(bitmap.height, ...cellWidths));
+  const sourceFrames = Array.from({ length: ANIMATION_FRAME_COUNT }, (_, frame) => {
+    const cellLeft = Math.round((frame * bitmap.width) / ANIMATION_FRAME_COUNT);
+    const cellWidth = cellWidths[frame]!;
+    const sourceX = Math.max(0, Math.min(bitmap.width - sourceSize, cellLeft + Math.round((cellWidth - sourceSize) / 2)));
+    const sourceY = Math.max(0, Math.round((bitmap.height - sourceSize) / 2));
+    const canvas = document.createElement("canvas");
+    canvas.width = sourceSize;
+    canvas.height = sourceSize;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) throw new Error("The animation sprite sheet could not be prepared.");
+    context.drawImage(bitmap, sourceX, sourceY, sourceSize, sourceSize, 0, 0, sourceSize, sourceSize);
+    return { canvas, image: context.getImageData(0, 0, sourceSize, sourceSize) };
   });
   const key = hexRGB(keyColor);
   const bounds = sourceFrames.reduce((current, frame) => {
-    for (let y = 0; y < frame.height; y += 1) {
-      for (let x = 0; x < frame.width; x += 1) {
-        const offset = (y * frame.width + x) * 4;
-        if (!isKeyPixel(frame.data, offset, key)) {
+    for (let y = 0; y < frame.image.height; y += 1) {
+      for (let x = 0; x < frame.image.width; x += 1) {
+        const offset = (y * frame.image.width + x) * 4;
+        if (!isKeyPixel(frame.image.data, offset, key)) {
           current.left = Math.min(current.left, x);
           current.top = Math.min(current.top, y);
           current.right = Math.max(current.right, x);
@@ -280,20 +288,19 @@ function normalizeAnimationFrames(bitmaps: ImageBitmap[], keyColor: string): Uin
       }
     }
     return current;
-  }, { bottom: -1, left: SCREENMASTER_WIDTH, right: -1, top: SCREENMASTER_ART_HEIGHT });
+  }, { bottom: -1, left: sourceSize, right: -1, top: sourceSize });
   if (bounds.right < bounds.left || bounds.bottom < bounds.top) {
-    throw new Error("OpenAI returned empty animation frames.");
+    throw new Error("OpenAI returned an empty animation sprite sheet.");
   }
-  const padding = 3;
+  const padding = Math.max(1, Math.round(sourceSize * 0.015));
   const left = Math.max(0, bounds.left - padding);
   const top = Math.max(0, bounds.top - padding);
-  const cropWidth = Math.min(SCREENMASTER_WIDTH - left, bounds.right - bounds.left + 1 + padding * 2);
-  const cropHeight = Math.min(SCREENMASTER_ART_HEIGHT - top, bounds.bottom - bounds.top + 1 + padding * 2);
-  const scale = Math.min(60 / cropWidth, 60 / cropHeight);
+  const cropWidth = Math.min(sourceSize - left, bounds.right - bounds.left + 1 + padding * 2);
+  const cropHeight = Math.min(sourceSize - top, bounds.bottom - bounds.top + 1 + padding * 2);
+  const scale = Math.min(ANIMATION_CONTENT_SIZE / cropWidth, ANIMATION_CONTENT_SIZE / cropHeight);
   const targetWidth = Math.max(1, Math.round(cropWidth * scale));
   const targetHeight = Math.max(1, Math.round(cropHeight * scale));
   return sourceFrames.map((frame) => {
-    sourceContext.putImageData(frame, 0, 0);
     const target = document.createElement("canvas");
     target.width = ANIMATION_FRAME_SIZE;
     target.height = ANIMATION_FRAME_SIZE;
@@ -301,7 +308,7 @@ function normalizeAnimationFrames(bitmaps: ImageBitmap[], keyColor: string): Uin
     if (!context) throw new Error("The animation frame could not be prepared.");
     context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = "high";
-    context.drawImage(sourceCanvas, left, top, cropWidth, cropHeight, Math.round((ANIMATION_FRAME_SIZE - targetWidth) / 2), Math.round((ANIMATION_FRAME_SIZE - targetHeight) / 2), targetWidth, targetHeight);
+    context.drawImage(frame.canvas, left, top, cropWidth, cropHeight, Math.round((ANIMATION_FRAME_SIZE - targetWidth) / 2), Math.round((ANIMATION_FRAME_SIZE - targetHeight) / 2), targetWidth, targetHeight);
     const normalized = context.getImageData(0, 0, ANIMATION_FRAME_SIZE, ANIMATION_FRAME_SIZE);
     for (let offset = 0; offset < normalized.data.length; offset += 4) {
       if (isKeyPixel(normalized.data, offset, key)) normalized.data[offset + 3] = 0;
