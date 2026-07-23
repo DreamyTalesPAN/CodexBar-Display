@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { deviceIsActive, deviceIsReady } from "./control-center-types";
+import {
+  deviceIsActive,
+  deviceIsReady,
+  deviceNeedsExplicitConnect,
+} from "./control-center-types";
 
 describe("device connection contract", () => {
   it("only treats an explicit ready=true as connected", () => {
@@ -38,5 +42,41 @@ describe("device connection contract", () => {
     ];
 
     expect(updates.map(deviceIsReady)).toEqual([false, false, false, true]);
+  });
+
+  it("returns a reachable device with a missing key to the Connect screen", () => {
+    expect(
+      deviceNeedsExplicitConnect({
+        active: true,
+        connected: true,
+        paired: false,
+        ready: false,
+        stream: {
+          running: true,
+          healthy: false,
+          errorCode: "device_pairing_required",
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("does not replace normal reconnecting or offline screens with Connect", () => {
+    expect(
+      deviceNeedsExplicitConnect({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: false,
+        connectionState: "reconnecting",
+      }),
+    ).toBe(false);
+    expect(
+      deviceNeedsExplicitConnect({
+        active: true,
+        connected: false,
+        paired: false,
+        ready: false,
+      }),
+    ).toBe(false);
   });
 });

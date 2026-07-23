@@ -36,6 +36,7 @@ import {
   deviceIsActive,
   deviceImageIsStuck,
   deviceIsReady,
+  deviceNeedsExplicitConnect,
   type ActiveTab,
   type ApiError,
   type CompanionInfo,
@@ -2612,7 +2613,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
   const deviceReady = deviceIsReady(device);
   const hasActiveDevice = deviceIsActive(device);
-  const connectionRecoveryRequired = isConnectionRecoveryError(lastError);
+  const connectionRecoveryRequired =
+    isConnectionRecoveryError(lastError) || deviceNeedsExplicitConnect(device);
   const startupDeviceCandidates =
     deviceCandidates.length > 0
       ? deviceCandidates

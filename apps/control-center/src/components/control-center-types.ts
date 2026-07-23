@@ -467,3 +467,15 @@ export function deviceIsReady(device: DeviceInfo | null | undefined) {
 export function deviceIsActive(device: DeviceInfo | null | undefined) {
   return device?.active === true;
 }
+
+export function deviceNeedsExplicitConnect(
+  device: DeviceInfo | null | undefined,
+) {
+  if (device?.connected !== true) {
+    return false;
+  }
+  return (
+    device.paired === false ||
+    device.stream?.errorCode === "device_pairing_required"
+  );
+}

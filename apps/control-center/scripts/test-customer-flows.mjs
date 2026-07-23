@@ -418,7 +418,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testClosedPairingWindowStaysInOverview(
+    await testClosedPairingWindowOffersExplicitConnect(
       browser,
       appContext.appUrl,
     );
@@ -2095,9 +2095,10 @@ async function testRunningPairingErrorDoesNotWriteAutomatically(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "VibeTV status" }).waitFor({
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
+  await discoveredConnectButtons(page).first().waitFor();
   await page.waitForTimeout(5_500);
   assert(
     repairRequests.length === 0,
@@ -2111,7 +2112,7 @@ async function testRunningPairingErrorDoesNotWriteAutomatically(
   await page.close();
 }
 
-async function testClosedPairingWindowStaysInOverview(browser, appUrl) {
+async function testClosedPairingWindowOffersExplicitConnect(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   let repairRequests = 0;
@@ -2144,26 +2145,33 @@ async function testClosedPairingWindowStaysInOverview(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page
-    .getByRole("heading", { name: "VibeTV status" })
-    .waitFor({
-    timeout: 10_000,
-  });
+  try {
+    await page
+      .getByRole("heading", { name: "Choose a VibeTV" })
+      .waitFor({ timeout: 10_000 });
+  } catch (error) {
+    throw new Error(
+      `A reachable VibeTV without a local key did not offer Connect. Visible UI:\n${await page.locator("body").innerText()}`,
+      { cause: error },
+    );
+  }
+  await discoveredConnectButtons(page).first().waitFor();
   await page.waitForTimeout(5_500);
-  await page
-    .getByRole("heading", { name: "VibeTV status" })
-    .waitFor();
   assert(
     repairRequests === 0,
-    `A clearly closed pairing window must not trigger a doomed repair, got ${repairRequests}`,
+    `A missing key must wait for the customer to press Connect, got ${repairRequests} automatic writes`,
   );
   assert(
     (await page.getByText(/Unplug VibeTV|three times/i).count()) === 0,
     "Closed pairing must never show destructive recovery copy",
   );
   assert(
-    (await page.getByText(/same WiFi|search again/i).count()) === 0,
-    "Closed pairing must not be explained as a WiFi search problem",
+    (await page
+      .getByText("Keep VibeTV powered on, then try pairing again.", {
+        exact: true,
+      })
+      .count()) === 0,
+    "Closed pairing must not show the removed powered-on instruction",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -2271,8 +2279,9 @@ async function testRunningPairingFailureHidesStaleUsageFrame(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page
-    .getByText("Waiting for a fresh image from VibeTV.", { exact: true })
+    .getByRole("heading", { name: "Choose a VibeTV" })
     .waitFor({ timeout: 10_000 });
+  await discoveredConnectButtons(page).first().waitFor();
   assert(
     (await page.getByRole("alertdialog").count()) === 0,
     "A generic stream pairing signal must not open the explicit token-rejection dialog",
@@ -2314,9 +2323,10 @@ async function testPairingStreamErrorDoesNotInventRecovery(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "VibeTV status" }).waitFor({
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
+  await discoveredConnectButtons(page).first().waitFor();
   assert(
     repairRequests === 0,
     `A generic stream error must not trigger pairing writes, got ${repairRequests}`,
