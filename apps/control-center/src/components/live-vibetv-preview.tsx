@@ -938,7 +938,7 @@ function formatCompactTokens(value: number): string {
 }
 
 const COUNT_UP_PREVIEW_STEPS = 12;
-const COUNT_UP_PREVIEW_TICK_MS = 60;
+const COUNT_UP_PREVIEW_TICK_MS = 100;
 
 export function countUpPreviewValue(target: number, step: number): number {
   const safeTarget = Math.max(0, Math.trunc(target));
