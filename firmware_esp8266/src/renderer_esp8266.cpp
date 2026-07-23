@@ -191,6 +191,11 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
         event.themeSpecPartialRender &&
         display::CurrentFrame().hasThemeSpec &&
         display::CurrentThemeSpecRenderedSuccessfully()) {
+      display::PrepareThemeSpecTokenCountUp(
+          event.themeSpecChangedFields,
+          event.previousSessionTokens,
+          event.previousWeekTokens,
+          event.previousTotalTokens);
       if (display::RenderThemeSpecPartial(event.themeSpecChangedFields)) {
         return;
       }

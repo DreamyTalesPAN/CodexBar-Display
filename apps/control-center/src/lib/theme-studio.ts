@@ -29,6 +29,8 @@ export type ThemeStudioPrimitive = {
   height?: number;
   text?: string;
   binding?: ThemeStudioBinding;
+  numberFormat?: "exact" | "compact";
+  animation?: "none" | "count-up";
   fontSize?: number;
   font?: number;
   color?: string;
@@ -413,6 +415,10 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
           : undefined,
     progressStyle:
       primitive.progressStyle === "segments" ? "segments" : undefined,
+    numberFormat:
+      primitive.numberFormat === "compact" ? "compact" : undefined,
+    animation:
+      primitive.animation === "count-up" ? "count-up" : undefined,
     frameCount:
       primitive.frameCount === undefined
         ? undefined
@@ -508,7 +514,13 @@ export function buildThemePack(
     id: normalized.themeId,
     name: cleanPackName(packName) || titleFromThemeId(normalized.themeId),
     version: "0.1.0",
-    minFirmware: "1.0.24",
+    minFirmware: normalized.primitives.some(
+      (primitive) =>
+        primitive.numberFormat === "compact" ||
+        primitive.animation === "count-up",
+    )
+      ? "1.0.40"
+      : "1.0.24",
     themeSpec: {
       path: validation.themeSpecPath,
       file: "theme.json",
@@ -902,6 +914,12 @@ function buildDevicePrimitive(
   if (primitive.binding !== undefined) {
     compact.b = COMPACT_BINDINGS[primitive.binding] || primitive.binding;
   }
+  if (primitive.numberFormat === "compact") {
+    compact.nf = "compact";
+  }
+  if (primitive.animation === "count-up") {
+    compact.an = "count-up";
+  }
   if (primitive.fontSize !== undefined) {
     compact.s = primitive.fontSize;
   }
@@ -995,6 +1013,15 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
     stringValue(value.b);
   if (binding !== undefined) {
     primitive.binding = expandBinding(binding);
+  }
+  const numberFormat =
+    stringValue(value.numberFormat) ?? stringValue(value.nf);
+  if (numberFormat === "compact" || numberFormat === "exact") {
+    primitive.numberFormat = numberFormat;
+  }
+  const animation = stringValue(value.animation) ?? stringValue(value.an);
+  if (animation === "count-up" || animation === "none") {
+    primitive.animation = animation;
   }
   const fontSize = numberValue(value.fontSize) ?? numberValue(value.s);
   if (fontSize !== undefined) {

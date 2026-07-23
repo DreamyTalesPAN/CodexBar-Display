@@ -155,6 +155,8 @@ struct CompiledPrimitive {
   uint16_t border = 0x7BEF;
   bool hasBg = false;
   bool fitShrink = false;
+  bool compactNumberFormat = false;
+  bool countUp = false;
   const char* text = "";
   const char* binding = nullptr;
   const char* assetPath = "";
@@ -513,6 +515,94 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     std::snprintf(out, outSize, "%lld", static_cast<long long>(frame.totalTokens));
     return;
   }
+}
+
+inline bool IsTokenBinding(const char* key) {
+  key = SafeText(key);
+  return std::strcmp(key, "sessionTokens") == 0 ||
+         std::strcmp(key, "st") == 0 ||
+         std::strcmp(key, "weekTokens") == 0 ||
+         std::strcmp(key, "wt") == 0 ||
+         std::strcmp(key, "totalTokens") == 0 ||
+         std::strcmp(key, "tt") == 0;
+}
+
+inline int64_t TokenValueForBinding(const char* key, const FrameData& frame) {
+  key = SafeText(key);
+  if (std::strcmp(key, "sessionTokens") == 0 || std::strcmp(key, "st") == 0) {
+    return frame.sessionTokens;
+  }
+  if (std::strcmp(key, "weekTokens") == 0 || std::strcmp(key, "wt") == 0) {
+    return frame.weekTokens;
+  }
+  if (std::strcmp(key, "totalTokens") == 0 || std::strcmp(key, "tt") == 0) {
+    return frame.totalTokens;
+  }
+  return 0;
+}
+
+inline void FormatCompactTokenCount(int64_t value, char* out, size_t outSize) {
+  if (out == nullptr || outSize == 0) {
+    return;
+  }
+  value = value < 0 ? 0 : value;
+  if (value < 1000) {
+    std::snprintf(out, outSize, "%lld", static_cast<long long>(value));
+    return;
+  }
+
+  int64_t divisor = 1000;
+  int decimals = 1;
+  char suffix = 'K';
+  if (value >= 1000000000LL) {
+    divisor = 1000000000LL;
+    decimals = 2;
+    suffix = 'B';
+  } else if (value >= 1000000LL) {
+    divisor = 1000000LL;
+    suffix = 'M';
+  }
+
+  const int64_t scale = decimals == 2 ? 100 : 10;
+  int64_t whole = value / divisor;
+  int64_t fraction =
+      ((value % divisor) * scale + divisor / 2) / divisor;
+  if (fraction >= scale) {
+    whole += 1;
+    fraction = 0;
+  }
+  if (fraction == 0) {
+    std::snprintf(out, outSize, "%lld%c", static_cast<long long>(whole), suffix);
+  } else if (decimals == 2 && fraction % 10 == 0) {
+    std::snprintf(
+        out,
+        outSize,
+        "%lld.%lld%c",
+        static_cast<long long>(whole),
+        static_cast<long long>(fraction / 10),
+        suffix);
+  } else {
+    std::snprintf(
+        out,
+        outSize,
+        decimals == 2 ? "%lld.%02lld%c" : "%lld.%lld%c",
+        static_cast<long long>(whole),
+        static_cast<long long>(fraction),
+        suffix);
+  }
+}
+
+inline void BoundValueForPrimitive(
+    const CompiledPrimitive& primitive,
+    const FrameData& frame,
+    char* out,
+    size_t outSize) {
+  if (primitive.compactNumberFormat && IsTokenBinding(primitive.binding)) {
+    FormatCompactTokenCount(
+        TokenValueForBinding(primitive.binding, frame), out, outSize);
+    return;
+  }
+  BoundValue(primitive.binding, frame, out, outSize);
 }
 
 inline void AppendText(char* out, size_t outSize, size_t& outLen, const char* text) {
@@ -904,6 +994,14 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     }
     const char* fit = JsonStringFor(primitive, "fit", "ft");
     out.fitShrink = fit != nullptr && std::strcmp(fit, "shrink") == 0;
+    const char* numberFormat = JsonStringFor(primitive, "numberFormat", "nf");
+    out.compactNumberFormat =
+        numberFormat != nullptr && std::strcmp(numberFormat, "compact") == 0;
+    const char* animation = JsonStringFor(primitive, "animation", "an");
+    out.countUp =
+        animation != nullptr &&
+        std::strcmp(animation, "count-up") == 0 &&
+        IsTokenBinding(out.binding);
     const char* align = JsonStringFor(primitive, "align", "al");
     if (align != nullptr && std::strcmp(align, "center") == 0) {
       out.align = 1;
@@ -1229,7 +1327,7 @@ inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const Fram
     }
     char text[128] = {0};
     if (primitive.binding != nullptr) {
-      BoundValue(primitive.binding, frame, text, sizeof(text));
+      BoundValueForPrimitive(primitive, frame, text, sizeof(text));
     } else {
       RenderTextTemplate(primitive.text, frame, text, sizeof(text));
     }
@@ -1322,6 +1420,17 @@ inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const Fram
   return false;
 }
 
+inline const FrameData& FrameForCompiledPrimitive(
+    const CompiledPrimitive& primitive,
+    const FrameData& frame,
+    const FrameData* animatedTokenFrame) {
+  return animatedTokenFrame != nullptr &&
+                 primitive.countUp &&
+                 IsTokenBinding(primitive.binding)
+             ? *animatedTokenFrame
+             : frame;
+}
+
 inline bool RenderCompiledThemeSpec(const CompiledThemeSpec& scene, const FrameData& frame, Sink& sink) {
   if (scene.primitiveCount == 0) {
     return false;
@@ -1365,7 +1474,8 @@ inline bool RenderCompiledThemeSpecRegionPrimitives(
     const Bounds& region,
     Sink& sink,
     const char** error = nullptr,
-    bool* skippedAnimatedOverlap = nullptr) {
+    bool* skippedAnimatedOverlap = nullptr,
+    const FrameData* animatedTokenFrame = nullptr) {
   if (error != nullptr) {
     *error = "";
   }
@@ -1408,7 +1518,12 @@ inline bool RenderCompiledThemeSpecRegionPrimitives(
         rendered = true;
         continue;
       }
-      rendered = DrawCompiledPrimitive(primitive, frame, sink) || rendered;
+      rendered = DrawCompiledPrimitive(
+                     primitive,
+                     FrameForCompiledPrimitive(
+                         primitive, frame, animatedTokenFrame),
+                     sink) ||
+                 rendered;
       RenderYield();
     }
   }
@@ -1425,7 +1540,8 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
     uint32_t changedFields,
     Sink& sink,
     const char** error = nullptr,
-    bool* skippedAnimatedOverlap = nullptr) {
+    bool* skippedAnimatedOverlap = nullptr,
+    const FrameData* animatedTokenFrame = nullptr) {
   if (error != nullptr) {
     *error = "";
   }
@@ -1475,7 +1591,29 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
     return false;
   }
 
-  return RenderCompiledThemeSpecRegionPrimitives(scene, frame, dirty, sink, error, skippedAnimatedOverlap);
+  return RenderCompiledThemeSpecRegionPrimitives(
+      scene,
+      frame,
+      dirty,
+      sink,
+      error,
+      skippedAnimatedOverlap,
+      animatedTokenFrame);
+}
+
+inline uint32_t CountUpTokenFields(
+    const CompiledThemeSpec& scene,
+    uint32_t changedFields) {
+  uint32_t fields = 0;
+  for (size_t i = 0; i < scene.primitiveCount; ++i) {
+    const CompiledPrimitive& primitive = scene.primitives[i];
+    if (primitive.kind == PrimitiveKind::Text &&
+        primitive.countUp &&
+        IsTokenBinding(primitive.binding)) {
+      fields |= primitive.liveFields & changedFields;
+    }
+  }
+  return fields;
 }
 
 inline bool AnyAnimatedCompiledPrimitiveOverlaps(

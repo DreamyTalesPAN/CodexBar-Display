@@ -185,6 +185,34 @@
                   "b": {
                     "type": "string"
                   },
+                  "numberFormat": {
+                    "type": "string",
+                    "enum": [
+                      "exact",
+                      "compact"
+                    ]
+                  },
+                  "nf": {
+                    "type": "string",
+                    "enum": [
+                      "exact",
+                      "compact"
+                    ]
+                  },
+                  "animation": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "count-up"
+                    ]
+                  },
+                  "an": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "count-up"
+                    ]
+                  },
                   "fontSize": {
                     "type": "integer",
                     "minimum": 0
@@ -393,6 +421,34 @@
                   },
                   "b": {
                     "type": "string"
+                  },
+                  "numberFormat": {
+                    "type": "string",
+                    "enum": [
+                      "exact",
+                      "compact"
+                    ]
+                  },
+                  "nf": {
+                    "type": "string",
+                    "enum": [
+                      "exact",
+                      "compact"
+                    ]
+                  },
+                  "animation": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "count-up"
+                    ]
+                  },
+                  "an": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "count-up"
+                    ]
                   },
                   "fontSize": {
                     "type": "integer",

@@ -280,3 +280,15 @@ issue scope, or release permission never implies UI permission.
   cannot collapse to zero width during a slow image load.
 - Approved files: `overview-screen.tsx` and the existing connected Overview
   customer-flow assertion in `test-customer-flows.mjs`.
+
+## 2026-07-23 — Token timeframe and presentation in Theme Studio
+
+- User approval: After reviewing the KISS plan, the user explicitly ordered
+  `ok mach das so in neuer branch` in the Codex task on 2026-07-23.
+- Approved customer-visible result: A text element in Theme Studio can bind
+  directly to `Tokens · Today`, `Tokens · Last 7 days`, or
+  `Tokens · Last 30 days`. Token-bound text additionally offers `Exact` or
+  `Compact` number formatting and `None` or `Count up` animation. No new data
+  source, provider setting, or technical infrastructure control appears.
+- Approved files: Theme Studio binding and presentation controls, editor and
+  live preview formatting, ThemeSpec serialization, and their unit tests.

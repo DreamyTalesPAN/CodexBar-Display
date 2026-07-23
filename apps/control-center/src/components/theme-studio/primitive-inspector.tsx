@@ -15,7 +15,16 @@ const VARIABLE_TOKENS = [
   { label: "Reset", token: "{reset}" },
   { label: "Mode", token: "{usageMode}" },
   { label: "Time", token: "{time}" },
+  { label: "Tokens today", token: "{sessionTokens}" },
+  { label: "Tokens · 7 days", token: "{weekTokens}" },
+  { label: "Tokens · 30 days", token: "{totalTokens}" },
 ];
+
+const TOKEN_BINDINGS = new Set([
+  "sessionTokens",
+  "weekTokens",
+  "totalTokens",
+]);
 
 export function PrimitiveInspector({
   onChange,
@@ -94,8 +103,37 @@ export function PrimitiveInspector({
               ["usageMode", "Mode"],
               ["time", "Time"],
               ["date", "Date"],
+              ["sessionTokens", "Tokens · Today"],
+              ["weekTokens", "Tokens · Last 7 days"],
+              ["totalTokens", "Tokens · Last 30 days"],
             ]}
           />
+          {primitive.binding && TOKEN_BINDINGS.has(primitive.binding) ? (
+            <div className="grid grid-cols-2 gap-2">
+              <SelectField
+                label="Number format"
+                value={primitive.numberFormat || "exact"}
+                onChange={(value) =>
+                  onChange("numberFormat", value === "exact" ? "" : value)
+                }
+                options={[
+                  ["exact", "Exact"],
+                  ["compact", "Compact"],
+                ]}
+              />
+              <SelectField
+                label="Animation"
+                value={primitive.animation || "none"}
+                onChange={(value) =>
+                  onChange("animation", value === "none" ? "" : value)
+                }
+                options={[
+                  ["none", "None"],
+                  ["count-up", "Count up"],
+                ]}
+              />
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-2">
             <NumberField
               label="Font size"

@@ -88,6 +88,10 @@ export type ThemePrimitive = {
   v?: string;
   binding?: string;
   b?: string;
+  numberFormat?: string;
+  nf?: string;
+  animation?: string;
+  an?: string;
   fontSize?: number;
   s?: number;
   font?: number;
@@ -143,9 +147,9 @@ const THEME_LIBRARY_PREVIEW_FRAME: FrameData = {
   resetSecs: 3600,
   usageMode: "remaining",
   activity: "preview",
-  sessionTokens: 0,
-  weekTokens: 0,
-  totalTokens: 0,
+  sessionTokens: 142_400_000,
+  weekTokens: 982_300_000,
+  totalTokens: 1_230_000_000,
   time: "12:00",
   date: "03.07",
 };
@@ -861,12 +865,42 @@ function normalizeThemeAlias(theme: string | undefined): string {
 function renderTextPrimitive(primitive: ThemePrimitive, frame: FrameData): string {
   const binding = primitive.binding || primitive.b;
   if (binding) {
-    return boundValue(binding, frame);
+    const value = boundValue(binding, frame);
+    return isTokenBinding(binding) &&
+      (primitive.numberFormat || primitive.nf) === "compact"
+      ? formatCompactTokens(Number(value))
+      : value;
   }
   const raw = primitive.text || primitive.v || "";
   return raw.replace(/\{([a-zA-Z0-9_-]+)\}/g, (_match, key: string) =>
     boundValue(key, frame),
   );
+}
+
+function isTokenBinding(binding: string): boolean {
+  return [
+    "sessionTokens",
+    "st",
+    "weekTokens",
+    "wt",
+    "totalTokens",
+    "tt",
+  ].includes(binding);
+}
+
+function formatCompactTokens(value: number): string {
+  if (!Number.isFinite(value) || value < 1_000) {
+    return String(Math.max(0, Math.round(value || 0)));
+  }
+  const units = [
+    { threshold: 1_000_000_000, suffix: "B", digits: 2 },
+    { threshold: 1_000_000, suffix: "M", digits: 1 },
+    { threshold: 1_000, suffix: "K", digits: 1 },
+  ];
+  const unit = units.find((candidate) => value >= candidate.threshold)!;
+  return `${(value / unit.threshold)
+    .toFixed(unit.digits)
+    .replace(/\.?0+$/, "")}${unit.suffix}`;
 }
 
 function boundValue(key: string, frame: FrameData): string {

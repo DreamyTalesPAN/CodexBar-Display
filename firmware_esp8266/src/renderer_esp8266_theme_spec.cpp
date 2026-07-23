@@ -25,6 +25,8 @@ namespace {
 
 constexpr unsigned long kThemeSpecAnimatedTickMs = 20UL;
 constexpr unsigned long kThemeSpecAnimatedResumeTickMs = 1UL;
+constexpr unsigned long kTokenCountUpTickMs = 60UL;
+constexpr uint8_t kTokenCountUpSteps = 12;
 constexpr unsigned long kThemeSpecFullRenderRetryMs = 750UL;
 constexpr int kAnimatedSpriteCacheSlots = 2;
 constexpr size_t kSpriteLineReserveBytes = 256;
@@ -51,6 +53,18 @@ uint32_t lastSuccessfulThemeSpecRawHash = 0;
 JsonDocument cachedThemeSpecDoc;
 uint32_t cachedThemeSpecDocHash = 0;
 themespec::CompiledThemeSpec cachedThemeSpecScene;
+
+struct TokenCountUpState {
+  bool active = false;
+  uint8_t step = 0;
+  uint32_t fields = 0;
+  unsigned long nextTickAtMs = 0;
+  themespec::FrameData from;
+  themespec::FrameData current;
+  themespec::FrameData target;
+};
+
+TokenCountUpState tokenCountUp;
 
 struct AnimatedSpriteCache {
   bool valid = false;
@@ -136,6 +150,43 @@ bool compiledThemeSpecHasCbaAssets(const themespec::CompiledThemeSpec& scene) {
 
 const String& currentThemeSpecRaw();
 void resetAnimatedSpriteCaches();
+
+void resetTokenCountUp() {
+  tokenCountUp = TokenCountUpState{};
+}
+
+int64_t interpolateTokenValue(int64_t from, int64_t to, uint8_t step) {
+  if (to <= from || step >= kTokenCountUpSteps) {
+    return to;
+  }
+  return from + ((to - from) * step) / kTokenCountUpSteps;
+}
+
+void advanceTokenCountUp() {
+  if (!tokenCountUp.active) {
+    return;
+  }
+  tokenCountUp.step += 1;
+  tokenCountUp.current = tokenCountUp.target;
+  if ((tokenCountUp.fields & themespec::kThemeSpecFieldSessionTokens) != 0) {
+    tokenCountUp.current.sessionTokens = interpolateTokenValue(
+        tokenCountUp.from.sessionTokens,
+        tokenCountUp.target.sessionTokens,
+        tokenCountUp.step);
+  }
+  if ((tokenCountUp.fields & themespec::kThemeSpecFieldWeekTokens) != 0) {
+    tokenCountUp.current.weekTokens = interpolateTokenValue(
+        tokenCountUp.from.weekTokens,
+        tokenCountUp.target.weekTokens,
+        tokenCountUp.step);
+  }
+  if ((tokenCountUp.fields & themespec::kThemeSpecFieldTotalTokens) != 0) {
+    tokenCountUp.current.totalTokens = interpolateTokenValue(
+        tokenCountUp.from.totalTokens,
+        tokenCountUp.target.totalTokens,
+        tokenCountUp.step);
+  }
+}
 
 void releaseCbaFrameBuffer() {
   delete[] cbaFrameBuffer;
@@ -1117,6 +1168,7 @@ bool DrawThemeSpecUsage() {
   // A full redraw cancels any partial CBA job. The active state restarts at
   // frame zero and resumes a bounded row chunk per main-loop tick.
   resetAnimatedSpriteCaches();
+  resetTokenCountUp();
 
   const auto frameData = currentThemeSpecFrameData();
   ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly);
@@ -1142,7 +1194,7 @@ bool TickThemeSpecGifs() {
     return false;
   }
   const unsigned long now = millis();
-  if (nextThemeSpecAnimatedTickAtMs == 0) {
+  if (nextThemeSpecAnimatedTickAtMs == 0 && !tokenCountUp.active) {
     return true;
   }
   if (static_cast<long>(now - nextThemeSpecAnimatedTickAtMs) < 0) {
@@ -1158,16 +1210,111 @@ bool TickThemeSpecGifs() {
     return false;
   }
 
-  ThemeSpecSink sink(false, SpriteRenderMode::AnimatedOnly, true);
+  const auto frameData = currentThemeSpecFrameData();
+  bool ok = true;
   cbaRenderJobInProgress = false;
-  const bool ok = themespec::RenderCompiledThemeSpecAnimatedPrimitives(cachedThemeSpecScene, currentThemeSpecFrameData(), sink);
-  nextThemeSpecAnimatedTickAtMs = now +
-      (cbaRenderJobInProgress ? kThemeSpecAnimatedResumeTickMs : kThemeSpecAnimatedTickMs);
+  if (cachedThemeSpecScene.hasAnimatedAssets) {
+    ThemeSpecSink sink(false, SpriteRenderMode::AnimatedOnly, true);
+    ok = themespec::RenderCompiledThemeSpecAnimatedPrimitives(
+        cachedThemeSpecScene, frameData, sink);
+  }
+
+  if (tokenCountUp.active &&
+      static_cast<long>(now - tokenCountUp.nextTickAtMs) >= 0) {
+    advanceTokenCountUp();
+    ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly, true);
+    const char* partialError = nullptr;
+    ok = themespec::RenderCompiledThemeSpecChangedPrimitives(
+             cachedThemeSpecScene,
+             frameData,
+             tokenCountUp.fields,
+             sink,
+             &partialError,
+             nullptr,
+             &tokenCountUp.current) &&
+         ok;
+    if (tokenCountUp.step >= kTokenCountUpSteps) {
+      resetTokenCountUp();
+    } else {
+      tokenCountUp.nextTickAtMs = now + kTokenCountUpTickMs;
+    }
+  }
+
+  nextThemeSpecAnimatedTickAtMs =
+      cachedThemeSpecScene.hasAnimatedAssets || tokenCountUp.active
+          ? now +
+                (cbaRenderJobInProgress
+                     ? kThemeSpecAnimatedResumeTickMs
+                     : kThemeSpecAnimatedTickMs)
+          : 0;
   return ok;
 }
 
 bool ThemeSpecAnimationWorkPending() {
-  return cbaRenderJobInProgress;
+  return cbaRenderJobInProgress || tokenCountUp.active;
+}
+
+void PrepareThemeSpecTokenCountUp(
+    uint32_t changedFields,
+    int64_t previousSessionTokens,
+    int64_t previousWeekTokens,
+    int64_t previousTotalTokens) {
+  const String& raw = currentThemeSpecRaw();
+  if (!CurrentFrame().hasThemeSpec ||
+      !codexbar_display::core::ThemeSpecRawLooksRenderable(raw) ||
+      !ensureThemeSpecSceneCached(raw)) {
+    resetTokenCountUp();
+    return;
+  }
+
+  const uint32_t countUpFields =
+      themespec::CountUpTokenFields(cachedThemeSpecScene, changedFields);
+  if (countUpFields == 0) {
+    return;
+  }
+
+  const auto target = currentThemeSpecFrameData();
+  const themespec::FrameData previousAnimated = tokenCountUp.current;
+  const bool wasActive = tokenCountUp.active;
+  resetTokenCountUp();
+  tokenCountUp.from = target;
+  tokenCountUp.current = target;
+  tokenCountUp.target = target;
+
+  if ((countUpFields & themespec::kThemeSpecFieldSessionTokens) != 0) {
+    const int64_t from =
+        wasActive ? previousAnimated.sessionTokens : previousSessionTokens;
+    if (target.sessionTokens > from) {
+      tokenCountUp.fields |= themespec::kThemeSpecFieldSessionTokens;
+      tokenCountUp.from.sessionTokens = from;
+      tokenCountUp.current.sessionTokens = from;
+    }
+  }
+  if ((countUpFields & themespec::kThemeSpecFieldWeekTokens) != 0) {
+    const int64_t from =
+        wasActive ? previousAnimated.weekTokens : previousWeekTokens;
+    if (target.weekTokens > from) {
+      tokenCountUp.fields |= themespec::kThemeSpecFieldWeekTokens;
+      tokenCountUp.from.weekTokens = from;
+      tokenCountUp.current.weekTokens = from;
+    }
+  }
+  if ((countUpFields & themespec::kThemeSpecFieldTotalTokens) != 0) {
+    const int64_t from =
+        wasActive ? previousAnimated.totalTokens : previousTotalTokens;
+    if (target.totalTokens > from) {
+      tokenCountUp.fields |= themespec::kThemeSpecFieldTotalTokens;
+      tokenCountUp.from.totalTokens = from;
+      tokenCountUp.current.totalTokens = from;
+    }
+  }
+
+  tokenCountUp.active = tokenCountUp.fields != 0;
+  tokenCountUp.nextTickAtMs =
+      tokenCountUp.active ? millis() + kTokenCountUpTickMs : 0;
+  if (tokenCountUp.active) {
+    nextThemeSpecAnimatedTickAtMs = millis() + kThemeSpecAnimatedTickMs;
+  }
 }
 
 bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText) {
@@ -1198,7 +1345,8 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
           changedFields,
           sink,
           &partialError,
-          nullptr)) {
+          nullptr,
+          tokenCountUp.active ? &tokenCountUp.current : nullptr)) {
     markThemeSpecPartialFailed(changedFields, partialError);
     return false;
   }
@@ -1208,9 +1356,10 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
     resetAnimatedSpriteCaches();
   }
   markThemeSpecPartialOk(changedFields);
-  nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
-                                      ? millis() + kThemeSpecAnimatedTickMs
-                                      : 0;
+  nextThemeSpecAnimatedTickAtMs =
+      cachedThemeSpecScene.hasAnimatedAssets || tokenCountUp.active
+          ? millis() + kThemeSpecAnimatedTickMs
+          : 0;
   const int64_t remain = CurrentRemainingSecs();
   LastRenderedSecs() = remain;
   LastRenderedMinuteBucket() = remain / 60;
@@ -1278,6 +1427,7 @@ FirmwareUpdateOverlayPlacement FirmwareUpdateOverlayBarPlacement() {
 
 void ResetThemeSpecSpriteCaches() {
   resetAnimatedSpriteCaches();
+  resetTokenCountUp();
   releaseCbaFrameBuffer();
   clearFullRenderRetry();
   lastSuccessfulThemeSpecId = "";
@@ -1351,6 +1501,17 @@ bool TickThemeSpecGifs() {
 
 bool ThemeSpecAnimationWorkPending() {
   return false;
+}
+
+void PrepareThemeSpecTokenCountUp(
+    uint32_t changedFields,
+    int64_t previousSessionTokens,
+    int64_t previousWeekTokens,
+    int64_t previousTotalTokens) {
+  (void)changedFields;
+  (void)previousSessionTokens;
+  (void)previousWeekTokens;
+  (void)previousTotalTokens;
 }
 
 bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText) {

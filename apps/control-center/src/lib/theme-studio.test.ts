@@ -80,6 +80,38 @@ describe("validateThemeSpec", () => {
     expect(validateThemeSpec(imported).errors).toEqual([]);
   });
 
+  it("round-trips token presentation through compact device JSON", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        animation: "count-up",
+        binding: "weekTokens",
+        color: "#FFFFFF",
+        fontSize: 4,
+        numberFormat: "compact",
+        type: "text",
+        width: 220,
+        x: 10,
+        y: 80,
+      },
+    ];
+
+    const deviceSpec = JSON.parse(deviceThemeSpecJson(spec));
+    expect(deviceSpec.p[0]).toMatchObject({
+      an: "count-up",
+      b: "wt",
+      nf: "compact",
+    });
+
+    const imported = importThemeSpec(deviceSpec);
+    expect(imported.primitives[0]).toMatchObject({
+      animation: "count-up",
+      binding: "weekTokens",
+      numberFormat: "compact",
+    });
+    expect(validateThemeSpec(imported).errors).toEqual([]);
+  });
+
   it("rejects border radii outside the supported pixel range", () => {
     const spec = validSpec();
     spec.primitives[0].borderRadius = 121;

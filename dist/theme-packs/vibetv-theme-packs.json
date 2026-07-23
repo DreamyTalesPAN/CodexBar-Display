@@ -40,6 +40,22 @@
       "downloadAsset": "vibetv-theme-synthwave.zip",
       "sha256": "d60c34a2e2a9ccf947e125a5f8108976ed51970db8afa8cf7923661ca223ac38",
       "bytes": 1528
+    },
+    {
+      "id": "token-burner",
+      "title": "Token Burner",
+      "themeRev": 1,
+      "downloadAsset": "vibetv-theme-token-burner.zip",
+      "sha256": "8a9c57fb5d95b6bc017f579a897288c344b24d18f6b1ba7916f259185d6d8b80",
+      "bytes": 707
+    },
+    {
+      "id": "token-counter",
+      "title": "Token Counter",
+      "themeRev": 1,
+      "downloadAsset": "vibetv-theme-token-counter.zip",
+      "sha256": "233a4c3a860b81df51e5c07cb8933e6bc1259e87f20b561130ae91e83431875b",
+      "bytes": 700
     }
   ]
 }

@@ -14,9 +14,9 @@ This is a local-data path. It does not replace the existing percentage collector
 
 `codexbar-display` maps token data to these optional frame fields:
 
-- `sessionTokens`: top-level `sessionTokens`
+- `sessionTokens`: top-level `sessionTokens` for the current local calendar day
 - `weekTokens`: rolling 7-day sum from `daily[].totalTokens`
-- `totalTokens`: `totals.totalTokens`
+- `totalTokens`: `totals.totalTokens` for CodexBar's current 30-day cost window
 
 If a field cannot be derived reliably, it is omitted instead of guessed.
 

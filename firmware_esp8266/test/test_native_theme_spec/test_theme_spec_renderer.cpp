@@ -18,6 +18,7 @@ using codexbar_display::themespec::RectCommand;
 using codexbar_display::themespec::CompileThemeSpec;
 using codexbar_display::themespec::CompiledThemeSpec;
 using codexbar_display::themespec::CompiledThemeSpecHasGifAssets;
+using codexbar_display::themespec::CountUpTokenFields;
 using codexbar_display::themespec::AnyAnimatedCompiledPrimitiveOverlaps;
 using codexbar_display::themespec::Bounds;
 using codexbar_display::themespec::RenderCompiledThemeSpec;
@@ -34,6 +35,7 @@ using codexbar_display::themespec::kThemeSpecFieldLabel;
 using codexbar_display::themespec::kThemeSpecFieldReset;
 using codexbar_display::themespec::kThemeSpecFieldSession;
 using codexbar_display::themespec::kThemeSpecFieldWeekly;
+using codexbar_display::themespec::kThemeSpecFieldSessionTokens;
 using codexbar_display::core::ConsumeFrameLine;
 using codexbar_display::core::RuntimeState;
 using codexbar_display::core::SerialConsumeEvent;
@@ -429,6 +431,51 @@ void testUsageUnavailableKeepsThemeAndProgress() {
   char reset[32] = {0};
   codexbar_display::themespec::BoundValue("reset", frame, reset, sizeof(reset));
   TEST_ASSERT_EQUAL_STRING("Reset unavailable", reset);
+}
+
+void testTokenTextSupportsCompactFormatAndCountUpFrame() {
+  const char* spec = R"JSON({"v":1,"id":"token-counter","rev":1,"p":[{"t":"tx","x":10,"y":80,"w":220,"b":"st","nf":"compact","an":"count-up","s":4}]})JSON";
+
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+  TEST_ASSERT_EQUAL_UINT32(1, scene.primitiveCount);
+  TEST_ASSERT_TRUE(scene.primitives[0].compactNumberFormat);
+  TEST_ASSERT_TRUE(scene.primitives[0].countUp);
+  TEST_ASSERT_EQUAL_UINT32(
+      kThemeSpecFieldSessionTokens,
+      CountUpTokenFields(scene, kThemeSpecFieldSessionTokens));
+
+  FrameData target;
+  target.sessionTokens = 142400000;
+  RecordingSink fullSink;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpec(scene, target, fullSink));
+  TEST_ASSERT_EQUAL_STRING("142.4M", fullSink.commands[1].text.c_str());
+
+  FrameData animated = target;
+  animated.sessionTokens = 120000000;
+  RecordingSink partialSink;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpecChangedPrimitives(
+      scene,
+      target,
+      kThemeSpecFieldSessionTokens,
+      partialSink,
+      nullptr,
+      nullptr,
+      &animated));
+  bool foundAnimatedValue = false;
+  for (const RecordedCommand& command : partialSink.commands) {
+    if (command.type == CommandType::Text && command.text == "120M") {
+      foundAnimatedValue = true;
+    }
+  }
+  TEST_ASSERT_TRUE(foundAnimatedValue);
+
+  char compact[24] = {0};
+  codexbar_display::themespec::FormatCompactTokenCount(
+      1230000000LL, compact, sizeof(compact));
+  TEST_ASSERT_EQUAL_STRING("1.23B", compact);
+  ReleaseCompiledThemeSpec(scene);
 }
 
 void testLabelBindingUsesProviderLabelWithoutUpdateNotice() {
@@ -1751,6 +1798,7 @@ int main() {
   RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);
   RUN_TEST(testRendersCommandsAndBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
+  RUN_TEST(testTokenTextSupportsCompactFormatAndCountUpFrame);
   RUN_TEST(testLabelBindingUsesProviderLabelWithoutUpdateNotice);
   RUN_TEST(testChangedLabelPassUsesSynchronizedUpdateNoticeText);
   RUN_TEST(testChangedLabelPassCanRestoreProviderText);

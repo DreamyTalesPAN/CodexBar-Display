@@ -28,9 +28,9 @@ Fields:
 - `resetSecs` (number, optional): seconds remaining until reset.
 - `usageUnavailable` (boolean, optional): current quota values are not trustworthy; missing/false remains backward compatible. ThemeSpec text bindings show unknown values while progress keeps the numeric carrier values.
 - `usageMode` (string, optional): semantic of `session`/`weekly` (`used` or `remaining`).
-- `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
+- `sessionTokens` (number, optional): token total for the current local calendar day when available.
 - `weekTokens` (number, optional): rolling 7-day token total when available.
-- `totalTokens` (number, optional): lifetime token total when available.
+- `totalTokens` (number, optional): token total for CodexBar's current 30-day cost window when available.
 - `theme` (string, optional): requested built-in UI theme (`classic`, `crt`, `mini`).
 - `themeSpec` (object, optional): inline ThemeSpec v1 payload (see schema below). Once a ThemeSpec is cached or activated from storage, later live frames may omit this field and only send usage data.
 - `confirmClearThemeSpec` (boolean, optional): must be `true` when intentionally sending `themeSpec:null` to clear the active cached ThemeSpec.

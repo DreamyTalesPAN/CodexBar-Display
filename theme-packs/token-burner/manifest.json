@@ -1,0 +1,14 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "token-burner",
+  "name": "Token Burner",
+  "version": "0.1.0",
+  "minFirmware": "1.0.40",
+  "themeSpec": {
+    "path": "/themes/u/tokburn.json",
+    "file": "theme.json",
+    "contentType": "application/json"
+  },
+  "assets": []
+}

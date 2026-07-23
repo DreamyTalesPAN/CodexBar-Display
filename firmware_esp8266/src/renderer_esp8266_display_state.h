@@ -116,6 +116,11 @@ struct FirmwareUpdateOverlayPlacement {
 bool DrawThemeSpecUsage();
 bool TickThemeSpecGifs();
 bool ThemeSpecAnimationWorkPending();
+void PrepareThemeSpecTokenCountUp(
+    uint32_t changedFields,
+    int64_t previousSessionTokens,
+    int64_t previousWeekTokens,
+    int64_t previousTotalTokens);
 bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText = nullptr);
 // Repaints one bounded display region from the cached ThemeSpec scene without
 // a full-screen redraw. Used to remove the update-notice overlay bar.

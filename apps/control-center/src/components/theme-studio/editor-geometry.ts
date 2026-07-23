@@ -282,9 +282,15 @@ export function textPrimitiveNaturalWidth(
   primitive: ThemeStudioPrimitive,
   fontSize = primitive.fontSize || 1,
 ) {
-  const text = primitive.binding
-    ? boundText(primitive.binding)
-    : substituteText(primitive.text || "Text");
+  const bound = primitive.binding ? boundText(primitive.binding) : "";
+  const text =
+    primitive.binding &&
+    primitive.numberFormat === "compact" &&
+    ["sessionTokens", "weekTokens", "totalTokens"].includes(primitive.binding)
+      ? compactTokens(Number(bound))
+      : primitive.binding
+        ? bound
+        : substituteText(primitive.text || "Text");
   const renderFontSize = textPrimitiveRenderFontSize(primitive, fontSize);
   return Math.min(
     Math.max(1, DISPLAY_SIZE - primitive.x),
@@ -382,6 +388,21 @@ function boundText(binding: string): string {
     default:
       return "";
   }
+}
+
+function compactTokens(value: number): string {
+  if (value < 1_000) {
+    return String(value);
+  }
+  if (value < 1_000_000) {
+    return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  }
+  if (value < 1_000_000_000) {
+    return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  }
+  return `${(value / 1_000_000_000)
+    .toFixed(2)
+    .replace(/\.?0+$/, "")}B`;
 }
 
 function substituteText(value: string): string {

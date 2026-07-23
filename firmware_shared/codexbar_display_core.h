@@ -74,6 +74,9 @@ struct SerialConsumeEvent {
   bool themeSpecCacheHit = false;
   bool themeSpecPartialRender = false;
   uint32_t themeSpecChangedFields = 0;
+  int64_t previousSessionTokens = 0;
+  int64_t previousWeekTokens = 0;
+  int64_t previousTotalTokens = 0;
 };
 
 inline int ClampPct(int value) {
@@ -707,6 +710,9 @@ inline bool ConsumeFrameLine(
   outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChangedWithThemeSpecRaw(previous, next, themeSpecRaw) || outEvent.themeSpecChanged;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   outEvent.themeSpecChangedFields = ThemeSpecLiveChangedFields(previous, next);
+  outEvent.previousSessionTokens = previous.sessionTokens;
+  outEvent.previousWeekTokens = previous.weekTokens;
+  outEvent.previousTotalTokens = previous.totalTokens;
   outEvent.themeSpecPartialRender = ThemeSpecCanUsePartialRender(
       previous,
       next,
