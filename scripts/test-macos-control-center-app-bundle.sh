@@ -617,6 +617,8 @@ required_source = [
     "requiresApplicationInstallation(Bundle.main.bundleURL)",
     "presentInstallationRequiredAlert()",
     "RuntimePreparationOutcome",
+    "RuntimeServiceRegistrationOutcome",
+    "runtimeServiceRegistrationOutcome(",
     "pendingNativeUpdateBlocksBundle(",
     "pendingNativeUpdateIsExpired(",
     "discardMismatchedPendingNativeUpdate()",
@@ -632,6 +634,41 @@ required_source = [
     'title: "Create report"',
     'title: "Starting Control Center"',
     "retryTitle: status.retryTitle",
+    "kind: status.kind",
+    "case .failure(let failure):",
+    "SMAppService.openSystemSettingsLoginItems()",
+    'installationPreviewEnvironmentKey = "VIBETV_INSTALLATION_PREVIEW_STATE"',
+    'title: "Allow VibeTV to run in the background"',
+    'detail: "VibeTV needs permission to keep its local service running."',
+    'title: "Open Login Items"',
+    "action: #selector(openSystemSettingsLoginItems)",
+    "kind: .backgroundApproval",
+    "installationStatus?.kind == .backgroundApproval",
+    'title: "VibeTV’s background service couldn’t start"',
+    'detail: "Restart VibeTV’s local service to continue."',
+    'title: "Restart service"',
+    "action: #selector(retryRuntimePreparation)",
+    "kind: .serviceRestart",
+    'title: "VibeTV update didn’t finish"',
+    'detail: "The app and its background service are on different versions."',
+    'title: "Restart VibeTV"',
+    "action: #selector(restartControlCenterAfterFailedUpdate)",
+    "@objc private func restartControlCenterAfterFailedUpdate()",
+    'title: "Check for updates"',
+    "action: #selector(checkForUpdates)",
+    "kind: .updateMismatch",
+    'title: "VibeTV Control Center is incomplete"',
+    'detail: "Required application files are missing or damaged."',
+    'title: "Download VibeTV again"',
+    "action: #selector(downloadVibeTVAgain)",
+    "kind: .applicationIncomplete",
+    'title: "Your previous VibeTV installation needs repair"',
+    'detail: "VibeTV couldn’t safely replace the older background service."',
+    'title: "Repair installation"',
+    "action: #selector(restartControlCenter)",
+    "kind: .legacyRepair",
+    "button.intrinsicContentSize.width + 32",
+    "button.widthAnchor.constraint(equalToConstant: shadcnButtonWidth)",
     'codexBarBundleIdentifier = "com.steipete.codexbar"',
     'codexBarPinnedVersion = "0.44.0"',
     'codexBarMinimumCompatibleVersion = "0.23.0"',
@@ -661,6 +698,14 @@ for snippet in required_source:
 
 if "support.isHidden = !failed" in source:
     raise SystemExit("Create report must remain visible on every native setup screen")
+if '"Background activity is off"' in source:
+    raise SystemExit("background approval UI must stay limited to headline, detail, and actions")
+if '"Installation could not be verified"' in source:
+    raise SystemExit("runtime failures must use a specific customer recovery state")
+if '"The Mac App, runtime, and local listener did not reach one verified state."' in source:
+    raise SystemExit("runtime failures must not expose the generic verification detail")
+if "equalToConstant: 660" in source:
+    raise SystemExit("recovery buttons must hug their content instead of stretching")
 
 launch_start = source.find("func applicationDidFinishLaunching(")
 launch_end = source.find("func application(_ application:", launch_start)
@@ -686,10 +731,10 @@ prepare_runtime = preparation_method.find(
 )
 native_case = preparation_method.find("case .nativeRuntimeReady:", prepare_runtime)
 webview_after_verify = preparation_method.find("self.presentControlCenter()", native_case)
-legacy_case = preparation_method.find("case .legacyRuntimeRestored:", native_case)
+failure_case = preparation_method.find("case .failure(let failure):", native_case)
 if not (
     0 <= status_start < preflight_call < preparation_task < prepare_runtime
-    < native_case < webview_after_verify < legacy_case
+    < native_case < webview_after_verify < failure_case
 ):
     raise SystemExit(
         "native app must keep the WebView closed until app, runtime, and listener verification succeeds"
@@ -744,7 +789,7 @@ if "loadControlCenter(cachePolicy: .reloadIgnoringLocalCacheData)" not in create
         "native app must bypass stale Control Center HTML on the first verified WebView load"
     )
 
-registration = source.find("guard await ensureBundledRuntimeServiceRegistered()")
+registration = source.find("switch await ensureBundledRuntimeServiceRegistered()")
 stop_legacy = source.find("if !stopLegacyLaunchAgents(legacyStates)")
 health_gate = source.find("var health = await waitForHealthyRuntime")
 legacy_app_migration = source.find(
