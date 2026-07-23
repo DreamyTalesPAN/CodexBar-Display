@@ -143,6 +143,42 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: After Theme Studio installs a custom theme, Overview renders the exact active custom layout and assets with the live VibeTV usage frame instead of showing `Preview unavailable`. The installed render pack survives Mac App restarts, and an older local revision is never substituted for the active device theme. No new customer control or technical copy appears.
 - Approved files: `live-vibetv-preview.tsx`, `theme-studio-screen.tsx`, local theme render-pack storage and tests, Companion custom render-pack persistence and serving, and their Go and Control Center regression tests.
 
+## 2026-07-21 — Stable Theme Studio keyboard assertion
+
+- User approval: The user explicitly approved the exact Theme Studio result with accessible tabs on 2026-07-16; the current CI repair changes only the automated wait for that already approved result.
+- Approved customer-visible result: The approved Theme Studio remains visually and functionally unchanged. Pressing `ArrowRight` on the `Project` tab selects `Assets`, and the regression test waits for Radix's asynchronous focus transition before checking the result.
+- Approved files: The Theme Studio keyboard assertion in `test-customer-flows.mjs`.
+
+## 2026-07-21 — Stable Overview preview assertion
+
+- User approval: The user explicitly approved the exact Overview theme rendering with real zero-percent usage on 2026-07-18; the current CI repair changes only the automated wait for that already approved result.
+- Approved customer-visible result: The approved Overview remains visually and functionally unchanged. The regression test allows the same standard 10-second CI window for the device image layout before it checks the already rendered Synthwave preview.
+- Approved files: The Overview preview assertion in `test-customer-flows.mjs`.
+
+## 2026-07-21 — Customer preview feedback batch
+
+- User approval: While reviewing the preview Mac App on 2026-07-21, the user explicitly reported each visible defect and ordered the fixes: restore Usage token history, load Settings brightness when the tab opens, enlarge Theme Library previews, keep widthless text stable when alignment changes, open the native asset picker for GIF and Sprite, remove the redundant preview-dialog description, remove the misleading provider-repair box from Usage, and reduce and clean up the Support screen.
+- Approved customer-visible result: Usage shows available token history without a contradictory provider-repair box. Settings loads the current brightness and enables its slider. Theme previews render at a readable size, widthless Theme Studio text no longer jumps left when alignment changes, and GIF, Sprite, and JSON file actions open the macOS file picker. The Theme preview dialog shows only its title and preview. Support shows a compact VibeTV summary, one primary `Create report` action that becomes `Creating report`, then only `Copy`, `Download`, and `Create again`; detailed checks stay inside the copied or downloaded report, and Recent activity is compact and scrollable.
+- Approved files: `control-center-app.tsx`, `live-vibetv-preview.tsx`, `logs-screen.tsx`, `support-report-actions.tsx`, `theme-library-screen.tsx`, `usage-screen.tsx`, the shared `slider.tsx` accessibility label forwarding, the native `main.swift`, and the matching customer-flow assertions in `test-customer-flows.mjs`.
+
+## 2026-07-21 — Shared setup and recovery presentation
+
+- User approval: After reviewing the preview, the user explicitly required the setup screens to share their UI elements and approved implementing the resulting review recommendations. The user also explicitly required a spinner on the boot screen, a secondary `Create report` action there, and a primary report action on the Support screen.
+- Approved customer-visible result: Boot, device startup, setup, and Mac App recovery use one consistent status hierarchy, spinner treatment, device list, WiFi instructions, and accessible state announcements. The native startup screen mirrors the same title and detail hierarchy and preserves a specific repair action when reopened. `Create report` remains secondary only during boot and primary on Support.
+- Approved files: Shared setup, brand, shell-status, device-candidate, spinner, and support-report components; `control-center-app.tsx`, `control-center-shell.tsx`, `hosted-setup-shell.tsx`, `setup-screen.tsx`, `device-startup-screen.tsx`, `mac-app-recovery-screen.tsx`, native `main.swift`, `URLSchemeTests.swift`, and their unit and customer-flow tests.
+
+## 2026-07-22 — Provider management in Usage
+
+- User approval: The user explicitly requested GitHub issues #183 and #188 to be implemented together in the delegated Codex task on 2026-07-22, with #188 limited to provider enable/disable and customer-safe health status.
+- Approved customer-visible result: Usage keeps its existing provider usage overview and adds a compact `AI providers` list below it. The list shows every provider reported by the VibeTV Mac App, supports search, changes the real provider enablement with one switch per row, and shows only safe local and service health labels. Failed changes restore the previous switch value; no credentials, raw provider errors, or provider-selection controls appear.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`, `preference-control.tsx`, `usage-screen.tsx`, and their customer-flow assertions.
+
+## 2026-07-22 — Shadcn startup failure presentation
+
+- User approval: While testing the signed preview on 2026-07-22, the user explicitly reported that the `VibeTV could not connect` pairing-failure screen still used the old UI and required it to follow the current design.
+- Approved customer-visible result: Startup and recovery remain outside the Control Center navigation, but now use the compact VibeTV brand, the shared shadcn Card hierarchy, semantic status icon, shadcn Alert, current buttons, and a secondary support-report footer. Pairing failures name the visible `Search again` action instead of referring to a hidden `Fix connection` action.
+- Approved files: `setup-status-screen.tsx`, `device-startup-screen.tsx`, `mac-app-recovery-screen.tsx`, and their unit and customer-flow assertions.
+
 ## 2026-07-21 — Offer final releases to prerelease builds in update checks
 
 - User approval: The user explicitly ordered issue #173 to be implemented and the resulting PR #198 CI to be fixed in the Claude session on 2026-07-21.
@@ -152,7 +188,7 @@ issue scope, or release permission never implies UI permission.
 ## 2026-07-21 — Physical pairing recovery and Mac-App-first updates
 
 - User approval: After the security sweep described the visible recovery problem, the user explicitly answered `dann ... fixen` and approved implementing that customer-visible fix in the Codex task on 2026-07-21.
-- Approved customer-visible result: A closed pairing window or rejected saved token no longer tells the customer to check the same WiFi and retry. Control Center explains the three-restart recovery: interrupt early boot three times, connect VibeTV to WiFi again, then pair it again. A temporary pairing rate limit only asks the customer to wait briefly. When Mac App and VibeTV firmware updates are both available, the single Update action updates the Mac App first and exposes the firmware update only afterward.
+- Approved customer-visible result at that time: A closed pairing window or rejected saved token used a destructive physical recovery. The WiFi/pairing recovery part of this decision is superseded by the 2026-07-22 KISS WiFi-change decision below. A temporary pairing rate limit only asks the customer to wait briefly. When Mac App and VibeTV firmware updates are both available, the single Update action updates the Mac App first and exposes the firmware update only afterward.
 - Approved files: `control-center-types.ts`, `control-center-app.tsx`, `updates-screen.tsx`, `protocol/compatibility_matrix.json`, `docs/customer-setup.md`, and their customer-flow assertions.
 
 ## 2026-07-22 — Manual IP alongside WiFi discovery
@@ -160,3 +196,87 @@ issue scope, or release permission never implies UI permission.
 - User approval: After reviewing the exact rendered automatic-search and no-result screens, the user explicitly ordered `mach PR` in the Codex task on 2026-07-22.
 - Approved customer-visible result: While Control Center searches WiFi, the search spinner appears before an always-visible minimal IP-address field introduced by `Or enter the IP address shown on your VibeTV screen:`. When no VibeTV is found, the screen shows `We couldn't find your VibeTV`, the seven WiFi setup steps, `Scan WiFi again`, and only then the same alternative IP-address entry. The former `Enter VibeTV IP` and `VibeTV is on WiFi` buttons do not appear.
 - Approved files: `device-startup-screen.tsx`, `device-target-form.tsx`, `setup-screen.tsx`, and their customer-flow assertions in `test-customer-flows.mjs`.
+
+## 2026-07-22 — Shadcn manual IP and secure pairing integration
+
+- User approval: After merging the manual-IP work to `main`, the user explicitly ordered its functionality to be carried into the new Shadcn setup screens, rejected the old presentation, and requested a new preview in the Codex task on 2026-07-22.
+- Approved customer-visible result at that time: Automatic discovery stays the default, while startup and setup expose the same manual VibeTV address path through the existing Shadcn Card, Field, Input, Button, Spinner, and Alert components. The search spinner remains before the address field, and the no-result flow keeps WiFi instructions and `Scan WiFi again` before manual entry. The customer-visible destructive WiFi-reset instructions from this decision are superseded by the 2026-07-22 KISS WiFi-change decision below.
+- Approved files: `control-center-app.tsx`, `device-startup-screen.tsx`, `device-target-form.tsx`, `setup-screen.tsx`, `updates-screen.tsx`, and their unit and customer-flow assertions.
+
+## 2026-07-22 — Pairing recovery and truthful usage state
+
+- User approval: While testing preview 99.0.61, the user reported the rotating `Starting Control Center`, `Reconnecting to your VibeTV`, and first-time WiFi screens plus stale Usage values, and explicitly ordered an independent cleanup and review including the Usage problem.
+- Approved customer-visible result at that time: A reachable VibeTV whose local pairing key is missing is never presented as connected, as needing first-time WiFi setup, or as waiting for an AI provider. The customer-visible destructive WiFi-reset instructions from this decision are superseded by the 2026-07-22 KISS WiFi-change decision below. The stale last-sent usage frame stays hidden until pairing is restored, and the initial Control Center check is not held open by a slow provider usage probe.
+- Approved files: `control-center-app.tsx`, `device-startup-screen.tsx`, `overview-screen.tsx`, `live-vibetv-preview.tsx`, Companion provider setup status handling, and their unit and customer-flow assertions.
+
+## 2026-07-22 — KISS WiFi change without device reset
+
+- User approval: During physical preview testing, the user explicitly rejected
+  the read-only automatic setup hotspot and any WPA2/PIN recovery design.
+- Approved customer-visible result: If saved WiFi credentials fail, VibeTV
+  returns to the ordinary open `VibeTV-Setup` hotspot and immediately shows the
+  normal writable WiFi form. Choosing a new network changes only SSID/password;
+  pairing, themes and device settings remain intact. A normal WiFi change never
+  asks the customer to reset the device and never opens a new pairing window on
+  an already paired device.
+- Approved files: ESP8266 setup-AP/portal behavior, firmware WiFi/pairing policy,
+  native firmware regression tests, and the WiFi hardware/customer contract.
+
+## 2026-07-22 — One cardless setup language and working re-pair
+
+- User approval: While testing the signed preview on 2026-07-22, the user explicitly required every setup state to use the cardless `Starting Control Center` presentation, required support-report creation to remain available during search, required the address field to show and accept only the IP address, and reported that `Pair again` must repair pairing instead of returning to device selection.
+- Approved customer-visible result: Boot, search, WiFi help, device selection, connecting and pairing errors use one shared cardless full-screen hierarchy. `Create report` remains available while another setup action runs. The VibeTV address field displays a bare IP address while normalizing it internally. After a selected VibeTV rejects the saved pairing token, `Pair again` explicitly re-pairs that same verified device and opens Control Center instead of restarting discovery.
+- Approved files: `control-center-app.tsx`, `device-startup-screen.tsx`, `setup-screen.tsx`, `setup-status-screen.tsx`, `device-target-copy.ts`, `device-target-form.tsx`, `support-report-actions.tsx`, Support and Updates consumers, and their unit and customer-flow assertions.
+
+## 2026-07-22 — Usage self-repair, centered update indicator and draft brightness
+
+- User approval: While testing the signed preview on 2026-07-22, the user explicitly reported that token history did not load, the Updates notification was not centered, and the brightness slider sometimes returned to 100. The user required brightness changes to remain local until `Save brightness` is clicked, required a stalled `cost --json` scan to repair itself in the background, and then explicitly requested a refresh button for token usage.
+- Approved customer-visible result: Usage immediately uses an available local token-history cache when the full CodexBar cost scan is slow, then refreshes that history through one longer background repair scan. The token-history card includes a visible `Refresh` action that requests a fresh usage scan, shows `Refreshing` while it runs, and cannot be clicked twice. The Updates notification is vertically centered in its navigation row. Moving the brightness slider never writes to VibeTV and a delayed settings response cannot replace the unsaved value; `Save brightness` sends that value exactly once.
+- Approved files: Companion token-history cache and background-repair handling, `control-center-app.tsx`, `control-center-shell.tsx`, `usage-screen.tsx`, and their Go, unit, and customer-flow assertions.
+
+## 2026-07-22 — Approved shadcn stack merge checkpoint
+
+- User approval: This merge checkpoint combines the user's explicit 2026-07-22 approvals recorded above for the shadcn manual-IP and one-cardless re-pair flow with the separately approved Usage refresh, centered update indicator, and draft brightness behavior.
+- Approved customer-visible result: The merged shadcn branch preserves the approved cardless setup and recovery flow, including the bare-IP manual address field and working `Pair again`, while Usage retains its approved refresh and self-repair behavior and Settings retains its approved save-only brightness behavior. The merge introduces no additional customer-facing state, copy, or action.
+- Approved files: `device-target-form.tsx`, `control-center-app.tsx`, `control-center-shell.tsx`, `usage-screen.tsx`, and their unit and customer-flow assertions in `test-customer-flows.mjs`.
+
+## 2026-07-23 — One-click Connect and explicit 1.0.38 recovery
+
+- User approval: The user explicitly ordered pairing to be reduced to selecting
+  a visible VibeTV and pressing `Connect`, while keeping the unavoidable legacy
+  recovery only for already locked firmware `1.0.38` devices.
+- Approved customer-visible result: Explicit Connect always establishes the
+  current internal key and never waits for the first display image. Firmware
+  `1.0.38` rejection shows `Reconnect this VibeTV`, the three-power-cycle,
+  `VibeTV-Setup`, and 30-minute Connect steps. It shows neither `Pair again`,
+  the old generic powered-on instruction, nor an additional settings sentence.
+  Support-report access remains available.
+- Approved files: ESP8266 pairing policy and compatibility version, Companion
+  Connect routing/error mapping, Control Center startup recovery, and their
+  firmware, Go, unit, and customer-flow tests.
+
+## 2026-07-23 — Restore Connect after a lost local key
+
+- User approval: After testing the signed preview against the real VibeTV, the
+  user explicitly accepted the successful result with `ja geil` and asked
+  whether the branch was ready to merge.
+- Approved customer-visible result: When the reachable VibeTV no longer has a
+  matching local key, the startup screen keeps that VibeTV visible with the
+  normal `Connect` action. Pressing it establishes the new internal key, opens
+  Overview, and reaches the green connected state with a live display image
+  without another reset or WiFi setup.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`, their
+  unit tests, and the matching customer-flow assertions in
+  `test-customer-flows.mjs`.
+
+## 2026-07-23 — Stable connected Overview preview width
+
+- User approval: The user's explicit acceptance of the real-device connected
+  Overview covers the same visible result while fixing its collapsed-width CI
+  case.
+- Approved customer-visible result: The connected Overview continues to show
+  the VibeTV case and live theme image at the approved size. Its preview
+  container now keeps an explicit available width so the exact same image
+  cannot collapse to zero width during a slow image load.
+- Approved files: `overview-screen.tsx` and the existing connected Overview
+  customer-flow assertion in `test-customer-flows.mjs`.

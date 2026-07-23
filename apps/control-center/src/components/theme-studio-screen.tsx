@@ -25,6 +25,42 @@ import {
   useRef,
   useState,
 } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemTitle,
+} from "@/components/ui/item";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import {
   buildThemePack,
   createStarterThemeSpec,
@@ -77,7 +113,6 @@ import { PrimitiveInspector } from "./theme-studio/primitive-inspector";
 import {
   AddButton,
   AssetRow,
-  DarkButton,
   PanelTitle,
 } from "./theme-studio/editor-controls";
 import {
@@ -213,7 +248,7 @@ export function ThemeStudioScreen({
   });
   const [assetStatus, setAssetStatus] = useState<EditorStatus>({
     tone: "unknown",
-    message: "Import GIF or sprite assets when the theme needs them.",
+    message: "",
   });
   const [libraryStatus, setLibraryStatus] = useState<EditorStatus | null>(() =>
     saveBlockedReason
@@ -951,6 +986,13 @@ export function ThemeStudioScreen({
   }
 
   async function sendTheme() {
+    if (dirty) {
+      setDeviceStatus({
+        tone: "attention",
+        message: "Save this theme before sending it to VibeTV.",
+      });
+      return;
+    }
     const checked = validateThemeSpec(spec, assets);
     if (checked.errors.length > 0) {
       setDeviceStatus({
@@ -1019,25 +1061,23 @@ export function ThemeStudioScreen({
 
   return (
     <div
-      className="mx-auto max-w-[1540px] text-[#1B1B1B] lg:h-screen lg:max-w-none lg:overflow-hidden"
+      className="mx-auto max-w-[1540px] text-foreground lg:h-screen lg:max-w-none lg:overflow-hidden"
       data-theme-studio-root
     >
       <h2 className="sr-only">Theme Studio</h2>
       <section className="grid gap-4 py-4 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)]">
-        <header className="grid gap-4 border-b border-[#747A60] pb-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+        <header className="grid gap-4 border-b pb-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="min-w-0">
             <div className="grid justify-items-start gap-3">
               {onBackToLibrary ? (
                 <div ref={libraryButtonRef}>
-                  <DarkButton
-                    fullWidth={false}
-                    icon={<ArrowLeft size={16} aria-hidden />}
-                    label="Library"
-                    onClick={requestBackToLibrary}
-                  />
+                  <Button onClick={requestBackToLibrary} type="button" variant="outline">
+                    <ArrowLeft data-icon="inline-start" aria-hidden />
+                    <span>Library</span>
+                  </Button>
                 </div>
               ) : null}
-              <h3 className="truncate text-3xl font-black leading-tight text-[#1B1B1B]">
+              <h3 className="truncate text-3xl font-black leading-tight text-foreground">
                 {packName || "Untitled theme"}
               </h3>
               <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -1079,6 +1119,7 @@ export function ThemeStudioScreen({
               validation.errors.length === 0 && !saveBlockedReason
             }
             canSend={
+              !dirty &&
               validation.errors.length === 0 &&
               (deviceValidation?.errors.length || 0) === 0
             }
@@ -1092,83 +1133,183 @@ export function ThemeStudioScreen({
             sending={sending}
             showSave={Boolean(onSaveToLibrary)}
           />
+          <div className="grid grid-cols-2 gap-2 lg:hidden">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="outline"><LayoutGrid data-icon="inline-start" />Layers & assets</Button>
+              </SheetTrigger>
+              <SheetContent className="overflow-y-auto" side="left">
+                <SheetHeader>
+                  <SheetTitle>Layers & assets</SheetTitle>
+                  <SheetDescription>Add content, select a layer, or import an asset.</SheetDescription>
+                </SheetHeader>
+                <div className="grid gap-5 px-4 pb-6">
+                  <div className="grid grid-cols-3 gap-2">
+                    <AddButton icon={Type} label="Text" onClick={() => addPrimitive("text")} />
+                    <AddButton icon={LayoutGrid} label="Bar" onClick={() => addPrimitive("progress")} />
+                    <AddButton icon={Square} label="Rect" onClick={() => addPrimitive("rect")} />
+                    <AddButton icon={Film} label="GIF" onClick={() => gifInputRef.current?.click()} />
+                    <AddButton icon={ImagePlus} label="Sprite" onClick={() => spriteInputRef.current?.click()} />
+                    <AddButton icon={FileUp} label="JSON" onClick={() => fileInputRef.current?.click()} />
+                  </div>
+                  <div className="grid gap-2">
+                    {spec.primitives.map((primitive, index) => (
+                      <Button
+                        aria-pressed={visibleSelectedIndices.includes(index)}
+                        className={cn("h-auto min-h-12 w-full justify-start", visibleSelectedIndices.includes(index) && "border-ring bg-primary hover:bg-primary-hover")}
+                        key={`mobile-${primitive.type}-${index}`}
+                        onClick={(event) => selectPrimitiveIndex(index, event.shiftKey || event.metaKey || event.ctrlKey)}
+                        variant="outline"
+                      >
+                        <span className="w-6 font-mono text-muted-foreground">{index + 1}</span>
+                        <strong className="w-16 truncate text-left">{primitive.type}</strong>
+                        <span className="min-w-0 flex-1 truncate text-left font-normal">{primitiveTitle(primitive)}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </SheetContent>
+            </Sheet>
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="outline"><Palette data-icon="inline-start" />Properties</Button>
+              </SheetTrigger>
+              <SheetContent className="overflow-y-auto" side="right">
+                <SheetHeader>
+                  <SheetTitle>Inspector</SheetTitle>
+                  <SheetDescription>Adjust the selected element and project settings.</SheetDescription>
+                </SheetHeader>
+                <div className="grid gap-6 px-4 pb-6">
+                  {selectedPrimitive ? (
+                    <PrimitiveInspector
+                      key={`mobile-${selectedPrimitive.type}-${selectedIndex}`}
+                      onChange={(field, value) => updateSelectedPrimitive((primitive) => setPrimitiveField(primitive, field, value))}
+                      onDelete={deleteSelectedPrimitives}
+                      onInsertToken={insertToken}
+                      primitive={selectedPrimitive}
+                    />
+                  ) : <p className="rounded-[var(--radius-control)] border bg-muted p-3 text-sm text-muted-foreground">Select an element.</p>}
+                  <div className="grid gap-3 border-t pt-5">
+                    <PanelTitle icon={<Palette aria-hidden />} title="Project" />
+                    <TextField label="Name" value={packName} onChange={setPackName} />
+                    <ColorField label="Background" value={spec.bgColor || COLOR_FALLBACK} onChange={(value) => updateSpec((draft) => { Object.assign(draft, updateThemeColors(draft, { background: value })); })} />
+                  </div>
+                  <StatusLine
+                    detail={deviceValidation?.errors[0] || deviceValidation?.warnings[0] || deviceStatus.message}
+                    icon={<Send aria-hidden />}
+                    title="VibeTV readiness"
+                    tone={deviceValidation?.errors.length ? "attention" : deviceStatus.tone}
+                  />
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
         </header>
 
-        <section className="grid min-h-0 items-start gap-4 lg:grid-cols-[240px_minmax(360px,1fr)_300px] lg:overflow-hidden 2xl:grid-cols-[300px_minmax(560px,1fr)_360px]">
-          <aside className="order-2 grid gap-4 border border-[#747A60] bg-[#F9F9F9] p-4 lg:order-1 lg:max-h-full lg:overflow-y-auto">
-            <div>
-              <PanelTitle icon={<LayoutGrid size={16} aria-hidden />} title="Layers" />
-              <div className="grid grid-cols-3 gap-2">
-                <AddButton
-                  icon={<Type size={18} aria-hidden />}
-                  label="Text"
-                  onClick={() => addPrimitive("text")}
-                />
-                <AddButton
-                  icon={<LayoutGrid size={18} aria-hidden />}
-                  label="Bar"
-                  onClick={() => addPrimitive("progress")}
-                />
-                <AddButton
-                  icon={<Square size={18} aria-hidden />}
-                  label="Rect"
-                  onClick={() => addPrimitive("rect")}
-                />
-                <AddButton
-                  icon={<Film size={18} aria-hidden />}
-                  label="GIF"
-                  onClick={() => gifInputRef.current?.click()}
-                />
-                <AddButton
-                  icon={<ImagePlus size={18} aria-hidden />}
-                  label="Sprite"
-                  onClick={() => spriteInputRef.current?.click()}
-                />
-              </div>
-            </div>
+        <section className="grid min-h-0 items-start gap-4 lg:h-full lg:grid-cols-[240px_minmax(360px,1fr)_300px] lg:overflow-hidden 2xl:grid-cols-[300px_minmax(560px,1fr)_360px]">
+          <aside className="order-2 hidden lg:order-1 lg:block lg:h-full lg:min-h-0">
+            <Card className="h-full min-h-0" size="sm">
+              <CardHeader>
+                <CardTitle>Layers</CardTitle>
+                <CardDescription>Add and arrange elements.</CardDescription>
+              </CardHeader>
+              <CardContent className="min-h-0 flex-1">
+                <ScrollArea className="h-full">
+                  <div className="flex flex-col gap-4 pr-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <AddButton
+                    icon={Type}
+                    label="Text"
+                    onClick={() => addPrimitive("text")}
+                  />
+                  <AddButton
+                    icon={LayoutGrid}
+                    label="Bar"
+                    onClick={() => addPrimitive("progress")}
+                  />
+                  <AddButton
+                    icon={Square}
+                    label="Rect"
+                    onClick={() => addPrimitive("rect")}
+                  />
+                  <AddButton
+                    icon={Film}
+                    label="GIF"
+                    onClick={() => gifInputRef.current?.click()}
+                  />
+                  <AddButton
+                    icon={ImagePlus}
+                    label="Sprite"
+                    onClick={() => spriteInputRef.current?.click()}
+                  />
+                </div>
 
-            <div className="grid max-h-[440px] gap-2 overflow-y-auto pr-1">
-              {spec.primitives.map((primitive, index) => (
-                <button
-                  className={`grid min-h-12 min-w-0 grid-cols-[28px_70px_minmax(0,1fr)] items-center gap-2 border px-3 py-2 text-left text-xs transition ${
-                    visibleSelectedIndices.includes(index)
-                      ? "border-[#5E7200] bg-[#CCFF00] text-[#1B1B1B] shadow-[inset_3px_0_0_#1B1B1B]"
-                      : "border-[#747A60] bg-[#F9F9F9] text-[#444933] hover:bg-[#EEEEEE]"
-                  }`}
-                  key={`${primitive.type}-${index}`}
-                  onClick={(event) =>
-                    selectPrimitiveIndex(
-                      index,
-                      event.shiftKey || event.metaKey || event.ctrlKey,
-                    )
-                  }
-                  type="button"
-                >
-                  <span className="font-mono text-[#444933]">{index + 1}</span>
-                  <strong className="truncate text-[#1B1B1B]">
-                    {primitive.type}
-                  </strong>
-                  <span className="truncate">{primitiveTitle(primitive)}</span>
-                </button>
-              ))}
-            </div>
+                <ItemGroup>
+                    {spec.primitives.map((primitive, index) => {
+                      const selected = visibleSelectedIndices.includes(index);
 
-            <div className="grid grid-cols-2 gap-2">
-              <DarkButton
-                disabled={visibleSelectedIndices.length === 0}
-                icon={<ArrowUp size={15} aria-hidden />}
-                label="Bring forward"
-                onClick={() => reorderSelectedPrimitives("forward")}
-              />
-              <DarkButton
-                disabled={visibleSelectedIndices.length === 0}
-                icon={<ArrowDown size={15} aria-hidden />}
-                label="Send backward"
-                onClick={() => reorderSelectedPrimitives("backward")}
-              />
-            </div>
+                      return (
+                        <Item
+                          asChild
+                          key={`${primitive.type}-${index}`}
+                          size="sm"
+                          variant={selected ? "muted" : "outline"}
+                        >
+                          <button
+                            aria-pressed={selected}
+                            onClick={(event) =>
+                              selectPrimitiveIndex(
+                                index,
+                                event.shiftKey ||
+                                  event.metaKey ||
+                                  event.ctrlKey,
+                              )
+                            }
+                            type="button"
+                          >
+                            <ItemContent className="min-w-0">
+                              <ItemTitle>{primitiveTypeLabel(primitive)}</ItemTitle>
+                              <ItemDescription className="truncate">
+                                {primitiveTitle(primitive)}
+                              </ItemDescription>
+                            </ItemContent>
+                            <ItemActions>
+                              <Badge variant={selected ? "default" : "outline"}>
+                                {index + 1}
+                              </Badge>
+                            </ItemActions>
+                          </button>
+                        </Item>
+                      );
+                    })}
+                </ItemGroup>
 
-            <AdvancedPanel
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    aria-label="Bring selected layers forward"
+                    disabled={visibleSelectedIndices.length === 0}
+                    onClick={() => reorderSelectedPrimitives("forward")}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    <ArrowUp data-icon="inline-start" aria-hidden />
+                    <span>Forward</span>
+                  </Button>
+                  <Button
+                    aria-label="Send selected layers backward"
+                    disabled={visibleSelectedIndices.length === 0}
+                    onClick={() => reorderSelectedPrimitives("backward")}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    <ArrowDown data-icon="inline-start" aria-hidden />
+                    <span>Backward</span>
+                  </Button>
+                </div>
+
+                <AdvancedPanel
               activeTab={advancedTab}
               onTabChange={setAdvancedTab}
               panels={{
@@ -1179,7 +1320,6 @@ export function ThemeStudioScreen({
                   id="theme-studio-panel-project"
                   role="tabpanel"
                 >
-                  <PanelTitle icon={<Palette size={16} aria-hidden />} title="Project" />
                   <TextField label="Name" value={packName} onChange={setPackName} />
                   <TextField
                     label="ID"
@@ -1202,38 +1342,58 @@ export function ThemeStudioScreen({
                       })
                     }
                   />
-                  <DarkButton
-                    icon={<RefreshCw size={15} aria-hidden />}
-                    label={loadingPreset ? "Loading" : "Mini theme"}
+                  <Button
+                    className="w-full"
+                    disabled={loadingPreset}
                     onClick={() => void loadBuiltInTheme("mini-classic")}
-                  />
-                  <DarkButton
-                    icon={<FileUp size={16} aria-hidden />}
-                    label="Import theme JSON"
+                    type="button"
+                    variant="outline"
+                  >
+                    {loadingPreset ? (
+                      <Spinner data-icon="inline-start" />
+                    ) : (
+                      <RefreshCw data-icon="inline-start" aria-hidden />
+                    )}
+                    <span>{loadingPreset ? "Loading" : "Mini theme"}</span>
+                  </Button>
+                  <Button
+                    className="w-full"
                     onClick={() => fileInputRef.current?.click()}
-                  />
+                    type="button"
+                    variant="outline"
+                  >
+                    <FileUp data-icon="inline-start" aria-hidden />
+                    <span>Import theme JSON</span>
+                  </Button>
                 </section>
                 ),
 
                 assets: (
                 <section
                   aria-labelledby="theme-studio-tab-assets"
-                  className="grid gap-2"
+                  className="grid min-w-0 gap-2"
                   id="theme-studio-panel-assets"
                   role="tabpanel"
                 >
-                  <PanelTitle icon={<FileUp size={16} aria-hidden />} title="Assets" />
-                  <div className="grid grid-cols-2 gap-2">
-                    <DarkButton
-                      icon={<Film size={15} aria-hidden />}
-                      label="Upload GIF"
+                  <div className="grid min-w-0 gap-2">
+                    <Button
+                      className="min-w-0 w-full justify-start"
                       onClick={() => gifInputRef.current?.click()}
-                    />
-                    <DarkButton
-                      icon={<ImagePlus size={15} aria-hidden />}
-                      label="Upload sprite"
+                      type="button"
+                      variant="outline"
+                    >
+                      <Film data-icon="inline-start" aria-hidden />
+                      <span>Upload GIF</span>
+                    </Button>
+                    <Button
+                      className="min-w-0 w-full justify-start"
                       onClick={() => spriteInputRef.current?.click()}
-                    />
+                      type="button"
+                      variant="outline"
+                    >
+                      <ImagePlus data-icon="inline-start" aria-hidden />
+                      <span>Upload sprite</span>
+                    </Button>
                   </div>
                   {Object.entries(assets).length > 0 ? (
                     Object.entries(assets).map(([assetPath, asset]) => (
@@ -1247,9 +1407,17 @@ export function ThemeStudioScreen({
                       />
                     ))
                   ) : (
-                    <p className="border border-[#747A60] bg-[#F9F9F9] p-3 text-xs leading-5 text-[#444933]">
-                      No custom assets in this draft.
-                    </p>
+                    <Empty className="gap-2 border bg-muted/30 p-4">
+                      <EmptyHeader className="gap-1">
+                        <EmptyMedia variant="icon">
+                          <FileUp aria-hidden />
+                        </EmptyMedia>
+                        <EmptyTitle>No custom assets</EmptyTitle>
+                        <EmptyDescription className="text-xs">
+                          Upload a GIF or sprite to add it to this draft.
+                        </EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
                   )}
                   {assetStatus.message ? (
                     <StatusLine
@@ -1292,10 +1460,9 @@ export function ThemeStudioScreen({
                   id="theme-studio-panel-json"
                   role="tabpanel"
                 >
-                  <PanelTitle icon={<Code2 size={16} aria-hidden />} title="JSON" />
-                  <textarea
+                  <Textarea
                     aria-label="Theme JSON"
-                    className="min-h-[220px] w-full resize-y border border-[#747A60] bg-[#F9F9F9] p-3 font-mono text-xs leading-5 text-[#1B1B1B] outline-none focus:border-[#5E7200]"
+                    className="min-h-[220px] resize-y font-mono text-xs leading-5"
                     onChange={(event) => {
                       setJsonText(event.target.value);
                       setJsonDirty(true);
@@ -1316,25 +1483,37 @@ export function ThemeStudioScreen({
                         tone={jsonStatus.tone}
                       />
                     ) : null}
-                    <DarkButton
-                      icon={<Code2 size={16} aria-hidden />}
-                      label="Apply JSON"
+                    <Button
+                      className="w-full"
                       onClick={applyJson}
-                    />
-                    <DarkButton
-                      icon={<RefreshCw size={16} aria-hidden />}
-                      label="Reset JSON"
+                      type="button"
+                      variant="outline"
+                    >
+                      <Code2 data-icon="inline-start" aria-hidden />
+                      <span>Apply JSON</span>
+                    </Button>
+                    <Button
+                      className="w-full"
                       onClick={() => {
                         setJsonText(prettyJson(spec));
                         setJsonDirty(false);
                         setJsonStatus({ tone: "ready", message: "JSON reset." });
                       }}
-                    />
+                      type="button"
+                      variant="outline"
+                    >
+                      <RefreshCw data-icon="inline-start" aria-hidden />
+                      <span>Reset JSON</span>
+                    </Button>
                   </div>
                 </section>
                 ),
               }}
-            />
+                />
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
           </aside>
 
           <main className="order-1 grid min-h-0 min-w-0 place-items-center lg:order-2 lg:h-full">
@@ -1390,7 +1569,7 @@ export function ThemeStudioScreen({
             />
           </main>
 
-          <aside className="order-3 grid gap-4 border border-[#747A60] bg-[#F9F9F9] p-4 lg:max-h-full lg:overflow-y-auto">
+          <aside className="order-3 hidden gap-4 rounded-[var(--radius-card)] border bg-card p-4 lg:grid lg:max-h-full lg:overflow-y-auto">
             <div>
               <PanelTitle
                 icon={<LayoutGrid size={16} aria-hidden />}
@@ -1409,14 +1588,14 @@ export function ThemeStudioScreen({
                   primitive={selectedPrimitive}
                 />
               ) : (
-                <p className="border border-[#747A60] bg-[#EEEEEE] p-3 text-sm text-[#444933]">
+                <p className="rounded-[var(--radius-control)] border bg-muted p-3 text-sm text-muted-foreground">
                   Select an element.
                 </p>
               )}
             </div>
 
             {validation.errors.length > 0 || validation.warnings.length > 0 ? (
-              <div className="border border-[#747A60] bg-[#EEEEEE] p-3">
+              <Card className="gap-0 bg-muted p-3">
                 <PanelTitle
                   icon={<AlertTriangle size={16} aria-hidden />}
                   title="Validation"
@@ -1441,7 +1620,7 @@ export function ThemeStudioScreen({
                     />
                   ))}
                 </div>
-              </div>
+              </Card>
             ) : null}
             {libraryStatus ? (
               <StatusLine
@@ -1534,6 +1713,16 @@ export function ThemeStudioScreen({
       ) : null}
     </div>
   );
+}
+
+function primitiveTypeLabel(primitive: ThemeStudioPrimitive): string {
+  if (primitive.type === "progress") {
+    return "Bar";
+  }
+  if (primitive.type === "gif") {
+    return "GIF";
+  }
+  return primitive.type.charAt(0).toUpperCase() + primitive.type.slice(1);
 }
 
 export function clearRetiredAiThemeStorage() {

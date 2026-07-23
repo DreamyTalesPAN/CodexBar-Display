@@ -326,6 +326,10 @@ func (cfg *Config) SetActiveDevice(device KnownDevice) {
 	cfg.upsertKnownDevice(device)
 }
 
+func (cfg *Config) RememberDevice(device KnownDevice) {
+	cfg.upsertKnownDevice(device)
+}
+
 func (cfg *Config) ClearDevices() {
 	cfg.DeviceTarget = ""
 	cfg.DeviceToken = ""

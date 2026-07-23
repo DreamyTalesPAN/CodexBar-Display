@@ -1,22 +1,44 @@
 "use client";
 
 import {
-  Check,
   Download,
   Monitor,
   RefreshCw,
-  Server,
   ShieldCheck,
   X,
 } from "lucide-react";
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
+import { Progress } from "@/components/ui/progress";
+import { Spinner } from "@/components/ui/spinner";
 import type { ReactNode } from "react";
 import {
   availableMacAppDmgDownloadUrl,
   type CompanionReleaseInfo,
 } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
-import { ControlCenterButton } from "./control-center-button";
-import { ControlCenterStatusIcon } from "./control-center-status-icon";
 import type { CompanionInfo } from "./control-center-types";
 
 export type UpdatesCompanionStatus = "unknown" | "online" | "missing";
@@ -64,6 +86,7 @@ export type UpdatesScreenProps = {
   requiresMacAppMigration?: boolean;
   busyAction?: string | null;
   updateStatus?: FirmwareUpdateStatus | null;
+  supportReportBusy?: boolean;
 };
 
 export function UpdatesScreen({
@@ -79,17 +102,25 @@ export function UpdatesScreen({
   requiresMacAppMigration = false,
   busyAction,
   updateStatus,
+  supportReportBusy = false,
 }: UpdatesScreenProps) {
+  const firmwareUpdateCompleted = updateStatus?.phase === "complete";
   const installedFirmware =
-    firmwareUpdate?.installedFirmware || device?.firmware || "Unknown";
+    updateStatus?.result?.firmware ||
+    firmwareUpdate?.installedFirmware ||
+    device?.firmware ||
+    "Unknown";
   const canCheckFirmware = Boolean(device?.board && device?.firmware);
   const checking = Boolean(canCheckFirmware && !firmwareUpdate);
   const macAppRunning = companionStatus === "online";
   const checkingMacApp = Boolean(macAppRunning && !companionRelease);
   const checkingUpdates = checking || checkingMacApp;
   const latestFirmware =
-    firmwareUpdate?.latestFirmware || (checking ? "Checking" : "Not available");
-  const updateAvailable = hasFirmwareUpdate(firmwareUpdate);
+    updateStatus?.result?.firmware ||
+    firmwareUpdate?.latestFirmware ||
+    (checking ? "Checking" : "Not available");
+  const updateAvailable =
+    !firmwareUpdateCompleted && hasFirmwareUpdate(firmwareUpdate);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const nativeMacUpdateReady = Boolean(
     macAppUpdateAvailable && companionInfo?.app?.installedInApplications,
@@ -111,54 +142,31 @@ export function UpdatesScreen({
   const firmwareUpdateBlocked = updateAvailable && macAppMustUpdateFirst;
   const anyUpdateAvailable =
     updateAvailable || macAppDownloadAction || macAppNativeAction;
-  const needsAttention = anyUpdateAvailable || requiresMacAppMigration;
   const refreshing = busyAction === "firmware-check";
-  const installingUpdate =
-    busyAction === "firmware-update" || updateStatus?.phase === "installing";
+  const installingUpdate = updateStatus
+    ? updateStatus.phase === "installing"
+    : busyAction === "firmware-update";
   const installingAnyUpdate = installingUpdate;
-  const creatingReport = busyAction === "diagnostics";
+  const creatingReport = supportReportBusy;
   const macAppCheckFailed =
     macAppRunning &&
     (companionRelease?.status === "check_failed" ||
       companionRelease?.dmgDownloadStatus === "check_failed");
   const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
-  const checkFailed = firmwareCheckFailed || macAppCheckFailed;
-  const title = checkingUpdates
-    ? "Checking updates"
-    : updateAvailable
-      ? "Update available"
-      : checkFailed
-        ? "Update check failed"
-        : macAppMigrationReady
-          ? "Update available"
-          : requiresMacAppMigration
-            ? "Update not ready"
-            : anyUpdateAvailable
-              ? "Update available"
-              : "Up to date";
-  const status = checking
-    ? "Checking"
-    : firmwareCheckFailed
-      ? "Check failed"
-      : !canCheckFirmware && !firmwareUpdate
-        ? "Not available"
-        : firmwareUpdateBlocked
-          ? "Update Mac App first"
-          : updateAvailable
-            ? "Update available"
-            : "Up to date";
-  const companionReleaseStatus = companionReleaseLabel({
-    macAppRunning,
-    migrationReady: macAppMigrationReady,
-    migrationRequired: requiresMacAppMigration,
-    release: companionRelease,
-  });
   const companionInstalled =
     companionStatus === "missing"
       ? "Not running"
       : companionInfo?.app?.version || companionVersion || "Unknown";
   const companionAvailable =
     companionRelease?.latestVersion || companionRelease?.release || "Checking";
+  const pageStatusHeading =
+    macAppCheckFailed || firmwareCheckFailed
+      ? "Update check failed"
+      : anyUpdateAvailable
+        ? "Update available"
+        : checkingUpdates
+          ? "Checking updates"
+          : "Up to date";
 
   async function runPrimaryUpdate() {
     if (macAppCheckFailed) {
@@ -186,131 +194,75 @@ export function UpdatesScreen({
   }
 
   return (
-    <div className="mx-auto max-w-[1180px]">
-      <section className="min-h-[330px] border-b border-[#747A60] py-10">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex min-w-0 items-start gap-5">
-            <HeroIcon variant={needsAttention ? "neutral" : "complete"}>
-              {needsAttention ? (
-                <RefreshCw size={36} aria-hidden />
-              ) : (
-                <Check size={38} aria-hidden />
-              )}
-            </HeroIcon>
-            <div className="min-w-0">
-              <h2 className="max-w-[560px] text-[clamp(3rem,5vw,5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
-                {title}
-              </h2>
-            </div>
-          </div>
-          <PrimaryUpdateAction
-            checking={checkingUpdates || refreshing}
-            disabled={
-              installingAnyUpdate ||
-              Boolean(busyAction && busyAction !== "firmware-check")
-            }
-            downloadUrl={macAppDownloadUrl}
-            nativeUpdateUrl={
-              macAppNativeAction ? "vibetv://check-for-updates" : undefined
-            }
-            installingFirmware={installingUpdate}
-            firmwareUpdateAvailable={
-              updateAvailable && !firmwareUpdateBlocked
-            }
-            macAppCheckFailed={macAppCheckFailed}
-            macAppMigrationRequired={requiresMacAppMigration}
-            macAppMigrationReady={macAppMigrationReady}
-            macAppUpdateAvailable={macAppUpdateAvailable}
-            onClick={runPrimaryUpdate}
-            updateReady={Boolean(
-              macAppCheckFailed
-                ? onCheckUpdates
-                : macAppMustUpdateFirst
-                  ? macAppNativeAction || macAppDownloadReady
-                  : updateAvailable
-                    ? onInstallUpdate
-                    : anyUpdateAvailable || onCheckUpdates,
-            )}
-          />
-        </div>
-      </section>
+    <div className="mx-auto flex max-w-[1040px] flex-col gap-4 py-4">
+      <h2 className="text-2xl font-black">{pageStatusHeading}</h2>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <UpdateCard
+          description="Software running on this Mac."
+          installedLabel="Installed"
+          installedValue={companionInstalled}
+          latestLabel="Available"
+          latestValue={companionAvailable}
+          title="Mac App"
+          updateAvailable={macAppUpdateAvailable || macAppMigrationReady}
+        />
 
-      <section className="border-b border-[#747A60] py-8">
-        <h3 className="mb-6 text-base font-bold text-[#1B1B1B]">Mac App</h3>
+        <UpdateCard
+          description="Software running on your VibeTV."
+          installedLabel="Installed firmware"
+          installedValue={installedFirmware}
+          latestLabel="Available firmware"
+          latestValue={latestFirmware}
+          title="Firmware update"
+          updateAvailable={updateAvailable}
+        >
+          {firmwareUpdateBlocked ? (
+            <Alert>
+              <ShieldCheck aria-hidden />
+              <AlertTitle>Update Mac App first</AlertTitle>
+              <AlertDescription>
+                Update the Mac App first. The VibeTV firmware update comes next.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {updateStatus ? (
+            <InlineUpdateProgress
+              creatingReport={creatingReport}
+              onCreateReport={onCreateReport}
+              onRetry={firmwareUpdateBlocked ? undefined : onInstallUpdate}
+              status={updateStatus}
+            />
+          ) : null}
+        </UpdateCard>
+      </div>
 
-        <dl className="grid gap-0 border-y border-[#747A60]">
-          <FirmwareRow
-            icon={<Server size={20} aria-hidden />}
-            label="App version"
-            value={companionInstalled}
-          />
-          <FirmwareRow
-            icon={<Server size={20} aria-hidden />}
-            label="App build"
-            value={companionInfo?.app?.build || "Unknown"}
-          />
-          <FirmwareRow
-            icon={<Monitor size={20} aria-hidden />}
-            label="Background version"
-            value={formatRuntimeValue(companionInfo)}
-          />
-          <FirmwareRow
-            icon={<ShieldCheck size={20} aria-hidden />}
-            label="Background service"
-            value={formatListenerValue(companionInfo)}
-          />
-          <FirmwareRow
-            icon={<Download size={20} aria-hidden />}
-            label="Latest version"
-            value={companionAvailable}
-          />
-          <FirmwareRow
-            icon={<Check size={20} aria-hidden />}
-            label="Status"
-            value={companionReleaseStatus}
-          />
-        </dl>
-
-      </section>
-
-      <section className="border-b border-[#747A60] py-8">
-        <h3 className="mb-6 text-base font-bold text-[#1B1B1B]">
-          Firmware update
-        </h3>
-
-        <dl className="grid gap-0 border-y border-[#747A60]">
-          <FirmwareRow
-            icon={<Monitor size={20} aria-hidden />}
-            label="Installed firmware"
-            value={installedFirmware}
-          />
-          <FirmwareRow
-            icon={<RefreshCw size={20} aria-hidden />}
-            label="Available firmware"
-            value={latestFirmware}
-          />
-          <FirmwareRow
-            icon={<Check size={20} aria-hidden />}
-            label="Status"
-            value={status}
-          />
-        </dl>
-
-        {firmwareUpdateBlocked ? (
-          <p className="mt-4 text-sm leading-6 text-[#444933]" role="status">
-            Update the Mac App first. The VibeTV firmware update comes next.
-          </p>
-        ) : null}
-
-        {updateStatus ? (
-          <InlineUpdateProgress
-            creatingReport={creatingReport}
-            onCreateReport={onCreateReport}
-            onRetry={firmwareUpdateBlocked ? undefined : onInstallUpdate}
-            status={updateStatus}
-          />
-        ) : null}
-      </section>
+      <PrimaryUpdateAction
+        checking={checkingUpdates || refreshing}
+        disabled={
+          installingAnyUpdate ||
+          Boolean(busyAction && busyAction !== "firmware-check")
+        }
+        downloadUrl={macAppDownloadUrl}
+        nativeUpdateUrl={
+          macAppNativeAction ? "vibetv://check-for-updates" : undefined
+        }
+        installingFirmware={installingUpdate}
+        firmwareUpdateAvailable={updateAvailable && !firmwareUpdateBlocked}
+        macAppCheckFailed={macAppCheckFailed}
+        macAppMigrationRequired={requiresMacAppMigration}
+        macAppMigrationReady={macAppMigrationReady}
+        macAppUpdateAvailable={macAppUpdateAvailable}
+        onClick={runPrimaryUpdate}
+        updateReady={Boolean(
+          macAppCheckFailed
+            ? onCheckUpdates
+            : macAppMustUpdateFirst
+              ? macAppNativeAction || macAppDownloadReady
+              : updateAvailable
+                ? onInstallUpdate
+                : anyUpdateAvailable || onCheckUpdates,
+        )}
+      />
     </div>
   );
 }
@@ -349,13 +301,12 @@ function PrimaryUpdateAction({
     !checking
   ) {
     return (
-      <a
-        className="vibetv-button vibetv-button--large vibetv-button--primary w-full sm:w-auto sm:min-w-[240px]"
-        href={nativeUpdateUrl}
-      >
-        <Download size={20} aria-hidden />
-        <span>Update</span>
-      </a>
+      <Button asChild className="h-14 w-full text-base font-bold" size="lg">
+        <a href={nativeUpdateUrl}>
+          <Download data-icon="inline-start" />
+          <span>Update</span>
+        </a>
+      </Button>
     );
   }
 
@@ -366,13 +317,12 @@ function PrimaryUpdateAction({
     !checking
   ) {
     return (
-      <a
-        className="vibetv-button vibetv-button--large vibetv-button--primary w-full sm:w-auto sm:min-w-[240px]"
-        href={downloadUrl}
-      >
-        <Download size={20} aria-hidden />
-        <span>Update</span>
-      </a>
+      <Button asChild className="h-14 w-full text-base font-bold" size="lg">
+        <a href={downloadUrl}>
+          <Download data-icon="inline-start" />
+          <span>Update</span>
+        </a>
+      </Button>
     );
   }
 
@@ -390,20 +340,20 @@ function PrimaryUpdateAction({
             ? "Checking updates"
             : "Check for updates";
   const icon = installingFirmware || checking ? (
-    <RefreshCw className="animate-spin" size={20} aria-hidden />
+    <Spinner data-icon="inline-start" />
   ) : firmwareUpdateAvailable ? (
-    <Download size={20} aria-hidden />
+    <Download data-icon="inline-start" aria-hidden />
   ) : macAppCheckFailed ? (
-    <RefreshCw size={20} aria-hidden />
+    <RefreshCw data-icon="inline-start" aria-hidden />
   ) : macAppMigrationRequired ? (
-    <Download size={20} aria-hidden />
+    <Download data-icon="inline-start" aria-hidden />
   ) : (
-    <RefreshCw size={20} aria-hidden />
+    <RefreshCw data-icon="inline-start" aria-hidden />
   );
 
   return (
-    <ControlCenterButton
-      className="w-full sm:w-auto sm:min-w-[240px]"
+    <Button
+      className="h-14 w-full text-base font-bold"
       disabled={
         disabled ||
         checking ||
@@ -415,12 +365,13 @@ function PrimaryUpdateAction({
           macAppUpdateAvailable &&
           !macAppCheckFailed)
       }
-      icon={icon}
-      label={label}
       onClick={onClick}
-      size="large"
-      variant="primary"
-    />
+      size="lg"
+      type="button"
+    >
+      {icon}
+      <span>{label}</span>
+    </Button>
   );
 }
 
@@ -460,132 +411,120 @@ function InlineUpdateProgress({
       : status.message ||
         status.logs[status.logs.length - 1] ||
         "Preparing VibeTV update.";
-  const previousSteps =
-    failed || complete || attention ? [] : status.logs.slice(-4, -1);
-
   return (
-    <div className="mt-6" role="status" aria-live="polite">
-      <div className="h-2 overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
-        <div
-          className={`h-full bg-[#CCFF00] transition-[width] duration-300 ${
-            failed || complete || attention ? "" : "animate-pulse"
-          }`}
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-      <div className="mt-3 flex flex-col gap-3 border border-[#747A60] bg-[#F9F9F9] p-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-start gap-2">
-          {failed ? (
-            <X className="mt-0.5 shrink-0" size={16} aria-hidden />
-          ) : complete ? (
-            <ShieldCheck className="mt-0.5 shrink-0" size={16} aria-hidden />
-          ) : attention ? (
-            <ShieldCheck className="mt-0.5 shrink-0" size={16} aria-hidden />
-          ) : (
-            <RefreshCw
-              className="mt-0.5 shrink-0 animate-spin"
-              size={16}
-              aria-hidden
-            />
-          )}
-          <div className="min-w-0">
-            <div className="text-sm font-bold text-[#1B1B1B]">{title}</div>
-            <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
-              {detail}
-            </div>
-            {previousSteps.length > 0 ? (
-              <ol className="mt-2 space-y-1 text-xs leading-5 text-[#5D634F]">
-                {previousSteps.map((step) => (
-                  <li key={step}>{step}</li>
-                ))}
-              </ol>
-            ) : null}
-          </div>
-        </div>
+    <div className="flex flex-col gap-3" role="status" aria-live="polite">
+      <Progress value={progress} />
+      <Alert variant={failed ? "destructive" : "default"}>
+        {failed ? (
+          <X aria-hidden />
+        ) : complete || attention ? (
+          <ShieldCheck aria-hidden />
+        ) : (
+          <RefreshCw className="animate-spin" aria-hidden />
+        )}
+        <AlertTitle>{title}</AlertTitle>
+        <AlertDescription>{detail}</AlertDescription>
         {failed || attention ? (
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <AlertAction className="flex gap-2">
             {failed && status.retryAllowed !== false ? (
-              <ControlCenterButton
+              <Button
                 disabled={!onRetry}
-                label="Try again"
                 onClick={onRetry}
-                size="compact"
-                variant="secondary"
-              />
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Try again
+              </Button>
             ) : null}
-            <ControlCenterButton
-              label={creatingReport ? "Creating report" : "Create report"}
+            <Button
               disabled={!onCreateReport || creatingReport}
               onClick={onCreateReport}
-              size="compact"
-              variant="primary"
-            />
-          </div>
+              size="sm"
+              type="button"
+            >
+              {creatingReport ? <Spinner data-icon="inline-start" /> : null}
+              <span>{creatingReport ? "Creating report" : "Create report"}</span>
+            </Button>
+          </AlertAction>
         ) : null}
-      </div>
+      </Alert>
     </div>
   );
 }
 
-function formatRuntimeValue(companion: CompanionInfo | null | undefined): string {
-  return companion?.runtime?.version || companion?.version || "Unknown";
-}
-
-function formatListenerValue(companion: CompanionInfo | null | undefined): string {
-  const owner = companion?.runtime?.listenerOwner?.trim();
-  const pid = companion?.runtime?.pid;
-  if (!owner) {
-    return "Not verified";
-  }
-  return owner === "shop.vibetv.control-center.runtime" && Boolean(pid)
-    ? "Running"
-    : "Needs attention";
-}
-
-function companionReleaseLabel({
-  macAppRunning,
-  migrationReady,
-  migrationRequired,
-  release,
+function UpdateCard({
+  children,
+  description,
+  installedLabel,
+  installedValue,
+  latestLabel,
+  latestValue,
+  title,
+  updateAvailable = false,
 }: {
-  macAppRunning: boolean;
-  migrationReady: boolean;
-  migrationRequired: boolean;
-  release: CompanionReleaseInfo | null;
-}): string {
-  if (macAppRunning) {
-    if (migrationRequired) {
-      if (
-        release?.status === "check_failed" ||
-        release?.dmgDownloadStatus === "check_failed"
-      ) {
-        return "Check failed";
-      }
-      return migrationReady ? "Update available" : "Update not ready";
-    }
-    if (release?.updateAvailable) {
-      return availableMacAppDmgDownloadUrl(release)
-        ? "Update available"
-        : "Update waiting";
-    }
-    if (
-      release?.status === "check_failed" ||
-      release?.dmgDownloadStatus === "check_failed"
-    ) {
-      return "Check failed";
-    }
-    return "Ready";
-  }
-  if (!release) {
-    return "Checking";
-  }
-  if (release.status === "available") {
-    return "Setup needed";
-  }
-  if (release.status === "missing_asset") {
-    return "Setup needed";
-  }
-  return "Check failed";
+  children?: ReactNode;
+  description: string;
+  installedLabel: string;
+  installedValue: string;
+  latestLabel: string;
+  latestValue: string;
+  title: string;
+  updateAvailable?: boolean;
+}) {
+  return (
+    <Card className="border-0">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+        {updateAvailable ? (
+          <CardAction>
+            <Badge>Update available</Badge>
+          </CardAction>
+        ) : null}
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <ItemGroup>
+          <VersionItem
+            icon={<Monitor aria-hidden />}
+            label={installedLabel}
+            value={installedValue}
+          />
+          <VersionItem
+            icon={<RefreshCw aria-hidden />}
+            label={latestLabel}
+            highlighted={updateAvailable}
+            value={latestValue}
+          />
+        </ItemGroup>
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
+
+function VersionItem({
+  highlighted = false,
+  icon,
+  label,
+  value,
+}: {
+  highlighted?: boolean;
+  icon: ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <Item role="listitem" variant="muted">
+      <ItemMedia variant="icon">{icon}</ItemMedia>
+      <ItemContent>
+        <ItemTitle>{label}</ItemTitle>
+      </ItemContent>
+      <ItemActions>
+        <Badge variant={highlighted ? "default" : "secondary"}>{value}</Badge>
+      </ItemActions>
+    </Item>
+  );
 }
 
 function clampUpdateProgress(value: number | undefined): number {
@@ -593,36 +532,4 @@ function clampUpdateProgress(value: number | undefined): number {
     return 5;
   }
   return Math.max(5, Math.min(100, Math.round(value)));
-}
-
-function HeroIcon({
-  children,
-  variant = "neutral",
-}: {
-  children: ReactNode;
-  variant?: "complete" | "neutral";
-}) {
-  return (
-    <ControlCenterStatusIcon variant={variant}>
-      {children}
-    </ControlCenterStatusIcon>
-  );
-}
-
-function FirmwareRow({
-  icon,
-  label,
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="grid min-h-[64px] grid-cols-[32px_minmax(0,1fr)_180px] items-center gap-4 border-b border-[#747A60] py-4 last:border-b-0">
-      <div className="text-[#506600]">{icon}</div>
-      <dt className="font-bold text-[#1B1B1B]">{label}</dt>
-      <dd className="text-right text-[#1B1B1B]">{value}</dd>
-    </div>
-  );
 }

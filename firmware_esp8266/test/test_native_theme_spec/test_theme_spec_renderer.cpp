@@ -67,6 +67,7 @@ struct RecordedCommand {
   int style = 0;
   int segments = 0;
   int segmentGap = 0;
+  int borderRadius = 0;
   uint16_t color = 0;
   uint16_t fg = 0;
   uint16_t bg = 0;
@@ -108,6 +109,7 @@ class RecordingSink final : public Sink {
     cmd.y = rect.y;
     cmd.width = rect.width;
     cmd.height = rect.height;
+    cmd.borderRadius = rect.borderRadius;
     cmd.color = rect.color;
     commands.push_back(cmd);
   }
@@ -140,6 +142,7 @@ class RecordingSink final : public Sink {
     cmd.style = progress.style;
     cmd.segments = progress.segments;
     cmd.segmentGap = progress.segmentGap;
+    cmd.borderRadius = progress.borderRadius;
     cmd.color = progress.fillColor;
     cmd.bg = progress.bgColor;
     cmd.border = progress.borderColor;
@@ -313,10 +316,10 @@ void testRendersCommandsAndBindings() {
     "themeRev": 1,
     "bgColor": "#123456",
     "primitives": [
-      {"type":"rect","x":1,"y":2,"width":3,"height":4,"color":"#FFFFFF"},
+      {"type":"rect","x":1,"y":2,"width":3,"height":4,"borderRadius":2,"color":"#FFFFFF"},
       {"type":"text","x":5,"y":6,"font":2,"fontSize":3,"maxWidth":120,"fit":"shrink","align":"center","color":"#CCFF00","bgColor":"#000000","text":"{label} {provider} {session}/{weekly} {reset} {usageMode} {time} {date} {sessionTokens} {weekTokens} {totalTokens}"},
       {"type":"text","x":7,"y":8,"fontSize":1,"binding":"weeklyPercent"},
-      {"type":"progress","x":9,"y":10,"width":111,"height":12,"progressStyle":"segments","segments":16,"segmentGap":2,"color":"#00FF00","bgColor":"#101010","borderColor":"#FFFFFF"},
+      {"type":"progress","x":9,"y":10,"width":111,"height":12,"borderRadius":6,"progressStyle":"segments","segments":16,"segmentGap":2,"color":"#00FF00","bgColor":"#101010","borderColor":"#FFFFFF"},
       {"type":"progress","x":13,"y":14,"width":99,"height":15,"binding":"weekly","color":"#0000FF"},
       {"type":"gif","x":15,"y":16,"width":80,"height":64,"assetPath":"/themes/mini/mini.gif"},
       {"type":"sprite","x":17,"y":18,"width":24,"height":14,"assetPath":"/themes/u/cloud.cbi"},
@@ -336,6 +339,7 @@ void testRendersCommandsAndBindings() {
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(rect.type));
   TEST_ASSERT_EQUAL_INT(1, rect.x);
   TEST_ASSERT_EQUAL_INT(2, rect.y);
+  TEST_ASSERT_EQUAL_INT(2, rect.borderRadius);
   TEST_ASSERT_EQUAL_INT(3, rect.width);
   TEST_ASSERT_EQUAL_INT(4, rect.height);
   TEST_ASSERT_EQUAL_HEX16(0xFFFF, rect.color);
@@ -734,7 +738,7 @@ void testRendersCompactCommandsAndBindings() {
     "bg": "#123456",
     "p": [
       {"t":"tx","x":5,"y":6,"f":2,"s":3,"mw":140,"ft":"shrink","al":"right","c":"#FF00FF","bg":"#000000","v":"{l} {s}/{w} {r} {u} {dt}"},
-      {"t":"p","x":9,"y":10,"w":111,"h":12,"b":"w","ps":"segments","sg":16,"gg":2,"c":"#00FF00","bg":"#101010","bc":"#FFFFFF"},
+      {"t":"p","x":9,"y":10,"w":111,"h":12,"br":6,"b":"w","ps":"segments","sg":16,"gg":2,"c":"#00FF00","bg":"#101010","bc":"#FFFFFF"},
       {"t":"g","x":15,"y":16,"w":80,"h":64,"a":"/themes/mini/mini.gif"},
       {"t":"sp","x":17,"y":18,"w":24,"h":14,"a":"/themes/u/cloud.cbi"},
       {"t":"px","x":2,"y":3,"w":4,"h":2,"c":"#FFFFFF","d":"A5"}
@@ -763,6 +767,7 @@ void testRendersCompactCommandsAndBindings() {
   TEST_ASSERT_EQUAL_INT(1, progress.style);
   TEST_ASSERT_EQUAL_INT(16, progress.segments);
   TEST_ASSERT_EQUAL_INT(2, progress.segmentGap);
+  TEST_ASSERT_EQUAL_INT(6, progress.borderRadius);
   TEST_ASSERT_EQUAL_HEX16(0xFFFF, progress.border);
 
   const RecordedCommand& gif = sink.commands[3];

@@ -23,6 +23,7 @@ func TestStatusIncludesProviderSetup(t *testing.T) {
 	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
 		return setupFixture(codexbar.ProviderAuthRequired)
 	}
+	server.currentProviderSetup(context.Background(), false)
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
 	if rec.Code != http.StatusOK {
@@ -35,6 +36,45 @@ func TestStatusIncludesProviderSetup(t *testing.T) {
 	if got.ProviderSetup.Status != "setup_required" || got.ProviderSetup.Providers[0].Status != codexbar.ProviderAuthRequired {
 		t.Fatalf("unexpected provider setup: %+v", got.ProviderSetup)
 	}
+}
+
+func TestStatusDoesNotWaitForColdProviderSetupProbe(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
+		close(started)
+		<-release
+		return setupFixture(codexbar.ProviderReady)
+	}
+
+	begin := time.Now()
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if elapsed := time.Since(begin); elapsed > 250*time.Millisecond {
+		t.Fatalf("status waited for provider probe: %s", elapsed)
+	}
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"checking"`) {
+		t.Fatalf("unexpected cold status response: %d %s", rec.Code, rec.Body.String())
+	}
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("background provider probe did not start")
+	}
+	close(release)
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		rec = httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		if strings.Contains(rec.Body.String(), `"status":"ready"`) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("completed provider probe was not cached: %s", rec.Body.String())
 }
 
 func TestProviderRetryIsSingleFlightAndWakesStreamOnceReady(t *testing.T) {
@@ -126,6 +166,44 @@ func TestNoProvidersStreamErrorIsProviderSetupRequired(t *testing.T) {
 	when, detail, code, ok := lastDisplayStreamErrorRecordAfter(logPath, startedAt)
 	if !ok || when.IsZero() || code != "provider_setup_required" || !strings.Contains(detail, "AI provider") {
 		t.Fatalf("unexpected provider stream error: ok=%t when=%s code=%q detail=%q", ok, when, code, detail)
+	}
+}
+
+func TestProviderSetupDoesNotChangeDeviceReadiness(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","deviceId":"provider-independent","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":3,"partialCount":1,"lastKind":"usage"}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "paired-token",
+		DeviceID:     "provider-independent",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    device.URL,
+			ErrorCode: "provider_setup_required",
+			Detail:    "No provider is ready.",
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Device.Active || !got.Device.Ready || got.Device.ConnectionState != deviceConnectionReady {
+		t.Fatalf("provider setup incorrectly changed device readiness: %+v", got.Device)
 	}
 }
 

@@ -6,6 +6,12 @@ handlers.
 
 ## Safety invariants
 
+- Firmware `1.0.39` and newer can always establish a new current token through
+  an explicit local-WiFi Connect before authenticated OTA.
+- Firmware upload always requires the current pairing token. The firmware does
+  not accept an unsigned upload merely because pairing itself is open.
+- The unauthenticated `GET /update` page never embeds a pairing token or a
+  browser upload form. It points to the authenticated `install-update` path.
 - Pin the device URL and `deviceId` before downloading or uploading firmware.
 - Treat device URL, `deviceId`, and pairing token as one identity tuple. When a
   target changes, update all three together; never reuse an unverified token
@@ -24,6 +30,22 @@ handlers.
   in the same device boot once firmware bytes may have been sent.
 - A successful update is complete only after the same `deviceId` returns with
   the target firmware and healthy rendering.
+
+## Recovery matrix
+
+| Bootable state | WiFi OTA path |
+| --- | --- |
+| Home WiFi and current token | Authenticated `install-update`. |
+| Firmware 1.0.39 on home WiFi but local token lost or rejected | Press Connect. The firmware replaces the token, then authenticated `install-update` can proceed. |
+| Firmware 1.0.38 on home WiFi but local token lost or rejected | Complete the legacy three-power-cycle WiFi recovery, reconnect the device to home WiFi, press Connect within 30 minutes, then update to current firmware. |
+| Saved home WiFi unavailable | Wait for the ordinary open `VibeTV-Setup` portal, save the new WiFi, then press Connect. |
+| Fresh unpaired device | Complete WiFi setup, press Connect, then run authenticated `install-update`. |
+| Paired device after a WiFi change | The existing token remains valid; discover the new IP and run authenticated `install-update`. |
+
+The ESP8266 firmware does not verify a cryptographic firmware signature on the
+device. Manifest SHA-256 validation therefore remains a sender-side release
+check, while the current pairing token is the mandatory receiver-side upload
+authorization. Open pairing never authorizes a firmware upload directly.
 
 ## Firmware 1.0.36 compatibility transport
 
@@ -80,8 +102,8 @@ upload-error recovery optimization.
   disconnect, abort, or final validation.
 - After a failure that entered update mode, return the error and perform a
   controlled restart. Do not accept another OTA attempt in that boot.
-- Mark OTA restarts so they do not increment the customer WiFi-recovery reset
-  counter.
+- Firmware `1.0.39` has no physical pairing recovery counter. Its legacy EEPROM
+  bytes remain reserved to preserve the existing storage layout.
 
 ## Release gate
 

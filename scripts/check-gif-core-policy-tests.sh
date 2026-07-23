@@ -18,7 +18,8 @@ mkdir -p "${ROOT_DIR}/tmp"
   "${ROOT_DIR}/firmware_esp8266/src/renderer_esp8266_theme_spec.cpp" \
   "${ROOT_DIR}/firmware_esp8266/src/gif_core_esp8266.cpp" \
   "${ROOT_DIR}/firmware_esp8266/src/main.cpp" \
-  "${ROOT_DIR}/firmware_esp8266/src/renderer_esp8266.cpp"
+  "${ROOT_DIR}/firmware_esp8266/src/renderer_esp8266.cpp" \
+  "${ROOT_DIR}/firmware_esp8266/platformio.ini"
 
 "${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic \
   "${VALIDATOR_SRC}" \

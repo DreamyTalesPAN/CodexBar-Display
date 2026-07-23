@@ -3,25 +3,65 @@
 import {
   AlertTriangle,
   BarChart3,
-  Clock,
+  Info,
   RefreshCw,
+  Search,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemTitle,
+} from "@/components/ui/item";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import type {
   ApiError,
   CompanionStatus,
-  ProviderSetupInfo,
+  PreferenceDescriptor,
   UsageCostDay,
-  UsagePaceInfo,
   UsageProviderInfo,
-  UsageOverTimePoint,
   UsageSnapshot,
   UsageWindowInfo,
 } from "./control-center-types";
-import {
-  ProviderSetupCard,
-  providerSetupNeedsAction,
-} from "./provider-setup-card";
+import { PreferenceControl } from "./preference-control";
 
 type UsageScreenProps = {
   busyAction?: string | null;
@@ -29,10 +69,19 @@ type UsageScreenProps = {
   usage: UsageSnapshot | null;
   usageError?: ApiError | null;
   onRefresh?: () => void;
-  onOpenCodexBar?: () => void;
-  onRepairCodexBar?: () => void;
-  onRetryProviders?: () => void;
-  providerSetup?: ProviderSetupInfo | null;
+  preferences: PreferenceDescriptor[] | null;
+  preferencesError?: ApiError | null;
+  pendingPreferenceIds: Set<string>;
+  onPreferenceChange: (
+    item: PreferenceDescriptor,
+    value: boolean,
+  ) => void | Promise<void>;
+};
+
+type ProviderPreferenceDescriptor = PreferenceDescriptor & {
+  type: "boolean";
+  value: boolean;
+  health: NonNullable<PreferenceDescriptor["health"]>;
 };
 
 export function UsageScreen({
@@ -41,10 +90,10 @@ export function UsageScreen({
   usage,
   usageError,
   onRefresh,
-  onOpenCodexBar,
-  onRepairCodexBar,
-  onRetryProviders,
-  providerSetup,
+  preferences,
+  preferencesError,
+  pendingPreferenceIds,
+  onPreferenceChange,
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
   const providers = filterVisibleProviders(
@@ -52,351 +101,394 @@ export function UsageScreen({
     usage?.currentProvider,
   );
   const hasProviders = providers.length > 0;
-  const providerActionRequired = providerSetupNeedsAction(providerSetup);
-  const overTimeProvider = pickUsageOverTimeProvider(
-    providers,
-    usage?.currentProvider,
-  );
-  const costProvider = pickCodexCostProvider(providers, usage?.currentProvider);
 
   return (
     <div className="mx-auto max-w-[1180px]">
-      <section className="border-b border-[#747A60] py-10">
-        <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h3 className="text-base font-bold text-[#1B1B1B]">Provider usage</h3>
-            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-[#444933]">
-              <UsageMeta
-                icon={<Clock size={16} aria-hidden />}
-                label={formatUsageTime(usage?.generatedAt)}
-              />
-            </div>
-          </div>
-
-          {onRefresh ? (
-            <button
-              className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={refreshing}
-              onClick={onRefresh}
-              type="button"
-            >
-              {refreshing ? (
-                <RefreshCw className="animate-spin" size={18} aria-hidden />
-              ) : (
-                <RefreshCw size={18} aria-hidden />
-              )}
-              <span>{refreshing ? "Refreshing" : "Refresh"}</span>
-            </button>
-          ) : null}
-        </div>
-
-        {providerActionRequired && providerSetup ? (
-          <div className="mb-6">
-            <ProviderSetupCard
-              busyAction={busyAction}
-              onOpenCodexBar={onOpenCodexBar}
-              onRepairCodexBar={onRepairCodexBar}
-              onRetry={onRetryProviders}
-              providerSetup={providerSetup}
-            />
-          </div>
-        ) : null}
-
-        {usageError && !providerActionRequired ? (
-          <div className="mb-6 border border-[#747A60] bg-[#EEEEEE] p-4 text-sm leading-6 text-[#444933]">
-            <div className="mb-1 flex items-center gap-2 font-bold text-[#1B1B1B]">
-              <AlertTriangle size={17} aria-hidden />
-              {usageError.message}
-            </div>
-            {usageError.nextAction}
-          </div>
-        ) : null}
-
-        {costProvider ? (
-          <CodexCostPanel provider={costProvider} />
-        ) : overTimeProvider ? (
-          <UsageOverTimePanel provider={overTimeProvider} />
+      <section className="py-10">
+        {usageError ? (
+          <Alert className="mb-6 bg-muted"><AlertTriangle /><AlertTitle>{usageError.message}</AlertTitle><AlertDescription>{usageError.nextAction}</AlertDescription></Alert>
         ) : null}
 
         {hasProviders ? (
-          <ol className="grid gap-5 lg:grid-cols-2">
+          <TokenUsageOverTimePanel
+            onRefresh={onRefresh}
+            providers={providers}
+            refreshing={refreshing}
+          />
+        ) : null}
+
+        {hasProviders ? (
+          <ol className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
             {providers.map((provider) => (
-              <li key={provider.id}>
+              <li className="min-w-0" key={provider.id}>
                 <UsageProviderTile provider={provider} />
               </li>
             ))}
           </ol>
-        ) : usageError || providerActionRequired ? null : (
+        ) : usageError ? null : (
           <UsageEmptyState
             companionStatus={companionStatus}
             refreshing={refreshing}
           />
         )}
+
+        <ProviderPreferencesPanel
+          error={preferencesError}
+          items={preferences}
+          pendingIds={pendingPreferenceIds}
+          onChange={onPreferenceChange}
+        />
       </section>
     </div>
   );
 }
 
-function CodexCostPanel({ provider }: { provider: UsageProviderInfo }) {
-  const cost = provider.cost;
-  if (!cost) {
-    return null;
-  }
-
-  const days = normalizeCostDays(cost.daily || []);
-  const maxCost = Math.max(...days.map((day) => day.totalCostUSD || 0), 0);
-  const todayCost = finiteNumber(cost.todayCostUSD)
-    ? cost.todayCostUSD
-    : latestCostDay(days)?.totalCostUSD;
-  const last30DaysCost = finiteNumber(cost.last30DaysCostUSD)
-    ? cost.last30DaysCostUSD
-    : days.reduce((sum, day) => sum + (day.totalCostUSD || 0), 0);
-  const last30DaysTokens = finiteNumber(cost.last30DaysTokens)
-    ? cost.last30DaysTokens
-    : days.reduce((sum, day) => sum + (day.totalTokens || 0), 0);
-  const latestTokens = finiteNumber(cost.latestTokens)
-    ? cost.latestTokens
-    : provider.sessionTokens || 0;
-  const resetCredits = provider.resetCredits;
-  const topModel = cost.topModel?.trim();
+function ProviderPreferencesPanel({
+  error,
+  items,
+  pendingIds,
+  onChange,
+}: {
+  error?: ApiError | null;
+  items: PreferenceDescriptor[] | null;
+  pendingIds: Set<string>;
+  onChange: (item: PreferenceDescriptor, value: boolean) => void | Promise<void>;
+}) {
+  const [query, setQuery] = useState("");
+  const providers = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return (items || [])
+      .filter(isProviderPreference)
+      .filter(
+        (item) =>
+          !normalizedQuery ||
+            item.label.toLowerCase().includes(normalizedQuery) ||
+            item.id.toLowerCase().includes(normalizedQuery),
+      )
+      .sort((a, b) => {
+        const priority = providerHealthPriority(a) - providerHealthPriority(b);
+        return priority || a.label.localeCompare(b.label);
+      });
+  }, [items, query]);
 
   return (
-    <section className="mb-6 border border-[#747A60] bg-[#F9F9F9] p-5 text-[#1B1B1B]">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h4 className="break-words text-base font-black text-[#1B1B1B]">
-            Limit Reset Credits
-          </h4>
-          {resetCredits?.nextExpiresAt ? (
-            <p className="mt-1 text-sm font-semibold text-[#444933]">
-              Manual resets expire {formatExpiryDate(resetCredits.nextExpiresAt)}
-            </p>
-          ) : null}
-        </div>
-        <div className="inline-flex min-h-6 max-w-full items-center border border-[#747A60] bg-[#EEEEEE] px-2 text-right text-xs font-bold uppercase text-[#1B1B1B]">
-          {formatResetCreditCount(resetCredits?.availableCount)}
-        </div>
-      </div>
-
-      <dl className="mt-5 grid gap-4 border-t border-[#747A60] pt-4 sm:grid-cols-2 lg:grid-cols-4">
-        <UsageCostMetric label="Today" value={formatCurrency(todayCost, cost.currencyCode)} />
-        <UsageCostMetric
-          label="30d cost"
-          value={formatCurrency(last30DaysCost, cost.currencyCode)}
-        />
-        <UsageCostMetric label="30d tokens" value={formatTokenCount(last30DaysTokens)} />
-        <UsageCostMetric label="Latest tokens" value={formatTokenCount(latestTokens)} />
-      </dl>
-
-      {days.length > 0 ? (
-        <div
-          aria-label={`Codex cost over time for ${provider.label || provider.id}`}
-          className="mt-6"
-          role="img"
-        >
-          <div className="flex h-32 items-end gap-1 border-b border-[#747A60] pb-1">
-            {days.map((day) => (
-              <CostHistoryBar
-                currencyCode={cost.currencyCode}
-                day={day}
-                key={day.day}
-                maxCost={maxCost}
-              />
-            ))}
-          </div>
-          <div className="mt-2 flex justify-between gap-3 text-xs font-semibold text-[#444933]">
-            <span>{formatDayLabel(days[0].day)}</span>
-            <span>{formatDayLabel(days[days.length - 1].day)}</span>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="mt-5 border-t border-[#747A60] pt-4 text-sm font-semibold text-[#444933]">
-        {topModel ? (
-          <div className="break-words">
-            Top model: <span className="font-bold text-[#1B1B1B]">{topModel}</span>
-          </div>
+    <Card className="mt-6" aria-labelledby="provider-settings-title">
+      <CardHeader>
+        <CardTitle id="provider-settings-title">AI providers</CardTitle>
+        <CardDescription>
+          Turn providers on or off and see when one needs attention.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {error ? (
+          <Alert className="mb-4" variant="destructive">
+            <AlertTriangle />
+            <AlertTitle>{error.message}</AlertTitle>
+            <AlertDescription>{error.nextAction}</AlertDescription>
+          </Alert>
         ) : null}
-      </div>
-    </section>
-  );
-}
 
-function UsageCostMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-xs font-bold uppercase text-[#506600]">{label}</dt>
-      <dd className="mt-1 break-words text-xl font-black text-[#1B1B1B]">
-        {value}
-      </dd>
-    </div>
-  );
-}
-
-function CostHistoryBar({
-  currencyCode,
-  day,
-  maxCost,
-}: {
-  currencyCode?: string;
-  day: UsageCostDay;
-  maxCost: number;
-}) {
-  const value = day.totalCostUSD || 0;
-  const height = maxCost > 0 ? Math.max((value / maxCost) * 100, 5) : 0;
-  const tooltip = `${formatDayLabel(day.day)} · ${formatCurrency(
-    value,
-    currencyCode,
-  )} · ${formatTokenCount(day.totalTokens || 0)}`;
-
-  return (
-    <div
-      aria-label={tooltip}
-      className="group relative flex h-full min-w-0 flex-1 items-end"
-      tabIndex={0}
-    >
-      <span
-        className="block w-full min-w-[5px] border border-[#747A60] bg-[#CCFF00]"
-        style={{ height: `${height}%` }}
-      />
-      <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 whitespace-nowrap border border-[#747A60] bg-[#F9F9F9] px-2 py-1 text-xs font-bold text-[#1B1B1B] shadow-[3px_3px_0_#CCFF00] group-focus:block group-hover:block">
-        {tooltip}
-      </span>
-    </div>
-  );
-}
-
-function UsageOverTimePanel({ provider }: { provider: UsageProviderInfo }) {
-  const points = normalizeUsageOverTime(provider.usageOverTime || []);
-  if (points.length === 0) {
-    return null;
-  }
-
-  const totalCredits = points.reduce(
-    (sum, point) => sum + point.totalCreditsUsed,
-    0,
-  );
-  const peak = points.reduce(
-    (current, point) =>
-      point.totalCreditsUsed > current.totalCreditsUsed ? point : current,
-    points[0],
-  );
-  const maxCredits = Math.max(...points.map((point) => point.totalCreditsUsed));
-  const services = usageOverTimeServices(points);
-
-  return (
-    <section className="mb-6 border border-[#747A60] bg-[#F9F9F9] p-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h4 className="text-base font-black text-[#1B1B1B]">
-            Usage over time
-          </h4>
-          <p className="mt-1 text-sm text-[#444933]">
-            {provider.label || provider.id} · {points.length} days
-          </p>
+        <div className="relative mb-4">
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            aria-label="Search AI providers"
+            className="pl-9"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search providers"
+            type="search"
+            value={query}
+          />
         </div>
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:text-right">
-          <div>
-            <dt className="text-xs font-bold uppercase text-[#506600]">
-              Total
-            </dt>
-            <dd className="mt-1 font-semibold text-[#1B1B1B]">
-              {formatCreditsUsed(totalCredits)}
-            </dd>
+
+        {items === null && !error ? (
+          <div className="flex min-h-24 items-center justify-center gap-2 text-sm text-muted-foreground" aria-live="polite">
+            <Spinner /> Checking providers
           </div>
-          <div>
-            <dt className="text-xs font-bold uppercase text-[#506600]">
-              Peak
-            </dt>
-            <dd className="mt-1 font-semibold text-[#1B1B1B]">
-              {formatCreditsUsed(peak.totalCreditsUsed)}
-            </dd>
-          </div>
-        </dl>
-      </div>
-
-      <div
-        aria-label={`Usage over time for ${provider.label || provider.id}`}
-        className="mt-5"
-        role="img"
-      >
-        <div className="flex h-32 items-end gap-1 border-b border-[#747A60] pb-1">
-          {points.map((point) => (
-            <UsageOverTimeBar
-              key={point.day}
-              maxCredits={maxCredits}
-              point={point}
-            />
-          ))}
-        </div>
-        <div className="mt-2 flex justify-between gap-3 text-xs font-semibold text-[#444933]">
-          <span>{formatDayLabel(points[0].day)}</span>
-          <span>{formatDayLabel(points[points.length - 1].day)}</span>
-        </div>
-      </div>
-
-      {services.length > 0 ? (
-        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2">
-          {services.map((service) => (
-            <span
-              className="inline-flex min-h-6 items-center gap-2 text-xs font-semibold text-[#444933]"
-              key={service}
-            >
-              <span
-                className="size-2.5 border border-[#747A60]"
-                style={{ backgroundColor: usageServiceColor(service) }}
-              />
-              {service}
-            </span>
-          ))}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function UsageOverTimeBar({
-  maxCredits,
-  point,
-}: {
-  maxCredits: number;
-  point: UsageOverTimePoint;
-}) {
-  const total = point.totalCreditsUsed;
-  const services = (point.services || []).filter(
-    (service) => service.creditsUsed > 0,
-  );
-  const stackTotal =
-    total > 0
-      ? total
-      : services.reduce((sum, service) => sum + service.creditsUsed, 0);
-  const height = maxCredits > 0 ? Math.max((stackTotal / maxCredits) * 100, 4) : 0;
-
-  return (
-    <div
-      aria-label={`${formatDayLabel(point.day)}: ${formatCreditsUsed(total)}`}
-      className="flex h-full min-w-0 flex-1 items-end"
-      title={`${formatDayLabel(point.day)}: ${formatCreditsUsed(total)}`}
-    >
-      <div
-        className="flex w-full min-w-[5px] flex-col-reverse border border-[#747A60] bg-[#EEEEEE]"
-        style={{ height: `${height}%` }}
-      >
-        {services.length > 0 ? (
-          services.map((service) => (
-            <span
-              key={service.service}
-              style={{
-                backgroundColor: usageServiceColor(service.service),
-                height: `${(service.creditsUsed / stackTotal) * 100}%`,
-              }}
-            />
-          ))
+        ) : providers.length > 0 ? (
+          <ItemGroup className="gap-2" aria-live="polite">
+            {providers.map((item) => {
+              const pending = pendingIds.has(item.id);
+              const checked = item.value === true;
+              const attentionExplanation = providerAttentionExplanation(item);
+              return (
+                <Item key={item.id} variant="outline" className="min-h-16 flex-nowrap">
+                  <ItemContent className="min-w-0">
+                    <ItemTitle className="flex-wrap">
+                      <span className="break-words">{item.label}</span>
+                      <Badge variant={healthBadgeVariant(item.health.state)}>
+                        {healthLabel(item.health.state)}
+                      </Badge>
+                      {item.health.service === "outage" &&
+                      item.health.state !== "service_outage" ? (
+                        <Badge variant="destructive">Service outage</Badge>
+                      ) : item.health.service === "degraded" ? (
+                        <Badge variant="secondary">Service degraded</Badge>
+                      ) : null}
+                      {attentionExplanation ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              aria-label={`Explain status for ${item.label}`}
+                              className="-my-2 inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              type="button"
+                            >
+                              <Info className="size-4" aria-hidden />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-72 leading-relaxed">
+                            {attentionExplanation}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                    </ItemTitle>
+                    <ItemDescription>{item.health.message}</ItemDescription>
+                  </ItemContent>
+                  <ItemActions className="min-w-12 justify-end">
+                    {pending ? <Spinner aria-label={`Updating ${item.label}`} /> : null}
+                    <PreferenceControl
+                      booleanLabel={`${checked ? "Disable" : "Enable"} ${item.label}`}
+                      descriptor={item}
+                      disabled={pending}
+                      onChange={(value) => {
+                        if (typeof value === "boolean") {
+                          void onChange(item, value);
+                        }
+                      }}
+                    />
+                  </ItemActions>
+                </Item>
+              );
+            })}
+          </ItemGroup>
         ) : (
-          <span className="h-full bg-[#CCFF00]" />
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            {query ? "No providers match your search." : "No providers are available."}
+          </p>
         )}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function providerHealthPriority(item: ProviderPreferenceDescriptor): number {
+  if (["auth_required", "setup_required", "stale", "unavailable"].includes(item.health.state)) {
+    return 0;
+  }
+  return item.value === true ? 1 : 2;
+}
+
+function isProviderPreference(
+  item: PreferenceDescriptor,
+): item is ProviderPreferenceDescriptor {
+  return (
+    item.section === "providers" &&
+    item.type === "boolean" &&
+    typeof item.value === "boolean" &&
+    Boolean(item.health)
+  );
+}
+
+function providerAttentionExplanation(
+  item: ProviderPreferenceDescriptor,
+): string | null {
+  const provider = item.label;
+  switch (item.health.state) {
+    case "auth_required":
+      return `${provider} is enabled, but its sign-in is no longer valid. Open ${provider}, sign in again, then use it once.`;
+    case "setup_required":
+      return `${provider} is enabled, but the VibeTV Mac App cannot read usage yet. Open ${provider}, finish setup or sign in if asked, then use it once.`;
+    case "stale":
+      return `VibeTV is showing the last saved ${provider} usage because live usage cannot be read. Open ${provider} and check that you are still signed in.`;
+    case "unavailable":
+      return `The VibeTV Mac App cannot read ${provider} right now. This can be temporary; open ${provider} and check that it is working and signed in.`;
+  }
+  if (item.health.service === "outage") {
+    return `${provider} is reporting an outage. Your setup may be fine; try again when the service is back online.`;
+  }
+  if (item.health.service === "degraded") {
+    return `${provider} is reporting a service problem. Usage updates may be delayed until the service recovers.`;
+  }
+  return null;
+}
+
+function healthLabel(state: string): string {
+  const labels: Record<string, string> = {
+    healthy: "Ready",
+    auth_required: "Sign-in needed",
+    setup_required: "Setup needed",
+    stale: "Stale",
+    service_outage: "Service outage",
+    unavailable: "Unavailable",
+    checking: "Checking",
+    disabled: "Off",
+  };
+  return labels[state] || "Unknown";
+}
+
+function healthBadgeVariant(state: string): "default" | "secondary" | "destructive" | "outline" {
+  if (["auth_required", "setup_required", "unavailable"].includes(state)) {
+    return "destructive";
+  }
+  if (state === "healthy") {
+    return "default";
+  }
+  return "secondary";
+}
+
+function TokenUsageOverTimePanel({
+  onRefresh,
+  providers,
+  refreshing,
+}: {
+  onRefresh?: () => void;
+  providers: UsageProviderInfo[];
+  refreshing: boolean;
+}) {
+  const currentProviderHistories = getProviderTokenHistories(providers);
+  const hasCurrentData = currentProviderHistories.length > 0;
+  const displayedHistories = hasCurrentData
+    ? currentProviderHistories
+    : providers.map((provider) => ({ days: [], provider }));
+
+  const { chartConfig, chartData, series } =
+    buildProviderTokenChart(displayedHistories);
+  const providerNames = displayedHistories.map(
+    ({ provider }) => provider.label || provider.id,
+  );
+  const last30DaysTokens = getLast30DaysTokenTotal(providers);
+
+  return (
+    <>
+      <section
+        aria-labelledby="total-tokens-heading"
+        className="mb-6 px-4 text-center"
+      >
+        <h2
+          className="text-sm font-bold uppercase tracking-wide text-muted-foreground"
+          id="total-tokens-heading"
+        >
+          Total tokens in the last 30 days
+        </h2>
+        <p className="mt-2 break-words text-3xl font-black tracking-tight tabular-nums sm:text-5xl">
+          {formatFullTokenCount(last30DaysTokens)}
+        </p>
+        {last30DaysTokens !== null ? (
+          <p className="mx-auto mt-2 max-w-3xl text-sm font-semibold leading-relaxed text-muted-foreground">
+            {formatTokenCountInWords(last30DaysTokens)} tokens
+          </p>
+        ) : null}
+      </section>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Tokens used over time</CardTitle>
+          <CardAction>
+            <Button
+              aria-busy={refreshing}
+              aria-label="Refresh token usage"
+              disabled={refreshing || !onRefresh}
+              onClick={() => onRefresh?.()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {refreshing ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <RefreshCw data-icon="inline-start" aria-hidden />
+              )}
+              {refreshing ? "Refreshing" : "Refresh"}
+            </Button>
+          </CardAction>
+        </CardHeader>
+
+        <CardContent>
+          <div className="relative min-h-52">
+            <ChartContainer
+              aria-hidden={!hasCurrentData}
+              aria-label={`Daily tokens used over time for ${providerNames.join(", ")}`}
+              className={cn(
+                "h-52 w-full overflow-hidden px-2 pt-3 transition-opacity",
+                !hasCurrentData && "pointer-events-none opacity-25 grayscale",
+              )}
+              config={chartConfig}
+              role="img"
+            >
+              <AreaChart
+                accessibilityLayer
+                data={chartData}
+                margin={{ top: 8, right: 10, bottom: 0, left: 10 }}
+              >
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  axisLine={false}
+                  dataKey="day"
+                  interval="preserveStartEnd"
+                  minTickGap={28}
+                  tickFormatter={formatDayLabel}
+                  tickLine={false}
+                  tickMargin={8}
+                />
+                <YAxis
+                  axisLine={false}
+                  tickFormatter={formatTokenCount}
+                  tickLine={false}
+                  tickMargin={8}
+                  width={48}
+                />
+                <ChartTooltip
+                  content={
+                    <ChartTooltipContent
+                      labelFormatter={(value) => formatDayLabel(String(value))}
+                    />
+                  }
+                  cursor={false}
+                />
+                <ChartLegend
+                  content={
+                    <ChartLegendContent className="flex-wrap gap-x-4 gap-y-2 pb-1" />
+                  }
+                />
+                {series.map((item) => (
+                  <Area
+                    activeDot={{ r: 4 }}
+                    connectNulls={false}
+                    dataKey={item.dataKey}
+                    fill={`var(--color-${item.dataKey})`}
+                    fillOpacity={0.12}
+                    isAnimationActive={false}
+                    key={item.dataKey}
+                    stroke={`var(--color-${item.dataKey})`}
+                    strokeWidth={2}
+                    type="monotone"
+                  />
+                ))}
+              </AreaChart>
+            </ChartContainer>
+
+            {!hasCurrentData ? (
+              <Empty
+                aria-live="polite"
+                className="absolute inset-0 min-h-0 bg-transparent p-4"
+                role="status"
+              >
+                <EmptyHeader>
+                  <EmptyTitle>
+                    <Badge variant="secondary">No data</Badge>
+                  </EmptyTitle>
+                  <EmptyDescription>
+                    Token history is temporarily unavailable.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
+    </>
   );
 }
 
@@ -406,73 +498,84 @@ function UsageProviderTile({
   provider: UsageProviderInfo;
 }) {
   return (
-    <article
-      className={`min-h-[248px] border border-[#747A60] bg-[#F9F9F9] p-5 ${
-        provider.stale ? "opacity-65" : ""
-      }`}
+    <Card
+      className={cn(
+        "h-full min-h-[248px] [--card-spacing:--spacing(5)]",
+        provider.stale && "opacity-65",
+      )}
     >
-      <div className="mb-5 flex min-h-10 items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h4 className="break-words text-xl font-black text-[#1B1B1B]">
-            {provider.label || provider.id}
-          </h4>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[#444933]">
+      <CardHeader>
+        <CardTitle className="break-words text-xl font-black">
+          {provider.label || provider.id}
+        </CardTitle>
+        {provider.stale || provider.status ? (
+          <CardDescription className="flex flex-wrap items-center gap-2">
             {provider.stale ? <StatusPill>Stale</StatusPill> : null}
             {provider.status ? (
               <StatusPill>{providerStatusLabel(provider.status.description)}</StatusPill>
             ) : null}
-          </div>
-        </div>
-        <div className="shrink-0 text-right text-sm font-semibold text-[#1B1B1B]">
-          {formatReset(provider.resetSecs)}
-        </div>
-      </div>
+          </CardDescription>
+        ) : null}
+      </CardHeader>
 
+      <CardContent className="flex flex-1 flex-col">
+        <ProviderUsageBars provider={provider} />
+
+        <UsageMetaGrid provider={provider} />
+        <TokenRow provider={provider} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
+  if (provider.windows?.length) {
+    return (
       <div className="grid gap-4">
-        <UsageBar
-          label="Session"
-          mode={provider.usageMode}
-          value={provider.session}
-        />
-        <UsageBar
-          label="Weekly"
-          mode={provider.usageMode}
-          value={provider.weekly}
-        />
+        {provider.windows.map((window) => (
+          <UsageWindowBar key={window.id} mode={provider.usageMode} window={window} />
+        ))}
       </div>
+    );
+  }
 
-      <UsageMetaGrid provider={provider} />
-      <ExtraWindows provider={provider} />
-      <PaceRows pace={provider.pace || []} />
-      <TokenRow provider={provider} />
-    </article>
+  return (
+    <div className="grid gap-4">
+      <UsageBar label="Session" mode={provider.usageMode} resetSecs={provider.resetSecs} value={provider.session} />
+      <UsageBar label="Weekly" mode={provider.usageMode} resetSecs={provider.resetSecs} value={provider.weekly} />
+    </div>
   );
 }
 
 function UsageBar({
   label,
   mode,
+  resetSecs,
   value,
 }: {
   label: string;
   mode?: string;
+  resetSecs?: number;
   value: number;
 }) {
   const percent = clampPercent(value);
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between gap-4 text-sm">
-        <span className="font-bold text-[#1B1B1B]">{label}</span>
-        <span className="font-semibold text-[#444933]">
-          {percent}% {usageModeShortLabel(mode)}
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
+        <span className="font-bold text-[#1B1B1B]">
+          {label}: {percent}% {usageModeShortLabel(mode)}
         </span>
+        {resetSecs ? (
+          <span className="ml-auto shrink-0 text-right font-semibold text-[#444933]">
+            {formatReset(resetSecs)}
+          </span>
+        ) : null}
       </div>
-      <div className="h-4 border border-[#747A60] bg-[#EEEEEE]">
-        <div
-          className="h-full bg-[#CCFF00]"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
+      <Progress
+        aria-label={`${label}: ${percent}% ${usageModeShortLabel(mode)}`}
+        className="h-2"
+        value={percent}
+      />
     </div>
   );
 }
@@ -485,26 +588,25 @@ function TokenRow({ provider }: { provider: UsageProviderInfo }) {
   ].filter(([, value]) => typeof value === "number" && value > 0);
 
   if (items.length === 0) {
-    return (
-      <div className="mt-5 border-t border-[#747A60] pt-4 text-sm text-[#444933]">
-        Token totals not available.
-      </div>
-    );
+    return null;
   }
 
   return (
-    <dl className="mt-5 grid gap-3 border-t border-[#747A60] pt-4 sm:grid-cols-3">
-      {items.map(([label, value]) => (
-        <div className="min-w-0" key={label}>
-          <dt className="text-xs font-bold uppercase text-[#506600]">
-            {label}
-          </dt>
-          <dd className="mt-1 break-words text-sm font-semibold text-[#1B1B1B]">
-            {formatTokenCount(value as number)}
-          </dd>
-        </div>
-      ))}
-    </dl>
+    <div className="mt-auto pt-5">
+      <h4 className="mb-3 text-sm font-bold text-foreground">Token usage</h4>
+      <dl className="grid gap-3 sm:grid-cols-3">
+        {items.map(([label, value]) => (
+          <div className="min-w-0" key={label}>
+            <dt className="text-xs font-bold uppercase text-[#506600]">
+              {label}
+            </dt>
+            <dd className="mt-1 break-words text-sm font-semibold text-[#1B1B1B]">
+              {formatTokenCount(value as number)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 
@@ -513,7 +615,6 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
     provider.status?.description
       ? ["Status", providerStatusLabel(provider.status.description)]
       : null,
-    provider.credits ? ["Credits", formatCredits(provider.credits.remaining)] : null,
     provider.activity ? ["Activity", provider.activity] : null,
   ].filter(Boolean) as Array<[string, string]>;
 
@@ -522,7 +623,7 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
   }
 
   return (
-    <dl className="mt-5 grid gap-3 border-t border-[#747A60] pt-4 sm:grid-cols-3">
+    <dl className="mt-5 grid gap-3 sm:grid-cols-3">
       {items.map(([label, value]) => (
         <div className="min-w-0" key={label}>
           <dt className="text-xs font-bold uppercase text-[#506600]">
@@ -537,28 +638,6 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
   );
 }
 
-function ExtraWindows({ provider }: { provider: UsageProviderInfo }) {
-  const extra = (provider.windows || []).filter(
-    (window) => window.id !== "primary" && window.id !== "secondary",
-  );
-  if (extra.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="mt-5 border-t border-[#747A60] pt-4">
-      <div className="mb-3 text-xs font-bold uppercase text-[#506600]">
-        More windows
-      </div>
-      <div className="grid gap-4">
-        {extra.map((window) => (
-          <UsageWindowBar key={window.id} mode={provider.usageMode} window={window} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function UsageWindowBar({
   mode,
   window,
@@ -569,49 +648,21 @@ function UsageWindowBar({
   const percent = clampPercent(window.usedPercent);
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between gap-4 text-sm">
-        <span className="font-bold text-[#1B1B1B]">{window.label}</span>
-        <span className="text-right font-semibold text-[#444933]">
-          {percent}% {usageModeShortLabel(mode)}
-          {window.resetSecs ? ` · ${formatReset(window.resetSecs)}` : ""}
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
+        <span className="font-bold text-[#1B1B1B]">
+          {window.label}: {percent}% {usageModeShortLabel(mode)}
         </span>
+        {window.resetSecs ? (
+          <span className="ml-auto shrink-0 text-right font-semibold text-[#444933]">
+            {formatReset(window.resetSecs)}
+          </span>
+        ) : null}
       </div>
-      <div className="h-3 border border-[#747A60] bg-[#EEEEEE]">
-        <div
-          className="h-full bg-[#CCFF00]"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function PaceRows({ pace }: { pace: UsagePaceInfo[] }) {
-  const visible = pace.filter((item) => item.summary || item.stage);
-  if (visible.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="mt-5 border-t border-[#747A60] pt-4">
-      <div className="mb-3 text-xs font-bold uppercase text-[#506600]">
-        Pace
-      </div>
-      <div className="grid gap-2">
-        {visible.map((item) => (
-          <div
-            className="grid gap-2 text-sm text-[#444933] sm:grid-cols-[88px_minmax(0,1fr)]"
-            key={item.window}
-          >
-            <span className="font-bold text-[#1B1B1B]">
-              {paceWindowLabel(item.window)}
-            </span>
-            <span className="break-words">
-              {item.summary || paceFallbackSummary(item)}
-            </span>
-          </div>
-        ))}
-      </div>
+      <Progress
+        aria-label={`${window.label}: ${percent}% ${usageModeShortLabel(mode)}`}
+        className="h-2"
+        value={percent}
+      />
     </div>
   );
 }
@@ -631,57 +682,23 @@ function UsageEmptyState({
       : "Mac App needs setup.";
   const action =
     companionStatus === "online"
-      ? "Open CodexBar and make sure at least one provider is enabled."
+      ? "Enable a provider below to start seeing usage."
       : "Run setup again, then refresh usage.";
 
   return (
-    <div className="border border-[#747A60] bg-[#EEEEEE] p-6 text-sm leading-6 text-[#444933]">
-      <div className="mb-1 flex items-center gap-2 font-bold text-[#1B1B1B]">
-        {refreshing ? (
-          <RefreshCw className="animate-spin" size={17} aria-hidden />
-        ) : (
-          <BarChart3 size={17} aria-hidden />
-        )}
-        {message}
-      </div>
-      {action}
-    </div>
-  );
-}
-
-function pickUsageOverTimeProvider(
-  providers: UsageProviderInfo[],
-  currentProvider?: string,
-): UsageProviderInfo | null {
-  const current = providers.find(
-    (provider) =>
-      provider.id === currentProvider && (provider.usageOverTime || []).length > 0,
-  );
-  if (current) {
-    return current;
-  }
-  return (
-    providers.find((provider) => (provider.usageOverTime || []).length > 0) ||
-    null
-  );
-}
-
-function pickCodexCostProvider(
-  providers: UsageProviderInfo[],
-  currentProvider?: string,
-): UsageProviderInfo | null {
-  const current = providers.find(
-    (provider) => provider.id === currentProvider && providerHasCost(provider),
-  );
-  if (current) {
-    return current;
-  }
-  return (
-    providers.find(
-      (provider) => provider.id === "codex" && providerHasCost(provider),
-    ) ||
-    providers.find((provider) => providerHasCost(provider)) ||
-    null
+    <Empty className="bg-muted/50 py-10 ring-1 ring-foreground/10">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          {refreshing ? (
+            <RefreshCw className="animate-spin" size={17} aria-hidden />
+          ) : (
+            <BarChart3 size={17} aria-hidden />
+          )}
+        </EmptyMedia>
+        <EmptyTitle>{message}</EmptyTitle>
+        <EmptyDescription>{action}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }
 
@@ -748,72 +765,106 @@ function providerHasCost(provider: UsageProviderInfo): boolean {
   );
 }
 
-function normalizeUsageOverTime(points: UsageOverTimePoint[]) {
-  return points
-    .filter(
-      (point) =>
-        Boolean(point.day) &&
-        Number.isFinite(point.totalCreditsUsed) &&
-        point.totalCreditsUsed >= 0,
-    )
-    .sort((a, b) => a.day.localeCompare(b.day))
-    .slice(-30);
-}
-
-function usageOverTimeServices(points: UsageOverTimePoint[]): string[] {
-  const totals = new Map<string, number>();
-  for (const point of points) {
-    for (const service of point.services || []) {
-      const name = service.service.trim();
-      if (!name || service.creditsUsed <= 0) {
-        continue;
-      }
-      totals.set(name, (totals.get(name) || 0) + service.creditsUsed);
-    }
-  }
-  return [...totals.entries()]
-    .sort((a, b) => {
-      if (b[1] === a[1]) {
-        return a[0].localeCompare(b[0]);
-      }
-      return b[1] - a[1];
-    })
-    .slice(0, 6)
-    .map(([service]) => service);
-}
-
-function normalizeCostDays(days: UsageCostDay[]) {
+function normalizeTokenHistory(days: UsageCostDay[]) {
   return days
     .filter(
       (day) =>
         Boolean(day.day) &&
-        (finiteNumber(day.totalCostUSD) || finiteNumber(day.totalTokens)),
+        finiteNumber(day.totalTokens) &&
+        day.totalTokens >= 0,
     )
     .sort((a, b) => a.day.localeCompare(b.day))
     .slice(-30);
 }
 
-function latestCostDay(days: UsageCostDay[]): UsageCostDay | undefined {
-  if (days.length === 0) {
-    return undefined;
-  }
-  return days[days.length - 1];
+type ProviderTokenHistory = {
+  days: UsageCostDay[];
+  provider: UsageProviderInfo;
+};
+
+function getProviderTokenHistories(
+  providers: UsageProviderInfo[],
+): ProviderTokenHistory[] {
+  return providers.flatMap((provider) => {
+    const days = normalizeTokenHistory(provider.cost?.daily || []);
+    return days.some((day) => (day.totalTokens || 0) > 0)
+      ? [{ days, provider }]
+      : [];
+  });
 }
 
-function UsageMeta({ icon, label }: { icon: ReactNode; label: string }) {
-  return (
-    <span className="inline-flex min-h-6 items-center gap-2">
-      {icon}
-      <span>{label}</span>
-    </span>
+function getLast30DaysTokenTotal(
+  providers: UsageProviderInfo[],
+): number | null {
+  const providerTotals = providers.flatMap((provider) => {
+    const reportedTotal = provider.cost?.last30DaysTokens;
+    if (finiteNumber(reportedTotal) && reportedTotal >= 0) {
+      return [reportedTotal];
+    }
+
+    const days = normalizeTokenHistory(provider.cost?.daily || []);
+    if (days.length === 0) {
+      return [];
+    }
+    return [days.reduce((sum, day) => sum + (day.totalTokens || 0), 0)];
+  });
+
+  return providerTotals.length > 0
+    ? providerTotals.reduce((sum, total) => sum + total, 0)
+    : null;
+}
+
+const usageProviderChartColors = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+] as const;
+
+function buildProviderTokenChart(
+  providerHistories: Array<{
+    days: UsageCostDay[];
+    provider: UsageProviderInfo;
+  }>,
+) {
+  const series = providerHistories.map(({ provider }, index) => ({
+    color: usageProviderChartColors[index % usageProviderChartColors.length],
+    dataKey: `provider${index + 1}`,
+    label: provider.label || provider.id,
+  }));
+  const rowsByDay = new Map<string, Record<string, number | string>>();
+
+  providerHistories.forEach(({ days }, index) => {
+    const dataKey = series[index].dataKey;
+    for (const day of days) {
+      const row = rowsByDay.get(day.day) || { day: day.day };
+      row[dataKey] = day.totalTokens || 0;
+      rowsByDay.set(day.day, row);
+    }
+  });
+
+  const chartData = [...rowsByDay.values()].sort((a, b) =>
+    String(a.day).localeCompare(String(b.day)),
   );
+  const chartConfig: ChartConfig = Object.fromEntries(
+    series.map((item) => [
+      item.dataKey,
+      {
+        color: item.color,
+        label: item.label,
+      },
+    ]),
+  );
+
+  return { chartConfig, chartData, series };
 }
 
 function StatusPill({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex min-h-6 items-center border border-[#747A60] bg-[#EEEEEE] px-2 text-xs font-bold uppercase text-[#1B1B1B]">
+    <Badge className="min-h-6 uppercase" variant="secondary">
       {children}
-    </span>
+    </Badge>
   );
 }
 
@@ -826,21 +877,6 @@ function clampPercent(value: number): number {
 
 function usageModeShortLabel(mode?: string): string {
   return mode === "remaining" ? "remaining" : "used";
-}
-
-function formatUsageTime(value?: string): string {
-  if (!value) {
-    return "Waiting for usage";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "Usage time unknown";
-  }
-  return new Intl.DateTimeFormat("de-DE", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(date);
 }
 
 function formatReset(seconds?: number): string {
@@ -867,43 +903,103 @@ function formatTokenCount(value: number): string {
     }).format(value);
 }
 
-function formatCurrency(value?: number, currencyCode?: string): string {
+function formatFullTokenCount(value: number | null): string {
   if (!finiteNumber(value)) {
-    return "Not available";
+    return "—";
   }
   return new Intl.NumberFormat("en-US", {
-    currency: currencyCode || "USD",
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-    style: "currency",
+    maximumFractionDigits: 0,
   }).format(value);
 }
 
-function formatResetCreditCount(value?: number): string {
-  const count = finiteNumber(value) ? Math.max(0, Math.round(value)) : 0;
-  if (count === 1) {
-    return "1 manual reset available";
+const tokenNumberOnes = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+  "eleven",
+  "twelve",
+  "thirteen",
+  "fourteen",
+  "fifteen",
+  "sixteen",
+  "seventeen",
+  "eighteen",
+  "nineteen",
+] as const;
+
+const tokenNumberTens = [
+  "",
+  "",
+  "twenty",
+  "thirty",
+  "forty",
+  "fifty",
+  "sixty",
+  "seventy",
+  "eighty",
+  "ninety",
+] as const;
+
+const tokenNumberScales = [
+  "",
+  "thousand",
+  "million",
+  "billion",
+  "trillion",
+  "quadrillion",
+] as const;
+
+function formatTokenCountInWords(value: number): string {
+  const roundedValue = Math.round(value);
+  if (!Number.isSafeInteger(roundedValue) || roundedValue < 0) {
+    return "unavailable";
   }
-  if (count === 0) {
-    return "No manual resets available";
+  if (roundedValue === 0) {
+    return tokenNumberOnes[0];
   }
-  return `${count} manual resets available`;
+
+  const groups: string[] = [];
+  let remaining = roundedValue;
+  let scaleIndex = 0;
+  while (remaining > 0) {
+    const chunk = remaining % 1000;
+    if (chunk > 0) {
+      const scale = tokenNumberScales[scaleIndex];
+      groups.unshift(
+        [formatTokenNumberChunk(chunk), scale].filter(Boolean).join(" "),
+      );
+    }
+    remaining = Math.floor(remaining / 1000);
+    scaleIndex += 1;
+  }
+  return groups.join(" ");
 }
 
-function formatExpiryDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "date unknown";
+function formatTokenNumberChunk(value: number): string {
+  const words: string[] = [];
+  const hundreds = Math.floor(value / 100);
+  const remainder = value % 100;
+
+  if (hundreds > 0) {
+    words.push(`${tokenNumberOnes[hundreds]} hundred`);
   }
-  const day = new Intl.DateTimeFormat("en-US", {
-    day: "numeric",
-    month: "short",
-  }).format(date);
-  const time = new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-  return `${day} at ${time}`;
+  if (remainder > 0 && remainder < 20) {
+    words.push(tokenNumberOnes[remainder]);
+  } else if (remainder >= 20) {
+    const tens = tokenNumberTens[Math.floor(remainder / 10)];
+    const ones = remainder % 10;
+    words.push(ones > 0 ? `${tens}-${tokenNumberOnes[ones]}` : tens);
+  }
+
+  return words.join(" ");
 }
 
 function finiteNumber(value: unknown): value is number {
@@ -918,18 +1014,6 @@ function providerStatusLabel(description?: string): string {
   return value;
 }
 
-function formatCredits(value: number): string {
-  return `${new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 1,
-  }).format(value)} left`;
-}
-
-function formatCreditsUsed(value: number): string {
-  return `${new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: value >= 100 ? 0 : 1,
-  }).format(value)} credits`;
-}
-
 function formatDayLabel(day: string): string {
   const date = new Date(`${day}T12:00:00`);
   if (Number.isNaN(date.getTime())) {
@@ -939,43 +1023,4 @@ function formatDayLabel(day: string): string {
     month: "short",
     day: "numeric",
   }).format(date);
-}
-
-function usageServiceColor(service: string): string {
-  const lower = service.toLowerCase();
-  if (lower === "cli") {
-    return "#428CF5";
-  }
-  if (lower.includes("github") || lower.includes("review")) {
-    return "#EF862E";
-  }
-  const palette = ["#75BF5C", "#CC74EA", "#42C7DB", "#EFC044", "#CCFF00"];
-  const index = Math.abs(hashString(lower)) % palette.length;
-  return palette[index];
-}
-
-function hashString(value: string): number {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) | 0;
-  }
-  return hash;
-}
-
-function paceWindowLabel(window: string): string {
-  if (window === "primary") {
-    return "Session";
-  }
-  if (window === "secondary") {
-    return "Weekly";
-  }
-  return window ? window[0].toUpperCase() + window.slice(1) : "Window";
-}
-
-function paceFallbackSummary(item: UsagePaceInfo): string {
-  const stage = item.stage || "Pace";
-  if (typeof item.expectedUsedPercent === "number") {
-    return `${stage} · expected ${item.expectedUsedPercent}% used`;
-  }
-  return stage;
 }

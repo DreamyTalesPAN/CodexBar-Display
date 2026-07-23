@@ -9,6 +9,16 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 func runURLSchemeTests() {
+    let repairStatus = InstallationStatus(
+        title: "CodexBar needs repair",
+        detail: "Repair CodexBar before continuing.",
+        failed: true,
+        retryTitle: "Repair CodexBar"
+    )
+    require(
+        repairStatus.retryTitle == "Repair CodexBar",
+        "native installation status must preserve its repair CTA across window reopening"
+    )
     let redactedReport = AppDelegate.redactReportValue([
         "token": "raw-token",
         "apiKey": "raw-api-key",
@@ -127,6 +137,46 @@ func runURLSchemeTests() {
         isCheckForUpdatesURL(URL(string: "vibetv://check-for-updates")!),
         "the exact native Sparkle action must be accepted"
     )
+    require(
+        isRestartControlCenterURL(URL(string: "vibetv://restart-control-center")!),
+        "the exact native restart action must be accepted"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://restart-control-center")!
+        ) == .restartControlCenter,
+        "the WebView restart URL must route to the native restart action"
+    )
+    for rejectedRestartURL in [
+        "vibetv://restart-control-center/extra",
+        "vibetv://restart-control-center?force=true",
+        "https://restart-control-center",
+    ] {
+        require(
+            !isRestartControlCenterURL(URL(string: rejectedRestartURL)!),
+            "unexpected restart action must be rejected: \(rejectedRestartURL)"
+        )
+    }
+    require(
+        isRepairRuntimeURL(URL(string: "vibetv://repair-runtime")!),
+        "the exact native runtime repair action must be accepted"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://repair-runtime")!
+        ) == .repairRuntime,
+        "the WebView repair URL must route to the native runtime repair action"
+    )
+    for rejectedRuntimeRepairURL in [
+        "vibetv://repair-runtime/extra",
+        "vibetv://repair-runtime?force=true",
+        "https://repair-runtime",
+    ] {
+        require(
+            !isRepairRuntimeURL(URL(string: rejectedRuntimeRepairURL)!),
+            "unexpected runtime repair action must be rejected: \(rejectedRuntimeRepairURL)"
+        )
+    }
     for rejectedUpdateURL in [
         "vibetv://check-for-updates/extra",
         "vibetv://check-for-updates?channel=beta",
@@ -154,6 +204,32 @@ func runURLSchemeTests() {
         ) == .checkForUpdates,
         "the WebView update URL must route to the native Sparkle action"
     )
+    require(
+        shouldHandleWebViewDownload(
+            url: URL(string: "blob:http://127.0.0.1/report")!,
+            requestedByWebContent: true
+        ),
+        "an explicit blob download must use the native WebKit download path"
+    )
+    require(
+        !shouldHandleWebViewDownload(
+            url: URL(string: "blob:http://127.0.0.1/report")!,
+            requestedByWebContent: false
+        ),
+        "ordinary blob navigation must not become a download"
+    )
+    for nonBlobDownloadURL in [
+        "vibetv://repair-runtime",
+        "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.0/VibeTV-Control-Center.dmg",
+    ] {
+        require(
+            !shouldHandleWebViewDownload(
+                url: URL(string: nonBlobDownloadURL)!,
+                requestedByWebContent: true
+            ),
+            "non-blob routes must keep their existing handling: \(nonBlobDownloadURL)"
+        )
+    }
     for rejectedRepairURL in [
         "vibetv://repair-codexbar/extra",
         "vibetv://repair-codexbar?force=true",

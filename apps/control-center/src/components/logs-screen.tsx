@@ -6,8 +6,39 @@ import {
   Clock,
   RefreshCw,
 } from "lucide-react";
-import type { SupportDiagnostics } from "./control-center-types";
-import { providerSetupStatusLabel } from "./provider-setup-card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Item,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  deviceIsReady,
+  type DeviceInfo,
+  type SupportDiagnostics,
+} from "./control-center-types";
 import { SupportReportActions } from "./support-report-actions";
 
 export type LogEvent = {
@@ -19,6 +50,7 @@ export type LogEvent = {
 
 export type LogsScreenProps = {
   events?: LogEvent[];
+  device?: DeviceInfo | null;
   diagnostics?: SupportDiagnostics | null;
   lastError?: {
     code: string;
@@ -27,245 +59,159 @@ export type LogsScreenProps = {
   } | null;
   onLoadDiagnostics?: () => void;
   onRefresh?: () => void;
+  onRunSetupAgain?: () => void;
   busyAction?: string | null;
+  supportReportBusy?: boolean;
 };
 
 export function LogsScreen({
   events = [],
+  device,
   diagnostics,
   lastError,
   onLoadDiagnostics,
   onRefresh,
+  onRunSetupAgain,
   busyAction,
+  supportReportBusy = false,
 }: LogsScreenProps) {
-  return (
-    <div className="mx-auto max-w-[1180px]">
-      <section className="border-b border-[#747A60] py-10">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <h3 className="text-base font-bold text-[#1B1B1B]">
-            Support report
-          </h3>
-          <SupportReportActions
-            busyAction={busyAction}
-            diagnostics={diagnostics}
-            onCreate={onLoadDiagnostics}
-          />
-        </div>
+  const deviceConnected = deviceIsReady(device);
 
-        {diagnostics ? (
-          <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-            <dl className="divide-y divide-[#747A60] border-y border-[#747A60]">
-              <DiagnosticFact
-                label="Generated"
-                value={formatDiagnosticTime(diagnostics.generatedAt)}
-              />
-              <DiagnosticFact
-                label="Mac App"
-                value={formatAppVersion(diagnostics)}
-              />
-              <DiagnosticFact
-                label="Background runtime"
-                value={formatRuntimeVersion(diagnostics)}
-              />
-              <DiagnosticFact
-                label="CodexBar"
-                value={formatCodexBarStatus(diagnostics)}
-              />
-              <DiagnosticFact
-                label="AI provider"
-                value={providerSetupStatusLabel(diagnostics.providerSetup)}
-              />
-              <DiagnosticFact
-                label="VibeTV address"
-                value={formatDeviceAddress(diagnostics.device?.target)}
-              />
-              <DiagnosticFact
+  return (
+    <div className="mx-auto grid max-w-[1180px] gap-4 py-6">
+      <div className="grid items-stretch gap-4 lg:grid-cols-2">
+        <Card size="sm">
+          <CardHeader>
+            <CardTitle>Connected VibeTV</CardTitle>
+            <CardDescription>
+              {deviceConnected
+                ? "The VibeTV currently controlled by this Mac."
+                : "No VibeTV is currently connected."}
+            </CardDescription>
+            <CardAction>
+              <Badge variant={deviceConnected ? "default" : "outline"}>
+                {deviceConnected ? "Connected" : "Not connected"}
+              </Badge>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="flex-1">
+            <dl className="grid gap-2 sm:grid-cols-2">
+              <SupportFact
                 label="Device"
-                value={
-                  diagnostics.device?.connected
-                    ? diagnostics.device.board || "Connected"
-                    : "Not connected"
-                }
+                value={device?.deviceId || device?.board || "Not available"}
               />
-              <DiagnosticFact
-                label="VibeTV firmware"
-                value={diagnostics.device?.firmware || "Unknown"}
+              <SupportFact
+                label="Address"
+                value={formatDeviceAddress(device?.target)}
               />
-              <DiagnosticFact
-                label="VibeTV ID"
-                value={
-                  diagnostics.device?.deviceId ||
-                  diagnostics.configuration?.deviceId ||
-                  "Unknown"
-                }
+              <SupportFact
+                label="Firmware"
+                value={device?.firmware || "Not available"}
               />
-              <DiagnosticFact
-                label="Paired and ready"
-                value={formatDeviceReadiness(diagnostics)}
-              />
-              <DiagnosticFact
-                label="VibeTVs on WiFi"
-                value={formatNetworkDiscovery(diagnostics)}
+              <SupportFact
+                label="Active theme"
+                value={activeThemeLabel(device)}
               />
             </dl>
-            <div className="grid content-start gap-6">
-              {diagnostics.networkDiscovery?.devices?.length ? (
-                <section aria-labelledby="wifi-vibetvs-heading">
-                  <h4
-                    className="mb-3 text-sm font-bold text-[#1B1B1B]"
-                    id="wifi-vibetvs-heading"
-                  >
-                    VibeTVs found on this WiFi
-                  </h4>
-                  <ul className="grid gap-0 border-y border-[#747A60]">
-                    {diagnostics.networkDiscovery.devices.map((candidate) => (
-                      <li
-                        className="grid gap-1 border-b border-[#747A60] py-3 text-sm last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto]"
-                        key={`${candidate.deviceId || "device"}-${candidate.target}`}
-                      >
-                        <span className="break-words font-bold text-[#1B1B1B]">
-                          {candidate.deviceId || candidate.board || "VibeTV"}
-                        </span>
-                        <span className="break-words text-[#444933]">
-                          {formatDeviceAddress(candidate.target)}
-                          {candidate.active
-                            ? " · Active"
-                            : candidate.known
-                              ? " · Known"
-                              : ""}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ) : null}
-              <ol className="grid gap-0 border-y border-[#747A60]">
-                {(diagnostics.checks || []).map((check) => (
-                  <li
-                    className="grid gap-3 border-b border-[#747A60] py-4 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)]"
-                    key={`${check.name}-${check.status}`}
-                  >
-                    <div>
-                      <span className="inline-flex min-h-8 items-center border border-[#747A60] bg-[#F9F9F9] px-3 text-xs font-bold uppercase text-[#1B1B1B]">
-                        {check.status}
-                      </span>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-bold text-[#1B1B1B]">
-                        {formatCheckName(check.name)}
-                      </div>
-                      {check.detail ? (
-                        <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
-                          {formatCustomerSupportText(check.detail)}
-                        </div>
-                      ) : null}
-                      {check.nextAction ? (
-                        <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
-                          {formatCustomerSupportText(check.nextAction)}
-                        </div>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          </div>
-        ) : (
-          <div className="border border-[#747A60] p-6 text-sm text-[#444933]">
-            Create a support report when support asks for it.
-          </div>
-        )}
-      </section>
-
-      <section className="border-b border-[#747A60] py-10">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h3 className="text-base font-bold text-[#1B1B1B]">
-            Recent activity
-          </h3>
-          {onRefresh ? (
-            <button
-              className="inline-flex h-11 items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={busyAction === "logs"}
-              onClick={onRefresh}
-              type="button"
-            >
-              {busyAction === "logs" ? (
-                <RefreshCw className="animate-spin" size={18} />
-              ) : (
-                <RefreshCw size={18} aria-hidden />
-              )}
-              <span>{busyAction === "logs" ? "Refreshing..." : "Refresh"}</span>
-            </button>
-          ) : null}
-        </div>
-
-        {lastError ? (
-          <div className="mb-6 border border-[#747A60] bg-[#EEEEEE] p-4 text-sm leading-6 text-[#444933]">
-            <div className="mb-1 flex items-center gap-2 font-bold text-[#1B1B1B]">
-              <AlertTriangle size={17} aria-hidden />
-              {formatCustomerSupportText(lastError.message)}
-            </div>
-            {formatCustomerSupportText(lastError.nextAction)}
-          </div>
-        ) : null}
-
-        {events.length ? (
-          <ol className="grid gap-0 border-y border-[#747A60]">
-            {events.map((event) => (
-              <li
-                className="grid gap-4 border-b border-[#747A60] py-5 last:border-b-0 md:grid-cols-[58px_minmax(0,1fr)_120px]"
-                key={event.id}
+          </CardContent>
+          {onRunSetupAgain ? (
+            <CardFooter className="justify-end">
+              <Button
+                className="w-full sm:w-auto"
+                disabled={Boolean(busyAction)}
+                onClick={onRunSetupAgain}
+                type="button"
+                variant="outline"
               >
-                <div className="grid size-12 place-items-center rounded-full bg-[#1B1B1B] text-[#CCFF00]">
-                  <Activity size={23} aria-hidden />
-                </div>
-                <div className="min-w-0">
-                  <div className="break-words font-bold text-[#1B1B1B]">
-                    {formatCustomerSupportText(event.label)}
-                  </div>
-                  {event.detail ? (
-                    <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
-                      {formatCustomerSupportText(event.detail)}
+                {busyAction === "reset-setup" ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <RefreshCw data-icon="inline-start" aria-hidden />
+                )}
+                {busyAction === "reset-setup" ? "Resetting setup" : "Run setup again"}
+              </Button>
+            </CardFooter>
+          ) : null}
+        </Card>
+
+        <Card size="sm">
+          <CardHeader>
+            <CardTitle>Support report</CardTitle>
+            <CardDescription>
+              Create a diagnostic file when support asks for it.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-1 items-center">
+            <SupportReportActions
+              creating={supportReportBusy}
+              diagnostics={diagnostics}
+              onCreate={onLoadDiagnostics}
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle>Recent activity</CardTitle>
+          <CardDescription>Connection and setup changes from this session.</CardDescription>
+          {onRefresh ? (
+            <CardAction>
+              <Button disabled={busyAction === "logs"} onClick={onRefresh} size="sm" variant="outline">
+                {busyAction === "logs" ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" aria-hidden />}
+                {busyAction === "logs" ? "Refreshing" : "Refresh"}
+              </Button>
+            </CardAction>
+          ) : null}
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          {lastError ? (
+            <Alert>
+              <AlertTriangle aria-hidden />
+              <AlertTitle>{formatCustomerSupportText(lastError.message)}</AlertTitle>
+              <AlertDescription>{formatCustomerSupportText(lastError.nextAction)}</AlertDescription>
+            </Alert>
+          ) : null}
+          {events.length ? (
+            <div className="max-h-[320px] overflow-y-auto rounded-lg border">
+              <ItemGroup className="gap-0 divide-y">
+                {events.map((event) => (
+                  <Item className="rounded-none border-0" key={event.id} size="sm">
+                    <ItemMedia variant="icon"><Activity aria-hidden /></ItemMedia>
+                    <ItemContent>
+                      <ItemTitle>{formatCustomerSupportText(event.label)}</ItemTitle>
+                      {event.detail ? <ItemDescription className="line-clamp-none break-words">{formatCustomerSupportText(event.detail)}</ItemDescription> : null}
+                    </ItemContent>
+                    <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                      <Clock size={14} aria-hidden />
+                      <span>{event.timestamp || "Session"}</span>
                     </div>
-                  ) : null}
-                </div>
-                <div className="flex min-w-0 items-center gap-2 break-words text-sm text-[#444933] md:justify-end">
-                  <Clock size={15} aria-hidden />
-                  <span className="min-w-0 break-words">
-                    {event.timestamp || "Session"}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <div className="border border-[#747A60] p-6 text-sm text-[#444933]">
-            Recent activity will appear here.
-          </div>
-        )}
-      </section>
+                  </Item>
+                ))}
+              </ItemGroup>
+            </div>
+          ) : (
+            <Empty className="bg-muted/50 py-6">
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><Activity aria-hidden /></EmptyMedia>
+                <EmptyTitle>No recent activity</EmptyTitle>
+                <EmptyDescription>Connection activity will appear here.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-function DiagnosticFact({ label, value }: { label: string; value: string }) {
+function SupportFact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid min-h-[52px] gap-1 py-3 sm:grid-cols-[110px_minmax(0,1fr)] sm:gap-4">
-      <dt className="text-sm font-bold text-[#1B1B1B]">{label}</dt>
-      <dd className="break-words text-sm leading-6 text-[#444933]">{value}</dd>
+    <div className="min-w-0 rounded-lg bg-muted/50 p-3">
+      <dt className="text-xs font-semibold uppercase text-muted-foreground">{label}</dt>
+      <dd className="mt-1 break-words text-sm font-medium">{value}</dd>
     </div>
   );
-}
-
-function formatCheckName(name: string): string {
-  if (name.trim().toLowerCase() === "companion") {
-    return "Mac App";
-  }
-  return name
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 function formatCustomerSupportText(value: string): string {
@@ -277,12 +223,9 @@ function formatCustomerSupportText(value: string): string {
     .replace(/\blocal\s+API\b/gi, "Mac App")
     .replace(/\bAPI\b/g, "app")
     .replace(/\btarget\b/gi, "VibeTV address")
-    .replace(/\bpack\s*URL\b/gi, "theme download")
-    .replace(/\bpackUrl\b/g, "theme download")
     .replace(/\bCOMPANION_UNREACHABLE\b/g, "Mac App needs setup")
     .replace(/\bCLIENT_ERROR\b/g, "Something needs attention")
     .replace(/\bHTTP_\d+\b/g, "Connection failed")
-    .replace(/\bVibeTV-Companion-API-\S+/g, "Mac App installer")
     .replace(/https?:\/\/\S+/g, "saved link");
 }
 
@@ -290,70 +233,9 @@ function formatDeviceAddress(value?: string): string {
   return value?.trim().replace(/^https?:\/\//i, "") || "Not configured";
 }
 
-function formatDiagnosticTime(value?: string): string {
-  if (!value) {
-    return "Unknown";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat("de-DE", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(date);
-}
 
-function formatCodexBarStatus(diagnostics: SupportDiagnostics): string {
-  const engine = diagnostics.providerSetup?.engine;
-  if (!engine) {
-    return "Unknown";
-  }
-  if (engine.status === "ready") {
-    return engine.version ? `Ready ${engine.version}` : "Ready";
-  }
-  if (engine.status === "config_error") {
-    return "Settings need attention";
-  }
-  return "Setup needed";
-}
-
-function formatAppVersion(diagnostics: SupportDiagnostics): string {
-  const app = diagnostics.companion?.app;
-  const version = app?.version || diagnostics.companion?.version;
-  if (!version) {
-    return "Unknown";
-  }
-  return app?.build ? `${version} (${app.build})` : version;
-}
-
-function formatRuntimeVersion(diagnostics: SupportDiagnostics): string {
-  const runtime = diagnostics.companion?.runtime;
-  if (!runtime?.version) {
-    return "Unknown";
-  }
-  return runtime.commit
-    ? `${runtime.version} · ${runtime.commit.slice(0, 10)}`
-    : runtime.version;
-}
-
-function formatDeviceReadiness(diagnostics: SupportDiagnostics): string {
-  const device = diagnostics.device;
-  if (!device?.paired) {
-    return device?.connected ? "Connected, not paired" : "Not paired";
-  }
-  return device.ready ? "Paired and ready" : "Paired, not ready";
-}
-
-function formatNetworkDiscovery(diagnostics: SupportDiagnostics): string {
-  const discovery = diagnostics.networkDiscovery;
-  if (!discovery?.attempted) {
-    return "Not checked";
-  }
-  if (discovery.errorCode) {
-    return "Search needs attention";
-  }
-  const count = discovery.devices?.length || 0;
-  return count === 0 ? "None found" : `${count} found`;
+function activeThemeLabel(device: DeviceInfo | null | undefined): string {
+  const theme = device?.activeTheme?.trim();
+  if (!theme) return deviceIsReady(device) ? "Default" : "Not available";
+  return theme.split(/[-_]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }

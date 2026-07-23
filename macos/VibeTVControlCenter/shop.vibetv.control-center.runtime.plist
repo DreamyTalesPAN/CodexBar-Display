@@ -13,7 +13,7 @@
       <string>--transport</string>
       <string>wifi</string>
       <string>--interval</string>
-      <string>30s</string>
+      <string>5s</string>
       <string>--api-addr</string>
       <string>127.0.0.1:47832</string>
       <string>--api-dev-origin</string>

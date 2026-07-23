@@ -12,9 +12,53 @@ import {
   Wifi,
   X,
 } from "lucide-react";
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemFooter,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
+import { Progress } from "@/components/ui/progress";
+import { Spinner } from "@/components/ui/spinner";
 import { compareSemVer, parseSemVer } from "@/lib/semver";
+import { cn } from "@/lib/utils";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
 import {
   createBlankThemeSpec,
@@ -32,7 +76,6 @@ import {
 } from "@/lib/theme-studio-storage";
 import type { ThemeStudioDeviceCapabilities } from "@/lib/theme-studio-capabilities";
 import type { ThemeProduct } from "@/lib/themes";
-import { ControlCenterButton } from "./control-center-button";
 import { themeRenderPackUrl } from "./control-center-runtime";
 import {
   ThemeSpecPreview,
@@ -50,6 +93,7 @@ export type ThemeLibraryCompanionStatus = "unknown" | "online" | "missing";
 export type ThemeLibraryDeviceInfo = {
   connected: boolean;
   paired?: boolean;
+  ready?: boolean;
   board?: string;
   firmware?: string;
   activeTheme?: string;
@@ -357,19 +401,21 @@ export function ThemeLibraryScreen({
     setRecovery(null);
   }
 
-  function confirmDeleteTheme() {
+  function confirmDeleteTheme(): boolean {
     if (!deleteTheme) {
-      return;
+      return false;
     }
     try {
       persistUserThemes(userThemes.filter((theme) => theme.id !== deleteTheme.id));
       setDeleteTheme(null);
       setDeleteError("");
       window.setTimeout(() => libraryHeadingRef.current?.focus(), 0);
+      return true;
     } catch (error) {
       setDeleteError(
         error instanceof Error ? error.message : "Theme could not be deleted.",
       );
+      return false;
     }
   }
 
@@ -428,7 +474,7 @@ export function ThemeLibraryScreen({
 
   return (
     <div className="mx-auto max-w-[1180px]">
-      <section className="grid gap-5 border-b border-[#747A60] py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+      <section className="grid gap-5 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <h2
           className="truncate text-3xl font-black leading-tight text-[#1B1B1B] outline-none"
           ref={libraryHeadingRef}
@@ -436,35 +482,26 @@ export function ThemeLibraryScreen({
         >
           Themes
         </h2>
-        <ControlCenterButton
-          icon={<Plus size={18} aria-hidden />}
-          label="Create Theme"
-          onClick={openBlankTheme}
-          variant="primary"
-        />
+        <Button onClick={openBlankTheme} type="button">
+          <Plus data-icon="inline-start" aria-hidden />
+          <span>Create Theme</span>
+        </Button>
       </section>
 
-      <section className="border-b border-[#747A60] py-8">
+      <section className="py-8">
         {storageWarning ? (
-          <div
-            className="mb-5 flex gap-3 border border-[#8A5A00] bg-[#FFF2CC] p-4 text-sm text-[#5F3D00]"
-            role="alert"
-          >
-            <Lock className="mt-0.5 shrink-0" size={18} aria-hidden />
-            <div>
-              <div className="font-bold">Theme storage needs attention</div>
-              <div className="mt-1 leading-6">{storageWarning}</div>
-            </div>
-          </div>
+          <Alert className="mb-5">
+            <Lock aria-hidden />
+            <AlertTitle>Theme storage needs attention</AlertTitle>
+            <AlertDescription>{storageWarning}</AlertDescription>
+          </Alert>
         ) : null}
         {libraryError ? (
-          <div
-            className="mb-5 flex gap-3 border border-[#7D2633] bg-[#FFE3E8] p-4 text-sm text-[#7D2633]"
-            role="alert"
-          >
-            <Lock className="mt-0.5 shrink-0" size={18} aria-hidden />
-            <div>{libraryError}</div>
-          </div>
+          <Alert className="mb-5" variant="destructive">
+            <Lock aria-hidden />
+            <AlertTitle>Theme action failed</AlertTitle>
+            <AlertDescription>{libraryError}</AlertDescription>
+          </Alert>
         ) : null}
         {recovery ? (
           <RecoveryCard
@@ -487,7 +524,7 @@ export function ThemeLibraryScreen({
               />
             ) : null}
 
-            <ul className="divide-y divide-[#747A60] border-y border-[#747A60]">
+            <ItemGroup>
               {libraryThemes.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}
@@ -509,36 +546,23 @@ export function ThemeLibraryScreen({
                   themeStorageLocked={storageLocked}
                 />
               ))}
-            </ul>
+            </ItemGroup>
           </>
         )}
       </section>
 
       {previewTheme ? (
-        <div
-          className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[#1B1B1B]/80 p-4 sm:p-6"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`${previewTheme.title} preview`}
-        >
-          <div className="max-h-[calc(100dvh-2rem)] w-full max-w-[640px] overflow-y-auto border border-[#747A60] bg-[#F9F9F9] p-5">
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <h3 className="truncate text-2xl font-black text-[#1B1B1B]">
-                {previewTheme.title}
-              </h3>
-              <button
-                aria-label="Close preview"
-                autoFocus
-                className="grid size-10 place-items-center border border-[#747A60] bg-[#F9F9F9] text-[#1B1B1B] hover:bg-[#CCFF00]"
-                onClick={() => setPreviewTheme(null)}
-                type="button"
-              >
-                <X size={20} aria-hidden />
-              </button>
-            </div>
+        <Dialog open onOpenChange={(open) => !open && setPreviewTheme(null)}>
+          <DialogContent
+            aria-describedby={undefined}
+            className="max-h-[calc(100dvh-2rem)] max-w-[640px] overflow-y-auto sm:max-w-[640px]"
+          >
+            <DialogHeader>
+              <DialogTitle className="truncate text-2xl font-black">{previewTheme.title}</DialogTitle>
+            </DialogHeader>
             <ThemePreview large theme={previewTheme} />
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
       {deleteTheme ? (
         <DeleteThemeDialog
@@ -575,7 +599,7 @@ function RecoveryCard({
   recovery: ThemeStudioRecovery;
 }) {
   return (
-    <div className="mb-6 grid gap-4 border border-[#747A60] bg-[#F9F9F9] p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+    <div className="mb-6 grid gap-4 border border-border bg-card p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div className="min-w-0">
         <div className="text-base font-bold text-[#1B1B1B]">
           Continue your unsaved theme
@@ -585,16 +609,12 @@ function RecoveryCard({
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <ControlCenterButton
-          label="Discard"
-          onClick={onDiscard}
-          variant="secondary"
-        />
-        <ControlCenterButton
-          label="Resume"
-          onClick={onResume}
-          variant="primary"
-        />
+        <Button onClick={onDiscard} type="button" variant="outline">
+          Discard
+        </Button>
+        <Button onClick={onResume} type="button">
+          Resume
+        </Button>
       </div>
     </div>
   );
@@ -608,87 +628,39 @@ function DeleteThemeDialog({
 }: {
   error: string;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: () => boolean;
   theme: UserThemeRecord;
 }) {
-  const dialogRef = useRef<HTMLDivElement>(null);
-
-  function handleDialogKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onCancel();
-      return;
-    }
-    if (event.key !== "Tab") {
-      return;
-    }
-    const buttons = Array.from(
-      dialogRef.current?.querySelectorAll<HTMLButtonElement>(
-        "button:not([disabled])",
-      ) || [],
-    );
-    if (buttons.length === 0) {
-      event.preventDefault();
-      return;
-    }
-    const first = buttons[0];
-    const last = buttons[buttons.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-
   return (
-    <div
-      aria-labelledby="delete-theme-title"
-      aria-modal="true"
-      className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[#1B1B1B]/80 p-4 sm:p-6"
-      onKeyDown={handleDialogKeyDown}
-      ref={dialogRef}
-      role="dialog"
-    >
-      <div className="w-full max-w-[520px] border border-[#747A60] bg-[#F9F9F9] p-5">
-        <h3
-          className="text-2xl font-black text-[#1B1B1B]"
-          id="delete-theme-title"
-        >
-          Delete {theme.document.packName}?
-        </h3>
-        <p className="mt-3 text-sm leading-6 text-[#444933]">
+    <AlertDialog open onOpenChange={(open) => !open && onCancel()}>
+      <AlertDialogContent className="sm:max-w-[520px]">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {theme.document.packName}?</AlertDialogTitle>
+          <AlertDialogDescription>
           This deletes the local library copy only. It does not remove or change
           the theme currently active on VibeTV.
-        </p>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
         {error ? (
-          <div
-            className="mt-4 border border-[#7D2633] bg-[#FFE3E8] p-3 text-sm text-[#7D2633]"
-            role="alert"
-          >
-            {error}
-          </div>
+          <Alert variant="destructive"><Lock /><AlertTitle>Theme could not be deleted</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>
         ) : null}
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          <button
-            autoFocus
-            className="h-12 border border-[#747A60] bg-[#F9F9F9] px-4 text-base font-semibold text-[#1B1B1B] hover:bg-[#EEEEEE]"
-            onClick={onCancel}
-            type="button"
-          >
+        <AlertDialogFooter>
+          <AlertDialogCancel autoFocus onClick={onCancel}>
             Cancel
-          </button>
-          <button
-            className="h-12 border border-[#7D2633] bg-[#7D2633] px-4 text-base font-semibold text-white hover:bg-[#5F1824]"
-            onClick={onConfirm}
-            type="button"
+          </AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(event) => {
+              if (!onConfirm()) {
+                event.preventDefault();
+              }
+            }}
+            variant="destructive"
           >
             Delete local copy
-          </button>
-        </div>
-      </div>
-    </div>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -702,43 +674,27 @@ function CatalogEmptyState({
   storefrontConfigured: boolean;
 }) {
   const detail = requestedThemeId
-    ? "This theme is not available right now. Open the theme shop or choose another theme later."
+    ? "This theme is not available right now. Reload the catalog or try again later."
     : storefrontConfigured || catalogIssue
-      ? "Themes could not be loaded right now. Reload the page or open the theme shop."
-      : "Themes are not available from this page right now. Open the theme shop instead.";
+      ? "Themes could not be loaded right now. Reload the catalog or try again later."
+      : "Themes are not available from this page right now. Try again later.";
 
   return (
-    <div className="grid gap-5 border-y border-[#747A60] py-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-      <div className="flex min-w-0 gap-4">
-        <div className="grid size-11 shrink-0 place-items-center rounded-full bg-[#1B1B1B] text-[#CCFF00]">
-          <Lock size={22} aria-hidden />
-        </div>
-        <div className="min-w-0">
-          <h3 className="text-base font-bold text-[#1B1B1B]">
-            Themes unavailable
-          </h3>
-          <p className="mt-1 max-w-[760px] text-sm leading-6 text-[#444933]">
-            {detail}
-          </p>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-3 sm:flex-row lg:justify-end">
-        <a
-          className="inline-flex h-12 min-w-[190px] items-center justify-center gap-2 border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#EEEEEE]"
-          href="https://vibetv.shop/collections/themes-2"
-        >
-          <Library size={18} aria-hidden />
-          <span>Open theme shop</span>
-        </a>
-        <ControlCenterButton
-          icon={<RefreshCw size={18} aria-hidden />}
-          label="Reload catalog"
-          onClick={() => window.location.reload()}
-          variant="primary"
-        />
-      </div>
-    </div>
+    <Empty className="border bg-card py-10">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Lock aria-hidden />
+        </EmptyMedia>
+        <EmptyTitle>Themes unavailable</EmptyTitle>
+        <EmptyDescription>{detail}</EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <Button onClick={() => window.location.reload()} type="button">
+          <RefreshCw data-icon="inline-start" aria-hidden />
+          Reload catalog
+        </Button>
+      </EmptyContent>
+    </Empty>
   );
 }
 
@@ -752,7 +708,7 @@ function MissingRequestedThemeNotice({
   }
 
   return (
-    <div className="mb-6 flex gap-3 border border-[#747A60] bg-[#F9F9F9] p-4 text-sm text-[#444933]">
+    <div className="mb-6 flex gap-3 border border-border bg-card p-4 text-sm text-muted-foreground">
       <Library
         className="mt-0.5 shrink-0 text-[#5E7200]"
         size={18}
@@ -843,40 +799,48 @@ function ThemeListItem({
   const loadingEdit = loadingEditorThemeId === item.themeId;
 
   return (
-    <li className={item.themeId === displayThemeId ? "bg-[#EEEEEE]" : ""}>
-      <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-4 py-4 transition sm:grid-cols-[96px_minmax(0,1fr)_auto] sm:items-center sm:gap-5">
-        <button
+    <Item
+      role="listitem"
+      variant={item.themeId === displayThemeId ? "muted" : "outline"}
+    >
+      <ItemMedia className="w-28 sm:w-36">
+        <Button
           aria-label={`Preview ${item.title}`}
-          className="text-left"
+          className="h-auto w-full justify-start p-0"
           onClick={() => onPreviewTheme(item)}
           type="button"
+          variant="ghost"
         >
           <ThemePreview theme={item} />
-        </button>
-        <div className="min-w-0">
-          <div className="truncate text-lg font-bold text-[#1B1B1B]">
-            {item.title}
-          </div>
-          <div className="mt-1 text-xs font-black uppercase text-[#5E7200]">
+        </Button>
+      </ItemMedia>
+      <ItemContent className="min-w-[180px]">
+          <ItemTitle className="text-lg font-bold">{item.title}</ItemTitle>
+          <ItemDescription className="font-semibold uppercase text-ring">
             {isCustom ? "Custom" : "Published"}
-          </div>
-        </div>
-        <div
-          className={`col-span-2 grid gap-2 sm:col-span-1 sm:mr-3 ${
-            isCustom ? "sm:grid-cols-3" : "sm:grid-cols-2"
-          }`}
+          </ItemDescription>
+      </ItemContent>
+      <ItemActions
+          className={cn(
+            "basis-full grid w-full gap-2 sm:basis-auto sm:w-auto",
+            isCustom ? "sm:grid-cols-3" : "sm:grid-cols-2",
+          )}
         >
-          <ControlCenterButton
-            busy={loadingEdit}
-            disabled={Boolean(loadingEditorThemeId) && !loadingEdit}
-            icon={<Edit3 size={16} aria-hidden />}
-            label={loadingEdit ? "Opening" : "Edit"}
+          <Button
+            disabled={Boolean(loadingEditorThemeId)}
             onClick={() => void onEditTheme(item)}
-            size="compact"
-            variant="secondary"
-          />
-          <button
-            className="h-11 min-w-[96px] border border-[#747A60] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#1B1B1B] transition hover:bg-[#CCFF00] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933] disabled:opacity-70 sm:h-10"
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {loadingEdit ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <Edit3 data-icon="inline-start" aria-hidden />
+            )}
+            <span>{loadingEdit ? "Opening" : "Edit"}</span>
+          </Button>
+          <Button
             disabled={disabled}
             onClick={() => {
               if (!blocker) {
@@ -885,6 +849,7 @@ function ThemeListItem({
             }}
             title={title}
             type="button"
+            size="sm"
           >
             {labelForInstallButton({
               actionInFlight,
@@ -894,11 +859,10 @@ function ThemeListItem({
               selected: item.themeId === selectedThemeId,
               disabled,
             })}
-          </button>
+          </Button>
           {item.kind === "custom" ? (
-            <button
+            <Button
               aria-label={`Delete ${item.title}`}
-              className="inline-flex h-11 min-w-[96px] items-center justify-center gap-2 border border-[#7D2633] bg-[#F9F9F9] px-4 text-sm font-semibold text-[#7D2633] transition hover:bg-[#FFE3E8] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#444933] disabled:opacity-70 sm:h-10"
               disabled={themeStorageLocked}
               onClick={() => onDeleteTheme(item.custom)}
               title={
@@ -907,21 +871,24 @@ function ThemeListItem({
                   : `Delete ${item.title}`
               }
               type="button"
+              size="sm"
+              variant="destructive"
             >
-              <Trash2 size={16} aria-hidden />
+              <Trash2 data-icon="inline-start" aria-hidden />
               <span>Delete</span>
-            </button>
+            </Button>
           ) : null}
-        </div>
-      </div>
+      </ItemActions>
       {visibleInstallStatus ? (
-        <InlineInstallProgress
-          canRetry={!disabled}
-          onRetry={() => onInstallTheme(item)}
-          status={installStatus!}
-        />
+        <ItemFooter className="block">
+          <InlineInstallProgress
+            canRetry={!disabled}
+            onRetry={() => onInstallTheme(item)}
+            status={installStatus!}
+          />
+        </ItemFooter>
       ) : null}
-    </li>
+    </Item>
   );
 }
 
@@ -954,52 +921,35 @@ function InlineInstallProgress({
   const previousSteps = failed || complete ? [] : status.logs.slice(-4, -1);
 
   return (
-    <div className="px-0 pb-4">
-      <div className="mr-3 h-2 overflow-hidden border border-[#747A60] bg-[#F9F9F9]">
-        <div
-          className={`h-full bg-[#CCFF00] transition-[width] duration-300 ${
-            failed || complete ? "" : "animate-pulse"
-          }`}
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-      <div className="mr-3 mt-3 flex flex-col gap-3 border border-[#747A60] bg-[#F9F9F9] p-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-start gap-2">
+    <div className="flex flex-col gap-3" role="status" aria-live="polite">
+      <Progress className={failed || complete ? "" : "animate-pulse"} value={progress} />
+      <Alert variant={failed ? "destructive" : "default"}>
           {failed ? (
-            <X className="mt-0.5 shrink-0" size={16} aria-hidden />
+            <X aria-hidden />
           ) : complete ? (
-            <ShieldCheck className="mt-0.5 shrink-0" size={16} aria-hidden />
+            <ShieldCheck aria-hidden />
           ) : (
-            <RefreshCw
-              className="mt-0.5 shrink-0 animate-spin"
-              size={16}
-              aria-hidden
-            />
+            <Spinner />
           )}
-          <div className="min-w-0">
-            <div className="text-sm font-bold text-[#1B1B1B]">{title}</div>
-            <div className="mt-1 break-words text-sm leading-6 text-[#444933]">
-              {detail}
-            </div>
+          <AlertTitle>{title}</AlertTitle>
+          <AlertDescription>
+            <p>{detail}</p>
             {previousSteps.length > 0 ? (
-              <ol className="mt-2 space-y-1 text-xs leading-5 text-[#5D634F]">
+              <ol className="mt-2 flex flex-col gap-1 text-xs leading-5">
                 {previousSteps.map((step) => (
                   <li key={step}>{step}</li>
                 ))}
               </ol>
             ) : null}
-          </div>
-        </div>
+          </AlertDescription>
         {failed && canRetry ? (
-          <button
-            className="h-10 min-w-[120px] border border-[#747A60] bg-[#F9F9F9] px-3 text-sm font-semibold text-[#1B1B1B] hover:bg-[#CCFF00]"
-            onClick={onRetry}
-            type="button"
-          >
-            Try again
-          </button>
+          <AlertAction>
+            <Button onClick={onRetry} size="sm" type="button" variant="outline">
+              Try again
+            </Button>
+          </AlertAction>
         ) : null}
-      </div>
+      </Alert>
     </div>
   );
 }
@@ -1053,7 +1003,7 @@ function buildCustomThemeInstallBlocker({
   themeInstallBlockedReason: string;
   themeInstallEnabled: boolean;
 }): ThemeInstallBlocker | null {
-  if (!device?.connected) {
+  if (device?.ready !== true) {
     return { reason: themeInstallBlockedReason || "Connect VibeTV first." };
   }
   if (!device.paired) {
@@ -1134,7 +1084,7 @@ function buildInstallReadiness({
       icon: <Wifi size={22} aria-hidden />,
     };
   }
-  if (!device?.connected) {
+  if (device?.ready !== true) {
     return {
       title: "VibeTV not found",
       detail:
@@ -1231,7 +1181,7 @@ function buildThemeInstallBlocker({
   if (metadataBlocker) {
     return metadataBlocker;
   }
-  if (!device?.connected) {
+  if (device?.ready !== true) {
     return { reason: themeInstallBlockedReason || "Connect VibeTV first." };
   }
   if (!device.paired) {
@@ -1391,8 +1341,8 @@ function ThemePreview({
     themeId: "",
   });
   const className = large
-    ? "relative block aspect-square w-full overflow-hidden border border-[#747A60] bg-[#EEEEEE]"
-    : "relative block size-24 overflow-hidden border border-[#747A60] bg-[#EEEEEE]";
+    ? "relative block aspect-square w-full overflow-hidden border border-border bg-muted"
+    : "relative block size-28 overflow-hidden border border-border bg-muted sm:size-36";
   const themeId = theme.themeId;
   const customPack =
     theme.kind === "custom"

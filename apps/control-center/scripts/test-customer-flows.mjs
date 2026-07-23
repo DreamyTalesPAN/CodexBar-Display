@@ -13,9 +13,11 @@ const viewport = { width: 390, height: 844 };
 const desktopViewport = { width: 1280, height: 900 };
 const themeStudioViewport = { width: 1180, height: 820 };
 const smokeOnly = process.argv.includes("--smoke");
+const providerSettingsOnly = process.argv.includes("--provider-settings");
 const migrationScreenshotDir =
   process.env.CONTROL_CENTER_CAPTURE_MIGRATION_SCREENSHOTS?.trim() || "";
 const themeStudioSafetyOnly = process.argv.includes("--theme-studio-safety");
+const wifiRescanOnly = process.argv.includes("--wifi-rescan");
 let displayStateDir = "";
 const fixturePackSHA256 = "a".repeat(64);
 const fixturePackBytes = 1234;
@@ -136,6 +138,7 @@ const missingAssetReleaseFixture = {
 
 const companionDevice = {
   target: "http://192.168.178.163",
+  active: true,
   connected: true,
   paired: true,
   ready: true,
@@ -257,7 +260,17 @@ async function main() {
       releaseUrl: smokeOnly ? missingAssetReleaseUrl : completeReleaseUrl,
     });
     app = appContext.app;
+    if (providerSettingsOnly) {
+      await testUsageManagesProviderPreferences(browser, appContext.appUrl);
+      console.log("control-center provider settings test passed");
+      return;
+    }
     await testStartupStateMachine(browser, appContext.appUrl);
+    if (wifiRescanOnly) {
+      await testLocalWifiSetupRescansAfterNoResults(browser, appContext.appUrl);
+      console.log("control-center WiFi rescan test passed");
+      return;
+    }
     if (themeStudioSafetyOnly) {
       await testThemeStudioUsesLocalRenderAndCompanionInstall(
         browser,
@@ -284,6 +297,14 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
+        browser,
+        appContext.appUrl,
+      );
+      await testRunningPairingFailureHidesStaleUsageFrame(
+        browser,
+        appContext.appUrl,
+      );
       await testLocalReachableWithoutFrameOpensOverview(
         browser,
         appContext.appUrl,
@@ -296,7 +317,15 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testRunningCompanionOutageKeepsControlCenterOpen(
+      await testRunningCompanionOutageBlocksControlCenter(
+        browser,
+        appContext.appUrl,
+      );
+      await testKnownDeviceCompanionOutageSurvivesReloadAndSecondWindow(
+        browser,
+        appContext.appUrl,
+      );
+      await testKnownDeviceCompanionRecoveryRehydratesStatusAndUsage(
         browser,
         appContext.appUrl,
       );
@@ -342,6 +371,10 @@ async function main() {
       { expectDmg: true },
     );
     await testLocalFreshAppSearchesBeforeWifiSetup(browser, appContext.appUrl);
+    await testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
+      browser,
+      appContext.appUrl,
+    );
     await testLocalWifiVerificationOpensOverview(browser, appContext.appUrl);
     await testLocalWifiVerificationFailureStaysInSetup(
       browser,
@@ -369,7 +402,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testOfflineActiveDeviceIgnoresOtherDevices(
+    await testOfflineActiveDeviceStaysInOverview(
       browser,
       appContext.appUrl,
     );
@@ -381,11 +414,15 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testRunningPairingErrorRepairsAutomaticallyOnce(
+    await testRunningPairingErrorDoesNotWriteAutomatically(
       browser,
       appContext.appUrl,
     );
-    await testClosedPairingWindowShowsPhysicalRecovery(
+    await testClosedPairingWindowOffersExplicitConnect(
+      browser,
+      appContext.appUrl,
+    );
+    await testRunningPairingFailureHidesStaleUsageFrame(
       browser,
       appContext.appUrl,
     );
@@ -393,7 +430,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testPairingRateLimitDoesNotResetWifi(browser, appContext.appUrl);
+    await testPairingStreamErrorDoesNotInventRecovery(browser, appContext.appUrl);
     await testLocalReachableWithoutFrameOpensOverview(
       browser,
       appContext.appUrl,
@@ -406,7 +443,15 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testRunningCompanionOutageKeepsControlCenterOpen(
+    await testRunningCompanionOutageBlocksControlCenter(
+      browser,
+      appContext.appUrl,
+    );
+    await testKnownDeviceCompanionOutageSurvivesReloadAndSecondWindow(
+      browser,
+      appContext.appUrl,
+    );
+    await testKnownDeviceCompanionRecoveryRehydratesStatusAndUsage(
       browser,
       appContext.appUrl,
     );
@@ -434,7 +479,8 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testUsageShowsCodexCostHistory(browser, appContext.appUrl);
+    await testUsagePrioritizesProviderTokenHistory(browser, appContext.appUrl);
+    await testUsageManagesProviderPreferences(browser, appContext.appUrl);
     await testUsageShowsMacAppUpdateForOldMacApp(browser, appContext.appUrl);
     await testRunSetupAgainReturnsToWifiOnboarding(browser, appContext.appUrl);
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
@@ -485,7 +531,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testSavedAddressDoesNotBlockConfirmedVibeTVSearch(
+    await testSavedAddressReconnectsReadOnly(
       browser,
       appContext.appUrl,
     );
@@ -745,9 +791,8 @@ async function testSetupDoesNotRequestBrowserPermission(browser, appUrl) {
   await page
     .getByText("Wait until VibeTV shows VibeTV-Setup.")
     .waitFor({ timeout: 10_000 });
-  await page.getByText("Take your phone.").waitFor({ timeout: 10_000 });
   await page
-    .getByText("Open WiFi settings and join")
+    .getByText("On your phone, open WiFi settings and join")
     .waitFor({ timeout: 10_000 });
   await page
     .getByText("If the browser does not open automatically, open")
@@ -765,6 +810,12 @@ async function testSetupDoesNotRequestBrowserPermission(browser, appUrl) {
     (await page.getByText("Browser permission needed.").count()) === 0,
     "setup should not show browser permission copy",
   );
+  assert(
+    (await page.evaluate(() =>
+      window.localStorage.getItem("vibetv.controlCenter.deviceTarget"),
+    )) === null,
+    "A genuine fresh setup must not invent known-device context",
+  );
   assertNoInstallRequests(installRequests);
   await page.close();
 }
@@ -772,29 +823,33 @@ async function testSetupDoesNotRequestBrowserPermission(browser, appUrl) {
 async function testLocalWifiVerificationOpensOverview(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
-  const repairRequests = [];
+  const selectRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: { connected: false, paired: false },
-    onRepair: (postData) => {
-      repairRequests.push(postData || "");
+    onSelect: (postData) => {
+      selectRequests.push(postData || "");
       return { ...companionDevice, connected: true, paired: true };
     },
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+  await discoveredConnectButtons(page).first().click();
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
   assert(
-    repairRequests.length === 1,
-    `A single discovered VibeTV should connect exactly once, got ${repairRequests.length}`,
+    selectRequests.length === 1,
+    `A selected VibeTV should connect exactly once, got ${selectRequests.length}`,
   );
-  const repairPayload = JSON.parse(repairRequests[0] || "{}");
+  const repairPayload = JSON.parse(selectRequests[0] || "{}");
   assert(
     repairPayload.forcePair == null || repairPayload.forcePair === false,
-    `Onboarding must preserve a valid token instead of forcing rotation, got ${repairRequests[0]}`,
+    `Onboarding must preserve a valid token instead of forcing rotation, got ${selectRequests[0]}`,
   );
-  const overviewButton = page.getByRole("button", { name: "Overview" });
+  const overviewButton = await getNavigationButton(page, "Overview");
   assert(
     (await overviewButton.getAttribute("aria-current")) === "page",
     "Successful native verification should go directly to Overview",
@@ -807,27 +862,40 @@ async function testLocalWifiVerificationOpensOverview(browser, appUrl) {
 async function testLocalWifiVerificationFailureStaysInSetup(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
-  const repairRequests = [];
+  const selectRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: { connected: false, paired: false },
     onRequest: (pathname, method) => {
-      if (method === "POST" && pathname === "/v1/device/repair") {
-        repairRequests.push(pathname);
+      if (method === "POST" && pathname === "/v1/device/select") {
+        selectRequests.push(pathname);
       }
     },
-    repairError: true,
+    selectError: true,
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "We couldn't find your VibeTV" }).waitFor({
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "Search again" }).waitFor({
+  await discoveredConnectButtons(page).first().click();
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
+  await discoveredConnectButtons(page).first().waitFor({
+    timeout: 10_000,
+  });
+  const startupScreen = page.getByTestId("device-startup-screen");
   assert(
-    repairRequests.length === 1,
-    `Failed verification must not retry automatically, got ${repairRequests.length} attempts`,
+    (await startupScreen.locator('[data-slot="card"]').count()) === 0,
+    "A failed Connect should keep the shared cardless setup layout",
+  );
+  assert(
+    (await startupScreen.locator('[data-slot="alert"]').count()) === 1,
+    "A failed Connect should explain the error in the shadcn alert",
+  );
+  assert(
+    selectRequests.length === 1,
+    `Failed verification must not retry automatically, got ${selectRequests.length} attempts`,
   );
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
@@ -844,47 +912,58 @@ async function testLocalWifiVerificationWithoutFrameOpensOverview(
   browser,
   appUrl,
 ) {
-  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
   const installRequests = [];
-  const repairRequests = [];
+  const selectRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: { connected: false, paired: false, ready: false },
-    repairError: true,
-    repairErrorDevice: {
+    onSelect: () => ({
       ...reachableUnreadyDevice,
       deviceId: "fixture-device-1",
-    },
+    }),
     onRequest: (pathname, method) => {
-      if (method === "POST" && pathname === "/v1/device/repair") {
-        repairRequests.push(pathname);
+      if (method === "POST" && pathname === "/v1/device/select") {
+        selectRequests.push(pathname);
       }
     },
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("Waiting for first image", { exact: true }).waitFor({
-    timeout: 10_000,
-  });
+  await discoveredConnectButtons(page).first().click();
+  try {
+    await page.getByRole("navigation", { name: "Control Center" }).waitFor({
+      timeout: 10_000,
+    });
+  } catch (error) {
+    throw new Error(
+      `Successful Connect with a delayed frame did not open Control Center. Visible UI:\n${await page.locator("body").innerText()}`,
+      { cause: error },
+    );
+  }
+  await page.getByRole("heading", { name: "VibeTV status" }).waitFor();
   assert(
     (await page
       .getByRole("heading", { name: "We couldn't find your VibeTV" })
       .count()) === 0,
-    "A paired VibeTV waiting for usage must not be reported as missing",
+    "A found VibeTV waiting for its first frame must not be reported as missing",
   );
   assert(
-    (await page.getByRole("button", { name: "Search again" }).count()) === 0,
-    "A paired VibeTV waiting for usage must keep polling instead of asking for another scan",
+    (await page.getByText("Waiting for first image", { exact: true }).count()) ===
+      1,
+    "A successful Connect must remain connected while the first image is pending",
   );
   assert(
-    repairRequests.length === 1,
-    `A reachable VibeTV without a display frame must not retry automatically, got ${repairRequests.length} attempts`,
+    selectRequests.length === 1,
+    `A reachable VibeTV without a display frame must not retry automatically, got ${selectRequests.length} attempts`,
   );
   assert(
     (await page.getByTestId("device-startup-screen").count()) === 0,
-    "A connected VibeTV should show the Control Center while the first display frame is pending",
+    "A delayed first display image must not roll back a successful Connect",
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -912,7 +991,7 @@ async function testLocalWifiSetupRescansAfterNoResults(browser, appUrl) {
             },
           ];
     },
-    onRepair: (postData) => {
+    onSelect: (postData) => {
       repairRequests.push(postData || "");
       return { ...companionDevice, target: "http://192.168.178.88" };
     },
@@ -928,9 +1007,10 @@ async function testLocalWifiSetupRescansAfterNoResults(browser, appUrl) {
   );
   assert(searchRequests === 1, "Fresh setup should search automatically once");
   await page.getByRole("button", { name: "Scan WiFi again" }).click();
-  await page.getByRole("heading", { name: "Looking for your VibeTV" }).waitFor({
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
+  await discoveredConnectButtons(page).first().click();
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
@@ -965,11 +1045,19 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
         active: false,
       },
     ],
-    onRepair: () => ({ ...companionDevice, deviceId: "customer-device" }),
+    onSelect: () => ({ ...companionDevice, deviceId: "customer-device" }),
     onRequest: (pathname, method) => requests.push(`${method} ${pathname}`),
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
+    timeout: 15_000,
+  });
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) === 0,
+    "A fresh launch must stay in setup until the customer chooses a VibeTV",
+  );
+  await discoveredConnectButtons(page).first().click();
   await page.getByRole("navigation", { name: "Control Center" }).waitFor({
     timeout: 15_000,
   });
@@ -1023,9 +1111,7 @@ async function testMultipleVibeTVsRequireAChoice(browser, appUrl) {
     timeout: 10_000,
   });
   assert(
-    (await page
-      .getByRole("button", { name: "Connect this VibeTV" })
-      .count()) === 2,
+    (await discoveredConnectButtons(page).count()) === 2,
     "Every discovered VibeTV must be selectable",
   );
   assert(
@@ -1061,8 +1147,8 @@ async function testMissingVibeTVOffersRetry(browser, appUrl) {
     const heading = [...document.querySelectorAll("h1")].find(
       (element) => element.textContent?.trim() === "We couldn't find your VibeTV",
     );
-    const firstSetupStep = [...document.querySelectorAll("li")].find((element) =>
-      element.textContent?.trim().startsWith("1. Plug VibeTV into power."),
+    const firstSetupStep = [...document.querySelectorAll("li")].find(
+      (element) => element.textContent?.trim() === "Plug VibeTV into power.",
     );
     const scanButton = [...document.querySelectorAll("button")].find(
       (element) => element.textContent?.trim() === "Scan WiFi again",
@@ -1164,7 +1250,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     const page = await newCustomerPage(browser, appUrl, { viewport });
     const requests = [];
     await routeCompanionOnline(page, [], () => {}, {
-      device: reachableUnreadyDevice,
+      device: companionDevice,
       onRequest: (path, method) => requests.push(`${method} ${path}`),
       providerSetup: providerSetupFixture(fixture.status),
     });
@@ -1174,10 +1260,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       .getByRole("heading", { name: "VibeTV is connected" })
       .waitFor({ timeout: 10_000 });
     await page
-      .getByText("Waiting for first image", { exact: true })
-      .waitFor({ timeout: 10_000 });
-    await page
-      .getByText("Start using any AI provider.", { exact: true })
+      .getByText("Live", { exact: true })
       .waitFor({ timeout: 10_000 });
     assert(
       (await page.getByText("AI provider", { exact: true }).count()) === 0,
@@ -1196,62 +1279,30 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       "Overview must not show technical stream details",
     );
 
-    await page.getByRole("button", { name: "Usage" }).click();
+    await clickNavigation(page, "Usage");
     await page
-      .getByRole("heading", { name: "Connect an AI provider" })
-      .first()
+      .getByRole("heading", { name: "Codex", exact: true })
       .waitFor({ timeout: 10_000 });
-    await page.getByText(fixture.expected).first().waitFor({ timeout: 10_000 });
     assert(
-      (await page.getByText("VibeTV screen is not ready").count()) === 0,
-      `${fixture.status} must not be presented as a VibeTV screen problem`,
-    );
-    assert(
-      (await page.getByRole("button", { name: "Fix connection" }).count()) ===
-        0,
-      `${fixture.status} must not offer Fix connection`,
-    );
-    assert(
-      (await page.getByRole("button", { name: "Repair CodexBar" }).count()) ===
-        (fixture.status === "not_configured" ? 1 : 0),
-      `${fixture.status} must expose CodexBar repair only when the engine is missing`,
-    );
-
-    if (fixture.status === "auth_required") {
-      await page.getByRole("button", { name: "Open CodexBar" }).click();
-      await page.getByRole("button", { name: "Check again" }).click();
-      assert(
-        requests.includes("POST /v1/providers/open-codexbar"),
-        "Open CodexBar must call the provider action",
-      );
-      assert(
-        requests.includes("POST /v1/providers/retry"),
-        "Check again must retry provider detection",
-      );
-
-      await page.getByRole("button", { name: "Overview" }).click();
-      await page
-        .getByRole("heading", { name: "VibeTV is connected" })
-        .waitFor({ timeout: 10_000 });
-      assert(
-        (await page
-          .getByRole("heading", { name: "Connect an AI provider" })
-          .count()) === 0,
-        "Provider setup belongs on Usage, not Overview",
-      );
-
-      await page.getByRole("button", { name: "Usage" }).click();
-      await page
+      (await page
         .getByRole("heading", { name: "Connect an AI provider" })
-        .first()
-        .waitFor({ timeout: 10_000 });
+        .count()) === 0,
+      `${fixture.status} must not show the removed provider repair box on Usage`,
+    );
+    assert(
+      (await page.getByText(fixture.expected).count()) === 0,
+      `${fixture.status} must not expose provider repair detail on Usage`,
+    );
+    for (const action of ["Open CodexBar", "Check again", "Repair CodexBar"]) {
       assert(
-        (await page
-          .getByText("No provider usage is available yet.")
-          .count()) === 0,
-        "Provider setup must replace the generic empty usage state",
+        (await page.getByRole("button", { name: action }).count()) === 0,
+        `${fixture.status} must not show ${action} on Usage`,
       );
     }
+    assert(
+      requests.every((request) => !request.includes("/v1/providers/")),
+      `${fixture.status} must not trigger provider repair requests from Usage`,
+    );
 
     await assertNoMobileOverflow(page);
     await page.close();
@@ -1303,16 +1354,13 @@ async function testOverviewKeepsTransientConnectionCustomerFriendly(
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page
-    .getByRole("heading", { name: "VibeTV is connected" })
+    .getByRole("heading", { name: "VibeTV status" })
     .waitFor({ timeout: 10_000 });
   await page
-    .getByText("VibeTV connected", { exact: true })
+    .getByText("VibeTV not connected", { exact: true })
     .waitFor({ timeout: 10_000 });
   await page
     .getByText("Waiting for first image", { exact: true })
-    .waitFor({ timeout: 10_000 });
-  await page
-    .getByText("Start using any AI provider.", { exact: true })
     .waitFor({ timeout: 10_000 });
   assert(
     (await page.getByText("VibeTV unavailable", { exact: true }).count()) === 0,
@@ -1334,7 +1382,7 @@ async function testLocalWifiSearchOffersImmediateManualEntry(browser, appUrl) {
   const requests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: { connected: false, paired: false },
-    searchDelayMs: 750,
+    searchDelayMs: 3_000,
     searchDevices: [],
     onSearch: (_device, postData) => {
       const target = parseJSON(postData)?.target;
@@ -1383,9 +1431,21 @@ async function testLocalWifiSearchOffersImmediateManualEntry(browser, appUrl) {
     searchStatusPrecedesInput,
     "The automatic-search spinner must appear before manual IP entry",
   );
+  const createReportButton = page.getByRole("button", {
+    name: "Create report",
+  });
+  assert(
+    await createReportButton.isEnabled(),
+    "Support report creation must stay enabled while device search is running",
+  );
+  await createReportButton.click();
+  await page.getByRole("button", { name: "Copy", exact: true }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("heading", { name: "Looking for your VibeTV" }).waitFor();
   await page.getByLabel("VibeTV address").fill("172.30.12.34");
-  await page.getByRole("button", { name: "Connect VibeTV" }).click();
-  await page.getByRole("button", { name: "Overview", exact: true }).waitFor({
+  await manualConnectButton(page).click();
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
   assert(
@@ -1417,7 +1477,7 @@ async function testManualVibeTVTargetValidationErrors(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByLabel("VibeTV address").fill("172.30.12.999");
-  await page.getByRole("button", { name: "Connect VibeTV" }).click();
+  await manualConnectButton(page).click();
   await page.locator("#startup-device-target-error").waitFor();
   assert(
     targetedSearches === 0,
@@ -1437,7 +1497,7 @@ async function testManualVibeTVTargetRejectsUnreachableAddress(browser, appUrl) 
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByLabel("VibeTV address").fill("172.30.12.99");
-  await page.getByRole("button", { name: "Connect VibeTV" }).click();
+  await manualConnectButton(page).click();
   await page
     .getByText("No VibeTV answered at that IP address.", { exact: true })
     .waitFor({ timeout: 10_000 });
@@ -1474,7 +1534,7 @@ async function testManualVibeTVTargetRejectsIdentityChange(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByLabel("VibeTV address").fill("172.30.12.34");
-  await page.getByRole("button", { name: "Connect VibeTV" }).click();
+  await manualConnectButton(page).click();
   await page
     .getByText("That address answered as a different VibeTV.", { exact: true })
     .waitFor({ timeout: 10_000 });
@@ -1508,25 +1568,150 @@ async function testManualVibeTVTargetShowsPairingRecovery(browser, appUrl) {
     },
     selectError: {
       status: 409,
-      code: "pairing_window_closed",
-      message: "VibeTV is not accepting a new pairing.",
-      nextAction: "Restart VibeTV to reopen pairing.",
+      code: "legacy_pairing_recovery_required",
+      message: "This VibeTV uses an older recovery method.",
+      nextAction: "Follow the recovery steps, then press Connect.",
     },
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByLabel("VibeTV address").fill("172.30.12.34");
-  await page.getByRole("button", { name: "Connect VibeTV" }).click();
+  await manualConnectButton(page).click();
   await page
-    .getByText("Pairing needs physical recovery.", { exact: true })
+    .getByRole("heading", { name: "Reconnect this VibeTV" })
     .waitFor({ timeout: 10_000 });
   await page
-    .getByText(/Unplug VibeTV during early boot three times in a row/)
+    .getByText(
+      "Unplug VibeTV and plug it back in three times. After the third start, leave it powered on.",
+      {
+        exact: true,
+      },
+    )
     .waitFor();
+  await page
+    .getByText(
+      "When VibeTV shows VibeTV-Setup, use your phone to connect it to your home WiFi again.",
+      {
+        exact: true,
+      },
+    )
+    .waitFor();
+  await page
+    .getByText(
+      "Return to this app. When VibeTV appears, click Connect within 30 minutes.",
+      {
+        exact: true,
+      },
+    )
+    .waitFor();
+  assert(
+    (await page.getByText("within 30 seconds each time", {
+      exact: false,
+    }).count()) === 0,
+    "Legacy recovery must use the short three-cycle instruction",
+  );
+  assert(
+    (await page.getByText(
+      "This only resets WiFi. Your themes and display settings stay saved.",
+      {
+        exact: true,
+      },
+    ).count()) === 0,
+    "Legacy recovery must not show the removed settings sentence",
+  );
+  await discoveredConnectButtons(page).first().waitFor();
+  await page
+    .getByRole("button", { name: "Create report", exact: true })
+    .waitFor();
+  assert(
+    (await page.getByRole("button", { name: "Pair again" }).count()) === 0,
+    "Legacy recovery must never show Pair again",
+  );
+  assert(
+    (await page.getByText("Keep VibeTV powered on, then try pairing again.", {
+      exact: true,
+    }).count()) === 0,
+    "Legacy recovery must remove the misleading powered-on instruction",
+  );
   await page.close();
 }
 
-async function testOfflineActiveDeviceIgnoresOtherDevices(browser, appUrl) {
+async function testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const deviceWriteRequests = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    device: { connected: false, paired: false, ready: false },
+    searchDevices: [
+      {
+        target: "http://172.30.0.31",
+        deviceId: "14799300",
+        networkMode: "station",
+        known: false,
+        active: false,
+      },
+    ],
+    selectError: {
+      status: 409,
+      code: "legacy_pairing_recovery_required",
+      message: "This VibeTV uses an older recovery method.",
+      nextAction: "Follow the recovery steps, then press Connect.",
+    },
+    onRequest: (pathname, method, body) => {
+      if (
+        method === "POST" &&
+        (pathname === "/v1/device/select" || pathname === "/v1/device/repair")
+      ) {
+        deviceWriteRequests.push({ pathname, body: parseJSON(body) });
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+  await discoveredConnectButtons(page).first().click();
+  await page
+    .getByRole("heading", { name: "Reconnect this VibeTV" })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByText(
+      "Unplug VibeTV and plug it back in three times. After the third start, leave it powered on.",
+      { exact: true },
+    )
+    .waitFor();
+  await discoveredConnectButtons(page).first().waitFor();
+  assert(
+    deviceWriteRequests.length === 1,
+    `The failed Connect must not trigger a second write automatically, got ${JSON.stringify(deviceWriteRequests)}`,
+  );
+  assert(
+    deviceWriteRequests[0]?.pathname === "/v1/device/select" &&
+      deviceWriteRequests[0]?.body?.target === "http://172.30.0.31" &&
+      deviceWriteRequests[0]?.body?.expectedDeviceId === "14799300",
+    `Connect must stay pinned to the selected VibeTV, got ${JSON.stringify(deviceWriteRequests[0])}`,
+  );
+  assert(
+    (await page.getByText("Open WiFi settings and join", { exact: false }).count()) ===
+      0,
+    "A discovered VibeTV with closed pairing must not fall into WiFi setup",
+  );
+  assert(
+    (await page.getByText("Starting Control Center", { exact: true }).count()) ===
+      0,
+    "Pairing attention must terminate the boot state",
+  );
+  assert(
+    (await page.getByRole("button", { name: "Pair again" }).count()) === 0,
+    "Legacy recovery must never show Pair again",
+  );
+  await page.close();
+}
+
+async function testOfflineActiveDeviceStaysInOverview(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const deviceWriteRequests = [];
@@ -1534,6 +1719,7 @@ async function testOfflineActiveDeviceIgnoresOtherDevices(browser, appUrl) {
     device: {
       target: "http://192.168.178.70",
       deviceId: "device-70",
+      active: true,
       connected: false,
       paired: true,
       ready: false,
@@ -1559,13 +1745,12 @@ async function testOfflineActiveDeviceIgnoresOtherDevices(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "We couldn't find your VibeTV" }).waitFor({
+  await page.getByRole("heading", { name: "VibeTV status" }).waitFor({
     timeout: 10_000,
   });
   assert(
-    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
-      0,
-    "Cold-start reconnect must run before the Control Center shell",
+    (await page.getByTestId("device-startup-screen").count()) === 0,
+    "An active VibeTV must keep the Control Center shell open while offline",
   );
   assert(
     (await page
@@ -1573,28 +1758,13 @@ async function testOfflineActiveDeviceIgnoresOtherDevices(browser, appUrl) {
       .count()) === 0,
     "Cold-start reconnect must not appear inside Setup",
   );
-  await page
-    .getByText(
-      "Please enter the IP address shown on your VibeTV screen below.",
-    )
-    .waitFor();
   assert(
     (await page.getByText("VibeTV device-82", { exact: true }).count()) === 0,
-    "A different VibeTV must not be offered as a replacement",
+    "An alternative VibeTV must not replace the active device automatically",
   );
   assert(
     deviceWriteRequests.length === 0,
     `Automatic search must remain read-only, got ${deviceWriteRequests}`,
-  );
-  await page.getByRole("button", { name: "Open Control Center" }).click();
-  await page.getByRole("button", { name: "Overview" }).waitFor();
-  assert(
-    (await page.getByText("Reconnecting…", { exact: true }).count()) === 0,
-    "Opening Control Center must not add a second reconnecting screen",
-  );
-  assert(
-    deviceWriteRequests.length === 0,
-    `Opening Control Center must not write to a device or change selection, got ${deviceWriteRequests}`,
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -1608,6 +1778,7 @@ async function testOfflineActiveDeviceReconnectsWithoutPrompt(browser, appUrl) {
     device: {
       target: "http://192.168.178.70",
       deviceId: "known-82",
+      active: true,
       connected: false,
       paired: true,
       ready: false,
@@ -1628,10 +1799,22 @@ async function testOfflineActiveDeviceReconnectsWithoutPrompt(browser, appUrl) {
         active: true,
       },
     ],
-    onRepair: (postData) => {
-      repairRequests.push(postData || "");
-      return { ...companionDevice, target: "http://192.168.178.82" };
-    },
+    statusDeviceSequence: [
+      {
+        target: "http://192.168.178.70",
+        deviceId: "known-82",
+        active: true,
+        connected: false,
+        paired: true,
+        ready: false,
+      },
+      {
+        ...companionDevice,
+        target: "http://192.168.178.82",
+        deviceId: "known-82",
+      },
+    ],
+    onRepair: (postData) => repairRequests.push(postData || ""),
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
@@ -1639,17 +1822,8 @@ async function testOfflineActiveDeviceReconnectsWithoutPrompt(browser, appUrl) {
     timeout: 10_000,
   });
   assert(
-    repairRequests.length === 1,
-    "The active VibeTV should reconnect once",
-  );
-  const request = JSON.parse(repairRequests[0] || "{}");
-  assert(
-    request.target === "http://192.168.178.82",
-    "Active target should win",
-  );
-  assert(
-    request.expectedDeviceId === "known-82",
-    "Active identity must stay pinned",
+    repairRequests.length === 0,
+    "The active VibeTV must reconnect through status without a UI write",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -1689,9 +1863,10 @@ async function testLegacyTargetDoesNotAutoconnectDiscoveredIdentity(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "We couldn't find your VibeTV" }).waitFor({
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
+  await discoveredConnectButtons(page).first().waitFor();
   assert(
     repairRequests.length === 0,
     "A legacy target must not automatically adopt a newly discovered identity",
@@ -1700,7 +1875,7 @@ async function testLegacyTargetDoesNotAutoconnectDiscoveredIdentity(
   await page.close();
 }
 
-async function testRunningCompanionOutageKeepsControlCenterOpen(
+async function testRunningCompanionOutageBlocksControlCenter(
   browser,
   appUrl,
 ) {
@@ -1723,36 +1898,170 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Overview" }).waitFor({
+  await page.getByRole("button", { name: "Overview", exact: true }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("Needs install", { exact: true }).waitFor({
-    timeout: 12_000,
-  });
+  await page
+    .getByRole("heading", { name: "VibeTV Control Center needs attention" })
+    .waitFor({
+      timeout: 12_000,
+    });
   assert(
-    (await page.getByRole("button", { name: "Overview" }).count()) === 1,
-    "A running session must keep the Control Center shell when the Mac App stops answering",
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "A running session must block Control Center navigation when the background service stops answering",
   );
   assert(
     (await page.getByTestId("device-startup-screen").count()) === 0,
-    "A Mac App outage must not return a running session to the startup screen",
+    "A background service outage must not return a running session to VibeTV startup",
   );
-  await page.getByText("VibeTV not connected", { exact: true }).waitFor();
   await waitForCondition(
     () => settingsResponses > 0,
     "The delayed settings response should arrive after the outage",
   );
   await page.waitForTimeout(250);
   assert(
-    (await page.getByText("VibeTV not connected", { exact: true }).count()) ===
-      1,
-    "A stale settings response must not restore a disconnected device",
+    (await page.getByTestId("mac-app-recovery-screen").count()) === 1,
+    "A stale settings response must not dismiss background service recovery",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
 }
 
-async function testRunningPairingErrorRepairsAutomaticallyOnce(
+async function testKnownDeviceCompanionOutageSurvivesReloadAndSecondWindow(
+  browser,
+  appUrl,
+) {
+  const context = await browser.newContext({ viewport: desktopViewport });
+  await context.grantPermissions(["local-network-access"], { origin: appUrl });
+  const firstPage = await context.newPage();
+  const installRequests = [];
+  const knownDevice = {
+    ...companionDevice,
+    connectionState: "ready",
+    deviceId: "known-reload-device",
+  };
+  await routeCompanionOnline(firstPage, installRequests, () => {}, {
+    device: knownDevice,
+  });
+
+  await firstPage.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await firstPage
+    .getByRole("heading", { name: "VibeTV is connected" })
+    .waitFor({ timeout: 10_000 });
+  await firstPage.unrouteAll({ behavior: "ignoreErrors" });
+  await routeCompanionMissing(firstPage, installRequests);
+  await firstPage.reload({ waitUntil: "domcontentloaded" });
+  await assertKnownDeviceMacAppOutage(firstPage);
+
+  const secondPage = await context.newPage();
+  await routeCompanionMissing(secondPage, installRequests);
+  await secondPage.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await assertKnownDeviceMacAppOutage(secondPage);
+
+  assertNoInstallRequests(installRequests);
+  await context.close();
+}
+
+async function testKnownDeviceCompanionRecoveryRehydratesStatusAndUsage(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const deviceWriteRequests = [];
+  const knownDevice = {
+    ...companionDevice,
+    connectionState: "ready",
+    deviceId: "known-recovery-device",
+  };
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: knownDevice,
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "VibeTV is connected" })
+    .waitFor({ timeout: 10_000 });
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await routeCompanionMissing(page, installRequests);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await assertKnownDeviceMacAppOutage(page);
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: knownDevice,
+    onRequest: (pathname, method) => {
+      if (method === "POST" && pathname.startsWith("/v1/device/")) {
+        deviceWriteRequests.push(pathname);
+      }
+    },
+  });
+  await page
+    .getByRole("button", { name: "Try automatic repair again" })
+    .click();
+  await page
+    .getByRole("heading", { name: "VibeTV is connected" })
+    .waitFor({ timeout: 10_000 });
+  await clickNavigation(page, "Usage");
+  await page.getByRole("heading", { name: "Usage", exact: true }).waitFor();
+  await page.getByText("Codex", { exact: true }).first().waitFor();
+  assert(
+    (await page.evaluate(() =>
+      window.localStorage.getItem("vibetv.controlCenter.deviceTarget"),
+    )) === knownDevice.target,
+    "Companion recovery must keep the saved VibeTV target",
+  );
+  assert(
+    deviceWriteRequests.length === 0,
+    `Companion recovery should rehydrate from status without device writes, got ${deviceWriteRequests}`,
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function assertKnownDeviceMacAppOutage(page) {
+  await page
+    .getByRole("heading", { name: "VibeTV Control Center needs attention" })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByRole("button", { name: "Restart Control Center" })
+    .waitFor();
+  await page
+    .getByRole("button", { name: "Try automatic repair again" })
+    .waitFor();
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "A known-device Mac App outage must block Control Center navigation",
+  );
+  assert(
+    (await page.getByTestId("mac-app-recovery-screen").count()) === 1,
+    "A known-device Mac App outage must render the focused recovery screen",
+  );
+  assert(
+    (await page
+      .getByRole("heading", { name: "Set up your VibeTV" })
+      .count()) === 0,
+    "A known-device Mac App outage must not render first-run setup",
+  );
+  assert(
+    (await page.getByText("Plug VibeTV into power.").count()) === 0,
+    "A known-device Mac App outage must not show WiFi onboarding",
+  );
+  assert(
+    Boolean(
+      await page.evaluate(() =>
+        window.localStorage.getItem("vibetv.controlCenter.deviceTarget"),
+      ),
+    ),
+    "A known-device Mac App outage must preserve the saved VibeTV target",
+  );
+}
+
+async function testRunningPairingErrorDoesNotWriteAutomatically(
   browser,
   appUrl,
 ) {
@@ -1786,22 +2095,14 @@ async function testRunningPairingErrorRepairsAutomaticallyOnce(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
+  await discoveredConnectButtons(page).first().waitFor();
   await page.waitForTimeout(5_500);
   assert(
-    repairRequests.length === 1,
-    `Pairing error should trigger exactly one automatic repair, got ${repairRequests.length}`,
-  );
-  const repairPayload = JSON.parse(repairRequests[0] || "{}");
-  assert(
-    repairPayload.forcePair == null || repairPayload.forcePair === false,
-    `Automatic pairing repair must not force token rotation, got ${repairRequests[0]}`,
-  );
-  assert(
-    repairPayload.expectedDeviceId === "known-device-1",
-    `Automatic repair must pin the saved identity, got ${repairRequests[0]}`,
+    repairRequests.length === 0,
+    `A status error must never trigger an automatic pairing write, got ${repairRequests.length}`,
   );
   assert(
     (await page.getByText("pairing token", { exact: false }).count()) === 0,
@@ -1811,7 +2112,7 @@ async function testRunningPairingErrorRepairsAutomaticallyOnce(
   await page.close();
 }
 
-async function testClosedPairingWindowShowsPhysicalRecovery(browser, appUrl) {
+async function testClosedPairingWindowOffersExplicitConnect(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   let repairRequests = 0;
@@ -1844,27 +2145,33 @@ async function testClosedPairingWindowShowsPhysicalRecovery(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page
-    .getByRole("heading", { name: "Pairing needs physical recovery." })
-    .waitFor({
-    timeout: 10_000,
-  });
+  try {
+    await page
+      .getByRole("heading", { name: "Choose a VibeTV" })
+      .waitFor({ timeout: 10_000 });
+  } catch (error) {
+    throw new Error(
+      `A reachable VibeTV without a local key did not offer Connect. Visible UI:\n${await page.locator("body").innerText()}`,
+      { cause: error },
+    );
+  }
+  await discoveredConnectButtons(page).first().waitFor();
+  await page.waitForTimeout(5_500);
   assert(
     repairRequests === 0,
-    `A clearly closed pairing window must not trigger a doomed repair, got ${repairRequests}`,
+    `A missing key must wait for the customer to press Connect, got ${repairRequests} automatic writes`,
+  );
+  assert(
+    (await page.getByText(/Unplug VibeTV|three times/i).count()) === 0,
+    "Closed pairing must never show destructive recovery copy",
   );
   assert(
     (await page
-      .getByText(
-        "Unplug VibeTV during early boot three times in a row. Then connect VibeTV to WiFi again and pair it in Control Center.",
-        { exact: true },
-      )
-      .count()) === 1,
-    "Closed pairing must show the complete three-restart recovery",
-  );
-  assert(
-    (await page.getByText(/same WiFi|search again/i).count()) === 0,
-    "Closed pairing must not be explained as a WiFi search problem",
+      .getByText("Keep VibeTV powered on, then try pairing again.", {
+        exact: true,
+      })
+      .count()) === 0,
+    "Closed pairing must not show the removed powered-on instruction",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -1878,20 +2185,15 @@ async function testRejectedPairingTokenUsesTypedRecovery(browser, appUrl) {
     device: {
       ...companionDevice,
       deviceId: "known-device-token-rejected",
+      firmware: "1.0.38",
       paired: false,
       ready: false,
       capabilities: undefined,
       stream: {
         healthy: false,
         running: true,
-        errorCode: "device_pairing_required",
+        errorCode: "pairing_token_rejected",
       },
-    },
-    repairError: {
-      status: 409,
-      code: "pairing_token_rejected",
-      message: "The saved pairing token was rejected.",
-      nextAction: "Try again.",
     },
     onRequest: (pathname, method) => {
       if (pathname === "/v1/device/repair" && method === "POST") {
@@ -1902,26 +2204,104 @@ async function testRejectedPairingTokenUsesTypedRecovery(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page
+    .getByRole("heading", { name: "Reconnect this VibeTV" })
+    .waitFor({ timeout: 10_000 });
+  await page
     .getByText(
-      "Unplug VibeTV during early boot three times in a row. Then connect VibeTV to WiFi again and pair it in Control Center.",
+      "Unplug VibeTV and plug it back in three times. After the third start, leave it powered on.",
       { exact: true },
     )
-    .waitFor({ timeout: 10_000 });
+    .waitFor();
   assert(
-    repairRequests === 1,
-    `A missing auth block may try once before using the typed 401 recovery, got ${repairRequests}`,
+    repairRequests === 0,
+    `A read-only token rejection must not trigger an automatic repair, got ${repairRequests}`,
   );
   assert(
-    (await page.getByText(/same WiFi|then try again/i).count()) === 0,
-    "A rejected token must not fall back to generic WiFi retry copy",
+    (await page.getByRole("alertdialog").count()) === 0,
+    "Legacy recovery must use the normal setup screen instead of a pairing dialog",
+  );
+  assert(
+    (await page.getByText(
+      "This only resets WiFi. Your themes and display settings stay saved.",
+      { exact: true },
+    ).count()) === 0,
+    "Legacy recovery must not show the removed settings sentence",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
 }
 
-async function testPairingRateLimitDoesNotResetWifi(browser, appUrl) {
+async function testRunningPairingFailureHidesStaleUsageFrame(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "vibetv.controlCenter.deviceTarget",
+      "http://172.30.0.31",
+    );
+  });
+  await routeCompanionOnline(page, [], () => {}, {
+    device: {
+      ...companionDevice,
+      target: "http://172.30.0.31",
+      deviceId: "14799300",
+      paired: false,
+      ready: false,
+      capabilities: {
+        ...companionDevice.capabilities,
+        auth: {
+          ...companionDevice.capabilities.auth,
+          paired: true,
+          pairingWindowOpen: false,
+          pairingWindowSeconds: 0,
+        },
+      },
+      stream: {
+        healthy: false,
+        running: true,
+        errorCode: "device_pairing_required",
+      },
+    },
+    displayFrameResponse: {
+      ok: true,
+      savedAt: "2026-07-22T08:00:00Z",
+      frame: {
+        v: 1,
+        provider: "codex",
+        label: "Codex",
+        session: 0,
+        weekly: 20,
+        usageMode: "used",
+      },
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "Choose a VibeTV" })
+    .waitFor({ timeout: 10_000 });
+  await discoveredConnectButtons(page).first().waitFor();
+  assert(
+    (await page.getByRole("alertdialog").count()) === 0,
+    "A generic stream pairing signal must not open the explicit token-rejection dialog",
+  );
+  assert(
+    (await page.getByText("Start using any AI provider.", { exact: true }).count()) ===
+      0,
+    "A pairing failure must not be described as missing provider usage",
+  );
+  assert(
+    (await page.getByRole("img", { name: /showing Codex/i }).count()) === 0,
+    "A pairing failure must not present the stale last-sent frame as current usage",
+  );
+  await page.close();
+}
+
+async function testPairingStreamErrorDoesNotInventRecovery(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
+  let repairRequests = 0;
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: {
       ...companionDevice,
@@ -1935,18 +2315,26 @@ async function testPairingRateLimitDoesNotResetWifi(browser, appUrl) {
         errorCode: "device_pairing_required",
       },
     },
-    repairError: {
-      status: 429,
-      code: "pairing_rate_limited",
-      message: "Too many pairing attempts.",
-      nextAction: "Try again later.",
+    onRequest: (pathname, method) => {
+      if (pathname === "/v1/device/repair" && method === "POST") {
+        repairRequests += 1;
+      }
     },
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page
-    .getByText("Wait one minute, then try pairing again.", { exact: true })
-    .waitFor({ timeout: 10_000 });
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+  await discoveredConnectButtons(page).first().waitFor();
+  assert(
+    repairRequests === 0,
+    `A generic stream error must not trigger pairing writes, got ${repairRequests}`,
+  );
+  assert(
+    (await page.getByText("Wait one minute, then try pairing again.", { exact: true }).count()) === 0,
+    "A generic stream error must not invent a pairing rate limit",
+  );
   assert(
     (await page.getByText(/early boot three times|connect VibeTV to WiFi again/i).count()) === 0,
     "A temporary pairing limit must not tell the customer to reset WiFi",
@@ -2047,8 +2435,15 @@ async function testHostedEntryShowsMacAppDownload(
     companionRequests.length === 0,
     `Hosted entry must not probe the local Mac App, got ${JSON.stringify(companionRequests)}`,
   );
-  await page.getByRole("button", { name: "Create report" }).click();
-  await page.getByRole("button", { name: "Copy report" }).waitFor({
+  const createReportButton = page.getByRole("button", {
+    name: "Create report",
+  });
+  assert(
+    (await createReportButton.getAttribute("data-variant")) === "default",
+    "Hosted setup should keep Create report primary",
+  );
+  await createReportButton.click();
+  await page.getByRole("button", { name: "Copy", exact: true }).waitFor({
     timeout: 10_000,
   });
   assert(
@@ -2147,9 +2542,6 @@ async function testLocalFreshAppSearchesBeforeWifiSetup(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "Looking for your VibeTV" }).waitFor({
-    timeout: 10_000,
-  });
   assert(
     (await page
       .getByRole("heading", { name: "Set up your VibeTV" })
@@ -2213,9 +2605,10 @@ async function testLocalReachableWithoutFrameOpensOverview(browser, appUrl) {
   await page.getByRole("navigation", { name: "Control Center" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+  await page.getByRole("heading", { name: "VibeTV status" }).waitFor({
     timeout: 10_000,
   });
+  await page.getByText("VibeTV not connected", { exact: true }).waitFor();
   await page.getByText("Waiting for first image", { exact: true }).waitFor({
     timeout: 10_000,
   });
@@ -2258,9 +2651,11 @@ async function testConfiguredDeviceShowsReconnectingWithoutSetup(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "Looking for your VibeTV" }).waitFor({
+  await page.getByRole("navigation", { name: "Control Center" }).waitFor({
     timeout: 10_000,
   });
+  await page.getByRole("heading", { name: "VibeTV status" }).waitFor();
+  await page.getByText("Reconnecting to VibeTV", { exact: true }).waitFor();
   assert(
     (await page
       .getByRole("heading", { name: "Set up your VibeTV" })
@@ -2269,13 +2664,9 @@ async function testConfiguredDeviceShowsReconnectingWithoutSetup(
   );
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
-      0,
-    "Reconnect and search must finish before Overview or Setup is rendered",
+      1,
+    "A known VibeTV must keep Overview open while reconnecting",
   );
-  await page
-    .getByRole("heading", { name: "We couldn't find your VibeTV" })
-    .waitFor();
-  await page.getByRole("button", { name: "Open Control Center" }).waitFor();
   assert(
     repairRequests.length === 0,
     "The browser must let the Companion own bounded automatic recovery",
@@ -2284,10 +2675,10 @@ async function testConfiguredDeviceShowsReconnectingWithoutSetup(
     (await page.getByText("Plug VibeTV into power.").count()) === 0,
     "A configured VibeTV must not fall back to first-run WiFi instructions",
   );
-  await page.getByRole("button", { name: "Open Control Center" }).click();
-  await page.getByRole("navigation", { name: "Control Center" }).waitFor();
-  await page.getByRole("heading", { name: "VibeTV status" }).waitFor();
-  await page.getByText("Not connected", { exact: true }).waitFor();
+  await page
+    .locator('[data-slot="item-title"]')
+    .filter({ hasText: /^Not connected$/ })
+    .waitFor();
   assert(
     (await page.getByTestId("device-startup-screen").count()) === 0,
     "Opening Control Center for a configured VibeTV must keep the shell visible",
@@ -2333,16 +2724,16 @@ async function testRunningDeviceOutageKeepsControlCenterOpen(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Overview" }).waitFor({
+  await page.getByRole("button", { name: "Overview", exact: true }).waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "Usage" }).click();
+  await clickNavigation(page, "Usage");
   await page.getByRole("heading", { name: "Usage", exact: true }).waitFor();
   await page.getByText("VibeTV not connected", { exact: true }).waitFor({
     timeout: 12_000,
   });
   assert(
-    (await page.getByRole("button", { name: "Overview" }).count()) === 1,
+    (await page.getByRole("button", { name: "Overview", exact: true }).count()) === 1,
     "A running session must keep the Control Center shell during an outage",
   );
   await page.getByRole("heading", { name: "Usage", exact: true }).waitFor();
@@ -2451,7 +2842,7 @@ async function testInitialHealthyStatusRaceAvoidsRepair(browser, appUrl) {
   const repairRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: companionDevice,
-    firstStatusDelayMs: 250,
+    firstStatusDelayMs: 2_000,
     onRequest: (pathname, method) => {
       if (method === "POST" && pathname === "/v1/device/repair") {
         repairRequests.push(pathname);
@@ -2463,9 +2854,26 @@ async function testInitialHealthyStatusRaceAvoidsRepair(browser, appUrl) {
   await page.getByRole("heading", { name: "Starting Control Center" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "Create report" }).waitFor({
+  const bootStatus = page.getByRole("status", {
+    name: "Checking the Mac App and your last connected VibeTV.",
+  });
+  await bootStatus.waitFor({
     timeout: 10_000,
   });
+  assert(
+    (await page.getByRole("status").count()) === 1,
+    "Starting Control Center should expose one focused live status",
+  );
+  const createReportButton = page.getByRole("button", {
+    name: "Create report",
+  });
+  await createReportButton.waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await createReportButton.getAttribute("data-variant")) === "secondary",
+    "Starting Control Center should keep Create report secondary",
+  );
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
@@ -2495,16 +2903,14 @@ async function testDelayedSettingsDoesNotResetActiveTab(browser, appUrl) {
   );
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).waitFor({
-    timeout: 10_000,
-  });
-  await page.getByRole("button", { name: "Updates" }).click();
+  const updatesButton = await getNavigationButton(page, "Updates");
+  await updatesButton.waitFor({ timeout: 10_000 });
+  await updatesButton.click();
   await page.waitForTimeout(900);
   assert(settingsRequests > 0, "The delayed settings response must be tested");
+  const activeUpdatesButton = await getNavigationButton(page, "Updates");
   assert(
-    (await page
-      .getByRole("button", { name: "Updates", exact: true })
-      .getAttribute("aria-current")) === "page",
+    (await activeUpdatesButton.getAttribute("aria-current")) === "page",
     "A late settings response must not reset the active tab to Overview",
   );
   assert(
@@ -2526,15 +2932,14 @@ async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   await page.goto(`${appUrl}/install/does-not-exist`, {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+  await page
+    .getByRole("heading", { name: "VibeTV Control Center needs attention" })
+    .waitFor({
     timeout: 10_000,
   });
   await assertThemeLibraryLockedBehindSetup(page);
   await assertNoSetupJargon(page);
   await assertNoDmgDownloadActions(page);
-  await page.getByRole("button", { name: "Scan WiFi again" }).click();
-  await assertNoDmgDownloadActions(page);
-
   assert(
     (await page.getByText("Shopify theme link was not found").count()) === 0,
     "locked Theme Library should not show missing-theme notices",
@@ -2560,7 +2965,9 @@ async function testSetupTabsAreLockedUntilSetupComplete(browser, appUrl) {
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
+  await page
+    .getByRole("heading", { name: "VibeTV Control Center needs attention" })
+    .waitFor({
     timeout: 10_000,
   });
   assert(
@@ -2595,15 +3002,7 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.waitForFunction(
-    () =>
-      Array.from(document.querySelectorAll("nav button")).some(
-        (button) =>
-          button.textContent?.includes("Overview") && !button.disabled,
-      ),
-    null,
-    { timeout: 20_000 },
-  );
+  await (await getNavigationButton(page, "Overview")).waitFor({ timeout: 20_000 });
   for (const tabName of [
     "Overview",
     "Settings",
@@ -2611,7 +3010,7 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
     "Updates",
     "Support",
   ]) {
-    const button = page.getByRole("button", { name: tabName });
+    const button = await getNavigationButton(page, tabName);
     await button.waitFor({ timeout: 10_000 });
     assert(
       !(await button.isDisabled()),
@@ -2635,11 +3034,11 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
     (await page.getByRole("button", { name: "Fix connection" }).count()) === 0,
     "completed setup should not show repair actions while healthy",
   );
-  await page.getByRole("button", { name: "Overview" }).click();
+  await clickNavigation(page, "Overview");
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "Theme Library" }).click();
+  await clickNavigation(page, "Theme Library");
   await page
     .getByRole("heading", { name: "Themes" })
     .waitFor({ timeout: 10_000 });
@@ -2657,9 +3056,9 @@ async function testDesktopHeaderDoesNotClaimDeviceDuringSetup(browser, appUrl) {
   await routeCompanionMissing(page, installRequests);
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "Set up your VibeTV" }).waitFor({
-    timeout: 10_000,
-  });
+  await page
+    .getByRole("heading", { name: "VibeTV Control Center needs attention" })
+    .waitFor({ timeout: 10_000 });
 
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
@@ -2679,20 +3078,84 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   let settingsCalls = 0;
-  await routeCompanionOnline(page, installRequests, () => {
-    settingsCalls += 1;
-  });
+  let settingsReads = 0;
+  const settingsWrites = [];
+  await routeCompanionOnline(
+    page,
+    installRequests,
+    () => {},
+    {
+      settingsBrightnessSequence: [null, 50, 100, 42],
+      settingsDelayMs: 150,
+      onRequest: (pathname, method, body) => {
+        if (pathname !== "/v1/settings") {
+          return;
+        }
+        if (method === "POST") {
+          settingsWrites.push(JSON.parse(body));
+        } else {
+          settingsReads += 1;
+        }
+      },
+      onSettingsResponse: () => {
+        settingsCalls += 1;
+      },
+    },
+  );
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await waitForCondition(
     () => settingsCalls >= 1,
     "expected settings refresh before opening Settings",
   );
-
-  await page.getByRole("button", { name: "Settings" }).click();
+  await clickNavigation(page, "Settings");
   await page.getByRole("heading", { name: "Display" }).waitFor({
     timeout: 10_000,
   });
+  await waitForCondition(
+    () => settingsCalls >= 2,
+    "opening Settings should load brightness",
+  );
+  await page.getByText("50%", { exact: true }).waitFor({ timeout: 10_000 });
+  const brightnessSlider = page.getByRole("slider", { name: "Brightness" });
+  assert(
+    await brightnessSlider.isEnabled(),
+    "brightness slider should be enabled after the Settings retry",
+  );
+
+  await clickNavigation(page, "Overview");
+  await clickNavigation(page, "Settings");
+  await waitForCondition(
+    () => settingsReads >= 3,
+    "reopening Settings should refresh saved brightness",
+  );
+  await brightnessSlider.press("Home");
+  for (let step = 0; step < 32; step += 1) {
+    await brightnessSlider.press("ArrowRight");
+  }
+  await page.getByText("42%", { exact: true }).waitFor({ timeout: 10_000 });
+  await waitForCondition(
+    () => settingsCalls >= 3,
+    "expected delayed brightness refresh to finish",
+  );
+  assert(
+    (await page.getByText("42%", { exact: true }).count()) === 1,
+    "a delayed device refresh must not replace the unsaved slider value",
+  );
+  assert(
+    settingsWrites.length === 0,
+    "moving the brightness slider must not write to VibeTV",
+  );
+
+  await page.getByRole("button", { name: "Save brightness" }).click();
+  await waitForCondition(
+    () => settingsWrites.length === 1,
+    "Save brightness should write once",
+  );
+  assert(
+    settingsWrites[0]?.brightnessPercent === 42,
+    `Save brightness should write 42, got ${JSON.stringify(settingsWrites[0])}`,
+  );
 
   const hiddenCustomerText = [
     "Connection controls",
@@ -2711,12 +3174,13 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     );
   }
 
+  await captureMigrationScreenshot(page, "04-settings-mobile.png");
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
 }
 
-async function testUsageShowsCodexCostHistory(browser, appUrl) {
+async function testUsagePrioritizesProviderTokenHistory(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
@@ -2813,35 +3277,117 @@ async function testUsageShowsCodexCostHistory(browser, appUrl) {
             },
           ],
         },
+        {
+          id: "claude",
+          label: "Claude",
+          source: "oauth",
+          session: 0,
+          weekly: 6,
+          resetSecs: 10_800,
+          usageMode: "used",
+          weekTokens: 19_176_330,
+          totalTokens: 19_176_330,
+          cost: {
+            currencyCode: "USD",
+            updatedAt: "2026-06-29T10:47:46Z",
+            last30DaysTokens: 19_176_330,
+            daily: [
+              {
+                day: "2026-06-29",
+                totalCostUSD: 8.69,
+                totalTokens: 19_176_330,
+                models: [
+                  {
+                    name: "claude-opus-4-8",
+                    totalTokens: 19_176_330,
+                    costUSD: 8.69,
+                  },
+                ],
+              },
+            ],
+          },
+        },
       ],
     },
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Usage" }).click();
-  await page.getByRole("heading", { name: "Limit Reset Credits" }).waitFor({
+  const updatesButton = await getNavigationButton(page, "Updates");
+  const updateBadge = page.getByLabel("Update available", { exact: true });
+  await updateBadge.waitFor({ timeout: 10_000 });
+  const updatesButtonBox = await updatesButton.boundingBox();
+  const updateBadgeBox = await updateBadge.boundingBox();
+  assert(
+    updatesButtonBox &&
+      updateBadgeBox &&
+      Math.abs(
+        updatesButtonBox.y + updatesButtonBox.height / 2 -
+          (updateBadgeBox.y + updateBadgeBox.height / 2),
+      ) < 1,
+    "the Updates notification must be vertically centered",
+  );
+  await clickNavigation(page, "Usage");
+  const tokenChartHeading = page.getByRole("heading", {
+    name: "Tokens used over time",
+  });
+  await tokenChartHeading.waitFor({
     timeout: 10_000,
   });
   await page
-    .getByText("3 manual resets available")
+    .getByText("4,319,176,330", { exact: true })
     .waitFor({ timeout: 10_000 });
   await page
-    .getByText("Manual resets expire Jul 12")
+    .getByText(
+      "four billion three hundred nineteen million one hundred seventy-six thousand three hundred thirty tokens",
+      { exact: true },
+    )
     .waitFor({ timeout: 10_000 });
-  await page
-    .getByText("$72.42", { exact: true })
-    .first()
-    .waitFor({ timeout: 10_000 });
-  await page.getByText("$3,694.16").waitFor({ timeout: 10_000 });
-  await page.getByText("4.3B").first().waitFor({ timeout: 10_000 });
-  await page.getByText("77M").first().waitFor({ timeout: 10_000 });
-  await page.getByText("Top model: gpt-5.5").waitFor({ timeout: 10_000 });
-  await page.getByLabel("Jun 29 · $72.42 · 77M").hover();
-  await page.getByText("Jun 29 · $72.42 · 77M").waitFor({ timeout: 10_000 });
-  await page.getByRole("heading", { name: "Codex" }).waitFor({
+  const tokenUsageRefresh = page.getByRole("button", {
+    name: "Refresh token usage",
+  });
+  const refreshResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname.endsWith("/v1/usage") &&
+      new URL(response.url()).searchParams.get("refresh") === "1",
+  );
+  await tokenUsageRefresh.click();
+  const usageResponse = await refreshResponse;
+  assert(usageResponse.ok(), "Token usage refresh should return successfully");
+  await tokenUsageRefresh.click({ trial: true });
+  assert(
+    await tokenUsageRefresh.isEnabled(),
+    "Token usage refresh should become available again after the request finishes",
+  );
+  assert(
+    (await page.getByText("Daily tokens by provider", { exact: false }).count()) ===
+      0,
+    "Usage should not show the removed token chart subtitle",
+  );
+  const providerHeading = page.getByRole("heading", { name: "Codex" });
+  await providerHeading.waitFor({
     timeout: 10_000,
   });
+  assert(
+    (await page.getByRole("heading", { name: "Limit Reset Credits" }).count()) ===
+      0,
+    "Usage should not show Codex-specific reset credits",
+  );
+  assert(
+    (await page.getByText("3 manual resets available").count()) === 0,
+    "Usage should not show manual reset metadata",
+  );
+  assert(
+    (await page.getByText("Top model: gpt-5.5").count()) === 0,
+    "Usage should not show the removed Codex cost summary",
+  );
+  const tokenChartBox = await tokenChartHeading.boundingBox();
+  const providerBox = await providerHeading.boundingBox();
+  assert(
+    tokenChartBox && providerBox && tokenChartBox.y < providerBox.y,
+    "The provider-neutral token chart should be the primary Usage metric",
+  );
 
+  await captureMigrationScreenshot(page, "05-usage-desktop.png");
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
@@ -2858,7 +3404,7 @@ async function testUsageShowsMacAppUpdateForOldMacApp(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Usage" }).click();
+  await clickNavigation(page, "Usage");
   await page.getByText("Mac App update needed.").waitFor({
     timeout: 10_000,
   });
@@ -2875,7 +3421,121 @@ async function testUsageShowsMacAppUpdateForOldMacApp(browser, appUrl) {
   await page.close();
 }
 
-async function testRunSetupAgainReturnsToWifiOnboarding(browser, appUrl) {
+async function testUsageManagesProviderPreferences(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    preferencePatchDelayMs: 200,
+    preferencePatchFailureIds: ["codexbar.providers.claude.enabled"],
+    preferencesResponse: {
+      ok: true,
+      items: [
+        {
+          id: "codexbar.providers.codex.enabled",
+          section: "providers",
+          owner: "codexbar",
+          type: "boolean",
+          label: "Codex",
+          value: true,
+          effectiveValue: true,
+          allowsDefault: false,
+          availability: { state: "available" },
+          writeStrategy: "codexbar_command",
+          writable: true,
+          health: {
+            state: "healthy",
+            service: "operational",
+            message: "Provider is working.",
+          },
+        },
+        {
+          id: "codexbar.providers.copilot.enabled",
+          section: "providers",
+          owner: "codexbar",
+          type: "boolean",
+          label: "GitHub Copilot",
+          value: false,
+          effectiveValue: false,
+          allowsDefault: false,
+          availability: { state: "available" },
+          writeStrategy: "codexbar_command",
+          writable: true,
+          health: {
+            state: "disabled",
+            service: "unknown",
+            message: "Provider is off.",
+          },
+        },
+        {
+          id: "codexbar.providers.claude.enabled",
+          section: "providers",
+          owner: "codexbar",
+          type: "boolean",
+          label: "Claude",
+          value: true,
+          effectiveValue: true,
+          allowsDefault: false,
+          availability: { state: "available" },
+          writeStrategy: "codexbar_command",
+          writable: true,
+          health: {
+            state: "auth_required",
+            service: "outage",
+            message: "Sign in again for this provider.",
+          },
+        },
+      ],
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Usage");
+  const panel = page.locator('[aria-labelledby="provider-settings-title"]');
+  await panel.getByText("Sign-in needed").waitFor({ timeout: 10_000 });
+  await panel.getByText("Service outage").waitFor({ timeout: 10_000 });
+  await panel.getByText("GitHub Copilot").waitFor({ timeout: 10_000 });
+
+  const itemLabels = await panel
+    .locator('[data-slot="item-title"] > span:first-child')
+    .allTextContents();
+  assert(itemLabels[0] === "Claude", "providers needing attention should sort first");
+
+  const search = panel.getByLabel("Search AI providers");
+  await search.fill("Copilot");
+  assert((await panel.getByText("Codex", { exact: true }).count()) === 0, "provider search should filter the list");
+  await search.fill("");
+
+  const enableCopilot = panel.getByRole("switch", { name: "Enable GitHub Copilot" });
+  await enableCopilot.click();
+  const pendingCopilot = panel.getByRole("switch", {
+    name: "Disable GitHub Copilot",
+  });
+  assert(await pendingCopilot.isDisabled(), "changed provider should be pending");
+  assert(
+    !(await panel.getByRole("switch", { name: "Disable Codex" }).isDisabled()),
+    "unrelated provider should stay interactive",
+  );
+  await panel
+    .getByLabel("Updating GitHub Copilot")
+    .waitFor({ state: "hidden", timeout: 10_000 });
+  assert(await pendingCopilot.isEnabled(), "changed provider should become interactive again");
+
+  await panel.getByRole("switch", { name: "Disable Claude" }).click();
+  await page.getByText("This provider could not be updated.").waitFor({ timeout: 10_000 });
+  assert(
+    await panel.getByRole("switch", { name: "Disable Claude" }).isChecked(),
+    "failed update must keep the previous value",
+  );
+
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testRunSetupAgainReturnsToWifiOnboarding(
+  browser,
+  appUrl,
+) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
@@ -2932,13 +3592,24 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
   );
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   const dmgUpdateLink = page.getByRole("link", {
     name: "Update",
   });
   await dmgUpdateLink.waitFor({
     timeout: 10_000,
   });
+  const updateCardBadges = page.locator(
+    '[data-slot="card-action"] [data-slot="badge"]',
+  );
+  const updateCardBadgeLabels = await updateCardBadges.allTextContents();
+  assert(
+    updateCardBadgeLabels.length > 0 &&
+      updateCardBadgeLabels.every(
+        (label) => label.trim() === "Update available",
+      ),
+    `Update cards must only show Update available badges, got ${JSON.stringify(updateCardBadgeLabels)}`,
+  );
   assert(
     assetName(await dmgUpdateLink.getAttribute("href")) ===
       "VibeTV-Control-Center.dmg",
@@ -2950,8 +3621,8 @@ async function testUpdatesShowCustomerCompanionAction(browser, appUrl) {
       .count()) === 0,
     "Updates must not expose manual Mac App installation mechanics",
   );
-  await page.getByText("App version").waitFor({ timeout: 10_000 });
-  await page.getByText("Latest version").waitFor({ timeout: 10_000 });
+  await page.getByText("Installed", { exact: true }).waitFor({ timeout: 10_000 });
+  await page.getByText("Available", { exact: true }).waitFor({ timeout: 10_000 });
   assert(
     (await page
       .getByRole("button", { name: "Copy update command" })
@@ -2996,7 +3667,7 @@ async function testMacAppUpdatePrecedesFirmwareUpdate(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   const updateLink = page.getByRole("link", { name: "Update" });
   await updateLink.waitFor({ timeout: 10_000 });
   assert(
@@ -3044,7 +3715,7 @@ async function testNativeMacAppUpdateUsesSparkleAction(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   const updateLink = page.getByRole("link", {
     name: "Update",
   });
@@ -3054,15 +3725,17 @@ async function testNativeMacAppUpdateUsesSparkleAction(browser, appUrl) {
     "Installed native Mac Apps must hand updates to the exact Sparkle URL action",
   );
   await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
-  await page.getByText("Background version").waitFor({ timeout: 10_000 });
-  await page.getByText("Background service").waitFor({ timeout: 10_000 });
-  await page.getByText("Running", { exact: true }).waitFor({ timeout: 10_000 });
+  await page.getByText("Installed", { exact: true }).waitFor({ timeout: 10_000 });
+  await page.getByText("Available", { exact: true }).waitFor({ timeout: 10_000 });
   assert(
-    (await page.getByText("shop.vibetv.control-center.runtime").count()) ===
-      0 &&
+    (await page.getByText("Status", { exact: true }).count()) === 0 &&
+      (await page.getByText("App build", { exact: true }).count()) === 0 &&
+      (await page.getByText("Background version", { exact: true }).count()) === 0 &&
+      (await page.getByText("Background service", { exact: true }).count()) === 0 &&
+      (await page.getByText("shop.vibetv.control-center.runtime").count()) === 0 &&
       (await page.getByText("PID 174").count()) === 0 &&
       (await page.getByText("abcdef12").count()) === 0,
-    "Updates must keep service names, process IDs, and commits out of customer copy",
+    "Updates must omit status and internal Mac App details from customer copy",
   );
   assert(
     (await page.getByRole("link", { name: "Update" }).count()) === 1,
@@ -3124,7 +3797,7 @@ async function testLegacyInstallMigratesToDmgAtSameVersion(browser, appUrl) {
   );
   await captureMigrationScreenshot(page, "01-legacy-overview.png");
 
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   await page
     .getByRole("heading", { name: "Update available" })
     .waitFor({ timeout: 10_000 });
@@ -3213,10 +3886,16 @@ async function testDmgInstallStaysUpToDateAtSameVersion(browser, appUrl) {
       0,
     "DMG Overview must not show the legacy migration card",
   );
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   await page.getByRole("heading", { name: "Up to date" }).waitFor({
     timeout: 10_000,
   });
+  assert(
+    (await page
+      .locator('[data-slot="card-action"] [data-slot="badge"]')
+      .count()) === 0,
+    "Up-to-date cards must not show status badges",
+  );
   assert(
     (await page.getByRole("link", { name: "Update" }).count()) === 0,
     "Current DMG install must not show a migration download",
@@ -3258,7 +3937,7 @@ async function testLegacyMigrationCanRetryFailedRelease(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   await page.getByRole("heading", { name: "Update check failed" }).waitFor({
     timeout: 10_000,
   });
@@ -3298,9 +3977,11 @@ async function testUpdatesShowLegacyCompanionReleaseFallback(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
-  await page.getByRole("link", { name: "Update" }).waitFor({ timeout: 10_000 });
-  const macAppSection = page.locator("section.border-b").filter({
+  await clickNavigation(page, "Updates");
+  await page
+    .getByRole("link", { name: "Update" })
+    .waitFor({ timeout: 10_000 });
+  const macAppSection = page.locator('[data-slot="card"]').filter({
     has: page.getByRole("heading", { name: "Mac App" }),
   });
   await macAppSection
@@ -3370,7 +4051,7 @@ async function testReloadRestoresRunningFirmwareUpdate(browser, appUrl) {
     "A reloaded app must reopen the active firmware update",
   );
   await page.getByText("VibeTV not connected", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Overview" }).click();
+  await clickNavigation(page, "Overview");
   assert(
     (await page.getByRole("button", { name: "Search for VibeTV" }).count()) ===
       0 &&
@@ -3548,8 +4229,8 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
-  const firmwareSection = page.locator("section.border-b").filter({
+  await clickNavigation(page, "Updates");
+  const firmwareSection = page.locator('[data-slot="card"]').filter({
     has: page.getByRole("heading", { name: "Firmware update" }),
   });
   await page.getByRole("button", { name: "Update", exact: true }).waitFor({
@@ -3574,17 +4255,16 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
     firmwareStatusRequests >= 1,
     "Firmware progress must include a reconnecting status response",
   );
+  const activeUpdatesDuringReconnect = await getNavigationButton(page, "Updates");
   assert(
-    (await page
-      .getByRole("button", { name: "Updates", exact: true })
-      .getAttribute("aria-current")) === "page",
+    (await activeUpdatesDuringReconnect.getAttribute("aria-current")) === "page",
     "The Updates tab must stay active while VibeTV is reconnecting",
   );
   assert(
     (await page.getByTestId("device-startup-screen").count()) === 0,
     "Firmware reconnecting must not open the startup screen",
   );
-  await page.getByRole("button", { name: "Overview" }).click();
+  await clickNavigation(page, "Overview");
   assert(
     (await page.getByRole("button", { name: "Search for VibeTV" }).count()) ===
       0 &&
@@ -3593,10 +4273,10 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
         .count()) === 0,
     "Recovery writes must stay unavailable while firmware is updating",
   );
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   await page
     .getByRole("status")
-    .filter({ hasText: /Updating VibeTV|Restarting VibeTV/ })
+    .filter({ hasText: /Updating VibeTV|Restarting VibeTV|Update complete/ })
     .waitFor({ timeout: 10_000 });
   await page
     .getByRole("status")
@@ -3614,27 +4294,17 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
     "Firmware progress must verify ready → reconnecting → ready status",
   );
   assert(
-    (await page.getByRole("button", { name: "Overview" }).count()) === 1,
+    (await page.locator("main.control-center-shell").count()) === 1,
     "Firmware reboot must keep the Control Center shell visible",
   );
+  const activeUpdatesAfterReboot = await getNavigationButton(page, "Updates");
   assert(
-    (await page
-      .getByRole("button", { name: "Updates", exact: true })
-      .getAttribute("aria-current")) === "page",
+    (await activeUpdatesAfterReboot.getAttribute("aria-current")) === "page",
     "Firmware reboot must keep the Updates tab active",
   );
   assert(
     (await page.getByTestId("device-startup-screen").count()) === 0,
     "Firmware reboot must not open the startup screen",
-  );
-  await firmwareSection.getByText("Up to date").waitFor({ timeout: 10_000 });
-  await page.getByRole("button", { name: "Check for updates" }).waitFor({
-    timeout: 10_000,
-  });
-  assert(
-    (await page.getByRole("button", { name: "Checking updates" }).count()) ===
-      0,
-    "firmware update button should not stay in checking state after success",
   );
   assert(
     (await firmwareSection.getByText("Checking", { exact: true }).count()) ===
@@ -3691,7 +4361,7 @@ async function testFirmwareAttentionDoesNotOfferSecondFlash(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   await page.getByRole("button", { name: "Update", exact: true }).click();
   await page
     .getByText("Firmware current — attention needed")
@@ -3737,7 +4407,7 @@ async function testFirmwarePowerCycleErrorDoesNotOfferSecondFlash(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   await page.getByRole("button", { name: "Update", exact: true }).click();
   await page.getByText("Update failed", { exact: true }).waitFor({
     timeout: 10_000,
@@ -3795,7 +4465,7 @@ async function testUpdatesKeepDmgHiddenWithoutVerifiedAsset(browser, appUrl) {
       .count()) === 0,
     "Legacy Overview must hide an unavailable update action",
   );
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   const unavailableButton = page.getByRole("button", {
     name: "Update",
     exact: true,
@@ -3849,7 +4519,7 @@ async function testLegacyMigrationDoesNotBlockFirmwareUpdate(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   await page.getByRole("heading", { name: "Update available" }).waitFor({
     timeout: 10_000,
   });
@@ -3889,41 +4559,54 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
   await routeCompanionOnline(page, installRequests);
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Support" }).click();
+  await clickNavigation(page, "Support");
   await page.getByRole("heading", { name: "Support report" }).waitFor({
     timeout: 10_000,
   });
 
   assert(
-    (await page.getByRole("button", { name: "Copy report" }).count()) === 0,
+    (await page.getByRole("button", { name: "Copy", exact: true }).count()) === 0,
     "Support report should not show Copy before a report is loaded",
   );
   assert(
-    (await page.getByRole("button", { name: "Download report" }).count()) === 0,
+    (await page.getByRole("button", { name: "Download", exact: true }).count()) === 0,
     "Support report should not show Download before a report is loaded",
   );
 
-  await page.getByRole("button", { name: "Create report" }).click();
-  await page.getByRole("button", { name: "Copy report" }).waitFor({
+  const createReportButton = page.getByRole("button", {
+    name: "Create report",
+  });
+  assert(
+    (await createReportButton.getAttribute("data-variant")) === "default",
+    "Support screen should keep Create report primary",
+  );
+  await createReportButton.click();
+  await page.getByRole("button", { name: "Copy", exact: true }).waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "Download report" }).waitFor({
+  await page.getByRole("button", { name: "Download", exact: true }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("VibeTV address", { exact: true }).waitFor({
+  const createAgainButton = page.getByRole("button", { name: "Create again" });
+  await createAgainButton.waitFor({
     timeout: 10_000,
   });
-  await page.getByText("VibeTVs on WiFi", { exact: true }).waitFor({
-    timeout: 10_000,
-  });
-  await page.getByText("1 found", { exact: true }).waitFor({
-    timeout: 10_000,
-  });
-  await page
-    .getByRole("region", { name: "VibeTVs found on this WiFi" })
-    .getByText("wifi-vibetv", { exact: true })
-    .waitFor({ timeout: 10_000 });
-  await page.getByRole("button", { name: "Copy report" }).click();
+  assert(
+    (await createAgainButton.getAttribute("data-variant")) === "default",
+    "Support screen should keep Create again primary",
+  );
+  for (const hiddenDetail of [
+    "Background runtime",
+    "VibeTVs on WiFi",
+    "Provider Setup",
+    "Theme Install Gate",
+  ]) {
+    assert(
+      (await page.getByText(hiddenDetail, { exact: true }).count()) === 0,
+      `Support screen should keep report detail out of the regular UI: ${hiddenDetail}`,
+    );
+  }
+  await page.getByRole("button", { name: "Copy", exact: true }).click();
   const copiedReport = await page.evaluate(
     () => globalThis.__copiedSupportReport || "",
   );
@@ -3968,25 +4651,23 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
     );
   }
 
+  await captureMigrationScreenshot(page, "06-support-mobile.png");
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
 }
 
-async function testSavedAddressDoesNotBlockConfirmedVibeTVSearch(
+async function testSavedAddressReconnectsReadOnly(
   browser,
   appUrl,
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const repairRequests = [];
-  let settingsCalls = 0;
   await routeCompanionOnline(
     page,
     installRequests,
-    () => {
-      settingsCalls += 1;
-    },
+    () => {},
     {
       device: {
         ...companionDevice,
@@ -3997,24 +4678,24 @@ async function testSavedAddressDoesNotBlockConfirmedVibeTVSearch(
         ready: false,
         stream: { healthy: false, running: true },
       },
-      searchDevices: [
+      statusDeviceSequence: [
         {
-          target: "http://192.168.178.163",
-          deviceId: "fixture-device-1",
-          networkMode: "station",
-          known: true,
-          active: true,
-        },
-      ],
-      onRepair: (postData) => {
-        repairRequests.push(postData || "");
-        return {
           ...companionDevice,
           target: "http://192.168.178.163",
-          connected: true,
+          deviceId: "fixture-device-1",
+          active: true,
+          connected: false,
           paired: true,
-        };
-      },
+          ready: false,
+          stream: { healthy: false, running: true },
+        },
+        {
+          ...companionDevice,
+          target: "http://192.168.178.163",
+          deviceId: "fixture-device-1",
+        },
+      ],
+      onRepair: (postData) => repairRequests.push(postData || ""),
     },
   );
   await page.addInitScript(() => {
@@ -4026,23 +4707,9 @@ async function testSavedAddressDoesNotBlockConfirmedVibeTVSearch(
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
-  await waitForCondition(
-    () => repairRequests.length === 1,
-    "expected one automatic VibeTV repair to run",
-  );
-
-  const repairPayload = JSON.parse(repairRequests[0] || "{}");
   assert(
-    repairPayload.target === "http://192.168.178.163",
-    `automatic repair should use the fresh search result, got ${repairRequests[0]}`,
-  );
-  assert(
-    repairPayload.forcePair == null || repairPayload.forcePair === false,
-    `automatic repair should preserve a valid pairing token, got ${repairRequests[0]}`,
-  );
-  assert(
-    settingsCalls >= 1,
-    "automatic repair should continue into settings refresh after finding VibeTV",
+    repairRequests.length === 0,
+    `Saved-device reconnect must stay read-only, got ${repairRequests}`,
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -4060,10 +4727,11 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
       ...companionDevice,
       activeTheme: "synthwave",
       firmware: "1.0.32",
-      ready: false,
+      ready: true,
       stream: {
-        healthy: false,
-        running: false,
+        healthy: true,
+        running: true,
+        lastSentAt: "2026-06-29T10:47:46Z",
       },
     },
     displayFrameUnavailableResponses: 1,
@@ -4113,7 +4781,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
     .getByRole("img", {
       name: /Rendered VibeTV theme synthwave showing Codex, 0% session used, 63% weekly used/,
     })
-    .waitFor({ timeout: 4_000 });
+    .waitFor({ timeout: 10_000 });
   const renderedTheme = page.getByRole("img", {
     name: /Rendered VibeTV theme synthwave/,
   });
@@ -4382,7 +5050,7 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Theme Library" }).click();
+  await clickNavigation(page, "Theme Library");
   const synthwavePreview = page.getByRole("img", {
     name: /Rendered VibeTV theme synthwave showing VibeTV, 62% session remaining, 62% weekly remaining/,
   });
@@ -4408,6 +5076,7 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
     "Theme Library thumbnails should stay static to avoid background rendering",
   );
 
+  await captureMigrationScreenshot(page, "07-theme-library-desktop.png");
   await page
     .getByRole("button", { name: "Preview Fixture Clippy Theme" })
     .click();
@@ -4516,7 +5185,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   await page.goto(localAppUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /^(Themes|Theme Library)$/ }).click();
   const publishedThemeRow = page
-    .locator("li")
+    .getByRole("listitem")
     .filter({ hasText: "Fixture Synthwave Theme" });
   await publishedThemeRow.waitFor({ timeout: 10_000 });
   await publishedThemeRow.getByRole("button", { name: "Edit" }).click();
@@ -4554,6 +5223,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     ),
     "Theme Studio should not create horizontal body overflow at 1180x820",
   );
+  await captureMigrationScreenshot(page, "08-theme-studio-1180x820.png");
   assert(
     await sendButton.isEnabled(),
     "published themes with validated large static sprites should remain editable and installable",
@@ -4603,6 +5273,12 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     "selecting an element should not create an undo step",
   );
   await page.getByRole("tab", { name: "Project" }).press("ArrowRight");
+  await page.waitForFunction(
+    () =>
+      document
+        .getElementById("theme-studio-tab-assets")
+        ?.getAttribute("aria-selected") === "true",
+  );
   assert(
     (await page
       .getByRole("tab", { name: "Assets" })
@@ -4655,7 +5331,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   });
 
   const clippyThemeRow = page
-    .locator("li")
+    .getByRole("listitem")
     .filter({ hasText: "Fixture Clippy Theme" });
   await clippyThemeRow.waitFor({ timeout: 10_000 });
   await clippyThemeRow.getByRole("button", { name: "Edit" }).click();
@@ -4796,6 +5472,9 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   await page.getByRole("button", { name: "Library", exact: true }).click();
   await page.getByRole("dialog", { name: "Save your changes?" }).waitFor();
   await page.getByRole("button", { name: "Keep editing", exact: true }).click();
+  await page.waitForFunction(
+    () => document.activeElement?.textContent?.trim() === "Library",
+  );
   assert(
     await page
       .getByRole("button", { name: "Library", exact: true })
@@ -4873,7 +5552,7 @@ async function testThemeInstallStatusStaysCustomerOnly(browser, appUrl) {
   );
 
   const installButton = page
-    .locator("li")
+    .getByRole("listitem")
     .filter({ hasText: "Fixture Synthwave Theme" })
     .getByRole("button", { name: "Install" });
   await installButton.waitFor({ timeout: 10_000 });
@@ -4965,7 +5644,7 @@ async function testThemeInstallShowsIntermediateProgress(browser, appUrl) {
   );
 
   const installButton = page
-    .locator("li")
+    .getByRole("listitem")
     .filter({ hasText: "Fixture Synthwave Theme" })
     .getByRole("button", { name: "Install" });
   await installButton.waitFor({ timeout: 10_000 });
@@ -5005,7 +5684,7 @@ async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
   );
 
   const installButton = page
-    .locator("li")
+    .getByRole("listitem")
     .filter({ hasText: "Fixture Synthwave Theme" })
     .getByRole("button", { name: "Install" });
   await installButton.waitFor({ timeout: 10_000 });
@@ -5014,7 +5693,7 @@ async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
     .getByText("Install failed", { exact: true })
     .waitFor({ timeout: 10_000 });
 
-  await page.getByRole("button", { name: "Support", exact: true }).click();
+  await clickNavigation(page, "Support");
   await page.getByRole("heading", { name: "Recent activity" }).waitFor({
     timeout: 10_000,
   });
@@ -5047,7 +5726,7 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
-  const pairRequests = [];
+  const selectRequests = [];
   let settingsCalls = 0;
   await routeCompanionOnline(
     page,
@@ -5057,14 +5736,14 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
     },
     {
       device: {
-        ...companionDevice,
+        connected: false,
+        active: false,
         paired: false,
         ready: false,
-        stream: { healthy: false, running: true },
       },
-      onPair: (postData, currentDevice) => {
-        pairRequests.push(postData);
-        return { ...currentDevice, ...companionDevice, paired: true };
+      onSelect: (postData) => {
+        selectRequests.push(postData);
+        return companionDevice;
       },
     },
   );
@@ -5072,6 +5751,10 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
   await page.goto(`${appUrl}/install/synthwave`, {
     waitUntil: "domcontentloaded",
   });
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+  await discoveredConnectButtons(page).first().click();
   await page.getByRole("heading", { name: "Themes" }).waitFor({
     timeout: 10_000,
   });
@@ -5080,19 +5763,13 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
       0,
     "A VibeTV found by the startup scan must not show the no-results WiFi guide",
   );
-  assert(
-    (await page
-      .getByRole("button", { name: "Theme Library" })
-      .getAttribute("aria-current")) === "page",
-    "Successful automatic verification must continue to the requested theme",
-  );
   await waitForCondition(
     () => settingsCalls >= 1,
     "expected settings refresh after pairing",
   );
   await assertSelectedThemeRow(page, "Fixture Synthwave Theme");
   const installButton = page
-    .locator("li")
+    .getByRole("listitem")
     .filter({ hasText: "Fixture Synthwave Theme" })
     .getByRole("button", { name: "Install" });
   await installButton.waitFor({ timeout: 10_000 });
@@ -5101,12 +5778,12 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
     "paired VibeTV should unlock install",
   );
   assert(
-    pairRequests.length === 1,
-    "the single discovered VibeTV should connect once",
+    selectRequests.length === 1,
+    "the selected VibeTV should connect once",
   );
   assert(
-    !pairRequests[0]?.includes('"forcePair":true'),
-    `explicit verification should not force token rotation: ${pairRequests[0]}`,
+    !selectRequests[0]?.includes('"forcePair":true'),
+    `explicit verification should not force token rotation: ${selectRequests[0]}`,
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -5131,7 +5808,7 @@ async function testThemeWithoutPackUrlStaysLocked(browser, appUrl) {
   );
   await assertSelectedThemeRow(page, "Fixture Missing Pack Theme");
   const lockedButton = page
-    .locator("li")
+    .getByRole("listitem")
     .filter({ hasText: "Fixture Missing Pack Theme" })
     .getByRole("button", { name: "Unavailable" });
   await lockedButton.waitFor({ timeout: 10_000 });
@@ -5163,7 +5840,7 @@ async function testBoardIncompatibleThemeStaysLocked(browser, appUrl) {
   await assertSelectedThemeRow(page, "Fixture ESP32 Only Theme");
 
   const lockedButton = page
-    .locator("li")
+    .getByRole("listitem")
     .filter({ hasText: "Fixture ESP32 Only Theme" })
     .getByRole("button", { name: "Not Supported" });
   await lockedButton.waitFor({ timeout: 10_000 });
@@ -5195,7 +5872,7 @@ async function testFirmwareIncompatibleThemeStaysLocked(browser, appUrl) {
   await assertSelectedThemeRow(page, "Fixture Future Firmware Theme");
 
   const lockedButton = page
-    .locator("li")
+    .getByRole("listitem")
     .filter({ hasText: "Fixture Future Firmware Theme" })
     .getByRole("button", { name: "Update Needed" });
   await lockedButton.waitFor({ timeout: 10_000 });
@@ -5245,7 +5922,7 @@ async function testDisabledDmgFlagHidesSetupAndUpdateLinks(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Updates" }).click();
+  await clickNavigation(page, "Updates");
   const unavailableButton = page.getByRole("button", {
     name: "Update",
     exact: true,
@@ -5524,6 +6201,10 @@ async function routeCompanionOnline(
     deviceAfterFirmwareUpdate,
     usageResponse,
     usageStatus = 200,
+    preferencesResponse,
+    preferencesStatus = 200,
+    preferencePatchDelayMs = 0,
+    preferencePatchFailureIds = [],
     displayFrameStatus = 200,
     displayFrameResponse,
     displayFrameUnavailableResponses = 0,
@@ -5536,6 +6217,7 @@ async function routeCompanionOnline(
     firstStatusDelayMs = 0,
     statusDelayAfterFirstMs = 0,
     settingsDelayMs = 0,
+    settingsBrightnessSequence,
     onSettingsResponse = () => {},
     statusDeviceSequence,
     firmwareStatusDeviceSequence,
@@ -5560,7 +6242,33 @@ async function routeCompanionOnline(
   let statusRequestCount = 0;
   let firmwareStatusIndex = 0;
   let displayFrameRequestCount = 0;
+  let settingsRequestCount = 0;
   let currentProviderSetup = providerSetup;
+  let currentPreferences = structuredClone(
+    preferencesResponse || {
+      ok: true,
+      items: [
+        {
+          id: "codexbar.providers.codex.enabled",
+          section: "providers",
+          owner: "codexbar",
+          type: "boolean",
+          label: "Codex",
+          value: true,
+          effectiveValue: true,
+          allowsDefault: false,
+          availability: { state: "available" },
+          writeStrategy: "codexbar_command",
+          writable: true,
+          health: {
+            state: "healthy",
+            service: "operational",
+            message: "Provider is working.",
+          },
+        },
+      ],
+    },
+  );
   const handler = async (route) => {
     const pathname = companionPath(route);
     onRequest(
@@ -5906,6 +6614,66 @@ async function routeCompanionOnline(
       });
       return;
     }
+    if (pathname === "/v1/preferences") {
+      await route.fulfill({
+        status: preferencesStatus,
+        contentType: "application/json",
+        body: JSON.stringify(
+          preferencesStatus === 200
+            ? currentPreferences
+            : {
+                ok: false,
+                error: {
+                  code: "provider_preferences_unavailable",
+                  message: "Provider settings are not available right now.",
+                  nextAction: "Make sure the Mac App is open, then try again.",
+                },
+              },
+        ),
+      });
+      return;
+    }
+    if (pathname.startsWith("/v1/preferences/")) {
+      const settingId = decodeURIComponent(pathname.slice("/v1/preferences/".length));
+      if (preferencePatchDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, preferencePatchDelayMs));
+      }
+      if (preferencePatchFailureIds.includes(settingId)) {
+        await route.fulfill({
+          status: 502,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: false,
+            error: {
+              code: "preference_write_failed",
+              message: "This provider could not be updated.",
+              nextAction: "Try again in a moment.",
+            },
+          }),
+        });
+        return;
+      }
+      const request = parseJSON(route.request().postData() || "") || {};
+      const item = currentPreferences.items.find((entry) => entry.id === settingId);
+      if (!item || typeof request.value !== "boolean") {
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: false }),
+        });
+        return;
+      }
+      item.value = request.value;
+      item.health = request.value
+        ? { state: "healthy", service: "operational", message: "Provider is working." }
+        : { state: "disabled", service: "unknown", message: "Provider is off." };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, item }),
+      });
+      return;
+    }
     if (pathname === "/v1/device/pair") {
       const nextDevice = onPair?.(
         route.request().postData() || "",
@@ -5984,7 +6752,7 @@ async function routeCompanionOnline(
         ...nextDevice,
         connected: true,
         paired: true,
-        ready: true,
+        ready: nextDevice.ready ?? true,
       };
       await route.fulfill({
         status: 200,
@@ -6163,6 +6931,12 @@ async function routeCompanionOnline(
     if (pathname === "/v1/settings") {
       onSettings();
       const responseDevice = currentDevice;
+      const brightnessPercent = settingsBrightnessSequence?.length
+        ? settingsBrightnessSequence[
+            Math.min(settingsRequestCount, settingsBrightnessSequence.length - 1)
+          ]
+        : 50;
+      settingsRequestCount += 1;
       if (settingsDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, settingsDelayMs));
       }
@@ -6171,7 +6945,7 @@ async function routeCompanionOnline(
         contentType: "application/json",
         body: JSON.stringify({
           ok: true,
-          settings: { display: { brightnessPercent: 50 } },
+          settings: { display: { brightnessPercent } },
           device: responseDevice,
         }),
       });
@@ -6851,25 +7625,19 @@ async function assertThemeLibraryLockedBehindSetup(page) {
 }
 
 async function assertSelectedThemeRow(page, themeTitle) {
-  const row = page.locator("li").filter({ hasText: themeTitle });
+  const row = page.getByRole("listitem").filter({ hasText: themeTitle });
   await row.waitFor({ timeout: 10_000 });
-  const background = await row.evaluate(
-    (element) => window.getComputedStyle(element).backgroundColor,
-  );
   assert(
-    background === "rgb(238, 238, 238)",
+    (await row.getAttribute("data-variant")) === "muted",
     `${themeTitle} should be the selected theme row`,
   );
 }
 
 async function assertThemeRowNotSelected(page, themeTitle) {
-  const row = page.locator("li").filter({ hasText: themeTitle });
+  const row = page.getByRole("listitem").filter({ hasText: themeTitle });
   await row.waitFor({ timeout: 10_000 });
-  const background = await row.evaluate(
-    (element) => window.getComputedStyle(element).backgroundColor,
-  );
   assert(
-    background !== "rgb(238, 238, 238)",
+    (await row.getAttribute("data-variant")) !== "muted",
     `${themeTitle} should not be the selected theme row`,
   );
 }
@@ -6955,6 +7723,46 @@ async function assertNoThemeLibraryReleaseDiagnostics(page) {
   }
 }
 
+function discoveredConnectButtons(page) {
+  return page
+    .getByRole("list")
+    .getByRole("button", { name: "Connect", exact: true });
+}
+
+function manualConnectButton(page) {
+  return page
+    .locator("form")
+    .getByRole("button", { name: "Connect", exact: true });
+}
+
+async function getNavigationButton(page, name) {
+  await page.locator("main.control-center-shell").waitFor({ timeout: 10_000 });
+  const mobileButton = page
+    .getByRole("navigation", { name: "Control Center mobile", exact: true })
+    .getByRole("button", { name })
+    .first();
+  if ((await mobileButton.count()) > 0 && (await mobileButton.isVisible())) {
+    return mobileButton;
+  }
+  const navigation = page.getByRole("navigation", {
+    name: "Control Center",
+    exact: true,
+  });
+  const button = navigation.getByRole("button", { name });
+  for (let index = 0; index < (await button.count()); index += 1) {
+    if (await button.nth(index).isVisible()) {
+      return button.nth(index);
+    }
+  }
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  return mobileButton;
+}
+
+async function clickNavigation(page, name) {
+  await page.waitForTimeout(350);
+  await (await getNavigationButton(page, name)).click({ timeout: 10_000 });
+}
+
 async function waitForCondition(predicate, message, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -6976,8 +7784,8 @@ async function assertCompanionRequestTimeoutContract() {
     "Ordinary Mac App requests must keep the 45 second timeout",
   );
   assert(
-    source.includes("const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 90_000;"),
-    "Device repair requests must allow up to 90 seconds",
+    source.includes("const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;"),
+    "Device repair requests must allow up to 120 seconds",
   );
   assert(
     source.includes("options?.timeoutMs ?? COMPANION_REQUEST_TIMEOUT_MS"),

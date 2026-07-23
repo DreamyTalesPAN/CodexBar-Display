@@ -72,6 +72,7 @@ var (
 	uploadFirmwareOTAFn                                = uploadFirmwareOTA
 	firmwareRawDialContextFn                           = dialFirmwareRawConnection
 	firmwareHTTPVerifyPollInterval                     = 2 * time.Second
+	firmwareHTTPVerifyProbeTimeout                     = 2 * time.Second
 	firmwareUpdateRediscoveryAfter                     = 10 * time.Second
 	firmwareUpdateRediscoveryInterval                  = 5 * time.Second
 	firmwareInterruptedVerifyTimeout                   = 20 * time.Second
@@ -584,7 +585,7 @@ func runInstallUpdate(args []string) (retErr error) {
 	}
 
 	fmt.Println("Uploading firmware...")
-	uploadErr := uploadFirmwareOTAFn(ctx, base, imagePath, deviceToken)
+	uploadErr := uploadFirmwareOTAFn(ctx, base, imagePath, deviceToken, caps.Firmware)
 	uploadErr = recoverInterruptedFirmwareUpload(
 		ctx,
 		base,
@@ -1398,8 +1399,8 @@ func fetchDeviceHelloHTTPWithToken(ctx context.Context, base, token string) (pro
 	return hello.Normalize(), nil
 }
 
-func uploadFirmwareOTA(ctx context.Context, base, imagePath, token string) error {
-	if err := uploadFirmwareOTARaw(ctx, base, imagePath, token); err == nil {
+func uploadFirmwareOTA(ctx context.Context, base, imagePath, token, currentFirmware string) error {
+	if err := uploadFirmwareOTARaw(ctx, base, imagePath, token, currentFirmware); err == nil {
 		return nil
 	} else if !rawFirmwareUploadUnavailable(err) {
 		return err
@@ -1510,7 +1511,7 @@ func firmwareUploadConnectionInterrupted(err error) bool {
 		strings.Contains(message, "update failed: no error")
 }
 
-func uploadFirmwareOTARaw(ctx context.Context, base, imagePath, token string) error {
+func uploadFirmwareOTARaw(ctx context.Context, base, imagePath, token, currentFirmware string) error {
 	endpoint, err := rawFirmwareEndpoint(base)
 	if err != nil {
 		return err
@@ -1583,7 +1584,11 @@ func uploadFirmwareOTARaw(ctx context.Context, base, imagePath, token string) er
 		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
 	}
 	time.Sleep(otaRawHeaderPause)
-	bodyWriter := &rawFirmwareBodyWriter{destination: conn, waitForAck: waitForAck}
+	bodyWriter := &rawFirmwareBodyWriter{
+		destination: conn,
+		waitForAck:  waitForAck,
+		writePause:  firmwareRawWritePause(currentFirmware),
+	}
 	if _, err := io.Copy(bodyWriter, file); err != nil {
 		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, err)
 	}
@@ -1606,13 +1611,13 @@ func uploadFirmwareOTARaw(ctx context.Context, base, imagePath, token string) er
 	return nil
 }
 
-// rawFirmwareBodyWriter deliberately writes the firmware body in tiny TCP
-// writes. ESP8266 firmware 1.0.36 can stop draining its receive queue when a
-// desktop sender fills the TCP window with normal multi-kilobyte writes. Small
-// paced writes avoid exhausting that queue.
+// rawFirmwareBodyWriter writes the firmware body in small TCP writes and waits
+// for the receiver after every block. ESP8266 firmware 1.0.36 and older also
+// need a pause after every write to avoid exhausting their receive queue.
 type rawFirmwareBodyWriter struct {
 	destination   io.Writer
 	waitForAck    func() error
+	writePause    time.Duration
 	bytesSinceAck int
 }
 
@@ -1631,7 +1636,9 @@ func (w *rawFirmwareBodyWriter) Write(p []byte) (int, error) {
 		}
 		w.bytesSinceAck += chunkSize
 		p = p[chunkSize:]
-		time.Sleep(otaRawWritePause)
+		if w.writePause > 0 {
+			time.Sleep(w.writePause)
+		}
 		if w.bytesSinceAck == otaRawAckBlockBytes {
 			if w.waitForAck != nil {
 				if err := w.waitForAck(); err != nil {
@@ -1642,6 +1649,22 @@ func (w *rawFirmwareBodyWriter) Write(p []byte) (int, error) {
 		}
 	}
 	return originalLength, nil
+}
+
+func firmwareRawWritePause(currentFirmware string) time.Duration {
+	current, err := versioning.ParseSemVer(currentFirmware)
+	if err != nil {
+		// Unknown or legacy firmware keeps the proven conservative sender.
+		return otaRawWritePause
+	}
+	// The receiver fix is present in every 1.0.37 development build as well as
+	// the final release, so only the numeric firmware core matters here.
+	current.PreRelease = ""
+	receiverFix := versioning.SemVer{Major: 1, Minor: 0, Patch: 37}
+	if current.Compare(receiverFix) >= 0 {
+		return 0
+	}
+	return otaRawWritePause
 }
 
 func writeAll(w io.Writer, p []byte) error {
@@ -1698,7 +1721,16 @@ func waitForHTTPFirmwareVersion(ctx context.Context, base, version string, timeo
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		hello, err := fetchDeviceHelloHTTP(ctx, base)
+		// A reboot can black-hole TCP instead of refusing it. Bound every probe
+		// so the shorter verification/rediscovery deadlines remain effective
+		// even though the shared release client has a five-minute timeout.
+		probeTimeout := firmwareHTTPVerifyProbeTimeout
+		if remaining := time.Until(deadline); probeTimeout <= 0 || remaining < probeTimeout {
+			probeTimeout = remaining
+		}
+		probeCtx, cancelProbe := context.WithTimeout(ctx, probeTimeout)
+		hello, err := fetchDeviceHelloHTTP(probeCtx, base)
+		cancelProbe()
 		if err == nil && normalizeReleaseVersion(hello.Firmware) == normalizeReleaseVersion(version) {
 			return nil
 		}

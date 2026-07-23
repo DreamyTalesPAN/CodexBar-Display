@@ -1,10 +1,28 @@
 export const COMPANION_URL = "http://127.0.0.1:47832";
-export const LOCAL_CONTROL_CENTER_LAUNCHER_URL =
-  "vibetv://open-control-center";
+export const RESTART_CONTROL_CENTER_URL =
+  "vibetv://restart-control-center";
+export const REPAIR_CONTROL_CENTER_RUNTIME_URL =
+  "vibetv://repair-runtime";
 export const REPAIR_CODEXBAR_URL = "vibetv://repair-codexbar";
+const NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX = "VibeTVControlCenter/";
 
-export function launchLocalControlCenterApp(): void {
-  launchNativeControlCenterAction(LOCAL_CONTROL_CENTER_LAUNCHER_URL);
+export function restartLocalControlCenterApp(): void {
+  launchNativeControlCenterAction(RESTART_CONTROL_CENTER_URL);
+}
+
+export function repairLocalControlCenterRuntime(): void {
+  launchNativeControlCenterAction(REPAIR_CONTROL_CENTER_RUNTIME_URL);
+}
+
+export function isNativeControlCenterUserAgent(userAgent: string): boolean {
+  return userAgent.startsWith(NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX);
+}
+
+export function isNativeControlCenterApp(): boolean {
+  return (
+    typeof navigator !== "undefined" &&
+    isNativeControlCenterUserAgent(navigator.userAgent)
+  );
 }
 
 export function launchCodexBarRepair(): void {

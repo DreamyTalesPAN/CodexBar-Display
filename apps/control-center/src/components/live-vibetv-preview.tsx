@@ -7,6 +7,7 @@ import type {
   DeviceInfo,
   UsageSnapshot,
 } from "./control-center-types";
+import { deviceIsReady } from "./control-center-types";
 import {
   companionRequestUrl,
   needsLoopbackTargetAddressSpace,
@@ -97,6 +98,8 @@ export type ThemePrimitive = {
   bg?: string;
   borderColor?: string;
   bc?: string;
+  borderRadius?: number;
+  br?: number;
   align?: string;
   al?: string;
   maxWidth?: number;
@@ -177,7 +180,7 @@ type SpriteRect = {
 export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   const themeId = activeThemeId(device);
   const themeSpecPath = device?.display?.themeSpec?.path || "";
-  const deviceConnected = Boolean(device?.connected);
+  const deviceConnected = deviceIsReady(device);
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
     null,
   );
@@ -297,7 +300,7 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   }, [deviceConnected]);
 
   return (
-    <figure className="w-full max-w-[540px]">
+    <figure className="w-full max-w-[520px]">
       <VibeTVCaseShell>
         {pack?.spec && frame ? (
           <ThemeSpecSVG
@@ -394,7 +397,7 @@ function ThemeSpecSVG({
   return (
     <svg
       aria-label={`Rendered VibeTV theme ${themeId} showing ${frame.label}, ${frame.session}% session ${frame.usageMode}, ${frame.weekly}% weekly ${frame.usageMode}`}
-      className="aspect-square w-full bg-black [image-rendering:pixelated]"
+      className="size-full bg-black [image-rendering:pixelated]"
       role="img"
       viewBox="0 0 240 240"
     >
@@ -433,10 +436,17 @@ function ThemePrimitiveNode({
   const height = primitive.height || primitive.h || 0;
 
   if (type === "rect" || type === "r") {
+    const radius = clampRadius(
+      primitive.borderRadius ?? primitive.br ?? 0,
+      width,
+      height,
+    );
     return (
       <rect
         fill={colorFor(primitive.color || primitive.c, "#000000")}
         height={height}
+        rx={radius}
+        ry={radius}
         width={width}
         x={x}
         y={y}
@@ -448,7 +458,10 @@ function ThemePrimitiveNode({
     const text = renderTextPrimitive(primitive, frame);
     const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
     const fontSize = themeFontSize(primitive.font || primitive.f, primitive.fontSize || primitive.s);
-    const textAnchor = svgTextAnchor(primitive.align || primitive.al);
+    // Firmware only applies text alignment inside an explicit width. Without
+    // one, x remains the text's left edge regardless of the selected alignment.
+    const textAnchor =
+      maxWidth > 0 ? svgTextAnchor(primitive.align || primitive.al) : "start";
     const textX = alignedTextX(x, maxWidth, textAnchor);
     return (
       <text
@@ -570,11 +583,21 @@ function ThemeProgress({
   const innerHeight = Math.max(0, height - 2);
   const style = primitive.progressStyle || primitive.ps || "";
   const segmented = style === "segments" || style === "segmented";
+  const radius = clampRadius(
+    primitive.borderRadius ?? primitive.br ?? 0,
+    width,
+    height,
+  );
+  const innerRadius = Math.max(0, radius - 1);
+  const fillWidth = Math.max(
+    0,
+    Math.min(innerWidth, Math.floor((innerWidth * percent) / 100)),
+  );
 
   return (
     <g>
-      <rect fill="none" height={height} stroke={borderColor} width={width} x={x} y={y} />
-      <rect fill={bgColor} height={innerHeight} width={innerWidth} x={x + 1} y={y + 1} />
+      <rect fill="none" height={height} rx={radius} ry={radius} stroke={borderColor} width={width} x={x} y={y} />
+      <rect fill={bgColor} height={innerHeight} rx={innerRadius} ry={innerRadius} width={innerWidth} x={x + 1} y={y + 1} />
       {segmented ? (
         <SegmentedProgress
           fillColor={fillColor}
@@ -585,12 +608,15 @@ function ThemeProgress({
           width={innerWidth}
           x={x + 1}
           y={y + 1}
+          radius={innerRadius}
         />
       ) : (
         <rect
           fill={fillColor}
           height={innerHeight}
-          width={Math.max(0, Math.min(innerWidth, Math.floor((width * percent) / 100)))}
+          rx={clampRadius(innerRadius, fillWidth, innerHeight)}
+          ry={clampRadius(innerRadius, fillWidth, innerHeight)}
+          width={fillWidth}
           x={x + 1}
           y={y + 1}
         />
@@ -603,6 +629,7 @@ function SegmentedProgress({
   fillColor,
   height,
   percent,
+  radius,
   segmentGap,
   segments,
   width,
@@ -612,6 +639,7 @@ function SegmentedProgress({
   fillColor: string;
   height: number;
   percent: number;
+  radius: number;
   segmentGap: number;
   segments: number;
   width: number;
@@ -630,6 +658,8 @@ function SegmentedProgress({
             fill={fillColor}
             height={height}
             key={index}
+            rx={clampRadius(radius, segW, height)}
+            ry={clampRadius(radius, segW, height)}
             width={segW}
             x={segX1}
             y={y}
@@ -638,6 +668,10 @@ function SegmentedProgress({
       })}
     </g>
   );
+}
+
+function clampRadius(radius: number, width: number, height: number): number {
+  return Math.max(0, Math.min(Math.round(radius), width / 2, height / 2));
 }
 
 function PixelRows({

@@ -49,6 +49,8 @@ type Primitive struct {
 	ShortBg          string            `json:"bg,omitempty"`
 	BorderColor      string            `json:"borderColor,omitempty"`
 	ShortBorder      string            `json:"bc,omitempty"`
+	BorderRadius     int               `json:"borderRadius,omitempty"`
+	ShortRadius      int               `json:"br,omitempty"`
 	AssetPath        string            `json:"assetPath,omitempty"`
 	ShortAsset       string            `json:"a,omitempty"`
 	StateAssets      map[string]string `json:"stateAssets,omitempty"`
@@ -250,6 +252,9 @@ func normalizePrimitive(p Primitive) Primitive {
 	if p.BorderColor == "" {
 		p.BorderColor = p.ShortBorder
 	}
+	if p.BorderRadius == 0 {
+		p.BorderRadius = p.ShortRadius
+	}
 	if p.AssetPath == "" {
 		p.AssetPath = p.ShortAsset
 	}
@@ -379,6 +384,9 @@ func validatePrimitive(p Primitive) error {
 	}
 	if p.FontSize < 0 {
 		return errors.New("fontSize must be >= 0")
+	}
+	if p.BorderRadius < 0 || p.BorderRadius > 120 {
+		return errors.New("borderRadius must be between 0 and 120")
 	}
 	if p.Color != "" && !colorPattern.MatchString(p.Color) {
 		return errUnsupportedColor

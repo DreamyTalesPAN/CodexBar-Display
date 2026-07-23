@@ -4,19 +4,14 @@ namespace codexbar_display::esp8266 {
 
 struct WifiSecurityPolicy {
   static bool AllowsCredentialWrite(
-      bool physicalSetupAuthorized,
-      bool setupTokenValid,
+      bool setupMode,
       bool devicePaired,
       bool deviceTokenValid) {
-    return (physicalSetupAuthorized && setupTokenValid) ||
-        (devicePaired && deviceTokenValid);
+    return setupMode || (devicePaired && deviceTokenValid);
   }
 
-  static bool AllowsPairing(
-      bool devicePaired,
-      bool deviceTokenValid,
-      bool physicalPairingWindowOpen) {
-    return (devicePaired && deviceTokenValid) || physicalPairingWindowOpen;
+  static bool AllowsFirmwareUpload(bool devicePaired, bool deviceTokenValid) {
+    return devicePaired && deviceTokenValid;
   }
 };
 

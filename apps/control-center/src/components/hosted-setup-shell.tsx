@@ -1,8 +1,24 @@
 "use client";
 
 import { ListChecks } from "lucide-react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
 import type { CompanionStatus } from "./control-center-types";
+import { ControlCenterBrand } from "./control-center-brand";
+import { ShellConnectionStatus } from "./shell-connection-status";
 
 type HostedSetupShellProps = {
   children: ReactNode;
@@ -17,70 +33,60 @@ export function HostedSetupShell({
 }: HostedSetupShellProps) {
   const ready = companionStatus === "online" || setupComplete;
   const statusLabel = ready ? "Opening local Control Center" : "Setup needed";
-  const statusDotClass = ready ? "bg-[#CCFF00]" : "bg-[#747A60]";
 
   return (
-    <main className="min-h-screen bg-[#F9F9F9] text-[#1B1B1B]">
-      <div className="grid min-h-screen lg:grid-cols-[266px_minmax(0,1fr)]">
-        <aside className="hidden bg-[#1B1B1B] text-[#EDEDED] lg:flex lg:flex-col">
-          <div className="px-9 pb-9 pt-8">
-            <div className="text-[32px] font-black uppercase leading-none tracking-normal">
-              VIBE<span className="text-[#CCFF00]">TV</span>
-            </div>
-            <div className="mt-1 text-sm font-semibold uppercase tracking-normal">
-              Control Center
-            </div>
-          </div>
-
-          <nav aria-label="Control Center" className="flex-1">
-            <button
-              aria-current="page"
-              className="flex h-[72px] w-full items-center gap-5 border-b border-[#444933] bg-[#CCFF00] px-9 text-left text-lg text-[#1B1B1B] transition"
-              type="button"
-            >
-              <span className="grid size-7 place-items-center">
-                <ListChecks size={22} aria-hidden />
-              </span>
-              <span className="min-w-0 truncate">Setup</span>
-            </button>
-          </nav>
-        </aside>
-
-        <section className="min-w-0">
-          <header className="flex h-[86px] items-center justify-between border-b border-[#747A60] bg-[#F9F9F9] px-7 lg:px-10">
-            <div className="hidden min-w-0 lg:block">
-              <h1 className="truncate text-xl font-semibold text-[#1B1B1B]">
-                Setup
-              </h1>
-            </div>
-
-            <div className="hidden items-center gap-8 lg:flex">
-              <div className="inline-flex items-center gap-3 text-base text-[#1B1B1B]">
-                <span className={`size-2 rounded-full ${statusDotClass}`} />
-                <span>{statusLabel}</span>
+    <SidebarProvider
+      className="control-center-shell overflow-x-hidden bg-background text-foreground"
+      style={{ "--sidebar-width": "16.625rem" } as CSSProperties}
+    >
+      <div className="flex min-h-svh w-full">
+        <Sidebar collapsible="icon">
+          <SidebarHeader className="border-b border-sidebar-border p-4 group-data-[collapsible=icon]:p-2">
+            <div className="flex h-14 min-w-0 items-center px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+              <div className="min-w-0 group-data-[collapsible=icon]:hidden">
+                <ControlCenterBrand />
               </div>
+              <ControlCenterBrand
+                className="hidden group-data-[collapsible=icon]:block"
+                variant="compact"
+              />
             </div>
+          </SidebarHeader>
+          <SidebarContent>
+            <SidebarGroup className="p-3 group-data-[collapsible=icon]:p-2">
+              <SidebarGroupContent>
+                <nav aria-label="Control Center">
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton isActive tooltip="Setup">
+                        <ListChecks aria-hidden />
+                        <span>Setup</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                </nav>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </SidebarContent>
+          <SidebarRail />
+        </Sidebar>
 
-            <div className="flex w-full min-w-0 items-center gap-2 overflow-x-auto lg:hidden">
-              <button
-                aria-current="page"
-                aria-label="Setup"
-                className="inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 bg-[#CCFF00] px-3 text-sm font-semibold text-[#1B1B1B]"
-                type="button"
-              >
-                <ListChecks size={22} aria-hidden />
-                <span className="sr-only min-[560px]:not-sr-only">Setup</span>
-              </button>
-              <div className="ml-auto inline-flex shrink-0 items-center gap-3 text-sm text-[#1B1B1B]">
-                <span className={`size-2 rounded-full ${statusDotClass}`} />
-                <span>{statusLabel}</span>
-              </div>
+        <SidebarInset className="min-w-0">
+          <header className="flex min-h-[72px] items-center justify-between gap-4 bg-background px-4 py-3 md:h-[86px] md:px-6 lg:px-10 lg:py-0">
+            <div className="flex min-w-0 items-center gap-3">
+              <SidebarTrigger aria-label="Open navigation" className="shrink-0" />
+              <h1 className="truncate text-base font-semibold md:text-xl">Setup</h1>
             </div>
+            <ShellConnectionStatus
+              compactLabel={ready ? "Opening" : "Setup needed"}
+              label={statusLabel}
+              ready={ready}
+            />
           </header>
 
-          <div className="px-7 py-0 lg:px-10">{children}</div>
-        </section>
+          <div className="px-5 py-0 sm:px-7 lg:px-10">{children}</div>
+        </SidebarInset>
       </div>
-    </main>
+    </SidebarProvider>
   );
 }

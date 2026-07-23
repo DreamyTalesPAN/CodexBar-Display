@@ -10,6 +10,10 @@ namespace display {
 
 namespace {
 
+int ClampDrawRadius(int radius, int width, int height) {
+  return max(0, min(radius, min(width, height) / 2));
+}
+
 class ESP8266PrimitiveSink final : public primitive::Sink {
  public:
   void FillScreen(uint16_t color) override {
@@ -22,7 +26,12 @@ class ESP8266PrimitiveSink final : public primitive::Sink {
       return;
     }
     DisplayTransaction transaction;
-    Tft().fillRect(cmd.x, cmd.y, cmd.width, cmd.height, cmd.color);
+    const int radius = ClampDrawRadius(cmd.borderRadius, cmd.width, cmd.height);
+    if (radius > 0) {
+      Tft().fillRoundRect(cmd.x, cmd.y, cmd.width, cmd.height, radius, cmd.color);
+    } else {
+      Tft().fillRect(cmd.x, cmd.y, cmd.width, cmd.height, cmd.color);
+    }
   }
 
   void DrawText(const primitive::TextCommand& cmd) override {
@@ -46,34 +55,56 @@ class ESP8266PrimitiveSink final : public primitive::Sink {
 
     DisplayTransaction transaction;
     TFT_eSPI& tft = Tft();
-    tft.drawRect(cmd.x, cmd.y, cmd.width, cmd.height, cmd.borderColor);
-    tft.fillRect(cmd.x + 1, cmd.y + 1, cmd.width - 2, cmd.height - 2, cmd.bgColor);
+    const int radius = ClampDrawRadius(cmd.borderRadius, cmd.width, cmd.height);
+    const int innerW = max(0, cmd.width - 2);
+    const int innerH = max(0, cmd.height - 2);
+    const int innerRadius = ClampDrawRadius(max(0, radius - 1), innerW, innerH);
+    if (radius > 0) {
+      tft.drawRoundRect(cmd.x, cmd.y, cmd.width, cmd.height, radius, cmd.borderColor);
+    } else {
+      tft.drawRect(cmd.x, cmd.y, cmd.width, cmd.height, cmd.borderColor);
+    }
+    if (innerW > 0 && innerH > 0) {
+      if (innerRadius > 0) {
+        tft.fillRoundRect(cmd.x + 1, cmd.y + 1, innerW, innerH, innerRadius, cmd.bgColor);
+      } else {
+        tft.fillRect(cmd.x + 1, cmd.y + 1, innerW, innerH, cmd.bgColor);
+      }
+    }
     if (cmd.style == 1) {
       const int segments = cmd.segments > 0 ? cmd.segments : 10;
       const int gap = cmd.segmentGap < 0 ? 0 : cmd.segmentGap;
-      const int innerW = cmd.width - 2;
-      const int innerH = cmd.height - 2;
       const int filledSegments = (segments * p + 99) / 100;
       for (int i = 0; i < segments; ++i) {
         const int segX1 = cmd.x + 1 + ((i * innerW) / segments);
         const int segX2 = cmd.x + 1 + (((i + 1) * innerW) / segments);
         const int segW = max(0, segX2 - segX1 - gap);
         if (segW > 0 && i < filledSegments) {
-          tft.fillRect(segX1, cmd.y + 1, segW, innerH, cmd.fillColor);
+          const int segmentRadius = ClampDrawRadius(innerRadius, segW, innerH);
+          if (segmentRadius > 0) {
+            tft.fillRoundRect(segX1, cmd.y + 1, segW, innerH, segmentRadius, cmd.fillColor);
+          } else {
+            tft.fillRect(segX1, cmd.y + 1, segW, innerH, cmd.fillColor);
+          }
         }
       }
       return;
     }
 
-    int filled = (cmd.width * p) / 100;
-    if (filled > (cmd.width - 2)) {
-      filled = cmd.width - 2;
+    int filled = (innerW * p) / 100;
+    if (filled > innerW) {
+      filled = innerW;
     }
     if (filled < 0) {
       filled = 0;
     }
     if (filled > 0) {
-      tft.fillRect(cmd.x + 1, cmd.y + 1, filled, cmd.height - 2, cmd.fillColor);
+      const int fillRadius = ClampDrawRadius(innerRadius, filled, innerH);
+      if (fillRadius > 0) {
+        tft.fillRoundRect(cmd.x + 1, cmd.y + 1, filled, innerH, fillRadius, cmd.fillColor);
+      } else {
+        tft.fillRect(cmd.x + 1, cmd.y + 1, filled, innerH, cmd.fillColor);
+      }
     }
   }
 };

@@ -1,8 +1,16 @@
 "use client";
 
-import { Download, Redo2, Save, Send, Undo2 } from "lucide-react";
-import type { ReactNode } from "react";
-import { ControlCenterButton } from "../control-center-button";
+import {
+  Download,
+  LoaderCircle,
+  Redo2,
+  Save,
+  Send,
+  Undo2,
+  type LucideIcon,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function ThemeStudioToolbar({
   canExport,
@@ -34,74 +42,67 @@ export function ThemeStudioToolbar({
   showSave: boolean;
 }) {
   return (
-    <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[570px] lg:grid-cols-[44px_44px_repeat(3,minmax(0,1fr))]">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       <ToolbarIconButton
         disabled={!canUndo}
-        icon={<Undo2 size={18} aria-hidden />}
+        icon={Undo2}
         label="Undo"
         onClick={onUndo}
       />
       <ToolbarIconButton
         disabled={!canRedo}
-        icon={<Redo2 size={18} aria-hidden />}
+        icon={Redo2}
         label="Redo"
         onClick={onRedo}
       />
-      <ControlCenterButton
+      <Button
         disabled={!canExport}
-        fullWidth
-        icon={<Download size={16} aria-hidden />}
-        label="Export ZIP"
         onClick={onExport}
         variant="secondary"
-      />
-      {showSave ? (
-        <ControlCenterButton
-          busy={saving}
-          busyLabel="Saving"
-          disabled={!canSave}
-          fullWidth
-          icon={<Save size={16} aria-hidden />}
-          label="Save theme"
-          onClick={onSave}
-          variant="primary"
-        />
-      ) : null}
-      <ControlCenterButton
-        busy={sending}
-        busyLabel="Sending"
+      >
+        <Download data-icon="inline-start" /> Export ZIP
+      </Button>
+      <Button
         disabled={!canSend}
-        fullWidth
-        icon={<Send size={16} aria-hidden />}
-        label="Send to VibeTV"
         onClick={onSend}
         variant="secondary"
-      />
+      >
+        {sending ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : <Send data-icon="inline-start" />}
+        {sending ? "Sending" : "Send to VibeTV"}
+      </Button>
+      {showSave ? (
+        <Button disabled={!canSave} onClick={onSave}>
+          {saving ? (
+            <LoaderCircle className="animate-spin" data-icon="inline-start" />
+          ) : (
+            <Save data-icon="inline-start" />
+          )}
+          {saving ? "Saving" : "Save theme"}
+        </Button>
+      ) : null}
     </div>
   );
 }
 
 function ToolbarIconButton({
   disabled,
-  icon,
+  icon: Icon,
   label,
   onClick,
 }: {
   disabled: boolean;
-  icon: ReactNode;
+  icon: LucideIcon;
   label: string;
   onClick: () => void;
 }) {
   return (
-    <button
-      aria-label={label}
-      className="inline-grid min-h-11 min-w-11 place-items-center border border-[#747A60] bg-[#F9F9F9] text-[#1B1B1B] outline-none transition hover:bg-[#EEEEEE] focus-visible:border-[#5E7200] disabled:cursor-not-allowed disabled:bg-[#EEEEEE] disabled:text-[#747A60] disabled:opacity-60"
-      disabled={disabled}
-      onClick={onClick}
-      title={label}
-      type="button"
-    >
-      {icon}
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button aria-label={label} disabled={disabled} onClick={onClick} size="icon" type="button" variant="ghost">
+          <Icon aria-hidden />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 }

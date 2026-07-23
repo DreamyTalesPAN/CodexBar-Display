@@ -8,7 +8,7 @@ import {
   RefreshCw,
   Wrench,
 } from "lucide-react";
-import { ControlCenterButton } from "./control-center-button";
+import { Button } from "@/components/ui/button";
 import type {
   ProviderReadinessInfo,
   ProviderReadinessStatus,
@@ -102,41 +102,47 @@ export function ProviderSetupCard({
 
       <div className="grid gap-3 sm:grid-cols-2">
         {repairNeeded && onRepairCodexBar ? (
-          <ControlCenterButton
+          <Button
+            className="w-full"
             disabled={checking}
-            fullWidth
-            icon={<Wrench size={18} aria-hidden />}
-            label="Repair CodexBar"
             onClick={onRepairCodexBar}
-            size="large"
-            variant="primary"
-          />
+            size="lg"
+          >
+            <Wrench data-icon="inline-start" aria-hidden />
+            Repair CodexBar
+          </Button>
         ) : null}
         {onOpenCodexBar ? (
-          <ControlCenterButton
-            busy={busyAction === "providers-open"}
-            busyLabel="Opening CodexBar"
+          <Button
+            className="w-full"
             disabled={checking}
-            fullWidth
-            icon={<ExternalLink size={18} aria-hidden />}
-            label="Open CodexBar"
             onClick={onOpenCodexBar}
-            size="large"
-            variant={repairNeeded ? "secondary" : "primary"}
-          />
+            size="lg"
+            variant={repairNeeded ? "outline" : "default"}
+          >
+            {busyAction === "providers-open" ? (
+              <Loader2 className="animate-spin" data-icon="inline-start" aria-hidden />
+            ) : (
+              <ExternalLink data-icon="inline-start" aria-hidden />
+            )}
+            {busyAction === "providers-open" ? "Opening CodexBar" : "Open CodexBar"}
+          </Button>
         ) : null}
         {onRetry ? (
-          <ControlCenterButton
-            busy={busyAction === "providers-retry"}
-            busyLabel="Checking"
+          <Button
+            className="w-full"
             disabled={checking}
-            fullWidth
-            icon={<RefreshCw size={18} aria-hidden />}
-            label="Check again"
             onClick={onRetry}
-            size="large"
-            variant="secondary"
-          />
+            size="lg"
+            variant="outline"
+          >
+            {busyAction === "providers-retry" ? (
+              <Loader2 className="animate-spin" data-icon="inline-start" aria-hidden />
+            ) : (
+              <RefreshCw data-icon="inline-start" aria-hidden />
+            )}
+            {busyAction === "providers-retry" ? "Checking" : "Check again"}
+          </Button>
         ) : null}
       </div>
     </section>

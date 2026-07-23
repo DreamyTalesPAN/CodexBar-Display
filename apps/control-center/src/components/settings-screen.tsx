@@ -1,37 +1,32 @@
 "use client";
 
-import { Check, RefreshCw } from "lucide-react";
-import type { ReactNode } from "react";
-
-export type SettingsDeviceInfo = {
-  target?: string;
-  connected: boolean;
-  paired?: boolean;
-  board?: string;
-  firmware?: string;
-  capabilities?: {
-    display?: {
-      brightness?: {
-        supported?: boolean;
-        minPercent?: number;
-        maxPercent?: number;
-      };
-    };
-    theme?: {
-      supportsThemeSpecV1?: boolean;
-      maxThemeGifBytes?: number;
-    };
-    transport?: {
-      active?: string;
-    };
-  };
-};
+import { Check } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Slider } from "@/components/ui/slider";
+import { Spinner } from "@/components/ui/spinner";
+import { deviceIsReady, type DeviceInfo } from "./control-center-types";
 
 export type SettingsScreenProps = {
-  device: SettingsDeviceInfo | null;
+  device: DeviceInfo | null;
   brightness: number | null;
   busyAction: string | null;
   onBrightnessChange: (value: number) => void;
+  onResetSetup: () => void;
   onSaveBrightness: (value: number) => void;
 };
 
@@ -40,6 +35,7 @@ export function SettingsScreen({
   brightness,
   busyAction,
   onBrightnessChange,
+  onResetSetup,
   onSaveBrightness,
 }: SettingsScreenProps) {
   const brightnessSupport =
@@ -49,94 +45,85 @@ export function SettingsScreen({
   const maxBrightness =
     device?.capabilities?.display?.brightness?.maxPercent ?? 100;
   const currentBrightness = brightness ?? minBrightness;
-  const localActionBusy = Boolean(busyAction);
+  const localActionBusy =
+    busyAction === "brightness" || busyAction === "reset-setup";
 
   return (
-    <div className="mx-auto max-w-[1180px]">
-      <section className="border-b border-[#747A60] py-8">
-        <div>
-          <div className="mb-5 flex items-center justify-between gap-4">
-            <h3 className="text-base font-bold text-[#1B1B1B]">Display</h3>
-            <span className="text-sm text-[#444933]">
+    <div className="mx-auto flex max-w-[1040px] flex-col gap-4 py-4">
+      <Card className="border-0">
+        <CardHeader>
+          <CardTitle>Display</CardTitle>
+          <CardDescription>
+            Adjust the screen brightness of the connected VibeTV.
+          </CardDescription>
+          <CardAction>
+            <Badge variant="outline">
               {brightness == null ? "Loading" : `${brightness}%`}
-            </span>
-          </div>
-          <div className="grid gap-5">
-            <div>
-              <div className="mb-3 flex items-center justify-between text-sm text-[#444933]">
-                <span>Brightness</span>
-                <span className="font-semibold text-[#1B1B1B]">
-                  {brightness == null ? "Loading" : `${brightness}%`}
-                </span>
-              </div>
-              <input
+            </Badge>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="vibetv-brightness">Brightness</FieldLabel>
+              <Slider
                 aria-label="Brightness"
-                className="h-2 w-full accent-[#CCFF00] disabled:opacity-50"
+                className="w-full"
                 disabled={!brightnessSupport || brightness == null || localActionBusy}
+                id="vibetv-brightness"
                 max={maxBrightness}
                 min={minBrightness}
-                onChange={(event) =>
-                  onBrightnessChange(Number(event.target.value))
-                }
-                type="range"
-                value={currentBrightness}
+                onValueChange={(values) => onBrightnessChange(values[0] ?? currentBrightness)}
+                value={[currentBrightness]}
               />
-              <div className="mt-2 flex justify-between text-xs text-[#444933]">
-                <span>{minBrightness}%</span>
-                <span>{maxBrightness}%</span>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <CommandButton
-                busy={busyAction === "brightness"}
+              <FieldDescription>
+                {minBrightness}% minimum · {maxBrightness}% maximum
+              </FieldDescription>
+              <Button
+                className="h-12"
                 disabled={
-                  !device?.connected ||
+                  !deviceIsReady(device) ||
                   brightness == null ||
-                  (localActionBusy && busyAction !== "brightness")
+                  localActionBusy
                 }
-                icon={<Check size={18} aria-hidden />}
-                label="Save brightness"
                 onClick={() => onSaveBrightness(currentBrightness)}
-                primary
-              />
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-}
+                type="button"
+              >
+                {busyAction === "brightness" ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <Check data-icon="inline-start" aria-hidden />
+                )}
+                <span>
+                  {busyAction === "brightness" ? "Working..." : "Save brightness"}
+                </span>
+              </Button>
+            </Field>
+          </FieldGroup>
+        </CardContent>
+      </Card>
 
-function CommandButton({
-  busy,
-  busyLabel = "Working...",
-  disabled,
-  icon,
-  label,
-  onClick,
-  primary,
-}: {
-  busy?: boolean;
-  busyLabel?: string;
-  disabled?: boolean;
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
-  primary?: boolean;
-}) {
-  return (
-    <button
-      className={`inline-flex h-12 items-center justify-center gap-2 border px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
-        primary
-          ? "border-[#CCFF00] bg-[#CCFF00] text-[#1B1B1B] hover:bg-[#ABD600]"
-          : "border-[#747A60] bg-[#F9F9F9] text-[#1B1B1B] hover:bg-[#EEEEEE]"
-      }`}
-      disabled={disabled || busy}
-      onClick={onClick}
-      type="button"
-    >
-      {busy ? <RefreshCw className="animate-spin" size={18} /> : icon}
-      <span>{busy ? busyLabel : label}</span>
-    </button>
+      <Card className="border-0">
+        <CardHeader>
+          <CardTitle>Setup</CardTitle>
+          <CardDescription>Connect this Mac to another VibeTV.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            disabled={localActionBusy}
+            onClick={onResetSetup}
+            type="button"
+            variant="outline"
+          >
+            {busyAction === "reset-setup" ? (
+              <Spinner data-icon="inline-start" />
+            ) : null}
+            <span>
+              {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
+            </span>
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

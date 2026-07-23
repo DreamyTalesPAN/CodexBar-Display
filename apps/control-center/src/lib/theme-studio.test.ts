@@ -67,4 +67,25 @@ describe("validateThemeSpec", () => {
       expect.stringContaining("must stay inside 240x240"),
     );
   });
+
+  it("round-trips border radius through compact device JSON", () => {
+    const spec = validSpec();
+    spec.primitives[0].borderRadius = 8;
+
+    const deviceSpec = JSON.parse(deviceThemeSpecJson(spec));
+    expect(deviceSpec.p[0].br).toBe(8);
+
+    const imported = importThemeSpec(deviceSpec);
+    expect(imported.primitives[0].borderRadius).toBe(8);
+    expect(validateThemeSpec(imported).errors).toEqual([]);
+  });
+
+  it("rejects border radii outside the supported pixel range", () => {
+    const spec = validSpec();
+    spec.primitives[0].borderRadius = 121;
+
+    expect(validateThemeSpec(spec).errors).toContainEqual(
+      expect.stringContaining("border radius must be between 0 and 120"),
+    );
+  });
 });

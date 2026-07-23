@@ -518,7 +518,7 @@ expected_arguments = [
     "--transport",
     "wifi",
     "--interval",
-    "30s",
+    "5s",
     "--api-addr",
     "127.0.0.1:47832",
     "--api-dev-origin",
@@ -625,7 +625,8 @@ required_source = [
     'withJSONObject: redactReportValue(report)',
     '"--max-time", "40"',
     'title: "Create report"',
-    'title: "Finishing installation…"',
+    'title: "Starting Control Center"',
+    "retryTitle: status.retryTitle",
     'codexBarBundleIdentifier = "com.steipete.codexbar"',
     'codexBarPinnedVersion = "0.44.0"',
     'codexBarMinimumCompatibleVersion = "0.23.0"',
@@ -673,7 +674,9 @@ preparation_method = source[prepare_start:prepare_end]
 status_start = preparation_method.find("presentInstallationStatus(")
 preflight_call = preparation_method.find("await self?.performLocalNetworkPrivacyPreflight()")
 preparation_task = preparation_method.find("preparationTask = Task")
-prepare_runtime = preparation_method.find("let outcome = await self.prepareCompanion()")
+prepare_runtime = preparation_method.find(
+    "let outcome = await self.prepareCompanionWithAutomaticCodexBarRepair()"
+)
 native_case = preparation_method.find("case .nativeRuntimeReady:", prepare_runtime)
 webview_after_verify = preparation_method.find("self.presentControlCenter()", native_case)
 legacy_case = preparation_method.find("case .legacyRuntimeRestored:", native_case)

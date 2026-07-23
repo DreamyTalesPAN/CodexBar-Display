@@ -40,6 +40,7 @@ func TestValidateAcceptsCompactV1Spec(t *testing.T) {
 			{"t":"tx","x":8,"y":48,"b":"l","s":2,"c":"#FFFFFF"},
 			{"t":"g","x":80,"y":96,"w":64,"h":64,"a":"/themes/mini/mini.gif"},
 			{"t":"sp","x":24,"y":116,"w":32,"h":32,"a":"/themes/u/hero.cba"},
+			{"t":"p","x":8,"y":72,"w":120,"h":14,"br":7,"b":"s","c":"#CCFF00"},
 			{"t":"px","x":4,"y":4,"w":8,"h":2,"c":"#FFFFFF","d":"A5F0"}
 		]
 	}`)
@@ -50,6 +51,24 @@ func TestValidateAcceptsCompactV1Spec(t *testing.T) {
 
 	if err := Validate(spec); err != nil {
 		t.Fatalf("expected compact spec to validate, got %v", err)
+	}
+	if got := normalizeSpec(spec).Primitives[4].BorderRadius; got != 7 {
+		t.Fatalf("expected compact border radius 7, got %d", got)
+	}
+}
+
+func TestValidateRejectsBorderRadiusOutsideSupportedRange(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "mini-transport",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{Type: "progress", Width: 120, Height: 14, BorderRadius: 121},
+		},
+	}
+
+	if err := Validate(spec); err == nil || !strings.Contains(err.Error(), "borderRadius") {
+		t.Fatalf("expected borderRadius validation error, got %v", err)
 	}
 }
 

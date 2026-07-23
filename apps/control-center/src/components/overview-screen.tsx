@@ -1,26 +1,45 @@
 "use client";
 
 import {
+  AppWindow,
   ArrowUpFromLine,
   Check,
   CircleHelp,
   Download,
   Monitor,
-  Wifi,
+  WifiOff,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
 import {
   availableMacAppDmgDownloadUrl,
   type CompanionReleaseInfo,
 } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
-import {
-  type CompanionStatus,
-  type DeviceInfo,
-  type ReadinessTone,
-  type UsageSnapshot,
+import type {
+  CompanionStatus,
+  DeviceInfo,
+  UsageSnapshot,
 } from "./control-center-types";
-import { ControlCenterStatusIcon } from "./control-center-status-icon";
+import { deviceIsActive, deviceIsReady } from "./control-center-types";
 import { LiveVibeTVPreview } from "./live-vibetv-preview";
 
 type OverviewScreenProps = {
@@ -42,29 +61,42 @@ export function OverviewScreen({
   usage,
   requiresMacAppMigration = false,
 }: OverviewScreenProps) {
-  const connected = deviceIsConnected(device);
-  const displayReady = Boolean(device?.ready);
+  const pairingRejected = device?.paired === false;
+  const connected = deviceIsReady(device);
+  const displayReady = connected;
+  const reconnecting = deviceIsActive(device) && !connected && !pairingRejected;
   const hero = buildHeroCopy(companionStatus, connected);
   const firmwareUpdateAvailable = hasFirmwareUpdate(firmwareUpdate);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const macAppMigrationUrl = requiresMacAppMigration
     ? availableMacAppDmgDownloadUrl(companionRelease)
     : undefined;
+
   return (
-    <div className="mx-auto max-w-[1180px]">
-      <section className="grid min-h-[500px] items-center gap-8 border-b border-[#747A60] py-8 lg:grid-cols-[minmax(0,520px)_minmax(420px,1fr)] lg:py-9">
-        <div className="min-w-0">
-          <div className="flex items-start gap-5">
-            <StatusBadge tone={hero.tone}>{hero.icon}</StatusBadge>
-            <div className="min-w-0">
-              <h2 className="max-w-[440px] text-[clamp(2.8rem,5vw,4.5rem)] font-black leading-[1.05] tracking-normal text-[#1B1B1B]">
-                {hero.title}
-              </h2>
-            </div>
+    <div className="mx-auto max-w-[1180px] py-4">
+      <section aria-labelledby="vibetv-overview-title">
+        <div className="mx-auto flex w-full max-w-[1040px] flex-col items-center gap-5">
+          <div className="flex flex-col items-center gap-2 text-center">
+            <Badge variant={hero.badgeVariant}>
+              {hero.icon}
+              <span>{hero.badge}</span>
+            </Badge>
+            <h2
+              className="text-4xl font-black tracking-tight md:text-5xl"
+              id="vibetv-overview-title"
+            >
+              {connected ? "VibeTV is connected" : "VibeTV status"}
+            </h2>
           </div>
 
-          <dl className="mt-9 max-w-[420px]">
-            <StatusRow
+          {reconnecting ? <ReconnectNotice device={device} /> : null}
+
+          <div className="flex w-full justify-center">
+            <LiveVibeTVPreview device={device} usage={usage || null} />
+          </div>
+
+          <ItemGroup className="grid w-full gap-3 lg:grid-cols-4">
+            <StatusItem
               badge={
                 requiresMacAppMigration
                   ? "New App"
@@ -72,95 +104,87 @@ export function OverviewScreen({
                     ? "Update"
                     : undefined
               }
-              icon={<Wifi size={18} aria-hidden />}
+              icon={<AppWindow aria-hidden />}
               label="Mac App"
               value={labelForCompanion(companionStatus, companionVersion)}
             />
-            <StatusRow
-              icon={<Monitor size={18} aria-hidden />}
+            <StatusItem
+              icon={<Monitor aria-hidden />}
               label="VibeTV"
               value={connected ? "Connected" : "Not connected"}
             />
-            <StatusRow
-              icon={<Monitor size={18} aria-hidden />}
+            <StatusItem
+              detail={
+                displayReady
+                  ? undefined
+                  : "Waiting for a fresh image from VibeTV."
+              }
+              icon={<Monitor aria-hidden />}
               label="Display"
-              detail={displayReady ? undefined : "Start using any AI provider."}
               value={displayReady ? "Live" : "Waiting for first image"}
             />
-            <StatusRow
+            <StatusItem
               badge={firmwareUpdateAvailable ? "Update" : undefined}
-              icon={<ArrowUpFromLine size={18} aria-hidden />}
+              icon={<ArrowUpFromLine aria-hidden />}
               label="VibeTV firmware"
               value={device?.firmware || "Waiting for VibeTV"}
             />
-          </dl>
-          {requiresMacAppMigration ? (
-            <MacAppMigrationCard downloadUrl={macAppMigrationUrl} />
-          ) : null}
+          </ItemGroup>
         </div>
 
-        <div className="flex justify-center lg:justify-end">
-          <LiveVibeTVPreview device={device} usage={usage || null} />
-        </div>
+        {requiresMacAppMigration ? (
+          <MacAppMigrationCard downloadUrl={macAppMigrationUrl} />
+        ) : null}
       </section>
     </div>
   );
 }
 
+function ReconnectNotice({ device }: { device: DeviceInfo | null }) {
+  const wifiSetupLikely =
+    device?.connected === false || device?.connectionState === "setup_required";
+  return (
+    <Alert className="w-full max-w-[1040px]">
+      <WifiOff aria-hidden />
+      <AlertTitle>Reconnecting to VibeTV</AlertTitle>
+      <AlertDescription>
+        {wifiSetupLikely
+          ? "If VibeTV shows VibeTV-Setup, connect your phone to it and choose the new WiFi. Your pairing and settings stay saved."
+          : "VibeTV is online, but its display is still reconnecting."}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 function MacAppMigrationCard({ downloadUrl }: { downloadUrl?: string }) {
-  const downloadReady = Boolean(downloadUrl);
   return (
-    <section
+    <Card
       aria-labelledby="mac-app-migration-title"
-      className="mt-7 border border-[#747A60] bg-[#F9F9F9] p-4"
+      className="mx-auto mt-4 max-w-[1040px]"
     >
-      <div className="flex items-start gap-3">
-        <Download
-          className="mt-0.5 shrink-0 text-[#506600]"
-          size={20}
-          aria-hidden
-        />
-        <div className="min-w-0">
-          <h3
-            className="text-base font-black text-[#1B1B1B]"
-            id="mac-app-migration-title"
-          >
-            {downloadReady ? "Update available" : "Update not ready"}
-          </h3>
-        </div>
-      </div>
+      <CardHeader>
+        <CardTitle id="mac-app-migration-title">
+          {downloadUrl ? "Update available" : "Mac App update not ready"}
+        </CardTitle>
+        <CardDescription>
+          Keep the Control Center and VibeTV connection on the latest version.
+        </CardDescription>
+      </CardHeader>
       {downloadUrl ? (
-        <div className="mt-4">
-          <a
-            className="vibetv-button vibetv-button--large vibetv-button--full vibetv-button--primary"
-            href={downloadUrl}
-          >
-            <Download size={20} aria-hidden />
-            <span>Update</span>
-          </a>
-        </div>
+        <CardFooter>
+          <Button asChild size="lg">
+            <a href={downloadUrl}>
+              <Download data-icon="inline-start" />
+              <span>Update</span>
+            </a>
+          </Button>
+        </CardFooter>
       ) : null}
-    </section>
+    </Card>
   );
 }
 
-function StatusBadge({
-  children,
-  tone,
-}: {
-  children: ReactNode;
-  tone: ReadinessTone;
-}) {
-  return (
-    <ControlCenterStatusIcon
-      variant={tone === "ready" ? "complete" : "neutral"}
-    >
-      {children}
-    </ControlCenterStatusIcon>
-  );
-}
-
-function StatusRow({
+function StatusItem({
   badge,
   detail,
   icon,
@@ -174,38 +198,36 @@ function StatusRow({
   value: string;
 }) {
   return (
-    <div className="grid min-h-[50px] grid-cols-[28px_1fr_120px] items-start gap-3 border-b border-[#747A60] py-3 last:border-b-0">
-      <div className="pt-0.5 text-[#506600]">{icon}</div>
-      <dt className="font-medium text-[#1B1B1B]">{label}</dt>
-      <dd className="min-w-0 text-[#1B1B1B]">
-        <div className="flex flex-wrap items-center gap-2">
-          <span>{value}</span>
-          {badge ? (
-            <span className="rounded-full bg-[#CCFF00] px-2 py-0.5 text-xs font-semibold text-[#1B1B1B]">
-              {badge}
-            </span>
-          ) : null}
-        </div>
-        {detail ? (
-          <div className="mt-1 text-sm text-[#444933]">{detail}</div>
-        ) : null}
-      </dd>
-    </div>
+    <Item className="min-w-0 flex-nowrap items-start" role="listitem" variant="muted">
+      <ItemMedia variant="icon">{icon}</ItemMedia>
+      <ItemContent>
+        <ItemDescription>{label}</ItemDescription>
+        <ItemTitle>{value}</ItemTitle>
+        {detail ? <ItemDescription>{detail}</ItemDescription> : null}
+      </ItemContent>
+      <ItemActions className="flex-wrap justify-end">
+        {badge ? <Badge>{badge}</Badge> : null}
+      </ItemActions>
+    </Item>
   );
 }
 
-function buildHeroCopy(companionStatus: CompanionStatus, connected: boolean) {
+function buildHeroCopy(
+  companionStatus: CompanionStatus,
+  connected: boolean,
+) {
   if (connected) {
     return {
-      title: "VibeTV is connected",
-      tone: "ready" as ReadinessTone,
-      icon: <Check size={38} aria-hidden />,
+      badge: "Connected",
+      badgeVariant: "default" as const,
+      icon: <Check data-icon="inline-start" aria-hidden />,
     };
   }
   return {
-    title: companionStatus === "missing" ? "Setup needed" : "VibeTV status",
-    tone: "attention" as ReadinessTone,
-    icon: <CircleHelp size={36} aria-hidden />,
+    badge:
+      companionStatus === "missing" ? "Mac App offline" : "Not connected",
+    badgeVariant: "outline" as const,
+    icon: <CircleHelp data-icon="inline-start" aria-hidden />,
   };
 }
 
@@ -217,11 +239,7 @@ function labelForCompanion(
     return companionVersion ? `Online ${companionVersion}` : "Online";
   }
   if (status === "missing") {
-    return "Needs install";
+    return "Not reachable";
   }
   return "Waiting for Mac App";
-}
-
-function deviceIsConnected(device: DeviceInfo | null): boolean {
-  return Boolean(device?.connected && (device.deviceId || device.target));
 }

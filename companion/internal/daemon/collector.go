@@ -10,6 +10,8 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
+const tokenStatsCollectorTimeout = 60 * time.Second
+
 type providerSnapshot struct {
 	Provider           string                     `json:"provider"`
 	Frame              protocol.Frame             `json:"frame"`
@@ -223,7 +225,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 	cancel := func() {}
 	if _, ok := parent.Deadline(); !ok {
 		var timeoutCancel context.CancelFunc
-		ctx, timeoutCancel = context.WithTimeout(parent, 10*time.Second)
+		ctx, timeoutCancel = context.WithTimeout(parent, tokenStatsCollectorTimeout)
 		cancel = timeoutCancel
 	}
 	defer cancel()

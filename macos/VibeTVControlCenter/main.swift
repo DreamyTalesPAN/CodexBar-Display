@@ -13,6 +13,8 @@ private let runtimeHealthURLString = "http://127.0.0.1:47832/v1/runtime-health"
 private let nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"
 private let controlCenterURLScheme = "vibetv"
 private let controlCenterURLHost = "open-control-center"
+private let restartControlCenterURLHost = "restart-control-center"
+private let repairRuntimeURLHost = "repair-runtime"
 private let checkForUpdatesURLHost = "check-for-updates"
 private let repairCodexBarURLHost = "repair-codexbar"
 private let controlCenterBundleIdentifier = "shop.vibetv.control-center"
@@ -78,6 +80,36 @@ func isCheckForUpdatesURL(_ url: URL) -> Bool {
     return true
 }
 
+func isRestartControlCenterURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == restartControlCenterURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/" else {
+        return false
+    }
+    return true
+}
+
+func isRepairRuntimeURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == repairRuntimeURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/" else {
+        return false
+    }
+    return true
+}
+
 func isRepairCodexBarURL(_ url: URL) -> Bool {
     guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
           components.scheme?.lowercased() == controlCenterURLScheme,
@@ -94,11 +126,19 @@ func isRepairCodexBarURL(_ url: URL) -> Bool {
 }
 
 enum NativeControlCenterAction: Equatable {
+    case restartControlCenter
+    case repairRuntime
     case checkForUpdates
     case repairCodexBar
 }
 
 func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
+    if isRestartControlCenterURL(url) {
+        return .restartControlCenter
+    }
+    if isRepairRuntimeURL(url) {
+        return .repairRuntime
+    }
     if isCheckForUpdatesURL(url) {
         return .checkForUpdates
     }
@@ -106,6 +146,10 @@ func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
         return .repairCodexBar
     }
     return nil
+}
+
+func shouldHandleWebViewDownload(url: URL, requestedByWebContent: Bool) -> Bool {
+    requestedByWebContent && url.scheme?.lowercased() == "blob"
 }
 
 func isApprovedDMGDownloadURL(_ url: URL) -> Bool {
@@ -880,10 +924,84 @@ struct InstallationStatus {
     let title: String
     let detail: String
     let failed: Bool
+    let retryTitle: String
+}
+
+private enum NativeSetupButtonVariant {
+    case primary
+    case secondary
+    case outline
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate {
+private final class ShadcnSpinnerView: NSView {
+    private let arcLayer = CAShapeLayer()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configure()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        configure()
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 20, height: 20)
+    }
+
+    override func layout() {
+        super.layout()
+        arcLayer.frame = bounds
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let radius = max(0, min(bounds.width, bounds.height) / 2 - 2)
+        let path = CGMutablePath()
+        path.addArc(
+            center: center,
+            radius: radius,
+            startAngle: -.pi / 2,
+            endAngle: .pi,
+            clockwise: false
+        )
+        arcLayer.path = path
+    }
+
+    func startAnimation() {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            return
+        }
+        guard arcLayer.animation(forKey: "shadcn-spinner") == nil else {
+            return
+        }
+        let animation = CABasicAnimation(keyPath: "transform.rotation.z")
+        animation.fromValue = 0
+        // AppKit's layer coordinates invert the CSS visual direction. Use a
+        // negative rotation so this matches shadcn's clockwise animate-spin.
+        animation.toValue = -CGFloat.pi * 2
+        animation.duration = 0.8
+        animation.repeatCount = .infinity
+        animation.isRemovedOnCompletion = false
+        arcLayer.add(animation, forKey: "shadcn-spinner")
+    }
+
+    private func configure() {
+        wantsLayer = true
+        arcLayer.fillColor = NSColor.clear.cgColor
+        arcLayer.strokeColor = NSColor(
+            calibratedRed: 0.267,
+            green: 0.286,
+            blue: 0.200,
+            alpha: 1
+        ).cgColor
+        arcLayer.lineCap = .round
+        arcLayer.lineWidth = 2
+        layer?.addSublayer(arcLayer)
+    }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     private var window: NSWindow?
     private var webView: WKWebView?
     private var activeNavigation: WKNavigation?
@@ -898,6 +1016,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var installationReady = false
     private var installationStatus: InstallationStatus?
     private var codexBarRepairRequired = false
+    private var codexBarAutoRepairAttempted = false
     private var installationStatusTitle = "Starting Control Center"
     private var installationStatusDetail = "Preparing the Mac App."
     private var installationStatusFailed = false
@@ -933,8 +1052,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         _ = updaterController
 #endif
         presentInstallationStatus(
-            title: "Finishing installation…",
-            detail: "Checking the Mac App and its background runtime.",
+            title: "Starting Control Center",
+            detail: "Checking the Mac App and your last connected VibeTV.",
             failed: false
         )
         startRuntimePreparation()
@@ -970,7 +1089,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             presentInstallationStatus(
                 title: status.title,
                 detail: status.detail,
-                failed: status.failed
+                failed: status.failed,
+                retryTitle: status.retryTitle
             )
         } else {
             window?.makeKeyAndOrderFront(nil)
@@ -984,8 +1104,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
         presentInstallationStatus(
-            title: "Finishing installation…",
-            detail: "Checking the Mac App and its background runtime.",
+            title: "Starting Control Center",
+            detail: "Checking the Mac App and your last connected VibeTV.",
             failed: false
         )
         Task { [weak self] in
@@ -995,11 +1115,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             guard let self else {
                 return
             }
-            let outcome = await self.prepareCompanion()
+            let outcome = await self.prepareCompanionWithAutomaticCodexBarRepair()
             self.preparationTask = nil
             switch outcome {
             case .nativeRuntimeReady:
                 self.codexBarRepairRequired = false
+                self.codexBarAutoRepairAttempted = false
                 self.installationReady = true
                 self.installationStatus = nil
                 _ = self.urlRouter.markReady()
@@ -1028,6 +1149,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 )
             }
         }
+    }
+
+    private func prepareCompanionWithAutomaticCodexBarRepair() async -> RuntimePreparationOutcome {
+        let outcome = await prepareCompanion()
+        guard outcome == .codexBarRepairRequired,
+              !codexBarAutoRepairAttempted else {
+            return outcome
+        }
+        codexBarAutoRepairAttempted = true
+        guard repairCodexBarInstallation() else {
+            return outcome
+        }
+        return await prepareCompanion()
     }
 
     @objc private func retryRuntimePreparation() {
@@ -1506,6 +1640,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 #endif
     }
 
+    private func restartControlCenter() {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.addsToRecentItems = false
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(
+            at: Bundle.main.bundleURL,
+            configuration: configuration
+        ) { application, error in
+            DispatchQueue.main.async {
+                guard application != nil, error == nil else {
+                    let detail = error?.localizedDescription
+                        ?? "new app instance was not created"
+                    NSLog(
+                        "VibeTV Control Center could not restart: \(detail)"
+                    )
+                    return
+                }
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    private func beginRuntimeRepair() {
+        guard preparationTask == nil else {
+            return
+        }
+        preparationTask = Task { [weak self] in
+            guard let self else {
+                return
+            }
+            let outcome = await self.prepareCompanionWithAutomaticCodexBarRepair()
+            self.preparationTask = nil
+            guard outcome == .nativeRuntimeReady else {
+                self.notifyRuntimeRepairResult(success: false)
+                return
+            }
+            self.codexBarRepairRequired = false
+            self.codexBarAutoRepairAttempted = false
+            self.installationReady = true
+            self.installationStatus = nil
+            self.notifyRuntimeRepairResult(success: true)
+            self.loadControlCenter(cachePolicy: .reloadIgnoringLocalCacheData)
+        }
+    }
+
+    private func notifyRuntimeRepairResult(success: Bool) {
+        let value = success ? "true" : "false"
+        let script = "window.dispatchEvent(new CustomEvent('vibetv:runtime-repair-result', { detail: { success: \(value) } })); true"
+        webView?.evaluateJavaScript(script) { _, error in
+            if let error {
+                NSLog(
+                    "VibeTV Control Center could not report runtime repair result: \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
     private func presentControlCenter() {
         guard !installationRequired, installationReady else {
             return
@@ -1561,6 +1753,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             ) as? String
         )
         webView.navigationDelegate = self
+        webView.uiDelegate = self
 
         let window = window ?? makeMainWindow()
         window.title = "VibeTV Control Center"
@@ -1592,6 +1785,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         return window
     }
 
+    private func makeNativeSetupButton(
+        title: String,
+        action: Selector,
+        symbolName: String,
+        variant: NativeSetupButtonVariant
+    ) -> NSButton {
+        let button = NSButton(title: title, target: self, action: action)
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 8
+        button.layer?.masksToBounds = true
+        button.font = .systemFont(ofSize: 14, weight: .semibold)
+        button.contentTintColor = NSColor(calibratedWhite: 0.1, alpha: 1)
+        button.image = NSImage(
+            systemSymbolName: symbolName,
+            accessibilityDescription: nil
+        )
+        button.imagePosition = .imageLeading
+        button.imageHugsTitle = true
+        button.imageScaling = .scaleProportionallyDown
+        button.setAccessibilityLabel(title)
+
+        switch variant {
+        case .primary:
+            button.layer?.backgroundColor = NSColor(
+                calibratedRed: 0.8,
+                green: 1,
+                blue: 0,
+                alpha: 1
+            ).cgColor
+        case .secondary:
+            button.layer?.backgroundColor = NSColor(
+                calibratedWhite: 0.933,
+                alpha: 1
+            ).cgColor
+        case .outline:
+            button.layer?.backgroundColor = NSColor(
+                calibratedWhite: 0.976,
+                alpha: 1
+            ).cgColor
+            button.layer?.borderColor = NSColor(
+                calibratedWhite: 0.89,
+                alpha: 1
+            ).cgColor
+            button.layer?.borderWidth = 1
+        }
+
+        button.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            button.heightAnchor.constraint(equalToConstant: 44),
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 132),
+        ])
+        return button
+    }
+
     private func presentInstallationStatus(
         title: String,
         detail: String,
@@ -1601,16 +1849,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         installationStatus = InstallationStatus(
             title: title,
             detail: detail,
-            failed: failed
+            failed: failed,
+            retryTitle: retryTitle
         )
         installationStatusTitle = title
         installationStatusDetail = detail
         installationStatusFailed = failed
         let window = window ?? makeMainWindow()
         let container = NSView()
-        // This screen intentionally uses a fixed light surface and dark text.
-        // Keep inherited AppKit controls (spinner and buttons) in the matching
-        // appearance so they do not render white-on-white in macOS Dark Mode.
+        // This screen intentionally mirrors the shadcn loading state shown by
+        // the WebView once the local Control Center is available.
         container.appearance = NSAppearance(named: .aqua)
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor(
@@ -1639,38 +1887,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         detailLabel.alignment = .center
         detailLabel.maximumNumberOfLines = 3
 
-        let progress = NSProgressIndicator()
-        progress.style = .spinning
-        progress.controlSize = .large
+        let progress = ShadcnSpinnerView(
+            frame: NSRect(x: 0, y: 0, width: 20, height: 20)
+        )
         if failed {
             progress.isHidden = true
         } else {
-            progress.startAnimation(nil)
+            progress.startAnimation()
         }
 
-        let retry = NSButton(
+        let retry = makeNativeSetupButton(
             title: retryTitle,
-            target: self,
-            action: #selector(retryRuntimePreparation)
+            action: #selector(retryRuntimePreparation),
+            symbolName: "arrow.clockwise",
+            variant: .primary
         )
-        retry.bezelStyle = .rounded
         retry.keyEquivalent = "\r"
         retry.isHidden = !failed
 
-        let support = NSButton(
+        let support = makeNativeSetupButton(
             title: "Create report",
-            target: self,
-            action: #selector(createNativeSupportReport)
+            action: #selector(createNativeSupportReport),
+            symbolName: "doc.text",
+            variant: .secondary
         )
-        support.bezelStyle = .rounded
         support.isHidden = false
 
-        let supportLog = NSButton(
+        let supportLog = makeNativeSetupButton(
             title: "Open support log",
-            target: self,
-            action: #selector(openSupportLog)
+            action: #selector(openSupportLog),
+            symbolName: "doc.plaintext",
+            variant: .outline
         )
-        supportLog.bezelStyle = .rounded
         supportLog.isHidden = !failed
 
         let actions = NSStackView(views: [retry, support, supportLog])
@@ -1678,7 +1926,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         actions.alignment = .centerY
         actions.spacing = 12
 
-        let stack = NSStackView(views: [brand, progress, titleLabel, detailLabel, actions])
+        let stack = NSStackView(views: [brand, titleLabel, detailLabel, progress, actions])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 18
@@ -2418,7 +2666,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 "--transport",
                 "wifi",
                 "--interval",
-                "30s",
+                "5s",
                 "--api-addr",
                 "127.0.0.1:47832",
                 "--api-dev-origin",
@@ -3086,11 +3334,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         if let action = nativeControlCenterAction(for: url) {
             decisionHandler(.cancel)
             switch action {
+            case .restartControlCenter:
+                restartControlCenter()
+            case .repairRuntime:
+                beginRuntimeRepair()
             case .checkForUpdates:
                 checkForUpdates()
             case .repairCodexBar:
                 beginCodexBarRepair()
             }
+            return
+        }
+
+        if shouldHandleWebViewDownload(
+            url: url,
+            requestedByWebContent: navigationAction.shouldPerformDownload
+        ) {
+            decisionHandler(.download)
             return
         }
 
@@ -3107,6 +3367,89 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         decisionHandler(.cancel)
         if !NSWorkspace.shared.open(url) {
             NSLog("VibeTV Control Center could not open verified DMG URL in the default browser")
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        navigationAction: WKNavigationAction,
+        didBecome download: WKDownload
+    ) {
+        download.delegate = self
+    }
+
+    func download(
+        _ download: WKDownload,
+        decideDestinationUsing response: URLResponse,
+        suggestedFilename: String,
+        completionHandler: @escaping @MainActor (URL?) -> Void
+    ) {
+        let panel = NSSavePanel()
+        let fileExtension = URL(fileURLWithPath: suggestedFilename).pathExtension
+        if let contentType = UTType(filenameExtension: fileExtension) {
+            panel.allowedContentTypes = [contentType]
+        }
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = suggestedFilename
+        panel.directoryURL = FileManager.default.urls(
+            for: .downloadsDirectory,
+            in: .userDomainMask
+        ).first
+        let finish: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard response == .OK, let destination = panel.url else {
+                completionHandler(nil)
+                return
+            }
+            guard !FileManager.default.fileExists(atPath: destination.path) else {
+                self?.presentSupportReportError(
+                    title: "A file with this name already exists",
+                    detail: "Choose a different filename to keep the existing file."
+                )
+                completionHandler(nil)
+                return
+            }
+            completionHandler(destination)
+        }
+        if let window {
+            panel.beginSheetModal(for: window, completionHandler: finish)
+        } else {
+            finish(panel.runModal())
+        }
+    }
+
+    func download(
+        _ download: WKDownload,
+        didFailWithError error: Error,
+        resumeData: Data?
+    ) {
+        let error = error as NSError
+        guard error.domain != NSURLErrorDomain || error.code != NSURLErrorCancelled else {
+            return
+        }
+        presentSupportReportError(
+            title: "Download failed",
+            detail: error.localizedDescription
+        )
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        runOpenPanelWith parameters: WKOpenPanelParameters,
+        initiatedByFrame frame: WKFrameInfo,
+        completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
+    ) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = !parameters.allowsDirectories
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+
+        let finish: (NSApplication.ModalResponse) -> Void = { response in
+            completionHandler(response == .OK ? panel.urls : nil)
+        }
+        if let window {
+            panel.beginSheetModal(for: window, completionHandler: finish)
+        } else {
+            panel.begin(completionHandler: finish)
         }
     }
 

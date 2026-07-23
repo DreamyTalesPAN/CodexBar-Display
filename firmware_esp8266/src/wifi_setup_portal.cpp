@@ -17,15 +17,11 @@ const char kPageStart[] PROGMEM = R"HTML(<!doctype html><html lang="en"><head><m
 
 const char kScanForm[] PROGMEM = R"HTML(<form class="scan-form" method="post" action="/scan" onsubmit="const b=this.querySelector('button');if(b.disabled)return false;b.disabled=true;b.textContent='Searching…';b.setAttribute('aria-busy','true')"><button class="secondary" type="submit">Search again</button></form>)HTML";
 
-const char kFieldsStart[] PROGMEM = R"HTML(<form method="post" action="/save"><input type="hidden" name="setup_token" value=")HTML";
-const char kFieldsAfterToken[] PROGMEM = R"HTML("><label for="ssid">Wi-Fi network</label><p id="wifi-band-help" class="field-help">Only 2.4 GHz networks are shown.</p><select id="ssid" name="ssid" aria-describedby="setup-status wifi-band-help">)HTML";
+const char kFieldsStart[] PROGMEM = R"HTML(<form method="post" action="/save"><label for="ssid">Wi-Fi network</label><p id="wifi-band-help" class="field-help">Only 2.4 GHz networks are shown.</p><select id="ssid" name="ssid" aria-describedby="setup-status wifi-band-help">)HTML";
 const char kFieldsManual[] PROGMEM = R"HTML(</select><label for="custom_ssid">Hidden network</label><input id="custom_ssid" name="custom_ssid" maxlength="32" autocomplete="off" placeholder="Enter Wi-Fi name" aria-describedby="setup-status")HTML";
 const char kFieldsPassword[] PROGMEM = R"HTML(><label for="password">Password</label><input id="password" name="password" type="password" maxlength="64" autocomplete="current-password" aria-describedby="setup-status"><div class="actions"><button class="primary" type="submit">Connect</button></div></form>)HTML";
 const char kPageEnd[] PROGMEM = R"HTML(</section><p class="foot">Setup address: http://)HTML";
 const char kDocumentEnd[] PROGMEM = R"HTML(</p></main></body></html>)HTML";
-const char kRecoveryPageStart[] PROGMEM = R"HTML(<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>VibeTV Wi-Fi Recovery</title><style>
-:root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0d0e10;color:#f7f7f2}*{box-sizing:border-box}body{margin:0;background:#0d0e10;color:#f7f7f2}main{width:min(100%,480px);margin:0 auto;padding:calc(24px + env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom))}h1{margin:0;font-size:clamp(2rem,9vw,2.7rem);line-height:1.02;letter-spacing:-.04em}.card{margin-top:22px;padding:18px;border:1px solid #303238;border-radius:16px;background:#17191c;box-shadow:0 18px 45px rgba(0,0,0,.24)}p,li{line-height:1.55;color:#d5d6d1}ol{padding-left:1.35rem}.help{display:block;margin-top:17px;color:#c7ff00;font-weight:750;text-align:center;text-underline-offset:3px}.foot{margin:22px 0 0;color:#85878c;font-size:.82rem;text-align:center}@media(min-width:600px){main{padding-top:48px}.card{padding:22px}}
-</style></head><body><main><header><h1>Wi-Fi recovery required</h1></header><section class="card"><p>This setup hotspot opened automatically, so Wi-Fi changes are locked.</p><ol><li>Unplug VibeTV during early boot.</li><li>Repeat this for three interrupted early boots.</li><li>On the next boot, reconnect to <strong>VibeTV-Setup</strong> and open the setup page again.</li></ol>)HTML";
 
 void copySsid(char* target, const String& ssid) {
   const size_t length = ssid.length() < (kMaxSsidBytes - 1) ? ssid.length() : (kMaxSsidBytes - 1);
@@ -52,18 +48,6 @@ void sortNetworks(State& state) {
   }
 }
 
-bool containsSsid(const State& state, const char* ssid) {
-  if (ssid == nullptr || ssid[0] == '\0') {
-    return false;
-  }
-  for (uint8_t i = 0; i < state.networkCount; ++i) {
-    if (strcmp(state.networks[i].ssid, ssid) == 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
 void sendDynamic(ESP8266WebServer& server, const String& content) {
   if (content.length() > 0) {
     server.sendContent(content);
@@ -84,25 +68,6 @@ String connectionErrorHTML(const State& state) {
       break;
     case ConnectionError::InvalidCredentials:
       html += F("The Wi-Fi name or password is too long.");
-      break;
-    case ConnectionError::WrongPassword:
-      html += F("Could not connect to <strong>");
-      html += HtmlEscape(String(state.attemptedSsid));
-      html += F("</strong>. Check the password and try again.");
-      break;
-    case ConnectionError::NetworkNotFound:
-      html += F("Could not find <strong>");
-      html += HtmlEscape(String(state.attemptedSsid));
-      html += F("</strong>. Search again or enter the Wi-Fi name manually.");
-      break;
-    case ConnectionError::ConnectionFailed:
-      if (state.attemptedSsid[0] == '\0') {
-        html += F("Could not reconnect to Wi-Fi. Search again or enter the Wi-Fi name manually.");
-      } else {
-        html += F("Could not connect to <strong>");
-        html += HtmlEscape(String(state.attemptedSsid));
-        html += F("</strong>. Check the password or signal and try again.");
-      }
       break;
     case ConnectionError::None:
       break;
@@ -188,26 +153,12 @@ const char* SignalLabel(int32_t rssi) {
   return "🔴";
 }
 
-ConnectionError ConnectionErrorFromWifiStatus(int status) {
-  switch (status) {
-    case WL_WRONG_PASSWORD:
-    case WL_CONNECT_FAILED:
-      return ConnectionError::WrongPassword;
-    case WL_NO_SSID_AVAIL:
-      return ConnectionError::NetworkNotFound;
-    default:
-      return ConnectionError::ConnectionFailed;
-  }
-}
-
-void SetConnectionError(State& state, ConnectionError error, const String& attemptedSsid) {
+void SetConnectionError(State& state, ConnectionError error) {
   state.connectionError = error;
-  copySsid(state.attemptedSsid, attemptedSsid);
 }
 
 void ClearConnectionError(State& state) {
   state.connectionError = ConnectionError::None;
-  state.attemptedSsid[0] = '\0';
 }
 
 String HtmlEscape(const String& raw) {
@@ -236,9 +187,6 @@ String BuildNetworkOptionsHTML(const State& state) {
     option += F("<option value=\"");
     option += escapedSsid;
     option += '"';
-    if (state.attemptedSsid[0] != '\0' && strcmp(state.attemptedSsid, state.networks[i].ssid) == 0) {
-      option += F(" selected");
-    }
     option += '>';
     option += escapedSsid;
     option += F(" — ");
@@ -260,7 +208,6 @@ void SendSetupPage(
     const State& state,
     const char* supportUrl,
     const char* setupAddress,
-    const char* setupToken,
     int statusCode) {
   server.setContentLength(CONTENT_LENGTH_UNKNOWN);
   server.send(statusCode, "text/html; charset=utf-8", "");
@@ -270,45 +217,10 @@ void SendSetupPage(
   sendDynamic(server, scanStatusHTML(state));
   server.sendContent_P(PSTR("</div>"));
   server.sendContent_P(kFieldsStart);
-  sendDynamic(server, HtmlEscape(String(setupToken == nullptr ? "" : setupToken)));
-  server.sendContent_P(kFieldsAfterToken);
   sendDynamic(server, BuildNetworkOptionsHTML(state));
   server.sendContent_P(kFieldsManual);
-
-  if (state.attemptedSsid[0] != '\0' && !containsSsid(state, state.attemptedSsid)) {
-    String value;
-    value.reserve(strlen(state.attemptedSsid) + 18);
-    value += F(" value=\"");
-    value += HtmlEscape(String(state.attemptedSsid));
-    value += '"';
-    sendDynamic(server, value);
-  }
   server.sendContent_P(kFieldsPassword);
   server.sendContent_P(kScanForm);
-
-  if (supportUrl != nullptr && supportUrl[0] != '\0') {
-    String help;
-    help.reserve(strlen(supportUrl) + 160);
-    help += F("<a class=\"help\" href=\"");
-    help += HtmlEscape(String(supportUrl));
-    help += F("\" target=\"_blank\" rel=\"noopener noreferrer\">Troubleshooting: vibetv.shop/pages/setup</a>");
-    sendDynamic(server, help);
-  }
-
-  server.sendContent_P(kPageEnd);
-  sendDynamic(server, HtmlEscape(String(setupAddress == nullptr ? "" : setupAddress)));
-  server.sendContent_P(kDocumentEnd);
-  server.sendContent(String());
-}
-
-void SendRecoveryPage(
-    ESP8266WebServer& server,
-    const char* supportUrl,
-    const char* setupAddress,
-    int statusCode) {
-  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  server.send(statusCode, "text/html; charset=utf-8", "");
-  server.sendContent_P(kRecoveryPageStart);
 
   if (supportUrl != nullptr && supportUrl[0] != '\0') {
     String help;
