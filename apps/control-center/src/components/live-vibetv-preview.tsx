@@ -35,6 +35,11 @@ export type ThemeRenderPack = {
   assets?: Record<string, ThemePackAsset>;
 };
 
+export type ThemeCountUpPreview = {
+  primitiveIndex: number;
+  runId: number;
+};
+
 type ThemePackState = {
   themeId: string;
   themeSpecPath: string;
@@ -325,11 +330,13 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
 
 export function ThemeSpecPreview({
   animate = true,
+  countUpPreview,
   pack,
   status,
   themeId,
 }: {
   animate?: boolean;
+  countUpPreview?: ThemeCountUpPreview | null;
   pack: ThemeRenderPack | null;
   status: "idle" | "loading" | "ready" | "error";
   themeId: string;
@@ -339,6 +346,7 @@ export function ThemeSpecPreview({
       <ThemeSpecSVG
         animate={animate}
         assets={pack.assets || {}}
+        countUpPreview={countUpPreview}
         frame={THEME_LIBRARY_PREVIEW_FRAME}
         spec={pack.spec}
         themeId={pack.themeId || themeId}
@@ -381,12 +389,14 @@ function VibeTVCaseShell({ children }: { children: ReactNode }) {
 function ThemeSpecSVG({
   animate = true,
   assets,
+  countUpPreview,
   frame,
   spec,
   themeId,
 }: {
   animate?: boolean;
   assets: Record<string, ThemePackAsset>;
+  countUpPreview?: ThemeCountUpPreview | null;
   frame: FrameData;
   spec: ThemeSpec;
   themeId: string;
@@ -408,9 +418,12 @@ function ThemeSpecSVG({
       <rect height="240" width="240" fill={colorFor(spec.bgColor || spec.bg, "#000000")} />
       {primitives.map((primitive, index) => (
         <ThemePrimitiveNode
+          animate={animate}
           assets={assets}
           animationTick={animationTick}
+          countUpPreview={countUpPreview}
           frame={frame}
+          index={index}
           key={index}
           primitive={primitive}
           sprites={sprites}
@@ -421,15 +434,21 @@ function ThemeSpecSVG({
 }
 
 function ThemePrimitiveNode({
+  animate,
   assets,
   animationTick,
+  countUpPreview,
   frame,
+  index,
   primitive,
   sprites,
 }: {
+  animate: boolean;
   assets: Record<string, ThemePackAsset>;
   animationTick: number;
+  countUpPreview?: ThemeCountUpPreview | null;
   frame: FrameData;
+  index: number;
   primitive: ThemePrimitive;
   sprites: Record<string, DecodedSprite>;
 }) {
@@ -460,6 +479,12 @@ function ThemePrimitiveNode({
 
   if (type === "text" || type === "tx") {
     const text = renderTextPrimitive(primitive, frame);
+    const binding = primitive.binding || primitive.b || "";
+    const countUpTarget = tokenBindingValue(binding, frame);
+    const previewsCountUp =
+      countUpPreview?.primitiveIndex === index &&
+      (primitive.animation || primitive.an) === "count-up" &&
+      countUpTarget !== null;
     const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
     const fontSize = themeFontSize(primitive.font || primitive.f, primitive.fontSize || primitive.s);
     // Firmware only applies text alignment inside an explicit width. Without
@@ -479,7 +504,16 @@ function ThemePrimitiveNode({
         x={textX}
         y={y}
       >
-        {text}
+        {previewsCountUp ? (
+          <ThemeCountUpText
+            animate={animate}
+            key={countUpPreview.runId}
+            numberFormat={primitive.numberFormat || primitive.nf}
+            target={countUpTarget}
+          />
+        ) : (
+          text
+        )}
       </text>
     );
   }
@@ -901,6 +935,69 @@ function formatCompactTokens(value: number): string {
   return `${(value / unit.threshold)
     .toFixed(unit.digits)
     .replace(/\.?0+$/, "")}${unit.suffix}`;
+}
+
+const COUNT_UP_PREVIEW_STEPS = 12;
+const COUNT_UP_PREVIEW_TICK_MS = 60;
+
+export function countUpPreviewValue(target: number, step: number): number {
+  const safeTarget = Math.max(0, Math.trunc(target));
+  const safeStep = Math.max(
+    0,
+    Math.min(COUNT_UP_PREVIEW_STEPS, Math.trunc(step)),
+  );
+  return Math.trunc((safeTarget * safeStep) / COUNT_UP_PREVIEW_STEPS);
+}
+
+function ThemeCountUpText({
+  animate,
+  numberFormat,
+  target,
+}: {
+  animate: boolean;
+  numberFormat?: string;
+  target: number;
+}) {
+  const [step, setStep] = useState(
+    animate ? 0 : COUNT_UP_PREVIEW_STEPS,
+  );
+
+  useEffect(() => {
+    if (!animate) {
+      return;
+    }
+
+    let nextStep = 0;
+    const timer = window.setInterval(() => {
+      nextStep += 1;
+      setStep(nextStep);
+      if (nextStep >= COUNT_UP_PREVIEW_STEPS) {
+        window.clearInterval(timer);
+      }
+    }, COUNT_UP_PREVIEW_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [animate]);
+
+  const value = animate
+    ? countUpPreviewValue(target, step)
+    : countUpPreviewValue(target, COUNT_UP_PREVIEW_STEPS);
+  return numberFormat === "compact" ? formatCompactTokens(value) : String(value);
+}
+
+function tokenBindingValue(binding: string, frame: FrameData): number | null {
+  switch (binding) {
+    case "sessionTokens":
+    case "st":
+      return frame.sessionTokens;
+    case "weekTokens":
+    case "wt":
+      return frame.weekTokens;
+    case "totalTokens":
+    case "tt":
+      return frame.totalTokens;
+    default:
+      return null;
+  }
 }
 
 function boundValue(key: string, frame: FrameData): string {

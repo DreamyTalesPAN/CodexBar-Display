@@ -30,11 +30,13 @@ export function PrimitiveInspector({
   onChange,
   onDelete,
   onInsertToken,
+  onPreviewAnimation,
   primitive,
 }: {
   onChange: (field: FieldKey, value: unknown) => void;
   onDelete: () => void;
   onInsertToken: (token: string) => void;
+  onPreviewAnimation: () => void;
   primitive: ThemeStudioPrimitive;
 }) {
   const bounds = primitiveBounds(primitive);
@@ -124,9 +126,12 @@ export function PrimitiveInspector({
               <SelectField
                 label="Animation"
                 value={primitive.animation || "none"}
-                onChange={(value) =>
-                  onChange("animation", value === "none" ? "" : value)
-                }
+                onChange={(value) => {
+                  onChange("animation", value === "none" ? "" : value);
+                  if (value === "count-up") {
+                    onPreviewAnimation();
+                  }
+                }}
                 options={[
                   ["none", "None"],
                   ["count-up", "Count up"],
