@@ -396,7 +396,7 @@ function ThemeSpecSVG({
   return (
     <svg
       aria-label={`Rendered VibeTV theme ${themeId} showing ${frame.label}, ${frame.session}% session ${frame.usageMode}, ${frame.weekly}% weekly ${frame.usageMode}`}
-      className="aspect-square w-full bg-black [image-rendering:pixelated]"
+      className="aspect-square size-full bg-black [image-rendering:pixelated]"
       role="img"
       viewBox="0 0 240 240"
     >

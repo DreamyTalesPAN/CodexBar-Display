@@ -1,14 +1,14 @@
 "use client";
 
-import { Bot, Check, Hammer, KeyRound, Send, Sparkles, Trash2, Undo2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Bot, Check, KeyRound, RefreshCw, Send, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import {
   buildAIThemeCandidate,
+  clearAIThemeHistory,
   deleteAIThemeCredential,
   fetchAIThemeCapabilities,
   generateAIThemeConcept,
@@ -24,9 +24,10 @@ import type { ThemeStudioSpec } from "@/lib/theme-studio";
 
 type CredentialFeedback = { message: string; state: "stored" | "testing" | "verified" | "error" };
 
-export function AIThemePanel({ currentSpec, onApply, onSessionChange, session }: {
+export function AIThemePanel({ currentSpec, onApply, onPreviewReady, onSessionChange, session }: {
   currentSpec: ThemeStudioSpec;
   onApply: (candidate: AIThemeCandidate) => void;
+  onPreviewReady?: () => void;
   onSessionChange: (session: AIThemeSession | null) => void;
   session: AIThemeSession | null;
 }) {
@@ -38,9 +39,10 @@ export function AIThemePanel({ currentSpec, onApply, onSessionChange, session }:
   const [prompt, setPrompt] = useState("");
   const [history, setHistory] = useState<AIThemeMessage[]>(() => loadAIThemeHistory(currentSpec.themeId));
   const [generationBusy, setGenerationBusy] = useState(false);
-  const [generationStatus, setGenerationStatus] = useState("");
+  const [generationError, setGenerationError] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const generationInFlightRef = useRef(false);
+  const resetVersionRef = useRef(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -54,9 +56,19 @@ export function AIThemePanel({ currentSpec, onApply, onSessionChange, session }:
   }, []);
 
   useEffect(() => saveAIThemeHistory(currentSpec.themeId, history), [currentSpec.themeId, history]);
+
+  useEffect(() => {
+    if (!credentialFeedback || credentialFeedback.state === "error" || credentialFeedback.state === "testing") {
+      return;
+    }
+    const timer = window.setTimeout(() => setCredentialFeedback(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [credentialFeedback]);
+
   if (!enabled) return null;
 
   const credentialBusy = credentialAction !== null;
+  const canCreateOrRefine = !credentialBusy && !generationBusy && configured && Boolean(prompt.trim());
 
   async function storeCredential() {
     if (!apiKey.trim() || credentialBusy || generationBusy) return;
@@ -93,27 +105,57 @@ export function AIThemePanel({ currentSpec, onApply, onSessionChange, session }:
     if (!prompt.trim() || generationInFlightRef.current || credentialBusy) return;
     generationInFlightRef.current = true; setGenerationBusy(true);
     const controller = new AbortController(); abortRef.current = controller;
+    const resetVersion = resetVersionRef.current;
     const refining = Boolean(session);
-    setGenerationStatus(refining ? "Refining concept and preparing its hardware preview…" : "Creating concept and preparing its hardware preview…");
+    const assistantMessage = refining
+      ? "Draft refined. Review the updated preview, then apply it."
+      : "Theme draft ready. Review the preview, then apply it.";
+    setGenerationError("");
     const userMessage: AIThemeMessage = { content: prompt.trim(), createdAt: new Date().toISOString(), role: "user" };
     try {
       const concept = await generateAIThemeConcept({ history: [...history, userMessage], previous: session?.concept, prompt: prompt.trim() }, controller.signal);
       const candidate = await buildAIThemeCandidate(concept);
-      onSessionChange({ built: false, candidate, concept });
-      setHistory((value) => [...value, userMessage, { content: concept.style.notes, createdAt: new Date().toISOString(), role: "assistant" }]);
-      setGenerationStatus("Concept ready. Review the screenmaster, then build the theme.");
+      if (resetVersionRef.current !== resetVersion) return;
+      onSessionChange({ candidate, concept });
+      setHistory((value) => [...value, userMessage, { content: assistantMessage, createdAt: new Date().toISOString(), role: "assistant" }]);
+      setPrompt("");
+      window.setTimeout(() => onPreviewReady?.(), 0);
     } catch (error) {
-      setGenerationStatus(controller.signal.aborted ? "Concept creation cancelled." : error instanceof Error ? error.message : "Concept creation failed.");
+      if (resetVersionRef.current !== resetVersion) return;
+      setGenerationError(controller.signal.aborted ? "Concept creation cancelled." : error instanceof Error ? error.message : "Concept creation failed.");
     } finally {
+      if (resetVersionRef.current !== resetVersion) return;
       abortRef.current = null; generationInFlightRef.current = false; setGenerationBusy(false);
     }
   }
 
-  function discard(message: string) { onSessionChange(null); setGenerationStatus(message); }
+  function startOver() {
+    resetVersionRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    generationInFlightRef.current = false;
+    setGenerationBusy(false);
+    setPrompt("");
+    setHistory([]);
+    clearAIThemeHistory(currentSpec.themeId);
+    onSessionChange(null);
+    setGenerationError("");
+    setCredentialFeedback(null);
+  }
+
+  function submitPromptFromKeyboard(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.shiftKey) {
+      return;
+    }
+    event.preventDefault();
+    if (canCreateOrRefine) {
+      void createOrRefineConcept();
+    }
+  }
 
   return (
     <aside className="grid min-h-0 gap-3 rounded-[var(--radius-card)] border bg-card p-4 lg:h-full lg:grid-rows-[auto_auto_minmax(0,1fr)_auto]">
-      <div><h3 className="flex items-center gap-2 font-bold"><Bot className="size-4" />AI Theme Builder</h3><p className="text-xs text-muted-foreground">Create one hardware-ready screenmaster, refine it, then build and apply.</p></div>
+      <div><h3 className="flex items-center gap-2 font-bold"><Bot className="size-4" />AI Theme Builder</h3><p className="text-xs text-muted-foreground">Create one hardware-ready theme draft, refine it, then apply.</p></div>
       <div className="grid gap-2">
         {!configured ? (
           <div className="flex gap-2"><Input aria-label="OpenAI key" autoComplete="off" disabled={credentialBusy || generationBusy} onChange={(event) => setAPIKey(event.target.value)} placeholder="OpenAI key" type="password" value={apiKey} /><Button disabled={credentialBusy || generationBusy || !apiKey.trim()} onClick={() => void storeCredential()} size="sm"><KeyRound />{credentialAction === "storing" ? "Storing…" : "Store key"}</Button></div>
@@ -124,17 +166,17 @@ export function AIThemePanel({ currentSpec, onApply, onSessionChange, session }:
       </div>
       <div className="min-h-0 space-y-2 overflow-y-auto">
         {history.slice(-6).map((message, index) => <div className="rounded-md bg-muted p-2 text-xs" key={`${message.createdAt}-${index}`}><strong>{message.role === "user" ? "You" : "AI"}</strong><p>{message.content}</p></div>)}
-        {session ? <Alert><Sparkles /><AlertTitle>{session.candidate.packName}</AlertTitle><AlertDescription>{session.candidate.notes}</AlertDescription></Alert> : null}
       </div>
       <div className="grid gap-2">
-        <Textarea aria-label="AI theme prompt" disabled={generationBusy} maxLength={2000} onChange={(event) => setPrompt(event.target.value)} placeholder={session ? "Make the cat larger and the colors warmer…" : "Create a premium synthwave cat theme…"} value={prompt} />
-        {generationStatus ? <p aria-live="polite" className="rounded-md border bg-muted px-3 py-2 text-sm font-medium text-foreground">{generationBusy ? <Spinner className="mr-1 inline" /> : null}{generationStatus}</p> : null}
-        <div className="flex flex-wrap gap-2">
-          {!session?.built ? <Button disabled={credentialBusy || generationBusy || !configured || !prompt.trim()} onClick={() => void createOrRefineConcept()} size="sm">{generationBusy ? <Spinner /> : <Send />}{generationBusy ? (session ? "Refining…" : "Creating…") : (session ? "Refine concept" : "Create concept")}</Button> : null}
-          {generationBusy ? <Button onClick={() => abortRef.current?.abort()} size="sm" variant="outline"><X />Cancel</Button> : null}
-          {session && !session.built ? <Button disabled={generationBusy} onClick={() => { onSessionChange({ ...session, built: true }); setGenerationStatus("Theme built. The screenmaster is unchanged and ready to apply."); }} size="sm" variant="secondary"><Hammer />Build theme</Button> : null}
-          {session?.built ? <><Button onClick={() => { onApply(session.candidate); discard("Theme applied as one undo step."); }} size="sm" variant="secondary"><Check />Apply</Button><Button onClick={() => { onSessionChange({ ...session, built: false }); setGenerationStatus("Back to concept. The editor is unchanged."); }} size="sm" variant="outline"><Undo2 />Back to concept</Button></> : null}
-          {session ? <Button disabled={generationBusy} onClick={() => discard("Concept discarded.")} size="sm" variant="ghost">Discard</Button> : null}
+        <Textarea aria-label="AI theme prompt" disabled={generationBusy} maxLength={2000} onChange={(event) => setPrompt(event.target.value)} onKeyDown={submitPromptFromKeyboard} placeholder={session ? "Make the cat larger and the colors warmer…" : "Create a premium synthwave cat theme…"} value={prompt} />
+        {generationError ? <p aria-live="polite" className="rounded-md border border-destructive/40 px-3 py-2 text-sm font-medium text-destructive">{generationError}</p> : null}
+        <div className="grid gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <Button className={session || generationBusy ? "" : "col-span-2"} disabled={!canCreateOrRefine} onClick={() => void createOrRefineConcept()} size="sm">{generationBusy ? <Spinner /> : <Send />}{generationBusy ? (session ? "Refining…" : "Creating…") : (session ? "Refine draft" : "Create theme draft")}</Button>
+            {generationBusy ? <Button onClick={() => abortRef.current?.abort()} size="sm" variant="outline"><X />Cancel</Button> : null}
+            {session && !generationBusy ? <Button onClick={() => { onApply(session.candidate); onSessionChange(null); setGenerationError(""); }} size="sm" variant="secondary"><Check />Apply</Button> : null}
+          </div>
+          <Button className="w-full" disabled={generationBusy && !session} onClick={startOver} size="sm" variant="outline"><RefreshCw />Start over</Button>
         </div>
       </div>
     </aside>

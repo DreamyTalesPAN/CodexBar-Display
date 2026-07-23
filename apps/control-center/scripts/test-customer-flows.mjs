@@ -4211,6 +4211,11 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
     name: /Rendered VibeTV theme clippy showing VibeTV/,
   });
   await clippyThumbnail.waitFor({ timeout: 10_000 });
+  const clippyThumbnailBox = await clippyThumbnail.boundingBox();
+  assert(
+    clippyThumbnailBox?.width >= 140 && clippyThumbnailBox?.height >= 140,
+    `Theme Library thumbnail should be large enough to inspect, got ${JSON.stringify(clippyThumbnailBox)}`,
+  );
   const firstThumbnailRender = await clippyThumbnail.evaluate(
     (node) => node.innerHTML,
   );
@@ -4764,7 +4769,7 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
 
   const prompt = page.getByLabel("AI theme prompt");
   await prompt.fill("Create a neon usage theme");
-  const create = page.getByRole("button", { name: "Create concept", exact: true });
+  const create = page.getByRole("button", { name: "Create theme draft", exact: true });
   await create.evaluate((button) => {
     button.click();
     button.click();
@@ -4772,16 +4777,24 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
   const creating = page.locator('button:has-text("Creating…")').first();
   await creating.waitFor();
   assert(await creating.isDisabled(), "generation should become busy immediately");
-  await page.getByText("Creating concept and preparing its hardware preview…").waitFor();
-  await page.getByText("Concept ready. Review the screenmaster, then build the theme.").waitFor();
-  assert(conceptRequests.length === 1, "double-clicking Create concept must start only one request");
+  await page.getByText("Theme draft ready. Review the preview, then apply it.").waitFor();
+  assert((await prompt.inputValue()) === "", "successful AI draft creation should clear the prompt input");
+  assert(
+    (await page.getByText("Draft creation started. Preparing preview…", { exact: true }).count()) === 0,
+    "busy state should stay in the Create button instead of a duplicate status box",
+  );
+  assert(conceptRequests.length === 1, "double-clicking Create theme draft must start only one request");
   assert(
     (await page.locator("[data-theme-studio-root] h3").first().textContent()) === originalName,
     "AI candidate must remain isolated before Apply",
   );
-  await page.getByText("AI Screenmaster Concept – not applied", { exact: true }).waitFor();
+  await page.getByText("AI Theme Draft – not applied", { exact: true }).waitFor();
   const candidatePreview = page.getByLabel("AI candidate theme preview");
   await candidatePreview.getByLabel(/Rendered VibeTV theme ai-moon-cat/).waitFor();
+  assert(
+    (await candidatePreview.getByText("CAT MODE", { exact: true }).count()) === 0,
+    "AI draft should not overlay the generated art with the blueprint title",
+  );
   await candidatePreview.getByText("SESSION", { exact: true }).waitFor();
   await candidatePreview.getByText("WEEKLY", { exact: true }).waitFor();
   assert((await candidatePreview.getByText("REMAINING", { exact: true }).count()) === 2, "screenmaster must show Remaining for both periods");
@@ -4790,17 +4803,11 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
     (await candidatePreview.getByLabel("Editable 240x240 preview").count()) === 0,
     "candidate preview must not expose editable overlays",
   );
-  const previewBeforeBuild = await candidatePreview.innerHTML();
-  await page.getByRole("button", { name: "Build theme", exact: true }).click();
-  await page.getByText("AI Theme Build – not applied", { exact: true }).waitFor();
-  assert((await candidatePreview.innerHTML()) === previewBeforeBuild, "Build theme must not change the screenmaster");
-  await page.getByRole("button", { name: "Back to concept", exact: true }).click();
-  await page.getByText("AI Screenmaster Concept – not applied", { exact: true }).waitFor();
+  assert((await page.getByRole("button", { name: "Build theme", exact: true }).count()) === 0, "AI draft should not need a separate Build theme step");
   await prompt.fill("Make the moon larger");
-  await page.getByRole("button", { name: "Refine concept", exact: true }).click();
-  await page.getByText("Concept ready. Review the screenmaster, then build the theme.").waitFor();
+  await page.getByRole("button", { name: "Refine draft", exact: true }).click();
+  await page.getByText("Draft refined. Review the updated preview, then apply it.").waitFor();
   assert(conceptRequests.at(-1)?.previous?.imageBase64 === conceptPNG, "Refine must send the previous concept image only for the edit request");
-  await page.getByRole("button", { name: "Build theme", exact: true }).click();
   await page.getByRole("button", { name: "Apply", exact: true }).click();
   await page.getByRole("heading", { name: "Moon Cat" }).waitFor();
   await page.waitForTimeout(400);
@@ -4809,7 +4816,7 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
     "AI screenmaster image data must never be written to localStorage",
   );
   assert(
-    (await page.getByText(/AI (Screenmaster Concept|Theme Build) – not applied/).count()) === 0,
+    (await page.getByText("AI Theme Draft – not applied", { exact: true }).count()) === 0,
     "Apply should restore the editable preview",
   );
   const undo = page.getByRole("button", { name: "Undo" });
@@ -4822,18 +4829,26 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
   assert(await undo.isDisabled(), "Apply should add exactly one undo step");
 
   await prompt.fill("Create another isolated cat concept");
-  await page.getByRole("button", { name: "Create concept", exact: true }).click();
-  await page.getByText("Concept ready. Review the screenmaster, then build the theme.").waitFor();
-  const nameBeforeDiscard = await page.locator("[data-theme-studio-root] h3").first().textContent();
-  await page.getByRole("button", { name: "Discard", exact: true }).click();
+  await prompt.press("Enter");
+  await page.getByText("Theme draft ready. Review the preview, then apply it.").waitFor();
+  const nameBeforeStartOver = await page.locator("[data-theme-studio-root] h3").first().textContent();
+  await page.getByRole("button", { name: "Start over", exact: true }).click();
   await page.getByLabel("Editable 240x240 preview").waitFor();
   assert(
-    (await page.locator("[data-theme-studio-root] h3").first().textContent()) === nameBeforeDiscard,
-    "Discard must not change the editor document",
+    (await page.locator("[data-theme-studio-root] h3").first().textContent()) === nameBeforeStartOver,
+    "Start over must not change the editor document",
   );
   assert(
-    (await page.getByText("AI Screenmaster Concept – not applied", { exact: true }).count()) === 0,
-    "Discard should restore the normal preview",
+    (await page.getByText("AI Theme Draft – not applied", { exact: true }).count()) === 0,
+    "Start over should restore the normal preview",
+  );
+  assert(
+    (await page.getByText("Create another isolated cat concept", { exact: true }).count()) === 0,
+    "Start over should remove old prompt history from the panel",
+  );
+  assert(
+    (await page.evaluate(() => Object.values(window.localStorage).some((entry) => String(entry).includes("Create another isolated cat concept")))) === false,
+    "Start over should remove old prompt history from localStorage",
   );
 
   await page.setViewportSize({ width: 800, height: 900 });
@@ -4841,16 +4856,15 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
   const aiSheet = page.getByRole("dialog");
   await aiSheet.getByText("Key stored securely. Test it before creating a concept.").waitFor();
   await aiSheet.getByLabel("AI theme prompt").fill("Create a compact mobile theme");
-  await aiSheet.getByRole("button", { name: "Create concept", exact: true }).click();
-  await aiSheet.getByText("Concept ready. Review the screenmaster, then build the theme.").waitFor();
-  await page.keyboard.press("Escape");
-  await page.getByText("AI Screenmaster Concept – not applied", { exact: true }).waitFor();
+  await aiSheet.getByRole("button", { name: "Create theme draft", exact: true }).click();
+  await aiSheet.waitFor({ state: "detached" });
+  await page.getByText("AI Theme Draft – not applied", { exact: true }).waitFor();
   await page.getByLabel("AI candidate theme preview").waitFor();
   await page.getByRole("button", { name: "AI Theme", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Discard", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Start over", exact: true }).click();
   assert(
-    (await page.getByText("AI Screenmaster Concept – not applied", { exact: true }).count()) === 0,
-    "mobile Sheet should keep and discard the shared candidate consistently",
+    (await page.getByText("AI Theme Draft – not applied", { exact: true }).count()) === 0,
+    "mobile Sheet should keep and reset the shared candidate consistently",
   );
 
   await page.unrouteAll({ behavior: "ignoreErrors" });

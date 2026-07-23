@@ -264,6 +264,8 @@ export function ThemeStudioScreen({
       : null,
   );
   const [aiThemeAvailable, setAIThemeAvailable] = useState(false);
+  const [aiThemeSheetOpen, setAIThemeSheetOpen] = useState(false);
+  const [mobileAIThemeSheetOpen, setMobileAIThemeSheetOpen] = useState(false);
   const [aiThemeSession, setAIThemeSession] = useState<AIThemeSession | null>(null);
   const aiThemeCandidate = aiThemeSession?.candidate || null;
 
@@ -396,6 +398,16 @@ export function ThemeStudioScreen({
         message: "AI candidate applied as one undo step.",
       },
     });
+  }
+
+  function revealAIThemePreview() {
+    setAIThemeSheetOpen(false);
+    setMobileAIThemeSheetOpen(false);
+    window.setTimeout(() => {
+      document
+        .querySelector("[data-ai-candidate-preview]")
+        ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 0);
   }
 
   const updateDocument = useCallback(
@@ -1190,7 +1202,7 @@ export function ThemeStudioScreen({
           />
           {aiThemeAvailable ? (
             <div className="hidden lg:block 2xl:hidden">
-              <Sheet>
+              <Sheet onOpenChange={setAIThemeSheetOpen} open={aiThemeSheetOpen}>
                 <SheetTrigger asChild>
                   <Button type="button" variant="outline">
                     <Sparkles data-icon="inline-start" aria-hidden />
@@ -1210,6 +1222,7 @@ export function ThemeStudioScreen({
                       currentSpec={spec}
                       key={`sheet-${spec.themeId}`}
                       onApply={applyAIThemeCandidate}
+                      onPreviewReady={revealAIThemePreview}
                       onSessionChange={setAIThemeSession}
                       session={aiThemeSession}
                     />
@@ -1289,7 +1302,7 @@ export function ThemeStudioScreen({
               </SheetContent>
             </Sheet>
             {aiThemeAvailable ? (
-              <Sheet>
+              <Sheet onOpenChange={setMobileAIThemeSheetOpen} open={mobileAIThemeSheetOpen}>
                 <SheetTrigger asChild>
                   <Button className="col-span-2" variant="outline">
                     <Sparkles data-icon="inline-start" />AI Theme
@@ -1305,6 +1318,7 @@ export function ThemeStudioScreen({
                       currentSpec={spec}
                       key={`mobile-ai-${spec.themeId}`}
                       onApply={applyAIThemeCandidate}
+                      onPreviewReady={revealAIThemePreview}
                       onSessionChange={setAIThemeSession}
                       session={aiThemeSession}
                     />
@@ -1629,9 +1643,7 @@ export function ThemeStudioScreen({
             <div className="grid w-full justify-items-center gap-2">
               {aiThemeSession ? (
                 <Badge data-ai-candidate-preview variant="secondary">
-                  {aiThemeSession.built
-                    ? "AI Theme Build – not applied"
-                    : "AI Screenmaster Concept – not applied"}
+                  AI Theme Draft – not applied
                 </Badge>
               ) : null}
               <EditableThemePreview
@@ -1785,6 +1797,7 @@ export function ThemeStudioScreen({
                 currentSpec={spec}
                 key={spec.themeId}
                 onApply={applyAIThemeCandidate}
+                onPreviewReady={revealAIThemePreview}
                 onSessionChange={setAIThemeSession}
                 session={aiThemeSession}
               />

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AI_THEME_LOCAL_HISTORY_LIMIT,
   buildAIThemeCandidateFromRGBA,
+  clearAIThemeHistory,
   encodeAIThemeCBI1,
   loadAIThemeHistory,
   saveAIThemeHistory,
@@ -11,6 +12,7 @@ import {
 class MemoryStorage {
   values = new Map<string, string>();
   getItem(key: string) { return this.values.get(key) ?? null; }
+  removeItem(key: string) { this.values.delete(key); }
   setItem(key: string, value: string) { this.values.set(key, value); }
 }
 
@@ -33,6 +35,13 @@ describe("AI theme history", () => {
     const storage = new MemoryStorage();
     saveAIThemeHistory("one", [{ content: "one", createdAt: "now", role: "user" }], storage);
     expect(loadAIThemeHistory("two", storage)).toEqual([]);
+  });
+
+  it("clears local history for a fresh AI draft", () => {
+    const storage = new MemoryStorage();
+    saveAIThemeHistory("one", [{ content: "old cat prompt", createdAt: "now", role: "user" }], storage);
+    clearAIThemeHistory("one", storage);
+    expect(loadAIThemeHistory("one", storage)).toEqual([]);
   });
 
   it("converts exactly 30,720 pixels into a maximum 26-color CBI1 screenmaster", () => {
@@ -68,6 +77,7 @@ describe("AI theme history", () => {
     expect(candidate.spec.primitives.filter((item) => item.type === "progress").map((item) => item.binding)).toEqual(["session", "weekly"]);
     expect(candidate.spec.primitives.filter((item) => item.type === "text").map((item) => item.text)).toContain("{session}%");
     expect(candidate.spec.primitives.filter((item) => item.type === "text").map((item) => item.text)).toContain("{weekly}%");
+    expect(candidate.spec.primitives.filter((item) => item.type === "text").map((item) => item.text)).not.toContain("CAT MODE");
     expect(Object.values(candidate.assets)[0]?.data.startsWith("CBI1\n240 128\n")).toBe(true);
     expect(JSON.stringify(candidate)).not.toContain(imageBase64);
   });

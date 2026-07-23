@@ -152,7 +152,7 @@ func TestAIThemeConceptUsesFixedPlannerAndImageModels(t *testing.T) {
 			payload, _ := json.Marshal(map[string]any{"output": []any{map[string]any{"content": []any{map[string]any{"type": "output_text", "text": validAIStyleJSON()}}}}})
 			return response(200, payload, r), nil
 		}
-		if r.URL.String() != openAIImageEndpoint || !bytes.Contains(body, []byte(openAIImageModel)) || !bytes.Contains(body, []byte(`"size":"1920x1024"`)) {
+		if r.URL.String() != openAIImageEndpoint || !bytes.Contains(body, []byte(openAIImageModel)) || !bytes.Contains(body, []byte(`"size":"1200x640"`)) || bytes.Contains(body, []byte(`"size":"1920x1024"`)) || !bytes.Contains(body, []byte(`"quality":"low"`)) || bytes.Contains(body, []byte(`"quality":"high"`)) {
 			t.Fatalf("image request url=%s body=%s", r.URL, body)
 		}
 		payload, _ := json.Marshal(map[string]any{"data": []any{map[string]any{"b64_json": tinyPNGBase64()}}})
@@ -189,7 +189,7 @@ func TestAIThemeConceptEditUsesPreviousPNGWithoutLoggingIt(t *testing.T) {
 	body, _ := json.Marshal(request)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, aiRequest(http.MethodPost, "/v1/ai-theme/concepts", string(body)))
-	if w.Code != 200 || !strings.HasPrefix(contentType, "multipart/form-data;") || !bytes.Contains(editBody, []byte(`filename="previous.png"`)) || !bytes.Contains(editBody, []byte("Content-Type: image/png")) || !bytes.Contains(editBody, []byte(openAIImageModel)) || !bytes.Contains(editBody, []byte("clearly readable defining features")) || bytes.Contains(editBody, []byte("recognizable silhouette")) {
+	if w.Code != 200 || !strings.HasPrefix(contentType, "multipart/form-data;") || !bytes.Contains(editBody, []byte(`filename="previous.png"`)) || !bytes.Contains(editBody, []byte("Content-Type: image/png")) || !bytes.Contains(editBody, []byte(openAIImageModel)) || !bytes.Contains(editBody, []byte(`name="size"`)) || !bytes.Contains(editBody, []byte("\r\n\r\n1200x640\r\n")) || bytes.Contains(editBody, []byte("\r\n\r\n1920x1024\r\n")) || !bytes.Contains(editBody, []byte(`name="quality"`)) || !bytes.Contains(editBody, []byte("\r\n\r\nlow\r\n")) || bytes.Contains(editBody, []byte("\r\n\r\nhigh\r\n")) || !bytes.Contains(editBody, []byte("clearly readable defining features")) || bytes.Contains(editBody, []byte("recognizable silhouette")) {
 		t.Fatalf("edit=%d content-type=%s", w.Code, contentType)
 	}
 }

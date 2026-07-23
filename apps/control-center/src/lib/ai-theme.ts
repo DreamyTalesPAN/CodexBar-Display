@@ -36,7 +36,6 @@ export type AIThemeCandidate = {
   spec: ThemeStudioSpec;
 };
 export type AIThemeSession = {
-  built: boolean;
   candidate: AIThemeCandidate;
   concept: AIThemeConcept;
 };
@@ -121,7 +120,6 @@ export function buildAIThemeCandidateFromRGBA(
     bgColor: style.backgroundColor,
     primitives: [
       { type: "sprite", x: 0, y: 0, width: 240, height: 128, assetPath: AI_THEME_SCREENMASTER_ASSET_PATH },
-      { type: "text", x: 8, y: 8, width: 224, text: style.title.toUpperCase(), align: "center", fontSize: 2, color: style.textColor },
       { type: "rect", x: 0, y: 128, width: 240, height: 112, color: style.panelColor, bgColor: style.panelColor, borderColor: style.panelColor, borderRadius: 0 },
       { type: "text", x: 12, y: 134, text: "SESSION", fontSize: 2, color: style.textColor },
       { type: "text", x: 152, y: 134, width: 76, text: "{session}%", align: "right", fontSize: 2, color: style.sessionColor },
@@ -207,6 +205,10 @@ export function saveAIThemeHistory(themeId: string, history: AIThemeMessage[], s
   if (!storage) return;
   const sanitized = history.map((message) => ({ content: message.content.slice(0, 2000), createdAt: message.createdAt, role: message.role })).slice(-AI_THEME_LOCAL_HISTORY_LIMIT);
   storage.setItem(historyKey(themeId), JSON.stringify(sanitized));
+}
+
+export function clearAIThemeHistory(themeId: string, storage: Pick<Storage, "removeItem"> | null = browserStorage()): void {
+  storage?.removeItem(historyKey(themeId));
 }
 
 function historyKey(themeId: string): string { return `${HISTORY_PREFIX}${themeId.replace(/[^a-z0-9_-]/gi, "_")}`; }

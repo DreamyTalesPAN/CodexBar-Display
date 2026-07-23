@@ -36,6 +36,8 @@ const (
 	openAIImageEditEndpoint    = "https://api.openai.com/v1/images/edits"
 	openAIModel                = "gpt-5.6-terra"
 	openAIImageModel           = "gpt-image-2"
+	openAIImageQuality         = "low"
+	openAIImageSize            = "1200x640"
 )
 
 var aiThemeColorPattern = regexp.MustCompile(`^#[A-Fa-f0-9]{6}$`)
@@ -400,7 +402,7 @@ func (a *aiThemeState) createConceptImage(ctx context.Context, key string, style
 	prompt := "Create only the illustration for a tiny physical 240x240 desk display. Make a text-free, front-on 15:8 composition with one strong recognizable subject, clearly readable defining features, large simple shapes and a limited cohesive palette. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. The image will occupy the top 240x128 pixels. " + style.ArtPrompt
 	var request *http.Request
 	if len(previous) == 0 {
-		body, _ := json.Marshal(map[string]any{"model": openAIImageModel, "prompt": prompt, "size": "1920x1024", "quality": "high", "output_format": "png", "n": 1})
+		body, _ := json.Marshal(map[string]any{"model": openAIImageModel, "prompt": prompt, "size": openAIImageSize, "quality": openAIImageQuality, "output_format": "png", "n": 1})
 		request, _ = http.NewRequestWithContext(ctx, http.MethodPost, openAIImageEndpoint, bytes.NewReader(body))
 		request.Header.Set("Content-Type", "application/json")
 	} else {
@@ -408,8 +410,8 @@ func (a *aiThemeState) createConceptImage(ctx context.Context, key string, style
 		writer := multipart.NewWriter(&body)
 		_ = writer.WriteField("model", openAIImageModel)
 		_ = writer.WriteField("prompt", prompt)
-		_ = writer.WriteField("size", "1920x1024")
-		_ = writer.WriteField("quality", "high")
+		_ = writer.WriteField("size", openAIImageSize)
+		_ = writer.WriteField("quality", openAIImageQuality)
 		_ = writer.WriteField("output_format", "png")
 		header := make(textproto.MIMEHeader)
 		header.Set("Content-Disposition", `form-data; name="image"; filename="previous.png"`)

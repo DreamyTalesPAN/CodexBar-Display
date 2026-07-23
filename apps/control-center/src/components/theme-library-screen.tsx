@@ -801,7 +801,7 @@ function ThemeListItem({
       role="listitem"
       variant={item.themeId === displayThemeId ? "muted" : "outline"}
     >
-      <ItemMedia className="w-24">
+      <ItemMedia className="w-32 sm:w-36">
         <Button
           aria-label={`Preview ${item.title}`}
           className="h-auto w-full justify-start p-0"
@@ -1328,7 +1328,7 @@ function ThemePreview({
   });
   const className = large
     ? "relative block aspect-square w-full overflow-hidden border border-border bg-muted"
-    : "relative block size-24 overflow-hidden border border-border bg-muted";
+    : "relative block size-32 overflow-hidden border border-border bg-muted sm:size-36";
   const themeId = theme.themeId;
   const customPack =
     theme.kind === "custom"
