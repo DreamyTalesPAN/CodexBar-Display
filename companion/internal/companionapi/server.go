@@ -2711,8 +2711,7 @@ func (s *Server) repairDeviceOnceLocked(
 	if err := s.startDisplayStream(ctx, target); err != nil {
 		return deviceInfo{}, &repairStageError{stage: "display-stream", err: err}
 	}
-	var stream displayStreamInfo
-	stream = s.waitForFreshDisplayStream(ctx, target, streamStartedAt)
+	stream := s.waitForFreshDisplayStream(ctx, target, streamStartedAt)
 	if !stream.Healthy && stream.ErrorCode == "device_pairing_required" && !forcePair {
 		return deviceInfo{}, &repairStageError{stage: "pair", err: &pairingAuthorizationError{
 			statusCode: http.StatusUnauthorized,

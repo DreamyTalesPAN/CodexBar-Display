@@ -254,3 +254,17 @@ issue scope, or release permission never implies UI permission.
 - Approved files: ESP8266 pairing policy and compatibility version, Companion
   Connect routing/error mapping, Control Center startup recovery, and their
   firmware, Go, unit, and customer-flow tests.
+
+## 2026-07-23 — Restore Connect after a lost local key
+
+- User approval: After testing the signed preview against the real VibeTV, the
+  user explicitly accepted the successful result with `ja geil` and asked
+  whether the branch was ready to merge.
+- Approved customer-visible result: When the reachable VibeTV no longer has a
+  matching local key, the startup screen keeps that VibeTV visible with the
+  normal `Connect` action. Pressing it establishes the new internal key, opens
+  Overview, and reaches the green connected state with a live display image
+  without another reset or WiFi setup.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`, their
+  unit tests, and the matching customer-flow assertions in
+  `test-customer-flows.mjs`.
