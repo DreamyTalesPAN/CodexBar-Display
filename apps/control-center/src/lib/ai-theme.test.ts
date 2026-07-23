@@ -124,7 +124,7 @@ describe("AI theme history", () => {
     expect(encoded.split("\n").filter((line) => line.includes(".")).length).toBeGreaterThan(0);
     const candidate = buildAIThemeAnimationCandidateFromRGBA(concept, background, frames);
     expect(candidate.assets[AI_THEME_ANIMATION_ASSET_PATH]?.data).toMatch(/^CBA1\n72 72 4 4\n/);
-    expect(candidate.assets[AI_THEME_ANIMATION_ASSET_PATH]?.data).not.toContain(".");
+    expect(candidate.assets[AI_THEME_ANIMATION_ASSET_PATH]?.data).toBe(encoded);
     expect(candidate.assets[AI_THEME_SCREENMASTER_ASSET_PATH]?.data.startsWith("CBI1\n240 128\n")).toBe(true);
     expect(candidate.spec.primitives[0]).toMatchObject({
       assetPath: AI_THEME_SCREENMASTER_ASSET_PATH,

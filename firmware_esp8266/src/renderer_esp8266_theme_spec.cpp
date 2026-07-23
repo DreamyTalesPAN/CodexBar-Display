@@ -27,6 +27,7 @@ constexpr unsigned long kThemeSpecAnimatedTickMs = 20UL;
 constexpr unsigned long kThemeSpecAnimatedResumeTickMs = 1UL;
 constexpr unsigned long kThemeSpecFullRenderRetryMs = 750UL;
 constexpr int kAnimatedSpriteCacheSlots = 2;
+constexpr int kStaticSpriteRegionCacheMaxRows = 240;
 constexpr size_t kSpriteLineReserveBytes = 256;
 constexpr size_t kSpriteLineMaxBytes = 512;
 unsigned long nextThemeSpecAnimatedTickAtMs = 0;
@@ -51,6 +52,7 @@ uint32_t lastSuccessfulThemeSpecRawHash = 0;
 JsonDocument cachedThemeSpecDoc;
 uint32_t cachedThemeSpecDocHash = 0;
 themespec::CompiledThemeSpec cachedThemeSpecScene;
+themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nullptr);
 
 struct AnimatedSpriteCache {
   bool valid = false;
@@ -73,11 +75,30 @@ struct AnimatedSpriteCache {
   unsigned long nextFrameAtMs = 0;
   int frameBufferWidth = 0;
   int frameBufferHeight = 0;
+  bool frameBufferHasStaticBackground = false;
+};
+
+// A CBA frame buffer is too small to keep a second RGB565 background copy.
+// Cache only the CBI palette and row offsets, then rebuild the animated region
+// in the existing frame buffer before each frame. This avoids a full TFT redraw.
+struct StaticSpriteRegionCache {
+  bool valid = false;
+  String path;
+  int x = 0;
+  int y = 0;
+  int targetWidth = 0;
+  int targetHeight = 0;
+  int sourceWidth = 0;
+  int sourceHeight = 0;
+  uint16_t palette[26] = {0};
+  int paletteSize = 0;
+  uint32_t rowOffsets[kStaticSpriteRegionCacheMaxRows] = {0};
 };
 
 AnimatedSpriteCache animatedSpriteCaches[kAnimatedSpriteCacheSlots];
 AnimatedSpriteCache* cbaFrameBufferOwner = nullptr;
 int nextAnimatedSpriteCacheSlot = 0;
+StaticSpriteRegionCache staticSpriteRegionCache;
 
 void markThemeSpecRenderOk() {
   lastThemeSpecRenderOk = true;
@@ -150,6 +171,7 @@ void releaseAnimatedSpriteBuffer(AnimatedSpriteCache& cache) {
   }
   cache.frameBufferWidth = 0;
   cache.frameBufferHeight = 0;
+  cache.frameBufferHasStaticBackground = false;
   cache.frameReadyToPush = false;
 }
 
@@ -403,7 +425,8 @@ bool decodeSpriteRleRowToBuffer(
     uint16_t transparentColor,
     uint16_t* buffer,
     int bufferWidth,
-    int bufferHeight) {
+    int bufferHeight,
+    bool preserveTransparentPixels) {
   if (buffer == nullptr || sourceWidth <= 0 || sourceHeight <= 0 ||
       sourceRow < 0 || sourceRow >= sourceHeight ||
       bufferWidth <= 0 || bufferHeight <= 0) {
@@ -427,8 +450,9 @@ bool decodeSpriteRleRowToBuffer(
     }
 
     const char token = row[i++];
+    const bool transparent = token == '.';
     uint16_t color = transparentColor;
-    if (token != '.') {
+    if (!transparent) {
       if (token < 'a' || token > 'z') {
         return false;
       }
@@ -443,10 +467,12 @@ bool decodeSpriteRleRowToBuffer(
     const int x2 = ((sourceOffset + runLength) * bufferWidth + sourceWidth - 1) / sourceWidth;
     const int y1 = (sourceRow * bufferHeight) / sourceHeight;
     const int y2 = ((sourceRow + 1) * bufferHeight + sourceHeight - 1) / sourceHeight;
-    for (int py = y1; py < y2 && py < bufferHeight; ++py) {
-      uint16_t* out = buffer + (py * bufferWidth);
-      for (int px = x1; px < x2 && px < bufferWidth; ++px) {
-        out[px] = color;
+    if (!transparent || !preserveTransparentPixels) {
+      for (int py = y1; py < y2 && py < bufferHeight; ++py) {
+        uint16_t* out = buffer + (py * bufferWidth);
+        for (int px = x1; px < x2 && px < bufferWidth; ++px) {
+          out[px] = color;
+        }
       }
     }
     sourceOffset += runLength;
@@ -466,6 +492,187 @@ bool readSpritePalette(File& file, uint16_t* palette, int& paletteSize) {
     palette[i] = themespec::ParseColor(line.c_str(), 0x0000);
   }
   return true;
+}
+
+bool decodeStaticSpriteRleRowToRegionBuffer(
+    const String& row,
+    const StaticSpriteRegionCache& cache,
+    int sourceRow,
+    int regionX,
+    int regionY,
+    int regionWidth,
+    int regionHeight,
+    uint16_t* buffer) {
+  if (buffer == nullptr || sourceRow < 0 || sourceRow >= cache.sourceHeight ||
+      regionWidth <= 0 || regionHeight <= 0) {
+    return false;
+  }
+  int sourceOffset = 0;
+  for (size_t i = 0; i < row.length();) {
+    int runLength = 0;
+    bool hasRunLength = false;
+    while (i < row.length() && row[i] >= '0' && row[i] <= '9') {
+      hasRunLength = true;
+      runLength = (runLength * 10) + (row[i] - '0');
+      ++i;
+    }
+    if (!hasRunLength) {
+      runLength = 1;
+    }
+    if (runLength <= 0 || i >= row.length() || sourceOffset + runLength > cache.sourceWidth) {
+      return false;
+    }
+    const char token = row[i++];
+    const int drawX1 = cache.x + ((sourceOffset * cache.targetWidth) / cache.sourceWidth);
+    const int drawX2 = cache.x + (((sourceOffset + runLength) * cache.targetWidth + cache.sourceWidth - 1) / cache.sourceWidth);
+    const int drawY1 = cache.y + ((sourceRow * cache.targetHeight) / cache.sourceHeight);
+    const int drawY2 = cache.y + (((sourceRow + 1) * cache.targetHeight + cache.sourceHeight - 1) / cache.sourceHeight);
+    const int clippedX1 = max(drawX1, regionX);
+    const int clippedX2 = min(drawX2, regionX + regionWidth);
+    const int clippedY1 = max(drawY1, regionY);
+    const int clippedY2 = min(drawY2, regionY + regionHeight);
+    if (token != '.' && clippedX1 < clippedX2 && clippedY1 < clippedY2) {
+      if (token < 'a' || token > 'z' || token - 'a' >= cache.paletteSize) {
+        return false;
+      }
+      const uint16_t color = cache.palette[token - 'a'];
+      for (int py = clippedY1; py < clippedY2; ++py) {
+        uint16_t* out = buffer + ((py - regionY) * regionWidth);
+        for (int px = clippedX1; px < clippedX2; ++px) {
+          out[px - regionX] = color;
+        }
+      }
+    }
+    sourceOffset += runLength;
+  }
+  return sourceOffset == cache.sourceWidth;
+}
+
+bool cacheStaticSpriteRegionForAnimation(
+    const char* animationPath,
+    int animationX,
+    int animationY,
+    int animationWidth,
+    int animationHeight) {
+  if (animationPath == nullptr || animationPath[0] == '\0') {
+    return false;
+  }
+  const themespec::FrameData frameData = currentThemeSpecFrameData();
+  int animatedIndex = -1;
+  for (size_t i = 0; i < cachedThemeSpecScene.primitiveCount; ++i) {
+    const themespec::CompiledPrimitive& primitive = cachedThemeSpecScene.primitives[i];
+    if (primitive.kind != themespec::PrimitiveKind::Sprite ||
+        !themespec::AssetPathLooksAnimated(themespec::CompiledStateAssetPathFor(primitive, frameData))) {
+      continue;
+    }
+    const char* path = themespec::CompiledStateAssetPathFor(primitive, frameData);
+    if (path != nullptr && strcmp(path, animationPath) == 0 &&
+        primitive.x == animationX && primitive.y == animationY &&
+        primitive.width == animationWidth && primitive.height == animationHeight) {
+      animatedIndex = static_cast<int>(i);
+      break;
+    }
+  }
+  if (animatedIndex <= 0) {
+    return false;
+  }
+
+  for (int i = animatedIndex - 1; i >= 0; --i) {
+    const themespec::CompiledPrimitive& primitive = cachedThemeSpecScene.primitives[i];
+    const char* path = themespec::CompiledStateAssetPathFor(primitive, frameData);
+    if (primitive.kind != themespec::PrimitiveKind::Sprite || path == nullptr ||
+        themespec::AssetPathLooksAnimated(path) || strstr(path, ".cbi") == nullptr ||
+        primitive.x > animationX || primitive.y > animationY ||
+        primitive.x + primitive.width < animationX + animationWidth ||
+        primitive.y + primitive.height < animationY + animationHeight) {
+      continue;
+    }
+    if (staticSpriteRegionCache.valid && staticSpriteRegionCache.path == path &&
+        staticSpriteRegionCache.x == primitive.x && staticSpriteRegionCache.y == primitive.y &&
+        staticSpriteRegionCache.targetWidth == primitive.width &&
+        staticSpriteRegionCache.targetHeight == primitive.height) {
+      return true;
+    }
+    StaticSpriteRegionCache replacement;
+    File file = LittleFS.open(path, "r");
+    String line;
+    int width = 0;
+    int height = 0;
+    if (!file || !readSpriteLine(file, line) || line != "CBI1" ||
+        !readSpriteLine(file, line) || !parseSpriteHeader(line, width, height) ||
+        height > kStaticSpriteRegionCacheMaxRows ||
+        !readSpritePalette(file, replacement.palette, replacement.paletteSize)) {
+      if (file) {
+        file.close();
+      }
+      continue;
+    }
+    bool indexed = true;
+    for (int row = 0; row < height; ++row) {
+      replacement.rowOffsets[row] = static_cast<uint32_t>(file.position());
+      if (!readSpriteLine(file, line)) {
+        indexed = false;
+        break;
+      }
+      if (ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(row + 1)) {
+        cooperativeYield();
+      }
+    }
+    file.close();
+    if (!indexed) {
+      continue;
+    }
+    replacement.valid = true;
+    replacement.path = path;
+    replacement.x = primitive.x;
+    replacement.y = primitive.y;
+    replacement.targetWidth = primitive.width;
+    replacement.targetHeight = primitive.height;
+    replacement.sourceWidth = width;
+    replacement.sourceHeight = height;
+    staticSpriteRegionCache = replacement;
+    return true;
+  }
+  return false;
+}
+
+bool restoreCachedStaticSpriteRegion(
+    int regionX,
+    int regionY,
+    int regionWidth,
+    int regionHeight,
+    uint16_t* buffer) {
+  const StaticSpriteRegionCache& cache = staticSpriteRegionCache;
+  if (!cache.valid || buffer == nullptr || regionWidth <= 0 || regionHeight <= 0 ||
+      cache.x > regionX || cache.y > regionY ||
+      cache.x + cache.targetWidth < regionX + regionWidth ||
+      cache.y + cache.targetHeight < regionY + regionHeight) {
+    return false;
+  }
+  File file = LittleFS.open(cache.path, "r");
+  if (!file) {
+    return false;
+  }
+  String line;
+  bool restored = true;
+  for (int row = 0; row < cache.sourceHeight; ++row) {
+    const int drawY1 = cache.y + ((row * cache.targetHeight) / cache.sourceHeight);
+    const int drawY2 = cache.y + (((row + 1) * cache.targetHeight + cache.sourceHeight - 1) / cache.sourceHeight);
+    if (drawY2 <= regionY || drawY1 >= regionY + regionHeight) {
+      continue;
+    }
+    if (!file.seek(cache.rowOffsets[row], SeekSet) || !readSpriteLine(file, line) ||
+        !decodeStaticSpriteRleRowToRegionBuffer(
+            line, cache, row, regionX, regionY, regionWidth, regionHeight, buffer)) {
+      restored = false;
+      break;
+    }
+    if (ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(row + 1)) {
+      cooperativeYield();
+    }
+  }
+  file.close();
+  return restored;
 }
 
 void drawStaticSpriteAsset(
@@ -600,6 +807,8 @@ bool loadAnimatedSpriteCache(File& file, AnimatedSpriteCache& cache) {
 
 bool prepareAnimatedSpriteBuffer(
     AnimatedSpriteCache& cache,
+    int x,
+    int y,
     int targetWidth,
     int targetHeight,
     bool hasClearColor,
@@ -647,6 +856,12 @@ bool prepareAnimatedSpriteBuffer(
   for (uint32_t i = 0; i < requiredPixels; ++i) {
     cbaFrameBuffer[i] = clearColor;
   }
+  cache.frameBufferHasStaticBackground = restoreCachedStaticSpriteRegion(
+      x,
+      y,
+      bufferWidth,
+      bufferHeight,
+      cbaFrameBuffer);
   cbaFrameBufferOwner = &cache;
   cache.frameBufferWidth = bufferWidth;
   cache.frameBufferHeight = bufferHeight;
@@ -695,6 +910,8 @@ void pushCompletedAnimatedSpriteFrame(
 bool drawAnimatedSpriteAsset(
     AnimatedSpriteCache& cache,
     File& file,
+    int x,
+    int y,
     int targetWidth,
     int targetHeight,
     bool hasClearColor,
@@ -717,8 +934,16 @@ bool drawAnimatedSpriteAsset(
     cache.nextRow = 0;
     cache.nextRowOffset = cache.frameOffsets[cache.renderingFrameIndex];
     releaseAnimatedSpriteBuffer(cache);
+    (void)cacheStaticSpriteRegionForAnimation(
+        cache.path.c_str(),
+        x,
+        y,
+        targetWidth > 0 ? targetWidth : cache.width,
+        targetHeight > 0 ? targetHeight : cache.height);
     if (!prepareAnimatedSpriteBuffer(
             cache,
+            x,
+            y,
             targetWidth,
             targetHeight,
             hasClearColor,
@@ -742,6 +967,7 @@ bool drawAnimatedSpriteAsset(
       cache.height);
   for (int rowBudget = 0; rowBudget < rowsThisTick; ++rowBudget) {
     const int row = cache.nextRow;
+    const bool preserveTransparentPixels = cache.frameBufferHasStaticBackground;
     if (!readSpriteLine(file, line) ||
         !decodeSpriteRleRowToBuffer(
             line,
@@ -753,7 +979,8 @@ bool drawAnimatedSpriteAsset(
             clearColor,
             cbaFrameBuffer,
             cache.frameBufferWidth,
-            cache.frameBufferHeight)) {
+            cache.frameBufferHeight,
+            preserveTransparentPixels)) {
       cache.valid = false;
       cancelAnimatedSpriteFrame(cache);
       return false;
@@ -822,6 +1049,8 @@ void drawSpriteAsset(
         (void)drawAnimatedSpriteAsset(
             *animatedCache,
             file,
+            x,
+            y,
             targetWidth,
             targetHeight,
             hasClearColor,
@@ -845,6 +1074,7 @@ void resetAnimatedSpriteCaches() {
   for (int i = 0; i < kAnimatedSpriteCacheSlots; ++i) {
     animatedSpriteCaches[i] = AnimatedSpriteCache{};
   }
+  staticSpriteRegionCache = StaticSpriteRegionCache{};
   nextAnimatedSpriteCacheSlot = 0;
 }
 
@@ -1066,7 +1296,7 @@ const char* themeSpecUpdateNoticeText() {
   return "Open VibeTV Mac App";
 }
 
-themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nullptr) {
+themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText) {
   themespec::FrameData frame;
   frame.provider = CurrentFrame().provider.c_str();
   frame.label = ProviderLabelText();
