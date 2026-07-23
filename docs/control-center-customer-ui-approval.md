@@ -297,3 +297,18 @@ issue scope, or release permission never implies UI permission.
   `mac-app-install-command.ts`, `mac-app-install-command.test.ts`, native
   `main.swift`, `URLSchemeTests.swift`, runtime endpoint handling, and their
   regression tests.
+
+## 2026-07-23 — Single-writer fallback safety
+
+- User approval: After the merge-risk review identified a possible second
+  display writer and stale fallback endpoint, the user explicitly ordered both
+  risks to be fixed in the Codex task on 2026-07-23.
+- Approved customer-visible result: An unrelated process on VibeTV's preferred
+  port still causes automatic background fallback without a new screen. If the
+  port belongs to another VibeTV service, the Mac App never starts a second
+  display writer and uses the already approved `VibeTV couldn’t start` screen.
+  After a fallback runtime restart, Control Center verifies the newly published
+  port before reloading. No copy, control, or layout changes.
+- Approved files: Companion port-owner classification and tests, native runtime
+  endpoint rediscovery, its macOS contract test, and the matching architecture
+  documentation.

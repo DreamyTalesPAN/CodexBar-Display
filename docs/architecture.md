@@ -7,7 +7,8 @@ VibeTV has four visible pieces:
 3. **VibeTV Mac App**: the local `codexbar-display` process on the customer's Mac.
 4. **Control Center**: the local browser app served by the Mac App. It prefers
    `http://127.0.0.1:47832/control-center` and automatically uses another
-   loopback port when that port belongs to another process.
+   loopback port when that port belongs to an unrelated process. It never
+   starts a second display writer beside another VibeTV service.
 
 The hosted page at `https://app.vibetv.shop` is the download entrypoint. It
 offers the verified Mac App DMG. After installation, the customer opens the Mac

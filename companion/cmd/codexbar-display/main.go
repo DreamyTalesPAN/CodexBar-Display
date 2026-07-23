@@ -310,10 +310,58 @@ type runtimeEndpoint struct {
 	PID    int    `json:"pid"`
 }
 
+func addressHostsVibeTVService(addr string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	statusURL := url.URL{
+		Scheme: "http",
+		Host:   addr,
+		Path:   "/v1/status",
+	}
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		statusURL.String(),
+		nil,
+	)
+	if err != nil {
+		return false
+	}
+	client := &http.Client{
+		Timeout: time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return false
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return false
+	}
+
+	var status map[string]json.RawMessage
+	if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&status); err != nil {
+		return false
+	}
+	companion := strings.TrimSpace(string(status["companion"]))
+	return companion != "" && companion != "null" && companion != "{}"
+}
+
 func listenCompanionAPI(addr string, allowFallback bool) (net.Listener, error) {
 	listener, err := net.Listen("tcp", addr)
 	if err == nil || !allowFallback || !errors.Is(err, syscall.EADDRINUSE) {
 		return listener, err
+	}
+	if addressHostsVibeTVService(addr) {
+		return nil, fmt.Errorf(
+			"another VibeTV service already owns %s: %w",
+			addr,
+			err,
+		)
 	}
 	return net.Listen("tcp", "127.0.0.1:0")
 }

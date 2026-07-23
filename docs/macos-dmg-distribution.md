@@ -42,9 +42,10 @@ VibeTV Control Center.app/
   `vibetv://open-control-center` launcher
 
 The Swift shell prefers `http://127.0.0.1:47832/control-center` in `WKWebView`.
-If another process already owns that port, the bundled runtime binds an
+If an unrelated process already owns that port, the bundled runtime binds an
 OS-selected loopback port and publishes it in the private
-`runtime-endpoint.json` file for the Swift shell.
+`runtime-endpoint.json` file for the Swift shell. If the listener is another
+VibeTV service, startup stops instead of creating a second display writer.
 When a bundled `Contents/Helpers/codexbar-display` exists, the shell
 uses this migration order:
 
@@ -58,14 +59,18 @@ uses this migration order:
    do not restart an already-current service.
 4. Record which old user LaunchAgents are running and stop them without moving
    or deleting their plists. Start on `127.0.0.1:47832`, or automatically use a
-   free loopback port when another process still owns the preferred port.
+   free loopback port when an unrelated process still owns the preferred port.
+   Another VibeTV service remains the sole display writer until the customer
+   stops it and retries.
 5. Accept the new runtime only when the endpoint returns HTTP 2xx, JSON
    `ok: true`, `companion.version` exactly matches the DMG app version, and the
    PID reported for `shop.vibetv.control-center.runtime` by `launchctl` owns the
    discovered listener. A timeout or mismatch
    unregisters the new service and restores the previously running legacy
    agents; their plists and old app bundles remain in place. A known or unknown
-   process on the preferred port is never killed.
+   process on the preferred port is never killed. If a fallback runtime
+   restarts on a different port, the Swift shell verifies the new endpoint
+   before reloading Control Center.
 6. After that health gate, make the `/Applications` app the default `vibetv://`
    handler and move both old LaunchAgent plists and the old Terminal app copies
    from `~/Applications` or Application Support into

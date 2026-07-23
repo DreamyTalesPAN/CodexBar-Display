@@ -2895,6 +2895,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         return candidates
     }
 
+    private func rediscoverRuntimeOriginForNavigationRetry() async {
+        let expectedVersion = currentCompanionVersion()
+        guard !expectedVersion.isEmpty else {
+            return
+        }
+        _ = await waitForHealthyRuntime(
+            expectedVersion: expectedVersion,
+            timeout: runtimeInitialHealthTimeout
+        )
+    }
+
     private func runtimePortConflictDetail() -> String? {
         let listener = runCommandCapturingOutput(
             executable: "/usr/sbin/lsof",
@@ -3639,6 +3650,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 return
             }
             guard let self else {
+                return
+            }
+            await self.rediscoverRuntimeOriginForNavigationRetry()
+            guard !Task<Never, Never>.isCancelled else {
                 return
             }
             self.scheduledReload = nil

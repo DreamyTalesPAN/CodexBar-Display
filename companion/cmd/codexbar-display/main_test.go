@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -87,26 +88,50 @@ func TestParseDaemonCommandOptionsAllowsAPIFallback(t *testing.T) {
 }
 
 func TestListenCompanionAPIFallsBackWithoutStoppingForeignListener(t *testing.T) {
-	foreign, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen foreign: %v", err)
-	}
+	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
 	defer foreign.Close()
+	foreignAddr := foreign.Listener.Addr().String()
 
-	listener, err := listenCompanionAPI(foreign.Addr().String(), true)
+	listener, err := listenCompanionAPI(foreignAddr, true)
 	if err != nil {
 		t.Fatalf("listen fallback: %v", err)
 	}
 	defer listener.Close()
 
-	if listener.Addr().String() == foreign.Addr().String() {
+	if listener.Addr().String() == foreignAddr {
 		t.Fatalf("fallback reused occupied address %s", listener.Addr())
 	}
-	conn, err := net.DialTimeout("tcp", foreign.Addr().String(), time.Second)
+	conn, err := net.DialTimeout("tcp", foreignAddr, time.Second)
 	if err != nil {
 		t.Fatalf("foreign listener was disturbed: %v", err)
 	}
 	conn.Close()
+}
+
+func TestListenCompanionAPIRejectsSecondVibeTVService(t *testing.T) {
+	existing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/status" {
+			http.NotFound(w, request)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(
+			w,
+			`{"companion":{"status":"ready","version":"1.0.0","runtime":{"executable":"/private/tmp/vibetv-ai-theme-companion"}}}`,
+		)
+	}))
+	defer existing.Close()
+
+	listener, err := listenCompanionAPI(existing.Listener.Addr().String(), true)
+	if listener != nil {
+		listener.Close()
+		t.Fatal("second VibeTV service received a fallback listener")
+	}
+	if !errors.Is(err, syscall.EADDRINUSE) {
+		t.Fatalf("second VibeTV service error=%v want address-in-use", err)
+	}
 }
 
 func TestRuntimeEndpointWriteIsPrivateAndAtomic(t *testing.T) {

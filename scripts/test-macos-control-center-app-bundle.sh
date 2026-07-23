@@ -582,6 +582,7 @@ required_source = [
     'runtimeEndpointFileName = "runtime-endpoint.json"',
     "validatedRuntimeEndpointOrigin(",
     "runtimeOriginCandidates()",
+    "rediscoverRuntimeOriginForNavigationRetry()",
     'nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"',
     "webView.customUserAgent = nativeControlCenterUserAgent(",
     "timeout: runtimeInitialHealthTimeout",
@@ -856,6 +857,19 @@ if health_method.find("evaluateRuntimeHealth(") > health_method.find(
 ):
     raise SystemExit(
         "HTTP health must be evaluated before listener ownership is accepted"
+    )
+
+reload_method = source[
+    source.find("private func scheduleReload()"):
+    source.find("\\n}\\n\\n#if canImport(Sparkle)", source.find("private func scheduleReload()"))
+]
+rediscover_runtime = reload_method.find(
+    "await self.rediscoverRuntimeOriginForNavigationRetry()"
+)
+reload_control_center = reload_method.find("self.loadControlCenter(")
+if not (0 <= rediscover_runtime < reload_control_center):
+    raise SystemExit(
+        "native navigation retry must rediscover the verified runtime endpoint before reloading"
     )
 
 register_method = source[
