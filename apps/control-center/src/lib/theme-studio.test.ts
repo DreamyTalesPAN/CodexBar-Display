@@ -4,6 +4,7 @@ import {
   buildThemePack,
   deviceThemeSpecJson,
   importThemeSpec,
+  minimumFirmwareForThemeSpec,
   normalizeThemeSpec,
   validateThemeSpec,
   type ThemeStudioSpec,
@@ -110,6 +111,30 @@ describe("validateThemeSpec", () => {
       numberFormat: "compact",
     });
     expect(validateThemeSpec(imported).errors).toEqual([]);
+  });
+
+  it("round-trips slot-roll animation through compact device JSON", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        animation: "slot-roll",
+        binding: "sessionTokens",
+        type: "text",
+        width: 220,
+        x: 10,
+        y: 80,
+      },
+    ];
+
+    const deviceSpec = JSON.parse(deviceThemeSpecJson(spec));
+    expect(deviceSpec.p[0]).toMatchObject({
+      an: "slot-roll",
+      b: "st",
+    });
+    expect(importThemeSpec(deviceSpec).primitives[0].animation).toBe(
+      "slot-roll",
+    );
+    expect(minimumFirmwareForThemeSpec(spec)).toBe("1.0.43");
   });
 
   it("rejects border radii outside the supported pixel range", () => {

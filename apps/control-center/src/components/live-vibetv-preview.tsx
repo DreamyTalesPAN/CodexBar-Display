@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import type {
@@ -35,7 +35,7 @@ export type ThemeRenderPack = {
   assets?: Record<string, ThemePackAsset>;
 };
 
-export type ThemeCountUpPreview = {
+export type ThemeTokenAnimationPreview = {
   primitiveIndex: number;
   runId: number;
 };
@@ -330,13 +330,13 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
 
 export function ThemeSpecPreview({
   animate = true,
-  countUpPreview,
+  tokenAnimationPreview,
   pack,
   status,
   themeId,
 }: {
   animate?: boolean;
-  countUpPreview?: ThemeCountUpPreview | null;
+  tokenAnimationPreview?: ThemeTokenAnimationPreview | null;
   pack: ThemeRenderPack | null;
   status: "idle" | "loading" | "ready" | "error";
   themeId: string;
@@ -346,7 +346,7 @@ export function ThemeSpecPreview({
       <ThemeSpecSVG
         animate={animate}
         assets={pack.assets || {}}
-        countUpPreview={countUpPreview}
+        tokenAnimationPreview={tokenAnimationPreview}
         frame={THEME_LIBRARY_PREVIEW_FRAME}
         spec={pack.spec}
         themeId={pack.themeId || themeId}
@@ -389,14 +389,14 @@ function VibeTVCaseShell({ children }: { children: ReactNode }) {
 function ThemeSpecSVG({
   animate = true,
   assets,
-  countUpPreview,
+  tokenAnimationPreview,
   frame,
   spec,
   themeId,
 }: {
   animate?: boolean;
   assets: Record<string, ThemePackAsset>;
-  countUpPreview?: ThemeCountUpPreview | null;
+  tokenAnimationPreview?: ThemeTokenAnimationPreview | null;
   frame: FrameData;
   spec: ThemeSpec;
   themeId: string;
@@ -421,7 +421,7 @@ function ThemeSpecSVG({
           animate={animate}
           assets={assets}
           animationTick={animationTick}
-          countUpPreview={countUpPreview}
+          tokenAnimationPreview={tokenAnimationPreview}
           frame={frame}
           index={index}
           key={index}
@@ -437,7 +437,7 @@ function ThemePrimitiveNode({
   animate,
   assets,
   animationTick,
-  countUpPreview,
+  tokenAnimationPreview,
   frame,
   index,
   primitive,
@@ -446,7 +446,7 @@ function ThemePrimitiveNode({
   animate: boolean;
   assets: Record<string, ThemePackAsset>;
   animationTick: number;
-  countUpPreview?: ThemeCountUpPreview | null;
+  tokenAnimationPreview?: ThemeTokenAnimationPreview | null;
   frame: FrameData;
   index: number;
   primitive: ThemePrimitive;
@@ -481,9 +481,10 @@ function ThemePrimitiveNode({
     const text = renderTextPrimitive(primitive, frame);
     const binding = primitive.binding || primitive.b || "";
     const countUpTarget = tokenBindingValue(binding, frame);
-    const previewsCountUp =
-      countUpPreview?.primitiveIndex === index &&
-      (primitive.animation || primitive.an) === "count-up" &&
+    const tokenAnimation = primitive.animation || primitive.an;
+    const previewsTokenAnimation =
+      tokenAnimationPreview?.primitiveIndex === index &&
+      (tokenAnimation === "count-up" || tokenAnimation === "slot-roll") &&
       countUpTarget !== null;
     const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
     const fontSize = themeFontSize(primitive.font || primitive.f, primitive.fontSize || primitive.s);
@@ -492,6 +493,33 @@ function ThemePrimitiveNode({
     const textAnchor =
       maxWidth > 0 ? svgTextAnchor(primitive.align || primitive.al) : "start";
     const textX = alignedTextX(x, maxWidth, textAnchor);
+    const slotClipX =
+      maxWidth > 0 || textAnchor === "start" ? x : 0;
+    const slotClipWidth =
+      maxWidth > 0
+        ? maxWidth
+        : textAnchor === "end"
+          ? x
+          : 240 - slotClipX;
+    if (previewsTokenAnimation && tokenAnimation === "slot-roll") {
+      return (
+        <ThemeSlotRollText
+          align={textAnchor}
+          animate={animate}
+          clipHeight={fontSize * 1.2}
+          clipWidth={slotClipWidth}
+          clipX={slotClipX}
+          color={colorFor(primitive.color || primitive.c, "#FFFFFF")}
+          fontSize={fontSize}
+          fontWeight={themeFontWeight(primitive.font || primitive.f)}
+          key={tokenAnimationPreview.runId}
+          numberFormat={primitive.numberFormat || primitive.nf}
+          target={countUpTarget}
+          x={textX}
+          y={y}
+        />
+      );
+    }
     return (
       <text
         dominantBaseline="hanging"
@@ -504,10 +532,10 @@ function ThemePrimitiveNode({
         x={textX}
         y={y}
       >
-        {previewsCountUp ? (
+        {previewsTokenAnimation ? (
           <ThemeCountUpText
             animate={animate}
-            key={countUpPreview.runId}
+            key={tokenAnimationPreview.runId}
             numberFormat={primitive.numberFormat || primitive.nf}
             target={countUpTarget}
           />
@@ -942,6 +970,8 @@ const COUNT_UP_PREVIEW_TICK_MS = 100;
 const COUNT_UP_PREVIEW_FLICKER_DIM_MS = 110;
 const COUNT_UP_PREVIEW_FLICKER_RESTORE_MS = 210;
 const COUNT_UP_PREVIEW_START_MS = 340;
+const SLOT_ROLL_PREVIEW_STEPS = 8;
+const SLOT_ROLL_PREVIEW_TICK_MS = 60;
 
 export function countUpPreviewValue(target: number, step: number): number {
   const safeTarget = Math.max(0, Math.trunc(target));
@@ -971,15 +1001,8 @@ function ThemeCountUpText({
 
   useEffect(() => {
     if (!animate) {
-      setPhase("counting");
-      setFlickerDimmed(false);
-      setStep(COUNT_UP_PREVIEW_STEPS);
       return;
     }
-
-    setPhase("flicker");
-    setFlickerDimmed(false);
-    setStep(0);
 
     const dimTimer = window.setTimeout(
       () => setFlickerDimmed(true),
@@ -1021,6 +1044,147 @@ function ThemeCountUpText({
     numberFormat === "compact" ? formatCompactTokens(value) : String(value);
   return (
     <tspan opacity={animate && flickerDimmed ? 0.2 : 1}>{label}</tspan>
+  );
+}
+
+function ThemeSlotRollText({
+  align,
+  animate,
+  clipHeight,
+  clipWidth,
+  clipX,
+  color,
+  fontSize,
+  fontWeight,
+  numberFormat,
+  target,
+  x,
+  y,
+}: {
+  align: "start" | "middle" | "end";
+  animate: boolean;
+  clipHeight: number;
+  clipWidth: number;
+  clipX: number;
+  color: string;
+  fontSize: number;
+  fontWeight: number;
+  numberFormat?: string;
+  target: number;
+  x: number;
+  y: number;
+}) {
+  const clipId = `slot-roll-${useId().replaceAll(":", "")}`;
+  const [step, setStep] = useState(
+    animate ? 0 : SLOT_ROLL_PREVIEW_STEPS,
+  );
+  const [phase, setPhase] = useState<"flicker" | "rolling">(
+    animate ? "flicker" : "rolling",
+  );
+  const [flickerDimmed, setFlickerDimmed] = useState(false);
+
+  useEffect(() => {
+    if (!animate) {
+      return;
+    }
+
+    const dimTimer = window.setTimeout(
+      () => setFlickerDimmed(true),
+      COUNT_UP_PREVIEW_FLICKER_DIM_MS,
+    );
+    const restoreTimer = window.setTimeout(
+      () => setFlickerDimmed(false),
+      COUNT_UP_PREVIEW_FLICKER_RESTORE_MS,
+    );
+    let rollTimer: number | undefined;
+    const startTimer = window.setTimeout(() => {
+      setPhase("rolling");
+      let nextStep = 0;
+      rollTimer = window.setInterval(() => {
+        nextStep += 1;
+        setStep(nextStep);
+        if (nextStep >= SLOT_ROLL_PREVIEW_STEPS) {
+          window.clearInterval(rollTimer);
+        }
+      }, SLOT_ROLL_PREVIEW_TICK_MS);
+    }, COUNT_UP_PREVIEW_START_MS);
+
+    return () => {
+      window.clearTimeout(dimTimer);
+      window.clearTimeout(restoreTimer);
+      window.clearTimeout(startTimer);
+      if (rollTimer !== undefined) {
+        window.clearInterval(rollTimer);
+      }
+    };
+  }, [animate]);
+
+  const previous = slotRollPreviewPreviousValue(target);
+  const progress = Math.min(1, step / SLOT_ROLL_PREVIEW_STEPS);
+  const oldY = y + clipHeight * progress;
+  const newY = y - clipHeight * (1 - progress);
+  const format = (value: number) =>
+    numberFormat === "compact"
+      ? formatCompactTokens(value)
+      : String(Math.max(0, Math.trunc(value)));
+  const textProps = {
+    dominantBaseline: "hanging" as const,
+    fill: color,
+    fontFamily:
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    fontSize,
+    fontWeight,
+    letterSpacing: "0",
+    textAnchor: align,
+    x,
+  };
+
+  return (
+    <g>
+      <defs>
+        <clipPath id={clipId}>
+          <rect
+            height={clipHeight}
+            width={clipWidth}
+            x={clipX}
+            y={y}
+          />
+        </clipPath>
+      </defs>
+      <g clipPath={`url(#${clipId})`}>
+        {animate && phase === "flicker" ? (
+          <text
+            {...textProps}
+            opacity={flickerDimmed ? 0.2 : 1}
+            y={y}
+          >
+            {format(previous)}
+          </text>
+        ) : (
+          <>
+            {progress < 1 ? (
+              <text {...textProps} y={oldY}>
+                {format(previous)}
+              </text>
+            ) : null}
+            <text {...textProps} y={newY}>
+              {format(target)}
+            </text>
+          </>
+        )}
+      </g>
+    </g>
+  );
+}
+
+export function slotRollPreviewPreviousValue(target: number): number {
+  const safeTarget = Math.max(0, Math.trunc(target));
+  if (safeTarget === 0) {
+    return 0;
+  }
+  return Math.max(
+    0,
+    safeTarget - Math.max(1, Math.round(safeTarget * 0.08)),
   );
 }
 

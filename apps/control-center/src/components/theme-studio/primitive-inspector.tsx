@@ -128,13 +128,14 @@ export function PrimitiveInspector({
                 value={primitive.animation || "none"}
                 onChange={(value) => {
                   onChange("animation", value === "none" ? "" : value);
-                  if (value === "count-up") {
+                  if (value === "count-up" || value === "slot-roll") {
                     onPreviewAnimation();
                   }
                 }}
                 options={[
                   ["none", "None"],
                   ["count-up", "Count up"],
+                  ["slot-roll", "Slot roll"],
                 ]}
               />
             </div>

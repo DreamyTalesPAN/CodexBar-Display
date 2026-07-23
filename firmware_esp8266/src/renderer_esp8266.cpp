@@ -192,7 +192,7 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
         display::CurrentFrame().hasThemeSpec &&
         display::CurrentThemeSpecRenderedSuccessfully()) {
       const uint32_t animatedTokenFields =
-          display::PrepareThemeSpecTokenCountUp(
+          display::PrepareThemeSpecTokenAnimation(
               event.themeSpecChangedFields,
               event.previousSessionTokens,
               event.previousWeekTokens,

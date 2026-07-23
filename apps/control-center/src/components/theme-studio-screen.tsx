@@ -131,7 +131,7 @@ import {
   titleFromThemeId,
 } from "./theme-studio/editor-geometry";
 import type {
-  ThemeCountUpPreview,
+  ThemeTokenAnimationPreview,
   ThemeRenderPack,
 } from "./live-vibetv-preview";
 import { themeRenderPackUrl } from "./control-center-runtime";
@@ -227,8 +227,8 @@ export function ThemeStudioScreen({
     document: editorState.present,
   };
   const [selectedIndices, setSelectedIndices] = useState<number[]>([0]);
-  const [countUpPreview, setCountUpPreview] =
-    useState<ThemeCountUpPreview | null>(null);
+  const [tokenAnimationPreview, setTokenAnimationPreview] =
+    useState<ThemeTokenAnimationPreview | null>(null);
   const [jsonText, setJsonText] = useState(() =>
     prettyJson(createStarterThemeSpec()),
   );
@@ -531,11 +531,11 @@ export function ThemeStudioScreen({
     updatePrimitive(selectedIndex, updater);
   }
 
-  function previewSelectedCountUp() {
+  function previewSelectedTokenAnimation() {
     if (selectedIndex < 0) {
       return;
     }
-    setCountUpPreview((current) => ({
+    setTokenAnimationPreview((current) => ({
       primitiveIndex: selectedIndex,
       runId: (current?.runId || 0) + 1,
     }));
@@ -1207,7 +1207,7 @@ export function ThemeStudioScreen({
                       onChange={(field, value) => updateSelectedPrimitive((primitive) => setPrimitiveField(primitive, field, value))}
                       onDelete={deleteSelectedPrimitives}
                       onInsertToken={insertToken}
-                      onPreviewAnimation={previewSelectedCountUp}
+                      onPreviewAnimation={previewSelectedTokenAnimation}
                       primitive={selectedPrimitive}
                     />
                   ) : <p className="rounded-[var(--radius-control)] border bg-muted p-3 text-sm text-muted-foreground">Select an element.</p>}
@@ -1540,7 +1540,7 @@ export function ThemeStudioScreen({
 
           <main className="order-1 grid min-h-0 min-w-0 place-items-center lg:order-2 lg:h-full">
             <EditableThemePreview
-              countUpPreview={countUpPreview}
+              tokenAnimationPreview={tokenAnimationPreview}
               onInteractionCancel={() =>
                 dispatchEditor({ type: "cancel_transaction" })
               }
@@ -1608,7 +1608,7 @@ export function ThemeStudioScreen({
                   }
                   onDelete={deleteSelectedPrimitives}
                   onInsertToken={insertToken}
-                  onPreviewAnimation={previewSelectedCountUp}
+                  onPreviewAnimation={previewSelectedTokenAnimation}
                   primitive={selectedPrimitive}
                 />
               ) : (

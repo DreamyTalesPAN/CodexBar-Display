@@ -74,6 +74,33 @@ describe("validateThemeAgainstCapabilities", () => {
     expect(accepted.errors).toEqual([]);
   });
 
+  it("requires slot-roll firmware without affecting count-up themes", () => {
+    const spec = baseSpec();
+    spec.primitives = [
+      {
+        animation: "slot-roll",
+        binding: "sessionTokens",
+        type: "text",
+        x: 8,
+        y: 8,
+      },
+    ];
+
+    const rejected = validateThemeAgainstCapabilities(spec, {}, {
+      ...baseCapabilities,
+      firmwareVersion: "1.0.42",
+    });
+    expect(rejected.errors).toContain(
+      "Firmware 1.0.43 or newer is required for this theme.",
+    );
+
+    const accepted = validateThemeAgainstCapabilities(spec, {}, {
+      ...baseCapabilities,
+      firmwareVersion: "1.0.43",
+    });
+    expect(accepted.errors).toEqual([]);
+  });
+
   it("prefers the stored ThemeSpec limit over the inline limit", () => {
     const spec = baseSpec();
     spec.primitives.push({

@@ -203,14 +203,16 @@
                     "type": "string",
                     "enum": [
                       "none",
-                      "count-up"
+                      "count-up",
+                      "slot-roll"
                     ]
                   },
                   "an": {
                     "type": "string",
                     "enum": [
                       "none",
-                      "count-up"
+                      "count-up",
+                      "slot-roll"
                     ]
                   },
                   "fontSize": {
@@ -440,14 +442,16 @@
                     "type": "string",
                     "enum": [
                       "none",
-                      "count-up"
+                      "count-up",
+                      "slot-roll"
                     ]
                   },
                   "an": {
                     "type": "string",
                     "enum": [
                       "none",
-                      "count-up"
+                      "count-up",
+                      "slot-roll"
                     ]
                   },
                   "fontSize": {

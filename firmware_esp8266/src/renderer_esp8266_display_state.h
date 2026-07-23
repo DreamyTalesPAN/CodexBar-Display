@@ -116,7 +116,7 @@ struct FirmwareUpdateOverlayPlacement {
 bool DrawThemeSpecUsage();
 bool TickThemeSpecGifs();
 bool ThemeSpecAnimationWorkPending();
-uint32_t PrepareThemeSpecTokenCountUp(
+uint32_t PrepareThemeSpecTokenAnimation(
     uint32_t changedFields,
     int64_t previousSessionTokens,
     int64_t previousWeekTokens,

@@ -19,6 +19,7 @@ using codexbar_display::themespec::CompileThemeSpec;
 using codexbar_display::themespec::CompiledThemeSpec;
 using codexbar_display::themespec::CompiledThemeSpecHasGifAssets;
 using codexbar_display::themespec::CountUpTokenFields;
+using codexbar_display::themespec::SlotRollTokenFields;
 using codexbar_display::themespec::AnyAnimatedCompiledPrimitiveOverlaps;
 using codexbar_display::themespec::Bounds;
 using codexbar_display::themespec::RenderCompiledThemeSpec;
@@ -475,6 +476,56 @@ void testTokenTextSupportsCompactFormatAndCountUpFrame() {
   codexbar_display::themespec::FormatCompactTokenCount(
       1230000000LL, compact, sizeof(compact));
   TEST_ASSERT_EQUAL_STRING("1.23B", compact);
+  ReleaseCompiledThemeSpec(scene);
+}
+
+void testTokenTextSupportsSlotRollFrames() {
+  const char* spec = R"JSON({"v":1,"id":"token-slot","rev":1,"p":[{"t":"tx","x":10,"y":80,"w":220,"b":"st","an":"slot-roll","s":2}]})JSON";
+
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+  TEST_ASSERT_EQUAL_UINT32(1, scene.primitiveCount);
+  TEST_ASSERT_TRUE(scene.primitives[0].slotRoll);
+  TEST_ASSERT_FALSE(scene.primitives[0].countUp);
+  TEST_ASSERT_EQUAL_UINT32(
+      kThemeSpecFieldSessionTokens,
+      SlotRollTokenFields(scene, kThemeSpecFieldSessionTokens));
+
+  FrameData previous;
+  previous.sessionTokens = 100;
+  FrameData target = previous;
+  target.sessionTokens = 101;
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpecChangedPrimitives(
+      scene,
+      target,
+      kThemeSpecFieldSessionTokens,
+      sink,
+      nullptr,
+      nullptr,
+      nullptr,
+      &previous,
+      &target,
+      kThemeSpecFieldSessionTokens,
+      4,
+      8));
+
+  bool foundOldValue = false;
+  bool foundNewValue = false;
+  for (const RecordedCommand& command : sink.commands) {
+    if (command.type != CommandType::Text) {
+      continue;
+    }
+    if (command.text == "100" && command.y > 80) {
+      foundOldValue = true;
+    }
+    if (command.text == "101" && command.y < 80) {
+      foundNewValue = true;
+    }
+  }
+  TEST_ASSERT_TRUE(foundOldValue);
+  TEST_ASSERT_TRUE(foundNewValue);
   ReleaseCompiledThemeSpec(scene);
 }
 
@@ -1810,6 +1861,7 @@ int main() {
   RUN_TEST(testRendersCommandsAndBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testTokenTextSupportsCompactFormatAndCountUpFrame);
+  RUN_TEST(testTokenTextSupportsSlotRollFrames);
   RUN_TEST(testLabelBindingUsesProviderLabelWithoutUpdateNotice);
   RUN_TEST(testChangedLabelPassUsesSynchronizedUpdateNoticeText);
   RUN_TEST(testChangedLabelPassCanRestoreProviderText);

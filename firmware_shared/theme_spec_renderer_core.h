@@ -157,6 +157,7 @@ struct CompiledPrimitive {
   bool fitShrink = false;
   bool compactNumberFormat = false;
   bool countUp = false;
+  bool slotRoll = false;
   const char* text = "";
   const char* binding = nullptr;
   const char* assetPath = "";
@@ -1002,6 +1003,10 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
         animation != nullptr &&
         std::strcmp(animation, "count-up") == 0 &&
         IsTokenBinding(out.binding);
+    out.slotRoll =
+        animation != nullptr &&
+        std::strcmp(animation, "slot-roll") == 0 &&
+        IsTokenBinding(out.binding);
     const char* align = JsonStringFor(primitive, "align", "al");
     if (align != nullptr && std::strcmp(align, "center") == 0) {
       out.align = 1;
@@ -1420,6 +1425,16 @@ inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const Fram
   return false;
 }
 
+inline bool DrawCompiledPrimitiveWithYOffset(
+    const CompiledPrimitive& primitive,
+    const FrameData& frame,
+    int yOffset,
+    Sink& sink) {
+  CompiledPrimitive shifted = primitive;
+  shifted.y += yOffset;
+  return DrawCompiledPrimitive(shifted, frame, sink);
+}
+
 inline const FrameData& FrameForCompiledPrimitive(
     const CompiledPrimitive& primitive,
     const FrameData& frame,
@@ -1475,7 +1490,12 @@ inline bool RenderCompiledThemeSpecRegionPrimitives(
     Sink& sink,
     const char** error = nullptr,
     bool* skippedAnimatedOverlap = nullptr,
-    const FrameData* animatedTokenFrame = nullptr) {
+    const FrameData* animatedTokenFrame = nullptr,
+    const FrameData* slotRollFromFrame = nullptr,
+    const FrameData* slotRollTargetFrame = nullptr,
+    uint32_t slotRollFields = 0,
+    uint8_t slotRollStep = 0,
+    uint8_t slotRollSteps = 0) {
   if (error != nullptr) {
     *error = "";
   }
@@ -1518,12 +1538,37 @@ inline bool RenderCompiledThemeSpecRegionPrimitives(
         rendered = true;
         continue;
       }
-      rendered = DrawCompiledPrimitive(
-                     primitive,
-                     FrameForCompiledPrimitive(
-                         primitive, frame, animatedTokenFrame),
-                     sink) ||
-                 rendered;
+      if (primitive.slotRoll &&
+          IsTokenBinding(primitive.binding) &&
+          (primitive.liveFields & slotRollFields) != 0 &&
+          slotRollFromFrame != nullptr &&
+          slotRollTargetFrame != nullptr &&
+          slotRollSteps > 0) {
+        const uint8_t boundedStep =
+            slotRollStep > slotRollSteps ? slotRollSteps : slotRollStep;
+        const int textHeight = ApproxTextHeight(primitive.font, primitive.size);
+        const int oldOffset =
+            (textHeight * static_cast<int>(boundedStep)) /
+            static_cast<int>(slotRollSteps);
+        const int newOffset = oldOffset - textHeight;
+        if (boundedStep < slotRollSteps) {
+          rendered =
+              DrawCompiledPrimitiveWithYOffset(
+                  primitive, *slotRollFromFrame, oldOffset, sink) ||
+              rendered;
+        }
+        rendered =
+            DrawCompiledPrimitiveWithYOffset(
+                primitive, *slotRollTargetFrame, newOffset, sink) ||
+            rendered;
+      } else {
+        rendered = DrawCompiledPrimitive(
+                       primitive,
+                       FrameForCompiledPrimitive(
+                           primitive, frame, animatedTokenFrame),
+                       sink) ||
+                   rendered;
+      }
       RenderYield();
     }
   }
@@ -1541,7 +1586,12 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
     Sink& sink,
     const char** error = nullptr,
     bool* skippedAnimatedOverlap = nullptr,
-    const FrameData* animatedTokenFrame = nullptr) {
+    const FrameData* animatedTokenFrame = nullptr,
+    const FrameData* slotRollFromFrame = nullptr,
+    const FrameData* slotRollTargetFrame = nullptr,
+    uint32_t slotRollFields = 0,
+    uint8_t slotRollStep = 0,
+    uint8_t slotRollSteps = 0) {
   if (error != nullptr) {
     *error = "";
   }
@@ -1598,7 +1648,12 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
       sink,
       error,
       skippedAnimatedOverlap,
-      animatedTokenFrame);
+      animatedTokenFrame,
+      slotRollFromFrame,
+      slotRollTargetFrame,
+      slotRollFields,
+      slotRollStep,
+      slotRollSteps);
 }
 
 inline uint32_t CountUpTokenFields(
@@ -1609,6 +1664,21 @@ inline uint32_t CountUpTokenFields(
     const CompiledPrimitive& primitive = scene.primitives[i];
     if (primitive.kind == PrimitiveKind::Text &&
         primitive.countUp &&
+        IsTokenBinding(primitive.binding)) {
+      fields |= primitive.liveFields & changedFields;
+    }
+  }
+  return fields;
+}
+
+inline uint32_t SlotRollTokenFields(
+    const CompiledThemeSpec& scene,
+    uint32_t changedFields) {
+  uint32_t fields = 0;
+  for (size_t i = 0; i < scene.primitiveCount; ++i) {
+    const CompiledPrimitive& primitive = scene.primitives[i];
+    if (primitive.kind == PrimitiveKind::Text &&
+        primitive.slotRoll &&
         IsTokenBinding(primitive.binding)) {
       fields |= primitive.liveFields & changedFields;
     }

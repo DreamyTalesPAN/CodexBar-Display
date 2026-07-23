@@ -58,6 +58,8 @@ struct TokenCountUpState {
   bool active = false;
   uint8_t step = 0;
   uint32_t fields = 0;
+  uint32_t countUpFields = 0;
+  uint32_t slotRollFields = 0;
   unsigned long nextTickAtMs = 0;
   themespec::FrameData from;
   themespec::FrameData current;
@@ -1240,7 +1242,18 @@ bool TickThemeSpecGifs() {
               sink,
               &partialError,
               nullptr,
-              &tokenCountUp.current)) {
+              (tokenCountUp.countUpFields & field) != 0
+                  ? &tokenCountUp.current
+                  : nullptr,
+              (tokenCountUp.slotRollFields & field) != 0
+                  ? &tokenCountUp.from
+                  : nullptr,
+              (tokenCountUp.slotRollFields & field) != 0
+                  ? &tokenCountUp.target
+                  : nullptr,
+              tokenCountUp.slotRollFields & field,
+              tokenCountUp.step,
+              kTokenCountUpSteps)) {
         ok = false;
       }
     }
@@ -1265,7 +1278,7 @@ bool ThemeSpecAnimationWorkPending() {
   return cbaRenderJobInProgress || tokenCountUp.active;
 }
 
-uint32_t PrepareThemeSpecTokenCountUp(
+uint32_t PrepareThemeSpecTokenAnimation(
     uint32_t changedFields,
     int64_t previousSessionTokens,
     int64_t previousWeekTokens,
@@ -1280,7 +1293,10 @@ uint32_t PrepareThemeSpecTokenCountUp(
 
   const uint32_t countUpFields =
       themespec::CountUpTokenFields(cachedThemeSpecScene, changedFields);
-  if (countUpFields == 0) {
+  const uint32_t slotRollFields =
+      themespec::SlotRollTokenFields(cachedThemeSpecScene, changedFields);
+  const uint32_t animatedTokenFields = countUpFields | slotRollFields;
+  if (animatedTokenFields == 0) {
     return 0;
   }
 
@@ -1292,29 +1308,41 @@ uint32_t PrepareThemeSpecTokenCountUp(
   tokenCountUp.current = target;
   tokenCountUp.target = target;
 
-  if ((countUpFields & themespec::kThemeSpecFieldSessionTokens) != 0) {
+  if ((animatedTokenFields & themespec::kThemeSpecFieldSessionTokens) != 0) {
     const int64_t from =
         wasActive ? previousAnimated.sessionTokens : previousSessionTokens;
     if (target.sessionTokens > from) {
       tokenCountUp.fields |= themespec::kThemeSpecFieldSessionTokens;
+      tokenCountUp.countUpFields |=
+          countUpFields & themespec::kThemeSpecFieldSessionTokens;
+      tokenCountUp.slotRollFields |=
+          slotRollFields & themespec::kThemeSpecFieldSessionTokens;
       tokenCountUp.from.sessionTokens = from;
       tokenCountUp.current.sessionTokens = from;
     }
   }
-  if ((countUpFields & themespec::kThemeSpecFieldWeekTokens) != 0) {
+  if ((animatedTokenFields & themespec::kThemeSpecFieldWeekTokens) != 0) {
     const int64_t from =
         wasActive ? previousAnimated.weekTokens : previousWeekTokens;
     if (target.weekTokens > from) {
       tokenCountUp.fields |= themespec::kThemeSpecFieldWeekTokens;
+      tokenCountUp.countUpFields |=
+          countUpFields & themespec::kThemeSpecFieldWeekTokens;
+      tokenCountUp.slotRollFields |=
+          slotRollFields & themespec::kThemeSpecFieldWeekTokens;
       tokenCountUp.from.weekTokens = from;
       tokenCountUp.current.weekTokens = from;
     }
   }
-  if ((countUpFields & themespec::kThemeSpecFieldTotalTokens) != 0) {
+  if ((animatedTokenFields & themespec::kThemeSpecFieldTotalTokens) != 0) {
     const int64_t from =
         wasActive ? previousAnimated.totalTokens : previousTotalTokens;
     if (target.totalTokens > from) {
       tokenCountUp.fields |= themespec::kThemeSpecFieldTotalTokens;
+      tokenCountUp.countUpFields |=
+          countUpFields & themespec::kThemeSpecFieldTotalTokens;
+      tokenCountUp.slotRollFields |=
+          slotRollFields & themespec::kThemeSpecFieldTotalTokens;
       tokenCountUp.from.totalTokens = from;
       tokenCountUp.current.totalTokens = from;
     }
@@ -1358,7 +1386,12 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
           sink,
           &partialError,
           nullptr,
-          tokenCountUp.active ? &tokenCountUp.current : nullptr)) {
+          tokenCountUp.active ? &tokenCountUp.current : nullptr,
+          tokenCountUp.active ? &tokenCountUp.from : nullptr,
+          tokenCountUp.active ? &tokenCountUp.target : nullptr,
+          tokenCountUp.slotRollFields,
+          tokenCountUp.step,
+          kTokenCountUpSteps)) {
     markThemeSpecPartialFailed(changedFields, partialError);
     return false;
   }
@@ -1515,7 +1548,7 @@ bool ThemeSpecAnimationWorkPending() {
   return false;
 }
 
-uint32_t PrepareThemeSpecTokenCountUp(
+uint32_t PrepareThemeSpecTokenAnimation(
     uint32_t changedFields,
     int64_t previousSessionTokens,
     int64_t previousWeekTokens,

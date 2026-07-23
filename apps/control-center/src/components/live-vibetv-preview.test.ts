@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { countUpPreviewValue } from "./live-vibetv-preview";
+import {
+  countUpPreviewValue,
+  slotRollPreviewPreviousValue,
+} from "./live-vibetv-preview";
 
 describe("countUpPreviewValue", () => {
   it("moves from zero to the complete preview value in twelve steps", () => {
@@ -11,5 +14,13 @@ describe("countUpPreviewValue", () => {
   it("clamps steps and token values to safe preview bounds", () => {
     expect(countUpPreviewValue(142_400_000, 20)).toBe(142_400_000);
     expect(countUpPreviewValue(-1, 6)).toBe(0);
+  });
+});
+
+describe("slotRollPreviewPreviousValue", () => {
+  it("keeps the preview close to the target instead of starting at zero", () => {
+    expect(slotRollPreviewPreviousValue(100)).toBe(92);
+    expect(slotRollPreviewPreviousValue(1)).toBe(0);
+    expect(slotRollPreviewPreviousValue(0)).toBe(0);
   });
 });

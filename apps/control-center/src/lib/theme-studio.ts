@@ -30,7 +30,7 @@ export type ThemeStudioPrimitive = {
   text?: string;
   binding?: ThemeStudioBinding;
   numberFormat?: "exact" | "compact";
-  animation?: "none" | "count-up";
+  animation?: "none" | "count-up" | "slot-roll";
   fontSize?: number;
   font?: number;
   color?: string;
@@ -418,7 +418,10 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
     numberFormat:
       primitive.numberFormat === "compact" ? "compact" : undefined,
     animation:
-      primitive.animation === "count-up" ? "count-up" : undefined,
+      primitive.animation === "count-up" ||
+      primitive.animation === "slot-roll"
+        ? primitive.animation
+        : undefined,
     frameCount:
       primitive.frameCount === undefined
         ? undefined
@@ -547,10 +550,16 @@ export function buildThemePack(
 export function minimumFirmwareForThemeSpec(
   spec: ThemeStudioSpec,
 ): string {
-  return normalizeThemeSpec(spec).primitives.some(
+  const primitives = normalizeThemeSpec(spec).primitives;
+  if (
+    primitives.some((primitive) => primitive.animation === "slot-roll")
+  ) {
+    return "1.0.43";
+  }
+  return primitives.some(
     (primitive) =>
       primitive.numberFormat === "compact" ||
-      primitive.animation === "count-up",
+      primitive.animation === "count-up"
   )
     ? "1.0.40"
     : "1.0.24";
@@ -923,8 +932,11 @@ function buildDevicePrimitive(
   if (primitive.numberFormat === "compact") {
     compact.nf = "compact";
   }
-  if (primitive.animation === "count-up") {
-    compact.an = "count-up";
+  if (
+    primitive.animation === "count-up" ||
+    primitive.animation === "slot-roll"
+  ) {
+    compact.an = primitive.animation;
   }
   if (primitive.fontSize !== undefined) {
     compact.s = primitive.fontSize;
@@ -1026,7 +1038,11 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
     primitive.numberFormat = numberFormat;
   }
   const animation = stringValue(value.animation) ?? stringValue(value.an);
-  if (animation === "count-up" || animation === "none") {
+  if (
+    animation === "count-up" ||
+    animation === "slot-roll" ||
+    animation === "none"
+  ) {
     primitive.animation = animation;
   }
   const fontSize = numberValue(value.fontSize) ?? numberValue(value.s);

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ThemeStudioSpec } from "@/lib/theme-studio";
 import {
   ThemeSpecPreview,
-  type ThemeCountUpPreview,
+  type ThemeTokenAnimationPreview,
   type ThemeRenderPack,
 } from "../live-vibetv-preview";
 import {
@@ -50,7 +50,7 @@ type DragState =
     };
 
 export function EditableThemePreview({
-  countUpPreview,
+  tokenAnimationPreview,
   onInteractionCancel,
   onInteractionCommit,
   onInteractionStart,
@@ -63,7 +63,7 @@ export function EditableThemePreview({
   selectedIndices,
   spec,
 }: {
-  countUpPreview: ThemeCountUpPreview | null;
+  tokenAnimationPreview: ThemeTokenAnimationPreview | null;
   onInteractionCancel: () => void;
   onInteractionCommit: () => void;
   onInteractionStart: () => void;
@@ -301,7 +301,7 @@ export function EditableThemePreview({
     <div className="relative aspect-square w-full max-w-[480px] overflow-hidden border border-[#1B1B1B] bg-black p-0">
       <ThemeSpecPreview
         animate={!prefersReducedMotion}
-        countUpPreview={countUpPreview}
+        tokenAnimationPreview={tokenAnimationPreview}
         pack={pack}
         status="ready"
         themeId={spec.themeId}
