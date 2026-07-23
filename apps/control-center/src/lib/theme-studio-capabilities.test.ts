@@ -74,7 +74,7 @@ describe("validateThemeAgainstCapabilities", () => {
     expect(accepted.errors).toEqual([]);
   });
 
-  it("requires slot-roll firmware without affecting count-up themes", () => {
+  it("requires the next official firmware for slot-roll themes", () => {
     const spec = baseSpec();
     spec.primitives = [
       {
@@ -88,15 +88,15 @@ describe("validateThemeAgainstCapabilities", () => {
 
     const rejected = validateThemeAgainstCapabilities(spec, {}, {
       ...baseCapabilities,
-      firmwareVersion: "1.0.42",
+      firmwareVersion: "1.0.39",
     });
     expect(rejected.errors).toContain(
-      "Firmware 1.0.43 or newer is required for this theme.",
+      "Firmware 1.0.40 or newer is required for this theme.",
     );
 
     const accepted = validateThemeAgainstCapabilities(spec, {}, {
       ...baseCapabilities,
-      firmwareVersion: "1.0.43",
+      firmwareVersion: "1.0.40",
     });
     expect(accepted.errors).toEqual([]);
   });

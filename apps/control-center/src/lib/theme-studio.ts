@@ -551,15 +551,11 @@ export function minimumFirmwareForThemeSpec(
   spec: ThemeStudioSpec,
 ): string {
   const primitives = normalizeThemeSpec(spec).primitives;
-  if (
-    primitives.some((primitive) => primitive.animation === "slot-roll")
-  ) {
-    return "1.0.43";
-  }
   return primitives.some(
     (primitive) =>
       primitive.numberFormat === "compact" ||
-      primitive.animation === "count-up"
+      primitive.animation === "count-up" ||
+      primitive.animation === "slot-roll"
   )
     ? "1.0.40"
     : "1.0.24";

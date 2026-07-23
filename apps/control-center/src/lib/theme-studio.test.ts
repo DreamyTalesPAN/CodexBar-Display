@@ -134,7 +134,7 @@ describe("validateThemeSpec", () => {
     expect(importThemeSpec(deviceSpec).primitives[0].animation).toBe(
       "slot-roll",
     );
-    expect(minimumFirmwareForThemeSpec(spec)).toBe("1.0.43");
+    expect(minimumFirmwareForThemeSpec(spec)).toBe("1.0.40");
   });
 
   it("rejects border radii outside the supported pixel range", () => {
