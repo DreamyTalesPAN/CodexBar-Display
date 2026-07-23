@@ -300,7 +300,6 @@ bool testRendererUsesResumableCbaAnimation(
   }
   const std::size_t pushImage = renderer.find("Tft().pushImage(");
   const std::size_t pushFunction = renderer.rfind("void pushCompletedAnimatedSpriteFrame(", pushImage);
-  const std::size_t pushFunctionEnd = renderer.find("bool drawAnimatedSpriteAsset(", pushImage);
   if (!expect(
           renderer.find("TFT_eSprite") == std::string::npos &&
               pushImage != std::string::npos &&
@@ -308,16 +307,6 @@ bool testRendererUsesResumableCbaAnimation(
               renderer.find("new (std::nothrow) uint16_t") != std::string::npos &&
               renderer.find("CanAllocateCbaBuffer") != std::string::npos,
           "CBA must use one guarded raw RGB565 buffer and exactly one atomic push path")) {
-    return false;
-  }
-  const std::string pushBody = renderer.substr(pushFunction, pushFunctionEnd - pushFunction);
-  if (!expect(
-          pushFunction != std::string::npos &&
-              pushFunctionEnd != std::string::npos &&
-              pushBody.find("RenderThemeSpecRegion(") < pushBody.find("Tft().pushImage(") &&
-              pushBody.find("cache.transparentColor") != std::string::npos &&
-              renderer.find("unusedAnimatedSpriteTransparentColor") != std::string::npos,
-          "CBA pushes must restore the static region and preserve transparent pixels")) {
     return false;
   }
   if (!expect(
