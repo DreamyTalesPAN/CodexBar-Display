@@ -64,9 +64,10 @@ type aiThemeStyle struct {
 }
 
 type aiThemePreviousConcept struct {
-	ImageBase64      string       `json:"imageBase64"`
-	ImageContentType string       `json:"imageContentType"`
-	Style            aiThemeStyle `json:"style"`
+	ImageBase64          string       `json:"imageBase64"`
+	ImageContentType     string       `json:"imageContentType"`
+	AnimationFrameBase64 string       `json:"animationFrameBase64,omitempty"`
+	Style                aiThemeStyle `json:"style"`
 }
 
 type aiThemeConceptRequest struct {
@@ -83,9 +84,14 @@ type aiThemeConcept struct {
 }
 
 type aiThemeAnimation struct {
-	AdditionalFramesBase64 []string `json:"additionalFramesBase64"`
-	FPS                    int      `json:"fps"`
-	KeyColor               string   `json:"keyColor"`
+	FramesBase64 []string `json:"framesBase64"`
+	FPS          int      `json:"fps"`
+	KeyColor     string   `json:"keyColor"`
+}
+
+type aiThemeGeneratedImages struct {
+	BackgroundBase64 string
+	AnimationFrames  []string
 }
 
 type aiThemeCredentialRequest struct {
@@ -286,12 +292,20 @@ func (s *Server) handleAIThemeConcept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var previous []byte
+	var previousAnimation []byte
 	if req.Previous != nil {
 		var err error
 		previous, err = validateConceptImage(req.Previous.ImageBase64, req.Previous.ImageContentType)
 		if err != nil || validateAIThemeStyle(req.Previous.Style) != nil {
 			writeAIThemeError(w, http.StatusBadRequest, "previous_concept_invalid")
 			return
+		}
+		if req.Previous.AnimationFrameBase64 != "" {
+			previousAnimation, err = validateConceptImage(req.Previous.AnimationFrameBase64, "image/png")
+			if err != nil {
+				writeAIThemeError(w, http.StatusBadRequest, "previous_concept_invalid")
+				return
+			}
 		}
 	}
 	key, err := s.aiTheme.store.Get("openai")
@@ -313,17 +327,17 @@ func (s *Server) handleAIThemeConcept(w http.ResponseWriter, r *http.Request) {
 		writeAIThemeError(w, providerStatusFromError(err), providerErrorCode(err, 0))
 		return
 	}
-	images, err := s.aiTheme.createConceptImages(r.Context(), key, style, previous)
+	images, err := s.aiTheme.createConceptImages(r.Context(), key, style, previous, previousAnimation)
 	if err != nil {
 		writeAIThemeError(w, providerStatusFromError(err), providerErrorCode(err, 0))
 		return
 	}
-	concept := aiThemeConcept{ImageBase64: images[0], ImageContentType: "image/png", Style: style}
-	if len(images) == 4 {
+	concept := aiThemeConcept{ImageBase64: images.BackgroundBase64, ImageContentType: "image/png", Style: style}
+	if len(images.AnimationFrames) == 4 {
 		concept.Animation = &aiThemeAnimation{
-			AdditionalFramesBase64: images[1:],
-			FPS:                    4,
-			KeyColor:               "#FF00FF",
+			FramesBase64: images.AnimationFrames,
+			FPS:          4,
+			KeyColor:     "#FF00FF",
 		}
 	}
 	writeJSON(w, http.StatusOK, concept)
@@ -413,27 +427,55 @@ func (a *aiThemeState) planConcept(ctx context.Context, key string, req aiThemeC
 	return style, text, nil
 }
 
-func (a *aiThemeState) createConceptImages(ctx context.Context, key string, style aiThemeStyle, previous []byte) ([]string, error) {
+func (a *aiThemeState) createConceptImages(ctx context.Context, key string, style aiThemeStyle, previous, previousAnimation []byte) (aiThemeGeneratedImages, error) {
 	ctx, cancel := context.WithTimeout(ctx, aiThemeTimeout)
 	defer cancel()
 	if style.AnimationMode != "four_frame" {
 		prompt := "Create only the illustration for a tiny physical 240x240 desk display. Make a text-free, front-on 15:8 composition with one strong recognizable subject, clearly readable defining features, large simple shapes and a limited cohesive palette. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. The image will occupy the top 240x128 pixels. " + style.ArtPrompt
 		image, err := a.createConceptImage(ctx, key, prompt, previous)
 		if err != nil {
-			return nil, err
+			return aiThemeGeneratedImages{}, err
 		}
-		return []string{image}, nil
+		return aiThemeGeneratedImages{BackgroundBase64: image}, nil
 	}
 
 	const keyColor = "#FF00FF"
+	backgroundPrompt := "Create a complete static background illustration for the top 240x128 pixels of a tiny physical desk display. Make it a text-free, front-on 15:8 scene with a strong atmosphere, large simple shapes and a limited cohesive palette. Do not show the main animated subject; leave the central area visually calm so a 64x64 animated sprite can be placed over it. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. Theme: " + style.ArtPrompt
 	masterPrompt := "Create frame 1 of a four-frame looping sprite animation for a tiny physical desk display. Show one isolated, centered subject with clearly readable defining features, identical scale and front-on camera, large simple shapes and a limited palette. Use a perfectly flat pure magenta " + keyColor + " background with no gradient, texture, shadow or reflection. Keep the complete subject inside a square-safe central area. No device, product mock-up, desk, frame, UI, title, letters, numbers, percentages, progress bars, logos, brackets or placeholders. Subject: " + style.ArtPrompt + ". Motion: " + style.AnimationPrompt
-	master, err := a.createConceptImage(ctx, key, masterPrompt, previous)
-	if err != nil {
-		return nil, err
+	var background, master string
+	var firstErr error
+	var firstMu sync.Mutex
+	var firstWG sync.WaitGroup
+	setFirstErr := func(createErr error) {
+		firstMu.Lock()
+		defer firstMu.Unlock()
+		if createErr != nil && firstErr == nil {
+			firstErr = createErr
+		}
+	}
+	firstWG.Add(2)
+	go func() {
+		defer firstWG.Done()
+		var createErr error
+		background, createErr = a.createConceptImage(ctx, key, backgroundPrompt, previous)
+		setFirstErr(createErr)
+	}()
+	go func() {
+		defer firstWG.Done()
+		var createErr error
+		master, createErr = a.createConceptImage(ctx, key, masterPrompt, previousAnimation)
+		setFirstErr(createErr)
+	}()
+	firstWG.Wait()
+	if firstErr != nil {
+		return aiThemeGeneratedImages{}, firstErr
+	}
+	if background == "" || master == "" {
+		return aiThemeGeneratedImages{}, errors.New("provider_malformed_response")
 	}
 	masterBytes, err := validateConceptImage(master, "image/png")
 	if err != nil {
-		return nil, err
+		return aiThemeGeneratedImages{}, err
 	}
 	images := make([]string, 4)
 	images[0] = master
@@ -461,9 +503,9 @@ func (a *aiThemeState) createConceptImages(ctx context.Context, key string, styl
 	wg.Wait()
 	close(errs)
 	if createErr := <-errs; createErr != nil {
-		return nil, createErr
+		return aiThemeGeneratedImages{}, createErr
 	}
-	return images, nil
+	return aiThemeGeneratedImages{BackgroundBase64: background, AnimationFrames: images}, nil
 }
 
 func (a *aiThemeState) createConceptImage(ctx context.Context, key, prompt string, previous []byte) (string, error) {

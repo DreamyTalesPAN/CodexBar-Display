@@ -1,6 +1,5 @@
 import type { NextRequest } from "next/server";
 
-export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const LOCAL_MAC_APP_ORIGIN =
@@ -50,6 +49,19 @@ async function proxyLocalMacApp(request: NextRequest, context: RouteContext) {
   const pathname = `/${(params.path || []).map(encodeURIComponent).join("/")}`;
   const targetUrl = new URL(`${LOCAL_MAC_APP_ORIGIN}${pathname}`);
   targetUrl.search = request.nextUrl.search;
+  if (localProxyTargetsIncomingServer(targetUrl, request.nextUrl)) {
+    return Response.json(
+      {
+        ok: false,
+        error: {
+          code: "LOCAL_COMPANION_PROXY_LOOP",
+          message: "Local Companion proxy points back to the Next server.",
+          nextAction: "Set VIBETV_LOCAL_MAC_APP_ORIGIN to the Companion port.",
+        },
+      },
+      { status: 500 },
+    );
+  }
 
   try {
     const upstream = await fetch(targetUrl, {
@@ -57,6 +69,7 @@ async function proxyLocalMacApp(request: NextRequest, context: RouteContext) {
       cache: "no-store",
       headers: localRequestHeaders(request.headers, targetUrl.origin),
       method: request.method,
+      signal: request.signal,
     });
     return new Response(upstream.body, {
       headers: localResponseHeaders(upstream.headers),
@@ -79,6 +92,15 @@ async function proxyLocalMacApp(request: NextRequest, context: RouteContext) {
 
 function isLoopbackHostname(hostname: string): boolean {
   return ["127.0.0.1", "localhost", "::1"].includes(hostname);
+}
+
+function localProxyTargetsIncomingServer(target: URL, incoming: URL): boolean {
+  return (
+    target.protocol === incoming.protocol &&
+    target.port === incoming.port &&
+    isLoopbackHostname(target.hostname) &&
+    isLoopbackHostname(incoming.hostname)
+  );
 }
 
 function localRequestHeaders(source: Headers, targetOrigin: string): Headers {

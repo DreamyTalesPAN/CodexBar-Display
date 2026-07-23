@@ -169,13 +169,15 @@ func TestAIThemeConceptUsesFixedPlannerAndImageModels(t *testing.T) {
 	}
 }
 
-func TestAIThemeAnimationCreatesOneMasterAndThreeConsistentEdits(t *testing.T) {
+func TestAIThemeAnimationCreatesStaticBackgroundAndFourFrameSprite(t *testing.T) {
 	store := newMemorySecretStore()
 	_ = store.Set("openai", "sk-test-12345678901234567890")
 	var mu sync.Mutex
 	calls := 0
 	generations := 0
 	edits := 0
+	backgrounds := 0
+	keyedFrames := 0
 	server := newAIThemeTestServer(t, store, aiRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		mu.Lock()
 		calls++
@@ -192,9 +194,14 @@ func TestAIThemeAnimationCreatesOneMasterAndThreeConsistentEdits(t *testing.T) {
 			return response(200, payload, r), nil
 		}
 		body, _ := io.ReadAll(r.Body)
-		if !bytes.Contains(body, []byte("#FF00FF")) {
-			t.Fatalf("animation request does not fix the key background: %s", body)
+		mu.Lock()
+		if bytes.Contains(body, []byte("complete static background illustration")) {
+			backgrounds++
 		}
+		if bytes.Contains(body, []byte("#FF00FF")) {
+			keyedFrames++
+		}
+		mu.Unlock()
 		payload, _ := json.Marshal(map[string]any{"data": []any{map[string]any{"b64_json": tinyPNGBase64()}}})
 		return response(200, payload, r), nil
 	}))
@@ -202,10 +209,10 @@ func TestAIThemeAnimationCreatesOneMasterAndThreeConsistentEdits(t *testing.T) {
 	server.Handler().ServeHTTP(w, aiRequest(http.MethodPost, "/v1/ai-theme/concepts", `{"prompt":"Animate the cat as a four-frame sprite"}`))
 	mu.Lock()
 	defer mu.Unlock()
-	if w.Code != http.StatusOK || calls != 5 || generations != 1 || edits != 3 {
-		t.Fatalf("animation=%d calls=%d generations=%d edits=%d body=%s", w.Code, calls, generations, edits, w.Body.String())
+	if w.Code != http.StatusOK || calls != 6 || generations != 2 || edits != 3 || backgrounds != 1 || keyedFrames != 4 {
+		t.Fatalf("animation=%d calls=%d generations=%d edits=%d backgrounds=%d keyed=%d body=%s", w.Code, calls, generations, edits, backgrounds, keyedFrames, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), `"fps":4`) || strings.Count(w.Body.String(), tinyPNGBase64()) != 4 {
+	if !strings.Contains(w.Body.String(), `"fps":4`) || strings.Count(w.Body.String(), tinyPNGBase64()) != 5 {
 		t.Fatalf("animation response=%s", w.Body.String())
 	}
 }

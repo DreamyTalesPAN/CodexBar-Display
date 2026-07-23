@@ -192,6 +192,7 @@ function readyProviderSetup() {
 
 async function main() {
   await assertCompanionRequestTimeoutContract();
+  await assertLocalCompanionProxySafetyContract();
   const fixtureServer = await startFixtureServer();
   const catalogUrl = `http://127.0.0.1:${fixtureServer.port}/theme-packs.json`;
   const failedCatalogUrl = `http://127.0.0.1:${fixtureServer.port}/theme-packs-failed.json`;
@@ -4747,7 +4748,7 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
           imageBase64: conceptPNG,
           imageContentType: "image/png",
           animation: animated ? {
-            additionalFramesBase64: [conceptPNG, conceptPNG, conceptPNG],
+            framesBase64: [conceptPNG, conceptPNG, conceptPNG, conceptPNG],
             fps: 4,
             keyColor: "#FF00FF",
           } : undefined,
@@ -4883,7 +4884,8 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
   await page.getByRole("button", { name: "Send change", exact: true }).click();
   await page.getByText("4-frame animation created. Drag or resize the sprite, or ask for another change.").waitFor();
   assert(conceptRequests.at(-1)?.previous?.imageBase64 === conceptPNG, "Refine must send the previous concept image only for the edit request");
-  assert(conceptRequests.at(-1)?.previous?.animation === undefined, "Refine must not upload all previous animation frames");
+  assert(conceptRequests.at(-1)?.previous?.animationFrameBase64 === undefined, "A static refine should not upload an animation frame");
+  assert((await editablePreview.locator('[aria-label^="Select sprite"]').count()) === 2, "AI animation should be embedded over a separate static theme image");
   const animatedSprite = editablePreview.locator('[aria-label^="Select sprite"]').last();
   await animatedSprite.click();
   assert((await page.getByLabel("Frames", { exact: true }).inputValue()) === "4", "AI animation should expose exactly four editable sprite frames");
@@ -4893,7 +4895,8 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
   await waitForCondition(() => conceptResponses >= 3, "animated chat refinement should complete");
   await page.getByRole("button", { name: "Send change", exact: true }).waitFor();
   assert(conceptRequests.at(-1)?.previous?.style?.animationMode === "four_frame", "Chat refinements should preserve the four-frame animation mode");
-  assert(conceptRequests.at(-1)?.previous?.animation === undefined, "Animated refinements should still upload only the reference frame");
+  assert(conceptRequests.at(-1)?.previous?.animationFrameBase64 === conceptPNG, "Animated refinements should upload only the first sprite frame as reference");
+  assert(conceptRequests.at(-1)?.previous?.framesBase64 === undefined, "Animated refinements must not upload all sprite frames");
   await page.waitForTimeout(400);
   assert(
     !(await page.evaluate(() => Object.values(window.localStorage).some((entry) => String(entry).includes("CBI1")))),
@@ -4904,12 +4907,16 @@ async function testAIThemeBuilderCandidateFlow(browser, appUrl) {
     "AI updates should not require a separate Apply action",
   );
 
-  const nameBeforeStartOver = await page.locator("[data-theme-studio-root] h3").first().textContent();
   await page.getByRole("button", { name: "Start over", exact: true }).click();
   await page.getByLabel("Editable 240x240 preview").waitFor();
   assert(
-    (await page.locator("[data-theme-studio-root] h3").first().textContent()) === nameBeforeStartOver,
-    "Start over must clear the chat without changing the editable document",
+    (await page.locator("[data-theme-studio-root] h3").first().textContent()) === "New Theme",
+    "Start over should create a new blank document",
+  );
+  assert(
+    (await editablePreview.locator('[aria-label^="Select "]').count()) === 1 &&
+      (await editablePreview.getByLabel("Select rect 1").count()) === 1,
+    "Start over should remove generated layers and leave only the blank canvas",
   );
   assert(
     (await page.getByText("Make the animated cat larger", { exact: true }).count()) === 0,
@@ -7091,6 +7098,21 @@ async function assertCompanionRequestTimeoutContract() {
   assert(
     statusPollGuards.length === 2,
     `Startup and Control Center status polling must both be single-flight, got ${statusPollGuards.length} guards`,
+  );
+}
+
+async function assertLocalCompanionProxySafetyContract() {
+  const source = await readFile(
+    join(root, "src/app/api/local-companion/[...path]/route.ts"),
+    "utf8",
+  );
+  assert(
+    source.includes("signal: request.signal"),
+    "The local Companion proxy must cancel its upstream fetch when the browser request is aborted",
+  );
+  assert(
+    source.includes("localProxyTargetsIncomingServer(targetUrl, request.nextUrl)"),
+    "The local Companion proxy must reject a target that points back to its own Next server",
   );
 }
 

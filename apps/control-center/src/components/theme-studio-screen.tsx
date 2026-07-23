@@ -75,6 +75,7 @@ import {
 } from "@/lib/ai-theme";
 import {
   buildThemePack,
+  createBlankThemeSpec,
   createStarterThemeSpec,
   importThemeSpec,
   normalizeThemeSpec,
@@ -201,6 +202,7 @@ export function ThemeStudioScreen({
 }: ThemeStudioScreenProps = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const gifInputRef = useRef<HTMLInputElement>(null);
+  const initialLoadStartedRef = useRef(false);
   const libraryButtonRef = useRef<HTMLDivElement>(null);
   const recoveryWrittenRef = useRef(Boolean(initialTheme?.recovered));
   const recoverySnapshotRef = useRef<{
@@ -304,6 +306,11 @@ export function ThemeStudioScreen({
   const referencedAssets = useMemo(() => referencedThemeAssetPaths(spec), [spec]);
 
   useEffect(() => {
+    if (initialLoadStartedRef.current) {
+      return;
+    }
+    initialLoadStartedRef.current = true;
+
     if (initialTheme) {
       libraryIdRef.current = initialTheme.libraryId;
       sourceRef.current = initialTheme.source;
@@ -384,6 +391,28 @@ export function ThemeStudioScreen({
         tone: "ready",
         message: "AI theme added to the editable canvas.",
       },
+    });
+  }
+
+  function startNewAITheme() {
+    libraryIdRef.current = undefined;
+    sourceRef.current = "custom";
+    recoveryWrittenRef.current = false;
+    setRecoveryDirty(false);
+    replaceLoadedTheme({
+      assets: {},
+      clearAIThemeSession: false,
+      packName: "New Theme",
+      spec: createBlankThemeSpec(),
+      status: {
+        tone: "ready",
+        message: "New blank theme started.",
+      },
+    });
+    setAssetStatus({ tone: "unknown", message: "" });
+    setDeviceStatus({
+      tone: "unknown",
+      message: "Nothing is sent until you click Send.",
     });
   }
 
@@ -1341,6 +1370,7 @@ export function ThemeStudioScreen({
                       currentSpec={spec}
                       onApply={applyGeneratedAITheme}
                       onSessionChange={setAIThemeSession}
+                      onStartOver={startNewAITheme}
                       session={aiThemeSession}
                     />
                   ) : null}
@@ -1631,6 +1661,7 @@ export function ThemeStudioScreen({
                 currentSpec={spec}
                 onApply={applyGeneratedAITheme}
                 onSessionChange={setAIThemeSession}
+                onStartOver={startNewAITheme}
                 session={aiThemeSession}
               />
             ) : null}

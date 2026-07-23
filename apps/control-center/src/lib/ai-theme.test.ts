@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AI_THEME_LOCAL_HISTORY_LIMIT,
   AI_THEME_ANIMATION_ASSET_PATH,
+  AI_THEME_SCREENMASTER_ASSET_PATH,
   buildAIThemeAnimationCandidateFromRGBA,
   buildAIThemeCandidateFromRGBA,
   clearAIThemeHistory,
@@ -95,9 +96,11 @@ describe("AI theme history", () => {
       rgba[offset + 3] = 255;
       return rgba;
     });
+    const background = new Uint8ClampedArray(240 * 128 * 4);
+    background.fill(255);
     const concept = {
-      animation: { additionalFramesBase64: ["two", "three", "four"], fps: 4, keyColor: "#FF00FF" },
-      imageBase64: "one",
+      animation: { framesBase64: ["one", "two", "three", "four"], fps: 4, keyColor: "#FF00FF" },
+      imageBase64: "background",
       imageContentType: "image/png" as const,
       style: {
         animationMode: "four_frame" as const,
@@ -118,8 +121,15 @@ describe("AI theme history", () => {
     const encoded = encodeAIThemeCBA1(frames);
     expect(encoded).toMatch(/^CBA1\n64 64 4 4\n/);
     expect(encoded.split("\n").filter((line) => line.includes(".")).length).toBeGreaterThan(0);
-    const candidate = buildAIThemeAnimationCandidateFromRGBA(concept, frames);
+    const candidate = buildAIThemeAnimationCandidateFromRGBA(concept, background, frames);
     expect(candidate.assets[AI_THEME_ANIMATION_ASSET_PATH]?.data).toBe(encoded);
+    expect(candidate.assets[AI_THEME_SCREENMASTER_ASSET_PATH]?.data.startsWith("CBI1\n240 128\n")).toBe(true);
+    expect(candidate.spec.primitives[0]).toMatchObject({
+      assetPath: AI_THEME_SCREENMASTER_ASSET_PATH,
+      height: 128,
+      type: "sprite",
+      width: 240,
+    });
     expect(candidate.spec.primitives[1]).toMatchObject({
       assetPath: AI_THEME_ANIMATION_ASSET_PATH,
       fps: 4,

@@ -28,7 +28,7 @@ export type AIThemeStyle = {
 };
 export type AIThemeConcept = {
   animation?: {
-    additionalFramesBase64: string[];
+    framesBase64: string[];
     fps: number;
     keyColor: string;
   };
@@ -89,6 +89,7 @@ export async function generateAIThemeConcept(
       prompt: input.prompt,
       history: input.history.slice(-AI_THEME_TRANSMITTED_HISTORY_LIMIT).map(({ content, role }) => ({ content, role })),
       previous: input.previous ? {
+        animationFrameBase64: input.previous.animation?.framesBase64[0],
         imageBase64: input.previous.imageBase64,
         imageContentType: input.previous.imageContentType,
         style: input.previous.style,
@@ -101,26 +102,19 @@ export async function generateAIThemeConcept(
 export async function buildAIThemeCandidate(concept: AIThemeConcept): Promise<AIThemeCandidate> {
   const encodedFrames = [
     concept.imageBase64,
-    ...(concept.animation?.additionalFramesBase64 ?? []),
+    ...(concept.animation?.framesBase64 ?? []),
   ];
-  if (concept.animation && encodedFrames.length !== ANIMATION_FRAME_COUNT) {
+  if (concept.animation && concept.animation.framesBase64.length !== ANIMATION_FRAME_COUNT) {
     throw new Error("Animated concepts must contain exactly four frames.");
   }
   const bitmaps = await Promise.all(encodedFrames.map((value) => conceptBitmap(value, concept.imageContentType)));
   try {
     if (concept.animation) {
-      const frames = normalizeAnimationFrames(bitmaps, concept.animation.keyColor);
-      return buildAIThemeAnimationCandidateFromRGBA(concept, frames, concept.animation.fps);
+      const background = bitmapRGBA(bitmaps[0]!, SCREENMASTER_WIDTH, SCREENMASTER_ART_HEIGHT);
+      const frames = normalizeAnimationFrames(bitmaps.slice(1), concept.animation.keyColor);
+      return buildAIThemeAnimationCandidateFromRGBA(concept, background, frames, concept.animation.fps);
     }
-    const canvas = document.createElement("canvas");
-    canvas.width = SCREENMASTER_WIDTH;
-    canvas.height = SCREENMASTER_ART_HEIGHT;
-    const context = canvas.getContext("2d", { willReadFrequently: true });
-    if (!context) throw new Error("The concept image could not be prepared.");
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = "high";
-    context.drawImage(bitmaps[0]!, 0, 0, SCREENMASTER_WIDTH, SCREENMASTER_ART_HEIGHT);
-    const rgba = context.getImageData(0, 0, SCREENMASTER_WIDTH, SCREENMASTER_ART_HEIGHT).data;
+    const rgba = bitmapRGBA(bitmaps[0]!, SCREENMASTER_WIDTH, SCREENMASTER_ART_HEIGHT);
     return buildAIThemeCandidateFromRGBA(concept, rgba);
   } finally {
     bitmaps.forEach((bitmap) => bitmap.close());
@@ -136,42 +130,53 @@ export function buildAIThemeCandidateFromRGBA(
     data: encodeAIThemeCBI1(rgba, SCREENMASTER_WIDTH, SCREENMASTER_ART_HEIGHT),
     encoding: "text",
   };
-  return buildCandidate(concept, { [AI_THEME_SCREENMASTER_ASSET_PATH]: asset }, {
+  return buildCandidate(concept, { [AI_THEME_SCREENMASTER_ASSET_PATH]: asset }, [{
     type: "sprite", x: 0, y: 0, width: 240, height: 128, assetPath: AI_THEME_SCREENMASTER_ASSET_PATH,
-  });
+  }]);
 }
 
 export function buildAIThemeAnimationCandidateFromRGBA(
   concept: AIThemeConcept,
+  background: ArrayLike<number>,
   frames: ArrayLike<number>[],
   fps = 4,
 ): AIThemeCandidate {
   if (frames.length !== ANIMATION_FRAME_COUNT) {
     throw new Error("Animated concepts must contain exactly four frames.");
   }
-  const asset: ThemeStudioAsset = {
+  const backgroundAsset: ThemeStudioAsset = {
+    contentType: "text/plain",
+    data: encodeAIThemeCBI1(background, SCREENMASTER_WIDTH, SCREENMASTER_ART_HEIGHT),
+    encoding: "text",
+  };
+  const animationAsset: ThemeStudioAsset = {
     contentType: "text/plain",
     data: encodeAIThemeCBA1(frames, ANIMATION_FRAME_SIZE, ANIMATION_FRAME_SIZE, fps),
     encoding: "text",
   };
-  return buildCandidate(concept, { [AI_THEME_ANIMATION_ASSET_PATH]: asset }, {
-    type: "sprite",
-    x: 88,
-    y: 32,
-    width: ANIMATION_FRAME_SIZE,
-    height: ANIMATION_FRAME_SIZE,
-    assetPath: AI_THEME_ANIMATION_ASSET_PATH,
-    frameCount: ANIMATION_FRAME_COUNT,
-    fps,
-    sheetColumns: ANIMATION_FRAME_COUNT,
-  }, true);
+  return buildCandidate(concept, {
+    [AI_THEME_SCREENMASTER_ASSET_PATH]: backgroundAsset,
+    [AI_THEME_ANIMATION_ASSET_PATH]: animationAsset,
+  }, [
+    { type: "sprite", x: 0, y: 0, width: 240, height: 128, assetPath: AI_THEME_SCREENMASTER_ASSET_PATH },
+    {
+      type: "sprite",
+      x: 88,
+      y: 32,
+      width: ANIMATION_FRAME_SIZE,
+      height: ANIMATION_FRAME_SIZE,
+      assetPath: AI_THEME_ANIMATION_ASSET_PATH,
+      frameCount: ANIMATION_FRAME_COUNT,
+      fps,
+      sheetColumns: ANIMATION_FRAME_COUNT,
+    },
+  ]);
 }
 
 function buildCandidate(
   concept: AIThemeConcept,
   assets: Record<string, ThemeStudioAsset>,
-  artPrimitive: ThemeStudioSpec["primitives"][number],
-  fixedArtBackground = false,
+  artPrimitives: ThemeStudioSpec["primitives"],
 ): AIThemeCandidate {
   const style = concept.style;
   const spec: ThemeStudioSpec = {
@@ -180,8 +185,7 @@ function buildCandidate(
     themeRev: 1,
     bgColor: style.backgroundColor,
     primitives: [
-      ...(fixedArtBackground ? [{ type: "rect" as const, x: 0, y: 0, width: 240, height: 128, color: style.backgroundColor, bgColor: style.backgroundColor, borderColor: style.backgroundColor, borderRadius: 0 }] : []),
-      artPrimitive,
+      ...artPrimitives,
       { type: "rect", x: 0, y: 128, width: 240, height: 112, color: style.panelColor, bgColor: style.panelColor, borderColor: style.panelColor, borderRadius: 0 },
       { type: "text", x: 12, y: 134, text: "SESSION", fontSize: 2, color: style.textColor },
       { type: "text", x: 152, y: 134, width: 76, text: "{session}%", align: "right", fontSize: 2, color: style.sessionColor },
@@ -237,6 +241,18 @@ export function encodeAIThemeCBA1(
 async function conceptBitmap(value: string, contentType: string): Promise<ImageBitmap> {
   const bytes = Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
   return createImageBitmap(new Blob([bytes], { type: contentType }));
+}
+
+function bitmapRGBA(bitmap: ImageBitmap, width: number, height: number): Uint8ClampedArray {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("The concept image could not be prepared.");
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(bitmap, 0, 0, width, height);
+  return context.getImageData(0, 0, width, height).data;
 }
 
 function normalizeAnimationFrames(bitmaps: ImageBitmap[], keyColor: string): Uint8ClampedArray[] {

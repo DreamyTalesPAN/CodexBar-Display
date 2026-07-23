@@ -34,10 +34,11 @@ function displayMessage(content: string): string {
   return content;
 }
 
-export function AIThemePanel({ currentSpec, onApply, onSessionChange, session }: {
+export function AIThemePanel({ currentSpec, onApply, onSessionChange, onStartOver, session }: {
   currentSpec: ThemeStudioSpec;
   onApply: (candidate: AIThemeCandidate) => void;
   onSessionChange: (session: AIThemeSession | null) => void;
+  onStartOver: () => void;
   session: AIThemeSession | null;
 }) {
   const [enabled, setEnabled] = useState(false);
@@ -148,8 +149,13 @@ export function AIThemePanel({ currentSpec, onApply, onSessionChange, session }:
     setGenerationBusy(false);
     setPrompt("");
     setHistory([]);
-    clearAIThemeHistory(currentSpec.themeId);
+    onStartOver();
     onSessionChange(null);
+    try {
+      clearAIThemeHistory(currentSpec.themeId);
+    } catch {
+      // A blocked browser storage must not prevent the editor reset.
+    }
     setGenerationError("");
     setCredentialFeedback(null);
   }
