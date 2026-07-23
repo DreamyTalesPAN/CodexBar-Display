@@ -46,7 +46,7 @@ func runURLSchemeTests() {
         portConflictDetail(
             process: PortListenerProcess(pid: 83979, name: "node"),
             port: 47832
-        ) == "“node” (PID 83979) is using VibeTV’s local port 47832. VibeTV also couldn’t start on another free port.",
+        ) == "“node” (PID 83979) is using VibeTV’s local port 47832. Quit the app or stop the process, then click Try again.",
         "the native failure screen must identify the blocking process and pid"
     )
     let repairStatus = InstallationStatus(

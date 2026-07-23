@@ -893,7 +893,7 @@ func portConflictDetail(
     process: PortListenerProcess,
     port: Int
 ) -> String {
-    "“\(process.name)” (PID \(process.pid)) is using VibeTV’s local port \(port). VibeTV also couldn’t start on another free port."
+    "“\(process.name)” (PID \(process.pid)) is using VibeTV’s local port \(port). Quit the app or stop the process, then click Try again."
 }
 
 private struct NativeSupportReportSnapshot: Sendable {
