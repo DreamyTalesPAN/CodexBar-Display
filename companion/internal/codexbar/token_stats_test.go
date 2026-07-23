@@ -145,17 +145,63 @@ func TestMergeTokenStatsAddsFrameFields(t *testing.T) {
 	}
 }
 
-func TestLoadProviderTokenStatsFromCostCache(t *testing.T) {
+func TestLoadProviderTokenStatsFromCostCacheCodexLayout(t *testing.T) {
 	cacheRoot := t.TempDir()
 	now := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
 	writeCostCacheFixture(t, filepath.Join(cacheRoot, "codex-v10.json"), `{
 		"version":1,
 		"lastScanUnixMs":1784743200000,
 		"days":{
-			"2026-07-21":{"gpt-5.5":[10,20,30]},
-			"2026-07-22":{"gpt-5.6-sol":[100,200,300]}
+			"2026-07-21":{"gpt-5.5":[10,8,2]},
+			"2026-07-22":{"gpt-5.6-sol":[100,80,20]}
 		}
 	}`)
+
+	stats, ok := loadProviderTokenStatsFromCostCacheAt(cacheRoot, now)
+	if !ok {
+		t.Fatal("expected cached token stats")
+	}
+	codex := stats["codex"]
+	if codex.SessionTokens != 120 || codex.WeekTokens != 132 || codex.TotalTokens != 132 {
+		t.Fatalf("unexpected cached Codex totals: %+v", codex)
+	}
+	if codex.Cost == nil || len(codex.Cost.Daily) != 2 || codex.Cost.TopModel != "gpt-5.6-sol" {
+		t.Fatalf("unexpected cached Codex history: %+v", codex.Cost)
+	}
+
+	cliStats, err := parseProviderTokenStats([]byte(`[{
+		"provider":"codex",
+		"source":"local",
+		"updatedAt":"2026-07-22T18:00:00Z",
+		"sessionTokens":120,
+		"last30DaysTokens":132,
+		"daily":[
+			{"date":"2026-07-21","totalTokens":12},
+			{"date":"2026-07-22","totalTokens":120}
+		],
+		"totals":{"totalTokens":132}
+	}]`))
+	if err != nil {
+		t.Fatalf("parse CLI token stats: %v", err)
+	}
+	cliCodex := cliStats["codex"]
+	if codex.SessionTokens != cliCodex.SessionTokens ||
+		codex.WeekTokens != cliCodex.WeekTokens ||
+		codex.TotalTokens != cliCodex.TotalTokens {
+		t.Fatalf("disk-cache and CLI totals differ: cache=%+v cli=%+v", codex, cliCodex)
+	}
+	for i := range codex.Cost.Daily {
+		if codex.Cost.Daily[i].Day != cliCodex.Cost.Daily[i].Day ||
+			codex.Cost.Daily[i].TotalTokens != cliCodex.Cost.Daily[i].TotalTokens {
+			t.Fatalf("disk-cache and CLI daily totals differ: cache=%+v cli=%+v",
+				codex.Cost.Daily, cliCodex.Cost.Daily)
+		}
+	}
+}
+
+func TestLoadProviderTokenStatsFromCostCacheClaudeLayout(t *testing.T) {
+	cacheRoot := t.TempDir()
+	now := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
 	writeCostCacheFixture(t, filepath.Join(cacheRoot, "claude-v5.json"), `{
 		"version":1,
 		"lastScanUnixMs":1784743200000,
@@ -166,16 +212,108 @@ func TestLoadProviderTokenStatsFromCostCache(t *testing.T) {
 	if !ok {
 		t.Fatal("expected cached token stats")
 	}
-	codex := stats["codex"]
-	if codex.SessionTokens != 600 || codex.WeekTokens != 660 || codex.TotalTokens != 660 {
-		t.Fatalf("unexpected cached Codex totals: %+v", codex)
-	}
-	if codex.Cost == nil || len(codex.Cost.Daily) != 2 || codex.Cost.TopModel != "gpt-5.6-sol" {
-		t.Fatalf("unexpected cached Codex history: %+v", codex.Cost)
-	}
 	claude := stats["claude"]
 	if claude.SessionTokens != 100 || claude.TotalTokens != 100 {
 		t.Fatalf("unexpected cached Claude totals: %+v", claude)
+	}
+}
+
+func TestLoadProviderTokenStatsFromCostCacheRejectsUnknownArtifactVersion(t *testing.T) {
+	cacheRoot := t.TempDir()
+	now := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
+	writeCostCacheFixture(t, filepath.Join(cacheRoot, "codex-v11.json"), `{
+		"version":1,
+		"lastScanUnixMs":1784743200000,
+		"days":{"2026-07-22":{"gpt-5.6-sol":[100,80,20]}}
+	}`)
+
+	if stats, ok := loadProviderTokenStatsFromCostCacheAt(cacheRoot, now); ok {
+		t.Fatalf("expected unknown Codex artifact version to be bypassed, got %#v", stats)
+	}
+}
+
+func TestLoadProviderTokenStatsFromCostCacheRejectsUnknownPackedLayout(t *testing.T) {
+	cacheRoot := t.TempDir()
+	now := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
+	writeCostCacheFixture(t, filepath.Join(cacheRoot, "codex-v10.json"), `{
+		"version":1,
+		"lastScanUnixMs":1784743200000,
+		"days":{"2026-07-22":{"gpt-5.6-sol":[100,80,20,5]}}
+	}`)
+
+	if stats, ok := loadProviderTokenStatsFromCostCacheAt(cacheRoot, now); ok {
+		t.Fatalf("expected unknown Codex packed layout to be bypassed, got %#v", stats)
+	}
+}
+
+func TestFetchProviderTokenStatsKeepsCostCacheAndCLIAtParity(t *testing.T) {
+	resetTokenStatsTestGlobals()
+	defer resetTokenStatsTestGlobals()
+
+	diskStats := map[string]ProviderTokenStats{
+		"codex": {
+			SessionTokens: 120,
+			WeekTokens:    120,
+			TotalTokens:   120,
+			Source:        "codexbar-cost-cache",
+			Cost: &ProviderCostUsage{
+				Last30DaysTokens: 120,
+				LatestTokens:     120,
+				Daily: []ProviderCostDay{
+					{Day: "2026-07-22", TotalTokens: 120},
+				},
+			},
+		},
+	}
+	loadProviderTokenStatsCacheFn = func(time.Time) (map[string]ProviderTokenStats, bool) {
+		return copyProviderTokenStats(diskStats), true
+	}
+
+	backgroundFinished := make(chan struct{})
+	runCostCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		defer close(backgroundFinished)
+		return []byte(`[{
+			"provider":"codex",
+			"source":"local",
+			"updatedAt":"2026-07-22T18:00:00Z",
+			"sessionTokens":120,
+			"last30DaysTokens":120,
+			"daily":[{"date":"2026-07-22","totalTokens":120}],
+			"totals":{"totalTokens":120}
+		}]`), nil
+	}
+
+	fromDisk, ok := fetchProviderTokenStats(context.Background(), "/tmp/CodexBarCLI")
+	if !ok || fromDisk["codex"].TotalTokens != 120 {
+		t.Fatalf("expected initial disk-cache total of 120, got %#v", fromDisk)
+	}
+	select {
+	case <-backgroundFinished:
+	case <-time.After(time.Second):
+		t.Fatal("expected background CLI repair to finish")
+	}
+
+	var fromCLI map[string]ProviderTokenStats
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if fresh, freshOK := tokenStatsCache.loadFresh(time.Now().UTC()); freshOK &&
+			fresh["codex"].Source == "local" {
+			fromCLI = fresh
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if fromCLI["codex"].TotalTokens != fromDisk["codex"].TotalTokens {
+		t.Fatalf("disk-cache and CLI totals differ: disk=%d cli=%d",
+			fromDisk["codex"].TotalTokens, fromCLI["codex"].TotalTokens)
+	}
+
+	tokenStatsCache.mu.Lock()
+	tokenStatsCache.fetched = time.Now().UTC().Add(-tokenStatsRefreshInterval - time.Second)
+	tokenStatsCache.mu.Unlock()
+	fromDiskAgain, ok := fetchProviderTokenStats(context.Background(), "/tmp/CodexBarCLI")
+	if !ok || fromDiskAgain["codex"].TotalTokens != fromCLI["codex"].TotalTokens {
+		t.Fatalf("expected refreshed disk-cache total to remain at CLI parity, got %#v", fromDiskAgain)
 	}
 }
 
