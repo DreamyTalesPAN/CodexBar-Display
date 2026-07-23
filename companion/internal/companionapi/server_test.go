@@ -1972,7 +1972,7 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	t.Setenv(displayStreamOutLogEnv, logPath)
 	if err := os.WriteFile(
 		logPath,
-		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=73 weekly=58 reset=2733s activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
+		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=73 weekly=58 sessionTokens=409072760 weekTokens=2696478278 totalTokens=7934929750 reset=2733s activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
 		0o644,
 	); err != nil {
 		t.Fatalf("write display stream log: %v", err)
@@ -2014,8 +2014,58 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	if got.Frame.Session != 73 || got.Frame.Weekly != 58 || got.Frame.ResetSec != 2733 {
 		t.Fatalf("unexpected sent frame values: %+v", got.Frame)
 	}
+	if got.Frame.SessionTokens != 409072760 ||
+		got.Frame.WeekTokens != 2696478278 ||
+		got.Frame.TotalTokens != 7934929750 {
+		t.Fatalf("unexpected sent token values: %+v", got.Frame)
+	}
 	if got.Frame.UsageMode != "remaining" || got.Frame.Activity != "coding" {
 		t.Fatalf("unexpected sent frame state: %+v", got.Frame)
+	}
+}
+
+func TestDisplayFrameLatestAddsTokensFromMatchingLegacyPersistedFrame(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	sentAt := time.Date(2026, 7, 23, 17, 27, 56, 0, time.UTC)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(sentAt.Format(time.RFC3339Nano)+` sent frame -> http://192.168.178.72 transport=wifi source=codexbar fresh=true usageMode=used provider=codex label=Codex session=0 weekly=36 reset=587622s activity="coding"`),
+		0o644,
+	); err != nil {
+		t.Fatalf("write display stream log: %v", err)
+	}
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	path := server.lastGoodDisplayFramePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create display state dir: %v", err)
+	}
+	if err := os.WriteFile(
+		path,
+		[]byte(`{"savedAt":"`+sentAt.Add(30*time.Second).Format(time.RFC3339Nano)+`","frame":{"v":1,"provider":"codex","label":"Codex","session":0,"weekly":36,"resetSecs":587622,"sessionTokens":804404100,"weekTokens":5299284562,"totalTokens":15502161634}}`),
+		0o644,
+	); err != nil {
+		t.Fatalf("write persisted display frame: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/display-frame/latest", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got displayFrameResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Source != "last-sent-frame" {
+		t.Fatalf("unexpected display frame source: %+v", got)
+	}
+	if got.Frame.SessionTokens != 804404100 ||
+		got.Frame.WeekTokens != 5299284562 ||
+		got.Frame.TotalTokens != 15502161634 {
+		t.Fatalf("expected legacy frame tokens from persisted snapshot, got %+v", got.Frame)
 	}
 }
 

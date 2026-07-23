@@ -130,6 +130,9 @@ var displayStreamLogKeys = []string{
 	"label",
 	"session",
 	"weekly",
+	"sessionTokens",
+	"weekTokens",
+	"totalTokens",
 	"reset",
 	"activity",
 	"time",
@@ -1378,6 +1381,9 @@ func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request
 	boundary, boundaryOK := displayStreamLogBoundary(logPath)
 	if boundaryOK {
 		if sentAt, frame, ok := lastDisplayStreamFrameSnapshotAfter(logPath, boundary); ok {
+			if saved, savedOK := s.loadLastGoodDisplayFrame(); savedOK {
+				frame = mergeLegacyDisplayFrameTokens(frame, sentAt, saved)
+			}
 			writeJSON(w, http.StatusOK, displayFrameResponse{
 				OK:      true,
 				SavedAt: sentAt.UTC().Format(time.RFC3339Nano),
@@ -1406,6 +1412,39 @@ func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request
 		Source:  "last-good-frame",
 		Frame:   saved.Frame.Normalize(),
 	})
+}
+
+func mergeLegacyDisplayFrameTokens(frame protocol.Frame, sentAt time.Time, saved persistedDisplayFrame) protocol.Frame {
+	const maxSnapshotSkew = time.Minute
+
+	frame = frame.Normalize()
+	saved.Frame = saved.Frame.Normalize()
+	if sentAt.IsZero() ||
+		saved.SavedAt.IsZero() ||
+		absDuration(saved.SavedAt.Sub(sentAt)) > maxSnapshotSkew ||
+		!strings.EqualFold(strings.TrimSpace(frame.Provider), strings.TrimSpace(saved.Frame.Provider)) ||
+		frame.Session != saved.Frame.Session ||
+		frame.Weekly != saved.Frame.Weekly ||
+		frame.ResetSec != saved.Frame.ResetSec {
+		return frame
+	}
+	if frame.SessionTokens == 0 {
+		frame.SessionTokens = saved.Frame.SessionTokens
+	}
+	if frame.WeekTokens == 0 {
+		frame.WeekTokens = saved.Frame.WeekTokens
+	}
+	if frame.TotalTokens == 0 {
+		frame.TotalTokens = saved.Frame.TotalTokens
+	}
+	return frame.Normalize()
+}
+
+func absDuration(value time.Duration) time.Duration {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func (s *Server) loadLastGoodDisplayFrame() (persistedDisplayFrame, bool) {
@@ -6801,6 +6840,21 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 	}
 	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
 		frame.ResetSec = reset
+	}
+	if sessionTokens, ok := int64FieldFromDisplayStreamLog(
+		line,
+		"sessionTokens",
+	); ok {
+		frame.SessionTokens = sessionTokens
+	}
+	if weekTokens, ok := int64FieldFromDisplayStreamLog(line, "weekTokens"); ok {
+		frame.WeekTokens = weekTokens
+	}
+	if totalTokens, ok := int64FieldFromDisplayStreamLog(
+		line,
+		"totalTokens",
+	); ok {
+		frame.TotalTokens = totalTokens
 	}
 	return frame.Normalize(), true
 }
