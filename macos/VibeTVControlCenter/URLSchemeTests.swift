@@ -9,6 +9,46 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 func runURLSchemeTests() {
+    let fallbackEndpoint = RuntimeEndpoint(
+        origin: "http://127.0.0.1:54321",
+        pid: 83979
+    )
+    require(
+        validatedRuntimeEndpointOrigin(fallbackEndpoint)?.port == 54321,
+        "a private loopback fallback endpoint must be accepted"
+    )
+    for invalid in [
+        RuntimeEndpoint(origin: "http://0.0.0.0:54321", pid: 83979),
+        RuntimeEndpoint(origin: "https://127.0.0.1:54321", pid: 83979),
+        RuntimeEndpoint(origin: "http://127.0.0.1:54321/path", pid: 83979),
+        RuntimeEndpoint(origin: "http://127.0.0.1:54321", pid: 0),
+    ] {
+        require(
+            validatedRuntimeEndpointOrigin(invalid) == nil,
+            "runtime endpoint discovery must reject non-private or malformed endpoints"
+        )
+    }
+    require(
+        parseLsofListenerProcesses(
+            """
+            p83979
+            cnode
+            p91234
+            cpython3
+            """
+        ) == [
+            PortListenerProcess(pid: 83979, name: "node"),
+            PortListenerProcess(pid: 91234, name: "python3"),
+        ],
+        "port diagnostics must preserve process names and pids"
+    )
+    require(
+        portConflictDetail(
+            process: PortListenerProcess(pid: 83979, name: "node"),
+            port: 47832
+        ) == "“node” (PID 83979) is using VibeTV’s local port 47832. Quit the app or stop the process, then click Try again.",
+        "the native failure screen must identify the blocking process and pid"
+    )
     let repairStatus = InstallationStatus(
         title: "CodexBar needs repair",
         detail: "Repair CodexBar before continuing.",

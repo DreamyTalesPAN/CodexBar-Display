@@ -880,14 +880,21 @@ func New(opts Options) (*Server, error) {
 }
 
 func (s *Server) ListenAndServe(ctx context.Context) error {
+	listener, err := net.Listen("tcp", s.addr)
+	if err != nil {
+		return err
+	}
+	return s.Serve(ctx, listener)
+}
+
+func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 	server := &http.Server{
-		Addr:              s.addr,
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	errc := make(chan error, 1)
 	go func() {
-		err := server.ListenAndServe()
+		err := server.Serve(listener)
 		if errors.Is(err, http.ErrServerClosed) {
 			err = nil
 		}

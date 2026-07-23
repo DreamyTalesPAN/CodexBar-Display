@@ -8,8 +8,9 @@ import WebKit
 import Sparkle
 #endif
 
-private let controlCenterURLString = "http://127.0.0.1:47832/control-center"
-private let runtimeHealthURLString = "http://127.0.0.1:47832/v1/runtime-health"
+private let defaultRuntimeOriginString = "http://127.0.0.1:47832"
+private let defaultRuntimePort = 47832
+private let runtimeEndpointFileName = "runtime-endpoint.json"
 private let nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"
 private let controlCenterURLScheme = "vibetv"
 private let controlCenterURLHost = "open-control-center"
@@ -836,6 +837,65 @@ private func captureProcessOutput(
     }
 }
 
+struct RuntimeEndpoint: Codable, Equatable {
+    let origin: String
+    let pid: Int32
+}
+
+func validatedRuntimeEndpointOrigin(_ endpoint: RuntimeEndpoint) -> URL? {
+    guard endpoint.pid > 0,
+          let components = URLComponents(string: endpoint.origin),
+          components.scheme?.lowercased() == "http",
+          components.host == "127.0.0.1",
+          let port = components.port,
+          (1...65535).contains(port),
+          components.user == nil,
+          components.password == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/" else {
+        return nil
+    }
+    return components.url
+}
+
+struct PortListenerProcess: Equatable {
+    let pid: Int32
+    let name: String
+}
+
+func parseLsofListenerProcesses(_ output: String) -> [PortListenerProcess] {
+    var processes: [Int32: String] = [:]
+    var currentPID: Int32?
+    for line in output.split(whereSeparator: \Character.isNewline) {
+        guard let field = line.first else {
+            continue
+        }
+        let value = String(line.dropFirst())
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        switch field {
+        case "p":
+            currentPID = Int32(value)
+        case "c":
+            guard let pid = currentPID, pid > 0, !value.isEmpty else {
+                continue
+            }
+            processes[pid] = String(value.prefix(80))
+        default:
+            continue
+        }
+    }
+    return processes.map { PortListenerProcess(pid: $0.key, name: $0.value) }
+        .sorted { $0.pid < $1.pid }
+}
+
+func portConflictDetail(
+    process: PortListenerProcess,
+    port: Int
+) -> String {
+    "“\(process.name)” (PID \(process.pid)) is using VibeTV’s local port \(port). Quit the app or stop the process, then click Try again."
+}
+
 private struct NativeSupportReportSnapshot: Sendable {
     let generatedAt: String
     let setupTitle: String
@@ -855,6 +915,7 @@ private struct NativeSupportReportSnapshot: Sendable {
     let localPreviewRuntime: Bool
     let helperPath: String
     let runtimeLabel: String
+    let runtimeOrigin: String
     let runtimeRegistrationStatus: String
     let codexBarPath: String?
     let supportDirectoryPath: String
@@ -1020,6 +1081,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var installationStatusTitle = "Starting Control Center"
     private var installationStatusDetail = "Preparing the Mac App."
     private var installationStatusFailed = false
+    private var activeRuntimeOrigin = URL(string: defaultRuntimeOriginString)!
+    private var runtimeFailureDetail: String?
 #if canImport(Sparkle)
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -1103,6 +1166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         guard preparationTask == nil else {
             return
         }
+        runtimeFailureDetail = nil
         presentInstallationStatus(
             title: "Starting Control Center",
             detail: "Checking the Mac App and your last connected VibeTV.",
@@ -1121,15 +1185,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             case .nativeRuntimeReady:
                 self.codexBarRepairRequired = false
                 self.codexBarAutoRepairAttempted = false
+                self.runtimeFailureDetail = nil
                 self.installationReady = true
                 self.installationStatus = nil
                 _ = self.urlRouter.markReady()
                 self.presentControlCenter()
             case .legacyRuntimeRestored:
                 self.codexBarRepairRequired = false
+                let conflictDetail = self.runtimeFailureDetail
                 self.presentInstallationStatus(
-                    title: "Installation needs attention",
-                    detail: "The previous VibeTV service was restored. Try again or open the support log.",
+                    title: conflictDetail == nil
+                        ? "Installation needs attention"
+                        : "VibeTV couldn’t start",
+                    detail: conflictDetail
+                        ?? "The previous VibeTV service was restored. Try again or open the support log.",
                     failed: true
                 )
             case .codexBarRepairRequired:
@@ -1142,9 +1211,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 )
             case .keepCurrentPage:
                 self.codexBarRepairRequired = false
+                let conflictDetail = self.runtimeFailureDetail
                 self.presentInstallationStatus(
-                    title: "Installation could not be verified",
-                    detail: "The Mac App, runtime, and local listener did not reach one verified state.",
+                    title: conflictDetail == nil
+                        ? "Installation could not be verified"
+                        : "VibeTV couldn’t start",
+                    detail: conflictDetail
+                        ?? "The Mac App, runtime, and local listener did not reach one verified state.",
                     failed: true
                 )
             }
@@ -1283,6 +1356,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             localPreviewRuntime: usesLocalPreviewRuntime,
             helperPath: helperURL.path,
             runtimeLabel: activeRuntimeLaunchAgentLabel,
+            runtimeOrigin: activeRuntimeOrigin.absoluteString,
             runtimeRegistrationStatus: runtimeRegistrationStatusDescription(),
             codexBarPath: existingCodexBarApp()?.path,
             supportDirectoryPath: applicationSupportURL().path,
@@ -1313,9 +1387,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             executable: "/bin/launchctl",
             arguments: ["print", launchctlServiceTarget(uid: getuid(), label: snapshot.runtimeLabel)]
         )
+        let runtimeOrigin = URL(string: snapshot.runtimeOrigin)
+            ?? URL(string: defaultRuntimeOriginString)!
+        let runtimePort = runtimeOrigin.port ?? defaultRuntimePort
         let listener = captureProcessOutput(
             executable: "/usr/sbin/lsof",
-            arguments: ["-nP", "-iTCP@127.0.0.1:47832", "-sTCP:LISTEN"]
+            arguments: [
+                "-nP",
+                "-iTCP@127.0.0.1:\(runtimePort)",
+                "-sTCP:LISTEN",
+            ]
         )
         let backgroundItems = captureProcessOutput(
             executable: "/usr/bin/sfltool",
@@ -1323,7 +1404,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         )
         let companionDiagnostics = captureProcessOutput(
             executable: "/usr/bin/curl",
-            arguments: ["--silent", "--show-error", "--max-time", "40", "http://127.0.0.1:47832/v1/diagnostics"]
+            arguments: [
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "40",
+                runtimeOrigin.appendingPathComponent("v1/diagnostics").absoluteString,
+            ]
         )
         let report: [String: Any] = [
             "schemaVersion": 2,
@@ -1354,11 +1441,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             ],
             "runtime": [
                 "label": snapshot.runtimeLabel,
+                "origin": runtimeOrigin.absoluteString,
                 "serviceStatus": snapshot.localPreviewRuntime
                     ? (launchAgent.exitStatus == 0 ? "loaded" : "not loaded")
                     : snapshot.runtimeRegistrationStatus,
                 "listenerOwnership": runtimeListenerOwnership(
-                    launchAgent: launchAgent
+                    launchAgent: launchAgent,
+                    port: runtimePort
                 ),
                 "helperExists": fileManager.isExecutableFile(atPath: helperURL.path),
                 "helperSignature": processOutputReport(helperSignature),
@@ -1408,7 +1497,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     nonisolated private static func runtimeListenerOwnership(
-        launchAgent: ProcessOutput
+        launchAgent: ProcessOutput,
+        port: Int
     ) -> String {
         guard let servicePID = parseLaunchctlServicePID(launchAgent.output),
               launchAgent.exitStatus == 0 else {
@@ -1426,7 +1516,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 "-a",
                 "-p",
                 String(servicePID),
-                "-iTCP@127.0.0.1:47832",
+                "-iTCP@127.0.0.1:\(port)",
                 "-sTCP:LISTEN",
                 "-Fp",
             ]
@@ -2019,9 +2109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private func loadControlCenter(
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy
     ) {
-        guard let url = URL(string: controlCenterURLString) else {
-            return
-        }
+        let url = activeRuntimeOrigin.appendingPathComponent("control-center")
         activeNavigation = webView?.load(
             URLRequest(
                 url: url,
@@ -2434,6 +2522,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         // bounded re-registration. Do not let that weaker snapshot tear down a
         // runtime whose identity, version, and listener ownership were proven.
         guard runtimeHealthGatePassed(health) else {
+            runtimeFailureDetail = runtimePortConflictDetail()
             NSLog(
                 "VibeTV Control Center runtime health gate failed; legacy artifacts remain untouched: \(health)"
             )
@@ -2671,6 +2760,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 "127.0.0.1:47832",
                 "--api-dev-origin",
                 "http://127.0.0.1:47832",
+                "--api-fallback",
             ],
             "EnvironmentVariables": environment,
             "RunAtLoad": true,
@@ -2732,47 +2822,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         expectedVersion: String,
         timeout: TimeInterval = runtimeHealthTimeout
     ) async -> RuntimeHealthEvaluation {
-        guard let statusURL = URL(string: runtimeHealthURLString) else {
-            return .requestFailed("invalid local status URL")
-        }
-
         let deadline = Date().addingTimeInterval(timeout)
         var lastEvaluation: RuntimeHealthEvaluation = .requestFailed("no response")
         repeat {
-            var request = URLRequest(
-                url: statusURL,
-                cachePolicy: .reloadIgnoringLocalCacheData,
-                timeoutInterval: runtimeHealthRequestTimeout
-            )
-            request.httpMethod = "GET"
-            do {
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard let http = response as? HTTPURLResponse else {
-                    lastEvaluation = .requestFailed("response was not HTTP")
-                    continue
-                }
-                lastEvaluation = evaluateRuntimeHealth(
-                    data: data,
-                    httpStatus: http.statusCode,
-                    expectedVersion: expectedVersion,
-                    expectedAppVersion: Bundle.main.object(
-                        forInfoDictionaryKey: "CFBundleShortVersionString"
-                    ) as? String,
-                    expectedBuild: Bundle.main.object(
-                        forInfoDictionaryKey: "CFBundleVersion"
-                    ) as? String,
-                    expectedAppPath: Bundle.main.bundleURL.path,
-                    expectedRuntimeOwner: activeRuntimeLaunchAgentLabel
+            for origin in runtimeOriginCandidates() {
+                let statusURL = origin.appendingPathComponent("v1/runtime-health")
+                var request = URLRequest(
+                    url: statusURL,
+                    cachePolicy: .reloadIgnoringLocalCacheData,
+                    timeoutInterval: runtimeHealthRequestTimeout
                 )
-                if case .healthy = lastEvaluation {
-                    let ownership = verifyRuntimeListenerOwnership()
-                    if case .owned = ownership {
-                        return lastEvaluation
+                request.httpMethod = "GET"
+                do {
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    guard let http = response as? HTTPURLResponse else {
+                        lastEvaluation = .requestFailed("response was not HTTP")
+                        continue
                     }
-                    lastEvaluation = .ownershipFailed(ownership)
+                    lastEvaluation = evaluateRuntimeHealth(
+                        data: data,
+                        httpStatus: http.statusCode,
+                        expectedVersion: expectedVersion,
+                        expectedAppVersion: Bundle.main.object(
+                            forInfoDictionaryKey: "CFBundleShortVersionString"
+                        ) as? String,
+                        expectedBuild: Bundle.main.object(
+                            forInfoDictionaryKey: "CFBundleVersion"
+                        ) as? String,
+                        expectedAppPath: Bundle.main.bundleURL.path,
+                        expectedRuntimeOwner: activeRuntimeLaunchAgentLabel
+                    )
+                    if case .healthy = lastEvaluation {
+                        let ownership = verifyRuntimeListenerOwnership(
+                            port: origin.port ?? defaultRuntimePort
+                        )
+                        if case .owned = ownership {
+                            activeRuntimeOrigin = origin
+                            return lastEvaluation
+                        }
+                        lastEvaluation = .ownershipFailed(ownership)
+                    }
+                } catch {
+                    lastEvaluation = .requestFailed((error as NSError).localizedDescription)
                 }
-            } catch {
-                lastEvaluation = .requestFailed((error as NSError).localizedDescription)
             }
 
             if Date() < deadline {
@@ -2781,6 +2873,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         } while Date() < deadline
 
         return lastEvaluation
+    }
+
+    private func runtimeEndpointURL() -> URL {
+        applicationSupportURL()
+            .appendingPathComponent("run", isDirectory: true)
+            .appendingPathComponent(runtimeEndpointFileName)
+    }
+
+    private func runtimeOriginCandidates() -> [URL] {
+        var candidates: [URL] = []
+        if let data = try? Data(contentsOf: runtimeEndpointURL()),
+           let endpoint = try? JSONDecoder().decode(RuntimeEndpoint.self, from: data),
+           let origin = validatedRuntimeEndpointOrigin(endpoint) {
+            candidates.append(origin)
+        }
+        if let defaultOrigin = URL(string: defaultRuntimeOriginString),
+           !candidates.contains(defaultOrigin) {
+            candidates.append(defaultOrigin)
+        }
+        return candidates
+    }
+
+    private func rediscoverRuntimeOriginForNavigationRetry() async {
+        let expectedVersion = currentCompanionVersion()
+        guard !expectedVersion.isEmpty else {
+            return
+        }
+        _ = await waitForHealthyRuntime(
+            expectedVersion: expectedVersion,
+            timeout: runtimeInitialHealthTimeout
+        )
+    }
+
+    private func runtimePortConflictDetail() -> String? {
+        let listener = runCommandCapturingOutput(
+            executable: "/usr/sbin/lsof",
+            arguments: [
+                "-nP",
+                "-iTCP@127.0.0.1:\(defaultRuntimePort)",
+                "-sTCP:LISTEN",
+                "-Fpc",
+            ]
+        )
+        guard let process = parseLsofListenerProcesses(listener.output).first else {
+            return nil
+        }
+        return portConflictDetail(
+            process: process,
+            port: defaultRuntimePort
+        )
     }
 
     private func currentCompanionVersion() -> String {
@@ -3008,7 +3150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         return states[label] ?? false
     }
 
-    private func verifyRuntimeListenerOwnership() -> RuntimeOwnershipEvaluation {
+    private func verifyRuntimeListenerOwnership(port: Int) -> RuntimeOwnershipEvaluation {
         let launchctl = runCommandCapturingOutput(
             executable: "/bin/launchctl",
             arguments: [
@@ -3033,7 +3175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 "-a",
                 "-p",
                 String(servicePID),
-                "-iTCP@127.0.0.1:47832",
+                "-iTCP@127.0.0.1:\(port)",
                 "-sTCP:LISTEN",
                 "-Fp",
             ]
@@ -3508,6 +3650,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 return
             }
             guard let self else {
+                return
+            }
+            await self.rediscoverRuntimeOriginForNavigationRetry()
+            guard !Task<Never, Never>.isCancelled else {
                 return
             }
             self.scheduledReload = nil

@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
@@ -256,6 +259,7 @@ type daemonCommandOptions struct {
 	Daemon       daemon.Options
 	APIAddr      string
 	APIDevOrigin string
+	APIFallback  bool
 }
 
 func parseDaemonOptions(args []string) (daemon.Options, error) {
@@ -273,6 +277,7 @@ func parseDaemonCommandOptions(args []string) (daemonCommandOptions, error) {
 	theme := fs.String("theme", "", "optional runtime theme override: classic|crt|mini")
 	apiAddr := fs.String("api-addr", "", "optional local companion API bind address")
 	apiDevOrigin := fs.String("api-dev-origin", "http://localhost:3000", "additional allowed local dev origin for --api-addr")
+	apiFallback := fs.Bool("api-fallback", false, "fall back to a free loopback port when --api-addr is in use")
 	if err := fs.Parse(args); err != nil {
 		return daemonCommandOptions{}, err
 	}
@@ -296,7 +301,125 @@ func parseDaemonCommandOptions(args []string) (daemonCommandOptions, error) {
 		},
 		APIAddr:      strings.TrimSpace(*apiAddr),
 		APIDevOrigin: strings.TrimSpace(*apiDevOrigin),
+		APIFallback:  *apiFallback,
 	}, nil
+}
+
+type runtimeEndpoint struct {
+	Origin string `json:"origin"`
+	PID    int    `json:"pid"`
+}
+
+const vibeTVServiceProbeTimeout = 12 * time.Second
+
+func addressHostsVibeTVService(addr string) bool {
+	statusURL := url.URL{
+		Scheme: "http",
+		Host:   addr,
+		Path:   "/v1/status",
+	}
+	request, err := http.NewRequest(
+		http.MethodGet,
+		statusURL.String(),
+		nil,
+	)
+	if err != nil {
+		return false
+	}
+	client := &http.Client{
+		Timeout: vibeTVServiceProbeTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return false
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return false
+	}
+
+	var status struct {
+		Companion struct {
+			Status  string `json:"status"`
+			Version string `json:"version"`
+		} `json:"companion"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&status); err != nil {
+		return false
+	}
+	return strings.TrimSpace(status.Companion.Status) != "" &&
+		strings.TrimSpace(status.Companion.Version) != ""
+}
+
+func listenCompanionAPI(addr string, allowFallback bool) (net.Listener, error) {
+	listener, err := net.Listen("tcp", addr)
+	if err == nil || !allowFallback || !errors.Is(err, syscall.EADDRINUSE) {
+		return listener, err
+	}
+	if addressHostsVibeTVService(addr) {
+		return nil, fmt.Errorf(
+			"another VibeTV service already owns %s: %w",
+			addr,
+			err,
+		)
+	}
+	return net.Listen("tcp", "127.0.0.1:0")
+}
+
+func runtimeEndpointPath(home string) string {
+	return filepath.Join(
+		home,
+		"Library",
+		"Application Support",
+		"codexbar-display",
+		"run",
+		"runtime-endpoint.json",
+	)
+}
+
+func writeRuntimeEndpoint(path string, endpoint runtimeEndpoint) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	data, err := json.Marshal(endpoint)
+	if err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(path), ".runtime-endpoint-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if err := temp.Chmod(0o600); err != nil {
+		temp.Close()
+		return err
+	}
+	if _, err := temp.Write(data); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, path)
+}
+
+func removeRuntimeEndpoint(path string, pid int) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var endpoint runtimeEndpoint
+	if json.Unmarshal(data, &endpoint) == nil && endpoint.PID == pid {
+		_ = os.Remove(path)
+	}
 }
 
 func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) error {
@@ -321,8 +444,30 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 		default:
 		}
 	}
+	listener, err := listenCompanionAPI(opts.APIAddr, opts.APIFallback)
+	if err != nil {
+		return err
+	}
+	actualAddr := listener.Addr().String()
+	if opts.APIFallback {
+		endpointPath := runtimeEndpointPath(home)
+		endpoint := runtimeEndpoint{
+			Origin: "http://" + actualAddr,
+			PID:    os.Getpid(),
+		}
+		if err := writeRuntimeEndpoint(endpointPath, endpoint); err != nil {
+			if actualAddr != opts.APIAddr {
+				listener.Close()
+				return fmt.Errorf("write runtime endpoint: %w", err)
+			}
+			logf("VibeTV companion API kept the default endpoint because runtime discovery could not be written: %v", err)
+		} else {
+			defer removeRuntimeEndpoint(endpointPath, endpoint.PID)
+		}
+	}
+
 	server, err := companionapi.New(companionapi.Options{
-		Addr:           opts.APIAddr,
+		Addr:           actualAddr,
 		AllowedOrigins: []string{opts.APIDevOrigin},
 		RefreshDisplayStream: func(context.Context, string) error {
 			wakeDisplayWorker()
@@ -332,6 +477,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 		WakeDisplayStream:  wakeDisplayWorker,
 	})
 	if err != nil {
+		listener.Close()
 		return err
 	}
 
@@ -345,14 +491,14 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 
 	errc := make(chan error, 1)
 	go func() {
-		errc <- server.ListenAndServe(ctx)
+		errc <- server.Serve(ctx, listener)
 	}()
 	workerRun := func(ctx context.Context, opts daemon.Options) error {
 		return daemon.RunWithLogger(ctx, opts, logf)
 	}
 	go superviseDisplayWorker(ctx, daemonOpts, workerRun, time.After, logf)
 
-	logf("VibeTV companion API listening on http://%s", opts.APIAddr)
+	logf("VibeTV companion API listening on http://%s", actualAddr)
 	err = <-errc
 	cancel()
 	return err
