@@ -1058,6 +1058,15 @@ export function ThemeStudioScreen({
     deviceStatus.tone === "attention" ||
     deviceStatus.message !== "Nothing is sent until you click Send.";
   const showJsonStatus = jsonStatus.tone === "attention";
+  const sendBlockedReason = sending
+    ? "This theme is currently being sent."
+    : dirty
+      ? saveBlockedReason || "Save this theme before sending it to VibeTV."
+      : validation.errors[0] ||
+        deviceValidation?.errors[0] ||
+        (!onInstallTheme
+          ? "Open Theme Studio in the local Mac App to send this theme."
+          : undefined);
 
   return (
     <div
@@ -1118,11 +1127,7 @@ export function ThemeStudioScreen({
             canSave={
               validation.errors.length === 0 && !saveBlockedReason
             }
-            canSend={
-              !dirty &&
-              validation.errors.length === 0 &&
-              (deviceValidation?.errors.length || 0) === 0
-            }
+            canSend={!sendBlockedReason}
             canUndo={editorState.past.length > 0}
             onExport={exportThemePack}
             onRedo={() => dispatchEditor({ type: "redo" })}
@@ -1130,6 +1135,7 @@ export function ThemeStudioScreen({
             onSend={() => void sendTheme()}
             onUndo={() => dispatchEditor({ type: "undo" })}
             saving={saving}
+            sendBlockedReason={sendBlockedReason}
             sending={sending}
             showSave={Boolean(onSaveToLibrary)}
           />

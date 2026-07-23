@@ -292,3 +292,14 @@ issue scope, or release permission never implies UI permission.
   source, provider setting, or technical infrastructure control appears.
 - Approved files: Theme Studio binding and presentation controls, editor and
   live preview formatting, ThemeSpec serialization, and their unit tests.
+
+## 2026-07-23 — Disabled Theme Studio send reason
+
+- User approval: The user explicitly requested a small information control
+  whenever `Send to VibeTV` is unavailable, explaining why it is blocked.
+- Approved customer-visible result: A disabled `Send to VibeTV` action shows a
+  compact information icon whose tooltip names the current blocker, including
+  unsaved changes, invalid themes, device capability limits, unavailable local
+  sending, and firmware that is too old for the theme.
+- Approved files: Theme Studio toolbar and send-state logic, shared theme
+  firmware compatibility, and their unit and customer-flow assertions.

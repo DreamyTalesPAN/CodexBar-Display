@@ -586,6 +586,7 @@ function themeStudioCapabilitiesFromDevice(
     ...device.capabilities.theme,
     displayHeightPx: device.capabilities.display?.heightPx,
     displayWidthPx: device.capabilities.display?.widthPx,
+    firmwareVersion: device.firmware,
   };
 }
 

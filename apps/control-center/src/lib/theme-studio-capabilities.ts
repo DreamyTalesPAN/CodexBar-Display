@@ -1,12 +1,15 @@
 import {
   deviceThemeSpecJson,
+  minimumFirmwareForThemeSpec,
   normalizeThemeSpec,
   type ThemeStudioAsset,
   type ThemeStudioPrimitiveType,
   type ThemeStudioSpec,
 } from "./theme-studio";
+import { compareSemVerStrings } from "./semver";
 
 export type ThemeStudioDeviceCapabilities = {
+  firmwareVersion?: string;
   supportsThemeSpecV1?: boolean;
   supportsStoredThemes?: boolean;
   maxThemeSpecBytes?: number;
@@ -60,6 +63,16 @@ export function validateThemeAgainstCapabilities(
 
   if (caps.supportsStoredThemes === false) {
     errors.push("This VibeTV does not support stored themes.");
+  }
+
+  const minimumFirmware = minimumFirmwareForThemeSpec(normalized);
+  const firmwareComparison = caps.firmwareVersion
+    ? compareSemVerStrings(caps.firmwareVersion, minimumFirmware)
+    : null;
+  if (firmwareComparison !== null && firmwareComparison < 0) {
+    errors.push(
+      `Firmware ${minimumFirmware} or newer is required for this theme.`,
+    );
   }
 
   const storedSpecLimit = positiveLimit(caps.maxStoredThemeSpecBytes)

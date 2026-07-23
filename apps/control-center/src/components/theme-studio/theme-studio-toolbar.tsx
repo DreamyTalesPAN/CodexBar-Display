@@ -2,6 +2,7 @@
 
 import {
   Download,
+  Info,
   LoaderCircle,
   Redo2,
   Save,
@@ -24,6 +25,7 @@ export function ThemeStudioToolbar({
   onSend,
   onUndo,
   saving,
+  sendBlockedReason,
   sending,
   showSave,
 }: {
@@ -38,6 +40,7 @@ export function ThemeStudioToolbar({
   onSend: () => void;
   onUndo: () => void;
   saving: boolean;
+  sendBlockedReason?: string;
   sending: boolean;
   showSave: boolean;
 }) {
@@ -62,14 +65,34 @@ export function ThemeStudioToolbar({
       >
         <Download data-icon="inline-start" /> Export ZIP
       </Button>
-      <Button
-        disabled={!canSend}
-        onClick={onSend}
-        variant="secondary"
-      >
-        {sending ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : <Send data-icon="inline-start" />}
-        {sending ? "Sending" : "Send to VibeTV"}
-      </Button>
+      <div className="flex items-center gap-1">
+        <Button
+          disabled={!canSend}
+          onClick={onSend}
+          variant="secondary"
+        >
+          {sending ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : <Send data-icon="inline-start" />}
+          {sending ? "Sending" : "Send to VibeTV"}
+        </Button>
+        {!canSend && sendBlockedReason ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                aria-label={`Why sending is unavailable: ${sendBlockedReason}`}
+                size="icon-sm"
+                title={sendBlockedReason}
+                type="button"
+                variant="ghost"
+              >
+                <Info aria-hidden />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-72">
+              {sendBlockedReason}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+      </div>
       {showSave ? (
         <Button disabled={!canSave} onClick={onSave}>
           {saving ? (

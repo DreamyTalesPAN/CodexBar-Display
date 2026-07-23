@@ -514,13 +514,7 @@ export function buildThemePack(
     id: normalized.themeId,
     name: cleanPackName(packName) || titleFromThemeId(normalized.themeId),
     version: "0.1.0",
-    minFirmware: normalized.primitives.some(
-      (primitive) =>
-        primitive.numberFormat === "compact" ||
-        primitive.animation === "count-up",
-    )
-      ? "1.0.40"
-      : "1.0.24",
+    minFirmware: minimumFirmwareForThemeSpec(normalized),
     themeSpec: {
       path: validation.themeSpecPath,
       file: "theme.json",
@@ -548,6 +542,18 @@ export function buildThemePack(
     themeSpecPath: validation.themeSpecPath,
     zipBytes,
   };
+}
+
+export function minimumFirmwareForThemeSpec(
+  spec: ThemeStudioSpec,
+): string {
+  return normalizeThemeSpec(spec).primitives.some(
+    (primitive) =>
+      primitive.numberFormat === "compact" ||
+      primitive.animation === "count-up",
+  )
+    ? "1.0.40"
+    : "1.0.24";
 }
 
 export function deviceThemeSpecJson(spec: ThemeStudioSpec): string {

@@ -5294,6 +5294,17 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     .getByLabel("Name", { exact: true })
     .fill("Synthwave Customer Copy");
   await page.getByLabel("ID", { exact: true }).fill("synthwave-copy");
+  const sendBlockedInfo = page.getByRole("button", {
+    name: "Why sending is unavailable: Save this theme before sending it to VibeTV.",
+  });
+  assert(
+    await sendBlockedInfo.isVisible(),
+    "disabled Theme Studio send should show a compact reason control",
+  );
+  await sendBlockedInfo.focus();
+  await page
+    .getByText("Save this theme before sending it to VibeTV.", { exact: true })
+    .waitFor();
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     page.getByRole("button", { name: "Export ZIP" }).click(),
