@@ -526,6 +526,25 @@ void testTokenTextSupportsSlotRollFrames() {
   }
   TEST_ASSERT_TRUE(foundOldValue);
   TEST_ASSERT_TRUE(foundNewValue);
+
+  RecordingSink blinkSink;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpecChangedPrimitives(
+      scene,
+      target,
+      kThemeSpecFieldSessionTokens,
+      blinkSink,
+      nullptr,
+      nullptr,
+      nullptr,
+      &previous,
+      &target,
+      kThemeSpecFieldSessionTokens,
+      0,
+      8,
+      false));
+  for (const RecordedCommand& command : blinkSink.commands) {
+    TEST_ASSERT_TRUE(command.type != CommandType::Text);
+  }
   ReleaseCompiledThemeSpec(scene);
 }
 

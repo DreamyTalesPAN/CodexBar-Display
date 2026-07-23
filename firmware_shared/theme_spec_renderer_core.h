@@ -1495,7 +1495,8 @@ inline bool RenderCompiledThemeSpecRegionPrimitives(
     const FrameData* slotRollTargetFrame = nullptr,
     uint32_t slotRollFields = 0,
     uint8_t slotRollStep = 0,
-    uint8_t slotRollSteps = 0) {
+    uint8_t slotRollSteps = 0,
+    bool slotRollVisible = true) {
   if (error != nullptr) {
     *error = "";
   }
@@ -1544,23 +1545,28 @@ inline bool RenderCompiledThemeSpecRegionPrimitives(
           slotRollFromFrame != nullptr &&
           slotRollTargetFrame != nullptr &&
           slotRollSteps > 0) {
-        const uint8_t boundedStep =
-            slotRollStep > slotRollSteps ? slotRollSteps : slotRollStep;
-        const int textHeight = ApproxTextHeight(primitive.font, primitive.size);
-        const int oldOffset =
-            (textHeight * static_cast<int>(boundedStep)) /
-            static_cast<int>(slotRollSteps);
-        const int newOffset = oldOffset - textHeight;
-        if (boundedStep < slotRollSteps) {
+        if (!slotRollVisible) {
+          rendered = true;
+        } else {
+          const uint8_t boundedStep =
+              slotRollStep > slotRollSteps ? slotRollSteps : slotRollStep;
+          const int textHeight =
+              ApproxTextHeight(primitive.font, primitive.size);
+          const int oldOffset =
+              (textHeight * static_cast<int>(boundedStep)) /
+              static_cast<int>(slotRollSteps);
+          const int newOffset = oldOffset - textHeight;
+          if (boundedStep < slotRollSteps) {
+            rendered =
+                DrawCompiledPrimitiveWithYOffset(
+                    primitive, *slotRollFromFrame, oldOffset, sink) ||
+                rendered;
+          }
           rendered =
               DrawCompiledPrimitiveWithYOffset(
-                  primitive, *slotRollFromFrame, oldOffset, sink) ||
+                  primitive, *slotRollTargetFrame, newOffset, sink) ||
               rendered;
         }
-        rendered =
-            DrawCompiledPrimitiveWithYOffset(
-                primitive, *slotRollTargetFrame, newOffset, sink) ||
-            rendered;
       } else {
         rendered = DrawCompiledPrimitive(
                        primitive,
@@ -1591,7 +1597,8 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
     const FrameData* slotRollTargetFrame = nullptr,
     uint32_t slotRollFields = 0,
     uint8_t slotRollStep = 0,
-    uint8_t slotRollSteps = 0) {
+    uint8_t slotRollSteps = 0,
+    bool slotRollVisible = true) {
   if (error != nullptr) {
     *error = "";
   }
@@ -1653,7 +1660,8 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
       slotRollTargetFrame,
       slotRollFields,
       slotRollStep,
-      slotRollSteps);
+      slotRollSteps,
+      slotRollVisible);
 }
 
 inline uint32_t CountUpTokenFields(

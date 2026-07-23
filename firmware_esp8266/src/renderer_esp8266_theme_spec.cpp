@@ -27,6 +27,8 @@ constexpr unsigned long kThemeSpecAnimatedTickMs = 20UL;
 constexpr unsigned long kThemeSpecAnimatedResumeTickMs = 1UL;
 constexpr unsigned long kTokenCountUpTickMs = 60UL;
 constexpr uint8_t kTokenCountUpSteps = 12;
+constexpr unsigned long kSlotRollBlinkTickMs = 150UL;
+constexpr uint8_t kSlotRollBlinkTransitions = 6;
 constexpr unsigned long kThemeSpecFullRenderRetryMs = 750UL;
 constexpr int kAnimatedSpriteCacheSlots = 2;
 constexpr size_t kSpriteLineReserveBytes = 256;
@@ -60,6 +62,8 @@ struct TokenCountUpState {
   uint32_t fields = 0;
   uint32_t countUpFields = 0;
   uint32_t slotRollFields = 0;
+  uint8_t slotRollBlinkTransition = 0;
+  bool slotRollVisible = true;
   unsigned long nextTickAtMs = 0;
   themespec::FrameData from;
   themespec::FrameData current;
@@ -188,6 +192,18 @@ void advanceTokenCountUp() {
         tokenCountUp.target.totalTokens,
         tokenCountUp.step);
   }
+}
+
+bool advanceSlotRollBlink() {
+  if (tokenCountUp.slotRollFields == 0 ||
+      tokenCountUp.slotRollBlinkTransition >=
+          kSlotRollBlinkTransitions) {
+    return false;
+  }
+  tokenCountUp.slotRollBlinkTransition += 1;
+  tokenCountUp.slotRollVisible =
+      tokenCountUp.slotRollBlinkTransition % 2 == 0;
+  return true;
 }
 
 void releaseCbaFrameBuffer() {
@@ -1223,7 +1239,10 @@ bool TickThemeSpecGifs() {
 
   if (tokenCountUp.active &&
       static_cast<long>(now - tokenCountUp.nextTickAtMs) >= 0) {
-    advanceTokenCountUp();
+    const bool blinked = advanceSlotRollBlink();
+    if (!blinked) {
+      advanceTokenCountUp();
+    }
     ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly, true);
     constexpr uint32_t kCountUpFields[] = {
         themespec::kThemeSpecFieldSessionTokens,
@@ -1253,14 +1272,23 @@ bool TickThemeSpecGifs() {
                   : nullptr,
               tokenCountUp.slotRollFields & field,
               tokenCountUp.step,
-              kTokenCountUpSteps)) {
+              kTokenCountUpSteps,
+              tokenCountUp.slotRollVisible)) {
         ok = false;
       }
     }
-    if (tokenCountUp.step >= kTokenCountUpSteps) {
+    if (!blinked && tokenCountUp.step >= kTokenCountUpSteps) {
       resetTokenCountUp();
     } else {
-      tokenCountUp.nextTickAtMs = now + kTokenCountUpTickMs;
+      const bool slotRollStillBlinking =
+          tokenCountUp.slotRollFields != 0 &&
+          tokenCountUp.slotRollBlinkTransition <
+              kSlotRollBlinkTransitions;
+      tokenCountUp.nextTickAtMs =
+          now +
+          (slotRollStillBlinking
+               ? kSlotRollBlinkTickMs
+               : kTokenCountUpTickMs);
     }
   }
 
@@ -1350,7 +1378,12 @@ uint32_t PrepareThemeSpecTokenAnimation(
 
   tokenCountUp.active = tokenCountUp.fields != 0;
   tokenCountUp.nextTickAtMs =
-      tokenCountUp.active ? millis() + kTokenCountUpTickMs : 0;
+      tokenCountUp.active
+          ? millis() +
+                (tokenCountUp.slotRollFields != 0
+                     ? kSlotRollBlinkTickMs
+                     : kTokenCountUpTickMs)
+          : 0;
   if (tokenCountUp.active) {
     nextThemeSpecAnimatedTickAtMs = millis() + kThemeSpecAnimatedTickMs;
   }
@@ -1391,7 +1424,8 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
           tokenCountUp.active ? &tokenCountUp.target : nullptr,
           tokenCountUp.slotRollFields,
           tokenCountUp.step,
-          kTokenCountUpSteps)) {
+          kTokenCountUpSteps,
+          tokenCountUp.slotRollVisible)) {
     markThemeSpecPartialFailed(changedFields, partialError);
     return false;
   }

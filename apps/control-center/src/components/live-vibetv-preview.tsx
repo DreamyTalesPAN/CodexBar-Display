@@ -970,6 +970,8 @@ const COUNT_UP_PREVIEW_TICK_MS = 100;
 const COUNT_UP_PREVIEW_FLICKER_DIM_MS = 110;
 const COUNT_UP_PREVIEW_FLICKER_RESTORE_MS = 210;
 const COUNT_UP_PREVIEW_START_MS = 340;
+const SLOT_ROLL_PREVIEW_BLINK_TRANSITIONS = 6;
+const SLOT_ROLL_PREVIEW_BLINK_TICK_MS = 150;
 const SLOT_ROLL_PREVIEW_STEPS = 8;
 const SLOT_ROLL_PREVIEW_TICK_MS = 60;
 
@@ -1088,31 +1090,28 @@ function ThemeSlotRollText({
       return;
     }
 
-    const dimTimer = window.setTimeout(
-      () => setFlickerDimmed(true),
-      COUNT_UP_PREVIEW_FLICKER_DIM_MS,
-    );
-    const restoreTimer = window.setTimeout(
-      () => setFlickerDimmed(false),
-      COUNT_UP_PREVIEW_FLICKER_RESTORE_MS,
-    );
     let rollTimer: number | undefined;
-    const startTimer = window.setTimeout(() => {
-      setPhase("rolling");
-      let nextStep = 0;
-      rollTimer = window.setInterval(() => {
-        nextStep += 1;
-        setStep(nextStep);
-        if (nextStep >= SLOT_ROLL_PREVIEW_STEPS) {
-          window.clearInterval(rollTimer);
-        }
-      }, SLOT_ROLL_PREVIEW_TICK_MS);
-    }, COUNT_UP_PREVIEW_START_MS);
+    let blinkTransition = 0;
+    const blinkTimer = window.setInterval(() => {
+      blinkTransition += 1;
+      setFlickerDimmed(blinkTransition % 2 === 1);
+      if (blinkTransition >= SLOT_ROLL_PREVIEW_BLINK_TRANSITIONS) {
+        window.clearInterval(blinkTimer);
+        setFlickerDimmed(false);
+        setPhase("rolling");
+        let nextStep = 0;
+        rollTimer = window.setInterval(() => {
+          nextStep += 1;
+          setStep(nextStep);
+          if (nextStep >= SLOT_ROLL_PREVIEW_STEPS) {
+            window.clearInterval(rollTimer);
+          }
+        }, SLOT_ROLL_PREVIEW_TICK_MS);
+      }
+    }, SLOT_ROLL_PREVIEW_BLINK_TICK_MS);
 
     return () => {
-      window.clearTimeout(dimTimer);
-      window.clearTimeout(restoreTimer);
-      window.clearTimeout(startTimer);
+      window.clearInterval(blinkTimer);
       if (rollTimer !== undefined) {
         window.clearInterval(rollTimer);
       }
@@ -1155,7 +1154,7 @@ function ThemeSlotRollText({
         {animate && phase === "flicker" ? (
           <text
             {...textProps}
-            opacity={flickerDimmed ? 0.2 : 1}
+            opacity={flickerDimmed ? 0 : 1}
             y={y}
           >
             {format(previous)}
