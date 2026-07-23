@@ -36,7 +36,7 @@ type DeviceTargetFormProps = {
 
 export function DeviceTargetForm({
   busy = false,
-  buttonLabel = "Connect VibeTV",
+  buttonLabel = "Connect",
   className,
   disabled = false,
   id,

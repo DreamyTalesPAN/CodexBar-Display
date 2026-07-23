@@ -564,7 +564,7 @@ function FinishSetupContent({
         </p>
         <DeviceTargetForm
           busy={busyAction === "manual-target" || busyAction === "select"}
-          buttonLabel="Connect VibeTV"
+          buttonLabel="Connect"
           className="grid gap-4"
           disabled={
             Boolean(busyAction) &&
@@ -679,7 +679,7 @@ function ManualDeviceTargetOption({
       </p>
       <DeviceTargetForm
         busy={connecting}
-        buttonLabel="Connect VibeTV"
+        buttonLabel="Connect"
         className="grid gap-4"
         disabled={Boolean(busyAction) && busyAction !== "search" && !connecting}
         id="setup-device-target"

@@ -42,33 +42,29 @@ DNSServer dnsServer;
 constexpr int kMaxFrameBytes = 2048;
 constexpr uint16_t kDnsPort = 53;
 constexpr uint32_t kWifiCredsMagic = 0x56544231UL;  // VTB1
-constexpr uint32_t kPhysicalRecoveryMagic = 0x56544252UL;  // VTBR
 constexpr uint32_t kBootDiagnosticsMagic = 0x56544244UL;  // VTBD
-constexpr uint32_t kPairingSetupMarkerMagic = 0x56545053UL;  // VTPS
 constexpr size_t kWifiSsidBytes = 33;
 constexpr size_t kWifiPasswordBytes = 65;
 constexpr size_t kWifiCredsBytes = 4 + kWifiSsidBytes + kWifiPasswordBytes;
-constexpr size_t kPhysicalRecoveryOffset = kWifiCredsBytes;
-constexpr size_t kPhysicalRecoveryBytes = 6;
-constexpr size_t kPhysicalRecoveryCounterOffset = kPhysicalRecoveryOffset + 4;
-constexpr size_t kBootDiagnosticsOffset = kPhysicalRecoveryOffset + kPhysicalRecoveryBytes;
+// Keep the legacy recovery bytes reserved so firmware updates do not move the
+// boot diagnostics or overwrite settings stored by firmware 1.0.38.
+constexpr size_t kLegacyRecoveryOffset = kWifiCredsBytes;
+constexpr size_t kLegacyRecoveryBytes = 6;
+constexpr size_t kBootDiagnosticsOffset = kLegacyRecoveryOffset + kLegacyRecoveryBytes;
 constexpr size_t kBootDiagnosticsBytes = 8;
 constexpr size_t kBootResetCounterOffset = kBootDiagnosticsOffset + 4;
-constexpr size_t kPairingSetupMarkerOffset = kBootDiagnosticsOffset + kBootDiagnosticsBytes;
-constexpr size_t kPairingSetupMarkerBytes = 4;
+constexpr size_t kLegacyPairingMarkerOffset = kBootDiagnosticsOffset + kBootDiagnosticsBytes;
+constexpr size_t kLegacyPairingMarkerBytes = 4;
 constexpr size_t kEepromBytes =
-    kWifiCredsBytes + kPhysicalRecoveryBytes + kBootDiagnosticsBytes + kPairingSetupMarkerBytes;
+    kWifiCredsBytes + kLegacyRecoveryBytes + kBootDiagnosticsBytes + kLegacyPairingMarkerBytes;
 constexpr unsigned long kWifiConnectTimeoutMs = 20000UL;
 constexpr unsigned long kWifiReconnectRetryMs = 5000UL;
 constexpr unsigned long kWifiReconnectFallbackMs = 120000UL;
 constexpr unsigned long kRebootDelayMs = 750UL;
-constexpr unsigned long kPhysicalRecoveryStableMs = 30000UL;
 constexpr unsigned long kFrameStaleWarningMs = 150000UL;
 constexpr unsigned long kFirmwareUpdateNoticeToggleMs = 1500UL;
 constexpr unsigned long kRawOtaProgressTimeoutMs = 30000UL;
-constexpr unsigned long kPhysicalPairingWindowMs = 30UL * 60UL * 1000UL;
 constexpr size_t kRawOtaReadBufferBytes = 512;
-constexpr uint8_t kPhysicalRecoveryThreshold = 3;
 constexpr size_t kMaxStoredThemeSpecBytes = 4096;
 constexpr size_t kMaxThemeGifAssetBytes = codexbar_display::themespec::kMaxThemeSpecGifAssetBytes;
 constexpr uint8_t kDefaultBrightnessPercent = 100;
@@ -194,8 +190,6 @@ String activeThemeSpecHash;
 codexbar_display::esp8266::wifi_setup::State setupWifiState;
 bool rebootPending = false;
 unsigned long rebootAtMs = 0;
-bool physicalRecoveryCounterNeedsClear = false;
-unsigned long physicalRecoveryClearAtMs = 0;
 unsigned long lastFrameAcceptedAtMs = 0;
 bool pendingWifiRender = false;
 codexbar_display::core::SerialConsumeEvent pendingWifiRenderEvent;
@@ -204,7 +198,6 @@ bool captiveDnsStarted = false;
 unsigned long wifiDisconnectedAtMs = 0;
 unsigned long wifiReconnectAttemptAtMs = 0;
 bool wifiReconnectStatusRendered = false;
-unsigned long physicalPairingWindowExpiresAtMs = 0;
 FirmwareUpdateState firmwareUpdate;
 bool firmwareUpdateNoticeDirty = false;
 OtaUploadDiagnostics otaDiagnostics;
@@ -450,24 +443,6 @@ bool requestHasValidOtaAuth() {
       requestHasCurrentDeviceToken());
 }
 
-bool physicalPairingWindowOpen() {
-  if (physicalPairingWindowExpiresAtMs == 0) {
-    return false;
-  }
-  if (static_cast<long>(physicalPairingWindowExpiresAtMs - millis()) <= 0) {
-    physicalPairingWindowExpiresAtMs = 0;
-    return false;
-  }
-  return true;
-}
-
-unsigned long physicalPairingWindowSecondsRemaining() {
-  if (!physicalPairingWindowOpen()) {
-    return 0;
-  }
-  return (physicalPairingWindowExpiresAtMs - millis() + 999UL) / 1000UL;
-}
-
 bool authorizeWifiCredentialWrite() {
   if (codexbar_display::esp8266::WifiSecurityPolicy::AllowsCredentialWrite(
           setupMode,
@@ -500,11 +475,7 @@ void appendAuthStatusJSON(String& out) {
   out += deviceAuthConfigured() ? "true" : "false";
   out += ",\"tokenHeader\":\"";
   out += kDeviceAuthHeader;
-  out += "\",\"pairingWindowOpen\":";
-  out += physicalPairingWindowOpen() ? "true" : "false";
-  out += ",\"pairingWindowSeconds\":";
-  out += String(physicalPairingWindowSecondsRemaining());
-  out += "}";
+  out += "\"}";
 }
 
 void appendBrightnessCapabilityJSON(String& out) {
@@ -950,10 +921,7 @@ bool readWifiCredentials(WifiCredentials& creds) {
   return String(creds.ssid).length() > 0;
 }
 
-bool saveWifiCredentials(
-    const String& ssid,
-    const String& password,
-    bool openPairingWindowOnNextBoot = false) {
+bool saveWifiCredentials(const String& ssid, const String& password) {
   EEPROM.begin(kEepromBytes);
   EEPROM.put(0, kWifiCredsMagic);
   for (size_t i = 0; i < kWifiSsidBytes; ++i) {
@@ -962,25 +930,10 @@ bool saveWifiCredentials(
   for (size_t i = 0; i < kWifiPasswordBytes; ++i) {
     EEPROM.write(4 + kWifiSsidBytes + i, i < password.length() ? password.charAt(i) : 0);
   }
-  EEPROM.put(
-      kPairingSetupMarkerOffset,
-      openPairingWindowOnNextBoot ? kPairingSetupMarkerMagic : static_cast<uint32_t>(0));
+  // Clear any marker left by 1.0.38. New firmware never needs a physical
+  // pairing window, but the bytes stay reserved for storage compatibility.
+  EEPROM.put(kLegacyPairingMarkerOffset, static_cast<uint32_t>(0));
   return EEPROM.commit();
-}
-
-bool consumePhysicalPairingSetupMarker() {
-  EEPROM.begin(kEepromBytes);
-  uint32_t marker = 0;
-  EEPROM.get(kPairingSetupMarkerOffset, marker);
-  if (marker != kPairingSetupMarkerMagic) {
-    return false;
-  }
-  EEPROM.put(kPairingSetupMarkerOffset, static_cast<uint32_t>(0));
-  if (!EEPROM.commit()) {
-    Serial.println("pairing_window_closed reason=marker_clear_failed");
-    return false;
-  }
-  return true;
 }
 
 void clearWifiCredentials() {
@@ -999,60 +952,6 @@ void clearSdkWifiCredentials() {
   delay(150);
   WiFi.persistent(false);
   Serial.println("wifi_sdk_credentials_cleared");
-}
-
-uint8_t readPhysicalRecoveryCounter() {
-  EEPROM.begin(kEepromBytes);
-  uint32_t magic = 0;
-  EEPROM.get(kPhysicalRecoveryOffset, magic);
-  if (magic != kPhysicalRecoveryMagic) {
-    return 0;
-  }
-  return EEPROM.read(kPhysicalRecoveryCounterOffset);
-}
-
-void writePhysicalRecoveryCounter(uint8_t counter) {
-  EEPROM.begin(kEepromBytes);
-  EEPROM.put(kPhysicalRecoveryOffset, kPhysicalRecoveryMagic);
-  EEPROM.write(kPhysicalRecoveryCounterOffset, counter);
-  EEPROM.commit();
-}
-
-void clearPhysicalRecoveryCounter() {
-  if (readPhysicalRecoveryCounter() == 0) {
-    physicalRecoveryCounterNeedsClear = false;
-    return;
-  }
-  EEPROM.begin(kEepromBytes);
-  for (size_t i = 0; i < kPhysicalRecoveryBytes; ++i) {
-    EEPROM.write(kPhysicalRecoveryOffset + i, 0);
-  }
-  EEPROM.commit();
-  physicalRecoveryCounterNeedsClear = false;
-  Serial.println("physical_recovery_counter_cleared");
-}
-
-bool consumePhysicalRecoveryTrigger() {
-  if (!codexbar_display::esp8266::WifiSecurityPolicy::CountsAsPhysicalRecoveryReset(
-          ESP.getResetInfoPtr()->reason)) {
-    clearPhysicalRecoveryCounter();
-    return false;
-  }
-
-  uint8_t counter = readPhysicalRecoveryCounter();
-  if (counter < 255) {
-    ++counter;
-  }
-  writePhysicalRecoveryCounter(counter);
-  if (counter >= kPhysicalRecoveryThreshold) {
-    clearPhysicalRecoveryCounter();
-    Serial.println("physical_recovery_triggered action=pairing_window");
-    return true;
-  }
-
-  physicalRecoveryCounterNeedsClear = true;
-  physicalRecoveryClearAtMs = millis() + kPhysicalRecoveryStableMs;
-  return false;
 }
 
 uint32_t incrementBootResetCounter() {
@@ -1118,13 +1017,8 @@ bool connectToSdkWifiConfig() {
 
   const String password = WiFi.psk();
   if (ssid.length() < kWifiSsidBytes && password.length() < kWifiPasswordBytes) {
-    const bool firstPairing = !deviceAuthConfigured();
-    if (saveWifiCredentials(ssid, password, firstPairing)) {
+    if (saveWifiCredentials(ssid, password)) {
       Serial.printf("wifi_sdk_credentials_imported ssid=%s\n", ssid.c_str());
-      if (firstPairing) {
-        physicalPairingWindowExpiresAtMs = millis() + kPhysicalPairingWindowMs;
-        Serial.printf("pairing_window_open seconds=%lu\n", kPhysicalPairingWindowMs / 1000UL);
-      }
     }
   }
 
@@ -1278,9 +1172,7 @@ void handleSaveWifi() {
   }
 
   codexbar_display::esp8266::wifi_setup::ClearConnectionError(setupWifiState);
-  const bool openPairingWindowOnNextBoot =
-      !deviceAuthConfigured() || physicalPairingWindowOpen();
-  if (!saveWifiCredentials(ssid, password, openPairingWindowOnNextBoot)) {
+  if (!saveWifiCredentials(ssid, password)) {
     webServer.send(500, "text/plain; charset=utf-8", "WiFi settings could not be saved");
     return;
   }
@@ -1571,12 +1463,12 @@ void handleSettingsAPI() {
 }
 
 void handlePairingAPI() {
+  addCorsHeaders();
   const String token = generateAuthToken();
   if (!saveDeviceAuthToken(token)) {
     webServer.send(500, "text/plain; charset=utf-8", "pairing token save failed");
     return;
   }
-  physicalPairingWindowExpiresAtMs = 0;
   if (webServer.hasArg("api")) {
     String out;
     out.reserve(100);
@@ -2761,12 +2653,6 @@ void setup() {
   renderer.Setup(runtimeCtx);
   loadDeviceSettings();
   loadDeviceAuthToken();
-  const bool setupPairingWindow = consumePhysicalPairingSetupMarker();
-  const bool physicalRecoveryWindow = consumePhysicalRecoveryTrigger();
-  if (setupPairingWindow || physicalRecoveryWindow) {
-    physicalPairingWindowExpiresAtMs = millis() + kPhysicalPairingWindowMs;
-    Serial.printf("pairing_window_open seconds=%lu\n", kPhysicalPairingWindowMs / 1000UL);
-  }
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   loadDefaultStoredThemeSpecCache();
 #endif
@@ -2944,11 +2830,6 @@ void loop() {
     Serial.println("reboot_now");
     delay(100);
     ESP.restart();
-  }
-
-  if (physicalRecoveryCounterNeedsClear &&
-      static_cast<long>(millis() - physicalRecoveryClearAtMs) >= 0) {
-    clearPhysicalRecoveryCounter();
   }
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER

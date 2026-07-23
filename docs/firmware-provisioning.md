@@ -161,10 +161,8 @@ Devices must expose either the GeekMagic factory update page or the VibeTV OTA e
 - If saved credentials fail, the device returns to the same open, writable
   `VibeTV-Setup` portal used for first setup. Saving a replacement network does
   not clear pairing, themes, brightness, or other settings.
-- Saving WiFi opens the one-use 30-minute pairing window only when the device
-  has no pairing token yet. A WiFi change on a paired device never opens it.
 - Repeated early power interruptions do not clear WiFi credentials.
-- If the current pairing token is unavailable, three deliberately interrupted
-  early boots open only the time-bounded pairing window. Pair again before
-  using any OTA endpoint; the recovery window never permits a direct unsigned
-  firmware upload.
+- Firmware `1.0.39` accepts an explicit local-WiFi Connect without the previous
+  token. The new token is still required before using any OTA endpoint.
+- Firmware `1.0.38` keeps its legacy three-power-cycle WiFi recovery and
+  30-minute pairing window so that it can be connected and updated.

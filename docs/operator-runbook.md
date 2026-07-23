@@ -99,14 +99,11 @@ unset VIBETV_TOKEN
 ```
 
 An HTTP `401`/`403`, an empty token, or a different `deviceId` means the stored
-pairing cannot be trusted for that target. The current `install-update` command
-repairs an authentication rejection before OTA. For manual recovery, with
-explicit approval for this device, use:
-
-If the device pairing window is closed and no valid current token exists,
-deliberately interrupt early boot three times first. This opens only a
-30-minute pairing window; it does not reset WiFi or other device data and it
-does not authorize firmware upload by itself.
+pairing cannot be trusted for that target. On firmware `1.0.39` and newer,
+explicit Connect replaces the token. Firmware `1.0.38` must first complete its
+legacy three-power-cycle WiFi recovery and return to home WiFi; Connect must
+then run within 30 minutes. In either case, with explicit approval for this
+device, use:
 
 ```bash
 curl -fsS --max-time 90 \

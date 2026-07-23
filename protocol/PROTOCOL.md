@@ -89,7 +89,7 @@ When the ESP8266 is connected to WiFi, it serves:
 - `POST /frame`: accepts one newline-delimited JSON frame as the request body and feeds it into the same firmware parser used by USB Serial.
 - Frame payloads may include a local `update` object (`available`, `latestVersion`, `status`, `lastError`). This updates the cached display/diagnostic update state. On built-in themes, `available=true` renders a firmware-level notice that cycles through the provider, `Update available`, and `app.vibetv.shop`. ThemeSpec themes receive the same values through the existing `{label}` / `label` binding. The ESP8266 firmware must not fetch public HTTPS manifests directly.
 - `POST /reset-wifi`: with the current pairing token, clears saved WiFi credentials and restarts the device into setup mode.
-- `POST /api/pair`: creates or rotates the local LAN pairing token. Rotation requires the current token. First pairing or lost-token recovery requires the short physical pairing window opened by initial WiFi setup or by three deliberately interrupted early boots. Physical recovery opens only pairing and never clears WiFi or other device data. Include `api=1` for a JSON response (`{"ok":true,"token":"..."}`).
+- `POST /api/pair`: creates or rotates the local LAN pairing token. Starting with firmware `1.0.39`, an explicit local-WiFi Connect may always replace the previous token; the most recently connected Mac wins. Firmware `1.0.38` retains its legacy 30-minute recovery window. Include `api=1` for a JSON response (`{"ok":true,"token":"..."}`).
 - `POST /api/settings`: updates persisted device settings. Form field `b` sets display brightness percent. Include `api=1` for a JSON/CORS response; omit it for the built-in IP-based form redirect.
 - `GET /assets`: returns mounted filesystem status and stored `/themes/` asset paths/sizes. Internal firmware control files are never listed.
 - `POST /assets?path=/themes/<short-id>/<asset>`: uploads one theme asset using multipart field `asset`.
@@ -97,13 +97,13 @@ When the ESP8266 is connected to WiFi, it serves:
 - `POST /theme/active`: activates a stored ThemeSpec JSON file uploaded via `/assets`. Body: `{"path":"/themes/u/<short-id>.json"}`. This loads the spec into the firmware cache, so future `/frame` requests can stay small and only include live usage values. The response and `/health` diagnostics include a content `hash` for firmware that supports stored-theme verification.
 
 Pairing/auth:
-- Initial WiFi setup and non-destructive physical recovery open one 30-minute pairing window. The first successful pair consumes it.
-- An unpaired device outside that window rejects pairing. A paired device requires its current token to rotate identity.
+- Firmware `1.0.39` accepts every local-WiFi `/api/pair` request and immediately replaces the previous token. It has no physical pairing gesture or pairing window.
+- Firmware `1.0.38` remains compatible with its legacy first-pair and three-power-cycle 30-minute recovery window.
 - Protected write APIs require `X-VibeTV-Token: <token>` or the documented query fallback used by native tooling and raw OTA.
-- Protected write APIs include `POST /frame`, `POST /api/settings`, WiFi credential writes, `POST /assets`, `DELETE /assets`, `POST /theme/active`, and firmware/filesystem OTA upload paths. OTA upload is stricter: it always requires a configured device and its current token, even during first setup or a physical pairing window.
+- Protected write APIs include `POST /frame`, `POST /api/settings`, WiFi credential writes, `POST /assets`, `DELETE /assets`, `POST /theme/active`, and firmware/filesystem OTA upload paths. OTA upload always requires a configured device and its current token.
 - Read APIs such as `GET /hello`, `GET /health`, and `GET /assets` stay open for diagnostics.
-- The unauthenticated device page never renders the pairing token. WiFi `/hello` reports `capabilities.auth.paired`, `tokenHeader`, `pairingWindowOpen`, and `pairingWindowSeconds`; it never reports the token value.
-- Fresh setup and automatic WiFi fallback use the same open, writable setup portal. Saving WiFi on a paired device preserves its token. If that token was lost on the Mac, physical recovery reopens pairing without clearing WiFi; firmware upload still requires the newly obtained token.
+- The unauthenticated device page never renders the pairing token. Firmware `1.0.39` WiFi `/hello` reports `capabilities.auth.paired` and `tokenHeader`; legacy firmware may additionally report pairing-window fields. No firmware reports the token value.
+- Fresh setup and automatic WiFi fallback use the same open, writable setup portal. Saving WiFi preserves device authentication, themes, and settings.
 
 Installable customer themes use VibeTV Theme Packs: a directory or `.zip` with `manifest.json`, one ThemeSpec JSON file, and optional asset files. See `docs/theme-packs.md`.
 
@@ -117,7 +117,7 @@ Example:
 
 ```bash
 curl http://192.168.178.123/hello
-TOKEN="$(curl -fsS -X POST -d api=1 http://192.168.178.123/api/pair | jq -r .token)" # during physical pairing window
+TOKEN="$(curl -fsS -X POST -d api=1 http://192.168.178.123/api/pair | jq -r .token)"
 curl -X POST -H "X-VibeTV-Token: $TOKEN" -F asset=@theme.json 'http://192.168.178.123/assets?path=/themes/u/cozy-1-a1b2c3.json'
 curl -X POST -H "X-VibeTV-Token: $TOKEN" -H 'Content-Type: text/plain' --data '{"path":"/themes/u/cozy-1-a1b2c3.json"}' \
   http://192.168.178.123/theme/active

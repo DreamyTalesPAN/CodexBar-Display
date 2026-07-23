@@ -62,20 +62,23 @@ export function DeviceStartupScreen({
   const waiting = deviceSearchState === "waiting";
   const choosing =
     deviceSearchState === "multiple" && deviceCandidates.length > 0;
-  const pairingAttention = isPairingAttentionError(lastError);
+  const legacyRecovery =
+    lastError?.code === "legacy_pairing_recovery_required";
+  const connectionAttention = isConnectionAttentionError(lastError);
   const wifiSetupNeeded =
     deviceSearchState === "not-found" &&
     !manualConnecting &&
     !selecting &&
-    !pairingAttention;
+    !connectionAttention;
   const repairFailed = deviceSearchState === "repair-failed";
   const searchFailed = deviceSearchState === "failed";
   const manualEntryAvailable =
-    searching ||
-    choosing ||
-    wifiSetupNeeded ||
-    searchFailed ||
-    repairFailed;
+    (searching ||
+      choosing ||
+      wifiSetupNeeded ||
+      searchFailed ||
+      repairFailed) &&
+    !legacyRecovery;
 
   let title = "Set up your VibeTV";
   let detail = "Choose a VibeTV on your WiFi.";
@@ -85,22 +88,22 @@ export function DeviceStartupScreen({
     detail = "Searching your WiFi for a VibeTV.";
   } else if (selecting || manualConnecting) {
     title = "Connecting to VibeTV";
-    detail = "Checking the selected VibeTV and waiting for a fresh image.";
+    detail = "Connecting to the selected VibeTV.";
   } else if (reconnecting) {
     title = "Reconnecting to your VibeTV";
-    detail = "Your saved VibeTV was found. Waiting for a fresh image.";
+    detail = "Connecting to your saved VibeTV.";
   } else if (waiting) {
     title = "Connecting to VibeTV";
     detail = "VibeTV was found. Waiting for the first usage data.";
+  } else if (legacyRecovery) {
+    title = "Reconnect this VibeTV";
+    detail = "Follow these steps, then connect VibeTV again.";
   } else if (choosing) {
     title = "Choose a VibeTV";
     detail = "Choose the VibeTV you want to connect.";
-  } else if (pairingAttention) {
-    title =
-      lastError?.code === "pairing_rate_limited"
-        ? "Pairing is paused for a moment"
-        : "VibeTV needs to be paired again";
-    detail = "VibeTV is reachable, but the secure connection needs attention.";
+  } else if (connectionAttention) {
+    title = "Reconnect this VibeTV";
+    detail = "VibeTV is reachable. Press Connect to reconnect it.";
   } else if (wifiSetupNeeded) {
     title = "We couldn't find your VibeTV";
     detail =
@@ -127,21 +130,21 @@ export function DeviceStartupScreen({
     <Wifi aria-hidden />
   ) : searchFailed ? (
     <WifiOff aria-hidden />
-  ) : repairFailed || pairingAttention ? (
+  ) : repairFailed || connectionAttention ? (
     <CircleAlert aria-hidden />
   ) : undefined;
 
-  const actions = choosing ? (
+  const actions = legacyRecovery ? null : choosing ? (
     <StartupActions
       busy={Boolean(busyAction)}
       onSearch={onSearch}
       searchVariant="outline"
     />
-  ) : searchFailed || repairFailed || pairingAttention ? (
+  ) : searchFailed || repairFailed || connectionAttention ? (
     <StartupActions
       busy={Boolean(busyAction)}
-      onSearch={pairingAttention ? onPair : onSearch}
-      searchLabel={pairingAttention ? "Pair again" : "Search again"}
+      onSearch={connectionAttention ? onPair : onSearch}
+      searchLabel={connectionAttention ? "Connect" : "Search again"}
     />
   ) : null;
 
@@ -158,7 +161,7 @@ export function DeviceStartupScreen({
       </p>
       <DeviceTargetForm
         busy={manualConnecting}
-        buttonLabel="Connect VibeTV"
+        buttonLabel="Connect"
         disabled={
           Boolean(busyAction) && busyAction !== "search" && !manualConnecting
         }
@@ -212,14 +215,31 @@ export function DeviceStartupScreen({
           </>
         ) : null}
 
-        {lastError && !searching ? (
-          <Alert variant={pairingAttention ? "destructive" : "default"}>
+        {legacyRecovery && !searching ? (
+          <Alert variant="destructive">
             <CircleAlert aria-hidden />
-            <AlertTitle>
-              {pairingAttention
-                ? "VibeTV needs to be paired again."
-                : lastError.message}
-            </AlertTitle>
+            <AlertTitle>Reconnect this VibeTV</AlertTitle>
+            <AlertDescription>
+              <ol className="grid list-decimal gap-2 pl-5">
+                <li>
+                  Unplug VibeTV and plug it back in three times. After the third
+                  start, leave it powered on.
+                </li>
+                <li>
+                  When VibeTV shows VibeTV-Setup, use your phone to connect it
+                  to your home WiFi again.
+                </li>
+                <li>
+                  Return to this app. When VibeTV appears, click Connect within
+                  30 minutes.
+                </li>
+              </ol>
+            </AlertDescription>
+          </Alert>
+        ) : lastError && !searching ? (
+          <Alert variant={connectionAttention ? "destructive" : "default"}>
+            <CircleAlert aria-hidden />
+            <AlertTitle>{lastError.message}</AlertTitle>
             <AlertDescription>
               {startupErrorNextAction(lastError, repairFailed)}
             </AlertDescription>
@@ -260,19 +280,23 @@ function StartupActions({
 }
 
 function startupErrorNextAction(error: ApiError, repairFailed: boolean) {
-  if (isPairingAttentionError(error)) {
-    return error.code === "pairing_rate_limited"
-      ? "Wait one minute, then try pairing again."
-      : "Keep VibeTV powered on, then try pairing again.";
+  if (isConnectionAttentionError(error)) {
+    return error.nextAction || "Press Connect again.";
   }
-  if (repairFailed && error.code === "pair_failed") {
+  if (
+    repairFailed &&
+    (error.code === "pair_failed" || error.code === "connect_failed")
+  ) {
     return "Keep VibeTV powered on, then search again.";
   }
   return error.nextAction;
 }
 
-function isPairingAttentionError(error?: ApiError | null) {
+function isConnectionAttentionError(error?: ApiError | null) {
   return (
+    error?.code === "legacy_pairing_recovery_required" ||
+    error?.code === "connect_failed" ||
+    error?.code === "connect_temporarily_unavailable" ||
     error?.code === "pairing_token_rejected" ||
     error?.code === "pairing_window_closed" ||
     error?.code === "pairing_rate_limited"

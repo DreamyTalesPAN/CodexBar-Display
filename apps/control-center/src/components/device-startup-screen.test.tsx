@@ -127,17 +127,16 @@ describe("DeviceStartupScreen", () => {
     expect(html).not.toContain("Scan WiFi again");
   });
 
-  it("never exposes destructive recovery copy for a pairing error", () => {
+  it("shows the exact legacy 1.0.38 recovery steps without extra settings copy", () => {
     const html = renderToStaticMarkup(
       <DeviceStartupScreen
         deviceCandidates={[]}
         deviceSearchState="not-found"
         deviceTarget="172.30.0.31"
         lastError={{
-          code: "pairing_window_closed",
-          message: "Pairing needs physical recovery.",
-          nextAction:
-            "Unplug VibeTV during early boot three times in a row. Then connect VibeTV to WiFi again and pair it in Control Center.",
+          code: "legacy_pairing_recovery_required",
+          message: "This VibeTV uses an older recovery method.",
+          nextAction: "Follow the recovery steps, then press Connect.",
         }}
         onDeviceTargetChange={vi.fn()}
         onManualTarget={vi.fn()}
@@ -147,9 +146,20 @@ describe("DeviceStartupScreen", () => {
       />,
     );
 
-    expect(html).toContain("VibeTV needs to be paired again");
-    expect(html).not.toContain("Unplug VibeTV");
-    expect(html).not.toContain("three times");
+    expect(html).toContain("Reconnect this VibeTV");
+    expect(html).toContain(
+      "Unplug VibeTV and plug it back in three times. After the third start, leave it powered on.",
+    );
+    expect(html).toContain(
+      "When VibeTV shows VibeTV-Setup, use your phone to connect it to your home WiFi again.",
+    );
+    expect(html).toContain(
+      "Return to this app. When VibeTV appears, click Connect within 30 minutes.",
+    );
+    expect(html).not.toContain("within 30 seconds each time");
+    expect(html).not.toContain(
+      "This only resets WiFi. Your themes and display settings stay saved.",
+    );
     expect(html).not.toContain("We couldn&#x27;t find your VibeTV");
     expect(html).not.toContain("Open WiFi settings");
   });

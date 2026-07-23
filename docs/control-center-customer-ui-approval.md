@@ -239,3 +239,18 @@ issue scope, or release permission never implies UI permission.
 - User approval: This merge checkpoint combines the user's explicit 2026-07-22 approvals recorded above for the shadcn manual-IP and one-cardless re-pair flow with the separately approved Usage refresh, centered update indicator, and draft brightness behavior.
 - Approved customer-visible result: The merged shadcn branch preserves the approved cardless setup and recovery flow, including the bare-IP manual address field and working `Pair again`, while Usage retains its approved refresh and self-repair behavior and Settings retains its approved save-only brightness behavior. The merge introduces no additional customer-facing state, copy, or action.
 - Approved files: `device-target-form.tsx`, `control-center-app.tsx`, `control-center-shell.tsx`, `usage-screen.tsx`, and their unit and customer-flow assertions in `test-customer-flows.mjs`.
+
+## 2026-07-23 — One-click Connect and explicit 1.0.38 recovery
+
+- User approval: The user explicitly ordered pairing to be reduced to selecting
+  a visible VibeTV and pressing `Connect`, while keeping the unavoidable legacy
+  recovery only for already locked firmware `1.0.38` devices.
+- Approved customer-visible result: Explicit Connect always establishes the
+  current internal key and never waits for the first display image. Firmware
+  `1.0.38` rejection shows `Reconnect this VibeTV`, the three-power-cycle,
+  `VibeTV-Setup`, and 30-minute Connect steps. It shows neither `Pair again`,
+  the old generic powered-on instruction, nor an additional settings sentence.
+  Support-report access remains available.
+- Approved files: ESP8266 pairing policy and compatibility version, Companion
+  Connect routing/error mapping, Control Center startup recovery, and their
+  firmware, Go, unit, and customer-flow tests.

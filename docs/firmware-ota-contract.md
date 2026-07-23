@@ -6,11 +6,10 @@ handlers.
 
 ## Safety invariants
 
-- No bootable release firmware state may be WiFi-OTA-unrecoverable.
+- Firmware `1.0.39` and newer can always establish a new current token through
+  an explicit local-WiFi Connect before authenticated OTA.
 - Firmware upload always requires the current pairing token. The firmware does
-  not accept an unsigned upload merely because it is unpaired, in setup mode,
-  or inside a pairing window. The pairing window is used only to obtain a new
-  token before starting the authenticated upload.
+  not accept an unsigned upload merely because pairing itself is open.
 - The unauthenticated `GET /update` page never embeds a pairing token or a
   browser upload form. It points to the authenticated `install-update` path.
 - Pin the device URL and `deviceId` before downloading or uploading firmware.
@@ -37,17 +36,16 @@ handlers.
 | Bootable state | WiFi OTA path |
 | --- | --- |
 | Home WiFi and current token | Authenticated `install-update`. |
-| Home WiFi but local token lost or rejected | Physically restart early boot three times. This opens only the 30-minute pairing window; it does not clear WiFi or device data. Pair again, then run authenticated `install-update`. |
-| Saved home WiFi unavailable | Wait for the ordinary open `VibeTV-Setup` portal, save the new WiFi, then use the preserved token. If the token is also lost, use the same non-destructive physical pairing recovery before or during setup. |
-| Fresh unpaired device | Complete WiFi setup, pair once during the first-pair window, then run authenticated `install-update`. |
+| Firmware 1.0.39 on home WiFi but local token lost or rejected | Press Connect. The firmware replaces the token, then authenticated `install-update` can proceed. |
+| Firmware 1.0.38 on home WiFi but local token lost or rejected | Complete the legacy three-power-cycle WiFi recovery, reconnect the device to home WiFi, press Connect within 30 minutes, then update to current firmware. |
+| Saved home WiFi unavailable | Wait for the ordinary open `VibeTV-Setup` portal, save the new WiFi, then press Connect. |
+| Fresh unpaired device | Complete WiFi setup, press Connect, then run authenticated `install-update`. |
 | Paired device after a WiFi change | The existing token remains valid; discover the new IP and run authenticated `install-update`. |
-| Pairing window closed | Use the current token. If it is unavailable, use the non-destructive physical pairing recovery, pair again, then update. |
 
 The ESP8266 firmware does not verify a cryptographic firmware signature on the
 device. Manifest SHA-256 validation therefore remains a sender-side release
 check, while the current pairing token is the mandatory receiver-side upload
-authorization. The physical recovery gesture restores pairing capability, not
-direct upload capability.
+authorization. Open pairing never authorizes a firmware upload directly.
 
 ## Firmware 1.0.36 compatibility transport
 
@@ -104,8 +102,8 @@ upload-error recovery optimization.
   disconnect, abort, or final validation.
 - After a failure that entered update mode, return the error and perform a
   controlled restart. Do not accept another OTA attempt in that boot.
-- Software, OTA, watchdog, exception, and sleep resets never advance the
-  physical recovery counter.
+- Firmware `1.0.39` has no physical pairing recovery counter. Its legacy EEPROM
+  bytes remain reserved to preserve the existing storage layout.
 
 ## Release gate
 
