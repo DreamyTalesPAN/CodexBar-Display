@@ -31,8 +31,11 @@ export function currentControlCenterOrigin() {
     : window.location.origin;
 }
 
-export function companionReleaseApiUrl(origin: string) {
-  return isLocalCompanionOrigin(origin)
+export function companionReleaseApiUrl(
+  origin: string,
+  nativeRuntime = false,
+) {
+  return nativeRuntime || isLocalCompanionOrigin(origin)
     ? `${DEFAULT_CONTROL_CENTER_ORIGIN}${COMPANION_RELEASE_API_PATH}`
     : COMPANION_RELEASE_API_PATH;
 }

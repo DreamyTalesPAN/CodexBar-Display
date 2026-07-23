@@ -6,6 +6,7 @@ import {
   companionReleaseApiUrl,
   currentControlCenterOrigin,
 } from "./mac-app-install-command";
+import { isNativeControlCenterApp } from "./control-center-runtime";
 
 type UseCompanionReleaseOptions = {
   enabled?: boolean;
@@ -31,7 +32,10 @@ export function useCompanionRelease(
         params.set("version", companionVersion);
       }
       const suffix = params.toString() ? `?${params.toString()}` : "";
-      const endpoint = companionReleaseApiUrl(currentControlCenterOrigin());
+      const endpoint = companionReleaseApiUrl(
+        currentControlCenterOrigin(),
+        isNativeControlCenterApp(),
+      );
       const response = await fetch(`${endpoint}${suffix}`, {
         cache: "no-store",
       });

@@ -18,6 +18,7 @@
       <string>127.0.0.1:47832</string>
       <string>--api-dev-origin</string>
       <string>http://127.0.0.1:47832</string>
+      <string>--api-fallback</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>

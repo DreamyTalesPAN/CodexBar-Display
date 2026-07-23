@@ -523,6 +523,7 @@ expected_arguments = [
     "127.0.0.1:47832",
     "--api-dev-origin",
     "http://127.0.0.1:47832",
+    "--api-fallback",
 ]
 if agent.get("ProgramArguments") != expected_arguments:
     raise SystemExit(
@@ -577,7 +578,10 @@ required_source = [
     'unregisterLocalPreviewRuntimeService()',
     '"CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL":',
     'runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"',
-    'runtimeHealthURLString = "http://127.0.0.1:47832/v1/runtime-health"',
+    'defaultRuntimeOriginString = "http://127.0.0.1:47832"',
+    'runtimeEndpointFileName = "runtime-endpoint.json"',
+    "validatedRuntimeEndpointOrigin(",
+    "runtimeOriginCandidates()",
     'nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"',
     "webView.customUserAgent = nativeControlCenterUserAgent(",
     "timeout: runtimeInitialHealthTimeout",
@@ -586,9 +590,9 @@ required_source = [
     '"--vibetv-validation-unregister-runtime"',
     '"VIBETV_RUNTIME_VALIDATION_UNREGISTER"',
     "CODEX_RUNTIME_UNREGISTER_OK label=",
-    "let ownership = verifyRuntimeListenerOwnership()",
+    "let ownership = verifyRuntimeListenerOwnership(",
     'executable: "/usr/sbin/lsof"',
-    '"-iTCP@127.0.0.1:47832"',
+    '"-iTCP@127.0.0.1:\\(port)"',
     '"-sTCP:LISTEN"',
     'URL(fileURLWithPath: "/Library/LaunchAgents"',
     'launchctlExitStatus(["disable", service])',
@@ -623,7 +627,7 @@ required_source = [
     '"backgroundItems": filteredBackgroundItems(',
     'Task.detached(priority: .userInitiated)',
     'withJSONObject: redactReportValue(report)',
-    '"--max-time", "40"',
+    '"--max-time",',
     'title: "Create report"',
     'title: "Starting Control Center"',
     "retryTitle: status.retryTitle",
@@ -641,7 +645,9 @@ required_source = [
     'environment["CODEXBAR_CONFIG"] = configURL.path',
     '[.posixPermissions: 0o700]',
     '[.posixPermissions: 0o600]',
-    'title: "Installation needs attention"',
+    '"VibeTV couldn’t start"',
+    "runtimePortConflictDetail()",
+    "parseLsofListenerProcesses(",
     "activeNavigation = webView?.load(",
     ".reloadIgnoringLocalCacheData",
     'alert.addButton(withTitle: "Open Applications")',
@@ -846,7 +852,7 @@ if "timeout: TimeInterval = runtimeHealthTimeout" not in health_method:
         "native runtime recovery must retain the full health timeout after the fast first check"
     )
 if health_method.find("evaluateRuntimeHealth(") > health_method.find(
-    "verifyRuntimeListenerOwnership()"
+    "verifyRuntimeListenerOwnership("
 ):
     raise SystemExit(
         "HTTP health must be evaluated before listener ownership is accepted"
@@ -863,6 +869,7 @@ if "recordCurrentRuntimeBundleVersion" in register_method:
 
 for forbidden in [
     "companionProcess",
+    "Darwin.kill",
     "func applicationShouldTerminate(",
     "func applicationWillTerminate(",
 ]:
