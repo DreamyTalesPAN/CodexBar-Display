@@ -600,7 +600,7 @@ function RecoveryCard({
   recovery: ThemeStudioRecovery;
 }) {
   return (
-    <div className="mb-6 grid gap-4 border border-border bg-card p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+    <div className="mb-6 grid gap-4 rounded-lg border border-border bg-card p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div className="min-w-0">
         <div className="text-base font-bold text-[#1B1B1B]">
           Continue your unsaved theme

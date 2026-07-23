@@ -303,3 +303,11 @@ issue scope, or release permission never implies UI permission.
   sending, and firmware that is too old for the theme.
 - Approved files: Theme Studio toolbar and send-state logic, shared theme
   firmware compatibility, and their unit and customer-flow assertions.
+
+## 2026-07-23 — Recovery card radius
+
+- User approval: The user explicitly marked the Theme Library recovery card
+  and requested the correct border radius.
+- Approved customer-visible result: The recovery card uses the same `rounded-lg`
+  corner radius as the neighboring Theme Library item cards.
+- Approved files: Theme Library recovery card styling.
