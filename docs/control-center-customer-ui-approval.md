@@ -268,3 +268,15 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-app.tsx`, `control-center-types.ts`, their
   unit tests, and the matching customer-flow assertions in
   `test-customer-flows.mjs`.
+
+## 2026-07-23 — Stable connected Overview preview width
+
+- User approval: The user's explicit acceptance of the real-device connected
+  Overview covers the same visible result while fixing its collapsed-width CI
+  case.
+- Approved customer-visible result: The connected Overview continues to show
+  the VibeTV case and live theme image at the approved size. Its preview
+  container now keeps an explicit available width so the exact same image
+  cannot collapse to zero width during a slow image load.
+- Approved files: `overview-screen.tsx` and the existing connected Overview
+  customer-flow assertion in `test-customer-flows.mjs`.

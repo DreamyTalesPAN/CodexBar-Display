@@ -91,7 +91,7 @@ export function OverviewScreen({
 
           {reconnecting ? <ReconnectNotice device={device} /> : null}
 
-          <div className="flex justify-center">
+          <div className="flex w-full justify-center">
             <LiveVibeTVPreview device={device} usage={usage || null} />
           </div>
 
