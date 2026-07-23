@@ -1223,16 +1223,27 @@ bool TickThemeSpecGifs() {
       static_cast<long>(now - tokenCountUp.nextTickAtMs) >= 0) {
     advanceTokenCountUp();
     ThemeSpecSink sink(false, SpriteRenderMode::StaticOnly, true);
-    const char* partialError = nullptr;
-    ok = themespec::RenderCompiledThemeSpecChangedPrimitives(
-             cachedThemeSpecScene,
-             frameData,
-             tokenCountUp.fields,
-             sink,
-             &partialError,
-             nullptr,
-             &tokenCountUp.current) &&
-         ok;
+    constexpr uint32_t kCountUpFields[] = {
+        themespec::kThemeSpecFieldSessionTokens,
+        themespec::kThemeSpecFieldWeekTokens,
+        themespec::kThemeSpecFieldTotalTokens,
+    };
+    for (const uint32_t field : kCountUpFields) {
+      if ((tokenCountUp.fields & field) == 0) {
+        continue;
+      }
+      const char* partialError = nullptr;
+      if (!themespec::RenderCompiledThemeSpecChangedPrimitives(
+              cachedThemeSpecScene,
+              frameData,
+              field,
+              sink,
+              &partialError,
+              nullptr,
+              &tokenCountUp.current)) {
+        ok = false;
+      }
+    }
     if (tokenCountUp.step >= kTokenCountUpSteps) {
       resetTokenCountUp();
     } else {
@@ -1254,7 +1265,7 @@ bool ThemeSpecAnimationWorkPending() {
   return cbaRenderJobInProgress || tokenCountUp.active;
 }
 
-void PrepareThemeSpecTokenCountUp(
+uint32_t PrepareThemeSpecTokenCountUp(
     uint32_t changedFields,
     int64_t previousSessionTokens,
     int64_t previousWeekTokens,
@@ -1264,13 +1275,13 @@ void PrepareThemeSpecTokenCountUp(
       !codexbar_display::core::ThemeSpecRawLooksRenderable(raw) ||
       !ensureThemeSpecSceneCached(raw)) {
     resetTokenCountUp();
-    return;
+    return 0;
   }
 
   const uint32_t countUpFields =
       themespec::CountUpTokenFields(cachedThemeSpecScene, changedFields);
   if (countUpFields == 0) {
-    return;
+    return 0;
   }
 
   const auto target = currentThemeSpecFrameData();
@@ -1315,6 +1326,7 @@ void PrepareThemeSpecTokenCountUp(
   if (tokenCountUp.active) {
     nextThemeSpecAnimatedTickAtMs = millis() + kThemeSpecAnimatedTickMs;
   }
+  return tokenCountUp.fields;
 }
 
 bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText) {
@@ -1503,7 +1515,7 @@ bool ThemeSpecAnimationWorkPending() {
   return false;
 }
 
-void PrepareThemeSpecTokenCountUp(
+uint32_t PrepareThemeSpecTokenCountUp(
     uint32_t changedFields,
     int64_t previousSessionTokens,
     int64_t previousWeekTokens,
@@ -1512,6 +1524,7 @@ void PrepareThemeSpecTokenCountUp(
   (void)previousSessionTokens;
   (void)previousWeekTokens;
   (void)previousTotalTokens;
+  return 0;
 }
 
 bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText) {

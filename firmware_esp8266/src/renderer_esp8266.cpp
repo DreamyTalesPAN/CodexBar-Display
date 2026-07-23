@@ -191,12 +191,16 @@ void RendererESP8266::OnFrameAccepted(app::RuntimeContext& ctx, const core::Seri
         event.themeSpecPartialRender &&
         display::CurrentFrame().hasThemeSpec &&
         display::CurrentThemeSpecRenderedSuccessfully()) {
-      display::PrepareThemeSpecTokenCountUp(
-          event.themeSpecChangedFields,
-          event.previousSessionTokens,
-          event.previousWeekTokens,
-          event.previousTotalTokens);
-      if (display::RenderThemeSpecPartial(event.themeSpecChangedFields)) {
+      const uint32_t animatedTokenFields =
+          display::PrepareThemeSpecTokenCountUp(
+              event.themeSpecChangedFields,
+              event.previousSessionTokens,
+              event.previousWeekTokens,
+              event.previousTotalTokens);
+      const uint32_t immediateFields =
+          event.themeSpecChangedFields & ~animatedTokenFields;
+      if (immediateFields == 0 ||
+          display::RenderThemeSpecPartial(immediateFields)) {
         return;
       }
     }
