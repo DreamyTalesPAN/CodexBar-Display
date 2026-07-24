@@ -328,3 +328,18 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-app.tsx`, `control-center-types.ts`,
   `usage-screen.tsx`, Companion provider preferences and usage normalization,
   and their regression tests.
+
+## 2026-07-24 — Truthful partial provider usage
+
+- User approval: While checking the connected VibeTV in the issue #247 task,
+  the user explicitly rejected making the entire provider unavailable when
+  only one value is missing and required only that value to show `??`.
+- Approved customer-visible result: A provider with one known and one unknown
+  normalized usage lane stays visible and fresh. The known Session or Weekly
+  lane keeps its real percentage, while only the unknown lane shows `??` and
+  no believable zero-percent bar. Existing extra or custom usage windows stay
+  visible without invented Session or Weekly rows. No new control, screen, or
+  provider-specific copy is added.
+- Approved files: `control-center-types.ts`, `usage-screen.tsx`, its unit tests,
+  Companion usage normalization, the generic display protocol, and firmware
+  renderer contract tests.
