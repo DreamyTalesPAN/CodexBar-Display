@@ -24,8 +24,6 @@ constexpr uint32_t kThemeSpecFieldWeekTokens = 1UL << 10;
 constexpr uint32_t kThemeSpecFieldTotalTokens = 1UL << 11;
 constexpr uint32_t kThemeSpecFieldUsageSlot1 = 1UL << 12;
 constexpr uint32_t kThemeSpecFieldUsageSlot2 = 1UL << 13;
-constexpr uint32_t kThemeSpecFieldUsageSlot3 = 1UL << 14;
-constexpr uint32_t kThemeSpecFieldUsageSlot4 = 1UL << 15;
 constexpr int kThemeSpecCanvasSize = 240;
 constexpr size_t kMaxThemeSpecGifAssets = 1;
 constexpr size_t kMaxThemeSpecGifAssetBytes = 24 * 1024;
@@ -57,14 +55,6 @@ struct FrameData {
   int usageSlot2Percent = 0;
   int64_t usageSlot2ResetSecs = 0;
   bool usageSlot2Available = false;
-  const char* usageSlot3Label = "";
-  int usageSlot3Percent = 0;
-  int64_t usageSlot3ResetSecs = 0;
-  bool usageSlot3Available = false;
-  const char* usageSlot4Label = "";
-  int usageSlot4Percent = 0;
-  int64_t usageSlot4ResetSecs = 0;
-  bool usageSlot4Available = false;
   const char* usageMode = "";
   const char* activity = "idle";
   const char* time = "";
@@ -158,6 +148,7 @@ enum class PrimitiveKind : uint8_t {
 struct CompiledPrimitive {
   PrimitiveKind kind = PrimitiveKind::Unknown;
   uint32_t liveFields = 0;
+  uint8_t usageSlot = 0;
   int x = 0;
   int y = 0;
   int width = 0;
@@ -468,10 +459,10 @@ inline const char* LabelText(const FrameData& frame) {
 
 inline int UsageSlotBindingIndex(const char* key) {
   key = SafeText(key);
-  if (std::strncmp(key, "usageSlot", 9) == 0 && key[9] >= '1' && key[9] <= '4') {
+  if (std::strncmp(key, "usageSlot", 9) == 0 && key[9] >= '1' && key[9] <= '2') {
     return key[9] - '1';
   }
-  if (std::strncmp(key, "us", 2) == 0 && key[2] >= '1' && key[2] <= '4') {
+  if (std::strncmp(key, "us", 2) == 0 && key[2] >= '1' && key[2] <= '2') {
     return key[2] - '1';
   }
   return -1;
@@ -481,8 +472,6 @@ inline const char* UsageSlotLabelFor(const FrameData& frame, int slotIndex) {
   switch (slotIndex) {
     case 0: return frame.usageSlot1Label;
     case 1: return frame.usageSlot2Label;
-    case 2: return frame.usageSlot3Label;
-    case 3: return frame.usageSlot4Label;
     default: return "";
   }
 }
@@ -491,8 +480,6 @@ inline int UsageSlotPercentFor(const FrameData& frame, int slotIndex) {
   switch (slotIndex) {
     case 0: return frame.usageSlot1Percent;
     case 1: return frame.usageSlot2Percent;
-    case 2: return frame.usageSlot3Percent;
-    case 3: return frame.usageSlot4Percent;
     default: return 0;
   }
 }
@@ -501,8 +488,6 @@ inline int64_t UsageSlotResetSecsFor(const FrameData& frame, int slotIndex) {
   switch (slotIndex) {
     case 0: return frame.usageSlot1ResetSecs;
     case 1: return frame.usageSlot2ResetSecs;
-    case 2: return frame.usageSlot3ResetSecs;
-    case 3: return frame.usageSlot4ResetSecs;
     default: return 0;
   }
 }
@@ -511,8 +496,6 @@ inline bool UsageSlotAvailableFor(const FrameData& frame, int slotIndex) {
   switch (slotIndex) {
     case 0: return frame.usageSlot1Available;
     case 1: return frame.usageSlot2Available;
-    case 2: return frame.usageSlot3Available;
-    case 3: return frame.usageSlot4Available;
     default: return false;
   }
 }
@@ -560,16 +543,13 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
   const int slotIndex = UsageSlotBindingIndex(key);
   if (slotIndex >= 0) {
     const bool available = UsageSlotAvailableFor(frame, slotIndex);
-    char availableShort[5] = {0};
-    char labelShort[5] = {0};
-    char resetShort[5] = {0};
-    std::snprintf(availableShort, sizeof(availableShort), "us%da", slotIndex + 1);
-    std::snprintf(labelShort, sizeof(labelShort), "us%dl", slotIndex + 1);
-    std::snprintf(resetShort, sizeof(resetShort), "us%dr", slotIndex + 1);
+    const char* availableShort = slotIndex == 0 ? "us1a" : "us2a";
+    const char* labelShort = slotIndex == 0 ? "us1l" : "us2l";
+    const char* resetShort = slotIndex == 0 ? "us1r" : "us2r";
     if (std::strstr(key, "Available") != nullptr || std::strcmp(key, availableShort) == 0) {
       std::snprintf(out, outSize, "%s", available ? "true" : "false");
     } else if (!available) {
-      std::snprintf(out, outSize, "");
+      out[0] = '\0';
     } else if (std::strstr(key, "Label") != nullptr || std::strcmp(key, labelShort) == 0) {
       std::snprintf(out, outSize, "%s", SafeText(UsageSlotLabelFor(frame, slotIndex)));
     } else if (std::strstr(key, "Reset") != nullptr || std::strcmp(key, resetShort) == 0) {
@@ -712,7 +692,7 @@ inline bool BindingUsesField(const char* binding, uint32_t fields) {
   }
   const int slotIndex = UsageSlotBindingIndex(binding);
   if (slotIndex >= 0) {
-    const uint32_t slotFields[] = {kThemeSpecFieldUsageSlot1, kThemeSpecFieldUsageSlot2, kThemeSpecFieldUsageSlot3, kThemeSpecFieldUsageSlot4};
+    const uint32_t slotFields[] = {kThemeSpecFieldUsageSlot1, kThemeSpecFieldUsageSlot2};
     return (fields & slotFields[slotIndex]) != 0;
   }
   if ((fields & kThemeSpecFieldUsageMode) != 0 && StringEqualsAny(binding, "usageMode", "u")) {
@@ -742,8 +722,6 @@ inline bool BindingUsesField(const char* binding, uint32_t fields) {
 inline bool TextTemplateUsesField(const char* raw, uint32_t fields) {
   return ((fields & kThemeSpecFieldUsageSlot1) != 0 && (TemplateUsesField(raw, "usageSlot1Label", "us1l") || TemplateUsesField(raw, "usageSlot1Percent", "us1p") || TemplateUsesField(raw, "usageSlot1Reset", "us1r") || TemplateUsesField(raw, "usageSlot1Available", "us1a"))) ||
          ((fields & kThemeSpecFieldUsageSlot2) != 0 && (TemplateUsesField(raw, "usageSlot2Label", "us2l") || TemplateUsesField(raw, "usageSlot2Percent", "us2p") || TemplateUsesField(raw, "usageSlot2Reset", "us2r") || TemplateUsesField(raw, "usageSlot2Available", "us2a"))) ||
-         ((fields & kThemeSpecFieldUsageSlot3) != 0 && (TemplateUsesField(raw, "usageSlot3Label", "us3l") || TemplateUsesField(raw, "usageSlot3Percent", "us3p") || TemplateUsesField(raw, "usageSlot3Reset", "us3r") || TemplateUsesField(raw, "usageSlot3Available", "us3a"))) ||
-         ((fields & kThemeSpecFieldUsageSlot4) != 0 && (TemplateUsesField(raw, "usageSlot4Label", "us4l") || TemplateUsesField(raw, "usageSlot4Percent", "us4p") || TemplateUsesField(raw, "usageSlot4Reset", "us4r") || TemplateUsesField(raw, "usageSlot4Available", "us4a"))) ||
          ((fields & kThemeSpecFieldProvider) != 0 && TemplateUsesField(raw, "provider", "pr")) ||
          ((fields & kThemeSpecFieldLabel) != 0 && TemplateUsesField(raw, "label", "providerLabel", "l")) ||
          ((fields & kThemeSpecFieldSession) != 0 && TemplateUsesField(raw, "session", "sessionPercent", "s")) ||
@@ -778,8 +756,6 @@ inline uint32_t BindingFieldMask(const char* binding) {
   switch (UsageSlotBindingIndex(binding)) {
     case 0: return kThemeSpecFieldUsageSlot1;
     case 1: return kThemeSpecFieldUsageSlot2;
-    case 2: return kThemeSpecFieldUsageSlot3;
-    case 3: return kThemeSpecFieldUsageSlot4;
     default: break;
   }
   if (StringEqualsAny(binding, "usageMode", "u")) {
@@ -828,12 +804,6 @@ inline uint32_t TextTemplateFieldMask(const char* raw) {
   }
   if (TemplateUsesField(raw, "usageSlot2Label", "us2l") || TemplateUsesField(raw, "usageSlot2Percent", "us2p") || TemplateUsesField(raw, "usageSlot2Reset", "us2r") || TemplateUsesField(raw, "usageSlot2Available", "us2a")) {
     fields |= kThemeSpecFieldUsageSlot2;
-  }
-  if (TemplateUsesField(raw, "usageSlot3Label", "us3l") || TemplateUsesField(raw, "usageSlot3Percent", "us3p") || TemplateUsesField(raw, "usageSlot3Reset", "us3r") || TemplateUsesField(raw, "usageSlot3Available", "us3a")) {
-    fields |= kThemeSpecFieldUsageSlot3;
-  }
-  if (TemplateUsesField(raw, "usageSlot4Label", "us4l") || TemplateUsesField(raw, "usageSlot4Percent", "us4p") || TemplateUsesField(raw, "usageSlot4Reset", "us4r") || TemplateUsesField(raw, "usageSlot4Available", "us4a")) {
-    fields |= kThemeSpecFieldUsageSlot4;
   }
   if (TemplateUsesField(raw, "usageMode", "u")) {
     fields |= kThemeSpecFieldUsageMode;
@@ -1010,6 +980,15 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
   out = CompiledPrimitive{};
   out.x = primitive["x"] | 0;
   out.y = primitive["y"] | 0;
+  out.usageSlot = static_cast<uint8_t>(JsonIntFor(primitive, "slot", "sl", 0));
+  if (out.usageSlot > 2) {
+    return false;
+  }
+  if (out.usageSlot == 1) {
+    out.liveFields |= kThemeSpecFieldUsageSlot1;
+  } else if (out.usageSlot == 2) {
+    out.liveFields |= kThemeSpecFieldUsageSlot2;
+  }
 
   if (PrimitiveTypeIs(primitive, "rect", "r")) {
     out.kind = PrimitiveKind::Rect;
@@ -1042,7 +1021,7 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
     out.hasBg = bgColor != nullptr;
     out.bg = ParseColor(bgColor, 0x0000);
-    out.liveFields = out.binding != nullptr ? BindingFieldMask(out.binding) : TextTemplateFieldMask(out.text);
+    out.liveFields |= out.binding != nullptr ? BindingFieldMask(out.binding) : TextTemplateFieldMask(out.text);
     return out.size > 0;
   }
 
@@ -1061,11 +1040,11 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     out.color = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
     out.bg = ParseColor(JsonStringFor(primitive, "bgColor", "bg"), 0x0000);
     out.border = ParseColor(JsonStringFor(primitive, "borderColor", "bc"), 0x7BEF);
-    const uint32_t slotField = BindingFieldMask(out.binding) & (kThemeSpecFieldUsageSlot1 | kThemeSpecFieldUsageSlot2 | kThemeSpecFieldUsageSlot3 | kThemeSpecFieldUsageSlot4);
+    const uint32_t slotField = BindingFieldMask(out.binding) & (kThemeSpecFieldUsageSlot1 | kThemeSpecFieldUsageSlot2);
     if (slotField != 0) {
-      out.liveFields = slotField;
+      out.liveFields |= slotField;
     } else {
-      out.liveFields = BindingUsesField(out.binding, kThemeSpecFieldWeekly) ? kThemeSpecFieldWeekly : kThemeSpecFieldSession;
+      out.liveFields |= BindingUsesField(out.binding, kThemeSpecFieldWeekly) ? kThemeSpecFieldWeekly : kThemeSpecFieldSession;
     }
     return out.width > 0 && out.height > 0;
   }
@@ -1084,7 +1063,7 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
     out.hasBg = bgColor != nullptr;
     out.bg = ParseColor(bgColor, 0x0000);
-    out.liveFields = (out.idleAssetPath == nullptr && out.codingAssetPath == nullptr) ? 0 : kThemeSpecFieldActivity;
+    out.liveFields |= (out.idleAssetPath == nullptr && out.codingAssetPath == nullptr) ? 0 : kThemeSpecFieldActivity;
     hasAnimatedAssets = true;
     if (out.width <= 0 || out.height <= 0 ||
         out.width > kMaxThemeSpecGifWidth ||
@@ -1114,7 +1093,7 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
     out.hasBg = bgColor != nullptr;
     out.bg = ParseColor(bgColor, 0x0000);
-    out.liveFields = (out.idleAssetPath == nullptr && out.codingAssetPath == nullptr) ? 0 : kThemeSpecFieldActivity;
+    out.liveFields |= (out.idleAssetPath == nullptr && out.codingAssetPath == nullptr) ? 0 : kThemeSpecFieldActivity;
     hasAnimatedAssets = hasAnimatedAssets ||
                         AssetPathLooksAnimated(out.assetPath) ||
                         AssetPathLooksAnimated(out.idleAssetPath) ||
@@ -1337,6 +1316,10 @@ inline bool CompiledPrimitiveBounds(
 }
 
 inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const FrameData& frame, Sink& sink) {
+  if (primitive.usageSlot > 0 &&
+      !UsageSlotAvailableFor(frame, static_cast<int>(primitive.usageSlot - 1))) {
+    return false;
+  }
   if (primitive.kind == PrimitiveKind::Rect) {
     RectCommand cmd;
     cmd.x = primitive.x;

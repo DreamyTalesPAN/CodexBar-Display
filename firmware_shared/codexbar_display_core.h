@@ -17,7 +17,7 @@ namespace codexbar_display {
 namespace core {
 
 constexpr size_t kFrameLineBufferBytes = 2048;
-constexpr size_t kMaxUsageSlots = 4;
+constexpr size_t kMaxUsageSlots = 2;
 
 struct UsageSlot {
   String id;
@@ -115,6 +115,20 @@ inline int64_t CurrentRemainingSecs(const RuntimeState& state, unsigned long now
     return 0;
   }
   return remain;
+}
+
+inline int64_t CurrentUsageSlotRemainingSecs(
+    const RuntimeState& state,
+    size_t slotIndex,
+    unsigned long nowMillis) {
+  if (!state.hasFrame || slotIndex >= kMaxUsageSlots ||
+      !state.current.usageSlots[slotIndex].available) {
+    return 0;
+  }
+  const unsigned long elapsedMillis = nowMillis - state.resetBaseMillis;
+  const int64_t elapsedSecs = static_cast<int64_t>(elapsedMillis / 1000UL);
+  const int64_t remain = state.current.usageSlots[slotIndex].resetSecs - elapsedSecs;
+  return remain < 0 ? 0 : remain;
 }
 
 inline bool IsSafeActivityName(const String& value) {
@@ -233,18 +247,44 @@ inline bool FrameTokenStatsVisualChanged(const Frame& previous, const Frame& nex
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 inline bool ThemeSpecUsesUsageSlotBinding(const String& raw, size_t slotIndex) {
   char longName[16] = {0};
-  char compactName[8] = {0};
+  char compactPrefix[8] = {0};
+  char compactTemplate[8] = {0};
+  char compactOwner[12] = {0};
+  char compactOwnerSpaced[13] = {0};
+  char readableOwner[16] = {0};
+  char readableOwnerSpaced[17] = {0};
   std::snprintf(longName, sizeof(longName), "usageSlot%u", static_cast<unsigned>(slotIndex + 1));
-  std::snprintf(compactName, sizeof(compactName), "us%u", static_cast<unsigned>(slotIndex + 1));
-  return ThemeSpecUsesBinding(raw, longName, compactName);
+  std::snprintf(compactPrefix, sizeof(compactPrefix), "\"us%u", static_cast<unsigned>(slotIndex + 1));
+  std::snprintf(compactTemplate, sizeof(compactTemplate), "{us%u", static_cast<unsigned>(slotIndex + 1));
+  std::snprintf(compactOwner, sizeof(compactOwner), "\"sl\":%u", static_cast<unsigned>(slotIndex + 1));
+  std::snprintf(compactOwnerSpaced, sizeof(compactOwnerSpaced), "\"sl\": %u", static_cast<unsigned>(slotIndex + 1));
+  std::snprintf(readableOwner, sizeof(readableOwner), "\"slot\":%u", static_cast<unsigned>(slotIndex + 1));
+  std::snprintf(readableOwnerSpaced, sizeof(readableOwnerSpaced), "\"slot\": %u", static_cast<unsigned>(slotIndex + 1));
+  return raw.indexOf(longName) >= 0 ||
+         raw.indexOf(compactPrefix) >= 0 ||
+         raw.indexOf(compactTemplate) >= 0 ||
+         raw.indexOf(compactOwner) >= 0 ||
+         raw.indexOf(compactOwnerSpaced) >= 0 ||
+         raw.indexOf(readableOwner) >= 0 ||
+         raw.indexOf(readableOwnerSpaced) >= 0;
+}
+
+inline bool ThemeSpecUsesUsageSlotResetBinding(const String& raw, size_t slotIndex) {
+  char longName[24] = {0};
+  char compactName[8] = {0};
+  std::snprintf(longName, sizeof(longName), "usageSlot%uReset", static_cast<unsigned>(slotIndex + 1));
+  std::snprintf(compactName, sizeof(compactName), "us%ur", static_cast<unsigned>(slotIndex + 1));
+  return raw.indexOf(longName) >= 0 || raw.indexOf(compactName) >= 0;
+}
+
+inline bool RemainingMinuteBucketChanged(int64_t remainingSecs, int64_t lastRenderedMinuteBucket) {
+  return remainingSecs / 60 != lastRenderedMinuteBucket;
 }
 
 inline uint32_t ThemeSpecUsageSlotField(size_t slotIndex) {
   switch (slotIndex) {
     case 0: return themespec::kThemeSpecFieldUsageSlot1;
     case 1: return themespec::kThemeSpecFieldUsageSlot2;
-    case 2: return themespec::kThemeSpecFieldUsageSlot3;
-    case 3: return themespec::kThemeSpecFieldUsageSlot4;
     default: return 0;
   }
 }
@@ -579,12 +619,12 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
       if (slotIndex >= static_cast<int>(kMaxUsageSlots)) {
         break;
       }
-      const bool available = slot["available"] | false;
       const char* slotLabel = slot["label"] | "";
-      if (!available || slotLabel[0] == '\0') {
+      const char* slotID = slot["id"] | "";
+      if (slotID[0] == '\0' || slotLabel[0] == '\0') {
         continue;
       }
-      out.usageSlots[slotIndex].id = String(slot["id"] | "");
+      out.usageSlots[slotIndex].id = String(slotID);
       out.usageSlots[slotIndex].label = String(slotLabel);
       out.usageSlots[slotIndex].percent = ClampPct(slot["percent"] | 0);
       out.usageSlots[slotIndex].resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(slot["resetSecs"] | 0));

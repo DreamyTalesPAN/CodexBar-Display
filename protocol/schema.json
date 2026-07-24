@@ -610,19 +610,24 @@
     },
     "usageSlots": {
       "type": "array",
-      "maxItems": 4,
+      "maxItems": 2,
       "items": {
         "type": "object",
         "required": [
-          "available"
+          "id",
+          "label",
+          "percent",
+          "resetSecs"
         ],
         "properties": {
           "id": {
             "type": "string",
+            "minLength": 1,
             "maxLength": 32
           },
           "label": {
             "type": "string",
+            "minLength": 1,
             "maxLength": 24
           },
           "percent": {
@@ -633,9 +638,6 @@
           "resetSecs": {
             "type": "integer",
             "minimum": 0
-          },
-          "available": {
-            "type": "boolean"
           }
         },
         "additionalProperties": false

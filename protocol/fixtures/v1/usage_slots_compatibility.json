@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "newFrame": {
+    "v": 2,
+    "provider": "codex",
+    "label": "Codex",
+    "session": 42,
+    "weekly": 7,
+    "resetSecs": 15480,
+    "usageSlots": [
+      {
+        "id": "secondary",
+        "label": "Weekly",
+        "percent": 42,
+        "resetSecs": 15480
+      },
+      {
+        "id": "codex-spark-weekly",
+        "label": "Codex Spark Weekly",
+        "percent": 7,
+        "resetSecs": 604800
+      }
+    ]
+  },
+  "legacyExpected": {
+    "v": 2,
+    "provider": "codex",
+    "label": "Codex",
+    "session": 42,
+    "weekly": 7,
+    "resetSecs": 15480
+  }
+}

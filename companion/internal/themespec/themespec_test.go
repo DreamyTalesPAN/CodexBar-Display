@@ -530,3 +530,66 @@ func TestValidateAgainstCapabilitiesAcceptsCompatibleSpec(t *testing.T) {
 		t.Fatalf("expected compatible spec, got %v", err)
 	}
 }
+
+func TestValidateUsageSlotOwnershipRequiresCapability(t *testing.T) {
+	spec, raw, err := Parse([]byte(`{
+		"v":1,
+		"id":"usage-slots",
+		"rev":1,
+		"p":[{"t":"tx","x":0,"y":0,"sl":2,"v":"{usageSlot2Label}"}]
+	}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+
+	legacyCaps := protocol.DeviceCapabilities{
+		Known:               true,
+		SupportsThemeSpecV1: true,
+	}
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err == nil ||
+		!strings.Contains(err.Error(), "usage-slots-v1") {
+		t.Fatalf("expected usage slot capability rejection, got %v", err)
+	}
+	legacyCaps.SupportsUsageSlotsV1 = true
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err != nil {
+		t.Fatalf("expected slot-capable device to accept spec: %v", err)
+	}
+}
+
+func TestValidateCompactUsageSlotTemplateRequiresCapability(t *testing.T) {
+	spec, raw, err := Parse([]byte(`{
+		"v":1,
+		"id":"usage-slots",
+		"rev":1,
+		"p":[{"t":"tx","x":0,"y":0,"v":"{us1p}%"}]
+	}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	legacyCaps := protocol.DeviceCapabilities{
+		Known:               true,
+		SupportsThemeSpecV1: true,
+	}
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err == nil ||
+		!strings.Contains(err.Error(), "usage-slots-v1") {
+		t.Fatalf("expected compact template capability rejection, got %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidUsageSlotOwnership(t *testing.T) {
+	spec, _, err := Parse([]byte(`{
+		"v":1,
+		"id":"usage-slots",
+		"rev":1,
+		"p":[{"t":"tx","x":0,"y":0,"sl":3,"v":"bad"}]
+	}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if err := Validate(spec); err == nil || !strings.Contains(err.Error(), "slot must be 1 or 2") {
+		t.Fatalf("expected invalid slot rejection, got %v", err)
+	}
+}

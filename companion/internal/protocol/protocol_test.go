@@ -2,8 +2,11 @@ package protocol
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestFrameNormalizeDropsUnsupportedTheme(t *testing.T) {
@@ -19,6 +22,37 @@ func TestFrameNormalizeDropsUnsupportedTheme(t *testing.T) {
 	normalized := frame.Normalize()
 	if normalized.Theme != "" {
 		t.Fatalf("expected unsupported theme to be dropped, got %q", normalized.Theme)
+	}
+}
+
+func TestUsageSlotsFixtureRemainsReadableByLegacyFrame(t *testing.T) {
+	type legacyFrame struct {
+		V         int    `json:"v"`
+		Provider  string `json:"provider"`
+		Label     string `json:"label"`
+		Session   int    `json:"session"`
+		Weekly    int    `json:"weekly"`
+		ResetSecs int64  `json:"resetSecs"`
+	}
+	type fixture struct {
+		NewFrame       json.RawMessage `json:"newFrame"`
+		LegacyExpected legacyFrame     `json:"legacyExpected"`
+	}
+	path := filepath.Join("..", "..", "..", "protocol", "fixtures", "v1", "usage_slots_compatibility.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read compatibility fixture: %v", err)
+	}
+	var data fixture
+	if err := json.Unmarshal(raw, &data); err != nil {
+		t.Fatalf("parse compatibility fixture: %v", err)
+	}
+	var got legacyFrame
+	if err := json.Unmarshal(data.NewFrame, &got); err != nil {
+		t.Fatalf("legacy parser rejected additive usageSlots: %v", err)
+	}
+	if got != data.LegacyExpected {
+		t.Fatalf("legacy projection mismatch: got=%+v want=%+v", got, data.LegacyExpected)
 	}
 }
 
@@ -181,27 +215,75 @@ func TestFrameNormalizeTrimsUpdateState(t *testing.T) {
 	}
 }
 
-func TestFrameNormalizeKeepsOnlyFourAvailableUsageSlots(t *testing.T) {
+func TestFrameNormalizeKeepsOnlyTwoValidUsageSlots(t *testing.T) {
 	frame := Frame{UsageSlots: []UsageSlot{
-		{ID: " Weekly ", Label: "Weekly", Percent: 36, ResetSec: 10, Available: true},
-		{ID: "missing", Label: "Missing", Percent: 99, Available: false},
-		{ID: "spark", Label: "Codex Spark Weekly Window Name", Percent: 120, ResetSec: -1, Available: true},
-		{ID: "third", Label: "Third", Percent: 10, Available: true},
-		{ID: "fourth", Label: "Fourth", Percent: 20, Available: true},
-		{ID: "fifth", Label: "Fifth", Percent: 30, Available: true},
+		{ID: "", Label: "Missing", Percent: 99},
+		{ID: " Weekly ", Label: "Weekly", Percent: 36, ResetSec: 10},
+		{ID: "spark-window-id-that-is-longer-than-thirty-two-characters", Label: "Codex Spark Wöchentliche Nutzung", Percent: 120, ResetSec: -1},
+		{ID: "third", Label: "Third", Percent: 10},
 	}}
 
 	normalized := frame.Normalize()
-	if len(normalized.UsageSlots) != 4 {
-		t.Fatalf("expected four available slots, got %+v", normalized.UsageSlots)
+	if len(normalized.UsageSlots) != 2 {
+		t.Fatalf("expected two valid slots, got %+v", normalized.UsageSlots)
 	}
 	if normalized.UsageSlots[0].ID != "weekly" || normalized.UsageSlots[0].Percent != 36 || normalized.UsageSlots[0].ResetSec != 10 {
 		t.Fatalf("expected weekly slot preserved, got %+v", normalized.UsageSlots[0])
 	}
-	if normalized.UsageSlots[1].ID != "spark" || normalized.UsageSlots[1].Percent != 100 || normalized.UsageSlots[1].ResetSec != 0 || len(normalized.UsageSlots[1].Label) > 24 {
+	if normalized.UsageSlots[1].Percent != 100 ||
+		normalized.UsageSlots[1].ResetSec != 0 ||
+		len(normalized.UsageSlots[1].ID) > 32 ||
+		len(normalized.UsageSlots[1].Label) > 24 ||
+		!utf8.ValidString(normalized.UsageSlots[1].Label) {
 		t.Fatalf("expected clamped spark slot, got %+v", normalized.UsageSlots[1])
 	}
-	if normalized.UsageSlots[3].ID != "fourth" {
-		t.Fatalf("expected fourth available slot, got %+v", normalized.UsageSlots[3])
+
+	line, err := normalized.MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal normalized frame: %v", err)
+	}
+	if strings.Contains(string(line), `"available"`) {
+		t.Fatalf("available=true must not consume wire bytes: %s", line)
+	}
+}
+
+func TestMaximumUsageSlotFrameStaysInsideDocumentedBudget(t *testing.T) {
+	frame := Frame{
+		V:         2,
+		Provider:  "antigravity",
+		Label:     "Antigravity",
+		Session:   100,
+		Weekly:    100,
+		ResetSec:  604800,
+		UsageMode: "remaining",
+		UsageSlots: []UsageSlot{
+			{ID: strings.Repeat("a", 32), Label: strings.Repeat("ä", 12), Percent: 100, ResetSec: 604800},
+			{ID: strings.Repeat("b", 32), Label: strings.Repeat("Z", 24), Percent: 100, ResetSec: 604800},
+		},
+	}
+	line, err := frame.MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal max usage slot frame: %v", err)
+	}
+	if len(line) > 512 {
+		t.Fatalf("usage slot frame exceeds 512-byte budget: bytes=%d frame=%s", len(line), line)
+	}
+}
+
+func TestUsageSlotZeroValuesRemainExplicitOnWire(t *testing.T) {
+	frame := Frame{
+		V:        2,
+		Provider: "codex",
+		UsageSlots: []UsageSlot{
+			{ID: "primary", Label: "Session", Percent: 0, ResetSec: 0},
+		},
+	}
+	line, err := frame.MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal zero-value slot: %v", err)
+	}
+	if !strings.Contains(string(line), `"percent":0`) ||
+		!strings.Contains(string(line), `"resetSecs":0`) {
+		t.Fatalf("required zero values disappeared from wire frame: %s", line)
 	}
 }

@@ -312,3 +312,18 @@ issue scope, or release permission never implies UI permission.
 - Approved files: Companion port-owner classification and tests, native runtime
   endpoint rediscovery, its macOS contract test, and the matching architecture
   documentation.
+
+## 2026-07-24 — Dynamic usage lanes in Theme Studio
+
+- User approval: The user reviewed the exact final `1180×820` Theme Studio
+  screenshot in the Codex task on 2026-07-24 and explicitly approved it with
+  `freigegeben`.
+- Approved customer-visible result: Theme Studio keeps the approved immersive
+  editor and adds one `Usage lane` selector to the Inspector. An element can be
+  `Always visible`, `Hide with slot 1`, or `Hide with slot 2`; the approved
+  screenshot shows the first usage progress bar selected with
+  `Hide with slot 1`. The preview uses the dynamic `Weekly` and
+  `Codex Spark Weekly` labels and keeps both lanes inside the 240×240 display.
+- Approved files: `primitive-inspector.tsx`, Theme Studio serialization,
+  geometry and capability validation, `live-vibetv-preview.tsx`, the display
+  frame route, and their unit and customer-flow assertions.

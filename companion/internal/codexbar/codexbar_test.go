@@ -211,6 +211,24 @@ func TestParseProviderPayloadReadsExtraRateWindows(t *testing.T) {
 	}
 }
 
+func TestParseUsageWindowKeepsPresentZeroPercent(t *testing.T) {
+	window, ok := parseUsageWindowMap(
+		map[string]any{"usedPercent": float64(0), "resetSecs": float64(0)},
+		"primary",
+		"Session",
+	)
+	if !ok || window.UsedPercent != 0 || window.ResetSec != 0 {
+		t.Fatalf("expected present zero-percent window, got ok=%t window=%+v", ok, window)
+	}
+}
+
+func TestRecoveredCodexSlotsDoNotInventMissingSecondary(t *testing.T) {
+	slots := recoveredCodexUsageSlots(0, true, 0, false, 0)
+	if len(slots) != 1 || slots[0].ID != "primary" || slots[0].Percent != 0 {
+		t.Fatalf("expected only present primary slot, got %+v", slots)
+	}
+}
+
 func TestParseProviderPayloadReadsCodexDailyBreakdown(t *testing.T) {
 	raw := []byte(`[
 		{
@@ -1085,6 +1103,11 @@ func TestFetchAllProvidersFallsBackToCodexCLIOnAggregateCommandFailure(t *testin
 	if parsed[0].Frame.Session != 7 || parsed[0].Frame.Weekly != 13 {
 		t.Fatalf("expected fallback session=7 weekly=13, got session=%d weekly=%d", parsed[0].Frame.Session, parsed[0].Frame.Weekly)
 	}
+	if slots := parsed[0].Frame.UsageSlots; len(slots) != 2 ||
+		slots[0].Label != "Session" || slots[0].Percent != 7 ||
+		slots[1].Label != "Weekly" || slots[1].Percent != 13 {
+		t.Fatalf("expected transitional fallback slots, got %#v", slots)
+	}
 }
 
 func TestFetchAllProvidersKeepsMixedJSONOnNonzeroExitWithoutFallback(t *testing.T) {
@@ -1442,13 +1465,13 @@ func testSignal(at time.Time, confidence activitySignalConfidence, evidence stri
 	}
 }
 
-func TestParseProviderPayloadBuildsFourDynamicUsageSlots(t *testing.T) {
+func TestParseProviderPayloadBuildsTwoTransitionalUsageSlots(t *testing.T) {
 	raw := []byte(`[
 		{
 			"provider":"antigravity",
 			"usage":{
-				"primary":{"label":"Session","usedPercent":11,"resetSecs":100},
-				"secondary":{"label":"Weekly","usedPercent":22,"resetSecs":200},
+				"primary":{"usedPercent":11,"resetSecs":100},
+				"secondary":{"usedPercent":22,"resetSecs":200},
 				"extraRateWindows":[
 					{"id":"gemini-weekly","label":"Gemini weekly","usedPercent":33,"resetSecs":300},
 					{"id":"claude-gpt-weekly","label":"Claude/GPT weekly","usedPercent":44,"resetSecs":400}
@@ -1461,20 +1484,20 @@ func TestParseProviderPayloadBuildsFourDynamicUsageSlots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseAllProviders failed: %v", err)
 	}
+	// The one-shot CLI path still uses structural primary/secondary labels.
+	// #254 replaces these transitional labels with CodexBar dashboard labels
+	// and generic deduplication; this test only locks the two-slot transport.
 	slots := parsed[0].Frame.UsageSlots
-	if len(slots) != 4 {
-		t.Fatalf("expected four device slots, got %+v", slots)
+	if len(slots) != 2 {
+		t.Fatalf("expected two bounded device slots, got %+v", slots)
 	}
-	if slots[0].Label != "Session" || slots[0].Percent != 11 || slots[0].ResetSec != 100 || !slots[0].Available {
+	if slots[0].Label != "Session" || slots[0].Percent != 11 || slots[0].ResetSec != 100 {
 		t.Fatalf("expected first valid source window in slot 1, got %+v", slots[0])
 	}
-	if slots[1].Label != "Weekly" || slots[1].Percent != 22 || slots[1].ResetSec != 200 || !slots[1].Available {
+	if slots[1].Label != "Weekly" || slots[1].Percent != 22 || slots[1].ResetSec != 200 {
 		t.Fatalf("expected second valid source window in slot 2, got %+v", slots[1])
 	}
-	if slots[2].Label != "Gemini weekly" || slots[2].Percent != 33 || slots[2].ResetSec != 300 || !slots[2].Available {
-		t.Fatalf("expected third valid source window in slot 3, got %+v", slots[2])
-	}
-	if slots[3].Label != "Claude/GPT weekly" || slots[3].Percent != 44 || slots[3].ResetSec != 400 || !slots[3].Available {
-		t.Fatalf("expected fourth valid source window in slot 4, got %+v", slots[3])
+	if parsed[0].Frame.Session != 11 || parsed[0].Frame.Weekly != 22 || parsed[0].Frame.ResetSec != 100 {
+		t.Fatalf("expected legacy aliases to mirror the two slots, got %+v", parsed[0].Frame)
 	}
 }

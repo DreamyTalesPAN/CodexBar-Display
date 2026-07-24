@@ -11,6 +11,7 @@ import type {
 
 const baseCapabilities: ThemeStudioDeviceCapabilities = {
   supportsThemeSpecV1: true,
+  supportsUsageSlotsV1: true,
   supportsStoredThemes: true,
   maxThemeSpecBytes: 2048,
   maxStoredThemeSpecBytes: 4096,
@@ -161,6 +162,43 @@ describe("validateThemeAgainstCapabilities", () => {
     expect(result.errors).toEqual([]);
     expect(result.warnings).toContainEqual(
       expect.stringContaining("will be checked when sending"),
+    );
+  });
+
+  it("blocks slot-owned themes when the device lacks usage slot support", () => {
+    const spec = baseSpec();
+    spec.primitives.push({
+      type: "text",
+      x: 4,
+      y: 4,
+      slot: 1,
+      text: "{usageSlot1Label}",
+    });
+
+    const result = validateThemeAgainstCapabilities(spec, {}, {
+      ...baseCapabilities,
+      supportsUsageSlotsV1: false,
+    });
+    expect(result.errors).toContainEqual(
+      expect.stringContaining("needs a firmware update"),
+    );
+  });
+
+  it("blocks compact slot templates when the device lacks usage slot support", () => {
+    const spec = baseSpec();
+    spec.primitives.push({
+      type: "text",
+      x: 4,
+      y: 4,
+      text: "{us1p}%",
+    });
+
+    const result = validateThemeAgainstCapabilities(spec, {}, {
+      ...baseCapabilities,
+      supportsUsageSlotsV1: false,
+    });
+    expect(result.errors).toContainEqual(
+      expect.stringContaining("needs a firmware update"),
     );
   });
 });

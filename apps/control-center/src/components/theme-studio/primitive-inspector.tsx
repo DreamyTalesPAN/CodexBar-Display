@@ -16,10 +16,6 @@ const VARIABLE_TOKENS = [
   { label: "Slot 2 label", token: "{usageSlot2Label}" },
   { label: "Slot 2 %", token: "{usageSlot2Percent}" },
   { label: "Slot 2 reset", token: "{usageSlot2Reset}" },
-  { label: "Slot 3 label", token: "{usageSlot3Label}" },
-  { label: "Slot 3 %", token: "{usageSlot3Percent}" },
-  { label: "Slot 4 label", token: "{usageSlot4Label}" },
-  { label: "Slot 4 %", token: "{usageSlot4Percent}" },
   { label: "Mode", token: "{usageMode}" },
   { label: "Time", token: "{time}" },
 ];
@@ -50,6 +46,17 @@ export function PrimitiveInspector({
           onChange={(value) => onChange("y", value)}
         />
       </div>
+
+      <SelectField
+        label="Usage lane"
+        value={primitive.slot ? String(primitive.slot) : ""}
+        onChange={(value) => onChange("slot", value ? Number(value) : "")}
+        options={[
+          ["", "Always visible"],
+          ["1", "Hide with slot 1"],
+          ["2", "Hide with slot 2"],
+        ]}
+      />
 
       {(primitive.type === "rect" ||
         primitive.type === "progress" ||
@@ -101,12 +108,6 @@ export function PrimitiveInspector({
               ["usageSlot2Label", "Slot 2 label"],
               ["usageSlot2Percent", "Slot 2 %"],
               ["usageSlot2Reset", "Slot 2 reset"],
-              ["usageSlot3Label", "Slot 3 label"],
-              ["usageSlot3Percent", "Slot 3 %"],
-              ["usageSlot3Reset", "Slot 3 reset"],
-              ["usageSlot4Label", "Slot 4 label"],
-              ["usageSlot4Percent", "Slot 4 %"],
-              ["usageSlot4Reset", "Slot 4 reset"],
               ["session", "Session (legacy)"],
               ["weekly", "Weekly (legacy)"],
               ["reset", "Reset (legacy)"],
@@ -170,8 +171,6 @@ export function PrimitiveInspector({
             options={[
               ["usageSlot1Percent", "Slot 1 %"],
               ["usageSlot2Percent", "Slot 2 %"],
-              ["usageSlot3Percent", "Slot 3 %"],
-              ["usageSlot4Percent", "Slot 4 %"],
               ["session", "Session (legacy)"],
               ["weekly", "Weekly (legacy)"],
             ]}

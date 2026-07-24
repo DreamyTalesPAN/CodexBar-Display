@@ -37,6 +37,8 @@ type Primitive struct {
 	ShortWidth       int               `json:"w,omitempty"`
 	Height           int               `json:"height,omitempty"`
 	ShortHeight      int               `json:"h,omitempty"`
+	Slot             int               `json:"slot,omitempty"`
+	ShortSlot        int               `json:"sl,omitempty"`
 	Text             string            `json:"text,omitempty"`
 	ShortText        string            `json:"v,omitempty"`
 	Binding          string            `json:"binding,omitempty"`
@@ -139,6 +141,9 @@ func validateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 	if !caps.SupportsThemeSpecV1 {
 		return errors.New("device does not advertise theme-spec-v1 support")
 	}
+	if specUsesUsageSlots(spec) && !caps.SupportsUsageSlotsV1 {
+		return errors.New("device does not advertise usage-slots-v1 support")
+	}
 	if maxSpecBytes > 0 && len(raw) > maxSpecBytes {
 		return fmt.Errorf("theme spec payload exceeds device limit: size=%d limit=%d", len(raw), maxSpecBytes)
 	}
@@ -184,6 +189,19 @@ func validateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 		}
 	}
 	return nil
+}
+
+func specUsesUsageSlots(spec Spec) bool {
+	for _, primitive := range spec.Primitives {
+		if primitive.Slot > 0 ||
+			strings.Contains(primitive.Binding, "usageSlot") ||
+			strings.Contains(primitive.Text, "{usageSlot") ||
+			strings.Contains(primitive.Text, "{us1") ||
+			strings.Contains(primitive.Text, "{us2") {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeSpec(spec Spec) Spec {
@@ -233,6 +251,9 @@ func normalizePrimitive(p Primitive) Primitive {
 	}
 	if p.Height == 0 {
 		p.Height = p.ShortHeight
+	}
+	if p.Slot == 0 {
+		p.Slot = p.ShortSlot
 	}
 	if p.Text == "" {
 		p.Text = p.ShortText
@@ -309,6 +330,22 @@ func expandBinding(value string) string {
 		return "weekly"
 	case "r":
 		return "reset"
+	case "us1l":
+		return "usageSlot1Label"
+	case "us1p":
+		return "usageSlot1Percent"
+	case "us1r":
+		return "usageSlot1Reset"
+	case "us1a":
+		return "usageSlot1Available"
+	case "us2l":
+		return "usageSlot2Label"
+	case "us2p":
+		return "usageSlot2Percent"
+	case "us2r":
+		return "usageSlot2Reset"
+	case "us2a":
+		return "usageSlot2Available"
 	case "u":
 		return "usageMode"
 	case "act":
@@ -325,6 +362,9 @@ func expandBinding(value string) string {
 }
 
 func validatePrimitive(p Primitive) error {
+	if p.Slot < 0 || p.Slot > 2 {
+		return errors.New("slot must be 1 or 2 when set")
+	}
 	switch p.Type {
 	case "text":
 		if strings.TrimSpace(p.Text) == "" && strings.TrimSpace(p.Binding) == "" {

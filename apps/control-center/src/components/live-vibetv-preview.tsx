@@ -53,7 +53,6 @@ type UsageSlotFrame = {
   label?: string;
   percent?: number;
   resetSecs?: number;
-  available?: boolean;
 };
 
 type DisplayFrame = {
@@ -93,6 +92,8 @@ export type ThemePrimitive = {
   w?: number;
   height?: number;
   h?: number;
+  slot?: number;
+  sl?: number;
   text?: string;
   v?: string;
   binding?: string;
@@ -144,14 +145,6 @@ type FrameData = {
   usageSlot2Percent: number;
   usageSlot2ResetSecs: number;
   usageSlot2Available: boolean;
-  usageSlot3Label: string;
-  usageSlot3Percent: number;
-  usageSlot3ResetSecs: number;
-  usageSlot3Available: boolean;
-  usageSlot4Label: string;
-  usageSlot4Percent: number;
-  usageSlot4ResetSecs: number;
-  usageSlot4Available: boolean;
   activity: string;
   sessionTokens: number;
   weekTokens: number;
@@ -175,14 +168,6 @@ const THEME_LIBRARY_PREVIEW_FRAME: FrameData = {
   usageSlot2Percent: 38,
   usageSlot2ResetSecs: 7200,
   usageSlot2Available: true,
-  usageSlot3Label: "Gemini Weekly",
-  usageSlot3Percent: 44,
-  usageSlot3ResetSecs: 10800,
-  usageSlot3Available: true,
-  usageSlot4Label: "Claude Weekly",
-  usageSlot4Percent: 27,
-  usageSlot4ResetSecs: 14400,
-  usageSlot4Available: true,
   activity: "preview",
   sessionTokens: 0,
   weekTokens: 0,
@@ -437,7 +422,7 @@ function ThemeSpecSVG({
   const animationTick = useAnimationTick(animationFps);
   return (
     <svg
-      aria-label={`Rendered VibeTV theme ${themeId} showing ${frame.label}, ${frame.session}% session ${frame.usageMode}, ${frame.weekly}% weekly ${frame.usageMode}`}
+      aria-label={themeSpecAriaLabel(themeId, frame)}
       className="size-full bg-black [image-rendering:pixelated]"
       role="img"
       viewBox="0 0 240 240"
@@ -475,6 +460,9 @@ function ThemePrimitiveNode({
   const y = primitive.y || 0;
   const width = primitive.width || primitive.w || 0;
   const height = primitive.height || primitive.h || 0;
+  if (!primitiveUsageSlotVisible(primitive, frame)) {
+    return null;
+  }
 
   if (type === "rect" || type === "r") {
     const radius = clampRadius(
@@ -835,18 +823,18 @@ function hasRenderableUsage(
   );
 }
 
-function buildFrameData(
+export function buildFrameData(
   generatedAt: string | undefined,
   displayFrame: DisplayFrame,
 ): FrameData {
   const now = generatedAt ? new Date(generatedAt) : new Date();
   const usableDate = Number.isNaN(now.getTime()) ? new Date() : now;
   const sourceUsageMode = frameUsageMode(displayFrame);
-  const slots = (displayFrame.usageSlots || []).filter((slot) => slot.available);
+  const slots = (displayFrame.usageSlots || []).filter(
+    (slot) => Boolean(slot.id?.trim() && slot.label?.trim()),
+  );
   const slot1 = slots[0];
   const slot2 = slots[1];
-  const slot3 = slots[2];
-  const slot4 = slots[3];
   return {
     provider: displayFrame.provider || "",
     label: displayFrame.label || displayFrame.provider || "",
@@ -857,19 +845,11 @@ function buildFrameData(
     usageSlot1Label: slot1?.label || "",
     usageSlot1Percent: clampPercent(slot1?.percent),
     usageSlot1ResetSecs: slot1?.resetSecs ?? 0,
-    usageSlot1Available: Boolean(slot1?.available),
+    usageSlot1Available: Boolean(slot1),
     usageSlot2Label: slot2?.label || "",
     usageSlot2Percent: clampPercent(slot2?.percent),
     usageSlot2ResetSecs: slot2?.resetSecs ?? 0,
-    usageSlot2Available: Boolean(slot2?.available),
-    usageSlot3Label: slot3?.label || "",
-    usageSlot3Percent: clampPercent(slot3?.percent),
-    usageSlot3ResetSecs: slot3?.resetSecs ?? 0,
-    usageSlot3Available: Boolean(slot3?.available),
-    usageSlot4Label: slot4?.label || "",
-    usageSlot4Percent: clampPercent(slot4?.percent),
-    usageSlot4ResetSecs: slot4?.resetSecs ?? 0,
-    usageSlot4Available: Boolean(slot4?.available),
+    usageSlot2Available: Boolean(slot2),
     activity: displayFrame.activity || "idle",
     sessionTokens: displayFrame.sessionTokens ?? 0,
     weekTokens: displayFrame.weekTokens ?? 0,
@@ -883,6 +863,32 @@ function buildFrameData(
       month: "2-digit",
     }).format(usableDate),
   };
+}
+
+export function primitiveUsageSlotVisible(
+  primitive: ThemePrimitive,
+  frame: FrameData,
+): boolean {
+  const slot = primitive.slot ?? primitive.sl;
+  if (slot === 1) {
+    return frame.usageSlot1Available;
+  }
+  if (slot === 2) {
+    return frame.usageSlot2Available;
+  }
+  return true;
+}
+
+export function themeSpecAriaLabel(themeId: string, frame: FrameData): string {
+  const usage = [
+    frame.usageSlot1Available
+      ? `${frame.usageSlot1Label} ${frame.usageSlot1Percent}% ${frame.usageMode}`
+      : "",
+    frame.usageSlot2Available
+      ? `${frame.usageSlot2Label} ${frame.usageSlot2Percent}% ${frame.usageMode}`
+      : "",
+  ].filter(Boolean);
+  return `Rendered VibeTV theme ${themeId} showing ${frame.label}, ${usage.length > 0 ? usage.join(", ") : "no usage windows available"}`;
 }
 
 function frameUsageMode(
@@ -976,30 +982,6 @@ function boundValue(key: string, frame: FrameData): string {
     case "usageSlot2Available":
     case "us2a":
       return String(frame.usageSlot2Available);
-    case "usageSlot3Label":
-    case "us3l":
-      return frame.usageSlot3Available ? frame.usageSlot3Label : "";
-    case "usageSlot3Percent":
-    case "us3p":
-      return frame.usageSlot3Available ? String(frame.usageSlot3Percent) : "";
-    case "usageSlot3Reset":
-    case "us3r":
-      return frame.usageSlot3Available ? formatReset(frame.usageSlot3ResetSecs) : "";
-    case "usageSlot3Available":
-    case "us3a":
-      return String(frame.usageSlot3Available);
-    case "usageSlot4Label":
-    case "us4l":
-      return frame.usageSlot4Available ? frame.usageSlot4Label : "";
-    case "usageSlot4Percent":
-    case "us4p":
-      return frame.usageSlot4Available ? String(frame.usageSlot4Percent) : "";
-    case "usageSlot4Reset":
-    case "us4r":
-      return frame.usageSlot4Available ? formatReset(frame.usageSlot4ResetSecs) : "";
-    case "usageSlot4Available":
-    case "us4a":
-      return String(frame.usageSlot4Available);
     case "usageMode":
     case "u":
       return frame.usageMode;
@@ -1033,12 +1015,6 @@ function progressPercent(primitive: ThemePrimitive, frame: FrameData): number {
   }
   if (binding === "usageSlot2Percent" || binding === "us2p") {
     return frame.usageSlot2Available ? frame.usageSlot2Percent : 0;
-  }
-  if (binding === "usageSlot3Percent" || binding === "us3p") {
-    return frame.usageSlot3Available ? frame.usageSlot3Percent : 0;
-  }
-  if (binding === "usageSlot4Percent" || binding === "us4p") {
-    return frame.usageSlot4Available ? frame.usageSlot4Percent : 0;
   }
   return binding === "weekly" || binding === "weeklyPercent" || binding === "w"
     ? frame.weekly

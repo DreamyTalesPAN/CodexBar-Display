@@ -14,6 +14,8 @@ struct RuntimeContext {
   String topLineOverride;
   int64_t lastRenderedSecs = -1;
   int64_t lastRenderedMinuteBucket = -1;
+  int64_t lastRenderedUsageSlotSecs[core::kMaxUsageSlots] = {-1, -1};
+  int64_t lastRenderedUsageSlotMinuteBuckets[core::kMaxUsageSlots] = {-1, -1};
 };
 
 inline core::Frame& CurrentFrame(RuntimeContext& ctx) {
@@ -30,6 +32,13 @@ inline bool HasFrame(const RuntimeContext& ctx) {
 
 inline int64_t CurrentRemainingSecs(const RuntimeContext& ctx, unsigned long nowMillis) {
   return core::CurrentRemainingSecs(ctx.runtime, nowMillis);
+}
+
+inline int64_t CurrentUsageSlotRemainingSecs(
+    const RuntimeContext& ctx,
+    size_t slotIndex,
+    unsigned long nowMillis) {
+  return core::CurrentUsageSlotRemainingSecs(ctx.runtime, slotIndex, nowMillis);
 }
 
 inline String FormatDuration(int64_t secs) {

@@ -1079,20 +1079,14 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   frame.usageUnavailable = CurrentFrame().usageUnavailable;
   frame.usageSlot1Label = CurrentFrame().usageSlots[0].label.c_str();
   frame.usageSlot1Percent = CurrentFrame().usageSlots[0].percent;
-  frame.usageSlot1ResetSecs = CurrentFrame().usageSlots[0].resetSecs;
+  frame.usageSlot1ResetSecs =
+      codexbar_display::core::CurrentUsageSlotRemainingSecs(RuntimeState(), 0, millis());
   frame.usageSlot1Available = CurrentFrame().usageSlots[0].available && !CurrentFrame().usageUnavailable;
   frame.usageSlot2Label = CurrentFrame().usageSlots[1].label.c_str();
   frame.usageSlot2Percent = CurrentFrame().usageSlots[1].percent;
-  frame.usageSlot2ResetSecs = CurrentFrame().usageSlots[1].resetSecs;
+  frame.usageSlot2ResetSecs =
+      codexbar_display::core::CurrentUsageSlotRemainingSecs(RuntimeState(), 1, millis());
   frame.usageSlot2Available = CurrentFrame().usageSlots[1].available && !CurrentFrame().usageUnavailable;
-  frame.usageSlot3Label = CurrentFrame().usageSlots[2].label.c_str();
-  frame.usageSlot3Percent = CurrentFrame().usageSlots[2].percent;
-  frame.usageSlot3ResetSecs = CurrentFrame().usageSlots[2].resetSecs;
-  frame.usageSlot3Available = CurrentFrame().usageSlots[2].available && !CurrentFrame().usageUnavailable;
-  frame.usageSlot4Label = CurrentFrame().usageSlots[3].label.c_str();
-  frame.usageSlot4Percent = CurrentFrame().usageSlots[3].percent;
-  frame.usageSlot4ResetSecs = CurrentFrame().usageSlots[3].resetSecs;
-  frame.usageSlot4Available = CurrentFrame().usageSlots[3].available && !CurrentFrame().usageUnavailable;
   frame.usageMode = usageModeText();
   frame.activity = CurrentFrame().activity.c_str();
   frame.time = CurrentFrame().timeText.c_str();
@@ -1104,6 +1098,19 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
 }
 
 }  // namespace
+
+void MarkThemeSpecCountdownsRendered() {
+  const unsigned long now = millis();
+  const int64_t remain = CurrentRemainingSecs();
+  LastRenderedSecs() = remain;
+  LastRenderedMinuteBucket() = remain / 60;
+  for (size_t i = 0; i < codexbar_display::core::kMaxUsageSlots; ++i) {
+    const int64_t slotRemain =
+        codexbar_display::core::CurrentUsageSlotRemainingSecs(RuntimeState(), i, now);
+    Context().lastRenderedUsageSlotSecs[i] = slotRemain;
+    Context().lastRenderedUsageSlotMinuteBuckets[i] = slotRemain / 60;
+  }
+}
 
 bool DrawThemeSpecUsage() {
   if (!CurrentFrame().hasThemeSpec) {
@@ -1146,9 +1153,7 @@ bool DrawThemeSpecUsage() {
   nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
                                       ? millis() + kThemeSpecAnimatedTickMs
                                       : 0;
-  const int64_t remain = CurrentRemainingSecs();
-  LastRenderedSecs() = remain;
-  LastRenderedMinuteBucket() = remain / 60;
+  MarkThemeSpecCountdownsRendered();
   return true;
 }
 
@@ -1227,9 +1232,7 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
   nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
                                       ? millis() + kThemeSpecAnimatedTickMs
                                       : 0;
-  const int64_t remain = CurrentRemainingSecs();
-  LastRenderedSecs() = remain;
-  LastRenderedMinuteBucket() = remain / 60;
+  MarkThemeSpecCountdownsRendered();
   return true;
 }
 

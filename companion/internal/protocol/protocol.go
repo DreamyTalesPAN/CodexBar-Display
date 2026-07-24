@@ -3,16 +3,16 @@ package protocol
 import (
 	"encoding/json"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
 )
 
 type UsageSlot struct {
-	ID        string `json:"id,omitempty"`
-	Label     string `json:"label,omitempty"`
-	Percent   int    `json:"percent,omitempty"`
-	ResetSec  int64  `json:"resetSecs,omitempty"`
-	Available bool   `json:"available,omitempty"`
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Percent  int    `json:"percent"`
+	ResetSec int64  `json:"resetSecs"`
 }
 
 type Frame struct {
@@ -113,18 +113,19 @@ func normalizeUsageSlots(slots []UsageSlot) []UsageSlot {
 	if len(slots) == 0 {
 		return nil
 	}
-	out := make([]UsageSlot, 0, 4)
+	out := make([]UsageSlot, 0, 2)
 	for _, slot := range slots {
-		if len(out) == 4 {
+		if len(out) == 2 {
 			break
 		}
-		slot.ID = strings.TrimSpace(strings.ToLower(slot.ID))
-		slot.Label = strings.TrimSpace(slot.Label)
+		slot.ID = truncateUTF8Bytes(strings.TrimSpace(strings.ToLower(slot.ID)), 32)
+		slot.Label = truncateUTF8Bytes(strings.TrimSpace(slot.Label), 24)
 		if slot.Label == "" {
 			slot.Label = slot.ID
 		}
-		if len(slot.Label) > 24 {
-			slot.Label = slot.Label[:24]
+		slot.Label = truncateUTF8Bytes(slot.Label, 24)
+		if slot.ID == "" || slot.Label == "" {
+			continue
 		}
 		if slot.Percent < 0 {
 			slot.Percent = 0
@@ -135,12 +136,23 @@ func normalizeUsageSlots(slots []UsageSlot) []UsageSlot {
 		if slot.ResetSec < 0 {
 			slot.ResetSec = 0
 		}
-		if !slot.Available {
-			continue
-		}
 		out = append(out, slot)
 	}
 	return out
+}
+
+func truncateUTF8Bytes(value string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(value) <= maxBytes {
+		return value
+	}
+	value = value[:maxBytes]
+	for !utf8.ValidString(value) {
+		value = value[:len(value)-1]
+	}
+	return value
 }
 
 func (f Frame) MarshalLine() ([]byte, error) {

@@ -4,7 +4,8 @@
   "id": "cozy-meadow",
   "name": "Cozy Meadow",
   "version": "0.1.0",
-  "minFirmware": "1.0.0",
+  "minFirmware": "1.0.40",
+  "requiredCapabilities": ["usage-slots-v1"],
   "themeSpec": {
     "path": "/themes/u/cm.json",
     "file": "theme.json",
