@@ -2,15 +2,17 @@ package codexbar
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestEnsureConfigSeedsPrivateConfigWithCommonProviders(t *testing.T) {
+func TestEnsureConfigSeedsPrivateConfigWithoutOwningProviderInventory(t *testing.T) {
 	t.Setenv("CODEXBAR_CONFIG", "")
 	home := t.TempDir()
 	path, err := EnsureConfig(home)
@@ -25,10 +27,15 @@ func TestEnsureConfigSeedsPrivateConfigWithCommonProviders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
-	for _, provider := range []string{"codex", "claude", "cursor", "gemini", "copilot"} {
-		if !strings.Contains(string(data), `"id": "`+provider+`"`) {
-			t.Fatalf("seed missing %s: %s", provider, data)
-		}
+	var config map[string]any
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatalf("parse seeded config: %v", err)
+	}
+	if config["version"] != float64(1) {
+		t.Fatalf("unexpected seeded config: %#v", config)
+	}
+	if _, ownsProviders := config["providers"]; ownsProviders {
+		t.Fatalf("VibeTV must not seed a provider inventory: %#v", config)
 	}
 	if mode := fileMode(t, filepath.Dir(path)); mode.Perm() != 0o700 {
 		t.Fatalf("expected config dir 0700, got %o", mode.Perm())
@@ -54,6 +61,10 @@ func TestEnsureConfigPreservesExistingStandardConfig(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".codexbar", "config.json")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("unexpected fallback config: %v", err)
+	}
+	data, err := os.ReadFile(standard)
+	if err != nil || string(data) != `{"existing":true}` {
+		t.Fatalf("existing config changed: data=%q err=%v", data, err)
 	}
 }
 
@@ -181,6 +192,84 @@ func TestProbeProviderSetupReportsReadyProvider(t *testing.T) {
 	}
 	if len(got.Providers) != 1 || !got.Providers[0].Enabled || got.Providers[0].Status != ProviderReady {
 		t.Fatalf("unexpected ready providers: %+v", got.Providers)
+	}
+}
+
+func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	defer func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	}()
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	t.Setenv("CODEXBAR_CONFIG", "")
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.44.0"), nil
+	}
+	var usageArgs []string
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "config" && args[1] == "providers" {
+			return []byte(`[
+				{"provider":"codex","displayName":"Codex","enabled":true},
+				{"provider":"antigravity","displayName":"Antigravity","enabled":true}
+			]`), nil
+		}
+		usageArgs = append([]string(nil), args...)
+		return []byte(`[
+			{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":7},"secondary":{"usedPercent":13}}},
+			{"provider":"antigravity","source":"cli","usage":{"primary":{"usedPercent":17},"secondary":{"usedPercent":23},"updatedAt":"2026-07-24T08:00:00Z"}}
+		]`), nil
+	}
+
+	got := ProbeProviderSetupForProvider(context.Background(), t.TempDir(), "antigravity")
+	if got.Status != ProviderReady || len(got.Providers) != 1 || got.Providers[0].ID != "antigravity" {
+		t.Fatalf("unexpected exact readiness: %+v", got)
+	}
+	if got.Providers[0].Source != "cli" || got.Providers[0].CollectedAt != "2026-07-24T08:00:00Z" {
+		t.Fatalf("missing safe source/freshness diagnostics: %+v", got.Providers[0])
+	}
+	want := []string{"usage", "--json", "--provider", "antigravity", "--source", "auto", "--web-timeout", "8"}
+	if !reflect.DeepEqual(usageArgs, want) {
+		t.Fatalf("unexpected exact usage args: got %v want %v", usageArgs, want)
+	}
+}
+
+func TestProbeProviderSetupForProviderDoesNotAcceptAnotherReadyProvider(t *testing.T) {
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	defer func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	}()
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	t.Setenv("CODEXBAR_CONFIG", "")
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.44.0"), nil
+	}
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "config" && args[1] == "providers" {
+			return []byte(`[
+				{"provider":"codex","displayName":"Codex","enabled":true},
+				{"provider":"antigravity","displayName":"Antigravity","enabled":true}
+			]`), nil
+		}
+		return []byte(`[
+			{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":7},"secondary":{"usedPercent":13}}}
+		]`), nil
+	}
+
+	got := ProbeProviderSetupForProvider(context.Background(), t.TempDir(), "antigravity")
+	if got.Status == ProviderReady || len(got.Providers) != 1 || got.Providers[0].ID != "antigravity" {
+		t.Fatalf("another provider incorrectly satisfied exact readiness: %+v", got)
 	}
 }
 

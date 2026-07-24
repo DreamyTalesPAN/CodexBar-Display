@@ -201,6 +201,7 @@ type Server struct {
 	usageCache             *usageResponse
 	usageCacheAt           time.Time
 	probeProviderSetup     func(context.Context, string) codexbar.ProviderSetup
+	probeExactProvider     func(context.Context, string, string) codexbar.ProviderSetup
 	openCodexBar           func(context.Context) error
 	providerSetupMu        sync.Mutex
 	providerSetupRefresh   atomic.Bool
@@ -865,10 +866,12 @@ func New(opts Options) (*Server, error) {
 		loadUsage:             daemon.LoadPersistedUsage,
 		fetchUsage:            codexbar.FetchAllProviders,
 		probeProviderSetup:    codexbar.ProbeProviderSetup,
+		probeExactProvider:    codexbar.ProbeProviderSetupForProvider,
 		openCodexBar:          codexbar.OpenApp,
 		providerPreferences: providerPreferencesState{
-			load: codexbar.FetchProviderSettings,
-			set:  codexbar.SetProviderEnabled,
+			load:   codexbar.FetchProviderSettings,
+			set:    codexbar.SetProviderEnabled,
+			verify: codexbar.ProbeProviderSetupForProvider,
 		},
 		updateFirmware:     runFirmwareUpdateCommand,
 		updateMacApp:       runMacAppUpdateCommand,
@@ -1270,6 +1273,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	showUsed := codexbar.UsageBarsShowUsed()
 	writeUsage := func(resp usageResponse) {
+		resp = s.filterDisabledProviders(resp)
 		writeJSON(w, http.StatusOK, usageResponseForDisplayMode(resp, showUsed))
 	}
 	forceRefresh := r.URL.Query().Get("refresh") == "1"

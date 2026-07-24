@@ -36,12 +36,14 @@ type EngineReadiness struct {
 }
 
 type ProviderReadiness struct {
-	ID         string `json:"id"`
-	Label      string `json:"label"`
-	Enabled    bool   `json:"enabled"`
-	Status     string `json:"status"`
-	Detail     string `json:"detail,omitempty"`
-	NextAction string `json:"nextAction,omitempty"`
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Enabled     bool   `json:"enabled"`
+	Status      string `json:"status"`
+	Source      string `json:"source,omitempty"`
+	CollectedAt string `json:"collectedAt,omitempty"`
+	Detail      string `json:"detail,omitempty"`
+	NextAction  string `json:"nextAction,omitempty"`
 }
 
 type ProviderSetup struct {
@@ -94,7 +96,7 @@ func ensureConfigFile(path string) (string, error) {
 		return path, fmt.Errorf("protect CodexBar config directory: %w", err)
 	}
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		seed := []byte("{\n  \"version\": 1,\n  \"providers\": [\n    {\"id\": \"codex\", \"enabled\": true},\n    {\"id\": \"claude\", \"enabled\": true},\n    {\"id\": \"cursor\", \"enabled\": true},\n    {\"id\": \"gemini\", \"enabled\": true},\n    {\"id\": \"copilot\", \"enabled\": true}\n  ]\n}\n")
+		seed := []byte("{\n  \"version\": 1\n}\n")
 		if err := os.WriteFile(path, seed, 0o600); err != nil {
 			return path, fmt.Errorf("write CodexBar config: %w", err)
 		}
@@ -165,6 +167,17 @@ func configPathFromContext(ctx context.Context) string {
 // It never returns provider error text verbatim because that text can contain
 // account identifiers, paths or tokens.
 func ProbeProviderSetup(ctx context.Context, home string) ProviderSetup {
+	return probeProviderSetup(ctx, home, "")
+}
+
+// ProbeProviderSetupForProvider verifies one provider from CodexBar's dynamic
+// inventory. The usage call is explicitly provider-scoped and uses CodexBar's
+// authoritative auto source selection.
+func ProbeProviderSetupForProvider(ctx context.Context, home, providerID string) ProviderSetup {
+	return probeProviderSetup(ctx, home, strings.TrimSpace(strings.ToLower(providerID)))
+}
+
+func probeProviderSetup(ctx context.Context, home, exactProvider string) ProviderSetup {
 	result := ProviderSetup{Status: "setup_required", CheckedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	configPath, configErr := EnsureConfig(home)
 	result.Engine.ConfigPath = configPath
@@ -203,8 +216,45 @@ func ProbeProviderSetup(ctx context.Context, home string) ProviderSetup {
 
 	probeCtx, cancel := context.WithTimeout(configuredCtx, 20*time.Second)
 	defer cancel()
-	out, commandErr := runUsageCommandFn(probeCtx, 18*time.Second, bin, "usage", "--json", "--web-timeout", "8")
-	result.Providers = providerReadinessFromOutput(out, commandErr, probeCtx.Err())
+	args := []string{"usage", "--json", "--web-timeout", "8"}
+	var exactSetting *ProviderSetting
+	if exactProvider != "" {
+		if !validProviderID(exactProvider) {
+			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderNotConfigured)}
+			return result
+		}
+		inventoryRaw, inventoryErr := runUsageCommandFn(probeCtx, 5*time.Second, bin, "config", "providers", "--json")
+		inventory, parseErr := parseProviderSettings(inventoryRaw)
+		if inventoryErr != nil || parseErr != nil {
+			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderConfigError)}
+			return result
+		}
+		for i := range inventory {
+			if inventory[i].ID == exactProvider {
+				exactSetting = &inventory[i]
+				break
+			}
+		}
+		if exactSetting == nil {
+			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderNotConfigured)}
+			return result
+		}
+		args = []string{
+			"usage", "--json",
+			"--provider", exactProvider,
+			"--source", "auto",
+			"--web-timeout", "8",
+		}
+	}
+	out, commandErr := runUsageCommandFn(probeCtx, 18*time.Second, bin, args...)
+	if exactProvider == "" {
+		result.Providers = providerReadinessFromOutput(out, commandErr, probeCtx.Err())
+	} else {
+		provider := exactProviderReadinessFromOutput(exactProvider, out, commandErr, probeCtx.Err())
+		provider.Label = exactSetting.Label
+		provider.Enabled = exactSetting.Enabled
+		result.Providers = []ProviderReadiness{provider}
+	}
 	for _, provider := range result.Providers {
 		if provider.Status == ProviderReady {
 			result.Status = ProviderReady
@@ -212,6 +262,18 @@ func ProbeProviderSetup(ctx context.Context, home string) ProviderSetup {
 		}
 	}
 	return result
+}
+
+func exactProviderReadinessFromOutput(providerID string, raw []byte, commandErr, contextErr error) ProviderReadiness {
+	for _, provider := range providerReadinessFromOutput(raw, commandErr, contextErr) {
+		if provider.ID == providerID {
+			return provider
+		}
+		if provider.ID == "codexbar" && provider.Status == ProviderTimeout {
+			return providerResult(providerID, ProviderTimeout)
+		}
+	}
+	return providerResult(providerID, ProviderNoUsageAvailable)
 }
 
 func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []ProviderReadiness {
@@ -244,6 +306,10 @@ func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []Pro
 		}
 		provider := providerResult(id, status)
 		provider.Enabled = true
+		provider.Source = safeProviderSource(firstString(payload, "source"))
+		if collectedAt := firstRFC3339AtPaths(payload, "usage.updatedAt", "updatedAt"); !collectedAt.IsZero() {
+			provider.CollectedAt = collectedAt.Format(time.RFC3339)
+		}
 		seen[id] = provider
 	}
 	if len(seen) == 0 {
@@ -255,6 +321,22 @@ func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []Pro
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
+}
+
+func safeProviderSource(raw string) string {
+	source := strings.TrimSpace(strings.ToLower(raw))
+	if source == "" || len(source) > 40 {
+		return ""
+	}
+	for _, character := range source {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= '0' && character <= '9') ||
+			character == '-' || character == '_' || character == '.' || character == '+' {
+			continue
+		}
+		return ""
+	}
+	return source
 }
 
 func commandErrorDetail(err error) string {
@@ -270,7 +352,10 @@ func commandErrorDetail(err error) string {
 }
 
 func providerPayloadHasUsage(payload map[string]any) bool {
-	for _, path := range []string{"usage.primary", "usage.secondary", "primary", "secondary", "credits", "openaiDashboard.primaryLimit", "openaiDashboard.secondaryLimit"} {
+	if len(parseUsageWindows(payload)) > 0 {
+		return true
+	}
+	for _, path := range []string{"credits", "openaiDashboard.credits", "openaiDashboard.balance"} {
 		if value, ok := getPath(payload, path); ok && value != nil {
 			return true
 		}

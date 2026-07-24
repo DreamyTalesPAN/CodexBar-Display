@@ -13,16 +13,20 @@ import (
 func TestParseProviderSettingsIncludesDisabledProviders(t *testing.T) {
 	settings, err := parseProviderSettings([]byte(`[
 		{"provider":"codex","displayName":"Codex","enabled":true,"defaultEnabled":true},
-		{"provider":"copilot","displayName":"GitHub Copilot","enabled":false,"defaultEnabled":false}
+		{"provider":"copilot","displayName":"GitHub Copilot","enabled":false,"defaultEnabled":false},
+		{"provider":"antigravity","displayName":"Antigravity","enabled":false,"defaultEnabled":false}
 	]`))
 	if err != nil {
 		t.Fatalf("parse settings: %v", err)
 	}
-	if len(settings) != 2 {
+	if len(settings) != 3 {
 		t.Fatalf("expected all providers, got %d", len(settings))
 	}
 	if settings[1].ID != "copilot" || settings[1].Enabled {
 		t.Fatalf("expected disabled copilot, got %#v", settings[1])
+	}
+	if settings[2].ID != "antigravity" || settings[2].Enabled || settings[2].DefaultEnabled {
+		t.Fatalf("expected dynamically discovered disabled antigravity, got %#v", settings[2])
 	}
 }
 

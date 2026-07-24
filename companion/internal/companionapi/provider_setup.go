@@ -3,6 +3,7 @@ package companionapi
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
@@ -82,7 +83,17 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
 	defer cancel()
-	setup := s.currentProviderSetup(ctx, true)
+	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
+	var setup codexbar.ProviderSetup
+	if providerID == "" {
+		setup = s.currentProviderSetup(ctx, true)
+	} else {
+		probe := s.probeExactProvider
+		if probe == nil {
+			probe = codexbar.ProbeProviderSetupForProvider
+		}
+		setup = probe(ctx, s.home, providerID)
+	}
 	if setup.Status == codexbar.ProviderReady && s.wakeDisplayStream != nil {
 		s.wakeDisplayStream()
 	}

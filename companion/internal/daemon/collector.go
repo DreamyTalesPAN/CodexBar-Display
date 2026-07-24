@@ -157,6 +157,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	successes := 0
 
 	c.mu.Lock()
+	c.order = mergeProviderOrder(providerOrderFromFrames(allProviders), c.order)
 	for _, parsed := range allProviders {
 		frame := parsed.Frame.Normalize()
 		if strings.TrimSpace(frame.Error) != "" {
@@ -209,6 +210,54 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		c.persistIfNeeded(now)
 	}
 	c.logf("collector complete transport=%s source=codexbar fresh=true providers=%d succeeded=%d timeout=%s mode=fetch-all\n", usageSourceOrDefault(c.transportName, "usb"), len(allProviders), successes, c.timeout)
+}
+
+func providerOrderFromFrames(frames []codexbar.ParsedFrame) []string {
+	order := make([]string, 0, len(frames))
+	seen := make(map[string]struct{}, len(frames))
+	for _, frame := range frames {
+		key := normalizeProviderKey(frame.Provider)
+		if key == "" {
+			key = normalizeProviderKey(frame.Frame.Provider)
+		}
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		order = append(order, key)
+	}
+	return order
+}
+
+func mergeProviderOrder(current, previous []string) []string {
+	order := make([]string, 0, len(current)+len(previous))
+	seen := make(map[string]struct{}, len(current)+len(previous))
+	for _, key := range previous {
+		key = normalizeProviderKey(key)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		order = append(order, key)
+	}
+	for _, key := range current {
+		key = normalizeProviderKey(key)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		order = append(order, key)
+	}
+	return order
 }
 
 func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {

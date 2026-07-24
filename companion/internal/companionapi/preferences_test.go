@@ -91,6 +91,11 @@ func TestPreferencePatchReReadsEffectiveDescriptorAfterWrite(t *testing.T) {
 		enabled = value
 		return nil
 	}
+	server.providerPreferences.verify = func(_ context.Context, _ string, id string) codexbar.ProviderSetup {
+		return codexbar.ProviderSetup{Providers: []codexbar.ProviderReadiness{{
+			ID: id, Label: "Claude", Enabled: true, Status: codexbar.ProviderAuthRequired,
+		}}}
+	}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
 
 	recorder := httptest.NewRecorder()
@@ -103,6 +108,115 @@ func TestPreferencePatchReReadsEffectiveDescriptorAfterWrite(t *testing.T) {
 	_ = json.Unmarshal(recorder.Body.Bytes(), &response)
 	if response.Item.Value != true || response.Item.EffectiveValue != true || response.Item.Health.State != "auth_required" || loads != 2 {
 		t.Fatalf("expected re-read effective enabled value, got %#v loads=%d", response.Item, loads)
+	}
+}
+
+func TestPreferencePatchEnablingAntigravityUsesExactReadiness(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	enabled := false
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "antigravity", Label: "Antigravity", Enabled: enabled, Health: codexbar.ProviderHealthChecking},
+		}, nil
+	}
+	server.providerPreferences.set = func(_ context.Context, id string, value bool) error {
+		if id != "antigravity" {
+			t.Fatalf("unexpected provider ID %q", id)
+		}
+		enabled = value
+		return nil
+	}
+	var verified string
+	server.providerPreferences.verify = func(_ context.Context, _ string, id string) codexbar.ProviderSetup {
+		verified = id
+		return codexbar.ProviderSetup{Providers: []codexbar.ProviderReadiness{{
+			ID: id, Label: "Antigravity", Enabled: true, Status: codexbar.ProviderAuthRequired,
+		}}}
+	}
+	wakes := 0
+	server.wakeDisplayStream = func() { wakes++ }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodPatch,
+		"/v1/preferences/codexbar.providers.antigravity.enabled",
+		bytes.NewBufferString(`{"value":true}`),
+	)
+	server.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response preferenceResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if verified != "antigravity" || response.Item.Health.State != "auth_required" {
+		t.Fatalf("exact Antigravity readiness was not retained: verified=%q item=%#v", verified, response.Item)
+	}
+	if wakes != 0 {
+		t.Fatalf("broken Antigravity must not wake the ready stream, got %d", wakes)
+	}
+}
+
+func TestDisablingProviderRemovesItsPersistedUsageCard(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	cursorEnabled := true
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "cursor", Label: "Cursor", Enabled: cursorEnabled, Health: codexbar.ProviderHealthHealthy},
+		}, nil
+	}
+	server.providerPreferences.set = func(_ context.Context, id string, enabled bool) error {
+		if id != "cursor" {
+			t.Fatalf("unexpected provider ID %q", id)
+		}
+		cursorEnabled = enabled
+		return nil
+	}
+	server.loadUsage = func(now time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now,
+			CurrentProvider: "cursor",
+			Providers: []daemon.ProviderUsageSnapshot{
+				{
+					Provider:    "cursor",
+					Frame:       protocol.Frame{Provider: "cursor", Label: "Cursor", Session: 57, Weekly: 100},
+					CollectedAt: now,
+				},
+				{
+					Provider:    "codex",
+					Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Session: 12, Weekly: 34},
+					CollectedAt: now,
+				},
+			},
+		}, true
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodPatch,
+		"/v1/preferences/codexbar.providers.cursor.enabled",
+		bytes.NewBufferString(`{"value":false}`),
+	)
+	server.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("disable Cursor: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	recorder = httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("get usage: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response usageResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode usage: %v", err)
+	}
+	if response.CurrentProvider != "codex" || len(response.Providers) != 1 || response.Providers[0].ID != "codex" {
+		t.Fatalf("disabled provider remained visible: %#v", response)
 	}
 }
 

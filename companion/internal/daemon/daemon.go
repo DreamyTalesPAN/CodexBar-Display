@@ -1705,28 +1705,13 @@ func collectorProviderTimeout() time.Duration {
 }
 
 func collectorProviderOrder() []string {
-	defaults := []string{
-		"codex",
-		"claude",
-		"cursor",
-		"copilot",
-		"gemini",
-		"vertexai",
-		"jetbrains",
-		"augment",
-		"factory",
-		"kimi",
-		"ollama",
-		"antigravity",
-	}
-
 	raw := strings.TrimSpace(os.Getenv(collectorOrderEnvVar))
 	if raw == "" {
-		return defaults
+		return nil
 	}
 
 	var out []string
-	seen := make(map[string]struct{}, len(defaults))
+	seen := make(map[string]struct{})
 	for _, part := range strings.Split(raw, ",") {
 		key := normalizeProviderKey(part)
 		if key == "" {
@@ -1737,9 +1722,6 @@ func collectorProviderOrder() []string {
 		}
 		seen[key] = struct{}{}
 		out = append(out, key)
-	}
-	if len(out) == 0 {
-		return defaults
 	}
 	return out
 }

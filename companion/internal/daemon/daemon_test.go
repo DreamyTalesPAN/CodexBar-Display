@@ -1982,29 +1982,29 @@ func TestLoadPersistedUsageReturnsOrderedProviderSnapshots(t *testing.T) {
 	if len(usage.Providers) != 2 {
 		t.Fatalf("expected two providers, got %+v", usage.Providers)
 	}
-	if usage.Providers[0].Provider != "codex" || usage.Providers[1].Provider != "claude" {
-		t.Fatalf("expected collector order codex, claude; got %+v", usage.Providers)
+	if usage.Providers[0].Provider != "claude" || usage.Providers[1].Provider != "codex" {
+		t.Fatalf("expected generic alphabetical fallback without a VibeTV provider list; got %+v", usage.Providers)
 	}
-	if usage.Providers[0].Stale {
-		t.Fatalf("expected fresh codex snapshot, got %+v", usage.Providers[0])
+	if !usage.Providers[0].Stale {
+		t.Fatalf("expected stale claude snapshot, got %+v", usage.Providers[0])
 	}
-	if !usage.Providers[1].Stale {
-		t.Fatalf("expected stale claude snapshot, got %+v", usage.Providers[1])
+	if usage.Providers[1].Stale {
+		t.Fatalf("expected fresh codex snapshot, got %+v", usage.Providers[1])
 	}
-	if usage.Providers[0].Frame.UsageMode != "used" {
-		t.Fatalf("expected default usage mode used, got %q", usage.Providers[0].Frame.UsageMode)
+	if usage.Providers[1].Frame.UsageMode != "used" {
+		t.Fatalf("expected default usage mode used, got %q", usage.Providers[1].Frame.UsageMode)
 	}
-	if usage.Providers[0].Frame.SessionTokens != 500 {
-		t.Fatalf("expected token stats to survive, got %+v", usage.Providers[0].Frame)
+	if usage.Providers[1].Frame.SessionTokens != 500 {
+		t.Fatalf("expected token stats to survive, got %+v", usage.Providers[1].Frame)
 	}
-	if usage.Providers[0].Meta.Credits == nil || usage.Providers[0].Meta.Credits.Remaining != 42.5 {
-		t.Fatalf("expected credits metadata to survive, got %+v", usage.Providers[0].Meta.Credits)
+	if usage.Providers[1].Meta.Credits == nil || usage.Providers[1].Meta.Credits.Remaining != 42.5 {
+		t.Fatalf("expected credits metadata to survive, got %+v", usage.Providers[1].Meta.Credits)
 	}
-	if usage.Providers[0].Meta.Status == nil || usage.Providers[0].Meta.Status.Description != "Operational" {
-		t.Fatalf("expected status metadata to survive, got %+v", usage.Providers[0].Meta.Status)
+	if usage.Providers[1].Meta.Status == nil || usage.Providers[1].Meta.Status.Description != "Operational" {
+		t.Fatalf("expected status metadata to survive, got %+v", usage.Providers[1].Meta.Status)
 	}
-	if len(usage.Providers[0].Meta.OverTime) != 1 || usage.Providers[0].Meta.OverTime[0].Day != "2026-06-24" {
-		t.Fatalf("expected usage-over-time metadata to survive, got %+v", usage.Providers[0].Meta.OverTime)
+	if len(usage.Providers[1].Meta.OverTime) != 1 || usage.Providers[1].Meta.OverTime[0].Day != "2026-06-24" {
+		t.Fatalf("expected usage-over-time metadata to survive, got %+v", usage.Providers[1].Meta.OverTime)
 	}
 }
 
@@ -2832,6 +2832,34 @@ func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 	}
 }
 
+func TestProviderCollectorLearnsDynamicCodexBarOrder(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("antigravity", 17, 23, 3600),
+				testParsedFrame("gemini", 41, 52, 7200),
+			}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+
+	if !reflect.DeepEqual(collector.order, []string{"antigravity", "gemini"}) {
+		t.Fatalf("collector did not learn CodexBar order dynamically: %v", collector.order)
+	}
+	frames := collector.providerFrames(now)
+	if len(frames) != 2 || frames[0].Provider != "antigravity" || frames[1].Provider != "gemini" {
+		t.Fatalf("dynamic provider order was not preserved: %#v", frames)
+	}
+}
+
 func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -2919,10 +2947,49 @@ func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing
 func TestPreferAvailableProvidersDoesNotLetUnavailableDisplaceFresh(t *testing.T) {
 	providers := preferAvailableProviders([]codexbar.ParsedFrame{
 		{Provider: "gemini", Frame: protocol.Frame{Provider: "gemini", UsageUnavailable: true}},
-		testParsedFrame("codex", 17, 42, 3600),
+		testParsedFrame("antigravity", 17, 42, 3600),
 	})
-	if len(providers) != 1 || providers[0].Provider != "codex" {
-		t.Fatalf("expected only fresh Codex to remain selectable, got %#v", providers)
+	if len(providers) != 1 || providers[0].Provider != "antigravity" {
+		t.Fatalf("fresh Antigravity must displace stale Gemini, got %#v", providers)
+	}
+}
+
+func TestRunCycleSendsFreshAntigravityInsteadOfUnavailableGemini(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	var sent []byte
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+		now:         time.Now,
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				{
+					Provider: "gemini",
+					Frame: protocol.Frame{
+						Provider:         "gemini",
+						Label:            "Gemini",
+						Session:          0,
+						Weekly:           0,
+						UsageUnavailable: true,
+					},
+				},
+				testParsedFrame("antigravity", 17, 42, 3600),
+			}, nil
+		},
+		sendLine: func(_ string, line []byte) error {
+			sent = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("run cycle: %v", err)
+	}
+
+	frame := decodeFrameLine(t, sent)
+	if frame.Provider != "antigravity" || frame.UsageUnavailable || frame.Session != 17 || frame.Weekly != 42 {
+		t.Fatalf("old Gemini zero/100%% carrier displaced fresh Antigravity: %#v", frame)
 	}
 }
 

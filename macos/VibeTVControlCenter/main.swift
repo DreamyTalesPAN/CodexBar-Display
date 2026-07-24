@@ -301,18 +301,11 @@ func codexBarInstalledAppCandidates(homeDirectory: URL) -> [URL] {
     ]
 }
 
-func defaultCodexBarConfigData() -> Data {
+func minimumCodexBarConfigData() -> Data {
     Data(
         """
         {
-          "version": 1,
-          "providers": [
-            {"id": "codex", "enabled": true},
-            {"id": "claude", "enabled": true},
-            {"id": "cursor", "enabled": true},
-            {"id": "gemini", "enabled": true},
-            {"id": "copilot", "enabled": true}
-          ]
+          "version": 1
         }
 
         """.utf8
@@ -2598,7 +2591,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 [.posixPermissions: 0o700],
                 ofItemAtPath: configDirectoryURL.path
             )
-            try defaultCodexBarConfigData().write(to: configURL, options: .atomic)
+            try minimumCodexBarConfigData().write(to: configURL, options: .atomic)
             try fileManager.setAttributes(
                 [.posixPermissions: 0o600],
                 ofItemAtPath: configURL.path

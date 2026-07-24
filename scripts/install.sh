@@ -284,16 +284,11 @@ seed_codexbar_config_if_missing() {
   mkdir -p "$CODEXBAR_CONFIG_DIR"
   cat >"$CODEXBAR_CONFIG_PATH" <<'EOF'
 {
-  "version": 1,
-  "providers": [
-    {"id": "codex", "enabled": true},
-    {"id": "claude", "enabled": true},
-    {"id": "cursor", "enabled": true}
-  ]
+  "version": 1
 }
 EOF
   chmod 600 "$CODEXBAR_CONFIG_PATH"
-  log "vibetv: seeded default CodexBar provider config at ${CODEXBAR_CONFIG_PATH}"
+  log "vibetv: seeded minimal CodexBar config at ${CODEXBAR_CONFIG_PATH}"
 }
 
 open_codexbar_app() {

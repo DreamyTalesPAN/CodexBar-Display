@@ -186,18 +186,11 @@ func runURLSchemeTests() {
         "CodexBar discovery must prefer the shared app and then the user app"
     )
     let config = try! JSONSerialization.jsonObject(
-        with: defaultCodexBarConfigData()
+        with: minimumCodexBarConfigData()
     ) as! [String: Any]
-    let providers = config["providers"] as! [[String: Any]]
     require(
-        providers.compactMap { $0["id"] as? String } == [
-            "codex", "claude", "cursor", "gemini", "copilot",
-        ],
-        "fresh installs must seed only the common supported providers"
-    )
-    require(
-        providers.allSatisfy { $0["enabled"] as? Bool == true },
-        "fresh-install providers must be enabled before the first probe"
+        config["version"] as? Int == 1 && config["providers"] == nil,
+        "fresh installs must let CodexBar own and normalize its provider inventory"
     )
     require(
         RuntimePreparationOutcome.nativeRuntimeReady.shouldReloadControlCenter,

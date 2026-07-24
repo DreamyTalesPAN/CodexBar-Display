@@ -134,6 +134,35 @@ func TestProviderRetryDoesNotWakeStreamUntilReady(t *testing.T) {
 	}
 }
 
+func TestProviderRetryCanTargetExactProvider(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	var gotProvider string
+	server.probeExactProvider = func(_ context.Context, _ string, providerID string) codexbar.ProviderSetup {
+		gotProvider = providerID
+		return codexbar.ProviderSetup{
+			Status: "setup_required",
+			Providers: []codexbar.ProviderReadiness{{
+				ID: "antigravity", Label: "Antigravity", Enabled: true, Status: codexbar.ProviderAuthRequired,
+			}},
+		}
+	}
+	woke := false
+	server.wakeDisplayStream = func() { woke = true }
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(
+		rec,
+		httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=antigravity", nil),
+	)
+	if rec.Code != http.StatusOK || gotProvider != "antigravity" || woke {
+		t.Fatalf("unexpected exact retry: status=%d provider=%q woke=%t body=%s", rec.Code, gotProvider, woke, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"id":"antigravity"`) ||
+		!strings.Contains(rec.Body.String(), `"status":"auth_required"`) {
+		t.Fatalf("exact provider identity/readiness missing: %s", rec.Body.String())
+	}
+}
+
 func TestOpenCodexBarUsesFixedActionAndReturnsSetup(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	called := false
