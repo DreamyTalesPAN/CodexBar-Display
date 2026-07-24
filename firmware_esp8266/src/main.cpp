@@ -2774,15 +2774,16 @@ void loop() {
     markFrameAccepted(event, "usb");
   }
 
+  if (httpServerStarted) {
+    webServer.handleClient();
+  }
+  handleRawOtaClient();
   maintainWifiConnection();
   if (!otaUploadInProgress) {
     maintainFirmwareUpdateNotice();
   }
 
   if (otaUploadInProgress || assetUploadInProgress) {
-    if (httpServerStarted) {
-      webServer.handleClient();
-    }
     delay(1);
     return;
   }
@@ -2889,10 +2890,6 @@ void loop() {
   (void)renderDurationUs;
 #endif
 
-  if (httpServerStarted) {
-    webServer.handleClient();
-  }
-  handleRawOtaClient();
   if (captiveDnsStarted) {
     dnsServer.processNextRequest();
   }
