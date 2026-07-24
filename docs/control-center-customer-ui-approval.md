@@ -357,3 +357,14 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `live-vibetv-preview.tsx`, its focused unit test, and the
   Companion last-sent-frame reconstruction that supplies the generic lane
   availability flags.
+
+## 2026-07-24 — Customer flow covers truthful partial usage
+
+- User approval: In the issue #247 task, the user explicitly rejected showing
+  a missing device value as `0 %` and required only that value to show `??`.
+- Approved customer-visible result: The connected Overview preview shows `??`
+  for an unavailable Codex Session while keeping the real Weekly percentage
+  visible. This is the same already approved partial-usage state; no copy,
+  control, layout, or product behavior changed.
+- Approved files: The matching connected Overview assertion in
+  `test-customer-flows.mjs`.
