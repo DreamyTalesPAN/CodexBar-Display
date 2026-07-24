@@ -175,6 +175,32 @@ func runURLSchemeTests() {
         !isCompatibleCodexBarVersion("0.22.0"),
         "an unsupported CodexBar version must not replace the pinned bootstrap"
     )
+    let commandFixtureDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("vibetv-command-\(UUID().uuidString)")
+    try! FileManager.default.createDirectory(
+        at: commandFixtureDirectory,
+        withIntermediateDirectories: false
+    )
+    defer { try? FileManager.default.removeItem(at: commandFixtureDirectory) }
+    let verboseCommand = commandFixtureDirectory.appendingPathComponent("verbose-command")
+    try! Data(
+        """
+        #!/bin/sh
+        /usr/bin/awk 'BEGIN { for (i = 0; i < 200000; i++) printf "x" }'
+        """.utf8
+    ).write(to: verboseCommand)
+    try! FileManager.default.setAttributes(
+        [.posixPermissions: 0o700],
+        ofItemAtPath: verboseCommand.path
+    )
+    let verboseResult = runCodexBarCommand(
+        executableURL: verboseCommand,
+        arguments: []
+    )
+    require(
+        verboseResult?.exitCode == 0 && verboseResult?.output.count == 200000,
+        "command output must be drained while a verbose child process is running"
+    )
     let codexBarCandidates = codexBarInstalledAppCandidates(
         homeDirectory: URL(fileURLWithPath: "/Users/customer", isDirectory: true)
     )

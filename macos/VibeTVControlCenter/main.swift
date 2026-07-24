@@ -301,12 +301,12 @@ func codexBarInstalledAppCandidates(homeDirectory: URL) -> [URL] {
     ]
 }
 
-private struct CodexBarCommandResult {
+struct CodexBarCommandResult {
     let exitCode: Int32
     let output: String
 }
 
-private func runCodexBarCommand(
+func runCodexBarCommand(
     executableURL: URL,
     arguments: [String],
     environment: [String: String]? = nil,
@@ -323,11 +323,11 @@ private func runCodexBarCommand(
         : FileHandle.nullDevice
     do {
         try process.run()
-        process.waitUntilExit()
     } catch {
         return nil
     }
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
     return CodexBarCommandResult(
         exitCode: process.terminationStatus,
         output: String(data: data, encoding: .utf8) ?? ""
