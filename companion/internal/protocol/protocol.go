@@ -7,6 +7,14 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
 )
 
+type UsageSlot struct {
+	ID        string `json:"id,omitempty"`
+	Label     string `json:"label,omitempty"`
+	Percent   int    `json:"percent,omitempty"`
+	ResetSec  int64  `json:"resetSecs,omitempty"`
+	Available bool   `json:"available,omitempty"`
+}
+
 type Frame struct {
 	V                     int             `json:"v"`
 	Provider              string          `json:"provider,omitempty"`
@@ -16,6 +24,7 @@ type Frame struct {
 	ResetSec              int64           `json:"resetSecs,omitempty"`
 	UsageUnavailable      bool            `json:"usageUnavailable,omitempty"`
 	UsageMode             string          `json:"usageMode,omitempty"`
+	UsageSlots            []UsageSlot     `json:"usageSlots,omitempty"`
 	Time                  string          `json:"time,omitempty"`
 	Date                  string          `json:"date,omitempty"`
 	SessionTokens         int64           `json:"sessionTokens,omitempty"`
@@ -58,6 +67,7 @@ func (f Frame) Normalize() Frame {
 	if f.ResetSec < 0 {
 		f.ResetSec = 0
 	}
+	f.UsageSlots = normalizeUsageSlots(f.UsageSlots)
 	if f.SessionTokens < 0 {
 		f.SessionTokens = 0
 	}
@@ -97,6 +107,40 @@ func (f Frame) Normalize() Frame {
 		f.Update.SHA256 = strings.TrimSpace(f.Update.SHA256)
 	}
 	return f
+}
+
+func normalizeUsageSlots(slots []UsageSlot) []UsageSlot {
+	if len(slots) == 0 {
+		return nil
+	}
+	out := make([]UsageSlot, 0, 4)
+	for _, slot := range slots {
+		if len(out) == 4 {
+			break
+		}
+		slot.ID = strings.TrimSpace(strings.ToLower(slot.ID))
+		slot.Label = strings.TrimSpace(slot.Label)
+		if slot.Label == "" {
+			slot.Label = slot.ID
+		}
+		if len(slot.Label) > 24 {
+			slot.Label = slot.Label[:24]
+		}
+		if slot.Percent < 0 {
+			slot.Percent = 0
+		}
+		if slot.Percent > 100 {
+			slot.Percent = 100
+		}
+		if slot.ResetSec < 0 {
+			slot.ResetSec = 0
+		}
+		if !slot.Available {
+			continue
+		}
+		out = append(out, slot)
+	}
+	return out
 }
 
 func (f Frame) MarshalLine() ([]byte, error) {

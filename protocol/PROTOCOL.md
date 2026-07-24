@@ -27,7 +27,8 @@ Fields:
 - `weekly` (number, optional): weekly usage percent `0..100`.
 - `resetSecs` (number, optional): seconds remaining until reset.
 - `usageUnavailable` (boolean, optional): current quota values are not trustworthy; missing/false remains backward compatible. ThemeSpec text bindings show unknown values while progress keeps the numeric carrier values.
-- `usageMode` (string, optional): semantic of `session`/`weekly` (`used` or `remaining`).
+- `usageMode` (string, optional): semantic of `session`/`weekly` and `usageSlots[].percent` (`used` or `remaining`).
+- `usageSlots` (array, optional): compact provider-aware display slots, max four entries. Each available slot carries `id`, `label` (bounded to 24 chars), `percent`, `resetSecs`, and `available:true`. Missing or unavailable source windows are omitted rather than coerced to `0`/`100`. Legacy `session` and `weekly` remain as compatibility aliases for the first two slots where possible.
 - `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
 - `weekTokens` (number, optional): rolling 7-day token total when available.
 - `totalTokens` (number, optional): lifetime token total when available.
@@ -39,7 +40,7 @@ Fields:
 Example with additive token stats + theme:
 
 ```json
-{"v":2,"provider":"codex","label":"Codex","session":17,"weekly":42,"resetSecs":15480,"sessionTokens":1437166,"weekTokens":384312010,"totalTokens":1078397605,"theme":"mini"}
+{"v":2,"provider":"codex","label":"Codex","session":17,"weekly":42,"resetSecs":15480,"usageSlots":[{"id":"secondary","label":"Weekly","percent":42,"resetSecs":15480,"available":true},{"id":"codex-spark-weekly","label":"Codex Spark Weekly","percent":7,"resetSecs":604800,"available":true},{"id":"gemini-weekly","label":"Gemini Weekly","percent":9,"resetSecs":604800,"available":true},{"id":"claude-weekly","label":"Claude Weekly","percent":12,"resetSecs":604800,"available":true}],"sessionTokens":1437166,"weekTokens":384312010,"totalTokens":1078397605,"theme":"mini"}
 ```
 
 Theme registry source of truth:

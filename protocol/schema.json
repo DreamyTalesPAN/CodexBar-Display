@@ -607,6 +607,39 @@
     "error": {
       "type": "string",
       "minLength": 1
+    },
+    "usageSlots": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": [
+          "available"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 24
+          },
+          "percent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "resetSecs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "available": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
     }
   },
   "additionalProperties": true

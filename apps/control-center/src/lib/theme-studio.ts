@@ -12,6 +12,22 @@ export type ThemeStudioBinding =
   | "session"
   | "weekly"
   | "reset"
+  | "usageSlot1Label"
+  | "usageSlot1Percent"
+  | "usageSlot1Reset"
+  | "usageSlot1Available"
+  | "usageSlot2Label"
+  | "usageSlot2Percent"
+  | "usageSlot2Reset"
+  | "usageSlot2Available"
+  | "usageSlot3Label"
+  | "usageSlot3Percent"
+  | "usageSlot3Reset"
+  | "usageSlot3Available"
+  | "usageSlot4Label"
+  | "usageSlot4Percent"
+  | "usageSlot4Reset"
+  | "usageSlot4Available"
   | "usageMode"
   | "activity"
   | "time"
@@ -199,6 +215,22 @@ const SHORT_BINDINGS: Record<string, ThemeStudioBinding> = {
   weeklyusage: "weekly",
   r: "reset",
   resetcountdown: "reset",
+  us1l: "usageSlot1Label",
+  us1p: "usageSlot1Percent",
+  us1r: "usageSlot1Reset",
+  us1a: "usageSlot1Available",
+  us2l: "usageSlot2Label",
+  us2p: "usageSlot2Percent",
+  us2r: "usageSlot2Reset",
+  us2a: "usageSlot2Available",
+  us3l: "usageSlot3Label",
+  us3p: "usageSlot3Percent",
+  us3r: "usageSlot3Reset",
+  us3a: "usageSlot3Available",
+  us4l: "usageSlot4Label",
+  us4p: "usageSlot4Percent",
+  us4r: "usageSlot4Reset",
+  us4a: "usageSlot4Available",
   u: "usageMode",
   mode: "usageMode",
   act: "activity",
@@ -225,6 +257,22 @@ const COMPACT_BINDINGS: Record<string, string> = {
   weeklyPercent: "w",
   reset: "r",
   resetCountdown: "r",
+  usageSlot1Label: "us1l",
+  usageSlot1Percent: "us1p",
+  usageSlot1Reset: "us1r",
+  usageSlot1Available: "us1a",
+  usageSlot2Label: "us2l",
+  usageSlot2Percent: "us2p",
+  usageSlot2Reset: "us2r",
+  usageSlot2Available: "us2a",
+  usageSlot3Label: "us3l",
+  usageSlot3Percent: "us3p",
+  usageSlot3Reset: "us3r",
+  usageSlot3Available: "us3a",
+  usageSlot4Label: "us4l",
+  usageSlot4Percent: "us4p",
+  usageSlot4Reset: "us4r",
+  usageSlot4Available: "us4a",
   usageMode: "u",
   activity: "act",
   time: "tm",
@@ -277,7 +325,7 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         type: "text",
         x: 7,
         y: 30,
-        text: "Session",
+        text: "{usageSlot1Label}",
         fontSize: 2,
         color: "#999999",
       },
@@ -285,7 +333,7 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         type: "text",
         x: 7,
         y: 60,
-        text: "{session}%",
+        text: "{usageSlot1Percent}%",
         fontSize: 5,
         color: "#CCFF00",
       },
@@ -293,7 +341,7 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         type: "text",
         x: 153,
         y: 30,
-        text: "Weekly",
+        text: "{usageSlot2Label}",
         fontSize: 2,
         color: "#999999",
       },
@@ -302,7 +350,7 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         x: 144,
         y: 66,
         width: 90,
-        text: "{weekly}%",
+        text: "{usageSlot2Percent}%",
         align: "right",
         fontSize: 5,
         color: "#CCFF00",
@@ -320,7 +368,7 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         x: 24,
         y: 208,
         width: 192,
-        text: "Reset in {reset}",
+        text: "Reset in {usageSlot1Reset}",
         align: "center",
         fontSize: 2,
         color: "#999999",

@@ -48,6 +48,14 @@ type DisplayFrameSnapshot = {
   frame?: DisplayFrame;
 };
 
+type UsageSlotFrame = {
+  id?: string;
+  label?: string;
+  percent?: number;
+  resetSecs?: number;
+  available?: boolean;
+};
+
 type DisplayFrame = {
   v?: number;
   provider?: string;
@@ -56,6 +64,7 @@ type DisplayFrame = {
   weekly?: number;
   resetSecs?: number;
   usageMode?: string;
+  usageSlots?: UsageSlotFrame[];
   activity?: string;
   sessionTokens?: number;
   weekTokens?: number;
@@ -127,6 +136,22 @@ type FrameData = {
   weekly: number;
   resetSecs: number;
   usageMode: string;
+  usageSlot1Label: string;
+  usageSlot1Percent: number;
+  usageSlot1ResetSecs: number;
+  usageSlot1Available: boolean;
+  usageSlot2Label: string;
+  usageSlot2Percent: number;
+  usageSlot2ResetSecs: number;
+  usageSlot2Available: boolean;
+  usageSlot3Label: string;
+  usageSlot3Percent: number;
+  usageSlot3ResetSecs: number;
+  usageSlot3Available: boolean;
+  usageSlot4Label: string;
+  usageSlot4Percent: number;
+  usageSlot4ResetSecs: number;
+  usageSlot4Available: boolean;
   activity: string;
   sessionTokens: number;
   weekTokens: number;
@@ -142,6 +167,22 @@ const THEME_LIBRARY_PREVIEW_FRAME: FrameData = {
   weekly: 62,
   resetSecs: 3600,
   usageMode: "remaining",
+  usageSlot1Label: "Weekly",
+  usageSlot1Percent: 62,
+  usageSlot1ResetSecs: 3600,
+  usageSlot1Available: true,
+  usageSlot2Label: "Codex Spark Weekly",
+  usageSlot2Percent: 38,
+  usageSlot2ResetSecs: 7200,
+  usageSlot2Available: true,
+  usageSlot3Label: "Gemini Weekly",
+  usageSlot3Percent: 44,
+  usageSlot3ResetSecs: 10800,
+  usageSlot3Available: true,
+  usageSlot4Label: "Claude Weekly",
+  usageSlot4Percent: 27,
+  usageSlot4ResetSecs: 14400,
+  usageSlot4Available: true,
   activity: "preview",
   sessionTokens: 0,
   weekTokens: 0,
@@ -801,6 +842,11 @@ function buildFrameData(
   const now = generatedAt ? new Date(generatedAt) : new Date();
   const usableDate = Number.isNaN(now.getTime()) ? new Date() : now;
   const sourceUsageMode = frameUsageMode(displayFrame);
+  const slots = (displayFrame.usageSlots || []).filter((slot) => slot.available);
+  const slot1 = slots[0];
+  const slot2 = slots[1];
+  const slot3 = slots[2];
+  const slot4 = slots[3];
   return {
     provider: displayFrame.provider || "",
     label: displayFrame.label || displayFrame.provider || "",
@@ -808,6 +854,22 @@ function buildFrameData(
     weekly: clampPercent(displayFrame.weekly),
     resetSecs: displayFrame.resetSecs ?? 0,
     usageMode: sourceUsageMode,
+    usageSlot1Label: slot1?.label || "",
+    usageSlot1Percent: clampPercent(slot1?.percent),
+    usageSlot1ResetSecs: slot1?.resetSecs ?? 0,
+    usageSlot1Available: Boolean(slot1?.available),
+    usageSlot2Label: slot2?.label || "",
+    usageSlot2Percent: clampPercent(slot2?.percent),
+    usageSlot2ResetSecs: slot2?.resetSecs ?? 0,
+    usageSlot2Available: Boolean(slot2?.available),
+    usageSlot3Label: slot3?.label || "",
+    usageSlot3Percent: clampPercent(slot3?.percent),
+    usageSlot3ResetSecs: slot3?.resetSecs ?? 0,
+    usageSlot3Available: Boolean(slot3?.available),
+    usageSlot4Label: slot4?.label || "",
+    usageSlot4Percent: clampPercent(slot4?.percent),
+    usageSlot4ResetSecs: slot4?.resetSecs ?? 0,
+    usageSlot4Available: Boolean(slot4?.available),
     activity: displayFrame.activity || "idle",
     sessionTokens: displayFrame.sessionTokens ?? 0,
     weekTokens: displayFrame.weekTokens ?? 0,
@@ -890,6 +952,54 @@ function boundValue(key: string, frame: FrameData): string {
     case "resetCountdown":
     case "r":
       return formatReset(frame.resetSecs);
+    case "usageSlot1Label":
+    case "us1l":
+      return frame.usageSlot1Available ? frame.usageSlot1Label : "";
+    case "usageSlot1Percent":
+    case "us1p":
+      return frame.usageSlot1Available ? String(frame.usageSlot1Percent) : "";
+    case "usageSlot1Reset":
+    case "us1r":
+      return frame.usageSlot1Available ? formatReset(frame.usageSlot1ResetSecs) : "";
+    case "usageSlot1Available":
+    case "us1a":
+      return String(frame.usageSlot1Available);
+    case "usageSlot2Label":
+    case "us2l":
+      return frame.usageSlot2Available ? frame.usageSlot2Label : "";
+    case "usageSlot2Percent":
+    case "us2p":
+      return frame.usageSlot2Available ? String(frame.usageSlot2Percent) : "";
+    case "usageSlot2Reset":
+    case "us2r":
+      return frame.usageSlot2Available ? formatReset(frame.usageSlot2ResetSecs) : "";
+    case "usageSlot2Available":
+    case "us2a":
+      return String(frame.usageSlot2Available);
+    case "usageSlot3Label":
+    case "us3l":
+      return frame.usageSlot3Available ? frame.usageSlot3Label : "";
+    case "usageSlot3Percent":
+    case "us3p":
+      return frame.usageSlot3Available ? String(frame.usageSlot3Percent) : "";
+    case "usageSlot3Reset":
+    case "us3r":
+      return frame.usageSlot3Available ? formatReset(frame.usageSlot3ResetSecs) : "";
+    case "usageSlot3Available":
+    case "us3a":
+      return String(frame.usageSlot3Available);
+    case "usageSlot4Label":
+    case "us4l":
+      return frame.usageSlot4Available ? frame.usageSlot4Label : "";
+    case "usageSlot4Percent":
+    case "us4p":
+      return frame.usageSlot4Available ? String(frame.usageSlot4Percent) : "";
+    case "usageSlot4Reset":
+    case "us4r":
+      return frame.usageSlot4Available ? formatReset(frame.usageSlot4ResetSecs) : "";
+    case "usageSlot4Available":
+    case "us4a":
+      return String(frame.usageSlot4Available);
     case "usageMode":
     case "u":
       return frame.usageMode;
@@ -918,6 +1028,18 @@ function boundValue(key: string, frame: FrameData): string {
 
 function progressPercent(primitive: ThemePrimitive, frame: FrameData): number {
   const binding = primitive.binding || primitive.b || "";
+  if (binding === "usageSlot1Percent" || binding === "us1p") {
+    return frame.usageSlot1Available ? frame.usageSlot1Percent : 0;
+  }
+  if (binding === "usageSlot2Percent" || binding === "us2p") {
+    return frame.usageSlot2Available ? frame.usageSlot2Percent : 0;
+  }
+  if (binding === "usageSlot3Percent" || binding === "us3p") {
+    return frame.usageSlot3Available ? frame.usageSlot3Percent : 0;
+  }
+  if (binding === "usageSlot4Percent" || binding === "us4p") {
+    return frame.usageSlot4Available ? frame.usageSlot4Percent : 0;
+  }
   return binding === "weekly" || binding === "weeklyPercent" || binding === "w"
     ? frame.weekly
     : frame.session;

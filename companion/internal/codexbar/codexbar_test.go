@@ -1441,3 +1441,40 @@ func testSignal(at time.Time, confidence activitySignalConfidence, evidence stri
 		Evidence:   evidence,
 	}
 }
+
+func TestParseProviderPayloadBuildsFourDynamicUsageSlots(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"antigravity",
+			"usage":{
+				"primary":{"label":"Session","usedPercent":11,"resetSecs":100},
+				"secondary":{"label":"Weekly","usedPercent":22,"resetSecs":200},
+				"extraRateWindows":[
+					{"id":"gemini-weekly","label":"Gemini weekly","usedPercent":33,"resetSecs":300},
+					{"id":"claude-gpt-weekly","label":"Claude/GPT weekly","usedPercent":44,"resetSecs":400}
+				]
+			}
+		}
+	]`)
+
+	parsed, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatalf("parseAllProviders failed: %v", err)
+	}
+	slots := parsed[0].Frame.UsageSlots
+	if len(slots) != 4 {
+		t.Fatalf("expected four device slots, got %+v", slots)
+	}
+	if slots[0].Label != "Session" || slots[0].Percent != 11 || slots[0].ResetSec != 100 || !slots[0].Available {
+		t.Fatalf("expected first valid source window in slot 1, got %+v", slots[0])
+	}
+	if slots[1].Label != "Weekly" || slots[1].Percent != 22 || slots[1].ResetSec != 200 || !slots[1].Available {
+		t.Fatalf("expected second valid source window in slot 2, got %+v", slots[1])
+	}
+	if slots[2].Label != "Gemini weekly" || slots[2].Percent != 33 || slots[2].ResetSec != 300 || !slots[2].Available {
+		t.Fatalf("expected third valid source window in slot 3, got %+v", slots[2])
+	}
+	if slots[3].Label != "Claude/GPT weekly" || slots[3].Percent != 44 || slots[3].ResetSec != 400 || !slots[3].Available {
+		t.Fatalf("expected fourth valid source window in slot 4, got %+v", slots[3])
+	}
+}

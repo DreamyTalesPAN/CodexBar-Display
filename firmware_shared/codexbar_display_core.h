@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <cstdio>
 #include <cstring>
 
 #ifndef CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
@@ -16,6 +17,15 @@ namespace codexbar_display {
 namespace core {
 
 constexpr size_t kFrameLineBufferBytes = 2048;
+constexpr size_t kMaxUsageSlots = 4;
+
+struct UsageSlot {
+  String id;
+  String label;
+  int percent = 0;
+  int64_t resetSecs = 0;
+  bool available = false;
+};
 
 struct Frame {
   String provider;
@@ -24,6 +34,7 @@ struct Frame {
   int weekly = 0;
   int64_t resetSecs = 0;
   bool usageUnavailable = false;
+  UsageSlot usageSlots[kMaxUsageSlots];
   int64_t sessionTokens = 0;
   int64_t weekTokens = 0;
   int64_t totalTokens = 0;
@@ -124,10 +135,24 @@ inline bool IsSafeActivityName(const String& value) {
   return true;
 }
 
+inline bool UsageSlotChanged(const UsageSlot& previous, const UsageSlot& next) {
+  return previous.id != next.id ||
+         previous.label != next.label ||
+         previous.percent != next.percent ||
+         previous.resetSecs != next.resetSecs ||
+         previous.available != next.available;
+}
+
 inline bool UsageProgressChanged(const Frame& previous, const Frame& next) {
-  return previous.session != next.session ||
-         previous.weekly != next.weekly ||
-         previous.sessionTokens != next.sessionTokens ||
+  if (previous.session != next.session || previous.weekly != next.weekly) {
+    return true;
+  }
+  for (size_t i = 0; i < kMaxUsageSlots; ++i) {
+    if (UsageSlotChanged(previous.usageSlots[i], next.usageSlots[i])) {
+      return true;
+    }
+  }
+  return previous.sessionTokens != next.sessionTokens ||
          previous.weekTokens != next.weekTokens ||
          previous.totalTokens != next.totalTokens;
 }
@@ -205,18 +230,51 @@ inline bool FrameTokenStatsVisualChanged(const Frame& previous, const Frame& nex
 #endif
 }
 
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+inline bool ThemeSpecUsesUsageSlotBinding(const String& raw, size_t slotIndex) {
+  char longName[16] = {0};
+  char compactName[8] = {0};
+  std::snprintf(longName, sizeof(longName), "usageSlot%u", static_cast<unsigned>(slotIndex + 1));
+  std::snprintf(compactName, sizeof(compactName), "us%u", static_cast<unsigned>(slotIndex + 1));
+  return ThemeSpecUsesBinding(raw, longName, compactName);
+}
+
+inline uint32_t ThemeSpecUsageSlotField(size_t slotIndex) {
+  switch (slotIndex) {
+    case 0: return themespec::kThemeSpecFieldUsageSlot1;
+    case 1: return themespec::kThemeSpecFieldUsageSlot2;
+    case 2: return themespec::kThemeSpecFieldUsageSlot3;
+    case 3: return themespec::kThemeSpecFieldUsageSlot4;
+    default: return 0;
+  }
+}
+#endif
+
 inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& next, const String& raw) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   const bool usesLabel = ThemeSpecUsesBinding(raw, "label", "l");
+  bool usesUsageSlots = false;
+  for (size_t i = 0; i < kMaxUsageSlots; ++i) {
+    usesUsageSlots = usesUsageSlots || ThemeSpecUsesUsageSlotBinding(raw, i);
+  }
   const bool usesUsage = ThemeSpecUsesBinding(raw, "session", "s") ||
                          ThemeSpecUsesBinding(raw, "weekly", "w") ||
-                         ThemeSpecUsesBinding(raw, "reset", "r");
+                         ThemeSpecUsesBinding(raw, "reset", "r") ||
+                         usesUsageSlots;
   return (ThemeSpecUsesBinding(raw, "provider", "pr") && previous.provider != next.provider) ||
          (usesLabel &&
           (previous.label != next.label || previous.updateAvailable != next.updateAvailable)) ||
          (ThemeSpecUsesBinding(raw, "session", "s") && previous.session != next.session) ||
          (ThemeSpecUsesBinding(raw, "weekly", "w") && previous.weekly != next.weekly) ||
          (ThemeSpecUsesBinding(raw, "reset", "r") && previous.resetSecs != next.resetSecs) ||
+         (usesUsageSlots && [&]() {
+           for (size_t i = 0; i < kMaxUsageSlots; ++i) {
+             if (ThemeSpecUsesUsageSlotBinding(raw, i) && UsageSlotChanged(previous.usageSlots[i], next.usageSlots[i])) {
+               return true;
+             }
+           }
+           return false;
+         }()) ||
          (usesUsage && previous.usageUnavailable != next.usageUnavailable) ||
          (ThemeSpecUsesBinding(raw, "usageMode", "u") &&
           (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode)) ||
@@ -250,10 +308,18 @@ inline uint32_t ThemeSpecLiveChangedFields(const Frame& previous, const Frame& n
   if (previous.resetSecs != next.resetSecs) {
     fields |= themespec::kThemeSpecFieldReset;
   }
+  for (size_t i = 0; i < kMaxUsageSlots; ++i) {
+    if (UsageSlotChanged(previous.usageSlots[i], next.usageSlots[i])) {
+      fields |= ThemeSpecUsageSlotField(i);
+    }
+  }
   if (previous.usageUnavailable != next.usageUnavailable) {
     fields |= themespec::kThemeSpecFieldSession |
               themespec::kThemeSpecFieldWeekly |
               themespec::kThemeSpecFieldReset;
+    for (size_t i = 0; i < kMaxUsageSlots; ++i) {
+      fields |= ThemeSpecUsageSlotField(i);
+    }
   }
   if (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode) {
     fields |= themespec::kThemeSpecFieldUsageMode;
@@ -506,6 +572,26 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   out.weekly = ClampPct(doc["weekly"] | 0);
   out.resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(doc["resetSecs"] | 0));
   out.usageUnavailable = doc["usageUnavailable"] | false;
+  if (doc["usageSlots"].is<JsonArrayConst>()) {
+    JsonArrayConst slots = doc["usageSlots"].as<JsonArrayConst>();
+    int slotIndex = 0;
+    for (JsonObjectConst slot : slots) {
+      if (slotIndex >= static_cast<int>(kMaxUsageSlots)) {
+        break;
+      }
+      const bool available = slot["available"] | false;
+      const char* slotLabel = slot["label"] | "";
+      if (!available || slotLabel[0] == '\0') {
+        continue;
+      }
+      out.usageSlots[slotIndex].id = String(slot["id"] | "");
+      out.usageSlots[slotIndex].label = String(slotLabel);
+      out.usageSlots[slotIndex].percent = ClampPct(slot["percent"] | 0);
+      out.usageSlots[slotIndex].resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(slot["resetSecs"] | 0));
+      out.usageSlots[slotIndex].available = true;
+      ++slotIndex;
+    }
+  }
   out.timeText = String(doc["time"] | "");
   out.dateText = String(doc["date"] | "");
   out.sessionTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["sessionTokens"] | 0));

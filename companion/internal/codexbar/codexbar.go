@@ -761,21 +761,46 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		label = "Provider"
 	}
 
+	meta := parseProviderUsageMeta(payload)
 	return ParsedFrame{
 		Frame: protocol.Frame{
-			V:        1,
-			Provider: provider,
-			Label:    label,
-			Session:  session,
-			Weekly:   weekly,
-			ResetSec: resetSecs,
+			V:          1,
+			Provider:   provider,
+			Label:      label,
+			Session:    session,
+			Weekly:     weekly,
+			ResetSec:   resetSecs,
+			UsageSlots: usageSlotsFromWindows(meta.Windows),
 		},
 		Provider:           provider,
 		Source:             source,
 		AccountEmail:       accountEmail,
-		Meta:               parseProviderUsageMeta(payload),
+		Meta:               meta,
 		ActivityObservedAt: activityObservedAt,
 	}, nil
+}
+
+func usageSlotsFromWindows(windows []UsageWindow) []protocol.UsageSlot {
+	if len(windows) == 0 {
+		return nil
+	}
+	slots := make([]protocol.UsageSlot, 0, 4)
+	for _, window := range windows {
+		if len(slots) == 4 {
+			break
+		}
+		if strings.TrimSpace(window.ID) == "" || strings.TrimSpace(window.Label) == "" {
+			continue
+		}
+		slots = append(slots, protocol.UsageSlot{
+			ID:        window.ID,
+			Label:     window.Label,
+			Percent:   window.UsedPercent,
+			ResetSec:  window.ResetSec,
+			Available: true,
+		})
+	}
+	return slots
 }
 
 func parseProviderUsageMeta(payload map[string]any) ProviderUsageMeta {

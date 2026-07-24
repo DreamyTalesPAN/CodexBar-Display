@@ -180,3 +180,28 @@ func TestFrameNormalizeTrimsUpdateState(t *testing.T) {
 		t.Fatalf("unexpected normalized update state: %+v", normalized.Update)
 	}
 }
+
+func TestFrameNormalizeKeepsOnlyFourAvailableUsageSlots(t *testing.T) {
+	frame := Frame{UsageSlots: []UsageSlot{
+		{ID: " Weekly ", Label: "Weekly", Percent: 36, ResetSec: 10, Available: true},
+		{ID: "missing", Label: "Missing", Percent: 99, Available: false},
+		{ID: "spark", Label: "Codex Spark Weekly Window Name", Percent: 120, ResetSec: -1, Available: true},
+		{ID: "third", Label: "Third", Percent: 10, Available: true},
+		{ID: "fourth", Label: "Fourth", Percent: 20, Available: true},
+		{ID: "fifth", Label: "Fifth", Percent: 30, Available: true},
+	}}
+
+	normalized := frame.Normalize()
+	if len(normalized.UsageSlots) != 4 {
+		t.Fatalf("expected four available slots, got %+v", normalized.UsageSlots)
+	}
+	if normalized.UsageSlots[0].ID != "weekly" || normalized.UsageSlots[0].Percent != 36 || normalized.UsageSlots[0].ResetSec != 10 {
+		t.Fatalf("expected weekly slot preserved, got %+v", normalized.UsageSlots[0])
+	}
+	if normalized.UsageSlots[1].ID != "spark" || normalized.UsageSlots[1].Percent != 100 || normalized.UsageSlots[1].ResetSec != 0 || len(normalized.UsageSlots[1].Label) > 24 {
+		t.Fatalf("expected clamped spark slot, got %+v", normalized.UsageSlots[1])
+	}
+	if normalized.UsageSlots[3].ID != "fourth" {
+		t.Fatalf("expected fourth available slot, got %+v", normalized.UsageSlots[3])
+	}
+}
