@@ -312,3 +312,19 @@ issue scope, or release permission never implies UI permission.
 - Approved files: Companion port-owner classification and tests, native runtime
   endpoint rediscovery, its macOS contract test, and the matching architecture
   documentation.
+
+## 2026-07-24 — Immediate provider activation with truthful pending usage
+
+- User approval: In the delegated issue #247 task, the user explicitly required
+  missing or unknown provider values to use the existing unavailable/`??`
+  presentation instead of believable `0 %` or `100 %`, and then reported the
+  provider switch timeout plus stale zero-percent card as another bug to fix.
+- Approved customer-visible result: Enabling any provider returns immediately
+  with `Checking`. While CodexBar obtains that exact provider's fresh usage,
+  saved percentages that are no longer trustworthy show `??` without a reset
+  time. The same provider card updates automatically as soon as fresh usage
+  arrives; there is no timeout error, extra action, provider-specific copy, or
+  new UI component.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`,
+  `usage-screen.tsx`, Companion provider preferences and usage normalization,
+  and their regression tests.

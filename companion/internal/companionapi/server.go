@@ -701,6 +701,7 @@ type usageProviderInfo struct {
 	TotalTokens        int64                    `json:"totalTokens,omitempty"`
 	Activity           string                   `json:"activity,omitempty"`
 	Stale              bool                     `json:"stale"`
+	UsageUnavailable   bool                     `json:"usageUnavailable,omitempty"`
 	CollectedAt        string                   `json:"collectedAt,omitempty"`
 	ActivityObservedAt string                   `json:"activityObservedAt,omitempty"`
 	Windows            []usageWindowInfo        `json:"windows,omitempty"`
@@ -874,7 +875,6 @@ func New(opts Options) (*Server, error) {
 		providerPreferences: providerPreferencesState{
 			load:          codexbar.FetchProviderSettings,
 			set:           codexbar.SetProviderEnabled,
-			verify:        codexbar.ProbeProviderSetupForProvider,
 			loadInventory: codexbar.FetchProviderInventory,
 		},
 		updateFirmware:     runFirmwareUpdateCommand,
@@ -1372,6 +1372,58 @@ func (s *Server) invalidateUsageCache() {
 	defer s.usageCacheMu.Unlock()
 	s.usageCache = nil
 	s.usageCacheAt = time.Time{}
+}
+
+func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
+	now := s.currentTime().UTC()
+	const (
+		exactUsageMaxAge     = 15 * time.Minute
+		exactUsageFutureSkew = 5 * time.Minute
+	)
+	if parsed.CollectedAt.IsZero() ||
+		parsed.CollectedAt.After(now.Add(exactUsageFutureSkew)) ||
+		now.Sub(parsed.CollectedAt) > exactUsageMaxAge {
+		return
+	}
+	fresh, ok := usageProviderFromParsed(parsed)
+	if !ok || (fresh.UsageUnavailable && len(fresh.Windows) == 0) {
+		return
+	}
+
+	base := emptyUsageResponse(now, "codexbar")
+	if s.loadUsage != nil {
+		if persisted, ok := s.loadUsage(now); ok {
+			base = usageResponseFromPersisted(now, persisted)
+		}
+	}
+	s.usageCacheMu.Lock()
+	if s.usageCache != nil {
+		base = *s.usageCache
+	}
+	replaced := false
+	for i := range base.Providers {
+		if base.Providers[i].ID != fresh.ID {
+			continue
+		}
+		fresh = mergePersistedUsageDetails(
+			usageResponse{Providers: []usageProviderInfo{fresh}},
+			usageResponse{Providers: []usageProviderInfo{base.Providers[i]}},
+		).Providers[0]
+		base.Providers[i] = fresh
+		replaced = true
+		break
+	}
+	if !replaced {
+		base.Providers = append(base.Providers, fresh)
+	}
+	base.OK = true
+	base.GeneratedAt = now.Format(time.RFC3339)
+	base.Source = "codexbar"
+	base.UsageMode = usageModeForProviders(base.Providers)
+	base.CurrentProvider = fresh.ID
+	s.usageCache = &base
+	s.usageCacheAt = now
+	s.usageCacheMu.Unlock()
 }
 
 func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
@@ -1935,6 +1987,7 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		TotalTokens:        frame.TotalTokens,
 		Activity:           strings.TrimSpace(frame.Activity),
 		Stale:              snapshot.Stale,
+		UsageUnavailable:   snapshot.Stale || (frame.UsageUnavailable && len(snapshot.Meta.Windows) == 0),
 		CollectedAt:        formatOptionalTime(snapshot.CollectedAt),
 		ActivityObservedAt: formatOptionalTime(snapshot.ActivityObservedAt),
 		Windows:            usageWindowsFromMeta(snapshot.Meta),
@@ -1969,6 +2022,7 @@ func usageProviderFromParsed(parsed codexbar.ParsedFrame) (usageProviderInfo, bo
 		TotalTokens:        frame.TotalTokens,
 		Activity:           strings.TrimSpace(frame.Activity),
 		Stale:              parsed.Stale,
+		UsageUnavailable:   parsed.Stale || (frame.UsageUnavailable && len(parsed.Meta.Windows) == 0),
 		CollectedAt:        formatOptionalTime(parsed.CollectedAt),
 		ActivityObservedAt: formatOptionalTime(parsed.ActivityObservedAt),
 		Windows:            usageWindowsFromMeta(parsed.Meta),

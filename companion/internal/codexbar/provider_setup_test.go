@@ -327,9 +327,43 @@ func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 	if got.Providers[0].Source != "cli" || got.Providers[0].CollectedAt != "2026-07-24T08:00:00Z" {
 		t.Fatalf("missing safe source/freshness diagnostics: %+v", got.Providers[0])
 	}
+	if got.ExactUsage == nil || got.ExactUsage.Provider != "antigravity" ||
+		got.ExactUsage.Frame.Session != 17 || got.ExactUsage.Frame.Weekly != 23 ||
+		got.ExactUsage.CollectedAt.Format(time.RFC3339) != "2026-07-24T08:00:00Z" {
+		t.Fatalf("exact usage was not retained for immediate companion refresh: %+v", got.ExactUsage)
+	}
 	want := []string{"usage", "--json", "--provider", "antigravity", "--source", "auto", "--web-timeout", "8"}
 	if !reflect.DeepEqual(usageArgs, want) {
 		t.Fatalf("unexpected exact usage args: got %v want %v", usageArgs, want)
+	}
+}
+
+func TestProbeProviderSetupForProviderDoesNotCacheUndatedExactUsage(t *testing.T) {
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	defer func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	}()
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	setExistingConfig(t)
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.44.0"), nil
+	}
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if len(args) >= 2 && args[0] == "config" && args[1] == "providers" {
+			return []byte(`[{"provider":"future-provider","displayName":"Future Provider","enabled":true}]`), nil
+		}
+		return []byte(`[{"provider":"future-provider","source":"oauth","usage":{"secondary":{"usedPercent":23}}}]`), nil
+	}
+
+	got := ProbeProviderSetupForProvider(context.Background(), t.TempDir(), "future-provider")
+	if got.Status != ProviderReady || got.ExactUsage != nil {
+		t.Fatalf("undated provider usage must be ready but not immediately cached: %+v", got)
 	}
 }
 
