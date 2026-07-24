@@ -3106,37 +3106,71 @@ func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing
 	}
 }
 
-func TestPreferAvailableProvidersDoesNotLetUnavailableDisplaceFresh(t *testing.T) {
-	providers := preferAvailableProviders([]codexbar.ParsedFrame{
-		{Provider: "gemini", Frame: protocol.Frame{Provider: "gemini", UsageUnavailable: true}},
-		testParsedFrame("antigravity", 17, 42, 3600),
-	})
-	if len(providers) != 1 || providers[0].Provider != "antigravity" {
-		t.Fatalf("fresh Antigravity must displace stale Gemini, got %#v", providers)
+func TestProviderCollectorPreservesFreshPartialUsageAndWindows(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{{
+				Provider: "codex",
+				Source:   "oauth",
+				Frame: protocol.Frame{
+					Provider:           "codex",
+					Label:              "Codex",
+					Weekly:             57,
+					SessionUnavailable: true,
+				},
+				Meta: codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{
+					{ID: "secondary", Label: "Weekly", UsedPercent: 57},
+					{ID: "codex-spark-weekly", Label: "Codex Spark Weekly", UsedPercent: 12},
+				}},
+			}}, nil
+		},
+	}
+
+	collector.collectOnce(context.Background())
+	frames := collector.providerFrames(now)
+	if len(frames) != 1 {
+		t.Fatalf("expected one partial provider snapshot, got %#v", frames)
+	}
+	got := frames[0]
+	if got.Stale || got.Frame.UsageUnavailable || !got.Frame.SessionUnavailable ||
+		got.Frame.WeeklyUnavailable || got.Frame.Weekly != 57 {
+		t.Fatalf("partial usage was not kept fresh: %#v", got)
+	}
+	if !got.CollectedAt.Equal(now) || len(got.Meta.Windows) != 2 ||
+		got.Meta.Windows[1].Label != "Codex Spark Weekly" {
+		t.Fatalf("partial usage metadata was lost: %#v", got)
 	}
 }
 
-func TestRunCycleSendsFreshAntigravityInsteadOfUnavailableGemini(t *testing.T) {
+func TestRunCycleCanSelectPartialActiveProviderWhenCompleteProviderExists(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	var sent []byte
 	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	state.selector.SetCurrentProvider("codex")
 	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
 		now:         time.Now,
 		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
 		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
 			return []codexbar.ParsedFrame{
+				testParsedFrame("antigravity", 17, 42, 3600),
 				{
-					Provider: "gemini",
+					Provider: "codex",
 					Frame: protocol.Frame{
-						Provider:         "gemini",
-						Label:            "Gemini",
-						Session:          0,
-						Weekly:           0,
-						UsageUnavailable: true,
+						Provider:           "codex",
+						Label:              "Codex",
+						Weekly:             57,
+						SessionUnavailable: true,
 					},
 				},
-				testParsedFrame("antigravity", 17, 42, 3600),
 			}, nil
 		},
 		sendLine: func(_ string, line []byte) error {
@@ -3150,8 +3184,9 @@ func TestRunCycleSendsFreshAntigravityInsteadOfUnavailableGemini(t *testing.T) {
 	}
 
 	frame := decodeFrameLine(t, sent)
-	if frame.Provider != "antigravity" || frame.UsageUnavailable || frame.Session != 17 || frame.Weekly != 42 {
-		t.Fatalf("old Gemini zero/100%% carrier displaced fresh Antigravity: %#v", frame)
+	if frame.Provider != "codex" || frame.UsageUnavailable || !frame.SessionUnavailable ||
+		frame.WeeklyUnavailable || frame.Weekly != 57 {
+		t.Fatalf("partial sticky provider was excluded from normal selection: %#v", frame)
 	}
 }
 

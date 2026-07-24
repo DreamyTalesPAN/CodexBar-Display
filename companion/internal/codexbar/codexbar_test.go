@@ -29,18 +29,25 @@ func TestParseUsageJSONReturnsFirstProvider(t *testing.T) {
 	}
 }
 
-func TestParseProviderPayloadMarksMissingOrUnknownLanesUnavailable(t *testing.T) {
+func TestParseProviderPayloadPreservesKnownLaneWhenOtherLaneIsUnknown(t *testing.T) {
 	tests := []struct {
-		name string
-		raw  string
+		name               string
+		raw                string
+		sessionUnavailable bool
+		weeklyUnavailable  bool
+		knownPercent       int
 	}{
 		{
-			name: "missing secondary",
-			raw:  `[{"provider":"antigravity","source":"cli","usage":{"primary":{"usedPercent":17}}}]`,
+			name:              "missing secondary",
+			raw:               `[{"provider":"antigravity","source":"cli","usage":{"primary":{"usedPercent":17}}}]`,
+			weeklyUnavailable: true,
+			knownPercent:      17,
 		},
 		{
-			name: "explicit unknown primary",
-			raw:  `[{"provider":"antigravity","source":"cli","usage":{"primary":{"usedPercent":0,"usageKnown":false},"secondary":{"usedPercent":23}}}]`,
+			name:               "explicit unknown primary",
+			raw:                `[{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":0,"usageKnown":false},"secondary":{"usedPercent":57},"extra":[{"id":"codex-spark-weekly","label":"Codex Spark Weekly","usedPercent":12}]}}]`,
+			sessionUnavailable: true,
+			knownPercent:       57,
 		},
 	}
 	for _, test := range tests {
@@ -49,8 +56,18 @@ func TestParseProviderPayloadMarksMissingOrUnknownLanesUnavailable(t *testing.T)
 			if err != nil {
 				t.Fatalf("parse usage: %v", err)
 			}
-			if !parsed.Frame.UsageUnavailable {
-				t.Fatalf("unknown lane became trustworthy usage: %#v", parsed.Frame)
+			if parsed.Frame.UsageUnavailable {
+				t.Fatalf("one unknown lane made the whole provider unavailable: %#v", parsed.Frame)
+			}
+			if parsed.Frame.SessionUnavailable != test.sessionUnavailable ||
+				parsed.Frame.WeeklyUnavailable != test.weeklyUnavailable {
+				t.Fatalf("unexpected lane availability: %#v", parsed.Frame)
+			}
+			if len(parsed.Meta.Windows) == 0 {
+				t.Fatalf("known usage windows were lost: %#v", parsed.Meta)
+			}
+			if got := parsed.Meta.Windows[0].UsedPercent; got != test.knownPercent {
+				t.Fatalf("known lane changed: got %d want %d", got, test.knownPercent)
 			}
 		})
 	}
@@ -601,6 +618,51 @@ func TestProviderSelectorPrefersRecentLocalActivity(t *testing.T) {
 	}
 	if selected.Provider != "claude" {
 		t.Fatalf("expected claude from local activity, got %q", selected.Provider)
+	}
+}
+
+func TestProviderSelectorOrderFallbackPrefersAvailableProvider(t *testing.T) {
+	selector := NewProviderSelector()
+	decision, ok := selector.SelectWithDecision([]ParsedFrame{
+		{
+			Provider: "gemini",
+			Stale:    true,
+			Frame: protocol.Frame{
+				Provider:         "gemini",
+				UsageUnavailable: true,
+			},
+		},
+		testParsedFrame("antigravity", 17, 42, 3600),
+	})
+	if !ok {
+		t.Fatal("expected a selected provider")
+	}
+	if decision.Selected.Provider != "antigravity" ||
+		decision.Reason != SelectionReasonCodexbarOrder {
+		t.Fatalf("unavailable first provider displaced available fallback: %#v", decision)
+	}
+}
+
+func TestProviderSelectorStickyFallbackDoesNotHoldUnavailableProvider(t *testing.T) {
+	selector := NewProviderSelector()
+	selector.SetCurrentProvider("gemini")
+	decision, ok := selector.SelectWithDecision([]ParsedFrame{
+		testParsedFrame("antigravity", 17, 42, 3600),
+		{
+			Provider: "gemini",
+			Stale:    true,
+			Frame: protocol.Frame{
+				Provider:         "gemini",
+				UsageUnavailable: true,
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("expected a selected provider")
+	}
+	if decision.Selected.Provider != "antigravity" ||
+		decision.Reason != SelectionReasonCodexbarOrder {
+		t.Fatalf("unavailable sticky provider displaced available fallback: %#v", decision)
 	}
 }
 

@@ -942,16 +942,6 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		result.failureErr = codexbar.ErrNoProviders
 		return finalizeCycleResult(state, result, now)
 	}
-	allProviders = preferAvailableProviders(allProviders)
-	if allProviders[0].Frame.UsageUnavailable && state != nil && state.hasLastGood && isLastGoodFreshAt(state.lastGoodAt, now, lastGoodMaxAge()) {
-		result.frame = state.lastGood
-		result.usedLastGood = true
-		result.selectionReason = "stale-last-good"
-		result.selectionDetail = "provider-unavailable"
-		result.usageSource = "last-good"
-		return result
-	}
-
 	decision, ok := state.selector.SelectWithDecision(allProviders)
 	if !ok {
 		result.failureKind = runtimeErrorNoProviders
@@ -975,19 +965,6 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	}
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
-}
-
-func preferAvailableProviders(all []codexbar.ParsedFrame) []codexbar.ParsedFrame {
-	available := make([]codexbar.ParsedFrame, 0, len(all))
-	for _, parsed := range all {
-		if !parsed.Frame.UsageUnavailable {
-			available = append(available, parsed)
-		}
-	}
-	if len(available) > 0 {
-		return available
-	}
-	return all
 }
 
 func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time) cycleResult {

@@ -530,9 +530,49 @@ function UsageProviderTile({
 
 function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
   if (provider.windows?.length) {
+    const primary = provider.windows.find((window) => window.id === "primary");
+    const secondary = provider.windows.find(
+      (window) => window.id === "secondary",
+    );
+    const extras = provider.windows.filter(
+      (window) => window.id !== "primary" && window.id !== "secondary",
+    );
+    const hasNormalizedWindow = Boolean(primary || secondary);
+    const primaryUnavailable =
+      provider.usageUnavailable || provider.sessionUnavailable;
+    const secondaryUnavailable =
+      provider.usageUnavailable || provider.weeklyUnavailable;
     return (
       <div className="grid gap-4">
-        {provider.windows.map((window) => (
+        {primary || (hasNormalizedWindow && primaryUnavailable) ? (
+          <UsageWindowBar
+            key="primary"
+            mode={provider.usageMode}
+            unavailable={primaryUnavailable}
+            window={
+              primary || {
+                id: "primary",
+                label: "Session",
+                usedPercent: provider.session,
+              }
+            }
+          />
+        ) : null}
+        {secondary || (hasNormalizedWindow && secondaryUnavailable) ? (
+          <UsageWindowBar
+            key="secondary"
+            mode={provider.usageMode}
+            unavailable={secondaryUnavailable}
+            window={
+              secondary || {
+                id: "secondary",
+                label: "Weekly",
+                usedPercent: provider.weekly,
+              }
+            }
+          />
+        ) : null}
+        {extras.map((window) => (
           <UsageWindowBar
             key={window.id}
             mode={provider.usageMode}
@@ -550,14 +590,16 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
         label="Session"
         mode={provider.usageMode}
         resetSecs={provider.resetSecs}
-        unavailable={provider.usageUnavailable}
+        unavailable={
+          provider.usageUnavailable || provider.sessionUnavailable
+        }
         value={provider.session}
       />
       <UsageBar
         label="Weekly"
         mode={provider.usageMode}
         resetSecs={provider.resetSecs}
-        unavailable={provider.usageUnavailable}
+        unavailable={provider.usageUnavailable || provider.weeklyUnavailable}
         value={provider.weekly}
       />
     </div>

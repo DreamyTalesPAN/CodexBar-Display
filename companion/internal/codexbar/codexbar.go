@@ -763,16 +763,15 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 
 	return ParsedFrame{
 		Frame: protocol.Frame{
-			V:        1,
-			Provider: provider,
-			Label:    label,
-			Session:  session,
-			Weekly:   weekly,
-			ResetSec: resetSecs,
-			// The device protocol cannot represent one unknown lane without
-			// making its numeric zero look real. Reuse the existing generic
-			// unavailable rendering until both normalized lanes are known.
-			UsageUnavailable: !sessionKnown || !weeklyKnown,
+			V:                  1,
+			Provider:           provider,
+			Label:              label,
+			Session:            session,
+			Weekly:             weekly,
+			ResetSec:           resetSecs,
+			UsageUnavailable:   !sessionKnown && !weeklyKnown,
+			SessionUnavailable: !sessionKnown,
+			WeeklyUnavailable:  !weeklyKnown,
 		},
 		Provider:           provider,
 		Source:             source,
@@ -1761,7 +1760,11 @@ func (s *ProviderSelector) SelectWithDecision(all []ParsedFrame) (SelectionDecis
 		s.conflictWindow = defaultActivityConflictWindow
 	}
 
+	availableIdx := firstAvailableProviderIndex(all)
 	selected := all[0]
+	if availableIdx >= 0 {
+		selected = all[availableIdx]
+	}
 	reason := SelectionReasonCodexbarOrder
 	detail := "initial-provider-order"
 
@@ -1775,9 +1778,13 @@ func (s *ProviderSelector) SelectWithDecision(all []ParsedFrame) (SelectionDecis
 		detail = fmt.Sprintf("provider=%s score=%s", providerKey(byDelta), formatActivityScore(score))
 	} else if s.currentKey != "" {
 		if idx := indexOfProviderKey(all, s.currentKey); idx >= 0 {
-			selected = all[idx]
-			reason = SelectionReasonStickyCurrent
-			detail = fmt.Sprintf("provider=%s", s.currentKey)
+			if providerUsageAvailable(all[idx]) || availableIdx < 0 {
+				selected = all[idx]
+				reason = SelectionReasonStickyCurrent
+				detail = fmt.Sprintf("provider=%s", s.currentKey)
+			} else {
+				detail = fmt.Sprintf("current-provider-unavailable provider=%s", s.currentKey)
+			}
 		} else {
 			detail = "current-provider-missing"
 		}
@@ -1810,6 +1817,19 @@ func (s *ProviderSelector) SelectWithDecision(all []ParsedFrame) (SelectionDecis
 		ActivitySignalReason: resultSignalReason,
 		ActivityDetail:       resultActivityDetail,
 	}, true
+}
+
+func firstAvailableProviderIndex(all []ParsedFrame) int {
+	for i := range all {
+		if providerUsageAvailable(all[i]) {
+			return i
+		}
+	}
+	return -1
+}
+
+func providerUsageAvailable(provider ParsedFrame) bool {
+	return !provider.Stale && !provider.Frame.UsageUnavailable
 }
 
 func (s *ProviderSelector) selectByRecentLocalActivity(all []ParsedFrame) (ParsedFrame, string, bool) {

@@ -702,6 +702,8 @@ type usageProviderInfo struct {
 	Activity           string                   `json:"activity,omitempty"`
 	Stale              bool                     `json:"stale"`
 	UsageUnavailable   bool                     `json:"usageUnavailable,omitempty"`
+	SessionUnavailable bool                     `json:"sessionUnavailable,omitempty"`
+	WeeklyUnavailable  bool                     `json:"weeklyUnavailable,omitempty"`
 	CollectedAt        string                   `json:"collectedAt,omitempty"`
 	ActivityObservedAt string                   `json:"activityObservedAt,omitempty"`
 	Windows            []usageWindowInfo        `json:"windows,omitempty"`
@@ -1988,6 +1990,8 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		Activity:           strings.TrimSpace(frame.Activity),
 		Stale:              snapshot.Stale,
 		UsageUnavailable:   snapshot.Stale || (frame.UsageUnavailable && len(snapshot.Meta.Windows) == 0),
+		SessionUnavailable: snapshot.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
+		WeeklyUnavailable:  snapshot.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
 		CollectedAt:        formatOptionalTime(snapshot.CollectedAt),
 		ActivityObservedAt: formatOptionalTime(snapshot.ActivityObservedAt),
 		Windows:            usageWindowsFromMeta(snapshot.Meta),
@@ -2023,6 +2027,8 @@ func usageProviderFromParsed(parsed codexbar.ParsedFrame) (usageProviderInfo, bo
 		Activity:           strings.TrimSpace(frame.Activity),
 		Stale:              parsed.Stale,
 		UsageUnavailable:   parsed.Stale || (frame.UsageUnavailable && len(parsed.Meta.Windows) == 0),
+		SessionUnavailable: parsed.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
+		WeeklyUnavailable:  parsed.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
 		CollectedAt:        formatOptionalTime(parsed.CollectedAt),
 		ActivityObservedAt: formatOptionalTime(parsed.ActivityObservedAt),
 		Windows:            usageWindowsFromMeta(parsed.Meta),

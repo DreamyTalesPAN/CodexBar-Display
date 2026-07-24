@@ -45,6 +45,8 @@ struct FrameData {
   int weekly = 0;
   int64_t resetSecs = 0;
   bool usageUnavailable = false;
+  bool sessionUnavailable = false;
+  bool weeklyUnavailable = false;
   const char* usageMode = "";
   const char* activity = "idle";
   const char* time = "";
@@ -462,7 +464,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     return;
   }
   if (std::strcmp(key, "session") == 0 || std::strcmp(key, "sessionPercent") == 0 || std::strcmp(key, "s") == 0) {
-    if (frame.usageUnavailable) {
+    if (frame.usageUnavailable || frame.sessionUnavailable) {
       std::snprintf(out, outSize, "??");
     } else {
       std::snprintf(out, outSize, "%d", ClampPct(frame.session));
@@ -470,7 +472,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     return;
   }
   if (std::strcmp(key, "weekly") == 0 || std::strcmp(key, "weeklyPercent") == 0 || std::strcmp(key, "w") == 0) {
-    if (frame.usageUnavailable) {
+    if (frame.usageUnavailable || frame.weeklyUnavailable) {
       std::snprintf(out, outSize, "??");
     } else {
       std::snprintf(out, outSize, "%d", ClampPct(frame.weekly));
@@ -1135,6 +1137,16 @@ inline int CompiledProgressPercentFor(const CompiledPrimitive& primitive, const 
   return ClampPct(frame.session);
 }
 
+inline bool CompiledProgressLaneUnavailable(const CompiledPrimitive& primitive, const FrameData& frame) {
+  if (frame.usageUnavailable) {
+    return false;
+  }
+  if (StringEqualsAny(primitive.binding, "weekly", "weeklyPercent", "w")) {
+    return frame.weeklyUnavailable;
+  }
+  return frame.sessionUnavailable;
+}
+
 inline bool CompiledPrimitiveIsAnimated(const CompiledPrimitive& primitive, const FrameData& frame) {
   if (primitive.kind == PrimitiveKind::Gif) {
     return true;
@@ -1242,6 +1254,9 @@ inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const Fram
   }
 
   if (primitive.kind == PrimitiveKind::Progress) {
+    if (CompiledProgressLaneUnavailable(primitive, frame)) {
+      return false;
+    }
     ProgressCommand cmd;
     cmd.x = primitive.x;
     cmd.y = primitive.y;

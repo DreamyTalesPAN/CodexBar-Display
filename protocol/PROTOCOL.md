@@ -26,7 +26,8 @@ Fields:
 - `session` (number, optional): session usage percent `0..100`.
 - `weekly` (number, optional): weekly usage percent `0..100`.
 - `resetSecs` (number, optional): seconds remaining until reset.
-- `usageUnavailable` (boolean, optional): current quota values are not trustworthy; missing/false remains backward compatible. ThemeSpec text bindings show unknown values while progress keeps the numeric carrier values.
+- `usageUnavailable` (boolean, optional): both current quota values are not trustworthy; missing/false remains backward compatible. ThemeSpec text bindings show unknown values while progress keeps the numeric carrier values.
+- `sessionUnavailable` / `weeklyUnavailable` (boolean, optional): only that existing usage lane is unknown. Missing/false remains backward compatible. Its text binding shows `??` and its progress primitive is omitted. `usageUnavailable:true` still overrides both lanes, including stale frames.
 - `usageMode` (string, optional): semantic of `session`/`weekly` (`used` or `remaining`).
 - `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
 - `weekTokens` (number, optional): rolling 7-day token total when available.
