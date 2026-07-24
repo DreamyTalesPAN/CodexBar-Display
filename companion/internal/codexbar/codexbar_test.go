@@ -29,6 +29,68 @@ func TestParseUsageJSONReturnsFirstProvider(t *testing.T) {
 	}
 }
 
+func TestParseProviderPayloadPreservesKnownLaneWhenOtherLaneIsUnknown(t *testing.T) {
+	tests := []struct {
+		name               string
+		raw                string
+		sessionUnavailable bool
+		weeklyUnavailable  bool
+		knownPercent       int
+	}{
+		{
+			name:              "missing secondary",
+			raw:               `[{"provider":"antigravity","source":"cli","usage":{"primary":{"usedPercent":17}}}]`,
+			weeklyUnavailable: true,
+			knownPercent:      17,
+		},
+		{
+			name:               "explicit unknown primary",
+			raw:                `[{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":0,"usageKnown":false},"secondary":{"usedPercent":57},"extra":[{"id":"codex-spark-weekly","label":"Codex Spark Weekly","usedPercent":12}]}}]`,
+			sessionUnavailable: true,
+			knownPercent:       57,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parsed, err := parseUsageJSON([]byte(test.raw))
+			if err != nil {
+				t.Fatalf("parse usage: %v", err)
+			}
+			if parsed.Frame.UsageUnavailable {
+				t.Fatalf("one unknown lane made the whole provider unavailable: %#v", parsed.Frame)
+			}
+			if parsed.Frame.SessionUnavailable != test.sessionUnavailable ||
+				parsed.Frame.WeeklyUnavailable != test.weeklyUnavailable {
+				t.Fatalf("unexpected lane availability: %#v", parsed.Frame)
+			}
+			if len(parsed.Meta.Windows) == 0 {
+				t.Fatalf("known usage windows were lost: %#v", parsed.Meta)
+			}
+			if got := parsed.Meta.Windows[0].UsedPercent; got != test.knownPercent {
+				t.Fatalf("known lane changed: got %d want %d", got, test.knownPercent)
+			}
+		})
+	}
+}
+
+func TestParseProviderPayloadAcceptsKnownZeroPercentLanes(t *testing.T) {
+	parsed, err := parseUsageJSON([]byte(`[
+		{"provider":"antigravity","source":"cli","usage":{
+			"primary":{"usedPercent":0,"usageKnown":true},
+			"secondary":{"usedPercent":0}
+		}}
+	]`))
+	if err != nil {
+		t.Fatalf("parse usage: %v", err)
+	}
+	if parsed.Frame.UsageUnavailable {
+		t.Fatalf("known zero-percent lanes were marked unavailable: %#v", parsed.Frame)
+	}
+	if len(parsed.Meta.Windows) != 2 {
+		t.Fatalf("known zero-percent lanes must remain in normalized windows: %#v", parsed.Meta.Windows)
+	}
+}
+
 func TestParseUsageJSONHandlesConcatenatedTopLevelArrays(t *testing.T) {
 	raw := []byte(`[
 		{"provider":"codex","usage":{"primary":{"usedPercent":1}}}
@@ -556,6 +618,51 @@ func TestProviderSelectorPrefersRecentLocalActivity(t *testing.T) {
 	}
 	if selected.Provider != "claude" {
 		t.Fatalf("expected claude from local activity, got %q", selected.Provider)
+	}
+}
+
+func TestProviderSelectorOrderFallbackPrefersAvailableProvider(t *testing.T) {
+	selector := NewProviderSelector()
+	decision, ok := selector.SelectWithDecision([]ParsedFrame{
+		{
+			Provider: "gemini",
+			Stale:    true,
+			Frame: protocol.Frame{
+				Provider:         "gemini",
+				UsageUnavailable: true,
+			},
+		},
+		testParsedFrame("antigravity", 17, 42, 3600),
+	})
+	if !ok {
+		t.Fatal("expected a selected provider")
+	}
+	if decision.Selected.Provider != "antigravity" ||
+		decision.Reason != SelectionReasonCodexbarOrder {
+		t.Fatalf("unavailable first provider displaced available fallback: %#v", decision)
+	}
+}
+
+func TestProviderSelectorStickyFallbackDoesNotHoldUnavailableProvider(t *testing.T) {
+	selector := NewProviderSelector()
+	selector.SetCurrentProvider("gemini")
+	decision, ok := selector.SelectWithDecision([]ParsedFrame{
+		testParsedFrame("antigravity", 17, 42, 3600),
+		{
+			Provider: "gemini",
+			Stale:    true,
+			Frame: protocol.Frame{
+				Provider:         "gemini",
+				UsageUnavailable: true,
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("expected a selected provider")
+	}
+	if decision.Selected.Provider != "antigravity" ||
+		decision.Reason != SelectionReasonCodexbarOrder {
+		t.Fatalf("unavailable sticky provider displaced available fallback: %#v", decision)
 	}
 }
 
@@ -1266,6 +1373,103 @@ func TestFetchProviderScopedUsageDetailedReturnsSanitizedProviderError(t *testin
 	if providerKey(parsed) != "cursor" || !parsed.Frame.UsageUnavailable || parsed.Frame.Error != "" {
 		t.Fatalf("unexpected sanitized provider result: %#v", parsed)
 	}
+}
+
+func TestFetchProviderScopedUsageDetailedRejectsDifferentReadyProvider(t *testing.T) {
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() {
+		runUsageCommandFn = originalRunUsageCommand
+	}()
+
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, _ ...string) ([]byte, error) {
+		return []byte(`[
+			{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":7},"secondary":{"usedPercent":13}}}
+		]`), nil
+	}
+
+	_, err := fetchProviderScopedUsageDetailed(context.Background(), 5*time.Second, "/bin/sh", "antigravity", 8, "auto")
+	if err == nil || FetchErrorKindOf(err) != FetchErrorNoProviders {
+		t.Fatalf("different provider must not satisfy exact readiness: %v", err)
+	}
+}
+
+func TestLiveAntigravityAutoUsageMatchesCompanionNormalization(t *testing.T) {
+	if os.Getenv("CODEXBAR_LIVE_ANTIGRAVITY_TEST") != "1" {
+		t.Skip("set CODEXBAR_LIVE_ANTIGRAVITY_TEST=1 for the read-only installed-provider check")
+	}
+
+	bin, err := FindBinary()
+	if err != nil {
+		t.Fatal("installed CodexBar CLI is unavailable")
+	}
+	raw, err := runUsageCommand(
+		context.Background(),
+		60*time.Second,
+		bin,
+		"usage",
+		"--json",
+		"--provider",
+		"antigravity",
+		"--source",
+		"auto",
+		"--web-timeout",
+		"8",
+	)
+	if err != nil {
+		t.Fatal("live Antigravity auto-source query failed")
+	}
+
+	providers, err := extractProvidersFromRawJSON(raw)
+	if err != nil {
+		t.Fatal("live Antigravity response was not valid provider JSON")
+	}
+	var direct map[string]any
+	for _, item := range providers {
+		payload, ok := item.(map[string]any)
+		if ok && strings.EqualFold(strings.TrimSpace(firstStringAtPaths(payload, "provider", "id", "key")), "antigravity") {
+			direct = payload
+			break
+		}
+	}
+	if direct == nil {
+		t.Fatal("live response did not contain the requested Antigravity provider")
+	}
+
+	primary, primaryKnown := knownUsagePercentAtPaths(direct, "usage.primary", "primary")
+	secondary, secondaryKnown := knownUsagePercentAtPaths(direct, "usage.secondary", "secondary")
+	normalized, err := parseProviderPayload(direct)
+	if err != nil {
+		t.Fatal("Companion could not normalize the live Antigravity response")
+	}
+	if !primaryKnown || !secondaryKnown || normalized.Frame.UsageUnavailable {
+		t.Fatal("live Antigravity response did not contain two trustworthy normalized lanes")
+	}
+	if normalized.Provider != "antigravity" ||
+		normalized.Frame.Session != primary ||
+		normalized.Frame.Weekly != secondary {
+		t.Fatalf(
+			"Companion normalization mismatch: provider=%s primary=%d secondary=%d",
+			normalized.Provider,
+			normalized.Frame.Session,
+			normalized.Frame.Weekly,
+		)
+	}
+	if normalized.Source == "" {
+		t.Fatal("live Antigravity response did not contain a source label")
+	}
+	if normalized.ActivityObservedAt.IsZero() {
+		t.Fatal("live Antigravity response did not contain a fresh usage timestamp")
+	}
+
+	t.Logf(
+		"provider=%s source=%s primary=%d secondary=%d timestamp=%s unavailable=%t",
+		normalized.Provider,
+		normalized.Source,
+		normalized.Frame.Session,
+		normalized.Frame.Weekly,
+		normalized.ActivityObservedAt.UTC().Format(time.RFC3339),
+		normalized.Frame.UsageUnavailable,
+	)
 }
 
 func TestFallbackContextDetachedWhenParentExpired(t *testing.T) {

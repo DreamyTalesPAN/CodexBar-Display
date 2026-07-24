@@ -134,6 +134,86 @@ func TestProviderRetryDoesNotWakeStreamUntilReady(t *testing.T) {
 	}
 }
 
+func TestProviderRetryCanTargetExactProvider(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	var gotProvider string
+	server.probeExactProvider = func(_ context.Context, _ string, providerID string) codexbar.ProviderSetup {
+		gotProvider = providerID
+		return codexbar.ProviderSetup{
+			Status: "setup_required",
+			Providers: []codexbar.ProviderReadiness{{
+				ID: "future-provider", Label: "Future Provider", Enabled: true, Status: codexbar.ProviderAuthRequired,
+			}},
+		}
+	}
+	woke := false
+	server.wakeDisplayStream = func() { woke = true }
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(
+		rec,
+		httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=future-provider", nil),
+	)
+	if rec.Code != http.StatusOK || gotProvider != "future-provider" || woke {
+		t.Fatalf("unexpected exact retry: status=%d provider=%q woke=%t body=%s", rec.Code, gotProvider, woke, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"id":"future-provider"`) ||
+		!strings.Contains(rec.Body.String(), `"status":"auth_required"`) {
+		t.Fatalf("exact provider identity/readiness missing: %s", rec.Body.String())
+	}
+}
+
+func TestExactProviderRetryIsSingleFlight(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	var probes atomic.Int32
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server.probeExactProvider = func(_ context.Context, _ string, providerID string) codexbar.ProviderSetup {
+		if probes.Add(1) == 1 {
+			close(started)
+		}
+		<-release
+		return codexbar.ProviderSetup{
+			Status: codexbar.ProviderReady,
+			Providers: []codexbar.ProviderReadiness{{
+				ID: providerID, Label: "Future Provider", Enabled: true, Status: codexbar.ProviderReady,
+			}},
+		}
+	}
+
+	const requests = 2
+	results := make(chan *httptest.ResponseRecorder, requests)
+	var waitGroup sync.WaitGroup
+	startRequests := make(chan struct{})
+	for range requests {
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			<-startRequests
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(
+				recorder,
+				httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=future-provider", nil),
+			)
+			results <- recorder
+		}()
+	}
+	close(startRequests)
+	<-started
+	time.Sleep(20 * time.Millisecond)
+	close(release)
+	waitGroup.Wait()
+	close(results)
+	for recorder := range results {
+		if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"status":"ready"`) {
+			t.Fatalf("unexpected exact retry response: status=%d body=%s", recorder.Code, recorder.Body.String())
+		}
+	}
+	if probes.Load() != 1 {
+		t.Fatalf("parallel exact retries started %d probes", probes.Load())
+	}
+}
+
 func TestOpenCodexBarUsesFixedActionAndReturnsSetup(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	called := false

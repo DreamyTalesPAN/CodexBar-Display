@@ -312,3 +312,81 @@ issue scope, or release permission never implies UI permission.
 - Approved files: Companion port-owner classification and tests, native runtime
   endpoint rediscovery, its macOS contract test, and the matching architecture
   documentation.
+
+## 2026-07-24 — Immediate provider activation with truthful pending usage
+
+- User approval: In the delegated issue #247 task, the user explicitly required
+  missing or unknown provider values to use the existing unavailable/`??`
+  presentation instead of believable `0 %` or `100 %`, and then reported the
+  provider switch timeout plus stale zero-percent card as another bug to fix.
+- Approved customer-visible result: Enabling any provider returns immediately
+  with `Checking`. While CodexBar obtains that exact provider's fresh usage,
+  saved percentages that are no longer trustworthy show `??` without a reset
+  time. The same provider card updates automatically as soon as fresh usage
+  arrives; there is no timeout error, extra action, provider-specific copy, or
+  new UI component.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`,
+  `usage-screen.tsx`, Companion provider preferences and usage normalization,
+  and their regression tests.
+
+## 2026-07-24 — Truthful partial provider usage
+
+- User approval: While checking the connected VibeTV in the issue #247 task,
+  the user explicitly rejected making the entire provider unavailable when
+  only one value is missing and required only that value to show `??`.
+- Approved customer-visible result: A provider with one known and one unknown
+  normalized usage lane stays visible and fresh. The known Session or Weekly
+  lane keeps its real percentage, while only the unknown lane shows `??` and
+  no believable zero-percent bar. Existing extra or custom usage windows stay
+  visible without invented Session or Weekly rows. No new control, screen, or
+  provider-specific copy is added.
+- Approved files: `control-center-types.ts`, `usage-screen.tsx`, its unit tests,
+  Companion usage normalization, the generic display protocol, and firmware
+  renderer contract tests.
+
+## 2026-07-24 — Truthful partial usage in the live VibeTV preview
+
+- User approval: During the real-device issue #247 verification, the user
+  explicitly required an unavailable Session or Weekly value to show `??`
+  instead of `0 %`, while keeping the other real value visible.
+- Approved customer-visible result: The existing live VibeTV preview preserves
+  the same partial-usage contract as the Usage card and device frame. Only the
+  unknown Session or Weekly value renders as `??` with an empty bar; the known
+  lane keeps its real percentage. No new component, screen, action, or
+  provider-specific copy is added.
+- Approved files: `live-vibetv-preview.tsx`, its focused unit test, and the
+  Companion last-sent-frame reconstruction that supplies the generic lane
+  availability flags.
+
+## 2026-07-24 — Customer flow covers truthful partial usage
+
+- User approval: In the issue #247 task, the user explicitly rejected showing
+  a missing device value as `0 %` and required only that value to show `??`.
+- Approved customer-visible result: The connected Overview preview shows `??`
+  for an unavailable Codex Session while keeping the real Weekly percentage
+  visible. This is the same already approved partial-usage state; no copy,
+  control, layout, or product behavior changed.
+- Approved files: The matching connected Overview assertion in
+  `test-customer-flows.mjs`.
+
+## 2026-07-24 — Accessible partial usage percentages
+
+- User approval: The user's explicit issue #247 requirement says an unknown
+  lane must show `??`, while every available lane keeps its real percentage.
+- Approved customer-visible result: The live preview's accessible image label
+  says `??` for an unavailable lane and keeps the `%` suffix on a known lane.
+  It never describes an unknown value as a believable percentage.
+- Approved files: The matching accessible preview label in
+  `live-vibetv-preview.tsx`.
+
+## 2026-07-24 — Usage cards show only CodexBar limit windows
+
+- User approval: After identifying that CodexBar reports Weekly and Codex Spark
+  Weekly for Codex but no Session limit, the user explicitly ordered the
+  invented `Session: ??` row to be fixed with `dann fix es`.
+- Approved customer-visible result: When CodexBar supplies an explicit usage
+  window list, the provider card shows exactly those windows in their supplied
+  order. A missing Session or Weekly window is absent instead of being invented
+  as `??`. Legacy provider payloads without a window list retain the existing
+  two-lane fallback.
+- Approved files: `usage-screen.tsx` and its focused unit tests.

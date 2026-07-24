@@ -36,28 +36,34 @@ type EngineReadiness struct {
 }
 
 type ProviderReadiness struct {
-	ID         string `json:"id"`
-	Label      string `json:"label"`
-	Enabled    bool   `json:"enabled"`
-	Status     string `json:"status"`
-	Detail     string `json:"detail,omitempty"`
-	NextAction string `json:"nextAction,omitempty"`
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Enabled     bool   `json:"enabled"`
+	Status      string `json:"status"`
+	Source      string `json:"source,omitempty"`
+	CollectedAt string `json:"collectedAt,omitempty"`
+	Detail      string `json:"detail,omitempty"`
+	NextAction  string `json:"nextAction,omitempty"`
 }
 
 type ProviderSetup struct {
-	Status    string              `json:"status"`
-	CheckedAt string              `json:"checkedAt"`
-	Engine    EngineReadiness     `json:"engine"`
-	Providers []ProviderReadiness `json:"providers"`
+	Status     string              `json:"status"`
+	CheckedAt  string              `json:"checkedAt"`
+	Engine     EngineReadiness     `json:"engine"`
+	Providers  []ProviderReadiness `json:"providers"`
+	ExactUsage *ParsedFrame        `json:"-"`
 }
 
 var openCodexBarCommand = func(ctx context.Context) error {
 	return exec.CommandContext(ctx, "/usr/bin/open", "-b", "com.steipete.codexbar").Run()
 }
 
+var runConfigBootstrapCommandFn = runConfigBootstrapCommand
+
 // EnsureConfig selects an existing CodexBar config without modifying it. If
-// none exists, it creates a private VibeTV-owned config outside ~/.config so a
-// broken or root-owned ~/.config directory cannot break onboarding.
+// none exists, CodexBar itself renders and validates its current default config
+// into a private path outside ~/.config. VibeTV never owns the provider
+// inventory or its defaults.
 func EnsureConfig(home string) (string, error) {
 	if explicit := strings.TrimSpace(os.Getenv("CODEXBAR_CONFIG")); explicit != "" {
 		return ensureConfigFile(explicit)
@@ -94,9 +100,12 @@ func ensureConfigFile(path string) (string, error) {
 		return path, fmt.Errorf("protect CodexBar config directory: %w", err)
 	}
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		seed := []byte("{\n  \"version\": 1,\n  \"providers\": [\n    {\"id\": \"codex\", \"enabled\": true},\n    {\"id\": \"claude\", \"enabled\": true},\n    {\"id\": \"cursor\", \"enabled\": true},\n    {\"id\": \"gemini\", \"enabled\": true},\n    {\"id\": \"copilot\", \"enabled\": true}\n  ]\n}\n")
-		if err := os.WriteFile(path, seed, 0o600); err != nil {
-			return path, fmt.Errorf("write CodexBar config: %w", err)
+		bin, findErr := FindBinary()
+		if findErr != nil {
+			return path, fmt.Errorf("find CodexBar for config initialization: %w", findErr)
+		}
+		if initErr := initializeConfigFile(path, bin); initErr != nil {
+			return path, initErr
 		}
 	} else if err != nil {
 		return path, fmt.Errorf("inspect CodexBar config: %w", err)
@@ -105,6 +114,75 @@ func ensureConfigFile(path string) (string, error) {
 		return path, fmt.Errorf("protect CodexBar config: %w", err)
 	}
 	return path, writableConfig(path)
+}
+
+func initializeConfigFile(path, bin string) error {
+	dir := filepath.Dir(path)
+	staged, err := os.CreateTemp(dir, ".vibetv-codexbar-default-*")
+	if err != nil {
+		return fmt.Errorf("stage CodexBar config: %w", err)
+	}
+	stagedPath := staged.Name()
+	if closeErr := staged.Close(); closeErr != nil {
+		_ = os.Remove(stagedPath)
+		return fmt.Errorf("close staged CodexBar config: %w", closeErr)
+	}
+	if err := os.Remove(stagedPath); err != nil {
+		return fmt.Errorf("prepare CodexBar config staging path: %w", err)
+	}
+	defer os.Remove(stagedPath)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	raw, err := runConfigBootstrapCommandFn(
+		ctx,
+		bin,
+		stagedPath,
+		"config",
+		"dump",
+		"--format",
+		"json",
+	)
+	if err != nil {
+		return fmt.Errorf("render CodexBar default config: %w", err)
+	}
+	if !json.Valid(raw) {
+		return errors.New("CodexBar default config is not valid JSON")
+	}
+	if err := os.WriteFile(stagedPath, raw, 0o600); err != nil {
+		return fmt.Errorf("write staged CodexBar config: %w", err)
+	}
+	if _, err := runConfigBootstrapCommandFn(
+		ctx,
+		bin,
+		stagedPath,
+		"config",
+		"validate",
+		"--format",
+		"json",
+	); err != nil {
+		return fmt.Errorf("validate CodexBar default config: %w", err)
+	}
+	// A hard link publishes without replacing a config another process may
+	// have created while CodexBar was rendering its defaults.
+	if err := os.Link(stagedPath, path); err != nil {
+		if _, statErr := os.Stat(path); statErr == nil {
+			return nil
+		}
+		return fmt.Errorf("publish CodexBar default config: %w", err)
+	}
+	return nil
+}
+
+func runConfigBootstrapCommand(
+	ctx context.Context,
+	bin string,
+	configPath string,
+	args ...string,
+) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Env = environmentWithConfig(configPath)
+	return cmd.Output()
 }
 
 func writableConfig(path string) error {
@@ -131,26 +209,34 @@ func writableConfig(path string) error {
 }
 
 func commandEnvironment(configPath string) []string {
+	path := strings.TrimSpace(configPath)
+	if path == "" {
+		var err error
+		path, err = EnsureConfig("")
+		if err != nil || path == "" {
+			return environmentWithConfig("")
+		}
+	}
+	return environmentWithConfig(path)
+}
+
+func environmentWithConfig(configPath string) []string {
 	env := os.Environ()
 	filtered := make([]string, 0, len(env)+1)
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "CODEXBAR_CONFIG=") {
-			if strings.TrimSpace(strings.TrimPrefix(entry, "CODEXBAR_CONFIG=")) != "" && strings.TrimSpace(configPath) == "" {
+			if strings.TrimSpace(strings.TrimPrefix(entry, "CODEXBAR_CONFIG=")) != "" &&
+				strings.TrimSpace(configPath) == "" {
 				return env
 			}
 			continue
 		}
 		filtered = append(filtered, entry)
 	}
-	path := strings.TrimSpace(configPath)
-	if path == "" {
-		var err error
-		path, err = EnsureConfig("")
-		if err != nil || path == "" {
-			return filtered
-		}
+	if path := strings.TrimSpace(configPath); path != "" {
+		filtered = append(filtered, "CODEXBAR_CONFIG="+path)
 	}
-	return append(filtered, "CODEXBAR_CONFIG="+path)
+	return filtered
 }
 
 func configPathFromContext(ctx context.Context) string {
@@ -165,16 +251,18 @@ func configPathFromContext(ctx context.Context) string {
 // It never returns provider error text verbatim because that text can contain
 // account identifiers, paths or tokens.
 func ProbeProviderSetup(ctx context.Context, home string) ProviderSetup {
-	result := ProviderSetup{Status: "setup_required", CheckedAt: time.Now().UTC().Format(time.RFC3339Nano)}
-	configPath, configErr := EnsureConfig(home)
-	result.Engine.ConfigPath = configPath
-	result.Engine.Writable = configErr == nil
-	if configErr != nil {
-		result.Engine.Status = ProviderConfigError
-		result.Providers = []ProviderReadiness{providerResult("codexbar", ProviderConfigError)}
-		return result
-	}
+	return probeProviderSetup(ctx, home, "")
+}
 
+// ProbeProviderSetupForProvider verifies one provider from CodexBar's dynamic
+// inventory. The usage call is explicitly provider-scoped and uses CodexBar's
+// authoritative auto source selection.
+func ProbeProviderSetupForProvider(ctx context.Context, home, providerID string) ProviderSetup {
+	return probeProviderSetup(ctx, home, strings.TrimSpace(strings.ToLower(providerID)))
+}
+
+func probeProviderSetup(ctx context.Context, home, exactProvider string) ProviderSetup {
+	result := ProviderSetup{Status: "setup_required", CheckedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	bin, err := FindBinary()
 	if err != nil {
 		result.Engine.Status = ProviderNotConfigured
@@ -183,6 +271,14 @@ func ProbeProviderSetup(ctx context.Context, home string) ProviderSetup {
 	}
 	result.Engine.Path = bin
 	result.Engine.Source = BinarySource(bin)
+	configPath, configErr := EnsureConfig(home)
+	result.Engine.ConfigPath = configPath
+	result.Engine.Writable = configErr == nil
+	if configErr != nil {
+		result.Engine.Status = ProviderConfigError
+		result.Providers = []ProviderReadiness{providerResult("codexbar", ProviderConfigError)}
+		return result
+	}
 	configuredCtx := context.WithValue(ctx, configPathContextKey{}, configPath)
 	versionCtx, cancelVersion := context.WithTimeout(configuredCtx, versionCheckTimeout)
 	version, versionErr := installedVersion(versionCtx, bin)
@@ -203,8 +299,59 @@ func ProbeProviderSetup(ctx context.Context, home string) ProviderSetup {
 
 	probeCtx, cancel := context.WithTimeout(configuredCtx, 20*time.Second)
 	defer cancel()
-	out, commandErr := runUsageCommandFn(probeCtx, 18*time.Second, bin, "usage", "--json", "--web-timeout", "8")
-	result.Providers = providerReadinessFromOutput(out, commandErr, probeCtx.Err())
+	args := []string{"usage", "--json", "--web-timeout", "8"}
+	var exactSetting *ProviderSetting
+	if exactProvider != "" {
+		if !validProviderID(exactProvider) {
+			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderNotConfigured)}
+			return result
+		}
+		inventoryRaw, inventoryErr := runUsageCommandFn(probeCtx, 5*time.Second, bin, "config", "providers", "--json")
+		inventory, parseErr := parseProviderSettings(inventoryRaw)
+		if inventoryErr != nil || parseErr != nil {
+			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderConfigError)}
+			return result
+		}
+		for i := range inventory {
+			if inventory[i].ID == exactProvider {
+				exactSetting = &inventory[i]
+				break
+			}
+		}
+		if exactSetting == nil {
+			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderNotConfigured)}
+			return result
+		}
+		args = []string{
+			"usage", "--json",
+			"--provider", exactProvider,
+			"--source", "auto",
+			"--web-timeout", "8",
+		}
+	}
+	out, commandErr := runUsageCommandFn(probeCtx, 18*time.Second, bin, args...)
+	if exactProvider == "" {
+		result.Providers = providerReadinessFromOutput(out, commandErr, probeCtx.Err())
+	} else {
+		provider := exactProviderReadinessFromOutput(exactProvider, out, commandErr, probeCtx.Err())
+		provider.Label = exactSetting.Label
+		provider.Enabled = exactSetting.Enabled
+		result.Providers = []ProviderReadiness{provider}
+		if provider.Status == ProviderReady {
+			collectedAt, collectedErr := time.Parse(time.RFC3339, provider.CollectedAt)
+			if parsed, parseErr := parseAllProviders(out); parseErr == nil && collectedErr == nil {
+				for i := range parsed {
+					if providerKey(parsed[i]) != exactProvider {
+						continue
+					}
+					parsed[i].Frame = parsed[i].Frame.Normalize()
+					parsed[i].CollectedAt = collectedAt.UTC()
+					result.ExactUsage = &parsed[i]
+					break
+				}
+			}
+		}
+	}
 	for _, provider := range result.Providers {
 		if provider.Status == ProviderReady {
 			result.Status = ProviderReady
@@ -212,6 +359,18 @@ func ProbeProviderSetup(ctx context.Context, home string) ProviderSetup {
 		}
 	}
 	return result
+}
+
+func exactProviderReadinessFromOutput(providerID string, raw []byte, commandErr, contextErr error) ProviderReadiness {
+	for _, provider := range providerReadinessFromOutput(raw, commandErr, contextErr) {
+		if provider.ID == providerID {
+			return provider
+		}
+		if provider.ID == "codexbar" && provider.Status == ProviderTimeout {
+			return providerResult(providerID, ProviderTimeout)
+		}
+	}
+	return providerResult(providerID, ProviderNoUsageAvailable)
 }
 
 func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []ProviderReadiness {
@@ -244,6 +403,10 @@ func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []Pro
 		}
 		provider := providerResult(id, status)
 		provider.Enabled = true
+		provider.Source = safeProviderSource(firstString(payload, "source"))
+		if collectedAt := firstRFC3339AtPaths(payload, "usage.updatedAt", "updatedAt"); !collectedAt.IsZero() {
+			provider.CollectedAt = collectedAt.Format(time.RFC3339)
+		}
 		seen[id] = provider
 	}
 	if len(seen) == 0 {
@@ -255,6 +418,22 @@ func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []Pro
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
+}
+
+func safeProviderSource(raw string) string {
+	source := strings.TrimSpace(strings.ToLower(raw))
+	if source == "" || len(source) > 40 {
+		return ""
+	}
+	for _, character := range source {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= '0' && character <= '9') ||
+			character == '-' || character == '_' || character == '.' || character == '+' {
+			continue
+		}
+		return ""
+	}
+	return source
 }
 
 func commandErrorDetail(err error) string {
@@ -270,7 +449,10 @@ func commandErrorDetail(err error) string {
 }
 
 func providerPayloadHasUsage(payload map[string]any) bool {
-	for _, path := range []string{"usage.primary", "usage.secondary", "primary", "secondary", "credits", "openaiDashboard.primaryLimit", "openaiDashboard.secondaryLimit"} {
+	if len(parseUsageWindows(payload)) > 0 {
+		return true
+	}
+	for _, path := range []string{"credits", "openaiDashboard.credits", "openaiDashboard.balance"} {
 		if value, ok := getPath(payload, path); ok && value != nil {
 			return true
 		}

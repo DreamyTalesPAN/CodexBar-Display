@@ -4743,6 +4743,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
         v: 1,
         provider: "codex",
         label: "Codex",
+        sessionUnavailable: true,
         weekly: 63,
         resetSecs: 5400,
         usageMode: "used",
@@ -4779,7 +4780,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
   await page
     .getByRole("img", {
-      name: /Rendered VibeTV theme synthwave showing Codex, 0% session used, 63% weekly used/,
+      name: /Rendered VibeTV theme synthwave showing Codex, \?\? session used, 63% weekly used/,
     })
     .waitFor({ timeout: 10_000 });
   const renderedTheme = page.getByRole("img", {
@@ -4788,7 +4789,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   await renderedTheme.getByText("USAGE").waitFor({ timeout: 10_000 });
   await renderedTheme.getByText("SESSION used").waitFor({ timeout: 10_000 });
   await renderedTheme.getByText("WEEKLY used").waitFor({ timeout: 10_000 });
-  await renderedTheme.getByText("0%").waitFor({ timeout: 10_000 });
+  await renderedTheme.getByText("??").waitFor({ timeout: 10_000 });
   await renderedTheme.getByText("63%").waitFor({ timeout: 10_000 });
   const previewFigure = page.locator("figure").filter({ has: renderedTheme });
   assert(

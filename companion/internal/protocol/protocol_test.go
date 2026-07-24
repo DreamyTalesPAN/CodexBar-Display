@@ -100,6 +100,30 @@ func TestFrameMarshalUsageUnavailableIsOptional(t *testing.T) {
 	}
 }
 
+func TestFrameMarshalLaneUnavailableFieldsAreOptionalAndBackwardCompatible(t *testing.T) {
+	known, err := (Frame{V: 2, Provider: "codex", Session: 12, Weekly: 57}).MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal known frame: %v", err)
+	}
+	if strings.Contains(string(known), "sessionUnavailable") || strings.Contains(string(known), "weeklyUnavailable") {
+		t.Fatalf("false optional lane fields must stay omitted for old readers, got %s", known)
+	}
+
+	partial, err := (Frame{
+		V:                  2,
+		Provider:           "codex",
+		Weekly:             57,
+		SessionUnavailable: true,
+	}).MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal partial frame: %v", err)
+	}
+	if !strings.Contains(string(partial), `"sessionUnavailable":true`) ||
+		strings.Contains(string(partial), `"usageUnavailable":true`) {
+		t.Fatalf("expected only the unknown lane to be marked, got %s", partial)
+	}
+}
+
 func TestFrameNormalizeKeepsSafeActivity(t *testing.T) {
 	frame := Frame{
 		Provider: "codex",

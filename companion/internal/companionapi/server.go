@@ -130,6 +130,8 @@ var displayStreamLogKeys = []string{
 	"label",
 	"session",
 	"weekly",
+	"sessionUnavailable",
+	"weeklyUnavailable",
 	"reset",
 	"activity",
 	"time",
@@ -201,8 +203,11 @@ type Server struct {
 	usageCache             *usageResponse
 	usageCacheAt           time.Time
 	probeProviderSetup     func(context.Context, string) codexbar.ProviderSetup
+	probeExactProvider     func(context.Context, string, string) codexbar.ProviderSetup
 	openCodexBar           func(context.Context) error
 	providerSetupMu        sync.Mutex
+	exactProviderProbeMu   sync.Mutex
+	exactProviderProbes    map[string]*exactProviderProbeFlight
 	providerSetupRefresh   atomic.Bool
 	providerSetupCache     codexbar.ProviderSetup
 	providerSetupCachedAt  time.Time
@@ -698,6 +703,9 @@ type usageProviderInfo struct {
 	TotalTokens        int64                    `json:"totalTokens,omitempty"`
 	Activity           string                   `json:"activity,omitempty"`
 	Stale              bool                     `json:"stale"`
+	UsageUnavailable   bool                     `json:"usageUnavailable,omitempty"`
+	SessionUnavailable bool                     `json:"sessionUnavailable,omitempty"`
+	WeeklyUnavailable  bool                     `json:"weeklyUnavailable,omitempty"`
 	CollectedAt        string                   `json:"collectedAt,omitempty"`
 	ActivityObservedAt string                   `json:"activityObservedAt,omitempty"`
 	Windows            []usageWindowInfo        `json:"windows,omitempty"`
@@ -865,10 +873,13 @@ func New(opts Options) (*Server, error) {
 		loadUsage:             daemon.LoadPersistedUsage,
 		fetchUsage:            codexbar.FetchAllProviders,
 		probeProviderSetup:    codexbar.ProbeProviderSetup,
+		probeExactProvider:    codexbar.ProbeProviderSetupForProvider,
+		exactProviderProbes:   make(map[string]*exactProviderProbeFlight),
 		openCodexBar:          codexbar.OpenApp,
 		providerPreferences: providerPreferencesState{
-			load: codexbar.FetchProviderSettings,
-			set:  codexbar.SetProviderEnabled,
+			load:          codexbar.FetchProviderSettings,
+			set:           codexbar.SetProviderEnabled,
+			loadInventory: codexbar.FetchProviderInventory,
 		},
 		updateFirmware:     runFirmwareUpdateCommand,
 		updateMacApp:       runMacAppUpdateCommand,
@@ -1269,7 +1280,18 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	showUsed := codexbar.UsageBarsShowUsed()
+	inventoryCh := make(chan []codexbar.ProviderSetting, 1)
+	go func() {
+		inventoryCh <- s.providerInventoryForUsage(r.Context())
+	}()
+	var inventory []codexbar.ProviderSetting
+	inventoryLoaded := false
 	writeUsage := func(resp usageResponse) {
+		if !inventoryLoaded {
+			inventory = <-inventoryCh
+			inventoryLoaded = true
+		}
+		resp = filterDisabledProviders(resp, inventory)
 		writeJSON(w, http.StatusOK, usageResponseForDisplayMode(resp, showUsed))
 	}
 	forceRefresh := r.URL.Query().Get("refresh") == "1"
@@ -1347,6 +1369,65 @@ func (s *Server) cacheDirectUsage(resp usageResponse, now time.Time) {
 	defer s.usageCacheMu.Unlock()
 	s.usageCache = &resp
 	s.usageCacheAt = now
+}
+
+func (s *Server) invalidateUsageCache() {
+	s.usageCacheMu.Lock()
+	defer s.usageCacheMu.Unlock()
+	s.usageCache = nil
+	s.usageCacheAt = time.Time{}
+}
+
+func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
+	now := s.currentTime().UTC()
+	const (
+		exactUsageMaxAge     = 15 * time.Minute
+		exactUsageFutureSkew = 5 * time.Minute
+	)
+	if parsed.CollectedAt.IsZero() ||
+		parsed.CollectedAt.After(now.Add(exactUsageFutureSkew)) ||
+		now.Sub(parsed.CollectedAt) > exactUsageMaxAge {
+		return
+	}
+	fresh, ok := usageProviderFromParsed(parsed)
+	if !ok || (fresh.UsageUnavailable && len(fresh.Windows) == 0) {
+		return
+	}
+
+	base := emptyUsageResponse(now, "codexbar")
+	if s.loadUsage != nil {
+		if persisted, ok := s.loadUsage(now); ok {
+			base = usageResponseFromPersisted(now, persisted)
+		}
+	}
+	s.usageCacheMu.Lock()
+	if s.usageCache != nil {
+		base = *s.usageCache
+	}
+	replaced := false
+	for i := range base.Providers {
+		if base.Providers[i].ID != fresh.ID {
+			continue
+		}
+		fresh = mergePersistedUsageDetails(
+			usageResponse{Providers: []usageProviderInfo{fresh}},
+			usageResponse{Providers: []usageProviderInfo{base.Providers[i]}},
+		).Providers[0]
+		base.Providers[i] = fresh
+		replaced = true
+		break
+	}
+	if !replaced {
+		base.Providers = append(base.Providers, fresh)
+	}
+	base.OK = true
+	base.GeneratedAt = now.Format(time.RFC3339)
+	base.Source = "codexbar"
+	base.UsageMode = usageModeForProviders(base.Providers)
+	base.CurrentProvider = fresh.ID
+	s.usageCache = &base
+	s.usageCacheAt = now
+	s.usageCacheMu.Unlock()
 }
 
 func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
@@ -1910,6 +1991,9 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		TotalTokens:        frame.TotalTokens,
 		Activity:           strings.TrimSpace(frame.Activity),
 		Stale:              snapshot.Stale,
+		UsageUnavailable:   snapshot.Stale || (frame.UsageUnavailable && len(snapshot.Meta.Windows) == 0),
+		SessionUnavailable: snapshot.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
+		WeeklyUnavailable:  snapshot.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
 		CollectedAt:        formatOptionalTime(snapshot.CollectedAt),
 		ActivityObservedAt: formatOptionalTime(snapshot.ActivityObservedAt),
 		Windows:            usageWindowsFromMeta(snapshot.Meta),
@@ -1944,6 +2028,9 @@ func usageProviderFromParsed(parsed codexbar.ParsedFrame) (usageProviderInfo, bo
 		TotalTokens:        frame.TotalTokens,
 		Activity:           strings.TrimSpace(frame.Activity),
 		Stale:              parsed.Stale,
+		UsageUnavailable:   parsed.Stale || (frame.UsageUnavailable && len(parsed.Meta.Windows) == 0),
+		SessionUnavailable: parsed.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
+		WeeklyUnavailable:  parsed.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
 		CollectedAt:        formatOptionalTime(parsed.CollectedAt),
 		ActivityObservedAt: formatOptionalTime(parsed.ActivityObservedAt),
 		Windows:            usageWindowsFromMeta(parsed.Meta),
@@ -6795,21 +6882,28 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 	}
 
 	frame := protocol.Frame{
-		V:         protocol.ProtocolVersionV1,
-		Provider:  displayStreamLogValue(line, "provider"),
-		Label:     displayStreamLogValue(line, "label"),
-		Session:   session,
-		Weekly:    weekly,
-		UsageMode: displayStreamLogValue(line, "usageMode"),
-		Activity:  displayStreamLogValue(line, "activity"),
-		Time:      displayStreamLogValue(line, "time"),
-		Date:      displayStreamLogValue(line, "date"),
-		Error:     displayStreamLogValue(line, "error"),
+		V:                  protocol.ProtocolVersionV1,
+		Provider:           displayStreamLogValue(line, "provider"),
+		Label:              displayStreamLogValue(line, "label"),
+		Session:            session,
+		Weekly:             weekly,
+		SessionUnavailable: boolFieldFromDisplayStreamLog(line, "sessionUnavailable"),
+		WeeklyUnavailable:  boolFieldFromDisplayStreamLog(line, "weeklyUnavailable"),
+		UsageMode:          displayStreamLogValue(line, "usageMode"),
+		Activity:           displayStreamLogValue(line, "activity"),
+		Time:               displayStreamLogValue(line, "time"),
+		Date:               displayStreamLogValue(line, "date"),
+		Error:              displayStreamLogValue(line, "error"),
 	}
 	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
 		frame.ResetSec = reset
 	}
 	return frame.Normalize(), true
+}
+
+func boolFieldFromDisplayStreamLog(line, key string) bool {
+	parsed, err := strconv.ParseBool(displayStreamLogValue(line, key))
+	return err == nil && parsed
 }
 
 func intFieldFromDisplayStreamLog(line, key string) (int, bool) {

@@ -21,6 +21,8 @@ const (
 	preferenceSchemaVersion  = 1
 )
 
+var providerUsageInventoryTimeout = 2 * time.Second
+
 type preferenceType string
 
 const (
@@ -98,11 +100,18 @@ type preferenceAdapter interface {
 }
 
 type providerPreferencesState struct {
-	mu     sync.Mutex
-	at     time.Time
-	cached []codexbar.ProviderSetting
-	load   func(context.Context) ([]codexbar.ProviderSetting, error)
-	set    func(context.Context, string, bool) error
+	mu            sync.Mutex
+	at            time.Time
+	cached        []codexbar.ProviderSetting
+	load          func(context.Context) ([]codexbar.ProviderSetting, error)
+	set           func(context.Context, string, bool) error
+	revision      uint64
+	providerRev   map[string]uint64
+	healthRefresh bool
+	inventoryMu   sync.Mutex
+	inventoryAt   time.Time
+	inventory     []codexbar.ProviderSetting
+	loadInventory func(context.Context) ([]codexbar.ProviderSetting, error)
 }
 
 type providerPreferenceAdapter struct {
@@ -131,9 +140,9 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 	}
 
 	a.server.providerPreferences.mu.Lock()
-	defer a.server.providerPreferences.mu.Unlock()
 	settings, err := a.server.providerSettingsLocked(ctx, false)
 	if err != nil {
+		a.server.providerPreferences.mu.Unlock()
 		return preferenceDescriptor{}, err
 	}
 	providerID := ""
@@ -144,25 +153,119 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 		}
 	}
 	if providerID == "" {
+		a.server.providerPreferences.mu.Unlock()
 		return preferenceDescriptor{}, errPreferenceNotFound
 	}
 	if a.server.providerPreferences.set == nil {
+		a.server.providerPreferences.mu.Unlock()
 		return preferenceDescriptor{}, errors.New("provider preference writer unavailable")
 	}
 	if err := a.server.providerPreferences.set(ctx, providerID, enabled); err != nil {
+		a.server.providerPreferences.mu.Unlock()
 		return preferenceDescriptor{}, err
 	}
-
-	settings, err = a.server.providerSettingsLocked(ctx, true)
-	if err != nil {
-		return preferenceDescriptor{}, err
-	}
-	for _, item := range a.server.providerDescriptors(settings) {
-		if item.ID == settingID {
-			return item, nil
+	for i := range settings {
+		if settings[i].ID == providerID {
+			settings[i].Enabled = enabled
+			settings[i].Health = codexbar.ProviderHealthChecking
+			settings[i].Service = codexbar.ProviderServiceUnknown
+			break
 		}
 	}
-	return preferenceDescriptor{}, errPreferenceNotFound
+	a.server.providerPreferences.cached = append([]codexbar.ProviderSetting(nil), settings...)
+	a.server.providerPreferences.at = a.server.currentTime().UTC()
+	a.server.providerPreferences.revision++
+	if a.server.providerPreferences.providerRev == nil {
+		a.server.providerPreferences.providerRev = make(map[string]uint64)
+	}
+	a.server.providerPreferences.providerRev[providerID]++
+	providerRevision := a.server.providerPreferences.providerRev[providerID]
+	a.server.cacheProviderInventory(settings)
+	a.server.invalidateUsageCache()
+	var descriptor preferenceDescriptor
+	for _, item := range a.server.providerDescriptors(settings) {
+		if item.ID == settingID {
+			descriptor = item
+			break
+		}
+	}
+	a.server.providerPreferences.mu.Unlock()
+	if descriptor.ID == "" {
+		return preferenceDescriptor{}, errPreferenceNotFound
+	}
+	if !enabled {
+		if a.server.wakeDisplayStream != nil {
+			a.server.wakeDisplayStream()
+		}
+		return descriptor, nil
+	}
+
+	// Activation must not keep the customer-facing PATCH open while CodexBar
+	// performs browser/OAuth work. The exact provider probe still starts
+	// immediately and remains scoped to source=auto inside CodexBar.
+	go a.server.verifyEnabledProvider(providerID, providerRevision)
+	return descriptor, nil
+}
+
+func (s *Server) verifyEnabledProvider(providerID string, providerRevision uint64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	setup := s.currentExactProviderSetup(ctx, providerID)
+	var exactReadiness *codexbar.ProviderReadiness
+	for i := range setup.Providers {
+		if setup.Providers[i].ID == providerID {
+			exactReadiness = &setup.Providers[i]
+			break
+		}
+	}
+	if exactReadiness == nil {
+		return
+	}
+
+	s.providerPreferences.mu.Lock()
+	if s.providerPreferences.providerRev[providerID] != providerRevision {
+		s.providerPreferences.mu.Unlock()
+		return
+	}
+	enabled := false
+	for i := range s.providerPreferences.cached {
+		if s.providerPreferences.cached[i].ID != providerID {
+			continue
+		}
+		enabled = s.providerPreferences.cached[i].Enabled
+		if enabled {
+			s.providerPreferences.cached[i].Health = providerHealthFromReadiness(exactReadiness.Status)
+			s.providerPreferences.cached[i].Service = codexbar.ProviderServiceUnknown
+			s.providerPreferences.at = s.currentTime().UTC()
+		}
+		break
+	}
+	s.providerPreferences.mu.Unlock()
+	if !enabled {
+		return
+	}
+
+	if exactReadiness.Status == codexbar.ProviderReady {
+		if setup.ExactUsage != nil {
+			s.cacheExactProviderUsage(*setup.ExactUsage)
+		}
+		if s.wakeDisplayStream != nil {
+			s.wakeDisplayStream()
+		}
+	}
+}
+
+func providerHealthFromReadiness(status string) codexbar.ProviderHealthState {
+	switch status {
+	case codexbar.ProviderReady:
+		return codexbar.ProviderHealthHealthy
+	case codexbar.ProviderAuthRequired:
+		return codexbar.ProviderHealthAuthRequired
+	case codexbar.ProviderNotConfigured, codexbar.ProviderConfigError:
+		return codexbar.ProviderHealthSetupRequired
+	default:
+		return codexbar.ProviderHealthUnavailable
+	}
 }
 
 var errPreferenceNotFound = errors.New("preference not found")
@@ -356,13 +459,135 @@ func (s *Server) providerSettingsLocked(ctx context.Context, force bool) ([]code
 	if !force && len(s.providerPreferences.cached) > 0 && now.Sub(s.providerPreferences.at) < providerPreferenceCache {
 		return append([]codexbar.ProviderSetting(nil), s.providerPreferences.cached...), nil
 	}
-	settings, err := s.providerPreferences.load(ctx)
+	load := s.providerPreferences.load
+	if s.providerPreferences.loadInventory != nil {
+		load = s.providerPreferences.loadInventory
+	}
+	if load == nil {
+		return nil, errors.New("provider preference reader unavailable")
+	}
+	settings, err := load(ctx)
 	if err != nil {
 		return nil, err
 	}
+	healthByID := make(map[string]codexbar.ProviderSetting, len(s.providerPreferences.cached))
+	for _, cached := range s.providerPreferences.cached {
+		healthByID[cached.ID] = cached
+	}
+	for i := range settings {
+		if cached, ok := healthByID[settings[i].ID]; ok && cached.Enabled == settings[i].Enabled {
+			settings[i].Health = cached.Health
+			settings[i].Service = cached.Service
+		}
+	}
 	s.providerPreferences.cached = append([]codexbar.ProviderSetting(nil), settings...)
 	s.providerPreferences.at = now
+	s.cacheProviderInventory(settings)
+	s.startProviderHealthRefreshLocked()
 	return append([]codexbar.ProviderSetting(nil), settings...), nil
+}
+
+func (s *Server) startProviderHealthRefreshLocked() {
+	if s.providerPreferences.healthRefresh ||
+		s.providerPreferences.load == nil ||
+		s.providerPreferences.loadInventory == nil {
+		return
+	}
+	s.providerPreferences.healthRefresh = true
+	revision := s.providerPreferences.revision
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
+		settings, err := s.providerPreferences.load(ctx)
+
+		s.providerPreferences.mu.Lock()
+		defer s.providerPreferences.mu.Unlock()
+		s.providerPreferences.healthRefresh = false
+		if err != nil || revision != s.providerPreferences.revision {
+			return
+		}
+		healthByID := make(map[string]codexbar.ProviderSetting, len(settings))
+		for _, setting := range settings {
+			healthByID[setting.ID] = setting
+		}
+		for i := range s.providerPreferences.cached {
+			current, ok := healthByID[s.providerPreferences.cached[i].ID]
+			if !ok || current.Enabled != s.providerPreferences.cached[i].Enabled {
+				continue
+			}
+			s.providerPreferences.cached[i].Health = current.Health
+			s.providerPreferences.cached[i].Service = current.Service
+		}
+		s.providerPreferences.at = s.currentTime().UTC()
+	}()
+}
+
+func (s *Server) providerInventoryForUsage(ctx context.Context) []codexbar.ProviderSetting {
+	now := s.currentTime().UTC()
+	if s.providerPreferences.mu.TryLock() {
+		settings := append([]codexbar.ProviderSetting(nil), s.providerPreferences.cached...)
+		cachedAt := s.providerPreferences.at
+		s.providerPreferences.mu.Unlock()
+		if len(settings) > 0 && now.Sub(cachedAt) < providerPreferenceCache {
+			return settings
+		}
+	}
+
+	s.providerPreferences.inventoryMu.Lock()
+	defer s.providerPreferences.inventoryMu.Unlock()
+	if len(s.providerPreferences.inventory) > 0 &&
+		now.Sub(s.providerPreferences.inventoryAt) < providerPreferenceCache {
+		return append([]codexbar.ProviderSetting(nil), s.providerPreferences.inventory...)
+	}
+	if s.providerPreferences.loadInventory == nil {
+		return nil
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, providerUsageInventoryTimeout)
+	defer cancel()
+	settings, err := s.providerPreferences.loadInventory(lookupCtx)
+	if err != nil {
+		return append([]codexbar.ProviderSetting(nil), s.providerPreferences.inventory...)
+	}
+	s.providerPreferences.inventory = append([]codexbar.ProviderSetting(nil), settings...)
+	s.providerPreferences.inventoryAt = now
+	return append([]codexbar.ProviderSetting(nil), settings...)
+}
+
+func (s *Server) cacheProviderInventory(settings []codexbar.ProviderSetting) {
+	s.providerPreferences.inventoryMu.Lock()
+	defer s.providerPreferences.inventoryMu.Unlock()
+	s.providerPreferences.inventory = append([]codexbar.ProviderSetting(nil), settings...)
+	s.providerPreferences.inventoryAt = s.currentTime().UTC()
+}
+
+func filterDisabledProviders(resp usageResponse, settings []codexbar.ProviderSetting) usageResponse {
+	if len(settings) == 0 || len(resp.Providers) == 0 {
+		return resp
+	}
+
+	enabled := make(map[string]struct{})
+	for _, setting := range settings {
+		if setting.Enabled {
+			enabled[setting.ID] = struct{}{}
+		}
+	}
+
+	providers := make([]usageProviderInfo, 0, len(resp.Providers))
+	for _, provider := range resp.Providers {
+		if _, visible := enabled[provider.ID]; !visible {
+			continue
+		}
+		providers = append(providers, provider)
+	}
+	resp.Providers = providers
+	if _, visible := enabled[resp.CurrentProvider]; !visible {
+		resp.CurrentProvider = ""
+	}
+	if resp.CurrentProvider == "" && len(providers) > 0 {
+		resp.CurrentProvider = providers[0].ID
+	}
+	resp.UsageMode = usageModeForProviders(providers)
+	return resp
 }
 
 func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []preferenceDescriptor {
@@ -392,7 +617,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			(setting.Health == codexbar.ProviderHealthHealthy || setting.Health == codexbar.ProviderHealthChecking) {
 			state = "service_outage"
 			message = "This provider is reporting a service outage."
-		} else if (setting.Health == codexbar.ProviderHealthUnavailable || setting.Health == codexbar.ProviderHealthChecking) && lastSuccess[setting.ID] != "" {
+		} else if setting.Health == codexbar.ProviderHealthUnavailable && lastSuccess[setting.ID] != "" {
 			state = "stale"
 			message = "Live usage is unavailable; the last successful reading is still saved."
 		}

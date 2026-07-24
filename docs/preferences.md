@@ -51,6 +51,19 @@ codexbar config enable --provider <id>
 codexbar config disable --provider <id>
 ```
 
+After enabling or retrying a provider, the adapter verifies that exact inventory
+entry with:
+
+```text
+codexbar usage --json --provider <id> --source auto --web-timeout 8
+```
+
+Another working provider cannot make the requested provider appear ready.
+Provider-specific source fallback, authentication checks, and quota/model
+mapping remain owned by CodexBar.
+Disabled inventory entries are also removed from the Companion usage response,
+including stale persisted snapshots.
+
 The browser receives only stable health states and short recovery messages.
 Local sign-in/setup health and upstream service status remain separate.
 

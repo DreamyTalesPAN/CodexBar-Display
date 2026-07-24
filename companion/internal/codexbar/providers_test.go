@@ -13,16 +13,20 @@ import (
 func TestParseProviderSettingsIncludesDisabledProviders(t *testing.T) {
 	settings, err := parseProviderSettings([]byte(`[
 		{"provider":"codex","displayName":"Codex","enabled":true,"defaultEnabled":true},
-		{"provider":"copilot","displayName":"GitHub Copilot","enabled":false,"defaultEnabled":false}
+		{"provider":"copilot","displayName":"GitHub Copilot","enabled":false,"defaultEnabled":false},
+		{"provider":"antigravity","displayName":"Antigravity","enabled":false,"defaultEnabled":false}
 	]`))
 	if err != nil {
 		t.Fatalf("parse settings: %v", err)
 	}
-	if len(settings) != 2 {
+	if len(settings) != 3 {
 		t.Fatalf("expected all providers, got %d", len(settings))
 	}
 	if settings[1].ID != "copilot" || settings[1].Enabled {
 		t.Fatalf("expected disabled copilot, got %#v", settings[1])
+	}
+	if settings[2].ID != "antigravity" || settings[2].Enabled || settings[2].DefaultEnabled {
+		t.Fatalf("expected dynamically discovered disabled antigravity, got %#v", settings[2])
 	}
 }
 
@@ -75,6 +79,32 @@ func TestFetchProviderSettingsUsesStatusEvenAfterNonzeroExit(t *testing.T) {
 	}
 	if settings[0].Health != ProviderHealthAuthRequired {
 		t.Fatalf("expected auth_required, got %#v", settings[0])
+	}
+}
+
+func TestFetchProviderInventoryDoesNotRunHealthProbe(t *testing.T) {
+	withProviderCommandTestBinary(t, "0.44.0")
+	original := runProviderCommandFn
+	t.Cleanup(func() { runProviderCommandFn = original })
+	var calls [][]string
+	runProviderCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, append([]string(nil), args...))
+		return []byte(`[
+			{"provider":"codex","displayName":"Codex","enabled":true},
+			{"provider":"future-provider","displayName":"Future Provider","enabled":false}
+		]`), nil
+	}
+
+	settings, err := FetchProviderInventory(context.Background())
+	if err != nil {
+		t.Fatalf("fetch inventory: %v", err)
+	}
+	if len(settings) != 2 || !settings[0].Enabled || settings[1].Enabled {
+		t.Fatalf("unexpected inventory: %#v", settings)
+	}
+	want := [][]string{{"config", "providers", "--json"}}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("inventory added a slow health probe: got %v want %v", calls, want)
 	}
 }
 

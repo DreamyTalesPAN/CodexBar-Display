@@ -1719,6 +1719,54 @@ func TestUsageReturnsPersistedProviderSnapshots(t *testing.T) {
 	}
 }
 
+func TestUsageReturnsFreshPartialProviderWindows(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	collectedAt := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         collectedAt,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider: "codex",
+				Source:   "oauth",
+				Frame: protocol.Frame{
+					Provider:           "codex",
+					Label:              "Codex",
+					Weekly:             57,
+					SessionUnavailable: true,
+				},
+				Meta: codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{
+					{ID: "secondary", Label: "Weekly", UsedPercent: 57},
+					{ID: "codex-spark-weekly", Label: "Codex Spark Weekly", UsedPercent: 12},
+				}},
+				CollectedAt: collectedAt,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got.Providers) != 1 {
+		t.Fatalf("expected one provider, got %+v", got.Providers)
+	}
+	provider := got.Providers[0]
+	if provider.Stale || provider.UsageUnavailable || !provider.SessionUnavailable ||
+		provider.WeeklyUnavailable || provider.Weekly != 57 {
+		t.Fatalf("fresh partial provider was reported unavailable: %+v", provider)
+	}
+	if provider.CollectedAt != collectedAt.Format(time.RFC3339) || len(provider.Windows) != 2 ||
+		provider.Windows[1].Label != "Codex Spark Weekly" {
+		t.Fatalf("fresh partial windows or timestamp were lost: %+v", provider)
+	}
+}
+
 func TestUsageHonorsCodexBarRemainingPreference(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "remaining")
@@ -1972,7 +2020,7 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	t.Setenv(displayStreamOutLogEnv, logPath)
 	if err := os.WriteFile(
 		logPath,
-		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=73 weekly=58 reset=2733s activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
+		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=0 weekly=58 sessionUnavailable=true weeklyUnavailable=false reset=2733s activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
 		0o644,
 	); err != nil {
 		t.Fatalf("write display stream log: %v", err)
@@ -2011,7 +2059,8 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	if got.Frame.Provider != "codex" || got.Frame.Label != "Vibe TV" {
 		t.Fatalf("unexpected frame identity: %+v", got.Frame)
 	}
-	if got.Frame.Session != 73 || got.Frame.Weekly != 58 || got.Frame.ResetSec != 2733 {
+	if got.Frame.Session != 0 || got.Frame.Weekly != 58 || got.Frame.ResetSec != 2733 ||
+		!got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
 		t.Fatalf("unexpected sent frame values: %+v", got.Frame)
 	}
 	if got.Frame.UsageMode != "remaining" || got.Frame.Activity != "coding" {
@@ -2605,6 +2654,10 @@ func TestUsageReturnsStaleProviderSnapshotsWhenRefreshFails(t *testing.T) {
 	}
 	if got.Source != "codexbar-display" || len(got.Providers) != 1 || !got.Providers[0].Stale {
 		t.Fatalf("expected stale persisted usage, got %+v", got)
+	}
+	if !got.Providers[0].UsageUnavailable || !got.Providers[0].SessionUnavailable ||
+		!got.Providers[0].WeeklyUnavailable {
+		t.Fatalf("stale all-unknown usage must keep both lanes unavailable, got %+v", got.Providers[0])
 	}
 }
 
@@ -7425,6 +7478,7 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 			}},
 		}
 	}
+	server.providerPreferences.loadInventory = nil
 	server.openCodexBar = func(context.Context) error { return nil }
 	server.subnetTargets = func() []string {
 		return nil

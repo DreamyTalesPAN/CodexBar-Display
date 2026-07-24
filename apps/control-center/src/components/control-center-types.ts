@@ -302,6 +302,9 @@ export type UsageProviderInfo = {
   totalTokens?: number;
   activity?: string;
   stale?: boolean;
+  usageUnavailable?: boolean;
+  sessionUnavailable?: boolean;
+  weeklyUnavailable?: boolean;
   collectedAt?: string;
   activityObservedAt?: string;
   windows?: UsageWindowInfo[];

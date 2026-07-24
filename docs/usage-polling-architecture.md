@@ -43,6 +43,11 @@ Notes:
 
 - No per-provider fanout polling loop in daemon collector mode.
 - Aggregate Codex values are preserved as-is (no replacement by separate codex-cli value when aggregate already contains Codex).
+- Provider inventory and ordering come from CodexBar output. VibeTV does not
+  maintain a fallback provider list.
+- A provider is rendered as unavailable when either normalized primary or
+  secondary usage is missing or explicitly marked unknown. Numeric zero is
+  trusted only when CodexBar marks that lane as known.
 
 ### 2b) Token stats side-channel
 

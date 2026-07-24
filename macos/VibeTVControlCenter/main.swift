@@ -301,50 +301,109 @@ func codexBarInstalledAppCandidates(homeDirectory: URL) -> [URL] {
     ]
 }
 
-func defaultCodexBarConfigData() -> Data {
-    Data(
-        """
-        {
-          "version": 1,
-          "providers": [
-            {"id": "codex", "enabled": true},
-            {"id": "claude", "enabled": true},
-            {"id": "cursor", "enabled": true},
-            {"id": "gemini", "enabled": true},
-            {"id": "copilot", "enabled": true}
-          ]
-        }
-
-        """.utf8
-    )
-}
-
-private struct CodexBarCommandResult {
+struct CodexBarCommandResult {
     let exitCode: Int32
     let output: String
 }
 
-private func runCodexBarCommand(
+func runCodexBarCommand(
     executableURL: URL,
-    arguments: [String]
+    arguments: [String],
+    environment: [String: String]? = nil,
+    mergeStandardError: Bool = true
 ) -> CodexBarCommandResult? {
     let process = Process()
     let pipe = Pipe()
     process.executableURL = executableURL
     process.arguments = arguments
+    process.environment = environment
     process.standardOutput = pipe
-    process.standardError = pipe
+    process.standardError = mergeStandardError
+        ? pipe
+        : FileHandle.nullDevice
     do {
         try process.run()
-        process.waitUntilExit()
     } catch {
         return nil
     }
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
     return CodexBarCommandResult(
         exitCode: process.terminationStatus,
         output: String(data: data, encoding: .utf8) ?? ""
     )
+}
+
+func writeCodexBarOwnedDefaultConfig(
+    executableURL: URL,
+    targetURL: URL,
+    fileManager: FileManager = .default
+) -> Bool {
+    let directoryURL = targetURL.deletingLastPathComponent()
+    do {
+        try fileManager.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: directoryURL.path
+        )
+    } catch {
+        return false
+    }
+
+    if fileManager.fileExists(atPath: targetURL.path) {
+        return fileManager.isWritableFile(atPath: targetURL.path)
+    }
+
+    let stagedURL = directoryURL.appendingPathComponent(
+        ".vibetv-codexbar-default-\(UUID().uuidString).json"
+    )
+    defer { try? fileManager.removeItem(at: stagedURL) }
+
+    var environment = ProcessInfo.processInfo.environment
+    environment["CODEXBAR_CONFIG"] = stagedURL.path
+    guard let dump = runCodexBarCommand(
+        executableURL: executableURL,
+        arguments: ["config", "dump", "--format", "json"],
+        environment: environment,
+        mergeStandardError: false
+    ), dump.exitCode == 0,
+       let data = dump.output.data(using: .utf8),
+       (try? JSONSerialization.jsonObject(with: data)) is [String: Any] else {
+        return false
+    }
+
+    do {
+        try data.write(to: stagedURL, options: .atomic)
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: stagedURL.path
+        )
+    } catch {
+        return false
+    }
+
+    guard let validation = runCodexBarCommand(
+        executableURL: executableURL,
+        arguments: ["config", "validate", "--format", "json"],
+        environment: environment,
+        mergeStandardError: false
+    ), validation.exitCode == 0 else {
+        return false
+    }
+
+    if fileManager.fileExists(atPath: targetURL.path) {
+        return fileManager.isWritableFile(atPath: targetURL.path)
+    }
+    do {
+        try fileManager.moveItem(at: stagedURL, to: targetURL)
+        return true
+    } catch {
+        return false
+    }
 }
 
 private func sha256Hex(of fileURL: URL) -> String? {
@@ -2565,7 +2624,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         return true
     }
 
-    private func preparedCodexBarConfigURL() -> URL? {
+    private func preparedCodexBarConfigURL(for appURL: URL) -> URL? {
         let fileManager = FileManager.default
         let homeURL = fileManager.homeDirectoryForCurrentUser
         let existingCandidates = [
@@ -2588,26 +2647,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let configDirectoryURL = homeURL
             .appendingPathComponent(".codexbar", isDirectory: true)
         let configURL = configDirectoryURL.appendingPathComponent("config.json")
-        do {
-            try fileManager.createDirectory(
-                at: configDirectoryURL,
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
-            try fileManager.setAttributes(
-                [.posixPermissions: 0o700],
-                ofItemAtPath: configDirectoryURL.path
-            )
-            try defaultCodexBarConfigData().write(to: configURL, options: .atomic)
-            try fileManager.setAttributes(
-                [.posixPermissions: 0o600],
-                ofItemAtPath: configURL.path
-            )
-            return configURL
-        } catch {
-            NSLog("VibeTV Control Center could not prepare its private CodexBar config: \(error)")
+        guard let executableURL = codexBarCLIURL(in: appURL) else {
             return nil
         }
+        if writeCodexBarOwnedDefaultConfig(
+            executableURL: executableURL,
+            targetURL: configURL,
+            fileManager: fileManager
+        ) {
+            return configURL
+        }
+        NSLog("VibeTV Control Center could not prepare its private CodexBar config")
+        return nil
     }
 
     private func launchCodexBar(_ appURL: URL) async -> Bool {
@@ -2620,7 +2671,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
         configuration.addsToRecentItems = false
-        if let configURL = preparedCodexBarConfigURL() {
+        if let configURL = preparedCodexBarConfigURL(for: appURL) {
             var environment = ProcessInfo.processInfo.environment
             environment["CODEXBAR_CONFIG"] = configURL.path
             configuration.environment = environment
