@@ -86,10 +86,10 @@ describe("AI theme history", () => {
     expect(JSON.stringify(candidate)).not.toContain(imageBase64);
   });
 
-  it("creates an editable CBA1 sprite with exactly four 72x72 frames", () => {
+  it("creates a precomposited CBA1 sprite with exactly four 48x48 frames", () => {
     const frames = Array.from({ length: 4 }, (_, frame) => {
-      const rgba = new Uint8ClampedArray(72 * 72 * 4);
-      const offset = ((28 + frame) * 72 + 34) * 4;
+      const rgba = new Uint8ClampedArray(48 * 48 * 4);
+      const offset = ((20 + frame) * 48 + 22) * 4;
       rgba[offset] = 255;
       rgba[offset + 1] = 128;
       rgba[offset + 2] = 0;
@@ -120,11 +120,11 @@ describe("AI theme history", () => {
       },
     };
     const encoded = encodeAIThemeCBA1(frames);
-    expect(encoded).toMatch(/^CBA1\n72 72 4 4\n/);
+    expect(encoded).toMatch(/^CBA1\n48 48 4 4\n/);
     expect(encoded.split("\n").filter((line) => line.includes(".")).length).toBeGreaterThan(0);
     const candidate = buildAIThemeAnimationCandidateFromRGBA(concept, background, frames);
-    expect(candidate.assets[AI_THEME_ANIMATION_ASSET_PATH]?.data).toMatch(/^CBA1\n72 72 4 4\n/);
-    expect(candidate.assets[AI_THEME_ANIMATION_ASSET_PATH]?.data).toBe(encoded);
+    expect(candidate.assets[AI_THEME_ANIMATION_ASSET_PATH]?.data).toMatch(/^CBA1\n48 48 4 4\n/);
+    expect(candidate.assets[AI_THEME_ANIMATION_ASSET_PATH]?.data).not.toContain(".");
     expect(candidate.assets[AI_THEME_SCREENMASTER_ASSET_PATH]?.data.startsWith("CBI1\n240 128\n")).toBe(true);
     expect(candidate.spec.primitives[0]).toMatchObject({
       assetPath: AI_THEME_SCREENMASTER_ASSET_PATH,
@@ -136,12 +136,12 @@ describe("AI theme history", () => {
       assetPath: AI_THEME_ANIMATION_ASSET_PATH,
       fps: 4,
       frameCount: 4,
-      height: 72,
+      height: 48,
       sheetColumns: 4,
       type: "sprite",
-      width: 72,
-      x: 84,
-      y: 28,
+      width: 48,
+      x: 96,
+      y: 40,
     });
   });
 });

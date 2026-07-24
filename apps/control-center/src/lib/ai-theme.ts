@@ -57,9 +57,9 @@ export const AI_THEME_SCREENMASTER_ASSET_PATH = "/themes/u/ai-screen.cbi";
 export const AI_THEME_ANIMATION_ASSET_PATH = "/themes/u/ai-animation.cba";
 const SCREENMASTER_WIDTH = 240;
 const SCREENMASTER_ART_HEIGHT = 128;
-const ANIMATION_FRAME_SIZE = 72;
+const ANIMATION_FRAME_SIZE = 48;
 const ANIMATION_FRAME_COUNT = 4;
-const ANIMATION_CONTENT_SIZE = 68;
+const ANIMATION_CONTENT_SIZE = 44;
 const MAX_COLORS = 26;
 export const AI_THEME_LOCAL_HISTORY_LIMIT = 20;
 export const AI_THEME_TRANSMITTED_HISTORY_LIMIT = 10;
@@ -153,7 +153,12 @@ export function buildAIThemeAnimationCandidateFromRGBA(
   };
   const animationAsset: ThemeStudioAsset = {
     contentType: "text/plain",
-    data: encodeAIThemeCBA1(frames, ANIMATION_FRAME_SIZE, ANIMATION_FRAME_SIZE, fps),
+    data: encodeAIThemeCBA1(
+      compositeAnimationFramesOverBackground(background, frames),
+      ANIMATION_FRAME_SIZE,
+      ANIMATION_FRAME_SIZE,
+      fps,
+    ),
     encoding: "text",
   };
   return buildCandidate(concept, {
@@ -173,6 +178,35 @@ export function buildAIThemeAnimationCandidateFromRGBA(
       sheetColumns: ANIMATION_FRAME_COUNT,
     },
   ]);
+}
+
+function compositeAnimationFramesOverBackground(
+  background: ArrayLike<number>,
+  frames: ArrayLike<number>[],
+): Uint8ClampedArray[] {
+  if (background.length !== SCREENMASTER_WIDTH * SCREENMASTER_ART_HEIGHT * 4) {
+    throw new Error("Animated concept background must contain exactly 30,720 pixels.");
+  }
+  const left = Math.round((SCREENMASTER_WIDTH - ANIMATION_FRAME_SIZE) / 2);
+  const top = Math.round((SCREENMASTER_ART_HEIGHT - ANIMATION_FRAME_SIZE) / 2);
+  return frames.map((frame) => {
+    const composited = new Uint8ClampedArray(frame);
+    for (let y = 0; y < ANIMATION_FRAME_SIZE; y += 1) {
+      for (let x = 0; x < ANIMATION_FRAME_SIZE; x += 1) {
+        const frameOffset = (y * ANIMATION_FRAME_SIZE + x) * 4;
+        const backgroundOffset = ((top + y) * SCREENMASTER_WIDTH + left + x) * 4;
+        const alpha = (composited[frameOffset + 3] ?? 0) / 255;
+        for (let channel = 0; channel < 3; channel += 1) {
+          composited[frameOffset + channel] = Math.round(
+            (composited[frameOffset + channel] ?? 0) * alpha +
+              (background[backgroundOffset + channel] ?? 0) * (1 - alpha),
+          );
+        }
+        composited[frameOffset + 3] = 255;
+      }
+    }
+    return composited;
+  });
 }
 
 function buildCandidate(
@@ -211,7 +245,7 @@ export function encodeAIThemeCBA1(
   fps = 4,
 ): string {
   if (frames.length !== ANIMATION_FRAME_COUNT || width !== ANIMATION_FRAME_SIZE || height !== ANIMATION_FRAME_SIZE || !Number.isInteger(fps) || fps < 1 || fps > 30 || frames.some((frame) => frame.length !== width * height * 4)) {
-    throw new Error("Animation must contain exactly four 72x72 RGBA frames.");
+    throw new Error("Animation must contain exactly four 48x48 RGBA frames.");
   }
   const colors: Array<Array<string | null>> = [];
   const counts = new Map<string, number>();

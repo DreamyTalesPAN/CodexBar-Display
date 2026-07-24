@@ -310,12 +310,10 @@ bool testRendererUsesResumableCbaAnimation(
     return false;
   }
   if (!expect(
-          renderer.find("struct StaticSpriteRegionCache") != std::string::npos &&
-              renderer.find("restoreCachedStaticSpriteRegion") != std::string::npos &&
-              drawFunction.find("preserveTransparentPixels") != std::string::npos &&
-              renderer.substr(pushFunction, renderer.find("bool drawAnimatedSpriteAsset", pushFunction) - pushFunction)
-                      .find("RenderThemeSpecRegion") == std::string::npos,
-          "transparent CBA pixels must restore a cached CBI region in RAM without a full display redraw")) {
+          renderer.find("struct StaticSpriteRegionCache") == std::string::npos &&
+              renderer.find("restoreCachedStaticSpriteRegion") == std::string::npos &&
+              drawFunction.find("preserveTransparentPixels") == std::string::npos,
+          "precomposited CBA frames must not rebuild static CBI pixels during device animation")) {
     return false;
   }
   if (!expect(
