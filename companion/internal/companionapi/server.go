@@ -130,6 +130,8 @@ var displayStreamLogKeys = []string{
 	"label",
 	"session",
 	"weekly",
+	"sessionUnavailable",
+	"weeklyUnavailable",
 	"reset",
 	"activity",
 	"time",
@@ -6880,21 +6882,28 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 	}
 
 	frame := protocol.Frame{
-		V:         protocol.ProtocolVersionV1,
-		Provider:  displayStreamLogValue(line, "provider"),
-		Label:     displayStreamLogValue(line, "label"),
-		Session:   session,
-		Weekly:    weekly,
-		UsageMode: displayStreamLogValue(line, "usageMode"),
-		Activity:  displayStreamLogValue(line, "activity"),
-		Time:      displayStreamLogValue(line, "time"),
-		Date:      displayStreamLogValue(line, "date"),
-		Error:     displayStreamLogValue(line, "error"),
+		V:                  protocol.ProtocolVersionV1,
+		Provider:           displayStreamLogValue(line, "provider"),
+		Label:              displayStreamLogValue(line, "label"),
+		Session:            session,
+		Weekly:             weekly,
+		SessionUnavailable: boolFieldFromDisplayStreamLog(line, "sessionUnavailable"),
+		WeeklyUnavailable:  boolFieldFromDisplayStreamLog(line, "weeklyUnavailable"),
+		UsageMode:          displayStreamLogValue(line, "usageMode"),
+		Activity:           displayStreamLogValue(line, "activity"),
+		Time:               displayStreamLogValue(line, "time"),
+		Date:               displayStreamLogValue(line, "date"),
+		Error:              displayStreamLogValue(line, "error"),
 	}
 	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
 		frame.ResetSec = reset
 	}
 	return frame.Normalize(), true
+}
+
+func boolFieldFromDisplayStreamLog(line, key string) bool {
+	parsed, err := strconv.ParseBool(displayStreamLogValue(line, key))
+	return err == nil && parsed
 }
 
 func intFieldFromDisplayStreamLog(line, key string) (int, bool) {

@@ -54,6 +54,8 @@ type DisplayFrame = {
   label?: string;
   session?: number;
   weekly?: number;
+  sessionUnavailable?: boolean;
+  weeklyUnavailable?: boolean;
   resetSecs?: number;
   usageMode?: string;
   activity?: string;
@@ -125,6 +127,8 @@ type FrameData = {
   label: string;
   session: number;
   weekly: number;
+  sessionUnavailable: boolean;
+  weeklyUnavailable: boolean;
   resetSecs: number;
   usageMode: string;
   activity: string;
@@ -140,6 +144,8 @@ const THEME_LIBRARY_PREVIEW_FRAME: FrameData = {
   label: "VibeTV",
   session: 62,
   weekly: 62,
+  sessionUnavailable: false,
+  weeklyUnavailable: false,
   resetSecs: 3600,
   usageMode: "remaining",
   activity: "preview",
@@ -396,7 +402,7 @@ function ThemeSpecSVG({
   const animationTick = useAnimationTick(animationFps);
   return (
     <svg
-      aria-label={`Rendered VibeTV theme ${themeId} showing ${frame.label}, ${frame.session}% session ${frame.usageMode}, ${frame.weekly}% weekly ${frame.usageMode}`}
+      aria-label={`Rendered VibeTV theme ${themeId} showing ${frame.label}, ${usageLaneText(frame.session, frame.sessionUnavailable)} session ${frame.usageMode}, ${usageLaneText(frame.weekly, frame.weeklyUnavailable)} weekly ${frame.usageMode}`}
       className="size-full bg-black [image-rendering:pixelated]"
       role="img"
       viewBox="0 0 240 240"
@@ -794,7 +800,7 @@ function hasRenderableUsage(
   );
 }
 
-function buildFrameData(
+export function buildFrameData(
   generatedAt: string | undefined,
   displayFrame: DisplayFrame,
 ): FrameData {
@@ -806,6 +812,8 @@ function buildFrameData(
     label: displayFrame.label || displayFrame.provider || "",
     session: clampPercent(displayFrame.session),
     weekly: clampPercent(displayFrame.weekly),
+    sessionUnavailable: displayFrame.sessionUnavailable === true,
+    weeklyUnavailable: displayFrame.weeklyUnavailable === true,
     resetSecs: displayFrame.resetSecs ?? 0,
     usageMode: sourceUsageMode,
     activity: displayFrame.activity || "idle",
@@ -869,7 +877,7 @@ function renderTextPrimitive(primitive: ThemePrimitive, frame: FrameData): strin
   );
 }
 
-function boundValue(key: string, frame: FrameData): string {
+export function boundValue(key: string, frame: FrameData): string {
   switch (key) {
     case "label":
     case "providerLabel":
@@ -881,11 +889,11 @@ function boundValue(key: string, frame: FrameData): string {
     case "session":
     case "sessionPercent":
     case "s":
-      return String(frame.session);
+      return usageLaneText(frame.session, frame.sessionUnavailable);
     case "weekly":
     case "weeklyPercent":
     case "w":
-      return String(frame.weekly);
+      return usageLaneText(frame.weekly, frame.weeklyUnavailable);
     case "reset":
     case "resetCountdown":
     case "r":
@@ -916,11 +924,16 @@ function boundValue(key: string, frame: FrameData): string {
   }
 }
 
-function progressPercent(primitive: ThemePrimitive, frame: FrameData): number {
+export function progressPercent(primitive: ThemePrimitive, frame: FrameData): number {
   const binding = primitive.binding || primitive.b || "";
-  return binding === "weekly" || binding === "weeklyPercent" || binding === "w"
-    ? frame.weekly
-    : frame.session;
+  if (binding === "weekly" || binding === "weeklyPercent" || binding === "w") {
+    return frame.weeklyUnavailable ? 0 : frame.weekly;
+  }
+  return frame.sessionUnavailable ? 0 : frame.session;
+}
+
+function usageLaneText(value: number, unavailable: boolean): string {
+  return unavailable ? "??" : String(value);
 }
 
 function activeAssetPath(primitive: ThemePrimitive, frame: FrameData): string {

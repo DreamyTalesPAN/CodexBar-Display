@@ -343,3 +343,17 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-types.ts`, `usage-screen.tsx`, its unit tests,
   Companion usage normalization, the generic display protocol, and firmware
   renderer contract tests.
+
+## 2026-07-24 — Truthful partial usage in the live VibeTV preview
+
+- User approval: During the real-device issue #247 verification, the user
+  explicitly required an unavailable Session or Weekly value to show `??`
+  instead of `0 %`, while keeping the other real value visible.
+- Approved customer-visible result: The existing live VibeTV preview preserves
+  the same partial-usage contract as the Usage card and device frame. Only the
+  unknown Session or Weekly value renders as `??` with an empty bar; the known
+  lane keeps its real percentage. No new component, screen, action, or
+  provider-specific copy is added.
+- Approved files: `live-vibetv-preview.tsx`, its focused unit test, and the
+  Companion last-sent-frame reconstruction that supplies the generic lane
+  availability flags.

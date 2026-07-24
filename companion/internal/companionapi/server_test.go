@@ -2020,7 +2020,7 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	t.Setenv(displayStreamOutLogEnv, logPath)
 	if err := os.WriteFile(
 		logPath,
-		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=73 weekly=58 reset=2733s activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
+		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=0 weekly=58 sessionUnavailable=true weeklyUnavailable=false reset=2733s activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
 		0o644,
 	); err != nil {
 		t.Fatalf("write display stream log: %v", err)
@@ -2059,7 +2059,8 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	if got.Frame.Provider != "codex" || got.Frame.Label != "Vibe TV" {
 		t.Fatalf("unexpected frame identity: %+v", got.Frame)
 	}
-	if got.Frame.Session != 73 || got.Frame.Weekly != 58 || got.Frame.ResetSec != 2733 {
+	if got.Frame.Session != 0 || got.Frame.Weekly != 58 || got.Frame.ResetSec != 2733 ||
+		!got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
 		t.Fatalf("unexpected sent frame values: %+v", got.Frame)
 	}
 	if got.Frame.UsageMode != "remaining" || got.Frame.Activity != "coding" {
