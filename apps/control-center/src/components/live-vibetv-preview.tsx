@@ -402,7 +402,7 @@ function ThemeSpecSVG({
   const animationTick = useAnimationTick(animationFps);
   return (
     <svg
-      aria-label={`Rendered VibeTV theme ${themeId} showing ${frame.label}, ${usageLaneText(frame.session, frame.sessionUnavailable)} session ${frame.usageMode}, ${usageLaneText(frame.weekly, frame.weeklyUnavailable)} weekly ${frame.usageMode}`}
+      aria-label={`Rendered VibeTV theme ${themeId} showing ${frame.label}, ${usageLaneText(frame.session, frame.sessionUnavailable)}${frame.sessionUnavailable ? "" : "%"} session ${frame.usageMode}, ${usageLaneText(frame.weekly, frame.weeklyUnavailable)}${frame.weeklyUnavailable ? "" : "%"} weekly ${frame.usageMode}`}
       className="size-full bg-black [image-rendering:pixelated]"
       role="img"
       viewBox="0 0 240 240"

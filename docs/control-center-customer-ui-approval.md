@@ -368,3 +368,13 @@ issue scope, or release permission never implies UI permission.
   control, layout, or product behavior changed.
 - Approved files: The matching connected Overview assertion in
   `test-customer-flows.mjs`.
+
+## 2026-07-24 — Accessible partial usage percentages
+
+- User approval: The user's explicit issue #247 requirement says an unknown
+  lane must show `??`, while every available lane keeps its real percentage.
+- Approved customer-visible result: The live preview's accessible image label
+  says `??` for an unavailable lane and keeps the `%` suffix on a known lane.
+  It never describes an unknown value as a believable percentage.
+- Approved files: The matching accessible preview label in
+  `live-vibetv-preview.tsx`.
