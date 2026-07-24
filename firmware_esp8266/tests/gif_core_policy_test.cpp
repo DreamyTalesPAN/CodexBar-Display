@@ -360,6 +360,42 @@ bool testWifiRecoveryFirmwareWiring(const char* mainPath) {
       "setup recovery must begin once, keep timeout in AP_STA, and leave DNS/AP/setup mode only after connection");
 }
 
+bool testUploadMutualExclusionPolicy(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t rawStart = mainSource.find("void handleRawOtaClient()");
+  const std::size_t rawAccept = mainSource.find("WiFiClient client = rawOtaServer.accept();", rawStart);
+  const std::size_t assetStart = mainSource.find("void handleAssetUpload()");
+  const std::size_t assetEnd = mainSource.find("void handleAssetUploadResult()", assetStart);
+  const std::size_t otaStart = mainSource.find("void handleOtaUpload(int command, const char* target)");
+  const std::size_t otaEnd = mainSource.find("void scheduleReboot(", otaStart);
+  if (!expect(
+          rawStart != std::string::npos && rawAccept != std::string::npos && assetStart != std::string::npos &&
+              assetEnd != std::string::npos && otaStart != std::string::npos && otaEnd != std::string::npos,
+          "all upload handlers must remain discoverable")) {
+    return false;
+  }
+
+  const std::string rawGuard = mainSource.substr(rawStart, rawAccept - rawStart);
+  const std::string assetHandler = mainSource.substr(assetStart, assetEnd - assetStart);
+  const std::string otaHandler = mainSource.substr(otaStart, otaEnd - otaStart);
+  const std::size_t assetStartEvent = assetHandler.find("if (upload.status == UPLOAD_FILE_START)");
+  const std::size_t assetBusy =
+      assetHandler.find("if (otaUploadInProgress || assetUploadInProgress || rebootPending)", assetStartEvent);
+  const std::size_t assetSafeMode = assetHandler.find("enterAssetUploadSafeMode()", assetStartEvent);
+  const std::size_t otaStartEvent = otaHandler.find("if (upload.status == UPLOAD_FILE_START)");
+  const std::size_t otaBusy =
+      otaHandler.find("if (assetUploadInProgress || otaUploadInProgress || rebootPending)", otaStartEvent);
+  const std::size_t otaSafeMode = otaHandler.find("enterOtaSafeMode(", otaStartEvent);
+  return expect(
+      rawGuard.find("assetUploadInProgress") != std::string::npos &&
+          rawGuard.find("otaUploadInProgress") != std::string::npos &&
+          rawGuard.find("rebootPending") != std::string::npos && assetStartEvent != std::string::npos &&
+          assetBusy != std::string::npos && assetSafeMode != std::string::npos && assetBusy < assetSafeMode &&
+          otaStartEvent != std::string::npos && otaBusy != std::string::npos && otaSafeMode != std::string::npos &&
+          otaBusy < otaSafeMode,
+      "raw OTA and HTTP asset/filesystem/firmware uploads must exclude each other before safe mode");
+}
+
 bool testCaptiveFirstResponseNeverBlocksOnWifiScan(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   const std::size_t rootStart = mainSource.find("void handleRoot()");
@@ -935,6 +971,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testWifiRecoveryFirmwareWiring(argv[3])) {
+    return 1;
+  }
+  if (!testUploadMutualExclusionPolicy(argv[3])) {
     return 1;
   }
   if (!testCaptiveFirstResponseNeverBlocksOnWifiScan(argv[3])) {

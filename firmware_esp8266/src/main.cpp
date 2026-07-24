@@ -1667,6 +1667,12 @@ void handleAssetUpload() {
   HTTPUpload& upload = webServer.upload();
 
   if (upload.status == UPLOAD_FILE_START) {
+    if (otaUploadInProgress || assetUploadInProgress || rebootPending) {
+      assetUploadSucceeded = false;
+      assetUploadInProgress = true;
+      assetUploadError = "another upload is active";
+      return;
+    }
     assetUploadSucceeded = false;
     assetUploadInProgress = true;
     assetUploadError = "";
@@ -2148,6 +2154,13 @@ void handleOtaUpload(int command, const char* target) {
   HTTPUpload& upload = webServer.upload();
 
   if (upload.status == UPLOAD_FILE_START) {
+    if (assetUploadInProgress || otaUploadInProgress || rebootPending) {
+      otaUploadSucceeded = false;
+      otaUploadInProgress = true;
+      otaUploadNeedsReboot = false;
+      otaUploadError = "another upload is active";
+      return;
+    }
     otaUploadSucceeded = false;
     otaUploadInProgress = true;
     otaUploadNeedsReboot = false;
@@ -2308,7 +2321,7 @@ String rawRequestToken(const String& line) {
 }
 
 void handleRawOtaClient() {
-  if (!rawOtaServerStarted || otaUploadInProgress || rebootPending) {
+  if (!rawOtaServerStarted || otaUploadInProgress || assetUploadInProgress || rebootPending) {
     return;
   }
 
