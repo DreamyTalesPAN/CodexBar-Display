@@ -132,6 +132,7 @@ type runtimeDeps struct {
 	deviceCaps        func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders    func(context.Context) ([]codexbar.ParsedFrame, error)
 	fetchProvider     func(context.Context, string) (codexbar.ParsedFrame, error)
+	fetchInventory    func(context.Context) ([]codexbar.ProviderSetting, error)
 	fetchTokenStats   func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
 	usageBarsShowUsed func() bool
 	sendLine          func(string, []byte) error
@@ -169,6 +170,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.fetchProvider == nil {
 		d.fetchProvider = codexbar.FetchProvider
+	}
+	if d.fetchInventory == nil {
+		d.fetchInventory = codexbar.FetchProviderInventory
 	}
 	if d.fetchTokenStats == nil {
 		d.fetchTokenStats = codexbar.FetchProviderTokenStats
@@ -1324,6 +1328,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 func runCycleFromCollector(ctx context.Context, requestedPort string, state *runtimeState, collector *providerCollector, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 	state = ensureCycleState(state, deps)
+	invalidateLastGoodDisabledByInventory(state, collector, deps)
 
 	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
 	if err != nil {
@@ -1347,6 +1352,32 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 
 	attachFirmwareUpdateState(ctx, state, deps, caps, &result)
 	return sendCycleResult(ctx, port, caps, maxFrameBytes, state, deps, result)
+}
+
+func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *providerCollector, deps runtimeDeps) {
+	if state == nil || !state.hasLastGood {
+		return
+	}
+	enabled, known := collector.providerEnabledByInventory(state.lastGood.Provider)
+	if !known || enabled {
+		return
+	}
+
+	provider := normalizeProviderKey(state.lastGood.Provider)
+	state.lastGood = protocol.Frame{}
+	state.lastGoodAt = time.Time{}
+	state.hasLastGood = false
+	state.lastPersistedGood = protocol.Frame{}
+	state.lastPersistedAt = time.Time{}
+	state.hasPersistedGood = false
+	if state.selector != nil {
+		state.selector.SetCurrentProvider("")
+	}
+	if err := clearPersistedLastGood(); err != nil {
+		deps.logf("runtime event=last-good-clear-failed provider=%s err=%v\n", provider, err)
+		return
+	}
+	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-disabled\n", provider)
 }
 
 func probeProvidersDirectly(parent context.Context, order []string, deps runtimeDeps) []codexbar.ParsedFrame {
@@ -1560,6 +1591,18 @@ func persistLastGood(frame protocol.Frame, savedAt time.Time) error {
 	return os.WriteFile(path, raw, 0o644)
 }
 
+func clearPersistedLastGood() error {
+	path := lastGoodSnapshotPath()
+	if path == "" {
+		return nil
+	}
+	err := os.Remove(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
 func lastGoodSnapshotPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
@@ -1765,7 +1808,7 @@ func providerSnapshotsPath() string {
 }
 
 func persistProviderSnapshots(snapshots map[string]providerSnapshot, savedAt time.Time) error {
-	if len(snapshots) == 0 || savedAt.IsZero() {
+	if savedAt.IsZero() {
 		return nil
 	}
 
@@ -1790,10 +1833,6 @@ func persistProviderSnapshots(snapshots map[string]providerSnapshot, savedAt tim
 		}
 		payload.Providers = append(payload.Providers, snapshot)
 	}
-	if len(payload.Providers) == 0 {
-		return nil
-	}
-
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -1931,10 +1970,6 @@ func providerUsageSnapshotIsStale(snapshot providerSnapshot, now time.Time) bool
 }
 
 func encodeProviderSnapshotsForCompare(snapshots map[string]providerSnapshot) string {
-	if len(snapshots) == 0 {
-		return ""
-	}
-
 	ordered := make([]providerSnapshot, 0, len(snapshots))
 	for _, key := range sortedSnapshotKeys(snapshots) {
 		snapshot := snapshots[key]
@@ -1947,9 +1982,6 @@ func encodeProviderSnapshotsForCompare(snapshots map[string]providerSnapshot) st
 			continue
 		}
 		ordered = append(ordered, snapshot)
-	}
-	if len(ordered) == 0 {
-		return ""
 	}
 	raw, err := json.Marshal(ordered)
 	if err != nil {

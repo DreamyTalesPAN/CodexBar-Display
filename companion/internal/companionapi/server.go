@@ -204,6 +204,8 @@ type Server struct {
 	probeExactProvider     func(context.Context, string, string) codexbar.ProviderSetup
 	openCodexBar           func(context.Context) error
 	providerSetupMu        sync.Mutex
+	exactProviderProbeMu   sync.Mutex
+	exactProviderProbes    map[string]*exactProviderProbeFlight
 	providerSetupRefresh   atomic.Bool
 	providerSetupCache     codexbar.ProviderSetup
 	providerSetupCachedAt  time.Time
@@ -867,11 +869,13 @@ func New(opts Options) (*Server, error) {
 		fetchUsage:            codexbar.FetchAllProviders,
 		probeProviderSetup:    codexbar.ProbeProviderSetup,
 		probeExactProvider:    codexbar.ProbeProviderSetupForProvider,
+		exactProviderProbes:   make(map[string]*exactProviderProbeFlight),
 		openCodexBar:          codexbar.OpenApp,
 		providerPreferences: providerPreferencesState{
-			load:   codexbar.FetchProviderSettings,
-			set:    codexbar.SetProviderEnabled,
-			verify: codexbar.ProbeProviderSetupForProvider,
+			load:          codexbar.FetchProviderSettings,
+			set:           codexbar.SetProviderEnabled,
+			verify:        codexbar.ProbeProviderSetupForProvider,
+			loadInventory: codexbar.FetchProviderInventory,
 		},
 		updateFirmware:     runFirmwareUpdateCommand,
 		updateMacApp:       runMacAppUpdateCommand,
@@ -1272,8 +1276,18 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	showUsed := codexbar.UsageBarsShowUsed()
+	inventoryCh := make(chan []codexbar.ProviderSetting, 1)
+	go func() {
+		inventoryCh <- s.providerInventoryForUsage(r.Context())
+	}()
+	var inventory []codexbar.ProviderSetting
+	inventoryLoaded := false
 	writeUsage := func(resp usageResponse) {
-		resp = s.filterDisabledProviders(resp)
+		if !inventoryLoaded {
+			inventory = <-inventoryCh
+			inventoryLoaded = true
+		}
+		resp = filterDisabledProviders(resp, inventory)
 		writeJSON(w, http.StatusOK, usageResponseForDisplayMode(resp, showUsed))
 	}
 	forceRefresh := r.URL.Query().Get("refresh") == "1"
@@ -1351,6 +1365,13 @@ func (s *Server) cacheDirectUsage(resp usageResponse, now time.Time) {
 	defer s.usageCacheMu.Unlock()
 	s.usageCache = &resp
 	s.usageCacheAt = now
+}
+
+func (s *Server) invalidateUsageCache() {
+	s.usageCacheMu.Lock()
+	defer s.usageCacheMu.Unlock()
+	s.usageCache = nil
+	s.usageCacheAt = time.Time{}
 }
 
 func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {

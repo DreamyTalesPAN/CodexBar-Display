@@ -82,6 +82,32 @@ func TestFetchProviderSettingsUsesStatusEvenAfterNonzeroExit(t *testing.T) {
 	}
 }
 
+func TestFetchProviderInventoryDoesNotRunHealthProbe(t *testing.T) {
+	withProviderCommandTestBinary(t, "0.44.0")
+	original := runProviderCommandFn
+	t.Cleanup(func() { runProviderCommandFn = original })
+	var calls [][]string
+	runProviderCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, append([]string(nil), args...))
+		return []byte(`[
+			{"provider":"codex","displayName":"Codex","enabled":true},
+			{"provider":"future-provider","displayName":"Future Provider","enabled":false}
+		]`), nil
+	}
+
+	settings, err := FetchProviderInventory(context.Background())
+	if err != nil {
+		t.Fatalf("fetch inventory: %v", err)
+	}
+	if len(settings) != 2 || !settings[0].Enabled || settings[1].Enabled {
+		t.Fatalf("unexpected inventory: %#v", settings)
+	}
+	want := [][]string{{"config", "providers", "--json"}}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("inventory added a slow health probe: got %v want %v", calls, want)
+	}
+}
+
 func TestFetchProviderSettingsRequiresFeatureVersion(t *testing.T) {
 	withProviderCommandTestBinary(t, "0.26.9")
 	_, err := FetchProviderSettings(context.Background())

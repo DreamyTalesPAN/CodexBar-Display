@@ -21,6 +21,8 @@ const (
 	preferenceSchemaVersion  = 1
 )
 
+var providerUsageInventoryTimeout = 2 * time.Second
+
 type preferenceType string
 
 const (
@@ -98,12 +100,16 @@ type preferenceAdapter interface {
 }
 
 type providerPreferencesState struct {
-	mu     sync.Mutex
-	at     time.Time
-	cached []codexbar.ProviderSetting
-	load   func(context.Context) ([]codexbar.ProviderSetting, error)
-	set    func(context.Context, string, bool) error
-	verify func(context.Context, string, string) codexbar.ProviderSetup
+	mu            sync.Mutex
+	at            time.Time
+	cached        []codexbar.ProviderSetting
+	load          func(context.Context) ([]codexbar.ProviderSetting, error)
+	set           func(context.Context, string, bool) error
+	verify        func(context.Context, string, string) codexbar.ProviderSetup
+	inventoryMu   sync.Mutex
+	inventoryAt   time.Time
+	inventory     []codexbar.ProviderSetting
+	loadInventory func(context.Context) ([]codexbar.ProviderSetting, error)
 }
 
 type providerPreferenceAdapter struct {
@@ -153,9 +159,37 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 	if err := a.server.providerPreferences.set(ctx, providerID, enabled); err != nil {
 		return preferenceDescriptor{}, err
 	}
+	for i := range settings {
+		if settings[i].ID == providerID {
+			settings[i].Enabled = enabled
+			break
+		}
+	}
+	a.server.providerPreferences.cached = append([]codexbar.ProviderSetting(nil), settings...)
+	a.server.providerPreferences.at = a.server.currentTime().UTC()
+	a.server.cacheProviderInventory(settings)
+	a.server.invalidateUsageCache()
+	if !enabled {
+		settings, err = a.server.providerSettingsLocked(ctx, true)
+		if err != nil {
+			return preferenceDescriptor{}, err
+		}
+		if a.server.wakeDisplayStream != nil {
+			a.server.wakeDisplayStream()
+		}
+		for _, item := range a.server.providerDescriptors(settings) {
+			if item.ID == settingID {
+				return item, nil
+			}
+		}
+		return preferenceDescriptor{}, errPreferenceNotFound
+	}
 
 	var exactReadiness *codexbar.ProviderReadiness
-	if enabled && a.server.providerPreferences.verify != nil {
+	// The provider preference PATCH is the customer-facing activation/retry
+	// path. Verify only the provider that was enabled; another healthy
+	// provider must not make this one appear ready.
+	if a.server.providerPreferences.verify != nil {
 		setup := a.server.providerPreferences.verify(ctx, a.server.home, providerID)
 		for i := range setup.Providers {
 			if setup.Providers[i].ID == providerID {
@@ -400,36 +434,69 @@ func (s *Server) providerSettingsLocked(ctx context.Context, force bool) ([]code
 	}
 	s.providerPreferences.cached = append([]codexbar.ProviderSetting(nil), settings...)
 	s.providerPreferences.at = now
+	s.cacheProviderInventory(settings)
 	return append([]codexbar.ProviderSetting(nil), settings...), nil
 }
 
-func (s *Server) filterDisabledProviders(resp usageResponse) usageResponse {
-	s.providerPreferences.mu.Lock()
-	settings := append([]codexbar.ProviderSetting(nil), s.providerPreferences.cached...)
-	s.providerPreferences.mu.Unlock()
+func (s *Server) providerInventoryForUsage(ctx context.Context) []codexbar.ProviderSetting {
+	now := s.currentTime().UTC()
+	if s.providerPreferences.mu.TryLock() {
+		settings := append([]codexbar.ProviderSetting(nil), s.providerPreferences.cached...)
+		cachedAt := s.providerPreferences.at
+		s.providerPreferences.mu.Unlock()
+		if len(settings) > 0 && now.Sub(cachedAt) < providerPreferenceCache {
+			return settings
+		}
+	}
+
+	s.providerPreferences.inventoryMu.Lock()
+	defer s.providerPreferences.inventoryMu.Unlock()
+	if len(s.providerPreferences.inventory) > 0 &&
+		now.Sub(s.providerPreferences.inventoryAt) < providerPreferenceCache {
+		return append([]codexbar.ProviderSetting(nil), s.providerPreferences.inventory...)
+	}
+	if s.providerPreferences.loadInventory == nil {
+		return nil
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, providerUsageInventoryTimeout)
+	defer cancel()
+	settings, err := s.providerPreferences.loadInventory(lookupCtx)
+	if err != nil {
+		return append([]codexbar.ProviderSetting(nil), s.providerPreferences.inventory...)
+	}
+	s.providerPreferences.inventory = append([]codexbar.ProviderSetting(nil), settings...)
+	s.providerPreferences.inventoryAt = now
+	return append([]codexbar.ProviderSetting(nil), settings...)
+}
+
+func (s *Server) cacheProviderInventory(settings []codexbar.ProviderSetting) {
+	s.providerPreferences.inventoryMu.Lock()
+	defer s.providerPreferences.inventoryMu.Unlock()
+	s.providerPreferences.inventory = append([]codexbar.ProviderSetting(nil), settings...)
+	s.providerPreferences.inventoryAt = s.currentTime().UTC()
+}
+
+func filterDisabledProviders(resp usageResponse, settings []codexbar.ProviderSetting) usageResponse {
 	if len(settings) == 0 || len(resp.Providers) == 0 {
 		return resp
 	}
 
-	disabled := make(map[string]struct{})
+	enabled := make(map[string]struct{})
 	for _, setting := range settings {
-		if !setting.Enabled {
-			disabled[setting.ID] = struct{}{}
+		if setting.Enabled {
+			enabled[setting.ID] = struct{}{}
 		}
-	}
-	if len(disabled) == 0 {
-		return resp
 	}
 
 	providers := make([]usageProviderInfo, 0, len(resp.Providers))
 	for _, provider := range resp.Providers {
-		if _, hidden := disabled[provider.ID]; hidden {
+		if _, visible := enabled[provider.ID]; !visible {
 			continue
 		}
 		providers = append(providers, provider)
 	}
 	resp.Providers = providers
-	if _, hidden := disabled[resp.CurrentProvider]; hidden {
+	if _, visible := enabled[resp.CurrentProvider]; !visible {
 		resp.CurrentProvider = ""
 	}
 	if resp.CurrentProvider == "" && len(providers) > 0 {

@@ -111,17 +111,17 @@ func TestPreferencePatchReReadsEffectiveDescriptorAfterWrite(t *testing.T) {
 	}
 }
 
-func TestPreferencePatchEnablingAntigravityUsesExactReadiness(t *testing.T) {
+func TestProviderPreferencePatchIsExactCustomerRetryPath(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	enabled := false
 	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
 		return []codexbar.ProviderSetting{
 			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
-			{ID: "antigravity", Label: "Antigravity", Enabled: enabled, Health: codexbar.ProviderHealthChecking},
+			{ID: "future-provider", Label: "Future Provider", Enabled: enabled, Health: codexbar.ProviderHealthChecking},
 		}, nil
 	}
 	server.providerPreferences.set = func(_ context.Context, id string, value bool) error {
-		if id != "antigravity" {
+		if id != "future-provider" {
 			t.Fatalf("unexpected provider ID %q", id)
 		}
 		enabled = value
@@ -130,9 +130,13 @@ func TestPreferencePatchEnablingAntigravityUsesExactReadiness(t *testing.T) {
 	var verified string
 	server.providerPreferences.verify = func(_ context.Context, _ string, id string) codexbar.ProviderSetup {
 		verified = id
-		return codexbar.ProviderSetup{Providers: []codexbar.ProviderReadiness{{
-			ID: id, Label: "Antigravity", Enabled: true, Status: codexbar.ProviderAuthRequired,
-		}}}
+		return codexbar.ProviderSetup{
+			Status: codexbar.ProviderReady,
+			Providers: []codexbar.ProviderReadiness{
+				{ID: "codex", Label: "Codex", Enabled: true, Status: codexbar.ProviderReady},
+				{ID: id, Label: "Future Provider", Enabled: true, Status: codexbar.ProviderAuthRequired},
+			},
+		}
 	}
 	wakes := 0
 	server.wakeDisplayStream = func() { wakes++ }
@@ -141,7 +145,7 @@ func TestPreferencePatchEnablingAntigravityUsesExactReadiness(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(
 		http.MethodPatch,
-		"/v1/preferences/codexbar.providers.antigravity.enabled",
+		"/v1/preferences/codexbar.providers.future-provider.enabled",
 		bytes.NewBufferString(`{"value":true}`),
 	)
 	server.Handler().ServeHTTP(recorder, request)
@@ -152,18 +156,20 @@ func TestPreferencePatchEnablingAntigravityUsesExactReadiness(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if verified != "antigravity" || response.Item.Health.State != "auth_required" {
-		t.Fatalf("exact Antigravity readiness was not retained: verified=%q item=%#v", verified, response.Item)
+	if !enabled || verified != "future-provider" || response.Item.Health.State != "auth_required" {
+		t.Fatalf("exact provider readiness was not retained: enabled=%t verified=%q item=%#v", enabled, verified, response.Item)
 	}
 	if wakes != 0 {
-		t.Fatalf("broken Antigravity must not wake the ready stream, got %d", wakes)
+		t.Fatalf("another ready provider must not wake the broken provider stream, got %d", wakes)
 	}
 }
 
 func TestDisablingProviderRemovesItsPersistedUsageCard(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	cursorEnabled := true
+	loads := 0
 	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		loads++
 		return []codexbar.ProviderSetting{
 			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
 			{ID: "cursor", Label: "Cursor", Enabled: cursorEnabled, Health: codexbar.ProviderHealthHealthy},
@@ -217,6 +223,206 @@ func TestDisablingProviderRemovesItsPersistedUsageCard(t *testing.T) {
 	}
 	if response.CurrentProvider != "codex" || len(response.Providers) != 1 || response.Providers[0].ID != "codex" {
 		t.Fatalf("disabled provider remained visible: %#v", response)
+	}
+	if loads != 2 {
+		t.Fatalf("disable did not re-read CodexBar's effective inventory: loads=%d", loads)
+	}
+}
+
+func TestEnablingProviderInvalidatesWarmUsageCache(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	enabled := false
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "future-provider", Label: "Future Provider", Enabled: enabled, Health: codexbar.ProviderHealthHealthy},
+		}, nil
+	}
+	server.providerPreferences.set = func(_ context.Context, id string, value bool) error {
+		if id != "future-provider" {
+			t.Fatalf("unexpected provider ID %q", id)
+		}
+		enabled = value
+		return nil
+	}
+	server.providerPreferences.verify = func(_ context.Context, _ string, id string) codexbar.ProviderSetup {
+		return codexbar.ProviderSetup{Status: codexbar.ProviderReady, Providers: []codexbar.ProviderReadiness{{
+			ID: id, Label: "Future Provider", Enabled: true, Status: codexbar.ProviderReady,
+		}}}
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	fetches := 0
+	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		fetches++
+		return []codexbar.ParsedFrame{
+			{Provider: "codex", Frame: protocol.Frame{Provider: "codex", Label: "Codex", Session: 12, Weekly: 34}},
+			{Provider: "future-provider", Frame: protocol.Frame{Provider: "future-provider", Label: "Future Provider", Session: 21, Weekly: 43}},
+		}, nil
+	}
+	server.usageCache = &usageResponse{
+		CurrentProvider: "codex",
+		Providers:       []usageProviderInfo{{ID: "codex", Label: "Codex", Session: 12, Weekly: 34}},
+	}
+	server.usageCacheAt = time.Now().UTC()
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(
+		recorder,
+		httptest.NewRequest(
+			http.MethodPatch,
+			"/v1/preferences/codexbar.providers.future-provider.enabled",
+			bytes.NewBufferString(`{"value":true}`),
+		),
+	)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("enable future provider: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	recorder = httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("get usage: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response usageResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode usage: %v", err)
+	}
+	if fetches != 1 || len(response.Providers) != 2 || response.Providers[1].ID != "future-provider" {
+		t.Fatalf("warm usage cache survived enable: fetches=%d response=%#v", fetches, response)
+	}
+}
+
+func TestUsageFiltersDisabledProviderWithColdPreferenceCache(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.cached = nil
+	server.providerPreferences.inventory = nil
+	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true},
+			{ID: "cursor", Label: "Cursor", Enabled: false},
+		}, nil
+	}
+	server.loadUsage = func(now time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now,
+			CurrentProvider: "cursor",
+			Providers: []daemon.ProviderUsageSnapshot{
+				{Provider: "cursor", Frame: protocol.Frame{Provider: "cursor", Label: "Cursor", Session: 57, Weekly: 100}, CollectedAt: now},
+				{Provider: "codex", Frame: protocol.Frame{Provider: "codex", Label: "Codex", Session: 12, Weekly: 34}, CollectedAt: now},
+			},
+		}, true
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("get cold usage: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response usageResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode usage: %v", err)
+	}
+	if response.CurrentProvider != "codex" || len(response.Providers) != 1 || response.Providers[0].ID != "codex" {
+		t.Fatalf("cold preference cache exposed disabled provider: %#v", response)
+	}
+}
+
+func TestUsageInventoryDoesNotWaitForParallelPreferenceHealth(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	healthStarted := make(chan struct{})
+	releaseHealth := make(chan struct{})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		close(healthStarted)
+		<-releaseHealth
+		return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true}}, nil
+	}
+	server.providerPreferences.cached = nil
+	server.providerPreferences.inventory = nil
+	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true},
+			{ID: "cursor", Label: "Cursor", Enabled: false},
+		}, nil
+	}
+	server.loadUsage = func(now time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: now,
+			Providers: []daemon.ProviderUsageSnapshot{
+				{Provider: "cursor", Frame: protocol.Frame{Provider: "cursor", Label: "Cursor", Session: 57, Weekly: 100}, CollectedAt: now},
+				{Provider: "codex", Frame: protocol.Frame{Provider: "codex", Label: "Codex", Session: 12, Weekly: 34}, CollectedAt: now},
+			},
+		}, true
+	}
+
+	preferencesDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+		preferencesDone <- recorder
+	}()
+	<-healthStarted
+
+	usageDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+		usageDone <- recorder
+	}()
+	select {
+	case recorder := <-usageDone:
+		if recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), `"id":"cursor"`) {
+			t.Fatalf("parallel usage was not safely filtered: status=%d body=%s", recorder.Code, recorder.Body.String())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("usage waited for the slower provider-health request")
+	}
+	close(releaseHealth)
+	if recorder := <-preferencesDone; recorder.Code != http.StatusOK {
+		t.Fatalf("preferences request failed: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestUsageInventoryLookupHasShortDeadlineAndPreservesStaleUsage(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	previousTimeout := providerUsageInventoryTimeout
+	providerUsageInventoryTimeout = 25 * time.Millisecond
+	t.Cleanup(func() { providerUsageInventoryTimeout = previousTimeout })
+
+	server.providerPreferences.cached = nil
+	server.providerPreferences.inventory = nil
+	server.providerPreferences.loadInventory = func(ctx context.Context) ([]codexbar.ProviderSetting, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	server.loadUsage = func(now time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now.Add(-time.Hour),
+			CurrentProvider: "future-provider",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "future-provider",
+				Frame:       protocol.Frame{Provider: "future-provider", Label: "Future Provider", Session: 57, Weekly: 100},
+				CollectedAt: now.Add(-time.Hour),
+				Stale:       true,
+			}},
+		}, true
+	}
+	server.fetchUsage = nil
+
+	startedAt := time.Now()
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if elapsed := time.Since(startedAt); elapsed > 500*time.Millisecond {
+		t.Fatalf("usage waited too long for provider inventory: %s", elapsed)
+	}
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("get usage: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response usageResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode usage: %v", err)
+	}
+	if len(response.Providers) != 1 || response.Providers[0].ID != "future-provider" || !response.Providers[0].Stale {
+		t.Fatalf("inventory timeout changed safe stale usage semantics: %#v", response)
 	}
 }
 

@@ -95,6 +95,16 @@ func FetchProviderSettings(ctx context.Context) ([]ProviderSetting, error) {
 	return settings, nil
 }
 
+// FetchProviderInventory returns CodexBar's authoritative dynamic provider
+// inventory without running the slower provider-health probe.
+func FetchProviderInventory(ctx context.Context) ([]ProviderSetting, error) {
+	settings, _, err := fetchProviderInventory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return settings, nil
+}
+
 func fetchProviderInventory(ctx context.Context) ([]ProviderSetting, string, error) {
 	bin, err := FindBinary()
 	if err != nil {

@@ -16,6 +16,11 @@ type providerSetupResponse struct {
 	ProviderSetup codexbar.ProviderSetup `json:"providerSetup"`
 }
 
+type exactProviderProbeFlight struct {
+	done  chan struct{}
+	setup codexbar.ProviderSetup
+}
+
 // currentProviderSetup caches normal status polling and serializes explicit
 // retries. A second concurrent retry reuses the first result instead of
 // starting another CodexBar/browser probe.
@@ -77,6 +82,51 @@ func checkingProviderSetup(now time.Time) codexbar.ProviderSetup {
 	}
 }
 
+func (s *Server) currentExactProviderSetup(ctx context.Context, providerID string) codexbar.ProviderSetup {
+	s.exactProviderProbeMu.Lock()
+	if s.exactProviderProbes == nil {
+		s.exactProviderProbes = make(map[string]*exactProviderProbeFlight)
+	}
+	if current := s.exactProviderProbes[providerID]; current != nil {
+		s.exactProviderProbeMu.Unlock()
+		select {
+		case <-current.done:
+			return current.setup
+		case <-ctx.Done():
+			return timedOutExactProviderSetup(providerID, s.currentTime())
+		}
+	}
+	flight := &exactProviderProbeFlight{done: make(chan struct{})}
+	s.exactProviderProbes[providerID] = flight
+	s.exactProviderProbeMu.Unlock()
+
+	probe := s.probeExactProvider
+	if probe == nil {
+		probe = codexbar.ProbeProviderSetupForProvider
+	}
+	setup := probe(ctx, s.home, providerID)
+
+	s.exactProviderProbeMu.Lock()
+	flight.setup = setup
+	close(flight.done)
+	delete(s.exactProviderProbes, providerID)
+	s.exactProviderProbeMu.Unlock()
+	return setup
+}
+
+func timedOutExactProviderSetup(providerID string, now time.Time) codexbar.ProviderSetup {
+	return codexbar.ProviderSetup{
+		Status:    "setup_required",
+		CheckedAt: now.UTC().Format(time.RFC3339Nano),
+		Providers: []codexbar.ProviderReadiness{{
+			ID:      providerID,
+			Label:   providerID,
+			Enabled: true,
+			Status:  codexbar.ProviderTimeout,
+		}},
+	}
+}
+
 func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -88,11 +138,7 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	if providerID == "" {
 		setup = s.currentProviderSetup(ctx, true)
 	} else {
-		probe := s.probeExactProvider
-		if probe == nil {
-			probe = codexbar.ProbeProviderSetupForProvider
-		}
-		setup = probe(ctx, s.home, providerID)
+		setup = s.currentExactProviderSetup(ctx, providerID)
 	}
 	if setup.Status == codexbar.ProviderReady && s.wakeDisplayStream != nil {
 		s.wakeDisplayStream()
