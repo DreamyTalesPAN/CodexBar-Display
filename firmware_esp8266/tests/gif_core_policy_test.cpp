@@ -29,6 +29,17 @@ bool expect(bool cond, const char* message) {
   return true;
 }
 
+std::size_t countOccurrences(const std::string& value, const char* needle) {
+  std::size_t count = 0;
+  std::size_t offset = 0;
+  const std::string target(needle);
+  while ((offset = value.find(target, offset)) != std::string::npos) {
+    ++count;
+    offset += target.size();
+  }
+  return count;
+}
+
 bool testBackoffThresholdAndExpiry() {
   GifFailureGuardState guard;
 
@@ -274,16 +285,115 @@ bool testSetupPortalIsReadyBeforeJoinInstructions(const char* mainPath) {
   const std::size_t clearError = body.find("ClearConnectionError(setupWifiState)");
   const std::size_t stopReconnect = body.find("WiFi.setAutoReconnect(false)");
   const std::size_t disconnect = body.find("WiFi.disconnect(false)");
-  const std::size_t apOnly = body.find("WiFi.mode(WIFI_AP)");
+  const std::size_t apSta = body.find("WiFi.mode(WIFI_AP_STA)");
   const std::size_t accessPoint = body.find("WiFi.softAP(kSetupApSsid)");
   const std::size_t dns = body.find("dnsServer.start(");
   const std::size_t http = body.find("startHttpServer()");
   const std::size_t joinInstructions = body.find("renderer.DrawSetupInstructions(");
   return expect(
-      clearError < stopReconnect && stopReconnect < disconnect && disconnect < apOnly &&
-          apOnly < accessPoint && accessPoint < dns && dns < http &&
-          http < joinInstructions && body.find("scanSetupNetworks()") == std::string::npos,
-      "setup display may invite joining only after the old STA attempt is stopped and AP, DNS, and HTTP are ready");
+      clearError < stopReconnect && stopReconnect < disconnect && disconnect < apSta &&
+          apSta < accessPoint && accessPoint < dns && dns < http &&
+          http < joinInstructions && body.find("WiFi.mode(WIFI_AP)") == std::string::npos &&
+          body.find("scanSetupNetworks()") == std::string::npos,
+      "setup display may invite joining only after the old STA attempt is stopped and AP_STA, DNS, and HTTP are ready");
+}
+
+bool testNetworkWorkPrecedesWifiRecovery(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t loopStart = mainSource.find("void loop()");
+  if (!expect(loopStart != std::string::npos, "firmware loop must remain discoverable")) {
+    return false;
+  }
+  const std::string loop = mainSource.substr(loopStart);
+  const std::size_t http = loop.find("webServer.handleClient();");
+  const std::size_t rawOta = loop.find("handleRawOtaClient();");
+  const std::size_t recovery = loop.find("maintainWifiConnection();");
+  return expect(
+      http != std::string::npos && rawOta != std::string::npos && recovery != std::string::npos &&
+          http < recovery && rawOta < recovery && countOccurrences(loop, "webServer.handleClient();") == 1 &&
+          countOccurrences(loop, "handleRawOtaClient();") == 1,
+      "setup HTTP and raw OTA work must run once before WiFi recovery decides busy state");
+}
+
+bool testWifiRecoveryFirmwareWiring(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t recoveryStart = mainSource.find("void maintainWifiSetupRecovery()");
+  const std::size_t recoveryEnd = mainSource.find("void resetWifiReconnectState()", recoveryStart);
+  const std::size_t finishStart = mainSource.find("void finishWifiSetupRecovery()");
+  const std::size_t finishEnd = mainSource.find("void maintainWifiSetupRecovery()", finishStart);
+  if (!expect(
+          recoveryStart != std::string::npos && recoveryEnd != std::string::npos &&
+              finishStart != std::string::npos && finishEnd != std::string::npos,
+          "WiFi setup recovery functions must remain discoverable")) {
+    return false;
+  }
+
+  const std::string recovery = mainSource.substr(recoveryStart, recoveryEnd - recoveryStart);
+  const std::string finish = mainSource.substr(finishStart, finishEnd - finishStart);
+  const std::size_t timeout = recovery.find("case codexbar_display::esp8266::wifi_recovery::Action::Timeout:");
+  const std::size_t timeoutDisconnect = recovery.find("WiFi.disconnect(false);", timeout);
+  const std::size_t timeoutApSta = recovery.find("WiFi.mode(WIFI_AP_STA);", timeoutDisconnect);
+  const std::size_t timeoutAp = recovery.find("WiFi.softAP(kSetupApSsid);", timeoutApSta);
+  const std::size_t connected = recovery.find("case codexbar_display::esp8266::wifi_recovery::Action::Connected:");
+  if (!expect(
+          timeout != std::string::npos && connected != std::string::npos && timeout < connected,
+          "setup recovery must keep distinct timeout and connected branches")) {
+    return false;
+  }
+  const std::string timeoutBlock = recovery.substr(timeout, connected - timeout);
+  const std::size_t dnsStop = finish.find("dnsServer.stop();");
+  const std::size_t apDisconnect = finish.find("WiFi.softAPdisconnect(true);");
+  const std::size_t sta = finish.find("WiFi.mode(WIFI_STA);");
+  const std::size_t leaveSetup = finish.find("setupMode = false;");
+  const std::size_t reset = finish.find("resetWifiReconnectState();");
+  const std::size_t server = finish.find("startHttpServer();");
+  const std::size_t connectedScreen = finish.find("drawWaitingForCompanionStatus();");
+  return expect(
+      countOccurrences(recovery, "WiFi.begin(") == 1 && timeout != std::string::npos &&
+          timeoutDisconnect != std::string::npos && timeoutApSta != std::string::npos &&
+          timeoutAp != std::string::npos && timeout < timeoutDisconnect && timeoutDisconnect < timeoutApSta &&
+          timeoutApSta < timeoutAp && timeoutBlock.find("finishWifiSetupRecovery()") == std::string::npos &&
+          recovery.find("finishWifiSetupRecovery();", connected) != std::string::npos &&
+          recovery.find("inputs.busy = wifiSetupRecoveryBusy();") != std::string::npos && dnsStop < apDisconnect &&
+          apDisconnect < sta && sta < leaveSetup && leaveSetup < reset && reset < server &&
+          server < connectedScreen,
+      "setup recovery must begin once, keep timeout in AP_STA, and leave DNS/AP/setup mode only after connection");
+}
+
+bool testUploadMutualExclusionPolicy(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t rawStart = mainSource.find("void handleRawOtaClient()");
+  const std::size_t rawAccept = mainSource.find("WiFiClient client = rawOtaServer.accept();", rawStart);
+  const std::size_t assetStart = mainSource.find("void handleAssetUpload()");
+  const std::size_t assetEnd = mainSource.find("void handleAssetUploadResult()", assetStart);
+  const std::size_t otaStart = mainSource.find("void handleOtaUpload(int command, const char* target)");
+  const std::size_t otaEnd = mainSource.find("void scheduleReboot(", otaStart);
+  if (!expect(
+          rawStart != std::string::npos && rawAccept != std::string::npos && assetStart != std::string::npos &&
+              assetEnd != std::string::npos && otaStart != std::string::npos && otaEnd != std::string::npos,
+          "all upload handlers must remain discoverable")) {
+    return false;
+  }
+
+  const std::string rawGuard = mainSource.substr(rawStart, rawAccept - rawStart);
+  const std::string assetHandler = mainSource.substr(assetStart, assetEnd - assetStart);
+  const std::string otaHandler = mainSource.substr(otaStart, otaEnd - otaStart);
+  const std::size_t assetStartEvent = assetHandler.find("if (upload.status == UPLOAD_FILE_START)");
+  const std::size_t assetBusy =
+      assetHandler.find("if (otaUploadInProgress || assetUploadInProgress || rebootPending)", assetStartEvent);
+  const std::size_t assetSafeMode = assetHandler.find("enterAssetUploadSafeMode()", assetStartEvent);
+  const std::size_t otaStartEvent = otaHandler.find("if (upload.status == UPLOAD_FILE_START)");
+  const std::size_t otaBusy =
+      otaHandler.find("if (assetUploadInProgress || otaUploadInProgress || rebootPending)", otaStartEvent);
+  const std::size_t otaSafeMode = otaHandler.find("enterOtaSafeMode(", otaStartEvent);
+  return expect(
+      rawGuard.find("assetUploadInProgress") != std::string::npos &&
+          rawGuard.find("otaUploadInProgress") != std::string::npos &&
+          rawGuard.find("rebootPending") != std::string::npos && assetStartEvent != std::string::npos &&
+          assetBusy != std::string::npos && assetSafeMode != std::string::npos && assetBusy < assetSafeMode &&
+          otaStartEvent != std::string::npos && otaBusy != std::string::npos && otaSafeMode != std::string::npos &&
+          otaBusy < otaSafeMode,
+      "raw OTA and HTTP asset/filesystem/firmware uploads must exclude each other before safe mode");
 }
 
 bool testCaptiveFirstResponseNeverBlocksOnWifiScan(const char* mainPath) {
@@ -855,6 +965,15 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testSetupPortalIsReadyBeforeJoinInstructions(argv[3])) {
+    return 1;
+  }
+  if (!testNetworkWorkPrecedesWifiRecovery(argv[3])) {
+    return 1;
+  }
+  if (!testWifiRecoveryFirmwareWiring(argv[3])) {
+    return 1;
+  }
+  if (!testUploadMutualExclusionPolicy(argv[3])) {
     return 1;
   }
   if (!testCaptiveFirstResponseNeverBlocksOnWifiScan(argv[3])) {

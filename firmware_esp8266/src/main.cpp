@@ -15,6 +15,7 @@
 #include "wifi_security_policy.h"
 #include "gif_asset_validator_file.h"
 #include "renderer_esp8266.h"
+#include "wifi_recovery_policy.h"
 #include "wifi_setup_portal.h"
 
 #ifndef CODEXBAR_DISPLAY_BOARD_ID
@@ -188,6 +189,9 @@ File assetUploadFile;
 String activeThemeSpecPath;
 String activeThemeSpecHash;
 codexbar_display::esp8266::wifi_setup::State setupWifiState;
+WifiCredentials savedWifiCredentials;
+bool savedWifiCredentialsAvailable = false;
+codexbar_display::esp8266::wifi_recovery::State wifiSetupRecoveryState;
 bool rebootPending = false;
 unsigned long rebootAtMs = 0;
 unsigned long lastFrameAcceptedAtMs = 0;
@@ -209,6 +213,8 @@ String bootResetReasonJSON;
 uint32_t bootResetCounter = 0;
 
 void addCorsHeaders();
+void resetWifiReconnectState();
+void startHttpServer();
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 constexpr const char* kDefaultThemeSpecPath = "/themes/u/mini-cl-1-e4fe6b.json";
@@ -685,6 +691,59 @@ void drawUpdateStatus(const String& line2) {
 
 bool statusScreenLocked() {
   return otaUploadInProgress || rebootPending;
+}
+
+bool wifiSetupRecoveryBusy() {
+  return statusScreenLocked() || assetUploadInProgress || setupWifiState.scanInProgress;
+}
+
+void finishWifiSetupRecovery() {
+  if (captiveDnsStarted) {
+    dnsServer.stop();
+    captiveDnsStarted = false;
+    Serial.println("captive_dns_stopped reason=wifi_reconnected");
+  }
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_STA);
+  setupMode = false;
+  resetWifiReconnectState();
+  startHttpServer();
+  drawWaitingForCompanionStatus();
+  Serial.printf("wifi_setup_retry_connected ip=%s\n", WiFi.localIP().toString().c_str());
+}
+
+void maintainWifiSetupRecovery() {
+  const unsigned long nowMs = millis();
+  codexbar_display::esp8266::wifi_recovery::Inputs inputs;
+  inputs.nowMs = static_cast<uint32_t>(nowMs);
+  inputs.setupMode = setupMode;
+  inputs.credentialsAvailable = savedWifiCredentialsAvailable;
+  inputs.busy = wifiSetupRecoveryBusy();
+  inputs.connected = WiFi.status() == WL_CONNECTED;
+
+  const codexbar_display::esp8266::wifi_recovery::Action action =
+      codexbar_display::esp8266::wifi_recovery::Tick(wifiSetupRecoveryState, inputs);
+  switch (action) {
+    case codexbar_display::esp8266::wifi_recovery::Action::StartAttempt:
+      WiFi.mode(WIFI_AP_STA);
+      WiFi.begin(savedWifiCredentials.ssid, savedWifiCredentials.password);
+      Serial.printf("wifi_setup_retry_started ssid=%s\n", savedWifiCredentials.ssid);
+      break;
+    case codexbar_display::esp8266::wifi_recovery::Action::Timeout:
+      WiFi.disconnect(false);
+      WiFi.mode(WIFI_AP_STA);
+      WiFi.softAP(kSetupApSsid);
+      Serial.printf("wifi_setup_retry_failed status=%d next_retry_ms=%lu\n",
+                    static_cast<int>(WiFi.status()),
+                    static_cast<unsigned long>(
+                        codexbar_display::esp8266::wifi_recovery::kRetryIntervalMs));
+      break;
+    case codexbar_display::esp8266::wifi_recovery::Action::Connected:
+      finishWifiSetupRecovery();
+      break;
+    case codexbar_display::esp8266::wifi_recovery::Action::None:
+      break;
+  }
 }
 
 void resetWifiReconnectState() {
@@ -1608,6 +1667,12 @@ void handleAssetUpload() {
   HTTPUpload& upload = webServer.upload();
 
   if (upload.status == UPLOAD_FILE_START) {
+    if (otaUploadInProgress || assetUploadInProgress || rebootPending) {
+      assetUploadSucceeded = false;
+      assetUploadInProgress = true;
+      assetUploadError = "another upload is active";
+      return;
+    }
     assetUploadSucceeded = false;
     assetUploadInProgress = true;
     assetUploadError = "";
@@ -2089,6 +2154,13 @@ void handleOtaUpload(int command, const char* target) {
   HTTPUpload& upload = webServer.upload();
 
   if (upload.status == UPLOAD_FILE_START) {
+    if (assetUploadInProgress || otaUploadInProgress || rebootPending) {
+      otaUploadSucceeded = false;
+      otaUploadInProgress = true;
+      otaUploadNeedsReboot = false;
+      otaUploadError = "another upload is active";
+      return;
+    }
     otaUploadSucceeded = false;
     otaUploadInProgress = true;
     otaUploadNeedsReboot = false;
@@ -2249,7 +2321,7 @@ String rawRequestToken(const String& line) {
 }
 
 void handleRawOtaClient() {
-  if (!rawOtaServerStarted || otaUploadInProgress || rebootPending) {
+  if (!rawOtaServerStarted || otaUploadInProgress || assetUploadInProgress || rebootPending) {
     return;
   }
 
@@ -2523,10 +2595,13 @@ void startHttpServer() {
 void startSetupAccessPoint() {
   setupMode = true;
   resetWifiReconnectState();
+  codexbar_display::esp8266::wifi_recovery::EnterSetup(
+      wifiSetupRecoveryState,
+      static_cast<uint32_t>(millis()));
   codexbar_display::esp8266::wifi_setup::ClearConnectionError(setupWifiState);
   WiFi.setAutoReconnect(false);
   WiFi.disconnect(false);
-  WiFi.mode(WIFI_AP);
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(kSetupApSsid);
   Serial.printf("wifi_setup_ap ssid=VibeTV-Setup ip=%s\n", WiFi.softAPIP().toString().c_str());
   dnsServer.start(kDnsPort, "*", WiFi.softAPIP());
@@ -2540,7 +2615,11 @@ void startSetupAccessPoint() {
 }
 
 void maintainWifiConnection() {
-  if (setupMode || rebootPending) {
+  if (setupMode) {
+    maintainWifiSetupRecovery();
+    return;
+  }
+  if (rebootPending) {
     return;
   }
   if (WiFi.status() == WL_CONNECTED) {
@@ -2668,16 +2747,20 @@ void setup() {
 #endif
 
   bool wifiConnected = false;
-  WifiCredentials creds;
-  const bool hasSavedWifi = readWifiCredentials(creds);
+  const bool hasSavedWifi = readWifiCredentials(savedWifiCredentials);
+  savedWifiCredentialsAvailable = hasSavedWifi;
   if (hasSavedWifi) {
-    wifiConnected = connectToSavedWifi(creds);
+    wifiConnected = connectToSavedWifi(savedWifiCredentials);
   }
 
   // SDK credentials are a one-time legacy import only. Never let stale SDK
   // credentials replace a failed explicit VibeTV Wi-Fi configuration.
   if (!wifiConnected && !hasSavedWifi) {
     wifiConnected = connectToSdkWifiConfig();
+  }
+
+  if (wifiConnected && !hasSavedWifi) {
+    savedWifiCredentialsAvailable = readWifiCredentials(savedWifiCredentials);
   }
 
   if (wifiConnected) {
@@ -2704,15 +2787,16 @@ void loop() {
     markFrameAccepted(event, "usb");
   }
 
+  if (httpServerStarted) {
+    webServer.handleClient();
+  }
+  handleRawOtaClient();
   maintainWifiConnection();
   if (!otaUploadInProgress) {
     maintainFirmwareUpdateNotice();
   }
 
   if (otaUploadInProgress || assetUploadInProgress) {
-    if (httpServerStarted) {
-      webServer.handleClient();
-    }
     delay(1);
     return;
   }
@@ -2819,10 +2903,6 @@ void loop() {
   (void)renderDurationUs;
 #endif
 
-  if (httpServerStarted) {
-    webServer.handleClient();
-  }
-  handleRawOtaClient();
   if (captiveDnsStarted) {
     dnsServer.processNextRequest();
   }
