@@ -2,8 +2,11 @@ package codexbar
 
 import (
 	"context"
+	"errors"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -150,6 +153,7 @@ func TestLoadProviderTokenStatsFromCostCacheCodexLayout(t *testing.T) {
 	now := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
 	writeCostCacheFixture(t, filepath.Join(cacheRoot, "codex-v10.json"), `{
 		"version":1,
+		"producerKey":"codex:cu:p2d056ae5a24d5157",
 		"lastScanUnixMs":1784743200000,
 		"days":{
 			"2026-07-21":{"gpt-5.5":[10,8,2]},
@@ -223,6 +227,7 @@ func TestLoadProviderTokenStatsFromCostCacheRejectsUnknownArtifactVersion(t *tes
 	now := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
 	writeCostCacheFixture(t, filepath.Join(cacheRoot, "codex-v11.json"), `{
 		"version":1,
+		"producerKey":"codex:cu:p2d056ae5a24d5157",
 		"lastScanUnixMs":1784743200000,
 		"days":{"2026-07-22":{"gpt-5.6-sol":[100,80,20]}}
 	}`)
@@ -237,6 +242,7 @@ func TestLoadProviderTokenStatsFromCostCacheRejectsUnknownPackedLayout(t *testin
 	now := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
 	writeCostCacheFixture(t, filepath.Join(cacheRoot, "codex-v10.json"), `{
 		"version":1,
+		"producerKey":"codex:cu:p2d056ae5a24d5157",
 		"lastScanUnixMs":1784743200000,
 		"days":{"2026-07-22":{"gpt-5.6-sol":[100,80,20,5]}}
 	}`)
@@ -244,6 +250,141 @@ func TestLoadProviderTokenStatsFromCostCacheRejectsUnknownPackedLayout(t *testin
 	if stats, ok := loadProviderTokenStatsFromCostCacheAt(cacheRoot, now); ok {
 		t.Fatalf("expected unknown Codex packed layout to be bypassed, got %#v", stats)
 	}
+}
+
+func TestLoadProviderTokenStatsFromCostCacheUsesRollingCalendarWindow(t *testing.T) {
+	cacheRoot := t.TempDir()
+	now := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
+	writeCostCacheFixture(t, filepath.Join(cacheRoot, "codex-v10.json"), `{
+		"version":1,
+		"producerKey":"codex:cu:p2d056ae5a24d5157",
+		"lastScanUnixMs":1784743200000,
+		"days":{
+			"2026-06-22":{"gpt-5.5":[1000,800,200]},
+			"2026-06-23":{"gpt-5.5":[10,8,2]},
+			"2026-07-22":{"gpt-5.6-sol":[100,80,20]}
+		}
+	}`)
+
+	stats, ok := loadProviderTokenStatsFromCostCacheAt(cacheRoot, now)
+	if !ok {
+		t.Fatal("expected cached token stats")
+	}
+	codex := stats["codex"]
+	if codex.TotalTokens != 132 || codex.Cost == nil || len(codex.Cost.Daily) != 2 {
+		t.Fatalf("expected only the inclusive 30-calendar-day window, got %+v", codex)
+	}
+	if codex.Cost.Daily[0].Day != "2026-06-23" || codex.Cost.Daily[1].Day != "2026-07-22" {
+		t.Fatalf("unexpected rolling-window days: %+v", codex.Cost.Daily)
+	}
+}
+
+func TestLoadProviderTokenStatsFromCostCacheRejectsUnknownCodexProducerKey(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		producerKey string
+	}{
+		{name: "missing"},
+		{name: "unknown", producerKey: "codex:cu:punknown"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cacheRoot := t.TempDir()
+			now := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
+			writeCostCacheFixture(t, filepath.Join(cacheRoot, "codex-v10.json"), `{
+				"version":1,
+				"producerKey":"`+test.producerKey+`",
+				"lastScanUnixMs":1784743200000,
+				"days":{"2026-07-22":{"gpt-5.6-sol":[100,80,20]}}
+			}`)
+
+			if stats, ok := loadProviderTokenStatsFromCostCacheAt(cacheRoot, now); ok {
+				t.Fatalf("expected unsupported Codex producer key to be bypassed, got %#v", stats)
+			}
+		})
+	}
+}
+
+func TestLoadProviderTokenStatsFromCostCacheRejectsPeriodOverflow(t *testing.T) {
+	cacheRoot := t.TempDir()
+	now := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
+	writeCostCacheFixture(t, filepath.Join(cacheRoot, "codex-v10.json"), `{
+		"version":1,
+		"producerKey":"codex:cu:p2d056ae5a24d5157",
+		"lastScanUnixMs":1784743200000,
+		"days":{
+			"2026-07-21":{"gpt-5.5":[`+fmtInt64(math.MaxInt64)+`,0,0]},
+			"2026-07-22":{"gpt-5.6-sol":[1,0,0]}
+		}
+	}`)
+
+	if stats, ok := loadProviderTokenStatsFromCostCacheAt(cacheRoot, now); ok {
+		t.Fatalf("expected overflowing period total to be bypassed, got %#v", stats)
+	}
+}
+
+func TestFetchProviderTokenStatsFallsBackFromUnknownCacheToCLIAndLastGood(t *testing.T) {
+	t.Run("CLI", func(t *testing.T) {
+		resetTokenStatsTestGlobals()
+		defer resetTokenStatsTestGlobals()
+
+		cacheRoot := t.TempDir()
+		cacheNow := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
+		writeCostCacheFixture(t, filepath.Join(cacheRoot, "codex-v11.json"), `{
+			"version":1,
+			"lastScanUnixMs":1784743200000,
+			"days":{"2026-07-22":{"gpt-5.6-sol":[100,80,20]}}
+		}`)
+		loadProviderTokenStatsCacheFn = func(time.Time) (map[string]ProviderTokenStats, bool) {
+			return loadProviderTokenStatsFromCostCacheAt(cacheRoot, cacheNow)
+		}
+		runCostCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+			return []byte(`[{
+				"provider":"codex",
+				"source":"local",
+				"updatedAt":"2026-07-22T18:00:00Z",
+				"sessionTokens":120,
+				"last30DaysTokens":120,
+				"daily":[{"date":"2026-07-22","totalTokens":120}],
+				"totals":{"totalTokens":120}
+			}]`), nil
+		}
+
+		stats, ok := fetchProviderTokenStats(context.Background(), "/tmp/CodexBarCLI")
+		if !ok || stats["codex"].Source != "local" || stats["codex"].TotalTokens != 120 {
+			t.Fatalf("expected CLI fallback from unknown cache, got %#v", stats)
+		}
+	})
+
+	t.Run("last-good", func(t *testing.T) {
+		resetTokenStatsTestGlobals()
+		defer resetTokenStatsTestGlobals()
+
+		loadProviderTokenStatsCacheFn = func(time.Time) (map[string]ProviderTokenStats, bool) {
+			return nil, false
+		}
+		var calls atomic.Int32
+		runCostCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+			calls.Add(1)
+			return nil, errors.New("cost unavailable")
+		}
+		tokenStatsCache.store(
+			time.Now().UTC().Add(-tokenStatsRefreshInterval-time.Second),
+			map[string]ProviderTokenStats{
+				"codex": {TotalTokens: 90, Source: "last-good"},
+			})
+
+		stats, ok := fetchProviderTokenStats(context.Background(), "/tmp/CodexBarCLI")
+		if !ok || stats["codex"].Source != "last-good" || stats["codex"].TotalTokens != 90 {
+			t.Fatalf("expected stale last-good fallback, got %#v", stats)
+		}
+		deadline := time.Now().Add(time.Second)
+		for calls.Load() < 2 && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		if calls.Load() < 2 {
+			t.Fatal("expected background CLI repair after last-good fallback")
+		}
+	})
 }
 
 func TestFetchProviderTokenStatsKeepsCostCacheAndCLIAtParity(t *testing.T) {
@@ -365,6 +506,10 @@ func writeCostCacheFixture(t *testing.T, path, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write cost cache fixture: %v", err)
 	}
+}
+
+func fmtInt64(value int64) string {
+	return strconv.FormatInt(value, 10)
 }
 
 func resetTokenStatsTestGlobals() {

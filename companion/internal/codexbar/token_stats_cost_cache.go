@@ -16,10 +16,12 @@ const tokenStatsCostCacheMaxAge = 24 * time.Hour
 const (
 	codexCostCacheArtifactVersion  = 10
 	claudeCostCacheArtifactVersion = 5
+	codexCostCacheProducerKey      = "codex:cu:p2d056ae5a24d5157"
 )
 
 type codexBarCostCache struct {
 	Version        int                           `json:"version"`
+	ProducerKey    string                        `json:"producerKey"`
 	LastScanUnixMS int64                         `json:"lastScanUnixMs"`
 	Days           map[string]map[string][]int64 `json:"days"`
 }
@@ -48,6 +50,9 @@ func loadProviderTokenStatsFromCostCacheAt(cacheRoot string, now time.Time) (map
 		}
 		var cache codexBarCostCache
 		if err := json.Unmarshal(raw, &cache); err != nil || cache.Version != 1 || len(cache.Days) == 0 {
+			return nil, false
+		}
+		if provider == "codex" && cache.ProducerKey != codexCostCacheProducerKey {
 			return nil, false
 		}
 		updatedAt := time.UnixMilli(cache.LastScanUnixMS).UTC()
@@ -108,10 +113,13 @@ func supportedCostCacheArtifactVersion(provider string) (int, bool) {
 }
 
 func providerTokenStatsFromCostCache(provider string, cache codexBarCostCache, updatedAt time.Time) (ProviderTokenStats, bool) {
+	anchor := updatedAt.In(time.Local)
+	anchorDay := anchor.Format("2006-01-02")
+	windowStart := anchor.AddDate(0, 0, -29).Format("2006-01-02")
 	days := make([]ProviderCostDay, 0, len(cache.Days))
 	for dayKey, packedModels := range cache.Days {
 		day := usageDayKey(dayKey)
-		if day == "" || len(packedModels) == 0 {
+		if day == "" || day < windowStart || day > anchorDay || len(packedModels) == 0 {
 			continue
 		}
 		models := make([]ProviderCostModel, 0, len(packedModels))
@@ -148,19 +156,21 @@ func providerTokenStatsFromCostCache(provider string, cache codexBarCostCache, u
 		return ProviderTokenStats{}, false
 	}
 	sort.Slice(days, func(i, j int) bool { return days[i].Day < days[j].Day })
-	if len(days) > 30 {
-		days = days[len(days)-30:]
-	}
 
-	anchorDay := updatedAt.Format("2006-01-02")
-	weekStart := updatedAt.AddDate(0, 0, -6).Format("2006-01-02")
+	weekStart := anchor.AddDate(0, 0, -6).Format("2006-01-02")
 	var latestTokens, weekTokens, totalTokens int64
 	for _, day := range days {
+		if day.TotalTokens > math.MaxInt64-totalTokens {
+			return ProviderTokenStats{}, false
+		}
 		totalTokens += day.TotalTokens
 		if day.Day == anchorDay {
 			latestTokens = day.TotalTokens
 		}
 		if day.Day >= weekStart && day.Day <= anchorDay {
+			if day.TotalTokens > math.MaxInt64-weekTokens {
+				return ProviderTokenStats{}, false
+			}
 			weekTokens += day.TotalTokens
 		}
 	}
