@@ -149,6 +149,7 @@ func TestMergeTokenStatsAddsFrameFields(t *testing.T) {
 }
 
 func TestLoadProviderTokenStatsFromCostCacheCodexLayout(t *testing.T) {
+	setTokenStatsTestLocalLocation(t, time.UTC)
 	cacheRoot := t.TempDir()
 	now := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
 	writeCostCacheFixture(t, filepath.Join(cacheRoot, "codex-v10.json"), `{
@@ -253,12 +254,14 @@ func TestLoadProviderTokenStatsFromCostCacheRejectsUnknownPackedLayout(t *testin
 }
 
 func TestLoadProviderTokenStatsFromCostCacheUsesRollingCalendarWindow(t *testing.T) {
+	location := time.FixedZone("UTC+14", 14*60*60)
+	setTokenStatsTestLocalLocation(t, location)
 	cacheRoot := t.TempDir()
-	now := time.Date(2026, 7, 22, 18, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 7, 22, 18, 0, 0, 0, location)
 	writeCostCacheFixture(t, filepath.Join(cacheRoot, "codex-v10.json"), `{
 		"version":1,
 		"producerKey":"codex:cu:p2d056ae5a24d5157",
-		"lastScanUnixMs":1784743200000,
+		"lastScanUnixMs":`+fmtInt64(now.UnixMilli())+`,
 		"days":{
 			"2026-06-22":{"gpt-5.5":[1000,800,200]},
 			"2026-06-23":{"gpt-5.5":[10,8,2]},
@@ -276,6 +279,24 @@ func TestLoadProviderTokenStatsFromCostCacheUsesRollingCalendarWindow(t *testing
 	}
 	if codex.Cost.Daily[0].Day != "2026-06-23" || codex.Cost.Daily[1].Day != "2026-07-22" {
 		t.Fatalf("unexpected rolling-window days: %+v", codex.Cost.Daily)
+	}
+}
+
+func TestLoadProviderTokenStatsFromCostCacheRejectsPreviousLocalDay(t *testing.T) {
+	location := time.FixedZone("UTC+14", 14*60*60)
+	setTokenStatsTestLocalLocation(t, location)
+	cacheRoot := t.TempDir()
+	lastScan := time.Date(2026, 7, 22, 23, 59, 0, 0, location)
+	now := time.Date(2026, 7, 23, 0, 1, 0, 0, location)
+	writeCostCacheFixture(t, filepath.Join(cacheRoot, "codex-v10.json"), `{
+		"version":1,
+		"producerKey":"codex:cu:p2d056ae5a24d5157",
+		"lastScanUnixMs":`+fmtInt64(lastScan.UnixMilli())+`,
+		"days":{"2026-07-22":{"gpt-5.6-sol":[100,80,20]}}
+	}`)
+
+	if stats, ok := loadProviderTokenStatsFromCostCacheAt(cacheRoot, now); ok {
+		t.Fatalf("expected previous-local-day cache to fall back to CLI, got %#v", stats)
 	}
 }
 
@@ -510,6 +531,15 @@ func writeCostCacheFixture(t *testing.T, path, body string) {
 
 func fmtInt64(value int64) string {
 	return strconv.FormatInt(value, 10)
+}
+
+func setTokenStatsTestLocalLocation(t *testing.T, location *time.Location) {
+	t.Helper()
+	previous := time.Local
+	time.Local = location
+	t.Cleanup(func() {
+		time.Local = previous
+	})
 }
 
 func resetTokenStatsTestGlobals() {

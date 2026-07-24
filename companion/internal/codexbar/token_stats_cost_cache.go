@@ -59,6 +59,9 @@ func loadProviderTokenStatsFromCostCacheAt(cacheRoot string, now time.Time) (map
 		if updatedAt.IsZero() || updatedAt.After(now.Add(5*time.Minute)) || now.Sub(updatedAt) > tokenStatsCostCacheMaxAge {
 			return nil, false
 		}
+		if updatedAt.In(time.Local).Format("2006-01-02") != now.In(time.Local).Format("2006-01-02") {
+			return nil, false
+		}
 		if stats, ok := providerTokenStatsFromCostCache(provider, cache, updatedAt); ok {
 			providers[provider] = stats
 		} else {
