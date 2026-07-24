@@ -63,13 +63,14 @@ main() {
   local release_job macos_job release_count checksum_line release_line download_dmg_line
   local build_dmg_line verify_dmg_line upload_dmg_line require_dmg_line
   local local_installer release_installer local_installer_build_line local_installer_go_build_line
-  local local_static_builder ci_workflow signing_script verify_dmg_plan workflow
+  local local_static_builder ci_workflow preview_workflow signing_script verify_dmg_plan workflow
   local verify_dmg_open_line verify_syspolicy_line verify_app_spctl_line
   release_job="$(job_block "build-and-release")"
   local_installer="$(cat "$LOCAL_INSTALLER")"
   release_installer="$(cat "$RELEASE_INSTALLER")"
   local_static_builder="$(cat "$ROOT/apps/control-center/scripts/build-local-static.mjs")"
   ci_workflow="$(cat "$CI_WORKFLOW")"
+  preview_workflow="$(cat "$PREVIEW_WORKFLOW")"
   workflow="$(cat "$WORKFLOW")"
   signing_script="$(cat "$SIGNING_SCRIPT")"
   verify_dmg_plan="$("$VERIFY_DMG_SCRIPT" --dry-run --dmg "/tmp/VibeTV-Control-Center.dmg")"
@@ -83,6 +84,25 @@ main() {
     "release workflow must declare least-privilege permissions"
   assert_contains "$workflow" "contents: read" \
     "release workflow must keep repository write access out of the build job"
+
+  assert_contains "$preview_workflow" "workflow_dispatch:" \
+    "preview workflow must remain manually dispatched"
+  assert_contains "$preview_workflow" "github.repository == 'DreamyTalesPAN/CodexBar-Display'" \
+    "preview workflow must stay limited to the trusted repository"
+  assert_contains "$preview_workflow" "github.ref == 'refs/heads/main'" \
+    "preview workflow definition must run only from trusted main"
+  assert_contains "$preview_workflow" "github.actor == github.repository_owner" \
+    "preview workflow must keep the repository owner authorized"
+  assert_contains "$preview_workflow" "github.actor == 'marcus7989'" \
+    "preview workflow must authorize Marcus explicitly"
+  assert_contains "$preview_workflow" "contents: read" \
+    "preview workflow must retain read-only repository permissions"
+  assert_not_contains "$preview_workflow" "contents: write" \
+    "preview workflow must not gain repository write access"
+  assert_not_contains "$preview_workflow" "softprops/action-gh-release" \
+    "preview workflow must not publish a GitHub Release"
+  assert_contains "$preview_workflow" "persist-credentials: false" \
+    "preview source checkout must not persist GitHub credentials"
 
   assert_contains "$macos_job" "runs-on: macos-15" \
     "release workflow must pin the customer DMG build to macOS 15"
