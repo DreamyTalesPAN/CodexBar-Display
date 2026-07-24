@@ -26,7 +26,7 @@
 #endif
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-const char kThemeFeatureJSON[] = "[\"theme-spec-v1\"]";
+const char kThemeFeatureJSON[] = "[\"theme-spec-v1\",\"partial-usage-unavailable\"]";
 #else
 const char kThemeFeatureJSON[] = "[]";
 #endif

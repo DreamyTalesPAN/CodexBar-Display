@@ -14,7 +14,7 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 		PreferredProtocolVersion:  2,
 		Board:                     "ESP8266-SMALLTV-ST7789",
 		Firmware:                  "1.0.0",
-		Features:                  []string{"theme", "theme-spec-v1"},
+		Features:                  []string{"theme", "theme-spec-v1", "partial-usage-unavailable"},
 		MaxFrameBytes:             512,
 		Capabilities: CapabilityBlock{
 			Display: DisplayCapabilities{
@@ -60,6 +60,9 @@ func TestCapabilitiesFromHelloKnownAndTheme(t *testing.T) {
 	}
 	if !caps.SupportsThemeSpecV1 {
 		t.Fatalf("expected theme spec support")
+	}
+	if !caps.SupportsPartialUsage {
+		t.Fatalf("expected partial usage support")
 	}
 	if !caps.SupportsStoredThemes {
 		t.Fatalf("expected stored theme support")

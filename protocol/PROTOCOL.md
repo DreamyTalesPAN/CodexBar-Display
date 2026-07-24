@@ -27,7 +27,7 @@ Fields:
 - `weekly` (number, optional): weekly usage percent `0..100`.
 - `resetSecs` (number, optional): seconds remaining until reset.
 - `usageUnavailable` (boolean, optional): both current quota values are not trustworthy; missing/false remains backward compatible. ThemeSpec text bindings show unknown values while progress keeps the numeric carrier values.
-- `sessionUnavailable` / `weeklyUnavailable` (boolean, optional): only that existing usage lane is unknown. Missing/false remains backward compatible. Its text binding shows `??` and its progress primitive is omitted. `usageUnavailable:true` still overrides both lanes, including stale frames.
+- `sessionUnavailable` / `weeklyUnavailable` (boolean, optional): only that existing usage lane is unknown. Missing/false remains backward compatible. Its text binding shows `??` and its progress primitive is omitted. Firmware advertises this behavior with `partial-usage-unavailable`; hosts fall back to `usageUnavailable:true` for older devices so an unknown lane is never rendered as a believable `0%`.
 - `usageMode` (string, optional): semantic of `session`/`weekly` (`used` or `remaining`).
 - `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
 - `weekTokens` (number, optional): rolling 7-day token total when available.
@@ -138,7 +138,7 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
   "preferredProtocolVersion": 2,
   "board": "esp8266-smalltv-st7789",
   "firmware": "1.0.0",
-  "features": ["theme", "theme-spec-v1"],
+  "features": ["theme", "theme-spec-v1", "partial-usage-unavailable"],
   "maxFrameBytes": 2048,
   "capabilities": {
     "display": {
@@ -174,7 +174,7 @@ Fields:
 - `protocolVersion` (number): legacy single-value signal.
 - `supportedProtocolVersions` (array[number]): negotiated protocol candidates.
 - `preferredProtocolVersion` (number): firmware preference.
-- `features` (array[string], optional): capabilities (for example `theme`, `theme-spec-v1`).
+- `features` (array[string], optional): capabilities (for example `theme`, `theme-spec-v1`, `partial-usage-unavailable`).
 - `capabilities` (object, optional): extended block for display/theme/transport limits.
   - `display.brightness.supported` describes browser-adjustable backlight support when the board exposes it. Hosts use 10-100 percent for the current ESP8266 implementation.
   - `theme.maxThemeSpecBytes` is the inline `themeSpec` frame byte limit.

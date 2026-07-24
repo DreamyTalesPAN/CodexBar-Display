@@ -3,11 +3,12 @@ package protocol
 import "strings"
 
 const (
-	FeatureTheme         = "theme"
-	FeatureThemeSpecV1   = "theme-spec-v1"
-	DefaultMaxFrameBytes = 512
-	DefaultMinBrightness = 10
-	DefaultMaxBrightness = 100
+	FeatureTheme                   = "theme"
+	FeatureThemeSpecV1             = "theme-spec-v1"
+	FeaturePartialUsageUnavailable = "partial-usage-unavailable"
+	DefaultMaxFrameBytes           = 512
+	DefaultMinBrightness           = 10
+	DefaultMaxBrightness           = 100
 )
 
 type DisplayBrightnessCapabilities struct {
@@ -136,6 +137,7 @@ type DeviceCapabilities struct {
 	Features                   []string
 	SupportsTheme              bool
 	SupportsThemeSpecV1        bool
+	SupportsPartialUsage       bool
 	SupportsStoredThemes       bool
 	MaxFrameBytes              int
 	MaxThemeSpecBytes          int
@@ -177,6 +179,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 	negotiated := NegotiateProtocolVersion(supportedProtocols, h.PreferredProtocolVersion, h.ProtocolVersion)
 	supportsTheme := h.HasFeature(FeatureTheme)
 	supportsThemeSpecV1 := h.HasFeature(FeatureThemeSpecV1) || h.Capabilities.Theme.SupportsThemeSpecV1
+	supportsPartialUsage := h.HasFeature(FeaturePartialUsageUnavailable)
 	supportsStoredThemes := h.Capabilities.Theme.SupportsStoredThemes || h.Capabilities.Theme.MaxStoredThemeSpecBytes > 0
 	if !supportsTheme {
 		supportsTheme = len(h.Capabilities.Theme.BuiltinThemes) > 0 || supportsThemeSpecV1
@@ -192,6 +195,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		Features:                   append([]string(nil), h.Features...),
 		SupportsTheme:              supportsTheme,
 		SupportsThemeSpecV1:        supportsThemeSpecV1,
+		SupportsPartialUsage:       supportsPartialUsage,
 		SupportsStoredThemes:       supportsStoredThemes,
 		MaxFrameBytes:              h.MaxFrameBytes,
 		MaxThemeSpecBytes:          h.Capabilities.Theme.MaxThemeSpecBytes,
