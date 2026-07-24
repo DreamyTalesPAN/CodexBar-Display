@@ -83,7 +83,7 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Reset in");
   });
 
-  it("renders missing normalized window lanes as unknown before extras", () => {
+  it("renders only normalized windows reported by CodexBar", () => {
     const html = renderUsage(null, {
       ...usage,
       providers: [
@@ -108,15 +108,12 @@ describe("UsageScreen", () => {
       ],
     });
 
-    expect(html).toContain("Session: ??");
     expect(html).toContain("7-day quota: 57% used");
     expect(html).toContain("Codex Spark Weekly: 12% used");
-    expect(html.indexOf("Session: ??")).toBeLessThan(
-      html.indexOf("7-day quota: 57% used"),
-    );
     expect(html.indexOf("7-day quota: 57% used")).toBeLessThan(
       html.indexOf("Codex Spark Weekly: 12% used"),
     );
+    expect(html).not.toContain("Session:");
     expect(html).not.toContain("Session: 0%");
   });
 

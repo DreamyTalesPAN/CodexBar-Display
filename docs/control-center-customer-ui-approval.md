@@ -378,3 +378,15 @@ issue scope, or release permission never implies UI permission.
   It never describes an unknown value as a believable percentage.
 - Approved files: The matching accessible preview label in
   `live-vibetv-preview.tsx`.
+
+## 2026-07-24 — Usage cards show only CodexBar limit windows
+
+- User approval: After identifying that CodexBar reports Weekly and Codex Spark
+  Weekly for Codex but no Session limit, the user explicitly ordered the
+  invented `Session: ??` row to be fixed with `dann fix es`.
+- Approved customer-visible result: When CodexBar supplies an explicit usage
+  window list, the provider card shows exactly those windows in their supplied
+  order. A missing Session or Weekly window is absent instead of being invented
+  as `??`. Legacy provider payloads without a window list retain the existing
+  two-lane fallback.
+- Approved files: `usage-screen.tsx` and its focused unit tests.
