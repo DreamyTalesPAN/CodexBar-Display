@@ -339,7 +339,23 @@ issue scope, or release permission never implies UI permission.
   alignment and clipping as the VibeTV firmware. In the connected
   `claude-creature` Overview preview, the second lane visually shows
   `Codex Spark` like the physical VibeTV instead of allowing the full raw
-  `Codex Spark Weekly` label to overlap the first lane. The complete raw label
-  remains available to usage data and accessibility text.
+  `Codex Spark Weekly` label to overlap the first lane or clipping it earlier
+  because the Mac uses different font widths. The complete raw label remains
+  available to usage data and accessibility text.
+- Approved files: `live-vibetv-preview.tsx`, its unit tests, and this approval
+  record.
+
+## 2026-07-24 — Firmware-font provider label parity
+
+- User approval: During the signed PR 260 hardware test, the user explicitly
+  required the Mac App label to show `Codex Spark` exactly like the connected
+  VibeTV and required the solution to scale to every provider rather than
+  special-casing Codex.
+- Approved customer-visible result: Width-bounded ThemeSpec text uses the
+  VibeTV font widths in every provider preview. The connected
+  `claude-creature` Overview therefore shows exactly `Codex Spark`, neither the
+  overlapping raw `Codex Spark Weekly` nor an earlier browser-only truncation.
+  The complete raw provider label remains unchanged in usage data and
+  accessibility text.
 - Approved files: `live-vibetv-preview.tsx`, its unit tests, and this approval
   record.

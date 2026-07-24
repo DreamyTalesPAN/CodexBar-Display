@@ -6,6 +6,7 @@ import {
   buildFrameData,
   primitiveUsageSlotVisible,
   ThemeSpecPreview,
+  themeFirmwareTextMetrics,
   themeTextLayout,
   themeTextWidth,
   themeSpecAriaLabel,
@@ -116,6 +117,51 @@ describe("firmware-compatible ThemeSpec text layout", () => {
     });
   });
 
+  it("uses provider-neutral TFT font metrics for ASCII labels", () => {
+    const codex = themeFirmwareTextMetrics("Codex Spark Weekly", 2, 1);
+    const anotherProvider = themeFirmwareTextMetrics(
+      "Claude Team Monthly",
+      2,
+      1,
+    );
+
+    expect(codex?.width).toBe(123);
+    expect(
+      codex?.glyphs
+        .slice(0, "Codex Spark".length)
+        .reduce((width, glyph) => width + glyph.width, 0),
+    ).toBe(76);
+    expect(anotherProvider?.width).toBeGreaterThan(81);
+    expect(
+      themeFirmwareTextMetrics(" AIMWaz09~", 2, 1)?.glyphs.map(
+        (glyph) => glyph.width,
+      ),
+    ).toEqual([6, 8, 4, 10, 10, 7, 7, 8, 8, 8]);
+  });
+
+  it("matches TFT byte measurement and missing-glyph behavior for UTF-8", () => {
+    const font2 = themeFirmwareTextMetrics("月次 Nutzung", 2, 1);
+    const font1 = themeFirmwareTextMetrics("Équipe", 1, 1);
+
+    expect(font2?.width).toBe(90);
+    expect(font2?.glyphs[0]).toEqual({
+      character: " ",
+      offset: 0,
+      width: 6,
+    });
+    expect(font2?.glyphs[1]).toEqual({
+      character: "N",
+      offset: 6,
+      width: 8,
+    });
+    expect(font1?.width).toBe(42);
+    expect(font1?.glyphs[0]).toEqual({
+      character: "╩",
+      offset: 0,
+      width: 6,
+    });
+  });
+
   it("clips only text primitives with an explicit ThemeSpec width", () => {
     const markup = renderToStaticMarkup(
       createElement(ThemeSpecPreview, {
@@ -170,11 +216,12 @@ describe("firmware-compatible ThemeSpec text layout", () => {
       /<clipPath id="([^"]+)"><rect height="20" width="81" x="145" y="46"><\/rect><\/clipPath>/,
     );
     expect(markup).toContain('clip-path="url(#theme-text-');
-    expect(markup).toContain(
-      'text-anchor="start" x="145" y="46">Provider Enterprise Monthly</text>',
+    expect(markup).toMatch(
+      /<text[^>]*y="46"[^>]*text-anchor="start"[^>]*x="145">/,
     );
-    expect(markup).toContain(
-      'text-anchor="start" x="10" y="10">Unbounded</text>',
+    expect(markup).toMatch(
+      /<text[^>]*y="10"[^>]*text-anchor="start"[^>]*x="10">/,
     );
+    expect(markup).toContain('lengthAdjust="spacingAndGlyphs"');
   });
 });

@@ -486,14 +486,18 @@ function ThemePrimitiveNode({
   if (type === "text" || type === "tx") {
     const text = renderTextPrimitive(primitive, frame);
     const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
-    const fontSize = themeFontSize(primitive.font || primitive.f, primitive.fontSize || primitive.s);
+    const font = primitive.font || primitive.f || 1;
+    const size = Math.max(1, primitive.fontSize || primitive.s || 1);
+    const fontSize = themeFontSize(font, size);
     return (
       <ThemeTextPrimitive
         align={primitive.align || primitive.al}
         color={colorFor(primitive.color || primitive.c, "#FFFFFF")}
+        font={font}
         fontSize={fontSize}
-        fontWeight={themeFontWeight(primitive.font || primitive.f)}
+        fontWeight={themeFontWeight(font)}
         maxWidth={maxWidth}
+        size={size}
         text={text}
         x={x}
         y={y}
@@ -588,18 +592,22 @@ function ThemePrimitiveNode({
 function ThemeTextPrimitive({
   align,
   color,
+  font,
   fontSize,
   fontWeight,
   maxWidth,
+  size,
   text,
   x,
   y,
 }: {
   align?: string;
   color: string;
+  font: number;
   fontSize: number;
   fontWeight: number;
   maxWidth: number;
+  size: number;
   text: string;
   x: number;
   y: number;
@@ -611,11 +619,14 @@ function ThemeTextPrimitive({
     key: "",
     width: 0,
   });
-  const textWidth = themeTextWidth(
-    text,
-    fontSize,
-    measurement.key === measurementKey ? measurement.width : undefined,
-  );
+  const firmwareMetrics = themeFirmwareTextMetrics(text, font, size);
+  const textWidth =
+    firmwareMetrics?.width ??
+    themeTextWidth(
+      text,
+      fontSize,
+      measurement.key === measurementKey ? measurement.width : undefined,
+    );
   const layout = themeTextLayout(x, maxWidth, align, textWidth);
 
   useEffect(() => {
@@ -634,18 +645,43 @@ function ThemeTextPrimitive({
     );
   }, [measurementKey, text]);
 
-  const textNode = (
+  const commonTextProps = {
+    dominantBaseline: "hanging" as const,
+    fill: color,
+    fontFamily:
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    fontSize,
+    fontWeight,
+    letterSpacing: "0",
+    y,
+  };
+  const textNode = firmwareMetrics ? (
     <text
-      dominantBaseline="hanging"
-      fill={color}
-      fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
-      fontSize={fontSize}
-      fontWeight={fontWeight}
-      letterSpacing="0"
+      {...commonTextProps}
+      style={{ whiteSpace: "pre" }}
+      textAnchor="start"
+      x={themeTextStartX(layout.textX, layout.textAnchor, textWidth)}
+    >
+      {firmwareMetrics.glyphs.map((glyph, index) => (
+        <tspan
+          key={`${index}-${glyph.character}`}
+          lengthAdjust="spacingAndGlyphs"
+          textLength={glyph.width}
+          x={
+            themeTextStartX(layout.textX, layout.textAnchor, textWidth) +
+            glyph.offset
+          }
+        >
+          {glyph.character}
+        </tspan>
+      ))}
+    </text>
+  ) : (
+    <text
+      {...commonTextProps}
       ref={textRef}
       textAnchor={layout.textAnchor}
       x={layout.textX}
-      y={y}
     >
       {text}
     </text>
@@ -1389,6 +1425,90 @@ export function themeTextWidth(
     return measuredWidth;
   }
   return text.length * fontSize * 0.6;
+}
+
+// Mirrors TFT_eSPI 2.5.43 Fonts/Font16.c, pinned in
+// firmware_esp8266/platformio.ini. Update both together when the pin changes.
+const TFT_ESPI_FONT2_WIDTHS = [
+  6, 3, 4, 9, 8, 9, 9, 3, 7, 7, 8, 6, 3, 6, 5, 7, 8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 3, 3, 6, 6, 6, 8, 9, 8, 8, 8, 8, 8, 8, 8, 8, 4, 8, 8, 7, 10, 8, 8,
+  8, 8, 8, 8, 8, 8, 8, 10, 8, 8, 8, 4, 7, 4, 7, 9, 5, 7, 7, 7, 7, 7, 6, 7,
+  7, 4, 5, 6, 4, 8, 7, 8, 7, 8, 6, 6, 5, 7, 8, 8, 6, 7, 7, 5, 3, 5, 8, 6,
+] as const;
+
+// Mirrors the classic GLCD font's CP437 glyph order in TFT_eSPI 2.5.43.
+// TFT_eSPI keeps the historical Adafruit_GFX >175 one-glyph shift unless
+// setCP437(true) is called; the firmware uses that default.
+const TFT_GLCD_CP437_EXTENDED = Array.from(
+  "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ",
+);
+
+export function themeFirmwareTextMetrics(
+  text: string,
+  font: number,
+  size: number,
+): {
+  width: number;
+  glyphs: Array<{ character: string; offset: number; width: number }>;
+} | null {
+  if (font !== 1 && font !== 2) {
+    return null;
+  }
+  const scale = Math.max(1, size);
+  let layoutOffset = 0;
+  let drawOffset = 0;
+  const glyphs: Array<{ character: string; offset: number; width: number }> = [];
+  for (const character of Array.from(text)) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint === undefined) {
+      continue;
+    }
+    const utf8ByteCount = new TextEncoder().encode(character).length;
+    if (font === 1) {
+      layoutOffset += utf8ByteCount * 6 * scale;
+      const width = 6 * scale;
+      const glyphIndex = codePoint > 175 ? codePoint + 1 : codePoint;
+      const visibleCharacter =
+        glyphIndex < 128
+          ? String.fromCodePoint(glyphIndex)
+          : TFT_GLCD_CP437_EXTENDED[glyphIndex - 128];
+      if (visibleCharacter !== undefined) {
+        glyphs.push({
+          character: visibleCharacter,
+          offset: drawOffset,
+          width,
+        });
+      }
+      drawOffset += width;
+      continue;
+    }
+
+    if (codePoint >= 32 && codePoint <= 127) {
+      const width = TFT_ESPI_FONT2_WIDTHS[codePoint - 32] * scale;
+      glyphs.push({ character, offset: drawOffset, width });
+      layoutOffset += width;
+      drawOffset += width;
+    } else {
+      // Font 2 measures every unsupported UTF-8 byte as a space but drops the
+      // decoded glyph without advancing the draw cursor.
+      layoutOffset += utf8ByteCount * TFT_ESPI_FONT2_WIDTHS[0] * scale;
+    }
+  }
+  return { width: layoutOffset, glyphs };
+}
+
+function themeTextStartX(
+  textX: number,
+  textAnchor: "start" | "middle" | "end",
+  textWidth: number,
+): number {
+  if (textAnchor === "middle") {
+    return textX - textWidth / 2;
+  }
+  if (textAnchor === "end") {
+    return textX - textWidth;
+  }
+  return textX;
 }
 
 function themeFontSize(font?: number, size?: number): number {
