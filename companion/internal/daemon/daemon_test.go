@@ -3184,7 +3184,7 @@ func TestRunCycleCanSelectPartialActiveProviderWhenCompleteProviderExists(t *tes
 	}
 
 	frame := decodeFrameLine(t, sent)
-	if frame.Provider != "codex" || !frame.UsageUnavailable || !frame.SessionUnavailable ||
+	if frame.Provider != "codex" || frame.UsageUnavailable || !frame.SessionUnavailable ||
 		frame.WeeklyUnavailable || frame.Weekly != 57 {
 		t.Fatalf("partial sticky provider was excluded from normal selection: %#v", frame)
 	}
@@ -3593,24 +3593,6 @@ func TestCycleRunTimeoutDefault(t *testing.T) {
 
 	if got := cycleRunTimeout(); got != defaultCycleTimeout {
 		t.Fatalf("expected default cycle timeout %s, got %s", defaultCycleTimeout, got)
-	}
-}
-
-func TestProtectPartialUsageForDevice(t *testing.T) {
-	partial := protocol.Frame{
-		Provider:           "codex",
-		Weekly:             65,
-		SessionUnavailable: true,
-	}
-
-	legacy := protectPartialUsageForDevice(partial, protocol.DeviceCapabilities{})
-	if !legacy.UsageUnavailable || !legacy.SessionUnavailable || legacy.Weekly != 65 {
-		t.Fatalf("legacy device received a believable zero lane: %+v", legacy)
-	}
-
-	current := protectPartialUsageForDevice(partial, protocol.DeviceCapabilities{SupportsPartialUsage: true})
-	if current.UsageUnavailable || !current.SessionUnavailable || current.Weekly != 65 {
-		t.Fatalf("partial-aware device lost the known lane: %+v", current)
 	}
 }
 

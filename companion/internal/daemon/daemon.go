@@ -1109,7 +1109,6 @@ func codingMaxAgeExpired(lastCodingAt time.Time, now time.Time) bool {
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
 	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
-	frame = protectPartialUsageForDevice(frame, caps)
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = attachClockFields(frame, deps.now())
 
@@ -1182,13 +1181,6 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 
 	return nil
-}
-
-func protectPartialUsageForDevice(frame protocol.Frame, caps protocol.DeviceCapabilities) protocol.Frame {
-	if !caps.SupportsPartialUsage && (frame.SessionUnavailable || frame.WeeklyUnavailable) {
-		frame.UsageUnavailable = true
-	}
-	return frame
 }
 
 func sendTargetWithRuntimeAuth(target string, deps runtimeDeps) (string, error) {
