@@ -19,6 +19,7 @@ import {
   buildSupportChatMetadata,
   buildSupportChatMountOptions,
   clearSupportChatSession,
+  logSupportAgentMessage,
   loadSupportChatEmail,
   storeSupportChatEmail,
   supportChatConfig,
@@ -94,6 +95,19 @@ export function CustomerServiceChat({
             chatApp = createChat(
               buildSupportChatMountOptions({
                 metadata: sessionMetadata,
+                onAgentMessage: (message) => {
+                  const sessionId = window.localStorage.getItem(
+                    "n8n-chat/sessionId",
+                  );
+                  if (!sessionId || !supportChatConfig.logWebhookUrl) {
+                    return;
+                  }
+                  void logSupportAgentMessage({
+                    logWebhookUrl: supportChatConfig.logWebhookUrl,
+                    message,
+                    sessionId,
+                  });
+                },
                 streamingEnabled: supportChatConfig.streamingEnabled,
                 target,
                 webhookUrl,
@@ -242,15 +256,15 @@ export function CustomerServiceChat({
           {showFallback ? (
             <p aria-live="polite" className="font-medium text-[#7D2633]" role="alert">
               Support is temporarily unavailable. Please try again or email{" "}
-              <a className="underline" href="mailto:vibetv@shop.com">
-                vibetv@shop.com
+              <a className="underline" href="mailto:hello@vibetv.shop">
+                hello@vibetv.shop
               </a>
               .
             </p>
           ) : null}
           <p>{SUPPORT_CHAT_COPY.notice}</p>
           <div className="flex flex-wrap gap-x-3 gap-y-1">
-            <a className="underline" href="mailto:vibetv@shop.com">
+            <a className="underline" href="mailto:hello@vibetv.shop">
               Email support
             </a>
             <a

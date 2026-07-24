@@ -4,6 +4,7 @@ import {
   buildSupportChatMetadata,
   buildSupportChatMountOptions,
   clearSupportChatSession,
+  logSupportAgentMessage,
   loadSupportChatEmail,
   normalizeSupportChatEmail,
   resolveSupportChatConfig,
@@ -30,9 +31,11 @@ describe("resolveSupportChatConfig", () => {
       resolveSupportChatConfig({
         enabled: "1",
         webhookUrl: "https://n8n.example.com/webhook/support",
+        logWebhookUrl: "https://n8n.example.com/webhook/support-log",
       }),
     ).toMatchObject({
       enabled: true,
+      logWebhookUrl: "https://n8n.example.com/webhook/support-log",
       webhookUrl: "https://n8n.example.com/webhook/support",
     });
     expect(
@@ -152,6 +155,89 @@ describe("support chat request contract", () => {
       SUPPORT_CHAT_COPY.placeholder,
     );
     expect(options.webhookConfig.headers).not.toHaveProperty("Authorization");
+  });
+
+  it("emits the final streamed bot message once", async () => {
+    const onAgentMessage = vi.fn();
+    const options = buildSupportChatMountOptions({
+      metadata: buildSupportChatMetadata({
+        deviceConnected: false,
+        surface: "local-control-center",
+      }),
+      onAgentMessage,
+      streamingEnabled: true,
+      target: {} as Element,
+      webhookUrl: "https://n8n.example.com/webhook/support",
+    });
+    const message = {
+      id: "message-1",
+      sender: "bot" as const,
+      text: "Final streamed answer",
+    };
+
+    await options.afterMessageSent?.("question", {
+      hasReceivedChunks: true,
+      message,
+    });
+    await options.afterMessageSent?.("question", {
+      hasReceivedChunks: true,
+      message: "",
+    });
+    await options.afterMessageSent?.("question", {
+      hasReceivedChunks: true,
+      message,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onAgentMessage).toHaveBeenCalledTimes(1);
+    expect(onAgentMessage).toHaveBeenCalledWith(message);
+  });
+});
+
+describe("logSupportAgentMessage", () => {
+  it("posts an idempotent Airtable logging payload", async () => {
+    const fetcher = vi.fn().mockResolvedValue({ ok: true });
+
+    await expect(
+      logSupportAgentMessage({
+        fetcher,
+        logWebhookUrl: "https://n8n.example.com/webhook/support-log",
+        message: {
+          id: "message-7",
+          sender: "bot",
+          text: "A complete streamed answer.",
+        },
+        sessionId: "session-4",
+      }),
+    ).resolves.toBe(true);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://n8n.example.com/webhook/support-log",
+      expect.objectContaining({
+        body: JSON.stringify({
+          message: "A complete streamed answer.",
+          messageId: "session-4:agent:message-7",
+          sessionId: "session-4",
+          ticketId: "VT-session-4",
+        }),
+        headers: { "Content-Type": "application/json" },
+        keepalive: true,
+        method: "POST",
+      }),
+    );
+  });
+
+  it("does not throw when logging is unavailable", async () => {
+    const fetcher = vi.fn().mockRejectedValue(new Error("offline"));
+
+    await expect(
+      logSupportAgentMessage({
+        fetcher,
+        logWebhookUrl: "https://n8n.example.com/webhook/support-log",
+        message: { id: "message-8", sender: "bot", text: "Answer" },
+        sessionId: "session-5",
+      }),
+    ).resolves.toBe(false);
   });
 });
 

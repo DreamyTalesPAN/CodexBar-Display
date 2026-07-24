@@ -24,6 +24,7 @@ async function main() {
   const app = startNextDev({
     appPort,
     catalogUrl: `http://127.0.0.1:${fixture.port}/theme-packs.json`,
+    logWebhookUrl: `http://127.0.0.1:${fixture.port}/support-log`,
     webhookUrl: `http://127.0.0.1:${fixture.port}/support-chat`,
   });
   let browser;
@@ -136,6 +137,21 @@ async function testMobileStreamingAndSessionFlow(browser, appUrl, fixture) {
   assert(
     firstSend.body.metadata.customerEmail === "customer@example.com",
     "sendMessage request did not include the normalized customer email",
+  );
+  await waitFor(
+    () => fixture.logRequests.length === 1,
+    "completed agent message log",
+  );
+  const firstLog = fixture.logRequests[0];
+  assert(
+    firstLog.body.sessionId === firstSessionId &&
+      firstLog.body.ticketId === `VT-${firstSessionId}`,
+    "agent message log did not preserve the support session",
+  );
+  assert(
+    firstLog.body.message === "Hello from VibeTV Support." &&
+      firstLog.body.messageId.startsWith(`${firstSessionId}:agent:`),
+    "agent message log did not contain the completed streamed answer",
   );
 
   await page.getByRole("button", { name: "Close", exact: true }).click();
@@ -303,12 +319,35 @@ function assertRequestContract(request, { expectedPlatform, expectedSurface }) {
 }
 
 async function startFixtureServer() {
+  const logRequests = [];
   const requests = [];
   let failNext = false;
   const server = createServer(async (request, response) => {
     if (request.url === "/theme-packs.json") {
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ themes: [] }));
+      return;
+    }
+
+    if (request.url === "/support-log") {
+      const corsHeaders = {
+        "Access-Control-Allow-Headers": "content-type",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Origin": request.headers.origin || "*",
+        Vary: "Origin",
+      };
+      if (request.method === "OPTIONS") {
+        response.writeHead(204, corsHeaders);
+        response.end();
+        return;
+      }
+      const body = JSON.parse(await readRequestBody(request));
+      logRequests.push({ body, headers: request.headers });
+      response.writeHead(200, {
+        ...corsHeaders,
+        "Content-Type": "application/json",
+      });
+      response.end(JSON.stringify({ success: true }));
       return;
     }
 
@@ -381,11 +420,12 @@ async function startFixtureServer() {
       failNext = true;
     },
     port: address.port,
+    logRequests,
     requests,
   };
 }
 
-function startNextDev({ appPort, catalogUrl, webhookUrl }) {
+function startNextDev({ appPort, catalogUrl, logWebhookUrl, webhookUrl }) {
   const child = spawn(
     process.execPath,
     [nextBin, "dev", "--hostname", "127.0.0.1", "--port", String(appPort)],
@@ -395,6 +435,7 @@ function startNextDev({ appPort, catalogUrl, webhookUrl }) {
         ...process.env,
         CONTROL_CENTER_ALLOW_CATALOG_FALLBACK: "1",
         NEXT_PUBLIC_VIBETV_SUPPORT_CHAT_ENABLED: "1",
+        NEXT_PUBLIC_VIBETV_SUPPORT_CHAT_LOG_WEBHOOK_URL: logWebhookUrl,
         NEXT_PUBLIC_VIBETV_SUPPORT_CHAT_STREAMING_ENABLED: "1",
         NEXT_PUBLIC_VIBETV_SUPPORT_CHAT_WEBHOOK_URL: webhookUrl,
         SHOPIFY_STORE_DOMAIN: "",

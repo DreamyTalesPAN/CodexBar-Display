@@ -3,7 +3,7 @@ export const SUPPORT_CHAT_EMAIL_STORAGE_KEY = "vibetv-support/customerEmail";
 
 export const SUPPORT_CHAT_COPY = {
   fallback:
-    "Support is temporarily unavailable. Please try again or email vibetv@shop.com.",
+    "Support is temporarily unavailable. Please try again or email hello@vibetv.shop.",
   greeting: "Hi! I’m the VibeTV support assistant. How can I help?",
   notice:
     "AI-assisted support. Don’t share passwords, API keys, or payment details.",
@@ -34,12 +34,14 @@ export type SupportChatMetadata = {
 
 export type SupportChatConfig = {
   enabled: boolean;
+  logWebhookUrl: string | null;
   streamingEnabled: boolean;
   webhookUrl: string | null;
 };
 
 type PublicSupportChatEnvironment = {
   enabled?: string;
+  logWebhookUrl?: string;
   streamingEnabled?: string;
   webhookUrl?: string;
 };
@@ -55,6 +57,10 @@ type SupportChatMetadataInput = {
 };
 
 export type SupportChatMountOptions = {
+  afterMessageSent?: (
+    message: string,
+    response?: SupportChatSendMessageResponse,
+  ) => void | Promise<void>;
   allowFileUploads: false;
   defaultLanguage: "en";
   enableMessageActions: false;
@@ -83,6 +89,17 @@ export type SupportChatMountOptions = {
   webhookUrl: string;
 };
 
+type SupportChatSendMessageResponse = {
+  hasReceivedChunks?: boolean;
+  message?: string | SupportChatAgentMessage;
+};
+
+export type SupportChatAgentMessage = {
+  id: string;
+  sender: "bot";
+  text: string;
+};
+
 export function resolveSupportChatConfig(
   environment: PublicSupportChatEnvironment,
 ): SupportChatConfig {
@@ -90,6 +107,7 @@ export function resolveSupportChatConfig(
 
   return {
     enabled: environment.enabled === "1" && webhookUrl !== null,
+    logWebhookUrl: normalizeSupportChatWebhookUrl(environment.logWebhookUrl),
     streamingEnabled: environment.streamingEnabled !== "0",
     webhookUrl,
   };
@@ -97,6 +115,8 @@ export function resolveSupportChatConfig(
 
 export const supportChatConfig = resolveSupportChatConfig({
   enabled: process.env.NEXT_PUBLIC_VIBETV_SUPPORT_CHAT_ENABLED,
+  logWebhookUrl:
+    process.env.NEXT_PUBLIC_VIBETV_SUPPORT_CHAT_LOG_WEBHOOK_URL,
   streamingEnabled:
     process.env.NEXT_PUBLIC_VIBETV_SUPPORT_CHAT_STREAMING_ENABLED,
   webhookUrl: process.env.NEXT_PUBLIC_VIBETV_SUPPORT_CHAT_WEBHOOK_URL,
@@ -128,16 +148,56 @@ export function buildSupportChatMetadata({
 
 export function buildSupportChatMountOptions({
   metadata,
+  onAgentMessage,
   streamingEnabled,
   target,
   webhookUrl,
 }: {
   metadata: SupportChatMetadata;
+  onAgentMessage?: (message: SupportChatAgentMessage) => void | Promise<void>;
   streamingEnabled: boolean;
   target: Element;
   webhookUrl: string;
 }): SupportChatMountOptions {
+  let pendingAgentMessage: SupportChatAgentMessage | null = null;
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  const loggedMessageIds = new Set<string>();
+
+  const flushAgentMessage = () => {
+    if (!pendingAgentMessage || !onAgentMessage) {
+      return;
+    }
+    const message = pendingAgentMessage;
+    pendingAgentMessage = null;
+    if (loggedMessageIds.has(message.id)) {
+      return;
+    }
+    loggedMessageIds.add(message.id);
+    void Promise.resolve(onAgentMessage(message)).catch(() => undefined);
+  };
+
   return {
+    ...(onAgentMessage
+      ? {
+          afterMessageSent: (_message, response) => {
+            if (isAgentMessage(response?.message)) {
+              pendingAgentMessage = response.message;
+              if (flushTimer) {
+                clearTimeout(flushTimer);
+              }
+              flushTimer = setTimeout(flushAgentMessage, 0);
+              return;
+            }
+            if (response?.hasReceivedChunks && response.message === "") {
+              if (flushTimer) {
+                clearTimeout(flushTimer);
+                flushTimer = null;
+              }
+              flushAgentMessage();
+            }
+          },
+        }
+      : {}),
     allowFileUploads: false,
     defaultLanguage: "en",
     enableMessageActions: false,
@@ -165,6 +225,39 @@ export function buildSupportChatMountOptions({
     },
     webhookUrl,
   };
+}
+
+export async function logSupportAgentMessage({
+  fetcher = fetch,
+  logWebhookUrl,
+  message,
+  sessionId,
+}: {
+  fetcher?: typeof fetch;
+  logWebhookUrl: string;
+  message: SupportChatAgentMessage;
+  sessionId: string;
+}): Promise<boolean> {
+  if (!sessionId || !message.text.trim()) {
+    return false;
+  }
+
+  try {
+    const response = await fetcher(logWebhookUrl, {
+      body: JSON.stringify({
+        message: message.text,
+        messageId: `${sessionId}:agent:${message.id}`,
+        sessionId,
+        ticketId: `VT-${sessionId}`,
+      }),
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      method: "POST",
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 export function clearSupportChatSession(
@@ -248,4 +341,17 @@ function detectSupportChatPlatform(
 
 function nonEmptyVersion(value?: string | null): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function isAgentMessage(
+  value?: string | SupportChatAgentMessage,
+): value is SupportChatAgentMessage {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    value.sender === "bot" &&
+    typeof value.id === "string" &&
+    typeof value.text === "string" &&
+    value.text.trim().length > 0
+  );
 }

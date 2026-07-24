@@ -13,6 +13,7 @@ Set these public build-time variables before building the Control Center:
 ```text
 NEXT_PUBLIC_VIBETV_SUPPORT_CHAT_ENABLED=1
 NEXT_PUBLIC_VIBETV_SUPPORT_CHAT_WEBHOOK_URL=https://n8n.example.com/webhook/...
+NEXT_PUBLIC_VIBETV_SUPPORT_CHAT_LOG_WEBHOOK_URL=https://n8n.example.com/webhook/...
 NEXT_PUBLIC_VIBETV_SUPPORT_CHAT_STREAMING_ENABLED=1
 ```
 
@@ -20,6 +21,9 @@ The button is not rendered unless the enabled flag is `1` and the webhook URL
 is valid. HTTPS is required outside loopback development. Streaming is enabled
 unless its flag is `0`; the client does not retry automatically in another mode.
 The streaming flag and the Chat Trigger response mode must always match.
+The optional log webhook receives the completed bot message after streaming
+finishes. Logging is best-effort and never replaces or delays the visible chat
+answer. n8n deduplicates it by message ID before writing to Airtable.
 
 These values are public browser configuration. Never put Basic Auth, API keys,
 tokens, or other secrets in them.
@@ -81,7 +85,7 @@ the result is then sent to the customer without a second approval. Customer,
 agent, human, and outbound email messages are logged in Airtable.
 
 The customer-facing Gmail credential must authenticate the exact sender
-`vibetv@shop.com`; a display name or Reply-To value is not a substitute for the
+`hello@vibetv.shop`; a display name or Reply-To value is not a substitute for the
 authenticated From address.
 
 ## Release check
