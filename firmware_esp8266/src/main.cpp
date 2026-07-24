@@ -92,9 +92,9 @@ String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   String out;
   out.reserve(compact ? 180 : 260);
   if (!enabled) {
-    return "{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
+    return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
   }
-  out += "{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
+  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
   out += String(codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives);
   if (!compact) {
     out += ",\"supportedPrimitiveTypes\":[\"text\",\"rect\",\"progress\",\"gif\",\"sprite\",\"pixels\"]";
@@ -2725,20 +2725,37 @@ void loop() {
     renderer.TickActive(runtimeCtx);
     recordAnimatedTickAttempt();
     const int64_t remain = codexbar_display::app::CurrentRemainingSecs(runtimeCtx, millis());
+    bool countdownMinuteChanged = false;
     if (remain != runtimeCtx.lastRenderedSecs) {
-      const int64_t minuteBucket = remain / 60;
-      if (minuteBucket != runtimeCtx.lastRenderedMinuteBucket) {
-#ifdef CODEXBAR_DISPLAY_PROBE_ONLY
-        runtimeCtx.screenDirty = true;
-#else
-        const unsigned long renderStartUs = micros();
-        renderer.DrawReset(runtimeCtx, remain);
-        drawFirmwareUpdateNotice();
-        recordRenderPartial("reset", micros() - renderStartUs);
-#endif
+      if (codexbar_display::core::RemainingMinuteBucketChanged(
+              remain, runtimeCtx.lastRenderedMinuteBucket)) {
+        countdownMinuteChanged = true;
       } else {
         runtimeCtx.lastRenderedSecs = remain;
       }
+    }
+    for (size_t i = 0; i < codexbar_display::core::kMaxUsageSlots; ++i) {
+      const int64_t slotRemain =
+          codexbar_display::app::CurrentUsageSlotRemainingSecs(runtimeCtx, i, millis());
+      if (slotRemain == runtimeCtx.lastRenderedUsageSlotSecs[i]) {
+        continue;
+      }
+      if (codexbar_display::core::RemainingMinuteBucketChanged(
+              slotRemain, runtimeCtx.lastRenderedUsageSlotMinuteBuckets[i])) {
+        countdownMinuteChanged = true;
+      } else {
+        runtimeCtx.lastRenderedUsageSlotSecs[i] = slotRemain;
+      }
+    }
+    if (countdownMinuteChanged) {
+#ifdef CODEXBAR_DISPLAY_PROBE_ONLY
+      runtimeCtx.screenDirty = true;
+#else
+      const unsigned long renderStartUs = micros();
+      renderer.DrawReset(runtimeCtx, remain);
+      drawFirmwareUpdateNotice();
+      recordRenderPartial("reset", micros() - renderStartUs);
+#endif
     }
   }
 

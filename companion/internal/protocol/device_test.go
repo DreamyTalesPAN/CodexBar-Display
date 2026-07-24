@@ -224,3 +224,21 @@ func TestCapabilitiesFromHelloUnknownWhenMissingSignal(t *testing.T) {
 		t.Fatalf("expected v1 fallback negotiation, got %d", caps.NegotiatedProtocolVersion)
 	}
 }
+
+func TestCapabilitiesFromHelloAdvertisesUsageSlots(t *testing.T) {
+	caps := CapabilitiesFromHello(DeviceHello{
+		Kind:     "hello",
+		Features: []string{FeatureTheme, FeatureThemeSpecV1, FeatureUsageSlotsV1},
+	})
+	if !caps.Known || !caps.SupportsUsageSlotsV1 {
+		t.Fatalf("expected usage-slots-v1 capability, got %+v", caps)
+	}
+
+	legacy := CapabilitiesFromHello(DeviceHello{
+		Kind:     "hello",
+		Features: []string{FeatureTheme, FeatureThemeSpecV1},
+	})
+	if legacy.SupportsUsageSlotsV1 {
+		t.Fatalf("legacy ThemeSpec support must not imply usage slots: %+v", legacy)
+	}
+}

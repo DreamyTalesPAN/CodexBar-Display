@@ -1,6 +1,7 @@
 import {
   deviceThemeSpecJson,
   normalizeThemeSpec,
+  themeStudioSpecUsesUsageSlots,
   type ThemeStudioAsset,
   type ThemeStudioPrimitiveType,
   type ThemeStudioSpec,
@@ -8,6 +9,7 @@ import {
 
 export type ThemeStudioDeviceCapabilities = {
   supportsThemeSpecV1?: boolean;
+  supportsUsageSlotsV1?: boolean;
   supportsStoredThemes?: boolean;
   maxThemeSpecBytes?: number;
   maxStoredThemeSpecBytes?: number;
@@ -60,6 +62,14 @@ export function validateThemeAgainstCapabilities(
 
   if (caps.supportsStoredThemes === false) {
     errors.push("This VibeTV does not support stored themes.");
+  }
+  if (
+    themeStudioSpecUsesUsageSlots(normalized) &&
+    caps.supportsUsageSlotsV1 !== true
+  ) {
+    errors.push(
+      "This VibeTV needs a firmware update before it can use this theme.",
+    );
   }
 
   const storedSpecLimit = positiveLimit(caps.maxStoredThemeSpecBytes)

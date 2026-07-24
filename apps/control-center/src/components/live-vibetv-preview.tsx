@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import type {
@@ -48,6 +48,13 @@ type DisplayFrameSnapshot = {
   frame?: DisplayFrame;
 };
 
+type UsageSlotFrame = {
+  id?: string;
+  label?: string;
+  percent?: number;
+  resetSecs?: number;
+};
+
 type DisplayFrame = {
   v?: number;
   provider?: string;
@@ -56,6 +63,7 @@ type DisplayFrame = {
   weekly?: number;
   resetSecs?: number;
   usageMode?: string;
+  usageSlots?: UsageSlotFrame[];
   activity?: string;
   sessionTokens?: number;
   weekTokens?: number;
@@ -84,6 +92,8 @@ export type ThemePrimitive = {
   w?: number;
   height?: number;
   h?: number;
+  slot?: number;
+  sl?: number;
   text?: string;
   v?: string;
   binding?: string;
@@ -127,6 +137,14 @@ type FrameData = {
   weekly: number;
   resetSecs: number;
   usageMode: string;
+  usageSlot1Label: string;
+  usageSlot1Percent: number;
+  usageSlot1ResetSecs: number;
+  usageSlot1Available: boolean;
+  usageSlot2Label: string;
+  usageSlot2Percent: number;
+  usageSlot2ResetSecs: number;
+  usageSlot2Available: boolean;
   activity: string;
   sessionTokens: number;
   weekTokens: number;
@@ -142,6 +160,14 @@ const THEME_LIBRARY_PREVIEW_FRAME: FrameData = {
   weekly: 62,
   resetSecs: 3600,
   usageMode: "remaining",
+  usageSlot1Label: "Weekly",
+  usageSlot1Percent: 62,
+  usageSlot1ResetSecs: 3600,
+  usageSlot1Available: true,
+  usageSlot2Label: "Codex Spark Weekly",
+  usageSlot2Percent: 38,
+  usageSlot2ResetSecs: 7200,
+  usageSlot2Available: true,
   activity: "preview",
   sessionTokens: 0,
   weekTokens: 0,
@@ -396,7 +422,7 @@ function ThemeSpecSVG({
   const animationTick = useAnimationTick(animationFps);
   return (
     <svg
-      aria-label={`Rendered VibeTV theme ${themeId} showing ${frame.label}, ${frame.session}% session ${frame.usageMode}, ${frame.weekly}% weekly ${frame.usageMode}`}
+      aria-label={themeSpecAriaLabel(themeId, frame)}
       className="size-full bg-black [image-rendering:pixelated]"
       role="img"
       viewBox="0 0 240 240"
@@ -434,6 +460,9 @@ function ThemePrimitiveNode({
   const y = primitive.y || 0;
   const width = primitive.width || primitive.w || 0;
   const height = primitive.height || primitive.h || 0;
+  if (!primitiveUsageSlotVisible(primitive, frame)) {
+    return null;
+  }
 
   if (type === "rect" || type === "r") {
     const radius = clampRadius(
@@ -458,25 +487,17 @@ function ThemePrimitiveNode({
     const text = renderTextPrimitive(primitive, frame);
     const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
     const fontSize = themeFontSize(primitive.font || primitive.f, primitive.fontSize || primitive.s);
-    // Firmware only applies text alignment inside an explicit width. Without
-    // one, x remains the text's left edge regardless of the selected alignment.
-    const textAnchor =
-      maxWidth > 0 ? svgTextAnchor(primitive.align || primitive.al) : "start";
-    const textX = alignedTextX(x, maxWidth, textAnchor);
     return (
-      <text
-        dominantBaseline="hanging"
-        fill={colorFor(primitive.color || primitive.c, "#FFFFFF")}
-        fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+      <ThemeTextPrimitive
+        align={primitive.align || primitive.al}
+        color={colorFor(primitive.color || primitive.c, "#FFFFFF")}
         fontSize={fontSize}
         fontWeight={themeFontWeight(primitive.font || primitive.f)}
-        letterSpacing="0"
-        textAnchor={textAnchor}
-        x={textX}
+        maxWidth={maxWidth}
+        text={text}
+        x={x}
         y={y}
-      >
-        {text}
-      </text>
+      />
     );
   }
 
@@ -562,6 +583,91 @@ function ThemePrimitiveNode({
   }
 
   return null;
+}
+
+function ThemeTextPrimitive({
+  align,
+  color,
+  fontSize,
+  fontWeight,
+  maxWidth,
+  text,
+  x,
+  y,
+}: {
+  align?: string;
+  color: string;
+  fontSize: number;
+  fontWeight: number;
+  maxWidth: number;
+  text: string;
+  x: number;
+  y: number;
+}) {
+  const clipPathId = `theme-text-${useId().replaceAll(":", "")}`;
+  const textRef = useRef<SVGTextElement>(null);
+  const measurementKey = `${text}\u0000${fontSize}\u0000${fontWeight}`;
+  const [measurement, setMeasurement] = useState({
+    key: "",
+    width: 0,
+  });
+  const textWidth = themeTextWidth(
+    text,
+    fontSize,
+    measurement.key === measurementKey ? measurement.width : undefined,
+  );
+  const layout = themeTextLayout(x, maxWidth, align, textWidth);
+
+  useEffect(() => {
+    const node = textRef.current;
+    if (!node) {
+      return;
+    }
+    const width = node.getComputedTextLength();
+    if (!Number.isFinite(width) || (text !== "" && width <= 0)) {
+      return;
+    }
+    setMeasurement((current) =>
+      current.key === measurementKey && current.width === width
+        ? current
+        : { key: measurementKey, width },
+    );
+  }, [measurementKey, text]);
+
+  const textNode = (
+    <text
+      dominantBaseline="hanging"
+      fill={color}
+      fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+      fontSize={fontSize}
+      fontWeight={fontWeight}
+      letterSpacing="0"
+      ref={textRef}
+      textAnchor={layout.textAnchor}
+      x={layout.textX}
+      y={y}
+    >
+      {text}
+    </text>
+  );
+  if (layout.clipWidth <= 0) {
+    return textNode;
+  }
+  return (
+    <>
+      <defs>
+        <clipPath id={clipPathId}>
+          <rect
+            height={Math.ceil(fontSize) + 4}
+            width={layout.clipWidth}
+            x={x}
+            y={y}
+          />
+        </clipPath>
+      </defs>
+      <g clipPath={`url(#${clipPathId})`}>{textNode}</g>
+    </>
+  );
 }
 
 function ThemeProgress({
@@ -794,13 +900,18 @@ function hasRenderableUsage(
   );
 }
 
-function buildFrameData(
+export function buildFrameData(
   generatedAt: string | undefined,
   displayFrame: DisplayFrame,
 ): FrameData {
   const now = generatedAt ? new Date(generatedAt) : new Date();
   const usableDate = Number.isNaN(now.getTime()) ? new Date() : now;
   const sourceUsageMode = frameUsageMode(displayFrame);
+  const slots = (displayFrame.usageSlots || []).filter(
+    (slot) => Boolean(slot.id?.trim() && slot.label?.trim()),
+  );
+  const slot1 = slots[0];
+  const slot2 = slots[1];
   return {
     provider: displayFrame.provider || "",
     label: displayFrame.label || displayFrame.provider || "",
@@ -808,6 +919,14 @@ function buildFrameData(
     weekly: clampPercent(displayFrame.weekly),
     resetSecs: displayFrame.resetSecs ?? 0,
     usageMode: sourceUsageMode,
+    usageSlot1Label: slot1?.label || "",
+    usageSlot1Percent: clampPercent(slot1?.percent),
+    usageSlot1ResetSecs: slot1?.resetSecs ?? 0,
+    usageSlot1Available: Boolean(slot1),
+    usageSlot2Label: slot2?.label || "",
+    usageSlot2Percent: clampPercent(slot2?.percent),
+    usageSlot2ResetSecs: slot2?.resetSecs ?? 0,
+    usageSlot2Available: Boolean(slot2),
     activity: displayFrame.activity || "idle",
     sessionTokens: displayFrame.sessionTokens ?? 0,
     weekTokens: displayFrame.weekTokens ?? 0,
@@ -821,6 +940,32 @@ function buildFrameData(
       month: "2-digit",
     }).format(usableDate),
   };
+}
+
+export function primitiveUsageSlotVisible(
+  primitive: ThemePrimitive,
+  frame: FrameData,
+): boolean {
+  const slot = primitive.slot ?? primitive.sl;
+  if (slot === 1) {
+    return frame.usageSlot1Available;
+  }
+  if (slot === 2) {
+    return frame.usageSlot2Available;
+  }
+  return true;
+}
+
+export function themeSpecAriaLabel(themeId: string, frame: FrameData): string {
+  const usage = [
+    frame.usageSlot1Available
+      ? `${frame.usageSlot1Label} ${frame.usageSlot1Percent}% ${frame.usageMode}`
+      : "",
+    frame.usageSlot2Available
+      ? `${frame.usageSlot2Label} ${frame.usageSlot2Percent}% ${frame.usageMode}`
+      : "",
+  ].filter(Boolean);
+  return `Rendered VibeTV theme ${themeId} showing ${frame.label}, ${usage.length > 0 ? usage.join(", ") : "no usage windows available"}`;
 }
 
 function frameUsageMode(
@@ -890,6 +1035,30 @@ function boundValue(key: string, frame: FrameData): string {
     case "resetCountdown":
     case "r":
       return formatReset(frame.resetSecs);
+    case "usageSlot1Label":
+    case "us1l":
+      return frame.usageSlot1Available ? frame.usageSlot1Label : "";
+    case "usageSlot1Percent":
+    case "us1p":
+      return frame.usageSlot1Available ? String(frame.usageSlot1Percent) : "";
+    case "usageSlot1Reset":
+    case "us1r":
+      return frame.usageSlot1Available ? formatReset(frame.usageSlot1ResetSecs) : "";
+    case "usageSlot1Available":
+    case "us1a":
+      return String(frame.usageSlot1Available);
+    case "usageSlot2Label":
+    case "us2l":
+      return frame.usageSlot2Available ? frame.usageSlot2Label : "";
+    case "usageSlot2Percent":
+    case "us2p":
+      return frame.usageSlot2Available ? String(frame.usageSlot2Percent) : "";
+    case "usageSlot2Reset":
+    case "us2r":
+      return frame.usageSlot2Available ? formatReset(frame.usageSlot2ResetSecs) : "";
+    case "usageSlot2Available":
+    case "us2a":
+      return String(frame.usageSlot2Available);
     case "usageMode":
     case "u":
       return frame.usageMode;
@@ -918,6 +1087,12 @@ function boundValue(key: string, frame: FrameData): string {
 
 function progressPercent(primitive: ThemePrimitive, frame: FrameData): number {
   const binding = primitive.binding || primitive.b || "";
+  if (binding === "usageSlot1Percent" || binding === "us1p") {
+    return frame.usageSlot1Available ? frame.usageSlot1Percent : 0;
+  }
+  if (binding === "usageSlot2Percent" || binding === "us2p") {
+    return frame.usageSlot2Available ? frame.usageSlot2Percent : 0;
+  }
   return binding === "weekly" || binding === "weeklyPercent" || binding === "w"
     ? frame.weekly
     : frame.session;
@@ -1176,6 +1351,44 @@ function alignedTextX(
     return x + maxWidth;
   }
   return x;
+}
+
+export function themeTextLayout(
+  x: number,
+  maxWidth: number,
+  align: string | undefined,
+  textWidth: number,
+) {
+  const clipWidth = Math.max(0, maxWidth);
+  // TFT_eSPI keeps an overlong centered/right-aligned string at the left edge
+  // of its viewport, then clips it. Match that behavior so every provider
+  // label stays inside the same ThemeSpec lane in hardware and web previews.
+  const textAnchor =
+    clipWidth > 0 && textWidth > clipWidth
+      ? ("start" as const)
+      : clipWidth > 0
+        ? svgTextAnchor(align)
+        : ("start" as const);
+  return {
+    clipWidth,
+    textAnchor,
+    textX: alignedTextX(x, clipWidth, textAnchor),
+  };
+}
+
+export function themeTextWidth(
+  text: string,
+  fontSize: number,
+  measuredWidth?: number,
+): number {
+  if (
+    typeof measuredWidth === "number" &&
+    Number.isFinite(measuredWidth) &&
+    (text === "" || measuredWidth > 0)
+  ) {
+    return measuredWidth;
+  }
+  return text.length * fontSize * 0.6;
 }
 
 function themeFontSize(font?: number, size?: number): number {

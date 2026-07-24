@@ -574,15 +574,22 @@ void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
   if (display::CurrentFrame().hasThemeSpec) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
     const String& themeSpecRaw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
+    uint32_t countdownFields = 0;
+    if (core::ThemeSpecUsesBinding(themeSpecRaw, "reset", "r")) {
+      countdownFields |= codexbar_display::themespec::kThemeSpecFieldReset;
+    }
+    for (size_t i = 0; i < core::kMaxUsageSlots; ++i) {
+      if (core::ThemeSpecUsesUsageSlotResetBinding(themeSpecRaw, i)) {
+        countdownFields |= core::ThemeSpecUsageSlotField(i);
+      }
+    }
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
-        core::ThemeSpecUsesBinding(themeSpecRaw, "reset", "r") &&
-        display::RenderThemeSpecPartial(codexbar_display::themespec::kThemeSpecFieldReset)) {
+        countdownFields != 0 &&
+        display::RenderThemeSpecPartial(countdownFields)) {
       return;
     }
 #endif
-    const int64_t remain = display::CurrentRemainingSecs();
-    display::LastRenderedSecs() = remain;
-    display::LastRenderedMinuteBucket() = remain / 60;
+    display::MarkThemeSpecCountdownsRendered();
     return;
   }
   (void)remainSecs;

@@ -10,6 +10,12 @@
       "companionMin": "1.0.51",
       "updateOrder": "companion-first",
       "notes": "Firmware 1.0.39 lets an explicit Connect replace a missing or stale token. Firmware 1.0.38 still requires its legacy WiFi recovery flow when no valid token remains, so update the Mac App before firmware."
+    },
+    "usageSlotsV1": {
+      "firmwareMin": "1.0.40",
+      "companionMin": "1.0.52",
+      "updateOrder": "companion-first",
+      "notes": "Firmware 1.0.40 advertises usage-slots-v1, renders two provider-neutral lanes, hides absent lanes, and ticks per-slot resets. Slot-based theme packs are blocked on older firmware."
     }
   },
   "rules": [

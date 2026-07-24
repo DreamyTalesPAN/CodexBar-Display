@@ -12,6 +12,14 @@ export type ThemeStudioBinding =
   | "session"
   | "weekly"
   | "reset"
+  | "usageSlot1Label"
+  | "usageSlot1Percent"
+  | "usageSlot1Reset"
+  | "usageSlot1Available"
+  | "usageSlot2Label"
+  | "usageSlot2Percent"
+  | "usageSlot2Reset"
+  | "usageSlot2Available"
   | "usageMode"
   | "activity"
   | "time"
@@ -27,6 +35,7 @@ export type ThemeStudioPrimitive = {
   y: number;
   width?: number;
   height?: number;
+  slot?: 1 | 2;
   text?: string;
   binding?: ThemeStudioBinding;
   fontSize?: number;
@@ -93,6 +102,7 @@ type ThemePackManifest = {
   name: string;
   version: string;
   minFirmware: string;
+  requiredCapabilities?: string[];
   themeSpec: {
     path: string;
     file: "theme.json";
@@ -199,6 +209,14 @@ const SHORT_BINDINGS: Record<string, ThemeStudioBinding> = {
   weeklyusage: "weekly",
   r: "reset",
   resetcountdown: "reset",
+  us1l: "usageSlot1Label",
+  us1p: "usageSlot1Percent",
+  us1r: "usageSlot1Reset",
+  us1a: "usageSlot1Available",
+  us2l: "usageSlot2Label",
+  us2p: "usageSlot2Percent",
+  us2r: "usageSlot2Reset",
+  us2a: "usageSlot2Available",
   u: "usageMode",
   mode: "usageMode",
   act: "activity",
@@ -225,6 +243,14 @@ const COMPACT_BINDINGS: Record<string, string> = {
   weeklyPercent: "w",
   reset: "r",
   resetCountdown: "r",
+  usageSlot1Label: "us1l",
+  usageSlot1Percent: "us1p",
+  usageSlot1Reset: "us1r",
+  usageSlot1Available: "us1a",
+  usageSlot2Label: "us2l",
+  usageSlot2Percent: "us2p",
+  usageSlot2Reset: "us2r",
+  usageSlot2Available: "us2a",
   usageMode: "u",
   activity: "act",
   time: "tm",
@@ -277,7 +303,8 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         type: "text",
         x: 7,
         y: 30,
-        text: "Session",
+        slot: 1,
+        text: "{usageSlot1Label}",
         fontSize: 2,
         color: "#999999",
       },
@@ -285,7 +312,8 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         type: "text",
         x: 7,
         y: 60,
-        text: "{session}%",
+        slot: 1,
+        text: "{usageSlot1Percent}%",
         fontSize: 5,
         color: "#CCFF00",
       },
@@ -293,7 +321,8 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         type: "text",
         x: 153,
         y: 30,
-        text: "Weekly",
+        slot: 2,
+        text: "{usageSlot2Label}",
         fontSize: 2,
         color: "#999999",
       },
@@ -301,8 +330,9 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         type: "text",
         x: 144,
         y: 66,
+        slot: 2,
         width: 90,
-        text: "{weekly}%",
+        text: "{usageSlot2Percent}%",
         align: "right",
         fontSize: 5,
         color: "#CCFF00",
@@ -319,8 +349,9 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         type: "text",
         x: 24,
         y: 208,
+        slot: 1,
         width: 192,
-        text: "Reset in {reset}",
+        text: "Reset in {usageSlot1Reset}",
         align: "center",
         fontSize: 2,
         color: "#999999",
@@ -329,6 +360,7 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         type: "text",
         x: 7,
         y: 106,
+        slot: 1,
         text: "{usageMode}",
         fontSize: 2,
         color: "#999999",
@@ -337,6 +369,7 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         type: "text",
         x: 128,
         y: 106,
+        slot: 2,
         width: 108,
         text: "{usageMode}",
         align: "right",
@@ -398,6 +431,10 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
     type: expandPrimitiveType(primitive.type),
     x: integerOrDefault(primitive.x, 0),
     y: integerOrDefault(primitive.y, 0),
+    slot:
+      primitive.slot === 1 || primitive.slot === 2
+        ? primitive.slot
+        : undefined,
     color: normalizeColor(primitive.color),
     bgColor: normalizeColor(primitive.bgColor),
     borderColor: normalizeColor(primitive.borderColor),
@@ -482,6 +519,7 @@ export function buildThemePack(
   assets: Record<string, ThemeStudioAsset> = {},
 ): ThemePackBuild {
   const normalized = normalizeThemeSpec(spec);
+  const usesUsageSlots = themeStudioSpecUsesUsageSlots(normalized);
   const validation = validateThemeSpec(normalized, assets);
   if (validation.errors.length > 0) {
     throw new Error(validation.errors[0]);
@@ -508,7 +546,10 @@ export function buildThemePack(
     id: normalized.themeId,
     name: cleanPackName(packName) || titleFromThemeId(normalized.themeId),
     version: "0.1.0",
-    minFirmware: "1.0.24",
+    minFirmware: usesUsageSlots ? "1.0.40" : "1.0.24",
+    ...(usesUsageSlots
+      ? { requiredCapabilities: ["usage-slots-v1"] }
+      : {}),
     themeSpec: {
       path: validation.themeSpecPath,
       file: "theme.json",
@@ -536,6 +577,19 @@ export function buildThemePack(
     themeSpecPath: validation.themeSpecPath,
     zipBytes,
   };
+}
+
+export function themeStudioSpecUsesUsageSlots(
+  spec: ThemeStudioSpec,
+): boolean {
+  return spec.primitives.some(
+    (primitive) =>
+      primitive.slot !== undefined ||
+      primitive.binding?.startsWith("usageSlot") ||
+      primitive.text?.includes("{usageSlot") ||
+      primitive.text?.includes("{us1") ||
+      primitive.text?.includes("{us2"),
+  );
 }
 
 export function deviceThemeSpecJson(spec: ThemeStudioSpec): string {
@@ -610,6 +664,13 @@ function validatePrimitive(
   }
   if (!isNonNegativeInteger(primitive.x) || !isNonNegativeInteger(primitive.y)) {
     errors.push(`${prefix}: x/y must be whole numbers starting at 0.`);
+  }
+  if (
+    primitive.slot !== undefined &&
+    primitive.slot !== 1 &&
+    primitive.slot !== 2
+  ) {
+    errors.push(`${prefix}: usage slot must be 1 or 2.`);
   }
   for (const key of ["color", "bgColor", "borderColor"] as const) {
     const value = primitive[key];
@@ -896,6 +957,9 @@ function buildDevicePrimitive(
   if (primitive.height !== undefined) {
     compact.h = primitive.height;
   }
+  if (primitive.slot !== undefined) {
+    compact.sl = primitive.slot;
+  }
   if (primitive.text !== undefined) {
     compact.v = primitive.text;
   }
@@ -982,6 +1046,10 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   }
   if (height !== undefined) {
     primitive.height = height;
+  }
+  const slot = numberValue(value.slot) ?? numberValue(value.sl);
+  if (slot === 1 || slot === 2) {
+    primitive.slot = slot;
   }
   const text = stringValue(value.text) ?? stringValue(value.label) ?? stringValue(value.v);
   if (text !== undefined) {
@@ -1343,6 +1411,12 @@ function estimatePrimitiveWidth(primitive: ThemeStudioPrimitive): number {
 
 function previewTextForEstimate(value: string): string {
   return value
+    .replace(/\{usageSlot1Label\}/g, "Usage window")
+    .replace(/\{usageSlot2Label\}/g, "Usage window")
+    .replace(/\{usageSlot1Percent\}/g, "100")
+    .replace(/\{usageSlot2Percent\}/g, "100")
+    .replace(/\{usageSlot1Reset\}/g, "1h 0m")
+    .replace(/\{usageSlot2Reset\}/g, "1h 0m")
     .replace(/\{session\}/g, "100")
     .replace(/\{weekly\}/g, "100")
     .replace(/\{reset\}/g, "1h 0m")

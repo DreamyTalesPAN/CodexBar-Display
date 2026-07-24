@@ -10,9 +10,12 @@ const DEFAULT_SPRITE_FPS = 8;
 
 const VARIABLE_TOKENS = [
   { label: "Label", token: "{label}" },
-  { label: "Session", token: "{session}" },
-  { label: "Weekly", token: "{weekly}" },
-  { label: "Reset", token: "{reset}" },
+  { label: "Slot 1 label", token: "{usageSlot1Label}" },
+  { label: "Slot 1 %", token: "{usageSlot1Percent}" },
+  { label: "Slot 1 reset", token: "{usageSlot1Reset}" },
+  { label: "Slot 2 label", token: "{usageSlot2Label}" },
+  { label: "Slot 2 %", token: "{usageSlot2Percent}" },
+  { label: "Slot 2 reset", token: "{usageSlot2Reset}" },
   { label: "Mode", token: "{usageMode}" },
   { label: "Time", token: "{time}" },
 ];
@@ -43,6 +46,17 @@ export function PrimitiveInspector({
           onChange={(value) => onChange("y", value)}
         />
       </div>
+
+      <SelectField
+        label="Usage lane"
+        value={primitive.slot ? String(primitive.slot) : ""}
+        onChange={(value) => onChange("slot", value ? Number(value) : "")}
+        options={[
+          ["", "Always visible"],
+          ["1", "Hide with slot 1"],
+          ["2", "Hide with slot 2"],
+        ]}
+      />
 
       {(primitive.type === "rect" ||
         primitive.type === "progress" ||
@@ -88,9 +102,15 @@ export function PrimitiveInspector({
             options={[
               ["", "None"],
               ["label", "Label"],
-              ["session", "Session"],
-              ["weekly", "Weekly"],
-              ["reset", "Reset"],
+              ["usageSlot1Label", "Slot 1 label"],
+              ["usageSlot1Percent", "Slot 1 %"],
+              ["usageSlot1Reset", "Slot 1 reset"],
+              ["usageSlot2Label", "Slot 2 label"],
+              ["usageSlot2Percent", "Slot 2 %"],
+              ["usageSlot2Reset", "Slot 2 reset"],
+              ["session", "Session (legacy)"],
+              ["weekly", "Weekly (legacy)"],
+              ["reset", "Reset (legacy)"],
               ["usageMode", "Mode"],
               ["time", "Time"],
               ["date", "Date"],
@@ -149,8 +169,10 @@ export function PrimitiveInspector({
             value={primitive.binding || "session"}
             onChange={(value) => onChange("binding", value)}
             options={[
-              ["session", "Session"],
-              ["weekly", "Weekly"],
+              ["usageSlot1Percent", "Slot 1 %"],
+              ["usageSlot2Percent", "Slot 2 %"],
+              ["session", "Session (legacy)"],
+              ["weekly", "Weekly (legacy)"],
             ]}
           />
           <SelectField

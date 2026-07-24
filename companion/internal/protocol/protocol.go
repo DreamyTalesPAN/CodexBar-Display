@@ -3,9 +3,17 @@ package protocol
 import (
 	"encoding/json"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
 )
+
+type UsageSlot struct {
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Percent  int    `json:"percent"`
+	ResetSec int64  `json:"resetSecs"`
+}
 
 type Frame struct {
 	V                     int             `json:"v"`
@@ -16,6 +24,7 @@ type Frame struct {
 	ResetSec              int64           `json:"resetSecs,omitempty"`
 	UsageUnavailable      bool            `json:"usageUnavailable,omitempty"`
 	UsageMode             string          `json:"usageMode,omitempty"`
+	UsageSlots            []UsageSlot     `json:"usageSlots,omitempty"`
 	Time                  string          `json:"time,omitempty"`
 	Date                  string          `json:"date,omitempty"`
 	SessionTokens         int64           `json:"sessionTokens,omitempty"`
@@ -58,6 +67,7 @@ func (f Frame) Normalize() Frame {
 	if f.ResetSec < 0 {
 		f.ResetSec = 0
 	}
+	f.UsageSlots = normalizeUsageSlots(f.UsageSlots)
 	if f.SessionTokens < 0 {
 		f.SessionTokens = 0
 	}
@@ -97,6 +107,52 @@ func (f Frame) Normalize() Frame {
 		f.Update.SHA256 = strings.TrimSpace(f.Update.SHA256)
 	}
 	return f
+}
+
+func normalizeUsageSlots(slots []UsageSlot) []UsageSlot {
+	if len(slots) == 0 {
+		return nil
+	}
+	out := make([]UsageSlot, 0, 2)
+	for _, slot := range slots {
+		if len(out) == 2 {
+			break
+		}
+		slot.ID = truncateUTF8Bytes(strings.TrimSpace(strings.ToLower(slot.ID)), 32)
+		slot.Label = truncateUTF8Bytes(strings.TrimSpace(slot.Label), 24)
+		if slot.Label == "" {
+			slot.Label = slot.ID
+		}
+		slot.Label = truncateUTF8Bytes(slot.Label, 24)
+		if slot.ID == "" || slot.Label == "" {
+			continue
+		}
+		if slot.Percent < 0 {
+			slot.Percent = 0
+		}
+		if slot.Percent > 100 {
+			slot.Percent = 100
+		}
+		if slot.ResetSec < 0 {
+			slot.ResetSec = 0
+		}
+		out = append(out, slot)
+	}
+	return out
+}
+
+func truncateUTF8Bytes(value string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(value) <= maxBytes {
+		return value
+	}
+	value = value[:maxBytes]
+	for !utf8.ValidString(value) {
+		value = value[:len(value)-1]
+	}
+	return value
 }
 
 func (f Frame) MarshalLine() ([]byte, error) {

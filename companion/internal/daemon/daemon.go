@@ -1184,8 +1184,8 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 	persistActiveWiFiTarget(port, deps)
 
-	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
-		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
+	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds usageSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
+		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, usageSlotsLogValue(frame.UsageSlots), frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -1200,6 +1200,17 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 
 	return nil
+}
+
+func usageSlotsLogValue(slots []protocol.UsageSlot) string {
+	if len(slots) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(slots)
+	if err != nil {
+		return ""
+	}
+	return url.QueryEscape(string(raw))
 }
 
 func sendTargetWithRuntimeAuth(target string, deps runtimeDeps) (string, error) {
@@ -1473,6 +1484,9 @@ func applyUsageBarsPreference(frame protocol.Frame, showUsed bool) protocol.Fram
 
 	frame.Session = 100 - clampPercent(frame.Session)
 	frame.Weekly = 100 - clampPercent(frame.Weekly)
+	for i := range frame.UsageSlots {
+		frame.UsageSlots[i].Percent = 100 - clampPercent(frame.UsageSlots[i].Percent)
+	}
 	frame.UsageMode = "remaining"
 	return frame
 }

@@ -16,6 +16,7 @@ type RawDisplayFrame = {
   session?: unknown;
   weekly?: unknown;
   resetSecs?: unknown;
+  usageSlots?: unknown;
   usageMode?: unknown;
   activity?: unknown;
   sessionTokens?: unknown;
@@ -29,11 +30,19 @@ type DisplayFrame = {
   session?: number;
   weekly?: number;
   resetSecs?: number;
+  usageSlots?: UsageSlot[];
   usageMode: "used" | "remaining";
   activity?: string;
   sessionTokens?: number;
   weekTokens?: number;
   totalTokens?: number;
+};
+
+type UsageSlot = {
+  id: string;
+  label: string;
+  percent: number;
+  resetSecs: number;
 };
 
 export async function GET() {
@@ -83,6 +92,7 @@ function sanitizeFrame(raw: RawDisplayFrame | undefined): DisplayFrame | null {
   let session = percent(raw.session);
   let weekly = percent(raw.weekly);
   const resetSecs = nonNegativeInteger(raw.resetSecs);
+  const usageSlots = sanitizeUsageSlots(raw.usageSlots, defaultedToRemaining);
   const sessionTokens = nonNegativeInteger(raw.sessionTokens);
   const weekTokens = nonNegativeInteger(raw.weekTokens);
   const totalTokens = nonNegativeInteger(raw.totalTokens);
@@ -111,6 +121,9 @@ function sanitizeFrame(raw: RawDisplayFrame | undefined): DisplayFrame | null {
   if (resetSecs != null) {
     frame.resetSecs = resetSecs;
   }
+  if (usageSlots.length > 0) {
+    frame.usageSlots = usageSlots;
+  }
   if (sessionTokens != null) {
     frame.sessionTokens = sessionTokens;
   }
@@ -124,12 +137,55 @@ function sanitizeFrame(raw: RawDisplayFrame | undefined): DisplayFrame | null {
   return frame;
 }
 
+function sanitizeUsageSlots(value: unknown, invert: boolean): UsageSlot[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const slots: UsageSlot[] = [];
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== "object" || slots.length === 2) {
+      continue;
+    }
+    const raw = candidate as Record<string, unknown>;
+    const id = truncateUtf8Bytes(safeText(raw.id), 32);
+    const label = truncateUtf8Bytes(safeText(raw.label), 24);
+    let valuePercent = percent(raw.percent);
+    const resetSecs = nonNegativeInteger(raw.resetSecs) ?? 0;
+    if (!id || !label || valuePercent == null) {
+      continue;
+    }
+    if (invert) {
+      valuePercent = 100 - valuePercent;
+    }
+    slots.push({ id, label, percent: valuePercent, resetSecs });
+  }
+  return slots;
+}
+
 function usageMode(value: unknown): "used" | "remaining" | null {
   return value === "used" || value === "remaining" ? value : null;
 }
 
 function safeText(value: unknown): string {
-  return typeof value === "string" ? value.trim().slice(0, 80) : "";
+  return typeof value === "string"
+    ? Array.from(value.trim()).slice(0, 80).join("")
+    : "";
+}
+
+export function truncateUtf8Bytes(value: string, maxBytes: number): string {
+  if (maxBytes <= 0) {
+    return "";
+  }
+  const encoder = new TextEncoder();
+  let result = "";
+  for (const character of value) {
+    const candidate = `${result}${character}`;
+    if (encoder.encode(candidate).byteLength > maxBytes) {
+      break;
+    }
+    result = candidate;
+  }
+  return result.trimEnd();
 }
 
 function percent(value: unknown): number | null {

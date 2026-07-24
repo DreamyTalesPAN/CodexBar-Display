@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
@@ -76,6 +77,12 @@ func assertFrameMatch(t *testing.T, got, want protocol.Frame) {
 	}
 	if got.UsageMode != want.UsageMode {
 		t.Fatalf("usageMode mismatch: got=%q want=%q", got.UsageMode, want.UsageMode)
+	}
+	if got.UsageUnavailable != want.UsageUnavailable {
+		t.Fatalf("usageUnavailable mismatch: got=%t want=%t", got.UsageUnavailable, want.UsageUnavailable)
+	}
+	if !reflect.DeepEqual(got.UsageSlots, want.UsageSlots) {
+		t.Fatalf("usageSlots mismatch: got=%+v want=%+v", got.UsageSlots, want.UsageSlots)
 	}
 	if got.SessionTokens != want.SessionTokens {
 		t.Fatalf("sessionTokens mismatch: got=%d want=%d", got.SessionTokens, want.SessionTokens)

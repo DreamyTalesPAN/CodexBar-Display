@@ -48,6 +48,7 @@ describe("validateThemeSpec", () => {
     } as ThemeStudioSpec & { fallbackTheme: string });
     const deviceSpec = JSON.parse(deviceThemeSpecJson(normalized));
     const packSpec = JSON.parse(buildThemePack(normalized, "Legacy Theme").themeJson);
+    const pack = buildThemePack(normalized, "Legacy Theme");
 
     expect(normalized).not.toHaveProperty("fallbackTheme");
     expect(normalized).not.toHaveProperty("fb");
@@ -55,6 +56,8 @@ describe("validateThemeSpec", () => {
     expect(deviceSpec).not.toHaveProperty("fb");
     expect(packSpec).not.toHaveProperty("fallbackTheme");
     expect(packSpec).not.toHaveProperty("fb");
+    expect(pack.manifest.minFirmware).toBe("1.0.24");
+    expect(pack.manifest.requiredCapabilities).toBeUndefined();
   });
 
   it("blocks primitives that extend beyond the 240x240 canvas", () => {
@@ -87,5 +90,18 @@ describe("validateThemeSpec", () => {
     expect(validateThemeSpec(spec).errors).toContainEqual(
       expect.stringContaining("border radius must be between 0 and 120"),
     );
+  });
+
+  it("round-trips usage lane ownership and advertises its capability", () => {
+    const spec = validSpec();
+    spec.primitives[0].slot = 2;
+
+    const deviceSpec = JSON.parse(deviceThemeSpecJson(spec));
+    expect(deviceSpec.p[0].sl).toBe(2);
+    expect(importThemeSpec(deviceSpec).primitives[0].slot).toBe(2);
+
+    const pack = buildThemePack(spec, "Usage Theme");
+    expect(pack.manifest.minFirmware).toBe("1.0.40");
+    expect(pack.manifest.requiredCapabilities).toEqual(["usage-slots-v1"]);
   });
 });

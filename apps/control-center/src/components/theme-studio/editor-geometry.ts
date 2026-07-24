@@ -15,6 +15,12 @@ const DEFAULT_FRAME = {
   session: 62,
   weekly: 62,
   resetSecs: 3600,
+  usageSlot1Label: "Weekly",
+  usageSlot1Percent: 62,
+  usageSlot1Reset: "1h",
+  usageSlot2Label: "Codex Spark Weekly",
+  usageSlot2Percent: 38,
+  usageSlot2Reset: "2h",
   usageMode: "remaining",
   activity: "preview",
   sessionTokens: 12000,
@@ -365,6 +371,22 @@ function boundText(binding: string): string {
     case "reset":
     case "resetCountdown":
       return "1h";
+    case "usageSlot1Label":
+      return DEFAULT_FRAME.usageSlot1Label;
+    case "usageSlot1Percent":
+      return String(DEFAULT_FRAME.usageSlot1Percent);
+    case "usageSlot1Reset":
+      return DEFAULT_FRAME.usageSlot1Reset;
+    case "usageSlot1Available":
+      return "true";
+    case "usageSlot2Label":
+      return DEFAULT_FRAME.usageSlot2Label;
+    case "usageSlot2Percent":
+      return String(DEFAULT_FRAME.usageSlot2Percent);
+    case "usageSlot2Reset":
+      return DEFAULT_FRAME.usageSlot2Reset;
+    case "usageSlot2Available":
+      return "true";
     case "usageMode":
       return DEFAULT_FRAME.usageMode;
     case "activity":

@@ -761,21 +761,53 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		label = "Provider"
 	}
 
+	meta := parseProviderUsageMeta(payload)
+	usageSlots := usageSlotsFromWindows(meta.Windows)
+	if len(usageSlots) > 0 {
+		session = usageSlots[0].Percent
+		resetSecs = usageSlots[0].ResetSec
+	}
+	if len(usageSlots) > 1 {
+		weekly = usageSlots[1].Percent
+	}
 	return ParsedFrame{
 		Frame: protocol.Frame{
-			V:        1,
-			Provider: provider,
-			Label:    label,
-			Session:  session,
-			Weekly:   weekly,
-			ResetSec: resetSecs,
+			V:          1,
+			Provider:   provider,
+			Label:      label,
+			Session:    session,
+			Weekly:     weekly,
+			ResetSec:   resetSecs,
+			UsageSlots: usageSlots,
 		},
 		Provider:           provider,
 		Source:             source,
 		AccountEmail:       accountEmail,
-		Meta:               parseProviderUsageMeta(payload),
+		Meta:               meta,
 		ActivityObservedAt: activityObservedAt,
 	}, nil
+}
+
+func usageSlotsFromWindows(windows []UsageWindow) []protocol.UsageSlot {
+	if len(windows) == 0 {
+		return nil
+	}
+	slots := make([]protocol.UsageSlot, 0, 2)
+	for _, window := range windows {
+		if len(slots) == 2 {
+			break
+		}
+		if strings.TrimSpace(window.ID) == "" || strings.TrimSpace(window.Label) == "" {
+			continue
+		}
+		slots = append(slots, protocol.UsageSlot{
+			ID:       window.ID,
+			Label:    window.Label,
+			Percent:  window.UsedPercent,
+			ResetSec: window.ResetSec,
+		})
+	}
+	return slots
 }
 
 func parseProviderUsageMeta(payload map[string]any) ProviderUsageMeta {
@@ -1129,10 +1161,20 @@ func parseExtraUsageWindows(raw any) []UsageWindow {
 }
 
 func parseUsageWindowMap(windowMap map[string]any, id string, label string) (UsageWindow, bool) {
-	used := percentAtPaths(windowMap, "usedPercent", "used_percent", "percent", "usagePercent")
-	resetSec := resetSecondsFromWindowMap(windowMap)
-	windowMinutes := intAtPaths(windowMap, "windowMinutes", "window_minutes")
-	if used == 0 && resetSec == 0 && windowMinutes == 0 {
+	used, hasUsed := percentAtPathsWithPresence(
+		windowMap,
+		"usedPercent",
+		"used_percent",
+		"percent",
+		"usagePercent",
+	)
+	resetSec, hasReset := resetSecondsFromWindowMap(windowMap)
+	windowMinutes, hasWindowMinutes := intAtPathsWithPresence(
+		windowMap,
+		"windowMinutes",
+		"window_minutes",
+	)
+	if !hasUsed && !hasReset && !hasWindowMinutes {
 		return UsageWindow{}, false
 	}
 	return UsageWindow{
@@ -1144,22 +1186,30 @@ func parseUsageWindowMap(windowMap map[string]any, id string, label string) (Usa
 	}, true
 }
 
-func resetSecondsFromWindowMap(windowMap map[string]any) int64 {
-	if n := intAtPaths(windowMap, "resetSecs", "resetSeconds", "reset_after_seconds"); n > 0 {
-		return int64(n)
+func resetSecondsFromWindowMap(windowMap map[string]any) (int64, bool) {
+	if n, ok := intAtPathsWithPresence(
+		windowMap,
+		"resetSecs",
+		"resetSeconds",
+		"reset_after_seconds",
+	); ok {
+		if n < 0 {
+			n = 0
+		}
+		return int64(n), true
 	}
 	resetAt := firstStringAtPaths(windowMap, "resetsAt", "resetAt")
 	if resetAt == "" {
-		return 0
+		return 0, false
 	}
 	t, err := time.Parse(time.RFC3339, resetAt)
 	if err != nil {
-		return 0
+		return 0, false
 	}
 	if d := time.Until(t); d > 0 {
-		return int64(d.Seconds())
+		return int64(d.Seconds()), true
 	}
-	return 0
+	return 0, true
 }
 
 func parseProviderStatus(payload map[string]any) (ProviderStatus, bool) {
@@ -1321,13 +1371,15 @@ func recoverCodexFrameFromErrorPayload(payload map[string]any) (ParsedFrame, boo
 		return ParsedFrame{}, false
 	}
 
-	session := percentAtPaths(body, "rate_limit.primary_window.used_percent")
-	weekly := percentAtPaths(body, "rate_limit.secondary_window.used_percent")
+	session, hasSession := percentAtPathsWithPresence(body, "rate_limit.primary_window.used_percent")
+	weekly, hasWeekly := percentAtPathsWithPresence(body, "rate_limit.secondary_window.used_percent")
 	resetSecs := int64(0)
-	if n, ok := intAtPath(body, "rate_limit.primary_window.reset_after_seconds"); ok && n > 0 {
+	n, hasPrimaryReset := intAtPath(body, "rate_limit.primary_window.reset_after_seconds")
+	if hasPrimaryReset && n > 0 {
 		resetSecs = int64(n)
 	}
-	if session == 0 && weekly == 0 && resetSecs == 0 {
+	hasPrimary := hasSession || hasPrimaryReset
+	if !hasPrimary && !hasWeekly {
 		return ParsedFrame{}, false
 	}
 
@@ -1339,10 +1391,46 @@ func recoverCodexFrameFromErrorPayload(payload map[string]any) (ParsedFrame, boo
 			Session:  session,
 			Weekly:   weekly,
 			ResetSec: resetSecs,
+			UsageSlots: recoveredCodexUsageSlots(
+				session,
+				hasPrimary,
+				weekly,
+				hasWeekly,
+				resetSecs,
+			),
 		},
 		Provider: "codex",
 		Source:   "openai-web-recovered",
 	}, true
+}
+
+func recoveredCodexUsageSlots(
+	session int,
+	hasSession bool,
+	weekly int,
+	hasWeekly bool,
+	resetSecs int64,
+) []protocol.UsageSlot {
+	// This recovery payload has no display labels. Keep the legacy structural
+	// labels only so migrated themes do not go blank; #254 replaces this
+	// transitional fallback with CodexBar dashboard labels.
+	slots := make([]protocol.UsageSlot, 0, 2)
+	if hasSession {
+		slots = append(slots, protocol.UsageSlot{
+			ID:       "primary",
+			Label:    "Session",
+			Percent:  session,
+			ResetSec: resetSecs,
+		})
+	}
+	if hasWeekly {
+		slots = append(slots, protocol.UsageSlot{
+			ID:      "secondary",
+			Label:   "Weekly",
+			Percent: weekly,
+		})
+	}
+	return slots
 }
 
 func decodeEmbeddedJSONBody(message string) (map[string]any, bool) {
@@ -1373,14 +1461,19 @@ func intAtPath(m map[string]any, path string) (int, bool) {
 }
 
 func intAtPaths(m map[string]any, paths ...string) int {
+	n, _ := intAtPathsWithPresence(m, paths...)
+	return n
+}
+
+func intAtPathsWithPresence(m map[string]any, paths ...string) (int, bool) {
 	for _, path := range paths {
 		if v, ok := getPath(m, path); ok {
 			if n, ok := anyToInt(v); ok {
-				return n
+				return n, true
 			}
 		}
 	}
-	return 0
+	return 0, false
 }
 
 func floatAtPaths(m map[string]any, paths ...string) (float64, bool) {
@@ -2850,6 +2943,11 @@ func firstRFC3339AtPaths(m map[string]any, paths ...string) time.Time {
 }
 
 func percentAtPaths(m map[string]any, paths ...string) int {
+	n, _ := percentAtPathsWithPresence(m, paths...)
+	return n
+}
+
+func percentAtPathsWithPresence(m map[string]any, paths ...string) (int, bool) {
 	for _, p := range paths {
 		if v, ok := getPath(m, p); ok {
 			if n, ok := anyToInt(v); ok {
@@ -2859,11 +2957,11 @@ func percentAtPaths(m map[string]any, paths ...string) int {
 				if n > 100 {
 					n = 100
 				}
-				return n
+				return n, true
 			}
 		}
 	}
-	return 0
+	return 0, false
 }
 
 func getPath(m map[string]any, path string) (any, bool) {

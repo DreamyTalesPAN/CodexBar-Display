@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -373,6 +374,28 @@ func TestRunCycleWithDepsSendsRuntimeConfigDeviceTokenWithoutLoggingIt(t *testin
 	}
 	if !strings.Contains(logged.String(), "sent frame -> http://192.168.178.159") {
 		t.Fatalf("expected public target in log, got %q", logged.String())
+	}
+}
+
+func TestUsageSlotsLogValueRoundTripsThroughQueryEncoding(t *testing.T) {
+	slots := []protocol.UsageSlot{
+		{ID: "secondary", Label: "Weekly", Percent: 75, ResetSec: 490812},
+		{ID: "codex-spark-weekly", Label: "Codex Spark Weekly", Percent: 0, ResetSec: 604794},
+	}
+	encoded := usageSlotsLogValue(slots)
+	if encoded == "" || strings.Contains(encoded, " ") {
+		t.Fatalf("expected compact encoded usage slots, got %q", encoded)
+	}
+	raw, err := url.QueryUnescape(encoded)
+	if err != nil {
+		t.Fatalf("decode usage slots log value: %v", err)
+	}
+	var got []protocol.UsageSlot
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("parse usage slots log value: %v", err)
+	}
+	if !reflect.DeepEqual(got, slots) {
+		t.Fatalf("usage slots mismatch: got=%+v want=%+v", got, slots)
 	}
 }
 

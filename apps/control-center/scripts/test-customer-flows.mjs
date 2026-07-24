@@ -4745,6 +4745,20 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
         label: "Codex",
         weekly: 63,
         resetSecs: 5400,
+        usageSlots: [
+          {
+            id: "primary",
+            label: "Session",
+            percent: 0,
+            resetSecs: 5400,
+          },
+          {
+            id: "secondary",
+            label: "Weekly",
+            percent: 63,
+            resetSecs: 0,
+          },
+        ],
         usageMode: "used",
         activity: "coding",
       },
@@ -4779,7 +4793,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
   await page
     .getByRole("img", {
-      name: /Rendered VibeTV theme synthwave showing Codex, 0% session used, 63% weekly used/,
+      name: /Rendered VibeTV theme synthwave showing Codex, Session 0% used, Weekly 63% used/,
     })
     .waitFor({ timeout: 10_000 });
   const renderedTheme = page.getByRole("img", {
@@ -4941,11 +4955,11 @@ async function testOverviewRejectsInvalidDisplayFrame(browser, appUrl) {
 
 async function testOverviewRendersThemeSpecAssetTypes(browser, appUrl) {
   const cases = [
-    { id: "mini-classic", kind: "gif" },
-    { id: "clippy", kind: "animated-sprite" },
-    { id: "cozy-meadow", kind: "static-sprite" },
-    { id: "synthwave", kind: "static-sprite" },
-    { id: "claude-creature", kind: "animated-sprite" },
+    { id: "mini-classic", kind: "gif", expectedLabel: "Codex" },
+    { id: "clippy", kind: "animated-sprite", expectedLabel: "Codex" },
+    { id: "cozy-meadow", kind: "static-sprite", expectedLabel: "Session" },
+    { id: "synthwave", kind: "static-sprite", expectedLabel: "Codex" },
+    { id: "claude-creature", kind: "animated-sprite", expectedLabel: "Codex" },
   ];
 
   for (const theme of cases) {
@@ -4994,11 +5008,13 @@ async function testOverviewRendersThemeSpecAssetTypes(browser, appUrl) {
     await page.goto(appUrl, { waitUntil: "domcontentloaded" });
     const renderedTheme = page.getByRole("img", {
       name: new RegExp(
-        `Rendered VibeTV theme ${theme.id} showing Codex, 27% session used, 63% weekly used`,
+        `Rendered VibeTV theme ${theme.id} showing Codex, Session 27% used, Weekly 63% used`,
       ),
     });
     await renderedTheme.waitFor({ timeout: 10_000 });
-    await renderedTheme.getByText("Codex").waitFor({ timeout: 10_000 });
+    await renderedTheme
+      .getByText(theme.expectedLabel)
+      .waitFor({ timeout: 10_000 });
     assert(
       (await page.getByText("ThemeSpec not available").count()) === 0,
       `${theme.id} preview should load its ThemeSpec`,
@@ -5045,14 +5061,22 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
     companionVersion: "1.0.33",
     device: {
       ...companionDevice,
-      firmware: "1.0.32",
+      firmware: "1.0.40",
+      capabilities: {
+        ...companionDevice.capabilities,
+        theme: {
+          supportsThemeSpecV1: true,
+          supportsUsageSlotsV1: true,
+          supportsStoredThemes: true,
+        },
+      },
     },
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await clickNavigation(page, "Theme Library");
   const synthwavePreview = page.getByRole("img", {
-    name: /Rendered VibeTV theme synthwave showing VibeTV, 62% session remaining, 62% weekly remaining/,
+    name: /Rendered VibeTV theme synthwave showing VibeTV, Weekly 62% remaining, Codex Spark Weekly 38% remaining/,
   });
   await synthwavePreview.waitFor({ timeout: 10_000 });
   assert(
@@ -5150,7 +5174,15 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     companionVersion: "1.0.33",
     device: {
       ...companionDevice,
-      firmware: "1.0.32",
+      firmware: "1.0.40",
+      capabilities: {
+        ...companionDevice.capabilities,
+        theme: {
+          supportsThemeSpecV1: true,
+          supportsUsageSlotsV1: true,
+          supportsStoredThemes: true,
+        },
+      },
     },
     installStatusSequence: [
       {
@@ -5222,6 +5254,18 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
     "Theme Studio should not create horizontal body overflow at 1180x820",
+  );
+  const firstUsageLaneLayer = page.getByText("usageSlot1Percent", {
+    exact: true,
+  });
+  assert(
+    (await firstUsageLaneLayer.count()) === 1,
+    "migrated theme should expose exactly one first-slot progress layer",
+  );
+  await firstUsageLaneLayer.click();
+  assert(
+    (await page.getByLabel("Usage lane").innerText()) === "Hide with slot 1",
+    "migrated first-slot layer should expose its lane ownership in the inspector",
   );
   await captureMigrationScreenshot(page, "08-theme-studio-1180x820.png");
   assert(
@@ -7173,6 +7217,24 @@ function displayFrameFromUsageResponse(usageResponse) {
       : "used";
   const session = clampPercent(provider.session);
   const weekly = clampPercent(provider.weekly);
+  // Transitional fixture until the dashboard-backed source in #254 supplies
+  // the authoritative window IDs and labels.
+  const usageSlots = Array.isArray(provider.usageSlots)
+    ? provider.usageSlots
+    : [
+        {
+          id: "primary",
+          label: "Session",
+          percent: session,
+          resetSecs: nonNegativeInteger(provider.resetSecs) || 0,
+        },
+        {
+          id: "secondary",
+          label: "Weekly",
+          percent: weekly,
+          resetSecs: 0,
+        },
+      ];
   return {
     v: 1,
     provider: provider.id,
@@ -7180,6 +7242,7 @@ function displayFrameFromUsageResponse(usageResponse) {
     ...(session > 0 ? { session } : {}),
     ...(weekly > 0 ? { weekly } : {}),
     resetSecs: nonNegativeInteger(provider.resetSecs),
+    usageSlots,
     usageMode,
     activity: provider.activity || "idle",
     sessionTokens: nonNegativeInteger(provider.sessionTokens),

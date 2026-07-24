@@ -431,6 +431,99 @@ void testUsageUnavailableKeepsThemeAndProgress() {
   TEST_ASSERT_EQUAL_STRING("Reset unavailable", reset);
 }
 
+void testUsageSlotOwnershipHidesCompleteMissingLane() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"usage-slots",
+    "rev":1,
+    "p":[
+      {"t":"tx","x":0,"y":0,"sl":1,"v":"{usageSlot1Label}"},
+      {"t":"r","x":0,"y":20,"w":100,"h":8,"sl":2,"c":"#FFFFFF"},
+      {"t":"p","x":0,"y":40,"w":100,"h":8,"sl":2,"b":"us2p"},
+      {"t":"tx","x":0,"y":60,"sl":2,"v":"{usageSlot2Label}"}
+    ]
+  })JSON";
+
+  FrameData frame;
+  frame.usageSlot1Label = "Weekly";
+  frame.usageSlot1Percent = 42;
+  frame.usageSlot1Available = true;
+
+  RecordingSink oneSlotSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, oneSlotSink));
+  TEST_ASSERT_EQUAL_UINT32(2, oneSlotSink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(oneSlotSink.commands[0].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(oneSlotSink.commands[1].type));
+  TEST_ASSERT_EQUAL_STRING("Weekly", oneSlotSink.commands[1].text.c_str());
+
+  frame.usageSlot2Label = "Codex Spark Weekly";
+  frame.usageSlot2Percent = 7;
+  frame.usageSlot2Available = true;
+  RecordingSink twoSlotSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, twoSlotSink));
+  TEST_ASSERT_EQUAL_UINT32(5, twoSlotSink.commands.size());
+}
+
+void testUsageSlotResetCountdownsTickIndependently() {
+  RuntimeState state;
+  state.hasFrame = true;
+  state.resetBaseMillis = 1000;
+  state.current.usageSlots[0].available = true;
+  state.current.usageSlots[0].resetSecs = 100;
+  state.current.usageSlots[1].available = true;
+  state.current.usageSlots[1].resetSecs = 200;
+
+  TEST_ASSERT_EQUAL_INT64(
+      40,
+      codexbar_display::core::CurrentUsageSlotRemainingSecs(state, 0, 61000));
+  TEST_ASSERT_EQUAL_INT64(
+      140,
+      codexbar_display::core::CurrentUsageSlotRemainingSecs(state, 1, 61000));
+  TEST_ASSERT_EQUAL_INT64(
+      0,
+      codexbar_display::core::CurrentUsageSlotRemainingSecs(state, 0, 121000));
+  TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(40, 1));
+  TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(140, 3));
+  TEST_ASSERT_FALSE(codexbar_display::core::RemainingMinuteBucketChanged(139, 2));
+  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecUsesUsageSlotResetBinding(
+      String(R"JSON({"p":[{"t":"tx","v":"{usageSlot1Reset}"}]})JSON"), 0));
+  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecUsesUsageSlotResetBinding(
+      String(R"JSON({"p":[{"t":"tx","v":"{us2r}"}]})JSON"), 1));
+}
+
+void testCompactUsageSlotBindingTriggersLiveRedraw() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","usageSlots":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":100}],"themeSpec":{"v":1,"id":"slot-redraw","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":8,"sl":1,"b":"us1p"}]}})JSON";
+  const char* nextFrame = R"JSON({"v":2,"provider":"codex","usageSlots":[{"id":"weekly","label":"Weekly","percent":43,"resetSecs":99}]})JSON";
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, nextFrame, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageSlot1) != 0);
+}
+
+void testUsageSlotOwnershipAndCompactTemplateTriggerLiveRedraw() {
+  RuntimeState ownershipState;
+  SerialConsumeEvent event;
+  const char* ownershipFrame = R"JSON({"v":2,"provider":"codex","themeSpec":{"v":1,"id":"slot-owner-redraw","rev":1,"p":[{"t":"r","x":0,"y":0,"w":100,"h":8,"sl":1,"c":"#FFFFFF"}]}})JSON";
+  const char* slotAppears = R"JSON({"v":2,"provider":"codex","usageSlots":[{"id":"weekly","label":"Weekly","percent":0,"resetSecs":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(ownershipState, ownershipFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(ownershipState, slotAppears, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageSlot1) != 0);
+
+  RuntimeState compactTemplateState;
+  const char* compactTemplateFrame = R"JSON({"v":2,"provider":"codex","usageSlots":[{"id":"weekly","label":"Weekly","percent":0,"resetSecs":0}],"themeSpec":{"v":1,"id":"slot-template-redraw","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"{us1l}"}]}})JSON";
+  const char* labelChanges = R"JSON({"v":2,"provider":"codex","usageSlots":[{"id":"weekly","label":"This week","percent":0,"resetSecs":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(compactTemplateState, compactTemplateFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(compactTemplateState, labelChanges, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+}
+
 void testLabelBindingUsesProviderLabelWithoutUpdateNotice() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -1751,6 +1844,10 @@ int main() {
   RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);
   RUN_TEST(testRendersCommandsAndBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
+  RUN_TEST(testUsageSlotOwnershipHidesCompleteMissingLane);
+  RUN_TEST(testUsageSlotResetCountdownsTickIndependently);
+  RUN_TEST(testCompactUsageSlotBindingTriggersLiveRedraw);
+  RUN_TEST(testUsageSlotOwnershipAndCompactTemplateTriggerLiveRedraw);
   RUN_TEST(testLabelBindingUsesProviderLabelWithoutUpdateNotice);
   RUN_TEST(testChangedLabelPassUsesSynchronizedUpdateNoticeText);
   RUN_TEST(testChangedLabelPassCanRestoreProviderText);

@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1970,9 +1971,10 @@ func TestDisplayFrameLatestReturnsPersistedLastGoodFrame(t *testing.T) {
 func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
 	t.Setenv(displayStreamOutLogEnv, logPath)
+	usageSlots := url.QueryEscape(`[{"id":"secondary","label":"Weekly","percent":75,"resetSecs":490812},{"id":"codex-spark-weekly","label":"Codex Spark Weekly","percent":0,"resetSecs":604794}]`)
 	if err := os.WriteFile(
 		logPath,
-		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=73 weekly=58 reset=2733s activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
+		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=73 weekly=58 reset=2733s usageSlots=`+usageSlots+` activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
 		0o644,
 	); err != nil {
 		t.Fatalf("write display stream log: %v", err)
@@ -2016,6 +2018,11 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	}
 	if got.Frame.UsageMode != "remaining" || got.Frame.Activity != "coding" {
 		t.Fatalf("unexpected sent frame state: %+v", got.Frame)
+	}
+	if len(got.Frame.UsageSlots) != 2 ||
+		got.Frame.UsageSlots[0].Label != "Weekly" ||
+		got.Frame.UsageSlots[1].Label != "Codex Spark Weekly" {
+		t.Fatalf("expected sent usage slots in display preview, got %+v", got.Frame.UsageSlots)
 	}
 }
 

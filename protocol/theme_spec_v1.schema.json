@@ -104,6 +104,14 @@
             "type": "integer",
             "minimum": 1
           },
+          "slot": {
+            "type": "integer",
+            "enum": [1, 2]
+          },
+          "sl": {
+            "type": "integer",
+            "enum": [1, 2]
+          },
           "text": {
             "type": "string"
           },
@@ -320,6 +328,14 @@
           "h": {
             "type": "integer",
             "minimum": 1
+          },
+          "slot": {
+            "type": "integer",
+            "enum": [1, 2]
+          },
+          "sl": {
+            "type": "integer",
+            "enum": [1, 2]
           },
           "text": {
             "type": "string"

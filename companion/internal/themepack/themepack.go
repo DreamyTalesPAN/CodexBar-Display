@@ -40,14 +40,15 @@ var packIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9\-_]{2,63}$`)
 var spriteColorPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 type Manifest struct {
-	Kind        string      `json:"kind"`
-	Schema      int         `json:"schemaVersion"`
-	ID          string      `json:"id"`
-	Name        string      `json:"name"`
-	Version     string      `json:"version,omitempty"`
-	MinFirmware string      `json:"minFirmware,omitempty"`
-	ThemeSpec   FileEntry   `json:"themeSpec"`
-	Assets      []FileEntry `json:"assets,omitempty"`
+	Kind                 string      `json:"kind"`
+	Schema               int         `json:"schemaVersion"`
+	ID                   string      `json:"id"`
+	Name                 string      `json:"name"`
+	Version              string      `json:"version,omitempty"`
+	MinFirmware          string      `json:"minFirmware,omitempty"`
+	RequiredCapabilities []string    `json:"requiredCapabilities,omitempty"`
+	ThemeSpec            FileEntry   `json:"themeSpec"`
+	Assets               []FileEntry `json:"assets,omitempty"`
 }
 
 type FileEntry struct {
@@ -77,6 +78,16 @@ func (p *Pack) ValidateAgainstCapabilities(caps protocol.DeviceCapabilities) err
 	}
 	if err := themespec.ValidateStoredAgainstCapabilities(p.ThemeSpec, p.ThemeSpecRaw, caps); err != nil {
 		return err
+	}
+	for _, capability := range p.Manifest.RequiredCapabilities {
+		switch strings.TrimSpace(strings.ToLower(capability)) {
+		case protocol.FeatureUsageSlotsV1:
+			if !caps.SupportsUsageSlotsV1 {
+				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureUsageSlotsV1)
+			}
+		default:
+			return fmt.Errorf("theme pack requires unsupported capability %q", capability)
+		}
 	}
 	gifRefs := referencedGIFAssets(p.ThemeSpec)
 	assetsByPath := make(map[string]File, len(p.Assets))
@@ -359,6 +370,11 @@ func validateManifestFields(manifest Manifest) error {
 	}
 	if strings.TrimSpace(manifest.Name) == "" {
 		return errors.New("name is required")
+	}
+	for _, capability := range manifest.RequiredCapabilities {
+		if strings.TrimSpace(strings.ToLower(capability)) != protocol.FeatureUsageSlotsV1 {
+			return fmt.Errorf("required capability %q is unsupported", capability)
+		}
 	}
 	return nil
 }

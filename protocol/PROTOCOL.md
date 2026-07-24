@@ -27,7 +27,8 @@ Fields:
 - `weekly` (number, optional): weekly usage percent `0..100`.
 - `resetSecs` (number, optional): seconds remaining until reset.
 - `usageUnavailable` (boolean, optional): current quota values are not trustworthy; missing/false remains backward compatible. ThemeSpec text bindings show unknown values while progress keeps the numeric carrier values.
-- `usageMode` (string, optional): semantic of `session`/`weekly` (`used` or `remaining`).
+- `usageMode` (string, optional): semantic of `session`/`weekly` and `usageSlots[].percent` (`used` or `remaining`).
+- `usageSlots` (array, optional): compact provider-aware display slots, max two entries. Each emitted slot carries `id` (max 32 UTF-8 bytes), `label` (max 24 UTF-8 bytes), `percent`, and its own `resetSecs`. Presence means availability; missing or unavailable source windows are omitted rather than coerced to `0`/`100`. Legacy `session`, `weekly`, and shared `resetSecs` remain deprecated compatibility aliases for slots 1, 2, and slot 1's reset.
 - `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
 - `weekTokens` (number, optional): rolling 7-day token total when available.
 - `totalTokens` (number, optional): lifetime token total when available.
@@ -39,7 +40,7 @@ Fields:
 Example with additive token stats + theme:
 
 ```json
-{"v":2,"provider":"codex","label":"Codex","session":17,"weekly":42,"resetSecs":15480,"sessionTokens":1437166,"weekTokens":384312010,"totalTokens":1078397605,"theme":"mini"}
+{"v":2,"provider":"codex","label":"Codex","session":42,"weekly":7,"resetSecs":15480,"usageSlots":[{"id":"secondary","label":"Weekly","percent":42,"resetSecs":15480},{"id":"codex-spark-weekly","label":"Codex Spark Weekly","percent":7,"resetSecs":604800}],"sessionTokens":1437166,"weekTokens":384312010,"totalTokens":1078397605,"theme":"mini"}
 ```
 
 Theme registry source of truth:
@@ -61,6 +62,7 @@ Design constraints:
 - No user code execution on device.
 - Primitives are declarative (`text`, `rect`, `progress`, `gif`, `sprite`, `pixels`) and validated by companion before send.
 - Devices accept the readable ThemeSpec keys and a compact device form. Theme Studio keeps the readable editor model, but sends compact keys such as `v/id/rev/p`, primitive `t/w/h/v/b/s/c/bg/bc/br/a/d`, and type aliases `tx/r/p/g/sp/px`. `br` is the optional 0-120 pixel border radius for rectangle and progress primitives.
+- A primitive may declare usage-lane ownership with `slot: 1|2` (compact `sl`). The renderer skips the entire primitive when that slot is absent, including static decoration and progress tracks. Themes that use slot bindings or ownership require the advertised `usage-slots-v1` capability.
 - Optional top-level `bgColor` fills the whole 240x240 screen before primitives are drawn.
 - Text primitives use the single firmware-loaded TFT GLCD font; scale with `fontSize`.
 - Text primitive `bgColor` is optional; when omitted, text is drawn transparent over the theme background.
@@ -148,6 +150,7 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
     },
     "theme": {
       "supportsThemeSpecV1": true,
+      "supportsUsageSlotsV1": true,
       "maxThemeSpecBytes": 2048,
       "maxThemePrimitives": 32,
       "supportedPrimitiveTypes": ["text", "rect", "progress", "gif", "sprite", "pixels"],
@@ -177,6 +180,7 @@ Fields:
 - `capabilities` (object, optional): extended block for display/theme/transport limits.
   - `display.brightness.supported` describes browser-adjustable backlight support when the board exposes it. Hosts use 10-100 percent for the current ESP8266 implementation.
   - `theme.maxThemeSpecBytes` is the inline `themeSpec` frame byte limit.
+  - `theme.supportsUsageSlotsV1` gates dynamic slot bindings and primitive lane ownership.
   - `theme.maxStoredThemeSpecBytes` is the uploaded/stored ThemeSpec JSON byte limit for WiFi themes.
   - `theme.maxThemePrimitives` is the maximum primitive count accepted by the renderer.
   - `theme.supportedPrimitiveTypes` lists the ThemeSpec primitive types this firmware can render.
