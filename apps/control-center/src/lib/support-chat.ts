@@ -89,15 +89,19 @@ export type SupportChatMountOptions = {
   webhookUrl: string;
 };
 
-type SupportChatSendMessageResponse = {
-  hasReceivedChunks?: boolean;
-  message?: string | SupportChatAgentMessage;
-};
-
 export type SupportChatAgentMessage = {
   id: string;
   sender: "bot";
   text: string;
+};
+
+type SupportChatCallbackMessage = Omit<SupportChatAgentMessage, "sender"> & {
+  sender: "bot" | "user";
+};
+
+type SupportChatSendMessageResponse = {
+  hasReceivedChunks?: boolean;
+  message?: string | SupportChatCallbackMessage;
 };
 
 export function resolveSupportChatConfig(
@@ -344,7 +348,7 @@ function nonEmptyVersion(value?: string | null): value is string {
 }
 
 function isAgentMessage(
-  value?: string | SupportChatAgentMessage,
+  value?: string | SupportChatCallbackMessage,
 ): value is SupportChatAgentMessage {
   return (
     typeof value === "object" &&
