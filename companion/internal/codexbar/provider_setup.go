@@ -57,9 +57,12 @@ var openCodexBarCommand = func(ctx context.Context) error {
 	return exec.CommandContext(ctx, "/usr/bin/open", "-b", "com.steipete.codexbar").Run()
 }
 
+var runConfigBootstrapCommandFn = runConfigBootstrapCommand
+
 // EnsureConfig selects an existing CodexBar config without modifying it. If
-// none exists, it creates a private VibeTV-owned config outside ~/.config so a
-// broken or root-owned ~/.config directory cannot break onboarding.
+// none exists, CodexBar itself renders and validates its current default config
+// into a private path outside ~/.config. VibeTV never owns the provider
+// inventory or its defaults.
 func EnsureConfig(home string) (string, error) {
 	if explicit := strings.TrimSpace(os.Getenv("CODEXBAR_CONFIG")); explicit != "" {
 		return ensureConfigFile(explicit)
@@ -96,9 +99,12 @@ func ensureConfigFile(path string) (string, error) {
 		return path, fmt.Errorf("protect CodexBar config directory: %w", err)
 	}
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		seed := []byte("{\n  \"version\": 1\n}\n")
-		if err := os.WriteFile(path, seed, 0o600); err != nil {
-			return path, fmt.Errorf("write CodexBar config: %w", err)
+		bin, findErr := FindBinary()
+		if findErr != nil {
+			return path, fmt.Errorf("find CodexBar for config initialization: %w", findErr)
+		}
+		if initErr := initializeConfigFile(path, bin); initErr != nil {
+			return path, initErr
 		}
 	} else if err != nil {
 		return path, fmt.Errorf("inspect CodexBar config: %w", err)
@@ -107,6 +113,75 @@ func ensureConfigFile(path string) (string, error) {
 		return path, fmt.Errorf("protect CodexBar config: %w", err)
 	}
 	return path, writableConfig(path)
+}
+
+func initializeConfigFile(path, bin string) error {
+	dir := filepath.Dir(path)
+	staged, err := os.CreateTemp(dir, ".vibetv-codexbar-default-*")
+	if err != nil {
+		return fmt.Errorf("stage CodexBar config: %w", err)
+	}
+	stagedPath := staged.Name()
+	if closeErr := staged.Close(); closeErr != nil {
+		_ = os.Remove(stagedPath)
+		return fmt.Errorf("close staged CodexBar config: %w", closeErr)
+	}
+	if err := os.Remove(stagedPath); err != nil {
+		return fmt.Errorf("prepare CodexBar config staging path: %w", err)
+	}
+	defer os.Remove(stagedPath)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	raw, err := runConfigBootstrapCommandFn(
+		ctx,
+		bin,
+		stagedPath,
+		"config",
+		"dump",
+		"--format",
+		"json",
+	)
+	if err != nil {
+		return fmt.Errorf("render CodexBar default config: %w", err)
+	}
+	if !json.Valid(raw) {
+		return errors.New("CodexBar default config is not valid JSON")
+	}
+	if err := os.WriteFile(stagedPath, raw, 0o600); err != nil {
+		return fmt.Errorf("write staged CodexBar config: %w", err)
+	}
+	if _, err := runConfigBootstrapCommandFn(
+		ctx,
+		bin,
+		stagedPath,
+		"config",
+		"validate",
+		"--format",
+		"json",
+	); err != nil {
+		return fmt.Errorf("validate CodexBar default config: %w", err)
+	}
+	// A hard link publishes without replacing a config another process may
+	// have created while CodexBar was rendering its defaults.
+	if err := os.Link(stagedPath, path); err != nil {
+		if _, statErr := os.Stat(path); statErr == nil {
+			return nil
+		}
+		return fmt.Errorf("publish CodexBar default config: %w", err)
+	}
+	return nil
+}
+
+func runConfigBootstrapCommand(
+	ctx context.Context,
+	bin string,
+	configPath string,
+	args ...string,
+) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Env = environmentWithConfig(configPath)
+	return cmd.Output()
 }
 
 func writableConfig(path string) error {
@@ -133,26 +208,34 @@ func writableConfig(path string) error {
 }
 
 func commandEnvironment(configPath string) []string {
+	path := strings.TrimSpace(configPath)
+	if path == "" {
+		var err error
+		path, err = EnsureConfig("")
+		if err != nil || path == "" {
+			return environmentWithConfig("")
+		}
+	}
+	return environmentWithConfig(path)
+}
+
+func environmentWithConfig(configPath string) []string {
 	env := os.Environ()
 	filtered := make([]string, 0, len(env)+1)
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "CODEXBAR_CONFIG=") {
-			if strings.TrimSpace(strings.TrimPrefix(entry, "CODEXBAR_CONFIG=")) != "" && strings.TrimSpace(configPath) == "" {
+			if strings.TrimSpace(strings.TrimPrefix(entry, "CODEXBAR_CONFIG=")) != "" &&
+				strings.TrimSpace(configPath) == "" {
 				return env
 			}
 			continue
 		}
 		filtered = append(filtered, entry)
 	}
-	path := strings.TrimSpace(configPath)
-	if path == "" {
-		var err error
-		path, err = EnsureConfig("")
-		if err != nil || path == "" {
-			return filtered
-		}
+	if path := strings.TrimSpace(configPath); path != "" {
+		filtered = append(filtered, "CODEXBAR_CONFIG="+path)
 	}
-	return append(filtered, "CODEXBAR_CONFIG="+path)
+	return filtered
 }
 
 func configPathFromContext(ctx context.Context) string {
@@ -179,15 +262,6 @@ func ProbeProviderSetupForProvider(ctx context.Context, home, providerID string)
 
 func probeProviderSetup(ctx context.Context, home, exactProvider string) ProviderSetup {
 	result := ProviderSetup{Status: "setup_required", CheckedAt: time.Now().UTC().Format(time.RFC3339Nano)}
-	configPath, configErr := EnsureConfig(home)
-	result.Engine.ConfigPath = configPath
-	result.Engine.Writable = configErr == nil
-	if configErr != nil {
-		result.Engine.Status = ProviderConfigError
-		result.Providers = []ProviderReadiness{providerResult("codexbar", ProviderConfigError)}
-		return result
-	}
-
 	bin, err := FindBinary()
 	if err != nil {
 		result.Engine.Status = ProviderNotConfigured
@@ -196,6 +270,14 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 	}
 	result.Engine.Path = bin
 	result.Engine.Source = BinarySource(bin)
+	configPath, configErr := EnsureConfig(home)
+	result.Engine.ConfigPath = configPath
+	result.Engine.Writable = configErr == nil
+	if configErr != nil {
+		result.Engine.Status = ProviderConfigError
+		result.Providers = []ProviderReadiness{providerResult("codexbar", ProviderConfigError)}
+		return result
+	}
 	configuredCtx := context.WithValue(ctx, configPathContextKey{}, configPath)
 	versionCtx, cancelVersion := context.WithTimeout(configuredCtx, versionCheckTimeout)
 	version, versionErr := installedVersion(versionCtx, bin)

@@ -12,8 +12,50 @@ import (
 	"time"
 )
 
-func TestEnsureConfigSeedsPrivateConfigWithoutOwningProviderInventory(t *testing.T) {
+func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
 	t.Setenv("CODEXBAR_CONFIG", "")
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	originalBootstrap := runConfigBootstrapCommandFn
+	defer func() { runConfigBootstrapCommandFn = originalBootstrap }()
+	codexBarDefault := []byte(`{
+		"version": 42,
+		"providers": [{"id":"future-provider","enabled":true}]
+	}`)
+	var calls [][]string
+	runConfigBootstrapCommandFn = func(
+		_ context.Context,
+		gotBin string,
+		configPath string,
+		args ...string,
+	) ([]byte, error) {
+		if gotBin != bin {
+			t.Fatalf("unexpected binary: %q", gotBin)
+		}
+		calls = append(calls, append([]string{configPath}, args...))
+		switch {
+		case reflect.DeepEqual(args, []string{"config", "dump", "--format", "json"}):
+			if _, err := os.Stat(configPath); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("default dump must use a missing config path: %v", err)
+			}
+			return codexBarDefault, nil
+		case reflect.DeepEqual(args, []string{"config", "validate", "--format", "json"}):
+			data, err := os.ReadFile(configPath)
+			if err != nil {
+				t.Fatalf("read staged config: %v", err)
+			}
+			if !reflect.DeepEqual(data, codexBarDefault) {
+				t.Fatalf("CodexBar output changed: got %q want %q", data, codexBarDefault)
+			}
+			return []byte(`[]`), nil
+		default:
+			t.Fatalf("unexpected bootstrap args: %v", args)
+			return nil, nil
+		}
+	}
 	home := t.TempDir()
 	path, err := EnsureConfig(home)
 	if err != nil {
@@ -31,17 +73,49 @@ func TestEnsureConfigSeedsPrivateConfigWithoutOwningProviderInventory(t *testing
 	if err := json.Unmarshal(data, &config); err != nil {
 		t.Fatalf("parse seeded config: %v", err)
 	}
-	if config["version"] != float64(1) {
+	if config["version"] != float64(42) {
 		t.Fatalf("unexpected seeded config: %#v", config)
 	}
-	if _, ownsProviders := config["providers"]; ownsProviders {
-		t.Fatalf("VibeTV must not seed a provider inventory: %#v", config)
+	providers, ok := config["providers"].([]any)
+	if !ok || len(providers) != 1 {
+		t.Fatalf("CodexBar provider inventory was not preserved: %#v", config)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("expected dump and validation, got %v", calls)
 	}
 	if mode := fileMode(t, filepath.Dir(path)); mode.Perm() != 0o700 {
 		t.Fatalf("expected config dir 0700, got %o", mode.Perm())
 	}
 	if mode := fileMode(t, path); mode.Perm() != 0o600 {
 		t.Fatalf("expected config file 0600, got %o", mode.Perm())
+	}
+}
+
+func TestEnsureConfigRejectsInvalidCodexBarDefaultWithoutPublishing(t *testing.T) {
+	t.Setenv("CODEXBAR_CONFIG", "")
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	originalBootstrap := runConfigBootstrapCommandFn
+	defer func() { runConfigBootstrapCommandFn = originalBootstrap }()
+	runConfigBootstrapCommandFn = func(
+		context.Context,
+		string,
+		string,
+		...string,
+	) ([]byte, error) {
+		return []byte("not-json"), nil
+	}
+
+	home := t.TempDir()
+	path, err := EnsureConfig(home)
+	if err == nil {
+		t.Fatal("invalid CodexBar output must fail")
+	}
+	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("invalid config was published: %v", statErr)
 	}
 }
 
@@ -54,6 +128,17 @@ func TestEnsureConfigPreservesExistingStandardConfig(t *testing.T) {
 	}
 	if err := os.WriteFile(standard, []byte(`{"existing":true}`), 0o600); err != nil {
 		t.Fatal(err)
+	}
+	originalBootstrap := runConfigBootstrapCommandFn
+	defer func() { runConfigBootstrapCommandFn = originalBootstrap }()
+	runConfigBootstrapCommandFn = func(
+		context.Context,
+		string,
+		string,
+		...string,
+	) ([]byte, error) {
+		t.Fatal("existing config must not invoke CodexBar bootstrap")
+		return nil, nil
 	}
 	path, err := EnsureConfig(home)
 	if err != nil || path != standard {
@@ -73,9 +158,18 @@ func TestRunUsageCommandInjectsResolvedConfig(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("CODEXBAR_CONFIG", "")
 	script := filepath.Join(t.TempDir(), "print-config")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf '%s' \"$CODEXBAR_CONFIG\"\n"), 0o700); err != nil {
+	if err := os.WriteFile(script, []byte(`#!/bin/sh
+if [ "${1:-} ${2:-}" = "config dump" ]; then
+  printf '{"version":1,"providers":[{"id":"future-provider","enabled":true}]}'
+elif [ "${1:-} ${2:-}" = "config validate" ]; then
+  printf '[]'
+else
+  printf '%s' "$CODEXBAR_CONFIG"
+fi
+`), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("CODEXBAR_BIN", script)
 	out, err := runUsageCommand(context.Background(), time.Second, script)
 	if err != nil {
 		t.Fatalf("runUsageCommand: %v", err)
@@ -179,7 +273,7 @@ func TestProbeProviderSetupReportsReadyProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("CODEXBAR_BIN", bin)
-	t.Setenv("CODEXBAR_CONFIG", "")
+	setExistingConfig(t)
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
 		return []byte("CodexBar 0.44.0"), nil
 	}
@@ -207,7 +301,7 @@ func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("CODEXBAR_BIN", bin)
-	t.Setenv("CODEXBAR_CONFIG", "")
+	setExistingConfig(t)
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
 		return []byte("CodexBar 0.44.0"), nil
 	}
@@ -251,7 +345,7 @@ func TestProbeProviderSetupForProviderDoesNotAcceptAnotherReadyProvider(t *testi
 		t.Fatal(err)
 	}
 	t.Setenv("CODEXBAR_BIN", bin)
-	t.Setenv("CODEXBAR_CONFIG", "")
+	setExistingConfig(t)
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
 		return []byte("CodexBar 0.44.0"), nil
 	}
@@ -284,6 +378,15 @@ func TestProbeProviderSetupReportsMissingEngineWithoutRawPathInDetail(t *testing
 	if len(got.Providers) != 1 || strings.Contains(got.Providers[0].Detail, "private-secret") {
 		t.Fatalf("missing engine leaked path: %+v", got.Providers)
 	}
+}
+
+func setExistingConfig(t *testing.T) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"version":1,"providers":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_CONFIG", path)
 }
 
 func fileMode(t *testing.T, path string) os.FileMode {

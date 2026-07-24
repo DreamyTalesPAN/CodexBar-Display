@@ -185,12 +185,61 @@ func runURLSchemeTests() {
         ],
         "CodexBar discovery must prefer the shared app and then the user app"
     )
-    let config = try! JSONSerialization.jsonObject(
-        with: minimumCodexBarConfigData()
-    ) as! [String: Any]
+    let configFixtureDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("vibetv-codexbar-config-\(UUID().uuidString)")
+    try! FileManager.default.createDirectory(
+        at: configFixtureDirectory,
+        withIntermediateDirectories: false
+    )
+    defer { try? FileManager.default.removeItem(at: configFixtureDirectory) }
+    let fakeCodexBarCLI = configFixtureDirectory.appendingPathComponent("CodexBarCLI")
+    try! Data(
+        """
+        #!/bin/sh
+        case "${1:-} ${2:-}" in
+          "config dump")
+            printf '{"version":42,"providers":[{"id":"future-provider","enabled":true}]}'
+            ;;
+          "config validate")
+            printf '[]'
+            ;;
+          *)
+            exit 64
+            ;;
+        esac
+        """.utf8
+    ).write(to: fakeCodexBarCLI)
+    try! FileManager.default.setAttributes(
+        [.posixPermissions: 0o700],
+        ofItemAtPath: fakeCodexBarCLI.path
+    )
+    let generatedConfigURL = configFixtureDirectory.appendingPathComponent("config.json")
     require(
-        config["version"] as? Int == 1 && config["providers"] == nil,
-        "fresh installs must let CodexBar own and normalize its provider inventory"
+        writeCodexBarOwnedDefaultConfig(
+            executableURL: fakeCodexBarCLI,
+            targetURL: generatedConfigURL
+        ),
+        "fresh installs must ask CodexBar to render and validate its own defaults"
+    )
+    let generatedConfigData = try! Data(contentsOf: generatedConfigURL)
+    let config = try! JSONSerialization.jsonObject(
+        with: generatedConfigData
+    ) as! [String: Any]
+    let generatedProviders = config["providers"] as? [[String: Any]]
+    require(
+        config["version"] as? Int == 42
+            && generatedProviders?.first?["id"] as? String == "future-provider",
+        "VibeTV must preserve CodexBar's dynamic provider inventory and defaults"
+    )
+    let existingConfigData = Data(#"{"existing":true}"#.utf8)
+    try! existingConfigData.write(to: generatedConfigURL, options: .atomic)
+    require(
+        writeCodexBarOwnedDefaultConfig(
+            executableURL: fakeCodexBarCLI,
+            targetURL: generatedConfigURL
+        )
+            && (try! Data(contentsOf: generatedConfigURL)) == existingConfigData,
+        "an existing CodexBar config must remain untouched"
     )
     require(
         RuntimePreparationOutcome.nativeRuntimeReady.shouldReloadControlCenter,
