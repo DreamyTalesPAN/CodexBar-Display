@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import type {
@@ -487,25 +487,17 @@ function ThemePrimitiveNode({
     const text = renderTextPrimitive(primitive, frame);
     const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
     const fontSize = themeFontSize(primitive.font || primitive.f, primitive.fontSize || primitive.s);
-    // Firmware only applies text alignment inside an explicit width. Without
-    // one, x remains the text's left edge regardless of the selected alignment.
-    const textAnchor =
-      maxWidth > 0 ? svgTextAnchor(primitive.align || primitive.al) : "start";
-    const textX = alignedTextX(x, maxWidth, textAnchor);
     return (
-      <text
-        dominantBaseline="hanging"
-        fill={colorFor(primitive.color || primitive.c, "#FFFFFF")}
-        fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+      <ThemeTextPrimitive
+        align={primitive.align || primitive.al}
+        color={colorFor(primitive.color || primitive.c, "#FFFFFF")}
         fontSize={fontSize}
         fontWeight={themeFontWeight(primitive.font || primitive.f)}
-        letterSpacing="0"
-        textAnchor={textAnchor}
-        x={textX}
+        maxWidth={maxWidth}
+        text={text}
+        x={x}
         y={y}
-      >
-        {text}
-      </text>
+      />
     );
   }
 
@@ -591,6 +583,91 @@ function ThemePrimitiveNode({
   }
 
   return null;
+}
+
+function ThemeTextPrimitive({
+  align,
+  color,
+  fontSize,
+  fontWeight,
+  maxWidth,
+  text,
+  x,
+  y,
+}: {
+  align?: string;
+  color: string;
+  fontSize: number;
+  fontWeight: number;
+  maxWidth: number;
+  text: string;
+  x: number;
+  y: number;
+}) {
+  const clipPathId = `theme-text-${useId().replaceAll(":", "")}`;
+  const textRef = useRef<SVGTextElement>(null);
+  const measurementKey = `${text}\u0000${fontSize}\u0000${fontWeight}`;
+  const [measurement, setMeasurement] = useState({
+    key: "",
+    width: 0,
+  });
+  const textWidth = themeTextWidth(
+    text,
+    fontSize,
+    measurement.key === measurementKey ? measurement.width : undefined,
+  );
+  const layout = themeTextLayout(x, maxWidth, align, textWidth);
+
+  useEffect(() => {
+    const node = textRef.current;
+    if (!node) {
+      return;
+    }
+    const width = node.getComputedTextLength();
+    if (!Number.isFinite(width) || (text !== "" && width <= 0)) {
+      return;
+    }
+    setMeasurement((current) =>
+      current.key === measurementKey && current.width === width
+        ? current
+        : { key: measurementKey, width },
+    );
+  }, [measurementKey, text]);
+
+  const textNode = (
+    <text
+      dominantBaseline="hanging"
+      fill={color}
+      fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+      fontSize={fontSize}
+      fontWeight={fontWeight}
+      letterSpacing="0"
+      ref={textRef}
+      textAnchor={layout.textAnchor}
+      x={layout.textX}
+      y={y}
+    >
+      {text}
+    </text>
+  );
+  if (layout.clipWidth <= 0) {
+    return textNode;
+  }
+  return (
+    <>
+      <defs>
+        <clipPath id={clipPathId}>
+          <rect
+            height={Math.ceil(fontSize) + 4}
+            width={layout.clipWidth}
+            x={x}
+            y={y}
+          />
+        </clipPath>
+      </defs>
+      <g clipPath={`url(#${clipPathId})`}>{textNode}</g>
+    </>
+  );
 }
 
 function ThemeProgress({
@@ -1274,6 +1351,44 @@ function alignedTextX(
     return x + maxWidth;
   }
   return x;
+}
+
+export function themeTextLayout(
+  x: number,
+  maxWidth: number,
+  align: string | undefined,
+  textWidth: number,
+) {
+  const clipWidth = Math.max(0, maxWidth);
+  // TFT_eSPI keeps an overlong centered/right-aligned string at the left edge
+  // of its viewport, then clips it. Match that behavior so every provider
+  // label stays inside the same ThemeSpec lane in hardware and web previews.
+  const textAnchor =
+    clipWidth > 0 && textWidth > clipWidth
+      ? ("start" as const)
+      : clipWidth > 0
+        ? svgTextAnchor(align)
+        : ("start" as const);
+  return {
+    clipWidth,
+    textAnchor,
+    textX: alignedTextX(x, clipWidth, textAnchor),
+  };
+}
+
+export function themeTextWidth(
+  text: string,
+  fontSize: number,
+  measuredWidth?: number,
+): number {
+  if (
+    typeof measuredWidth === "number" &&
+    Number.isFinite(measuredWidth) &&
+    (text === "" || measuredWidth > 0)
+  ) {
+    return measuredWidth;
+  }
+  return text.length * fontSize * 0.6;
 }
 
 function themeFontSize(font?: number, size?: number): number {
