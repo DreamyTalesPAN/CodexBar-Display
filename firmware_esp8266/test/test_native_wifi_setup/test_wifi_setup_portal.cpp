@@ -4,13 +4,29 @@
 #include <cstdlib>
 
 #include "../../src/wifi_setup_portal.cpp"
+#include "../../src/wifi_recovery_policy.h"
 
 namespace {
 
 using namespace codexbar_display::esp8266::wifi_setup;
+namespace wifi_recovery = codexbar_display::esp8266::wifi_recovery;
 
 bool contains(const String& haystack, const char* needle) {
   return haystack.find(needle) != String::npos;
+}
+
+wifi_recovery::Inputs recoveryInputs(
+    uint32_t nowMs,
+    bool credentialsAvailable = true,
+    bool busy = false,
+    bool connected = false) {
+  wifi_recovery::Inputs inputs;
+  inputs.nowMs = nowMs;
+  inputs.setupMode = true;
+  inputs.credentialsAvailable = credentialsAvailable;
+  inputs.busy = busy;
+  inputs.connected = connected;
+  return inputs;
 }
 
 void test_scan_filters_deduplicates_and_sorts() {
@@ -159,6 +175,117 @@ void test_clean_automatic_fallback_does_not_render_or_prefill_old_ssid() {
   TEST_ASSERT_TRUE(contains(fallbackServer.output, "Search again"));
 }
 
+void test_recovery_waits_120_seconds_before_starting_once() {
+  wifi_recovery::State state;
+  wifi_recovery::EnterSetup(state, 0);
+
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::None),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(119999))));
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::StartAttempt),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120000))));
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::None),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120001))));
+}
+
+void test_recovery_scheduling_handles_millis_wraparound() {
+  wifi_recovery::State state;
+  const uint32_t setupAtMs = 0xFFFFFF00UL;
+  wifi_recovery::EnterSetup(state, setupAtMs);
+
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::None),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(0x0001D3BFUL))));
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::StartAttempt),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(0x0001D3C0UL))));
+}
+
+void test_recovery_does_not_retry_without_credentials() {
+  wifi_recovery::State state;
+  wifi_recovery::EnterSetup(state, 0);
+
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::None),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(0xFFFFFFFFUL, false))));
+  TEST_ASSERT_FALSE(state.attemptInProgress);
+}
+
+void test_recovery_busy_gate_defers_attempt() {
+  wifi_recovery::State state;
+  wifi_recovery::EnterSetup(state, 0);
+
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::None),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120000, true, true))));
+  TEST_ASSERT_FALSE(state.attemptInProgress);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::StartAttempt),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120001))));
+}
+
+void test_recovery_busy_gate_defers_connected_transition() {
+  wifi_recovery::State state;
+  wifi_recovery::EnterSetup(state, 0);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::StartAttempt),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120000))));
+
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::None),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(125000, true, true, true))));
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::Connected),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(125001, true, false, true))));
+}
+
+void test_recovery_does_not_begin_again_while_attempt_is_running() {
+  wifi_recovery::State state;
+  wifi_recovery::EnterSetup(state, 0);
+
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::StartAttempt),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120000))));
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::None),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120001))));
+}
+
+void test_recovery_timeout_stays_in_setup_and_schedules_next_attempt() {
+  wifi_recovery::State state;
+  wifi_recovery::EnterSetup(state, 0);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::StartAttempt),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120000))));
+
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::Timeout),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(140000))));
+  TEST_ASSERT_FALSE(state.attemptInProgress);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::None),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(140001))));
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::StartAttempt),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(260000))));
+}
+
+void test_recovery_connected_later_leaves_setup_state() {
+  wifi_recovery::State state;
+  wifi_recovery::EnterSetup(state, 0);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::StartAttempt),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120000))));
+
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::Connected),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(125000, true, false, true))));
+  TEST_ASSERT_FALSE(state.attemptInProgress);
+  TEST_ASSERT_FALSE(state.retryScheduled);
+}
+
 }  // namespace
 
 void setUp() {}
@@ -187,5 +314,13 @@ int main(int, char**) {
   RUN_TEST(test_page_publishes_no_placeholder_without_support_url);
   RUN_TEST(test_automatic_setup_ap_renders_normal_writable_setup_page);
   RUN_TEST(test_clean_automatic_fallback_does_not_render_or_prefill_old_ssid);
+  RUN_TEST(test_recovery_waits_120_seconds_before_starting_once);
+  RUN_TEST(test_recovery_scheduling_handles_millis_wraparound);
+  RUN_TEST(test_recovery_does_not_retry_without_credentials);
+  RUN_TEST(test_recovery_busy_gate_defers_attempt);
+  RUN_TEST(test_recovery_busy_gate_defers_connected_transition);
+  RUN_TEST(test_recovery_does_not_begin_again_while_attempt_is_running);
+  RUN_TEST(test_recovery_timeout_stays_in_setup_and_schedules_next_attempt);
+  RUN_TEST(test_recovery_connected_later_leaves_setup_state);
   return UNITY_END();
 }
