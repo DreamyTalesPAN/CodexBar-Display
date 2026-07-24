@@ -327,3 +327,19 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `primitive-inspector.tsx`, Theme Studio serialization,
   geometry and capability validation, `live-vibetv-preview.tsx`, the display
   frame route, and their unit and customer-flow assertions.
+
+## 2026-07-24 — Provider-neutral ThemeSpec label clipping
+
+- User approval: While testing the signed PR 260 preview against the real
+  VibeTV, the user explicitly required the Mac App and VibeTV label rendering
+  to be consistent, then rejected a Codex-only hotfix and required a scalable
+  solution for all providers.
+- Approved customer-visible result: Every provider label in a width-bounded
+  ThemeSpec text element stays inside its lane and uses the same overflow
+  alignment and clipping as the VibeTV firmware. In the connected
+  `claude-creature` Overview preview, the second lane visually shows
+  `Codex Spark` like the physical VibeTV instead of allowing the full raw
+  `Codex Spark Weekly` label to overlap the first lane. The complete raw label
+  remains available to usage data and accessibility text.
+- Approved files: `live-vibetv-preview.tsx`, its unit tests, and this approval
+  record.
