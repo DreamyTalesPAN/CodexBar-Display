@@ -17,6 +17,7 @@ import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
 
 type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
+  displayFrame: DisplayFrameSnapshot | null;
   usage: UsageSnapshot | null;
 };
 
@@ -44,7 +45,7 @@ type ThemePackState = {
   status: "ready" | "error";
 };
 
-type DisplayFrameSnapshot = {
+export type DisplayFrameSnapshot = {
   ok?: boolean;
   savedAt?: string;
   frame?: DisplayFrame;
@@ -210,16 +211,69 @@ type SpriteRect = {
   color: string;
 };
 
-export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
+export function useLatestDisplayFrame(
+  connected: boolean,
+  onFrame?: (frame: DisplayFrameSnapshot) => void,
+) {
+  const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!connected) {
+      const timer = window.setTimeout(() => setDisplayFrame(null), 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    const controller = new AbortController();
+
+    const refreshDisplayFrame = async () => {
+      try {
+        const requestInit: LocalDisplayFrameRequestInit = {
+          cache: "no-store",
+          signal: controller.signal,
+        };
+        const url = companionRequestUrl("/v1/display-frame/latest");
+        if (needsLoopbackTargetAddressSpace(url)) {
+          requestInit.targetAddressSpace = "loopback";
+        }
+        const response = await fetch(url, requestInit);
+        if (!response.ok) {
+          throw new Error("display frame unavailable");
+        }
+        const nextFrame = (await response.json()) as DisplayFrameSnapshot;
+        setDisplayFrame(nextFrame);
+        onFrame?.(nextFrame);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+      }
+    };
+
+    void refreshDisplayFrame();
+    const timer = window.setInterval(refreshDisplayFrame, 1000);
+
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [connected, onFrame]);
+
+  return displayFrame;
+}
+
+export function LiveVibeTVPreview({
+  device,
+  displayFrame,
+  usage,
+}: LiveVibeTVPreviewProps) {
   const themeId = activeThemeId(device);
   const themeSpecPath = device?.display?.themeSpec?.path || "";
   const themeSpecHash = normalizeThemeSpecHash(
     device?.display?.themeSpec?.hash,
   );
   const deviceConnected = deviceIsReady(device);
-  const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
-    null,
-  );
   const effectiveDisplayFrame = deviceConnected ? displayFrame : null;
   const frame = hasRenderableUsage(effectiveDisplayFrame)
     ? buildFrameData(
@@ -301,45 +355,6 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
     return () => controller.abort();
   }, [themeId, themeSpecHash, themeSpecPath]);
 
-  useEffect(() => {
-    if (!deviceConnected) {
-      return;
-    }
-
-    const controller = new AbortController();
-
-    const refreshDisplayFrame = async () => {
-      try {
-        const requestInit: LocalDisplayFrameRequestInit = {
-          cache: "no-store",
-          signal: controller.signal,
-        };
-        const url = companionRequestUrl("/v1/display-frame/latest");
-        if (needsLoopbackTargetAddressSpace(url)) {
-          requestInit.targetAddressSpace = "loopback";
-        }
-        const response = await fetch(url, requestInit);
-        if (!response.ok) {
-          throw new Error("display frame unavailable");
-        }
-        setDisplayFrame((await response.json()) as DisplayFrameSnapshot);
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
-        setDisplayFrame(null);
-      }
-    };
-
-    void refreshDisplayFrame();
-    const timer = window.setInterval(refreshDisplayFrame, 1000);
-
-    return () => {
-      controller.abort();
-      window.clearInterval(timer);
-    };
-  }, [deviceConnected]);
-
   return (
     <figure className="w-full max-w-[520px]">
       <VibeTVCaseShell>
@@ -352,8 +367,6 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
             spec={pack.spec}
             themeId={pack.themeId || themeId}
           />
-        ) : pack?.spec ? (
-          <ThemeUsageLoading />
         ) : (
           <ThemeSpecLoading status={packStatus} themeId={themeId} />
         )}
@@ -919,26 +932,6 @@ function ThemeSpecLoading({
   );
 }
 
-function ThemeUsageLoading() {
-  return (
-    <div
-      aria-label="Loading VibeTV usage preview"
-      className="grid aspect-square w-full place-items-center bg-[#050505] p-4 text-center font-mono text-[11px] font-bold uppercase tracking-normal text-[#CCFF00]"
-      role="img"
-    >
-      <div>
-        <div className="mb-3 text-[#FF4FC3]">Usage</div>
-        <div className="flex items-center justify-center gap-1.5" aria-hidden>
-          <span className="block h-2 w-2 animate-pulse bg-[#CCFF00]" />
-          <span className="block h-2 w-2 animate-pulse bg-[#32D5FF] [animation-delay:150ms]" />
-          <span className="block h-2 w-2 animate-pulse bg-[#FF4FC3] [animation-delay:300ms]" />
-        </div>
-        <div className="mt-3">Loading usage</div>
-      </div>
-    </div>
-  );
-}
-
 function ThemePreviewOffline() {
   return (
     <div
@@ -954,7 +947,7 @@ function ThemePreviewOffline() {
   );
 }
 
-function hasRenderableUsage(
+export function hasRenderableUsage(
   snapshot: DisplayFrameSnapshot | null | undefined,
 ): snapshot is DisplayFrameSnapshot & { ok: true; frame: DisplayFrame } {
   const displayFrame = snapshot?.frame;
@@ -970,14 +963,16 @@ function hasRenderableUsage(
   const hasProvider = [displayFrame.provider, displayFrame.label].some(
     (value) => typeof value === "string" && value.trim().length > 0,
   );
-  const validPercent = (value: unknown) =>
-    value === undefined ||
-    (typeof value === "number" && Number.isFinite(value));
-  return (
-    hasProvider &&
-    validPercent(displayFrame.session) &&
-    validPercent(displayFrame.weekly)
+  const hasLegacyUsage = [displayFrame.session, displayFrame.weekly].some(
+    (value) => typeof value === "number" && Number.isFinite(value),
   );
+  const hasSlotUsage = (displayFrame.usageSlots || []).some(
+    (slot) =>
+      Boolean(slot.id?.trim() && slot.label?.trim()) &&
+      typeof slot.percent === "number" &&
+      Number.isFinite(slot.percent),
+  );
+  return hasProvider && (hasLegacyUsage || hasSlotUsage);
 }
 
 export function buildFrameData(

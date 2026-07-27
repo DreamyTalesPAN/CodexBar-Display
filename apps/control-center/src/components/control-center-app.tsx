@@ -49,6 +49,11 @@ import { DeviceStartupScreen } from "./device-startup-screen";
 import { useCompanionRelease } from "./companion-installer-actions";
 import { HostedSetupShell } from "./hosted-setup-shell";
 import { LogsScreen } from "./logs-screen";
+import {
+  hasRenderableUsage,
+  type DisplayFrameSnapshot,
+  useLatestDisplayFrame,
+} from "./live-vibetv-preview";
 import { MacAppRecoveryScreen } from "./mac-app-recovery-screen";
 import { OverviewScreen } from "./overview-screen";
 import { SetupScreen } from "./setup-screen";
@@ -276,6 +281,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     "repairing" | "failed"
   >("repairing");
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
+  const [hasEnteredControlCenter, setHasEnteredControlCenter] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
   const brightnessDirtyRef = useRef(false);
@@ -1596,6 +1602,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
+      setHasEnteredControlCenter(false);
       if (payload.device) {
         setDevice(payload.device.connected ? payload.device : null);
       }
@@ -2821,6 +2828,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     deviceIsReady(device) && deviceImageIsStuck(device),
   );
   const deviceReady = deviceIsReady(device);
+  const handleDisplayFrame = useCallback((frame: DisplayFrameSnapshot) => {
+    if (hasRenderableUsage(frame)) {
+      setHasEnteredControlCenter(true);
+    }
+  }, []);
+  const displayFrame = useLatestDisplayFrame(deviceReady, handleDisplayFrame);
   const hasActiveDevice = deviceIsActive(device);
   const connectionRecoveryRequired =
     isConnectionRecoveryError(lastError) || deviceNeedsExplicitConnect(device);
@@ -2840,14 +2853,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             } satisfies DeviceCandidate,
           ]
         : [];
+  const waitingForFirstUsage =
+    hasActiveDevice &&
+    device?.connected === true &&
+    device.paired !== false &&
+    !connectionRecoveryRequired &&
+    !hasEnteredControlCenter;
   const startupDeviceSearchState: DeviceSearchState =
-    connectionRecoveryRequired && startupDeviceCandidates.length > 0
-      ? "multiple"
-      : deviceSearchState;
+    waitingForFirstUsage
+      ? "waiting"
+      : connectionRecoveryRequired && startupDeviceCandidates.length > 0
+        ? "multiple"
+        : deviceSearchState;
+
   const setupComplete = Boolean(
     !setupPreviewStep &&
     companionStatus === "online" &&
-    deviceReady,
+    deviceReady &&
+    hasEnteredControlCenter,
   );
   const needsRuntimeRecovery = companionStatus === "missing";
   const controlCenterAvailable =
@@ -3106,7 +3129,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   if (
     companionStatus === "online" &&
     !requiresMacAppMigration &&
-    (!hasActiveDevice || connectionRecoveryRequired)
+    (!hasActiveDevice || connectionRecoveryRequired || waitingForFirstUsage)
   ) {
     return (
       <DeviceStartupScreen
@@ -3159,6 +3182,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           companionVersion={companionInfo?.version}
           companionStatus={companionStatus}
           device={device}
+          displayFrame={displayFrame}
           firmwareUpdate={effectiveFirmwareUpdate}
           requiresMacAppMigration={requiresMacAppMigration}
           usage={usage}

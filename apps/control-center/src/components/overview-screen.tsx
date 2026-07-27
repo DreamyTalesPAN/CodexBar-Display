@@ -40,13 +40,17 @@ import type {
   UsageSnapshot,
 } from "./control-center-types";
 import { deviceIsActive, deviceIsReady } from "./control-center-types";
-import { LiveVibeTVPreview } from "./live-vibetv-preview";
+import {
+  LiveVibeTVPreview,
+  type DisplayFrameSnapshot,
+} from "./live-vibetv-preview";
 
 type OverviewScreenProps = {
   companionVersion?: string;
   companionRelease?: CompanionReleaseInfo | null;
   companionStatus: CompanionStatus;
   device: DeviceInfo | null;
+  displayFrame?: DisplayFrameSnapshot | null;
   firmwareUpdate?: FirmwareUpdateInfo | null;
   usage?: UsageSnapshot | null;
   requiresMacAppMigration?: boolean;
@@ -57,6 +61,7 @@ export function OverviewScreen({
   companionRelease,
   companionStatus,
   device,
+  displayFrame = null,
   firmwareUpdate,
   usage,
   requiresMacAppMigration = false,
@@ -92,7 +97,11 @@ export function OverviewScreen({
           {reconnecting ? <ReconnectNotice device={device} /> : null}
 
           <div className="flex w-full justify-center">
-            <LiveVibeTVPreview device={device} usage={usage || null} />
+            <LiveVibeTVPreview
+              device={device}
+              displayFrame={displayFrame}
+              usage={usage || null}
+            />
           </div>
 
           <ItemGroup className="grid w-full gap-3 lg:grid-cols-4">

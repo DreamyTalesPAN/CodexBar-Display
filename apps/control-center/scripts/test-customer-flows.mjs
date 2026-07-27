@@ -391,7 +391,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testLocalReachableWithoutFrameOpensOverview(
+      await testLocalReachableWithoutFrameWaitsForUsage(
         browser,
         appContext.appUrl,
       );
@@ -466,7 +466,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testLocalWifiVerificationWithoutFrameOpensOverview(
+    await testLocalWifiVerificationWithoutFrameWaitsForUsage(
       browser,
       appContext.appUrl,
     );
@@ -517,7 +517,7 @@ async function main() {
       appContext.appUrl,
     );
     await testPairingStreamErrorDoesNotInventRecovery(browser, appContext.appUrl);
-    await testLocalReachableWithoutFrameOpensOverview(
+    await testLocalReachableWithoutFrameWaitsForUsage(
       browser,
       appContext.appUrl,
     );
@@ -590,13 +590,13 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testOverviewShowsUsageLoadingUntilRealUsage(
+    await testOverviewWaitsForRealUsage(
       browser,
       appContext.appUrl,
     );
     await testOverviewRejectsInvalidDisplayFrame(browser, appContext.appUrl);
     await testProviderReadinessCustomerStates(browser, appContext.appUrl);
-    await testOverviewKeepsTransientConnectionCustomerFriendly(
+    await testTransientFirstFrameStaysCustomerFriendly(
       browser,
       appContext.appUrl,
     );
@@ -640,6 +640,7 @@ async function main() {
     await testThemeWithoutPackUrlStaysLocked(browser, appContext.appUrl);
     await testBoardIncompatibleThemeStaysLocked(browser, appContext.appUrl);
     await testFirmwareIncompatibleThemeStaysLocked(browser, appContext.appUrl);
+    await testMatchingDevFirmwareUnlocksThemes(browser, appContext.appUrl);
     await testCapabilityIncompatibleThemeStaysLocked(
       browser,
       appContext.appUrl,
@@ -1006,7 +1007,7 @@ async function testLocalWifiVerificationFailureStaysInSetup(browser, appUrl) {
   await page.close();
 }
 
-async function testLocalWifiVerificationWithoutFrameOpensOverview(
+async function testLocalWifiVerificationWithoutFrameWaitsForUsage(
   browser,
   appUrl,
 ) {
@@ -1033,17 +1034,10 @@ async function testLocalWifiVerificationWithoutFrameOpensOverview(
     timeout: 10_000,
   });
   await discoveredConnectButtons(page).first().click();
-  try {
-    await page.getByRole("navigation", { name: "Control Center" }).waitFor({
-      timeout: 10_000,
-    });
-  } catch (error) {
-    throw new Error(
-      `Successful Connect with a delayed frame did not open Control Center. Visible UI:\n${await page.locator("body").innerText()}`,
-      { cause: error },
-    );
-  }
-  await page.getByRole("heading", { name: "VibeTV status" }).waitFor();
+  await page.getByRole("heading", { name: "Connecting to VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByText("Waiting for usage…", { exact: true }).waitFor();
   assert(
     (await page
       .getByRole("heading", { name: "We couldn't find your VibeTV" })
@@ -1051,17 +1045,17 @@ async function testLocalWifiVerificationWithoutFrameOpensOverview(
     "A found VibeTV waiting for its first frame must not be reported as missing",
   );
   assert(
-    (await page.getByText("Waiting for first image", { exact: true }).count()) ===
-      1,
-    "A successful Connect must remain connected while the first image is pending",
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "Control Center must stay hidden until the first usage frame is complete",
   );
   assert(
     selectRequests.length === 1,
     `A reachable VibeTV without a display frame must not retry automatically, got ${selectRequests.length} attempts`,
   );
   assert(
-    (await page.getByTestId("device-startup-screen").count()) === 0,
-    "A delayed first display image must not roll back a successful Connect",
+    (await page.getByTestId("device-startup-screen").count()) === 1,
+    "A delayed first usage frame must stay in the existing startup screen",
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -1440,7 +1434,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
   await readyPage.close();
 }
 
-async function testOverviewKeepsTransientConnectionCustomerFriendly(
+async function testTransientFirstFrameStaysCustomerFriendly(
   browser,
   appUrl,
 ) {
@@ -1464,17 +1458,15 @@ async function testOverviewKeepsTransientConnectionCustomerFriendly(
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page
-    .getByRole("heading", { name: "VibeTV status" })
+    .getByRole("heading", { name: "Connecting to VibeTV" })
     .waitFor({ timeout: 10_000 });
   await page
-    .getByText("VibeTV not connected", { exact: true })
-    .waitFor({ timeout: 10_000 });
-  await page
-    .getByText("Waiting for first image", { exact: true })
+    .getByText("Waiting for usage…", { exact: true })
     .waitFor({ timeout: 10_000 });
   assert(
-    (await page.getByText("VibeTV unavailable", { exact: true }).count()) === 0,
-    "A connected VibeTV must not be labelled unavailable during first-frame startup",
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "A connected VibeTV must stay in startup until the first usage frame",
   );
   assert(
     (await page.getByText(technicalStreamDetail, { exact: true }).count()) ===
@@ -2697,7 +2689,7 @@ async function testLocalFreshAppSearchesBeforeWifiSetup(browser, appUrl) {
   await page.close();
 }
 
-async function testLocalReachableWithoutFrameOpensOverview(browser, appUrl) {
+async function testLocalReachableWithoutFrameWaitsForUsage(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
@@ -2712,19 +2704,13 @@ async function testLocalReachableWithoutFrameOpensOverview(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("navigation", { name: "Control Center" }).waitFor({
+  await page.getByRole("heading", { name: "Connecting to VibeTV" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByRole("heading", { name: "VibeTV status" }).waitFor({
-    timeout: 10_000,
-  });
-  await page.getByText("VibeTV not connected", { exact: true }).waitFor();
-  await page.getByText("Waiting for first image", { exact: true }).waitFor({
-    timeout: 10_000,
-  });
+  await page.getByText("Waiting for usage…", { exact: true }).waitFor();
   assert(
-    (await page.getByTestId("device-startup-screen").count()) === 0,
-    "A reachable and paired VibeTV should open Control Center while the first image is pending",
+    (await page.getByTestId("device-startup-screen").count()) === 1,
+    "A reachable and paired VibeTV should stay in startup while first usage is pending",
   );
   assert(
     (await page.getByRole("button", { name: "Setup", exact: true }).count()) ===
@@ -2733,7 +2719,7 @@ async function testLocalReachableWithoutFrameOpensOverview(browser, appUrl) {
   );
   assert(
     repairRequests.length === 0,
-    "Opening Control Center must not automatically retry a reachable but unready VibeTV",
+    "Waiting for usage must not automatically retry a reachable but unready VibeTV",
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -5150,14 +5136,14 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   await page.close();
 }
 
-async function testOverviewShowsUsageLoadingUntilRealUsage(browser, appUrl) {
+async function testOverviewWaitsForRealUsage(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
   const installRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.33",
-    displayFrameStatus: 404,
+    displayFrameUnavailableResponses: 2,
     device: {
       ...companionDevice,
       activeTheme: "synthwave",
@@ -5194,27 +5180,23 @@ async function testOverviewShowsUsageLoadingUntilRealUsage(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
-  const loadingPreview = page.getByRole("img", {
-    name: "Loading VibeTV usage preview",
+  await page.getByRole("heading", { name: "Connecting to VibeTV" }).waitFor({
+    timeout: 10_000,
   });
-  await loadingPreview.waitFor({ timeout: 10_000 });
-  await loadingPreview.getByText("Loading usage").waitFor({ timeout: 10_000 });
+  await page.getByText("Waiting for usage…", { exact: true }).waitFor();
   assert(
-    (await page
-      .getByRole("img", { name: /Rendered VibeTV theme synthwave/ })
-      .count()) === 0,
-    "Overview preview should not render fake theme usage before real usage arrives",
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "Overview must not render before a real display frame exists",
   );
   assert(
-    !(await page.locator("figure").innerText()).includes("100%"),
-    "Overview preview should not show fake 100% usage while usage is loading",
+    (await page.locator("figure").count()) === 0,
+    "No theme preview should be mounted while first usage is pending",
   );
-  assert(
-    !(await page.locator("figure").innerText()).includes("27%") &&
-      !(await page.locator("figure").innerText()).includes("63%"),
-    "Overview preview must not substitute provider usage when no display frame exists",
-  );
+  await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
+  await page
+    .getByRole("img", { name: /Rendered VibeTV theme synthwave/ })
+    .waitFor({ timeout: 10_000 });
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -5259,10 +5241,15 @@ async function testOverviewRejectsInvalidDisplayFrame(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
-  await page
-    .getByRole("img", { name: "Loading VibeTV usage preview" })
-    .waitFor({ timeout: 10_000 });
+  await page.getByRole("heading", { name: "Connecting to VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByText("Waiting for usage…", { exact: true }).waitFor();
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "A label-only display frame must not open Overview",
+  );
   assert(
     (await page
       .getByRole("img", { name: /Rendered VibeTV theme synthwave/ })
@@ -6377,6 +6364,37 @@ async function testFirmwareIncompatibleThemeStaysLocked(browser, appUrl) {
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testMatchingDevFirmwareUnlocksThemes(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...companionDevice,
+      activeTheme: "synthwave",
+      firmware: "1.0.40-dev.a5f52c7",
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Theme Library");
+  for (const title of [
+    "Fixture Cozy Meadow Theme",
+    "Fixture Mini Classic Theme",
+  ]) {
+    const installButton = page
+      .getByRole("listitem")
+      .filter({ hasText: title })
+      .getByRole("button", { name: "Install" });
+    await installButton.waitFor({ timeout: 10_000 });
+    assert(
+      !(await installButton.isDisabled()),
+      `${title} should install on matching 1.0.40 development firmware`,
+    );
+  }
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 

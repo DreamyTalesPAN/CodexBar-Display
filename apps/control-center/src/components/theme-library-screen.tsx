@@ -1342,7 +1342,16 @@ function themeFirmwareBlocker(
       readinessIcon: <RefreshCw size={22} aria-hidden />,
     };
   }
-  if (compareSemVer(deviceParsed, requiredParsed) >= 0) {
+  const matchingDevelopmentCore =
+    deviceParsed.prerelease[0] === "dev" &&
+    requiredParsed.prerelease.length === 0 &&
+    deviceParsed.major === requiredParsed.major &&
+    deviceParsed.minor === requiredParsed.minor &&
+    deviceParsed.patch === requiredParsed.patch;
+  if (
+    compareSemVer(deviceParsed, requiredParsed) >= 0 ||
+    matchingDevelopmentCore
+  ) {
     return null;
   }
   return {

@@ -424,3 +424,32 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-app.tsx`, `control-center-types.ts`,
   `provider-setup-card.tsx`, `usage-screen.tsx`, `usage-screen.test.tsx`, and
   the matching customer-flow assertions in `test-customer-flows.mjs`.
+
+## 2026-07-27 — Overview waits for complete usage
+
+- User approval: While testing the signed PR 260 preview with the connected
+  VibeTV, the user explicitly required a KISS solution that keeps the existing
+  setup state visible until usage is ready and only shows Overview for the
+  first time once its preview is complete.
+- Approved customer-visible result: A connected and paired VibeTV without its
+  first real usage frame stays on `Connecting to VibeTV` with
+  `Waiting for usage…`. Neither the Mac App nor VibeTV shows a provider-only,
+  empty theme preview. The first Overview already contains the real usage
+  lanes. Later temporary reconnects keep the already opened Control Center
+  visible.
+- Approved files: `control-center-app.tsx`, `overview-screen.tsx`,
+  `live-vibetv-preview.tsx`, its unit tests, the Companion daemon frame gate and
+  its tests, the setup-flow principles, and the matching customer-flow
+  assertions in `test-customer-flows.mjs`.
+
+## 2026-07-27 — Matching development firmware can install themes
+
+- User approval: The user reported that the connected VibeTV already has the
+  required firmware and must therefore allow the new themes to be installed.
+- Approved customer-visible result: A VibeTV advertising the required
+  capabilities on a matching development firmware such as
+  `1.0.40-dev.a5f52c7` shows an enabled `Install` action for themes requiring
+  `1.0.40`. Lower firmware and devices missing a required capability remain
+  blocked with `Update Needed`.
+- Approved files: `theme-library-screen.tsx`, the matching customer-flow
+  assertion in `test-customer-flows.mjs`, and this approval record.

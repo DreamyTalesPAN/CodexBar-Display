@@ -58,6 +58,64 @@ func TestRunCycleWithDepsSendsErrorFrameWhenNoLastGood(t *testing.T) {
 	}
 }
 
+func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+	var sentLines [][]byte
+	var logged strings.Builder
+	unavailable := testParsedFrame("claude", 0, 0, 0)
+	unavailable.Frame.UsageUnavailable = true
+	providers := []codexbar.ParsedFrame{unavailable}
+	deps := runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return providers, nil
+		},
+		logf: func(format string, args ...any) {
+			logged.WriteString(fmt.Sprintf(format, args...))
+		},
+		sendLine: func(port string, line []byte) error {
+			sentLines = append(sentLines, append([]byte(nil), line...))
+			return nil
+		},
+	}
+
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected unavailable cold-start usage to keep waiting, got %v", err)
+	}
+	if len(sentLines) != 0 {
+		t.Fatalf("expected no incomplete frame before first usage, got %d", len(sentLines))
+	}
+	if !strings.Contains(logged.String(), "event=usage-waiting") {
+		t.Fatalf("expected an explicit usage-waiting log, got %q", logged.String())
+	}
+
+	providers = []codexbar.ParsedFrame{testParsedFrame("claude", 0, 11, 3600)}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected first available usage frame to send, got %v", err)
+	}
+	if len(sentLines) != 1 {
+		t.Fatalf("expected exactly one complete frame, got %d", len(sentLines))
+	}
+	frame := decodeFrameLine(t, sentLines[0])
+	if frame.Provider != "claude" || frame.Weekly != 11 || frame.UsageUnavailable {
+		t.Fatalf("expected complete Claude usage frame, got %+v", frame)
+	}
+
+	providers = []codexbar.ParsedFrame{unavailable}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected later unavailable usage to keep the valid frame, got %v", err)
+	}
+	if len(sentLines) != 1 {
+		t.Fatalf("expected unavailable usage to preserve the one valid frame, got %d sends", len(sentLines))
+	}
+}
+
 func TestDefaultIntervalForTransport(t *testing.T) {
 	tests := []struct {
 		name      string

@@ -1128,6 +1128,10 @@ func codingMaxAgeExpired(lastCodingAt time.Time, now time.Time) bool {
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
 	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
+	if !result.usageFresh && result.failureErr == nil {
+		deps.logf("runtime event=usage-waiting port=%s provider=%s reason=usage-not-fresh\n", publicPort, frame.Provider)
+		return nil
+	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = attachClockFields(frame, deps.now())
 

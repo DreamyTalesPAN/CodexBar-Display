@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   buildFrameData,
   fetchThemeRenderPackRevision,
+  hasRenderableUsage,
   primitiveUsageSlotVisible,
   THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
@@ -21,6 +22,26 @@ const lane1: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 1 };
 const lane2: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 2 };
 
 describe("dynamic usage slot preview", () => {
+  it("waits for actual usage instead of accepting a provider label alone", () => {
+    expect(
+      hasRenderableUsage({
+        ok: true,
+        frame: { v: 2, provider: "claude", label: "Claude" },
+      }),
+    ).toBe(false);
+    expect(
+      hasRenderableUsage({
+        ok: true,
+        frame: {
+          v: 2,
+          provider: "claude",
+          label: "Claude",
+          usageSlots: [{ id: "session", label: "Session", percent: 0 }],
+        },
+      }),
+    ).toBe(true);
+  });
+
   it("uses a legacy render cache only when its path matches the active Custom Theme", async () => {
     const oldCompanionPack = {
       themeId: "my-custom",
