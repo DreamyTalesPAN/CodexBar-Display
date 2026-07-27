@@ -16,6 +16,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { availableMacAppDmgDownloadUrl } from "@/lib/companion-release";
+import { resolveActiveThemeUpgrade } from "@/lib/active-theme-upgrade";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import { buildThemePack } from "@/lib/theme-studio";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
@@ -2159,6 +2160,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [checkCompanion, refreshFirmwareUpdate, refreshHostedCompanionRelease]);
 
   const installFirmwareUpdate = useCallback(async () => {
+    const activeThemeUpgrade = resolveActiveThemeUpgrade(
+      catalog.themes,
+      device,
+    );
+    const shouldUpgradeActiveTheme = Boolean(
+      activeThemeUpgrade.theme &&
+        device?.capabilities?.theme?.supportsUsageSlotsV1 !== true,
+    );
     const startedAt = formatTime();
     const initialLogs = ["Preparing VibeTV update."];
     const applyUpdateJob = (job: FirmwareUpdateJob) => {
@@ -2244,29 +2253,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const logs = customerUpdateLogs(finishedJob.logs, initialLogs);
       const finishedAt = formatTime();
       const installedFirmware = finishedJob.result?.firmware?.trim() || "";
-      setFirmwareUpdateStatus({
-        phase: "complete",
-        startedAt,
-        finishedAt,
-        message: "Update complete.",
-        progress: 100,
-        logs: customerUpdateLogs([...logs, "Update complete."]),
-        result: finishedJob.result,
-      });
       if (installedFirmware) {
         setDevice((current) =>
           current ? { ...current, firmware: installedFirmware } : current,
         );
         setFirmwareUpdate(currentFirmwareUpdate(installedFirmware));
       }
-      addEvent({
-        label: "VibeTV updated",
-        detail: installedFirmware
-          ? `Firmware ${installedFirmware} is installed.`
-          : "Update complete.",
-        at: finishedAt,
-        tone: "ready",
-      });
       const refreshedDevice = await refreshDevice({ quiet: true });
       const firmwareForCheck = installedFirmware || refreshedDevice?.firmware;
       const boardForCheck = refreshedDevice?.board || deviceBoard;
@@ -2285,6 +2277,97 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           firmware: firmwareForCheck,
         });
       }
+      const completedLogs = logs;
+      if (activeThemeUpgrade.unresolved) {
+        const message =
+          "The firmware is current, but VibeTV still needs attention.";
+        setFirmwareUpdateStatus({
+          phase: "attention",
+          outcome: "firmware_current_theme_catalog_attention",
+          startedAt,
+          finishedAt,
+          message,
+          progress: 100,
+          logs: customerUpdateLogs([...logs, message]),
+          result: finishedJob.result,
+        });
+        addEvent({
+          label: "VibeTV update needs attention",
+          detail: message,
+          at: finishedAt,
+          tone: "attention",
+        });
+        return true;
+      }
+      if (shouldUpgradeActiveTheme) {
+        if (
+          refreshedDevice?.capabilities?.theme?.supportsUsageSlotsV1 !== true
+        ) {
+          const message =
+            "The firmware is current, but VibeTV still needs attention.";
+          setFirmwareUpdateStatus({
+            phase: "attention",
+            outcome: "firmware_current_theme_support_attention",
+            startedAt,
+            finishedAt,
+            message,
+            progress: 100,
+            logs: customerUpdateLogs([...logs, message]),
+            result: finishedJob.result,
+          });
+          addEvent({
+            label: "VibeTV update needs attention",
+            detail: message,
+            at: finishedAt,
+            tone: "attention",
+          });
+          return true;
+        }
+        setFirmwareUpdateStatus({
+          phase: "installing",
+          startedAt,
+          message: "Updating VibeTV.",
+          progress: 95,
+          logs,
+          result: finishedJob.result,
+        });
+        if (!(await installTheme(activeThemeUpgrade.theme))) {
+          const message =
+            "The firmware is current, but VibeTV still needs attention.";
+          setFirmwareUpdateStatus({
+            phase: "attention",
+            outcome: "firmware_current_theme_attention",
+            startedAt,
+            finishedAt: formatTime(),
+            message,
+            progress: 100,
+            logs: customerUpdateLogs([...logs, message]),
+            result: finishedJob.result,
+          });
+          addEvent({
+            label: "VibeTV update needs attention",
+            detail: message,
+            tone: "attention",
+          });
+          return true;
+        }
+      }
+      setFirmwareUpdateStatus({
+        phase: "complete",
+        startedAt,
+        finishedAt: formatTime(),
+        message: "Update complete.",
+        progress: 100,
+        logs: customerUpdateLogs([...completedLogs, "Update complete."]),
+        result: finishedJob.result,
+      });
+      addEvent({
+        label: "VibeTV updated",
+        detail: installedFirmware
+          ? `Firmware ${installedFirmware} is installed.`
+          : "Update complete.",
+        tone: "ready",
+      });
       return true;
     } catch (error) {
       const normalized = normalizeCaughtError(error, "VibeTV update failed.");
@@ -2315,13 +2398,62 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, [
     addEvent,
+    catalog.themes,
+    device,
     deviceBoard,
+    installTheme,
     markCompanionAccessBlocked,
     markCompanionUnavailable,
     refreshDevice,
     refreshFirmwareUpdate,
     runCompanion,
   ]);
+
+  const retryActiveThemeUpgrade = useCallback(async (): Promise<boolean> => {
+    const activeThemeUpgrade = resolveActiveThemeUpgrade(
+      catalog.themes,
+      device,
+    );
+    if (!activeThemeUpgrade.theme) {
+      return false;
+    }
+    const previousStatus = firmwareUpdateStatus;
+    const startedAt = previousStatus?.startedAt || formatTime();
+    const logs = previousStatus?.logs || ["Preparing VibeTV update."];
+    setFirmwareUpdateStatus({
+      phase: "installing",
+      startedAt,
+      message: "Updating VibeTV.",
+      progress: 95,
+      logs,
+      result: previousStatus?.result,
+    });
+    if (!(await installTheme(activeThemeUpgrade.theme))) {
+      const message =
+        "The firmware is current, but VibeTV still needs attention.";
+      setFirmwareUpdateStatus({
+        phase: "attention",
+        outcome: "firmware_current_theme_attention",
+        startedAt,
+        finishedAt: formatTime(),
+        message,
+        progress: 100,
+        logs: customerUpdateLogs([...logs, message]),
+        result: previousStatus?.result,
+      });
+      return false;
+    }
+    setFirmwareUpdateStatus({
+      phase: "complete",
+      startedAt,
+      finishedAt: formatTime(),
+      message: "Update complete.",
+      progress: 100,
+      logs: customerUpdateLogs([...logs, "Update complete."]),
+      result: previousStatus?.result,
+    });
+    return true;
+  }, [catalog.themes, device, firmwareUpdateStatus, installTheme]);
 
   const refreshUsage = useCallback(
     async (options?: { quiet?: boolean }) => {
@@ -3046,6 +3178,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             void loadSupportDiagnostics();
           }}
           onInstallUpdate={installFirmwareUpdate}
+          onRetryThemeUpdate={retryActiveThemeUpgrade}
           requiresMacAppMigration={requiresMacAppMigration}
           supportReportBusy={supportReportBusy}
           updateStatus={firmwareUpdateStatus}

@@ -22,6 +22,7 @@ export type ThemeProduct = {
   packSizeBytes?: number;
   compatibleBoards?: string[];
   requiresFirmware?: string;
+  requiredCapabilities?: string[];
   source: ThemeSource;
 };
 
@@ -102,6 +103,7 @@ type ThemePackCatalog = {
     version?: string;
     compatibleBoards?: string[];
     requiresFirmware?: string;
+    requiredCapabilities?: string[];
     sha256?: string;
     bytes?: number;
   }>;
@@ -357,6 +359,7 @@ function mapThemePackCatalogEntry(
     packSizeBytes: theme.bytes,
     compatibleBoards: theme.compatibleBoards,
     requiresFirmware: theme.requiresFirmware,
+    requiredCapabilities: theme.requiredCapabilities,
     source: "github-catalog",
   };
 }
@@ -405,6 +408,8 @@ async function enrichThemesWithGitHubCatalog(
         ...packMetadata,
         requiresFirmware:
           theme.requiresFirmware || fallback.requiresFirmware,
+        requiredCapabilities:
+          theme.requiredCapabilities || fallback.requiredCapabilities,
         themeVersion: theme.themeVersion || fallback.themeVersion,
       };
     });

@@ -5,6 +5,10 @@
       "id": "claude-creature",
       "title": "Claude Creature",
       "themeRev": 1,
+      "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
       "downloadAsset": "vibetv-theme-claude-creature.zip",
       "sha256": "cc1f2212ebc678141f7dd399bbd710f359754983a71751f79dcd6c9a19a61e5a",
       "bytes": 3330
@@ -13,6 +17,10 @@
       "id": "clippy",
       "title": "Clippy",
       "themeRev": 1,
+      "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
       "downloadAsset": "vibetv-theme-clippy.zip",
       "sha256": "63bfed7ed1353e3884e731414026639c398bcb18201b0155b3348392ab131772",
       "bytes": 18626
@@ -21,6 +29,10 @@
       "id": "cozy-meadow",
       "title": "Cozy Meadow",
       "themeRev": 1,
+      "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
       "downloadAsset": "vibetv-theme-cozy-meadow.zip",
       "sha256": "1bb7c64f7302ea7c6dd91ecafcb6fbc1bb014ef7878288a8d8beb409df3b9fd6",
       "bytes": 929
@@ -29,6 +41,10 @@
       "id": "mini-classic",
       "title": "Mini Classic",
       "themeRev": 1,
+      "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
       "downloadAsset": "vibetv-theme-mini-classic.zip",
       "sha256": "6173bc3074a16c5f02cf5ac55e6c48f4ed9d273e25fb1c174c1508d8452a36fe",
       "bytes": 18480
@@ -36,10 +52,14 @@
     {
       "id": "synthwave",
       "title": "Synthwave",
-      "themeRev": 1,
+      "themeRev": 2,
+      "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
       "downloadAsset": "vibetv-theme-synthwave.zip",
-      "sha256": "a9594f739d68879e51c61cb12cfcb8b216158a71d41d22a3956a191399c2ec59",
-      "bytes": 1576
+      "sha256": "e9e54ce2239ae777bf65404d8c708eb925ff1b921c73919e62a1d0a847560d7d",
+      "bytes": 1572
     }
   ]
 }

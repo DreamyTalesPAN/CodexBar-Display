@@ -83,6 +83,7 @@ export type UpdatesScreenProps = {
   onCheckUpdates?: () => Promise<void> | void;
   onCreateReport?: () => void;
   onInstallUpdate?: () => Promise<boolean> | boolean | void;
+  onRetryThemeUpdate?: () => Promise<boolean> | boolean | void;
   requiresMacAppMigration?: boolean;
   busyAction?: string | null;
   updateStatus?: FirmwareUpdateStatus | null;
@@ -99,6 +100,7 @@ export function UpdatesScreen({
   onCheckUpdates,
   onCreateReport,
   onInstallUpdate,
+  onRetryThemeUpdate,
   requiresMacAppMigration = false,
   busyAction,
   updateStatus,
@@ -229,7 +231,13 @@ export function UpdatesScreen({
             <InlineUpdateProgress
               creatingReport={creatingReport}
               onCreateReport={onCreateReport}
-              onRetry={firmwareUpdateBlocked ? undefined : onInstallUpdate}
+              onRetry={
+                firmwareUpdateBlocked
+                  ? undefined
+                  : updateStatus.phase === "attention"
+                    ? onRetryThemeUpdate
+                    : onInstallUpdate
+              }
               status={updateStatus}
             />
           ) : null}
@@ -426,7 +434,9 @@ function InlineUpdateProgress({
         <AlertDescription>{detail}</AlertDescription>
         {failed || attention ? (
           <AlertAction className="flex gap-2">
-            {failed && status.retryAllowed !== false ? (
+            {(failed && status.retryAllowed !== false) ||
+            (attention &&
+              status.outcome === "firmware_current_theme_attention") ? (
               <Button
                 disabled={!onRetry}
                 onClick={onRetry}

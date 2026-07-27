@@ -374,6 +374,33 @@ main() {
     "firmware update messages must name the VibeTV Mac App"
   assert_not_contains "$(grep '"message"' "$WORKFLOW")" "vibetv.shop" \
     "release workflow firmware message fallback must not send customers to a hosted URL"
+  python3 - \
+    "${ROOT}/release/firmware-versions.json" \
+    "${ROOT}/protocol/compatibility_matrix.json" <<'PY'
+import json
+import sys
+
+firmware_path, compatibility_path = sys.argv[1:]
+with open(firmware_path, encoding="utf-8") as source:
+    firmware = json.load(source)
+with open(compatibility_path, encoding="utf-8") as source:
+    compatibility = json.load(source)
+
+required = compatibility["featureRequirements"]["usageSlotsV1"]["firmwareMin"]
+published = next(
+    artifact["firmwareVersion"]
+    for artifact in firmware["artifacts"]
+    if artifact["board"] == "esp8266-smalltv-st7789"
+)
+
+def version_tuple(value):
+    return tuple(int(part) for part in value.split("-", 1)[0].split("."))
+
+if version_tuple(published) < version_tuple(required):
+    raise SystemExit(
+        f"ESP8266 release firmware {published} is older than usageSlotsV1 minimum {required}"
+    )
+PY
 
   printf 'control-center release workflow test passed\n'
 }

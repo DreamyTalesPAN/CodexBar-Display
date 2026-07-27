@@ -60,6 +60,8 @@ for (const theme of themeDirs) {
     id: manifest.id,
     title: manifest.name || manifest.id,
     themeRev: await themeRevFromManifest(manifest),
+    requiresFirmware: manifest.minFirmware,
+    requiredCapabilities: manifest.requiredCapabilities,
     downloadAsset: zipName,
     sha256: createHash("sha256").update(zipBytes).digest("hex"),
     bytes: zipBytes.byteLength,

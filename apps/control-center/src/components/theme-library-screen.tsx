@@ -1197,6 +1197,10 @@ function buildThemeInstallBlocker({
   if (boardBlocker) {
     return boardBlocker;
   }
+  const capabilityBlocker = themeCapabilityBlocker(theme, device);
+  if (capabilityBlocker) {
+    return capabilityBlocker;
+  }
   const firmwareBlocker = themeFirmwareBlocker(theme, device);
   if (firmwareBlocker) {
     return firmwareBlocker;
@@ -1282,6 +1286,28 @@ function themeBoardBlocker(
     readinessTitle: "Not supported",
     readinessDetail: "Choose another theme for this VibeTV.",
     readinessIcon: <Lock size={22} aria-hidden />,
+  };
+}
+
+function themeCapabilityBlocker(
+  theme: ThemeProduct,
+  device: ThemeLibraryDeviceInfo,
+): ThemeInstallBlocker | null {
+  const required = theme.requiredCapabilities || [];
+  const missing = required.filter((capability) => {
+    if (capability === "usage-slots-v1") {
+      return device.capabilities?.theme?.supportsUsageSlotsV1 !== true;
+    }
+    return true;
+  });
+  if (missing.length === 0) {
+    return null;
+  }
+  return {
+    reason: "Update firmware first.",
+    readinessTitle: "Firmware update needed",
+    readinessDetail: `${theme.title} needs a VibeTV update before it can be installed.`,
+    readinessIcon: <RefreshCw size={22} aria-hidden />,
   };
 }
 

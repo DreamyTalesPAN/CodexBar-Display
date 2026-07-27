@@ -34,6 +34,7 @@ const catalogFixture = {
       bytes: fixturePackBytes,
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
+      requiredCapabilities: ["usage-slots-v1"],
     },
     {
       id: "clippy",
@@ -45,6 +46,7 @@ const catalogFixture = {
       bytes: fixturePackBytes,
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
+      requiredCapabilities: ["usage-slots-v1"],
     },
     {
       id: "claude-creature",
@@ -56,6 +58,7 @@ const catalogFixture = {
       bytes: fixturePackBytes,
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
+      requiredCapabilities: ["usage-slots-v1"],
     },
     {
       id: "missing-pack",
@@ -151,6 +154,10 @@ const companionDevice = {
       tokenHeader: "X-VibeTV-Token",
       pairingWindowOpen: false,
       pairingWindowSeconds: 0,
+    },
+    theme: {
+      supportsThemeSpecV1: true,
+      supportsUsageSlotsV1: true,
     },
   },
   stream: {
@@ -519,6 +526,10 @@ async function main() {
     await testReloadRestoresRunningFirmwareUpdate(browser, appContext.appUrl);
     await testReloadRestoresRunningThemeInstall(browser, appContext.appUrl);
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
+    await testThemeRefreshRetryDoesNotFlashFirmwareAgain(
+      browser,
+      appContext.appUrl,
+    );
     await testFirmwareAttentionDoesNotOfferSecondFlash(
       browser,
       appContext.appUrl,
@@ -546,6 +557,10 @@ async function main() {
     await testThemeWithoutPackUrlStaysLocked(browser, appContext.appUrl);
     await testBoardIncompatibleThemeStaysLocked(browser, appContext.appUrl);
     await testFirmwareIncompatibleThemeStaysLocked(browser, appContext.appUrl);
+    await testCapabilityIncompatibleThemeStaysLocked(
+      browser,
+      appContext.appUrl,
+    );
     await assertCompanionReleaseApi(appContext.appUrl, {
       dmgDownloadAsset: "VibeTV-Control-Center.dmg",
       dmgDownloadStatus: "available",
@@ -4154,6 +4169,18 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   let firmwareStatusRequests = 0;
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.99",
+    device: {
+      ...companionDevice,
+      activeTheme: "synthwave",
+      firmware: "1.0.32",
+      capabilities: {
+        ...companionDevice.capabilities,
+        theme: {
+          supportsThemeSpecV1: true,
+          supportsUsageSlotsV1: false,
+        },
+      },
+    },
     onRequest: (pathname, method) => {
       if (pathname === "/v1/device/reload-display" && method === "POST") {
         reloadRequests.push(pathname);
@@ -4168,6 +4195,7 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
     dropBoardAfterFirmwareUpdate: true,
     deviceAfterFirmwareUpdate: {
       ...companionDevice,
+      activeTheme: "synthwave",
       connectionState: "ready",
       deviceId: "firmware-device-1",
       firmware: "1.0.33",
@@ -4182,6 +4210,25 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
         connectionState: "ready",
         deviceId: "firmware-device-1",
         firmware: "1.0.33",
+      },
+    ],
+    installStatusSequence: [
+      {
+        phase: "complete",
+        message: "Theme is active on VibeTV.",
+        progress: 100,
+        logs: [
+          "Preparing theme files.",
+          "Uploading theme files.",
+          "Theme is active on VibeTV.",
+        ],
+        result: {
+          themeId: "synthwave",
+          packId: "synthwave",
+          name: "Fixture Synthwave Theme",
+          activePath: "/themes/u/synthwa-2-5f8ac7.json",
+          themeRev: 2,
+        },
       },
     ],
     updateStatusSequence: [
@@ -4324,7 +4371,11 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
     );
   }
 
-  assertNoInstallRequests(installRequests);
+  assert(
+    installRequests.length === 1 &&
+      JSON.parse(installRequests[0]).themeId === "synthwave",
+    "Firmware update must refresh the active slot theme exactly once",
+  );
   await assertNoMobileOverflow(page);
   await page.close();
 }
@@ -4377,6 +4428,92 @@ async function testFirmwareAttentionDoesNotOfferSecondFlash(browser, appUrl) {
     timeout: 10_000,
   });
   assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testThemeRefreshRetryDoesNotFlashFirmwareAgain(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const updateRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.99",
+    device: {
+      ...companionDevice,
+      activeTheme: "synthwave",
+      firmware: "1.0.32",
+      capabilities: {
+        ...companionDevice.capabilities,
+        theme: {
+          supportsThemeSpecV1: true,
+          supportsUsageSlotsV1: false,
+        },
+      },
+    },
+    deviceAfterFirmwareUpdate: {
+      ...companionDevice,
+      activeTheme: "synthwave",
+      firmware: "1.0.33",
+    },
+    onUpdate: (postData) => {
+      updateRequests.push(postData || "");
+    },
+    updateStatusSequence: [
+      {
+        phase: "complete",
+        message: "Update complete.",
+        progress: 100,
+        logs: ["Updating VibeTV.", "Update complete."],
+        result: { firmware: "1.0.33" },
+      },
+    ],
+    installStatusSequence: [
+      {
+        phase: "error",
+        message: "Theme install failed.",
+        progress: 100,
+        logs: ["Preparing theme files.", "Theme install failed."],
+        error: {
+          code: "theme_install_failed",
+          message: "Theme install failed.",
+          nextAction: "Keep VibeTV powered on and retry the install.",
+        },
+      },
+      {
+        phase: "complete",
+        message: "Theme is active on VibeTV.",
+        progress: 100,
+        logs: ["Preparing theme files.", "Theme is active on VibeTV."],
+        result: {
+          themeId: "synthwave",
+          packId: "synthwave",
+          name: "Fixture Synthwave Theme",
+          activePath: "/themes/u/synthwa-2-5f8ac7.json",
+          themeRev: 2,
+        },
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Updates");
+  await page.getByRole("button", { name: "Update", exact: true }).click();
+  await page
+    .getByText("Firmware current — attention needed", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  const retry = page.getByRole("button", { name: "Try again", exact: true });
+  await retry.waitFor({ timeout: 10_000 });
+  await retry.click();
+  await page
+    .getByText("Update complete", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    updateRequests.length === 1,
+    "Retrying the active theme must not flash firmware a second time",
+  );
+  assert(
+    installRequests.length === 2,
+    "A failed active-theme refresh should be retried exactly once",
+  );
   await page.close();
 }
 
@@ -5926,6 +6063,40 @@ async function testFirmwareIncompatibleThemeStaysLocked(browser, appUrl) {
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testCapabilityIncompatibleThemeStaysLocked(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...companionDevice,
+      firmware: "9.9.9",
+      capabilities: {
+        ...companionDevice.capabilities,
+        theme: {
+          supportsThemeSpecV1: true,
+          supportsUsageSlotsV1: false,
+        },
+      },
+    },
+  });
+
+  await page.goto(`${appUrl}/install/synthwave`, {
+    waitUntil: "domcontentloaded",
+  });
+  await assertSelectedThemeRow(page, "Fixture Synthwave Theme");
+  const lockedButton = page
+    .getByRole("listitem")
+    .filter({ hasText: "Fixture Synthwave Theme" })
+    .getByRole("button", { name: "Update Needed" });
+  await lockedButton.waitFor({ timeout: 10_000 });
+  assert(
+    await lockedButton.isDisabled(),
+    "missing required capability must block install even when firmware version is high enough",
+  );
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
