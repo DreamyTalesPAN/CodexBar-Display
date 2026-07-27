@@ -39,7 +39,6 @@ import {
   deviceIsReady,
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
-  deviceThemeSetupDecisionPending,
   type ActiveTab,
   type ApiError,
   type CompanionInfo,
@@ -282,10 +281,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [deviceTarget, setDeviceTarget] = useState(readInitialDeviceTarget);
   const [brightness, setBrightness] = useState<number | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [
-    deviceSelectionVerificationPending,
-    setDeviceSelectionVerificationPending,
-  ] = useState(false);
   const [supportReportBusy, setSupportReportBusy] = useState(false);
   const [lastError, setLastError] = useState<ApiError | null>(null);
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
@@ -1401,10 +1396,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const setupGeneration = setupGenerationRef.current;
       pendingPairingCandidate.current = candidate;
       setBusyAction("select");
-      setDeviceSelectionVerificationPending(true);
       setLastError(null);
       try {
-        await runCompanion<{ device: DeviceInfo }>(
+        const payload = await runCompanion<{ device: DeviceInfo }>(
           "/v1/device/select",
           {
             method: "POST",
@@ -1418,24 +1412,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (setupGeneration !== setupGenerationRef.current) {
           return;
         }
-        const verifiedDevice = await refreshDevice({ quiet: true });
-        if (setupGeneration !== setupGenerationRef.current) {
-          return;
-        }
-        if (!verifiedDevice) {
-          throw {
-            code: "device_verification_failed",
-            message: "The selected VibeTV could not be verified.",
-            nextAction: "Keep VibeTV powered on, then press Connect again.",
-          } satisfies ApiError;
-        }
+        mergeDevice(payload.device);
         setDeviceCandidates([]);
         pendingPairingCandidate.current = null;
         setDeviceSearchState("idle");
-        setDeviceState(verifiedDevice.paired ? "paired" : "online");
-        if (verifiedDevice.target) {
-          setDeviceTarget(verifiedDevice.target);
-          rememberDeviceTarget(verifiedDevice.target);
+        setDeviceState(payload.device.paired ? "paired" : "online");
+        if (payload.device.target) {
+          setDeviceTarget(payload.device.target);
+          rememberDeviceTarget(payload.device.target);
         }
         setLastError(null);
         addEvent({
@@ -1467,12 +1451,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         });
       } finally {
         if (setupGeneration === setupGenerationRef.current) {
-          setDeviceSelectionVerificationPending(false);
           setBusyAction(null);
         }
       }
     },
-    [addEvent, loadSettings, refreshDevice, runCompanion],
+    [addEvent, loadSettings, mergeDevice, runCompanion],
   );
 
   const connectManualTarget = useCallback(
@@ -1637,7 +1620,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setDeviceState("unknown");
       setDeviceCandidates([]);
       setDeviceSearchState("idle");
-      setDeviceSelectionVerificationPending(false);
       brightnessDirtyRef.current = false;
       setBrightness(null);
       setLastInstall(undefined);
@@ -2694,9 +2676,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" &&
     !themeSetupComplete &&
     (themeSetupEntryRequired || themeSetupSessionMatches);
-  const themeSetupDecisionPending =
-    companionStatus === "online" &&
-    deviceThemeSetupDecisionPending(device);
 
   const startupDeviceCandidates =
     deviceCandidates.length > 0
@@ -2980,10 +2959,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   if (
     companionStatus === "online" &&
     !requiresMacAppMigration &&
-    (deviceSelectionVerificationPending ||
-      themeSetupDecisionPending ||
-      !hasActiveDevice ||
-      connectionRecoveryRequired)
+    (!hasActiveDevice || connectionRecoveryRequired)
   ) {
     return (
       <DeviceStartupScreen

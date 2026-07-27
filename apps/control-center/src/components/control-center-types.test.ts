@@ -6,7 +6,6 @@ import {
   deviceIsReady,
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
-  deviceThemeSetupDecisionPending,
 } from "./control-center-types";
 
 describe("device connection contract", () => {
@@ -109,7 +108,7 @@ describe("device connection contract", () => {
     ).toBe(false);
   });
 
-  it("shows theme setup while the newly connected display stream is still starting", () => {
+  it("shows theme setup without waiting for the display stream", () => {
     expect(
       deviceNeedsThemeSetup({
         active: true,
@@ -118,48 +117,10 @@ describe("device connection contract", () => {
         ready: false,
         activeTheme: "theme-missing",
         health: { ok: true },
-        stream: { healthy: false, running: false },
-        display: { themeSpec: { active: false, renderOk: true } },
-      }),
-    ).toBe(true);
-  });
-
-  it("holds setup while a newly connected device has no theme readback yet", () => {
-    expect(
-      deviceThemeSetupDecisionPending({
-        active: true,
-        connected: true,
-        paired: true,
-        ready: false,
-        stream: { healthy: false, running: false },
-      }),
-    ).toBe(true);
-    expect(
-      deviceThemeSetupDecisionPending({
-        active: true,
-        connected: true,
-        paired: true,
-        ready: false,
-        activeTheme: "theme-missing",
-        health: { ok: true },
-        stream: { healthy: false, running: false },
-        display: { themeSpec: { active: false, renderOk: true } },
-      }),
-    ).toBe(false);
-  });
-
-  it("keeps the normal delayed-first-frame overview when a theme is active", () => {
-    expect(
-      deviceThemeSetupDecisionPending({
-        active: true,
-        connected: true,
-        paired: true,
-        ready: false,
-        activeTheme: "clippy",
         stream: { healthy: false, running: true },
-        display: { themeSpec: { active: true, renderOk: true } },
+        display: { themeSpec: { active: false, renderOk: true } },
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("keeps unrelated incomplete device states out of theme setup", () => {
@@ -198,17 +159,6 @@ describe("device connection contract", () => {
         paired: true,
         ready: false,
         activeTheme: "theme-missing",
-      }),
-    ).toBe(false);
-    expect(
-      deviceNeedsThemeSetup({
-        active: true,
-        connected: true,
-        paired: true,
-        ready: false,
-        activeTheme: "theme-missing",
-        health: { ok: true },
-        stream: { healthy: false, running: true },
       }),
     ).toBe(false);
     expect(

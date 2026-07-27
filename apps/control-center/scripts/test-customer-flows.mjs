@@ -1021,17 +1021,6 @@ async function testThemeMissingDeviceNeverFlashesOverviewAfterConnect(
     viewport: desktopViewport,
   });
   const installRequests = [];
-  const partialSelection = {
-    ...themeMissingDevice,
-    health: undefined,
-    display: undefined,
-    stream: {
-      healthy: false,
-      running: false,
-      detail:
-        "VibeTV is connected. The Mac App will retry the display stream.",
-    },
-  };
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: {
       connected: false,
@@ -1039,23 +1028,16 @@ async function testThemeMissingDeviceNeverFlashesOverviewAfterConnect(
       ready: false,
       active: false,
     },
-    onSelect: () => partialSelection,
-    deviceReadDelayMs: 500,
-    onDeviceRead: (currentDevice) => currentDevice,
-    statusDeviceSequence: [
-      {
-        connected: false,
-        paired: false,
-        ready: false,
-        active: false,
+    onSelect: () => ({
+      ...themeMissingDevice,
+      deviceId: "fixture-device-1",
+      stream: {
+        healthy: false,
+        running: false,
+        detail:
+          "VibeTV is connected. The Mac App will retry the display stream.",
       },
-      partialSelection,
-      {
-        ...themeMissingDevice,
-        deviceId: "fixture-device-1",
-        stream: { healthy: false, running: false },
-      },
-    ],
+    }),
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
@@ -1065,7 +1047,8 @@ async function testThemeMissingDeviceNeverFlashesOverviewAfterConnect(
   await page.evaluate(() => {
     const windowWithTestState = window;
     windowWithTestState.__vibeTVOverviewWasRendered = false;
-    const recordOverview = () => {
+    windowWithTestState.__vibeTVEmptySetupWasRendered = false;
+    const recordUnexpectedScreens = () => {
       if (
         document.querySelector(
           'nav[aria-label="Control Center"], [data-testid="overview-screen"]',
@@ -1073,27 +1056,32 @@ async function testThemeMissingDeviceNeverFlashesOverviewAfterConnect(
       ) {
         windowWithTestState.__vibeTVOverviewWasRendered = true;
       }
+      if (
+        Array.from(document.querySelectorAll("h1, h2")).some(
+          (heading) => heading.textContent?.trim() === "Set up your VibeTV",
+        )
+      ) {
+        windowWithTestState.__vibeTVEmptySetupWasRendered = true;
+      }
     };
-    recordOverview();
-    new MutationObserver(recordOverview).observe(document.body, {
+    recordUnexpectedScreens();
+    new MutationObserver(recordUnexpectedScreens).observe(document.body, {
       childList: true,
       subtree: true,
     });
   });
 
   await discoveredConnectButtons(page).first().click();
-  await page.waitForTimeout(1_000);
-  assert(
-    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
-      0,
-    "An unresolved post-pairing theme readback must keep the Control Center shell hidden",
-  );
   await page
     .getByRole("heading", { name: "Choose your VibeTV theme" })
-    .waitFor({ timeout: 15_000 });
+    .waitFor({ timeout: 3_000 });
   assert(
     (await page.evaluate(() => window.__vibeTVOverviewWasRendered)) === false,
     "A newly connected theme-missing VibeTV must never render Overview before the theme chooser",
+  );
+  assert(
+    (await page.evaluate(() => window.__vibeTVEmptySetupWasRendered)) === false,
+    "A newly connected theme-missing VibeTV must never fall back to the empty setup screen",
   );
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
@@ -6613,7 +6601,6 @@ async function routeCompanionOnline(
     legacyCompanionRelease = false,
     device = companionDevice,
     onDiscover,
-    onDeviceRead,
     onPair,
     onRepair,
     onSelect,
@@ -6627,7 +6614,6 @@ async function routeCompanionOnline(
     installStatusSequence,
     deviceAfterThemeInstall,
     deviceReadFailuresAfterThemeInstall = 0,
-    deviceReadDelayMs = 0,
     updateStatusSequence,
     macAppUpdateStatusSequence,
     macAppUpdateStatusFailures = 0,
@@ -7371,10 +7357,6 @@ async function routeCompanionOnline(
         await route.abort("failed");
         return;
       }
-      if (deviceReadDelayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, deviceReadDelayMs));
-      }
-      currentDevice = onDeviceRead?.(currentDevice) || currentDevice;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
