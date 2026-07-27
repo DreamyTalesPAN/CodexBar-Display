@@ -314,7 +314,7 @@ func classifyProviderError(detail string) string {
 func providerResult(id, status string) ProviderReadiness {
 	label := humanLabel(id)
 	if id == "codexbar" {
-		label = "CodexBar"
+		label = "Usage service"
 	}
 	result := ProviderReadiness{ID: id, Label: label, Status: status}
 	switch status {
@@ -322,25 +322,25 @@ func providerResult(id, status string) ProviderReadiness {
 		result.Detail = "Usage data is available."
 	case ProviderAuthRequired:
 		result.Detail = "This provider needs an active sign-in."
-		result.NextAction = "Open CodexBar and sign in to this provider, then check again."
+		result.NextAction = "Sign in to this provider, then check again."
 	case ProviderPermissionRequired:
 		result.Detail = "macOS blocked access required by this provider."
-		result.NextAction = "Open CodexBar and allow the requested macOS permission, then check again."
+		result.NextAction = "Allow the requested macOS permission, then check again."
 	case ProviderNoUsageAvailable:
 		result.Detail = "This account does not expose usage data."
 		result.NextAction = "Choose another provider that exposes usage limits."
 	case ProviderTimeout:
 		result.Detail = "The provider check timed out."
-		result.NextAction = "Open CodexBar, confirm the provider works, then check again."
+		result.NextAction = "Confirm the provider sign-in, then check again."
 	case ProviderConfigError:
-		result.Detail = "CodexBar could not save or read its provider configuration."
-		result.NextAction = "Open CodexBar and check its provider settings."
+		result.Detail = "The usage service could not save or read its provider settings."
+		result.NextAction = "Repair the usage service, then check again."
 	case ProviderNotConfigured:
 		result.Detail = "No usable AI provider is configured yet."
-		result.NextAction = "Open CodexBar and connect an AI provider."
+		result.NextAction = "Open provider setup and connect an AI provider."
 	default:
-		result.Detail = "CodexBar could not read this provider."
-		result.NextAction = "Open CodexBar, check this provider, then try again."
+		result.Detail = "The usage service could not read this provider."
+		result.NextAction = "Check this provider, then try again."
 	}
 	return result
 }

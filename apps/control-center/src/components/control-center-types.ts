@@ -390,6 +390,7 @@ export type UsageSnapshot = {
   generatedAt?: string;
   source?: string;
   usageMode?: "used" | "remaining" | string;
+  tokenUsageReady?: boolean;
   currentProvider?: string;
   providers: UsageProviderInfo[];
 };

@@ -76,7 +76,7 @@ export function ProviderSetupCard({
           </h4>
           <p className="mt-1 text-sm leading-6 text-[#444933]">
             {checking
-              ? "CodexBar is checking your provider sign-ins and usage limits."
+              ? "VibeTV is checking your provider sign-ins and usage limits."
               : providerSetupSummary(providerSetup)}
           </p>
         </div>
@@ -109,7 +109,7 @@ export function ProviderSetupCard({
             size="lg"
           >
             <Wrench data-icon="inline-start" aria-hidden />
-            Repair CodexBar
+            Repair usage service
           </Button>
         ) : null}
         {onOpenCodexBar ? (
@@ -125,7 +125,9 @@ export function ProviderSetupCard({
             ) : (
               <ExternalLink data-icon="inline-start" aria-hidden />
             )}
-            {busyAction === "providers-open" ? "Opening CodexBar" : "Open CodexBar"}
+            {busyAction === "providers-open"
+              ? "Opening provider setup"
+              : "Open provider setup"}
           </Button>
         ) : null}
         {onRetry ? (
@@ -214,10 +216,10 @@ export function providerSetupStatusLabel(
   }
   const engineStatus = normalizeStatus(providerSetup.engine?.status);
   if (engineStatus === "not_configured") {
-    return "CodexBar setup needed";
+    return "Usage service setup needed";
   }
   if (engineStatus === "config_error") {
-    return "CodexBar settings need attention";
+    return "Usage service settings need attention";
   }
   return "Setup needed";
 }
@@ -237,7 +239,7 @@ export function providerSetupStatusDetail(
     providerSetup.engine?.detail?.trim() ||
     providerSetup.nextAction?.trim() ||
     providerSetup.engine?.nextAction?.trim() ||
-    "Open CodexBar and connect a provider that exposes usage limits."
+    "Open provider setup and connect a provider that exposes usage limits."
   );
 }
 
@@ -270,7 +272,7 @@ function providerSetupSummary(providerSetup: ProviderSetupInfo): string {
     providerSetup.engine?.detail?.trim() ||
     providerSetup.nextAction?.trim() ||
     providerSetup.engine?.nextAction?.trim() ||
-    "Open CodexBar and connect a provider that exposes usage limits."
+    "Open provider setup and connect a provider that exposes usage limits."
   );
 }
 
@@ -290,21 +292,21 @@ function providerIssueDetail(provider: ProviderReadinessInfo): string {
   const name = provider.label || providerName(provider.id) || "This provider";
   switch (normalizeStatus(provider.status)) {
     case "auth_required":
-      return `Sign in to ${name} in CodexBar, then check again.`;
+      return `Sign in to ${name}, then check again.`;
     case "permission_required":
-      return `${name} needs permission to read your sign-in. Open CodexBar and allow access, then check again.`;
+      return `${name} needs permission to read your sign-in. Allow access, then check again.`;
     case "no_usage_available":
       return `${name} is connected, but this account does not expose usage limits. Choose another provider.`;
     case "timeout":
-      return `${name} did not answer in time. Open CodexBar, confirm the sign-in, then check again.`;
+      return `${name} did not answer in time. Confirm the sign-in, then check again.`;
     case "config_error":
-      return "CodexBar could not save its provider settings. Open CodexBar and finish provider setup there.";
+      return "The usage service could not save its provider settings. Repair it, then check again.";
     case "engine_error":
-      return "CodexBar needs attention before VibeTV can read provider usage.";
+      return "The usage service needs attention before VibeTV can read provider usage.";
     case "not_configured":
-      return `Open CodexBar and connect ${name}, then check again.`;
+      return `Open provider setup and connect ${name}, then check again.`;
     default:
-      return `Open CodexBar and finish setting up ${name}.`;
+      return `Open provider setup and finish setting up ${name}.`;
   }
 }
 
@@ -321,7 +323,7 @@ function providerStatusLabel(status: ProviderReadinessStatus): string {
     case "config_error":
       return "Settings need attention";
     case "engine_error":
-      return "CodexBar needs attention";
+      return "Usage service needs attention";
     case "not_configured":
       return "Not configured";
     default:

@@ -1892,6 +1892,9 @@ func TestUsageCachePicksUpTokenHistoryCollectedAfterFirstResponse(t *testing.T) 
 	if len(initial.Providers) != 1 || initial.Providers[0].Cost != nil {
 		t.Fatalf("expected initial response without history, got %+v", initial.Providers)
 	}
+	if initial.TokenUsageReady {
+		t.Fatalf("expected initial response to keep token usage loading: %+v", initial)
+	}
 
 	historyReady = true
 	second := httptest.NewRecorder()
@@ -1909,8 +1912,42 @@ func TestUsageCachePicksUpTokenHistoryCollectedAfterFirstResponse(t *testing.T) 
 	if enriched.Providers[0].SessionTokens != 1234 || enriched.Providers[0].WeekTokens != 5678 || enriched.Providers[0].TotalTokens != 9000 {
 		t.Fatalf("expected cached response enriched with token totals, got %+v", enriched.Providers[0])
 	}
+	if !enriched.TokenUsageReady {
+		t.Fatalf("expected enriched response to mark token usage ready: %+v", enriched)
+	}
 	if fetches != 1 {
 		t.Fatalf("expected cached second response without another direct fetch, got %d fetches", fetches)
+	}
+}
+
+func TestMergePersistedUsageDetailsKeepsSuccessfulZeroResult(t *testing.T) {
+	fresh := usageResponse{
+		Providers: []usageProviderInfo{{
+			ID:   "codex",
+			Cost: &usageCostInfo{},
+		}},
+	}
+	persisted := usageResponse{
+		TokenUsageReady: true,
+		Providers: []usageProviderInfo{{
+			ID:            "codex",
+			SessionTokens: 1234,
+			WeekTokens:    5678,
+			TotalTokens:   9000,
+			Cost:          &usageCostInfo{Last30DaysTokens: 9000},
+		}},
+	}
+
+	got := mergePersistedUsageDetails(fresh, persisted)
+	if !got.TokenUsageReady || len(got.Providers) != 1 {
+		t.Fatalf("expected successful zero result to remain ready: %+v", got)
+	}
+	provider := got.Providers[0]
+	if provider.SessionTokens != 0 || provider.WeekTokens != 0 || provider.TotalTokens != 0 {
+		t.Fatalf("persisted counters overwrote the successful zero result: %+v", provider)
+	}
+	if provider.Cost == nil || provider.Cost.Last30DaysTokens != 0 {
+		t.Fatalf("persisted history overwrote the successful zero result: %+v", provider.Cost)
 	}
 }
 
@@ -2641,6 +2678,9 @@ func TestUsageUnavailableReturnsCustomerSafeError(t *testing.T) {
 	}
 	if got.OK || got.Error.Code != "usage_unavailable" {
 		t.Fatalf("unexpected error response: %+v", got)
+	}
+	if strings.Contains(got.Error.Message+" "+got.Error.NextAction, "CodexBar") {
+		t.Fatalf("usage error exposed the internal service name: %+v", got.Error)
 	}
 }
 

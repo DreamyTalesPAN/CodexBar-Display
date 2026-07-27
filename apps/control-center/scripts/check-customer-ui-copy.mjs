@@ -9,9 +9,19 @@ const files = [
   ...collectFiles(join(appRoot, "src", "components")),
   ...collectFiles(join(appRoot, "src", "app")),
   join(appRoot, "src", "lib", "themes.ts"),
-].filter((file) => file.endsWith(".tsx") || file.endsWith(".ts"));
+].filter(
+  (file) =>
+    (file.endsWith(".tsx") || file.endsWith(".ts")) &&
+    !file.includes(".test.") &&
+    !file.includes(".spec."),
+);
 
 const forbiddenPatterns = [
+  {
+    label: "internal usage service name",
+    pattern: /\bCodexBar\b/,
+    suggestion: "Describe the customer action without naming the internal service.",
+  },
   {
     label: "internal Companion service name",
     pattern: /\bCompanion\b/,
