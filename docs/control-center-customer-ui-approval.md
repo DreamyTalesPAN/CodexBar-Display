@@ -463,3 +463,13 @@ issue scope, or release permission never implies UI permission.
   VibeTV logo. The sidebar branding remains unchanged.
 - Approved files: `control-center-brand.tsx`, `setup-status-screen.tsx`, its
   unit test, and this approval record.
+
+## 2026-07-27 — First usage wait sets a time expectation
+
+- User approval: While testing the setup screen, the user explicitly required
+  the first-usage message to tell customers how long the wait can take.
+- Approved customer-visible result: The waiting screen says that loading the
+  first usage data can take up to 30 seconds, matching the collector retry
+  cadence.
+- Approved files: `device-startup-screen.tsx`, its unit test, and this approval
+  record.

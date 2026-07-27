@@ -65,6 +65,22 @@ describe("DeviceStartupScreen", () => {
     expect(html).not.toContain('data-slot="card"');
   });
 
+  it("sets the correct expectation while waiting for first usage", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onPair={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain(
+      "Waiting for the first usage data. This can take up to 30 seconds.",
+    );
+  });
+
   it("uses shadcn recovery UI and names the action that is actually shown", () => {
     const html = renderToStaticMarkup(
       <DeviceStartupScreen
