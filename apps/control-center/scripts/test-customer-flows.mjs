@@ -177,6 +177,25 @@ const reachableUnreadyDevice = {
   },
 };
 
+const themeMissingDevice = {
+  ...companionDevice,
+  ready: false,
+  connectionState: "reconnecting",
+  activeTheme: "theme-missing",
+  stream: {
+    healthy: true,
+    running: true,
+    detail: "Display stream is healthy.",
+  },
+  health: { ok: true },
+  display: {
+    themeSpec: {
+      active: false,
+      renderOk: true,
+    },
+  },
+};
+
 const reconnectingDevice = {
   ...companionDevice,
   connected: false,
@@ -309,6 +328,14 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testThemeMissingDeviceChoosesThemeAndCompletesSetup(
+        browser,
+        appContext.appUrl,
+      );
+      await testThemeSetupWaitsAfterDeviceReadbackFailure(
+        browser,
+        appContext.appUrl,
+      );
       await testConfiguredDeviceShowsReconnectingWithoutSetup(
         browser,
         appContext.appUrl,
@@ -432,6 +459,14 @@ async function main() {
     );
     await testPairingStreamErrorDoesNotInventRecovery(browser, appContext.appUrl);
     await testLocalReachableWithoutFrameOpensOverview(
+      browser,
+      appContext.appUrl,
+    );
+    await testThemeMissingDeviceChoosesThemeAndCompletesSetup(
+      browser,
+      appContext.appUrl,
+    );
+    await testThemeSetupWaitsAfterDeviceReadbackFailure(
       browser,
       appContext.appUrl,
     );
@@ -2627,6 +2662,303 @@ async function testLocalReachableWithoutFrameOpensOverview(browser, appUrl) {
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const readyDevice = {
+    ...companionDevice,
+    deviceId: "fixture-device-1",
+    activeTheme: "synthwave",
+    connectionState: "ready",
+  };
+  const companionRoute = await routeCompanionOnline(
+    page,
+    installRequests,
+    () => {},
+    {
+      device: {
+        ...themeMissingDevice,
+        deviceId: undefined,
+      },
+      deviceAfterThemeInstall: {
+        ...readyDevice,
+        activeTheme: "synthwave",
+        ready: false,
+        connectionState: "reconnecting",
+      },
+      installStatusSequence: [
+        {
+          phase: "error",
+          message: "Theme install failed.",
+          progress: 100,
+          logs: ["Preparing theme files.", "Theme install failed."],
+          error: {
+            code: "theme_install_failed",
+            message: "Theme install failed.",
+            nextAction: "Keep VibeTV powered on and retry the install.",
+          },
+        },
+        {
+          phase: "complete",
+          message: "Theme is active on VibeTV.",
+          progress: 100,
+          logs: [
+            "Preparing theme files.",
+            "Uploading theme files.",
+            "Theme is active on VibeTV.",
+          ],
+          result: {
+            themeId: "synthwave",
+            packId: "synthwave",
+            name: "Synthwave",
+            activePath: "/themes/u/synthwave.json",
+            themeRev: 1,
+          },
+        },
+      ],
+    },
+  );
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "Choose your VibeTV theme" })
+    .waitFor({ timeout: 10_000 });
+
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "Theme setup must stay inside setup instead of opening the Control Center shell",
+  );
+  assert(
+    (await page.getByRole("button", { name: "Create Theme" }).count()) === 0 &&
+      (await page.getByRole("button", { name: /^Edit/ }).count()) === 0 &&
+      (await page.getByText("Published", { exact: true }).count()) === 0,
+    "Theme setup must show only the theme list and per-theme install actions",
+  );
+
+  const synthwaveRow = page
+    .getByRole("listitem")
+    .filter({ hasText: "Fixture Synthwave Theme" });
+  const installButton = synthwaveRow.getByRole("button", {
+    name: "Install",
+    exact: true,
+  });
+  const otherInstallButton = page
+    .getByRole("listitem")
+    .filter({ hasText: "Fixture Clippy Theme" })
+    .getByRole("button", { name: "Install", exact: true });
+  await installButton.waitFor({ timeout: 10_000 });
+  const installStyle = await installButton.evaluate((button) => {
+    const style = window.getComputedStyle(button);
+    return {
+      backgroundColor: style.backgroundColor,
+      borderRadius: style.borderRadius,
+    };
+  });
+  assert(
+    installStyle.backgroundColor === "rgb(204, 255, 0)",
+    `Theme setup Install must use the VibeTV primary color, got ${installStyle.backgroundColor}`,
+  );
+  assert(
+    installStyle.borderRadius === "8px",
+    `Theme setup Install must use the existing 8px control radius, got ${installStyle.borderRadius}`,
+  );
+  assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+
+  await installButton.click();
+  await page
+    .getByText("Install failed", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Try again" }).click();
+  await synthwaveRow
+    .getByRole("status")
+    .getByText("Installed", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  await waitForEnabled(
+    page,
+    otherInstallButton,
+    "Theme setup should finish processing the ready=false readback before the assertion",
+  );
+  assert(
+    (await page
+      .getByRole("heading", { name: "Choose your VibeTV theme" })
+      .count()) === 1,
+    "Theme setup must stay open while the installed theme is active but device ready is still false",
+  );
+  assert(
+    (await page
+      .getByRole("heading", { name: "VibeTV is connected" })
+      .count()) === 0,
+    "Theme setup must not open Overview before a ready device readback",
+  );
+
+  companionRoute.setDevice({
+    active: true,
+    connected: true,
+    paired: true,
+    ready: true,
+    connectionState: "ready",
+    target: readyDevice.target,
+    deviceId: readyDevice.deviceId,
+    health: { ok: true },
+    stream: { healthy: true, running: true },
+  });
+  await page
+    .getByRole("heading", { name: "VibeTV is connected" })
+    .waitFor({ timeout: 12_000 });
+
+  assert(
+    installRequests.length === 2,
+    `Theme setup should retry only after the customer clicks Try again, got ${installRequests.length} install requests`,
+  );
+  assert(
+    installRequests.every((request) => request?.includes('"themeId":"synthwave"')),
+    `Theme setup should install the chosen theme, got ${JSON.stringify(installRequests)}`,
+  );
+  assert(
+    (await page
+      .getByRole("heading", { name: "Choose your VibeTV theme" })
+      .count()) === 0,
+    "Theme setup must close only after the device reports ready",
+  );
+  companionRoute.setDevice({
+    ...readyDevice,
+    ready: false,
+    connectionState: "reconnecting",
+  });
+  await page
+    .getByText("VibeTV is online, but its display is still reconnecting.", {
+      exact: true,
+    })
+    .waitFor({ timeout: 12_000 });
+  assert(
+    (await page
+      .getByRole("heading", { name: "Choose your VibeTV theme" })
+      .count()) === 0,
+    "A later unrelated ready=false state must not reopen completed theme setup",
+  );
+  await page.close();
+}
+
+async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  let installStarted = false;
+  let postInstallDeviceReads = 0;
+  const readyDevice = {
+    ...companionDevice,
+    activeTheme: "synthwave",
+    connectionState: "ready",
+  };
+  const companionRoute = await routeCompanionOnline(
+    page,
+    installRequests,
+    () => {},
+    {
+      device: themeMissingDevice,
+      deviceAfterThemeInstall: {
+        ...readyDevice,
+        ready: false,
+        connectionState: "reconnecting",
+      },
+      deviceReadFailuresAfterThemeInstall: 1,
+      installStatusSequence: [
+        {
+          phase: "complete",
+          message: "Theme is active on VibeTV.",
+          progress: 100,
+          logs: [
+            "Preparing theme files.",
+            "Uploading theme files.",
+            "Theme is active on VibeTV.",
+          ],
+          result: {
+            themeId: "synthwave",
+            packId: "synthwave",
+            name: "Synthwave",
+            activePath: "/themes/u/synthwave.json",
+            themeRev: 1,
+          },
+        },
+      ],
+      onRequest: (pathname, method) => {
+        if (pathname === "/v1/themes/install" && method === "POST") {
+          installStarted = true;
+        }
+        if (
+          installStarted &&
+          pathname === "/v1/device" &&
+          method === "GET"
+        ) {
+          postInstallDeviceReads += 1;
+        }
+      },
+    },
+  );
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "Choose your VibeTV theme" })
+    .waitFor({ timeout: 10_000 });
+  const synthwaveRow = page
+    .getByRole("listitem")
+    .filter({ hasText: "Fixture Synthwave Theme" });
+  const otherInstallButton = page
+    .getByRole("listitem")
+    .filter({ hasText: "Fixture Clippy Theme" })
+    .getByRole("button", { name: "Install", exact: true });
+  await synthwaveRow
+    .getByRole("button", { name: "Install", exact: true })
+    .click();
+
+  for (
+    let attempt = 0;
+    attempt < 20 && postInstallDeviceReads === 0;
+    attempt += 1
+  ) {
+    await page.waitForTimeout(250);
+  }
+  assert(
+    postInstallDeviceReads === 1,
+    `Theme setup should perform one post-install device read, got ${postInstallDeviceReads}`,
+  );
+  await waitForEnabled(
+    page,
+    otherInstallButton,
+    "Theme setup should finish processing the failed readback before the assertion",
+  );
+  assert(
+    (await page
+      .getByRole("heading", { name: "VibeTV is connected" })
+      .count()) === 0,
+    "A failed post-install device read must not complete setup",
+  );
+  assert(
+    (await page
+      .getByRole("heading", { name: "Choose your VibeTV theme" })
+      .count()) === 1,
+    "A failed post-install device read must keep the entered theme setup visible",
+  );
+
+  companionRoute.setDevice(readyDevice);
+  await page
+    .getByRole("heading", { name: "VibeTV is connected" })
+    .waitFor({ timeout: 12_000 });
+  assert(
+    installRequests.length === 1,
+    `A readback failure must not trigger another theme install, got ${installRequests.length} requests`,
+  );
   await page.close();
 }
 
@@ -6193,6 +6525,8 @@ async function routeCompanionOnline(
     onMacAppUpdate,
     onThemeInstallRequest,
     installStatusSequence,
+    deviceAfterThemeInstall,
+    deviceReadFailuresAfterThemeInstall = 0,
     updateStatusSequence,
     macAppUpdateStatusSequence,
     macAppUpdateStatusFailures = 0,
@@ -6234,6 +6568,7 @@ async function routeCompanionOnline(
   let activeInstallJobId = statusThemeInstallJob?.id || "";
   let currentStatusThemeInstallJob = statusThemeInstallJob;
   let installStatusIndex = 0;
+  let deviceReadFailuresRemaining = deviceReadFailuresAfterThemeInstall;
   let activeUpdateJobId = "";
   let updateStatusIndex = 0;
   let activeMacAppUpdateJobId = "";
@@ -6468,10 +6803,16 @@ async function routeCompanionOnline(
         ...nextStatus,
       };
       if (nextStatus.phase === "complete" && nextStatus.result?.themeId) {
-        currentDevice = {
-          ...currentDevice,
-          activeTheme: nextStatus.result.themeId,
-        };
+        currentDevice = deviceAfterThemeInstall
+          ? {
+              ...currentDevice,
+              ...deviceAfterThemeInstall,
+              activeTheme: nextStatus.result.themeId,
+            }
+          : {
+              ...currentDevice,
+              activeTheme: nextStatus.result.themeId,
+            };
       }
       await route.fulfill({
         status: 200,
@@ -6921,6 +7262,14 @@ async function routeCompanionOnline(
       return;
     }
     if (pathname === "/v1/device") {
+      if (
+        currentStatusThemeInstallJob?.phase === "complete" &&
+        deviceReadFailuresRemaining > 0
+      ) {
+        deviceReadFailuresRemaining -= 1;
+        await route.abort("failed");
+        return;
+      }
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -7028,6 +7377,11 @@ async function routeCompanionOnline(
     });
   };
   await routeCompanionPaths(page, handler);
+  return {
+    setDevice(nextDevice) {
+      currentDevice = nextDevice;
+    },
+  };
 }
 
 async function routeCompanionPaths(page, handler) {
@@ -7537,6 +7891,16 @@ function assetName(raw) {
     return "";
   }
   return new URL(raw).pathname.split("/").pop() || "";
+}
+
+async function waitForEnabled(page, locator, message) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (await locator.isEnabled()) {
+      return;
+    }
+    await page.waitForTimeout(250);
+  }
+  throw new Error(message);
 }
 
 async function assertNoMobileOverflow(page) {

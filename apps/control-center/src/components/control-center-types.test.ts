@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  deviceCanContinueThemeSetup,
+  deviceCompletedThemeSetup,
   deviceIsActive,
   deviceIsReady,
   deviceNeedsExplicitConnect,
+  deviceNeedsThemeSetup,
 } from "./control-center-types";
 
 describe("device connection contract", () => {
@@ -78,5 +81,141 @@ describe("device connection contract", () => {
         ready: false,
       }),
     ).toBe(false);
+  });
+
+  it("shows theme setup only for an active, paired VibeTV whose theme is missing", () => {
+    expect(
+      deviceNeedsThemeSetup({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: false,
+        activeTheme: "theme-missing",
+        health: { ok: true },
+        display: { themeSpec: { active: false, renderOk: true } },
+      }),
+    ).toBe(true);
+    expect(
+      deviceNeedsThemeSetup({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: false,
+        activeTheme: "clippy",
+        health: { ok: true },
+        display: { themeSpec: { active: true, renderOk: false } },
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps unrelated incomplete device states out of theme setup", () => {
+    expect(
+      deviceNeedsThemeSetup({
+        active: true,
+        connected: false,
+        paired: true,
+        ready: false,
+        activeTheme: "theme-missing",
+      }),
+    ).toBe(false);
+    expect(
+      deviceNeedsThemeSetup({
+        active: true,
+        connected: true,
+        paired: false,
+        ready: false,
+        activeTheme: "theme-missing",
+      }),
+    ).toBe(false);
+    expect(
+      deviceNeedsThemeSetup({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: false,
+        activeTheme: "theme-missing",
+        health: { ok: false },
+      }),
+    ).toBe(false);
+    expect(
+      deviceNeedsThemeSetup({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: false,
+        activeTheme: "theme-missing",
+      }),
+    ).toBe(false);
+    expect(
+      deviceNeedsThemeSetup({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: false,
+        activeTheme: "theme-missing",
+        health: { ok: true },
+        stream: { healthy: false, running: true },
+      }),
+    ).toBe(false);
+    expect(
+      deviceNeedsThemeSetup({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: false,
+        activeTheme: "theme-missing",
+        health: { ok: true },
+        display: { themeSpec: { active: false, renderOk: false } },
+      }),
+    ).toBe(false);
+    expect(
+      deviceNeedsThemeSetup({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: true,
+        activeTheme: "theme-missing",
+        health: { ok: false },
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps an entered theme setup eligible until the complete device readback", () => {
+    expect(
+      deviceCanContinueThemeSetup({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: false,
+        activeTheme: "synthwave",
+        health: { ok: true },
+        stream: { healthy: true, running: true },
+        display: { themeSpec: { active: true, renderOk: true } },
+      }),
+    ).toBe(true);
+    expect(
+      deviceCompletedThemeSetup({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: false,
+        activeTheme: "synthwave",
+        health: { ok: true },
+        stream: { healthy: true, running: true },
+        display: { themeSpec: { active: true, renderOk: true } },
+      }),
+    ).toBe(false);
+    expect(
+      deviceCompletedThemeSetup({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: true,
+        activeTheme: "synthwave",
+        health: { ok: true },
+        stream: { healthy: true, running: true },
+        display: { themeSpec: { active: true, renderOk: true } },
+      }),
+    ).toBe(true);
   });
 });

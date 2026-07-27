@@ -479,3 +479,44 @@ export function deviceNeedsExplicitConnect(
     device.stream?.errorCode === "device_pairing_required"
   );
 }
+
+export function deviceNeedsThemeSetup(
+  device: DeviceInfo | null | undefined,
+) {
+  if (!deviceCanContinueThemeSetup(device) || device?.ready === true) {
+    return false;
+  }
+
+  return (
+    device?.activeTheme === "theme-missing" ||
+    device?.display?.themeSpec?.active === false
+  );
+}
+
+export function deviceCanContinueThemeSetup(
+  device: DeviceInfo | null | undefined,
+) {
+  if (
+    device?.active !== true ||
+    device.connected !== true ||
+    device.paired !== true ||
+    device.health?.ok !== true ||
+    device.stream?.healthy === false ||
+    device.display?.themeSpec?.renderOk === false
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+export function deviceCompletedThemeSetup(
+  device: DeviceInfo | null | undefined,
+) {
+  return (
+    deviceCanContinueThemeSetup(device) &&
+    device?.ready === true &&
+    device.display?.themeSpec?.active === true &&
+    device.display.themeSpec.renderOk === true
+  );
+}
