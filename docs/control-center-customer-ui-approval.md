@@ -5,6 +5,12 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-07-27 — Customer-safe internal preview wording
+
+- User approval: The user explicitly instructed Codex to continue after the KISS implementation and review.
+- Approved customer-visible result: No customer-visible change. The live preview test describes the backward-compatible render-cache fallback without exposing the internal Companion service name.
+- Approved files: Live VibeTV preview unit test and this approval log.
+
 ## 2026-07-27 — KISS refactor preserves approved previews
 
 - User approval: The user explicitly requested a neutral KISS review and instructed that its findings be implemented, with the goal of substantially less code.

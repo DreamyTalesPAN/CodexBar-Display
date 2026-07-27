@@ -20,7 +20,7 @@ const lane1: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 1 };
 const lane2: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 2 };
 
 describe("dynamic usage slot preview", () => {
-  it("uses an old Companion cache only when its path matches the active Custom Theme", async () => {
+  it("uses a legacy render cache only when its path matches the active Custom Theme", async () => {
     const oldCompanionPack = {
       themeId: "my-custom",
       spec: { p: [] },
