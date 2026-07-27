@@ -4,6 +4,20 @@ Wenn du fertig bist, laber den Nutzer nicht voll mit "Wenn du willst ...", solan
 Im Deutschen benutzt du Umlaute.
 Bevor du pro Chat anfängst zu bauen, prüfe einmal, ob der Remote-Branch vor lokal ist. Falls ja, erst fetchen. Nur einmal pro Chat.
 
+## Primary Development Principle: Maximum Simplicity, Minimum Code
+
+- The goal of every change is the desired outcome with as little code, complexity, state, abstraction, and special-case handling as possible.
+- Always work in this order:
+  1. Delete unnecessary code.
+  2. Simplify or consolidate existing code.
+  3. Write new code only when the first two steps are insufficient.
+- Before adding code, check whether deleting or simplifying existing code can achieve the goal.
+- Prefer one small central solution over multiple local special cases.
+- Do not add speculative abstractions, frameworks, configuration options, fallbacks, or compatibility layers without a concrete current requirement.
+- When multiple solutions are correct, choose the one with less code and fewer moving parts.
+- Before finishing, review the complete diff against `main` and remove everything that is not strictly required for the desired outcome.
+- Simplicity does not mean omitting required functionality, tests, error handling, or safety mechanisms.
+
 ## Merge-, Release- und Production-Guardrails
 
 - Niemals `gh pr merge`, `git merge` nach `main`, `git push origin main`, `git tag`, `git push origin refs/tags/*`, `gh release ...` oder einen Release-Workflow auslösen, außer der Nutzer gibt in der aktuellen Unterhaltung eine explizite Freigabe für genau diese Aktion und genau dieses Ziel.
