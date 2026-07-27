@@ -466,6 +466,19 @@ export function deviceIsReady(device: DeviceInfo | null | undefined) {
   return device?.ready === true;
 }
 
+export function deviceIsWaitingForUsage(
+  device: DeviceInfo | null | undefined,
+) {
+  return Boolean(
+    device?.connected === true &&
+      device.paired !== false &&
+      device.ready !== true &&
+      device.stream?.running === true &&
+      device.stream.healthy !== true &&
+      !device.stream.errorCode,
+  );
+}
+
 export function deviceIsActive(device: DeviceInfo | null | undefined) {
   return device?.active === true;
 }

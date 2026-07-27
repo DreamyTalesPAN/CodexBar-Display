@@ -39,7 +39,11 @@ import type {
   DeviceInfo,
   UsageSnapshot,
 } from "./control-center-types";
-import { deviceIsActive, deviceIsReady } from "./control-center-types";
+import {
+  deviceIsActive,
+  deviceIsReady,
+  deviceIsWaitingForUsage,
+} from "./control-center-types";
 import {
   LiveVibeTVPreview,
   type DisplayFrameSnapshot,
@@ -67,9 +71,14 @@ export function OverviewScreen({
   requiresMacAppMigration = false,
 }: OverviewScreenProps) {
   const pairingRejected = device?.paired === false;
-  const connected = deviceIsReady(device);
-  const displayReady = connected;
-  const reconnecting = deviceIsActive(device) && !connected && !pairingRejected;
+  const connected = device?.connected === true && !pairingRejected;
+  const displayReady = deviceIsReady(device);
+  const waitingForUsage = deviceIsWaitingForUsage(device);
+  const reconnecting =
+    deviceIsActive(device) &&
+    !deviceIsReady(device) &&
+    !pairingRejected &&
+    !waitingForUsage;
   const hero = buildHeroCopy(companionStatus, connected);
   const firmwareUpdateAvailable = hasFirmwareUpdate(firmwareUpdate);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
@@ -126,11 +135,19 @@ export function OverviewScreen({
               detail={
                 displayReady
                   ? undefined
-                  : "Waiting for a fresh image from VibeTV."
+                  : waitingForUsage
+                    ? "This can take up to 30 seconds."
+                    : "Waiting for a fresh image from VibeTV."
               }
               icon={<Monitor aria-hidden />}
               label="Display"
-              value={displayReady ? "Live" : "Waiting for first image"}
+              value={
+                displayReady
+                  ? "Live"
+                  : waitingForUsage
+                    ? "Waiting for usage"
+                    : "Waiting for first image"
+              }
             />
             <StatusItem
               badge={firmwareUpdateAvailable ? "Update" : undefined}

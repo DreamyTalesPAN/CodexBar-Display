@@ -7,7 +7,10 @@ import type {
   DeviceInfo,
   UsageSnapshot,
 } from "./control-center-types";
-import { deviceIsReady } from "./control-center-types";
+import {
+  deviceIsReady,
+  deviceIsWaitingForUsage,
+} from "./control-center-types";
 import {
   companionRequestUrl,
   needsLoopbackTargetAddressSpace,
@@ -273,8 +276,11 @@ export function LiveVibeTVPreview({
   const themeSpecHash = normalizeThemeSpecHash(
     device?.display?.themeSpec?.hash,
   );
-  const deviceConnected = deviceIsReady(device);
-  const effectiveDisplayFrame = deviceConnected ? displayFrame : null;
+  const deviceConnected =
+    device?.connected === true && device.paired !== false;
+  const deviceReady = deviceIsReady(device);
+  const waitingForUsage = deviceIsWaitingForUsage(device);
+  const effectiveDisplayFrame = deviceReady ? displayFrame : null;
   const frame = hasRenderableUsage(effectiveDisplayFrame)
     ? buildFrameData(
         effectiveDisplayFrame?.savedAt || usage?.generatedAt,
@@ -358,8 +364,14 @@ export function LiveVibeTVPreview({
   return (
     <figure className="w-full max-w-[520px]">
       <VibeTVCaseShell>
-        {!deviceConnected ? (
+        {!deviceConnected || (!deviceReady && !waitingForUsage) ? (
           <ThemePreviewOffline />
+        ) : waitingForUsage ? (
+          <ThemeSpecLoading
+            message="Waiting for usage…"
+            status="loading"
+            themeId={themeId}
+          />
         ) : pack?.spec && frame ? (
           <ThemeSpecSVG
             assets={pack.assets || {}}
@@ -913,21 +925,27 @@ function PixelRows({
 }
 
 function ThemeSpecLoading({
+  message,
   status,
   themeId,
 }: {
+  message?: string;
   status: "idle" | "loading" | "ready" | "error";
   themeId: string;
 }) {
-  const message =
-    status === "error"
+  const content =
+    message ||
+    (status === "error"
       ? "Preview unavailable"
       : themeId
         ? "Loading preview"
-        : "Waiting for theme";
+        : "Waiting for theme");
   return (
-    <div className="grid aspect-square w-full place-items-center whitespace-normal break-words border border-[#747A60] bg-[#111111] p-3 text-center font-mono text-[10px] font-bold uppercase leading-tight text-[#CCFF00] sm:text-xs">
-      {message}
+    <div
+      className="grid aspect-square w-full place-items-center whitespace-normal break-words border border-[#747A60] bg-[#111111] p-3 text-center font-mono text-[10px] font-bold uppercase leading-tight text-[#CCFF00] sm:text-xs"
+      role={message ? "status" : undefined}
+    >
+      {content}
     </div>
   );
 }
