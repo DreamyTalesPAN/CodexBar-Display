@@ -77,6 +77,31 @@ func TestParseProviderTokenStats(t *testing.T) {
 	}
 }
 
+func TestParseProviderTokenStatsKeepsSuccessfulZeroResult(t *testing.T) {
+	stats, err := parseProviderTokenStats([]byte(`[
+		{
+			"provider":"codex",
+			"updatedAt":"2026-07-27T12:00:00Z",
+			"daily":[],
+			"totals":{"totalTokens":0}
+		}
+	]`))
+	if err != nil {
+		t.Fatalf("parse zero token stats: %v", err)
+	}
+
+	codex, ok := stats["codex"]
+	if !ok || codex.Cost == nil {
+		t.Fatalf("expected successful zero result to remain available, got %#v", stats)
+	}
+	if codex.SessionTokens != 0 || codex.WeekTokens != 0 || codex.TotalTokens != 0 {
+		t.Fatalf("expected zero token counters, got %+v", codex)
+	}
+	if codex.Cost.Last30DaysTokens != 0 || len(codex.Cost.Daily) != 0 {
+		t.Fatalf("expected an explicit empty cost result, got %+v", codex.Cost)
+	}
+}
+
 func TestMergeTokenStatsAddsFrameFields(t *testing.T) {
 	resetTokenStatsTestGlobals()
 	defer resetTokenStatsTestGlobals()

@@ -4,6 +4,7 @@ import { UsageScreen } from "./usage-screen";
 
 const usage = {
   ok: true,
+  tokenUsageReady: true,
   currentProvider: "codex",
   providers: [
     {
@@ -23,6 +24,27 @@ const usage = {
       },
     },
   ],
+};
+
+const codexPreference = {
+  id: "provider.codex.enabled",
+  section: "providers",
+  owner: "codexbar" as const,
+  type: "boolean" as const,
+  label: "Codex",
+  value: true,
+  effectiveValue: true,
+  allowsDefault: false,
+  availability: {
+    state: "available" as const,
+  },
+  writeStrategy: "codexbar_command" as const,
+  writable: true,
+  health: {
+    state: "healthy",
+    service: "operational",
+    message: "Provider is working.",
+  },
 };
 
 function renderUsage(busyAction: string | null = null) {
@@ -80,6 +102,61 @@ describe("UsageScreen", () => {
     expect(html).toContain("Try again</button>");
     expect(html).not.toContain("Loading usage");
     expect(html).not.toContain("CodexBar");
+  });
+
+  it("keeps token usage loading while an already loaded provider list remains visible", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        onPreferenceChange={vi.fn()}
+        onRefresh={vi.fn()}
+        pendingPreferenceIds={new Set()}
+        preferences={[codexPreference]}
+        usage={{
+          ...usage,
+          tokenUsageReady: false,
+          providers: usage.providers.map((provider) => ({
+            ...provider,
+            cost: undefined,
+            totalTokens: 9000,
+          })),
+        }}
+      />,
+    );
+
+    expect(html).toContain("Loading usage");
+    expect(html).toContain("AI providers");
+    expect(html).toContain('aria-label="Disable Codex"');
+    expect(html).not.toContain("Total tokens in the last 30 days");
+    expect(html).not.toContain("Tokens used over time");
+  });
+
+  it("renders a successful zero token result instead of staying in loading", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        onPreferenceChange={vi.fn()}
+        onRefresh={vi.fn()}
+        pendingPreferenceIds={new Set()}
+        preferences={[]}
+        usage={{
+          ...usage,
+          tokenUsageReady: true,
+          providers: usage.providers.map((provider) => ({
+            ...provider,
+            session: 0,
+            weekly: 0,
+            cost: {
+              daily: [],
+            },
+          })),
+        }}
+      />,
+    );
+
+    expect(html).toContain("zero tokens");
+    expect(html).toContain("No data");
+    expect(html).not.toContain("Loading usage");
   });
 
   it("shows a dedicated token usage refresh action", () => {

@@ -669,6 +669,7 @@ type usageResponse struct {
 	GeneratedAt     string              `json:"generatedAt"`
 	Source          string              `json:"source"`
 	UsageMode       string              `json:"usageMode"`
+	TokenUsageReady bool                `json:"tokenUsageReady"`
 	CurrentProvider string              `json:"currentProvider,omitempty"`
 	Providers       []usageProviderInfo `json:"providers"`
 }
@@ -1353,19 +1354,20 @@ func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
 		if !ok {
 			continue
 		}
-		if provider.SessionTokens == 0 {
-			provider.SessionTokens = cached.SessionTokens
-		}
-		if provider.WeekTokens == 0 {
-			provider.WeekTokens = cached.WeekTokens
-		}
-		if provider.TotalTokens == 0 {
-			provider.TotalTokens = cached.TotalTokens
-		}
 		if provider.Cost == nil {
+			if provider.SessionTokens == 0 {
+				provider.SessionTokens = cached.SessionTokens
+			}
+			if provider.WeekTokens == 0 {
+				provider.WeekTokens = cached.WeekTokens
+			}
+			if provider.TotalTokens == 0 {
+				provider.TotalTokens = cached.TotalTokens
+			}
 			provider.Cost = cached.Cost
 		}
 	}
+	fresh.TokenUsageReady = usageProvidersHaveTokenResult(fresh.Providers)
 	return fresh
 }
 
@@ -1837,6 +1839,7 @@ func usageResponseFromPersisted(now time.Time, usage daemon.PersistedUsage) usag
 	resp.CurrentProvider = strings.TrimSpace(usage.CurrentProvider)
 	resp.Providers = providers
 	resp.UsageMode = usageModeForProviders(providers)
+	resp.TokenUsageReady = usageProvidersHaveTokenResult(providers)
 	if resp.CurrentProvider == "" && len(providers) > 0 {
 		resp.CurrentProvider = providers[0].ID
 	}
@@ -1853,6 +1856,7 @@ func usageResponseFromParsed(now time.Time, parsed []codexbar.ParsedFrame) usage
 	resp := emptyUsageResponse(now, "codexbar")
 	resp.Providers = providers
 	resp.UsageMode = usageModeForProviders(providers)
+	resp.TokenUsageReady = usageProvidersHaveTokenResult(providers)
 	if len(providers) > 0 {
 		resp.CurrentProvider = providers[0].ID
 	}
@@ -1875,6 +1879,15 @@ func emptyUsageResponse(now time.Time, source string) usageResponse {
 func usageResponseHasFreshProvider(resp usageResponse) bool {
 	for _, provider := range resp.Providers {
 		if !provider.Stale {
+			return true
+		}
+	}
+	return false
+}
+
+func usageProvidersHaveTokenResult(providers []usageProviderInfo) bool {
+	for _, provider := range providers {
+		if provider.Cost != nil {
 			return true
 		}
 	}

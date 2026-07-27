@@ -96,13 +96,15 @@ export function UsageScreen({
   onPreferenceChange,
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
-  const loading =
-    companionStatus === "online" && !usage && !usageError;
   const providers = filterVisibleProviders(
     usage?.providers || [],
     usage?.currentProvider,
   );
   const hasProviders = providers.length > 0;
+  const tokenUsageReady =
+    usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);
+  const tokenUsageLoading =
+    companionStatus === "online" && !usageError && !tokenUsageReady;
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -130,7 +132,9 @@ export function UsageScreen({
           </Alert>
         ) : null}
 
-        {hasProviders ? (
+        {tokenUsageLoading ? (
+          <UsageEmptyState companionStatus={companionStatus} loading />
+        ) : hasProviders ? (
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}
             providers={providers}
@@ -138,7 +142,7 @@ export function UsageScreen({
           />
         ) : null}
 
-        {hasProviders ? (
+        {!tokenUsageLoading && hasProviders ? (
           <ol className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
             {providers.map((provider) => (
               <li className="min-w-0" key={provider.id}>
@@ -146,12 +150,12 @@ export function UsageScreen({
               </li>
             ))}
           </ol>
-        ) : usageError ? null : (
+        ) : !tokenUsageLoading && !usageError ? (
           <UsageEmptyState
             companionStatus={companionStatus}
-            loading={loading || refreshing}
+            loading={false}
           />
-        )}
+        ) : null}
 
         <ProviderPreferencesPanel
           error={preferencesError}
@@ -379,7 +383,7 @@ function TokenUsageOverTimePanel({
   const providerNames = displayedHistories.map(
     ({ provider }) => provider.label || provider.id,
   );
-  const last30DaysTokens = getLast30DaysTokenTotal(providers);
+  const last30DaysTokens = getLast30DaysTokenTotal(providers) ?? 0;
 
   return (
     <>
@@ -775,6 +779,12 @@ function providerHasTokens(provider: UsageProviderInfo): boolean {
     (provider.weekTokens || 0) > 0 ||
     (provider.totalTokens || 0) > 0
   );
+}
+
+function usageProvidersHaveTokenResult(
+  providers: UsageProviderInfo[],
+): boolean {
+  return providers.some((provider) => provider.cost != null);
 }
 
 function providerHasCost(provider: UsageProviderInfo): boolean {
