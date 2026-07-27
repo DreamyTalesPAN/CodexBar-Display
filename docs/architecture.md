@@ -5,8 +5,10 @@ VibeTV has four visible pieces:
 1. **VibeTV hardware**: the physical WiFi display on the desk.
 2. **CodexBar**: the upstream usage collector for AI providers.
 3. **VibeTV Mac App**: the local `codexbar-display` process on the customer's Mac.
-4. **Control Center**: the local browser app served by the Mac App at
-   `http://127.0.0.1:47832/control-center`.
+4. **Control Center**: the local browser app served by the Mac App. It prefers
+   `http://127.0.0.1:47832/control-center` and automatically uses another
+   loopback port when that port belongs to an unrelated process. It never
+   starts a second display writer beside another VibeTV service.
 
 The hosted page at `https://app.vibetv.shop` is the download entrypoint. It
 offers the verified Mac App DMG. After installation, the customer opens the Mac
@@ -26,7 +28,7 @@ CodexBar reads AI usage on the Mac
 ```text
 AI provider state
   -> CodexBar
-  -> VibeTV Mac App on 127.0.0.1:47832
+  -> VibeTV Mac App on a private loopback port
   -> browser running the local Control Center
   -> codexbar-display sends frames to VibeTV over LAN
   -> VibeTV screen

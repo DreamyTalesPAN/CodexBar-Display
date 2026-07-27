@@ -9,15 +9,129 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 func runURLSchemeTests() {
+    let fallbackEndpoint = RuntimeEndpoint(
+        origin: "http://127.0.0.1:54321",
+        pid: 83979
+    )
+    require(
+        validatedRuntimeEndpointOrigin(fallbackEndpoint)?.port == 54321,
+        "a private loopback fallback endpoint must be accepted"
+    )
+    for invalid in [
+        RuntimeEndpoint(origin: "http://0.0.0.0:54321", pid: 83979),
+        RuntimeEndpoint(origin: "https://127.0.0.1:54321", pid: 83979),
+        RuntimeEndpoint(origin: "http://127.0.0.1:54321/path", pid: 83979),
+        RuntimeEndpoint(origin: "http://127.0.0.1:54321", pid: 0),
+    ] {
+        require(
+            validatedRuntimeEndpointOrigin(invalid) == nil,
+            "runtime endpoint discovery must reject non-private or malformed endpoints"
+        )
+    }
+    require(
+        parseLsofListenerProcesses(
+            """
+            p83979
+            cnode
+            p91234
+            cpython3
+            """
+        ) == [
+            PortListenerProcess(pid: 83979, name: "node"),
+            PortListenerProcess(pid: 91234, name: "python3"),
+        ],
+        "port diagnostics must preserve process names and pids"
+    )
+    require(
+        portConflictDetail(
+            process: PortListenerProcess(pid: 83979, name: "node"),
+            port: 47832
+        ) == "“node” (PID 83979) is using VibeTV’s local port 47832. Quit the app or stop the process, then click Try again.",
+        "the native failure screen must identify the blocking process and pid"
+    )
     let repairStatus = InstallationStatus(
         title: "Usage service needs repair",
         detail: "Repair the usage service before continuing.",
         failed: true,
-        retryTitle: "Repair usage service"
+        retryTitle: "Repair usage service",
+        kind: .standard
     )
     require(
         repairStatus.retryTitle == "Repair usage service",
         "native installation status must preserve its repair CTA across window reopening"
+    )
+    let approvalStatus = InstallationFailure.backgroundApproval.installationStatus
+    require(
+        approvalStatus.title == "Allow VibeTV to run in the background"
+            && approvalStatus.detail
+                == "VibeTV needs permission to keep its local service running."
+            && approvalStatus.retryTitle == "Try again"
+            && approvalStatus.kind == .backgroundApproval,
+        "native installation status must preserve background approval across window reopening"
+    )
+    let serviceStatus = InstallationFailure.serviceStart.installationStatus
+    require(
+        serviceStatus.title == "VibeTV’s background service couldn’t start"
+            && serviceStatus.detail
+                == "Restart VibeTV’s local service to continue."
+            && serviceStatus.retryTitle == "Restart service"
+            && serviceStatus.kind == .serviceRestart,
+        "service startup failures must offer the focused restart recovery"
+    )
+    let updateStatus = InstallationFailure.updateMismatch.installationStatus
+    require(
+        updateStatus.title == "VibeTV update didn’t finish"
+            && updateStatus.detail
+                == "The app and its background service are on different versions."
+            && updateStatus.retryTitle == "Restart VibeTV"
+            && updateStatus.kind == .updateMismatch,
+        "version mismatches must explain the interrupted update"
+    )
+    let incompleteStatus = InstallationFailure.applicationIncomplete.installationStatus
+    require(
+        incompleteStatus.title == "VibeTV Control Center is incomplete"
+            && incompleteStatus.detail
+                == "Required application files are missing or damaged."
+            && incompleteStatus.retryTitle == "Download VibeTV again"
+            && incompleteStatus.kind == .applicationIncomplete,
+        "missing app resources must direct the customer to a fresh download"
+    )
+    let legacyStatus = InstallationFailure.legacyRepair.installationStatus
+    require(
+        legacyStatus.title == "Your previous VibeTV installation needs repair"
+            && legacyStatus.detail
+                == "VibeTV couldn’t safely replace the older background service."
+            && legacyStatus.retryTitle == "Repair installation"
+            && legacyStatus.kind == .legacyRepair,
+        "legacy migration failures must offer installation repair"
+    )
+    require(
+        installationPreviewFailure("background-approval") == .backgroundApproval
+            && installationPreviewFailure("service-start") == .serviceStart
+            && installationPreviewFailure("update-mismatch") == .updateMismatch
+            && installationPreviewFailure("application-incomplete")
+                == .applicationIncomplete
+            && installationPreviewFailure("legacy-repair") == .legacyRepair
+            && installationPreviewFailure("unknown") == nil,
+        "local preview must expose every approved recovery state and nothing else"
+    )
+    require(
+        installationFailure(
+            for: .versionMismatch(expected: "1.0.0", actual: "0.9.0")
+        ) == .updateMismatch
+            && installationFailure(for: .appMetadataMissing) == .updateMismatch
+            && installationFailure(for: .requestFailed("offline"))
+                == .serviceStart,
+        "runtime diagnostics must select a useful customer recovery state"
+    )
+    let backgroundApprovalSequence = [
+        runtimeServiceRegistrationOutcome(for: .requiresApproval),
+        runtimeServiceRegistrationOutcome(for: .enabled),
+        runtimeServiceRegistrationOutcome(for: .requiresApproval),
+    ]
+    require(
+        backgroundApprovalSequence == [.requiresApproval, .ready, .requiresApproval],
+        "background approval must recover after consent and return when consent is revoked"
     )
     let redactedReport = AppDelegate.redactReportValue([
         "token": "raw-token",
@@ -90,15 +204,17 @@ func runURLSchemeTests() {
         "healthy native runtime must refresh the WebView"
     )
     require(
-        !RuntimePreparationOutcome.legacyRuntimeRestored.shouldReloadControlCenter,
-        "a restored legacy runtime must keep the WebView closed until native installation succeeds"
-    )
-    require(
         !RuntimePreparationOutcome.codexBarRepairRequired.shouldReloadControlCenter,
         "a failed CodexBar installation must keep customer setup blocked"
     )
     require(
-        !RuntimePreparationOutcome.keepCurrentPage.shouldReloadControlCenter,
+        !RuntimePreparationOutcome.failure(.backgroundApproval)
+            .shouldReloadControlCenter,
+        "background approval must keep the WebView closed until the runtime is verified"
+    )
+    require(
+        !RuntimePreparationOutcome.failure(.legacyRepair)
+            .shouldReloadControlCenter,
         "uncertain runtime state must not force a misleading WebView refresh"
     )
     require(

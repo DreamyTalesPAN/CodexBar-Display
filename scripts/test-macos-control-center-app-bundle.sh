@@ -523,6 +523,7 @@ expected_arguments = [
     "127.0.0.1:47832",
     "--api-dev-origin",
     "http://127.0.0.1:47832",
+    "--api-fallback",
 ]
 if agent.get("ProgramArguments") != expected_arguments:
     raise SystemExit(
@@ -577,7 +578,11 @@ required_source = [
     'unregisterLocalPreviewRuntimeService()',
     '"CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL":',
     'runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"',
-    'runtimeHealthURLString = "http://127.0.0.1:47832/v1/runtime-health"',
+    'defaultRuntimeOriginString = "http://127.0.0.1:47832"',
+    'runtimeEndpointFileName = "runtime-endpoint.json"',
+    "validatedRuntimeEndpointOrigin(",
+    "runtimeOriginCandidates()",
+    "rediscoverRuntimeOriginForNavigationRetry()",
     'nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"',
     "webView.customUserAgent = nativeControlCenterUserAgent(",
     "timeout: runtimeInitialHealthTimeout",
@@ -586,9 +591,9 @@ required_source = [
     '"--vibetv-validation-unregister-runtime"',
     '"VIBETV_RUNTIME_VALIDATION_UNREGISTER"',
     "CODEX_RUNTIME_UNREGISTER_OK label=",
-    "let ownership = verifyRuntimeListenerOwnership()",
+    "let ownership = verifyRuntimeListenerOwnership(",
     'executable: "/usr/sbin/lsof"',
-    '"-iTCP@127.0.0.1:47832"',
+    '"-iTCP@127.0.0.1:\\(port)"',
     '"-sTCP:LISTEN"',
     'URL(fileURLWithPath: "/Library/LaunchAgents"',
     'launchctlExitStatus(["disable", service])',
@@ -612,6 +617,8 @@ required_source = [
     "requiresApplicationInstallation(Bundle.main.bundleURL)",
     "presentInstallationRequiredAlert()",
     "RuntimePreparationOutcome",
+    "RuntimeServiceRegistrationOutcome",
+    "runtimeServiceRegistrationOutcome(",
     "pendingNativeUpdateBlocksBundle(",
     "pendingNativeUpdateIsExpired(",
     "discardMismatchedPendingNativeUpdate()",
@@ -623,10 +630,45 @@ required_source = [
     '"backgroundItems": filteredBackgroundItems(',
     'Task.detached(priority: .userInitiated)',
     'withJSONObject: redactReportValue(report)',
-    '"--max-time", "40"',
+    '"--max-time",',
     'title: "Create report"',
     'title: "Starting Control Center"',
     "retryTitle: status.retryTitle",
+    "kind: status.kind",
+    "case .failure(let failure):",
+    "SMAppService.openSystemSettingsLoginItems()",
+    'installationPreviewEnvironmentKey = "VIBETV_INSTALLATION_PREVIEW_STATE"',
+    'title: "Allow VibeTV to run in the background"',
+    'detail: "VibeTV needs permission to keep its local service running."',
+    'title: "Open Login Items"',
+    "action: #selector(openSystemSettingsLoginItems)",
+    "kind: .backgroundApproval",
+    "installationStatus?.kind == .backgroundApproval",
+    'title: "VibeTV’s background service couldn’t start"',
+    'detail: "Restart VibeTV’s local service to continue."',
+    'title: "Restart service"',
+    "action: #selector(retryRuntimePreparation)",
+    "kind: .serviceRestart",
+    'title: "VibeTV update didn’t finish"',
+    'detail: "The app and its background service are on different versions."',
+    'title: "Restart VibeTV"',
+    "action: #selector(restartControlCenterAfterFailedUpdate)",
+    "@objc private func restartControlCenterAfterFailedUpdate()",
+    'title: "Check for updates"',
+    "action: #selector(checkForUpdates)",
+    "kind: .updateMismatch",
+    'title: "VibeTV Control Center is incomplete"',
+    'detail: "Required application files are missing or damaged."',
+    'title: "Download VibeTV again"',
+    "action: #selector(downloadVibeTVAgain)",
+    "kind: .applicationIncomplete",
+    'title: "Your previous VibeTV installation needs repair"',
+    'detail: "VibeTV couldn’t safely replace the older background service."',
+    'title: "Repair installation"',
+    "action: #selector(restartControlCenter)",
+    "kind: .legacyRepair",
+    "button.intrinsicContentSize.width + 32",
+    "button.widthAnchor.constraint(equalToConstant: shadcnButtonWidth)",
     'codexBarBundleIdentifier = "com.steipete.codexbar"',
     'codexBarPinnedVersion = "0.44.0"',
     'codexBarMinimumCompatibleVersion = "0.23.0"',
@@ -641,7 +683,9 @@ required_source = [
     'environment["CODEXBAR_CONFIG"] = configURL.path',
     '[.posixPermissions: 0o700]',
     '[.posixPermissions: 0o600]',
-    'title: "Installation needs attention"',
+    '"VibeTV couldn’t start"',
+    "runtimePortConflictDetail()",
+    "parseLsofListenerProcesses(",
     "activeNavigation = webView?.load(",
     ".reloadIgnoringLocalCacheData",
     'alert.addButton(withTitle: "Open Applications")',
@@ -654,6 +698,14 @@ for snippet in required_source:
 
 if "support.isHidden = !failed" in source:
     raise SystemExit("Create report must remain visible on every native setup screen")
+if '"Background activity is off"' in source:
+    raise SystemExit("background approval UI must stay limited to headline, detail, and actions")
+if '"Installation could not be verified"' in source:
+    raise SystemExit("runtime failures must use a specific customer recovery state")
+if '"The Mac App, runtime, and local listener did not reach one verified state."' in source:
+    raise SystemExit("runtime failures must not expose the generic verification detail")
+if "equalToConstant: 660" in source:
+    raise SystemExit("recovery buttons must hug their content instead of stretching")
 
 launch_start = source.find("func applicationDidFinishLaunching(")
 launch_end = source.find("func application(_ application:", launch_start)
@@ -679,10 +731,10 @@ prepare_runtime = preparation_method.find(
 )
 native_case = preparation_method.find("case .nativeRuntimeReady:", prepare_runtime)
 webview_after_verify = preparation_method.find("self.presentControlCenter()", native_case)
-legacy_case = preparation_method.find("case .legacyRuntimeRestored:", native_case)
+failure_case = preparation_method.find("case .failure(let failure):", native_case)
 if not (
     0 <= status_start < preflight_call < preparation_task < prepare_runtime
-    < native_case < webview_after_verify < legacy_case
+    < native_case < webview_after_verify < failure_case
 ):
     raise SystemExit(
         "native app must keep the WebView closed until app, runtime, and listener verification succeeds"
@@ -737,7 +789,7 @@ if "loadControlCenter(cachePolicy: .reloadIgnoringLocalCacheData)" not in create
         "native app must bypass stale Control Center HTML on the first verified WebView load"
     )
 
-registration = source.find("guard await ensureBundledRuntimeServiceRegistered()")
+registration = source.find("switch await ensureBundledRuntimeServiceRegistered()")
 stop_legacy = source.find("if !stopLegacyLaunchAgents(legacyStates)")
 health_gate = source.find("var health = await waitForHealthyRuntime")
 legacy_app_migration = source.find(
@@ -846,10 +898,23 @@ if "timeout: TimeInterval = runtimeHealthTimeout" not in health_method:
         "native runtime recovery must retain the full health timeout after the fast first check"
     )
 if health_method.find("evaluateRuntimeHealth(") > health_method.find(
-    "verifyRuntimeListenerOwnership()"
+    "verifyRuntimeListenerOwnership("
 ):
     raise SystemExit(
         "HTTP health must be evaluated before listener ownership is accepted"
+    )
+
+reload_method = source[
+    source.find("private func scheduleReload()"):
+    source.find("\\n}\\n\\n#if canImport(Sparkle)", source.find("private func scheduleReload()"))
+]
+rediscover_runtime = reload_method.find(
+    "await self.rediscoverRuntimeOriginForNavigationRetry()"
+)
+reload_control_center = reload_method.find("self.loadControlCenter(")
+if not (0 <= rediscover_runtime < reload_control_center):
+    raise SystemExit(
+        "native navigation retry must rediscover the verified runtime endpoint before reloading"
     )
 
 register_method = source[
@@ -863,6 +928,7 @@ if "recordCurrentRuntimeBundleVersion" in register_method:
 
 for forbidden in [
     "companionProcess",
+    "Darwin.kill",
     "func applicationShouldTerminate(",
     "func applicationWillTerminate(",
 ]:

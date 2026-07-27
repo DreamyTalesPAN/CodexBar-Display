@@ -10,12 +10,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -68,6 +70,111 @@ func TestParseDaemonOptionsWiFiTarget(t *testing.T) {
 	}
 	if !opts.Once {
 		t.Fatalf("expected once option")
+	}
+}
+
+func TestParseDaemonCommandOptionsAllowsAPIFallback(t *testing.T) {
+	opts, err := parseDaemonCommandOptions([]string{
+		"--transport", "wifi",
+		"--api-addr", "127.0.0.1:47832",
+		"--api-fallback",
+	})
+	if err != nil {
+		t.Fatalf("parseDaemonCommandOptions returned error: %v", err)
+	}
+	if !opts.APIFallback {
+		t.Fatal("expected API fallback to be enabled")
+	}
+}
+
+func TestListenCompanionAPIFallsBackWithoutStoppingForeignListener(t *testing.T) {
+	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"companion":"unrelated"}`)
+	}))
+	defer foreign.Close()
+	foreignAddr := foreign.Listener.Addr().String()
+
+	listener, err := listenCompanionAPI(foreignAddr, true)
+	if err != nil {
+		t.Fatalf("listen fallback: %v", err)
+	}
+	defer listener.Close()
+
+	if listener.Addr().String() == foreignAddr {
+		t.Fatalf("fallback reused occupied address %s", listener.Addr())
+	}
+	conn, err := net.DialTimeout("tcp", foreignAddr, time.Second)
+	if err != nil {
+		t.Fatalf("foreign listener was disturbed: %v", err)
+	}
+	conn.Close()
+}
+
+func TestListenCompanionAPIRejectsSecondVibeTVService(t *testing.T) {
+	existing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/status" {
+			http.NotFound(w, request)
+			return
+		}
+		time.Sleep(1100 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(
+			w,
+			`{"companion":{"status":"ready","version":"1.0.0","runtime":{"executable":"/private/tmp/vibetv-ai-theme-companion"}}}`,
+		)
+	}))
+	defer existing.Close()
+
+	listener, err := listenCompanionAPI(existing.Listener.Addr().String(), true)
+	if listener != nil {
+		listener.Close()
+		t.Fatal("second VibeTV service received a fallback listener")
+	}
+	if !errors.Is(err, syscall.EADDRINUSE) {
+		t.Fatalf("second VibeTV service error=%v want address-in-use", err)
+	}
+}
+
+func TestRuntimeEndpointWriteIsPrivateAndAtomic(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "run", "runtime-endpoint.json")
+	want := runtimeEndpoint{Origin: "http://127.0.0.1:54321", PID: 42}
+	if err := writeRuntimeEndpoint(path, want); err != nil {
+		t.Fatalf("writeRuntimeEndpoint: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read endpoint: %v", err)
+	}
+	var got runtimeEndpoint
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("decode endpoint: %v", err)
+	}
+	if got != want {
+		t.Fatalf("endpoint=%+v want %+v", got, want)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat endpoint: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("endpoint mode=%#o want 0600", info.Mode().Perm())
+	}
+	dirInfo, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		t.Fatalf("stat endpoint dir: %v", err)
+	}
+	if dirInfo.Mode().Perm() != 0o700 {
+		t.Fatalf("endpoint dir mode=%#o want 0700", dirInfo.Mode().Perm())
+	}
+
+	removeRuntimeEndpoint(path, 7)
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("wrong pid removed endpoint: %v", err)
+	}
+	removeRuntimeEndpoint(path, want.PID)
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("matching pid did not remove endpoint: %v", err)
 	}
 }
 

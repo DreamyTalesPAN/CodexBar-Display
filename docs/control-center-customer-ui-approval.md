@@ -280,3 +280,35 @@ issue scope, or release permission never implies UI permission.
   cannot collapse to zero width during a slow image load.
 - Approved files: `overview-screen.tsx` and the existing connected Overview
   customer-flow assertion in `test-customer-flows.mjs`.
+
+## 2026-07-23 — Automatic Mac runtime port fallback
+
+- User approval: After requiring the Mac App to use another port automatically,
+  the user reviewed the exact terminal-failure screenshot and explicitly
+  approved it with `ja` in the Codex task on 2026-07-23.
+- Approved customer-visible result: If another process uses VibeTV's preferred
+  local port, the Mac App starts on a free private loopback port without showing
+  an error screen. Only if automatic fallback also fails, the existing native
+  screen shows `VibeTV couldn’t start` and identifies the process name, PID, and
+  port followed by `Quit the app or stop the process, then click Try again.`
+  The existing `Try again`, `Create report`, and `Open support log` actions
+  remain unchanged.
+- Approved files: `companion-installer-actions.tsx`,
+  `mac-app-install-command.ts`, `mac-app-install-command.test.ts`, native
+  `main.swift`, `URLSchemeTests.swift`, runtime endpoint handling, and their
+  regression tests.
+
+## 2026-07-23 — Single-writer fallback safety
+
+- User approval: After the merge-risk review identified a possible second
+  display writer and stale fallback endpoint, the user explicitly ordered both
+  risks to be fixed in the Codex task on 2026-07-23.
+- Approved customer-visible result: An unrelated process on VibeTV's preferred
+  port still causes automatic background fallback without a new screen. If the
+  port belongs to another VibeTV service, the Mac App never starts a second
+  display writer and uses the already approved `VibeTV couldn’t start` screen.
+  After a fallback runtime restart, Control Center verifies the newly published
+  port before reloading. No copy, control, or layout changes.
+- Approved files: Companion port-owner classification and tests, native runtime
+  endpoint rediscovery, its macOS contract test, and the matching architecture
+  documentation.
