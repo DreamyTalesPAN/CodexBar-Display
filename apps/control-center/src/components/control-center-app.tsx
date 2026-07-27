@@ -1832,11 +1832,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           logs: customerInstallLogs([...logs, "Theme is active on VibeTV."]),
           result,
         });
-        if (result.themeId) {
-          setDevice((current) =>
-            current ? { ...current, activeTheme: result.themeId } : current,
-          );
-        }
         addEvent({
           label: "Theme installed",
           detail: result.name || theme.title,
@@ -1844,6 +1839,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           tone: "ready",
         });
         await loadSettings();
+        if (result.themeId) {
+          setDevice((current) =>
+            current
+              ? {
+                  ...current,
+                  activeTheme: result.themeId,
+                  display: {
+                    ...current.display,
+                    themeSpec: {
+                      ...current.display?.themeSpec,
+                      active: true,
+                      path: result.activePath,
+                    },
+                  },
+                }
+              : current,
+          );
+        }
         return true;
       } catch (error) {
         const normalized = normalizeCaughtError(
@@ -2165,11 +2178,70 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       device,
     );
     const shouldUpgradeActiveTheme = Boolean(
-      activeThemeUpgrade.theme &&
-        device?.capabilities?.theme?.supportsUsageSlotsV1 !== true,
+      activeThemeUpgrade.theme && activeThemeUpgrade.needed,
     );
     const startedAt = formatTime();
     const initialLogs = ["Preparing VibeTV update."];
+    const firmwareIsKnownCurrent = Boolean(
+      firmwareUpdate?.status === "current" &&
+        (!firmwareUpdate.installedFirmware ||
+          firmwareUpdate.installedFirmware === device?.firmware),
+    );
+    const shouldUpgradeOnlyActiveTheme = Boolean(
+      activeThemeUpgrade.theme &&
+        activeThemeUpgrade.needsThemeSpec &&
+        !activeThemeUpgrade.needsFirmwareCapability &&
+        firmwareIsKnownCurrent,
+    );
+    if (shouldUpgradeOnlyActiveTheme && activeThemeUpgrade.theme) {
+      setBusyAction("firmware-update");
+      setFirmwareUpdateStatus({
+        phase: "installing",
+        startedAt,
+        message: "Updating VibeTV.",
+        progress: 95,
+        logs: initialLogs,
+      });
+      addEvent({
+        label: "VibeTV update started",
+        detail: "VibeTV is being updated.",
+        at: startedAt,
+        tone: "unknown",
+      });
+      if (!(await installTheme(activeThemeUpgrade.theme))) {
+        const message =
+          "The firmware is current, but VibeTV still needs attention.";
+        setFirmwareUpdateStatus({
+          phase: "attention",
+          outcome: "firmware_current_theme_attention",
+          startedAt,
+          finishedAt: formatTime(),
+          message,
+          progress: 100,
+          logs: customerUpdateLogs([...initialLogs, message]),
+        });
+        addEvent({
+          label: "VibeTV update needs attention",
+          detail: message,
+          tone: "attention",
+        });
+        return false;
+      }
+      setFirmwareUpdateStatus({
+        phase: "complete",
+        startedAt,
+        finishedAt: formatTime(),
+        message: "Update complete.",
+        progress: 100,
+        logs: customerUpdateLogs([...initialLogs, "Update complete."]),
+      });
+      addEvent({
+        label: "VibeTV updated",
+        detail: `${activeThemeUpgrade.theme.title} is current.`,
+        tone: "ready",
+      });
+      return true;
+    }
     const applyUpdateJob = (job: FirmwareUpdateJob) => {
       setFirmwareUpdateStatus(firmwareUpdateStatusFromJob(job, startedAt));
     };
@@ -2401,6 +2473,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     catalog.themes,
     device,
     deviceBoard,
+    firmwareUpdate,
     installTheme,
     markCompanionAccessBlocked,
     markCompanionUnavailable,
@@ -2725,6 +2798,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? firmwareUpdate
       : null;
   const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
+  const activeThemeUpgrade = resolveActiveThemeUpgrade(catalog.themes, device);
+  const activeThemeUpdateAvailable = Boolean(
+    activeThemeUpgrade.theme &&
+      activeThemeUpgrade.needed &&
+      !activeThemeUpgrade.unresolved,
+  );
   const companionRelease =
     hostedCompanionRelease?.status === "check_failed" && companionInfo?.update
       ? {
@@ -2738,6 +2817,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const anyUpdateAvailable =
     firmwareUpdateAvailable ||
+    activeThemeUpdateAvailable ||
     macAppUpdateAvailable ||
     macAppMigrationAvailable;
   const imageNeedsReload = Boolean(
@@ -3181,6 +3261,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onRetryThemeUpdate={retryActiveThemeUpgrade}
           requiresMacAppMigration={requiresMacAppMigration}
           supportReportBusy={supportReportBusy}
+          themeUpdateAvailable={activeThemeUpdateAvailable}
           updateStatus={firmwareUpdateStatus}
         />
       ) : null}

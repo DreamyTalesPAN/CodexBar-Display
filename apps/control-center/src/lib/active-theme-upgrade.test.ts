@@ -10,10 +10,15 @@ const slotTheme = {
   requiredCapabilities: ["usage-slots-v1"],
   source: "github-catalog",
   themeId: "synthwave",
+  themeRev: 2,
+  themeSpecPath: "/themes/u/synthwa-2-5f8ac7.json",
   title: "Synthwave",
 } satisfies ThemeProduct;
 
-function device(supportsUsageSlotsV1: boolean): DeviceInfo {
+function device(
+  supportsUsageSlotsV1: boolean,
+  path = "/themes/u/synthwa-1-6b39a3.json",
+): DeviceInfo {
   return {
     activeTheme: "synthwave",
     capabilities: {
@@ -22,16 +27,43 @@ function device(supportsUsageSlotsV1: boolean): DeviceInfo {
       },
     },
     connected: true,
+    display: {
+      themeSpec: {
+        active: true,
+        path,
+      },
+    },
   };
 }
 
 describe("resolveActiveThemeUpgrade", () => {
   it("resolves a cataloged slot theme before and after the firmware update", () => {
     expect(resolveActiveThemeUpgrade([slotTheme], device(false))).toEqual({
+      needed: true,
+      needsFirmwareCapability: true,
+      needsThemeSpec: true,
       theme: slotTheme,
       unresolved: false,
     });
+    expect(
+      resolveActiveThemeUpgrade(
+        [slotTheme],
+        device(true, "/themes/u/synthwa-2-5f8ac7.json"),
+      ),
+    ).toEqual({
+      needed: false,
+      needsFirmwareCapability: false,
+      needsThemeSpec: false,
+      theme: slotTheme,
+      unresolved: false,
+    });
+  });
+
+  it("upgrades an old active ThemeSpec even when firmware is already capable", () => {
     expect(resolveActiveThemeUpgrade([slotTheme], device(true))).toEqual({
+      needed: true,
+      needsFirmwareCapability: false,
+      needsThemeSpec: true,
       theme: slotTheme,
       unresolved: false,
     });
@@ -45,6 +77,9 @@ describe("resolveActiveThemeUpgrade", () => {
       title: "Clippy",
     };
     expect(resolveActiveThemeUpgrade([otherTheme], device(false))).toEqual({
+      needed: false,
+      needsFirmwareCapability: false,
+      needsThemeSpec: false,
       unresolved: true,
     });
   });

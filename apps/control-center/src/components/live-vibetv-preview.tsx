@@ -31,12 +31,14 @@ export type ThemeRenderPack = {
   themeId?: string;
   name?: string;
   spec?: ThemeSpec;
+  specHash?: string;
   specPath?: string;
   assets?: Record<string, ThemePackAsset>;
 };
 
 type ThemePackState = {
   themeId: string;
+  themeSpecHash: string;
   themeSpecPath: string;
   pack: ThemeRenderPack | null;
   status: "ready" | "error";
@@ -153,19 +155,22 @@ type FrameData = {
   date: string;
 };
 
-const THEME_LIBRARY_PREVIEW_FRAME: FrameData = {
+// Catalog previews deliberately use short, generic usage windows. They are not
+// connected to the current provider or VibeTV frame, so labels must not imply
+// a provider-specific entitlement such as "Codex Spark Weekly".
+export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   provider: "vibetv",
   label: "VibeTV",
-  session: 62,
-  weekly: 62,
+  session: 64,
+  weekly: 64,
   resetSecs: 3600,
-  usageMode: "remaining",
-  usageSlot1Label: "Weekly",
-  usageSlot1Percent: 62,
+  usageMode: "used",
+  usageSlot1Label: "Session",
+  usageSlot1Percent: 64,
   usageSlot1ResetSecs: 3600,
   usageSlot1Available: true,
-  usageSlot2Label: "Codex Spark Weekly",
-  usageSlot2Percent: 38,
+  usageSlot2Label: "Weekly",
+  usageSlot2Percent: 28,
   usageSlot2ResetSecs: 7200,
   usageSlot2Available: true,
   activity: "preview",
@@ -206,6 +211,9 @@ type SpriteRect = {
 export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   const themeId = activeThemeId(device);
   const themeSpecPath = device?.display?.themeSpec?.path || "";
+  const themeSpecHash = normalizeThemeSpecHash(
+    device?.display?.themeSpec?.hash,
+  );
   const deviceConnected = deviceIsReady(device);
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
     null,
@@ -220,12 +228,14 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   const [packState, setPackState] = useState<ThemePackState | null>(null);
   const pack =
     packState?.themeId === themeId &&
+    packState.themeSpecHash === themeSpecHash &&
     packState.themeSpecPath === themeSpecPath
       ? packState.pack
       : null;
   const packStatus: "idle" | "loading" | "ready" | "error" = !themeId
     ? "idle"
     : packState?.themeId === themeId &&
+        packState.themeSpecHash === themeSpecHash &&
         packState.themeSpecPath === themeSpecPath
       ? packState.status
       : "loading";
@@ -236,10 +246,14 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
     }
 
     const localPack = loadLocalThemeRenderPack(themeId, themeSpecPath);
-    if (localPack) {
+    if (
+      localPack &&
+      (!themeSpecHash || localPack.specHash === themeSpecHash)
+    ) {
       const timer = window.setTimeout(() => {
         setPackState({
           themeId,
+          themeSpecHash,
           themeSpecPath,
           pack: localPack,
           status: "ready",
@@ -249,26 +263,52 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
     }
 
     const controller = new AbortController();
-    fetch(themeRenderPackUrl(themeId), {
-      signal: controller.signal,
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("theme pack unavailable");
-        }
-        return response.json() as Promise<ThemeRenderPack>;
-      })
+    const fetchRenderPack = async (): Promise<ThemeRenderPack> => {
+      const exactResponse = await fetch(
+        themeRenderPackUrl(themeId, themeSpecPath, themeSpecHash),
+        { signal: controller.signal },
+      );
+      if (exactResponse.ok) {
+        return exactResponse.json() as Promise<ThemeRenderPack>;
+      }
+      if (!themeSpecPath) {
+        throw new Error("theme pack unavailable");
+      }
+
+      // Companions shipped before revision-aware previews only expose the
+      // latest cached Custom Theme at /render/<themeId>.json. Its payload
+      // still contains specPath, so the validation below can safely accept
+      // the cache only when it is the exact revision active on the VibeTV.
+      const legacyResponse = await fetch(themeRenderPackUrl(themeId), {
+        signal: controller.signal,
+      });
+      if (!legacyResponse.ok) {
+        throw new Error("theme pack unavailable");
+      }
+      return legacyResponse.json() as Promise<ThemeRenderPack>;
+    };
+
+    fetchRenderPack()
       .then((payload) => {
         const receivedSpecPath = (payload?.specPath || "").trim();
+        const receivedSpecHash = renderPackSpecHash(payload);
         const exactThemeRevision =
-          !themeSpecPath ||
-          !receivedSpecPath ||
-          receivedSpecPath === themeSpecPath;
+          !themeSpecPath || receivedSpecPath === themeSpecPath;
+        const exactThemeBytes =
+          !themeSpecHash ||
+          receivedSpecHash === themeSpecHash ||
+          (!receivedSpecHash &&
+            Boolean(themeSpecPath) &&
+            exactThemeRevision);
         setPackState({
           themeId,
+          themeSpecHash,
           themeSpecPath,
-          pack: exactThemeRevision ? payload : null,
-          status: payload?.spec && exactThemeRevision ? "ready" : "error",
+          pack: exactThemeRevision && exactThemeBytes ? payload : null,
+          status:
+            payload?.spec && exactThemeRevision && exactThemeBytes
+              ? "ready"
+              : "error",
         });
       })
       .catch((error) => {
@@ -277,6 +317,7 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
         }
         setPackState({
           themeId,
+          themeSpecHash,
           themeSpecPath,
           pack: null,
           status: "error",
@@ -284,7 +325,7 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
       });
 
     return () => controller.abort();
-  }, [themeId, themeSpecPath]);
+  }, [themeId, themeSpecHash, themeSpecPath]);
 
   useEffect(() => {
     if (!deviceConnected) {
@@ -328,7 +369,9 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   return (
     <figure className="w-full max-w-[520px]">
       <VibeTVCaseShell>
-        {pack?.spec && frame ? (
+        {!deviceConnected ? (
+          <ThemePreviewOffline />
+        ) : pack?.spec && frame ? (
           <ThemeSpecSVG
             assets={pack.assets || {}}
             frame={frame}
@@ -347,11 +390,13 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
 
 export function ThemeSpecPreview({
   animate = true,
+  frame = THEME_CATALOG_PREVIEW_FRAME,
   pack,
   status,
   themeId,
 }: {
   animate?: boolean;
+  frame?: FrameData;
   pack: ThemeRenderPack | null;
   status: "idle" | "loading" | "ready" | "error";
   themeId: string;
@@ -361,7 +406,7 @@ export function ThemeSpecPreview({
       <ThemeSpecSVG
         animate={animate}
         assets={pack.assets || {}}
-        frame={THEME_LIBRARY_PREVIEW_FRAME}
+        frame={frame}
         spec={pack.spec}
         themeId={pack.themeId || themeId}
       />
@@ -884,7 +929,7 @@ function ThemeSpecLoading({
         ? "Loading preview"
         : "Waiting for theme";
   return (
-    <div className="grid aspect-square w-full place-items-center border border-[#747A60] bg-[#111111] p-4 text-center font-mono text-sm font-bold uppercase text-[#CCFF00]">
+    <div className="grid aspect-square w-full place-items-center whitespace-normal break-words border border-[#747A60] bg-[#111111] p-3 text-center font-mono text-[10px] font-bold uppercase leading-tight text-[#CCFF00] sm:text-xs">
       {message}
     </div>
   );
@@ -905,6 +950,21 @@ function ThemeUsageLoading() {
           <span className="block h-2 w-2 animate-pulse bg-[#FF4FC3] [animation-delay:300ms]" />
         </div>
         <div className="mt-3">Loading usage</div>
+      </div>
+    </div>
+  );
+}
+
+function ThemePreviewOffline() {
+  return (
+    <div
+      aria-label="VibeTV live preview is offline"
+      className="grid aspect-square w-full place-items-center bg-[#050505] p-5 text-center font-mono text-[11px] font-bold uppercase text-[#CCFF00]"
+      role="img"
+    >
+      <div>
+        <div className="mb-3 text-[#FF4FC3]">Live preview paused</div>
+        <div className="text-[#FFFFFF]">Reconnect VibeTV to continue</div>
       </div>
     </div>
   );
@@ -1037,6 +1097,15 @@ function normalizeThemeAlias(theme: string | undefined): string {
     return "";
   }
   return DEVICE_THEME_ALIASES[normalized] || normalized;
+}
+
+function normalizeThemeSpecHash(value: string | undefined): string {
+  const hash = (value || "").trim().toLowerCase();
+  return /^[a-f0-9]{8}$/.test(hash) ? hash : "";
+}
+
+function renderPackSpecHash(pack: ThemeRenderPack): string {
+  return normalizeThemeSpecHash(pack.specHash);
 }
 
 function renderTextPrimitive(primitive: ThemePrimitive, frame: FrameData): string {
@@ -1243,6 +1312,9 @@ function useAnimationTick(framesPerSecond: number): number {
         scheduleNextFrame();
       } else {
         stopTimer();
+        if (reducedMotion.matches) {
+          setTick(0);
+        }
       }
     };
 
@@ -1250,7 +1322,7 @@ function useAnimationTick(framesPerSecond: number): number {
     window.addEventListener("focus", handlePageActivity);
     window.addEventListener("blur", handlePageActivity);
     reducedMotion.addEventListener("change", handlePageActivity);
-    scheduleNextFrame();
+    handlePageActivity();
 
     return () => {
       stopTimer();
@@ -1261,7 +1333,7 @@ function useAnimationTick(framesPerSecond: number): number {
     };
   }, [framesPerSecond]);
 
-  return tick;
+  return framesPerSecond > 0 ? tick : 0;
 }
 
 function spriteFrameIndex(sprite: DecodedSprite, animationTick: number): number {

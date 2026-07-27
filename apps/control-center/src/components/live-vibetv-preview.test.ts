@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   buildFrameData,
   primitiveUsageSlotVisible,
+  THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
   themeFirmwareTextMetrics,
   themeTextLayout,
@@ -17,6 +18,26 @@ const lane1: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 1 };
 const lane2: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 2 };
 
 describe("dynamic usage slot preview", () => {
+  it("accepts neutral catalog sample data without changing the default preview", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ThemeSpecPreview, {
+        animate: false,
+        frame: THEME_CATALOG_PREVIEW_FRAME,
+        pack: {
+          themeId: "catalog-preview",
+          spec: { p: [] },
+        },
+        status: "ready",
+        themeId: "catalog-preview",
+      }),
+    );
+
+    expect(markup).toContain(
+      "Rendered VibeTV theme catalog-preview showing VibeTV, Session 64% used, Weekly 28% used",
+    );
+    expect(markup).not.toContain("Codex Spark Weekly");
+  });
+
   it.each([
     { count: 0, slots: [] },
     {

@@ -21,6 +21,12 @@ import (
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
 
+func TestDefaultCatalogUsesCurrentThemeGeneration(t *testing.T) {
+	if !strings.HasSuffix(DefaultCatalogURL, "/vibetv-theme-packs-v2.json") {
+		t.Fatalf("DefaultCatalogURL=%q, want current v2 catalog", DefaultCatalogURL)
+	}
+}
+
 func TestResolveSourceAllowsThemeIDWithExplicitPackURL(t *testing.T) {
 	got, err := ResolveSource("https://example.com/theme.zip", "", "mini-classic")
 	if err != nil {

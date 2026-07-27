@@ -127,7 +127,7 @@ func printUsage() {
 	fmt.Println("  codexbar-display restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
 	fmt.Println("  codexbar-display theme-validate --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display theme-apply --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
-	fmt.Println("  codexbar-display theme-pack catalog [--catalog https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json]")
+	fmt.Printf("  codexbar-display theme-pack catalog [--catalog %s]\n", defaultThemeCatalogURL)
 	fmt.Println("  codexbar-display theme-pack validate --pack path/to/theme-pack-dir-or.zip-or-url [--pack-sha256 hex --pack-size-bytes n]")
 	fmt.Println("  codexbar-display theme-pack install (--pack path/to/theme-pack-dir-or.zip-or-url [--pack-sha256 hex --pack-size-bytes n] | --catalog url --theme theme-id) [--target http://<device-ip>] [--firmware-manifest-url url] [--skip-firmware-update] [--allow-unknown-capabilities] [--verbose]")
 	fmt.Println("  codexbar-display setup [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")

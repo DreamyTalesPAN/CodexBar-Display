@@ -35,7 +35,10 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingRoot: repoRoot,
   outputFileTracingIncludes: {
-    "/api/theme-pack/[themeId]": ["../../theme-packs/**/*"],
+    "/api/theme-pack/[themeId]": [
+      "../../theme-packs/**/*",
+      "../../dist/theme-packs/render/**/*",
+    ],
   },
   images: {
     unoptimized: localStaticExport,

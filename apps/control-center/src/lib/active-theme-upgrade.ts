@@ -2,6 +2,9 @@ import type { DeviceInfo } from "@/components/control-center-types";
 import type { ThemeProduct } from "@/lib/themes";
 
 export type ActiveThemeUpgrade = {
+  needed: boolean;
+  needsFirmwareCapability: boolean;
+  needsThemeSpec: boolean;
   theme?: ThemeProduct;
   unresolved: boolean;
 };
@@ -11,7 +14,12 @@ export function resolveActiveThemeUpgrade(
   device: DeviceInfo | null,
 ): ActiveThemeUpgrade {
   if (!device?.activeTheme) {
-    return { unresolved: false };
+    return {
+      needed: false,
+      needsFirmwareCapability: false,
+      needsThemeSpec: false,
+      unresolved: false,
+    };
   }
   const needsUsageSlots =
     device.capabilities?.theme?.supportsUsageSlotsV1 !== true;
@@ -19,13 +27,34 @@ export function resolveActiveThemeUpgrade(
     (candidate) => candidate.themeId === device.activeTheme,
   );
   if (!theme) {
-    return { unresolved: needsUsageSlots };
+    return {
+      needed: false,
+      needsFirmwareCapability: false,
+      needsThemeSpec: false,
+      unresolved: needsUsageSlots,
+    };
   }
   if (!theme.requiredCapabilities) {
-    return { unresolved: needsUsageSlots };
+    return {
+      needed: false,
+      needsFirmwareCapability: false,
+      needsThemeSpec: false,
+      theme,
+      unresolved: needsUsageSlots,
+    };
   }
-  if (!theme.requiredCapabilities.includes("usage-slots-v1")) {
-    return { unresolved: false };
-  }
-  return { theme, unresolved: false };
+  const needsRequiredCapability =
+    theme.requiredCapabilities.includes("usage-slots-v1") && needsUsageSlots;
+  const expectedPath = theme.themeSpecPath?.trim();
+  const activePath = device.display?.themeSpec?.path?.trim();
+  const pathIsOutdated = Boolean(
+    expectedPath && activePath && expectedPath !== activePath,
+  );
+  return {
+    needed: needsRequiredCapability || pathIsOutdated,
+    needsFirmwareCapability: needsRequiredCapability,
+    needsThemeSpec: pathIsOutdated,
+    theme,
+    unresolved: false,
+  };
 }

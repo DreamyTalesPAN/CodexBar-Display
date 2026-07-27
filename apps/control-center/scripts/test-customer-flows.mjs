@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -8,6 +9,20 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const themePreviewGoldens = JSON.parse(
+  await readFile(
+    join(root, "test-fixtures", "theme-preview-goldens.json"),
+    "utf8",
+  ),
+);
+const themePreviewVectorGoldenPath = join(
+  root,
+  "test-fixtures",
+  "theme-preview-vector-goldens.json",
+);
+const themePreviewVectorGoldens = JSON.parse(
+  await readFile(themePreviewVectorGoldenPath, "utf8"),
+);
 const nextBin = join(root, "node_modules", "next", "dist", "bin", "next");
 const viewport = { width: 390, height: 844 };
 const desktopViewport = { width: 1280, height: 900 };
@@ -17,21 +32,31 @@ const providerSettingsOnly = process.argv.includes("--provider-settings");
 const migrationScreenshotDir =
   process.env.CONTROL_CENTER_CAPTURE_MIGRATION_SCREENSHOTS?.trim() || "";
 const themeStudioSafetyOnly = process.argv.includes("--theme-studio-safety");
+const themeReleaseOnly = process.argv.includes("--theme-release");
+const themePreviewsOnly = process.argv.includes("--theme-previews");
+const updateThemePreviewVectorGoldens =
+  process.env.CONTROL_CENTER_UPDATE_THEME_PREVIEW_GOLDENS === "1";
 const wifiRescanOnly = process.argv.includes("--wifi-rescan");
 let displayStateDir = "";
 const fixturePackSHA256 = "a".repeat(64);
 const fixturePackBytes = 1234;
 
 const catalogFixture = {
+  generation: 2,
+  schemaVersion: 1,
   themes: [
     {
       id: "synthwave",
       title: "Fixture Synthwave Theme",
       description:
         "A neon pixel theme with a retro grid, usage bars, and high-contrast desk display previews.",
-      downloadUrl: "https://cdn.example.test/synthwave.vibetv-theme",
+      downloadUrl:
+        "https://cdn.example.test/vibetv-theme-synthwave-v1.1.0.zip",
       sha256: fixturePackSHA256,
       bytes: fixturePackBytes,
+      version: "1.1.0",
+      themeRev: 2,
+      themeSpecPath: "/themes/u/synthwa-2-5f8ac7.json",
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
       requiredCapabilities: ["usage-slots-v1"],
@@ -44,6 +69,7 @@ const catalogFixture = {
       downloadUrl: "https://cdn.example.test/clippy.vibetv-theme",
       sha256: fixturePackSHA256,
       bytes: fixturePackBytes,
+      themeSpecPath: "/themes/u/clippy-2-269831.json",
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
       requiredCapabilities: ["usage-slots-v1"],
@@ -56,8 +82,41 @@ const catalogFixture = {
       downloadUrl: "https://cdn.example.test/claude-creature.vibetv-theme",
       sha256: fixturePackSHA256,
       bytes: fixturePackBytes,
+      themeSpecPath: "/themes/u/claude--2-b110c1.json",
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
+      requiredCapabilities: ["usage-slots-v1"],
+    },
+    {
+      id: "cozy-meadow",
+      title: "Fixture Cozy Meadow Theme",
+      description:
+        "A calm pixel landscape with one compact usage window and reset timer.",
+      downloadUrl:
+        "https://cdn.example.test/vibetv-theme-cozy-meadow-v0.2.0.zip",
+      sha256: fixturePackSHA256,
+      bytes: fixturePackBytes,
+      themeSpecPath: "/themes/u/cm-2-09ea27.json",
+      version: "0.2.0",
+      themeRev: 2,
+      compatibleBoards: ["esp8266_smalltv_st7789"],
+      requiresFirmware: "1.0.40",
+      requiredCapabilities: ["usage-slots-v1"],
+    },
+    {
+      id: "mini-classic",
+      title: "Fixture Mini Classic Theme",
+      description:
+        "A compact high-contrast theme with two neutral usage windows.",
+      downloadUrl:
+        "https://cdn.example.test/vibetv-theme-mini-classic-v1.1.0.zip",
+      sha256: fixturePackSHA256,
+      bytes: fixturePackBytes,
+      version: "1.1.0",
+      themeRev: 2,
+      themeSpecPath: "/themes/u/mini-cl-2-2ee44f.json",
+      compatibleBoards: ["esp8266_smalltv_st7789"],
+      requiresFirmware: "1.0.40",
       requiredCapabilities: ["usage-slots-v1"],
     },
     {
@@ -267,6 +326,26 @@ async function main() {
       releaseUrl: smokeOnly ? missingAssetReleaseUrl : completeReleaseUrl,
     });
     app = appContext.app;
+    if (themeReleaseOnly) {
+      await testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
+        browser,
+        appContext.appUrl,
+      );
+      console.log("control-center theme release flow test passed");
+      return;
+    }
+    if (themePreviewsOnly) {
+      await testThemeLibraryRendersThemeSpecPreviews(
+        browser,
+        appContext.appUrl,
+      );
+      await testLivePreviewFallsBackToLegacyCompanionCustomCache(
+        browser,
+        appContext.appUrl,
+      );
+      console.log("control-center theme preview tests passed");
+      return;
+    }
     if (providerSettingsOnly) {
       await testUsageManagesProviderPreferences(browser, appContext.appUrl);
       console.log("control-center provider settings test passed");
@@ -522,10 +601,18 @@ async function main() {
       appContext.appUrl,
     );
     await testOverviewRendersThemeSpecAssetTypes(browser, appContext.appUrl);
+    await testLivePreviewFallsBackToLegacyCompanionCustomCache(
+      browser,
+      appContext.appUrl,
+    );
     await testThemeLibraryRendersThemeSpecPreviews(browser, appContext.appUrl);
     await testReloadRestoresRunningFirmwareUpdate(browser, appContext.appUrl);
     await testReloadRestoresRunningThemeInstall(browser, appContext.appUrl);
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
+    await testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
+      browser,
+      appContext.appUrl,
+    );
     await testThemeRefreshRetryDoesNotFlashFirmwareAgain(
       browser,
       appContext.appUrl,
@@ -2671,6 +2758,12 @@ async function testConfiguredDeviceShowsReconnectingWithoutSetup(
   });
   await page.getByRole("heading", { name: "VibeTV status" }).waitFor();
   await page.getByText("Reconnecting to VibeTV", { exact: true }).waitFor();
+  await page
+    .getByRole("img", { name: "VibeTV live preview is offline" })
+    .waitFor();
+  await page
+    .getByText("Reconnect VibeTV to continue", { exact: true })
+    .waitFor();
   assert(
     (await page
       .getByRole("heading", { name: "Set up your VibeTV" })
@@ -4278,7 +4371,7 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await clickNavigation(page, "Updates");
   const firmwareSection = page.locator('[data-slot="card"]').filter({
-    has: page.getByRole("heading", { name: "Firmware update" }),
+    has: page.getByRole("heading", { name: "VibeTV update" }),
   });
   await page.getByRole("button", { name: "Update", exact: true }).waitFor({
     timeout: 10_000,
@@ -4377,6 +4470,80 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
     "Firmware update must refresh the active slot theme exactly once",
   );
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const updateRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.99",
+    device: {
+      ...companionDevice,
+      activeTheme: "synthwave",
+      firmware: "1.0.40",
+      display: {
+        themeSpec: {
+          active: true,
+          path: "/themes/u/synthwa-1-6b39a3.json",
+          renderOk: true,
+        },
+      },
+    },
+    onUpdate: (postData) => {
+      updateRequests.push(postData || "");
+    },
+    installStatusSequence: [
+      {
+        phase: "complete",
+        message: "Theme is active on VibeTV.",
+        progress: 100,
+        logs: ["Preparing theme files.", "Theme is active on VibeTV."],
+        result: {
+          themeId: "synthwave",
+          packId: "synthwave",
+          name: "Fixture Synthwave Theme",
+          activePath: "/themes/u/synthwa-2-5f8ac7.json",
+          themeRev: 2,
+        },
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Updates");
+  const update = page.getByRole("button", { name: "Update", exact: true });
+  await update.waitFor({ timeout: 10_000 });
+  await update.click();
+  await waitForCondition(
+    () => installRequests.length + updateRequests.length > 0,
+    "Theme-only update did not start a theme or firmware request",
+  );
+  assert(
+    updateRequests.length === 0,
+    "Current firmware plus an old active ThemeSpec must not flash firmware",
+  );
+  assert(
+    installRequests.length === 1,
+    "Current firmware plus an old active ThemeSpec must install one theme",
+  );
+  await page
+    .getByText("Update complete", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByRole("button", { name: "Check for updates", exact: true })
+    .waitFor({ timeout: 10_000 });
+
+  const install = JSON.parse(installRequests[0]);
+  assert(
+    install.themeId === "synthwave" &&
+      install.packUrl.endsWith("vibetv-theme-synthwave-v1.1.0.zip"),
+    `Theme-only update used the wrong generation: ${installRequests[0]}`,
+  );
   await page.close();
 }
 
@@ -5194,6 +5361,16 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
     viewport: desktopViewport,
   });
   const installRequests = [];
+  const renderPackRequests = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (
+      url.pathname.startsWith("/api/theme-pack/") ||
+      url.pathname.startsWith("/theme-packs/render/")
+    ) {
+      renderPackRequests.push(url);
+    }
+  });
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.33",
     device: {
@@ -5212,8 +5389,57 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await clickNavigation(page, "Theme Library");
+  for (const [themeId, expectedText] of Object.entries(themePreviewGoldens)) {
+    const preview = page.getByRole("img", {
+      name: new RegExp(`Rendered VibeTV theme ${themeId} showing VibeTV`),
+    });
+    await preview.waitFor({ timeout: 10_000 });
+    const actualText = (await preview.locator("text").allTextContents()).map(
+      (value) => value.trim(),
+    );
+    assert(
+      JSON.stringify(actualText) === JSON.stringify(expectedText),
+      `${themeId} neutral preview golden changed:\nexpected=${JSON.stringify(expectedText)}\nactual=${JSON.stringify(actualText)}`,
+    );
+  }
+  assert(
+    Object.keys(themePreviewGoldens).every((themeId) =>
+      renderPackRequests.some(
+        (url) =>
+          url.pathname === `/api/theme-pack/${themeId}` &&
+          url.searchParams.has("specPath"),
+      ),
+    ),
+    `published Theme Library previews must request their catalog revision: ${renderPackRequests.map((url) => url.toString()).join(", ")}`,
+  );
+  const legacySynthwavePack = JSON.parse(
+    await readFile(
+      join(
+        root,
+        "..",
+        "..",
+        "dist",
+        "theme-packs",
+        "render",
+        "synthwave",
+        "synthwa-1-6b39a3.json",
+      ),
+      "utf8",
+    ),
+  );
+  const legacyResponse = await fetch(
+    `${appUrl}/api/theme-pack/synthwave?${new URLSearchParams({
+      specPath: legacySynthwavePack.specPath,
+      specHash: legacySynthwavePack.specHash,
+    })}`,
+  );
+  assert(
+    legacyResponse.ok &&
+      (await legacyResponse.json()).specPath === legacySynthwavePack.specPath,
+    "hosted preview API should serve an exact frozen legacy revision",
+  );
   const synthwavePreview = page.getByRole("img", {
-    name: /Rendered VibeTV theme synthwave showing VibeTV, Weekly 62% remaining, Codex Spark Weekly 38% remaining/,
+    name: /Rendered VibeTV theme synthwave showing VibeTV, Session 64% used, Weekly 28% used/,
   });
   await synthwavePreview.waitFor({ timeout: 10_000 });
   assert(
@@ -5241,6 +5467,10 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
   await page
     .getByRole("button", { name: "Preview Fixture Clippy Theme" })
     .click();
+  await page
+    .getByRole("dialog")
+    .getByText("Example data · This is a catalog preview, not live VibeTV data.")
+    .waitFor({ timeout: 10_000 });
   const clippyDialogPreview = page.getByRole("dialog").getByRole("img", {
     name: /Rendered VibeTV theme clippy showing VibeTV/,
   });
@@ -5268,9 +5498,151 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
       (await clippyDialogPreview.evaluate((node) => node.innerHTML)),
     "Animated previews should stop when reduced motion is requested",
   );
+  await page.keyboard.press("Escape");
+
+  const vectorGoldens = {};
+  for (const themeId of Object.keys(themePreviewGoldens)) {
+    const product = catalogFixture.themes.find((theme) => theme.id === themeId);
+    assert(product, `missing catalog fixture for ${themeId}`);
+    const cardPreview = page.getByRole("img", {
+      name: new RegExp(`Rendered VibeTV theme ${themeId} showing VibeTV`),
+    });
+    vectorGoldens[themeId] = {
+      card: await themePreviewVectorSnapshot(cardPreview),
+    };
+    await page
+      .getByRole("button", { name: `Preview ${product.title}` })
+      .click();
+    const dialog = page.getByRole("dialog");
+    const largePreview = dialog.getByRole("img", {
+      name: new RegExp(`Rendered VibeTV theme ${themeId} showing VibeTV`),
+    });
+    await largePreview.waitFor({ timeout: 10_000 });
+    vectorGoldens[themeId].large =
+      await themePreviewVectorSnapshot(largePreview);
+    await page.keyboard.press("Escape");
+  }
+  if (updateThemePreviewVectorGoldens) {
+    await writeFile(
+      themePreviewVectorGoldenPath,
+      `${JSON.stringify(vectorGoldens, null, 2)}\n`,
+    );
+  } else {
+    assert(
+      JSON.stringify(vectorGoldens) ===
+        JSON.stringify(themePreviewVectorGoldens),
+      `240px/card vector preview goldens changed:\nexpected=${JSON.stringify(themePreviewVectorGoldens)}\nactual=${JSON.stringify(vectorGoldens)}`,
+    );
+  }
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function themePreviewVectorSnapshot(preview) {
+  const box = await preview.boundingBox();
+  assert(box, "theme preview should have a rendered bounding box");
+  const markup = await preview.evaluate((node) => node.outerHTML);
+  const normalizedMarkup = markup
+    .replace(/theme-text-[^"')]+/g, "theme-text-GOLDEN")
+    .replace(/\s+/g, " ")
+    .trim();
+  return {
+    width: Math.round(box.width * 10) / 10,
+    height: Math.round(box.height * 10) / 10,
+    svgSha256: createHash("sha256")
+      .update(normalizedMarkup)
+      .digest("hex"),
+  };
+}
+
+async function testLivePreviewFallsBackToLegacyCompanionCustomCache(
+  browser,
+  appUrl,
+) {
+  const page = await browser.newPage({ viewport: desktopViewport });
+  const localAppUrl = "http://127.0.0.1:47832/control-center";
+  const installRequests = [];
+  const renderPackRequests = [];
+  const pack = await readTrackedThemeRenderPackFixture("cozy-meadow");
+  pack.themeId = "my-custom";
+  pack.specPath = "/themes/u/custom-old.json";
+
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.startsWith("/theme-packs/render/my-custom")) {
+      renderPackRequests.push(pathname);
+    }
+  });
+  await routeLocalCompanionAppThroughLocalNext(page, appUrl);
+  await page.route(
+    "http://127.0.0.1:47832/theme-packs/render/my-custom/custom-old.json?*",
+    async (route) => {
+      await route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: false }),
+      });
+    },
+  );
+  await page.route(
+    "http://127.0.0.1:47832/theme-packs/render/my-custom.json",
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(pack),
+      });
+    },
+  );
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.40",
+    device: {
+      ...companionDevice,
+      activeTheme: "my-custom",
+      display: {
+        themeSpec: {
+          active: true,
+          hash: "1234abcd",
+          path: pack.specPath,
+          renderOk: true,
+        },
+      },
+    },
+    usageResponse: {
+      ok: true,
+      generatedAt: "2026-07-27T10:00:00Z",
+      source: "codexbar-display",
+      usageMode: "used",
+      currentProvider: "codex",
+      providers: [
+        {
+          id: "codex",
+          label: "Codex",
+          session: 27,
+          weekly: 63,
+          resetSecs: 5400,
+          usageMode: "used",
+        },
+      ],
+    },
+  });
+
+  await page.goto(localAppUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("img", {
+      name: /Rendered VibeTV theme my-custom showing Codex/,
+    })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    renderPackRequests.includes(
+      "/theme-packs/render/my-custom/custom-old.json",
+    ) &&
+      renderPackRequests.includes("/theme-packs/render/my-custom.json"),
+    "new Mac App should fall back to the exact matching cache of an old Companion",
+  );
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
@@ -5296,8 +5668,9 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   await routeLocalCompanionAppThroughLocalNext(page, appUrl);
   for (const themeId of ["synthwave", "clippy"]) {
     const renderPack = await readTrackedThemeRenderPackFixture(themeId);
+    const specFile = renderPack.specPath.split("/").pop();
     await page.route(
-      `http://127.0.0.1:47832/theme-packs/render/${themeId}.json`,
+      `http://127.0.0.1:47832/theme-packs/render/${themeId}/${specFile}`,
       async (route) => {
         await route.fulfill({
           status: 200,
@@ -5419,7 +5792,9 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   );
   assert(
     browserRequests.some(
-      (url) => new URL(url).pathname === "/theme-packs/render/synthwave.json",
+      (url) =>
+        new URL(url).pathname ===
+        "/theme-packs/render/synthwave/synthwa-2-5f8ac7.json",
     ),
     "local Theme Studio should open a published theme from the embedded render pack",
   );
@@ -6686,6 +7061,14 @@ async function routeCompanionOnline(
         currentDevice = {
           ...currentDevice,
           activeTheme: nextStatus.result.themeId,
+          display: {
+            ...currentDevice.display,
+            themeSpec: {
+              ...currentDevice.display?.themeSpec,
+              active: true,
+              path: nextStatus.result.activePath,
+            },
+          },
         };
       }
       await route.fulfill({

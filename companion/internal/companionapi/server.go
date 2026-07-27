@@ -3,11 +3,14 @@ package companionapi
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"embed"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"io/fs"
 	"net"
@@ -46,55 +49,57 @@ import (
 var embeddedControlCenterStatic embed.FS
 
 const (
-	DefaultAddr               = "127.0.0.1:47832"
-	appOrigin                 = "https://app.vibetv.shop"
-	defaultDevOrigin          = "http://localhost:3000"
-	previewOriginHostPrefix   = "codex-vibetv-control-center-"
-	previewOriginHostSuffix   = "-paul-anduschus-projects.vercel.app"
-	nativeControlCenterUA     = "VibeTVControlCenter/"
-	deviceConnectionReady     = "ready"
-	deviceConnectionRetrying  = "reconnecting"
-	deviceConnectionSetup     = "setup_required"
-	deviceTimeout             = 15 * time.Second
-	deviceSearchWindow        = 30 * time.Second
-	discoveryProbeTime        = 1500 * time.Millisecond
-	deviceProbeCacheTime      = 750 * time.Millisecond
-	repairDiscoveryAttempts   = 3
-	repairDiscoveryRetryGap   = 1200 * time.Millisecond
-	subnetProbeLimit          = 64
-	maxSubnetDiscoveryPrefix  = 23
-	maxSubnetDiscoveryTargets = 510
-	themeInstallDisableEnv    = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
-	macAppUpdateDisableEnv    = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
-	displayStreamLegacyLabel  = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
-	displayStreamLabelEnv     = runtimepaths.DisplayStreamLaunchAgentLabelEnv
-	displayStreamOutLogEnv    = runtimepaths.DisplayStreamOutLogEnv
-	displayStreamReadyAge     = 2 * time.Minute
-	displayVerificationAge    = 2 * time.Minute
-	displayStreamWaitTime     = 30 * time.Second
-	displayRenderWaitTime     = 12 * time.Second
-	defaultPairAttempts       = 3
-	defaultPairAttemptTimeout = 5 * time.Second
-	defaultPairRetryGap       = 500 * time.Millisecond
-	firmwareUpdateJobTime     = 10 * time.Minute
-	macAppUpdateJobTime       = 8 * time.Minute
-	usageFallbackFetchTime    = 15 * time.Second
-	usageDirectCacheTime      = 5 * time.Minute
-	themeRenderPackDir        = "theme-render-packs"
-	macAppInstallerURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
-	macAppReleaseAPIEnvVar    = "CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL"
-	macAppReleaseAPIURL       = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
-	macAppReleaseCheckGap     = 6 * time.Hour
-	macAppReleaseTimeout      = 5 * time.Second
-	macAppVersionEnv          = "VIBETV_MAC_APP_VERSION"
-	macAppBuildEnv            = "VIBETV_MAC_APP_BUILD"
-	firmwareManifestEnvVar    = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
-	firmwareReleaseTimeout    = 5 * time.Second
-	themePackUploadReadTime   = 30 * time.Second
+	DefaultAddr                  = "127.0.0.1:47832"
+	appOrigin                    = "https://app.vibetv.shop"
+	defaultDevOrigin             = "http://localhost:3000"
+	previewOriginHostPrefix      = "codex-vibetv-control-center-"
+	previewOriginHostSuffix      = "-paul-anduschus-projects.vercel.app"
+	nativeControlCenterUA        = "VibeTVControlCenter/"
+	deviceConnectionReady        = "ready"
+	deviceConnectionRetrying     = "reconnecting"
+	deviceConnectionSetup        = "setup_required"
+	deviceTimeout                = 15 * time.Second
+	deviceSearchWindow           = 30 * time.Second
+	discoveryProbeTime           = 1500 * time.Millisecond
+	deviceProbeCacheTime         = 750 * time.Millisecond
+	repairDiscoveryAttempts      = 3
+	repairDiscoveryRetryGap      = 1200 * time.Millisecond
+	subnetProbeLimit             = 64
+	maxSubnetDiscoveryPrefix     = 23
+	maxSubnetDiscoveryTargets    = 510
+	themeInstallDisableEnv       = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
+	macAppUpdateDisableEnv       = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
+	displayStreamLegacyLabel     = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
+	displayStreamLabelEnv        = runtimepaths.DisplayStreamLaunchAgentLabelEnv
+	displayStreamOutLogEnv       = runtimepaths.DisplayStreamOutLogEnv
+	displayStreamReadyAge        = 2 * time.Minute
+	displayVerificationAge       = 2 * time.Minute
+	displayStreamWaitTime        = 30 * time.Second
+	displayRenderWaitTime        = 12 * time.Second
+	defaultPairAttempts          = 3
+	defaultPairAttemptTimeout    = 5 * time.Second
+	defaultPairRetryGap          = 500 * time.Millisecond
+	firmwareUpdateJobTime        = 10 * time.Minute
+	macAppUpdateJobTime          = 8 * time.Minute
+	usageFallbackFetchTime       = 15 * time.Second
+	usageDirectCacheTime         = 5 * time.Minute
+	themeRenderPackDir           = "theme-render-packs"
+	themeRenderPackRevisionLimit = 12
+	macAppInstallerURL           = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
+	macAppReleaseAPIEnvVar       = "CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL"
+	macAppReleaseAPIURL          = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
+	macAppReleaseCheckGap        = 6 * time.Hour
+	macAppReleaseTimeout         = 5 * time.Second
+	macAppVersionEnv             = "VIBETV_MAC_APP_VERSION"
+	macAppBuildEnv               = "VIBETV_MAC_APP_BUILD"
+	firmwareManifestEnvVar       = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
+	firmwareReleaseTimeout       = 5 * time.Second
+	themePackUploadReadTime      = 30 * time.Second
 )
 
 var deviceHealthProbeTime = 2 * time.Second
 var themeRenderPackIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{2,63}$`)
+var themeRenderPackSpecFilePattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+\.json$`)
 var firmwareHealthVerifyTime = 30 * time.Second
 var diagnosticsDiscoveryTime = 5 * time.Second
 
@@ -1007,19 +1012,186 @@ func (s *Server) handleThemeRenderPack(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet, http.MethodHead) {
 		return
 	}
-	themeID := themeRenderPackID(r.URL.Path)
-	if themeID != "" {
-		if data, err := os.ReadFile(s.themeRenderPackPath(themeID)); err == nil {
-			w.Header().Set("Cache-Control", "no-store")
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			if r.Method == http.MethodGet {
-				_, _ = w.Write(data)
-			}
+	themeID, specFile, exactPath := themeRenderPackRequest(r.URL.Path)
+	selector, selectorOK := themeRenderPackRequestSelector(r)
+	if themeID == "" || !selectorOK || (exactPath && (selector.SpecPath != "" || selector.SpecSHA256 != "")) {
+		http.NotFound(w, r)
+		return
+	}
+	if exactPath {
+		if data, ok := s.loadThemeRenderPackBySpecFile(themeID, specFile, selector); ok {
+			serveThemeRenderPack(w, r, data)
 			return
 		}
+		// The Mac App bundles known historic revisions at this exact path. A
+		// custom cache miss may therefore safely fall through to those assets;
+		// never substitute the latest revision by id.
+		s.handleControlCenterAsset(w, r)
+		return
+	}
+	if data, ok := s.loadThemeRenderPack(themeID, selector); ok {
+		serveThemeRenderPack(w, r, data)
+		return
+	}
+	if selector.SpecPath != "" || selector.SpecHash != "" || selector.SpecSHA256 != "" {
+		http.NotFound(w, r)
+		return
 	}
 	s.handleControlCenterAsset(w, r)
+}
+
+func serveThemeRenderPack(w http.ResponseWriter, r *http.Request, data []byte) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if r.Method == http.MethodGet {
+		_, _ = w.Write(data)
+	}
+}
+
+func themeRenderPackRequest(requestPath string) (themeID, specFile string, exactPath bool) {
+	const prefix = "/theme-packs/render/"
+	if !strings.HasPrefix(requestPath, prefix) {
+		return "", "", false
+	}
+	remaining := strings.TrimPrefix(requestPath, prefix)
+	parts := strings.Split(remaining, "/")
+	if len(parts) == 1 {
+		return themeRenderPackID(requestPath), "", false
+	}
+	if len(parts) != 2 || !themeRenderPackIDPattern.MatchString(parts[0]) || !themeRenderPackSpecFilePattern.MatchString(parts[1]) {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+type themeRenderPackSelector struct {
+	SpecPath   string
+	SpecHash   string
+	SpecSHA256 string
+}
+
+func themeRenderPackRequestSelector(r *http.Request) (themeRenderPackSelector, bool) {
+	selector := themeRenderPackSelector{
+		SpecPath:   strings.TrimSpace(r.URL.Query().Get("specPath")),
+		SpecHash:   strings.ToLower(strings.TrimSpace(r.URL.Query().Get("specHash"))),
+		SpecSHA256: strings.ToLower(strings.TrimSpace(r.URL.Query().Get("specSha256"))),
+	}
+	if selector.SpecPath != "" {
+		if !strings.HasPrefix(selector.SpecPath, "/themes/") ||
+			strings.Contains(selector.SpecPath, "..") ||
+			len(selector.SpecPath) > 255 {
+			return themeRenderPackSelector{}, false
+		}
+	}
+	if selector.SpecSHA256 != "" {
+		if len(selector.SpecSHA256) != sha256.Size*2 {
+			return themeRenderPackSelector{}, false
+		}
+		if _, err := hex.DecodeString(selector.SpecSHA256); err != nil {
+			return themeRenderPackSelector{}, false
+		}
+	}
+	if selector.SpecHash != "" {
+		if len(selector.SpecHash) != 8 {
+			return themeRenderPackSelector{}, false
+		}
+		if _, err := hex.DecodeString(selector.SpecHash); err != nil {
+			return themeRenderPackSelector{}, false
+		}
+	}
+	return selector, true
+}
+
+func (s *Server) loadThemeRenderPack(themeID string, selector themeRenderPackSelector) ([]byte, bool) {
+	if selector.SpecPath == "" && selector.SpecHash == "" && selector.SpecSHA256 == "" {
+		data, err := os.ReadFile(s.themeRenderPackPath(themeID))
+		return data, err == nil
+	}
+
+	if selector.SpecPath != "" && selector.SpecSHA256 != "" {
+		if data, err := os.ReadFile(s.themeRenderPackRevisionPath(themeID, selector.SpecPath, selector.SpecSHA256)); err == nil && themeRenderPackMatches(data, selector) {
+			return data, true
+		}
+	}
+
+	// A path-only lookup is what the device health endpoint supplies. Scan the
+	// small per-theme cache rather than falling back to a different revision.
+	revisionDir := s.themeRenderPackRevisionDir(themeID)
+	entries, err := os.ReadDir(revisionDir)
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+				continue
+			}
+			data, readErr := os.ReadFile(filepath.Join(revisionDir, entry.Name()))
+			if readErr == nil && themeRenderPackMatches(data, selector) {
+				return data, true
+			}
+		}
+	}
+
+	// Older Companions stored a single <themeId>.json. Keep it readable for a
+	// current Mac App, but only when its exact selector matches.
+	if data, err := os.ReadFile(s.themeRenderPackPath(themeID)); err == nil && themeRenderPackMatches(data, selector) {
+		return data, true
+	}
+	return nil, false
+}
+
+func (s *Server) loadThemeRenderPackBySpecFile(themeID, specFile string, selector themeRenderPackSelector) ([]byte, bool) {
+	revisionDir := s.themeRenderPackRevisionDir(themeID)
+	entries, err := os.ReadDir(revisionDir)
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+				continue
+			}
+			data, readErr := os.ReadFile(filepath.Join(revisionDir, entry.Name()))
+			if readErr == nil && themeRenderPackHasSpecFile(data, specFile) && themeRenderPackMatches(data, selector) {
+				return data, true
+			}
+		}
+	}
+	if data, err := os.ReadFile(s.themeRenderPackPath(themeID)); err == nil && themeRenderPackHasSpecFile(data, specFile) && themeRenderPackMatches(data, selector) {
+		return data, true
+	}
+	return nil, false
+}
+
+func themeRenderPackMatches(data []byte, selector themeRenderPackSelector) bool {
+	var pack themeRenderPack
+	if err := json.Unmarshal(data, &pack); err != nil || !pack.OK {
+		return false
+	}
+	if selector.SpecPath != "" && strings.TrimSpace(pack.SpecPath) != selector.SpecPath {
+		return false
+	}
+	if selector.SpecHash != "" {
+		actual := strings.ToLower(strings.TrimSpace(pack.SpecHash))
+		if actual == "" {
+			actual = themeRenderPackSpecHash(pack.Spec)
+		}
+		if actual != selector.SpecHash {
+			return false
+		}
+	}
+	if selector.SpecSHA256 == "" {
+		return true
+	}
+	actual := strings.ToLower(strings.TrimSpace(pack.SpecSHA256))
+	if actual == "" {
+		actual = themeRenderPackSpecSHA256(pack.Spec)
+	}
+	return actual == selector.SpecSHA256
+}
+
+func themeRenderPackHasSpecFile(data []byte, specFile string) bool {
+	var pack themeRenderPack
+	if err := json.Unmarshal(data, &pack); err != nil || !pack.OK {
+		return false
+	}
+	return path.Base(strings.TrimSpace(pack.SpecPath)) == specFile
 }
 
 func (s *Server) serveControlCenterFile(w http.ResponseWriter, r *http.Request, assetPath string) bool {
@@ -3563,12 +3735,14 @@ type themeRenderPackAsset struct {
 }
 
 type themeRenderPack struct {
-	OK       bool                            `json:"ok"`
-	ThemeID  string                          `json:"themeId"`
-	Name     string                          `json:"name"`
-	Spec     json.RawMessage                 `json:"spec"`
-	SpecPath string                          `json:"specPath"`
-	Assets   map[string]themeRenderPackAsset `json:"assets"`
+	OK         bool                            `json:"ok"`
+	ThemeID    string                          `json:"themeId"`
+	Name       string                          `json:"name"`
+	Spec       json.RawMessage                 `json:"spec"`
+	SpecPath   string                          `json:"specPath"`
+	SpecHash   string                          `json:"specHash"`
+	SpecSHA256 string                          `json:"specSha256"`
+	Assets     map[string]themeRenderPackAsset `json:"assets"`
 }
 
 func (s *Server) persistThemeRenderPack(packBytes []byte) error {
@@ -3601,18 +3775,38 @@ func (s *Server) persistThemeRenderPack(packBytes []byte) error {
 			Encoding:    encoding,
 		}
 	}
+	specPath := strings.TrimSpace(pack.ThemeSpecFile.Entry.Path)
+	specHash := themeRenderPackSpecHash(pack.ThemeSpecRaw)
+	specSHA256 := themeRenderPackSpecSHA256(pack.ThemeSpecRaw)
 	payload, err := json.Marshal(themeRenderPack{
-		OK:       true,
-		ThemeID:  themeID,
-		Name:     strings.TrimSpace(pack.Manifest.Name),
-		Spec:     json.RawMessage(pack.ThemeSpecRaw),
-		SpecPath: strings.TrimSpace(pack.ThemeSpecFile.Entry.Path),
-		Assets:   assets,
+		OK:         true,
+		ThemeID:    themeID,
+		Name:       strings.TrimSpace(pack.Manifest.Name),
+		Spec:       json.RawMessage(pack.ThemeSpecRaw),
+		SpecPath:   specPath,
+		SpecHash:   specHash,
+		SpecSHA256: specSHA256,
+		Assets:     assets,
 	})
 	if err != nil {
 		return err
 	}
-	destination := s.themeRenderPackPath(themeID)
+	// Keep a bounded revision history. Custom themes deliberately reuse their
+	// ID while editing, so one id.json file is not enough to render the exact
+	// ThemeSpec that an already-connected VibeTV reports.
+	destination := s.themeRenderPackRevisionPath(themeID, specPath, specSHA256)
+	if err := writeThemeRenderPackFile(destination, payload); err != nil {
+		return err
+	}
+	if err := s.pruneThemeRenderPackRevisions(themeID, destination); err != nil {
+		return err
+	}
+	// Retain the original latest-by-id cache for old Mac Apps that do not send
+	// an exact ThemeSpec selector yet.
+	return writeThemeRenderPackFile(s.themeRenderPackPath(themeID), payload)
+}
+
+func writeThemeRenderPackFile(destination string, payload []byte) error {
 	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
 		return err
 	}
@@ -3645,6 +3839,84 @@ func (s *Server) themeRenderPackPath(themeID string) string {
 		themeRenderPackDir,
 		themeID+".json",
 	)
+}
+
+func (s *Server) themeRenderPackRevisionPath(themeID, specPath, specSHA256 string) string {
+	cacheKey := sha256.Sum256([]byte(specPath + "\n" + specSHA256))
+	return filepath.Join(s.themeRenderPackRevisionDir(themeID), hex.EncodeToString(cacheKey[:])+".json")
+}
+
+func (s *Server) themeRenderPackRevisionDir(themeID string) string {
+	return filepath.Join(
+		s.home,
+		"Library",
+		"Application Support",
+		"codexbar-display",
+		themeRenderPackDir,
+		themeID,
+	)
+}
+
+func (s *Server) pruneThemeRenderPackRevisions(themeID, preservePath string) error {
+	revisionDir := s.themeRenderPackRevisionDir(themeID)
+	entries, err := os.ReadDir(revisionDir)
+	if err != nil {
+		return err
+	}
+	type cachedRevision struct {
+		name       string
+		modTime    time.Time
+		isPreserve bool
+	}
+	revisions := make([]cachedRevision, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return infoErr
+		}
+		entryPath := filepath.Join(revisionDir, entry.Name())
+		revisions = append(revisions, cachedRevision{
+			name:       entry.Name(),
+			modTime:    info.ModTime(),
+			isPreserve: entryPath == preservePath,
+		})
+	}
+	sort.Slice(revisions, func(i, j int) bool {
+		if revisions[i].isPreserve != revisions[j].isPreserve {
+			return revisions[i].isPreserve
+		}
+		if !revisions[i].modTime.Equal(revisions[j].modTime) {
+			return revisions[i].modTime.After(revisions[j].modTime)
+		}
+		return revisions[i].name > revisions[j].name
+	})
+	if len(revisions) <= themeRenderPackRevisionLimit {
+		return nil
+	}
+	for _, revision := range revisions[themeRenderPackRevisionLimit:] {
+		if err := os.Remove(filepath.Join(revisionDir, revision.name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
+}
+
+func themeRenderPackSpecSHA256(spec json.RawMessage) string {
+	sum := sha256.Sum256(spec)
+	return hex.EncodeToString(sum[:])
+}
+
+// themeRenderPackSpecHash matches the FNV-1a hash exposed by the VibeTV
+// /health display.themeSpec.hash field. Firmware trims stored ThemeSpec bytes
+// before hashing, so a pack's harmless final newline must not change it. Keep
+// it separate from the SHA-256 cache key: they answer different questions.
+func themeRenderPackSpecHash(spec json.RawMessage) string {
+	hash := fnv.New32a()
+	_, _ = hash.Write(bytes.TrimSpace(spec))
+	return fmt.Sprintf("%08x", hash.Sum32())
 }
 
 func themeRenderPackID(requestPath string) string {

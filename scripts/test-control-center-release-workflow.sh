@@ -60,10 +60,11 @@ main() {
   cmp -s "$RELEASE_INSTALLER" "$PUBLIC_INSTALLER" \
     || die "public Control Center installer must match the release installer"
 
-  local release_job macos_job release_count checksum_line release_line download_dmg_line
+  local release_job macos_job shopify_guard_job release_count checksum_line release_line download_dmg_line
   local build_dmg_line verify_dmg_line upload_dmg_line require_dmg_line
   local local_installer release_installer local_installer_build_line local_installer_go_build_line
   local local_static_builder ci_workflow preview_workflow signing_script verify_dmg_plan workflow
+  local theme_shop_doc
   local verify_dmg_open_line verify_syspolicy_line verify_app_spctl_line
   release_job="$(job_block "build-and-release")"
   local_installer="$(cat "$LOCAL_INSTALLER")"
@@ -73,11 +74,23 @@ main() {
   preview_workflow="$(cat "$PREVIEW_WORKFLOW")"
   workflow="$(cat "$WORKFLOW")"
   signing_script="$(cat "$SIGNING_SCRIPT")"
+  theme_shop_doc="$(cat "$ROOT/docs/vibetv-shopify-theme-shop.md")"
   verify_dmg_plan="$("$VERIFY_DMG_SCRIPT" --dry-run --dmg "/tmp/VibeTV-Control-Center.dmg")"
   macos_job="$(job_block "build-macos-dmg")"
+  shopify_guard_job="$(job_block "validate-shopify-theme-compatibility")"
 
   assert_not_contains "$workflow" "workflow_dispatch:" \
     "public release workflow must not expose the validation-only trigger"
+  assert_contains "$theme_shop_doc" "SHOPIFY_PACK_METADATA_GENERATION=legacy" \
+    "theme release docs must freeze Shopify pack metadata for old hosted apps"
+  assert_contains "$theme_shop_doc" "never overwrite technical metadata" \
+    "theme release docs must forbid overwriting old Shopify theme ids"
+  assert_contains "$shopify_guard_job" "check-shopify-theme-pack-compatibility.mjs" \
+    "release workflow must read and verify live Shopify theme metadata"
+  assert_contains "$shopify_guard_job" "VIBETV_SHOPIFY_CLIENT_SECRET" \
+    "Shopify theme guard must receive its client credential secret"
+  assert_contains "$macos_job" "needs: validate-shopify-theme-compatibility" \
+    "customer DMG build must wait for the live Shopify compatibility guard"
   assert_not_contains "$workflow" "validation_version:" \
     "public release workflow must not accept a validation bundle version"
   assert_contains "$workflow" "permissions:" \
@@ -169,8 +182,10 @@ main() {
     "macOS DMG job must upload the notarized DMG for the release job"
   assert_not_contains "$macos_job" "--dry-run" \
     "macOS DMG job must run the real signing/notarization path"
-  assert_contains "$release_job" "needs: build-macos-dmg" \
+  assert_contains "$release_job" "- build-macos-dmg" \
     "public release job must wait for the notarized Mac DMG"
+  assert_contains "$release_job" "- validate-shopify-theme-compatibility" \
+    "public release job must wait for the live Shopify compatibility guard"
   assert_contains "$release_job" "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')" \
     "public release job must run only for a release tag"
   assert_contains "$release_job" "contents: write" \
@@ -325,7 +340,7 @@ main() {
     || die "local installer must build local Control Center before companion binary"
   (( local_installer_build_line < local_installer_go_build_line )) \
     || die "local installer must embed local Control Center before Go binary is built"
-  assert_contains "$local_static_builder" "http://127.0.0.1:47832/theme-packs/vibetv-theme-packs.json" \
+  assert_contains "$local_static_builder" "http://127.0.0.1:47832/theme-packs/vibetv-theme-packs-v2.json" \
     "local static Control Center must resolve theme packs from the local Companion"
   assert_contains "$local_static_builder" "dist\", \"theme-packs" \
     "local static Control Center must embed built theme-pack downloads"

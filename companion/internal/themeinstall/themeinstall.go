@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	DefaultCatalogURL          = "https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json"
+	DefaultCatalogURL          = "https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs-v2.json"
 	DefaultWiFiTimeout         = 60 * time.Second
 	DefaultUploadSettleDelay   = 750 * time.Millisecond
 	DefaultFirmwareManifestURL = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"

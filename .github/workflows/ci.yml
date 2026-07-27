@@ -154,6 +154,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -167,6 +169,9 @@ jobs:
 
       - name: Check Theme Pack Dist
         run: ./scripts/check-theme-pack-dist.sh
+
+      - name: Test Shopify legacy theme compatibility guard
+        run: node scripts/test-shopify-theme-pack-compatibility.mjs
 
   firmware-build-v0:
     runs-on: ubuntu-latest

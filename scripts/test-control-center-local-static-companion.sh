@@ -101,11 +101,28 @@ main() {
 
   asset_path="$(extract_next_asset_path "$index_file")"
   curl -fsS "${base_url}${asset_path}" >/dev/null
-  curl -fsS "${base_url}/theme-packs/vibetv-theme-packs.json" >/dev/null
+  curl -fsS "${base_url}/theme-packs/vibetv-theme-packs.json" \
+    | grep -F '"vibetv-theme-mini-classic.zip"' >/dev/null \
+    || {
+      printf 'error: frozen legacy theme catalog is unavailable\n' >&2
+      exit 1
+    }
+  curl -fsS "${base_url}/theme-packs/vibetv-theme-packs-v2.json" \
+    | grep -F '"vibetv-theme-mini-classic-v1.1.0.zip"' >/dev/null \
+    || {
+      printf 'error: current versioned theme catalog is unavailable\n' >&2
+      exit 1
+    }
   curl -fsS "${base_url}/theme-packs/render/mini-classic.json" \
     | grep -F '"spec"' >/dev/null \
     || {
       printf 'error: local Theme Studio render pack is unavailable\n' >&2
+      exit 1
+    }
+  curl -fsS "${base_url}/theme-packs/render/synthwave/synthwa-1-6b39a3.json" \
+    | grep -F '"specPath":"/themes/u/synthwa-1-6b39a3.json"' >/dev/null \
+    || {
+      printf 'error: frozen legacy ThemeSpec preview is unavailable\n' >&2
       exit 1
     }
   expect_http_status 404 POST "${base_url}/api/ai-theme"

@@ -5,6 +5,18 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-07-27 — Exact live previews and neutral catalog examples
+
+- User approval: After the preview failure and proposed separation of live, catalog, and editor previews were explained, the user explicitly instructed `rest so umsetzen` and clarified that Custom Themes must retain the preview behavior of the older Mac App while large catalog previews may use neutral example data.
+- Approved customer-visible result: Overview renders the exact installed published or Custom Theme revision with the latest real VibeTV frame. Known legacy revisions remain previewable. A disconnected VibeTV shows a clear paused-live state instead of loading forever. Theme Library thumbnails and the large preview use short neutral `Session`/`Weekly` example values; only the large preview labels them as example data.
+- Approved files: Live VibeTV preview, Theme Library preview, revisioned render-pack storage and serving, local Mac App theme bundle, and their unit, Companion, customer-flow, and visual assertions.
+
+## 2026-07-27 — Theme releases stay compatible by app generation
+
+- User approval: After the exact old-app/old-firmware and new-app/new-firmware theme release matrix was explained, the user explicitly instructed `dann bau das so` in the Codex task on 2026-07-27.
+- Approved customer-visible result: An older Mac App keeps its bundled legacy themes. The current Mac App uses the matching current theme generation, upgrades firmware before refreshing the active theme, and never exposes an incompatible current theme pack to an older app generation. Shopify presentation remains unchanged; matching GitHub catalog metadata supplies the generation-correct install package and requirements. No new customer controls or technical compatibility choices appear.
+- Approved files: Theme catalog selection and merge logic, the local Mac App theme bundle, immutable theme release metadata, and their unit, customer-flow, and release assertions.
+
 ## 2026-07-27 — One update keeps the active theme compatible
 
 - User approval: The user explicitly required in the Codex task on 2026-07-27 that customers with an older VibeTV update everything needed for the new usage display.

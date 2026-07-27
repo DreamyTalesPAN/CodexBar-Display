@@ -42,25 +42,47 @@ Rules:
 
 ## CLI
 
-The versioned directories under `theme-packs/` are the source of truth for
-published themes. Build all pack ZIPs and the GitHub catalog with:
+The directories under `theme-packs/` are the source of truth for the current
+app generation. Every content change must bump both `manifest.version` and the
+ThemeSpec `rev`, and must use a new ThemeSpec device path. Build all current
+pack ZIPs and the GitHub catalog with:
 
 ```bash
 node scripts/build-theme-packs.mjs
 ```
 
-The build validates every source directory and every generated ZIP with the Companion CLI. Committed output:
+The build validates every source directory and every generated ZIP with the
+Companion CLI. A published versioned ZIP is immutable: if the same version
+would produce different bytes, the build fails and requires another version
+bump. Committed current-generation output:
 
 ```text
-dist/theme-packs/vibetv-theme-packs.json
-dist/theme-packs/vibetv-theme-<theme-id>.zip
+dist/theme-packs/vibetv-theme-packs-v2.json
+dist/theme-packs/vibetv-theme-<theme-id>-v<theme-version>.zip
+dist/theme-packs/render/<theme-id>/<theme-spec-file>.json
 ```
 
-After these files are committed and merged to `main`, the default catalog URL is:
+The revisioned render packs contain both frozen legacy and current revisions.
+They power exact previews in the hosted Control Center and are copied into the
+Mac App. The unqualified `render/<theme-id>.json` alias points only to the
+current revision for compatibility with older clients.
+
+The legacy generation remains frozen at:
 
 ```text
 https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json
 ```
+
+Old Mac Apps bundle that legacy catalog and its unversioned ZIPs. Current Mac
+Apps bundle a release-local snapshot of the v2 catalog and versioned ZIPs. The
+current Companion defaults to:
+
+```text
+https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs-v2.json
+```
+
+When a renderer contract changes incompatibly again, create a new catalog
+generation instead of repointing an old Companion at incompatible packs.
 
 List the published VibeTV theme catalog:
 
@@ -81,7 +103,7 @@ missing or does not match:
 
 ```bash
 go run ./cmd/codexbar-display theme-pack validate \
-  --pack https://example.com/vibetv-theme-cozy-meadow.zip \
+  --pack https://example.com/vibetv-theme-cozy-meadow-v0.2.0.zip \
   --pack-sha256 <64-character-hex-sha256> \
   --pack-size-bytes <exact-byte-size>
 ```

@@ -1,0 +1,62 @@
+{
+  "claude-creature": {
+    "card": {
+      "width": 140,
+      "height": 142,
+      "svgSha256": "3ea1326287ac61447730ef4ec4491daca0744a9df5c85f81f3b687f880a0186f"
+    },
+    "large": {
+      "width": 606,
+      "height": 606,
+      "svgSha256": "3ea1326287ac61447730ef4ec4491daca0744a9df5c85f81f3b687f880a0186f"
+    }
+  },
+  "clippy": {
+    "card": {
+      "width": 140,
+      "height": 142,
+      "svgSha256": "a375d0a3449253758e2a677ebf97afe047b765022d9fe489b48adfebdc915d16"
+    },
+    "large": {
+      "width": 606,
+      "height": 606,
+      "svgSha256": "a375d0a3449253758e2a677ebf97afe047b765022d9fe489b48adfebdc915d16"
+    }
+  },
+  "cozy-meadow": {
+    "card": {
+      "width": 140,
+      "height": 142,
+      "svgSha256": "a400cbfc35aec1cb34abe6f6382ba595326e34f27b7fd7d23ddd5a87f7daf5d7"
+    },
+    "large": {
+      "width": 606,
+      "height": 606,
+      "svgSha256": "a400cbfc35aec1cb34abe6f6382ba595326e34f27b7fd7d23ddd5a87f7daf5d7"
+    }
+  },
+  "mini-classic": {
+    "card": {
+      "width": 140,
+      "height": 142,
+      "svgSha256": "a54a786190e7daba07043b88fbd608e25b45f9ebb4c203967e2a8f3facd2454f"
+    },
+    "large": {
+      "width": 606,
+      "height": 606,
+      "svgSha256": "a54a786190e7daba07043b88fbd608e25b45f9ebb4c203967e2a8f3facd2454f"
+    }
+  },
+  "synthwave": {
+    "card": {
+      "width": 140,
+      "height": 142,
+      "svgSha256": "0204a25b1e940442eaff97af3489bc112eb630b3cd3a61e00d83c43b7f778e95"
+    },
+    "large": {
+      "width": 606,
+      "height": 606,
+      "svgSha256": "0204a25b1e940442eaff97af3489bc112eb630b3cd3a61e00d83c43b7f778e95"
+    }
+  }
+}

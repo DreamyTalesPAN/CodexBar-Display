@@ -2929,6 +2929,138 @@ func TestCustomThemeRenderPackPersistsAcrossCompanionRestart(t *testing.T) {
 	}
 }
 
+func TestCustomThemeRenderPacksKeepInstalledRevisions(t *testing.T) {
+	home := t.TempDir()
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.home = home
+	first := testThemePackZipRevision(t, "my-custom", "/themes/u/custom-a.json", 1, "FIRST")
+	second := testThemePackZipRevision(t, "my-custom", "/themes/u/custom-b.json", 2, "SECOND")
+	if err := server.persistThemeRenderPack(first); err != nil {
+		t.Fatalf("persist first custom revision: %v", err)
+	}
+	if err := server.persistThemeRenderPack(second); err != nil {
+		t.Fatalf("persist second custom revision: %v", err)
+	}
+
+	requestPack := func(requestPath string) themeRenderPack {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, requestPath, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected %s status 200, got %d body=%s", requestPath, rec.Code, rec.Body.String())
+		}
+		var pack themeRenderPack
+		if err := json.Unmarshal(rec.Body.Bytes(), &pack); err != nil {
+			t.Fatalf("decode %s: %v", requestPath, err)
+		}
+		return pack
+	}
+
+	firstPack := requestPack("/theme-packs/render/my-custom/custom-a.json")
+	if firstPack.SpecPath != "/themes/u/custom-a.json" || firstPack.SpecHash == "" || !strings.Contains(string(firstPack.Spec), "FIRST") {
+		t.Fatalf("expected exact first custom revision, got %+v", firstPack)
+	}
+	if asset, ok := firstPack.Assets["/themes/u/custom-meta.txt"]; !ok || asset.Data != "FIRST" {
+		t.Fatalf("expected first revision assets to remain available, got %+v", firstPack.Assets)
+	}
+
+	secondPack := requestPack("/theme-packs/render/my-custom/custom-b.json")
+	if secondPack.SpecPath != "/themes/u/custom-b.json" || secondPack.SpecHash == firstPack.SpecHash || !strings.Contains(string(secondPack.Spec), "SECOND") {
+		t.Fatalf("expected exact second custom revision, got %+v", secondPack)
+	}
+
+	byDevicePath := requestPack("/theme-packs/render/my-custom.json?specPath=%2Fthemes%2Fu%2Fcustom-a.json")
+	if byDevicePath.SpecPath != firstPack.SpecPath || byDevicePath.SpecHash != firstPack.SpecHash {
+		t.Fatalf("expected exact path selector to return first revision, got %+v", byDevicePath)
+	}
+	byDeviceHash := requestPack("/theme-packs/render/my-custom.json?specHash=" + firstPack.SpecHash)
+	if byDeviceHash.SpecPath != firstPack.SpecPath || byDeviceHash.SpecHash != firstPack.SpecHash {
+		t.Fatalf("expected FNV device hash selector to return first revision, got %+v", byDeviceHash)
+	}
+
+	latest := requestPack("/theme-packs/render/my-custom.json")
+	if latest.SpecPath != secondPack.SpecPath {
+		t.Fatalf("expected id alias to serve most recent revision, got %+v", latest)
+	}
+
+	for _, requestPath := range []string{
+		"/theme-packs/render/my-custom/custom-a.json?specHash=00000000",
+		"/theme-packs/render/my-custom.json?specPath=%2Fthemes%2Fu%2Fmissing.json",
+		"/theme-packs/render/my-custom.json?specHash=00000000",
+	} {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, requestPath, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected exact selector miss %s to return 404, got %d body=%s", requestPath, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestCustomThemeRenderPackRevisionCacheIsBounded(t *testing.T) {
+	home := t.TempDir()
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.home = home
+
+	var newestPath string
+	for revision := 0; revision < themeRenderPackRevisionLimit+3; revision++ {
+		newestPath = fmt.Sprintf("/themes/u/custom-%02d.json", revision)
+		pack := testThemePackZipRevision(
+			t,
+			"my-custom",
+			newestPath,
+			revision+1,
+			fmt.Sprintf("REVISION-%02d", revision),
+		)
+		if err := server.persistThemeRenderPack(pack); err != nil {
+			t.Fatalf("persist custom revision %d: %v", revision, err)
+		}
+	}
+
+	entries, err := os.ReadDir(server.themeRenderPackRevisionDir("my-custom"))
+	if err != nil {
+		t.Fatalf("read bounded revision cache: %v", err)
+	}
+	if len(entries) != themeRenderPackRevisionLimit {
+		t.Fatalf("expected %d cached revisions, got %d", themeRenderPackRevisionLimit, len(entries))
+	}
+	rec := httptest.NewRecorder()
+	requestPath := "/theme-packs/render/my-custom/" + filepath.Base(newestPath)
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, requestPath, nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "REVISION-14") {
+		t.Fatalf("expected newest revision to survive pruning, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLegacySingleThemeRenderPackCacheStillSupportsExactSelector(t *testing.T) {
+	home := t.TempDir()
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.home = home
+	if err := server.persistThemeRenderPack(testThemePackZip(t)); err != nil {
+		t.Fatalf("persist legacy cache fixture: %v", err)
+	}
+	if err := os.RemoveAll(server.themeRenderPackRevisionDir("cozy-meadow")); err != nil {
+		t.Fatalf("remove revision cache to simulate old Companion: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/theme-packs/render/cozy-meadow.json?specPath=%2Fthemes%2Fu%2Fcm.json",
+		nil,
+	)
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected legacy id cache to satisfy exact path, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got themeRenderPack
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode legacy cache response: %v", err)
+	}
+	if got.SpecPath != "/themes/u/cm.json" {
+		t.Fatalf("unexpected legacy cache response: %+v", got)
+	}
+}
+
 func TestCustomThemeRenderPackPersistsWhenDisplayRefreshFails(t *testing.T) {
 	device := newThemeInstallReadyDeviceServer(t)
 	defer device.Close()
@@ -7602,6 +7734,46 @@ func testThemePackZip(t *testing.T) []byte {
 			name: "theme.json",
 			data: `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"v":"OK","s":1}]}`,
 		},
+	}
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	for _, file := range files {
+		entry, err := writer.Create(file.name)
+		if err != nil {
+			t.Fatalf("create ZIP entry %s: %v", file.name, err)
+		}
+		if _, err := io.WriteString(entry, file.data); err != nil {
+			t.Fatalf("write ZIP entry %s: %v", file.name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close theme ZIP: %v", err)
+	}
+	return append([]byte(nil), buffer.Bytes()...)
+}
+
+func testThemePackZipRevision(t *testing.T, themeID, specPath string, revision int, marker string) []byte {
+	t.Helper()
+	files := []struct {
+		name string
+		data string
+	}{
+		{
+			name: "manifest.json",
+			data: fmt.Sprintf(`{"kind":"vibetv-theme-pack","schemaVersion":1,"id":%q,"name":"My Custom","themeSpec":{"path":%q,"file":"theme.json"},"assets":[{"path":"/themes/u/custom-meta.txt","file":"assets/meta.txt","contentType":"text/plain"}]}`,
+				themeID,
+				specPath,
+			),
+		},
+		{
+			name: "theme.json",
+			data: fmt.Sprintf(`{"v":1,"id":%q,"rev":%d,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"v":%q,"s":1}]}`,
+				themeID,
+				revision,
+				marker,
+			),
+		},
+		{name: "assets/meta.txt", data: marker},
 	}
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)

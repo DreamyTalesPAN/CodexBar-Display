@@ -78,6 +78,7 @@ import type { ThemeStudioDeviceCapabilities } from "@/lib/theme-studio-capabilit
 import type { ThemeProduct } from "@/lib/themes";
 import { themeRenderPackUrl } from "./control-center-runtime";
 import {
+  THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
   type ThemeRenderPack,
 } from "./live-vibetv-preview";
@@ -310,7 +311,10 @@ export function ThemeLibraryScreen({
 
     setLoadingEditorThemeId(item.themeId);
     try {
-      const payload = await fetchThemePackForEditing(item.product.themeId);
+      const payload = await fetchThemePackForEditing(
+        item.product.themeId,
+        item.product.themeSpecPath,
+      );
       const spec = importThemeSpec(payload.spec);
       const existingIds = allThemeIds(themes, userThemes);
       spec.themeId = uniqueThemeId(`${item.product.themeId}-custom`, existingIds);
@@ -554,12 +558,18 @@ export function ThemeLibraryScreen({
       {previewTheme ? (
         <Dialog open onOpenChange={(open) => !open && setPreviewTheme(null)}>
           <DialogContent
-            aria-describedby={undefined}
+            aria-describedby="theme-library-example-data"
             className="max-h-[calc(100dvh-2rem)] max-w-[640px] overflow-y-auto sm:max-w-[640px]"
           >
             <DialogHeader>
               <DialogTitle className="truncate text-2xl font-black">{previewTheme.title}</DialogTitle>
             </DialogHeader>
+            <p
+              className="-mt-2 text-sm text-muted-foreground"
+              id="theme-library-example-data"
+            >
+              Example data · This is a catalog preview, not live VibeTV data.
+            </p>
             <ThemePreview large theme={previewTheme} />
           </DialogContent>
         </Dialog>
@@ -1359,17 +1369,20 @@ function ThemePreview({
 }) {
   const [packState, setPackState] = useState<{
     pack: ThemeRenderPack | null;
+    requestKey: string;
     status: "idle" | "loading" | "ready" | "error";
-    themeId: string;
   }>({
     pack: null,
+    requestKey: "",
     status: "idle",
-    themeId: "",
   });
   const className = large
     ? "relative block aspect-square w-full overflow-hidden border border-border bg-muted"
     : "relative block size-28 overflow-hidden border border-border bg-muted sm:size-36";
   const themeId = theme.themeId;
+  const themeSpecPath =
+    theme.kind === "published" ? theme.product.themeSpecPath || "" : "";
+  const requestKey = `${themeId}\n${themeSpecPath}`;
   const customPack =
     theme.kind === "custom"
       ? {
@@ -1382,11 +1395,15 @@ function ThemePreview({
       : null;
   const pack =
     customPack ||
-    (packState.themeId === themeId && packState.status === "ready"
+    (packState.requestKey === requestKey && packState.status === "ready"
       ? packState.pack
       : null);
   const status =
-    customPack ? "ready" : packState.themeId === themeId ? packState.status : "loading";
+    customPack
+      ? "ready"
+      : packState.requestKey === requestKey
+        ? packState.status
+        : "loading";
 
   useEffect(() => {
     if (theme.kind === "custom") {
@@ -1397,7 +1414,9 @@ function ThemePreview({
     }
 
     const controller = new AbortController();
-    fetch(themeRenderPackUrl(themeId), { signal: controller.signal })
+    fetch(themeRenderPackUrl(themeId, themeSpecPath), {
+      signal: controller.signal,
+    })
       .then((response) => {
         if (!response.ok) {
           throw new Error("theme preview unavailable");
@@ -1407,24 +1426,25 @@ function ThemePreview({
       .then((payload) => {
         setPackState({
           pack: payload,
+          requestKey,
           status: payload?.spec ? "ready" : "error",
-          themeId,
         });
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
         }
-        setPackState({ pack: null, status: "error", themeId });
+        setPackState({ pack: null, requestKey, status: "error" });
       });
 
     return () => controller.abort();
-  }, [theme.kind, themeId]);
+  }, [requestKey, theme.kind, themeId, themeSpecPath]);
 
   return (
     <span className={className}>
       <ThemeSpecPreview
         animate={Boolean(large)}
+        frame={THEME_CATALOG_PREVIEW_FRAME}
         pack={pack}
         status={status}
         themeId={themeId}
@@ -1433,12 +1453,15 @@ function ThemePreview({
   );
 }
 
-async function fetchThemePackForEditing(themeId: string): Promise<{
+async function fetchThemePackForEditing(
+  themeId: string,
+  themeSpecPath?: string,
+): Promise<{
   assets?: Record<string, ThemeStudioAsset>;
   name?: string;
   spec: unknown;
 }> {
-  const response = await fetch(themeRenderPackUrl(themeId));
+  const response = await fetch(themeRenderPackUrl(themeId, themeSpecPath));
   if (!response.ok) {
     throw new Error("Theme could not be opened.");
   }
