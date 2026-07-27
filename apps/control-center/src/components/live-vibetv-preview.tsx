@@ -663,7 +663,7 @@ function ThemeTextPrimitive({
   }, [measurementKey, text]);
 
   const commonTextProps = {
-    dominantBaseline: "hanging" as const,
+    dominantBaseline: "text-before-edge" as const,
     fill: color,
     fontFamily:
       "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",

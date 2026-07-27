@@ -281,6 +281,8 @@ describe("firmware-compatible ThemeSpec text layout", () => {
       /<clipPath id="([^"]+)"><rect height="20" width="81" x="145" y="46"><\/rect><\/clipPath>/,
     );
     expect(markup).toContain('clip-path="url(#theme-text-');
+    expect(markup).toContain('dominant-baseline="text-before-edge"');
+    expect(markup).not.toContain('dominant-baseline="hanging"');
     expect(markup).toMatch(
       /<text[^>]*y="46"[^>]*text-anchor="start"[^>]*x="145">/,
     );

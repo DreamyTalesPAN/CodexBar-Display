@@ -5,6 +5,12 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-07-27 — ThemeSpec text uses the VibeTV top edge
+
+- User approval: The user compared the installed Synthwave theme on the physical VibeTV with the Mac App preview and explicitly reported that `SESSION used` and `WEEKLY used` render too high only in the preview.
+- Approved customer-visible result: ThemeSpec text uses its `y` coordinate as the top edge in every Mac preview, matching the VibeTV renderer without theme- or provider-specific offsets. Synthwave labels sit at the same vertical positions as the physical display; other approved preview behavior is unchanged.
+- Approved files: Live VibeTV ThemeSpec preview renderer, its unit and vector-golden assertions, and this approval log.
+
 ## 2026-07-27 — Customer-safe internal preview wording
 
 - User approval: The user explicitly instructed Codex to continue after the KISS implementation and review.
