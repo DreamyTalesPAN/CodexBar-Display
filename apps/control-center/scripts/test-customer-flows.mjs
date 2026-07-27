@@ -320,6 +320,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testThemeMissingDeviceNeverFlashesOverviewAfterConnect(
+        browser,
+        appContext.appUrl,
+      );
       await testRunningPairingFailureHidesStaleUsageFrame(
         browser,
         appContext.appUrl,
@@ -408,6 +412,10 @@ async function main() {
       appContext.appUrl,
     );
     await testLocalWifiVerificationWithoutFrameOpensOverview(
+      browser,
+      appContext.appUrl,
+    );
+    await testThemeMissingDeviceNeverFlashesOverviewAfterConnect(
       browser,
       appContext.appUrl,
     );
@@ -1002,6 +1010,79 @@ async function testLocalWifiVerificationWithoutFrameOpensOverview(
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testThemeMissingDeviceNeverFlashesOverviewAfterConnect(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const partialSelection = {
+    ...themeMissingDevice,
+    health: undefined,
+    display: undefined,
+    stream: {
+      healthy: false,
+      running: false,
+      detail:
+        "VibeTV is connected. The Mac App will retry the display stream.",
+    },
+  };
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: { connected: false, paired: false, ready: false },
+    onSelect: () => partialSelection,
+    deviceReadDelayMs: 500,
+    onDeviceRead: (currentDevice) =>
+      currentDevice.active
+        ? {
+            ...themeMissingDevice,
+            deviceId: "fixture-device-1",
+            stream: { healthy: false, running: false },
+          }
+        : currentDevice,
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.evaluate(() => {
+    const windowWithTestState = window;
+    windowWithTestState.__vibeTVOverviewWasRendered = false;
+    const recordOverview = () => {
+      if (
+        document.querySelector(
+          'nav[aria-label="Control Center"], [data-testid="overview-screen"]',
+        )
+      ) {
+        windowWithTestState.__vibeTVOverviewWasRendered = true;
+      }
+    };
+    recordOverview();
+    new MutationObserver(recordOverview).observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+  });
+
+  await discoveredConnectButtons(page).first().click();
+  await page
+    .getByRole("heading", { name: "Choose your VibeTV theme" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.evaluate(() => window.__vibeTVOverviewWasRendered)) === false,
+    "A newly connected theme-missing VibeTV must never render Overview before the theme chooser",
+  );
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "Theme setup must keep the Control Center shell hidden",
+  );
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
@@ -6514,6 +6595,7 @@ async function routeCompanionOnline(
     legacyCompanionRelease = false,
     device = companionDevice,
     onDiscover,
+    onDeviceRead,
     onPair,
     onRepair,
     onSelect,
@@ -6527,6 +6609,7 @@ async function routeCompanionOnline(
     installStatusSequence,
     deviceAfterThemeInstall,
     deviceReadFailuresAfterThemeInstall = 0,
+    deviceReadDelayMs = 0,
     updateStatusSequence,
     macAppUpdateStatusSequence,
     macAppUpdateStatusFailures = 0,
@@ -7270,6 +7353,10 @@ async function routeCompanionOnline(
         await route.abort("failed");
         return;
       }
+      if (deviceReadDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, deviceReadDelayMs));
+      }
+      currentDevice = onDeviceRead?.(currentDevice) || currentDevice;
       await route.fulfill({
         status: 200,
         contentType: "application/json",

@@ -281,6 +281,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [deviceTarget, setDeviceTarget] = useState(readInitialDeviceTarget);
   const [brightness, setBrightness] = useState<number | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [
+    deviceSelectionVerificationPending,
+    setDeviceSelectionVerificationPending,
+  ] = useState(false);
   const [supportReportBusy, setSupportReportBusy] = useState(false);
   const [lastError, setLastError] = useState<ApiError | null>(null);
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
@@ -1396,9 +1400,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const setupGeneration = setupGenerationRef.current;
       pendingPairingCandidate.current = candidate;
       setBusyAction("select");
+      setDeviceSelectionVerificationPending(true);
       setLastError(null);
       try {
-        const payload = await runCompanion<{ device: DeviceInfo }>(
+        await runCompanion<{ device: DeviceInfo }>(
           "/v1/device/select",
           {
             method: "POST",
@@ -1412,14 +1417,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (setupGeneration !== setupGenerationRef.current) {
           return;
         }
-        mergeDevice(payload.device);
+        const verifiedDevice = await refreshDevice({ quiet: true });
+        if (setupGeneration !== setupGenerationRef.current) {
+          return;
+        }
+        if (!verifiedDevice) {
+          throw {
+            code: "device_verification_failed",
+            message: "The selected VibeTV could not be verified.",
+            nextAction: "Keep VibeTV powered on, then press Connect again.",
+          } satisfies ApiError;
+        }
         setDeviceCandidates([]);
         pendingPairingCandidate.current = null;
         setDeviceSearchState("idle");
-        setDeviceState(payload.device.paired ? "paired" : "online");
-        if (payload.device.target) {
-          setDeviceTarget(payload.device.target);
-          rememberDeviceTarget(payload.device.target);
+        setDeviceState(verifiedDevice.paired ? "paired" : "online");
+        if (verifiedDevice.target) {
+          setDeviceTarget(verifiedDevice.target);
+          rememberDeviceTarget(verifiedDevice.target);
         }
         setLastError(null);
         addEvent({
@@ -1451,11 +1466,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         });
       } finally {
         if (setupGeneration === setupGenerationRef.current) {
+          setDeviceSelectionVerificationPending(false);
           setBusyAction(null);
         }
       }
     },
-    [addEvent, loadSettings, mergeDevice, runCompanion],
+    [addEvent, loadSettings, refreshDevice, runCompanion],
   );
 
   const connectManualTarget = useCallback(
@@ -1620,6 +1636,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setDeviceState("unknown");
       setDeviceCandidates([]);
       setDeviceSearchState("idle");
+      setDeviceSelectionVerificationPending(false);
       brightnessDirtyRef.current = false;
       setBrightness(null);
       setLastInstall(undefined);
@@ -2959,7 +2976,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   if (
     companionStatus === "online" &&
     !requiresMacAppMigration &&
-    (!hasActiveDevice || connectionRecoveryRequired)
+    (deviceSelectionVerificationPending ||
+      !hasActiveDevice ||
+      connectionRecoveryRequired)
   ) {
     return (
       <DeviceStartupScreen

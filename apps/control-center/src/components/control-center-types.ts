@@ -496,12 +496,15 @@ export function deviceNeedsThemeSetup(
 export function deviceCanContinueThemeSetup(
   device: DeviceInfo | null | undefined,
 ) {
+  const streamHasDistinctFailure =
+    device?.stream?.healthy === false &&
+    (device.stream.running !== false || Boolean(device.stream.errorCode));
   if (
     device?.active !== true ||
     device.connected !== true ||
     device.paired !== true ||
     device.health?.ok !== true ||
-    device.stream?.healthy === false ||
+    streamHasDistinctFailure ||
     device.display?.themeSpec?.renderOk === false
   ) {
     return false;

@@ -108,6 +108,21 @@ describe("device connection contract", () => {
     ).toBe(false);
   });
 
+  it("shows theme setup while the newly connected display stream is still starting", () => {
+    expect(
+      deviceNeedsThemeSetup({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: false,
+        activeTheme: "theme-missing",
+        health: { ok: true },
+        stream: { healthy: false, running: false },
+        display: { themeSpec: { active: false, renderOk: true } },
+      }),
+    ).toBe(true);
+  });
+
   it("keeps unrelated incomplete device states out of theme setup", () => {
     expect(
       deviceNeedsThemeSetup({
