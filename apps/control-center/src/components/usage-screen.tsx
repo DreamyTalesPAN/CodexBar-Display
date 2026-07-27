@@ -96,6 +96,8 @@ export function UsageScreen({
   onPreferenceChange,
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
+  const loading =
+    companionStatus === "online" && !usage && !usageError;
   const providers = filterVisibleProviders(
     usage?.providers || [],
     usage?.currentProvider,
@@ -106,7 +108,26 @@ export function UsageScreen({
     <div className="mx-auto max-w-[1180px]">
       <section className="py-10">
         {usageError ? (
-          <Alert className="mb-6 bg-muted"><AlertTriangle /><AlertTitle>{usageError.message}</AlertTitle><AlertDescription>{usageError.nextAction}</AlertDescription></Alert>
+          <Alert className="mb-6 bg-muted">
+            <AlertTriangle />
+            <AlertTitle>{usageError.message}</AlertTitle>
+            <AlertDescription className="grid justify-items-start gap-3">
+              <span>{usageError.nextAction}</span>
+              {onRefresh ? (
+                <Button
+                  aria-busy={refreshing}
+                  disabled={refreshing}
+                  onClick={onRefresh}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
+                  {refreshing ? "Trying again" : "Try again"}
+                </Button>
+              ) : null}
+            </AlertDescription>
+          </Alert>
         ) : null}
 
         {hasProviders ? (
@@ -128,7 +149,7 @@ export function UsageScreen({
         ) : usageError ? null : (
           <UsageEmptyState
             companionStatus={companionStatus}
-            refreshing={refreshing}
+            loading={loading || refreshing}
           />
         )}
 
@@ -669,34 +690,40 @@ function UsageWindowBar({
 
 function UsageEmptyState({
   companionStatus,
-  refreshing,
+  loading,
 }: {
   companionStatus: CompanionStatus;
-  refreshing: boolean;
+  loading: boolean;
 }) {
   const message =
     companionStatus === "online"
-      ? refreshing
-        ? "Loading provider usage."
+      ? loading
+        ? "Loading usage"
         : "No provider usage is available yet."
       : "Mac App needs setup.";
   const action =
     companionStatus === "online"
-      ? "Enable a provider below to start seeing usage."
+      ? loading
+        ? null
+        : "Enable a provider below to start seeing usage."
       : "Run setup again, then refresh usage.";
 
   return (
-    <Empty className="bg-muted/50 py-10 ring-1 ring-foreground/10">
+    <Empty
+      aria-live="polite"
+      className="bg-muted/50 py-10 ring-1 ring-foreground/10"
+      role="status"
+    >
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          {refreshing ? (
-            <RefreshCw className="animate-spin" size={17} aria-hidden />
+          {loading ? (
+            <Spinner />
           ) : (
             <BarChart3 size={17} aria-hidden />
           )}
         </EmptyMedia>
         <EmptyTitle>{message}</EmptyTitle>
-        <EmptyDescription>{action}</EmptyDescription>
+        {action ? <EmptyDescription>{action}</EmptyDescription> : null}
       </EmptyHeader>
     </Empty>
   );

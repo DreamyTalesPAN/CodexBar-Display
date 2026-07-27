@@ -10,13 +10,13 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 
 func runURLSchemeTests() {
     let repairStatus = InstallationStatus(
-        title: "CodexBar needs repair",
-        detail: "Repair CodexBar before continuing.",
+        title: "Usage service needs repair",
+        detail: "Repair the usage service before continuing.",
         failed: true,
-        retryTitle: "Repair CodexBar"
+        retryTitle: "Repair usage service"
     )
     require(
-        repairStatus.retryTitle == "Repair CodexBar",
+        repairStatus.retryTitle == "Repair usage service",
         "native installation status must preserve its repair CTA across window reopening"
     )
     let redactedReport = AppDelegate.redactReportValue([

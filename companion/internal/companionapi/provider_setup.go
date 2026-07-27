@@ -98,7 +98,7 @@ func (s *Server) handleOpenCodexBar(w http.ResponseWriter, r *http.Request) {
 		openApp = codexbar.OpenApp
 	}
 	if err := openApp(r.Context()); err != nil {
-		writeError(w, http.StatusServiceUnavailable, "codexbar_open_failed", "CodexBar could not be opened.", "Open CodexBar from Applications, then check again.")
+		writeError(w, http.StatusServiceUnavailable, "codexbar_open_failed", "Provider setup could not be opened.", "Open provider setup from Applications, then check again.")
 		return
 	}
 	writeJSON(w, http.StatusOK, providerSetupResponse{
@@ -116,7 +116,7 @@ func providerDiagnosticCheck(setup codexbar.ProviderSetup) diagnosticCheck {
 		Status:     "attention",
 		Detail:     "No AI provider is delivering usage data yet.",
 		ErrorCode:  "provider_setup_required",
-		NextAction: "Open CodexBar, connect a provider, then click Check again.",
+		NextAction: "Open provider setup, connect a provider, then click Check again.",
 	}
 	if len(setup.Providers) > 0 {
 		provider := setup.Providers[0]

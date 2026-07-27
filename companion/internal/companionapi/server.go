@@ -1309,8 +1309,8 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 			w,
 			http.StatusServiceUnavailable,
 			"usage_unavailable",
-			"Usage is not ready.",
-			"Open CodexBar and the Mac App, then try again.",
+			"Usage is still loading.",
+			"Keep this page open. VibeTV will retry automatically.",
 		)
 		return
 	}
@@ -1594,7 +1594,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			Status:     "attention",
 			Detail:     device.Stream.Detail,
 			ErrorCode:  "provider_setup_required",
-			NextAction: "Connect an AI provider in CodexBar, then click Check again.",
+			NextAction: "Open provider setup, connect an AI provider, then click Check again.",
 		})
 	} else {
 		checks = append(checks, diagnosticCheck{

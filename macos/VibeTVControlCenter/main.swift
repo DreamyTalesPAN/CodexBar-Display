@@ -1135,10 +1135,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             case .codexBarRepairRequired:
                 self.codexBarRepairRequired = true
                 self.presentInstallationStatus(
-                    title: "CodexBar needs repair",
-                    detail: "Repair CodexBar to install and start the verified copy included with VibeTV Control Center.",
+                    title: "Usage service needs repair",
+                    detail: "Repair the usage service to install and start the verified copy included with VibeTV Control Center.",
                     failed: true,
-                    retryTitle: "Repair CodexBar"
+                    retryTitle: "Repair usage service"
                 )
             case .keepCurrentPage:
                 self.codexBarRepairRequired = false
@@ -1168,10 +1168,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         discardMismatchedPendingNativeUpdate()
         if codexBarRepairRequired && !repairCodexBarInstallation() {
             presentInstallationStatus(
-                title: "CodexBar repair failed",
-                detail: "CodexBar could not be backed up or reinstalled. Open the support log for details.",
+                title: "Usage service repair failed",
+                detail: "The usage service could not be backed up or reinstalled. Open the support log for details.",
                 failed: true,
-                retryTitle: "Repair CodexBar"
+                retryTitle: "Repair usage service"
             )
             return
         }
@@ -1185,7 +1185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         activeNavigation = nil
         webView = nil
         presentInstallationStatus(
-            title: "Repairing CodexBar…",
+            title: "Repairing usage service…",
             detail: "Backing up an incompatible copy before installing the verified version.",
             failed: false
         )

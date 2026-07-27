@@ -2635,6 +2635,9 @@ func TestUsageUnavailableReturnsCustomerSafeError(t *testing.T) {
 	if got.OK || got.Error.Code != "usage_unavailable" {
 		t.Fatalf("unexpected error response: %+v", got)
 	}
+	if strings.Contains(got.Error.Message+" "+got.Error.NextAction, "CodexBar") {
+		t.Fatalf("usage error exposed the internal service name: %+v", got.Error)
+	}
 }
 
 func TestCORSAllowedAndForeignOrigins(t *testing.T) {

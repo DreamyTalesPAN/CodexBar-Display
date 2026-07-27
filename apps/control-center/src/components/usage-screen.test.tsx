@@ -40,6 +40,48 @@ function renderUsage(busyAction: string | null = null) {
 }
 
 describe("UsageScreen", () => {
+  it("shows a simple loading state while the first usage snapshot is pending", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        onPreferenceChange={vi.fn()}
+        onRefresh={vi.fn()}
+        pendingPreferenceIds={new Set()}
+        preferences={null}
+        usage={null}
+      />,
+    );
+
+    expect(html).toContain("Loading usage");
+    expect(html).toContain('data-slot="spinner"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).not.toContain("CodexBar");
+    expect(html).not.toContain("No provider usage is available yet.");
+  });
+
+  it("offers a generic retry for a real usage error", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        onPreferenceChange={vi.fn()}
+        onRefresh={vi.fn()}
+        pendingPreferenceIds={new Set()}
+        preferences={[]}
+        usage={null}
+        usageError={{
+          code: "COMPANION_TIMEOUT",
+          message: "Usage needs attention.",
+          nextAction: "Check the Mac App, then try again.",
+        }}
+      />,
+    );
+
+    expect(html).toContain("Usage needs attention.");
+    expect(html).toContain("Try again</button>");
+    expect(html).not.toContain("Loading usage");
+    expect(html).not.toContain("CodexBar");
+  });
+
   it("shows a dedicated token usage refresh action", () => {
     const html = renderUsage();
 
