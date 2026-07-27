@@ -453,3 +453,13 @@ issue scope, or release permission never implies UI permission.
   blocked with `Update Needed`.
 - Approved files: `theme-library-screen.tsx`, the matching customer-flow
   assertion in `test-customer-flows.mjs`, and this approval record.
+
+## 2026-07-27 — Setup screen uses only the VibeTV logo
+
+- User approval: While testing preview 99.0.109, the user explicitly required
+  removing the unreadable gray `Control Center` tagline below the VibeTV logo
+  on the setup screen.
+- Approved customer-visible result: Setup and loading screens show only the
+  VibeTV logo. The sidebar branding remains unchanged.
+- Approved files: `control-center-brand.tsx`, `setup-status-screen.tsx`, its
+  unit test, and this approval record.
