@@ -9,6 +9,7 @@ import {
   THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
   themeFirmwareTextMetrics,
+  themeTextFittedSize,
   themeTextLayout,
   themeTextWidth,
   themeSpecAriaLabel,
@@ -121,6 +122,12 @@ describe("dynamic usage slot preview", () => {
 });
 
 describe("firmware-compatible ThemeSpec text layout", () => {
+  it("chooses the largest configured integer size that fits the text box", () => {
+    expect(themeTextFittedSize("Weekly", 1, 3, 108, true)).toBe(3);
+    expect(themeTextFittedSize("Codex Spark Weekly", 1, 3, 108, true)).toBe(1);
+    expect(themeTextFittedSize("Codex Spark Weekly", 1, 3, 108, false)).toBe(3);
+  });
+
   it.each([
     {
       name: "keeps short right-aligned text at the right edge",
@@ -281,13 +288,14 @@ describe("firmware-compatible ThemeSpec text layout", () => {
       /<clipPath id="([^"]+)"><rect height="20" width="81" x="145" y="46"><\/rect><\/clipPath>/,
     );
     expect(markup).toContain('clip-path="url(#theme-text-');
-    expect(markup).toContain('dominant-baseline="text-before-edge"');
+    expect(markup).toContain('dominant-baseline="alphabetic"');
+    expect(markup).not.toContain('dominant-baseline="text-before-edge"');
     expect(markup).not.toContain('dominant-baseline="hanging"');
     expect(markup).toMatch(
-      /<text[^>]*y="46"[^>]*text-anchor="start"[^>]*x="145">/,
+      /<text[^>]*y="58\.8"[^>]*text-anchor="start"[^>]*x="145">/,
     );
     expect(markup).toMatch(
-      /<text[^>]*y="10"[^>]*text-anchor="start"[^>]*x="10">/,
+      /<text[^>]*y="22\.8"[^>]*text-anchor="start"[^>]*x="10">/,
     );
     expect(markup).toContain('lengthAdjust="spacingAndGlyphs"');
   });

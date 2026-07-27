@@ -51,12 +51,12 @@ const catalogFixture = {
       description:
         "A neon pixel theme with a retro grid, usage bars, and high-contrast desk display previews.",
       downloadUrl:
-        "https://cdn.example.test/vibetv-theme-synthwave-v1.1.0.zip",
+        "https://cdn.example.test/vibetv-theme-synthwave-v1.1.1.zip",
       sha256: fixturePackSHA256,
       bytes: fixturePackBytes,
-      version: "1.1.0",
-      themeRev: 2,
-      themeSpecPath: "/themes/u/synthwa-2-5f8ac7.json",
+      version: "1.1.1",
+      themeRev: 3,
+      themeSpecPath: "/themes/u/synthwa-3-619665.json",
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
       requiredCapabilities: ["usage-slots-v1"],
@@ -69,7 +69,9 @@ const catalogFixture = {
       downloadUrl: "https://cdn.example.test/clippy.vibetv-theme",
       sha256: fixturePackSHA256,
       bytes: fixturePackBytes,
-      themeSpecPath: "/themes/u/clippy-2-269831.json",
+      version: "1.1.1",
+      themeRev: 3,
+      themeSpecPath: "/themes/u/clippy-3-fe3fd4.json",
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
       requiredCapabilities: ["usage-slots-v1"],
@@ -82,7 +84,9 @@ const catalogFixture = {
       downloadUrl: "https://cdn.example.test/claude-creature.vibetv-theme",
       sha256: fixturePackSHA256,
       bytes: fixturePackBytes,
-      themeSpecPath: "/themes/u/claude--2-b110c1.json",
+      version: "1.1.1",
+      themeRev: 3,
+      themeSpecPath: "/themes/u/claude--3-afab9c.json",
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
       requiredCapabilities: ["usage-slots-v1"],
@@ -93,12 +97,12 @@ const catalogFixture = {
       description:
         "A calm pixel landscape with one compact usage window and reset timer.",
       downloadUrl:
-        "https://cdn.example.test/vibetv-theme-cozy-meadow-v0.2.0.zip",
+        "https://cdn.example.test/vibetv-theme-cozy-meadow-v0.2.1.zip",
       sha256: fixturePackSHA256,
       bytes: fixturePackBytes,
-      themeSpecPath: "/themes/u/cm-2-09ea27.json",
-      version: "0.2.0",
-      themeRev: 2,
+      themeSpecPath: "/themes/u/cm-3-1ed79c.json",
+      version: "0.2.1",
+      themeRev: 3,
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.40",
       requiredCapabilities: ["usage-slots-v1"],
@@ -109,12 +113,12 @@ const catalogFixture = {
       description:
         "A compact high-contrast theme with two neutral usage windows.",
       downloadUrl:
-        "https://cdn.example.test/vibetv-theme-mini-classic-v1.1.0.zip",
+        "https://cdn.example.test/vibetv-theme-mini-classic-v1.1.1.zip",
       sha256: fixturePackSHA256,
       bytes: fixturePackBytes,
-      version: "1.1.0",
-      themeRev: 2,
-      themeSpecPath: "/themes/u/mini-cl-2-2ee44f.json",
+      version: "1.1.1",
+      themeRev: 3,
+      themeSpecPath: "/themes/u/mini-cl-3-47fe90.json",
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.40",
       requiredCapabilities: ["usage-slots-v1"],
@@ -4323,8 +4327,8 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
           themeId: "synthwave",
           packId: "synthwave",
           name: "Fixture Synthwave Theme",
-          activePath: "/themes/u/synthwa-2-5f8ac7.json",
-          themeRev: 2,
+          activePath: "/themes/u/synthwa-3-619665.json",
+          themeRev: 3,
         },
       },
     ],
@@ -4511,8 +4515,8 @@ async function testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
           themeId: "synthwave",
           packId: "synthwave",
           name: "Fixture Synthwave Theme",
-          activePath: "/themes/u/synthwa-2-5f8ac7.json",
-          themeRev: 2,
+          activePath: "/themes/u/synthwa-3-619665.json",
+          themeRev: 3,
         },
       },
     ],
@@ -4545,7 +4549,7 @@ async function testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
   const install = JSON.parse(installRequests[0]);
   assert(
     install.themeId === "synthwave" &&
-      install.packUrl.endsWith("vibetv-theme-synthwave-v1.1.0.zip"),
+      install.packUrl.endsWith("vibetv-theme-synthwave-v1.1.1.zip"),
     `Theme-only update used the wrong generation: ${installRequests[0]}`,
   );
   await page.close();
@@ -4658,8 +4662,8 @@ async function testThemeRefreshRetryDoesNotFlashFirmwareAgain(browser, appUrl) {
           themeId: "synthwave",
           packId: "synthwave",
           name: "Fixture Synthwave Theme",
-          activePath: "/themes/u/synthwa-2-5f8ac7.json",
-          themeRev: 2,
+          activePath: "/themes/u/synthwa-3-619665.json",
+          themeRev: 3,
         },
       },
     ],
@@ -5056,13 +5060,13 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
         usageSlots: [
           {
             id: "primary",
-            label: "Session",
+            label: "Weekly",
             percent: 0,
             resetSecs: 5400,
           },
           {
             id: "secondary",
-            label: "Weekly",
+            label: "Codex Spark Weekly",
             percent: 63,
             resetSecs: 0,
           },
@@ -5101,15 +5105,24 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
   await page
     .getByRole("img", {
-      name: /Rendered VibeTV theme synthwave showing Codex, Session 0% used, Weekly 63% used/,
+      name: /Rendered VibeTV theme synthwave showing Codex, Weekly 0% used, Codex Spark Weekly 63% used/,
     })
     .waitFor({ timeout: 10_000 });
   const renderedTheme = page.getByRole("img", {
     name: /Rendered VibeTV theme synthwave/,
   });
   await renderedTheme.getByText("USAGE").waitFor({ timeout: 10_000 });
-  await renderedTheme.getByText("SESSION used").waitFor({ timeout: 10_000 });
-  await renderedTheme.getByText("WEEKLY used").waitFor({ timeout: 10_000 });
+  const weeklyLabel = renderedTheme.getByText("Weekly used", { exact: true });
+  const sparkLabel = renderedTheme.getByText("Codex Spark Weekly used", {
+    exact: true,
+  });
+  await weeklyLabel.waitFor({ timeout: 10_000 });
+  await sparkLabel.waitFor({ timeout: 10_000 });
+  assert(
+    (await weeklyLabel.getAttribute("font-size")) === "16" &&
+      (await sparkLabel.getAttribute("font-size")) === "16",
+    "Synthwave should use its largest readable font for both real Codex window labels",
+  );
   await renderedTheme.getByText("0%").waitFor({ timeout: 10_000 });
   await renderedTheme.getByText("63%").waitFor({ timeout: 10_000 });
   const previewFigure = page.locator("figure").filter({ has: renderedTheme });
@@ -5525,10 +5538,15 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
       cardSnapshot.svgSha256 === largeSnapshot.svgSha256,
       `${themeId} card and large preview should render the same SVG`,
     );
+    assert(
+      largeSnapshot.width >= cardSnapshot.width &&
+        largeSnapshot.height >= cardSnapshot.height &&
+        largeSnapshot.width === largeSnapshot.height,
+      `${themeId} dialog preview should remain a larger square`,
+    );
     vectorGoldens[themeId] = {
       svgSha256: cardSnapshot.svgSha256,
       cardSize: [cardSnapshot.width, cardSnapshot.height],
-      largeSize: [largeSnapshot.width, largeSnapshot.height],
     };
     await page.keyboard.press("Escape");
   }
@@ -5715,7 +5733,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     browserRequests.some(
       (url) =>
         new URL(url).pathname ===
-        "/theme-packs/render/synthwave/synthwa-2-5f8ac7.json",
+        "/theme-packs/render/synthwave/synthwa-3-619665.json",
     ),
     "local Theme Studio should open a published theme from the embedded render pack",
   );

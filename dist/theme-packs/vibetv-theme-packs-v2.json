@@ -5,72 +5,72 @@
     {
       "id": "claude-creature",
       "title": "Claude Creature",
-      "version": "1.1.0",
-      "themeRev": 2,
-      "themeSpecPath": "/themes/u/claude--2-b110c1.json",
+      "version": "1.1.1",
+      "themeRev": 3,
+      "themeSpecPath": "/themes/u/claude--3-afab9c.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-claude-creature-v1.1.0.zip",
-      "sha256": "c45b6b98866346e526aa66cd7964e73a36b78c25de61c104f5a6f4dc846eb9cc",
-      "bytes": 3330
+      "downloadAsset": "vibetv-theme-claude-creature-v1.1.1.zip",
+      "sha256": "2c4c52f1520a713ecaab8613e2e7064d02e609ebe878f72922f1bbf0e71476d9",
+      "bytes": 3343
     },
     {
       "id": "clippy",
       "title": "Clippy",
-      "version": "1.1.0",
-      "themeRev": 2,
-      "themeSpecPath": "/themes/u/clippy-2-269831.json",
+      "version": "1.1.1",
+      "themeRev": 3,
+      "themeSpecPath": "/themes/u/clippy-3-fe3fd4.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-clippy-v1.1.0.zip",
-      "sha256": "67d064b6db8c3e1d07a3cdc2d18e34d582fb80c48fb045b721ac3ded2abc70f2",
-      "bytes": 18625
+      "downloadAsset": "vibetv-theme-clippy-v1.1.1.zip",
+      "sha256": "04f719de8afa4f7bfd0a320c56f11a37ba885a745de2a66933d964d436f9bcb1",
+      "bytes": 18640
     },
     {
       "id": "cozy-meadow",
       "title": "Cozy Meadow",
-      "version": "0.2.0",
-      "themeRev": 2,
-      "themeSpecPath": "/themes/u/cm-2-09ea27.json",
+      "version": "0.2.1",
+      "themeRev": 3,
+      "themeSpecPath": "/themes/u/cm-3-1ed79c.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-cozy-meadow-v0.2.0.zip",
-      "sha256": "3890cc435e2b655ca2904a2fe2323d3e2f2c9524839d675e3cd6fdc5a70dff16",
-      "bytes": 1005
+      "downloadAsset": "vibetv-theme-cozy-meadow-v0.2.1.zip",
+      "sha256": "839c0efb5347414e55134b33b05c4957e2eed99239db8780e394088b86d28e61",
+      "bytes": 1016
     },
     {
       "id": "mini-classic",
       "title": "Mini Classic",
-      "version": "1.1.0",
-      "themeRev": 2,
-      "themeSpecPath": "/themes/u/mini-cl-2-2ee44f.json",
+      "version": "1.1.1",
+      "themeRev": 3,
+      "themeSpecPath": "/themes/u/mini-cl-3-47fe90.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-mini-classic-v1.1.0.zip",
-      "sha256": "e02b6defb8b7ca55866b3784c3c6b5778b3ad77cf98ae9fe9a18a1ab1e94326c",
-      "bytes": 18484
+      "downloadAsset": "vibetv-theme-mini-classic-v1.1.1.zip",
+      "sha256": "5964d50dadc44e05d5ee40153aeef5afaec7749bfcd038919bffce36dfcbe665",
+      "bytes": 18493
     },
     {
       "id": "synthwave",
       "title": "Synthwave",
-      "version": "1.1.0",
-      "themeRev": 2,
-      "themeSpecPath": "/themes/u/synthwa-2-5f8ac7.json",
+      "version": "1.1.1",
+      "themeRev": 3,
+      "themeSpecPath": "/themes/u/synthwa-3-619665.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-synthwave-v1.1.0.zip",
-      "sha256": "26c7a0bd12b69b7770af21bf2df4df4df168fa9481ee5c10f893b572146719d4",
-      "bytes": 1573
+      "downloadAsset": "vibetv-theme-synthwave-v1.1.1.zip",
+      "sha256": "9e1848b5a499545ded284798eedd4de0d8018193451ab2b4e1fd1097664c5a80",
+      "bytes": 1583
     }
   ]
 }

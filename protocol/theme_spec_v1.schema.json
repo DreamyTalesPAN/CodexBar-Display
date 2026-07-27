@@ -140,6 +140,18 @@
             "type": "integer",
             "minimum": 1
           },
+          "fit": {
+            "type": "string",
+            "enum": [
+              "shrink"
+            ]
+          },
+          "ft": {
+            "type": "string",
+            "enum": [
+              "shrink"
+            ]
+          },
           "color": {
             "type": "string",
             "pattern": "^#[A-Fa-f0-9]{6}$"
@@ -364,6 +376,18 @@
           "f": {
             "type": "integer",
             "minimum": 1
+          },
+          "fit": {
+            "type": "string",
+            "enum": [
+              "shrink"
+            ]
+          },
+          "ft": {
+            "type": "string",
+            "enum": [
+              "shrink"
+            ]
           },
           "color": {
             "type": "string",

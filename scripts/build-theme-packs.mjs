@@ -169,7 +169,8 @@ async function writeCatalog(catalog) {
 }
 
 async function writeRenderPacks() {
-  await rm(renderRoot, { force: true, recursive: true });
+  // Revision files are immutable preview inputs for VibeTVs that have not
+  // installed the newest theme yet. Keep them and only advance the aliases.
   await mkdir(renderRoot, { recursive: true });
 
   for (const theme of themeDirs) {

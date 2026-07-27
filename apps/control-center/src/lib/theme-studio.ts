@@ -40,6 +40,7 @@ export type ThemeStudioPrimitive = {
   binding?: ThemeStudioBinding;
   fontSize?: number;
   font?: number;
+  fit?: "shrink";
   color?: string;
   bgColor?: string;
   borderColor?: string;
@@ -448,6 +449,7 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
         : primitive.align === "left"
           ? "left"
           : undefined,
+    fit: primitive.fit === "shrink" ? "shrink" : undefined,
     progressStyle:
       primitive.progressStyle === "segments" ? "segments" : undefined,
     frameCount:
@@ -972,6 +974,9 @@ function buildDevicePrimitive(
   if (primitive.font !== undefined) {
     compact.f = primitive.font;
   }
+  if (primitive.fit === "shrink") {
+    compact.ft = "shrink";
+  }
   if (primitive.align && primitive.align !== "left") {
     compact.al = primitive.align;
   }
@@ -1071,6 +1076,10 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   const font = numberValue(value.font) ?? numberValue(value.f);
   if (font !== undefined) {
     primitive.font = font;
+  }
+  const fit = stringValue(value.fit) ?? stringValue(value.ft);
+  if (fit === "shrink") {
+    primitive.fit = "shrink";
   }
   const align = stringValue(value.align) ?? stringValue(value.al);
   if (align === "left" || align === "center" || align === "right") {

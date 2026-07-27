@@ -83,6 +83,25 @@ describe("validateThemeSpec", () => {
     expect(validateThemeSpec(imported).errors).toEqual([]);
   });
 
+  it("round-trips firmware text auto-fit through compact device JSON", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        fit: "shrink",
+        fontSize: 3,
+        text: "{usageSlot1Label}",
+        type: "text",
+        width: 108,
+        x: 7,
+        y: 30,
+      },
+    ];
+
+    const deviceSpec = JSON.parse(deviceThemeSpecJson(spec));
+    expect(deviceSpec.p[0].ft).toBe("shrink");
+    expect(importThemeSpec(deviceSpec).primitives[0].fit).toBe("shrink");
+  });
+
   it("rejects border radii outside the supported pixel range", () => {
     const spec = validSpec();
     spec.primitives[0].borderRadius = 121;

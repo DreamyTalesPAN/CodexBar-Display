@@ -104,6 +104,8 @@ export type ThemePrimitive = {
   s?: number;
   font?: number;
   f?: number;
+  fit?: string;
+  ft?: string;
   color?: string;
   c?: string;
   bgColor?: string;
@@ -504,7 +506,14 @@ function ThemePrimitiveNode({
     const text = renderTextPrimitive(primitive, frame);
     const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
     const font = primitive.font || primitive.f || 1;
-    const size = Math.max(1, primitive.fontSize || primitive.s || 1);
+    const maxSize = Math.max(1, primitive.fontSize || primitive.s || 1);
+    const size = themeTextFittedSize(
+      text,
+      font,
+      maxSize,
+      maxWidth,
+      (primitive.fit || primitive.ft) === "shrink",
+    );
     const fontSize = themeFontSize(font, size);
     return (
       <ThemeTextPrimitive
@@ -663,14 +672,17 @@ function ThemeTextPrimitive({
   }, [measurementKey, text]);
 
   const commonTextProps = {
-    dominantBaseline: "text-before-edge" as const,
+    // WebKit ignores text-before-edge and falls back to an alphabetic
+    // baseline at y, leaving only descenders inside the firmware clip box.
+    // Use the standard alphabetic baseline with an explicit ascent instead.
+    dominantBaseline: "alphabetic" as const,
     fill: color,
     fontFamily:
       "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
     fontSize,
     fontWeight,
     letterSpacing: "0",
-    y,
+    y: y + fontSize * 0.8,
   };
   const textNode = firmwareMetrics ? (
     <text
@@ -1515,6 +1527,29 @@ export function themeTextWidth(
     return measuredWidth;
   }
   return text.length * fontSize * 0.6;
+}
+
+export function themeTextFittedSize(
+  text: string,
+  font: number,
+  maxSize: number,
+  maxWidth: number,
+  fitShrink: boolean,
+): number {
+  let size = Math.max(1, maxSize);
+  if (!fitShrink || maxWidth <= 0) {
+    return size;
+  }
+  while (size > 1) {
+    const metrics = themeFirmwareTextMetrics(text, font, size);
+    const width =
+      metrics?.width ?? themeTextWidth(text, themeFontSize(font, size));
+    if (width <= maxWidth) {
+      break;
+    }
+    size -= 1;
+  }
+  return size;
 }
 
 // Mirrors TFT_eSPI 2.5.43 Fonts/Font16.c, pinned in
