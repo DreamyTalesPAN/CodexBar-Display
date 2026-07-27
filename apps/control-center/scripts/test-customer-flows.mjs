@@ -1033,17 +1033,29 @@ async function testThemeMissingDeviceNeverFlashesOverviewAfterConnect(
     },
   };
   await routeCompanionOnline(page, installRequests, () => {}, {
-    device: { connected: false, paired: false, ready: false },
+    device: {
+      connected: false,
+      paired: false,
+      ready: false,
+      active: false,
+    },
     onSelect: () => partialSelection,
     deviceReadDelayMs: 500,
-    onDeviceRead: (currentDevice) =>
-      currentDevice.active
-        ? {
-            ...themeMissingDevice,
-            deviceId: "fixture-device-1",
-            stream: { healthy: false, running: false },
-          }
-        : currentDevice,
+    onDeviceRead: (currentDevice) => currentDevice,
+    statusDeviceSequence: [
+      {
+        connected: false,
+        paired: false,
+        ready: false,
+        active: false,
+      },
+      partialSelection,
+      {
+        ...themeMissingDevice,
+        deviceId: "fixture-device-1",
+        stream: { healthy: false, running: false },
+      },
+    ],
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
@@ -1070,9 +1082,15 @@ async function testThemeMissingDeviceNeverFlashesOverviewAfterConnect(
   });
 
   await discoveredConnectButtons(page).first().click();
+  await page.waitForTimeout(1_000);
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "An unresolved post-pairing theme readback must keep the Control Center shell hidden",
+  );
   await page
     .getByRole("heading", { name: "Choose your VibeTV theme" })
-    .waitFor({ timeout: 10_000 });
+    .waitFor({ timeout: 15_000 });
   assert(
     (await page.evaluate(() => window.__vibeTVOverviewWasRendered)) === false,
     "A newly connected theme-missing VibeTV must never render Overview before the theme chooser",

@@ -39,6 +39,7 @@ import {
   deviceIsReady,
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
+  deviceThemeSetupDecisionPending,
   type ActiveTab,
   type ApiError,
   type CompanionInfo,
@@ -2693,6 +2694,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" &&
     !themeSetupComplete &&
     (themeSetupEntryRequired || themeSetupSessionMatches);
+  const themeSetupDecisionPending =
+    companionStatus === "online" &&
+    deviceThemeSetupDecisionPending(device);
 
   const startupDeviceCandidates =
     deviceCandidates.length > 0
@@ -2977,6 +2981,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" &&
     !requiresMacAppMigration &&
     (deviceSelectionVerificationPending ||
+      themeSetupDecisionPending ||
       !hasActiveDevice ||
       connectionRecoveryRequired)
   ) {

@@ -312,3 +312,19 @@ issue scope, or release permission never implies UI permission.
 - Approved files: Companion port-owner classification and tests, native runtime
   endpoint rediscovery, its macOS contract test, and the matching architecture
   documentation.
+
+## 2026-07-27 — Missing-theme chooser before Control Center
+
+- User approval: During two real-device preview tests, the user explicitly
+  rejected the temporary Overview screen and required a newly connected
+  theme-missing VibeTV to reach `Choose your VibeTV theme` before Overview is
+  ever shown.
+- Approved customer-visible result: After the customer presses `Connect`, the
+  full Control Center shell and Overview remain hidden while the first
+  theme-state readback is pending. A VibeTV with no active theme opens the
+  already approved `Choose your VibeTV theme` screen directly. A VibeTV with a
+  confirmed active theme retains the normal Overview behavior while its first
+  display image is delayed.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`, their unit
+  tests, and the matching customer-flow assertions in
+  `test-customer-flows.mjs`.

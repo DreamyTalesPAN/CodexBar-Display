@@ -493,6 +493,30 @@ export function deviceNeedsThemeSetup(
   );
 }
 
+export function deviceThemeSetupDecisionPending(
+  device: DeviceInfo | null | undefined,
+) {
+  if (
+    device?.active !== true ||
+    device.connected !== true ||
+    device.paired !== true ||
+    device.ready === true
+  ) {
+    return false;
+  }
+
+  if (deviceNeedsThemeSetup(device)) {
+    return false;
+  }
+
+  const activeTheme = device.activeTheme?.trim() || "";
+  const activeThemeIsKnown =
+    activeTheme !== "" && activeTheme !== "theme-missing";
+  const activeThemeSpecIsKnown = device.display?.themeSpec?.active === true;
+
+  return !activeThemeIsKnown && !activeThemeSpecIsKnown;
+}
+
 export function deviceCanContinueThemeSetup(
   device: DeviceInfo | null | undefined,
 ) {
