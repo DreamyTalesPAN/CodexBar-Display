@@ -156,6 +156,24 @@ func TestProviderReadinessClassifiesTimeoutWithoutSecrets(t *testing.T) {
 	}
 }
 
+func TestProviderReadinessCopyHidesInternalUsageServiceName(t *testing.T) {
+	for _, status := range []string{
+		ProviderAuthRequired,
+		ProviderPermissionRequired,
+		ProviderNoUsageAvailable,
+		ProviderTimeout,
+		ProviderConfigError,
+		ProviderEngineError,
+		ProviderNotConfigured,
+	} {
+		got := providerResult("codexbar", status)
+		customerCopy := strings.Join([]string{got.Label, got.Detail, got.NextAction}, " ")
+		if strings.Contains(customerCopy, "CodexBar") {
+			t.Fatalf("%s leaked the internal service name: %+v", status, got)
+		}
+	}
+}
+
 func TestProbeProviderSetupReportsReadyProvider(t *testing.T) {
 	originalUsage := runUsageCommandFn
 	originalVersion := runVersionCommandFn

@@ -1281,8 +1281,20 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
 
     await clickNavigation(page, "Usage");
     await page
-      .getByRole("heading", { name: "Codex", exact: true })
+      .getByText("Loading usage", { exact: true })
       .waitFor({ timeout: 10_000 });
+    await page
+      .getByRole("heading", { name: "AI providers", exact: true })
+      .waitFor({ timeout: 10_000 });
+    await page
+      .getByRole("switch", { name: "Disable Codex" })
+      .waitFor({ timeout: 10_000 });
+    assert(
+      (await page
+        .getByText("Total tokens in the last 30 days", { exact: true })
+        .count()) === 0,
+      "Token totals must stay hidden until token history is ready",
+    );
     assert(
       (await page
         .getByRole("heading", { name: "Connect an AI provider" })
