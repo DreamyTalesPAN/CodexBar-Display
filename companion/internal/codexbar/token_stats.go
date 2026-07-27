@@ -365,10 +365,30 @@ func parseProviderCostUsagePayload(payload map[string]any, fallbackLatestTokens 
 		cost.Last30DaysCostUSD <= 0 &&
 		cost.Last30DaysTokens <= 0 &&
 		cost.LatestTokens <= 0 &&
-		cost.TopModel == "" {
+		cost.TopModel == "" &&
+		!providerTokenStatsPayloadHasResult(payload) {
 		return ProviderCostUsage{}, false
 	}
 	return cost, true
+}
+
+func providerTokenStatsPayloadHasResult(payload map[string]any) bool {
+	if providerPayloadHasError(payload) {
+		return false
+	}
+	for _, key := range []string{
+		"daily",
+		"totals",
+		"sessionTokens",
+		"latestTokens",
+		"last30DaysTokens",
+		"totalTokens",
+	} {
+		if _, ok := payload[key]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func parseProviderCostDays(raw any) []ProviderCostDay {
