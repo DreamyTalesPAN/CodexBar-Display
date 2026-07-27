@@ -3,10 +3,8 @@ package companionapi
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"embed"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -100,6 +98,7 @@ const (
 var deviceHealthProbeTime = 2 * time.Second
 var themeRenderPackIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{2,63}$`)
 var themeRenderPackSpecFilePattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+\.json$`)
+var themeRenderPackHashPattern = regexp.MustCompile(`^[a-f0-9]{8}$`)
 var firmwareHealthVerifyTime = 30 * time.Second
 var diagnosticsDiscoveryTime = 5 * time.Second
 
@@ -1013,13 +1012,13 @@ func (s *Server) handleThemeRenderPack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	themeID, specFile, exactPath := themeRenderPackRequest(r.URL.Path)
-	selector, selectorOK := themeRenderPackRequestSelector(r)
-	if themeID == "" || !selectorOK || (exactPath && (selector.SpecPath != "" || selector.SpecSHA256 != "")) {
+	specHash, selectorOK := themeRenderPackRequestHash(r, exactPath)
+	if themeID == "" || !selectorOK {
 		http.NotFound(w, r)
 		return
 	}
 	if exactPath {
-		if data, ok := s.loadThemeRenderPackBySpecFile(themeID, specFile, selector); ok {
+		if data, ok := s.loadThemeRenderPackBySpecFile(themeID, specFile, specHash); ok {
 			serveThemeRenderPack(w, r, data)
 			return
 		}
@@ -1029,12 +1028,8 @@ func (s *Server) handleThemeRenderPack(w http.ResponseWriter, r *http.Request) {
 		s.handleControlCenterAsset(w, r)
 		return
 	}
-	if data, ok := s.loadThemeRenderPack(themeID, selector); ok {
+	if data, err := os.ReadFile(s.themeRenderPackPath(themeID)); err == nil {
 		serveThemeRenderPack(w, r, data)
-		return
-	}
-	if selector.SpecPath != "" || selector.SpecHash != "" || selector.SpecSHA256 != "" {
-		http.NotFound(w, r)
 		return
 	}
 	s.handleControlCenterAsset(w, r)
@@ -1065,133 +1060,52 @@ func themeRenderPackRequest(requestPath string) (themeID, specFile string, exact
 	return parts[0], parts[1], true
 }
 
-type themeRenderPackSelector struct {
-	SpecPath   string
-	SpecHash   string
-	SpecSHA256 string
+func themeRenderPackRequestHash(r *http.Request, exactPath bool) (string, bool) {
+	query := r.URL.Query()
+	for key := range query {
+		if key != "specHash" {
+			return "", false
+		}
+	}
+	specHash := strings.ToLower(strings.TrimSpace(query.Get("specHash")))
+	if (!exactPath && specHash != "") ||
+		(specHash != "" && !themeRenderPackHashPattern.MatchString(specHash)) {
+		return "", false
+	}
+	return specHash, true
 }
 
-func themeRenderPackRequestSelector(r *http.Request) (themeRenderPackSelector, bool) {
-	selector := themeRenderPackSelector{
-		SpecPath:   strings.TrimSpace(r.URL.Query().Get("specPath")),
-		SpecHash:   strings.ToLower(strings.TrimSpace(r.URL.Query().Get("specHash"))),
-		SpecSHA256: strings.ToLower(strings.TrimSpace(r.URL.Query().Get("specSha256"))),
+func (s *Server) loadThemeRenderPackBySpecFile(themeID, specFile, specHash string) ([]byte, bool) {
+	revisionPath := filepath.Join(s.themeRenderPackRevisionDir(themeID), specFile)
+	if data, err := os.ReadFile(revisionPath); err == nil && themeRenderPackMatches(data, specFile, specHash) {
+		return data, true
 	}
-	if selector.SpecPath != "" {
-		if !strings.HasPrefix(selector.SpecPath, "/themes/") ||
-			strings.Contains(selector.SpecPath, "..") ||
-			len(selector.SpecPath) > 255 {
-			return themeRenderPackSelector{}, false
-		}
-	}
-	if selector.SpecSHA256 != "" {
-		if len(selector.SpecSHA256) != sha256.Size*2 {
-			return themeRenderPackSelector{}, false
-		}
-		if _, err := hex.DecodeString(selector.SpecSHA256); err != nil {
-			return themeRenderPackSelector{}, false
-		}
-	}
-	if selector.SpecHash != "" {
-		if len(selector.SpecHash) != 8 {
-			return themeRenderPackSelector{}, false
-		}
-		if _, err := hex.DecodeString(selector.SpecHash); err != nil {
-			return themeRenderPackSelector{}, false
-		}
-	}
-	return selector, true
-}
-
-func (s *Server) loadThemeRenderPack(themeID string, selector themeRenderPackSelector) ([]byte, bool) {
-	if selector.SpecPath == "" && selector.SpecHash == "" && selector.SpecSHA256 == "" {
-		data, err := os.ReadFile(s.themeRenderPackPath(themeID))
-		return data, err == nil
-	}
-
-	if selector.SpecPath != "" && selector.SpecSHA256 != "" {
-		if data, err := os.ReadFile(s.themeRenderPackRevisionPath(themeID, selector.SpecPath, selector.SpecSHA256)); err == nil && themeRenderPackMatches(data, selector) {
-			return data, true
-		}
-	}
-
-	// A path-only lookup is what the device health endpoint supplies. Scan the
-	// small per-theme cache rather than falling back to a different revision.
-	revisionDir := s.themeRenderPackRevisionDir(themeID)
-	entries, err := os.ReadDir(revisionDir)
-	if err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-				continue
-			}
-			data, readErr := os.ReadFile(filepath.Join(revisionDir, entry.Name()))
-			if readErr == nil && themeRenderPackMatches(data, selector) {
-				return data, true
-			}
-		}
-	}
-
-	// Older Companions stored a single <themeId>.json. Keep it readable for a
-	// current Mac App, but only when its exact selector matches.
-	if data, err := os.ReadFile(s.themeRenderPackPath(themeID)); err == nil && themeRenderPackMatches(data, selector) {
+	// Older Companions stored only <themeId>.json. It remains a safe fallback
+	// when its embedded path and optional fingerprint match the exact request.
+	if data, err := os.ReadFile(s.themeRenderPackPath(themeID)); err == nil && themeRenderPackMatches(data, specFile, specHash) {
 		return data, true
 	}
 	return nil, false
 }
 
-func (s *Server) loadThemeRenderPackBySpecFile(themeID, specFile string, selector themeRenderPackSelector) ([]byte, bool) {
-	revisionDir := s.themeRenderPackRevisionDir(themeID)
-	entries, err := os.ReadDir(revisionDir)
-	if err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-				continue
-			}
-			data, readErr := os.ReadFile(filepath.Join(revisionDir, entry.Name()))
-			if readErr == nil && themeRenderPackHasSpecFile(data, specFile) && themeRenderPackMatches(data, selector) {
-				return data, true
-			}
-		}
-	}
-	if data, err := os.ReadFile(s.themeRenderPackPath(themeID)); err == nil && themeRenderPackHasSpecFile(data, specFile) && themeRenderPackMatches(data, selector) {
-		return data, true
-	}
-	return nil, false
-}
-
-func themeRenderPackMatches(data []byte, selector themeRenderPackSelector) bool {
+func themeRenderPackMatches(data []byte, specFile, specHash string) bool {
 	var pack themeRenderPack
 	if err := json.Unmarshal(data, &pack); err != nil || !pack.OK {
 		return false
 	}
-	if selector.SpecPath != "" && strings.TrimSpace(pack.SpecPath) != selector.SpecPath {
+	if path.Base(strings.TrimSpace(pack.SpecPath)) != specFile {
 		return false
 	}
-	if selector.SpecHash != "" {
+	if specHash != "" {
 		actual := strings.ToLower(strings.TrimSpace(pack.SpecHash))
 		if actual == "" {
 			actual = themeRenderPackSpecHash(pack.Spec)
 		}
-		if actual != selector.SpecHash {
+		if actual != specHash {
 			return false
 		}
 	}
-	if selector.SpecSHA256 == "" {
-		return true
-	}
-	actual := strings.ToLower(strings.TrimSpace(pack.SpecSHA256))
-	if actual == "" {
-		actual = themeRenderPackSpecSHA256(pack.Spec)
-	}
-	return actual == selector.SpecSHA256
-}
-
-func themeRenderPackHasSpecFile(data []byte, specFile string) bool {
-	var pack themeRenderPack
-	if err := json.Unmarshal(data, &pack); err != nil || !pack.OK {
-		return false
-	}
-	return path.Base(strings.TrimSpace(pack.SpecPath)) == specFile
+	return true
 }
 
 func (s *Server) serveControlCenterFile(w http.ResponseWriter, r *http.Request, assetPath string) bool {
@@ -3735,14 +3649,13 @@ type themeRenderPackAsset struct {
 }
 
 type themeRenderPack struct {
-	OK         bool                            `json:"ok"`
-	ThemeID    string                          `json:"themeId"`
-	Name       string                          `json:"name"`
-	Spec       json.RawMessage                 `json:"spec"`
-	SpecPath   string                          `json:"specPath"`
-	SpecHash   string                          `json:"specHash"`
-	SpecSHA256 string                          `json:"specSha256"`
-	Assets     map[string]themeRenderPackAsset `json:"assets"`
+	OK       bool                            `json:"ok"`
+	ThemeID  string                          `json:"themeId"`
+	Name     string                          `json:"name"`
+	Spec     json.RawMessage                 `json:"spec"`
+	SpecPath string                          `json:"specPath"`
+	SpecHash string                          `json:"specHash"`
+	Assets   map[string]themeRenderPackAsset `json:"assets"`
 }
 
 func (s *Server) persistThemeRenderPack(packBytes []byte) error {
@@ -3777,16 +3690,14 @@ func (s *Server) persistThemeRenderPack(packBytes []byte) error {
 	}
 	specPath := strings.TrimSpace(pack.ThemeSpecFile.Entry.Path)
 	specHash := themeRenderPackSpecHash(pack.ThemeSpecRaw)
-	specSHA256 := themeRenderPackSpecSHA256(pack.ThemeSpecRaw)
 	payload, err := json.Marshal(themeRenderPack{
-		OK:         true,
-		ThemeID:    themeID,
-		Name:       strings.TrimSpace(pack.Manifest.Name),
-		Spec:       json.RawMessage(pack.ThemeSpecRaw),
-		SpecPath:   specPath,
-		SpecHash:   specHash,
-		SpecSHA256: specSHA256,
-		Assets:     assets,
+		OK:       true,
+		ThemeID:  themeID,
+		Name:     strings.TrimSpace(pack.Manifest.Name),
+		Spec:     json.RawMessage(pack.ThemeSpecRaw),
+		SpecPath: specPath,
+		SpecHash: specHash,
+		Assets:   assets,
 	})
 	if err != nil {
 		return err
@@ -3794,7 +3705,7 @@ func (s *Server) persistThemeRenderPack(packBytes []byte) error {
 	// Keep a bounded revision history. Custom themes deliberately reuse their
 	// ID while editing, so one id.json file is not enough to render the exact
 	// ThemeSpec that an already-connected VibeTV reports.
-	destination := s.themeRenderPackRevisionPath(themeID, specPath, specSHA256)
+	destination := s.themeRenderPackRevisionPath(themeID, specPath)
 	if err := writeThemeRenderPackFile(destination, payload); err != nil {
 		return err
 	}
@@ -3841,9 +3752,8 @@ func (s *Server) themeRenderPackPath(themeID string) string {
 	)
 }
 
-func (s *Server) themeRenderPackRevisionPath(themeID, specPath, specSHA256 string) string {
-	cacheKey := sha256.Sum256([]byte(specPath + "\n" + specSHA256))
-	return filepath.Join(s.themeRenderPackRevisionDir(themeID), hex.EncodeToString(cacheKey[:])+".json")
+func (s *Server) themeRenderPackRevisionPath(themeID, specPath string) string {
+	return filepath.Join(s.themeRenderPackRevisionDir(themeID), path.Base(specPath))
 }
 
 func (s *Server) themeRenderPackRevisionDir(themeID string) string {
@@ -3904,15 +3814,9 @@ func (s *Server) pruneThemeRenderPackRevisions(themeID, preservePath string) err
 	return nil
 }
 
-func themeRenderPackSpecSHA256(spec json.RawMessage) string {
-	sum := sha256.Sum256(spec)
-	return hex.EncodeToString(sum[:])
-}
-
 // themeRenderPackSpecHash matches the FNV-1a hash exposed by the VibeTV
 // /health display.themeSpec.hash field. Firmware trims stored ThemeSpec bytes
-// before hashing, so a pack's harmless final newline must not change it. Keep
-// it separate from the SHA-256 cache key: they answer different questions.
+// before hashing, so a pack's harmless final newline must not change it.
 func themeRenderPackSpecHash(spec json.RawMessage) string {
 	hash := fnv.New32a()
 	_, _ = hash.Write(bytes.TrimSpace(spec))

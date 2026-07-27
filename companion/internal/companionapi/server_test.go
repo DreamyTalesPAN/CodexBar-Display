@@ -2969,13 +2969,9 @@ func TestCustomThemeRenderPacksKeepInstalledRevisions(t *testing.T) {
 		t.Fatalf("expected exact second custom revision, got %+v", secondPack)
 	}
 
-	byDevicePath := requestPack("/theme-packs/render/my-custom.json?specPath=%2Fthemes%2Fu%2Fcustom-a.json")
-	if byDevicePath.SpecPath != firstPack.SpecPath || byDevicePath.SpecHash != firstPack.SpecHash {
-		t.Fatalf("expected exact path selector to return first revision, got %+v", byDevicePath)
-	}
-	byDeviceHash := requestPack("/theme-packs/render/my-custom.json?specHash=" + firstPack.SpecHash)
-	if byDeviceHash.SpecPath != firstPack.SpecPath || byDeviceHash.SpecHash != firstPack.SpecHash {
-		t.Fatalf("expected FNV device hash selector to return first revision, got %+v", byDeviceHash)
+	byDeviceHash := requestPack("/theme-packs/render/my-custom/custom-a.json?specHash=" + firstPack.SpecHash)
+	if byDeviceHash.SpecPath != firstPack.SpecPath {
+		t.Fatalf("expected exact path and device hash to return first revision, got %+v", byDeviceHash)
 	}
 
 	latest := requestPack("/theme-packs/render/my-custom.json")
@@ -2986,7 +2982,6 @@ func TestCustomThemeRenderPacksKeepInstalledRevisions(t *testing.T) {
 	for _, requestPath := range []string{
 		"/theme-packs/render/my-custom/custom-a.json?specHash=00000000",
 		"/theme-packs/render/my-custom.json?specPath=%2Fthemes%2Fu%2Fmissing.json",
-		"/theme-packs/render/my-custom.json?specHash=00000000",
 	} {
 		rec := httptest.NewRecorder()
 		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, requestPath, nil))
@@ -3045,7 +3040,7 @@ func TestLegacySingleThemeRenderPackCacheStillSupportsExactSelector(t *testing.T
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(
 		http.MethodGet,
-		"/theme-packs/render/cozy-meadow.json?specPath=%2Fthemes%2Fu%2Fcm.json",
+		"/theme-packs/render/cozy-meadow/cm.json",
 		nil,
 	)
 	server.Handler().ServeHTTP(rec, req)

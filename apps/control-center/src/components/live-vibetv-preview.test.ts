@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   buildFrameData,
+  fetchThemeRenderPackRevision,
   primitiveUsageSlotVisible,
   THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
@@ -11,6 +12,7 @@ import {
   themeTextLayout,
   themeTextWidth,
   themeSpecAriaLabel,
+  themeRenderPackMatchesActiveRevision,
   type ThemePrimitive,
 } from "./live-vibetv-preview";
 
@@ -18,6 +20,48 @@ const lane1: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 1 };
 const lane2: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 2 };
 
 describe("dynamic usage slot preview", () => {
+  it("uses an old Companion cache only when its path matches the active Custom Theme", async () => {
+    const oldCompanionPack = {
+      themeId: "my-custom",
+      spec: { p: [] },
+      specPath: "/themes/u/custom-old.json",
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        Response.json(oldCompanionPack, { status: 200 }),
+      );
+
+    const pack = await fetchThemeRenderPackRevision(
+      "my-custom",
+      "/themes/u/custom-old.json",
+      "1234abcd",
+      undefined,
+      fetcher,
+    );
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      "/api/theme-pack/my-custom?specPath=%2Fthemes%2Fu%2Fcustom-old.json&specHash=1234abcd",
+    );
+    expect(fetcher.mock.calls[1]?.[0]).toBe("/api/theme-pack/my-custom");
+    expect(
+      themeRenderPackMatchesActiveRevision(
+        pack,
+        "/themes/u/custom-old.json",
+        "1234abcd",
+      ),
+    ).toBe(true);
+    expect(
+      themeRenderPackMatchesActiveRevision(
+        pack,
+        "/themes/u/another.json",
+        "1234abcd",
+      ),
+    ).toBe(false);
+  });
+
   it("accepts neutral catalog sample data without changing the default preview", () => {
     const markup = renderToStaticMarkup(
       createElement(ThemeSpecPreview, {

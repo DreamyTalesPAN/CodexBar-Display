@@ -263,52 +263,24 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
     }
 
     const controller = new AbortController();
-    const fetchRenderPack = async (): Promise<ThemeRenderPack> => {
-      const exactResponse = await fetch(
-        themeRenderPackUrl(themeId, themeSpecPath, themeSpecHash),
-        { signal: controller.signal },
-      );
-      if (exactResponse.ok) {
-        return exactResponse.json() as Promise<ThemeRenderPack>;
-      }
-      if (!themeSpecPath) {
-        throw new Error("theme pack unavailable");
-      }
-
-      // Companions shipped before revision-aware previews only expose the
-      // latest cached Custom Theme at /render/<themeId>.json. Its payload
-      // still contains specPath, so the validation below can safely accept
-      // the cache only when it is the exact revision active on the VibeTV.
-      const legacyResponse = await fetch(themeRenderPackUrl(themeId), {
-        signal: controller.signal,
-      });
-      if (!legacyResponse.ok) {
-        throw new Error("theme pack unavailable");
-      }
-      return legacyResponse.json() as Promise<ThemeRenderPack>;
-    };
-
-    fetchRenderPack()
+    fetchThemeRenderPackRevision(
+      themeId,
+      themeSpecPath,
+      themeSpecHash,
+      controller.signal,
+    )
       .then((payload) => {
-        const receivedSpecPath = (payload?.specPath || "").trim();
-        const receivedSpecHash = renderPackSpecHash(payload);
-        const exactThemeRevision =
-          !themeSpecPath || receivedSpecPath === themeSpecPath;
-        const exactThemeBytes =
-          !themeSpecHash ||
-          receivedSpecHash === themeSpecHash ||
-          (!receivedSpecHash &&
-            Boolean(themeSpecPath) &&
-            exactThemeRevision);
+        const matchesActiveRevision = themeRenderPackMatchesActiveRevision(
+          payload,
+          themeSpecPath,
+          themeSpecHash,
+        );
         setPackState({
           themeId,
           themeSpecHash,
           themeSpecPath,
-          pack: exactThemeRevision && exactThemeBytes ? payload : null,
-          status:
-            payload?.spec && exactThemeRevision && exactThemeBytes
-              ? "ready"
-              : "error",
+          pack: matchesActiveRevision ? payload : null,
+          status: matchesActiveRevision ? "ready" : "error",
         });
       })
       .catch((error) => {
@@ -1106,6 +1078,52 @@ function normalizeThemeSpecHash(value: string | undefined): string {
 
 function renderPackSpecHash(pack: ThemeRenderPack): string {
   return normalizeThemeSpecHash(pack.specHash);
+}
+
+export async function fetchThemeRenderPackRevision(
+  themeId: string,
+  themeSpecPath: string,
+  themeSpecHash: string,
+  signal?: AbortSignal,
+  fetcher: typeof fetch = fetch,
+): Promise<ThemeRenderPack> {
+  const exactResponse = await fetcher(
+    themeRenderPackUrl(themeId, themeSpecPath, themeSpecHash),
+    { signal },
+  );
+  if (exactResponse.ok) {
+    return exactResponse.json() as Promise<ThemeRenderPack>;
+  }
+  if (!themeSpecPath) {
+    throw new Error("theme pack unavailable");
+  }
+
+  // Old Companions only expose the latest cache by theme ID. Their payload
+  // still includes specPath, which lets the caller reject a wrong revision.
+  const legacyResponse = await fetcher(themeRenderPackUrl(themeId), { signal });
+  if (!legacyResponse.ok) {
+    throw new Error("theme pack unavailable");
+  }
+  return legacyResponse.json() as Promise<ThemeRenderPack>;
+}
+
+export function themeRenderPackMatchesActiveRevision(
+  pack: ThemeRenderPack,
+  themeSpecPath: string,
+  themeSpecHash: string,
+): boolean {
+  if (!pack?.spec) {
+    return false;
+  }
+  const receivedSpecPath = (pack.specPath || "").trim();
+  const receivedSpecHash = renderPackSpecHash(pack);
+  const exactPath = !themeSpecPath || receivedSpecPath === themeSpecPath;
+  return (
+    exactPath &&
+    (!themeSpecHash ||
+      receivedSpecHash === themeSpecHash ||
+      (!receivedSpecHash && Boolean(themeSpecPath)))
+  );
 }
 
 function renderTextPrimitive(primitive: ThemePrimitive, frame: FrameData): string {

@@ -339,10 +339,6 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testLivePreviewFallsBackToLegacyCompanionCustomCache(
-        browser,
-        appContext.appUrl,
-      );
       console.log("control-center theme preview tests passed");
       return;
     }
@@ -601,10 +597,6 @@ async function main() {
       appContext.appUrl,
     );
     await testOverviewRendersThemeSpecAssetTypes(browser, appContext.appUrl);
-    await testLivePreviewFallsBackToLegacyCompanionCustomCache(
-      browser,
-      appContext.appUrl,
-    );
     await testThemeLibraryRendersThemeSpecPreviews(browser, appContext.appUrl);
     await testReloadRestoresRunningFirmwareUpdate(browser, appContext.appUrl);
     await testReloadRestoresRunningThemeInstall(browser, appContext.appUrl);
@@ -5507,9 +5499,7 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
     const cardPreview = page.getByRole("img", {
       name: new RegExp(`Rendered VibeTV theme ${themeId} showing VibeTV`),
     });
-    vectorGoldens[themeId] = {
-      card: await themePreviewVectorSnapshot(cardPreview),
-    };
+    const cardSnapshot = await themePreviewVectorSnapshot(cardPreview);
     await page
       .getByRole("button", { name: `Preview ${product.title}` })
       .click();
@@ -5518,8 +5508,16 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
       name: new RegExp(`Rendered VibeTV theme ${themeId} showing VibeTV`),
     });
     await largePreview.waitFor({ timeout: 10_000 });
-    vectorGoldens[themeId].large =
-      await themePreviewVectorSnapshot(largePreview);
+    const largeSnapshot = await themePreviewVectorSnapshot(largePreview);
+    assert(
+      cardSnapshot.svgSha256 === largeSnapshot.svgSha256,
+      `${themeId} card and large preview should render the same SVG`,
+    );
+    vectorGoldens[themeId] = {
+      svgSha256: cardSnapshot.svgSha256,
+      cardSize: [cardSnapshot.width, cardSnapshot.height],
+      largeSize: [largeSnapshot.width, largeSnapshot.height],
+    };
     await page.keyboard.press("Escape");
   }
   if (updateThemePreviewVectorGoldens) {
@@ -5555,95 +5553,6 @@ async function themePreviewVectorSnapshot(preview) {
       .update(normalizedMarkup)
       .digest("hex"),
   };
-}
-
-async function testLivePreviewFallsBackToLegacyCompanionCustomCache(
-  browser,
-  appUrl,
-) {
-  const page = await browser.newPage({ viewport: desktopViewport });
-  const localAppUrl = "http://127.0.0.1:47832/control-center";
-  const installRequests = [];
-  const renderPackRequests = [];
-  const pack = await readTrackedThemeRenderPackFixture("cozy-meadow");
-  pack.themeId = "my-custom";
-  pack.specPath = "/themes/u/custom-old.json";
-
-  page.on("request", (request) => {
-    const pathname = new URL(request.url()).pathname;
-    if (pathname.startsWith("/theme-packs/render/my-custom")) {
-      renderPackRequests.push(pathname);
-    }
-  });
-  await routeLocalCompanionAppThroughLocalNext(page, appUrl);
-  await page.route(
-    "http://127.0.0.1:47832/theme-packs/render/my-custom/custom-old.json?*",
-    async (route) => {
-      await route.fulfill({
-        status: 404,
-        contentType: "application/json",
-        body: JSON.stringify({ ok: false }),
-      });
-    },
-  );
-  await page.route(
-    "http://127.0.0.1:47832/theme-packs/render/my-custom.json",
-    async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(pack),
-      });
-    },
-  );
-  await routeCompanionOnline(page, installRequests, () => {}, {
-    companionVersion: "1.0.40",
-    device: {
-      ...companionDevice,
-      activeTheme: "my-custom",
-      display: {
-        themeSpec: {
-          active: true,
-          hash: "1234abcd",
-          path: pack.specPath,
-          renderOk: true,
-        },
-      },
-    },
-    usageResponse: {
-      ok: true,
-      generatedAt: "2026-07-27T10:00:00Z",
-      source: "codexbar-display",
-      usageMode: "used",
-      currentProvider: "codex",
-      providers: [
-        {
-          id: "codex",
-          label: "Codex",
-          session: 27,
-          weekly: 63,
-          resetSecs: 5400,
-          usageMode: "used",
-        },
-      ],
-    },
-  });
-
-  await page.goto(localAppUrl, { waitUntil: "domcontentloaded" });
-  await page
-    .getByRole("img", {
-      name: /Rendered VibeTV theme my-custom showing Codex/,
-    })
-    .waitFor({ timeout: 10_000 });
-  assert(
-    renderPackRequests.includes(
-      "/theme-packs/render/my-custom/custom-old.json",
-    ) &&
-      renderPackRequests.includes("/theme-packs/render/my-custom.json"),
-    "new Mac App should fall back to the exact matching cache of an old Companion",
-  );
-  assertNoInstallRequests(installRequests);
-  await page.close();
 }
 
 async function testThemeStudioUsesLocalRenderAndCompanionInstall(
