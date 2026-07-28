@@ -31,23 +31,25 @@ type persistedProviderSnapshots struct {
 }
 
 type providerCollector struct {
-	now             func() time.Time
-	logf            func(string, ...any)
-	fetchProviders  func(context.Context) ([]codexbar.ParsedFrame, error)
-	fetchDashboard  func(context.Context, codexbar.DashboardServeInfo, time.Time, int) (codexbar.DashboardFetchResult, error)
-	fetchInventory  func(context.Context) ([]codexbar.ProviderSetting, error)
-	fetchTokenStats func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
-	dashboard       codexbar.DashboardServe
-	resolvePort     func(string) (string, error)
-	requestedPort   string
-	requestedPortFn func() string
-	transportName   string
-	order           []string
-	interval        time.Duration
-	activityPoll    time.Duration
-	timeout         time.Duration
-	snapshotMaxAge  time.Duration
-	persistInterval time.Duration
+	now              func() time.Time
+	logf             func(string, ...any)
+	fetchProviders   func(context.Context) ([]codexbar.ParsedFrame, error)
+	fetchDashboard   func(context.Context, codexbar.DashboardServeInfo, time.Time, int) (codexbar.DashboardFetchResult, error)
+	fetchInventory   func(context.Context) ([]codexbar.ProviderSetting, error)
+	fetchTokenStats  func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
+	dashboard        codexbar.DashboardServe
+	resolvePort      func(string) (string, error)
+	requestedPort    string
+	requestedPortFn  func() string
+	transportName    string
+	order            []string
+	interval         time.Duration
+	activityPoll     time.Duration
+	timeout          time.Duration
+	snapshotMaxAge   time.Duration
+	persistInterval  time.Duration
+	wake             <-chan struct{}
+	afterWakeCollect func()
 
 	mu                       sync.RWMutex
 	providers                map[string]providerSnapshot
@@ -127,6 +129,11 @@ func (c *providerCollector) run(ctx context.Context) {
 			return
 		case <-usageTicker.C:
 			c.collectOnce(ctx)
+		case <-c.wake:
+			c.collectOnce(ctx)
+			if c.afterWakeCollect != nil {
+				c.afterWakeCollect()
+			}
 		case <-activityTicker.C:
 			c.collectTokenStatsOnce(ctx)
 		}

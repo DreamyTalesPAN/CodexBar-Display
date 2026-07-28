@@ -2991,6 +2991,68 @@ func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 	}
 }
 
+func TestProviderCollectorWakeCollectsBeforeDisplayWake(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	wake := make(chan struct{}, 1)
+	displayWake := make(chan struct{}, 1)
+	collected := make(chan int, 2)
+	var calls atomic.Int32
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex"},
+		interval:        time.Hour,
+		activityPoll:    time.Hour,
+		timeout:         time.Second,
+		snapshotMaxAge:  time.Hour,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		wake:            wake,
+		afterWakeCollect: func() {
+			signalWake(displayWake)
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			call := int(calls.Add(1))
+			collected <- call
+			weekly := 10
+			if call >= 2 {
+				weekly = 77
+			}
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 11, weekly, 3600)}, nil
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go collector.run(ctx)
+
+	select {
+	case call := <-collected:
+		if call != 1 {
+			t.Fatalf("expected initial collection first, got call %d", call)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for initial collection")
+	}
+
+	wake <- struct{}{}
+
+	select {
+	case <-displayWake:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for display wake after manual collection")
+	}
+	if calls.Load() < 2 {
+		t.Fatalf("display woke before the collector handled the manual refresh, calls=%d", calls.Load())
+	}
+	frames := collector.providerFrames(now)
+	if len(frames) != 1 || frames[0].Frame.Weekly != 77 {
+		t.Fatalf("display wake must follow the refreshed collector snapshot, got %#v", frames)
+	}
+}
+
 func TestProviderCollectorLearnsDynamicCodexBarOrder(t *testing.T) {
 	prepareFastTestEnv(t)
 

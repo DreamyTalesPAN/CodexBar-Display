@@ -339,7 +339,19 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 			deps.logf("codexbar-dashboard event=supervisor-started refreshInterval=%s\n", info.RefreshInterval)
 		}
 	}
-	collector, collectorCancel := startProviderCollector(ctx, opts, deps, syncCycleMode)
+	var collectorWake <-chan struct{}
+	var wakeAfterCollect func()
+	if !syncCycleMode && opts.Wake != nil {
+		collectorWakeCh := make(chan struct{}, 1)
+		cycleWakeCh := make(chan struct{}, 1)
+		go forwardWake(ctx, opts.Wake, collectorWakeCh)
+		collectorWake = collectorWakeCh
+		wakeAfterCollect = func() {
+			signalWake(cycleWakeCh)
+		}
+		opts.Wake = cycleWakeCh
+	}
+	collector, collectorCancel := startProviderCollector(ctx, opts, deps, syncCycleMode, collectorWake, wakeAfterCollect)
 	if collectorCancel != nil {
 		defer collectorCancel()
 	}
@@ -356,6 +368,30 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	}
 
 	return runDaemonLoop(ctx, opts, deps, runCycle)
+}
+
+func forwardWake(ctx context.Context, input <-chan struct{}, output chan<- struct{}) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case _, ok := <-input:
+			if !ok {
+				return
+			}
+			signalWake(output)
+		}
+	}
+}
+
+func signalWake(output chan<- struct{}) {
+	if output == nil {
+		return
+	}
+	select {
+	case output <- struct{}{}:
+	default:
+	}
 }
 
 func initializeRuntimeState(now time.Time, opts Options, deps runtimeDeps) *runtimeState {
@@ -402,7 +438,7 @@ func bootstrapStateFromPersistedLastGood(state *runtimeState, now time.Time, dep
 	}
 }
 
-func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps, syncCycleMode bool) (*providerCollector, context.CancelFunc) {
+func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps, syncCycleMode bool, wake <-chan struct{}, afterWakeCollect func()) (*providerCollector, context.CancelFunc) {
 	if syncCycleMode {
 		// Deterministic unit tests can run synchronous cycle fetches without a
 		// background collector goroutine by injecting only fetchProviders.
@@ -410,6 +446,8 @@ func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps,
 	}
 
 	collector := newProviderCollector(deps, opts)
+	collector.wake = wake
+	collector.afterWakeCollect = afterWakeCollect
 	collectorCtx, cancel := context.WithCancel(ctx)
 	collector.start(collectorCtx)
 	deps.logf("collector started transport=%s interval=%s timeout=%s providers=%s mode=fetch-all\n",
