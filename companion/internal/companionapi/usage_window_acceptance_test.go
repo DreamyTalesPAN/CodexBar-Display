@@ -45,9 +45,6 @@ func TestUsageWindowAcceptanceAPIRetainsControlCenterWindows(t *testing.T) {
 	for _, tc := range fixture.Cases {
 		tc := tc
 		t.Run(tc.Name, func(t *testing.T) {
-			if tc.Name == "one-valid-weekly-remaining" {
-				t.Skip("product bug already confirmed by the full matrix run")
-			}
 			now := parseAcceptanceTime(t, tc.Now)
 			targetMode := "remaining"
 			if tc.ShowUsed {

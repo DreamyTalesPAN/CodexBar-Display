@@ -1498,8 +1498,19 @@ func applyUsageBarsPreference(frame protocol.Frame, showUsed bool) protocol.Fram
 		return frame
 	}
 
-	frame.Session = 100 - clampPercent(frame.Session)
-	frame.Weekly = 100 - clampPercent(frame.Weekly)
+	if len(frame.UsageSlots) == 0 {
+		frame.Session = 100 - clampPercent(frame.Session)
+		frame.Weekly = 100 - clampPercent(frame.Weekly)
+	} else {
+		frame.Session = 0
+		frame.Weekly = 0
+		if len(frame.UsageSlots) > 0 {
+			frame.Session = 100 - clampPercent(frame.UsageSlots[0].Percent)
+		}
+		if len(frame.UsageSlots) > 1 {
+			frame.Weekly = 100 - clampPercent(frame.UsageSlots[1].Percent)
+		}
+	}
 	for i := range frame.UsageSlots {
 		frame.UsageSlots[i].Percent = 100 - clampPercent(frame.UsageSlots[i].Percent)
 	}

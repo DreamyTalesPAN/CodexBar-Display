@@ -47,11 +47,8 @@ const slot2: ThemePrimitive = { t: "tx", x: 0, y: 0, sl: 2 };
 
 describe("usage-window acceptance preview parity", () => {
   const fixture = loadAcceptanceFixture();
-  const cases = fixture.cases.filter(
-    ({ name }) => name !== "one-valid-weekly-remaining",
-  );
 
-  it.each(cases)(
+  it.each(fixture.cases)(
     "renders expected slot visibility for $name",
     ({ name, now, expectedDeviceFrame, expectedRender }) => {
       const frame = buildFrameData(now, expectedDeviceFrame);
