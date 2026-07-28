@@ -4653,6 +4653,84 @@ func TestDeviceDiscoverReturnsConflictForMultipleSubnetCandidates(t *testing.T) 
 	}
 }
 
+func TestDeviceSearchAmbiguityBlocksLaterLegacyDiscover(t *testing.T) {
+	var pairCalls atomic.Int32
+	var frameCalls atomic.Int32
+	first := newCountedSelectableDeviceServer(t, "vibetv-a", &pairCalls, &frameCalls)
+	defer first.Close()
+	second := newCountedSelectableDeviceServer(t, "vibetv-b", &pairCalls, &frameCalls)
+	defer second.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	subnetCalls := 0
+	server.subnetTargets = func() []string {
+		subnetCalls++
+		if subnetCalls == 1 {
+			return []string{first.URL, second.URL}
+		}
+		return []string{first.URL}
+	}
+
+	search := httptest.NewRecorder()
+	searchReq := httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
+	searchReq.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(search, searchReq)
+	if search.Code != http.StatusOK {
+		t.Fatalf("expected first search status 200, got %d body=%s", search.Code, search.Body.String())
+	}
+	var firstSearch struct {
+		Devices []deviceSearchEntry `json:"devices"`
+	}
+	if err := json.Unmarshal(search.Body.Bytes(), &firstSearch); err != nil {
+		t.Fatalf("decode first search: %v", err)
+	}
+	if len(firstSearch.Devices) != 2 {
+		t.Fatalf("expected two discovered devices, got %+v", firstSearch.Devices)
+	}
+
+	search = httptest.NewRecorder()
+	searchReq = httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
+	searchReq.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(search, searchReq)
+	if search.Code != http.StatusOK {
+		t.Fatalf("expected second search status 200, got %d body=%s", search.Code, search.Body.String())
+	}
+	var secondSearch struct {
+		Devices []deviceSearchEntry `json:"devices"`
+	}
+	if err := json.Unmarshal(search.Body.Bytes(), &secondSearch); err != nil {
+		t.Fatalf("decode second search: %v", err)
+	}
+	if len(secondSearch.Devices) != 1 || secondSearch.Devices[0].DeviceID != "vibetv-a" {
+		t.Fatalf("expected transiently unique first device, got %+v", secondSearch.Devices)
+	}
+
+	discover := httptest.NewRecorder()
+	discoverReq := httptest.NewRequest(http.MethodPost, "/v1/device/discover", strings.NewReader(`{}`))
+	discoverReq.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(discover, discoverReq)
+	if discover.Code != http.StatusConflict {
+		t.Fatalf("expected legacy discover to stay blocked, got %d body=%s", discover.Code, discover.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(discover.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode discover error: %v", err)
+	}
+	if got.Error.Code != "multiple_devices_found" {
+		t.Fatalf("expected multiple-devices error, got %+v", got)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceTarget != "" || cfg.DeviceToken != "" || cfg.DeviceID != "" || len(cfg.KnownDevices) != 0 {
+		t.Fatalf("ambiguous discovery persisted device state: %+v", cfg)
+	}
+	if pairCalls.Load() != 0 || frameCalls.Load() != 0 {
+		t.Fatalf("ambiguous discovery caused pair/frame writes: pair=%d frame=%d", pairCalls.Load(), frameCalls.Load())
+	}
+}
+
 func TestDeviceDiscoverIgnoresStaleSavedToken(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -4793,6 +4871,53 @@ func TestDeviceRepairFindsActiveDeviceAtNewIPWithoutPairing(t *testing.T) {
 	cfg, err := server.config()
 	if err != nil || cfg.DeviceID != deviceID || cfg.DeviceTarget != device.URL || cfg.DeviceToken != token {
 		t.Fatalf("reconnect did not preserve active profile: cfg=%+v err=%v", cfg, err)
+	}
+}
+
+func TestDeviceRepairFindsSavedDeviceIDWhenMultipleDevicesAreOnline(t *testing.T) {
+	const deviceID = "saved-vibetv"
+	const token = "saved-token"
+	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "old address", http.StatusServiceUnavailable)
+	}))
+	defer stale.Close()
+	var pairCalls atomic.Int32
+	expected := newCountedSelectableDeviceServer(t, deviceID, &pairCalls, nil)
+	defer expected.Close()
+	other := newCountedSelectableDeviceServer(t, "other-vibetv", &pairCalls, nil)
+	defer other.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: stale.URL,
+		DeviceToken:  token,
+		DeviceID:     deviceID,
+		KnownDevices: []runtimeconfig.KnownDevice{{
+			DeviceID:    deviceID,
+			Target:      stale.URL,
+			DeviceToken: token,
+		}},
+	})
+	server.subnetTargets = func() []string {
+		return []string{other.URL, expected.URL}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected repair status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode repair response: %v", err)
+	}
+	if !got.Device.Connected || got.Device.DeviceID != deviceID || got.Device.Target != expected.URL {
+		t.Fatalf("expected repair to pin saved device identity, got %+v", got.Device)
+	}
+	if pairCalls.Load() != 0 {
+		t.Fatalf("saved device recovery must not pair again, got %d pair calls", pairCalls.Load())
 	}
 }
 
@@ -7930,6 +8055,34 @@ func newPairableDeviceServer(t *testing.T) *httptest.Server {
 		case "/health":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+}
+
+func newCountedSelectableDeviceServer(t *testing.T, deviceID string, pairCalls, frameCalls *atomic.Int32) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","deviceId":%q,"networkMode":"station","capabilities":{"theme":{"supportsThemeSpecV1":true},"auth":{"paired":true,"tokenHeader":"X-VibeTV-Token"},"transport":{"active":"wifi"}}}`, deviceID)
+		case "/api/pair":
+			if pairCalls != nil {
+				pairCalls.Add(1)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"token":"pair-token"}`))
+		case "/frame":
+			if frameCalls != nil {
+				frameCalls.Add(1)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":2,"partialCount":0,"lastKind":"usage"},"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":{"display":{"brightnessPercent":40}}}`))
 		default:
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}

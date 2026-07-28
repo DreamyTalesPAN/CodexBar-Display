@@ -182,6 +182,8 @@ type Server struct {
 	repairMu               sync.Mutex
 	repairFlightsMu        sync.Mutex
 	repairFlights          map[string]*deviceRepairFlight
+	deviceSelectionMu      sync.Mutex
+	ambiguousDeviceSeen    bool
 	probeMu                sync.Mutex
 	helloProbeCache        map[string]helloProbeSnapshot
 	helloProbeFlights      map[string]*helloProbeFlight
@@ -2533,10 +2535,20 @@ func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
+	if strings.TrimSpace(req.Target) == "" &&
+		strings.TrimSpace(cfg.DeviceID) == "" &&
+		s.ambiguousDeviceSelectionPending() {
+		writeDiscoveryError(w, &multipleDevicesError{})
+		return
+	}
 	discoveryCfg := cfg
 	discoveryCfg.DeviceToken = ""
 	target, hello, err := s.discover(r.Context(), discoveryCfg, req.Target)
 	if err != nil {
+		var multiple *multipleDevicesError
+		if errors.As(err, &multiple) {
+			s.markAmbiguousDeviceSelection()
+		}
 		writeDiscoveryError(w, err)
 		return
 	}
@@ -2590,6 +2602,9 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
+	if strings.TrimSpace(req.Target) == "" && distinctDeviceSearchCount(devices) > 1 {
+		s.markAmbiguousDeviceSelection()
+	}
 	writeJSON(w, http.StatusOK, struct {
 		OK      bool                `json:"ok"`
 		Devices []deviceSearchEntry `json:"devices"`
@@ -2616,6 +2631,7 @@ func (s *Server) handleDeviceSelect(w http.ResponseWriter, r *http.Request) {
 		writeRepairError(w, err)
 		return
 	}
+	s.clearAmbiguousDeviceSelection()
 	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
 }
 
@@ -5294,6 +5310,7 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 }
 
 func (s *Server) clearConfiguredDeviceState() {
+	s.clearAmbiguousDeviceSelection()
 	s.connectionMu.Lock()
 	clear(s.connectionStates)
 	s.connectionMu.Unlock()
@@ -5306,6 +5323,10 @@ func (s *Server) clearConfiguredDeviceState() {
 func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) (string, protocol.DeviceHello, error) {
 	explicitTarget = strings.TrimSpace(explicitTarget)
 	var lastErr error
+	expectedDeviceID := ""
+	if explicitTarget == "" {
+		expectedDeviceID = strings.TrimSpace(cfg.DeviceID)
+	}
 	if explicitTarget != "" {
 		target, targetErr := normalizeExplicitDeviceTarget(explicitTarget)
 		if targetErr != nil {
@@ -5314,6 +5335,8 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 		hello, err := s.getHelloProbe(ctx, target, cfg.DeviceToken, discoveryProbeTime)
 		if err != nil {
 			return "", protocol.DeviceHello{}, err
+		} else if !deviceIDMatchesExpected(hello, expectedDeviceID) {
+			return "", protocol.DeviceHello{}, errDeviceIdentityChanged
 		} else {
 			return target, hello, nil
 		}
@@ -5322,6 +5345,10 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 		for _, candidate := range candidates {
 			hello, err := s.getHelloProbe(ctx, candidate, cfg.DeviceToken, discoveryProbeTime)
 			if err == nil {
+				if !deviceIDMatchesExpected(hello, expectedDeviceID) {
+					lastErr = errDeviceIdentityChanged
+					continue
+				}
 				return normalizeTarget(candidate), hello, nil
 			}
 			lastErr = err
@@ -5399,6 +5426,10 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 	for res := range results {
 		if res.err == nil {
 			res.target = normalizeTarget(res.target)
+			if !deviceIDMatchesExpected(res.hello, cfg.DeviceID) {
+				lastErr = errDeviceIdentityChanged
+				continue
+			}
 			matches = append(matches, res)
 			if len(matches) > 1 {
 				cancel()
@@ -5472,6 +5503,36 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 		}
 	}
 	return sortedDeviceSearchEntries(byIdentity), nil
+}
+
+func (s *Server) markAmbiguousDeviceSelection() {
+	s.deviceSelectionMu.Lock()
+	defer s.deviceSelectionMu.Unlock()
+	s.ambiguousDeviceSeen = true
+}
+
+func (s *Server) clearAmbiguousDeviceSelection() {
+	s.deviceSelectionMu.Lock()
+	defer s.deviceSelectionMu.Unlock()
+	s.ambiguousDeviceSeen = false
+}
+
+func (s *Server) ambiguousDeviceSelectionPending() bool {
+	s.deviceSelectionMu.Lock()
+	defer s.deviceSelectionMu.Unlock()
+	return s.ambiguousDeviceSeen
+}
+
+func distinctDeviceSearchCount(devices []deviceSearchEntry) int {
+	seen := make(map[string]struct{}, len(devices))
+	for _, device := range devices {
+		key := deviceSearchIdentityKey(device)
+		if key == "" {
+			continue
+		}
+		seen[key] = struct{}{}
+	}
+	return len(seen)
 }
 
 func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) ([]deviceSearchEntry, error) {
@@ -5664,6 +5725,15 @@ func deviceIdentityMatches(cfg runtimeconfig.Config, hello protocol.DeviceHello)
 	wantID := strings.TrimSpace(cfg.DeviceID)
 	gotID := strings.TrimSpace(hello.DeviceID)
 	return wantID != "" && gotID != "" && strings.EqualFold(wantID, gotID)
+}
+
+func deviceIDMatchesExpected(hello protocol.DeviceHello, expectedDeviceID string) bool {
+	expectedDeviceID = strings.TrimSpace(expectedDeviceID)
+	if expectedDeviceID == "" {
+		return true
+	}
+	gotID := strings.TrimSpace(hello.DeviceID)
+	return gotID != "" && strings.EqualFold(expectedDeviceID, gotID)
 }
 
 func deviceIdentityIsKnown(cfg runtimeconfig.Config, hello protocol.DeviceHello) bool {

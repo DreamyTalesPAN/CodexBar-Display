@@ -1174,10 +1174,14 @@ async function testMultipleVibeTVsRequireAChoice(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
+  const requests = [];
+  let searchRequests = 0;
   await routeCompanionOnline(page, [], () => {}, {
     device: { connected: false, paired: false },
-    searchDevices: [
-      {
+    onRequest: (pathname, method) => requests.push(`${method} ${pathname}`),
+    onSearch: () => {
+      searchRequests += 1;
+      const firstDevice = {
         target: "http://192.0.2.10",
         deviceId: "vibetv-a",
         board: companionDevice.board,
@@ -1185,17 +1189,23 @@ async function testMultipleVibeTVsRequireAChoice(browser, appUrl) {
         networkMode: "station",
         known: true,
         active: false,
-      },
-      {
-        target: "http://192.0.2.11",
-        deviceId: "vibetv-b",
-        board: companionDevice.board,
-        firmware: companionDevice.firmware,
-        networkMode: "station",
-        known: true,
-        active: false,
-      },
-    ],
+      };
+      if (searchRequests > 1) {
+        return [firstDevice];
+      }
+      return [
+        firstDevice,
+        {
+          target: "http://192.0.2.11",
+          deviceId: "vibetv-b",
+          board: companionDevice.board,
+          firmware: companionDevice.firmware,
+          networkMode: "station",
+          known: true,
+          active: false,
+        },
+      ];
+    },
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
@@ -1209,6 +1219,24 @@ async function testMultipleVibeTVsRequireAChoice(browser, appUrl) {
   assert(
     (await page.getByRole("button", { name: "Not now" }).count()) === 0,
     "Device setup must not be bypassed",
+  );
+  await page.getByRole("button", { name: "Search again" }).click();
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await discoveredConnectButtons(page).count()) === 1,
+    "A transiently unique follow-up scan must still show an explicit picker",
+  );
+  assert(
+    requests.filter((request) =>
+      [
+        "POST /v1/device/select",
+        "POST /v1/device/repair",
+        "POST /v1/device/discover",
+      ].includes(request),
+    ).length === 0,
+    `A multi-device setup must not auto-select, repair, or discover-write, got ${JSON.stringify(requests)}`,
   );
   await page.close();
 }
