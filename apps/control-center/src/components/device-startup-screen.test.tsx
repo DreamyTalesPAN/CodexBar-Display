@@ -37,6 +37,7 @@ describe("DeviceStartupScreen", () => {
         onPair={vi.fn()}
         onSearch={vi.fn()}
         onSelect={vi.fn()}
+        selectingDeviceTarget="http://192.168.178.72"
       />,
     );
 

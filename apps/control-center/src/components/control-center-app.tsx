@@ -256,6 +256,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [deviceTarget, setDeviceTarget] = useState(readInitialDeviceTarget);
   const [brightness, setBrightness] = useState<number | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [selectingDeviceTarget, setSelectingDeviceTarget] = useState<
+    string | undefined
+  >();
   const [supportReportBusy, setSupportReportBusy] = useState(false);
   const [lastError, setLastError] = useState<ApiError | null>(null);
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
@@ -1366,6 +1369,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       const setupGeneration = setupGenerationRef.current;
       pendingPairingCandidate.current = candidate;
+      setSelectingDeviceTarget(candidate.target);
       setBusyAction("select");
       setLastError(null);
       try {
@@ -1422,6 +1426,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         });
       } finally {
         if (setupGeneration === setupGenerationRef.current) {
+          setSelectingDeviceTarget(undefined);
           setBusyAction(null);
         }
       }
@@ -3082,6 +3087,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       macAppRelease={companionRelease}
       previewStep={setupPreviewStep}
       requiresMacAppMigration={requiresMacAppMigration}
+      selectingDeviceTarget={
+        busyAction === "select" ? selectingDeviceTarget : undefined
+      }
       showIntro={showIntro}
       setupComplete={setupComplete}
       supportReportBusy={supportReportBusy}
@@ -3191,6 +3199,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         onSelect={(candidate) => {
           void selectAndConnectDevice(candidate);
         }}
+        selectingDeviceTarget={
+          busyAction === "select" ? selectingDeviceTarget : undefined
+        }
         supportReportBusy={supportReportBusy}
       />
     );

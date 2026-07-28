@@ -36,6 +36,7 @@ type Props = {
   onPair: () => void;
   onSearch: () => void;
   onSelect: (candidate: DeviceCandidate) => void;
+  selectingDeviceTarget?: string;
   supportReportBusy?: boolean;
 };
 
@@ -52,6 +53,7 @@ export function DeviceStartupScreen({
   onPair,
   onSearch,
   onSelect,
+  selectingDeviceTarget,
   supportReportBusy = false,
 }: Props) {
   const selecting = busyAction === "select";
@@ -202,7 +204,7 @@ export function DeviceStartupScreen({
             busy={Boolean(busyAction) && !selecting}
             candidates={deviceCandidates}
             onSelect={onSelect}
-            selecting={selecting}
+            selectingTarget={selectingDeviceTarget}
           />
         ) : null}
 
