@@ -115,6 +115,13 @@ PY
   grep -F "role']=='companion'" "${CANARY}" >/dev/null || die "canary does not select the candidate companion role"
   grep -F 'esp8266-backup.sh' "${CANARY}" >/dev/null || die "canary does not create the required full USB backup"
   grep -F 'vibetv-hardware-canary' "${WORKFLOW}" >/dev/null || die "workflow uses the wrong evidence artifact name"
+  grep -F 'semver_compare' "${CANARY}" >/dev/null || die "canary does not compare firmware versions as SemVer"
+  grep -F 'candidate-firmware-manifest.json' "${CANARY}" >/dev/null || die "canary does not create a local absolute firmware manifest"
+  grep -F -- '--resume' "${CANARY}" >/dev/null || die "canary lacks the read-only power-cycle resume phase"
+  grep -F 'sent frame ->' "${CANARY}" >/dev/null || die "canary does not require daemon frame-send evidence"
+  grep -F 'headBranch' "${WORKFLOW}" >/dev/null || die "workflow does not check candidate main branch"
+  grep -F 'workflow_dispatch' "${WORKFLOW}" >/dev/null || die "workflow does not check candidate dispatch event"
+  grep -F 'actor' "${WORKFLOW}" >/dev/null || die "workflow does not bind evidence actor"
 }
 
 main "$@"

@@ -32,6 +32,7 @@ jobs:
           mkdir -p evidence candidate
           printf '%s' "$EVIDENCE_BASE64" | base64 --decode > evidence/hardware-canary.json
           python3 -m json.tool evidence/hardware-canary.json >/dev/null
+          [[ "$(python3 -c 'import json; print(json.load(open("evidence/hardware-canary.json"))["actor"])')" == "${GITHUB_ACTOR}" ]]
 
       - name: Verify successful immutable candidate run
         id: candidate
@@ -41,11 +42,13 @@ jobs:
           set -euo pipefail
           run_id="$(python3 -c 'import json; print(json.load(open("evidence/hardware-canary.json"))["candidateRunId"])')"
           source_sha="$(python3 -c 'import json; print(json.load(open("evidence/hardware-canary.json"))["sourceSha"])')"
-          run="$(gh run view "${run_id}" --repo "${GITHUB_REPOSITORY}" --json conclusion,workflowName,headSha)"
+          run="$(gh run view "${run_id}" --repo "${GITHUB_REPOSITORY}" --json conclusion,workflowName,headSha,headBranch,event)"
           conclusion="$(printf '%s' "$run" | python3 -c 'import json,sys; print(json.load(sys.stdin)["conclusion"])')"
           workflow="$(printf '%s' "$run" | python3 -c 'import json,sys; print(json.load(sys.stdin)["workflowName"])')"
           head_sha="$(printf '%s' "$run" | python3 -c 'import json,sys; print(json.load(sys.stdin)["headSha"])')"
-          [[ "${conclusion}" == success && "${workflow}" == 'CODEX Test VibeTV Release Candidate' && "${head_sha}" == "${source_sha}" ]] || { echo 'candidate run identity/conclusion mismatch' >&2; exit 1; }
+          head_branch="$(printf '%s' "$run" | python3 -c 'import json,sys; print(json.load(sys.stdin)["headBranch"])')"
+          event="$(printf '%s' "$run" | python3 -c 'import json,sys; print(json.load(sys.stdin)["event"])')"
+          [[ "${conclusion}" == success && "${workflow}" == 'CODEX Test VibeTV Release Candidate' && "${head_sha}" == "${source_sha}" && "${head_branch}" == main && "${event}" == workflow_dispatch ]] || { echo 'candidate run identity/conclusion mismatch' >&2; exit 1; }
           gh run download "${run_id}" --repo "${GITHUB_REPOSITORY}" --name vibetv-release-candidate --dir candidate
           gh run download "${run_id}" --repo "${GITHUB_REPOSITORY}" --name vibetv-release-candidate-result --dir candidate-result
           ./scripts/validate-hardware-canary.py candidate-result --candidate-dir candidate --result candidate-result/candidate-result.json

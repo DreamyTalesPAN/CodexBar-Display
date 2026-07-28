@@ -7,14 +7,17 @@ REPO="DreamyTalesPAN/CodexBar-Display"
 CANDIDATE_RUN_ID=""; CANDIDATE_DIR=""; TARGET=""; EXPECTED_DEVICE_ID=""; OUTPUT_DIR=""
 RECOVERY_PORT=""; CONFIRM_DEVICE_ID=""; CONFIRM_WRITE_RISK=""; DRY_RUN=0
 CONFIRM_RENDER=""; CONFIRM_POWER_CYCLE=""; ACTOR="${USER:-unknown}"
+RESUME_STATE=""
 
 usage() { echo "usage: $0 (--candidate-run-id ID|--candidate-dir DIR) --target URL --expected-device-id ID --output-dir DIR [--recovery-port PORT --confirm-device-id ID --confirm-hardware-write-risk] [--dry-run]" >&2; exit 2; }
 die() { echo "error: $*" >&2; exit 1; }
 while [[ $# -gt 0 ]]; do case "$1" in
   --candidate-run-id) CANDIDATE_RUN_ID="${2:-}"; shift 2;; --candidate-dir) CANDIDATE_DIR="${2:-}"; shift 2;; --target) TARGET="${2:-}"; shift 2;; --expected-device-id) EXPECTED_DEVICE_ID="${2:-}"; shift 2;; --output-dir) OUTPUT_DIR="${2:-}"; shift 2;;
-  --recovery-port) RECOVERY_PORT="${2:-}"; shift 2;; --confirm-device-id) CONFIRM_DEVICE_ID="${2:-}"; shift 2;; --confirm-hardware-write-risk) CONFIRM_WRITE_RISK=1; shift;; --confirm-render-visible) CONFIRM_RENDER=1; shift;; --confirm-power-cycle-10s) CONFIRM_POWER_CYCLE=1; shift;; --actor) ACTOR="${2:-}"; shift 2;; --dry-run) DRY_RUN=1; shift;; *) usage;; esac; done
+  --recovery-port) RECOVERY_PORT="${2:-}"; shift 2;; --confirm-device-id) CONFIRM_DEVICE_ID="${2:-}"; shift 2;; --confirm-hardware-write-risk) CONFIRM_WRITE_RISK=1; shift;; --confirm-render-visible) CONFIRM_RENDER=1; shift;; --confirm-power-cycle-10s) CONFIRM_POWER_CYCLE=1; shift;; --actor) ACTOR="${2:-}"; shift 2;; --resume) RESUME_STATE="${2:-}"; shift 2;; --dry-run) DRY_RUN=1; shift;; *) usage;; esac; done
 [[ -n "$TARGET" && -n "$EXPECTED_DEVICE_ID" && -n "$OUTPUT_DIR" ]] || usage
-[[ -n "$CANDIDATE_RUN_ID" || -n "$CANDIDATE_DIR" ]] && [[ -z "$CANDIDATE_RUN_ID" || -z "$CANDIDATE_DIR" ]] || usage
+if [[ -z "$RESUME_STATE" ]]; then
+  [[ -n "$CANDIDATE_RUN_ID" || -n "$CANDIDATE_DIR" ]] && [[ -z "$CANDIDATE_RUN_ID" || -z "$CANDIDATE_DIR" ]] || usage
+fi
 if (( DRY_RUN )); then
   [[ -n "$CANDIDATE_DIR" ]] && "$VALIDATOR" candidate --candidate-dir "$CANDIDATE_DIR" >/dev/null
   echo "DRY RUN: no network, launchctl, or hardware command will run"
@@ -23,7 +26,26 @@ if (( DRY_RUN )); then
   exit 0
 fi
 
+semver_compare() {
+  python3 - "$1" "$2" <<'PY'
+import re,sys
+def parse(value):
+ m=re.fullmatch(r'v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?', value.strip())
+ if not m: raise SystemExit('invalid SemVer: '+value)
+ return tuple(map(int,m.group(1,2,3))), m.group(4) or ''
+a,b=parse(sys.argv[1]),parse(sys.argv[2])
+print(1 if a[0]>b[0] or (a[0]==b[0] and ((not a[1] and b[1]) or a[1]>b[1])) else 0)
+PY
+}
+
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
+if [[ -n "$RESUME_STATE" ]]; then
+  CANDIDATE_DIR="$(python3 - "$RESUME_STATE" <<'PY'
+import json,sys
+print(json.load(open(sys.argv[1]))['candidateDir'])
+PY
+)"
+fi
 if [[ -n "$CANDIDATE_RUN_ID" ]]; then
   gh run download "$CANDIDATE_RUN_ID" --repo "$REPO" --name vibetv-release-candidate --dir "$work/candidate"
   gh run download "$CANDIDATE_RUN_ID" --repo "$REPO" --name vibetv-release-candidate-result --dir "$work/candidate-result"
@@ -69,13 +91,28 @@ body=json.load(open(sys.argv[1])); board=sys.argv[2]
 print(next(a['firmwareVersion'] for a in body['artifacts'] if a.get('board') == board))
 PY
 )"
-if [[ "$before" != "$candidate_version" ]]; then
+if [[ -n "$RESUME_STATE" ]]; then
+  [[ -f "$RESUME_STATE" ]] || die "pending state is missing: $RESUME_STATE"
+  [[ -n "$CONFIRM_RENDER" && -n "$CONFIRM_POWER_CYCLE" ]] || die "resume requires --confirm-render-visible and --confirm-power-cycle-10s"
+  python3 - "$RESUME_STATE" "$TARGET" "$EXPECTED_DEVICE_ID" "$board" "$candidate_version" "$health" <<'PY'
+import json,sys
+state,target,device,board,version,health=sys.argv[1:]
+s=json.load(open(state)); h=json.loads(health)
+assert s['target']==target and s['deviceId']==device and s['board']==board and s['firmware']==version
+assert h.get('ok') is True and h.get('display',{}).get('themeSpec',{}).get('renderOk') is True
+PY
+  write_evidence success "$before" "$before"
+  echo "Evidence written: $OUTPUT_DIR/hardware-canary.json"
+  exit 0
+fi
+if [[ "$(semver_compare "$candidate_version" "$before")" == 1 ]]; then
   [[ -n "$RECOVERY_PORT" && "$CONFIRM_DEVICE_ID" == "$EXPECTED_DEVICE_ID" && -n "$CONFIRM_WRITE_RISK" ]] || die "firmware write requires --recovery-port, exact --confirm-device-id, and --confirm-hardware-write-risk"
   mkdir -p "$OUTPUT_DIR"
   "${ROOT}/scripts/esp8266-backup.sh" "$RECOVERY_PORT" "$OUTPUT_DIR/usb-backup.bin" 0x400000
   cp "$firmware_manifest" "$OUTPUT_DIR/candidate-firmware-manifest.json"
 fi
-python3 -m http.server 0 --directory "$CANDIDATE_DIR" >"$work/http.log" 2>&1 & server_pid=$!
+ln -s "$CANDIDATE_DIR" "$work/candidate"
+python3 -u -m http.server 0 --directory "$work" >"$work/http.log" 2>&1 & server_pid=$!
 trap 'kill "$server_pid" 2>/dev/null || true; rm -rf "$work"' EXIT
 port="$(python3 -u - "$work/http.log" <<'PY'
 import sys,time,re
@@ -88,18 +125,30 @@ for _ in range(100):
 PY
 )"
 [[ -n "$port" ]] || die "local candidate manifest server did not start"
-write_started=1
-on_write_error() {
+local_manifest="$work/candidate-firmware-manifest.json"
+python3 - "$firmware_manifest" "$local_manifest" "$port" <<'PY'
+import json,sys
+src,out,port=sys.argv[1:]; body=json.load(open(src))
+for artifact in body['artifacts']:
+ artifact['firmwareUrl']='http://127.0.0.1:%s/candidate/%s' % (port, artifact['firmwareUrl'].lstrip('/'))
+json.dump(body,open(out,'w'),separators=(',',':'))
+PY
+cp "$local_manifest" "$OUTPUT_DIR/candidate-firmware-manifest.json"
+if ! "$companion" install-update --target "$TARGET" --manifest-url "http://127.0.0.1:$port/${local_manifest#$work/}" --skip-launchagent-pause; then
   write_evidence unknown "$before" "" || true
   echo "OTA outcome unknown: STOP. Read-only diagnosis only; no retry or rollback. Recovery: $companion restore-known-good --port $RECOVERY_PORT" >&2
-}
-trap 'on_write_error' ERR
-"$companion" install-update --target "$TARGET" --manifest-url "http://127.0.0.1:$port/${firmware_manifest#$CANDIDATE_DIR/}" --skip-launchagent-pause
-"$companion" daemon --transport wifi --target "$TARGET" --once
+  exit 1
+fi
+if ! daemon_output="$("$companion" daemon --transport wifi --target "$TARGET" --once 2>&1)" || [[ "$daemon_output" != *"sent frame ->"* ]]; then
+  write_evidence blocked "$before" "" || true
+  echo "daemon/render failed; evidence is blocked and no OTA retry or rollback will run" >&2
+  exit 1
+fi
 echo "Manual checks required: visually confirm one rendered frame, then power-cycle VibeTV for 10 seconds and confirm it returns."
-[[ -n "$CONFIRM_RENDER" && -n "$CONFIRM_POWER_CYCLE" ]] || die "recording success evidence requires --confirm-render-visible and --confirm-power-cycle-10s"
-after_hello="$(curl -fsS "$TARGET/hello")"
-after="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["firmware"])' "$after_hello")"
-write_evidence success "$before" "$after"
-echo "Evidence written: $OUTPUT_DIR/hardware-canary.json"
-echo "Record with: gh workflow run record-hardware-canary.yml --ref main -f evidence_base64=$(base64 < "$OUTPUT_DIR/hardware-canary.json" | tr -d '\n')"
+pending="$OUTPUT_DIR/hardware-canary-pending.json"
+mkdir -p "$OUTPUT_DIR"
+python3 - "$pending" "$TARGET" "$EXPECTED_DEVICE_ID" "$board" "$candidate_version" "$CANDIDATE_DIR" <<'PY'
+import json,sys
+json.dump(dict(target=sys.argv[2],deviceId=sys.argv[3],board=sys.argv[4],firmware=sys.argv[5],candidateDir=sys.argv[6]),open(sys.argv[1],'w'))
+PY
+echo "Power-cycle VibeTV for 10 seconds, then resume read-only: $0 --resume $pending --target $TARGET --expected-device-id $EXPECTED_DEVICE_ID --output-dir $OUTPUT_DIR --confirm-render-visible --confirm-power-cycle-10s"
