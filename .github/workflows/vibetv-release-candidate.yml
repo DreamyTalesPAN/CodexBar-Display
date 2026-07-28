@@ -201,10 +201,26 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/resolve-vibetv-public-baselines.sh --output baseline-manifest.json
+      - name: Freeze baseline bytes and hashes
+        run: |
+          python3 - baseline-manifest.json <<'PY'
+          import hashlib, json, pathlib, urllib.request
+          path = pathlib.Path(__import__('sys').argv[1]); manifest = json.loads(path.read_text())
+          root = pathlib.Path('baselines'); root.mkdir()
+          for state, baseline in manifest['baselines'].items():
+              for kind, url_key in [('dmg', 'dmgUrl'), ('appcast', 'appcastUrl')]:
+                  data = urllib.request.urlopen(baseline[url_key]).read()
+                  target = root / f'{state}.{ "dmg" if kind == "dmg" else "appcast.xml" }'
+                  target.write_bytes(data)
+                  baseline[kind + 'Sha256'] = hashlib.sha256(data).hexdigest()
+          path.write_text(json.dumps(manifest, indent=2) + '\n')
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: CODEX-vibetv-rc-baselines-${{ github.run_id }}
-          path: baseline-manifest.json
+          path: |
+            baseline-manifest.json
+            baselines
           retention-days: 7
 
   guest-test:
@@ -237,9 +253,9 @@ jobs:
           print("DMG_URL=" + shlex.quote(baseline["dmgUrl"]))
           print("APPCAST_URL=" + shlex.quote(baseline["appcastUrl"]))
           PY
-          source baseline.env
-          curl --fail --location "$DMG_URL" -o baseline.dmg
-          curl --fail --location "$APPCAST_URL" -o baseline-appcast.xml
+          cp "baselines/${{ matrix.state }}.dmg" baseline.dmg
+          cp "baselines/${{ matrix.state }}.appcast.xml" baseline-appcast.xml
+          shasum -a 256 baseline.dmg baseline-appcast.xml
       - name: Run full direct hosted macOS guest matrix
         run: |
           set -euo pipefail

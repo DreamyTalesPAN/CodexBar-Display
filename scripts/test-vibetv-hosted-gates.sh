@@ -182,6 +182,10 @@ main() {
     'release candidate must enforce the release firmware size budgets'
   assert_contains "$RC_WORKFLOW" 'shasum -a 256 -c "checksums-v${version}.txt"' \
     'release candidate must verify its publish checksum asset before upload'
+  assert_contains "$RC_WORKFLOW" "kind + 'Sha256'" \
+    'release candidate must freeze public baseline DMG hashes'
+  assert_contains "$RC_WORKFLOW" 'baselines/${{ matrix.state }}.dmg' \
+    'guest matrix must consume the frozen baseline bytes'
   assert_contains "$RC_WORKFLOW" '"protocolVersion":config.get' \
     'release candidate must preserve release firmware protocol metadata'
   assert_contains "$SPARKLE_BUILDER" '6276ba2b404829d139c45ff98427cf90e2efc59b' \
