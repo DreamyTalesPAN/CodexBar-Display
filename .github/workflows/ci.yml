@@ -254,3 +254,36 @@ jobs:
             "20" \
             "25" \
             "0"
+
+  codex-ci:
+    name: CODEX CI
+    if: always()
+    needs:
+      - control-center-ui-review-gate
+      - companion-tests
+      - macos-control-center-tests
+      - theme-studio-tests
+      - control-center-tests
+      - theme-pack-build
+      - firmware-build-v0
+      - firmware-build-experimental
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate required CI jobs
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          failed = {
+              name: value.get("result")
+              for name, value in needs.items()
+              if value.get("result") in {"failure", "cancelled"}
+          }
+          if failed:
+              raise SystemExit(f"CODEX CI blocked by: {failed}")
+          print("CODEX CI passed:", {name: value.get("result") for name, value in needs.items()})
+          PY

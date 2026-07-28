@@ -1,0 +1,222 @@
+name: CODEX Test VibeTV Release Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Candidate SemVer built from the exact main SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codex-vibetv-release-candidate-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  build-main:
+    if: >-
+      github.repository == 'DreamyTalesPAN/CodexBar-Display' &&
+      github.ref == 'refs/heads/main' &&
+      (github.actor == github.repository_owner || github.actor == 'marcus7989')
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/control-center/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build immutable candidate inputs once
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          version="${VERSION#v}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || { echo 'version must be SemVer' >&2; exit 1; }
+          test -d companion/cmd/virtual-vibetv || { echo 'error: Issue #177 Core is required: companion/cmd/virtual-vibetv is missing.' >&2; exit 1; }
+          pip install platformio
+          mkdir -p dist/macos tmp/vibetv-rc
+          (
+            cd apps/control-center
+            npm ci
+            npm run build:local
+          )
+          rm -rf companion/internal/companionapi/controlcenter_static
+          mkdir -p companion/internal/companionapi/controlcenter_static
+          cp -R apps/control-center/out-local/. companion/internal/companionapi/controlcenter_static/
+          (
+            cd companion
+            for arch in amd64 arm64; do
+              GOOS=darwin GOARCH="$arch" CGO_ENABLED=0 go build \
+                -ldflags "-s -w -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=${version} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=${GITHUB_SHA}" \
+                -o "../tmp/vibetv-rc/codexbar-display-${arch}" ./cmd/codexbar-display
+            done
+            GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o ../tmp/vibetv-rc/virtual-vibetv ./cmd/virtual-vibetv
+          )
+          lipo -create -output tmp/vibetv-rc/codexbar-display tmp/vibetv-rc/codexbar-display-amd64 tmp/vibetv-rc/codexbar-display-arm64
+          ./scripts/build-macos-control-center-app.sh --version "$version" --build "$GITHUB_RUN_NUMBER" --universal --companion-binary tmp/vibetv-rc/codexbar-display --output 'dist/macos/VibeTV Control Center.app'
+          COPYFILE_DISABLE=1 tar -czf tmp/vibetv-rc/app.tar.gz -C dist/macos 'VibeTV Control Center.app'
+          (
+            cd firmware_esp8266
+            CODEXBAR_DISPLAY_FW_VERSION="$version" pio run -e esp8266_smalltv_st7789
+          )
+          cp firmware_esp8266/.pio/build/esp8266_smalltv_st7789/firmware.bin tmp/vibetv-rc/firmware.bin
+          printf '%s\n' "$version" > tmp/vibetv-rc/version.txt
+          printf '%s\n' "$GITHUB_SHA" > tmp/vibetv-rc/source-sha.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CODEX-vibetv-rc-inputs-${{ github.run_id }}
+          path: tmp/vibetv-rc
+          retention-days: 7
+
+  sign-and-package:
+    needs: build-main
+    runs-on: macos-15
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: CODEX-vibetv-rc-inputs-${{ github.run_id }}
+          path: tmp/vibetv-rc
+      - run: ./scripts/extract-vibetv-candidate-app.sh --archive tmp/vibetv-rc/app.tar.gz --output dist/macos
+      - name: Sign and notarize immutable release candidate
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_SIGNING_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_SIGNING_CERTIFICATE_P12_BASE64 }}
+          APPLE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_SIGNING_CERTIFICATE_PASSWORD }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+        run: |
+          ./scripts/sign-notarize-macos-control-center.sh --app 'dist/macos/VibeTV Control Center.app' --sign-app-only --allow-internal-xprotect-preflight-error
+          ./scripts/build-macos-control-center-dmg.sh --app 'dist/macos/VibeTV Control Center.app' --output dist/macos/VibeTV-Control-Center.dmg --staging-dir tmp/vibetv-rc/dmg-stage
+          ./scripts/sign-notarize-macos-control-center.sh --app 'dist/macos/VibeTV Control Center.app' --dmg dist/macos/VibeTV-Control-Center.dmg --skip-app-sign
+          ./scripts/verify-macos-control-center-dmg.sh --dmg dist/macos/VibeTV-Control-Center.dmg
+      - name: Create signed appcast and candidate-manifest.json
+        env:
+          SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
+          CANDIDATE_RUN_ID: ${{ github.run_id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version="$(cat tmp/vibetv-rc/version.txt)"
+          source_sha="$(cat tmp/vibetv-rc/source-sha.txt)"
+          sparkle_dir="$(./scripts/fetch-sparkle.sh)"
+          printf '%s' "$SPARKLE_ED25519_PRIVATE_KEY" | "$sparkle_dir/bin/generate_appcast" --ed-key-file - --maximum-deltas 0 --link https://app.vibetv.shop -o dist/macos/appcast.xml dist/macos
+          python3 - "$source_sha" "$version" "$REPOSITORY" "$CANDIDATE_RUN_ID" dist/macos/candidate-manifest.json <<'PY'
+          import datetime, hashlib, json, sys
+          sha, version, repository, run_id, output = sys.argv[1:]
+          files = [
+              ("VibeTV-Control-Center.dmg", "dist/macos/VibeTV-Control-Center.dmg", "signed-dmg"),
+              ("appcast.xml", "dist/macos/appcast.xml", "sparkle-appcast"),
+              ("firmware.bin", "tmp/vibetv-rc/firmware.bin", "firmware"),
+              ("virtual-vibetv", "tmp/vibetv-rc/virtual-vibetv", "virtual-vibetv"),
+          ]
+          artifacts = []
+          for name, path, role in files:
+              with open(path, "rb") as source:
+                  artifacts.append({"name": name, "path": name, "sha256": hashlib.sha256(source.read()).hexdigest(), "role": role})
+          with open(output, "w", encoding="utf-8") as destination:
+              json.dump({
+                  "schemaVersion": 1, "repository": repository, "sourceSha": sha, "version": version,
+                  "candidateRunId": run_id,
+                  "createdAt": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+                  "artifacts": artifacts, "virtualGate": {"result": "pending", "runId": run_id},
+              }, destination, indent=2)
+              destination.write("\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vibetv-release-candidate
+          path: |
+            dist/macos/VibeTV-Control-Center.dmg
+            dist/macos/appcast.xml
+            dist/macos/candidate-manifest.json
+            tmp/vibetv-rc/virtual-vibetv
+            tmp/vibetv-rc/firmware.bin
+          retention-days: 7
+          compression-level: 0
+
+  resolve-baselines:
+    needs: build-main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/resolve-vibetv-public-baselines.sh --output baseline-manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CODEX-vibetv-rc-baselines-${{ github.run_id }}
+          path: baseline-manifest.json
+          retention-days: 7
+
+  guest-test:
+    needs: [sign-and-package, resolve-baselines]
+    runs-on: macos-15
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        state: [clean_os, current_public, previous_public]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: vibetv-release-candidate
+          path: candidate
+      - uses: actions/download-artifact@v4
+        with:
+          name: CODEX-vibetv-rc-baselines-${{ github.run_id }}
+          path: baselines
+      - name: Download frozen public baseline when required
+        if: matrix.state != 'clean_os'
+        run: |
+          python3 - "baselines/baseline-manifest.json" "${{ matrix.state }}" <<'PY' > baseline.env
+          import json, shlex, sys
+          baseline = json.load(open(sys.argv[1], encoding="utf-8"))["baselines"][sys.argv[2]]
+          print("DMG_URL=" + shlex.quote(baseline["dmgUrl"]))
+          print("APPCAST_URL=" + shlex.quote(baseline["appcastUrl"]))
+          PY
+          source baseline.env
+          curl --fail --location "$DMG_URL" -o baseline.dmg
+          curl --fail --location "$APPCAST_URL" -o baseline-appcast.xml
+      - name: Run full direct hosted macOS guest matrix
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import json; print(json.load(open("candidate/candidate-manifest.json"))["version"])')"
+          baseline_args=()
+          if [[ '${{ matrix.state }}' != clean_os ]]; then
+            baseline_args=(--baseline-dmg baseline.dmg --baseline-appcast baseline-appcast.xml)
+          fi
+          ./scripts/test-vibetv-hosted-guest.sh --dmg candidate/VibeTV-Control-Center.dmg --appcast candidate/appcast.xml --virtual-vibetv candidate/virtual-vibetv --firmware candidate/firmware.bin --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: CODEX-vibetv-rc-results-${{ matrix.state }}-${{ github.run_id }}
+          path: results
+          retention-days: 7

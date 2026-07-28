@@ -1,0 +1,318 @@
+name: CODEX Test VibeTV Merge
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Open pull request number to build and test
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codex-vibetv-merge-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  resolve-pr:
+    if: >-
+      github.repository == 'DreamyTalesPAN/CodexBar-Display' &&
+      github.ref == 'refs/heads/main' &&
+      (github.actor == github.repository_owner || github.actor == 'marcus7989')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      sha: ${{ steps.pr.outputs.sha }}
+    steps:
+      - id: pr
+        name: Resolve exact open PR head SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] || { echo 'invalid PR number' >&2; exit 1; }
+          pr_number="$PR_NUMBER"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" > pr.json
+          python3 - "$GITHUB_OUTPUT" pr.json <<'PY'
+          import json
+          import sys
+
+          value = json.load(open(sys.argv[2], encoding="utf-8"))
+          if value.get("state") != "open" or value.get("base", {}).get("ref") != "main":
+              raise SystemExit("PR must be open against main")
+          sha = str(value.get("head", {}).get("sha", "")).strip()
+          if len(sha) != 40:
+              raise SystemExit("PR has no immutable 40-character head SHA")
+          with open(sys.argv[1], "a", encoding="utf-8") as output:
+              output.write(f"sha={sha}\n")
+          PY
+
+  build-untrusted:
+    needs: resolve-pr
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact untrusted PR head without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-pr.outputs.sha }}
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/control-center/package-lock.json
+
+      - name: Setup Python and PlatformIO
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build secrets-free candidate inputs
+        run: |
+          set -euo pipefail
+          test -d companion/cmd/virtual-vibetv || {
+            echo 'error: Issue #177 Core is required: companion/cmd/virtual-vibetv is missing.' >&2
+            exit 1
+          }
+          pip install platformio
+          source_sha="$(git rev-parse HEAD)"
+          version="0.0.0-pr${{ inputs.pr_number }}.${GITHUB_RUN_NUMBER}"
+          mkdir -p dist/macos tmp/vibetv-merge
+          (
+            cd apps/control-center
+            npm ci
+            npm run build:local
+          )
+          rm -rf companion/internal/companionapi/controlcenter_static
+          mkdir -p companion/internal/companionapi/controlcenter_static
+          cp -R apps/control-center/out-local/. companion/internal/companionapi/controlcenter_static/
+          (
+            cd companion
+            go test ./...
+            for arch in amd64 arm64; do
+              GOOS=darwin GOARCH="$arch" CGO_ENABLED=0 go build \
+                -ldflags "-s -w -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=${version} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=${source_sha}" \
+                -o "../tmp/vibetv-merge/codexbar-display-${arch}" ./cmd/codexbar-display
+            done
+            GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o ../tmp/vibetv-merge/virtual-vibetv ./cmd/virtual-vibetv
+          )
+          lipo -create -output tmp/vibetv-merge/codexbar-display \
+            tmp/vibetv-merge/codexbar-display-amd64 tmp/vibetv-merge/codexbar-display-arm64
+          ./scripts/build-macos-control-center-app.sh \
+            --version "$version" --build "$GITHUB_RUN_NUMBER" --universal \
+            --companion-binary tmp/vibetv-merge/codexbar-display \
+            --output 'dist/macos/VibeTV Control Center.app'
+          COPYFILE_DISABLE=1 tar -czf tmp/vibetv-merge/app.tar.gz -C dist/macos 'VibeTV Control Center.app'
+          (
+            cd firmware_esp8266
+            CODEXBAR_DISPLAY_FW_VERSION="$version" pio run -e esp8266_smalltv_st7789
+          )
+          cp firmware_esp8266/.pio/build/esp8266_smalltv_st7789/firmware.bin tmp/vibetv-merge/firmware.bin
+          printf '%s\n' "$source_sha" > tmp/vibetv-merge/source-sha.txt
+          printf '%s\n' "$version" > tmp/vibetv-merge/version.txt
+
+      - name: Upload unsigned candidate inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: CODEX-vibetv-merge-inputs-${{ github.run_id }}
+          path: tmp/vibetv-merge
+          retention-days: 1
+
+  sign-and-package:
+    needs: [resolve-pr, build-untrusted]
+    runs-on: macos-15
+    timeout-minutes: 70
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout trusted main signing tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Download unsigned candidate inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: CODEX-vibetv-merge-inputs-${{ github.run_id }}
+          path: tmp/vibetv-merge
+
+      - name: Safely extract untrusted app archive
+        run: ./scripts/extract-vibetv-candidate-app.sh --archive tmp/vibetv-merge/app.tar.gz --output dist/macos
+
+      - name: Sign and notarize candidate without running PR code
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_SIGNING_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_SIGNING_CERTIFICATE_P12_BASE64 }}
+          APPLE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_SIGNING_CERTIFICATE_PASSWORD }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          ./scripts/sign-notarize-macos-control-center.sh --app 'dist/macos/VibeTV Control Center.app' --sign-app-only --allow-internal-xprotect-preflight-error
+          ./scripts/build-macos-control-center-dmg.sh --app 'dist/macos/VibeTV Control Center.app' --output dist/macos/VibeTV-Control-Center.dmg --staging-dir tmp/vibetv-merge/dmg-stage
+          ./scripts/sign-notarize-macos-control-center.sh --app 'dist/macos/VibeTV Control Center.app' --dmg dist/macos/VibeTV-Control-Center.dmg --skip-app-sign
+          ./scripts/verify-macos-control-center-dmg.sh --dmg dist/macos/VibeTV-Control-Center.dmg
+
+      - name: Build signed candidate appcast and immutable manifest
+        env:
+          SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
+          SOURCE_SHA: ${{ needs.resolve-pr.outputs.sha }}
+          CANDIDATE_RUN_ID: ${{ github.run_id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version="$(cat tmp/vibetv-merge/version.txt)"
+          sparkle_dir="$(./scripts/fetch-sparkle.sh)"
+          printf '%s' "$SPARKLE_ED25519_PRIVATE_KEY" | "$sparkle_dir/bin/generate_appcast" --ed-key-file - --maximum-deltas 0 --link https://app.vibetv.shop -o dist/macos/appcast.xml dist/macos
+          python3 - "$SOURCE_SHA" "$version" "$REPOSITORY" "$CANDIDATE_RUN_ID" dist/macos/candidate-manifest.json <<'PY'
+          import datetime, hashlib, json, sys
+          sha, version, repository, run_id, output = sys.argv[1:]
+          files = [
+              ("VibeTV-Control-Center.dmg", "dist/macos/VibeTV-Control-Center.dmg", "signed-dmg"),
+              ("appcast.xml", "dist/macos/appcast.xml", "sparkle-appcast"),
+              ("firmware.bin", "tmp/vibetv-merge/firmware.bin", "firmware"),
+              ("virtual-vibetv", "tmp/vibetv-merge/virtual-vibetv", "virtual-vibetv"),
+          ]
+          manifest = {
+              "schemaVersion": 1, "repository": repository, "sourceSha": sha, "version": version,
+              "candidateRunId": run_id,
+              "createdAt": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+              "artifacts": [], "virtualGate": {"result": "pending", "runId": run_id},
+          }
+          for name, path, role in files:
+              with open(path, "rb") as source:
+                  manifest["artifacts"].append({"name": name, "path": name, "sha256": hashlib.sha256(source.read()).hexdigest(), "role": role})
+          with open(output, "w", encoding="utf-8") as destination:
+              json.dump(manifest, destination, indent=2)
+              destination.write("\n")
+          PY
+
+      - name: Upload signed merge candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: CODEX-vibetv-merge-candidate-${{ github.run_id }}
+          path: |
+            dist/macos/VibeTV-Control-Center.dmg
+            dist/macos/appcast.xml
+            dist/macos/candidate-manifest.json
+            tmp/vibetv-merge/virtual-vibetv
+            tmp/vibetv-merge/firmware.bin
+          retention-days: 7
+          compression-level: 0
+
+  resolve-baselines:
+    needs: resolve-pr
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout trusted baseline resolver
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Freeze public baselines
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/resolve-vibetv-public-baselines.sh --output baseline-manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CODEX-vibetv-merge-baselines-${{ github.run_id }}
+          path: baseline-manifest.json
+          retention-days: 7
+
+  guest-test:
+    needs: [sign-and-package, resolve-baselines]
+    runs-on: macos-15
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        state: [clean_os, current_public, previous_public]
+    steps:
+      - name: Checkout trusted guest test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: CODEX-vibetv-merge-candidate-${{ github.run_id }}
+          path: candidate
+      - uses: actions/download-artifact@v4
+        with:
+          name: CODEX-vibetv-merge-baselines-${{ github.run_id }}
+          path: baselines
+      - name: Download frozen public baseline when required
+        if: matrix.state != 'clean_os'
+        run: |
+          python3 - "baselines/baseline-manifest.json" "${{ matrix.state }}" <<'PY' > baseline.env
+          import json, shlex, sys
+          manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+          baseline = manifest["baselines"][sys.argv[2]]
+          print("DMG_URL=" + shlex.quote(baseline["dmgUrl"]))
+          print("APPCAST_URL=" + shlex.quote(baseline["appcastUrl"]))
+          PY
+          source baseline.env
+          curl --fail --location "$DMG_URL" -o baseline.dmg
+          curl --fail --location "$APPCAST_URL" -o baseline-appcast.xml
+      - name: Run direct hosted macOS guest checks
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import json; print(json.load(open("candidate/candidate-manifest.json"))["version"])')"
+          baseline_args=()
+          if [[ '${{ matrix.state }}' != clean_os ]]; then
+            baseline_args=(--baseline-dmg baseline.dmg --baseline-appcast baseline-appcast.xml)
+          fi
+          ./scripts/test-vibetv-hosted-guest.sh \
+            --dmg candidate/VibeTV-Control-Center.dmg --appcast candidate/appcast.xml \
+            --virtual-vibetv candidate/virtual-vibetv --firmware candidate/firmware.bin \
+            --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: CODEX-vibetv-merge-results-${{ matrix.state }}-${{ github.run_id }}
+          path: results
+          retention-days: 7
+
+  report-status:
+    if: always()
+    needs: [resolve-pr, guest-test]
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    steps:
+      - name: Publish stable VibeTV merge commit status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.resolve-pr.outputs.sha }}
+          RESULT: ${{ needs.guest-test.result }}
+        run: |
+          set -euo pipefail
+          state=success
+          description='GitHub-hosted VibeTV guest matrix passed'
+          if [[ "$RESULT" != success ]]; then
+            state=failure
+            description='GitHub-hosted VibeTV guest matrix failed'
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
+            -f state="$state" -f context='CODEX VibeTV Merge Gate' -f description="$description" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
