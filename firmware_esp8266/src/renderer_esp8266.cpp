@@ -568,6 +568,30 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
 #endif
 }
 
+bool RendererESP8266::DrawClock(app::RuntimeContext& ctx) {
+#if !defined(CODEXBAR_DISPLAY_PROBE_ONLY) && CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  display::AttachContext(ctx);
+  if (!display::CurrentFrame().hasThemeSpec || !display::CurrentThemeSpecRenderedSuccessfully()) {
+    return false;
+  }
+  const String& raw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
+  uint32_t fields = 0;
+  if (core::ThemeSpecUsesBinding(raw, "time", "tm")) {
+    fields |= codexbar_display::themespec::kThemeSpecFieldTime;
+  }
+  if (core::ThemeSpecUsesBinding(raw, "date", "dt")) {
+    fields |= codexbar_display::themespec::kThemeSpecFieldDate;
+  }
+  if (fields == 0) {
+    return false;
+  }
+  return display::RenderThemeSpecPartial(fields);
+#else
+  (void)ctx;
+  return false;
+#endif
+}
+
 void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);

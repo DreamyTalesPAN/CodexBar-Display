@@ -5,6 +5,7 @@ Goal: keep firmware transport/theme evolution modular and prevent monolith regre
 ## Module Boundaries
 - `firmware_shared/codexbar_display_core.h`: protocol frame parsing, runtime state, countdown math.
 - `firmware_shared/app_transport.h`: transport hello emission + serial consume bridge.
+- `firmware_shared/device_clock.h`: device wall clock state math (SNTP epoch, learned UTC offset, resolved `time`/`date` text). Pure state, no board calls, natively tested.
 - `firmware_shared/app_runtime.h`: runtime context wrapper.
 - `firmware_shared/app_renderer.h`: renderer lifecycle contract.
 - `firmware_esp8266/src/renderer_esp8266_*`: board-specific theme rendering details.
@@ -14,6 +15,11 @@ Rules:
 - transport logic must not import board-specific renderer internals.
 - renderer modules must not parse raw JSON directly (only consume `core::Frame`).
 - theme behavior changes should remain inside theme modules, not in transport loop.
+- the firmware may open outbound SNTP (UDP/123) for its own clock. It must not
+  fetch public HTTPS manifests. No other firmware-initiated outbound traffic.
+- `{time}`/`{date}` must resolve through the device clock first and fall back to
+  the Companion string only while that string is still current. A stale clock
+  value must never be rendered as the current time.
 
 ## Protocol/Theme Rules
 - Companion->device frame `v` is negotiated (prefer v2, fallback v1).

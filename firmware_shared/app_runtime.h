@@ -3,6 +3,7 @@
 #include <Arduino.h>
 
 #include "codexbar_display_core.h"
+#include "device_clock.h"
 
 namespace codexbar_display {
 namespace app {
@@ -10,11 +11,22 @@ namespace app {
 struct RuntimeContext {
   core::RuntimeState runtime;
   core::LineReaderState lineReader;
+  deviceclock::DeviceClock clock;
   bool screenDirty = true;
   String topLineOverride;
   int64_t lastRenderedSecs = -1;
   int64_t lastRenderedMinuteBucket = -1;
 };
+
+// Resolved wall clock texts, device clock first and Companion string as
+// fallback. Both renderer and diagnostics read them through here.
+inline deviceclock::Source ClockTimeText(const RuntimeContext& ctx, unsigned long nowMillis, char* out, size_t outSize) {
+  return deviceclock::ResolveTimeText(ctx.clock, nowMillis, ctx.runtime.current.timeText.c_str(), out, outSize);
+}
+
+inline deviceclock::Source ClockDateText(const RuntimeContext& ctx, unsigned long nowMillis, char* out, size_t outSize) {
+  return deviceclock::ResolveDateText(ctx.clock, nowMillis, ctx.runtime.current.dateText.c_str(), out, outSize);
+}
 
 inline core::Frame& CurrentFrame(RuntimeContext& ctx) {
   return ctx.runtime.current;

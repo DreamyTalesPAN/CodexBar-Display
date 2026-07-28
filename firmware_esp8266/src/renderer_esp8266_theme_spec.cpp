@@ -1081,8 +1081,15 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   frame.weeklyUnavailable = CurrentFrame().weeklyUnavailable;
   frame.usageMode = usageModeText();
   frame.activity = CurrentFrame().activity.c_str();
-  frame.time = CurrentFrame().timeText.c_str();
-  frame.date = CurrentFrame().dateText.c_str();
+  // The device clock owns {time}/{date}; the Companion string is only a
+  // fallback and is dropped once it is no longer current.
+  static char clockTimeText[deviceclock::kTimeTextSize];
+  static char clockDateText[deviceclock::kDateTextSize];
+  const unsigned long nowMs = millis();
+  app::ClockTimeText(Context(), nowMs, clockTimeText, sizeof(clockTimeText));
+  app::ClockDateText(Context(), nowMs, clockDateText, sizeof(clockDateText));
+  frame.time = clockTimeText;
+  frame.date = clockDateText;
   frame.sessionTokens = CurrentFrame().sessionTokens;
   frame.weekTokens = CurrentFrame().weekTokens;
   frame.totalTokens = CurrentFrame().totalTokens;

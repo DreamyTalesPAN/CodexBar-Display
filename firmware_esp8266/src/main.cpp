@@ -6,6 +6,7 @@
 #include <WiFiUdp.h>
 #include <LittleFS.h>
 #include <Updater.h>
+#include <time.h>
 
 #include "../../firmware_shared/app_runtime.h"
 #include "../../firmware_shared/app_transport.h"
@@ -62,6 +63,10 @@ constexpr unsigned long kWifiReconnectRetryMs = 5000UL;
 constexpr unsigned long kWifiReconnectFallbackMs = 120000UL;
 constexpr unsigned long kRebootDelayMs = 750UL;
 constexpr unsigned long kFrameStaleWarningMs = 150000UL;
+// SNTP answers within a few seconds of the WiFi link coming up and keeps the
+// system clock corrected on its own afterwards, so this is only a sampling
+// interval, not a retry loop.
+constexpr unsigned long kDeviceClockPollMs = 2000UL;
 constexpr unsigned long kFirmwareUpdateNoticeToggleMs = 1500UL;
 constexpr unsigned long kRawOtaProgressTimeoutMs = 30000UL;
 constexpr size_t kRawOtaReadBufferBytes = 512;
@@ -169,6 +174,12 @@ struct RuntimeRenderDiagnostics {
 struct DeviceSettings {
   uint8_t brightnessPercent = kDefaultBrightnessPercent;
 };
+
+namespace deviceclock = codexbar_display::deviceclock;
+
+unsigned long nextDeviceClockPollAtMs = 0;
+char renderedClockTime[deviceclock::kTimeTextSize] = {};
+char renderedClockDate[deviceclock::kDateTextSize] = {};
 
 bool httpServerStarted = false;
 bool rawOtaServerStarted = false;
@@ -321,13 +332,20 @@ bool loadDeviceSettings() {
     applyDeviceSettings();
     return false;
   }
-  const int brightness = file.read();
+  uint8_t record[1 + deviceclock::kUtcOffsetRecordBytes] = {};
+  const int readBytes = file.read(record, sizeof(record));
   file.close();
-  if (brightness <= 0) {
+  if (readBytes < 1 || record[0] == 0) {
     applyDeviceSettings();
     return false;
   }
-  deviceSettings.brightnessPercent = clampBrightnessPercent(brightness);
+  deviceSettings.brightnessPercent = clampBrightnessPercent(record[0]);
+  // Records written before the device clock existed only hold the brightness
+  // byte; the clock then simply relearns the offset from the next frame.
+  int offsetMinutes = 0;
+  if (deviceclock::DecodeUtcOffset(record + 1, static_cast<size_t>(readBytes) - 1, offsetMinutes)) {
+    deviceclock::RestoreUtcOffset(runtimeCtx.clock, offsetMinutes);
+  }
   applyDeviceSettings();
   return true;
 }
@@ -340,7 +358,10 @@ bool saveDeviceSettings() {
   if (!file) {
     return false;
   }
-  const size_t written = file.write(&deviceSettings.brightnessPercent, 1);
+  uint8_t record[1 + deviceclock::kUtcOffsetRecordBytes] = {};
+  record[0] = deviceSettings.brightnessPercent;
+  deviceclock::EncodeUtcOffset(runtimeCtx.clock, record + 1);
+  const size_t written = file.write(record, sizeof(record));
   file.close();
   return written > 0;
 }
@@ -488,6 +509,43 @@ void appendSettingsJSON(String& out) {
   out += "\"settings\":{\"display\":{\"brightnessPercent\":";
   out += String(deviceSettings.brightnessPercent);
   out += "}}";
+}
+
+// Clock state is a diagnostic: it must show whether the displayed time is the
+// device's own, a still-current Companion string, or nothing trustworthy.
+void appendClockJSON(String& out) {
+  const unsigned long nowMs = millis();
+  char timeText[deviceclock::kTimeTextSize];
+  char dateText[deviceclock::kDateTextSize];
+  const deviceclock::Source source =
+      codexbar_display::app::ClockTimeText(runtimeCtx, nowMs, timeText, sizeof(timeText));
+  codexbar_display::app::ClockDateText(runtimeCtx, nowMs, dateText, sizeof(dateText));
+
+  out += "\"clock\":{\"synced\":";
+  out += runtimeCtx.clock.synced ? "true" : "false";
+  out += ",\"source\":\"";
+  out += deviceclock::SourceName(source);
+  out += "\",\"epoch\":";
+  out += String(static_cast<long>(deviceclock::UtcNow(runtimeCtx.clock, nowMs)));
+  out += ",\"utcOffsetMinutes\":";
+  if (runtimeCtx.clock.hasUtcOffset) {
+    out += String(static_cast<int>(runtimeCtx.clock.utcOffsetMinutes));
+  } else {
+    out += "null";
+  }
+  out += ",\"lastSyncAgeMs\":";
+  if (runtimeCtx.clock.synced) {
+    out += String(nowMs - runtimeCtx.clock.syncMillis);
+  } else {
+    out += "null";
+  }
+  out += ",\"syncCount\":";
+  out += String(runtimeCtx.clock.syncCount);
+  out += ",\"time\":\"";
+  out += timeText;
+  out += "\",\"date\":\"";
+  out += dateText;
+  out += "\"},";
 }
 
 void markFirmwareUpdateNoticeDirty() {
@@ -731,6 +789,48 @@ void renderAcceptedFrame(const codexbar_display::core::SerialConsumeEvent& event
   }
 }
 
+// The device clock owns {time}/{date}. SNTP corrects the system clock on its
+// own once the link is up, so this only samples it and repaints when the text
+// the customer sees actually changes. That covers the device clock, the
+// Companion fallback and the honest placeholder with one trigger.
+void maintainDeviceClock() {
+  const unsigned long nowMs = millis();
+  if (static_cast<long>(nowMs - nextDeviceClockPollAtMs) < 0) {
+    return;
+  }
+  nextDeviceClockPollAtMs = nowMs + kDeviceClockPollMs;
+
+  const time_t systemEpoch = time(nullptr);
+  if (deviceclock::ObserveSystemEpoch(runtimeCtx.clock, static_cast<int64_t>(systemEpoch), nowMs)) {
+    Serial.printf("clock_synced epoch=%ld utc_offset_known=%d\n",
+                  static_cast<long>(systemEpoch),
+                  runtimeCtx.clock.hasUtcOffset ? 1 : 0);
+  }
+
+  char timeText[deviceclock::kTimeTextSize];
+  char dateText[deviceclock::kDateTextSize];
+  codexbar_display::app::ClockTimeText(runtimeCtx, nowMs, timeText, sizeof(timeText));
+  codexbar_display::app::ClockDateText(runtimeCtx, nowMs, dateText, sizeof(dateText));
+  if (strcmp(timeText, renderedClockTime) == 0 && strcmp(dateText, renderedClockDate) == 0) {
+    return;
+  }
+  strcpy(renderedClockTime, timeText);
+  strcpy(renderedClockDate, dateText);
+
+  if (setupMode ||
+      waitStatusRendered ||
+      frameStaleStatusRendered ||
+      runtimeCtx.screenDirty ||
+      !codexbar_display::app::HasFrame(runtimeCtx) ||
+      codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
+    return;
+  }
+  const unsigned long renderStartUs = micros();
+  if (renderer.DrawClock(runtimeCtx)) {
+    recordRenderPartial("clock", micros() - renderStartUs);
+  }
+}
+
 void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, const char* transport) {
   if (statusScreenLocked()) {
     Serial.printf("frame_ignored transport=%s reason=status_screen_locked\n", transport);
@@ -747,6 +847,16 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
     runtimeCtx.screenDirty = true;
   }
   lastFrameAcceptedAtMs = millis();
+  // SNTP delivers UTC only. The Mac is the only local-offset source the device
+  // has, so learn it while the Mac is here and persist it for the next boot.
+  if (deviceclock::ObserveCompanionClock(
+          runtimeCtx.clock,
+          codexbar_display::app::CurrentFrame(runtimeCtx).timeText.c_str(),
+          lastFrameAcceptedAtMs)) {
+    Serial.printf("clock_utc_offset_learned minutes=%d\n",
+                  static_cast<int>(runtimeCtx.clock.utcOffsetMinutes));
+    saveDeviceSettings();
+  }
   applyFrameUpdateState();
   if (event.themeSpecChanged) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
@@ -1352,7 +1462,7 @@ void handleHealth() {
   const codexbar_display::esp8266::RendererHealthSnapshot snapshot = renderer.HealthSnapshot();
 
   String out;
-  out.reserve(896);
+  out.reserve(1024);
   out += "{\"ok\":true,\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
   out += "\",\"system\":{\"freeHeap\":";
@@ -1412,6 +1522,7 @@ void handleHealth() {
   out += ",\"lastKind\":\"";
   out += jsonEscape(renderDiagnostics.lastKind);
   out += "\"},";
+  appendClockJSON(out);
   appendSettingsJSON(out);
   out += "}";
 
@@ -2682,6 +2793,10 @@ void setup() {
 
   if (wifiConnected) {
     setupMode = false;
+    // SNTP over UDP/123 in UTC. The local offset is applied by the device
+    // clock, not by the C library, so no timezone database is linked in.
+    // lwIP keeps the system clock corrected without any retry code here.
+    configTime(0, 0, "pool.ntp.org");
     startHttpServer();
   } else {
     startSetupAccessPoint();
@@ -2705,6 +2820,9 @@ void loop() {
   }
 
   maintainWifiConnection();
+  if (!otaUploadInProgress && !assetUploadInProgress) {
+    maintainDeviceClock();
+  }
   if (!otaUploadInProgress) {
     maintainFirmwareUpdateNotice();
   }
