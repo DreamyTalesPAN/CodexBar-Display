@@ -1087,6 +1087,8 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   frame.usageSlot2ResetSecs =
       codexbar_display::core::CurrentUsageSlotRemainingSecs(RuntimeState(), 1, millis());
   frame.usageSlot2Available = CurrentFrame().usageSlots[1].available && !CurrentFrame().usageUnavailable;
+  frame.sessionUnavailable = CurrentFrame().sessionUnavailable;
+  frame.weeklyUnavailable = CurrentFrame().weeklyUnavailable;
   frame.usageMode = usageModeText();
   frame.activity = CurrentFrame().activity.c_str();
   frame.time = CurrentFrame().timeText.c_str();

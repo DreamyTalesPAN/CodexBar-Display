@@ -3,11 +3,13 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
+  boundValue,
   buildFrameData,
   fetchThemeRenderPackRevision,
   hasRenderableUsage,
   LiveVibeTVPreview,
   primitiveUsageSlotVisible,
+  progressPercent,
   THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
   themeFirmwareTextMetrics,
@@ -353,5 +355,22 @@ describe("firmware-compatible ThemeSpec text layout", () => {
       /<text[^>]*y="22\.8"[^>]*text-anchor="start"[^>]*x="10">/,
     );
     expect(markup).toContain('lengthAdjust="spacingAndGlyphs"');
+  });
+});
+
+describe("live VibeTV partial usage", () => {
+  it("renders only the unknown lane as unavailable", () => {
+    const frame = buildFrameData("2026-07-24T10:30:00Z", {
+      v: 1,
+      provider: "codex",
+      label: "Codex",
+      weekly: 60,
+      sessionUnavailable: true,
+    });
+
+    expect(boundValue("session", frame)).toBe("??");
+    expect(boundValue("weekly", frame)).toBe("60");
+    expect(progressPercent({ binding: "session" }, frame)).toBe(0);
+    expect(progressPercent({ binding: "weekly" }, frame)).toBe(60);
   });
 });

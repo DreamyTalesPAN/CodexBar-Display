@@ -35,6 +35,8 @@ struct Frame {
   int64_t resetSecs = 0;
   bool usageUnavailable = false;
   UsageSlot usageSlots[kMaxUsageSlots];
+  bool sessionUnavailable = false;
+  bool weeklyUnavailable = false;
   int64_t sessionTokens = 0;
   int64_t weekTokens = 0;
   int64_t totalTokens = 0;
@@ -315,7 +317,10 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
            }
            return false;
          }()) ||
-         (usesUsage && previous.usageUnavailable != next.usageUnavailable) ||
+         (usesUsage &&
+           (previous.usageUnavailable != next.usageUnavailable ||
+            previous.sessionUnavailable != next.sessionUnavailable ||
+            previous.weeklyUnavailable != next.weeklyUnavailable)) ||
          (ThemeSpecUsesBinding(raw, "usageMode", "u") &&
           (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode)) ||
          (ThemeSpecUsesActivity(raw) && previous.activity != next.activity) ||
@@ -360,6 +365,12 @@ inline uint32_t ThemeSpecLiveChangedFields(const Frame& previous, const Frame& n
     for (size_t i = 0; i < kMaxUsageSlots; ++i) {
       fields |= ThemeSpecUsageSlotField(i);
     }
+  }
+  if (previous.sessionUnavailable != next.sessionUnavailable) {
+    fields |= themespec::kThemeSpecFieldSession;
+  }
+  if (previous.weeklyUnavailable != next.weeklyUnavailable) {
+    fields |= themespec::kThemeSpecFieldWeekly;
   }
   if (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode) {
     fields |= themespec::kThemeSpecFieldUsageMode;
@@ -632,6 +643,8 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
       ++slotIndex;
     }
   }
+  out.sessionUnavailable = doc["sessionUnavailable"] | false;
+  out.weeklyUnavailable = doc["weeklyUnavailable"] | false;
   out.timeText = String(doc["time"] | "");
   out.dateText = String(doc["date"] | "");
   out.sessionTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["sessionTokens"] | 0));
@@ -671,6 +684,8 @@ inline bool FrameVisualChangedWithThemeSpecRaw(const Frame& previous, const Fram
                                      previous.session != next.session ||
                                      previous.weekly != next.weekly ||
                                      previous.usageUnavailable != next.usageUnavailable ||
+                                     previous.sessionUnavailable != next.sessionUnavailable ||
+                                     previous.weeklyUnavailable != next.weeklyUnavailable ||
                                      previous.sessionTokens != next.sessionTokens ||
                                      previous.weekTokens != next.weekTokens ||
                                      previous.totalTokens != next.totalTokens ||

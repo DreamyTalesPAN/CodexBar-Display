@@ -35,6 +35,7 @@ type providerCollector struct {
 	logf            func(string, ...any)
 	fetchProviders  func(context.Context) ([]codexbar.ParsedFrame, error)
 	fetchDashboard  func(context.Context, codexbar.DashboardServeInfo, time.Time, int) (codexbar.DashboardFetchResult, error)
+	fetchInventory  func(context.Context) ([]codexbar.ProviderSetting, error)
 	fetchTokenStats func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
 	dashboard       codexbar.DashboardServe
 	resolvePort     func(string) (string, error)
@@ -48,13 +49,14 @@ type providerCollector struct {
 	snapshotMaxAge  time.Duration
 	persistInterval time.Duration
 
-	mu               sync.RWMutex
-	providers        map[string]providerSnapshot
-	lastPersistedRaw string
-	lastPersistedAt  time.Time
-
+	mu                       sync.RWMutex
+	providers                map[string]providerSnapshot
+	lastPersistedRaw         string
+	lastPersistedAt          time.Time
 	dashboardProcessKey      string
 	dashboardSnapshotFetches int
+	inventoryKnown           bool
+	inventoryEnabled         map[string]struct{}
 }
 
 func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
@@ -72,6 +74,7 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		logf:            logFn,
 		fetchProviders:  deps.fetchProviders,
 		fetchDashboard:  deps.fetchDashboard,
+		fetchInventory:  deps.fetchInventory,
 		fetchTokenStats: deps.fetchTokenStats,
 		dashboard:       deps.dashboard,
 		resolvePort:     deps.resolvePort,
@@ -153,15 +156,39 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	defer cancel()
 
 	allProviders, sourceMode, err := c.fetchProvidersForCollect(ctx, now)
+	var inventory []codexbar.ProviderSetting
+	inventoryAuthoritative := false
+	if c.fetchInventory != nil {
+		if current, inventoryErr := c.fetchInventory(ctx); inventoryErr == nil {
+			inventory = current
+			inventoryAuthoritative = true
+		}
+	}
 	if err != nil {
+		updated := false
+		if inventoryAuthoritative {
+			c.mu.Lock()
+			updated = c.applyProviderInventoryLocked(inventory)
+			c.mu.Unlock()
+		}
+		if updated {
+			c.persistIfNeeded(now)
+		}
 		c.logf("collector fetch-all transport=%s source=%s fresh=false err=%v timeout=%s\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, err, c.timeout)
 		return
 	}
 
 	updated := false
 	successes := 0
+	var authoritativeEnabled map[string]struct{}
 
 	c.mu.Lock()
+	if inventoryAuthoritative {
+		updated = c.applyProviderInventoryLocked(inventory)
+		_, authoritativeEnabled = enabledProviderInventory(inventory)
+	} else {
+		c.order = mergeProviderOrder(providerOrderFromFrames(allProviders), c.order)
+	}
 	for _, parsed := range allProviders {
 		frame := parsed.Frame.Normalize()
 		if strings.TrimSpace(frame.Error) != "" {
@@ -174,6 +201,11 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		}
 		if key == "" {
 			continue
+		}
+		if inventoryAuthoritative {
+			if _, enabled := authoritativeEnabled[key]; !enabled {
+				continue
+			}
 		}
 
 		frame.Provider = key
@@ -255,6 +287,120 @@ func (c *providerCollector) fetchProvidersForCollect(ctx context.Context, now ti
 	}
 	providers, err := c.fetchProviders(ctx)
 	return providers, "codexbar-usage-json", err
+}
+
+func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.ProviderSetting) bool {
+	enabledOrder, enabled := enabledProviderInventory(settings)
+	c.inventoryKnown = true
+	c.inventoryEnabled = enabled
+	updated := !equalProviderOrder(c.order, enabledOrder)
+	c.order = enabledOrder
+	for key := range c.providers {
+		if _, keep := enabled[key]; keep {
+			continue
+		}
+		delete(c.providers, key)
+		updated = true
+	}
+	return updated
+}
+
+func (c *providerCollector) providerEnabledByInventory(provider string) (bool, bool) {
+	if c == nil {
+		return false, false
+	}
+	key := normalizeProviderKey(provider)
+	if key == "" {
+		return false, false
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if !c.inventoryKnown {
+		return false, false
+	}
+	_, enabled := c.inventoryEnabled[key]
+	return enabled, true
+}
+
+func equalProviderOrder(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func enabledProviderInventory(settings []codexbar.ProviderSetting) ([]string, map[string]struct{}) {
+	order := make([]string, 0, len(settings))
+	enabled := make(map[string]struct{}, len(settings))
+	for _, setting := range settings {
+		if !setting.Enabled {
+			continue
+		}
+		key := normalizeProviderKey(setting.ID)
+		if key == "" {
+			continue
+		}
+		if _, exists := enabled[key]; exists {
+			continue
+		}
+		enabled[key] = struct{}{}
+		order = append(order, key)
+	}
+	return order, enabled
+}
+
+func providerOrderFromFrames(frames []codexbar.ParsedFrame) []string {
+	order := make([]string, 0, len(frames))
+	seen := make(map[string]struct{}, len(frames))
+	for _, frame := range frames {
+		key := normalizeProviderKey(frame.Provider)
+		if key == "" {
+			key = normalizeProviderKey(frame.Frame.Provider)
+		}
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		order = append(order, key)
+	}
+	return order
+}
+
+func mergeProviderOrder(current, previous []string) []string {
+	order := make([]string, 0, len(current)+len(previous))
+	seen := make(map[string]struct{}, len(current)+len(previous))
+	for _, key := range current {
+		key = normalizeProviderKey(key)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		order = append(order, key)
+	}
+	for _, key := range previous {
+		key = normalizeProviderKey(key)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		order = append(order, key)
+	}
+	return order
 }
 
 func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
@@ -485,9 +631,6 @@ func (c *providerCollector) persistIfNeeded(now time.Time) {
 	defer c.mu.Unlock()
 
 	encoded := encodeProviderSnapshotsForCompare(c.providers)
-	if encoded == "" {
-		return
-	}
 	if c.lastPersistedRaw == encoded && !c.lastPersistedAt.IsZero() && now.Sub(c.lastPersistedAt) < c.persistInterval {
 		return
 	}

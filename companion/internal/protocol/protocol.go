@@ -23,6 +23,8 @@ type Frame struct {
 	Weekly                int             `json:"weekly,omitempty"`
 	ResetSec              int64           `json:"resetSecs,omitempty"`
 	UsageUnavailable      bool            `json:"usageUnavailable,omitempty"`
+	SessionUnavailable    bool            `json:"sessionUnavailable,omitempty"`
+	WeeklyUnavailable     bool            `json:"weeklyUnavailable,omitempty"`
 	UsageMode             string          `json:"usageMode,omitempty"`
 	UsageSlots            []UsageSlot     `json:"usageSlots,omitempty"`
 	Time                  string          `json:"time,omitempty"`

@@ -5041,6 +5041,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
         v: 1,
         provider: "codex",
         label: "Codex",
+        sessionUnavailable: true,
         weekly: 63,
         resetSecs: 5400,
         usageSlots: [

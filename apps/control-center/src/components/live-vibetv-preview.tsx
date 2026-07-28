@@ -67,6 +67,8 @@ type DisplayFrame = {
   label?: string;
   session?: number;
   weekly?: number;
+  sessionUnavailable?: boolean;
+  weeklyUnavailable?: boolean;
   resetSecs?: number;
   usageMode?: string;
   usageSlots?: UsageSlotFrame[];
@@ -143,6 +145,8 @@ type FrameData = {
   label: string;
   session: number;
   weekly: number;
+  sessionUnavailable: boolean;
+  weeklyUnavailable: boolean;
   resetSecs: number;
   usageMode: string;
   usageSlot1Label: string;
@@ -169,6 +173,8 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   label: "VibeTV",
   session: 64,
   weekly: 64,
+  sessionUnavailable: false,
+  weeklyUnavailable: false,
   resetSecs: 3600,
   usageMode: "used",
   usageSlot1Label: "Session",
@@ -1010,6 +1016,8 @@ export function buildFrameData(
     label: displayFrame.label || displayFrame.provider || "",
     session: clampPercent(displayFrame.session),
     weekly: clampPercent(displayFrame.weekly),
+    sessionUnavailable: displayFrame.sessionUnavailable === true,
+    weeklyUnavailable: displayFrame.weeklyUnavailable === true,
     resetSecs: displayFrame.resetSecs ?? 0,
     usageMode: sourceUsageMode,
     usageSlot1Label: slot1?.label || "",
@@ -1162,7 +1170,7 @@ function renderTextPrimitive(primitive: ThemePrimitive, frame: FrameData): strin
   );
 }
 
-function boundValue(key: string, frame: FrameData): string {
+export function boundValue(key: string, frame: FrameData): string {
   switch (key) {
     case "label":
     case "providerLabel":
@@ -1174,11 +1182,11 @@ function boundValue(key: string, frame: FrameData): string {
     case "session":
     case "sessionPercent":
     case "s":
-      return String(frame.session);
+      return usageLaneText(frame.session, frame.sessionUnavailable);
     case "weekly":
     case "weeklyPercent":
     case "w":
-      return String(frame.weekly);
+      return usageLaneText(frame.weekly, frame.weeklyUnavailable);
     case "reset":
     case "resetCountdown":
     case "r":
@@ -1233,7 +1241,7 @@ function boundValue(key: string, frame: FrameData): string {
   }
 }
 
-function progressPercent(primitive: ThemePrimitive, frame: FrameData): number {
+export function progressPercent(primitive: ThemePrimitive, frame: FrameData): number {
   const binding = primitive.binding || primitive.b || "";
   if (binding === "usageSlot1Percent" || binding === "us1p") {
     return frame.usageSlot1Available ? frame.usageSlot1Percent : 0;
@@ -1241,9 +1249,14 @@ function progressPercent(primitive: ThemePrimitive, frame: FrameData): number {
   if (binding === "usageSlot2Percent" || binding === "us2p") {
     return frame.usageSlot2Available ? frame.usageSlot2Percent : 0;
   }
-  return binding === "weekly" || binding === "weeklyPercent" || binding === "w"
-    ? frame.weekly
-    : frame.session;
+  if (binding === "weekly" || binding === "weeklyPercent" || binding === "w") {
+    return frame.weeklyUnavailable ? 0 : frame.weekly;
+  }
+  return frame.sessionUnavailable ? 0 : frame.session;
+}
+
+function usageLaneText(value: number, unavailable: boolean): string {
+  return unavailable ? "??" : String(value);
 }
 
 function activeAssetPath(primitive: ThemePrimitive, frame: FrameData): string {
