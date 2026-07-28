@@ -1074,7 +1074,7 @@ func TestDeviceSelectRotatesKnownTokenAndKeepsProfiles(t *testing.T) {
 			_, _ = w.Write([]byte(`{"ok":true,"token":"rotated-token"}`))
 		case "/health":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini"},"settings":{"display":{"brightnessPercent":40}}}`))
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"theme-missing","themeSpec":{"active":false,"renderOk":false}},"settings":{"display":{"brightnessPercent":40}}}`))
 		default:
 			t.Fatalf("unexpected device path %s", r.URL.Path)
 		}
@@ -1106,6 +1106,18 @@ func TestDeviceSelectRotatesKnownTokenAndKeepsProfiles(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), savedToken) {
 		t.Fatalf("selection response leaked token: %s", rec.Body.String())
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode selection response: %v", err)
+	}
+	if got.Device.ActiveTheme != "theme-missing" ||
+		got.Device.Display == nil ||
+		got.Device.Display.ThemeSpec == nil ||
+		got.Device.Display.ThemeSpec.Active ||
+		got.Device.Health == nil ||
+		!got.Device.Health.OK {
+		t.Fatalf("selection response did not include immediate device health: %+v", got.Device)
 	}
 	cfg, err := server.config()
 	if err != nil {

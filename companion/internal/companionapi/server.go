@@ -2792,6 +2792,13 @@ func (s *Server) repairDeviceOnceLocked(
 		}
 		device := s.withDisplayStream(ctx, target, deviceFromHello(target, token, hello))
 		device.Active = true
+		readyBeforeHealth := device.Ready
+		if health, healthErr := s.getHealthProbe(ctx, target, token, deviceHealthProbeTime); healthErr == nil {
+			device = withDeviceHealth(device, health)
+			device.Ready = readyBeforeHealth
+		} else {
+			device = withDeviceHealthProbeError(device, healthErr)
+		}
 		if device.Ready {
 			device.ConnectionState = deviceConnectionReady
 		} else {

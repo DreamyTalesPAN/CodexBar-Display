@@ -26,10 +26,13 @@ import {
   shouldUseHostedSetupShell,
 } from "./control-center-runtime";
 import {
+  deviceCanContinueThemeSetup,
+  deviceCompletedThemeSetup,
   deviceIsActive,
   deviceImageIsStuck,
   deviceIsReady,
   deviceNeedsExplicitConnect,
+  deviceNeedsThemeSetup,
   type ActiveTab,
   type ApiError,
   type CompanionInfo,
@@ -79,6 +82,11 @@ const NATIVE_RUNTIME_REPAIR_RESULT_EVENT = "vibetv:runtime-repair-result";
 
 type LocalNetworkRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
+};
+
+type ThemeSetupDeviceIdentity = {
+  deviceId: string;
+  target: string;
 };
 
 type SettingsResponse = {
@@ -245,7 +253,30 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
   const [deviceSearchState, setDeviceSearchState] =
     useState<DeviceSearchState>("idle");
-  const [device, setDevice] = useState<DeviceInfo | null>(null);
+  const [deviceSession, setDeviceSession] = useState<{
+    device: DeviceInfo | null;
+    themeSetupIdentity: ThemeSetupDeviceIdentity | null;
+  }>({
+    device: null,
+    themeSetupIdentity: null,
+  });
+  const device = deviceSession.device;
+  const themeSetupIdentity = deviceSession.themeSetupIdentity;
+  const setDevice = useCallback(
+    (
+      update:
+        | DeviceInfo
+        | null
+        | ((current: DeviceInfo | null) => DeviceInfo | null),
+    ) => {
+      setDeviceSession((current) => ({
+        ...current,
+        device:
+          typeof update === "function" ? update(current.device) : update,
+      }));
+    },
+    [],
+  );
   const [deviceTarget, setDeviceTarget] = useState(readInitialDeviceTarget);
   const [brightness, setBrightness] = useState<number | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -336,7 +367,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       didRunAutomaticDeviceSearch.current = false;
       setLastError(null);
     }
-    setDevice((current) => mergeDeviceInfo(current, next));
+    setDeviceSession((current) => {
+      const mergedDevice = mergeDeviceInfo(current.device, next);
+      return {
+        device: mergedDevice,
+        themeSetupIdentity: reconcileThemeSetupIdentity(
+          current.themeSetupIdentity,
+          mergedDevice,
+        ),
+      };
+    });
   }, []);
 
   const addEvent = useCallback(
@@ -364,7 +404,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setUsage(null);
     setUsageError(null);
     setProviderSetup(null);
-  }, []);
+  }, [setDevice]);
 
   const markCompanionAccessBlocked = useCallback(() => {
     setCompanionStatus("unknown");
@@ -375,7 +415,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setUsage(null);
     setUsageError(null);
     setProviderSetup(null);
-  }, []);
+  }, [setDevice]);
 
   const handleCompanionUnavailableForRepair = useCallback(
     (quiet: boolean) => {
@@ -595,6 +635,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       markCompanionUnavailable,
       mergeDevice,
       runCompanion,
+      setDevice,
     ],
   );
 
@@ -687,13 +728,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       if (job.phase === "complete" && job.result) {
         setLastInstall(job.result);
-        if (job.result.themeId) {
-          setDevice((current) =>
-            current
-              ? { ...current, activeTheme: job.result?.themeId }
-              : current,
-          );
-        }
       }
       return status;
     },
@@ -965,6 +999,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       markCompanionUnavailable,
       mergeDevice,
       runCompanion,
+      setDevice,
       resumeThemeInstallJob,
       verifyLocalControlCenterAvailable,
     ],
@@ -1048,6 +1083,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     mergeDevice,
     resumeThemeInstallJob,
     runCompanion,
+    setDevice,
   ]);
 
   const repairConnection = useCallback(
@@ -1283,6 +1319,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       mergeDevice,
       refreshCompanionFeatures,
       runCompanion,
+      setDevice,
     ],
   );
 
@@ -1576,7 +1613,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setupGenerationRef.current += 1;
       forgetDeviceTarget();
       setDeviceTarget("");
-      setDevice(null);
+      setDeviceSession({
+        device: null,
+        themeSetupIdentity: null,
+      });
       setDeviceState("unknown");
       setDeviceCandidates([]);
       setDeviceSearchState("idle");
@@ -1636,6 +1676,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     markCompanionAccessBlocked,
     markCompanionUnavailable,
     runCompanion,
+    setDevice,
   ]);
 
   const saveBrightness = useCallback(
@@ -1706,6 +1747,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (!theme) {
         return false;
       }
+      const requiresThemeSetupVerification =
+        deviceNeedsThemeSetup(device) ||
+        deviceMatchesThemeSetupIdentity(themeSetupIdentity, device);
       setBusyAction("install");
       setLastInstall(undefined);
       setSelectedThemeId(theme.themeId);
@@ -1830,19 +1874,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           logs: customerInstallLogs([...logs, "Theme is active on VibeTV."]),
           result,
         });
-        if (result.themeId) {
-          setDevice((current) =>
-            current ? { ...current, activeTheme: result.themeId } : current,
-          );
-        }
+        const [, verifiedDevice] = await Promise.all([
+          loadSettings(),
+          refreshDevice({ quiet: true }),
+        ]);
+        const setupVerified =
+          !requiresThemeSetupVerification ||
+          deviceCompletedThemeSetup(verifiedDevice);
         addEvent({
-          label: "Theme installed",
-          detail: result.name || theme.title,
+          label: setupVerified
+            ? "Theme installed"
+            : "Waiting for VibeTV confirmation",
+          detail: setupVerified
+            ? result.name || theme.title
+            : "The theme is installed. VibeTV is still confirming its display.",
           at: finishedAt,
-          tone: "ready",
+          tone: setupVerified ? "ready" : "unknown",
         });
-        await loadSettings();
-        return true;
+        return setupVerified;
       } catch (error) {
         const normalized = normalizeCaughtError(
           error,
@@ -1883,8 +1932,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       loadSettings,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
+      refreshDevice,
       runCompanion,
       selectedTheme,
+      device,
+      themeSetupIdentity,
     ],
   );
 
@@ -2320,6 +2372,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     refreshDevice,
     refreshFirmwareUpdate,
     runCompanion,
+    setDevice,
   ]);
 
   const refreshUsage = useCallback(
@@ -2656,6 +2709,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const hasActiveDevice = deviceIsActive(device);
   const connectionRecoveryRequired =
     isConnectionRecoveryError(lastError) || deviceNeedsExplicitConnect(device);
+  const themeSetupEntryRequired =
+    companionStatus === "online" && deviceNeedsThemeSetup(device);
+  const themeSetupSessionMatches =
+    deviceCanContinueThemeSetup(device) &&
+    deviceMatchesThemeSetupIdentity(themeSetupIdentity, device);
+  const themeSetupComplete = deviceCompletedThemeSetup(device);
+  const themeSetupRequired =
+    companionStatus === "online" &&
+    !themeSetupComplete &&
+    (themeSetupEntryRequired || themeSetupSessionMatches);
+
   const startupDeviceCandidates =
     deviceCandidates.length > 0
       ? deviceCandidates
@@ -2968,6 +3032,29 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           void selectAndConnectDevice(candidate);
         }}
         supportReportBusy={supportReportBusy}
+      />
+    );
+  }
+
+  if (themeSetupRequired) {
+    return (
+      <ThemeLibraryScreen
+        busyAction={busyAction}
+        catalogIssue={catalog.issue}
+        companionStatus={companionStatus}
+        device={device}
+        installStatus={themeInstallStatus}
+        lastInstall={lastInstall}
+        onInstallCustomTheme={installCustomTheme}
+        onInstallTheme={installTheme}
+        onSelectTheme={setSelectedThemeId}
+        requestedThemeId={initialThemeId}
+        selectedTheme={selectedTheme}
+        selectedThemeId={selectedThemeId}
+        setupMode
+        storefrontConfigured={catalog.storefrontConfigured}
+        themeInstallEnabled={themeInstallEnabled}
+        themes={catalog.themes}
       />
     );
   }
@@ -3564,6 +3651,54 @@ function mergeDeviceInfo(
 
 function deviceIsConfigured(device: DeviceInfo | null | undefined): boolean {
   return Boolean(device?.deviceId || (device?.target && device.paired));
+}
+
+function readThemeSetupIdentity(
+  device: DeviceInfo | null | undefined,
+): ThemeSetupDeviceIdentity {
+  return {
+    deviceId: device?.deviceId?.trim() || "",
+    target: normalizeDeviceTarget(device?.target || ""),
+  };
+}
+
+function deviceMatchesThemeSetupIdentity(
+  identity: ThemeSetupDeviceIdentity | null,
+  device: DeviceInfo | null | undefined,
+): boolean {
+  if (!identity || !device) {
+    return false;
+  }
+  const candidate = readThemeSetupIdentity(device);
+  if (identity.deviceId && candidate.deviceId) {
+    return identity.deviceId === candidate.deviceId;
+  }
+  return Boolean(
+    identity.target &&
+      candidate.target &&
+      identity.target === candidate.target,
+  );
+}
+
+function reconcileThemeSetupIdentity(
+  current: ThemeSetupDeviceIdentity | null,
+  device: DeviceInfo,
+): ThemeSetupDeviceIdentity | null {
+  const candidate = readThemeSetupIdentity(device);
+  const hasIdentity = Boolean(candidate.deviceId || candidate.target);
+  if (current && deviceMatchesThemeSetupIdentity(current, device)) {
+    if (deviceCompletedThemeSetup(device)) {
+      return null;
+    }
+    return {
+      deviceId: candidate.deviceId || current.deviceId,
+      target: candidate.target || current.target,
+    };
+  }
+  if (hasIdentity && deviceNeedsThemeSetup(device)) {
+    return candidate;
+  }
+  return null;
 }
 
 function markDeviceDisconnected(
