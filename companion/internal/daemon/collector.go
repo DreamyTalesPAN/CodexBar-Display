@@ -270,6 +270,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		}
 
 		frame.Provider = key
+		parsedCollectedAt := parsedProviderCollectedAt(parsed, now)
 		if frame.UsageUnavailable {
 			lastGood, exists := c.providers[key]
 			if exists && !lastGood.Frame.UsageUnavailable {
@@ -289,7 +290,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 					Provider:         key,
 					Frame:            frame,
 					Source:           strings.TrimSpace(parsed.Source),
-					Collected:        parsed.CollectedAt.UTC(),
+					Collected:        parsedCollectedAt,
 					RateLimited:      parsed.RateLimited,
 					RateLimitedUntil: parsed.RateLimitedUntil.UTC(),
 				}
@@ -302,7 +303,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			Frame:               frame,
 			Source:              strings.TrimSpace(parsed.Source),
 			Meta:                parsed.Meta,
-			Collected:           now.UTC(),
+			Collected:           parsedCollectedAt,
 			TokenStatsCollected: parsedTokenStatsCollectedAt(parsed, now),
 			ActivityObservedAt:  parsed.ActivityObservedAt,
 			RateLimited:         false,
@@ -321,6 +322,16 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		c.persistIfNeeded(now)
 	}
 	c.logf("collector complete transport=%s source=%s fresh=true providers=%d succeeded=%d timeout=%s mode=fetch-all\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, len(allProviders), successes, c.timeout)
+}
+
+func parsedProviderCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time) time.Time {
+	if !parsed.CollectedAt.IsZero() {
+		return parsed.CollectedAt.UTC()
+	}
+	if !parsed.ActivityObservedAt.IsZero() {
+		return parsed.ActivityObservedAt.UTC()
+	}
+	return fallback.UTC()
 }
 
 func (c *providerCollector) fetchProvidersForCollect(ctx context.Context, now time.Time) ([]codexbar.ParsedFrame, string, error) {

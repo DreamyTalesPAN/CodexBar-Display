@@ -127,12 +127,16 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 	if normalized.UpdatedAt != nil {
 		activityObservedAt = normalized.UpdatedAt.UTC()
 	}
+	collectedAt := now.UTC()
+	if !activityObservedAt.IsZero() {
+		collectedAt = activityObservedAt
+	}
 	return ParsedFrame{
 		Frame:              frame.Normalize(),
 		Provider:           id,
 		Source:             "codexbar-dashboard",
 		Meta:               ProviderUsageMeta{Windows: metaWindows},
-		CollectedAt:        now.UTC(),
+		CollectedAt:        collectedAt,
 		ActivityObservedAt: activityObservedAt,
 		RateLimited:        dashboardErrorsAreRateLimited(provider.Error, usageError),
 		RateLimitedUntil:   rateLimitedUntilFromDashboardErrors(provider.Error, usageError),

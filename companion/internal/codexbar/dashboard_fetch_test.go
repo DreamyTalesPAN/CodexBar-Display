@@ -49,6 +49,9 @@ func TestFetchDashboardProvidersWithholdsColdFirstSnapshot(t *testing.T) {
 	if len(warm.Providers[0].Meta.Windows) != 2 {
 		t.Fatalf("expected all valid windows in metadata, got %+v", warm.Providers[0].Meta.Windows)
 	}
+	if got, want := warm.Providers[0].CollectedAt, time.Date(2026, 7, 28, 8, 1, 0, 0, time.UTC); !got.Equal(want) {
+		t.Fatalf("dashboard provider freshness must use provider updatedAt, got %s want %s", got, want)
+	}
 }
 
 func TestFetchDashboardProvidersRequiresProviderUpdatedAt(t *testing.T) {

@@ -3053,6 +3053,50 @@ func TestProviderCollectorWakeCollectsBeforeDisplayWake(t *testing.T) {
 	}
 }
 
+func TestProviderCollectorDoesNotMakeOldProviderObservationFresh(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		order:           []string{"antigravity", "claude"},
+		interval:        30 * time.Second,
+		timeout:         time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			oldAntigravity := testParsedFrame("antigravity", 19, 0, 3600)
+			oldAntigravity.Source = "codexbar-dashboard"
+			oldAntigravity.ActivityObservedAt = now.Add(-time.Hour)
+			oldAntigravity.CollectedAt = oldAntigravity.ActivityObservedAt
+			freshClaude := testParsedFrame("claude", 13, 3, 3600)
+			freshClaude.Source = "claude"
+			freshClaude.ActivityObservedAt = now
+			freshClaude.CollectedAt = now
+			return []codexbar.ParsedFrame{oldAntigravity, freshClaude}, nil
+		},
+	}
+
+	collector.collectOnce(context.Background())
+	frames := collector.providerFrames(now)
+	if len(frames) != 2 {
+		t.Fatalf("expected two provider frames, got %#v", frames)
+	}
+	if frames[0].Provider != "antigravity" || !frames[0].Stale || !frames[0].Frame.UsageUnavailable {
+		t.Fatalf("old Antigravity observation should be stale and unavailable, got %#v", frames[0])
+	}
+	if frames[1].Provider != "claude" || frames[1].Stale || frames[1].Frame.UsageUnavailable {
+		t.Fatalf("fresh Claude observation should remain available, got %#v", frames[1])
+	}
+
+	decision, ok := codexbar.NewProviderSelector().SelectWithDecision(frames)
+	if !ok || decision.Selected.Provider != "claude" {
+		t.Fatalf("fresh Claude should win over stale ordered provider, got ok=%t decision=%#v", ok, decision)
+	}
+}
+
 func TestProviderCollectorLearnsDynamicCodexBarOrder(t *testing.T) {
 	prepareFastTestEnv(t)
 
