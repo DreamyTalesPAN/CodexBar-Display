@@ -72,6 +72,7 @@ Companion negotiation:
 - `GET /assets` returns `filesystem.mounted` plus an `assets` array. Every asset entry includes `path` and `sizeBytes`; `sha256` is optional so small ESP8266 builds do not need to carry hashing code.
 - `GET /health` returns `display.activeTheme`, compact `display.themeSpec` render health, and `display.gif` so provisioning can see the active GIF path, file presence, decoder state, blocked state, and the last GIF open/decode error.
 - `GET /health` returns `settings.display.brightnessPercent` for support diagnostics.
+- `GET /health` returns `reset` with the sanitized countdown the device is willing to stand behind: `trust` (`live`, `offline`, `stale`, `unknown`), `deadlineSecs`, `trustSecs`, `basisAgeSecs` and `source`. `deadlineSecs` is `0` whenever `trust` is `stale`, which is exactly what the renderer shows as unavailable. There is no wall clock on the device, so `basisAgeSecs` is the wall-clock-free form of "last fresh at". See `protocol/PROTOCOL.md`, Reset Freshness and Trust.
 
 ## Theme Contract
 - Built-in runtime themes: `classic`, `crt`, `mini`.

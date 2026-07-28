@@ -43,6 +43,38 @@ class String : public std::string {
     return static_cast<int>(pos);
   }
 
+  int indexOf(char needle, int from = 0) const {
+    if (from < 0) {
+      from = 0;
+    }
+    const size_t pos = find(needle, static_cast<size_t>(from));
+    if (pos == npos) {
+      return -1;
+    }
+    return static_cast<int>(pos);
+  }
+
+  String substring(int from) const {
+    if (from < 0 || static_cast<size_t>(from) > size()) {
+      return String();
+    }
+    return String(substr(static_cast<size_t>(from)));
+  }
+
+  String substring(int from, int to) const {
+    if (from < 0 || to < from || static_cast<size_t>(from) > size()) {
+      return String();
+    }
+    if (static_cast<size_t>(to) > size()) {
+      to = static_cast<int>(size());
+    }
+    return String(substr(static_cast<size_t>(from), static_cast<size_t>(to - from)));
+  }
+
+  long toInt() const {
+    return std::strtol(c_str(), nullptr, 10);
+  }
+
   size_t write(uint8_t c) {
     push_back(static_cast<char>(c));
     return 1;

@@ -75,6 +75,7 @@ const char kSetupAddress[] = "192.168.4.1";
 const char kCustomerAppHost[] = "app.vibetv.shop";
 const char kCustomerAppUrl[] = "https://app.vibetv.shop";
 const char kDeviceSettingsPath[] = "/s";
+const char kResetTrustHandoverPath[] = "/rt";
 const char kDeviceAuthTokenPath[] = "/auth";
 const char kActiveThemeSpecPathFile[] = "/theme-active";
 const char kAssetUploadTemporaryPath[] = "/.asset-upload.tmp";
@@ -343,6 +344,58 @@ bool saveDeviceSettings() {
   const size_t written = file.write(&deviceSettings.brightnessPercent, 1);
   file.close();
   return written > 0;
+}
+
+// Reset-deadline handover across a self-initiated restart.
+//
+// Written only in the moment the firmware decides to reboot, and consumed once
+// on the next boot. That is two LittleFS writes per deliberate restart and none
+// per frame, so a ticking countdown never touches flash.
+//
+// Without a wall clock the device cannot measure how long it was powerless, so
+// the record is only honoured after a software restart, where the gap is the
+// firmware's own boot. Any other reset reason drops it.
+void persistResetTrustForRestart() {
+  if (!LittleFS.begin()) {
+    return;
+  }
+  const String record = codexbar_display::core::EncodeResetTrustRecord(runtimeCtx.runtime.reset, millis());
+  if (record.length() == 0) {
+    LittleFS.remove(kResetTrustHandoverPath);
+    return;
+  }
+  File file = LittleFS.open(kResetTrustHandoverPath, "w");
+  if (!file) {
+    return;
+  }
+  file.print(record);
+  file.close();
+}
+
+void restoreResetTrustAfterRestart() {
+  if (!LittleFS.begin() || !LittleFS.exists(kResetTrustHandoverPath)) {
+    return;
+  }
+  String record;
+  File file = LittleFS.open(kResetTrustHandoverPath, "r");
+  if (file) {
+    record = file.readString();
+    file.close();
+  }
+  LittleFS.remove(kResetTrustHandoverPath);
+
+  const rst_info* resetInfo = ESP.getResetInfoPtr();
+  if (resetInfo == nullptr || resetInfo->reason != REASON_SOFT_RESTART) {
+    return;
+  }
+  codexbar_display::core::ResetTrustState restored;
+  if (codexbar_display::core::DecodeResetTrustRecord(
+          record,
+          codexbar_display::core::kResetRestartDowntimeSecs,
+          millis(),
+          restored)) {
+    runtimeCtx.runtime.reset = restored;
+  }
 }
 
 bool validAuthToken(const String& value) {
@@ -1180,6 +1233,7 @@ void handleSaveWifi() {
   webServer.send(200, "text/html; charset=utf-8", "<!doctype html><p>Saved. Vibe TV is restarting.</p>");
   delay(500);
   clearSdkWifiCredentials();
+  persistResetTrustForRestart();
   ESP.restart();
 }
 
@@ -1214,6 +1268,7 @@ void handleResetWifi() {
   clearWifiCredentials();
   clearSdkWifiCredentials();
   delay(250);
+  persistResetTrustForRestart();
   ESP.restart();
 }
 
@@ -1348,11 +1403,30 @@ void appendAssetListJSON(String& out) {
   out += "]";
 }
 
+// Diagnostics for the reset countdown. There is no wall clock, so "last fresh"
+// is reported as the age of the basis instead of a timestamp.
+void appendResetTrustJSON(String& out) {
+  namespace core = codexbar_display::core;
+  const core::ResetTrustState& state = runtimeCtx.runtime.reset;
+  const unsigned long now = millis();
+  out += F("\"reset\":{\"trust\":\"");
+  out += core::ResetTrustName(core::CurrentResetTrust(state, now));
+  out += F("\",\"deadlineSecs\":");
+  out += String(static_cast<long>(core::CurrentRemainingSecs(runtimeCtx.runtime, now)));
+  out += F(",\"trustSecs\":");
+  out += String(static_cast<long>(core::ResetTrustBudgetSecs(state, now)));
+  out += F(",\"basisAgeSecs\":");
+  out += String(static_cast<long>(core::ResetBasisAgeSecs(state, now)));
+  out += F(",\"source\":");
+  appendJSONNullableString(out, state.source);
+  out += F("},");
+}
+
 void handleHealth() {
   const codexbar_display::esp8266::RendererHealthSnapshot snapshot = renderer.HealthSnapshot();
 
   String out;
-  out.reserve(896);
+  out.reserve(1024);
   out += "{\"ok\":true,\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
   out += "\",\"system\":{\"freeHeap\":";
@@ -1412,6 +1486,7 @@ void handleHealth() {
   out += ",\"lastKind\":\"";
   out += jsonEscape(renderDiagnostics.lastKind);
   out += "\"},";
+  appendResetTrustJSON(out);
   appendSettingsJSON(out);
   out += "}";
 
@@ -1878,8 +1953,8 @@ void activateStoredThemeSpec(const String& path, const String& raw, const String
   runtimeCtx.runtime.cachedThemeSpecRaw = raw;
   runtimeCtx.runtime.current = next;
   runtimeCtx.runtime.hasFrame = true;
-  runtimeCtx.runtime.resetBaseSecs = next.resetSecs;
-  runtimeCtx.runtime.resetBaseMillis = millis();
+  // A theme activation says nothing about the reset deadline, so it must not
+  // re-anchor the trust state: a restored or still valid countdown survives it.
   activeThemeSpecPath = path;
   activeThemeSpecHash = hashHex8(raw);
 
@@ -2653,6 +2728,7 @@ void setup() {
   renderer.Setup(runtimeCtx);
   loadDeviceSettings();
   loadDeviceAuthToken();
+  restoreResetTrustAfterRestart();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   loadDefaultStoredThemeSpecCache();
 #endif
@@ -2727,7 +2803,10 @@ void loop() {
     const int64_t remain = codexbar_display::app::CurrentRemainingSecs(runtimeCtx, millis());
     if (remain != runtimeCtx.lastRenderedSecs) {
       const int64_t minuteBucket = remain / 60;
-      if (minuteBucket != runtimeCtx.lastRenderedMinuteBucket) {
+      // Reaching zero always repaints, even inside the last minute: that is the
+      // moment the countdown becomes the unavailable marker.
+      if (minuteBucket != runtimeCtx.lastRenderedMinuteBucket ||
+          (remain == 0 && runtimeCtx.lastRenderedSecs != 0)) {
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
         runtimeCtx.screenDirty = true;
 #else
@@ -2829,6 +2908,7 @@ void loop() {
   if (rebootPending && static_cast<long>(millis() - rebootAtMs) >= 0) {
     Serial.println("reboot_now");
     delay(100);
+    persistResetTrustForRestart();
     ESP.restart();
   }
 
