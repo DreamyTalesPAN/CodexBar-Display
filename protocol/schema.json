@@ -38,6 +38,12 @@
     "usageUnavailable": {
       "type": "boolean"
     },
+    "sessionUnavailable": {
+      "type": "boolean"
+    },
+    "weeklyUnavailable": {
+      "type": "boolean"
+    },
     "usageMode": {
       "type": "string",
       "enum": [

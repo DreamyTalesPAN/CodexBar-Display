@@ -715,17 +715,17 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		label = l
 	}
 
-	session := percentAtPaths(payload,
-		"usage.primary.usedPercent",
-		"primary.usedPercent",
+	session, sessionKnown := knownUsagePercentAtPaths(payload,
+		"usage.primary",
+		"primary",
 		"session",
-		"openaiDashboard.primaryLimit.usedPercent",
+		"openaiDashboard.primaryLimit",
 	)
-	weekly := percentAtPaths(payload,
-		"usage.secondary.usedPercent",
-		"secondary.usedPercent",
+	weekly, weeklyKnown := knownUsagePercentAtPaths(payload,
+		"usage.secondary",
+		"secondary",
 		"weekly",
-		"openaiDashboard.secondaryLimit.usedPercent",
+		"openaiDashboard.secondaryLimit",
 	)
 
 	resetAt := firstStringAtPaths(payload,
@@ -763,12 +763,15 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 
 	return ParsedFrame{
 		Frame: protocol.Frame{
-			V:        1,
-			Provider: provider,
-			Label:    label,
-			Session:  session,
-			Weekly:   weekly,
-			ResetSec: resetSecs,
+			V:                  1,
+			Provider:           provider,
+			Label:              label,
+			Session:            session,
+			Weekly:             weekly,
+			ResetSec:           resetSecs,
+			UsageUnavailable:   !sessionKnown && !weeklyKnown,
+			SessionUnavailable: !sessionKnown,
+			WeeklyUnavailable:  !weeklyKnown,
 		},
 		Provider:           provider,
 		Source:             source,
@@ -1129,12 +1132,15 @@ func parseExtraUsageWindows(raw any) []UsageWindow {
 }
 
 func parseUsageWindowMap(windowMap map[string]any, id string, label string) (UsageWindow, bool) {
-	used := percentAtPaths(windowMap, "usedPercent", "used_percent", "percent", "usagePercent")
-	resetSec := resetSecondsFromWindowMap(windowMap)
-	windowMinutes := intAtPaths(windowMap, "windowMinutes", "window_minutes")
-	if used == 0 && resetSec == 0 && windowMinutes == 0 {
+	if usageKnown, ok := anyToBool(windowMap["usageKnown"]); ok && !usageKnown {
 		return UsageWindow{}, false
 	}
+	used, known := knownUsagePercentAtPaths(windowMap, "usedPercent", "used_percent", "percent", "usagePercent")
+	if !known {
+		return UsageWindow{}, false
+	}
+	resetSec := resetSecondsFromWindowMap(windowMap)
+	windowMinutes := intAtPaths(windowMap, "windowMinutes", "window_minutes")
 	return UsageWindow{
 		ID:            strings.TrimSpace(strings.ToLower(id)),
 		Label:         strings.TrimSpace(label),
@@ -1754,7 +1760,11 @@ func (s *ProviderSelector) SelectWithDecision(all []ParsedFrame) (SelectionDecis
 		s.conflictWindow = defaultActivityConflictWindow
 	}
 
+	availableIdx := firstAvailableProviderIndex(all)
 	selected := all[0]
+	if availableIdx >= 0 {
+		selected = all[availableIdx]
+	}
 	reason := SelectionReasonCodexbarOrder
 	detail := "initial-provider-order"
 
@@ -1768,9 +1778,13 @@ func (s *ProviderSelector) SelectWithDecision(all []ParsedFrame) (SelectionDecis
 		detail = fmt.Sprintf("provider=%s score=%s", providerKey(byDelta), formatActivityScore(score))
 	} else if s.currentKey != "" {
 		if idx := indexOfProviderKey(all, s.currentKey); idx >= 0 {
-			selected = all[idx]
-			reason = SelectionReasonStickyCurrent
-			detail = fmt.Sprintf("provider=%s", s.currentKey)
+			if providerUsageAvailable(all[idx]) || availableIdx < 0 {
+				selected = all[idx]
+				reason = SelectionReasonStickyCurrent
+				detail = fmt.Sprintf("provider=%s", s.currentKey)
+			} else {
+				detail = fmt.Sprintf("current-provider-unavailable provider=%s", s.currentKey)
+			}
 		} else {
 			detail = "current-provider-missing"
 		}
@@ -1803,6 +1817,19 @@ func (s *ProviderSelector) SelectWithDecision(all []ParsedFrame) (SelectionDecis
 		ActivitySignalReason: resultSignalReason,
 		ActivityDetail:       resultActivityDetail,
 	}, true
+}
+
+func firstAvailableProviderIndex(all []ParsedFrame) int {
+	for i := range all {
+		if providerUsageAvailable(all[i]) {
+			return i
+		}
+	}
+	return -1
+}
+
+func providerUsageAvailable(provider ParsedFrame) bool {
+	return !provider.Stale && !provider.Frame.UsageUnavailable
 }
 
 func (s *ProviderSelector) selectByRecentLocalActivity(all []ParsedFrame) (ParsedFrame, string, bool) {
@@ -2605,8 +2632,10 @@ func fetchProviderScopedUsageDetailed(ctx context.Context, timeout time.Duration
 			return candidate, nil
 		}
 	}
-	parsed[0].Frame = parsed[0].Frame.Normalize()
-	return parsed[0], nil
+	return ParsedFrame{}, wrapFetchError(
+		FetchErrorNoProviders,
+		fmt.Errorf("codexbar returned no result for requested provider %s", key),
+	)
 }
 
 func fallbackContext(parent context.Context) (context.Context, context.CancelFunc) {
@@ -2853,17 +2882,45 @@ func percentAtPaths(m map[string]any, paths ...string) int {
 	for _, p := range paths {
 		if v, ok := getPath(m, p); ok {
 			if n, ok := anyToInt(v); ok {
-				if n < 0 {
-					n = 0
-				}
-				if n > 100 {
-					n = 100
-				}
-				return n
+				return clampPercent(n)
 			}
 		}
 	}
 	return 0
+}
+
+func knownUsagePercentAtPaths(m map[string]any, paths ...string) (int, bool) {
+	for _, path := range paths {
+		value, ok := getPath(m, path)
+		if !ok {
+			continue
+		}
+		if window, ok := value.(map[string]any); ok {
+			if usageKnown, exists := anyToBool(window["usageKnown"]); exists && !usageKnown {
+				return 0, false
+			}
+			for _, key := range []string{"usedPercent", "used_percent", "percent", "usagePercent"} {
+				if used, exists := anyToInt(window[key]); exists {
+					return clampPercent(used), true
+				}
+			}
+			continue
+		}
+		if used, ok := anyToInt(value); ok {
+			return clampPercent(used), true
+		}
+	}
+	return 0, false
+}
+
+func clampPercent(value int) int {
+	if value < 0 {
+		return 0
+	}
+	if value > 100 {
+		return 100
+	}
+	return value
 }
 
 func getPath(m map[string]any, path string) (any, bool) {

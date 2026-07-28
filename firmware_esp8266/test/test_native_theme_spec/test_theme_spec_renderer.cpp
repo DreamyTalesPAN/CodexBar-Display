@@ -431,6 +431,44 @@ void testUsageUnavailableKeepsThemeAndProgress() {
   TEST_ASSERT_EQUAL_STRING("Reset unavailable", reset);
 }
 
+void testPartialUsageProtocolRendersOnlyUnknownLane() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* frameLine =
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":0,"weekly":57,"resetSecs":3600,"sessionUnavailable":true})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, frameLine, 1000, event));
+  TEST_ASSERT_FALSE(state.current.usageUnavailable);
+  TEST_ASSERT_TRUE(state.current.sessionUnavailable);
+  TEST_ASSERT_FALSE(state.current.weeklyUnavailable);
+
+  FrameData frame;
+  frame.label = state.current.label.c_str();
+  frame.session = state.current.session;
+  frame.weekly = state.current.weekly;
+  frame.resetSecs = state.current.resetSecs;
+  frame.usageUnavailable = state.current.usageUnavailable;
+  frame.sessionUnavailable = state.current.sessionUnavailable;
+  frame.weeklyUnavailable = state.current.weeklyUnavailable;
+
+  char session[8] = {0};
+  char weekly[8] = {0};
+  char reset[32] = {0};
+  codexbar_display::themespec::BoundValue("session", frame, session, sizeof(session));
+  codexbar_display::themespec::BoundValue("weekly", frame, weekly, sizeof(weekly));
+  codexbar_display::themespec::BoundValue("reset", frame, reset, sizeof(reset));
+  TEST_ASSERT_EQUAL_STRING("??", session);
+  TEST_ASSERT_EQUAL_STRING("57", weekly);
+  TEST_ASSERT_EQUAL_STRING("1h 0m", reset);
+
+  const char* spec =
+      R"JSON({"v":1,"id":"partial-usage","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":8,"b":"s"},{"t":"p","x":0,"y":10,"w":100,"h":8,"b":"w"}]})JSON";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(2, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Progress), static_cast<int>(sink.commands[1].type));
+  TEST_ASSERT_EQUAL_INT(57, sink.commands[1].percent);
+}
+
 void testLabelBindingUsesProviderLabelWithoutUpdateNotice() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -1751,6 +1789,7 @@ int main() {
   RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);
   RUN_TEST(testRendersCommandsAndBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
+  RUN_TEST(testPartialUsageProtocolRendersOnlyUnknownLane);
   RUN_TEST(testLabelBindingUsesProviderLabelWithoutUpdateNotice);
   RUN_TEST(testChangedLabelPassUsesSynchronizedUpdateNoticeText);
   RUN_TEST(testChangedLabelPassCanRestoreProviderText);

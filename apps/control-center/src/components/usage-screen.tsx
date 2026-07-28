@@ -558,7 +558,12 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
     return (
       <div className="grid gap-4">
         {provider.windows.map((window) => (
-          <UsageWindowBar key={window.id} mode={provider.usageMode} window={window} />
+          <UsageWindowBar
+            key={window.id}
+            mode={provider.usageMode}
+            unavailable={provider.usageUnavailable}
+            window={window}
+          />
         ))}
       </div>
     );
@@ -566,8 +571,22 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
 
   return (
     <div className="grid gap-4">
-      <UsageBar label="Session" mode={provider.usageMode} resetSecs={provider.resetSecs} value={provider.session} />
-      <UsageBar label="Weekly" mode={provider.usageMode} resetSecs={provider.resetSecs} value={provider.weekly} />
+      <UsageBar
+        label="Session"
+        mode={provider.usageMode}
+        resetSecs={provider.resetSecs}
+        unavailable={
+          provider.usageUnavailable || provider.sessionUnavailable
+        }
+        value={provider.session}
+      />
+      <UsageBar
+        label="Weekly"
+        mode={provider.usageMode}
+        resetSecs={provider.resetSecs}
+        unavailable={provider.usageUnavailable || provider.weeklyUnavailable}
+        value={provider.weekly}
+      />
     </div>
   );
 }
@@ -576,11 +595,13 @@ function UsageBar({
   label,
   mode,
   resetSecs,
+  unavailable,
   value,
 }: {
   label: string;
   mode?: string;
   resetSecs?: number;
+  unavailable?: boolean;
   value: number;
 }) {
   const percent = clampPercent(value);
@@ -588,18 +609,22 @@ function UsageBar({
     <div>
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
         <span className="font-bold text-[#1B1B1B]">
-          {label}: {percent}% {usageModeShortLabel(mode)}
+          {label}: {unavailable ? "??" : `${percent}% ${usageModeShortLabel(mode)}`}
         </span>
-        {resetSecs ? (
+        {!unavailable && resetSecs ? (
           <span className="ml-auto shrink-0 text-right font-semibold text-[#444933]">
             {formatReset(resetSecs)}
           </span>
         ) : null}
       </div>
       <Progress
-        aria-label={`${label}: ${percent}% ${usageModeShortLabel(mode)}`}
+        aria-label={
+          unavailable
+            ? `${label}: usage unavailable`
+            : `${label}: ${percent}% ${usageModeShortLabel(mode)}`
+        }
         className="h-2"
-        value={percent}
+        value={unavailable ? 0 : percent}
       />
     </div>
   );
@@ -665,9 +690,11 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
 
 function UsageWindowBar({
   mode,
+  unavailable,
   window,
 }: {
   mode?: string;
+  unavailable?: boolean;
   window: UsageWindowInfo;
 }) {
   const percent = clampPercent(window.usedPercent);
@@ -675,18 +702,22 @@ function UsageWindowBar({
     <div>
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
         <span className="font-bold text-[#1B1B1B]">
-          {window.label}: {percent}% {usageModeShortLabel(mode)}
+          {window.label}: {unavailable ? "??" : `${percent}% ${usageModeShortLabel(mode)}`}
         </span>
-        {window.resetSecs ? (
+        {!unavailable && window.resetSecs ? (
           <span className="ml-auto shrink-0 text-right font-semibold text-[#444933]">
             {formatReset(window.resetSecs)}
           </span>
         ) : null}
       </div>
       <Progress
-        aria-label={`${window.label}: ${percent}% ${usageModeShortLabel(mode)}`}
+        aria-label={
+          unavailable
+            ? `${window.label}: usage unavailable`
+            : `${window.label}: ${percent}% ${usageModeShortLabel(mode)}`
+        }
         className="h-2"
-        value={percent}
+        value={unavailable ? 0 : percent}
       />
     </div>
   );
