@@ -79,8 +79,6 @@ const (
 	defaultPairRetryGap          = 500 * time.Millisecond
 	firmwareUpdateJobTime        = 10 * time.Minute
 	macAppUpdateJobTime          = 8 * time.Minute
-	usageFallbackFetchTime       = 15 * time.Second
-	usageDirectCacheTime         = 5 * time.Minute
 	themeRenderPackDir           = "theme-render-packs"
 	themeRenderPackRevisionLimit = 12
 	macAppInstallerURL           = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
@@ -201,10 +199,6 @@ type Server struct {
 	allowMacAppSelfUpdate  bool
 	installationMode       string
 	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
-	fetchUsage             func(context.Context) ([]codexbar.ParsedFrame, error)
-	usageCacheMu           sync.RWMutex
-	usageCache             *usageResponse
-	usageCacheAt           time.Time
 	probeProviderSetup     func(context.Context, string) codexbar.ProviderSetup
 	openCodexBar           func(context.Context) error
 	providerSetupMu        sync.Mutex
@@ -869,7 +863,6 @@ func New(opts Options) (*Server, error) {
 		allowMacAppSelfUpdate: false,
 		installationMode:      macAppInstallationMode(),
 		loadUsage:             daemon.LoadPersistedUsage,
-		fetchUsage:            codexbar.FetchAllProviders,
 		probeProviderSetup:    codexbar.ProbeProviderSetup,
 		openCodexBar:          codexbar.OpenApp,
 		providerPreferences: providerPreferencesState{
@@ -1357,112 +1350,23 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	showUsed := codexbar.UsageBarsShowUsed()
-	writeUsage := func(resp usageResponse) {
-		writeJSON(w, http.StatusOK, usageResponseForDisplayMode(resp, showUsed))
-	}
-	forceRefresh := r.URL.Query().Get("refresh") == "1"
-	var persisted usageResponse
-	havePersisted := false
 	if s.loadUsage != nil {
 		if usage, ok := s.loadUsage(now); ok && len(usage.Providers) > 0 {
-			persisted = usageResponseFromPersisted(now, usage)
-			havePersisted = len(persisted.Providers) > 0
-		}
-	}
-	if !forceRefresh {
-		if cached, ok := s.cachedDirectUsage(now); ok {
-			if havePersisted {
-				cached = mergePersistedUsageDetails(cached, persisted)
+			resp := usageResponseFromPersisted(now, usage)
+			if len(resp.Providers) > 0 {
+				writeJSON(w, http.StatusOK, usageResponseForDisplayMode(resp, showUsed))
+				return
 			}
-			writeUsage(cached)
-			return
-		}
-		if havePersisted && usageResponseHasFreshProvider(persisted) {
-			writeUsage(persisted)
-			return
 		}
 	}
 
-	if s.fetchUsage == nil {
-		if havePersisted {
-			writeUsage(persisted)
-			return
-		}
-		writeUsage(emptyUsageResponse(now, "codexbar-display"))
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), usageFallbackFetchTime)
-	defer cancel()
-	providers, err := s.fetchUsage(ctx)
-	if err != nil {
-		if havePersisted {
-			writeUsage(persisted)
-			return
-		}
-		writeError(
-			w,
-			http.StatusServiceUnavailable,
-			"usage_unavailable",
-			"Usage is still loading.",
-			"Keep this page open. VibeTV will retry automatically.",
-		)
-		return
-	}
-	resp := usageResponseFromParsed(now, providers)
-	if havePersisted {
-		resp = mergePersistedUsageDetails(resp, persisted)
-	}
-	if len(resp.Providers) == 0 && havePersisted {
-		writeUsage(persisted)
-		return
-	}
-	s.cacheDirectUsage(resp, now)
-	writeUsage(resp)
-}
-
-func (s *Server) cachedDirectUsage(now time.Time) (usageResponse, bool) {
-	s.usageCacheMu.RLock()
-	defer s.usageCacheMu.RUnlock()
-	if s.usageCache == nil || now.Sub(s.usageCacheAt) > usageDirectCacheTime {
-		return usageResponse{}, false
-	}
-	return *s.usageCache, true
-}
-
-func (s *Server) cacheDirectUsage(resp usageResponse, now time.Time) {
-	s.usageCacheMu.Lock()
-	defer s.usageCacheMu.Unlock()
-	s.usageCache = &resp
-	s.usageCacheAt = now
-}
-
-func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
-	previous := make(map[string]usageProviderInfo, len(persisted.Providers))
-	for _, provider := range persisted.Providers {
-		previous[provider.ID] = provider
-	}
-	for i := range fresh.Providers {
-		provider := &fresh.Providers[i]
-		cached, ok := previous[provider.ID]
-		if !ok {
-			continue
-		}
-		if provider.Cost == nil {
-			if provider.SessionTokens == 0 {
-				provider.SessionTokens = cached.SessionTokens
-			}
-			if provider.WeekTokens == 0 {
-				provider.WeekTokens = cached.WeekTokens
-			}
-			if provider.TotalTokens == 0 {
-				provider.TotalTokens = cached.TotalTokens
-			}
-			provider.Cost = cached.Cost
-		}
-	}
-	fresh.TokenUsageReady = usageProvidersHaveTokenResult(fresh.Providers)
-	return fresh
+	writeError(
+		w,
+		http.StatusServiceUnavailable,
+		"usage_unavailable",
+		"Usage is still loading.",
+		"Keep this page open. VibeTV will retry automatically.",
+	)
 }
 
 func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request) {
@@ -1940,23 +1844,6 @@ func usageResponseFromPersisted(now time.Time, usage daemon.PersistedUsage) usag
 	return resp
 }
 
-func usageResponseFromParsed(now time.Time, parsed []codexbar.ParsedFrame) usageResponse {
-	providers := make([]usageProviderInfo, 0, len(parsed))
-	for _, provider := range parsed {
-		if info, ok := usageProviderFromParsed(provider); ok {
-			providers = append(providers, info)
-		}
-	}
-	resp := emptyUsageResponse(now, "codexbar")
-	resp.Providers = providers
-	resp.UsageMode = usageModeForProviders(providers)
-	resp.TokenUsageReady = usageProvidersHaveTokenResult(providers)
-	if len(providers) > 0 {
-		resp.CurrentProvider = providers[0].ID
-	}
-	return resp
-}
-
 func emptyUsageResponse(now time.Time, source string) usageResponse {
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -1968,15 +1855,6 @@ func emptyUsageResponse(now time.Time, source string) usageResponse {
 		UsageMode:   "used",
 		Providers:   []usageProviderInfo{},
 	}
-}
-
-func usageResponseHasFreshProvider(resp usageResponse) bool {
-	for _, provider := range resp.Providers {
-		if !provider.Stale {
-			return true
-		}
-	}
-	return false
 }
 
 func usageProvidersHaveTokenResult(providers []usageProviderInfo) bool {
@@ -1991,6 +1869,9 @@ func usageProvidersHaveTokenResult(providers []usageProviderInfo) bool {
 func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProviderInfo, bool) {
 	frame := snapshot.Frame.Normalize()
 	if strings.TrimSpace(frame.Error) != "" {
+		return usageProviderInfo{}, false
+	}
+	if frame.UsageUnavailable && !snapshotHasUsableUsage(frame, snapshot.Meta) {
 		return usageProviderInfo{}, false
 	}
 	id := usageProviderID(snapshot.Provider, frame.Provider)
@@ -2022,38 +1903,16 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 	}, true
 }
 
-func usageProviderFromParsed(parsed codexbar.ParsedFrame) (usageProviderInfo, bool) {
-	frame := parsed.Frame.Normalize()
-	if strings.TrimSpace(frame.Error) != "" {
-		return usageProviderInfo{}, false
+func snapshotHasUsableUsage(frame protocol.Frame, meta codexbar.ProviderUsageMeta) bool {
+	if len(meta.Windows) > 0 || meta.Cost != nil {
+		return true
 	}
-	id := usageProviderID(parsed.Provider, frame.Provider)
-	if id == "" {
-		return usageProviderInfo{}, false
-	}
-	return usageProviderInfo{
-		ID:                 id,
-		Label:              usageProviderLabel(id, frame.Label),
-		Source:             strings.TrimSpace(parsed.Source),
-		Session:            frame.Session,
-		Weekly:             frame.Weekly,
-		ResetSec:           frame.ResetSec,
-		UsageMode:          usageModeOrDefault(frame.UsageMode),
-		SessionTokens:      frame.SessionTokens,
-		WeekTokens:         frame.WeekTokens,
-		TotalTokens:        frame.TotalTokens,
-		Activity:           strings.TrimSpace(frame.Activity),
-		Stale:              parsed.Stale,
-		CollectedAt:        formatOptionalTime(parsed.CollectedAt),
-		ActivityObservedAt: formatOptionalTime(parsed.ActivityObservedAt),
-		Windows:            usageWindowsFromMeta(parsed.Meta),
-		Status:             usageStatusFromMeta(parsed.Meta),
-		Credits:            usageCreditsFromMeta(parsed.Meta),
-		ResetCredits:       usageResetCreditsFromMeta(parsed.Meta),
-		Cost:               usageCostFromMeta(parsed.Meta),
-		Pace:               usagePaceFromMeta(parsed.Meta),
-		UsageOverTime:      usageOverTimeFromMeta(parsed.Meta),
-	}, true
+	return frame.Session != 0 ||
+		frame.Weekly != 0 ||
+		frame.SessionTokens != 0 ||
+		frame.WeekTokens != 0 ||
+		frame.TotalTokens != 0 ||
+		len(frame.UsageSlots) > 0
 }
 
 func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta) []usageWindowInfo {
