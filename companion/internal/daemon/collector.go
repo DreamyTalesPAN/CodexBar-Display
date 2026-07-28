@@ -37,6 +37,7 @@ type providerCollector struct {
 	logf            func(string, ...any)
 	fetchProviders  func(context.Context) ([]codexbar.ParsedFrame, error)
 	fetchTokenStats func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
+	dashboard       codexbar.DashboardServe
 	resolvePort     func(string) (string, error)
 	requestedPort   string
 	requestedPortFn func() string
@@ -69,6 +70,7 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		logf:            logFn,
 		fetchProviders:  deps.fetchProviders,
 		fetchTokenStats: deps.fetchTokenStats,
+		dashboard:       deps.dashboard,
 		resolvePort:     deps.resolvePort,
 		requestedPort:   requestedDeviceTarget(opts),
 		transportName:   usageSourceOrDefault(deps.transportName, "usb"),
@@ -372,6 +374,13 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 		})
 	}
 	return frames
+}
+
+func (c *providerCollector) dashboardInfo() codexbar.DashboardServeInfo {
+	if c == nil || c.dashboard == nil {
+		return codexbar.DashboardServeInfo{}
+	}
+	return c.dashboard.Info()
 }
 
 func (c *providerCollector) resolveRequestedPort() string {

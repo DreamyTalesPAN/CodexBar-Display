@@ -133,6 +133,8 @@ type runtimeDeps struct {
 	fetchProviders    func(context.Context) ([]codexbar.ParsedFrame, error)
 	fetchProvider     func(context.Context, string) (codexbar.ParsedFrame, error)
 	fetchTokenStats   func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
+	startDashboard    func(context.Context, func(string, ...any)) codexbar.DashboardServe
+	dashboard         codexbar.DashboardServe
 	usageBarsShowUsed func() bool
 	sendLine          func(string, []byte) error
 	fetchUpdateState  func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
@@ -293,6 +295,7 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 			transport:         transportlayer.NewWiFiTransport(),
 			transportName:     "wifi",
 			usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+			startDashboard:    codexbar.StartDashboardServe,
 			logf:              logf,
 		})
 	}
@@ -304,6 +307,7 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 		sendLine:          sender.Send,
 		transportName:     "usb",
 		usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+		startDashboard:    codexbar.StartDashboardServe,
 		logf:              logf,
 	})
 }
@@ -316,6 +320,13 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 
 	state := initializeRuntimeState(deps.now(), opts, deps)
+	if !opts.Once && deps.startDashboard != nil {
+		deps.dashboard = deps.startDashboard(ctx, deps.logf)
+		if deps.dashboard != nil {
+			info := deps.dashboard.Info()
+			deps.logf("codexbar-dashboard event=supervisor-started refreshInterval=%s\n", info.RefreshInterval)
+		}
+	}
 	collector, collectorCancel := startProviderCollector(ctx, opts, deps, syncCycleMode)
 	if collectorCancel != nil {
 		defer collectorCancel()
