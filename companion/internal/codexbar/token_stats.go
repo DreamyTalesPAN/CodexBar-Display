@@ -6,19 +6,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
-const (
-	tokenStatsRefreshInterval = 30 * time.Second
-	tokenStatsStaleMaxAge     = 15 * time.Minute
-	tokenStatsCommandTimeout  = 2 * time.Second
-	tokenStatsRepairTimeout   = 5 * time.Minute
-	tokenStatsRepairCooldown  = 1 * time.Minute
-)
+const tokenStatsCommandTimeout = 2 * time.Second
 
 type ProviderTokenStats struct {
 	SessionTokens int64
@@ -32,22 +25,6 @@ type ProviderTokenStats struct {
 func (s ProviderTokenStats) HasAny() bool {
 	return s.SessionTokens > 0 || s.WeekTokens > 0 || s.TotalTokens > 0 || s.Cost != nil
 }
-
-type providerTokenStatsCache struct {
-	mu       sync.RWMutex
-	fetched  time.Time
-	provider map[string]ProviderTokenStats
-}
-
-var tokenStatsCache providerTokenStatsCache
-
-var loadProviderTokenStatsCacheFn = loadProviderTokenStatsFromCostCache
-
-var tokenStatsRepair = struct {
-	sync.Mutex
-	running     bool
-	nextAttempt time.Time
-}{}
 
 func FetchProviderTokenStats(ctx context.Context) (map[string]ProviderTokenStats, bool) {
 	bin, err := FindBinary()
@@ -126,125 +103,16 @@ func applyTokenStatsToFrame(frame *protocol.Frame, stats ProviderTokenStats) {
 }
 
 func fetchProviderTokenStats(ctx context.Context, bin string) (map[string]ProviderTokenStats, bool) {
-	now := time.Now().UTC()
-
-	if cached, ok := tokenStatsCache.loadFresh(now); ok {
-		return cached, true
-	}
-
-	// CodexBar writes its incremental cost scan before the CLI prints the final
-	// JSON payload. Reading that cache keeps Usage responsive even when a very
-	// large active session makes `cost --json` take longer than the foreground
-	// budget. One longer scan continues in the background and refreshes both the
-	// disk cache and this in-memory snapshot when it finishes.
-	if cached, ok := loadProviderTokenStatsCacheFn(now); ok {
-		tokenStatsCache.store(now, cached)
-		startProviderTokenStatsRepair(ctx, bin, now)
-		return copyProviderTokenStats(cached), true
-	}
-
 	raw, err := runCostCommandFn(ctx, tokenStatsCommandTimeout, bin, "cost", "--json")
-	if err == nil {
-		parsed, parseErr := parseProviderTokenStats(raw)
-		if parseErr == nil && len(parsed) > 0 {
-			tokenStatsCache.store(now, parsed)
-			return parsed, true
-		}
-		err = fmt.Errorf("parse codexbar cost --json: %w", parseErr)
-	}
-
-	// A first run can create the incremental cache before it reaches stdout.
-	// Pick it up immediately instead of waiting for the next collector cycle.
-	if cached, ok := loadProviderTokenStatsCacheFn(now); ok {
-		tokenStatsCache.store(now, cached)
-		startProviderTokenStatsRepair(ctx, bin, now)
-		return copyProviderTokenStats(cached), true
-	}
-
-	if cached, ok := tokenStatsCache.loadStale(now); ok {
-		startProviderTokenStatsRepair(ctx, bin, now)
-		return cached, true
-	}
-
-	startProviderTokenStatsRepair(ctx, bin, now)
-	_ = err
-	return nil, false
-}
-
-func startProviderTokenStatsRepair(parent context.Context, bin string, now time.Time) {
-	tokenStatsRepair.Lock()
-	if tokenStatsRepair.running || now.Before(tokenStatsRepair.nextAttempt) {
-		tokenStatsRepair.Unlock()
-		return
-	}
-	tokenStatsRepair.running = true
-	tokenStatsRepair.nextAttempt = now.Add(tokenStatsRepairCooldown)
-	tokenStatsRepair.Unlock()
-
-	run := runCostCommandFn
-	if parent == nil {
-		parent = context.Background()
-	} else {
-		parent = context.WithoutCancel(parent)
-	}
-	go func() {
-		defer func() {
-			tokenStatsRepair.Lock()
-			tokenStatsRepair.running = false
-			tokenStatsRepair.Unlock()
-		}()
-
-		ctx, cancel := context.WithTimeout(parent, tokenStatsRepairTimeout)
-		defer cancel()
-		raw, err := run(ctx, tokenStatsRepairTimeout, bin, "cost", "--json")
-		if err != nil {
-			return
-		}
-		parsed, err := parseProviderTokenStats(raw)
-		if err != nil || len(parsed) == 0 {
-			return
-		}
-		tokenStatsCache.store(time.Now().UTC(), parsed)
-	}()
-}
-
-func (c *providerTokenStatsCache) loadFresh(now time.Time) (map[string]ProviderTokenStats, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.fetched.IsZero() || now.Sub(c.fetched) > tokenStatsRefreshInterval || len(c.provider) == 0 {
+	if err != nil {
 		return nil, false
 	}
-	return copyProviderTokenStats(c.provider), true
-}
 
-func (c *providerTokenStatsCache) loadStale(now time.Time) (map[string]ProviderTokenStats, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.fetched.IsZero() || now.Sub(c.fetched) > tokenStatsStaleMaxAge || len(c.provider) == 0 {
+	parsed, err := parseProviderTokenStats(raw)
+	if err != nil || len(parsed) == 0 {
 		return nil, false
 	}
-	return copyProviderTokenStats(c.provider), true
-}
-
-func (c *providerTokenStatsCache) store(fetched time.Time, stats map[string]ProviderTokenStats) {
-	if len(stats) == 0 {
-		return
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.fetched = fetched
-	c.provider = copyProviderTokenStats(stats)
-}
-
-func copyProviderTokenStats(in map[string]ProviderTokenStats) map[string]ProviderTokenStats {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[string]ProviderTokenStats, len(in))
-	for key, value := range in {
-		out[key] = value
-	}
-	return out
+	return parsed, true
 }
 
 func parseProviderTokenStats(raw []byte) (map[string]ProviderTokenStats, error) {

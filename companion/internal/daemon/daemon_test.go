@@ -2997,6 +2997,88 @@ func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing
 	}
 }
 
+func TestProviderCollectorPreservesTokenStatsAcrossTemporaryFailureAndRecovers(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 28, 9, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex"},
+		interval:        30 * time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+	}
+
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 17, 42, 3600)}, nil
+	}
+	collector.collectOnce(context.Background())
+	if frames := collector.providerFrames(current); len(frames) != 1 || frames[0].Frame.TotalTokens != 0 {
+		t.Fatalf("expected first usage snapshot without token totals, got %#v", frames)
+	}
+
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return nil, false
+	}
+	collector.collectTokenStatsOnce(context.Background())
+	if got := collector.providers["codex"]; got.Frame.TotalTokens != 0 || got.Meta.Cost != nil {
+		t.Fatalf("failed token stats fetch changed the snapshot: %#v", got)
+	}
+
+	current = current.Add(time.Second)
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return map[string]codexbar.ProviderTokenStats{
+			"codex": {
+				SessionTokens: 10,
+				WeekTokens:    20,
+				TotalTokens:   30,
+				UpdatedAt:     current,
+				Source:        "codexbar-cost",
+				Cost:          &codexbar.ProviderCostUsage{Last30DaysTokens: 30, LatestTokens: 10},
+			},
+		}, true
+	}
+	collector.collectTokenStatsOnce(context.Background())
+	withTokens := collector.providers["codex"]
+	if withTokens.Frame.SessionTokens != 10 || withTokens.Frame.WeekTokens != 20 || withTokens.Frame.TotalTokens != 30 || withTokens.Meta.Cost == nil {
+		t.Fatalf("expected successful token stats to enrich existing snapshot, got %#v", withTokens)
+	}
+	if withTokens.Frame.UsageUnavailable {
+		t.Fatalf("token stats recovery should not mark a fresh usage snapshot unavailable: %#v", withTokens)
+	}
+
+	current = current.Add(30 * time.Second)
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 18, 43, 3500)}, nil
+	}
+	collector.collectOnce(context.Background())
+	held := collector.providers["codex"]
+	if held.Frame.SessionTokens != 10 || held.Frame.WeekTokens != 20 || held.Frame.TotalTokens != 30 || held.Meta.Cost == nil {
+		t.Fatalf("temporary token stats miss erased last-good token totals: %#v", held)
+	}
+
+	current = current.Add(time.Second)
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return map[string]codexbar.ProviderTokenStats{
+			"codex": {
+				SessionTokens: 40,
+				WeekTokens:    50,
+				TotalTokens:   60,
+				UpdatedAt:     current,
+				Source:        "codexbar-cost",
+				Cost:          &codexbar.ProviderCostUsage{Last30DaysTokens: 60, LatestTokens: 40},
+			},
+		}, true
+	}
+	collector.collectTokenStatsOnce(context.Background())
+	recovered := collector.providers["codex"]
+	if recovered.Frame.SessionTokens != 40 || recovered.Frame.WeekTokens != 50 || recovered.Frame.TotalTokens != 60 {
+		t.Fatalf("later successful token stats did not replace last-good totals: %#v", recovered)
+	}
+}
+
 func TestPreferAvailableProvidersDoesNotLetUnavailableDisplaceFresh(t *testing.T) {
 	providers := preferAvailableProviders([]codexbar.ParsedFrame{
 		{Provider: "gemini", Frame: protocol.Frame{Provider: "gemini", UsageUnavailable: true}},

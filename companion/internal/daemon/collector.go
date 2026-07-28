@@ -199,6 +199,9 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			Collected:          now.UTC(),
 			ActivityObservedAt: parsed.ActivityObservedAt,
 		}
+		if previous, exists := c.providers[key]; exists {
+			carryForwardSnapshotTokenStats(previous, &snapshot)
+		}
 		c.providers[key] = snapshot
 		successes++
 		updated = true
@@ -306,6 +309,30 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 	if updated > 0 {
 		c.persistIfNeeded(now)
 	}
+}
+
+func carryForwardSnapshotTokenStats(previous providerSnapshot, next *providerSnapshot) {
+	if next == nil {
+		return
+	}
+	if frameHasTokenStats(next.Frame) || next.Meta.Cost != nil {
+		return
+	}
+	prevFrame := previous.Frame.Normalize()
+	if !frameHasTokenStats(prevFrame) && previous.Meta.Cost == nil {
+		return
+	}
+	next.Frame.SessionTokens = prevFrame.SessionTokens
+	next.Frame.WeekTokens = prevFrame.WeekTokens
+	next.Frame.TotalTokens = prevFrame.TotalTokens
+	next.Meta.Cost = previous.Meta.Cost
+	if next.ActivityObservedAt.IsZero() {
+		next.ActivityObservedAt = previous.ActivityObservedAt
+	}
+}
+
+func frameHasTokenStats(frame protocol.Frame) bool {
+	return frame.SessionTokens > 0 || frame.WeekTokens > 0 || frame.TotalTokens > 0
 }
 
 func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame {
