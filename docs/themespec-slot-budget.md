@@ -73,6 +73,19 @@ Relevant firmware thresholds (`ThemeSpecRuntimePolicy`): rendering needs
 So the asset-heavy direction is the binding one, and only against a screensaver
 that uses the full 32 primitives and the full 4 KB spec budget.
 
+### Correction after #280
+
+The heap figures above were measured against firmware `1.0.40-dev.3f5344b`, before
+the NTP clock landed. #280 adds 464 bytes of static RAM (`pio run` reports 42688
+→ 43152 bytes), which comes straight off the free heap. The rows above should be
+read roughly 464 bytes lower; the countdown-screensaver case lands near 13.6 KB
+instead of 14.1 KB.
+
+The recommendation does not change — that case keeps a wide margin over the
+8192 B animation threshold, and the worst case already failed. But whoever builds
+#284 should re-measure rather than reuse these absolute numbers: every slice that
+adds static RAM shifts them again.
+
 ## Measured transition latency
 
 `scripts/measure-themespec-standby-latency.sh`, 5 rounds in both directions on a
