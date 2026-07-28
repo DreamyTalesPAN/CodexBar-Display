@@ -2545,10 +2545,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setUsageError(null);
         setCompanionStatus("online");
         if (!quiet) {
+          const refreshEvent = usageRefreshEvent(payload);
           addEvent({
-            label: "Usage refreshed",
-            detail: `${payload.providers?.length || 0} provider tiles loaded.`,
-            tone: payload.providers?.length ? "ready" : "attention",
+            label: refreshEvent.label,
+            detail: refreshEvent.detail,
+            tone: refreshEvent.tone,
           });
         }
       } catch (error) {
@@ -3298,6 +3299,49 @@ function getRuntimeSurfaceSnapshot(): RuntimeSurface {
 
 function getRuntimeSurfaceServerSnapshot(): RuntimeSurface {
   return "unknown";
+}
+
+function usageRefreshEvent(payload: UsageSnapshot): {
+  label: string;
+  detail: string;
+  tone: "ready" | "attention";
+} {
+  switch (payload.refresh?.state) {
+    case "refreshing":
+      return {
+        label: "Usage refresh started",
+        detail: "VibeTV is waiting for a new usage snapshot.",
+        tone: "attention",
+      };
+    case "rate_limited":
+      return {
+        label: "Usage refresh is waiting",
+        detail: payload.refresh.blockedUntil
+          ? `Try again after ${formatRefreshEventTime(payload.refresh.blockedUntil)}.`
+          : "The provider is temporarily limiting refreshes.",
+        tone: "attention",
+      };
+    case "unavailable":
+      return {
+        label: "Usage is still loading",
+        detail: "VibeTV will update automatically when usage is ready.",
+        tone: "attention",
+      };
+    default:
+      return {
+        label: "Usage refreshed",
+        detail: `${payload.providers?.length || 0} provider tiles loaded.`,
+        tone: payload.providers?.length ? "ready" : "attention",
+      };
+  }
+}
+
+function formatRefreshEventTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function subscribeRuntimeSurface(onStoreChange: () => void) {

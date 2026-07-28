@@ -21,6 +21,8 @@ type providerSnapshot struct {
 	Meta               codexbar.ProviderUsageMeta `json:"meta,omitempty"`
 	Collected          time.Time                  `json:"collectedAt"`
 	ActivityObservedAt time.Time                  `json:"activityObservedAt,omitempty"`
+	RateLimited        bool                       `json:"rateLimited,omitempty"`
+	RateLimitedUntil   time.Time                  `json:"rateLimitedUntil,omitempty"`
 }
 
 type persistedProviderSnapshots struct {
@@ -178,6 +180,12 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		if frame.UsageUnavailable {
 			lastGood, exists := c.providers[key]
 			if exists && !lastGood.Frame.UsageUnavailable {
+				if parsed.RateLimited || !parsed.RateLimitedUntil.IsZero() {
+					lastGood.RateLimited = parsed.RateLimited
+					lastGood.RateLimitedUntil = parsed.RateLimitedUntil.UTC()
+					c.providers[key] = lastGood
+					updated = true
+				}
 				if isLastGoodFreshAt(lastGood.Collected, now, c.snapshotMaxAge) {
 					continue
 				}
@@ -185,10 +193,12 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 				c.providers[key] = lastGood
 			} else if !exists {
 				c.providers[key] = providerSnapshot{
-					Provider:  key,
-					Frame:     frame,
-					Source:    strings.TrimSpace(parsed.Source),
-					Collected: parsed.CollectedAt.UTC(),
+					Provider:         key,
+					Frame:            frame,
+					Source:           strings.TrimSpace(parsed.Source),
+					Collected:        parsed.CollectedAt.UTC(),
+					RateLimited:      parsed.RateLimited,
+					RateLimitedUntil: parsed.RateLimitedUntil.UTC(),
 				}
 			}
 			updated = true
@@ -201,6 +211,8 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			Meta:               parsed.Meta,
 			Collected:          now.UTC(),
 			ActivityObservedAt: parsed.ActivityObservedAt,
+			RateLimited:        false,
+			RateLimitedUntil:   time.Time{},
 		}
 		if previous, exists := c.providers[key]; exists {
 			carryForwardSnapshotTokenStats(previous, &snapshot)
@@ -332,6 +344,8 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			Meta:               meta,
 			Collected:          snapshot.Collected,
 			ActivityObservedAt: activityObservedAt,
+			RateLimited:        snapshot.RateLimited,
+			RateLimitedUntil:   snapshot.RateLimitedUntil,
 		}
 		updated++
 	}
@@ -399,6 +413,8 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			Meta:               snapshot.Meta,
 			CollectedAt:        snapshot.Collected,
 			ActivityObservedAt: snapshot.ActivityObservedAt,
+			RateLimited:        snapshot.RateLimited,
+			RateLimitedUntil:   snapshot.RateLimitedUntil,
 			Stale:              frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
 		})
 	}

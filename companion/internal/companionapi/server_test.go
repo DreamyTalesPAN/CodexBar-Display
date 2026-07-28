@@ -1820,6 +1820,185 @@ func TestUsageRefreshReadsCollectorSnapshotWithoutDirectFetch(t *testing.T) {
 	}
 }
 
+func TestUsageManualRefreshReportsRefreshingForOldCollectorSnapshot(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	var wakeCount int
+	server.wakeDisplayStream = func() { wakeCount++ }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now.Add(-time.Minute),
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used"},
+				CollectedAt: now.Add(-time.Minute),
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if wakeCount != 1 {
+		t.Fatalf("manual refresh must wake the collector path once, got %d", wakeCount)
+	}
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Refresh.State != "refreshing" || len(got.Providers) != 1 || got.Providers[0].Weekly != 36 {
+		t.Fatalf("expected refreshing with last-good values, got %+v", got)
+	}
+}
+
+func TestUsageManualRefreshReportsFreshForNewCollectorSnapshot(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42, UsageMode: "used"},
+				CollectedAt: now,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if rec.Code != http.StatusOK || got.Refresh.State != "fresh" || got.Providers[0].Weekly != 42 {
+		t.Fatalf("expected fresh manual refresh response, status=%d got %+v", rec.Code, got)
+	}
+}
+
+func TestUsageManualRefreshReportsRateLimitAndBlockedUntil(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	blockedUntil := now.Add(2 * time.Minute)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now.Add(-time.Minute),
+			CurrentProvider: "claude",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:         "claude",
+				Frame:            protocol.Frame{Provider: "claude", Label: "Claude", Session: 64, UsageMode: "used"},
+				CollectedAt:      now.Add(-time.Minute),
+				RateLimited:      true,
+				RateLimitedUntil: blockedUntil,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if rec.Code != http.StatusOK || got.Refresh.State != "rate_limited" {
+		t.Fatalf("expected rate-limited response, status=%d got %+v", rec.Code, got)
+	}
+	if got.Refresh.BlockedUntil != blockedUntil.Format(time.RFC3339) || got.Providers[0].BlockedUntil != blockedUntil.Format(time.RFC3339) {
+		t.Fatalf("expected exact blockedUntil to be exposed, got refresh=%+v provider=%+v", got.Refresh, got.Providers[0])
+	}
+	if got.Providers[0].Session != 64 {
+		t.Fatalf("expected last-good value to remain visible, got %+v", got.Providers[0])
+	}
+}
+
+func TestUsageRefreshRateLimitWithoutBlockedUntilDoesNotInventTimestamp(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now.Add(-time.Minute),
+			CurrentProvider: "claude",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "claude",
+				Frame:       protocol.Frame{Provider: "claude", Label: "Claude", Session: 64, UsageMode: "used"},
+				CollectedAt: now.Add(-time.Minute),
+				RateLimited: true,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Refresh.State != "rate_limited" || got.Refresh.BlockedUntil != "" || got.Providers[0].BlockedUntil != "" {
+		t.Fatalf("expected rate limit without invented blockedUntil, got %+v provider=%+v", got.Refresh, got.Providers[0])
+	}
+}
+
+func TestUsageRefreshStateClearsAfterRecovery(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	blockedUntil := now.Add(2 * time.Minute)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	recovered := false
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		snapshot := daemon.ProviderUsageSnapshot{
+			Provider:         "claude",
+			Frame:            protocol.Frame{Provider: "claude", Label: "Claude", Session: 64, UsageMode: "used"},
+			CollectedAt:      now.Add(-time.Minute),
+			RateLimited:      true,
+			RateLimitedUntil: blockedUntil,
+		}
+		if recovered {
+			snapshot.Frame.Session = 72
+			snapshot.CollectedAt = now.Add(time.Minute)
+			snapshot.RateLimited = false
+			snapshot.RateLimitedUntil = time.Time{}
+		}
+		return daemon.PersistedUsage{
+			SavedAt:         snapshot.CollectedAt,
+			CurrentProvider: "claude",
+			Providers:       []daemon.ProviderUsageSnapshot{snapshot},
+		}, true
+	}
+
+	first := httptest.NewRecorder()
+	server.Handler().ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+	recovered = true
+	second := httptest.NewRecorder()
+	server.Handler().ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(second.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if second.Code != http.StatusOK || got.Refresh.State != "fresh" || got.Refresh.BlockedUntil != "" || got.Providers[0].RateLimited {
+		t.Fatalf("expected recovery to clear rate-limit state, status=%d got %+v", second.Code, got)
+	}
+	if got.Providers[0].Session != 72 {
+		t.Fatalf("expected recovered provider value, got %+v", got.Providers[0])
+	}
+}
+
 func TestUsageRestartFreeConvergenceReadsNewCollectorSnapshot(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)

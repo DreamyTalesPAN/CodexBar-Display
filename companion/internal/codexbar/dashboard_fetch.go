@@ -2,6 +2,7 @@ package codexbar
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -56,7 +57,7 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	for _, provider := range snapshot.Providers {
 		usage, usageOK := dashboardusage.UsageForProvider(usageProviders, provider.ID)
 		normalized := dashboardusage.NormalizeProvider(provider, usage)
-		parsed := parsedFrameFromDashboardProvider(provider, normalized, now)
+		parsed := parsedFrameFromDashboardProvider(provider, normalized, now, usage.Error)
 		if coldSource || provider.UpdatedAt == nil || !usageOK {
 			parsed.Frame.UsageUnavailable = true
 			parsed.Frame.UsageSlots = nil
@@ -94,7 +95,7 @@ func fetchDashboardJSON(ctx context.Context, client *http.Client, url string, to
 	return raw, nil
 }
 
-func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider, normalized dashboardusage.ProviderWindows, now time.Time) ParsedFrame {
+func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider, normalized dashboardusage.ProviderWindows, now time.Time, usageError json.RawMessage) ParsedFrame {
 	id := strings.TrimSpace(strings.ToLower(provider.ID))
 	label := strings.TrimSpace(provider.Name)
 	if label == "" {
@@ -133,8 +134,42 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 		Meta:               ProviderUsageMeta{Windows: metaWindows},
 		CollectedAt:        now.UTC(),
 		ActivityObservedAt: activityObservedAt,
+		RateLimited:        dashboardErrorsAreRateLimited(provider.Error, usageError),
+		RateLimitedUntil:   rateLimitedUntilFromDashboardErrors(provider.Error, usageError),
 		Stale:              frame.UsageUnavailable,
 	}
+}
+
+func dashboardErrorsAreRateLimited(errors ...json.RawMessage) bool {
+	for _, raw := range errors {
+		if len(raw) == 0 {
+			continue
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(raw, &payload); err != nil || len(payload) == 0 {
+			continue
+		}
+		if payloadIsRateLimited(map[string]any{"error": payload}) {
+			return true
+		}
+	}
+	return false
+}
+
+func rateLimitedUntilFromDashboardErrors(errors ...json.RawMessage) time.Time {
+	for _, raw := range errors {
+		if len(raw) == 0 {
+			continue
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(raw, &payload); err != nil || len(payload) == 0 {
+			continue
+		}
+		if blockedUntil := rateLimitedUntilFromPayload(map[string]any{"error": payload}); !blockedUntil.IsZero() {
+			return blockedUntil
+		}
+	}
+	return time.Time{}
 }
 
 func usageWindowsFromDashboardWindows(windows []dashboardusage.UsageWindow, now time.Time) []UsageWindow {

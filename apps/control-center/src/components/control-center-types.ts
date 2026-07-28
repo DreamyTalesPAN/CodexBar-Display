@@ -305,6 +305,8 @@ export type UsageProviderInfo = {
   stale?: boolean;
   collectedAt?: string;
   activityObservedAt?: string;
+  rateLimited?: boolean;
+  blockedUntil?: string;
   windows?: UsageWindowInfo[];
   status?: UsageStatusInfo;
   credits?: UsageCreditsInfo;
@@ -390,9 +392,17 @@ export type UsageSnapshot = {
   generatedAt?: string;
   source?: string;
   usageMode?: "used" | "remaining" | string;
+  refresh?: UsageRefreshInfo;
   tokenUsageReady?: boolean;
   currentProvider?: string;
   providers: UsageProviderInfo[];
+};
+
+export type UsageRefreshInfo = {
+  state: "refreshing" | "rate_limited" | "fresh" | "unavailable" | string;
+  requestedAt?: string;
+  blockedUntil?: string;
+  message?: string;
 };
 
 export type PreferenceHealthState =

@@ -277,6 +277,8 @@ type ProviderUsageSnapshot struct {
 	Meta               codexbar.ProviderUsageMeta
 	CollectedAt        time.Time
 	ActivityObservedAt time.Time
+	RateLimited        bool
+	RateLimitedUntil   time.Time
 	Stale              bool
 }
 
@@ -1924,6 +1926,8 @@ func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
 			Meta:               snapshot.Meta,
 			CollectedAt:        snapshot.Collected.UTC(),
 			ActivityObservedAt: snapshot.ActivityObservedAt.UTC(),
+			RateLimited:        snapshot.RateLimited,
+			RateLimitedUntil:   snapshot.RateLimitedUntil.UTC(),
 			Stale:              providerUsageSnapshotIsStale(snapshot, now),
 		})
 	}
