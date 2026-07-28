@@ -3516,6 +3516,159 @@ func TestProviderCollectorTokenStatsFreshnessSemantics(t *testing.T) {
 	}
 }
 
+func TestProviderCollectorSlowTokenScanDoesNotOverlapAndRecovers(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+	var calls atomic.Int32
+	var inFlight atomic.Int32
+	var maxInFlight atomic.Int32
+
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex"},
+		interval:        30 * time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:  "codex",
+				Frame:     protocol.Frame{Provider: "codex", Label: "Codex", Session: 11, Weekly: 22},
+				Collected: current,
+			},
+		},
+	}
+	collector.fetchTokenStats = func(ctx context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		active := inFlight.Add(1)
+		defer inFlight.Add(-1)
+		calls.Add(1)
+		for {
+			previous := maxInFlight.Load()
+			if active <= previous || maxInFlight.CompareAndSwap(previous, active) {
+				break
+			}
+		}
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+			return map[string]codexbar.ProviderTokenStats{
+				"codex": {SessionTokens: 12, WeekTokens: 34, TotalTokens: 56, UpdatedAt: current},
+			}, true
+		case <-ctx.Done():
+			return nil, false
+		}
+	}
+
+	if !collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("expected first token scan to start")
+	}
+	<-started
+	for i := 0; i < 5; i++ {
+		if collector.requestTokenStatsScan(context.Background()) {
+			t.Fatalf("fast poll %d started overlapping token scan", i)
+		}
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("expected one in-flight scan, got %d calls", got)
+	}
+	if got := maxInFlight.Load(); got != 1 {
+		t.Fatalf("expected max one in-flight scan, got %d", got)
+	}
+
+	close(release)
+	waitForCondition(t, time.Second, func() bool {
+		collector.mu.RLock()
+		defer collector.mu.RUnlock()
+		return collector.providers["codex"].Frame.TotalTokens == 56
+	})
+	if !collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("expected later token scan to start after recovery")
+	}
+	collector.shutdownTokenStatsScan()
+}
+
+func TestProviderCollectorTokenStatsTimeoutPreservesLastGood(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 28, 12, 30, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex"},
+		interval:        30 * time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:            "codex",
+				Frame:               protocol.Frame{Provider: "codex", Label: "Codex", Session: 11, Weekly: 22, TotalTokens: 99},
+				Collected:           current,
+				TokenStatsCollected: current,
+			},
+		},
+	}
+	collector.fetchTokenStats = func(ctx context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		<-ctx.Done()
+		return nil, false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	collector.collectTokenStatsOnce(ctx)
+
+	got := collector.providers["codex"]
+	if got.Frame.TotalTokens != 99 || got.TokenStatsCollected.IsZero() {
+		t.Fatalf("timeout erased bounded last-good token stats: %#v", got)
+	}
+}
+
+func TestProviderCollectorShutdownCancelsTokenScan(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 28, 13, 0, 0, 0, time.UTC)
+	started := make(chan struct{})
+	cancelled := make(chan struct{})
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex"},
+		interval:        30 * time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+	}
+	collector.fetchTokenStats = func(ctx context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		close(started)
+		<-ctx.Done()
+		close(cancelled)
+		return nil, false
+	}
+
+	if !collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("expected token scan to start")
+	}
+	<-started
+	collector.shutdownTokenStatsScan()
+	select {
+	case <-cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown did not cancel the token scan")
+	}
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return nil, false
+	}
+	if !collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("expected collector to accept a new scan after shutdown")
+	}
+	collector.shutdownTokenStatsScan()
+}
+
 func TestProviderCollectorFallsBackToUsageJSONWhenDashboardUnavailableAndRecovers(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -4224,4 +4377,20 @@ func prepareFastTestEnv(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
 	t.Setenv("CODEXBAR_DISPLAY_CHROMIUM_COOKIE_DB_PATHS", tmpHome+"/missing-cookies.db")
+}
+
+func waitForCondition(t *testing.T, timeout time.Duration, ready func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if ready() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if ready() {
+		return
+	}
+	t.Fatal("condition was not met before timeout")
 }

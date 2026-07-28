@@ -1217,6 +1217,38 @@ func TestFetchAllProvidersFallsBackToCodexCLIOnAggregateCommandFailure(t *testin
 	}
 }
 
+func TestFetchAllProvidersDoesNotRunCostScanOnFastPath(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+
+	originalRunUsageCommand := runUsageCommandFn
+	originalRunCostCommand := runCostCommandFn
+	defer func() {
+		runUsageCommandFn = originalRunUsageCommand
+		runCostCommandFn = originalRunCostCommand
+	}()
+
+	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		argLine := strings.Join(args, " ")
+		if strings.Contains(argLine, "usage --json") {
+			return []byte(`[{"provider":"codex","source":"local","usage":{"primary":{"usedPercent":11},"secondary":{"usedPercent":22}}}]`), nil
+		}
+		return nil, errors.New("unexpected command")
+	}
+	runCostCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		t.Fatal("fast provider usage path must not run codexbar cost --json")
+		return nil, nil
+	}
+
+	parsed, err := FetchAllProviders(context.Background())
+	if err != nil {
+		t.Fatalf("fetch all providers: %v", err)
+	}
+	if len(parsed) != 1 || parsed[0].Frame.Session != 11 || parsed[0].Frame.TotalTokens != 0 {
+		t.Fatalf("expected fast usage without token totals, got %#v", parsed)
+	}
+}
+
 func TestFetchAllProvidersKeepsMixedJSONOnNonzeroExitWithoutFallback(t *testing.T) {
 	stubSupportedCodexBarVersion(t)
 
@@ -1558,8 +1590,10 @@ func TestFetchProviderUsesProviderScopedUsage(t *testing.T) {
 	stubSupportedCodexBarVersion(t)
 
 	originalRunUsageCommand := runUsageCommandFn
+	originalRunCostCommand := runCostCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
+		runCostCommandFn = originalRunCostCommand
 	}()
 
 	t.Setenv("CODEXBAR_BIN", "/bin/sh")
@@ -1570,6 +1604,10 @@ func TestFetchProviderUsesProviderScopedUsage(t *testing.T) {
 			return []byte(`[{"provider":"claude","source":"web","usage":{"primary":{"usedPercent":17,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":31}}}]`), nil
 		}
 		return nil, errors.New("unexpected command")
+	}
+	runCostCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		t.Fatal("provider-scoped fast usage path must not run codexbar cost --json")
+		return nil, nil
 	}
 
 	parsed, err := FetchProvider(context.Background(), "claude")

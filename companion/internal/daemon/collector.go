@@ -60,6 +60,10 @@ type providerCollector struct {
 	dashboardSnapshotFetches int
 	inventoryKnown           bool
 	inventoryEnabled         map[string]struct{}
+	tokenStatsMu             sync.Mutex
+	tokenStatsRunning        bool
+	tokenStatsCancel         context.CancelFunc
+	tokenStatsWG             sync.WaitGroup
 }
 
 func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
@@ -118,6 +122,7 @@ func (c *providerCollector) run(ctx context.Context) {
 	if c == nil {
 		return
 	}
+	defer c.shutdownTokenStatsScan()
 	c.collectOnce(ctx)
 
 	usageTicker := time.NewTicker(c.interval)
@@ -136,9 +141,57 @@ func (c *providerCollector) run(ctx context.Context) {
 				c.afterWakeCollect()
 			}
 		case <-activityTicker.C:
-			c.collectTokenStatsOnce(ctx)
+			c.requestTokenStatsScan(ctx)
 		}
 	}
+}
+
+func (c *providerCollector) requestTokenStatsScan(parent context.Context) bool {
+	if c == nil || c.fetchTokenStats == nil {
+		return false
+	}
+	if parent == nil {
+		parent = context.Background()
+	}
+
+	ctx, cancel := context.WithCancel(parent)
+	c.tokenStatsMu.Lock()
+	if c.tokenStatsRunning {
+		c.tokenStatsMu.Unlock()
+		cancel()
+		return false
+	}
+	c.tokenStatsRunning = true
+	c.tokenStatsCancel = cancel
+	c.tokenStatsWG.Add(1)
+	c.tokenStatsMu.Unlock()
+
+	go func() {
+		defer c.finishTokenStatsScan()
+		c.collectTokenStatsOnce(ctx)
+	}()
+	return true
+}
+
+func (c *providerCollector) finishTokenStatsScan() {
+	c.tokenStatsMu.Lock()
+	c.tokenStatsRunning = false
+	c.tokenStatsCancel = nil
+	c.tokenStatsMu.Unlock()
+	c.tokenStatsWG.Done()
+}
+
+func (c *providerCollector) shutdownTokenStatsScan() {
+	if c == nil {
+		return
+	}
+	c.tokenStatsMu.Lock()
+	cancel := c.tokenStatsCancel
+	c.tokenStatsMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	c.tokenStatsWG.Wait()
 }
 
 func (c *providerCollector) collectOnce(parent context.Context) {

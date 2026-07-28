@@ -2,10 +2,10 @@ package codexbar
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
 func TestParseProviderTokenStats(t *testing.T) {
@@ -96,104 +96,6 @@ func TestParseProviderTokenStatsKeepsSuccessfulZeroResult(t *testing.T) {
 	}
 }
 
-func TestMergeTokenStatsAddsFrameFields(t *testing.T) {
-	runCostCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte(`[
-			{
-				"provider":"codex",
-				"currencyCode":"USD",
-				"updatedAt":"2026-03-07T15:53:03Z",
-				"sessionTokens":1437166,
-				"last30DaysCostUSD":456.78,
-				"daily":[
-					{"date":"2026-03-01","totalTokens":180438698},
-					{"date":"2026-03-02","totalTokens":87387409},
-					{"date":"2026-03-03","totalTokens":48306362},
-					{"date":"2026-03-04","totalTokens":56780749},
-					{"date":"2026-03-05","totalTokens":426535},
-					{"date":"2026-03-06","totalTokens":9535091},
-					{"date":"2026-03-07","totalTokens":1437166,"totalCost":12.34,"modelBreakdowns":[{"modelName":"gpt-5.5","totalTokens":1437166,"cost":12.34}]}
-				],
-				"totals":{"totalTokens":1078397605}
-			}
-			]`), nil
-	}
-	t.Cleanup(func() { runCostCommandFn = runUsageCommand })
-
-	frames := []ParsedFrame{
-		{
-			Provider: "codex",
-			Frame: protocol.Frame{
-				Provider: "codex",
-				Label:    "Codex",
-				Session:  17,
-				Weekly:   42,
-			},
-		},
-		{
-			Provider: "claude",
-			Frame: protocol.Frame{
-				Provider: "claude",
-				Label:    "Claude",
-				Session:  5,
-				Weekly:   8,
-			},
-		},
-	}
-
-	merged := mergeTokenStats(context.Background(), frames, "/opt/homebrew/bin/codexbar")
-	if merged[0].Frame.SessionTokens != 1437166 {
-		t.Fatalf("expected codex session tokens, got %d", merged[0].Frame.SessionTokens)
-	}
-	if merged[0].Frame.WeekTokens != 384312010 {
-		t.Fatalf("expected codex week tokens, got %d", merged[0].Frame.WeekTokens)
-	}
-	if merged[0].Frame.TotalTokens != 1078397605 {
-		t.Fatalf("expected codex total tokens, got %d", merged[0].Frame.TotalTokens)
-	}
-	if merged[0].ActivityObservedAt.IsZero() || !merged[0].ActivityObservedAt.Equal(time.Date(2026, 3, 7, 15, 53, 3, 0, time.UTC)) {
-		t.Fatalf("expected codex activity observed timestamp from cost updatedAt, got %s", merged[0].ActivityObservedAt)
-	}
-	if merged[0].Meta.Cost == nil || merged[0].Meta.Cost.TopModel != "gpt-5.5" {
-		t.Fatalf("expected cost usage metadata to merge into frame, got %+v", merged[0].Meta.Cost)
-	}
-	if merged[1].Frame.SessionTokens != 0 || merged[1].Frame.WeekTokens != 0 || merged[1].Frame.TotalTokens != 0 {
-		t.Fatalf("expected unmatched provider to remain unchanged, got %+v", merged[1].Frame)
-	}
-}
-
-func TestMergeTokenStatsReplacesPreviousValuesWithZero(t *testing.T) {
-	runCostCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte(`[
-			{
-				"provider":"codex",
-				"updatedAt":"2026-07-28T12:00:00Z",
-				"daily":[],
-				"totals":{"totalTokens":0}
-			}
-		]`), nil
-	}
-	t.Cleanup(func() { runCostCommandFn = runUsageCommand })
-
-	merged := mergeTokenStats(context.Background(), []ParsedFrame{{
-		Provider: "codex",
-		Frame: protocol.Frame{
-			Provider:      "codex",
-			Label:         "Codex",
-			SessionTokens: 10,
-			WeekTokens:    20,
-			TotalTokens:   30,
-		},
-	}}, "/opt/homebrew/bin/codexbar")
-
-	if len(merged) != 1 || merged[0].Frame.SessionTokens != 0 || merged[0].Frame.WeekTokens != 0 || merged[0].Frame.TotalTokens != 0 {
-		t.Fatalf("successful zero token stats did not replace previous counters: %+v", merged)
-	}
-	if merged[0].Meta.Cost == nil {
-		t.Fatalf("successful zero token result should keep cost result provenance: %+v", merged[0].Meta)
-	}
-}
-
 func TestFetchProviderTokenStatsReadsCodexBarCostWithoutRefresh(t *testing.T) {
 	var gotBin string
 	var gotArgs []string
@@ -224,5 +126,30 @@ func TestFetchProviderTokenStatsReadsCodexBarCostWithoutRefresh(t *testing.T) {
 	}
 	if len(gotArgs) != 2 || gotArgs[0] != "cost" || gotArgs[1] != "--json" {
 		t.Fatalf("expected codexbar cost --json without refresh, got %#v", gotArgs)
+	}
+}
+
+func TestFetchProviderTokenStatsAllowsSlowCostScan(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "codexbar")
+	script := `#!/bin/sh
+if [ "$1" = "cost" ] && [ "$2" = "--json" ]; then
+  sleep 2.1
+  printf '%s\n' '[{"provider":"codex","source":"local","updatedAt":"2026-07-28T09:00:00Z","sessionTokens":120,"last30DaysTokens":240,"totals":{"totalTokens":240}}]'
+  exit 0
+fi
+exit 64
+`
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake codexbar: %v", err)
+	}
+
+	start := time.Now()
+	stats, ok := fetchProviderTokenStats(context.Background(), bin)
+	elapsed := time.Since(start)
+	if !ok || stats["codex"].TotalTokens != 240 {
+		t.Fatalf("expected slow cost scan to return token stats, got ok=%t stats=%#v", ok, stats)
+	}
+	if elapsed <= 2*time.Second {
+		t.Fatalf("fake process should prove completion after two seconds, elapsed=%s", elapsed)
 	}
 }

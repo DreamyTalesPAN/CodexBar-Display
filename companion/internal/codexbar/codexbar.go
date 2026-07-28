@@ -248,8 +248,6 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 		return nil, wrapFetchError(classifyParseError(parseErr), parseErr)
 	}
 
-	allParsed = mergeTokenStats(ctx, allParsed, bin)
-
 	for i := range allParsed {
 		allParsed[i].Frame = allParsed[i].Frame.Normalize()
 	}
@@ -299,7 +297,6 @@ func FetchProvider(ctx context.Context, provider string) (ParsedFrame, error) {
 	if err != nil {
 		return ParsedFrame{}, err
 	}
-	parsed = mergeProviderTokenStats(ctx, parsed, bin)
 	parsed.Frame = parsed.Frame.Normalize()
 	return parsed, nil
 }

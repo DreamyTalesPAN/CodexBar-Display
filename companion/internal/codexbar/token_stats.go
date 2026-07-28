@@ -7,11 +7,9 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
-const tokenStatsCommandTimeout = 2 * time.Second
+const tokenStatsCommandTimeout = 60 * time.Second
 
 type ProviderTokenStats struct {
 	SessionTokens int64
@@ -35,65 +33,6 @@ func FetchProviderTokenStats(ctx context.Context) (map[string]ProviderTokenStats
 		return nil, false
 	}
 	return fetchProviderTokenStats(ctx, bin)
-}
-
-func mergeTokenStats(ctx context.Context, parsed []ParsedFrame, bin string) []ParsedFrame {
-	statsByProvider, ok := fetchProviderTokenStats(ctx, bin)
-	if !ok || len(statsByProvider) == 0 || len(parsed) == 0 {
-		return parsed
-	}
-
-	out := make([]ParsedFrame, len(parsed))
-	copy(out, parsed)
-	for i := range out {
-		key := providerKey(out[i])
-		if key == "" {
-			key = strings.TrimSpace(strings.ToLower(out[i].Frame.Provider))
-		}
-		stats, ok := statsByProvider[key]
-		if !ok || !stats.HasAny() {
-			continue
-		}
-		applyTokenStatsToFrame(&out[i].Frame, stats)
-		if stats.Cost != nil {
-			out[i].Meta.Cost = stats.Cost
-		}
-		if !stats.UpdatedAt.IsZero() {
-			out[i].ActivityObservedAt = stats.UpdatedAt.UTC()
-		}
-	}
-	return out
-}
-
-func mergeProviderTokenStats(ctx context.Context, parsed ParsedFrame, bin string) ParsedFrame {
-	statsByProvider, ok := fetchProviderTokenStats(ctx, bin)
-	if !ok || len(statsByProvider) == 0 {
-		return parsed
-	}
-
-	key := providerKey(parsed)
-	if key == "" {
-		key = strings.TrimSpace(strings.ToLower(parsed.Frame.Provider))
-	}
-	stats, ok := statsByProvider[key]
-	if !ok || !stats.HasAny() {
-		return parsed
-	}
-
-	applyTokenStatsToFrame(&parsed.Frame, stats)
-	if stats.Cost != nil {
-		parsed.Meta.Cost = stats.Cost
-	}
-	if !stats.UpdatedAt.IsZero() {
-		parsed.ActivityObservedAt = stats.UpdatedAt.UTC()
-	}
-	return parsed
-}
-
-func applyTokenStatsToFrame(frame *protocol.Frame, stats ProviderTokenStats) {
-	frame.SessionTokens = stats.SessionTokens
-	frame.WeekTokens = stats.WeekTokens
-	frame.TotalTokens = stats.TotalTokens
 }
 
 func fetchProviderTokenStats(ctx context.Context, bin string) (map[string]ProviderTokenStats, bool) {
