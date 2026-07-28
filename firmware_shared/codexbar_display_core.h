@@ -17,12 +17,45 @@ namespace core {
 
 constexpr size_t kFrameLineBufferBytes = 2048;
 
+// How long a collected reset deadline stays trustworthy without fresh data.
+// Mirrors protocol.ResetTrustHorizon on the host side.
+constexpr int64_t kResetTrustHorizonSecs = 5 * 60 * 60;
+
+// A basis older than this is no longer "live", no matter what the host claimed.
+// The host is required to send at least every 60 seconds, so this allows two
+// missed sends before the device downgrades the state it shows.
+constexpr int64_t kResetLiveMaxAgeSecs = 150;
+
+// A self-initiated restart costs boot plus WiFi association time that the
+// device cannot measure without a wall clock. Charged to the restored deadline
+// so a handover can only ever under-report the remaining time.
+constexpr int64_t kResetRestartDowntimeSecs = 30;
+
+// Trust in the reset deadline. The device has no wall clock, so every value is
+// a seconds count valid at the instant a frame arrived and ticked down with the
+// device's own monotonic clock. The host value is the best case; the device
+// re-evaluates it locally and may only downgrade it, never upgrade it.
+enum class ResetTrust : uint8_t {
+  kUnknown = 0,  // frame predates the trust contract: legacy local countdown
+  kLive = 1,
+  kOffline = 2,
+  kStale = 3,
+};
+
 struct Frame {
   String provider;
   String label;
   int session = 0;
   int weekly = 0;
   int64_t resetSecs = 0;
+  // Freshness contract fields. `resetAgeSecs` is not parsed: it is exactly
+  // `kResetTrustHorizonSecs - resetTrustSecs`, so the device derives it.
+  int64_t resetTrustSecs = 0;
+  String resetSource;
+  ResetTrust resetTrust = ResetTrust::kUnknown;
+  // False for frames that say nothing about the deadline (a ThemeSpec-only
+  // apply frame, for example). Those must not change the stored trust state.
+  bool hasResetFields = false;
   bool usageUnavailable = false;
   bool sessionUnavailable = false;
   bool weeklyUnavailable = false;
@@ -54,11 +87,25 @@ struct Frame {
   String error;
 };
 
+// The deadline the device is willing to stand behind, anchored to the device's
+// own monotonic clock. Everything the renderer shows for `reset` is derived
+// from this, so a countdown the device cannot justify cannot reach a theme.
+struct ResetTrustState {
+  bool hasDeadline = false;
+  // True once a contract-aware frame was seen: the trust budget is enforced.
+  // Legacy frames keep the old unbounded local countdown.
+  bool enforced = false;
+  bool hostLive = false;
+  int64_t deadlineSecs = 0;  // remaining at baseMillis
+  int64_t trustSecs = 0;     // remaining budget at baseMillis, if enforced
+  unsigned long baseMillis = 0;
+  String source;
+};
+
 struct RuntimeState {
   Frame current;
   bool hasFrame = false;
-  unsigned long resetBaseMillis = 0;
-  int64_t resetBaseSecs = 0;
+  ResetTrustState reset;
   String cachedThemeId;
   int cachedThemeRev = 0;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
@@ -99,20 +146,76 @@ inline int64_t ClampNonNegativeInt64(int64_t value) {
   return value;
 }
 
-inline int64_t CurrentRemainingSecs(const RuntimeState& state, unsigned long nowMillis) {
-  if (!state.hasFrame) {
-    return 0;
-  }
-  const unsigned long elapsedMillis = nowMillis - state.resetBaseMillis;
-  const int64_t elapsedSecs = static_cast<int64_t>(elapsedMillis / 1000UL);
-  const int64_t remain = state.resetBaseSecs - elapsedSecs;
-  if (remain < 0) {
-    return 0;
-  }
-  return remain;
+inline int64_t ResetElapsedSecs(const ResetTrustState& state, unsigned long nowMillis) {
+  return static_cast<int64_t>((nowMillis - state.baseMillis) / 1000UL);
 }
 
-inline bool IsSafeActivityName(const String& value) {
+// Remaining time on the stored deadline. Clamped at zero: passing the deadline
+// while offline never wraps into a fabricated new cycle.
+inline int64_t ResetDeadlineSecs(const ResetTrustState& state, unsigned long nowMillis) {
+  if (!state.hasDeadline) {
+    return 0;
+  }
+  const int64_t remain = state.deadlineSecs - ResetElapsedSecs(state, nowMillis);
+  return remain > 0 ? remain : 0;
+}
+
+// Remaining trust budget. Legacy frames carry none, so they keep the full
+// horizon and behave exactly as before this contract existed.
+inline int64_t ResetTrustBudgetSecs(const ResetTrustState& state, unsigned long nowMillis) {
+  if (!state.enforced) {
+    return kResetTrustHorizonSecs;
+  }
+  const int64_t remain = state.trustSecs - ResetElapsedSecs(state, nowMillis);
+  return remain > 0 ? remain : 0;
+}
+
+// Age of the basis, the wall-clock-free form of "last fresh at".
+inline int64_t ResetBasisAgeSecs(const ResetTrustState& state, unsigned long nowMillis) {
+  return kResetTrustHorizonSecs - ResetTrustBudgetSecs(state, nowMillis);
+}
+
+inline ResetTrust CurrentResetTrust(const ResetTrustState& state, unsigned long nowMillis) {
+  if (!state.hasDeadline ||
+      ResetDeadlineSecs(state, nowMillis) <= 0 ||
+      ResetTrustBudgetSecs(state, nowMillis) <= 0) {
+    return ResetTrust::kStale;
+  }
+  if (!state.enforced) {
+    return ResetTrust::kUnknown;
+  }
+  if (!state.hostLive || ResetBasisAgeSecs(state, nowMillis) > kResetLiveMaxAgeSecs) {
+    return ResetTrust::kOffline;
+  }
+  return ResetTrust::kLive;
+}
+
+inline const char* ResetTrustName(ResetTrust trust) {
+  switch (trust) {
+    case ResetTrust::kLive:
+      return "live";
+    case ResetTrust::kOffline:
+      return "offline";
+    case ResetTrust::kStale:
+      return "stale";
+    default:
+      return "unknown";
+  }
+}
+
+// The single value every reset rendering path reads. A stale basis yields zero,
+// which the ThemeSpec renderer already turns into the unavailable marker, so no
+// theme can put an unbacked number on screen.
+inline int64_t CurrentRemainingSecs(const RuntimeState& state, unsigned long nowMillis) {
+  if (!state.hasFrame || CurrentResetTrust(state.reset, nowMillis) == ResetTrust::kStale) {
+    return 0;
+  }
+  return ResetDeadlineSecs(state.reset, nowMillis);
+}
+
+// `allowSourceChars` adds the separators a reset source identity may use
+// (`provider:window`), matching protocol.normalizeResetSource on the host.
+inline bool IsSafeIdentifier(const String& value, bool allowSourceChars) {
   const size_t len = value.length();
   if (len == 0 || len > 31) {
     return false;
@@ -122,11 +225,134 @@ inline bool IsSafeActivityName(const String& value) {
     const bool valid = (c >= 'a' && c <= 'z') ||
                        (c >= '0' && c <= '9') ||
                        c == '_' ||
-                       c == '-';
+                       c == '-' ||
+                       (allowSourceChars && (c == ':' || c == '.'));
     if (!valid) {
       return false;
     }
   }
+  return true;
+}
+
+inline bool IsSafeActivityName(const String& value) {
+  return IsSafeIdentifier(value, false);
+}
+
+inline ResetTrust ParseResetTrustName(const String& value) {
+  if (value == "live") {
+    return ResetTrust::kLive;
+  }
+  if (value == "offline") {
+    return ResetTrust::kOffline;
+  }
+  if (value == "stale") {
+    return ResetTrust::kStale;
+  }
+  return ResetTrust::kUnknown;
+}
+
+// Re-anchors the stored deadline to this frame. A reset-bearing frame always
+// replaces the basis instead of extending it, so a changed `resetSource` can
+// never inherit the previous countdown.
+inline void ApplyFrameResetTrust(ResetTrustState& state, const Frame& frame, unsigned long nowMillis) {
+  if (frame.hasError || !frame.hasResetFields) {
+    return;
+  }
+
+  const bool enforced = frame.resetTrust != ResetTrust::kUnknown;
+  int64_t deadlineSecs = frame.resetSecs;
+  int64_t trustSecs = enforced ? frame.resetTrustSecs : 0;
+
+  // Downgrade only. An offline frame is a resend of data the device already
+  // has, so it may never hand back more deadline or more budget than the
+  // device is still counting down for that same source. Only a live frame
+  // refreshes the basis.
+  if (enforced && frame.resetTrust == ResetTrust::kOffline &&
+      state.enforced && state.hasDeadline && state.source == frame.resetSource) {
+    const int64_t heldDeadline = ResetDeadlineSecs(state, nowMillis);
+    const int64_t heldTrust = ResetTrustBudgetSecs(state, nowMillis);
+    if (deadlineSecs > heldDeadline) {
+      deadlineSecs = heldDeadline;
+    }
+    if (trustSecs > heldTrust) {
+      trustSecs = heldTrust;
+    }
+  }
+
+  // An unattributable deadline is stale: without a source the device cannot
+  // tell whether the next frame is even the same countdown.
+  const bool usable = deadlineSecs > 0 &&
+                      frame.resetTrust != ResetTrust::kStale &&
+                      (!enforced || (trustSecs > 0 && frame.resetSource.length() > 0));
+
+  state = ResetTrustState{};
+  state.enforced = enforced;
+  state.baseMillis = nowMillis;
+  if (!usable) {
+    return;
+  }
+  state.hasDeadline = true;
+  state.hostLive = frame.resetTrust == ResetTrust::kLive;
+  state.deadlineSecs = deadlineSecs;
+  state.trustSecs = trustSecs;
+  state.source = frame.resetSource;
+}
+
+// Handover record for a self-initiated restart: "1 <deadline> <budget> <src>".
+// Empty means there is nothing worth handing over. Only an enforced basis is
+// persisted; a legacy countdown has no budget and must not survive a restart
+// as an unbounded one.
+inline String EncodeResetTrustRecord(const ResetTrustState& state, unsigned long nowMillis) {
+  const int64_t deadlineSecs = ResetDeadlineSecs(state, nowMillis);
+  const int64_t trustSecs = ResetTrustBudgetSecs(state, nowMillis);
+  if (!state.enforced || !state.hasDeadline || deadlineSecs <= 0 || trustSecs <= 0) {
+    return String();
+  }
+  String out = "1 ";
+  out += String(static_cast<long>(deadlineSecs));
+  out += " ";
+  out += String(static_cast<long>(trustSecs));
+  out += " ";
+  out += state.source;
+  return out;
+}
+
+// `downtimeSecs` is charged to both counters because the device cannot measure
+// the gap across a restart. A restored basis is never `live`: no frame has
+// arrived yet.
+inline bool DecodeResetTrustRecord(
+    const String& raw,
+    int64_t downtimeSecs,
+    unsigned long nowMillis,
+    ResetTrustState& out) {
+  out = ResetTrustState{};
+  const int firstSpace = raw.indexOf(' ');
+  const int secondSpace = firstSpace < 0 ? -1 : raw.indexOf(' ', firstSpace + 1);
+  const int thirdSpace = secondSpace < 0 ? -1 : raw.indexOf(' ', secondSpace + 1);
+  if (thirdSpace < 0 || raw.substring(0, firstSpace) != "1") {
+    return false;
+  }
+
+  String source = raw.substring(thirdSpace + 1);
+  source.trim();
+  if (!IsSafeIdentifier(source, true)) {
+    return false;
+  }
+  const int64_t deadlineSecs =
+      static_cast<int64_t>(raw.substring(firstSpace + 1, secondSpace).toInt()) - downtimeSecs;
+  const int64_t trustSecs =
+      static_cast<int64_t>(raw.substring(secondSpace + 1, thirdSpace).toInt()) - downtimeSecs;
+  if (deadlineSecs <= 0 || trustSecs <= 0 || trustSecs > kResetTrustHorizonSecs) {
+    return false;
+  }
+
+  out.hasDeadline = true;
+  out.enforced = true;
+  out.hostLive = false;
+  out.deadlineSecs = deadlineSecs;
+  out.trustSecs = trustSecs;
+  out.baseMillis = nowMillis;
+  out.source = source;
   return true;
 }
 
@@ -453,6 +679,26 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
     }
   }
 
+  // Reset freshness. A frame that carries neither a deadline nor a trust state
+  // says nothing about the countdown and must leave the stored basis alone.
+  ResetTrust resetTrust = ResetTrust::kUnknown;
+  String resetSource;
+  if (doc["resetTrust"].is<const char*>()) {
+    String raw = String(doc["resetTrust"].as<const char*>());
+    raw.trim();
+    raw.toLowerCase();
+    resetTrust = ParseResetTrustName(raw);
+  }
+  if (doc["resetSource"].is<const char*>()) {
+    resetSource = String(doc["resetSource"].as<const char*>());
+    resetSource.trim();
+    resetSource.toLowerCase();
+    if (!IsSafeIdentifier(resetSource, true)) {
+      resetSource = "";
+    }
+  }
+  const bool hasResetFields = resetTrust != ResetTrust::kUnknown || !doc["resetSecs"].isNull();
+
   String activity;
   if (doc["activity"].is<const char*>()) {
     activity = String(doc["activity"].as<const char*>());
@@ -512,6 +758,10 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   out.session = ClampPct(doc["session"] | 0);
   out.weekly = ClampPct(doc["weekly"] | 0);
   out.resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(doc["resetSecs"] | 0));
+  out.resetTrustSecs = ClampNonNegativeInt64(static_cast<int64_t>(doc["resetTrustSecs"] | 0));
+  out.resetSource = resetSource;
+  out.resetTrust = resetTrust;
+  out.hasResetFields = hasResetFields;
   out.usageUnavailable = doc["usageUnavailable"] | false;
   out.sessionUnavailable = doc["sessionUnavailable"] | false;
   out.weeklyUnavailable = doc["weeklyUnavailable"] | false;
@@ -727,8 +977,7 @@ inline bool ConsumeFrameLine(
 
   runtimeState.current = next;
   runtimeState.hasFrame = true;
-  runtimeState.resetBaseSecs = runtimeState.current.resetSecs;
-  runtimeState.resetBaseMillis = nowMillis;
+  ApplyFrameResetTrust(runtimeState.reset, next, nowMillis);
   outEvent.frameAccepted = true;
   return true;
 }

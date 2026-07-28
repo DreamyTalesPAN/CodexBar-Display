@@ -117,6 +117,40 @@ Rules:
 - All fields are additive. Firmware that does not know them keeps working
   unchanged and simply ticks `resetSecs` down as before.
 
+### Firmware enforcement
+
+Enforced in `firmware_shared/codexbar_display_core.h`. Every rendering path
+reads the countdown through `CurrentRemainingSecs`, which returns `0` for a
+stale basis, and the ThemeSpec renderer turns `0` into `Reset unavailable`. A
+theme cannot bind its way around this.
+
+- The device does not parse `resetAgeSecs`. The age is exactly
+  `kResetTrustHorizonSecs - resetTrustSecs`, so it derives it from the budget.
+- A `live` frame whose derived basis age exceeds 150 seconds is shown as
+  `offline`. The host is required to send at least every 60 seconds, so this
+  covers two missed sends before the device stops calling the value current.
+- An `offline` frame for the same `resetSource` may not hand back more deadline
+  or more budget than the device is still counting down. Only a `live` frame
+  refreshes the basis. This is the downgrade-only rule applied to resends.
+- A deadline without a `resetSource` is unattributable and therefore stale.
+- Reaching the stored deadline clamps at `0` and stays there. No new cycle is
+  ever derived locally.
+
+Restart handover, `/rt` on LittleFS, format `1 <deadlineSecs> <trustSecs>
+<resetSource>`:
+
+- Written only in the moment the firmware decides to restart, and consumed and
+  deleted once on the next boot. Two writes per deliberate restart, none per
+  frame, so a ticking countdown never touches flash.
+- Honoured only after `REASON_SOFT_RESTART`. The device has no wall clock, so
+  after a power cut or an exception it cannot know how long it was down and
+  drops the record instead of guessing.
+- A fixed 30 second restart cost is charged to both counters, so the handover
+  can only ever under-report the remaining time.
+- Only an enforced basis is persisted. A legacy countdown carries no budget and
+  must not come back as an unbounded one.
+- A restored basis is never `live`: no frame has arrived yet.
+
 ## ThemeSpec v1 (declarative)
 
 Schema:

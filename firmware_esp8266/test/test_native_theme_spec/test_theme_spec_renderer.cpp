@@ -35,6 +35,13 @@ using codexbar_display::themespec::kThemeSpecFieldReset;
 using codexbar_display::themespec::kThemeSpecFieldSession;
 using codexbar_display::themespec::kThemeSpecFieldWeekly;
 using codexbar_display::core::ConsumeFrameLine;
+using codexbar_display::core::CurrentRemainingSecs;
+using codexbar_display::core::CurrentResetTrust;
+using codexbar_display::core::DecodeResetTrustRecord;
+using codexbar_display::core::EncodeResetTrustRecord;
+using codexbar_display::core::ResetTrust;
+using codexbar_display::core::ResetTrustBudgetSecs;
+using codexbar_display::core::ResetTrustState;
 using codexbar_display::core::RuntimeState;
 using codexbar_display::core::SerialConsumeEvent;
 using codexbar_display::esp8266::ThemeSpecRuntimePolicy;
@@ -1781,6 +1788,206 @@ void testAnimatedSpriteFrameOffsetsAreIndexedOneFrameAtATime() {
   TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ShouldIndexNextAnimatedFrame(7, 8, 8));
 }
 
+// --- Reset countdown trust (#279) -------------------------------------------
+//
+// The device has no wall clock. Every expectation below is expressed in
+// millis() deltas, exactly as the firmware sees them.
+
+constexpr unsigned long kHourMs = 3600UL * 1000UL;
+
+// resetSecs 6h, budget the full 5h horizon: a fresh live basis.
+const char* kLiveResetFrame =
+    R"JSON({"v":2,"provider":"claude","label":"Claude","session":73,"weekly":45,"resetSecs":21600,"resetAgeSecs":0,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"live"})JSON";
+
+void feedLiveResetFrame(RuntimeState& state, unsigned long atMillis) {
+  SerialConsumeEvent event;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, kLiveResetFrame, atMillis, event));
+}
+
+void testResetTrustLiveFrameCountsDownLocallyForFiveHours() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kLive),
+                        static_cast<int>(CurrentResetTrust(state.reset, 1000)));
+  TEST_ASSERT_EQUAL_INT64(21600, CurrentRemainingSecs(state, 1000));
+
+  // Updates stop here. The countdown stays exact for the whole trust budget.
+  TEST_ASSERT_EQUAL_INT64(21600 - 3600, CurrentRemainingSecs(state, 1000 + kHourMs));
+  // One second short of the horizon: still exact, still shown.
+  TEST_ASSERT_EQUAL_INT64(21600 - 17999, CurrentRemainingSecs(state, 1000 + 5 * kHourMs - 1000));
+
+  // Without fresh data the host claim of "live" no longer holds.
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kOffline),
+                        static_cast<int>(CurrentResetTrust(state.reset, 1000 + kHourMs)));
+}
+
+void testResetTrustExpiredBudgetBlanksAStillRunningDeadline() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+
+  // One second past the horizon the basis is stale even though the deadline
+  // itself is still 1h out. The firmware refuses the number it cannot back.
+  const unsigned long past = 1000 + 5 * kHourMs + 1000;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, past)));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, past));
+}
+
+void testResetTrustDeadlineReachedOfflineDoesNotStartNewCycle() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* nearlyDone =
+      R"JSON({"v":2,"provider":"claude","resetSecs":60,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"offline"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, nearlyDone, 1000, event));
+  TEST_ASSERT_EQUAL_INT64(60, CurrentRemainingSecs(state, 1000));
+
+  // Passing the deadline clamps at zero and stays there instead of wrapping
+  // into an invented next window.
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, 1000 + 61UL * 1000UL));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, 1000 + 2 * kHourMs));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, 1000 + 2 * kHourMs)));
+}
+
+void testResetTrustSourceChangeNeverInheritsPreviousDeadline() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+
+  SerialConsumeEvent event;
+  const char* otherWindow =
+      R"JSON({"v":2,"provider":"claude","resetSecs":900,"resetTrustSecs":18000,"resetSource":"claude:weekly","resetTrust":"live"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, otherWindow, 2000, event));
+  TEST_ASSERT_EQUAL_INT64(900, CurrentRemainingSecs(state, 2000));
+  TEST_ASSERT_EQUAL_STRING("claude:weekly", state.reset.source.c_str());
+
+  // A stale frame for a different source leaves nothing behind either.
+  const char* staleOther =
+      R"JSON({"v":2,"provider":"codex","resetSecs":0,"resetTrustSecs":0,"resetSource":"codex:primary","resetTrust":"stale"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, staleOther, 3000, event));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, 3000));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, 3000)));
+}
+
+void testResetTrustOfflineResendCannotExtendDeadlineOrBudget() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+
+  // Two hours later the host resends the same last known good numbers without
+  // re-anchoring them. The device may only downgrade, so its own clock wins.
+  SerialConsumeEvent event;
+  const char* resend =
+      R"JSON({"v":2,"provider":"claude","resetSecs":21600,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"offline"})JSON";
+  const unsigned long later = 1000 + 2 * kHourMs;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, resend, later, event));
+  TEST_ASSERT_EQUAL_INT64(21600 - 2 * 3600, CurrentRemainingSecs(state, later));
+  TEST_ASSERT_EQUAL_INT64(18000 - 2 * 3600, ResetTrustBudgetSecs(state.reset, later));
+}
+
+void testResetTrustRecoversFromStaleWithFreshDataWithoutRestart() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+  const unsigned long stale = 1000 + 6 * kHourMs;
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, stale));
+
+  feedLiveResetFrame(state, stale);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kLive),
+                        static_cast<int>(CurrentResetTrust(state.reset, stale)));
+  TEST_ASSERT_EQUAL_INT64(21600, CurrentRemainingSecs(state, stale));
+}
+
+void testResetTrustRestartHandoverKeepsStillValidDeadline() {
+  RuntimeState before;
+  feedLiveResetFrame(before, 1000);
+
+  const unsigned long rebootAt = 1000 + kHourMs;
+  const String record = EncodeResetTrustRecord(before.reset, rebootAt);
+  TEST_ASSERT_EQUAL_STRING("1 18000 14400 claude:primary", record.c_str());
+
+  // Fresh boot: millis() restarted, and the restart gap is charged to both
+  // counters because the device cannot measure it.
+  RuntimeState after;
+  after.hasFrame = true;
+  TEST_ASSERT_TRUE(DecodeResetTrustRecord(record, 30, 5000, after.reset));
+  TEST_ASSERT_EQUAL_INT64(18000 - 30, CurrentRemainingSecs(after, 5000));
+  TEST_ASSERT_EQUAL_INT64(14400 - 30, ResetTrustBudgetSecs(after.reset, 5000));
+  TEST_ASSERT_EQUAL_STRING("claude:primary", after.reset.source.c_str());
+
+  // A restored basis is never live: no frame has arrived yet.
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kOffline),
+                        static_cast<int>(CurrentResetTrust(after.reset, 5000)));
+}
+
+void testResetTrustHandoverRefusesUntrustworthyRecords() {
+  RuntimeState state;
+  ResetTrustState restored;
+
+  // Nothing to hand over before any contract-aware frame.
+  TEST_ASSERT_EQUAL_STRING("", EncodeResetTrustRecord(state.reset, 1000).c_str());
+
+  // A legacy countdown has no budget and must not survive as an unbounded one.
+  SerialConsumeEvent event;
+  const char* legacy = R"JSON({"v":2,"provider":"codex","resetSecs":3600})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, legacy, 1000, event));
+  TEST_ASSERT_EQUAL_STRING("", EncodeResetTrustRecord(state.reset, 1000).c_str());
+
+  TEST_ASSERT_FALSE(DecodeResetTrustRecord("", 30, 1000, restored));
+  TEST_ASSERT_FALSE(DecodeResetTrustRecord("1 18000 14400", 30, 1000, restored));
+  TEST_ASSERT_FALSE(DecodeResetTrustRecord("2 18000 14400 claude:primary", 30, 1000, restored));
+  TEST_ASSERT_FALSE(DecodeResetTrustRecord("1 18000 14400 claude primary", 30, 1000, restored));
+  // Budget beyond the horizon cannot come from an honest handover.
+  TEST_ASSERT_FALSE(DecodeResetTrustRecord("1 18000 99999 claude:primary", 30, 1000, restored));
+  // Deadline already consumed by the restart gap.
+  TEST_ASSERT_FALSE(DecodeResetTrustRecord("1 20 14400 claude:primary", 30, 1000, restored));
+}
+
+void testResetTrustLegacyFrameKeepsUnboundedLocalCountdown() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* legacy = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"resetSecs":21600})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, legacy, 1000, event));
+
+  // No trust claim, so no budget: exactly the pre-contract behaviour.
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kUnknown),
+                        static_cast<int>(CurrentResetTrust(state.reset, 1000)));
+  TEST_ASSERT_EQUAL_INT64(21600 - 6 * 3600, CurrentRemainingSecs(state, 1000 + 6 * kHourMs));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, 1000 + 7 * kHourMs));
+}
+
+void testResetTrustIsUntouchedByFramesWithoutResetFields() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+
+  SerialConsumeEvent event;
+  const char* themeOnly =
+      R"JSON({"v":2,"provider":"claude","label":"Claude","themeSpec":{"v":1,"id":"mini","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"{reset}"}]}})JSON";
+  const unsigned long later = 1000 + kHourMs;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, themeOnly, later, event));
+  TEST_ASSERT_EQUAL_INT64(21600 - 3600, CurrentRemainingSecs(state, later));
+  TEST_ASSERT_EQUAL_STRING("claude:primary", state.reset.source.c_str());
+}
+
+void testStaleResetRendersUnavailableWhateverTheThemeBinds() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+  const unsigned long stale = 1000 + 6 * kHourMs;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"reset-theme","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"Reset in {reset}"},{"t":"tx","x":0,"y":20,"b":"r"}]})JSON";
+
+  FrameData frame;
+  frame.label = "Claude";
+  // Renderers never read the raw frame value; they read the enforced one.
+  frame.resetSecs = CurrentRemainingSecs(state, stale);
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(3, sink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[2].text.c_str());
+}
+
 }  // namespace
 
 // Defined in test_device_clock.cpp.
@@ -1847,5 +2054,16 @@ int main() {
   RUN_TEST(testAnimatedAssetDuePolicySkipsFilesystemWorkBetweenFrames);
   RUN_TEST(testAssetDecodeYieldPolicyBoundsLongRleWork);
   RUN_TEST(testAnimatedSpriteFrameOffsetsAreIndexedOneFrameAtATime);
+  RUN_TEST(testResetTrustLiveFrameCountsDownLocallyForFiveHours);
+  RUN_TEST(testResetTrustExpiredBudgetBlanksAStillRunningDeadline);
+  RUN_TEST(testResetTrustDeadlineReachedOfflineDoesNotStartNewCycle);
+  RUN_TEST(testResetTrustSourceChangeNeverInheritsPreviousDeadline);
+  RUN_TEST(testResetTrustOfflineResendCannotExtendDeadlineOrBudget);
+  RUN_TEST(testResetTrustRecoversFromStaleWithFreshDataWithoutRestart);
+  RUN_TEST(testResetTrustRestartHandoverKeepsStillValidDeadline);
+  RUN_TEST(testResetTrustHandoverRefusesUntrustworthyRecords);
+  RUN_TEST(testResetTrustLegacyFrameKeepsUnboundedLocalCountdown);
+  RUN_TEST(testResetTrustIsUntouchedByFramesWithoutResetFields);
+  RUN_TEST(testStaleResetRendersUnavailableWhateverTheThemeBinds);
   return UNITY_END();
 }
