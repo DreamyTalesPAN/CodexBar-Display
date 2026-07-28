@@ -68,6 +68,7 @@ import {
 } from "./theme-studio-screen";
 import { UpdatesScreen } from "./updates-screen";
 import { UsageScreen } from "./usage-screen";
+import { startUsageSurfacePolling } from "./usage-surface-polling";
 
 const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
@@ -2544,10 +2545,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setUsageError(null);
         setCompanionStatus("online");
         if (!quiet) {
+          const refreshEvent = usageRefreshEvent(payload);
           addEvent({
-            label: "Usage refreshed",
-            detail: `${payload.providers?.length || 0} provider tiles loaded.`,
-            tone: payload.providers?.length ? "ready" : "attention",
+            label: refreshEvent.label,
+            detail: refreshEvent.detail,
+            tone: refreshEvent.tone,
           });
         }
       } catch (error) {
@@ -3009,31 +3011,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
 
-    const initialTimer = window.setTimeout(() => {
-      void refreshUsage({ quiet: true });
-    }, 0);
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "hidden") {
-        return;
-      }
-      void refreshUsage({ quiet: true });
-    }, 30000);
-
-    return () => {
-      window.clearTimeout(initialTimer);
-      window.clearInterval(timer);
-    };
-  }, [activeShellTab, companionStatus, controlCenterAvailable, refreshUsage]);
-
-  useEffect(() => {
-    if (activeShellTab !== "usage" || companionStatus !== "online") {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      void refreshProviderPreferences({ quiet: true });
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [activeShellTab, companionStatus, refreshProviderPreferences]);
+    return startUsageSurfacePolling({
+      refreshUsage: () => refreshUsage({ quiet: true }),
+      refreshProviderHealth: () =>
+        refreshProviderPreferences({ quiet: true }),
+    });
+  }, [
+    activeShellTab,
+    companionStatus,
+    controlCenterAvailable,
+    refreshProviderPreferences,
+    refreshUsage,
+  ]);
 
   const renderSetupScreen = (showIntro: boolean) => (
     <SetupScreen
@@ -3310,6 +3299,49 @@ function getRuntimeSurfaceSnapshot(): RuntimeSurface {
 
 function getRuntimeSurfaceServerSnapshot(): RuntimeSurface {
   return "unknown";
+}
+
+function usageRefreshEvent(payload: UsageSnapshot): {
+  label: string;
+  detail: string;
+  tone: "ready" | "attention";
+} {
+  switch (payload.refresh?.state) {
+    case "refreshing":
+      return {
+        label: "Usage refresh started",
+        detail: "VibeTV is waiting for a new usage snapshot.",
+        tone: "attention",
+      };
+    case "rate_limited":
+      return {
+        label: "Usage refresh is waiting",
+        detail: payload.refresh.blockedUntil
+          ? `Try again after ${formatRefreshEventTime(payload.refresh.blockedUntil)}.`
+          : "The provider is temporarily limiting refreshes.",
+        tone: "attention",
+      };
+    case "unavailable":
+      return {
+        label: "Usage is still loading",
+        detail: "VibeTV will update automatically when usage is ready.",
+        tone: "attention",
+      };
+    default:
+      return {
+        label: "Usage refreshed",
+        detail: `${payload.providers?.length || 0} provider tiles loaded.`,
+        tone: payload.providers?.length ? "ready" : "attention",
+      };
+  }
+}
+
+function formatRefreshEventTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function subscribeRuntimeSurface(onStoreChange: () => void) {

@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +21,8 @@ type providerSnapshot struct {
 	Meta               codexbar.ProviderUsageMeta `json:"meta,omitempty"`
 	Collected          time.Time                  `json:"collectedAt"`
 	ActivityObservedAt time.Time                  `json:"activityObservedAt,omitempty"`
+	RateLimited        bool                       `json:"rateLimited,omitempty"`
+	RateLimitedUntil   time.Time                  `json:"rateLimitedUntil,omitempty"`
 }
 
 type persistedProviderSnapshots struct {
@@ -26,17 +30,13 @@ type persistedProviderSnapshots struct {
 	Providers []providerSnapshot `json:"providers"`
 }
 
-type retryBackoff struct {
-	base    time.Duration
-	max     time.Duration
-	current time.Duration
-}
-
 type providerCollector struct {
 	now             func() time.Time
 	logf            func(string, ...any)
 	fetchProviders  func(context.Context) ([]codexbar.ParsedFrame, error)
+	fetchDashboard  func(context.Context, codexbar.DashboardServeInfo, time.Time, int) (codexbar.DashboardFetchResult, error)
 	fetchTokenStats func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
+	dashboard       codexbar.DashboardServe
 	resolvePort     func(string) (string, error)
 	requestedPort   string
 	requestedPortFn func() string
@@ -52,6 +52,9 @@ type providerCollector struct {
 	providers        map[string]providerSnapshot
 	lastPersistedRaw string
 	lastPersistedAt  time.Time
+
+	dashboardProcessKey      string
+	dashboardSnapshotFetches int
 }
 
 func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
@@ -68,7 +71,9 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		now:             nowFn,
 		logf:            logFn,
 		fetchProviders:  deps.fetchProviders,
+		fetchDashboard:  deps.fetchDashboard,
 		fetchTokenStats: deps.fetchTokenStats,
+		dashboard:       deps.dashboard,
 		resolvePort:     deps.resolvePort,
 		requestedPort:   requestedDeviceTarget(opts),
 		transportName:   usageSourceOrDefault(deps.transportName, "usb"),
@@ -126,7 +131,7 @@ func (c *providerCollector) run(ctx context.Context) {
 }
 
 func (c *providerCollector) collectOnce(parent context.Context) {
-	if c == nil || c.fetchProviders == nil {
+	if c == nil {
 		return
 	}
 	if c.resolvePort != nil {
@@ -147,9 +152,9 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	}
 	defer cancel()
 
-	allProviders, err := c.fetchProviders(ctx)
+	allProviders, sourceMode, err := c.fetchProvidersForCollect(ctx, now)
 	if err != nil {
-		c.logf("collector fetch-all transport=%s source=codexbar fresh=false err=%v timeout=%s\n", usageSourceOrDefault(c.transportName, "usb"), err, c.timeout)
+		c.logf("collector fetch-all transport=%s source=%s fresh=false err=%v timeout=%s\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, err, c.timeout)
 		return
 	}
 
@@ -175,6 +180,12 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		if frame.UsageUnavailable {
 			lastGood, exists := c.providers[key]
 			if exists && !lastGood.Frame.UsageUnavailable {
+				if parsed.RateLimited || !parsed.RateLimitedUntil.IsZero() {
+					lastGood.RateLimited = parsed.RateLimited
+					lastGood.RateLimitedUntil = parsed.RateLimitedUntil.UTC()
+					c.providers[key] = lastGood
+					updated = true
+				}
 				if isLastGoodFreshAt(lastGood.Collected, now, c.snapshotMaxAge) {
 					continue
 				}
@@ -182,10 +193,12 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 				c.providers[key] = lastGood
 			} else if !exists {
 				c.providers[key] = providerSnapshot{
-					Provider:  key,
-					Frame:     frame,
-					Source:    strings.TrimSpace(parsed.Source),
-					Collected: parsed.CollectedAt.UTC(),
+					Provider:         key,
+					Frame:            frame,
+					Source:           strings.TrimSpace(parsed.Source),
+					Collected:        parsed.CollectedAt.UTC(),
+					RateLimited:      parsed.RateLimited,
+					RateLimitedUntil: parsed.RateLimitedUntil.UTC(),
 				}
 			}
 			updated = true
@@ -198,6 +211,11 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			Meta:               parsed.Meta,
 			Collected:          now.UTC(),
 			ActivityObservedAt: parsed.ActivityObservedAt,
+			RateLimited:        false,
+			RateLimitedUntil:   time.Time{},
+		}
+		if previous, exists := c.providers[key]; exists {
+			carryForwardSnapshotTokenStats(previous, &snapshot)
 		}
 		c.providers[key] = snapshot
 		successes++
@@ -208,7 +226,35 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	if updated {
 		c.persistIfNeeded(now)
 	}
-	c.logf("collector complete transport=%s source=codexbar fresh=true providers=%d succeeded=%d timeout=%s mode=fetch-all\n", usageSourceOrDefault(c.transportName, "usb"), len(allProviders), successes, c.timeout)
+	c.logf("collector complete transport=%s source=%s fresh=true providers=%d succeeded=%d timeout=%s mode=fetch-all\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, len(allProviders), successes, c.timeout)
+}
+
+func (c *providerCollector) fetchProvidersForCollect(ctx context.Context, now time.Time) ([]codexbar.ParsedFrame, string, error) {
+	if c.dashboard != nil && c.fetchDashboard != nil {
+		info := c.dashboard.Info()
+		processKey := dashboardServeProcessKey(info)
+		if processKey != "" {
+			if processKey != c.dashboardProcessKey {
+				c.dashboardProcessKey = processKey
+				c.dashboardSnapshotFetches = 0
+			}
+			nextFetch := c.dashboardSnapshotFetches + 1
+			result, err := c.fetchDashboard(ctx, info, now, nextFetch)
+			if err == nil {
+				c.dashboardSnapshotFetches = nextFetch
+				if result.Cold {
+					c.logf("collector dashboard-warmup source=codexbar-dashboard snapshotFetches=%d\n", c.dashboardSnapshotFetches)
+				}
+				return result.Providers, "codexbar-dashboard", nil
+			}
+			c.logf("collector dashboard-unavailable source=codexbar-dashboard fallback=usage-json err=%v\n", err)
+		}
+	}
+	if c.fetchProviders == nil {
+		return nil, "codexbar-usage-json", errors.New("usage provider fetcher unavailable")
+	}
+	providers, err := c.fetchProviders(ctx)
+	return providers, "codexbar-usage-json", err
 }
 
 func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
@@ -298,6 +344,8 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			Meta:               meta,
 			Collected:          snapshot.Collected,
 			ActivityObservedAt: activityObservedAt,
+			RateLimited:        snapshot.RateLimited,
+			RateLimitedUntil:   snapshot.RateLimitedUntil,
 		}
 		updated++
 	}
@@ -306,6 +354,30 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 	if updated > 0 {
 		c.persistIfNeeded(now)
 	}
+}
+
+func carryForwardSnapshotTokenStats(previous providerSnapshot, next *providerSnapshot) {
+	if next == nil {
+		return
+	}
+	if frameHasTokenStats(next.Frame) || next.Meta.Cost != nil {
+		return
+	}
+	prevFrame := previous.Frame.Normalize()
+	if !frameHasTokenStats(prevFrame) && previous.Meta.Cost == nil {
+		return
+	}
+	next.Frame.SessionTokens = prevFrame.SessionTokens
+	next.Frame.WeekTokens = prevFrame.WeekTokens
+	next.Frame.TotalTokens = prevFrame.TotalTokens
+	next.Meta.Cost = previous.Meta.Cost
+	if next.ActivityObservedAt.IsZero() {
+		next.ActivityObservedAt = previous.ActivityObservedAt
+	}
+}
+
+func frameHasTokenStats(frame protocol.Frame) bool {
+	return frame.SessionTokens > 0 || frame.WeekTokens > 0 || frame.TotalTokens > 0
 }
 
 func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame {
@@ -341,10 +413,19 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			Meta:               snapshot.Meta,
 			CollectedAt:        snapshot.Collected,
 			ActivityObservedAt: snapshot.ActivityObservedAt,
+			RateLimited:        snapshot.RateLimited,
+			RateLimitedUntil:   snapshot.RateLimitedUntil,
 			Stale:              frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
 		})
 	}
 	return frames
+}
+
+func (c *providerCollector) dashboardInfo() codexbar.DashboardServeInfo {
+	if c == nil || c.dashboard == nil {
+		return codexbar.DashboardServeInfo{}
+	}
+	return c.dashboard.Info()
 }
 
 func (c *providerCollector) resolveRequestedPort() string {
@@ -419,43 +500,10 @@ func (c *providerCollector) persistIfNeeded(now time.Time) {
 	c.lastPersistedAt = now
 }
 
-func newRetryBackoff(interval time.Duration) *retryBackoff {
-	max := 30 * time.Second
-	if interval > 0 && interval < max {
-		max = interval
+func dashboardServeProcessKey(info codexbar.DashboardServeInfo) string {
+	endpoint := strings.TrimSpace(info.Endpoint)
+	if endpoint == "" || !info.Running {
+		return ""
 	}
-	if max <= 0 {
-		max = time.Second
-	}
-	base := time.Second
-	if max < base {
-		base = max
-	}
-	return &retryBackoff{
-		base: base,
-		max:  max,
-	}
-}
-
-func (b *retryBackoff) Next() time.Duration {
-	if b == nil {
-		return time.Second
-	}
-	if b.current <= 0 {
-		b.current = b.base
-		return b.current
-	}
-	next := b.current * 2
-	if next > b.max {
-		next = b.max
-	}
-	b.current = next
-	return b.current
-}
-
-func (b *retryBackoff) Reset() {
-	if b == nil {
-		return
-	}
-	b.current = 0
+	return endpoint + "#" + strconv.Itoa(info.PID)
 }

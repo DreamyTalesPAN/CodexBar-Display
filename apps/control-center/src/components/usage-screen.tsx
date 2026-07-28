@@ -105,6 +105,7 @@ export function UsageScreen({
     usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);
   const tokenUsageLoading =
     companionStatus === "online" && !usageError && !tokenUsageReady;
+  const refreshNotice = usageRefreshNotice(usage?.refresh);
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -129,6 +130,13 @@ export function UsageScreen({
                 </Button>
               ) : null}
             </AlertDescription>
+          </Alert>
+        ) : null}
+        {refreshNotice ? (
+          <Alert className="mb-6 bg-muted">
+            {refreshNotice.tone === "attention" ? <AlertTriangle /> : <Info />}
+            <AlertTitle>{refreshNotice.title}</AlertTitle>
+            <AlertDescription>{refreshNotice.description}</AlertDescription>
           </Alert>
         ) : null}
 
@@ -166,6 +174,48 @@ export function UsageScreen({
       </section>
     </div>
   );
+}
+
+function usageRefreshNotice(refresh: UsageSnapshot["refresh"] | undefined) {
+  switch (refresh?.state) {
+    case "refreshing":
+      return {
+        tone: "info" as const,
+        title: "Refreshing usage",
+        description:
+          "Current values stay visible while VibeTV waits for a new usage snapshot.",
+      };
+    case "rate_limited": {
+      const until = formatBlockedUntil(refresh.blockedUntil);
+      return {
+        tone: "attention" as const,
+        title: "Refresh is temporarily limited",
+        description: until
+          ? `Current values stay visible. Try again after ${until}.`
+          : "Current values stay visible. VibeTV will refresh again when the provider allows it.",
+      };
+    }
+    case "unavailable":
+      return {
+        tone: "attention" as const,
+        title: "Usage is still loading",
+        description:
+          "Keep this page open. VibeTV updates automatically when usage is ready.",
+      };
+    default:
+      return null;
+  }
+}
+
+function formatBlockedUntil(value: string | undefined) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function ProviderPreferencesPanel({

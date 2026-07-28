@@ -188,13 +188,13 @@ func TestProbeProviderSetupReportsReadyProvider(t *testing.T) {
 	t.Setenv("CODEXBAR_BIN", bin)
 	t.Setenv("CODEXBAR_CONFIG", "")
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.44.0"), nil
+		return []byte("CodexBar 0.45.2"), nil
 	}
 	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
 		return []byte(`[{"provider":"codex","usage":{"primary":{"usedPercent":0}}}]`), nil
 	}
 	got := ProbeProviderSetup(context.Background(), t.TempDir())
-	if got.Status != ProviderReady || got.Engine.Status != ProviderReady || got.Engine.Version != "0.44" {
+	if got.Status != ProviderReady || got.Engine.Status != ProviderReady || got.Engine.Version != "0.45.2" {
 		t.Fatalf("unexpected ready probe: %+v", got)
 	}
 	if len(got.Providers) != 1 || !got.Providers[0].Enabled || got.Providers[0].Status != ProviderReady {

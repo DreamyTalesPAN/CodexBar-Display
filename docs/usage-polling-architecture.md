@@ -12,6 +12,27 @@ Keep firmware dumb and mirror CodexBar desktop values on the device, while keepi
 - Refresh loop: <https://github.com/steipete/CodexBar/blob/main/docs/refresh-loop.md>
 - Status polling: <https://github.com/steipete/CodexBar/blob/main/docs/status.md>
 
+## Manual Refresh And Rate Limits
+
+Control Center manual refresh requests do not start a second CodexBar fetch path.
+They wake the existing display-stream collector and report an explicit refresh
+state at `/v1/usage`:
+
+- `refreshing`: the collector has not produced a snapshot at or after the user
+  request yet; last-good values remain visible.
+- `rate_limited`: CodexBar reported a provider rate limit; last-good values
+  remain visible.
+- `fresh`: at least one collector snapshot is fresh for the current request.
+- `unavailable`: no usable collector snapshot exists yet.
+
+`blockedUntil` is preserved only when CodexBar exposes a real timestamp in the
+provider error payload, for example `error.blockedUntil` or `error.retryAfter`.
+CodexBar `0.45.2` keeps the Claude CLI gate timestamp in `UserDefaults` but its
+`ProviderErrorPayload`, `codexbar usage --json`, and `/dashboard/v1/snapshot`
+JSON contracts expose only `code`, `message`, and `kind`. VibeTV therefore does
+not synthesize `now + cooldown`; when `0.45.2` only emits the rate-limit message,
+the API returns `rate_limited` without `blockedUntil`.
+
 Primary commands used by companion:
 
 - Aggregated usage: `codexbar usage --json --web-timeout 8`

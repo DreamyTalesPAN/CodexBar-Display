@@ -436,8 +436,8 @@ main() {
   [[ ! -e "${app}/Contents/Resources/companion" ]] \
     || die "Mach-O helpers must not be stored in the Resources directory"
   assert_file "${app}/Contents/Resources/VibeTVControlCenter.icns"
-  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-macos-universal-0.44.0.zip"
-  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-v0.44.0.manifest.json"
+  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-macos-universal-0.45.2.zip"
+  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-v0.45.2.manifest.json"
   assert_file "${app}/Contents/Resources/CodexBar/CodexBar-LICENSE.txt"
   assert_file "${app}/Contents/Library/LaunchAgents/shop.vibetv.control-center.runtime.plist"
   assert_file "${app}/Contents/Frameworks/Sparkle.framework/README.txt"
@@ -670,10 +670,10 @@ required_source = [
     "button.intrinsicContentSize.width + 32",
     "button.widthAnchor.constraint(equalToConstant: shadcnButtonWidth)",
     'codexBarBundleIdentifier = "com.steipete.codexbar"',
-    'codexBarPinnedVersion = "0.44.0"',
+    'codexBarPinnedVersion = "0.45.2"',
     'codexBarMinimumCompatibleVersion = "0.23.0"',
     'codexBarPinnedTeamIdentifier = "Y5PE65HELJ"',
-    'CodexBar-macos-universal-0.44.0.zip',
+    'CodexBar-macos-universal-0.45.2.zip',
     'bootstrapCodexBar()',
     'arguments: ["--verify", "--deep", "--strict", "--verbose=2", appURL.path]',
     'arguments: ["--assess", "--type", "execute", "--verbose=4", appURL.path]',
@@ -1018,9 +1018,9 @@ PY
     || die "Sparkle distribution version must stay pinned"
   grep -qF 'SHA256="1cb340cbbef04c6c0d162078610c25e2221031d794a3449d89f2f56f4df77c95"' "${ROOT}/scripts/fetch-sparkle.sh" \
     || die "Sparkle distribution checksum must stay pinned"
-  grep -qF 'VERSION="0.44.0"' "${ROOT}/scripts/fetch-codexbar.sh" \
+  grep -qF 'VERSION="0.45.2"' "${ROOT}/scripts/fetch-codexbar.sh" \
     || die "CodexBar distribution version must stay pinned"
-  grep -qF 'SHA256="958c4b3fc64367d833b6e26df98d262b16384a52dcf6b8181f9b98091505671f"' "${ROOT}/scripts/fetch-codexbar.sh" \
+  grep -qF 'SHA256="0a488ffafe991e8cbb93a48fa03fc8ba0fd1a40e6dbfe030c508382234a2f483"' "${ROOT}/scripts/fetch-codexbar.sh" \
     || die "CodexBar distribution checksum must stay pinned"
   grep -qF 'verify-bundled-codexbar.sh' "${ROOT}/.github/workflows/release.yml" \
     || die "release workflow must verify the bundled CodexBar payload"

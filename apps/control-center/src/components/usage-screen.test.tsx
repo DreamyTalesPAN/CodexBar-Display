@@ -175,4 +175,48 @@ describe("UsageScreen", () => {
     expect(html).toContain('data-slot="spinner"');
     expect(html).toContain("Refreshing</button>");
   });
+
+  it("explains that a manual refresh is still waiting for a new snapshot", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        onPreferenceChange={vi.fn()}
+        onRefresh={vi.fn()}
+        pendingPreferenceIds={new Set()}
+        preferences={[]}
+        usage={{
+          ...usage,
+          refresh: {
+            state: "refreshing",
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Refreshing usage");
+    expect(html).toContain("Current values stay visible");
+    expect(html).toContain("Codex");
+  });
+
+  it("shows rate-limit copy without inventing a retry time", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        onPreferenceChange={vi.fn()}
+        onRefresh={vi.fn()}
+        pendingPreferenceIds={new Set()}
+        preferences={[]}
+        usage={{
+          ...usage,
+          refresh: {
+            state: "rate_limited",
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Refresh is temporarily limited");
+    expect(html).toContain("provider allows it");
+    expect(html).not.toContain("Try again after");
+  });
 });

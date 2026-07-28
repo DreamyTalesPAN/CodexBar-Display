@@ -1590,7 +1590,7 @@ func TestStatusReportsMacAppUpdateCheckFailure(t *testing.T) {
 	}
 }
 
-func TestUsageReturnsPersistedProviderSnapshots(t *testing.T) {
+func TestUsageReturnsCollectorSnapshotsWithDynamicWindows(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	collectedAt := time.Date(2026, 6, 26, 11, 59, 0, 0, time.UTC)
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
@@ -1656,11 +1656,6 @@ func TestUsageReturnsPersistedProviderSnapshots(t *testing.T) {
 			},
 		}, true
 	}
-	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
-		t.Fatal("fetchUsage should not run when snapshots are present")
-		return nil, nil
-	}
-
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
 	server.Handler().ServeHTTP(rec, req)
@@ -1782,7 +1777,7 @@ func TestUsageHonorsCodexBarRemainingPreference(t *testing.T) {
 	}
 }
 
-func TestUsageRefreshBypassesPersistedSnapshotAndCachesFreshResult(t *testing.T) {
+func TestUsageRefreshReadsCollectorSnapshotWithoutDirectFetch(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 20, 14, 0, 0, 0, time.UTC)
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
@@ -1792,26 +1787,16 @@ func TestUsageRefreshBypassesPersistedSnapshotAndCachesFreshResult(t *testing.T)
 				Provider: "codex",
 				Frame:    protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used", SessionTokens: 1234, WeekTokens: 5678, TotalTokens: 9000},
 				Meta: codexbar.ProviderUsageMeta{
-					Windows: []codexbar.UsageWindow{{ID: "secondary", Label: "Weekly", UsedPercent: 36}},
-					Cost:    &codexbar.ProviderCostUsage{Daily: []codexbar.ProviderCostDay{{Day: "2026-07-20", TotalTokens: 1234}}},
+					Windows: []codexbar.UsageWindow{
+						{ID: "secondary", Label: "Weekly", UsedPercent: 36},
+						{ID: "codex-spark-weekly", Label: "Codex Spark Weekly", UsedPercent: 0, WindowMinutes: 10080},
+					},
+					Cost: &codexbar.ProviderCostUsage{Daily: []codexbar.ProviderCostDay{{Day: "2026-07-20", TotalTokens: 1234}}},
 				},
 				CollectedAt: now,
 			}},
 		}, true
 	}
-	fetches := 0
-	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
-		fetches++
-		return []codexbar.ParsedFrame{{
-			Provider: "codex",
-			Frame:    protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used"},
-			Meta: codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{
-				{ID: "secondary", Label: "Weekly", UsedPercent: 36},
-				{ID: "codex-spark-weekly", Label: "Codex Spark Weekly", UsedPercent: 0, WindowMinutes: 10080},
-			}},
-		}}, nil
-	}
-
 	for _, path := range []string{"/v1/usage?refresh=1", "/v1/usage"} {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -1833,12 +1818,188 @@ func TestUsageRefreshBypassesPersistedSnapshotAndCachesFreshResult(t *testing.T)
 			t.Fatalf("expected persisted cost history for %s, got %+v", path, got.Providers[0].Cost)
 		}
 	}
-	if fetches != 1 {
-		t.Fatalf("expected one direct fetch followed by cached usage, got %d", fetches)
+}
+
+func TestUsageManualRefreshReportsRefreshingForOldCollectorSnapshot(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	var wakeCount int
+	server.wakeDisplayStream = func() { wakeCount++ }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now.Add(-time.Minute),
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used"},
+				CollectedAt: now.Add(-time.Minute),
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if wakeCount != 1 {
+		t.Fatalf("manual refresh must wake the collector path once, got %d", wakeCount)
+	}
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Refresh.State != "refreshing" || len(got.Providers) != 1 || got.Providers[0].Weekly != 36 {
+		t.Fatalf("expected refreshing with last-good values, got %+v", got)
 	}
 }
 
-func TestUsageCachePicksUpTokenHistoryCollectedAfterFirstResponse(t *testing.T) {
+func TestUsageManualRefreshReportsFreshForNewCollectorSnapshot(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42, UsageMode: "used"},
+				CollectedAt: now,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if rec.Code != http.StatusOK || got.Refresh.State != "fresh" || got.Providers[0].Weekly != 42 {
+		t.Fatalf("expected fresh manual refresh response, status=%d got %+v", rec.Code, got)
+	}
+}
+
+func TestUsageManualRefreshReportsRateLimitAndBlockedUntil(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	blockedUntil := now.Add(2 * time.Minute)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now.Add(-time.Minute),
+			CurrentProvider: "claude",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:         "claude",
+				Frame:            protocol.Frame{Provider: "claude", Label: "Claude", Session: 64, UsageMode: "used"},
+				CollectedAt:      now.Add(-time.Minute),
+				RateLimited:      true,
+				RateLimitedUntil: blockedUntil,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if rec.Code != http.StatusOK || got.Refresh.State != "rate_limited" {
+		t.Fatalf("expected rate-limited response, status=%d got %+v", rec.Code, got)
+	}
+	if got.Refresh.BlockedUntil != blockedUntil.Format(time.RFC3339) || got.Providers[0].BlockedUntil != blockedUntil.Format(time.RFC3339) {
+		t.Fatalf("expected exact blockedUntil to be exposed, got refresh=%+v provider=%+v", got.Refresh, got.Providers[0])
+	}
+	if got.Providers[0].Session != 64 {
+		t.Fatalf("expected last-good value to remain visible, got %+v", got.Providers[0])
+	}
+}
+
+func TestUsageRefreshRateLimitWithoutBlockedUntilDoesNotInventTimestamp(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now.Add(-time.Minute),
+			CurrentProvider: "claude",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "claude",
+				Frame:       protocol.Frame{Provider: "claude", Label: "Claude", Session: 64, UsageMode: "used"},
+				CollectedAt: now.Add(-time.Minute),
+				RateLimited: true,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Refresh.State != "rate_limited" || got.Refresh.BlockedUntil != "" || got.Providers[0].BlockedUntil != "" {
+		t.Fatalf("expected rate limit without invented blockedUntil, got %+v provider=%+v", got.Refresh, got.Providers[0])
+	}
+}
+
+func TestUsageRefreshStateClearsAfterRecovery(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	blockedUntil := now.Add(2 * time.Minute)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	recovered := false
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		snapshot := daemon.ProviderUsageSnapshot{
+			Provider:         "claude",
+			Frame:            protocol.Frame{Provider: "claude", Label: "Claude", Session: 64, UsageMode: "used"},
+			CollectedAt:      now.Add(-time.Minute),
+			RateLimited:      true,
+			RateLimitedUntil: blockedUntil,
+		}
+		if recovered {
+			snapshot.Frame.Session = 72
+			snapshot.CollectedAt = now.Add(time.Minute)
+			snapshot.RateLimited = false
+			snapshot.RateLimitedUntil = time.Time{}
+		}
+		return daemon.PersistedUsage{
+			SavedAt:         snapshot.CollectedAt,
+			CurrentProvider: "claude",
+			Providers:       []daemon.ProviderUsageSnapshot{snapshot},
+		}, true
+	}
+
+	first := httptest.NewRecorder()
+	server.Handler().ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+	recovered = true
+	second := httptest.NewRecorder()
+	server.Handler().ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(second.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if second.Code != http.StatusOK || got.Refresh.State != "fresh" || got.Refresh.BlockedUntil != "" || got.Providers[0].RateLimited {
+		t.Fatalf("expected recovery to clear rate-limit state, status=%d got %+v", second.Code, got)
+	}
+	if got.Providers[0].Session != 72 {
+		t.Fatalf("expected recovered provider value, got %+v", got.Providers[0])
+	}
+}
+
+func TestUsageRestartFreeConvergenceReadsNewCollectorSnapshot(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 	historyReady := false
@@ -1866,34 +2027,10 @@ func TestUsageCachePicksUpTokenHistoryCollectedAfterFirstResponse(t *testing.T) 
 			}},
 		}, true
 	}
-	fetches := 0
-	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
-		fetches++
-		return []codexbar.ParsedFrame{{
-			Provider: "codex",
-			Frame: protocol.Frame{
-				Provider:  "codex",
-				Label:     "Codex",
-				Weekly:    36,
-				UsageMode: "used",
-			},
-		}}, nil
-	}
-
 	first := httptest.NewRecorder()
-	server.Handler().ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
-	if first.Code != http.StatusOK {
-		t.Fatalf("expected first response 200, got %d body=%s", first.Code, first.Body.String())
-	}
-	var initial usageResponse
-	if err := json.Unmarshal(first.Body.Bytes(), &initial); err != nil {
-		t.Fatalf("decode first response: %v", err)
-	}
-	if len(initial.Providers) != 1 || initial.Providers[0].Cost != nil {
-		t.Fatalf("expected initial response without history, got %+v", initial.Providers)
-	}
-	if initial.TokenUsageReady {
-		t.Fatalf("expected initial response to keep token usage loading: %+v", initial)
+	server.Handler().ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if first.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected initial loading status 503, got %d body=%s", first.Code, first.Body.String())
 	}
 
 	historyReady = true
@@ -1907,47 +2044,13 @@ func TestUsageCachePicksUpTokenHistoryCollectedAfterFirstResponse(t *testing.T) 
 		t.Fatalf("decode second response: %v", err)
 	}
 	if len(enriched.Providers) != 1 || enriched.Providers[0].Cost == nil || len(enriched.Providers[0].Cost.Daily) != 1 {
-		t.Fatalf("expected cached response enriched with collected history, got %+v", enriched.Providers)
+		t.Fatalf("expected collector response enriched with collected history, got %+v", enriched.Providers)
 	}
 	if enriched.Providers[0].SessionTokens != 1234 || enriched.Providers[0].WeekTokens != 5678 || enriched.Providers[0].TotalTokens != 9000 {
-		t.Fatalf("expected cached response enriched with token totals, got %+v", enriched.Providers[0])
+		t.Fatalf("expected collector response enriched with token totals, got %+v", enriched.Providers[0])
 	}
 	if !enriched.TokenUsageReady {
 		t.Fatalf("expected enriched response to mark token usage ready: %+v", enriched)
-	}
-	if fetches != 1 {
-		t.Fatalf("expected cached second response without another direct fetch, got %d fetches", fetches)
-	}
-}
-
-func TestMergePersistedUsageDetailsKeepsSuccessfulZeroResult(t *testing.T) {
-	fresh := usageResponse{
-		Providers: []usageProviderInfo{{
-			ID:   "codex",
-			Cost: &usageCostInfo{},
-		}},
-	}
-	persisted := usageResponse{
-		TokenUsageReady: true,
-		Providers: []usageProviderInfo{{
-			ID:            "codex",
-			SessionTokens: 1234,
-			WeekTokens:    5678,
-			TotalTokens:   9000,
-			Cost:          &usageCostInfo{Last30DaysTokens: 9000},
-		}},
-	}
-
-	got := mergePersistedUsageDetails(fresh, persisted)
-	if !got.TokenUsageReady || len(got.Providers) != 1 {
-		t.Fatalf("expected successful zero result to remain ready: %+v", got)
-	}
-	provider := got.Providers[0]
-	if provider.SessionTokens != 0 || provider.WeekTokens != 0 || provider.TotalTokens != 0 {
-		t.Fatalf("persisted counters overwrote the successful zero result: %+v", provider)
-	}
-	if provider.Cost == nil || provider.Cost.Last30DaysTokens != 0 {
-		t.Fatalf("persisted history overwrote the successful zero result: %+v", provider.Cost)
 	}
 }
 
@@ -2483,50 +2586,69 @@ func TestDisplayFrameLatestReturnsNotFoundWithoutLastGoodFrame(t *testing.T) {
 	}
 }
 
-func TestUsageFallsBackToCodexBarFetchWhenSnapshotsMissing(t *testing.T) {
+func TestUsageUnavailableWhenCollectorHasNoUsableSnapshot(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
-		return daemon.PersistedUsage{}, false
-	}
-	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
-		return []codexbar.ParsedFrame{
-			{
-				Provider: "claude",
-				Source:   "web",
-				Frame: protocol.Frame{
+		return daemon.PersistedUsage{
+			SavedAt: time.Date(2026, 6, 26, 13, 0, 0, 0, time.UTC),
+			Providers: []daemon.ProviderUsageSnapshot{
+				{
 					Provider: "claude",
-					Label:    "Claude",
-					Session:  11,
-					Weekly:   22,
-					ResetSec: 3600,
+					Frame: protocol.Frame{
+						Provider:         "claude",
+						Label:            "Claude",
+						UsageUnavailable: true,
+					},
 				},
 			},
-		}, nil
+		}, true
 	}
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
 	server.Handler().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status 503, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	var got usageResponse
+	var got errorResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.Source != "codexbar" || got.CurrentProvider != "claude" {
-		t.Fatalf("unexpected fallback metadata: %+v", got)
-	}
-	if len(got.Providers) != 1 || got.Providers[0].ID != "claude" || got.Providers[0].UsageMode != "used" {
-		t.Fatalf("unexpected fallback providers: %+v", got.Providers)
+	if got.OK || got.Error.Code != "usage_unavailable" {
+		t.Fatalf("unexpected loading response: %+v", got)
 	}
 }
 
 func TestUsageRefreshesStaleProviderSnapshots(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 6, 26, 13, 0, 0, 0, time.UTC)
+	freshReady := false
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		if freshReady {
+			return daemon.PersistedUsage{
+				SavedAt:         now,
+				CurrentProvider: "codex",
+				Providers: []daemon.ProviderUsageSnapshot{
+					{
+						Provider:    "codex",
+						Source:      "openai-web",
+						CollectedAt: now,
+						Frame: protocol.Frame{
+							Provider: "codex",
+							Label:    "Codex",
+							Session:  9,
+							Weekly:   19,
+						},
+						Meta: codexbar.ProviderUsageMeta{
+							OverTime: []codexbar.UsageOverTimePoint{
+								{Day: "2026-06-26", TotalCreditsUsed: 12},
+							},
+						},
+					},
+				},
+			}, true
+		}
 		return daemon.PersistedUsage{
 			SavedAt:         now.Add(-5 * time.Minute),
 			CurrentProvider: "codex",
@@ -2537,34 +2659,15 @@ func TestUsageRefreshesStaleProviderSnapshots(t *testing.T) {
 					CollectedAt: now.Add(-5 * time.Minute),
 					Stale:       true,
 					Frame: protocol.Frame{
-						Provider: "codex",
-						Label:    "Codex",
-						Session:  4,
-						Weekly:   18,
+						Provider:         "codex",
+						Label:            "Codex",
+						Session:          4,
+						Weekly:           18,
+						UsageUnavailable: true,
 					},
 				},
 			},
 		}, true
-	}
-	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
-		return []codexbar.ParsedFrame{
-			{
-				Provider:    "codex",
-				Source:      "openai-web",
-				CollectedAt: now,
-				Frame: protocol.Frame{
-					Provider: "codex",
-					Label:    "Codex",
-					Session:  9,
-					Weekly:   19,
-				},
-				Meta: codexbar.ProviderUsageMeta{
-					OverTime: []codexbar.UsageOverTimePoint{
-						{Day: "2026-06-26", TotalCreditsUsed: 12},
-					},
-				},
-			},
-		}, nil
 	}
 
 	rec := httptest.NewRecorder()
@@ -2578,14 +2681,28 @@ func TestUsageRefreshesStaleProviderSnapshots(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.Source != "codexbar" {
-		t.Fatalf("expected fresh codexbar source, got %+v", got)
+	if got.Source != "codexbar-display" || len(got.Providers) != 1 || !got.Providers[0].Stale {
+		t.Fatalf("expected stale collector usage before fresh snapshot, got %+v", got)
 	}
-	if len(got.Providers) != 1 || got.Providers[0].Session != 9 || got.Providers[0].Stale {
-		t.Fatalf("expected fresh provider usage, got %+v", got.Providers)
+
+	freshReady = true
+	second := httptest.NewRecorder()
+	server.Handler().ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if second.Code != http.StatusOK {
+		t.Fatalf("expected status 200 after fresh snapshot, got %d body=%s", second.Code, second.Body.String())
 	}
-	if len(got.Providers[0].UsageOverTime) != 1 {
-		t.Fatalf("expected fresh usage-over-time, got %+v", got.Providers[0].UsageOverTime)
+	var fresh usageResponse
+	if err := json.Unmarshal(second.Body.Bytes(), &fresh); err != nil {
+		t.Fatalf("decode fresh response: %v", err)
+	}
+	if fresh.Source != "codexbar-display" {
+		t.Fatalf("expected collector source, got %+v", fresh)
+	}
+	if len(fresh.Providers) != 1 || fresh.Providers[0].Session != 9 || fresh.Providers[0].Stale {
+		t.Fatalf("expected fresh provider usage, got %+v", fresh.Providers)
+	}
+	if len(fresh.Providers[0].UsageOverTime) != 1 {
+		t.Fatalf("expected fresh usage-over-time, got %+v", fresh.Providers[0].UsageOverTime)
 	}
 }
 
@@ -2609,7 +2726,7 @@ func TestStartDisplayStreamUsesInjectedRefresh(t *testing.T) {
 	}
 }
 
-func TestUsageReturnsStaleProviderSnapshotsWhenRefreshFails(t *testing.T) {
+func TestUsagePreservesLastGoodCollectorSnapshot(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 6, 26, 13, 0, 0, 0, time.UTC)
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
@@ -2632,10 +2749,6 @@ func TestUsageReturnsStaleProviderSnapshotsWhenRefreshFails(t *testing.T) {
 			},
 		}, true
 	}
-	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
-		return nil, errors.New("codexbar temporarily unavailable")
-	}
-
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
 	server.Handler().ServeHTTP(rec, req)
@@ -2657,9 +2770,6 @@ func TestUsageUnavailableReturnsCustomerSafeError(t *testing.T) {
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
 		return daemon.PersistedUsage{}, false
 	}
-	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
-		return nil, errors.New("secret raw codexbar failure")
-	}
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
@@ -2669,8 +2779,8 @@ func TestUsageUnavailableReturnsCustomerSafeError(t *testing.T) {
 		t.Fatalf("expected status 503, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	if strings.Contains(body, "secret raw codexbar failure") {
-		t.Fatalf("usage error leaked raw failure: %s", body)
+	if strings.Contains(body, "CodexBar") {
+		t.Fatalf("usage error exposed the internal service name: %s", body)
 	}
 	var got errorResponse
 	if err := json.Unmarshal([]byte(body), &got); err != nil {

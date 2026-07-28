@@ -131,8 +131,11 @@ type runtimeDeps struct {
 	resolvePort       func(string) (string, error)
 	deviceCaps        func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders    func(context.Context) ([]codexbar.ParsedFrame, error)
+	fetchDashboard    func(context.Context, codexbar.DashboardServeInfo, time.Time, int) (codexbar.DashboardFetchResult, error)
 	fetchProvider     func(context.Context, string) (codexbar.ParsedFrame, error)
 	fetchTokenStats   func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
+	startDashboard    func(context.Context, func(string, ...any)) codexbar.DashboardServe
+	dashboard         codexbar.DashboardServe
 	usageBarsShowUsed func() bool
 	beginDeviceWrite  func() func()
 	sendLine          func(string, []byte) error
@@ -167,6 +170,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.fetchProviders == nil {
 		d.fetchProviders = codexbar.FetchAllProviders
+	}
+	if d.fetchDashboard == nil {
+		d.fetchDashboard = codexbar.FetchDashboardProviders
 	}
 	if d.fetchProvider == nil {
 		d.fetchProvider = codexbar.FetchProvider
@@ -272,6 +278,8 @@ type ProviderUsageSnapshot struct {
 	Meta               codexbar.ProviderUsageMeta
 	CollectedAt        time.Time
 	ActivityObservedAt time.Time
+	RateLimited        bool
+	RateLimitedUntil   time.Time
 	Stale              bool
 }
 
@@ -294,6 +302,7 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 			transport:         transportlayer.NewWiFiTransport(),
 			transportName:     "wifi",
 			usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+			startDashboard:    codexbar.StartDashboardServe,
 			logf:              logf,
 		})
 	}
@@ -305,6 +314,7 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 		sendLine:          sender.Send,
 		transportName:     "usb",
 		usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+		startDashboard:    codexbar.StartDashboardServe,
 		logf:              logf,
 	})
 }
@@ -318,6 +328,13 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 
 	state := initializeRuntimeState(deps.now(), opts, deps)
+	if !opts.Once && deps.startDashboard != nil {
+		deps.dashboard = deps.startDashboard(ctx, deps.logf)
+		if deps.dashboard != nil {
+			info := deps.dashboard.Info()
+			deps.logf("codexbar-dashboard event=supervisor-started refreshInterval=%s\n", info.RefreshInterval)
+		}
+	}
 	collector, collectorCancel := startProviderCollector(ctx, opts, deps, syncCycleMode)
 	if collectorCancel != nil {
 		defer collectorCancel()
@@ -401,7 +418,6 @@ func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps,
 }
 
 func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle func(context.Context) error) error {
-	backoff := newRetryBackoff(opts.Interval)
 	cycleTimeout := cycleRunTimeout()
 	var lastCycleStart time.Time
 	var startedAt time.Time
@@ -430,11 +446,10 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 			startedAt = cycleStart
 		}
 		if detectSleepWakeGap(lastCycleStart, cycleStart, opts.Interval) {
-			deps.logf("runtime event=sleep-wake gap=%s threshold=%s action=reset-retry\n",
+			deps.logf("runtime event=sleep-wake gap=%s threshold=%s\n",
 				cycleStart.Sub(lastCycleStart),
 				sleepWakeGapThreshold(opts.Interval),
 			)
-			backoff.Reset()
 		}
 		lastCycleStart = cycleStart
 
@@ -447,7 +462,6 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		if err != nil {
 			runtimeErr := asRuntimeError(err)
 			if runtimeErr.Kind == runtimeErrorCycleTimeout {
-				waitFor = backoff.Next()
 				deps.logf("cycle timeout: code=%s op=%s retry=%s recovery=%q err=%v\n",
 					runtimeErr.ErrorCode(),
 					runtimeErr.Op,
@@ -456,7 +470,6 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 					err,
 				)
 			} else {
-				waitFor = backoff.Next()
 				deps.logf("cycle error: code=%s op=%s retry=%s recovery=%q err=%v\n",
 					runtimeErr.ErrorCode(),
 					runtimeErr.Op,
@@ -466,7 +479,6 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 				)
 			}
 		} else {
-			backoff.Reset()
 			uptime := cycleStart.Sub(startedAt)
 			if !opts.DisableStartupFastPoll {
 				waitFor = startupInterval(waitFor, uptime)
@@ -1488,8 +1500,19 @@ func applyUsageBarsPreference(frame protocol.Frame, showUsed bool) protocol.Fram
 		return frame
 	}
 
-	frame.Session = 100 - clampPercent(frame.Session)
-	frame.Weekly = 100 - clampPercent(frame.Weekly)
+	if len(frame.UsageSlots) == 0 {
+		frame.Session = 100 - clampPercent(frame.Session)
+		frame.Weekly = 100 - clampPercent(frame.Weekly)
+	} else {
+		frame.Session = 0
+		frame.Weekly = 0
+		if len(frame.UsageSlots) > 0 {
+			frame.Session = 100 - clampPercent(frame.UsageSlots[0].Percent)
+		}
+		if len(frame.UsageSlots) > 1 {
+			frame.Weekly = 100 - clampPercent(frame.UsageSlots[1].Percent)
+		}
+	}
 	for i := range frame.UsageSlots {
 		frame.UsageSlots[i].Percent = 100 - clampPercent(frame.UsageSlots[i].Percent)
 	}
@@ -1916,6 +1939,8 @@ func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
 			Meta:               snapshot.Meta,
 			CollectedAt:        snapshot.Collected.UTC(),
 			ActivityObservedAt: snapshot.ActivityObservedAt.UTC(),
+			RateLimited:        snapshot.RateLimited,
+			RateLimitedUntil:   snapshot.RateLimitedUntil.UTC(),
 			Stale:              providerUsageSnapshotIsStale(snapshot, now),
 		})
 	}
