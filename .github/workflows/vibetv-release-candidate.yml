@@ -86,19 +86,28 @@ jobs:
               else: raise SystemExit("unsupported firmware environment: " + env)
           PY
           while IFS=$'\t' read -r dir env board fw asset; do
-            (cd "$dir" && CODEXBAR_DISPLAY_FW_VERSION="$fw" pio run -e "$env")
+            BUILD_LOG="$(mktemp)"
+            (cd "$dir" && CODEXBAR_DISPLAY_FW_VERSION="$fw" pio run -e "$env") 2>&1 | tee "$BUILD_LOG"
             source="$dir/.pio/build/$env/firmware.bin"
+            if [[ "$env" == esp8266_* ]]; then
+              ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 46 82 482000 350000
+            else
+              ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 20 25 0 0
+            fi
             if [[ "$env" == esp8266_* ]]; then gzip -c -9 "$source" > "tmp/vibetv-rc/publish/firmware/$asset"; else cp "$source" "tmp/vibetv-rc/publish/firmware/$asset"; fi
           done < tmp/vibetv-rc/firmware-targets.tsv
-          python3 - "$version" "$GITHUB_REPOSITORY" tmp/vibetv-rc/firmware-targets.tsv tmp/vibetv-rc/publish/firmware > tmp/vibetv-rc/publish/firmware/firmware-manifest.json <<'PY'
+          python3 - "$version" "$GITHUB_REPOSITORY" release/firmware-versions.json tmp/vibetv-rc/firmware-targets.tsv tmp/vibetv-rc/publish/firmware > tmp/vibetv-rc/publish/firmware/firmware-manifest.json <<'PY'
           import hashlib, json, os, sys
-          version, repo, targets, root = sys.argv[1:]
+          version, repo, config_path, targets, root = sys.argv[1:]
+          config=json.load(open(config_path, encoding="utf-8"))
+          configured={item["firmwareEnv"]: item for item in config["artifacts"]}
           entries=[]
           for line in open(targets, encoding="utf-8"):
               _, env, board, fw, asset = line.rstrip("\n").split("\t")
               data=open(os.path.join(root, asset), "rb").read()
-              entries.append({"firmwareEnv":env,"board":board,"firmwareVersion":fw,"asset":asset,"sha256":hashlib.sha256(data).hexdigest(),"firmwareUrl":f"https://github.com/{repo}/releases/download/v{version}/{asset}"})
-          json.dump({"schemaVersion":1,"release":"v"+version,"artifacts":entries}, sys.stdout, indent=2); print()
+              item=configured[env]
+              entries.append({"firmwareEnv":env,"board":board,"firmwareVersion":fw,"asset":asset,"sha256":hashlib.sha256(data).hexdigest(),"severity":item.get("severity", "recommended"),"message":item.get("message", ""),"firmwareUrl":f"https://github.com/{repo}/releases/download/v{version}/{asset}"})
+          json.dump({"schemaVersion":1,"release":"v"+version,"protocolVersion":config.get("protocolVersion", 1),"artifacts":entries}, sys.stdout, indent=2); print()
           PY
           cp tmp/vibetv-rc/publish/firmware/firmware-manifest.json "tmp/vibetv-rc/publish/firmware/firmware-manifest-v${version}.json"
           printf '%s\n' "$version" > tmp/vibetv-rc/version.txt

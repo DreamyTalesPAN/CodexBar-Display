@@ -91,12 +91,25 @@ else
   [[ -d "$BASELINE_APP" ]] || die 'baseline DMG has no app'
   ditto "$BASELINE_APP" "$INSTALL_APP"
   plutil -extract CFBundleShortVersionString raw -o - "$INSTALL_APP/Contents/Info.plist" > "$OUTPUT/baseline-version.txt"
+  open -na "$INSTALL_APP"
+  sleep 2
+  BASELINE_PID="$(pgrep -f "$INSTALL_APP/Contents/MacOS/VibeTVControlCenter" | head -n1)"
+  [[ -n "$BASELINE_PID" ]] || die 'baseline app did not start before Sparkle replacement'
+  printf '%s\n' "$BASELINE_PID" > "$OUTPUT/baseline-pid.txt"
   # Sparkle's official CLI is intentionally mandatory. Do not downgrade this
   # to XML parsing: if the hosted image lacks it, the gate must fail loudly.
   "$ROOT/scripts/build-sparkle-cli.sh" --output "$WORK/sparkle-cli" > "$OUTPUT/sparkle-cli-provenance.txt"
   SPARKLE_CLI="${SPARKLE_CLI:-$WORK/sparkle-cli/sparkle.app/Contents/MacOS/sparkle}"
   [[ -x "$SPARKLE_CLI" ]] || die "official Sparkle CLI is unavailable at ${SPARKLE_CLI}; cannot prove Sparkle update"
   "$SPARKLE_CLI" --check-immediately --feed-url "$SERVER_URL/appcast.xml" --user-agent-name 'CODEX VibeTV RC' "$INSTALL_APP" > "$OUTPUT/sparkle-update.txt" 2>&1
+  deadline=$((SECONDS + 45)); CANDIDATE_PID=''
+  while (( SECONDS < deadline )); do
+    CANDIDATE_PID="$(pgrep -f "$INSTALL_APP/Contents/MacOS/VibeTVControlCenter" | head -n1 || true)"
+    [[ -n "$CANDIDATE_PID" && "$CANDIDATE_PID" != "$BASELINE_PID" ]] && break
+    sleep 1
+  done
+  [[ -n "$CANDIDATE_PID" && "$CANDIDATE_PID" != "$BASELINE_PID" ]] || die 'Sparkle did not replace and relaunch the candidate app'
+  printf '%s\n' "$CANDIDATE_PID" > "$OUTPUT/candidate-pid.txt"
 fi
 
 plutil -extract CFBundleShortVersionString raw -o - "$INSTALL_APP/Contents/Info.plist" > "$OUTPUT/installed-candidate-version.txt"

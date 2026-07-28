@@ -170,10 +170,18 @@ main() {
     'guest test must run the official Sparkle CLI instead of parsing XML'
   assert_contains "$GUEST_TEST" '--check-immediately' \
     'guest test must force a live Sparkle update check'
+  assert_contains "$GUEST_TEST" 'baseline app did not start' \
+    'guest test must start the public baseline before Sparkle'
+  assert_contains "$GUEST_TEST" 'replace and relaunch' \
+    'guest test must require a replacement Candidate process after Sparkle'
   assert_contains "$GUEST_TEST" 'gzip -cd' \
     'guest test must hash the raw firmware bytes sent through OTA'
   assert_contains "$RC_WORKFLOW" 'artifactHashes": {item["path"]' \
     'candidate result must expose publish validators a path-to-hash map'
+  assert_contains "$RC_WORKFLOW" 'check-firmware-size-budget.sh' \
+    'release candidate must enforce the release firmware size budgets'
+  assert_contains "$RC_WORKFLOW" '"protocolVersion":config.get' \
+    'release candidate must preserve release firmware protocol metadata'
   assert_contains "$SPARKLE_BUILDER" '6276ba2b404829d139c45ff98427cf90e2efc59b' \
     'Sparkle CLI source must be pinned to the reviewed upstream commit'
   assert_contains "$GUEST_TEST" 'CANDIDATE_COMPANION' \
