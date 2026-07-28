@@ -107,6 +107,25 @@ daemon. API language belongs in developer and operator docs.
 Theme install and firmware update are separate flows. Theme install must not
 silently flash firmware.
 
+## Device Clock
+
+VibeTV keeps its own wall clock so `{time}` and `{date}` stay correct while the
+Mac is off.
+
+- After the WiFi link is up, the firmware starts SNTP against `pool.ntp.org`
+  (**UDP port 123, outbound**) and reads UTC from the system clock. This is the
+  only traffic the firmware initiates on its own. It is not an HTTPS fetch, so
+  the rule that the firmware must not fetch public HTTPS manifests is untouched.
+- SNTP delivers UTC only. The local UTC offset is learned from the Companion
+  clock string while the Mac is reachable, rounded to a quarter hour, and stored
+  in the device settings file, so it survives a reboot with the Mac switched off.
+- Rendering order: device clock first; the Companion string second, and only
+  while it is still current (two minutes); otherwise `--:--` / `--.--.----`.
+  A frozen value is never presented as the current time.
+- `GET /health` reports `clock.synced`, `clock.source`, `clock.epoch`,
+  `clock.utcOffsetMinutes`, `clock.lastSyncAgeMs`, `clock.syncCount` and the
+  resolved `clock.time` / `clock.date`.
+
 ## Privacy Shape
 
 - Provider usage is read on the customer's Mac through CodexBar and the Mac App.

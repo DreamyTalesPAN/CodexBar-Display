@@ -1783,8 +1783,12 @@ void testAnimatedSpriteFrameOffsetsAreIndexedOneFrameAtATime() {
 
 }  // namespace
 
+// Defined in test_device_clock.cpp.
+void RunDeviceClockTests();
+
 int main() {
   UNITY_BEGIN();
+  RunDeviceClockTests();
   RUN_TEST(testInvalidSpecsReturnFalse);
   RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);
   RUN_TEST(testRendersCommandsAndBindings);

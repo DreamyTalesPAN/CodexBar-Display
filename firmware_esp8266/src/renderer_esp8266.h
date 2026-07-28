@@ -92,6 +92,10 @@ class RendererESP8266 : public app::Renderer {
   void DrawError(app::RuntimeContext& ctx, const String& message) override;
   void DrawUsage(app::RuntimeContext& ctx) override;
   void DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) override;
+  // Repaints only the {time}/{date} bindings of the active ThemeSpec after the
+  // device clock changed the displayed minute. Returns false when the theme
+  // does not show a clock at all.
+  bool DrawClock(app::RuntimeContext& ctx);
 };
 
 }  // namespace esp8266

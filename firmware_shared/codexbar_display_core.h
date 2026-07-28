@@ -32,6 +32,10 @@ struct Frame {
   bool hasUsageMode = false;
   String usageMode;
   String activity;
+  // Pre-formatted Companion clock strings. Fallback only: the device clock
+  // (firmware_shared/device_clock.h) owns {time}/{date} once SNTP answered, and
+  // these strings are dropped as soon as they stop being current. Repainting
+  // the clock is driven by the resolved text, not by these fields changing.
   String timeText;
   String dateText;
   bool clearThemeSpec = false;
@@ -226,8 +230,6 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
          (ThemeSpecUsesBinding(raw, "usageMode", "u") &&
           (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode)) ||
          (ThemeSpecUsesActivity(raw) && previous.activity != next.activity) ||
-         (ThemeSpecUsesBinding(raw, "time", "tm") && previous.timeText != next.timeText) ||
-         (ThemeSpecUsesBinding(raw, "date", "dt") && previous.dateText != next.dateText) ||
          FrameTokenStatsVisualChanged(previous, next, raw);
 #else
   (void)previous;
@@ -271,12 +273,6 @@ inline uint32_t ThemeSpecLiveChangedFields(const Frame& previous, const Frame& n
   }
   if (previous.activity != next.activity) {
     fields |= themespec::kThemeSpecFieldActivity;
-  }
-  if (previous.timeText != next.timeText) {
-    fields |= themespec::kThemeSpecFieldTime;
-  }
-  if (previous.dateText != next.dateText) {
-    fields |= themespec::kThemeSpecFieldDate;
   }
   if (previous.sessionTokens != next.sessionTokens) {
     fields |= themespec::kThemeSpecFieldSessionTokens;
@@ -565,9 +561,7 @@ inline bool FrameVisualChangedWithThemeSpecRaw(const Frame& previous, const Fram
                                      previous.totalTokens != next.totalTokens ||
                                      previous.hasUsageMode != next.hasUsageMode ||
                                      previous.usageMode != next.usageMode ||
-                                     previous.activity != next.activity ||
-                                     previous.timeText != next.timeText ||
-                                     previous.dateText != next.dateText;
+                                     previous.activity != next.activity;
   const bool themeIdentityChanged =
          previous.clearThemeSpec != next.clearThemeSpec ||
          previous.hasThemeSpec != next.hasThemeSpec ||
