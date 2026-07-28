@@ -281,19 +281,33 @@ seed_codexbar_config_if_missing() {
     return 0
   fi
 
+  local codexbar_cli staged_config missing_config
+  if command -v codexbar >/dev/null 2>&1; then
+    codexbar_cli="$(command -v codexbar)"
+  elif [[ -x "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI" ]]; then
+    codexbar_cli="/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI"
+  elif [[ -x "${HOME}/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI" ]]; then
+    codexbar_cli="${HOME}/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI"
+  else
+    log "vibetv: CodexBar will create its provider config when it becomes available"
+    return 0
+  fi
+
   mkdir -p "$CODEXBAR_CONFIG_DIR"
-  cat >"$CODEXBAR_CONFIG_PATH" <<'EOF'
-{
-  "version": 1,
-  "providers": [
-    {"id": "codex", "enabled": true},
-    {"id": "claude", "enabled": true},
-    {"id": "cursor", "enabled": true}
-  ]
-}
-EOF
-  chmod 600 "$CODEXBAR_CONFIG_PATH"
-  log "vibetv: seeded default CodexBar provider config at ${CODEXBAR_CONFIG_PATH}"
+  staged_config="$(mktemp "${CODEXBAR_CONFIG_DIR}/.vibetv-codexbar-default.XXXXXX")"
+  missing_config="${staged_config}.source"
+  if ! CODEXBAR_CONFIG="$missing_config" "$codexbar_cli" \
+      config dump --format json >"$staged_config" ||
+    ! CODEXBAR_CONFIG="$staged_config" "$codexbar_cli" \
+      config validate --format json >/dev/null; then
+    rm -f "$staged_config"
+    log "vibetv: CodexBar could not render a valid default provider config yet"
+    return 0
+  fi
+  chmod 600 "$staged_config"
+  mv -n "$staged_config" "$CODEXBAR_CONFIG_PATH"
+  rm -f "$staged_config"
+  log "vibetv: CodexBar created its default provider config at ${CODEXBAR_CONFIG_PATH}"
 }
 
 open_codexbar_app() {

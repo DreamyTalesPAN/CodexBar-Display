@@ -153,7 +153,18 @@ EOF
 
   cat > "${fake_bin}/codexbar" <<'EOF'
 #!/usr/bin/env bash
-printf '{"ok":true}\n'
+case "${1:-} ${2:-}" in
+  "config dump")
+    printf '{"version":42,"providers":[{"id":"future-provider","enabled":true}]}\n'
+    ;;
+  "config validate")
+    grep -F '"future-provider"' "${CODEXBAR_CONFIG:?}" >/dev/null
+    printf '[]\n'
+    ;;
+  *)
+    printf '{"ok":true}\n'
+    ;;
+esac
 EOF
 
   chmod +x \
@@ -260,6 +271,8 @@ run_fresh_install_keeps_default_theme_pack() {
   app_log="$(cat "${root}/codexbar-display.log")"
   assert_contains "$app_log" "theme-pack install --theme mini-classic --skip-firmware-update"
   assert_not_contains "$output" "default theme pack skipped for existing install"
+  grep -F '"future-provider"' "${root}/home/.codexbar/config.json" >/dev/null \
+    || die "fresh install must preserve CodexBar-owned provider defaults"
 }
 
 run_install_sh_does_not_block_when_codexbar_usage_is_missing() {

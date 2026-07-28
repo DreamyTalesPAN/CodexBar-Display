@@ -24,6 +24,8 @@ struct Frame {
   int weekly = 0;
   int64_t resetSecs = 0;
   bool usageUnavailable = false;
+  bool sessionUnavailable = false;
+  bool weeklyUnavailable = false;
   int64_t sessionTokens = 0;
   int64_t weekTokens = 0;
   int64_t totalTokens = 0;
@@ -217,7 +219,10 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
          (ThemeSpecUsesBinding(raw, "session", "s") && previous.session != next.session) ||
          (ThemeSpecUsesBinding(raw, "weekly", "w") && previous.weekly != next.weekly) ||
          (ThemeSpecUsesBinding(raw, "reset", "r") && previous.resetSecs != next.resetSecs) ||
-         (usesUsage && previous.usageUnavailable != next.usageUnavailable) ||
+         (usesUsage &&
+          (previous.usageUnavailable != next.usageUnavailable ||
+           previous.sessionUnavailable != next.sessionUnavailable ||
+           previous.weeklyUnavailable != next.weeklyUnavailable)) ||
          (ThemeSpecUsesBinding(raw, "usageMode", "u") &&
           (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode)) ||
          (ThemeSpecUsesActivity(raw) && previous.activity != next.activity) ||
@@ -254,6 +259,12 @@ inline uint32_t ThemeSpecLiveChangedFields(const Frame& previous, const Frame& n
     fields |= themespec::kThemeSpecFieldSession |
               themespec::kThemeSpecFieldWeekly |
               themespec::kThemeSpecFieldReset;
+  }
+  if (previous.sessionUnavailable != next.sessionUnavailable) {
+    fields |= themespec::kThemeSpecFieldSession;
+  }
+  if (previous.weeklyUnavailable != next.weeklyUnavailable) {
+    fields |= themespec::kThemeSpecFieldWeekly;
   }
   if (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode) {
     fields |= themespec::kThemeSpecFieldUsageMode;
@@ -506,6 +517,8 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   out.weekly = ClampPct(doc["weekly"] | 0);
   out.resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(doc["resetSecs"] | 0));
   out.usageUnavailable = doc["usageUnavailable"] | false;
+  out.sessionUnavailable = doc["sessionUnavailable"] | false;
+  out.weeklyUnavailable = doc["weeklyUnavailable"] | false;
   out.timeText = String(doc["time"] | "");
   out.dateText = String(doc["date"] | "");
   out.sessionTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["sessionTokens"] | 0));
@@ -545,6 +558,8 @@ inline bool FrameVisualChangedWithThemeSpecRaw(const Frame& previous, const Fram
                                      previous.session != next.session ||
                                      previous.weekly != next.weekly ||
                                      previous.usageUnavailable != next.usageUnavailable ||
+                                     previous.sessionUnavailable != next.sessionUnavailable ||
+                                     previous.weeklyUnavailable != next.weeklyUnavailable ||
                                      previous.sessionTokens != next.sessionTokens ||
                                      previous.weekTokens != next.weekTokens ||
                                      previous.totalTokens != next.totalTokens ||

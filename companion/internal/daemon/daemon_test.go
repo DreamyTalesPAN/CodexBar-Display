@@ -1982,29 +1982,62 @@ func TestLoadPersistedUsageReturnsOrderedProviderSnapshots(t *testing.T) {
 	if len(usage.Providers) != 2 {
 		t.Fatalf("expected two providers, got %+v", usage.Providers)
 	}
-	if usage.Providers[0].Provider != "codex" || usage.Providers[1].Provider != "claude" {
-		t.Fatalf("expected collector order codex, claude; got %+v", usage.Providers)
+	if usage.Providers[0].Provider != "claude" || usage.Providers[1].Provider != "codex" {
+		t.Fatalf("expected generic alphabetical fallback without a VibeTV provider list; got %+v", usage.Providers)
 	}
-	if usage.Providers[0].Stale {
-		t.Fatalf("expected fresh codex snapshot, got %+v", usage.Providers[0])
+	if !usage.Providers[0].Stale {
+		t.Fatalf("expected stale claude snapshot, got %+v", usage.Providers[0])
 	}
-	if !usage.Providers[1].Stale {
-		t.Fatalf("expected stale claude snapshot, got %+v", usage.Providers[1])
+	if usage.Providers[1].Stale {
+		t.Fatalf("expected fresh codex snapshot, got %+v", usage.Providers[1])
 	}
-	if usage.Providers[0].Frame.UsageMode != "used" {
-		t.Fatalf("expected default usage mode used, got %q", usage.Providers[0].Frame.UsageMode)
+	if usage.Providers[1].Frame.UsageMode != "used" {
+		t.Fatalf("expected default usage mode used, got %q", usage.Providers[1].Frame.UsageMode)
 	}
-	if usage.Providers[0].Frame.SessionTokens != 500 {
-		t.Fatalf("expected token stats to survive, got %+v", usage.Providers[0].Frame)
+	if usage.Providers[1].Frame.SessionTokens != 500 {
+		t.Fatalf("expected token stats to survive, got %+v", usage.Providers[1].Frame)
 	}
-	if usage.Providers[0].Meta.Credits == nil || usage.Providers[0].Meta.Credits.Remaining != 42.5 {
-		t.Fatalf("expected credits metadata to survive, got %+v", usage.Providers[0].Meta.Credits)
+	if usage.Providers[1].Meta.Credits == nil || usage.Providers[1].Meta.Credits.Remaining != 42.5 {
+		t.Fatalf("expected credits metadata to survive, got %+v", usage.Providers[1].Meta.Credits)
 	}
-	if usage.Providers[0].Meta.Status == nil || usage.Providers[0].Meta.Status.Description != "Operational" {
-		t.Fatalf("expected status metadata to survive, got %+v", usage.Providers[0].Meta.Status)
+	if usage.Providers[1].Meta.Status == nil || usage.Providers[1].Meta.Status.Description != "Operational" {
+		t.Fatalf("expected status metadata to survive, got %+v", usage.Providers[1].Meta.Status)
 	}
-	if len(usage.Providers[0].Meta.OverTime) != 1 || usage.Providers[0].Meta.OverTime[0].Day != "2026-06-24" {
-		t.Fatalf("expected usage-over-time metadata to survive, got %+v", usage.Providers[0].Meta.OverTime)
+	if len(usage.Providers[1].Meta.OverTime) != 1 || usage.Providers[1].Meta.OverTime[0].Day != "2026-06-24" {
+		t.Fatalf("expected usage-over-time metadata to survive, got %+v", usage.Providers[1].Meta.OverTime)
+	}
+}
+
+func TestPersistEmptyProviderSnapshotsClearsStoredUsage(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	now := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
+	if err := persistProviderSnapshots(map[string]providerSnapshot{
+		"cursor": {
+			Provider:  "cursor",
+			Source:    "web",
+			Collected: now,
+			Frame: protocol.Frame{
+				Provider: "cursor",
+				Label:    "Cursor",
+				Session:  20,
+				Weekly:   40,
+			},
+		},
+	}, now); err != nil {
+		t.Fatalf("persist provider snapshots: %v", err)
+	}
+
+	if _, _, ok := loadPersistedProviderSnapshotsAnyAge(); !ok {
+		t.Fatal("expected persisted provider snapshot before clearing")
+	}
+
+	if err := persistProviderSnapshots(map[string]providerSnapshot{}, now.Add(time.Minute)); err != nil {
+		t.Fatalf("clear persisted provider snapshots: %v", err)
+	}
+	if _, _, ok := loadPersistedProviderSnapshotsAnyAge(); ok {
+		t.Fatal("expected empty persisted provider snapshot set to stay cleared")
 	}
 }
 
@@ -2815,11 +2848,11 @@ func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 	if len(second) != 2 {
 		t.Fatalf("expected codex stale + claude fresh snapshots, got %#v", second)
 	}
-	if second[0].Provider != "codex" || second[1].Provider != "claude" {
-		t.Fatalf("expected provider order codex,claude; got %#v", second)
+	if second[0].Provider != "claude" || second[1].Provider != "codex" {
+		t.Fatalf("expected current CodexBar order first, then retained snapshot; got %#v", second)
 	}
-	if !second[0].Stale || second[1].Stale {
-		t.Fatalf("expected codex stale and claude fresh snapshots, got %#v", second)
+	if second[0].Stale || !second[1].Stale {
+		t.Fatalf("expected claude fresh and retained codex stale snapshots, got %#v", second)
 	}
 
 	current = current.Add(3 * time.Hour)
@@ -2827,8 +2860,165 @@ func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 	if len(expired) != 2 || !expired[0].Frame.UsageUnavailable || !expired[1].Frame.UsageUnavailable {
 		t.Fatalf("expected old provider snapshots to remain as unavailable carriers, got %#v", expired)
 	}
-	if expired[0].Frame.Session != 14 || expired[1].Frame.Session != 28 {
+	if expired[0].Frame.Session != 28 || expired[1].Frame.Session != 14 {
 		t.Fatalf("expected old values to remain available for progress rendering, got %#v", expired)
+	}
+}
+
+func TestProviderCollectorLearnsDynamicCodexBarOrder(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("antigravity", 17, 23, 3600),
+				testParsedFrame("gemini", 41, 52, 7200),
+			}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+
+	if !reflect.DeepEqual(collector.order, []string{"antigravity", "gemini"}) {
+		t.Fatalf("collector did not learn CodexBar order dynamically: %v", collector.order)
+	}
+	frames := collector.providerFrames(now)
+	if len(frames) != 2 || frames[0].Provider != "antigravity" || frames[1].Provider != "gemini" {
+		t.Fatalf("dynamic provider order was not preserved: %#v", frames)
+	}
+
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{
+			testParsedFrame("gemini", 41, 52, 7200),
+			testParsedFrame("antigravity", 17, 23, 3600),
+		}, nil
+	}
+	collector.collectOnce(context.Background())
+	if !reflect.DeepEqual(collector.order, []string{"gemini", "antigravity"}) {
+		t.Fatalf("collector kept stale order instead of current CodexBar order: %v", collector.order)
+	}
+}
+
+func TestProviderCollectorPrunesDisabledProviderFromAuthoritativeInventory(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
+	cursorEnabled := true
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frames := []codexbar.ParsedFrame{testParsedFrame("codex", 12, 34, 3600)}
+			if cursorEnabled {
+				frames = append(frames, testParsedFrame("cursor", 57, 100, 7200))
+			}
+			return frames, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			return []codexbar.ProviderSetting{
+				{ID: "codex", Enabled: true},
+				{ID: "cursor", Enabled: cursorEnabled},
+			}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+	if len(collector.providerFrames(now)) != 2 {
+		t.Fatalf("expected initial provider snapshots: %#v", collector.providerFrames(now))
+	}
+
+	cursorEnabled = false
+	collector.collectOnce(context.Background())
+	frames := collector.providerFrames(now)
+	if len(frames) != 1 || frames[0].Provider != "codex" {
+		t.Fatalf("disabled provider snapshot was not pruned: %#v", frames)
+	}
+	if !reflect.DeepEqual(collector.order, []string{"codex"}) {
+		t.Fatalf("disabled provider remained in authoritative order: %v", collector.order)
+	}
+}
+
+func TestProviderCollectorDoesNotPruneWhenInventoryRefreshFails(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
+	inventoryAvailable := true
+	includeCursorUsage := true
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frames := []codexbar.ParsedFrame{testParsedFrame("codex", 12, 34, 3600)}
+			if includeCursorUsage {
+				frames = append(frames, testParsedFrame("cursor", 57, 100, 7200))
+			}
+			return frames, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			if !inventoryAvailable {
+				return nil, errors.New("temporary inventory failure")
+			}
+			return []codexbar.ProviderSetting{
+				{ID: "codex", Enabled: true},
+				{ID: "cursor", Enabled: true},
+			}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+
+	inventoryAvailable = false
+	includeCursorUsage = false
+	collector.collectOnce(context.Background())
+	frames := collector.providerFrames(now)
+	if len(frames) != 2 {
+		t.Fatalf("transient inventory failure pruned a provider snapshot: %#v", frames)
+	}
+}
+
+func TestProviderCollectorUsesInventoryWithoutTreatingFetchFailureAsDisable(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
+	fetchFailed := false
+	cursorEnabled := true
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			if fetchFailed {
+				return nil, errors.New("temporary usage failure")
+			}
+			return []codexbar.ParsedFrame{testParsedFrame("cursor", 57, 100, 7200)}, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			return []codexbar.ProviderSetting{{ID: "cursor", Enabled: cursorEnabled}}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+
+	fetchFailed = true
+	collector.collectOnce(context.Background())
+	if frames := collector.providerFrames(now); len(frames) != 1 || frames[0].Provider != "cursor" {
+		t.Fatalf("transient usage failure pruned enabled provider: %#v", frames)
+	}
+
+	cursorEnabled = false
+	collector.collectOnce(context.Background())
+	if frames := collector.providerFrames(now); len(frames) != 0 {
+		t.Fatalf("authoritative inventory did not prune disabled last provider: %#v", frames)
 	}
 }
 
@@ -2916,13 +3106,87 @@ func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing
 	}
 }
 
-func TestPreferAvailableProvidersDoesNotLetUnavailableDisplaceFresh(t *testing.T) {
-	providers := preferAvailableProviders([]codexbar.ParsedFrame{
-		{Provider: "gemini", Frame: protocol.Frame{Provider: "gemini", UsageUnavailable: true}},
-		testParsedFrame("codex", 17, 42, 3600),
+func TestProviderCollectorPreservesFreshPartialUsageAndWindows(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{{
+				Provider: "codex",
+				Source:   "oauth",
+				Frame: protocol.Frame{
+					Provider:           "codex",
+					Label:              "Codex",
+					Weekly:             57,
+					SessionUnavailable: true,
+				},
+				Meta: codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{
+					{ID: "secondary", Label: "Weekly", UsedPercent: 57},
+					{ID: "codex-spark-weekly", Label: "Codex Spark Weekly", UsedPercent: 12},
+				}},
+			}}, nil
+		},
+	}
+
+	collector.collectOnce(context.Background())
+	frames := collector.providerFrames(now)
+	if len(frames) != 1 {
+		t.Fatalf("expected one partial provider snapshot, got %#v", frames)
+	}
+	got := frames[0]
+	if got.Stale || got.Frame.UsageUnavailable || !got.Frame.SessionUnavailable ||
+		got.Frame.WeeklyUnavailable || got.Frame.Weekly != 57 {
+		t.Fatalf("partial usage was not kept fresh: %#v", got)
+	}
+	if !got.CollectedAt.Equal(now) || len(got.Meta.Windows) != 2 ||
+		got.Meta.Windows[1].Label != "Codex Spark Weekly" {
+		t.Fatalf("partial usage metadata was lost: %#v", got)
+	}
+}
+
+func TestRunCycleCanSelectPartialActiveProviderWhenCompleteProviderExists(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	var sent []byte
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	state.selector.SetCurrentProvider("codex")
+	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+		now:         time.Now,
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("antigravity", 17, 42, 3600),
+				{
+					Provider: "codex",
+					Frame: protocol.Frame{
+						Provider:           "codex",
+						Label:              "Codex",
+						Weekly:             57,
+						SessionUnavailable: true,
+					},
+				},
+			}, nil
+		},
+		sendLine: func(_ string, line []byte) error {
+			sent = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
 	})
-	if len(providers) != 1 || providers[0].Provider != "codex" {
-		t.Fatalf("expected only fresh Codex to remain selectable, got %#v", providers)
+	if err != nil {
+		t.Fatalf("run cycle: %v", err)
+	}
+
+	frame := decodeFrameLine(t, sent)
+	if frame.Provider != "codex" || frame.UsageUnavailable || !frame.SessionUnavailable ||
+		frame.WeeklyUnavailable || frame.Weekly != 57 {
+		t.Fatalf("partial sticky provider was excluded from normal selection: %#v", frame)
 	}
 }
 
@@ -3023,7 +3287,7 @@ func TestProviderCollectorUsesRuntimeConfigWiFiTarget(t *testing.T) {
 	}
 }
 
-func TestRunCycleFromCollectorUsesStaleLastGoodWhenCollectorEmpty(t *testing.T) {
+func TestRunCycleFromCollectorKeepsLastGoodWhenUsageAndInventoryFail(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
@@ -3040,7 +3304,14 @@ func TestRunCycleFromCollectorUsesStaleLastGoodWhenCollectorEmpty(t *testing.T) 
 		order:          []string{"codex", "claude"},
 		snapshotMaxAge: 2 * time.Hour,
 		providers:      map[string]providerSnapshot{},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return nil, errors.New("temporary usage failure")
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			return nil, errors.New("temporary inventory failure")
+		},
 	}
+	collector.collectOnce(context.Background())
 
 	var sentLine []byte
 	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
@@ -3061,7 +3332,77 @@ func TestRunCycleFromCollectorUsesStaleLastGoodWhenCollectorEmpty(t *testing.T) 
 
 	frame := decodeFrameLine(t, sentLine)
 	if frame.Provider != "claude" || frame.Session != 61 {
-		t.Fatalf("expected stale last-good claude frame, got %+v", frame)
+		t.Fatalf("transient usage/inventory failures cleared last-good frame: %+v", frame)
+	}
+}
+
+func TestRunCycleFromCollectorClearsDisabledLastGoodAndPersistedRestartFallback(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	lastGood := protocol.Frame{
+		Provider: "future-provider",
+		Label:    "Future Provider",
+		Session:  61,
+		Weekly:   49,
+		ResetSec: 3600,
+	}
+	if err := persistLastGood(lastGood, now.Add(-time.Minute)); err != nil {
+		t.Fatalf("persist last good: %v", err)
+	}
+
+	deps := runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProvider: func(context.Context, string) (codexbar.ParsedFrame, error) {
+			t.Fatal("disabled provider must not be probed directly")
+			return codexbar.ParsedFrame{}, codexbar.ErrNoProviders
+		},
+		logf: func(string, ...any) {},
+	}
+	deps = deps.withDefaults()
+	state := initializeRuntimeState(now, Options{}, deps)
+	if !state.hasLastGood || state.lastGood.Provider != "future-provider" {
+		t.Fatalf("expected persisted last good before authoritative inventory, got %+v", state)
+	}
+
+	collector := &providerCollector{
+		now:            func() time.Time { return now },
+		logf:           func(string, ...any) {},
+		snapshotMaxAge: 2 * time.Hour,
+		providers:      map[string]providerSnapshot{},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return nil, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			return []codexbar.ProviderSetting{{ID: "future-provider", Enabled: false}}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+
+	var sentLine []byte
+	deps.sendLine = func(_ string, line []byte) error {
+		sentLine = append([]byte(nil), line...)
+		return nil
+	}
+	if err := runCycleFromCollector(context.Background(), "", state, collector, deps); err == nil {
+		t.Fatal("expected no-providers runtime error after disabling the last provider")
+	}
+
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Provider == "future-provider" || frame.Error == "" {
+		t.Fatalf("disabled last-good frame was sent instead of unavailable error: %+v", frame)
+	}
+	if state.hasLastGood || state.hasPersistedGood {
+		t.Fatalf("disabled last-good state survived authoritative inventory: %+v", state)
+	}
+	if _, _, ok := loadPersistedLastGoodAnyAge(); ok {
+		t.Fatal("disabled last-good file survived authoritative inventory")
+	}
+
+	restarted := initializeRuntimeState(now.Add(time.Minute), Options{}, deps)
+	if restarted.hasLastGood || restarted.hasPersistedGood {
+		t.Fatalf("restart resurrected disabled last-good frame: %+v", restarted)
 	}
 }
 

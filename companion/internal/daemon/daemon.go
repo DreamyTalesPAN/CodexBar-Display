@@ -132,6 +132,7 @@ type runtimeDeps struct {
 	deviceCaps        func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders    func(context.Context) ([]codexbar.ParsedFrame, error)
 	fetchProvider     func(context.Context, string) (codexbar.ParsedFrame, error)
+	fetchInventory    func(context.Context) ([]codexbar.ProviderSetting, error)
 	fetchTokenStats   func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
 	usageBarsShowUsed func() bool
 	sendLine          func(string, []byte) error
@@ -169,6 +170,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.fetchProvider == nil {
 		d.fetchProvider = codexbar.FetchProvider
+	}
+	if d.fetchInventory == nil {
+		d.fetchInventory = codexbar.FetchProviderInventory
 	}
 	if d.fetchTokenStats == nil {
 		d.fetchTokenStats = codexbar.FetchProviderTokenStats
@@ -938,16 +942,6 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		result.failureErr = codexbar.ErrNoProviders
 		return finalizeCycleResult(state, result, now)
 	}
-	allProviders = preferAvailableProviders(allProviders)
-	if allProviders[0].Frame.UsageUnavailable && state != nil && state.hasLastGood && isLastGoodFreshAt(state.lastGoodAt, now, lastGoodMaxAge()) {
-		result.frame = state.lastGood
-		result.usedLastGood = true
-		result.selectionReason = "stale-last-good"
-		result.selectionDetail = "provider-unavailable"
-		result.usageSource = "last-good"
-		return result
-	}
-
 	decision, ok := state.selector.SelectWithDecision(allProviders)
 	if !ok {
 		result.failureKind = runtimeErrorNoProviders
@@ -971,19 +965,6 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	}
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
-}
-
-func preferAvailableProviders(all []codexbar.ParsedFrame) []codexbar.ParsedFrame {
-	available := make([]codexbar.ParsedFrame, 0, len(all))
-	for _, parsed := range all {
-		if !parsed.Frame.UsageUnavailable {
-			available = append(available, parsed)
-		}
-	}
-	if len(available) > 0 {
-		return available
-	}
-	return all
 }
 
 func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time) cycleResult {
@@ -1184,8 +1165,8 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 	persistActiveWiFiTarget(port, deps)
 
-	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
-		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
+	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionUnavailable=%t weeklyUnavailable=%t reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
+		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -1324,6 +1305,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 func runCycleFromCollector(ctx context.Context, requestedPort string, state *runtimeState, collector *providerCollector, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 	state = ensureCycleState(state, deps)
+	invalidateLastGoodDisabledByInventory(state, collector, deps)
 
 	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
 	if err != nil {
@@ -1347,6 +1329,32 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 
 	attachFirmwareUpdateState(ctx, state, deps, caps, &result)
 	return sendCycleResult(ctx, port, caps, maxFrameBytes, state, deps, result)
+}
+
+func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *providerCollector, deps runtimeDeps) {
+	if state == nil || !state.hasLastGood {
+		return
+	}
+	enabled, known := collector.providerEnabledByInventory(state.lastGood.Provider)
+	if !known || enabled {
+		return
+	}
+
+	provider := normalizeProviderKey(state.lastGood.Provider)
+	state.lastGood = protocol.Frame{}
+	state.lastGoodAt = time.Time{}
+	state.hasLastGood = false
+	state.lastPersistedGood = protocol.Frame{}
+	state.lastPersistedAt = time.Time{}
+	state.hasPersistedGood = false
+	if state.selector != nil {
+		state.selector.SetCurrentProvider("")
+	}
+	if err := clearPersistedLastGood(); err != nil {
+		deps.logf("runtime event=last-good-clear-failed provider=%s err=%v\n", provider, err)
+		return
+	}
+	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-disabled\n", provider)
 }
 
 func probeProvidersDirectly(parent context.Context, order []string, deps runtimeDeps) []codexbar.ParsedFrame {
@@ -1560,6 +1568,18 @@ func persistLastGood(frame protocol.Frame, savedAt time.Time) error {
 	return os.WriteFile(path, raw, 0o644)
 }
 
+func clearPersistedLastGood() error {
+	path := lastGoodSnapshotPath()
+	if path == "" {
+		return nil
+	}
+	err := os.Remove(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
 func lastGoodSnapshotPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
@@ -1705,28 +1725,13 @@ func collectorProviderTimeout() time.Duration {
 }
 
 func collectorProviderOrder() []string {
-	defaults := []string{
-		"codex",
-		"claude",
-		"cursor",
-		"copilot",
-		"gemini",
-		"vertexai",
-		"jetbrains",
-		"augment",
-		"factory",
-		"kimi",
-		"ollama",
-		"antigravity",
-	}
-
 	raw := strings.TrimSpace(os.Getenv(collectorOrderEnvVar))
 	if raw == "" {
-		return defaults
+		return nil
 	}
 
 	var out []string
-	seen := make(map[string]struct{}, len(defaults))
+	seen := make(map[string]struct{})
 	for _, part := range strings.Split(raw, ",") {
 		key := normalizeProviderKey(part)
 		if key == "" {
@@ -1737,9 +1742,6 @@ func collectorProviderOrder() []string {
 		}
 		seen[key] = struct{}{}
 		out = append(out, key)
-	}
-	if len(out) == 0 {
-		return defaults
 	}
 	return out
 }
@@ -1783,7 +1785,7 @@ func providerSnapshotsPath() string {
 }
 
 func persistProviderSnapshots(snapshots map[string]providerSnapshot, savedAt time.Time) error {
-	if len(snapshots) == 0 || savedAt.IsZero() {
+	if savedAt.IsZero() {
 		return nil
 	}
 
@@ -1808,10 +1810,6 @@ func persistProviderSnapshots(snapshots map[string]providerSnapshot, savedAt tim
 		}
 		payload.Providers = append(payload.Providers, snapshot)
 	}
-	if len(payload.Providers) == 0 {
-		return nil
-	}
-
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -1949,10 +1947,6 @@ func providerUsageSnapshotIsStale(snapshot providerSnapshot, now time.Time) bool
 }
 
 func encodeProviderSnapshotsForCompare(snapshots map[string]providerSnapshot) string {
-	if len(snapshots) == 0 {
-		return ""
-	}
-
 	ordered := make([]providerSnapshot, 0, len(snapshots))
 	for _, key := range sortedSnapshotKeys(snapshots) {
 		snapshot := snapshots[key]
@@ -1965,9 +1959,6 @@ func encodeProviderSnapshotsForCompare(snapshots map[string]providerSnapshot) st
 			continue
 		}
 		ordered = append(ordered, snapshot)
-	}
-	if len(ordered) == 0 {
-		return ""
 	}
 	raw, err := json.Marshal(ordered)
 	if err != nil {

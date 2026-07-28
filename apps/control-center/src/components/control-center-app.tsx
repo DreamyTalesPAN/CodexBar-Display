@@ -53,6 +53,11 @@ import { HostedSetupShell } from "./hosted-setup-shell";
 import { LogsScreen } from "./logs-screen";
 import { MacAppRecoveryScreen } from "./mac-app-recovery-screen";
 import { OverviewScreen } from "./overview-screen";
+import {
+  PROVIDER_RECONCILE_WINDOW_MS,
+  providerUsageNeedsReconcile,
+  scheduleProviderUsageReconcile,
+} from "./provider-usage-reconcile";
 import { SetupScreen } from "./setup-screen";
 import { SetupStatusScreen } from "./setup-status-screen";
 import { SettingsScreen } from "./settings-screen";
@@ -298,6 +303,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [pendingPreferenceIds, setPendingPreferenceIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const providerReconcileDeadlineRef = useRef(0);
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
   );
@@ -2448,6 +2454,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const updateProviderPreference = useCallback(
     async (item: PreferenceDescriptor, value: boolean) => {
+      if (value) {
+        providerReconcileDeadlineRef.current =
+          Date.now() + PROVIDER_RECONCILE_WINDOW_MS;
+      }
       setPendingPreferenceIds((current) => new Set(current).add(item.id));
       setProviderPreferences((current) =>
         (current || []).map((preference) =>
@@ -2507,6 +2517,40 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [refreshProviderPreferences, refreshUsage, runCompanion],
   );
+
+  useEffect(() => {
+    if (
+      activeTab !== "usage" ||
+      providerReconcileDeadlineRef.current <= Date.now()
+    ) {
+      return;
+    }
+    const needsReconcile = providerUsageNeedsReconcile(
+      providerPreferences,
+      usage,
+    );
+    if (!needsReconcile) {
+      providerReconcileDeadlineRef.current = 0;
+      return;
+    }
+    return scheduleProviderUsageReconcile({
+      deadline: providerReconcileDeadlineRef.current,
+      preferences: providerPreferences,
+      usage,
+      refresh: () => {
+        void Promise.all([
+          refreshProviderPreferences({ quiet: true }),
+          refreshUsage({ quiet: true }),
+        ]);
+      },
+    });
+  }, [
+    activeTab,
+    providerPreferences,
+    refreshProviderPreferences,
+    refreshUsage,
+    usage,
+  ]);
 
   const loadSupportDiagnostics = useCallback(async () => {
     const setupGeneration = setupGenerationRef.current;

@@ -26,7 +26,8 @@ Fields:
 - `session` (number, optional): session usage percent `0..100`.
 - `weekly` (number, optional): weekly usage percent `0..100`.
 - `resetSecs` (number, optional): seconds remaining until reset.
-- `usageUnavailable` (boolean, optional): current quota values are not trustworthy; missing/false remains backward compatible. ThemeSpec text bindings show unknown values while progress keeps the numeric carrier values.
+- `usageUnavailable` (boolean, optional): both current quota values are not trustworthy; missing/false remains backward compatible. ThemeSpec text bindings show unknown values while progress keeps the numeric carrier values.
+- `sessionUnavailable` / `weeklyUnavailable` (boolean, optional): only that existing usage lane is unknown. Missing/false remains backward compatible. Its text binding shows `??` and its progress primitive is omitted. `usageUnavailable:true` still overrides both lanes, including stale frames.
 - `usageMode` (string, optional): semantic of `session`/`weekly` (`used` or `remaining`).
 - `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
 - `weekTokens` (number, optional): rolling 7-day token total when available.
@@ -144,7 +145,7 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
       "widthPx": 240,
       "heightPx": 240,
       "colorDepthBits": 16,
-      "brightness": {"supported": true}
+      "brightness": {"supported": true, "minPercent": 1, "maxPercent": 100}
     },
     "theme": {
       "supportsThemeSpecV1": true,
@@ -175,7 +176,8 @@ Fields:
 - `preferredProtocolVersion` (number): firmware preference.
 - `features` (array[string], optional): capabilities (for example `theme`, `theme-spec-v1`).
 - `capabilities` (object, optional): extended block for display/theme/transport limits.
-  - `display.brightness.supported` describes browser-adjustable backlight support when the board exposes it. Hosts use 10-100 percent for the current ESP8266 implementation.
+  - `display.brightness.supported` describes browser-adjustable backlight support when the board exposes it. `display.brightness.minPercent` and `maxPercent` report the supported range; the current ESP8266 implementation uses 1-100 percent. Hosts that see no range fall back to 10-100 percent.
+  - A VibeTV without saved display settings starts at 20 percent brightness.
   - `theme.maxThemeSpecBytes` is the inline `themeSpec` frame byte limit.
   - `theme.maxStoredThemeSpecBytes` is the uploaded/stored ThemeSpec JSON byte limit for WiFi themes.
   - `theme.maxThemePrimitives` is the maximum primitive count accepted by the renderer.

@@ -30,7 +30,7 @@ Companion setup enforces this mapping when a device hello is available.
   - `protocolVersion` (legacy single-value signal)
   - `board`, `firmware`, `features`, `maxFrameBytes`
   - `capabilities` block (`display`, `theme`, `transport`)
-  - `capabilities.display.brightness` when browser-adjustable backlight control is supported
+  - `capabilities.display.brightness` when browser-adjustable backlight control is supported, including `minPercent` and `maxPercent` (1-100 on the current ESP8266 firmware)
 
 Companion negotiation:
 - prefers v2 when available.
@@ -71,7 +71,7 @@ Companion negotiation:
 - Theme assets can be managed over WiFi only below `/themes/`; internal filesystem paths are never mutable through the asset API.
 - `GET /assets` returns `filesystem.mounted` plus an `assets` array. Every asset entry includes `path` and `sizeBytes`; `sha256` is optional so small ESP8266 builds do not need to carry hashing code.
 - `GET /health` returns `display.activeTheme`, compact `display.themeSpec` render health, and `display.gif` so provisioning can see the active GIF path, file presence, decoder state, blocked state, and the last GIF open/decode error.
-- `GET /health` returns `settings.display.brightnessPercent` for support diagnostics.
+- `GET /health` returns `settings.display.brightnessPercent` for support diagnostics. A VibeTV without saved display settings reports the 20 percent factory default.
 
 ## Theme Contract
 - Built-in runtime themes: `classic`, `crt`, `mini`.
