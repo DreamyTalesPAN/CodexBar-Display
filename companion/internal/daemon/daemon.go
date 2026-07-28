@@ -131,6 +131,7 @@ type runtimeDeps struct {
 	resolvePort       func(string) (string, error)
 	deviceCaps        func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders    func(context.Context) ([]codexbar.ParsedFrame, error)
+	fetchDashboard    func(context.Context, codexbar.DashboardServeInfo, time.Time, int) (codexbar.DashboardFetchResult, error)
 	fetchProvider     func(context.Context, string) (codexbar.ParsedFrame, error)
 	fetchTokenStats   func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
 	startDashboard    func(context.Context, func(string, ...any)) codexbar.DashboardServe
@@ -168,6 +169,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.fetchProviders == nil {
 		d.fetchProviders = codexbar.FetchAllProviders
+	}
+	if d.fetchDashboard == nil {
+		d.fetchDashboard = codexbar.FetchDashboardProviders
 	}
 	if d.fetchProvider == nil {
 		d.fetchProvider = codexbar.FetchProvider
@@ -410,7 +414,6 @@ func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps,
 }
 
 func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle func(context.Context) error) error {
-	backoff := newRetryBackoff(opts.Interval)
 	cycleTimeout := cycleRunTimeout()
 	var lastCycleStart time.Time
 	var startedAt time.Time
@@ -439,11 +442,10 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 			startedAt = cycleStart
 		}
 		if detectSleepWakeGap(lastCycleStart, cycleStart, opts.Interval) {
-			deps.logf("runtime event=sleep-wake gap=%s threshold=%s action=reset-retry\n",
+			deps.logf("runtime event=sleep-wake gap=%s threshold=%s\n",
 				cycleStart.Sub(lastCycleStart),
 				sleepWakeGapThreshold(opts.Interval),
 			)
-			backoff.Reset()
 		}
 		lastCycleStart = cycleStart
 
@@ -464,7 +466,6 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		if err != nil {
 			runtimeErr := asRuntimeError(err)
 			if runtimeErr.Kind == runtimeErrorCycleTimeout {
-				waitFor = backoff.Next()
 				deps.logf("cycle timeout: code=%s op=%s retry=%s recovery=%q err=%v\n",
 					runtimeErr.ErrorCode(),
 					runtimeErr.Op,
@@ -473,7 +474,6 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 					err,
 				)
 			} else {
-				waitFor = backoff.Next()
 				deps.logf("cycle error: code=%s op=%s retry=%s recovery=%q err=%v\n",
 					runtimeErr.ErrorCode(),
 					runtimeErr.Op,
@@ -483,7 +483,6 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 				)
 			}
 		} else {
-			backoff.Reset()
 			uptime := cycleStart.Sub(startedAt)
 			if !opts.DisableStartupFastPoll {
 				waitFor = startupInterval(waitFor, uptime)

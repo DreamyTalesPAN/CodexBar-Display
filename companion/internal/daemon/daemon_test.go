@@ -2688,8 +2688,8 @@ func TestRunWithDepsRetriesAndRecoversAfterReconnect(t *testing.T) {
 	if len(delays) < 5 {
 		t.Fatalf("expected retry delay samples, got %v", delays)
 	}
-	if delays[0] != time.Second || delays[1] != 2*time.Second || delays[2] != 4*time.Second {
-		t.Fatalf("unexpected retry backoff start: %v", delays[:3])
+	if delays[0] != time.Minute || delays[1] != time.Minute || delays[2] != time.Minute {
+		t.Fatalf("unexpected retry delay start after backoff removal: %v", delays[:3])
 	}
 
 	foundIntervalDelay := false
@@ -2718,7 +2718,7 @@ func TestStartupIntervalSwitchesAfterWarmupWindow(t *testing.T) {
 	}
 }
 
-func TestRunWithDepsResetsRetryBackoffAfterSleepWakeGap(t *testing.T) {
+func TestRunWithDepsUsesConfiguredIntervalAfterSleepWakeGap(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2777,7 +2777,7 @@ func TestRunWithDepsResetsRetryBackoffAfterSleepWakeGap(t *testing.T) {
 	if len(delays) < 4 {
 		t.Fatalf("expected 4 delay samples, got %v", delays)
 	}
-	want := []time.Duration{time.Second, 2 * time.Second, time.Second, 2 * time.Second}
+	want := []time.Duration{time.Minute, time.Minute, time.Minute, time.Minute}
 	for i, expected := range want {
 		if delays[i] != expected {
 			t.Fatalf("delay[%d]=%s, expected %s (delays=%v)", i, delays[i], expected, delays)
@@ -3076,6 +3076,120 @@ func TestProviderCollectorPreservesTokenStatsAcrossTemporaryFailureAndRecovers(t
 	recovered := collector.providers["codex"]
 	if recovered.Frame.SessionTokens != 40 || recovered.Frame.WeekTokens != 50 || recovered.Frame.TotalTokens != 60 {
 		t.Fatalf("later successful token stats did not replace last-good totals: %#v", recovered)
+	}
+}
+
+func TestProviderCollectorFallsBackToUsageJSONWhenDashboardUnavailableAndRecovers(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 28, 9, 30, 0, 0, time.UTC)
+	fallbackCalls := 0
+	dashboardCalls := 0
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex"},
+		interval:        30 * time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		dashboard:       staticDashboardServe{info: testDashboardServeInfo(1001)},
+		fetchDashboard: func(_ context.Context, _ codexbar.DashboardServeInfo, _ time.Time, _ int) (codexbar.DashboardFetchResult, error) {
+			dashboardCalls++
+			return codexbar.DashboardFetchResult{}, errors.New("connection refused")
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			fallbackCalls++
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 14, 22, 3600)}, nil
+		},
+	}
+
+	collector.collectOnce(context.Background())
+	frames := collector.providerFrames(current)
+	if dashboardCalls != 1 || fallbackCalls != 1 {
+		t.Fatalf("expected dashboard attempt and usage-json fallback, dashboard=%d fallback=%d", dashboardCalls, fallbackCalls)
+	}
+	if len(frames) != 1 || frames[0].Source != "web" || frames[0].Frame.Session != 14 {
+		t.Fatalf("expected fallback usage snapshot, got %+v", frames)
+	}
+
+	current = current.Add(time.Second)
+	collector.fetchDashboard = func(_ context.Context, _ codexbar.DashboardServeInfo, _ time.Time, snapshotFetches int) (codexbar.DashboardFetchResult, error) {
+		dashboardCalls++
+		if snapshotFetches < 2 {
+			return codexbar.DashboardFetchResult{
+				Providers: []codexbar.ParsedFrame{dashboardUnavailableFrame("codex")},
+				Cold:      true,
+			}, nil
+		}
+		return codexbar.DashboardFetchResult{
+			Providers: []codexbar.ParsedFrame{dashboardParsedFrame("codex", "Weekly", "Codex Spark Weekly", 68, 0)},
+		}, nil
+	}
+	collector.collectOnce(context.Background())
+	frames = collector.providerFrames(current)
+	if len(frames) != 1 || frames[0].Source != "web" || frames[0].Frame.Session != 14 {
+		t.Fatalf("expected first recovered dashboard snapshot to preserve fallback last-good, got %+v", frames)
+	}
+	current = current.Add(time.Second)
+	collector.collectOnce(context.Background())
+	frames = collector.providerFrames(current)
+	if len(frames) != 1 || frames[0].Source != "codexbar-dashboard" || frames[0].Frame.UsageSlots[0].Label != "Weekly" {
+		t.Fatalf("expected recovered dashboard snapshot, got %+v", frames)
+	}
+}
+
+func TestProviderCollectorResetsDashboardWarmupAfterSupervisorRestart(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	dashboard := &mutableDashboardServe{info: testDashboardServeInfo(2001)}
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex"},
+		interval:        30 * time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		dashboard:       dashboard,
+		fetchDashboard: func(_ context.Context, _ codexbar.DashboardServeInfo, _ time.Time, snapshotFetches int) (codexbar.DashboardFetchResult, error) {
+			if snapshotFetches < 2 {
+				return codexbar.DashboardFetchResult{
+					Providers: []codexbar.ParsedFrame{dashboardUnavailableFrame("codex")},
+					Cold:      true,
+				}, nil
+			}
+			return codexbar.DashboardFetchResult{
+				Providers: []codexbar.ParsedFrame{dashboardParsedFrame("codex", "Weekly", "Codex Spark Weekly", 68, 0)},
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return nil, errors.New("fallback should not be used")
+		},
+	}
+
+	collector.collectOnce(context.Background())
+	if frames := collector.providerFrames(current); len(frames) != 1 || !frames[0].Frame.UsageUnavailable {
+		t.Fatalf("expected first dashboard fetch to stay cold, got %+v", frames)
+	}
+	current = current.Add(time.Second)
+	collector.collectOnce(context.Background())
+	if frames := collector.providerFrames(current); len(frames) != 1 || frames[0].Frame.UsageUnavailable {
+		t.Fatalf("expected second dashboard fetch to be trusted, got %+v", frames)
+	}
+
+	current = current.Add(time.Second)
+	dashboard.info = testDashboardServeInfo(2002)
+	collector.collectOnce(context.Background())
+	if frames := collector.providerFrames(current); len(frames) != 1 || frames[0].Frame.UsageUnavailable {
+		t.Fatalf("expected restart warm-up to preserve fresh last-good instead of replacing it, got %+v", frames)
+	}
+	current = current.Add(time.Second)
+	collector.collectOnce(context.Background())
+	frames := collector.providerFrames(current)
+	if len(frames) != 1 || frames[0].Frame.UsageUnavailable || len(frames[0].Frame.UsageSlots) != 2 {
+		t.Fatalf("expected second fetch after restart to recover warm slots, got %+v", frames)
 	}
 }
 
@@ -3452,6 +3566,66 @@ func testParsedFrame(provider string, session, weekly int, reset int64) codexbar
 			Session:  session,
 			Weekly:   weekly,
 			ResetSec: reset,
+		},
+	}
+}
+
+type staticDashboardServe struct {
+	info codexbar.DashboardServeInfo
+}
+
+func (s staticDashboardServe) Info() codexbar.DashboardServeInfo {
+	return s.info
+}
+
+type mutableDashboardServe struct {
+	info codexbar.DashboardServeInfo
+}
+
+func (s *mutableDashboardServe) Info() codexbar.DashboardServeInfo {
+	return s.info
+}
+
+func testDashboardServeInfo(pid int) codexbar.DashboardServeInfo {
+	return codexbar.DashboardServeInfo{
+		Endpoint: "http://127.0.0.1:50000",
+		Token:    "test-token",
+		Healthy:  true,
+		Running:  true,
+		PID:      pid,
+	}
+}
+
+func dashboardParsedFrame(provider, firstLabel, secondLabel string, firstPercent, secondPercent int) codexbar.ParsedFrame {
+	return codexbar.ParsedFrame{
+		Provider: provider,
+		Source:   "codexbar-dashboard",
+		Frame: protocol.Frame{
+			Provider: provider,
+			Label:    provider,
+			Session:  firstPercent,
+			Weekly:   secondPercent,
+			UsageSlots: []protocol.UsageSlot{
+				{ID: "weekly", Label: firstLabel, Percent: firstPercent, ResetSec: 3600},
+				{ID: "codex-spark-weekly", Label: secondLabel, Percent: secondPercent, ResetSec: 3600},
+			},
+		},
+		Meta: codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{
+			{ID: "weekly", Label: firstLabel, UsedPercent: firstPercent, ResetSec: 3600},
+			{ID: "codex-spark-weekly", Label: secondLabel, UsedPercent: secondPercent, ResetSec: 3600},
+		}},
+	}
+}
+
+func dashboardUnavailableFrame(provider string) codexbar.ParsedFrame {
+	return codexbar.ParsedFrame{
+		Provider: provider,
+		Source:   "codexbar-dashboard",
+		Stale:    true,
+		Frame: protocol.Frame{
+			Provider:         provider,
+			Label:            provider,
+			UsageUnavailable: true,
 		},
 	}
 }
