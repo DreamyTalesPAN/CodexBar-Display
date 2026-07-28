@@ -225,6 +225,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			inventoryAuthoritative = true
 		}
 	}
+	collectedAt := c.now().UTC()
 	if err != nil {
 		updated := false
 		if inventoryAuthoritative {
@@ -233,7 +234,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			c.mu.Unlock()
 		}
 		if updated {
-			c.persistIfNeeded(now)
+			c.persistIfNeeded(collectedAt)
 		}
 		c.logf("collector fetch-all transport=%s source=%s fresh=false err=%v timeout=%s\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, err, c.timeout)
 		return
@@ -270,7 +271,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		}
 
 		frame.Provider = key
-		parsedCollectedAt := parsedProviderCollectedAt(parsed, now)
+		parsedCollectedAt := parsedProviderCollectedAt(parsed, collectedAt)
 		if frame.UsageUnavailable {
 			lastGood, exists := c.providers[key]
 			if exists && !lastGood.Frame.UsageUnavailable {
@@ -280,7 +281,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 					c.providers[key] = lastGood
 					updated = true
 				}
-				if isLastGoodFreshAt(lastGood.Collected, now, c.snapshotMaxAge) {
+				if isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
 					continue
 				}
 				lastGood.Frame.UsageUnavailable = true
@@ -319,7 +320,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	c.mu.Unlock()
 
 	if updated {
-		c.persistIfNeeded(now)
+		c.persistIfNeeded(collectedAt)
 	}
 	c.logf("collector complete transport=%s source=%s fresh=true providers=%d succeeded=%d timeout=%s mode=fetch-all\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, len(allProviders), successes, c.timeout)
 }
@@ -327,9 +328,6 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 func parsedProviderCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time) time.Time {
 	if !parsed.CollectedAt.IsZero() {
 		return parsed.CollectedAt.UTC()
-	}
-	if !parsed.ActivityObservedAt.IsZero() {
-		return parsed.ActivityObservedAt.UTC()
 	}
 	return fallback.UTC()
 }

@@ -3097,6 +3097,50 @@ func TestProviderCollectorDoesNotMakeOldProviderObservationFresh(t *testing.T) {
 	}
 }
 
+func TestRunCycleFromCollectorSendsSnapshotCollectedAfterSlowFetch(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"claude"},
+		interval:        30 * time.Second,
+		timeout:         time.Minute,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			current = current.Add(40 * time.Second)
+			return []codexbar.ParsedFrame{testParsedFrame("claude", 14, 4, 3600)}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+
+	frames := collector.providerFrames(current)
+	if len(frames) != 1 || frames[0].Stale || frames[0].Frame.UsageUnavailable {
+		t.Fatalf("slow successful fetch should be fresh at completion time, got %#v", frames)
+	}
+
+	var sentLine []byte
+	err := runCycleFromCollector(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, collector, runtimeDeps{
+		now:         func() time.Time { return current },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("publisher should send slow successful collector snapshot: %v", err)
+	}
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Provider != "claude" || frame.Session != 14 || frame.Weekly != 4 {
+		t.Fatalf("expected Claude frame from collector, got %+v", frame)
+	}
+}
+
 func TestProviderCollectorLearnsDynamicCodexBarOrder(t *testing.T) {
 	prepareFastTestEnv(t)
 
