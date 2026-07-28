@@ -236,14 +236,14 @@ run_install_sh_enables_control_center_in_daemon() {
   assert_contains "$output" "preparing Control Center Mac App service"
   assert_contains "$output" "Control Center Mac App service is running"
   assert_contains "$output" "open https://app.vibetv.shop"
-  assert_contains "$output" "default theme pack skipped for existing install"
+  assert_contains "$output" "no theme selected; install one in the Mac App"
   assert_not_contains "$(cat "$app_log")" "theme-pack install"
   assert_contains "$launch_log" "bootout gui/$(id -u)/com.codexbar-display.companion-api"
   assert_contains "$launch_log" "disable gui/$(id -u)/com.codexbar-display.companion-api"
   assert_not_contains "$(cat "$app_log")" "api --addr 127.0.0.1:47832"
 }
 
-run_fresh_install_keeps_default_theme_pack() {
+run_fresh_install_starts_without_theme_pack() {
   local root output app_log
   root="${TMP_WORK_DIR}/fresh-install"
   write_fake_commands "${root}/fake-bin"
@@ -258,8 +258,27 @@ run_fresh_install_keeps_default_theme_pack() {
   }
 
   app_log="$(cat "${root}/codexbar-display.log")"
-  assert_contains "$app_log" "theme-pack install --theme mini-classic --skip-firmware-update"
-  assert_not_contains "$output" "default theme pack skipped for existing install"
+  assert_not_contains "$app_log" "theme-pack install"
+  assert_contains "$output" "no theme selected; install one in the Mac App"
+}
+
+run_explicit_theme_pack_is_still_installed() {
+  local root output app_log
+  root="${TMP_WORK_DIR}/explicit-theme"
+  write_fake_commands "${root}/fake-bin"
+  mkdir -p "${root}/home" "${root}/global-bin" "${root}/global/Library/LaunchAgents"
+  : > "${root}/codexbar-display.log"
+  : > "${root}/curl.log"
+  : > "${root}/launchctl.log"
+
+  output="$(run_installer "$root" --version 9.9.9 --theme-pack synthwave -- --target http://192.0.2.10)" || {
+    printf '%s\n' "$output" >&2
+    die "expected explicit theme install path to pass"
+  }
+
+  app_log="$(cat "${root}/codexbar-display.log")"
+  assert_contains "$app_log" "theme-pack install --theme synthwave --skip-firmware-update"
+  assert_contains "$output" "installing requested theme pack (synthwave)"
 }
 
 run_install_sh_does_not_block_when_codexbar_usage_is_missing() {
@@ -319,7 +338,8 @@ EOF
 }
 
 run_install_sh_enables_control_center_in_daemon
-run_fresh_install_keeps_default_theme_pack
+run_fresh_install_starts_without_theme_pack
+run_explicit_theme_pack_is_still_installed
 run_install_sh_does_not_block_when_codexbar_usage_is_missing
 run_existing_global_symlink_does_not_require_relink
 

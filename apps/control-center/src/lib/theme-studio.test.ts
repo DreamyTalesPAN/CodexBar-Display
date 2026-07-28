@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildThemePack,
+  createStarterThemeSpec,
   deviceThemeSpecJson,
   importThemeSpec,
   normalizeThemeSpec,
@@ -31,6 +32,11 @@ function validSpec(): ThemeStudioSpec {
 describe("validateThemeSpec", () => {
   it("accepts a structurally valid portable theme", () => {
     expect(validateThemeSpec(validSpec()).errors).toEqual([]);
+  });
+
+  it("keeps the starter theme independent from firmware-owned assets", () => {
+    const starter = createStarterThemeSpec();
+    expect(deviceThemeSpecJson(starter)).not.toContain("/themes/mini/");
   });
 
   it("accepts legacy fallback metadata but omits it from normalized exports", () => {

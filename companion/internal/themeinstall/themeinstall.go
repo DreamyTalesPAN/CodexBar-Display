@@ -29,6 +29,7 @@ const (
 	DefaultUploadSettleDelay   = 750 * time.Millisecond
 	DefaultFirmwareManifestURL = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
 	uploadVerifyAttempts       = 3
+	legacyMiniGIFPath          = "/themes/mini/mini.gif"
 )
 
 var (
@@ -670,6 +671,9 @@ func cleanupThemeUserAssets(wifi transportlayer.WiFiTransport, target *string, s
 
 func cleanupThemeUserAssetPaths(assets transportlayer.DeviceAssetsSnapshot, keepPaths map[string]bool) []string {
 	paths := assets.PathsWithPrefix("/themes/u/")
+	if _, exists := assets.AssetSize(legacyMiniGIFPath); exists {
+		paths = append(paths, legacyMiniGIFPath)
+	}
 	filtered := paths[:0]
 	for _, devicePath := range paths {
 		if keepPaths[strings.TrimSpace(devicePath)] {

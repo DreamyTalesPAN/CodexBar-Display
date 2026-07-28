@@ -12,7 +12,7 @@ on the active theme.
 
 | Theme | Preview | Notes |
 | --- | --- | --- |
-| Mini | <img src="assets/vibetv-theme-mini.png" alt="Mini theme" width="140"> | Compact default theme focused on provider, session, weekly, tokens, and reset time. |
+| Mini | <img src="assets/vibetv-theme-mini.png" alt="Mini theme" width="140"> | Compact theme focused on provider, session, weekly, tokens, and reset time. |
 | Claude Creature | <img src="assets/vibetv-theme-claude.png" alt="Claude Creature theme" width="140"> | Character-style usage display for Claude-heavy workflows. |
 | Clippy | <img src="assets/vibetv-theme-clippy.png" alt="Clippy theme" width="140"> | Animated assistant-style theme with live usage bindings. |
 | Synthwave | <img src="assets/vibetv-theme-synthwave.png" alt="Synthwave theme" width="140"> | High-contrast theme with a more visual display style. |

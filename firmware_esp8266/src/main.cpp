@@ -211,11 +211,7 @@ uint32_t bootResetCounter = 0;
 void addCorsHeaders();
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-constexpr const char* kDefaultThemeSpecPath = "/themes/u/mini-cl-1-e4fe6b.json";
-constexpr const char* kPreviousDefaultThemeSpecPath = "/themes/u/mini-cl-1-b3c3f7.json";
-constexpr const char* kLegacyDefaultThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
-constexpr const char* kDefaultThemeSpecId = "mini-classic";
-constexpr int kDefaultThemeSpecRev = 1;
+constexpr const char* kLegacyMiniThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
 #endif
 
 void recordRenderFull(const char* kind, unsigned long durationUs) {
@@ -1806,11 +1802,9 @@ bool readStoredThemeSpec(const String& path, String& raw, String& error) {
   file.close();
   raw.trim();
 
-  // Firmware OTA intentionally preserves LittleFS. Devices upgraded from 1.0.36
-  // therefore keep this known factory Mini spec, whose labels were hard-coded
-  // to "left". Upgrade only that immutable legacy path in memory so the live
-  // usage mode is rendered without rewriting customer storage during OTA.
-  if (path == kLegacyDefaultThemeSpecPath) {
+  // Devices upgraded from 1.0.36 can still have this explicitly active Mini
+  // spec. Keep its label compatibility without treating it as a boot fallback.
+  if (path == kLegacyMiniThemeSpecPath) {
     raw.replace("\"v\":\"left\"", "\"v\":\"{usageMode}\"");
   }
   if (raw.length() == 0 || raw.length() > kMaxStoredThemeSpecBytes) {
@@ -1999,25 +1993,12 @@ bool loadStoredThemeSpecCacheFromPath(const String& path) {
   return true;
 }
 
-void loadDefaultStoredThemeSpecCache() {
+void loadActiveStoredThemeSpecCache() {
   String activePath;
-  if (readActiveThemeSpecPath(activePath) && loadStoredThemeSpecCacheFromPath(activePath)) {
+  if (!readActiveThemeSpecPath(activePath)) {
     return;
   }
-  if (loadStoredThemeSpecCacheFromPath(kDefaultThemeSpecPath)) {
-    runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
-    runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
-    return;
-  }
-  if (loadStoredThemeSpecCacheFromPath(kPreviousDefaultThemeSpecPath)) {
-    runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
-    runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
-    return;
-  }
-  if (loadStoredThemeSpecCacheFromPath(kLegacyDefaultThemeSpecPath)) {
-    runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
-    runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
-  }
+  (void)loadStoredThemeSpecCacheFromPath(activePath);
 }
 #endif
 
@@ -2654,7 +2635,7 @@ void setup() {
   loadDeviceSettings();
   loadDeviceAuthToken();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  loadDefaultStoredThemeSpecCache();
+  loadActiveStoredThemeSpecCache();
 #endif
   const unsigned long startupRenderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV", "Starting", "Please wait");

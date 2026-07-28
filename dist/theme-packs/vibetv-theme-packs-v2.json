@@ -47,16 +47,16 @@
     {
       "id": "mini-classic",
       "title": "Mini Classic",
-      "version": "1.1.1",
-      "themeRev": 3,
-      "themeSpecPath": "/themes/u/mini-cl-3-47fe90.json",
+      "version": "1.1.2",
+      "themeRev": 4,
+      "themeSpecPath": "/themes/u/mini-cl-4-656926.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-mini-classic-v1.1.1.zip",
-      "sha256": "5964d50dadc44e05d5ee40153aeef5afaec7749bfcd038919bffce36dfcbe665",
-      "bytes": 18493
+      "downloadAsset": "vibetv-theme-mini-classic-v1.1.2.zip",
+      "sha256": "adf13daa1d2b0452757dba1fd523e7839a05a38dd0ad31730a3819bf9dc9768d",
+      "bytes": 18499
     },
     {
       "id": "synthwave",

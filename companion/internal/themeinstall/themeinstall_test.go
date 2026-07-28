@@ -208,7 +208,7 @@ func TestPairThemeInstallTargetStoresTokenAndReturnsTokenizedTarget(t *testing.T
 	}
 }
 
-func TestCleanupThemeUserAssetsDeletesOnlyUserThemeFiles(t *testing.T) {
+func TestCleanupThemeUserAssetsDeletesUserFilesAndLegacyMiniGIF(t *testing.T) {
 	var deleted []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/assets" {
@@ -232,7 +232,7 @@ func TestCleanupThemeUserAssetsDeletesOnlyUserThemeFiles(t *testing.T) {
 	var out bytes.Buffer
 	cleanupThemeUserAssets(wifi, &target, nil, &out, nil)
 
-	if strings.Join(deleted, ",") != "/themes/u/old.cba,/themes/u/old.json" {
+	if strings.Join(deleted, ",") != "/themes/mini/mini.gif,/themes/u/old.cba,/themes/u/old.json" {
 		t.Fatalf("unexpected deleted paths: %v", deleted)
 	}
 	if !strings.Contains(out.String(), "Cleaning old theme files") {
@@ -249,7 +249,7 @@ func TestCleanupThemeUserAssetsKeepsInstalledThemeFiles(t *testing.T) {
 		switch r.Method {
 		case http.MethodGet:
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"assets":[{"path":"/themes/u/new.json","sizeBytes":900},{"path":"/themes/u/new.cbi","sizeBytes":12000},{"path":"/themes/u/old.json","sizeBytes":900}]}`))
+			_, _ = w.Write([]byte(`{"assets":[{"path":"/themes/u/new.json","sizeBytes":900},{"path":"/themes/u/new.cbi","sizeBytes":12000},{"path":"/themes/u/old.json","sizeBytes":900},{"path":"/themes/mini/mini.gif","sizeBytes":14336}]}`))
 		case http.MethodDelete:
 			deleted = append(deleted, r.URL.Query().Get("path"))
 			w.WriteHeader(http.StatusOK)
@@ -263,8 +263,9 @@ func TestCleanupThemeUserAssetsKeepsInstalledThemeFiles(t *testing.T) {
 	target := server.URL
 	var out bytes.Buffer
 	cleanupThemeUserAssets(wifi, &target, nil, &out, map[string]bool{
-		"/themes/u/new.json": true,
-		"/themes/u/new.cbi":  true,
+		"/themes/u/new.json":    true,
+		"/themes/u/new.cbi":     true,
+		"/themes/mini/mini.gif": true,
 	})
 
 	if strings.Join(deleted, ",") != "/themes/u/old.json" {

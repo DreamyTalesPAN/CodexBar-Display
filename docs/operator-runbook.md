@@ -59,7 +59,7 @@ cd companion
 ../codexbar-display setup --yes
 ```
 
-This installs the companion runtime, persists the Mini theme on fresh installs, and writes a WiFi LaunchAgent.
+This installs the companion runtime and writes a WiFi LaunchAgent. Fresh devices intentionally start in the `theme-missing` state until a theme is installed through the Mac App.
 It does not require USB serial.
 
 ### WiFi firmware update path

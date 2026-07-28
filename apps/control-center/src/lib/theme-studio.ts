@@ -339,14 +339,6 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         color: "#CCFF00",
       },
       {
-        type: "gif",
-        x: 82,
-        y: 122,
-        width: 76,
-        height: 76,
-        assetPath: "/themes/mini/mini.gif",
-      },
-      {
         type: "text",
         x: 24,
         y: 208,

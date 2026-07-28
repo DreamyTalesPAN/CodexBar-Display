@@ -36,7 +36,7 @@ poll_interval_secs=3
 curl_timeout_secs=30
 upload_timeout_secs=90
 filesystem_upload_timeout_secs=300
-required_assets=("/themes/mini/mini.gif" "/themes/u/mini-cl-1-e4fe6b.json")
+required_assets=()
 current_stage="startup"
 last_upload_result=""
 failure_reported=0
@@ -59,7 +59,8 @@ Usage:
 Builds firmware.bin + littlefs.bin, writes an OTA package with SHA-256 checksums,
 uploads firmware to the GeekMagic manufacturer updater, waits for VibeTV firmware,
 uploads LittleFS to the VibeTV updater, checks /health, /hello, and /assets,
-verifies required theme asset bytes plus SHA-256 when exposed, then sends a mini theme test frame.
+verifies explicitly requested asset bytes plus SHA-256 when exposed, then checks
+the intentional missing-theme screen.
 
 Commands:
   build                 Build and package artifacts only.
@@ -108,7 +109,7 @@ Flow toggles:
   --skip-filesystem     Do not upload littlefs.bin to VibeTV.
   --skip-health         Do not require /health during post-flash polling.
   --skip-asset-check    Do not require theme assets to be visible through /assets.
-  --skip-smoke          Do not send the mini test frame.
+  --skip-smoke          Do not send the missing-theme test frame.
   --allow-reboot-close  Treat curl exit 52/56 during OTA as a reboot close.
                         This is the default; post-upload checks still decide pass/fail.
   --strict-upload-response
@@ -118,8 +119,7 @@ Flow toggles:
   --filesystem-upload-timeout SECS
                         Upload timeout for LittleFS OTA requests. Default: 300.
   --require-asset PATH  Require an asset path in /assets after flashing.
-                        Repeatable. Defaults: /themes/mini/mini.gif and
-                        /themes/u/mini-cl-1-e4fe6b.json.
+                        Repeatable. No theme assets are required by default.
 
 Examples:
   ./scripts/vibetv-provision.sh build
@@ -688,39 +688,31 @@ send_frame() {
 
 send_smoke_frames() {
   local frame_url="$1"
-  send_frame "mini" "$frame_url" \
-    '{"v":2,"provider":"vibetv","label":"Vibe TV","session":23,"weekly":64,"resetSecs":12000,"sessionTokens":203211,"weekTokens":9231002,"totalTokens":1087628607,"theme":"mini"}'
+  send_frame "theme-missing" "$frame_url" \
+    '{"v":2,"provider":"vibetv","label":"Vibe TV","session":23,"weekly":64,"resetSecs":12000,"sessionTokens":203211,"weekTokens":9231002,"totalTokens":1087628607}'
 }
 
-check_post_smoke_gif_state() {
+check_post_smoke_theme_missing_state() {
   local health_url="$1"
-  local body_file="/tmp/vibetv-provision-gif-health.$$"
-  local attempt stage error_path
+  local body_file="/tmp/vibetv-provision-theme-health.$$"
+  local attempt
 
   if [[ "$skip_health" == "1" ]]; then
-    log "skip: post-smoke GIF state check because health checks are disabled"
+    log "skip: post-smoke theme state check because health checks are disabled"
     return 0
   fi
   if [[ "$dry_run" == "1" ]]; then
-    log "dry-run: would verify mini GIF state via ${health_url}"
+    log "dry-run: would verify missing-theme state via ${health_url}"
     return 0
   fi
 
-  current_stage="post-smoke GIF state"
+  current_stage="post-smoke missing-theme state"
   for attempt in 1 2 3 4 5 6 7 8; do
     if curl_get "$health_url" >"$body_file"; then
-      if jq -e '.display.activeTheme == "mini-classic" and .display.themeSpec.active == true and .display.themeSpec.path == "/themes/u/mini-cl-1-e4fe6b.json" and .display.themeSpec.renderOk == true and .display.gif.activePath == "/themes/mini/mini.gif" and .display.gif.filePresent == true and .display.gif.decoderOpen == true and .display.gif.lastError == null' "$body_file" >/dev/null 2>&1; then
-        log "smoke: mini-classic ThemeSpec GIF decoder healthy"
+      if jq -e '.display.activeTheme == "theme-missing" and .display.themeSpec.active == false' "$body_file" >/dev/null 2>&1; then
+        log "smoke: missing-theme state healthy"
         rm -f "$body_file"
         return 0
-      fi
-      if jq -e '.display.gif.lastError != null' "$body_file" >/dev/null 2>&1; then
-        stage="$(jq -r '.display.gif.lastError.stage // "unknown"' "$body_file")"
-        error_path="$(jq -r '.display.gif.lastError.path // ""' "$body_file")"
-        log "health response:" >&2
-        sed 's/^/  /' "$body_file" >&2
-        rm -f "$body_file"
-        die "mini GIF renderer reported error stage=${stage} path=${error_path}"
       fi
     fi
     if [[ "$attempt" != "8" ]]; then
@@ -733,7 +725,7 @@ check_post_smoke_gif_state() {
     sed 's/^/  /' "$body_file" >&2
   fi
   rm -f "$body_file"
-  die "mini-classic ThemeSpec GIF decoder did not report healthy state after smoke frame"
+  die "missing-theme state did not report healthy after smoke frame"
 }
 
 flash_package() {
@@ -777,7 +769,7 @@ flash_package() {
   if [[ "$skip_smoke" != "1" ]]; then
     current_stage="smoke frame"
     send_smoke_frames "$frame_url"
-    check_post_smoke_gif_state "$health_url"
+    check_post_smoke_theme_missing_state "$health_url"
   else
     log "skip: smoke frames"
   fi
