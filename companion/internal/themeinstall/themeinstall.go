@@ -192,14 +192,9 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := pack.ValidateAgainstCapabilities(caps); err != nil {
-		return Result{}, &InstallError{
-			Op:   "theme-pack/capabilities",
-			Code: errcode.ProtocolThemeSpecIncompatible,
-			Err:  err,
-		}
+	if err := pack.ValidateAgainstCapabilities(caps); err != nil && !canRetryAfterUsageSlotsFirmwareUpdate(pack, caps, err, opts) {
+		return Result{}, themePackCapabilitiesError(err)
 	}
-
 	if !opts.SkipFirmwareUpdate && opts.FirmwareUpdater != nil {
 		manifestURL := strings.TrimSpace(opts.FirmwareManifestURL)
 		if manifestURL == "" {
@@ -219,11 +214,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 			return Result{}, err
 		}
 		if err := pack.ValidateAgainstCapabilities(caps); err != nil {
-			return Result{}, &InstallError{
-				Op:   "theme-pack/capabilities",
-				Code: errcode.ProtocolThemeSpecIncompatible,
-				Err:  err,
-			}
+			return Result{}, themePackCapabilitiesError(err)
 		}
 	} else if opts.SkipFirmwareUpdate && opts.Verbose {
 		fmt.Fprintln(out, "Firmware check: skipped")
@@ -353,6 +344,34 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		ThemeRevision:     pack.ThemeSpec.ThemeRev,
 		CapabilitiesKnown: caps.Known,
 	}, nil
+}
+
+func themePackCapabilitiesError(err error) *InstallError {
+	return &InstallError{
+		Op:   "theme-pack/capabilities",
+		Code: errcode.ProtocolThemeSpecIncompatible,
+		Err:  err,
+	}
+}
+
+func canRetryAfterUsageSlotsFirmwareUpdate(pack *themepack.Pack, caps protocol.DeviceCapabilities, err error, opts Options) bool {
+	if opts.SkipFirmwareUpdate || opts.FirmwareUpdater == nil || !caps.Known || !caps.SupportsThemeSpecV1 || caps.SupportsUsageSlotsV1 {
+		return false
+	}
+	if !isMissingUsageSlotsV1Error(err) {
+		return false
+	}
+	updatedCaps := caps
+	updatedCaps.SupportsUsageSlotsV1 = true
+	return pack.ValidateAgainstCapabilities(updatedCaps) == nil
+}
+
+func isMissingUsageSlotsV1Error(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "usage-slots-v1") && strings.Contains(message, "does not advertise")
 }
 
 func themeInstallCapabilities(

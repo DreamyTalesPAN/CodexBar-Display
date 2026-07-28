@@ -536,6 +536,222 @@ func TestInstallEnforcesGIFLZWCapabilityBeforeUpload(t *testing.T) {
 	})
 }
 
+func TestInstallRunsFirmwareUpdateBeforeRejectingMissingUsageSlots(t *testing.T) {
+	withFastActivationRetries(t)
+	packDir := writeUsageSlotsThemePack(t)
+	const activePath = "/themes/u/slot.json"
+	currentActivePath := "/themes/u/old.json"
+	var firmwareUpdated atomic.Bool
+	var firmwareUpdateAttempts atomic.Int32
+	var helloRequests atomic.Int32
+	var uploadBeforeFirmwareUpdate atomic.Int32
+	uploadedAssets := make(map[string]int)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			helloRequests.Add(1)
+			writeUsageSlotsThemeHello(t, w, firmwareUpdated.Load())
+		case "/health":
+			writeThemeHealth(t, w, currentActivePath)
+		case "/frame":
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.WriteHeader(http.StatusOK)
+		case "/assets":
+			switch r.Method {
+			case http.MethodGet:
+				writeAssetList(t, w, uploadedAssets)
+			case http.MethodPost:
+				if !firmwareUpdated.Load() {
+					uploadBeforeFirmwareUpdate.Add(1)
+				}
+				uploadedAssets[r.URL.Query().Get("path")] = readUploadedAssetSize(t, r)
+				w.WriteHeader(http.StatusOK)
+			default:
+				t.Fatalf("unexpected assets method %s", r.Method)
+			}
+		case "/theme/active":
+			var payload struct {
+				Path string `json:"path"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode activation: %v", err)
+			}
+			currentActivePath = payload.Path
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	var out bytes.Buffer
+	result, err := Install(context.Background(), Options{
+		PackURL:           packDir,
+		Target:            server.URL,
+		Out:               &out,
+		HTTPClient:        server.Client(),
+		UploadSettleDelay: -1,
+		FetchLiveFrame:    testLiveFrame,
+		FirmwareUpdater: func(context.Context, string, string) error {
+			firmwareUpdateAttempts.Add(1)
+			firmwareUpdated.Store(true)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v\nlogs:\n%s", err, out.String())
+	}
+	if result.ThemeID != "slot-theme" || result.ActivePath != activePath {
+		t.Fatalf("unexpected install result: %+v", result)
+	}
+	if got := firmwareUpdateAttempts.Load(); got != 1 {
+		t.Fatalf("expected one firmware update, got %d", got)
+	}
+	if got := helloRequests.Load(); got < 2 {
+		t.Fatalf("expected pre-update and post-update hello checks, got %d", got)
+	}
+	if got := uploadBeforeFirmwareUpdate.Load(); got != 0 {
+		t.Fatalf("expected no asset upload before firmware update, got %d", got)
+	}
+	if !strings.Contains(out.String(), "Rechecking device after firmware update") {
+		t.Fatalf("expected post-update recheck log, got:\n%s", out.String())
+	}
+}
+
+func TestInstallRejectsMissingUsageSlotsAfterFirmwareUpdateBeforeUpload(t *testing.T) {
+	packDir := writeUsageSlotsThemePack(t)
+	var firmwareUpdateAttempts atomic.Int32
+	var helloRequests atomic.Int32
+	var unexpectedWrites atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			helloRequests.Add(1)
+			writeUsageSlotsThemeHello(t, w, false)
+		default:
+			unexpectedWrites.Add(1)
+			http.Error(w, "capability gate did not pass", http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+
+	_, err := Install(context.Background(), Options{
+		PackURL:           packDir,
+		Target:            server.URL,
+		HTTPClient:        server.Client(),
+		UploadSettleDelay: -1,
+		FirmwareUpdater: func(context.Context, string, string) error {
+			firmwareUpdateAttempts.Add(1)
+			return nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "usage-slots-v1") {
+		t.Fatalf("expected post-update usage-slots-v1 error, got %v", err)
+	}
+	if got := firmwareUpdateAttempts.Load(); got != 1 {
+		t.Fatalf("expected one firmware update, got %d", got)
+	}
+	if got := helloRequests.Load(); got != 2 {
+		t.Fatalf("expected pre-update and post-update hello checks, got %d", got)
+	}
+	if got := unexpectedWrites.Load(); got != 0 {
+		t.Fatalf("expected no device writes before capability gate, got %d", got)
+	}
+}
+
+func TestInstallSkipFirmwareUpdateRejectsMissingUsageSlotsImmediately(t *testing.T) {
+	packDir := writeUsageSlotsThemePack(t)
+	var firmwareUpdateAttempts atomic.Int32
+	var helloRequests atomic.Int32
+	var unexpectedWrites atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			helloRequests.Add(1)
+			writeUsageSlotsThemeHello(t, w, false)
+		default:
+			unexpectedWrites.Add(1)
+			http.Error(w, "capability gate did not pass", http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+
+	_, err := Install(context.Background(), Options{
+		PackURL:            packDir,
+		Target:             server.URL,
+		SkipFirmwareUpdate: true,
+		HTTPClient:         server.Client(),
+		UploadSettleDelay:  -1,
+		FirmwareUpdater: func(context.Context, string, string) error {
+			firmwareUpdateAttempts.Add(1)
+			return nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "usage-slots-v1") {
+		t.Fatalf("expected immediate usage-slots-v1 error, got %v", err)
+	}
+	if got := firmwareUpdateAttempts.Load(); got != 0 {
+		t.Fatalf("expected firmware update to be skipped, got %d", got)
+	}
+	if got := helloRequests.Load(); got != 1 {
+		t.Fatalf("expected one hello check, got %d", got)
+	}
+	if got := unexpectedWrites.Load(); got != 0 {
+		t.Fatalf("expected no device writes before capability gate, got %d", got)
+	}
+}
+
+func TestInstallDoesNotUpdateFirmwareWhenUsageSlotsThemeStillViolatesCurrentCaps(t *testing.T) {
+	packBytes := zipThemePackFiles(t, map[string]string{
+		"manifest.json": `{
+			"kind":"vibetv-theme-pack",
+			"schemaVersion":1,
+			"id":"slot-gif",
+			"name":"Slot GIF",
+			"requiredCapabilities":["usage-slots-v1"],
+			"themeSpec":{"path":"/themes/u/slot-gif.json","file":"theme.json"},
+			"assets":[{"path":"/themes/u/slot.gif","file":"slot.gif"}]
+		}`,
+		"theme.json": `{"v":1,"id":"slot-gif","rev":1,"fb":"mini","p":[{"t":"g","x":0,"y":0,"w":80,"h":80,"sl":1,"a":"/themes/u/slot.gif"}]}`,
+		"slot.gif":   strings.Repeat("x", 9),
+	})
+	var firmwareUpdateAttempts atomic.Int32
+	var unexpectedWrites atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/hello" && r.Method == http.MethodGet {
+			writeUsageSlotsThemeHelloWithGIFLimit(t, w, false, 8)
+			return
+		}
+		unexpectedWrites.Add(1)
+		http.Error(w, "capability gate did not pass", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	_, err := Install(context.Background(), Options{
+		PackBytes:         packBytes,
+		Target:            server.URL,
+		HTTPClient:        server.Client(),
+		UploadSettleDelay: -1,
+		FirmwareUpdater: func(context.Context, string, string) error {
+			firmwareUpdateAttempts.Add(1)
+			return nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "usage-slots-v1") {
+		t.Fatalf("expected initial usage-slots-v1 error, got %v", err)
+	}
+	if got := firmwareUpdateAttempts.Load(); got != 0 {
+		t.Fatalf("expected hidden GIF incompatibility to block firmware update, got %d", got)
+	}
+	if got := unexpectedWrites.Load(); got != 0 {
+		t.Fatalf("expected no device writes before capability gate, got %d", got)
+	}
+}
+
 func TestInstallRejectsTruncatedUploadedAsset(t *testing.T) {
 	withFastUploadVerification(t)
 	packDir := writeMinimalThemePack(t)
@@ -824,6 +1040,27 @@ func writeMinimalThemePack(t *testing.T) string {
 	return dir
 }
 
+func writeUsageSlotsThemePack(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	spec := `{"v":1,"id":"slot-theme","rev":1,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"sl":1,"b":"us1l","s":1}]}`
+	manifest := `{
+		"kind":"vibetv-theme-pack",
+		"schemaVersion":1,
+		"id":"slot-theme",
+		"name":"Slot Theme",
+		"requiredCapabilities":["usage-slots-v1"],
+		"themeSpec":{"path":"/themes/u/slot.json","file":"theme.json"}
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "theme.json"), []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func zipMinimalThemePack(t *testing.T, dir string) []byte {
 	t.Helper()
 	var buffer bytes.Buffer
@@ -1047,6 +1284,50 @@ func writeThemeHelloWithLZWLimit(t *testing.T, w http.ResponseWriter, maxBits *i
 		"board":           "esp8266-smalltv-st7789",
 		"firmware":        "1.0.36",
 		"features":        []string{"theme", "theme-spec-v1"},
+		"maxFrameBytes":   1024,
+		"capabilities": map[string]any{
+			"theme":     themeCapabilities,
+			"transport": map[string]any{"active": "wifi"},
+		},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeUsageSlotsThemeHello(t *testing.T, w http.ResponseWriter, supportsUsageSlots bool) {
+	t.Helper()
+	writeUsageSlotsThemeHelloWithGIFLimit(t, w, supportsUsageSlots, 24576)
+}
+
+func writeUsageSlotsThemeHelloWithGIFLimit(t *testing.T, w http.ResponseWriter, supportsUsageSlots bool, maxGIFBytes int) {
+	t.Helper()
+	features := []string{"theme", "theme-spec-v1"}
+	themeCapabilities := map[string]any{
+		"supportsThemeSpecV1":     true,
+		"supportsStoredThemes":    true,
+		"maxThemeSpecBytes":       2048,
+		"maxStoredThemeSpecBytes": 4096,
+		"maxThemePrimitives":      32,
+		"maxThemeGifAssets":       1,
+		"maxThemeGifBytes":        maxGIFBytes,
+		"maxThemeGifWidth":        80,
+		"maxThemeGifHeight":       80,
+		"maxThemeGifPixels":       6400,
+		"builtinThemes":           []string{"mini"},
+		"supportedPrimitiveTypes": []string{"text", "progress", "rect", "gif", "sprite"},
+		"supportsUsageSlotsV1":    supportsUsageSlots,
+	}
+	if supportsUsageSlots {
+		features = append(features, "usage-slots-v1")
+	}
+	payload := map[string]any{
+		"kind":            "hello",
+		"protocolVersion": 2,
+		"board":           "esp8266-smalltv-st7789",
+		"firmware":        "1.0.39",
+		"features":        features,
 		"maxFrameBytes":   1024,
 		"capabilities": map[string]any{
 			"theme":     themeCapabilities,
