@@ -255,6 +255,9 @@ type cycleResult struct {
 	usageSource     string
 	usageFresh      bool
 	activityDetail  string
+	// resetBasisAt is when the reset deadline in frame was collected. It is the
+	// anchor the device-facing freshness fields are derived from.
+	resetBasisAt time.Time
 }
 
 type persistedLastGood struct {
@@ -960,6 +963,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		collectedAt = now
 		decision.Selected.CollectedAt = collectedAt
 	}
+	result.resetBasisAt = collectedAt
 	if !result.frame.UsageUnavailable {
 		updateLastGoodState(state, result.frame, collectedAt, deps)
 	}
@@ -977,6 +981,7 @@ func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time)
 		if !isLastGoodFreshAt(state.lastGoodAt, now, lastGoodMaxAge()) {
 			result.frame.UsageUnavailable = true
 		}
+		result.resetBasisAt = state.lastGoodAt
 		result.usedLastGood = true
 		result.selectionReason = "stale-last-good"
 		result.selectionDetail = fmt.Sprintf("kind=%s", result.failureKind)
@@ -1110,7 +1115,9 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	publicPort := publicDeviceTarget(port)
 	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
-	frame = attachClockFields(frame, deps.now())
+	now := deps.now()
+	frame = attachClockFields(frame, now)
+	frame = frame.ApplyResetTrust(result.resetBasisAt, now, result.usageFresh)
 
 	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
 		var applied bool
@@ -1165,8 +1172,8 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 	persistActiveWiFiTarget(port, deps)
 
-	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionUnavailable=%t weeklyUnavailable=%t reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
-		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
+	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionUnavailable=%t weeklyUnavailable=%t reset=%ds resetTrust=%s resetAge=%ds resetTrustSecs=%ds resetSource=%q activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
+		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, frame.ResetTrust, frame.ResetAgeSec, frame.ResetTrustSec, frame.ResetSource, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {

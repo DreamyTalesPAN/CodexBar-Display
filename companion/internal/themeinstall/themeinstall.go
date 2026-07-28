@@ -438,7 +438,8 @@ func sendLiveThemeFrame(ctx context.Context, wifi transportlayer.WiFiTransport, 
 	if err != nil {
 		return fmt.Errorf("fetch current usage: %w", err)
 	}
-	frame = frame.Normalize()
+	now := time.Now()
+	frame = frame.ApplyResetTrust(now, now, true)
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame.Theme = ""
 	frame.ThemeSpec = nil
@@ -468,7 +469,8 @@ func sendClearThemeSpecFrame(ctx context.Context, wifi transportlayer.WiFiTransp
 	if err != nil {
 		return fmt.Errorf("fetch current usage: %w", err)
 	}
-	frame = frame.Normalize()
+	now := time.Now()
+	frame = frame.ApplyResetTrust(now, now, true)
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame.Theme = ""
 	frame.ThemeSpec = json.RawMessage("null")

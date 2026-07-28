@@ -133,6 +133,10 @@ var displayStreamLogKeys = []string{
 	"sessionUnavailable",
 	"weeklyUnavailable",
 	"reset",
+	"resetTrust",
+	"resetAge",
+	"resetTrustSecs",
+	"resetSource",
 	"activity",
 	"time",
 	"date",
@@ -6902,6 +6906,8 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 		Weekly:             weekly,
 		SessionUnavailable: boolFieldFromDisplayStreamLog(line, "sessionUnavailable"),
 		WeeklyUnavailable:  boolFieldFromDisplayStreamLog(line, "weeklyUnavailable"),
+		ResetSource:        displayStreamLogValue(line, "resetSource"),
+		ResetTrust:         displayStreamLogValue(line, "resetTrust"),
 		UsageMode:          displayStreamLogValue(line, "usageMode"),
 		Activity:           displayStreamLogValue(line, "activity"),
 		Time:               displayStreamLogValue(line, "time"),
@@ -6910,6 +6916,12 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 	}
 	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
 		frame.ResetSec = reset
+	}
+	if age, ok := int64FieldFromDisplayStreamLog(line, "resetAge"); ok {
+		frame.ResetAgeSec = age
+	}
+	if trustSecs, ok := int64FieldFromDisplayStreamLog(line, "resetTrustSecs"); ok {
+		frame.ResetTrustSec = trustSecs
 	}
 	return frame.Normalize(), true
 }

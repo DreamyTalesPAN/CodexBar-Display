@@ -25,7 +25,11 @@ Fields:
 - `label` (string, optional): display label.
 - `session` (number, optional): session usage percent `0..100`.
 - `weekly` (number, optional): weekly usage percent `0..100`.
-- `resetSecs` (number, optional): seconds remaining until reset.
+- `resetSecs` (number, optional): seconds remaining until reset, valid at the instant the frame is sent (see Reset Freshness and Trust).
+- `resetAgeSecs` (number, optional): how old the underlying usage data already was when the frame was sent.
+- `resetTrustSecs` (number, optional): remaining trust budget for the deadline at the instant the frame is sent.
+- `resetSource` (string, optional): identity of the provider plus usage window the deadline came from, for example `codex:primary`.
+- `resetTrust` (string, optional): host assessment of the deadline (`live`, `offline`, `stale`).
 - `usageUnavailable` (boolean, optional): both current quota values are not trustworthy; missing/false remains backward compatible. ThemeSpec text bindings show unknown values while progress keeps the numeric carrier values.
 - `sessionUnavailable` / `weeklyUnavailable` (boolean, optional): only that existing usage lane is unknown. Missing/false remains backward compatible. Its text binding shows `??` and its progress primitive is omitted. `usageUnavailable:true` still overrides both lanes, including stale frames.
 - `usageMode` (string, optional): semantic of `session`/`weekly` (`used` or `remaining`).
@@ -49,6 +53,67 @@ Theme registry source of truth:
 
 Golden frame fixtures:
 - `protocol/fixtures/v1/companion_frame_golden.json`
+- `protocol/fixtures/v2/reset_trust_golden.json`
+
+## Reset Freshness and Trust
+
+```json
+{"v":2,"provider":"claude","label":"Claude","session":73,"weekly":45,"resetSecs":8028,"resetAgeSecs":12,"resetTrustSecs":17988,"resetSource":"claude:primary","resetTrust":"live"}
+```
+
+The device has no wall clock, so the frame never carries an absolute time. Every
+reset value is a seconds count that is valid at the instant the frame arrives.
+The device only has to tick those counters down with its own monotonic clock:
+
+- `resetSecs` is the deadline, re-anchored to the send instant. Reaching `0`
+  means the reset time has passed.
+- `resetTrustSecs` is how much longer the deadline may be counted down before the
+  basis is too old to be trusted. It starts at the trust horizon (5 hours) minus
+  `resetAgeSecs`. Reaching `0` means `stale`, no matter how long the device was
+  without updates or how often it rebooted in between.
+- `resetAgeSecs` is how old the basis already was when the frame was sent. It is
+  the wall-clock-free form of "collected at": the device adds its own elapsed
+  time since the frame arrived to get the current age.
+- `resetSource` is the identity of the countdown (`provider` or
+  `provider:window`). A changed value is a different countdown.
+
+Trust states:
+
+| State | Meaning | Rendering |
+|---|---|---|
+| `live` | Deadline from current usage data. | `4h 12m` |
+| `offline` | Usage source is not reachable, deadline still inside its trust budget. | `4h 12m` plus a discreet offline hint |
+| `stale` | Expired, unknown, unattributable, or beyond the trust budget. | `—` |
+
+Transitions:
+
+- `live -> offline`: the host resends the last known good frame because the usage
+  source is unavailable, or the device stops receiving frames at all.
+- `offline -> live`: a frame with `resetTrust:"live"` arrives. Fresh data always
+  replaces the offline state; no restart or re-pairing is involved.
+- `live|offline -> stale`: `resetSecs` reaches `0`, `resetTrustSecs` reaches `0`,
+  `resetSource` changes, or the deadline can no longer be attributed.
+- `stale -> live`: only a frame with `resetTrust:"live"` leaves `stale`. Passing
+  the stored deadline never starts a new cycle locally.
+
+Rules:
+
+- The host value is the best case. The device re-evaluates trust locally and may
+  only downgrade it, never upgrade it.
+- The host never sends a deadline it does not trust: a `stale` frame carries
+  `resetSecs:0` and `resetTrustSecs:0`.
+- A deadline is never inherited across a `resetSource` change. On any change the
+  device drops the previous deadline instead of continuing it.
+- A frame that carries no reset fields at all (for example a ThemeSpec-only apply
+  frame) does not change the current trust state.
+- A frame with `resetSecs` but without `resetTrust` comes from a Companion that
+  predates this contract. Firmware keeps its legacy local countdown for those
+  frames; a missing or zero `resetTrustSecs` only means `stale` when `resetTrust`
+  is present.
+- The trust fields are never dropped to fit `maxFrameBytes`. Theme, token stats,
+  and clock strings are dropped first.
+- All fields are additive. Firmware that does not know them keeps working
+  unchanged and simply ticks `resetSecs` down as before.
 
 ## ThemeSpec v1 (declarative)
 
@@ -213,7 +278,7 @@ Result:
 - WiFi Companion usage: `codexbar-display daemon --transport wifi --target http://<device-ip>`.
 - Unknown `theme` values should be ignored by firmware.
 - Host should send at least every 60 seconds.
-- Firmware ticks down `resetSecs` locally between host updates.
+- Firmware ticks down `resetSecs` locally between host updates, bounded by `resetTrustSecs` (see Reset Freshness and Trust).
 - Companion may resend the last known good frame normally during short CodexBar outages (current default max age: 10 minutes). After that, it keeps provider identity and numeric progress carriers but sets `usageUnavailable:true`.
 - If frame payload exceeds `maxFrameBytes`, companion drops `theme` first, then token stats, before falling back to an error frame.
 
