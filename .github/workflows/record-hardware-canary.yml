@@ -1,0 +1,86 @@
+name: CODEX Record VibeTV Hardware Canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      evidence_base64:
+        description: Base64-encoded hardware-canary.json from the guided physical canary
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  statuses: write
+
+jobs:
+  record:
+    if: github.repository == 'DreamyTalesPAN/CodexBar-Display' && github.ref == 'refs/heads/main' && (github.actor == github.repository_owner || github.actor == 'marcus7989')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted validator
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Decode evidence
+        env:
+          EVIDENCE_BASE64: ${{ inputs.evidence_base64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence candidate
+          printf '%s' "$EVIDENCE_BASE64" | base64 --decode > evidence/hardware-canary.json
+          python3 -m json.tool evidence/hardware-canary.json >/dev/null
+
+      - name: Verify successful immutable candidate run
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id="$(python3 -c 'import json; print(json.load(open("evidence/hardware-canary.json"))["candidateRunId"])')"
+          source_sha="$(python3 -c 'import json; print(json.load(open("evidence/hardware-canary.json"))["sourceSha"])')"
+          run="$(gh run view "${run_id}" --repo "${GITHUB_REPOSITORY}" --json conclusion,workflowName,headSha)"
+          conclusion="$(printf '%s' "$run" | python3 -c 'import json,sys; print(json.load(sys.stdin)["conclusion"])')"
+          workflow="$(printf '%s' "$run" | python3 -c 'import json,sys; print(json.load(sys.stdin)["workflowName"])')"
+          head_sha="$(printf '%s' "$run" | python3 -c 'import json,sys; print(json.load(sys.stdin)["headSha"])')"
+          [[ "${conclusion}" == success && "${workflow}" == 'CODEX Test VibeTV Release Candidate' && "${head_sha}" == "${source_sha}" ]] || { echo 'candidate run identity/conclusion mismatch' >&2; exit 1; }
+          gh run download "${run_id}" --repo "${GITHUB_REPOSITORY}" --name vibetv-release-candidate --dir candidate
+          gh run download "${run_id}" --repo "${GITHUB_REPOSITORY}" --name vibetv-release-candidate-result --dir candidate-result
+          ./scripts/validate-hardware-canary.py candidate-result --candidate-dir candidate --result candidate-result/candidate-result.json
+          echo "source_sha=${source_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate evidence against candidate bundle
+        id: validate
+        run: |
+          set -euo pipefail
+          ./scripts/validate-hardware-canary.py evidence --candidate-dir candidate --evidence evidence/hardware-canary.json
+          result="$(python3 -c 'import json; print(json.load(open("evidence/hardware-canary.json"))["result"])')"
+          [[ "${result}" == "success" ]]
+
+      - name: Upload hardware canary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibetv-hardware-canary
+          path: evidence/hardware-canary.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Set hardware canary commit status
+        if: always() && steps.candidate.outputs.source_sha != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
+          VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
+        run: |
+          set -euo pipefail
+          state=failure
+          description='hardware evidence validation failed'
+          if [[ "${VALIDATION_OUTCOME}" == success ]]; then
+            state=success
+            description='hardware canary evidence validated'
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${SOURCE_SHA}" \
+            -f state="${state}" -f context='CODEX VibeTV Hardware Canary' -f description="${description}"
