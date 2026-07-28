@@ -6338,8 +6338,21 @@ func TestThemeInstallCapturesRenderBaselineBeforeActivation(t *testing.T) {
 		return health, nil
 	}
 
-	if _, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, io.Discard); err != nil {
+	var out bytes.Buffer
+	if _, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, &out); err != nil {
 		t.Fatalf("run theme install: %v", err)
+	}
+	for _, phase := range []string{
+		"device-maintenance",
+		"preflight",
+		"device-install",
+		"stream-refresh",
+		"render-verification",
+		"total",
+	} {
+		if !strings.Contains(out.String(), "Theme install timing: phase="+phase+" duration=") {
+			t.Fatalf("missing %s timing in output:\n%s", phase, out.String())
+		}
 	}
 }
 

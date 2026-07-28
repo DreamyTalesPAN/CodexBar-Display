@@ -134,6 +134,7 @@ type runtimeDeps struct {
 	fetchProvider     func(context.Context, string) (codexbar.ParsedFrame, error)
 	fetchTokenStats   func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
 	usageBarsShowUsed func() bool
+	beginDeviceWrite  func() func()
 	sendLine          func(string, []byte) error
 	fetchUpdateState  func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
 	newSelector       func() *codexbar.ProviderSelector
@@ -312,6 +313,7 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	if opts.Interval <= 0 {
 		opts.Interval = defaultIntervalForTransport(deps.transportName)
 	}
+	deps.beginDeviceWrite = opts.BeginDeviceWrite
 	syncCycleMode := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()
 
@@ -408,7 +410,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 	for {
 		if opts.PauseDeviceWrites != nil && opts.PauseDeviceWrites() {
 			if !deviceWritesPaused {
-				deps.logf("runtime event=device-writes-paused reason=firmware-update\n")
+				deps.logf("runtime event=device-writes-paused reason=device-maintenance\n")
 				deviceWritesPaused = true
 			}
 			select {
@@ -420,7 +422,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 			continue
 		}
 		if deviceWritesPaused {
-			deps.logf("runtime event=device-writes-resumed reason=firmware-update-complete\n")
+			deps.logf("runtime event=device-writes-resumed reason=device-maintenance-complete\n")
 			deviceWritesPaused = false
 		}
 		cycleStart := deps.now()
@@ -436,15 +438,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		}
 		lastCycleStart = cycleStart
 
-		runDeviceCycle := runCycle
-		if opts.BeginDeviceWrite != nil {
-			runDeviceCycle = func(cycleCtx context.Context) error {
-				release := opts.BeginDeviceWrite()
-				defer release()
-				return runCycle(cycleCtx)
-			}
-		}
-		err := runCycleWithTimeout(ctx, cycleTimeout, runDeviceCycle)
+		err := runCycleWithTimeout(ctx, cycleTimeout, runCycle)
 		if opts.Once {
 			return err
 		}
@@ -1178,11 +1172,19 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}
-	if err := deps.sendLine(sendTarget, line); err != nil {
+	releaseDeviceWrite := func() {}
+	if deps.beginDeviceWrite != nil {
+		if release := deps.beginDeviceWrite(); release != nil {
+			releaseDeviceWrite = release
+		}
+	}
+	sendErr := deps.sendLine(sendTarget, line)
+	releaseDeviceWrite()
+	if sendErr != nil {
 		return &RuntimeError{
 			Kind: runtimeErrorSerialWrite,
 			Op:   "send-line",
-			Err:  err,
+			Err:  sendErr,
 			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}

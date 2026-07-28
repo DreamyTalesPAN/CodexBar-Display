@@ -3507,6 +3507,10 @@ func (s *Server) handleMacAppUpdateStatus(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, req themeInstallRequest, out io.Writer) (themeinstall.Result, error) {
+	installStartedAt := time.Now()
+	defer logThemeInstallTiming(out, "total", installStartedAt)
+
+	maintenanceStartedAt := time.Now()
 	s.deviceMaintenanceMu.Lock()
 	defer s.deviceMaintenanceMu.Unlock()
 
@@ -3518,6 +3522,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		s.pauseDisplayStream(true)
 		streamPaused = true
 	}
+	logThemeInstallTiming(out, "device-maintenance", maintenanceStartedAt)
 	resumeStream := func() {
 		if streamPaused && s.pauseDisplayStream != nil {
 			s.pauseDisplayStream(false)
@@ -3526,6 +3531,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	}
 	defer resumeStream()
 
+	preflightStartedAt := time.Now()
 	latestCfg, err := s.config()
 	if err != nil {
 		return themeinstall.Result{}, err
@@ -3553,12 +3559,14 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			},
 		}
 	}
+	logThemeInstallTiming(out, "preflight", preflightStartedAt)
 
 	skipFirmwareUpdate := true
 	if req.SkipFirmwareUpdate != nil {
 		skipFirmwareUpdate = *req.SkipFirmwareUpdate
 	}
 	pairedDuringThemeInstall := false
+	deviceInstallStartedAt := time.Now()
 	result, err := s.installTheme(ctx, themeinstall.Options{
 		ThemeID:            strings.TrimSpace(req.ThemeID),
 		PackURL:            strings.TrimSpace(req.PackURL),
@@ -3586,6 +3594,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			return updateErr
 		},
 	})
+	logThemeInstallTiming(out, "device-install", deviceInstallStartedAt)
 	if err != nil {
 		return themeinstall.Result{}, err
 	}
@@ -3598,8 +3607,10 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	}
 	fmt.Fprintln(out, "Refreshing display stream...")
 	resumeStream()
+	streamRefreshStartedAt := time.Now()
 	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(ctx, cfg.DeviceTarget); err != nil {
+		logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
 		return themeinstall.Result{}, &statusAPIError{
 			status: http.StatusBadGateway,
 			api: apiError{
@@ -3615,7 +3626,10 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	} else {
 		stream = s.waitForFreshDisplayStream(ctx, cfg.DeviceTarget, streamStartedAt)
 	}
+	logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
+	renderVerificationStartedAt := time.Now()
 	health, err := s.waitForVerifiedDisplayRender(ctx, cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
+	logThemeInstallTiming(out, "render-verification", renderVerificationStartedAt)
 	if err != nil {
 		if !stream.Healthy {
 			return themeinstall.Result{}, &statusAPIError{
@@ -3653,6 +3667,18 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	}
 	fmt.Fprintln(out, "Display stream: refreshed and rendered")
 	return result, nil
+}
+
+func logThemeInstallTiming(out io.Writer, phase string, startedAt time.Time) {
+	if out == nil || startedAt.IsZero() {
+		return
+	}
+	fmt.Fprintf(
+		out,
+		"Theme install timing: phase=%s duration=%s\n",
+		strings.TrimSpace(phase),
+		time.Since(startedAt).Round(time.Millisecond),
+	)
 }
 
 type themeRenderPackAsset struct {

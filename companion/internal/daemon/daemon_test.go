@@ -58,6 +58,51 @@ func TestRunCycleWithDepsSendsErrorFrameWhenNoLastGood(t *testing.T) {
 	}
 }
 
+func TestRunCycleCoordinatesOnlyTheDeviceWrite(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	preparationFinished := false
+	writeLocked := false
+	released := false
+
+	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			preparationFinished = true
+			if writeLocked {
+				t.Fatal("device write lock must not cover provider preparation")
+			}
+			return []codexbar.ParsedFrame{testParsedFrame("claude", 12, 34, 3600)}, nil
+		},
+		beginDeviceWrite: func() func() {
+			if !preparationFinished {
+				t.Fatal("device write lock started before frame preparation completed")
+			}
+			writeLocked = true
+			return func() {
+				writeLocked = false
+				released = true
+			}
+		},
+		sendLine: func(string, []byte) error {
+			if !writeLocked {
+				t.Fatal("device frame was sent outside the write lock")
+			}
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("run cycle: %v", err)
+	}
+	if writeLocked || !released {
+		t.Fatalf("device write lock was not released: locked=%t released=%t", writeLocked, released)
+	}
+}
+
 func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -3269,7 +3314,7 @@ func TestRunDaemonLoopRetriesAfterCycleTimeout(t *testing.T) {
 	}
 }
 
-func TestRunDaemonLoopPausesDeviceCyclesDuringFirmwareUpdate(t *testing.T) {
+func TestRunDaemonLoopPausesDeviceCyclesDuringMaintenance(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -3306,10 +3351,10 @@ func TestRunDaemonLoopPausesDeviceCyclesDuringFirmwareUpdate(t *testing.T) {
 		t.Fatalf("device cycle calls=%d want 1 after resume", got)
 	}
 	log := logged.String()
-	if !strings.Contains(log, "runtime event=device-writes-paused reason=firmware-update") {
+	if !strings.Contains(log, "runtime event=device-writes-paused reason=device-maintenance") {
 		t.Fatalf("missing pause log: %q", log)
 	}
-	if !strings.Contains(log, "runtime event=device-writes-resumed reason=firmware-update-complete") {
+	if !strings.Contains(log, "runtime event=device-writes-resumed reason=device-maintenance-complete") {
 		t.Fatalf("missing resume log: %q", log)
 	}
 }
