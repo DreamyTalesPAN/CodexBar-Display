@@ -127,6 +127,9 @@ PY
   grep -F 'gh api user --jq .login' "${CANARY}" >/dev/null || die "canary does not resolve a GitHub actor"
   grep -F 'wait_for_resume_health' "${CANARY}" >/dev/null || die "resume does not bound hello and health polling"
   grep -F 'daemon --transport wifi --target "$TARGET" --once' "${CANARY}" >/dev/null || die "resume does not rerun the candidate daemon"
+  grep -F 'esp8266-smalltv-st7789' "${CANARY}" >/dev/null || die "canary does not gate ESP8266 backup by board"
+  grep -F 'no recovery/backup path is implemented' "${CANARY}" >/dev/null || die "canary does not fail closed for unsupported firmware boards"
+  if grep -F 'resume read-only' "${CANARY}" >/dev/null; then die "resume is misleadingly labelled read-only despite its frame send"; fi
 }
 
 main "$@"

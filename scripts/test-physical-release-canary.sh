@@ -133,6 +133,7 @@ PY
   exit 0
 fi
 if [[ "$(semver_compare "$candidate_version" "$before")" == 1 ]]; then
+  [[ "$board" == "esp8266-smalltv-st7789" ]] || die "firmware write blocked for board $board: no recovery/backup path is implemented"
   [[ -n "$RECOVERY_PORT" && "$CONFIRM_DEVICE_ID" == "$EXPECTED_DEVICE_ID" && -n "$CONFIRM_WRITE_RISK" ]] || die "firmware write requires --recovery-port, exact --confirm-device-id, and --confirm-hardware-write-risk"
   mkdir -p "$OUTPUT_DIR"
   "${ROOT}/scripts/esp8266-backup.sh" "$RECOVERY_PORT" "$OUTPUT_DIR/usb-backup.bin" 0x400000
@@ -181,4 +182,4 @@ python3 - "$pending" "$TARGET" "$EXPECTED_DEVICE_ID" "$board" "$candidate_versio
 import json,sys
 json.dump(dict(target=sys.argv[2],deviceId=sys.argv[3],board=sys.argv[4],firmware=sys.argv[5],candidateDir=sys.argv[6],candidateRunId=sys.argv[7],firmwareBefore=sys.argv[8]),open(sys.argv[1],'w'))
 PY
-echo "Power-cycle VibeTV for 10 seconds, then resume read-only: $0 --resume $pending --target $TARGET --expected-device-id $EXPECTED_DEVICE_ID --output-dir $OUTPUT_DIR --confirm-render-visible --confirm-power-cycle-10s"
+echo "Power-cycle VibeTV for 10 seconds, then resume without another firmware write: $0 --resume $pending --target $TARGET --expected-device-id $EXPECTED_DEVICE_ID --output-dir $OUTPUT_DIR --confirm-render-visible --confirm-power-cycle-10s"
