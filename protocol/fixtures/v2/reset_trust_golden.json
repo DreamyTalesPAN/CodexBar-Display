@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "trustHorizonSecs": 18000,
+  "cases": [
+    {
+      "name": "live",
+      "description": "Fresh collection: deadline re-anchored to the send instant, full trust budget minus the collection age.",
+      "collectedAgeSecs": 12,
+      "sourceLive": true,
+      "inputFrame": {
+        "v": 2,
+        "provider": "claude",
+        "label": "Claude",
+        "session": 73,
+        "weekly": 45,
+        "resetSecs": 8040,
+        "resetSource": "claude:primary"
+      },
+      "expectedFrame": {
+        "v": 2,
+        "provider": "claude",
+        "label": "Claude",
+        "session": 73,
+        "weekly": 45,
+        "resetSecs": 8028,
+        "resetAgeSecs": 12,
+        "resetTrustSecs": 17988,
+        "resetSource": "claude:primary",
+        "resetTrust": "live"
+      }
+    },
+    {
+      "name": "offline",
+      "description": "Usage source unavailable, last known good frame resent: deadline still valid, so the device may keep counting down and show an offline hint.",
+      "collectedAgeSecs": 600,
+      "sourceLive": false,
+      "inputFrame": {
+        "v": 2,
+        "provider": "claude",
+        "label": "Claude",
+        "session": 73,
+        "weekly": 45,
+        "resetSecs": 8040,
+        "resetSource": "claude:primary"
+      },
+      "expectedFrame": {
+        "v": 2,
+        "provider": "claude",
+        "label": "Claude",
+        "session": 73,
+        "weekly": 45,
+        "resetSecs": 7440,
+        "resetAgeSecs": 600,
+        "resetTrustSecs": 17400,
+        "resetSource": "claude:primary",
+        "resetTrust": "offline"
+      }
+    },
+    {
+      "name": "stale-deadline-passed",
+      "description": "The deadline itself expired while the source was unavailable. No new cycle is invented; the deadline is dropped.",
+      "collectedAgeSecs": 900,
+      "sourceLive": false,
+      "inputFrame": {
+        "v": 2,
+        "provider": "claude",
+        "label": "Claude",
+        "session": 73,
+        "weekly": 45,
+        "resetSecs": 300,
+        "resetSource": "claude:primary"
+      },
+      "expectedFrame": {
+        "v": 2,
+        "provider": "claude",
+        "label": "Claude",
+        "session": 73,
+        "weekly": 45,
+        "resetSecs": 0,
+        "resetAgeSecs": 900,
+        "resetTrustSecs": 0,
+        "resetSource": "claude:primary",
+        "resetTrust": "stale"
+      }
+    },
+    {
+      "name": "stale-trust-horizon-exceeded",
+      "description": "The basis is older than the trust horizon. The deadline would still be in the future, but it is no longer trustworthy.",
+      "collectedAgeSecs": 18600,
+      "sourceLive": false,
+      "inputFrame": {
+        "v": 2,
+        "provider": "codex",
+        "label": "Codex",
+        "session": 17,
+        "weekly": 42,
+        "resetSecs": 25000,
+        "resetSource": "codex:secondary"
+      },
+      "expectedFrame": {
+        "v": 2,
+        "provider": "codex",
+        "label": "Codex",
+        "session": 17,
+        "weekly": 42,
+        "resetSecs": 0,
+        "resetAgeSecs": 18600,
+        "resetTrustSecs": 0,
+        "resetSource": "codex:secondary",
+        "resetTrust": "stale"
+      }
+    },
+    {
+      "name": "stale-collection-time-unknown",
+      "description": "The host cannot say when the value was collected, so the age is unknowable and the deadline is not sent as a countdown.",
+      "basisUnknown": true,
+      "sourceLive": true,
+      "inputFrame": {
+        "v": 2,
+        "provider": "codex",
+        "label": "Codex",
+        "session": 17,
+        "weekly": 42,
+        "resetSecs": 15480,
+        "resetSource": "codex:primary"
+      },
+      "expectedFrame": {
+        "v": 2,
+        "provider": "codex",
+        "label": "Codex",
+        "session": 17,
+        "weekly": 42,
+        "resetSecs": 0,
+        "resetAgeSecs": 0,
+        "resetTrustSecs": 0,
+        "resetSource": "codex:primary",
+        "resetTrust": "stale"
+      }
+    },
+    {
+      "name": "live-source-defaults-to-provider",
+      "description": "A frame without an explicit window identity falls back to the provider key, so a provider change is still visible to the device.",
+      "collectedAgeSecs": 0,
+      "sourceLive": true,
+      "inputFrame": {
+        "v": 2,
+        "provider": "gemini",
+        "label": "Gemini",
+        "session": 5,
+        "weekly": 9,
+        "resetSecs": 3600
+      },
+      "expectedFrame": {
+        "v": 2,
+        "provider": "gemini",
+        "label": "Gemini",
+        "session": 5,
+        "weekly": 9,
+        "resetSecs": 3600,
+        "resetAgeSecs": 0,
+        "resetTrustSecs": 18000,
+        "resetSource": "gemini",
+        "resetTrust": "live"
+      }
+    }
+  ]
+}

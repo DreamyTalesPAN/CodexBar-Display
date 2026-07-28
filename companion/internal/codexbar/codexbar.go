@@ -728,11 +728,15 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		"openaiDashboard.secondaryLimit",
 	)
 
+	resetWindow := "primary"
 	resetAt := firstStringAtPaths(payload,
 		"usage.primary.resetsAt",
 		"primary.resetsAt",
-		"usage.secondary.resetsAt",
 	)
+	if resetAt == "" {
+		resetWindow = "secondary"
+		resetAt = firstStringAtPaths(payload, "usage.secondary.resetsAt")
+	}
 	resetSecs := int64(0)
 	if resetAt != "" {
 		if t, err := time.Parse(time.RFC3339, resetAt); err == nil {
@@ -740,6 +744,10 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 				resetSecs = int64(d.Seconds())
 			}
 		}
+	}
+	resetSource := ""
+	if resetSecs > 0 {
+		resetSource = protocol.ResetSourceKey(provider, resetWindow)
 	}
 
 	accountEmail := firstStringAtPaths(payload,
@@ -769,6 +777,7 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 			Session:            session,
 			Weekly:             weekly,
 			ResetSec:           resetSecs,
+			ResetSource:        resetSource,
 			UsageUnavailable:   !sessionKnown && !weeklyKnown,
 			SessionUnavailable: !sessionKnown,
 			WeeklyUnavailable:  !weeklyKnown,
@@ -1337,14 +1346,20 @@ func recoverCodexFrameFromErrorPayload(payload map[string]any) (ParsedFrame, boo
 		return ParsedFrame{}, false
 	}
 
+	resetSource := ""
+	if resetSecs > 0 {
+		resetSource = protocol.ResetSourceKey("codex", "primary")
+	}
+
 	return ParsedFrame{
 		Frame: protocol.Frame{
-			V:        1,
-			Provider: "codex",
-			Label:    "Codex",
-			Session:  session,
-			Weekly:   weekly,
-			ResetSec: resetSecs,
+			V:           1,
+			Provider:    "codex",
+			Label:       "Codex",
+			Session:     session,
+			Weekly:      weekly,
+			ResetSec:    resetSecs,
+			ResetSource: resetSource,
 		},
 		Provider: "codex",
 		Source:   "openai-web-recovered",

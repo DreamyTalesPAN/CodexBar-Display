@@ -1645,3 +1645,29 @@ func testSignal(at time.Time, confidence activitySignalConfidence, evidence stri
 		Evidence:   evidence,
 	}
 }
+
+func TestParseUsageJSONTagsResetSourceWithProviderAndWindow(t *testing.T) {
+	primary, err := parseUsageJSON([]byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":1,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":28}}}]`))
+	if err != nil {
+		t.Fatalf("parseUsageJSON failed: %v", err)
+	}
+	if primary.Frame.ResetSource != "codex:primary" {
+		t.Fatalf("expected codex:primary reset source, got %q", primary.Frame.ResetSource)
+	}
+
+	secondary, err := parseUsageJSON([]byte(`[{"provider":"claude","source":"claude-cli","usage":{"primary":{"usedPercent":1},"secondary":{"usedPercent":28,"resetsAt":"2099-01-01T00:00:00Z"}}}]`))
+	if err != nil {
+		t.Fatalf("parseUsageJSON failed: %v", err)
+	}
+	if secondary.Frame.ResetSource != "claude:secondary" {
+		t.Fatalf("expected claude:secondary reset source, got %q", secondary.Frame.ResetSource)
+	}
+
+	none, err := parseUsageJSON([]byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":1},"secondary":{"usedPercent":28}}}]`))
+	if err != nil {
+		t.Fatalf("parseUsageJSON failed: %v", err)
+	}
+	if none.Frame.ResetSource != "" {
+		t.Fatalf("expected no reset source without a deadline, got %q", none.Frame.ResetSource)
+	}
+}
