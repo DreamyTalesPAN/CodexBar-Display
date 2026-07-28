@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_APP='/Applications/VibeTV Control Center.app'
 DMG="" APPCAST="" VIRTUAL_VIBETV="" COMPANION="" FIRMWARE="" FIRMWARE_MANIFEST="" VERSION="" STATE="" OUTPUT=""
 BASELINE_DMG="" BASELINE_APPCAST=""
+CURRENT_FIRMWARE='0.0.0'
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 while [[ $# -gt 0 ]]; do
@@ -14,6 +15,7 @@ while [[ $# -gt 0 ]]; do
     --firmware) FIRMWARE="${2:-}"; shift 2 ;; --firmware-manifest) FIRMWARE_MANIFEST="${2:-}"; shift 2 ;;
     --version) VERSION="${2#v}"; shift 2 ;; --state) STATE="${2:-}"; shift 2 ;;
     --output) OUTPUT="${2:-}"; shift 2 ;; --baseline-dmg) BASELINE_DMG="${2:-}"; shift 2 ;;
+    --current-firmware) CURRENT_FIRMWARE="${2#v}"; shift 2 ;;
     --baseline-appcast) BASELINE_APPCAST="${2:-}"; shift 2 ;; *) die "unknown argument: $1" ;;
   esac
 done
@@ -124,9 +126,15 @@ for artifact in manifest.get("artifacts", []): artifact["firmwareUrl"] = url
 json.dump(manifest, open(output, "w", encoding="utf-8"), indent=2)
 PY
 candidate_firmware="$(python3 -c 'import json; print(next(a["firmwareVersion"] for a in json.load(open("'"$FIRMWARE_MANIFEST"'"))["artifacts"] if a["firmwareEnv"] == "esp8266_smalltv_st7789"))')"
+expected_uploads="$(python3 - "$CURRENT_FIRMWARE" "$candidate_firmware" <<'PY'
+import sys
+def key(value): return tuple(int(part) for part in value.split('-')[0].split('.'))
+print(1 if key(sys.argv[2]) > key(sys.argv[1]) else 0)
+PY
+)"
 RAW_FIRMWARE="$WORK/firmware.bin"; gzip -cd "$FIRMWARE" > "$RAW_FIRMWARE"
 firmware_sha="$(shasum -a 256 "$RAW_FIRMWARE" | awk '{print $1}')"
-"$VIRTUAL_VIBETV" --addr 127.0.0.1:47834 --raw-addr 127.0.0.1:8081 --firmware 0.0.0 --candidate-firmware "$candidate_firmware" --expected-firmware-sha256 "$firmware_sha" > "$OUTPUT/virtual-vibetv.log" 2>&1 & VIRTUAL_PID=$!
+"$VIRTUAL_VIBETV" --addr 127.0.0.1:47834 --raw-addr 127.0.0.1:8081 --firmware "$CURRENT_FIRMWARE" --candidate-firmware "$candidate_firmware" --expected-firmware-sha256 "$firmware_sha" > "$OUTPUT/virtual-vibetv.log" 2>&1 & VIRTUAL_PID=$!
 for _ in $(seq 1 30); do curl --fail --silent "$SERVER_URL/firmware-manifest.json" >/dev/null && curl --fail --silent http://127.0.0.1:47834/health > "$OUTPUT/virtual-health-before.json" && break; sleep 1; done
 [[ -s "$OUTPUT/virtual-health-before.json" ]] || die 'Virtual VibeTV did not become healthy'
 CANDIDATE_COMPANION="$INSTALL_APP/Contents/Helpers/codexbar-display"
@@ -135,10 +143,10 @@ CANDIDATE_COMPANION="$INSTALL_APP/Contents/Helpers/codexbar-display"
 grep -F 'Firmware: already current' "$OUTPUT/candidate-already-current.txt" >/dev/null || die 'candidate companion did not prove already_current'
 "$CANDIDATE_COMPANION" daemon --transport wifi --target http://127.0.0.1:47834 --once --api-addr 127.0.0.1:47832 > "$OUTPUT/candidate-daemon-once.txt" 2>&1
 curl --fail --silent http://127.0.0.1:47834/__virtual/state > "$OUTPUT/virtual-state.json"
-python3 - "$OUTPUT/virtual-state.json" <<'PY'
+python3 - "$OUTPUT/virtual-state.json" "$expected_uploads" <<'PY'
 import json, sys
 state = json.load(open(sys.argv[1], encoding="utf-8"))
-if state.get("updateUploads") != 1 or state.get("violations") or state.get("framesAccepted", 0) < 1:
+if state.get("updateUploads") != int(sys.argv[2]) or state.get("violations") or state.get("framesAccepted", 0) < 1:
     raise SystemExit("candidate companion did not complete raw OTA/render/no-op sequence")
 if not any(event.get("path") == "/update/firmware.raw" for event in state.get("events", [])):
     raise SystemExit("candidate companion did not use Raw OTA port 8081")

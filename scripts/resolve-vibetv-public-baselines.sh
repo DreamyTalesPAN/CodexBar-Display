@@ -43,12 +43,14 @@ for release in releases:
     assets = {asset.get("name"): asset.get("browser_download_url") for asset in release.get("assets", [])}
     dmg = assets.get("VibeTV-Control-Center.dmg")
     appcast = assets.get("appcast.xml")
-    if dmg and appcast:
+    firmware_manifest = assets.get("firmware-manifest.json")
+    if dmg and appcast and firmware_manifest:
         eligible.append({
             "tag": release["tag_name"],
             "version": match.group(1),
             "dmgUrl": dmg,
             "appcastUrl": appcast,
+            "firmwareManifestUrl": firmware_manifest,
             "publishedAt": release.get("published_at"),
         })
 

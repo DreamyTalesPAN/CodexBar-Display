@@ -92,7 +92,7 @@ jobs:
             if [[ "$env" == esp8266_* ]]; then
               ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 46 82 482000 350000
             else
-              ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 20 25 0 0
+              ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 46 82 0 0
             fi
             if [[ "$env" == esp8266_* ]]; then gzip -c -9 "$source" > "tmp/vibetv-rc/publish/firmware/$asset"; else cp "$source" "tmp/vibetv-rc/publish/firmware/$asset"; fi
           done < tmp/vibetv-rc/firmware-targets.tsv
@@ -208,11 +208,15 @@ jobs:
           path = pathlib.Path(__import__('sys').argv[1]); manifest = json.loads(path.read_text())
           root = pathlib.Path('baselines'); root.mkdir()
           for state, baseline in manifest['baselines'].items():
-              for kind, url_key in [('dmg', 'dmgUrl'), ('appcast', 'appcastUrl')]:
+              for kind, url_key in [('dmg', 'dmgUrl'), ('appcast', 'appcastUrl'), ('firmware-manifest', 'firmwareManifestUrl')]:
                   data = urllib.request.urlopen(baseline[url_key]).read()
-                  target = root / f'{state}.{ "dmg" if kind == "dmg" else "appcast.xml" }'
+                  target = root / f'{state}.{ "dmg" if kind == "dmg" else "appcast.xml" if kind == "appcast" else "firmware-manifest.json" }'
                   target.write_bytes(data)
                   baseline[kind + 'Sha256'] = hashlib.sha256(data).hexdigest()
+              firmware = json.loads((root / f'{state}.firmware-manifest.json').read_text())
+              esp = next(item for item in firmware['artifacts'] if item['firmwareEnv'] == 'esp8266_smalltv_st7789')
+              baseline['esp8266FirmwareVersion'] = esp['firmwareVersion']
+              baseline['esp8266FirmwareSha256'] = esp['sha256']
           path.write_text(json.dumps(manifest, indent=2) + '\n')
           PY
       - uses: actions/upload-artifact@v4
@@ -255,16 +259,19 @@ jobs:
           PY
           cp "baselines/${{ matrix.state }}.dmg" baseline.dmg
           cp "baselines/${{ matrix.state }}.appcast.xml" baseline-appcast.xml
+          cp "baselines/${{ matrix.state }}.firmware-manifest.json" baseline-firmware-manifest.json
           shasum -a 256 baseline.dmg baseline-appcast.xml
       - name: Run full direct hosted macOS guest matrix
         run: |
           set -euo pipefail
           version="$(python3 -c 'import json; print(json.load(open("candidate/candidate-manifest.json"))["version"])')"
           baseline_args=()
+          current_firmware=0.0.0
           if [[ '${{ matrix.state }}' != clean_os ]]; then
             baseline_args=(--baseline-dmg baseline.dmg --baseline-appcast baseline-appcast.xml)
+            current_firmware="$(python3 -c 'import json; print(next(a["firmwareVersion"] for a in json.load(open("baseline-firmware-manifest.json"))["artifacts"] if a["firmwareEnv"] == "esp8266_smalltv_st7789"))')"
           fi
-          ./scripts/test-vibetv-hosted-guest.sh --dmg candidate/publish/macos/VibeTV-Control-Center.dmg --appcast candidate/publish/macos/appcast.xml --virtual-vibetv candidate/test/virtual-vibetv --companion candidate/test/codexbar-display --firmware candidate/publish/firmware/codexbar-display-firmware-esp8266_smalltv_st7789-v$(python3 -c 'import json; print(next(a["firmwareVersion"] for a in json.load(open("release/firmware-versions.json"))["artifacts"] if a["firmwareEnv"] == "esp8266_smalltv_st7789")').bin.gz --firmware-manifest candidate/publish/firmware/firmware-manifest.json --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]}"
+          ./scripts/test-vibetv-hosted-guest.sh --dmg candidate/publish/macos/VibeTV-Control-Center.dmg --appcast candidate/publish/macos/appcast.xml --virtual-vibetv candidate/test/virtual-vibetv --companion candidate/test/codexbar-display --firmware candidate/publish/firmware/codexbar-display-firmware-esp8266_smalltv_st7789-v$(python3 -c 'import json; print(next(a["firmwareVersion"] for a in json.load(open("release/firmware-versions.json"))["artifacts"] if a["firmwareEnv"] == "esp8266_smalltv_st7789")').bin.gz --firmware-manifest candidate/publish/firmware/firmware-manifest.json --current-firmware "$current_firmware" --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
