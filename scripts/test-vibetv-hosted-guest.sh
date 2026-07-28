@@ -71,6 +71,16 @@ for _ in $(seq 1 30); do [[ -s "$WORK/serve/port" ]] && break; sleep 1; done
 [[ -s "$WORK/serve/port" ]] || die 'local candidate artifact server did not start'
 PORT="$(cat "$WORK/serve/port")"
 SERVER_URL="http://127.0.0.1:${PORT}"
+python3 - "$WORK/serve/appcast.xml" "$SERVER_URL/VibeTV-Control-Center.dmg" <<'PY'
+import sys
+path, url = sys.argv[1:]
+data = open(path, encoding="utf-8").read()
+start = 'https://github.com/'
+if start not in data: raise SystemExit('production appcast has no GitHub enclosure URL')
+before, _, rest = data.partition(start)
+_, _, tail = rest.partition('/VibeTV-Control-Center.dmg')
+open(path, 'w', encoding='utf-8').write(before + url + tail)
+PY
 
 if [[ "$STATE" == clean_os ]]; then
   ditto "$CANDIDATE_APP" "$INSTALL_APP"
@@ -83,11 +93,10 @@ else
   plutil -extract CFBundleShortVersionString raw -o - "$INSTALL_APP/Contents/Info.plist" > "$OUTPUT/baseline-version.txt"
   # Sparkle's official CLI is intentionally mandatory. Do not downgrade this
   # to XML parsing: if the hosted image lacks it, the gate must fail loudly.
-  sparkle_dir="$("$ROOT/scripts/fetch-sparkle.sh")"
-  SPARKLE_CLI="${SPARKLE_CLI:-${sparkle_dir}/bin/sparkle}"
+  "$ROOT/scripts/build-sparkle-cli.sh" --output "$WORK/sparkle-cli" > "$OUTPUT/sparkle-cli-provenance.txt"
+  SPARKLE_CLI="${SPARKLE_CLI:-$WORK/sparkle-cli/sparkle.app/Contents/MacOS/sparkle}"
   [[ -x "$SPARKLE_CLI" ]] || die "official Sparkle CLI is unavailable at ${SPARKLE_CLI}; cannot prove Sparkle update"
-  # Official Sparkle CLI: sparkle bundle APP --check-immediately --feed-url URL.
-  "$SPARKLE_CLI" bundle "$INSTALL_APP" --check-immediately --feed-url "$SERVER_URL/appcast.xml" > "$OUTPUT/sparkle-update.txt" 2>&1
+  "$SPARKLE_CLI" --check-immediately --feed-url "$SERVER_URL/appcast.xml" --user-agent-name 'CODEX VibeTV RC' "$INSTALL_APP" > "$OUTPUT/sparkle-update.txt" 2>&1
 fi
 
 plutil -extract CFBundleShortVersionString raw -o - "$INSTALL_APP/Contents/Info.plist" > "$OUTPUT/installed-candidate-version.txt"
@@ -101,8 +110,10 @@ manifest = json.load(open(source, encoding="utf-8"))
 for artifact in manifest.get("artifacts", []): artifact["firmwareUrl"] = url
 json.dump(manifest, open(output, "w", encoding="utf-8"), indent=2)
 PY
-firmware_sha="$(shasum -a 256 "$FIRMWARE" | awk '{print $1}')"
-"$VIRTUAL_VIBETV" --addr 127.0.0.1:47834 --raw-addr 127.0.0.1:8081 --firmware 0.0.0 --candidate-firmware "$VERSION" --expected-firmware-sha256 "$firmware_sha" > "$OUTPUT/virtual-vibetv.log" 2>&1 & VIRTUAL_PID=$!
+candidate_firmware="$(python3 -c 'import json; print(next(a["firmwareVersion"] for a in json.load(open("'"$FIRMWARE_MANIFEST"'"))["artifacts"] if a["firmwareEnv"] == "esp8266_smalltv_st7789"))')"
+RAW_FIRMWARE="$WORK/firmware.bin"; gzip -cd "$FIRMWARE" > "$RAW_FIRMWARE"
+firmware_sha="$(shasum -a 256 "$RAW_FIRMWARE" | awk '{print $1}')"
+"$VIRTUAL_VIBETV" --addr 127.0.0.1:47834 --raw-addr 127.0.0.1:8081 --firmware 0.0.0 --candidate-firmware "$candidate_firmware" --expected-firmware-sha256 "$firmware_sha" > "$OUTPUT/virtual-vibetv.log" 2>&1 & VIRTUAL_PID=$!
 for _ in $(seq 1 30); do curl --fail --silent "$SERVER_URL/firmware-manifest.json" >/dev/null && curl --fail --silent http://127.0.0.1:47834/health > "$OUTPUT/virtual-health-before.json" && break; sleep 1; done
 [[ -s "$OUTPUT/virtual-health-before.json" ]] || die 'Virtual VibeTV did not become healthy'
 CANDIDATE_COMPANION="$INSTALL_APP/Contents/Helpers/codexbar-display"

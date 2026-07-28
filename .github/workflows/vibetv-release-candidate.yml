@@ -49,7 +49,7 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || { echo 'version must be SemVer' >&2; exit 1; }
           test -d companion/cmd/virtual-vibetv || { echo 'error: Issue #177 Core is required: companion/cmd/virtual-vibetv is missing.' >&2; exit 1; }
           pip install platformio
-          mkdir -p dist/macos tmp/vibetv-rc
+          mkdir -p dist/macos tmp/vibetv-rc/publish/companion tmp/vibetv-rc/publish/firmware tmp/vibetv-rc/test
           (
             cd apps/control-center
             npm ci
@@ -65,24 +65,42 @@ jobs:
                 -ldflags "-s -w -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=${version} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=${GITHUB_SHA}" \
                 -o "../tmp/vibetv-rc/codexbar-display-${arch}" ./cmd/codexbar-display
             done
-            GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o ../tmp/vibetv-rc/virtual-vibetv ./cmd/virtual-vibetv
+            for arch in amd64 arm64; do GOOS=darwin GOARCH="$arch" CGO_ENABLED=0 go build -o "../tmp/vibetv-rc/virtual-vibetv-${arch}" ./cmd/virtual-vibetv; done
           )
           lipo -create -output tmp/vibetv-rc/codexbar-display tmp/vibetv-rc/codexbar-display-amd64 tmp/vibetv-rc/codexbar-display-arm64
+          lipo -create -output tmp/vibetv-rc/virtual-vibetv tmp/vibetv-rc/virtual-vibetv-amd64 tmp/vibetv-rc/virtual-vibetv-arm64
+          cp tmp/vibetv-rc/codexbar-display tmp/vibetv-rc/test/codexbar-display
+          cp tmp/vibetv-rc/virtual-vibetv tmp/vibetv-rc/test/virtual-vibetv
+          for arch in amd64 arm64; do cp "tmp/vibetv-rc/codexbar-display-${arch}" "tmp/vibetv-rc/publish/companion/codexbar-display-darwin-${arch}-v${version}"; done
+          cp scripts/install.sh tmp/vibetv-rc/publish/install.sh
+          cp scripts/install-control-center-companion-release.sh tmp/vibetv-rc/publish/install-control-center-companion.sh
+          chmod +x tmp/vibetv-rc/publish/install*.sh
           ./scripts/build-macos-control-center-app.sh --version "$version" --build "$GITHUB_RUN_NUMBER" --universal --companion-binary tmp/vibetv-rc/codexbar-display --output 'dist/macos/VibeTV Control Center.app'
           COPYFILE_DISABLE=1 tar -czf tmp/vibetv-rc/app.tar.gz -C dist/macos 'VibeTV Control Center.app'
-          (
-            cd firmware_esp8266
-            CODEXBAR_DISPLAY_FW_VERSION="$version" pio run -e esp8266_smalltv_st7789
-          )
-          cp firmware_esp8266/.pio/build/esp8266_smalltv_st7789/firmware.bin tmp/vibetv-rc/firmware.bin
-          python3 - "$version" tmp/vibetv-rc/firmware.bin > tmp/vibetv-rc/firmware-manifest.json <<'PY'
-          import hashlib, json, sys
-          version, firmware = sys.argv[1:]
-          with open(firmware, "rb") as source:
-              digest = hashlib.sha256(source.read()).hexdigest()
-          json.dump({"schemaVersion": 1, "release": "v" + version, "artifacts": [{"firmwareEnv": "esp8266_smalltv_st7789", "board": "esp8266-smalltv-st7789", "firmwareVersion": version, "asset": "firmware.bin", "firmwareUrl": "firmware.bin", "sha256": digest}]}, sys.stdout)
-          print()
+          python3 - release/firmware-versions.json > tmp/vibetv-rc/firmware-targets.tsv <<'PY'
+          import json, sys
+          for item in json.load(open(sys.argv[1]))["artifacts"]:
+              env, board, fw = item["firmwareEnv"], item["board"], item["firmwareVersion"]
+              if env == "esp8266_smalltv_st7789": print("firmware_esp8266\t%s\t%s\t%s\tcodexbar-display-firmware-%s-v%s.bin.gz" % (env, board, fw, env, fw))
+              elif env == "lilygo_t_display_s3": print("firmware_esp32\t%s\t%s\t%s\tcodexbar-display-firmware-%s-v%s.bin" % (env, board, fw, env, fw))
+              else: raise SystemExit("unsupported firmware environment: " + env)
           PY
+          while IFS=$'\t' read -r dir env board fw asset; do
+            (cd "$dir" && CODEXBAR_DISPLAY_FW_VERSION="$fw" pio run -e "$env")
+            source="$dir/.pio/build/$env/firmware.bin"
+            if [[ "$env" == esp8266_* ]]; then gzip -c -9 "$source" > "tmp/vibetv-rc/publish/firmware/$asset"; else cp "$source" "tmp/vibetv-rc/publish/firmware/$asset"; fi
+          done < tmp/vibetv-rc/firmware-targets.tsv
+          python3 - "$version" "$GITHUB_REPOSITORY" tmp/vibetv-rc/firmware-targets.tsv tmp/vibetv-rc/publish/firmware > tmp/vibetv-rc/publish/firmware/firmware-manifest.json <<'PY'
+          import hashlib, json, os, sys
+          version, repo, targets, root = sys.argv[1:]
+          entries=[]
+          for line in open(targets, encoding="utf-8"):
+              _, env, board, fw, asset = line.rstrip("\n").split("\t")
+              data=open(os.path.join(root, asset), "rb").read()
+              entries.append({"firmwareEnv":env,"board":board,"firmwareVersion":fw,"asset":asset,"sha256":hashlib.sha256(data).hexdigest(),"firmwareUrl":f"https://github.com/{repo}/releases/download/v{version}/{asset}"})
+          json.dump({"schemaVersion":1,"release":"v"+version,"artifacts":entries}, sys.stdout, indent=2); print()
+          PY
+          cp tmp/vibetv-rc/publish/firmware/firmware-manifest.json "tmp/vibetv-rc/publish/firmware/firmware-manifest-v${version}.json"
           printf '%s\n' "$version" > tmp/vibetv-rc/version.txt
           printf '%s\n' "$GITHUB_SHA" > tmp/vibetv-rc/source-sha.txt
       - uses: actions/upload-artifact@v4
@@ -118,7 +136,7 @@ jobs:
           ./scripts/build-macos-control-center-dmg.sh --app 'dist/macos/VibeTV Control Center.app' --output dist/macos/VibeTV-Control-Center.dmg --staging-dir tmp/vibetv-rc/dmg-stage
           ./scripts/sign-notarize-macos-control-center.sh --app 'dist/macos/VibeTV Control Center.app' --dmg dist/macos/VibeTV-Control-Center.dmg --skip-app-sign
           ./scripts/verify-macos-control-center-dmg.sh --dmg dist/macos/VibeTV-Control-Center.dmg
-      - name: Create signed appcast and candidate-manifest.json
+      - name: Create immutable production publish set and candidate manifest
         env:
           SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
           CANDIDATE_RUN_ID: ${{ github.run_id }}
@@ -128,22 +146,21 @@ jobs:
           version="$(cat tmp/vibetv-rc/version.txt)"
           source_sha="$(cat tmp/vibetv-rc/source-sha.txt)"
           sparkle_dir="$(./scripts/fetch-sparkle.sh)"
-          printf '%s' "$SPARKLE_ED25519_PRIVATE_KEY" | "$sparkle_dir/bin/generate_appcast" --ed-key-file - --maximum-deltas 0 --link https://app.vibetv.shop -o dist/macos/appcast.xml dist/macos
-          python3 - "$source_sha" "$version" "$REPOSITORY" "$CANDIDATE_RUN_ID" dist/macos/candidate-manifest.json <<'PY'
+          mkdir -p tmp/vibetv-rc/publish/macos
+          cp dist/macos/VibeTV-Control-Center.dmg tmp/vibetv-rc/publish/macos/VibeTV-Control-Center.dmg
+          printf '%s' "$SPARKLE_ED25519_PRIVATE_KEY" | "$sparkle_dir/bin/generate_appcast" --ed-key-file - --maximum-deltas 0 --link https://app.vibetv.shop --download-url-prefix "https://github.com/${REPOSITORY}/releases/download/v${version}/" -o tmp/vibetv-rc/publish/macos/appcast.xml tmp/vibetv-rc/publish/macos
+          (cd tmp/vibetv-rc/publish && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 > "checksums-v${version}.txt")
+          python3 - "$source_sha" "$version" "$REPOSITORY" "$CANDIDATE_RUN_ID" tmp/vibetv-rc/candidate-manifest.json tmp/vibetv-rc <<'PY'
           import datetime, hashlib, json, sys
-          sha, version, repository, run_id, output = sys.argv[1:]
-          files = [
-              ("VibeTV-Control-Center.dmg", "dist/macos/VibeTV-Control-Center.dmg", "signed-dmg"),
-              ("appcast.xml", "dist/macos/appcast.xml", "sparkle-appcast"),
-              ("codexbar-display", "tmp/vibetv-rc/codexbar-display", "companion"),
-              ("firmware.bin", "tmp/vibetv-rc/firmware.bin", "firmware"),
-              ("firmware-manifest.json", "tmp/vibetv-rc/firmware-manifest.json", "firmware-manifest"),
-              ("virtual-vibetv", "tmp/vibetv-rc/virtual-vibetv", "virtual-vibetv"),
-          ]
+          sha, version, repository, run_id, output, root = sys.argv[1:]
+          from pathlib import Path
+          files = sorted(Path(root).glob("publish/**/*")) + sorted(Path(root).glob("test/**/*"))
           artifacts = []
-          for name, path, role in files:
-              with open(path, "rb") as source:
-                  artifacts.append({"name": name, "path": name, "sha256": hashlib.sha256(source.read()).hexdigest(), "role": role})
+          for path in files:
+              if not path.is_file(): continue
+              relative = path.relative_to(root).as_posix()
+              role = "firmware" if "/firmware/" in relative and relative.endswith((".bin", ".gz")) else "firmware-manifest" if "firmware-manifest" in relative else "signed-dmg" if relative.endswith(".dmg") else "sparkle-appcast" if relative.endswith("appcast.xml") else "installer" if relative.endswith(".sh") else "companion-arch" if "/companion/" in relative else "checksums" if "checksums-" in relative else "virtual-vibetv" if relative.endswith("virtual-vibetv") else "companion"
+              artifacts.append({"name": path.name, "path": relative, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "role": role, "publish": relative.startswith("publish/")})
           with open(output, "w", encoding="utf-8") as destination:
               json.dump({
                   "schemaVersion": 1, "repository": repository, "sourceSha": sha, "version": version,
@@ -157,13 +174,9 @@ jobs:
         with:
           name: vibetv-release-candidate
           path: |
-            dist/macos/VibeTV-Control-Center.dmg
-            dist/macos/appcast.xml
-            dist/macos/candidate-manifest.json
-            tmp/vibetv-rc/virtual-vibetv
-            tmp/vibetv-rc/codexbar-display
-            tmp/vibetv-rc/firmware.bin
-            tmp/vibetv-rc/firmware-manifest.json
+            tmp/vibetv-rc/publish
+            tmp/vibetv-rc/test
+            tmp/vibetv-rc/candidate-manifest.json
           retention-days: 7
           compression-level: 0
 
@@ -225,7 +238,7 @@ jobs:
           if [[ '${{ matrix.state }}' != clean_os ]]; then
             baseline_args=(--baseline-dmg baseline.dmg --baseline-appcast baseline-appcast.xml)
           fi
-          ./scripts/test-vibetv-hosted-guest.sh --dmg candidate/VibeTV-Control-Center.dmg --appcast candidate/appcast.xml --virtual-vibetv candidate/virtual-vibetv --companion candidate/codexbar-display --firmware candidate/firmware.bin --firmware-manifest candidate/firmware-manifest.json --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]}"
+          ./scripts/test-vibetv-hosted-guest.sh --dmg candidate/publish/macos/VibeTV-Control-Center.dmg --appcast candidate/publish/macos/appcast.xml --virtual-vibetv candidate/test/virtual-vibetv --companion candidate/test/codexbar-display --firmware candidate/publish/firmware/codexbar-display-firmware-esp8266_smalltv_st7789-v$(python3 -c 'import json; print(next(a["firmwareVersion"] for a in json.load(open("release/firmware-versions.json"))["artifacts"] if a["firmwareEnv"] == "esp8266_smalltv_st7789")').bin.gz --firmware-manifest candidate/publish/firmware/firmware-manifest.json --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -259,7 +272,7 @@ jobs:
                   "version": manifest["version"],
                   "candidateRunId": manifest["candidateRunId"],
                   "result": result,
-                  "artifactHashes": manifest["artifacts"],
+                  "artifactHashes": {item["path"]: item["sha256"] for item in manifest["artifacts"]},
               }, destination, indent=2)
               destination.write("\n")
           if result != "success":

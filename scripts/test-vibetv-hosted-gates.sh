@@ -7,6 +7,7 @@ MERGE_WORKFLOW="${ROOT}/.github/workflows/vibetv-merge-gate.yml"
 RC_WORKFLOW="${ROOT}/.github/workflows/vibetv-release-candidate.yml"
 EXTRACTOR="${ROOT}/scripts/extract-vibetv-candidate-app.sh"
 GUEST_TEST="${ROOT}/scripts/test-vibetv-hosted-guest.sh"
+SPARKLE_BUILDER="${ROOT}/scripts/build-sparkle-cli.sh"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -75,6 +76,7 @@ main() {
   assert_file "$RC_WORKFLOW"
   assert_file "$EXTRACTOR"
   assert_file "$GUEST_TEST"
+  assert_file "$SPARKLE_BUILDER"
 
   assert_contains "$CI_WORKFLOW" 'codex-ci:' \
     'CI needs one stable CODEX CI aggregation job'
@@ -131,6 +133,10 @@ main() {
     'release candidate must emit an immutable candidate manifest'
   assert_contains "$RC_WORKFLOW" 'name: vibetv-release-candidate' \
     'release candidate artifact name must remain stable for downstream gates'
+  for required in publish/ test/ install.sh install-control-center-companion.sh checksums-v firmware-versions.json 'download/v${version}' '"publish"'; do
+    assert_contains "$RC_WORKFLOW" "$required" \
+      "release candidate must build the full publish asset set including ${required}"
+  done
   for field in repository sourceSha version candidateRunId createdAt virtualGate; do
     assert_contains "$RC_WORKFLOW" "\"${field}\"" \
       "candidate manifest must include ${field}"
@@ -145,7 +151,7 @@ main() {
   done
   assert_not_contains "$RC_WORKFLOW" 'self-hosted' \
     'release candidate must not depend on a self-hosted runner'
-  assert_not_contains "$RC_WORKFLOW" 'tart' \
+  assert_not_contains "$RC_WORKFLOW" 'Tart' \
     'release candidate must not use Tart'
 
   assert_contains "$GUEST_TEST" 'verify-macos-control-center-dmg.sh' \
@@ -160,10 +166,16 @@ main() {
     'direct guest test must preserve a macOS screenshot artifact'
   assert_contains "$GUEST_TEST" '/Applications/VibeTV Control Center.app' \
     'guest test must install the baseline or candidate app in Applications'
-  assert_contains "$GUEST_TEST" 'sparkle bundle' \
+  assert_contains "$GUEST_TEST" '--user-agent-name' \
     'guest test must run the official Sparkle CLI instead of parsing XML'
   assert_contains "$GUEST_TEST" '--check-immediately' \
     'guest test must force a live Sparkle update check'
+  assert_contains "$GUEST_TEST" 'gzip -cd' \
+    'guest test must hash the raw firmware bytes sent through OTA'
+  assert_contains "$RC_WORKFLOW" 'artifactHashes": {item["path"]' \
+    'candidate result must expose publish validators a path-to-hash map'
+  assert_contains "$SPARKLE_BUILDER" '6276ba2b404829d139c45ff98427cf90e2efc59b' \
+    'Sparkle CLI source must be pinned to the reviewed upstream commit'
   assert_contains "$GUEST_TEST" 'CANDIDATE_COMPANION' \
     'guest test must select the installed candidate companion for OTA'
   assert_contains "$GUEST_TEST" 'install-update --target' \
