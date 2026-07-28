@@ -5072,9 +5072,9 @@ func TestDeviceRepairMigratesStoredLegacyMDNSTargetToSubnetIP(t *testing.T) {
 	server.subnetTargets = func() []string {
 		return []string{device.URL}
 	}
-	var setupCalls []setup.Options
+	setupCalls := make(chan setup.Options, 2)
 	server.runSetup = func(_ context.Context, opts setup.Options) error {
-		setupCalls = append(setupCalls, opts)
+		setupCalls <- opts
 		return nil
 	}
 
@@ -5094,8 +5094,17 @@ func TestDeviceRepairMigratesStoredLegacyMDNSTargetToSubnetIP(t *testing.T) {
 	if !got.OK || got.Device.Target != device.URL || !got.Device.Paired {
 		t.Fatalf("expected subnet repair target %q, got %+v", device.URL, got)
 	}
-	if len(setupCalls) == 0 || setupCalls[len(setupCalls)-1].Target != device.URL {
-		t.Fatalf("expected display stream refreshed with discovered target, got %+v", setupCalls)
+	var calls []setup.Options
+	for len(calls) < 2 {
+		select {
+		case call := <-setupCalls:
+			calls = append(calls, call)
+		case <-time.After(time.Second):
+			t.Fatalf("expected display stream refreshed with discovered target, got %+v", calls)
+		}
+	}
+	if calls[len(calls)-1].Target != device.URL {
+		t.Fatalf("expected display stream refreshed with discovered target, got %+v", calls)
 	}
 }
 
@@ -5104,9 +5113,9 @@ func TestDeviceRepairForcePairRotatesToken(t *testing.T) {
 	defer device.Close()
 
 	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "old-token"})
-	var setupCalls []setup.Options
+	setupCalls := make(chan setup.Options, 2)
 	server.runSetup = func(_ context.Context, opts setup.Options) error {
-		setupCalls = append(setupCalls, opts)
+		setupCalls <- opts
 		return nil
 	}
 
@@ -5126,8 +5135,14 @@ func TestDeviceRepairForcePairRotatesToken(t *testing.T) {
 	if !got.Device.Paired {
 		t.Fatalf("expected paired device, got %+v", got.Device)
 	}
-	if len(setupCalls) != 2 {
-		t.Fatalf("expected display stream refresh, got %+v", setupCalls)
+	var calls []setup.Options
+	for len(calls) < 2 {
+		select {
+		case call := <-setupCalls:
+			calls = append(calls, call)
+		case <-time.After(time.Second):
+			t.Fatalf("expected display stream refresh, got %+v", calls)
+		}
 	}
 
 	rec = httptest.NewRecorder()
