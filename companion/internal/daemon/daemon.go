@@ -276,15 +276,16 @@ type PersistedUsage struct {
 }
 
 type ProviderUsageSnapshot struct {
-	Provider           string
-	Frame              protocol.Frame
-	Source             string
-	Meta               codexbar.ProviderUsageMeta
-	CollectedAt        time.Time
-	ActivityObservedAt time.Time
-	RateLimited        bool
-	RateLimitedUntil   time.Time
-	Stale              bool
+	Provider              string
+	Frame                 protocol.Frame
+	Source                string
+	Meta                  codexbar.ProviderUsageMeta
+	CollectedAt           time.Time
+	TokenStatsCollectedAt time.Time
+	ActivityObservedAt    time.Time
+	RateLimited           bool
+	RateLimitedUntil      time.Time
+	Stale                 bool
 }
 
 func Run(ctx context.Context, opts Options) error {
@@ -1931,6 +1932,13 @@ func loadPersistedProviderSnapshotsAnyAge() (map[string]providerSnapshot, time.T
 		if strings.TrimSpace(snapshot.Frame.Error) != "" {
 			continue
 		}
+		if snapshotHasTokenStats(snapshot) && snapshot.TokenStatsCollected.IsZero() {
+			if !snapshot.ActivityObservedAt.IsZero() {
+				snapshot.TokenStatsCollected = snapshot.ActivityObservedAt.UTC()
+			} else {
+				snapshot.TokenStatsCollected = snapshot.Collected.UTC()
+			}
+		}
 		out[key] = snapshot
 	}
 	if len(out) == 0 {
@@ -1968,16 +1976,26 @@ func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
 		if frame.UsageMode == "" {
 			frame.UsageMode = "used"
 		}
+		snapshot = snapshotWithFreshTokenStats(snapshot, now, providerSnapshotMaxAge())
+		frame = snapshot.Frame.Normalize()
+		frame.Provider = normalizeProviderKey(frame.Provider)
+		if frame.Provider == "" {
+			frame.Provider = key
+		}
+		if frame.UsageMode == "" {
+			frame.UsageMode = "used"
+		}
 		usage.Providers = append(usage.Providers, ProviderUsageSnapshot{
-			Provider:           key,
-			Frame:              frame,
-			Source:             strings.TrimSpace(snapshot.Source),
-			Meta:               snapshot.Meta,
-			CollectedAt:        snapshot.Collected.UTC(),
-			ActivityObservedAt: snapshot.ActivityObservedAt.UTC(),
-			RateLimited:        snapshot.RateLimited,
-			RateLimitedUntil:   snapshot.RateLimitedUntil.UTC(),
-			Stale:              providerUsageSnapshotIsStale(snapshot, now),
+			Provider:              key,
+			Frame:                 frame,
+			Source:                strings.TrimSpace(snapshot.Source),
+			Meta:                  snapshot.Meta,
+			CollectedAt:           snapshot.Collected.UTC(),
+			TokenStatsCollectedAt: snapshot.TokenStatsCollected.UTC(),
+			ActivityObservedAt:    snapshot.ActivityObservedAt.UTC(),
+			RateLimited:           snapshot.RateLimited,
+			RateLimitedUntil:      snapshot.RateLimitedUntil.UTC(),
+			Stale:                 providerUsageSnapshotIsStale(snapshot, now),
 		})
 	}
 	if len(usage.Providers) == 0 {

@@ -3376,6 +3376,146 @@ func TestProviderCollectorPreservesTokenStatsAcrossTemporaryFailureAndRecovers(t
 	}
 }
 
+func TestProviderCollectorTokenStatsFreshnessSemantics(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 28, 11, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex"},
+		interval:        30 * time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+	}
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 17, 42, 3600)}, nil
+	}
+	collector.collectOnce(context.Background())
+
+	tokenAt := current
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return map[string]codexbar.ProviderTokenStats{
+			"codex": {
+				SessionTokens: 10,
+				WeekTokens:    20,
+				TotalTokens:   30,
+				UpdatedAt:     tokenAt,
+				Source:        "codexbar-cost",
+				Cost:          &codexbar.ProviderCostUsage{UpdatedAt: tokenAt, Last30DaysTokens: 30, LatestTokens: 10, Last30DaysCostUSD: 1.25},
+			},
+		}, true
+	}
+	collector.collectTokenStatsOnce(context.Background())
+
+	current = current.Add(2 * time.Minute)
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return nil, false
+	}
+	collector.collectTokenStatsOnce(context.Background())
+	if frames := collector.providerFrames(current); len(frames) != 1 || frames[0].Frame.TotalTokens != 30 || frames[0].Meta.Cost == nil {
+		t.Fatalf("temporary token failure did not keep bounded last-good stats: %#v", frames)
+	}
+
+	zeroAt := current.Add(time.Minute)
+	current = zeroAt
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return map[string]codexbar.ProviderTokenStats{
+			"codex": {
+				UpdatedAt: zeroAt,
+				Source:    "codexbar-cost",
+				Cost:      &codexbar.ProviderCostUsage{UpdatedAt: zeroAt},
+			},
+		}, true
+	}
+	collector.collectTokenStatsOnce(context.Background())
+	zero := collector.providers["codex"]
+	if zero.Frame.SessionTokens != 0 || zero.Frame.WeekTokens != 0 || zero.Frame.TotalTokens != 0 || zero.Meta.Cost == nil {
+		t.Fatalf("successful zero token result did not replace positive stats: %#v", zero)
+	}
+
+	recoveredAt := zeroAt.Add(time.Minute)
+	current = recoveredAt
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return map[string]codexbar.ProviderTokenStats{
+			"codex": {
+				SessionTokens: 40,
+				WeekTokens:    50,
+				TotalTokens:   60,
+				UpdatedAt:     recoveredAt,
+				Source:        "codexbar-cost",
+				Cost:          &codexbar.ProviderCostUsage{UpdatedAt: recoveredAt, Last30DaysTokens: 60, LatestTokens: 40, Last30DaysCostUSD: 2.5},
+			},
+		}, true
+	}
+	collector.collectTokenStatsOnce(context.Background())
+
+	current = recoveredAt.Add(9 * time.Minute)
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 18, 43, 3500)}, nil
+	}
+	collector.collectOnce(context.Background())
+	freshCarry := collector.providerFrames(current)
+	if len(freshCarry) != 1 || freshCarry[0].Frame.Session != 18 || freshCarry[0].Frame.TotalTokens != 60 || freshCarry[0].Meta.Cost == nil {
+		t.Fatalf("fresh token stats were not carried across a quota-only refresh: %#v", freshCarry)
+	}
+
+	current = recoveredAt.Add(10*time.Minute + time.Second)
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 19, 44, 3400)}, nil
+	}
+	collector.collectOnce(context.Background())
+	expired := collector.providerFrames(current)
+	if len(expired) != 1 || expired[0].Frame.Session != 19 || expired[0].Frame.TotalTokens != 0 || expired[0].Meta.Cost != nil {
+		t.Fatalf("quota refresh kept expired token stats alive: %#v", expired)
+	}
+	if expired[0].Frame.UsageUnavailable {
+		t.Fatalf("expired token stats should not make fresh quota usage unavailable: %#v", expired)
+	}
+
+	current = current.Add(time.Minute)
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return map[string]codexbar.ProviderTokenStats{
+			"cursor": {
+				SessionTokens: 1,
+				UpdatedAt:     current,
+				Source:        "codexbar-cost",
+				Cost:          &codexbar.ProviderCostUsage{UpdatedAt: current, LatestTokens: 1},
+			},
+		}, true
+	}
+	codexSnapshot := collector.providers["codex"]
+	codexSnapshot.Frame.TotalTokens = 99
+	codexSnapshot.Meta.Cost = &codexbar.ProviderCostUsage{Last30DaysTokens: 99}
+	codexSnapshot.TokenStatsCollected = current
+	collector.providers["codex"] = codexSnapshot
+	collector.collectTokenStatsOnce(context.Background())
+	absent := collector.providers["codex"]
+	if absent.Frame.TotalTokens != 0 || absent.Meta.Cost != nil || !absent.TokenStatsCollected.IsZero() {
+		t.Fatalf("successful token scan without provider did not clear absent provider stats: %#v", absent)
+	}
+
+	current = current.Add(time.Minute)
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return map[string]codexbar.ProviderTokenStats{
+			"codex": {
+				SessionTokens: 70,
+				WeekTokens:    80,
+				TotalTokens:   90,
+				UpdatedAt:     current,
+				Source:        "codexbar-cost",
+				Cost:          &codexbar.ProviderCostUsage{UpdatedAt: current, Last30DaysTokens: 90, LatestTokens: 70},
+			},
+		}, true
+	}
+	collector.collectTokenStatsOnce(context.Background())
+	recovered := collector.providerFrames(current)
+	if len(recovered) == 0 || recovered[0].Provider != "codex" || recovered[0].Frame.TotalTokens != 90 || recovered[0].Meta.Cost == nil {
+		t.Fatalf("provider token recovery did not replace unavailable state: %#v", recovered)
+	}
+}
+
 func TestProviderCollectorFallsBackToUsageJSONWhenDashboardUnavailableAndRecovers(t *testing.T) {
 	prepareFastTestEnv(t)
 

@@ -162,6 +162,38 @@ func TestMergeTokenStatsAddsFrameFields(t *testing.T) {
 	}
 }
 
+func TestMergeTokenStatsReplacesPreviousValuesWithZero(t *testing.T) {
+	runCostCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte(`[
+			{
+				"provider":"codex",
+				"updatedAt":"2026-07-28T12:00:00Z",
+				"daily":[],
+				"totals":{"totalTokens":0}
+			}
+		]`), nil
+	}
+	t.Cleanup(func() { runCostCommandFn = runUsageCommand })
+
+	merged := mergeTokenStats(context.Background(), []ParsedFrame{{
+		Provider: "codex",
+		Frame: protocol.Frame{
+			Provider:      "codex",
+			Label:         "Codex",
+			SessionTokens: 10,
+			WeekTokens:    20,
+			TotalTokens:   30,
+		},
+	}}, "/opt/homebrew/bin/codexbar")
+
+	if len(merged) != 1 || merged[0].Frame.SessionTokens != 0 || merged[0].Frame.WeekTokens != 0 || merged[0].Frame.TotalTokens != 0 {
+		t.Fatalf("successful zero token stats did not replace previous counters: %+v", merged)
+	}
+	if merged[0].Meta.Cost == nil {
+		t.Fatalf("successful zero token result should keep cost result provenance: %+v", merged[0].Meta)
+	}
+}
+
 func TestFetchProviderTokenStatsReadsCodexBarCostWithoutRefresh(t *testing.T) {
 	var gotBin string
 	var gotArgs []string

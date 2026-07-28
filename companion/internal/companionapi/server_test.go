@@ -2102,6 +2102,45 @@ func TestUsageRestartFreeConvergenceReadsNewCollectorSnapshot(t *testing.T) {
 	}
 }
 
+func TestUsageTreatsExplicitZeroCostAsTokenResult(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: now,
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider: "codex",
+				Frame: protocol.Frame{
+					Provider:  "codex",
+					Label:     "Codex",
+					Weekly:    0,
+					UsageMode: "used",
+				},
+				Meta: codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{
+					UpdatedAt: now,
+				}},
+				CollectedAt: now,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.TokenUsageReady || len(got.Providers) != 1 || got.Providers[0].Cost == nil {
+		t.Fatalf("explicit zero cost result should mark token usage ready, got %+v", got)
+	}
+	if got.Providers[0].Cost.UpdatedAt != now.Format(time.RFC3339) {
+		t.Fatalf("expected zero cost provenance timestamp, got %+v", got.Providers[0].Cost)
+	}
+}
+
 func TestDisplayFrameLatestReturnsPersistedLastGoodFrame(t *testing.T) {
 	t.Setenv(displayStreamOutLogEnv, filepath.Join(t.TempDir(), "missing.log"))
 	server := newTestServer(t, runtimeconfig.Config{})

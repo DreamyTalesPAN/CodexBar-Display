@@ -15,14 +15,15 @@ import (
 const tokenStatsCollectorTimeout = 60 * time.Second
 
 type providerSnapshot struct {
-	Provider           string                     `json:"provider"`
-	Frame              protocol.Frame             `json:"frame"`
-	Source             string                     `json:"source,omitempty"`
-	Meta               codexbar.ProviderUsageMeta `json:"meta,omitempty"`
-	Collected          time.Time                  `json:"collectedAt"`
-	ActivityObservedAt time.Time                  `json:"activityObservedAt,omitempty"`
-	RateLimited        bool                       `json:"rateLimited,omitempty"`
-	RateLimitedUntil   time.Time                  `json:"rateLimitedUntil,omitempty"`
+	Provider            string                     `json:"provider"`
+	Frame               protocol.Frame             `json:"frame"`
+	Source              string                     `json:"source,omitempty"`
+	Meta                codexbar.ProviderUsageMeta `json:"meta,omitempty"`
+	Collected           time.Time                  `json:"collectedAt"`
+	TokenStatsCollected time.Time                  `json:"tokenStatsCollectedAt,omitempty"`
+	ActivityObservedAt  time.Time                  `json:"activityObservedAt,omitempty"`
+	RateLimited         bool                       `json:"rateLimited,omitempty"`
+	RateLimitedUntil    time.Time                  `json:"rateLimitedUntil,omitempty"`
 }
 
 type persistedProviderSnapshots struct {
@@ -244,17 +245,18 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			continue
 		}
 		snapshot := providerSnapshot{
-			Provider:           key,
-			Frame:              frame,
-			Source:             strings.TrimSpace(parsed.Source),
-			Meta:               parsed.Meta,
-			Collected:          now.UTC(),
-			ActivityObservedAt: parsed.ActivityObservedAt,
-			RateLimited:        false,
-			RateLimitedUntil:   time.Time{},
+			Provider:            key,
+			Frame:               frame,
+			Source:              strings.TrimSpace(parsed.Source),
+			Meta:                parsed.Meta,
+			Collected:           now.UTC(),
+			TokenStatsCollected: parsedTokenStatsCollectedAt(parsed, now),
+			ActivityObservedAt:  parsed.ActivityObservedAt,
+			RateLimited:         false,
+			RateLimitedUntil:    time.Time{},
 		}
 		if previous, exists := c.providers[key]; exists {
-			carryForwardSnapshotTokenStats(previous, &snapshot)
+			carryForwardSnapshotTokenStats(previous, &snapshot, now, c.snapshotMaxAge)
 		}
 		c.providers[key] = snapshot
 		successes++
@@ -438,11 +440,13 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 	updated := 0
 
 	c.mu.Lock()
+	seen := make(map[string]struct{}, len(statsByProvider))
 	for rawKey, stats := range statsByProvider {
 		key := normalizeProviderKey(rawKey)
 		if key == "" || !stats.HasAny() {
 			continue
 		}
+		seen[key] = struct{}{}
 
 		snapshot, exists := c.providers[key]
 		if !exists {
@@ -463,19 +467,11 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		if strings.TrimSpace(frame.Label) == "" {
 			frame.Label = key
 		}
-		if stats.SessionTokens > 0 {
-			frame.SessionTokens = stats.SessionTokens
-		}
-		if stats.WeekTokens > 0 {
-			frame.WeekTokens = stats.WeekTokens
-		}
-		if stats.TotalTokens > 0 {
-			frame.TotalTokens = stats.TotalTokens
-		}
+		frame.SessionTokens = stats.SessionTokens
+		frame.WeekTokens = stats.WeekTokens
+		frame.TotalTokens = stats.TotalTokens
 		meta := snapshot.Meta
-		if stats.Cost != nil {
-			meta.Cost = stats.Cost
-		}
+		meta.Cost = stats.Cost
 
 		source := strings.TrimSpace(snapshot.Source)
 		if source == "" {
@@ -491,15 +487,27 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		}
 
 		c.providers[key] = providerSnapshot{
-			Provider:           key,
-			Frame:              frame,
-			Source:             source,
-			Meta:               meta,
-			Collected:          snapshot.Collected,
-			ActivityObservedAt: activityObservedAt,
-			RateLimited:        snapshot.RateLimited,
-			RateLimitedUntil:   snapshot.RateLimitedUntil,
+			Provider:            key,
+			Frame:               frame,
+			Source:              source,
+			Meta:                meta,
+			Collected:           snapshot.Collected,
+			TokenStatsCollected: tokenStatsCollectedAt(stats, now),
+			ActivityObservedAt:  activityObservedAt,
+			RateLimited:         snapshot.RateLimited,
+			RateLimitedUntil:    snapshot.RateLimitedUntil,
 		}
+		updated++
+	}
+	for key, snapshot := range c.providers {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		if !snapshotHasTokenStats(snapshot) {
+			continue
+		}
+		clearSnapshotTokenStats(&snapshot)
+		c.providers[key] = snapshot
 		updated++
 	}
 	c.mu.Unlock()
@@ -509,21 +517,22 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 	}
 }
 
-func carryForwardSnapshotTokenStats(previous providerSnapshot, next *providerSnapshot) {
+func carryForwardSnapshotTokenStats(previous providerSnapshot, next *providerSnapshot, now time.Time, maxAge time.Duration) {
 	if next == nil {
 		return
 	}
 	if frameHasTokenStats(next.Frame) || next.Meta.Cost != nil {
 		return
 	}
-	prevFrame := previous.Frame.Normalize()
-	if !frameHasTokenStats(prevFrame) && previous.Meta.Cost == nil {
+	if !snapshotTokenStatsFresh(previous, now, maxAge) {
 		return
 	}
+	prevFrame := previous.Frame.Normalize()
 	next.Frame.SessionTokens = prevFrame.SessionTokens
 	next.Frame.WeekTokens = prevFrame.WeekTokens
 	next.Frame.TotalTokens = prevFrame.TotalTokens
 	next.Meta.Cost = previous.Meta.Cost
+	next.TokenStatsCollected = previous.TokenStatsCollected
 	if next.ActivityObservedAt.IsZero() {
 		next.ActivityObservedAt = previous.ActivityObservedAt
 	}
@@ -531,6 +540,58 @@ func carryForwardSnapshotTokenStats(previous providerSnapshot, next *providerSna
 
 func frameHasTokenStats(frame protocol.Frame) bool {
 	return frame.SessionTokens > 0 || frame.WeekTokens > 0 || frame.TotalTokens > 0
+}
+
+func snapshotHasTokenStats(snapshot providerSnapshot) bool {
+	return frameHasTokenStats(snapshot.Frame.Normalize()) || snapshot.Meta.Cost != nil
+}
+
+func clearSnapshotTokenStats(snapshot *providerSnapshot) {
+	if snapshot == nil {
+		return
+	}
+	snapshot.Frame.SessionTokens = 0
+	snapshot.Frame.WeekTokens = 0
+	snapshot.Frame.TotalTokens = 0
+	snapshot.Meta.Cost = nil
+	snapshot.TokenStatsCollected = time.Time{}
+}
+
+func tokenStatsCollectedAt(stats codexbar.ProviderTokenStats, fallback time.Time) time.Time {
+	if !stats.UpdatedAt.IsZero() {
+		return stats.UpdatedAt.UTC()
+	}
+	if stats.Cost != nil && !stats.Cost.UpdatedAt.IsZero() {
+		return stats.Cost.UpdatedAt.UTC()
+	}
+	return fallback.UTC()
+}
+
+func parsedTokenStatsCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time) time.Time {
+	if frameHasTokenStats(parsed.Frame.Normalize()) || parsed.Meta.Cost != nil {
+		if !parsed.ActivityObservedAt.IsZero() {
+			return parsed.ActivityObservedAt.UTC()
+		}
+		if parsed.Meta.Cost != nil && !parsed.Meta.Cost.UpdatedAt.IsZero() {
+			return parsed.Meta.Cost.UpdatedAt.UTC()
+		}
+		return fallback.UTC()
+	}
+	return time.Time{}
+}
+
+func snapshotTokenStatsFresh(snapshot providerSnapshot, now time.Time, maxAge time.Duration) bool {
+	if !snapshotHasTokenStats(snapshot) {
+		return false
+	}
+	return isLastGoodFreshAt(snapshot.TokenStatsCollected, now, maxAge)
+}
+
+func snapshotWithFreshTokenStats(snapshot providerSnapshot, now time.Time, maxAge time.Duration) providerSnapshot {
+	if snapshotHasTokenStats(snapshot) && !snapshotTokenStatsFresh(snapshot, now, maxAge) {
+		clearSnapshotTokenStats(&snapshot)
+	}
+	return snapshot
 }
 
 func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame {
@@ -551,6 +612,7 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 		if !ok {
 			continue
 		}
+		snapshot = snapshotWithFreshTokenStats(snapshot, now, c.snapshotMaxAge)
 		frame := snapshot.Frame.Normalize()
 		frame.Provider = normalizeProviderKey(frame.Provider)
 		if frame.Provider == "" {

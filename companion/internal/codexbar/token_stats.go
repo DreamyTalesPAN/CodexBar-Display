@@ -91,15 +91,9 @@ func mergeProviderTokenStats(ctx context.Context, parsed ParsedFrame, bin string
 }
 
 func applyTokenStatsToFrame(frame *protocol.Frame, stats ProviderTokenStats) {
-	if stats.SessionTokens > 0 {
-		frame.SessionTokens = stats.SessionTokens
-	}
-	if stats.WeekTokens > 0 {
-		frame.WeekTokens = stats.WeekTokens
-	}
-	if stats.TotalTokens > 0 {
-		frame.TotalTokens = stats.TotalTokens
-	}
+	frame.SessionTokens = stats.SessionTokens
+	frame.WeekTokens = stats.WeekTokens
+	frame.TotalTokens = stats.TotalTokens
 }
 
 func fetchProviderTokenStats(ctx context.Context, bin string) (map[string]ProviderTokenStats, bool) {

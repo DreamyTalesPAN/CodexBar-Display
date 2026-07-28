@@ -2331,7 +2331,8 @@ func usageCostFromMeta(meta codexbar.ProviderUsageMeta) *usageCostInfo {
 		cost.Last30DaysTokens <= 0 &&
 		cost.LatestTokens <= 0 &&
 		cost.TopModel == "" &&
-		len(cost.Daily) == 0 {
+		len(cost.Daily) == 0 &&
+		cost.UpdatedAt == "" {
 		return nil
 	}
 	return &cost
