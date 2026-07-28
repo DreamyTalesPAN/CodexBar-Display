@@ -5470,6 +5470,7 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 
 	byIdentity := make(map[string]deviceSearchEntry)
 	hasSavedIdentity := strings.TrimSpace(cfg.DeviceID) != ""
+	freshResultSeen := false
 	for {
 		foundKnown := false
 		entries, err := s.searchDevicesOnce(searchCtx, cfg, explicitTarget)
@@ -5485,13 +5486,15 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 				foundKnown = true
 			}
 		}
-		// A clean customer install has no saved device identity to prefer. Once
-		// that first scan finds a VibeTV, return it immediately instead of
-		// repeating the full /24 subnet scan until the UI request nearly times
-		// out. Recovery with a saved identity still gets the bounded retries so
-		// a briefly busy known device wins over an unknown alternative.
-		if foundKnown || (!hasSavedIdentity && len(byIdentity) > 0) {
+		// A clean customer install has no saved identity to prefer, so settle one
+		// additional full scan after the first result and merge both snapshots.
+		// Recovery with a saved identity keeps returning as soon as that known
+		// device answers.
+		if foundKnown || (!hasSavedIdentity && freshResultSeen) {
 			return sortedDeviceSearchEntries(byIdentity), nil
+		}
+		if !hasSavedIdentity && len(byIdentity) > 0 {
+			freshResultSeen = true
 		}
 		if searchCtx.Err() != nil {
 			break

@@ -411,9 +411,42 @@ func TestDeviceSearchReturnsAllDevicesWithoutMutatingConfig(t *testing.T) {
 	}
 }
 
+func TestDeviceSearchSettlesFreshResultsAcrossTwoScans(t *testing.T) {
+	first := newCountedSelectableDeviceServer(t, "vibetv-a", nil, nil)
+	defer first.Close()
+	second := newCountedSelectableDeviceServer(t, "vibetv-b", nil, nil)
+	defer second.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.defaultWiFiTarget = func() string { return "" }
+	subnetCalls := 0
+	server.subnetTargets = func() []string {
+		subnetCalls++
+		if subnetCalls == 1 {
+			return []string{first.URL}
+		}
+		return []string{first.URL, second.URL}
+	}
+
+	devices, err := server.searchDevices(context.Background(), runtimeconfig.Config{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if subnetCalls != 2 {
+		t.Fatalf("expected exactly one settle scan, got %d scans", subnetCalls)
+	}
+	foundIDs := map[string]bool{}
+	for _, device := range devices {
+		foundIDs[device.DeviceID] = true
+	}
+	if len(devices) != 2 || !foundIDs["vibetv-a"] || !foundIDs["vibetv-b"] {
+		t.Fatalf("expected merged fresh results from both scans, got %+v", devices)
+	}
+}
+
 func TestDeviceSearchRetriesTransientKnownDeviceFailure(t *testing.T) {
 	var helloCalls atomic.Int32
-	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	active := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if helloCalls.Add(1) == 1 {
 			http.Error(w, "busy", http.StatusServiceUnavailable)
 			return
@@ -421,23 +454,32 @@ func TestDeviceSearchRetriesTransientKnownDeviceFailure(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36","deviceId":"esp8266-retry","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
 	}))
-	defer device.Close()
+	defer active.Close()
+	unknown := newCountedSelectableDeviceServer(t, "esp8266-unknown", nil, nil)
+	defer unknown.Close()
 
 	server := newTestServer(t, runtimeconfig.Config{
-		DeviceTarget: device.URL,
+		DeviceTarget: active.URL,
 		DeviceID:     "esp8266-retry",
 	})
-	server.subnetTargets = func() []string { return nil }
+	server.defaultWiFiTarget = func() string { return "" }
+	server.subnetTargets = func() []string { return []string{active.URL, unknown.URL} }
 
 	devices, err := server.searchDevices(context.Background(), runtimeconfig.Config{
-		DeviceTarget: device.URL,
+		DeviceTarget: active.URL,
 		DeviceID:     "esp8266-retry",
 	}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(devices) != 1 || !devices[0].Known || devices[0].DeviceID != "esp8266-retry" {
-		t.Fatalf("expected transiently busy known VibeTV on retry, got %+v", devices)
+	if len(devices) != 2 ||
+		!devices[0].Known ||
+		!devices[0].Active ||
+		devices[0].DeviceID != "esp8266-retry" ||
+		devices[1].Known ||
+		devices[1].Active ||
+		devices[1].DeviceID != "esp8266-unknown" {
+		t.Fatalf("expected transiently busy active VibeTV first after retry, got %+v", devices)
 	}
 	if helloCalls.Load() != 2 {
 		t.Fatalf("expected exactly one bounded retry, got %d hello calls", helloCalls.Load())
@@ -605,7 +647,7 @@ func TestDeviceSearchReportsFastDarwinHostUnreachableBurstAsDeniedAccess(t *test
 	}
 }
 
-func TestDeviceSearchReturnsFirstFoundDeviceImmediatelyWithoutSavedIdentity(t *testing.T) {
+func TestDeviceSearchSettlesFirstFoundDeviceWithoutSavedIdentity(t *testing.T) {
 	var helloCalls atomic.Int32
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		helloCalls.Add(1)
@@ -624,8 +666,8 @@ func TestDeviceSearchReturnsFirstFoundDeviceImmediatelyWithoutSavedIdentity(t *t
 	if len(devices) != 1 || devices[0].DeviceID != "first-customer-device" {
 		t.Fatalf("expected first customer VibeTV, got %+v", devices)
 	}
-	if helloCalls.Load() != 1 {
-		t.Fatalf("expected first successful scan to return immediately, got %d hello calls", helloCalls.Load())
+	if helloCalls.Load() != 2 {
+		t.Fatalf("expected one settle scan after the first result, got %d hello calls", helloCalls.Load())
 	}
 }
 
@@ -651,8 +693,8 @@ func TestDeviceSearchRetriesCleanCustomerScanUntilDeviceAppears(t *testing.T) {
 	if len(devices) != 1 || devices[0].DeviceID != "late-customer-device" {
 		t.Fatalf("expected later customer scan to find VibeTV, got %+v", devices)
 	}
-	if helloCalls.Load() != 2 {
-		t.Fatalf("expected a second complete scan, got %d hello calls", helloCalls.Load())
+	if helloCalls.Load() != 3 {
+		t.Fatalf("expected discovery plus one settle scan, got %d hello calls", helloCalls.Load())
 	}
 }
 
@@ -803,8 +845,8 @@ func TestDeviceSearchActuallyProbesFarEdgeOfSlash23(t *testing.T) {
 	if len(devices) != 1 || devices[0].DeviceID != "far-edge-device" {
 		t.Fatalf("expected far-edge /23 VibeTV, got %+v", devices)
 	}
-	if got, want := int(attempts.Load()), len(targets); got != want {
-		t.Fatalf("search attempted %d targets; want every one of %d", got, want)
+	if got, want := int(attempts.Load()), 2*len(targets); got != want {
+		t.Fatalf("search attempted %d targets; want two complete scans of %d", got, len(targets))
 	}
 }
 
