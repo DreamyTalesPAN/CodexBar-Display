@@ -3221,7 +3221,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   if (
     companionStatus === "online" &&
     !requiresMacAppMigration &&
-    (!hasActiveDevice || connectionRecoveryRequired || waitingForFirstUsage)
+    (!hasActiveDevice ||
+      connectionRecoveryRequired ||
+      (waitingForFirstUsage && !themeSetupRequired))
   ) {
     return (
       <DeviceStartupScreen
