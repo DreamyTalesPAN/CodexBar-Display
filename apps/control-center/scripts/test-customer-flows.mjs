@@ -336,6 +336,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testThemeSetupLeavesChooserWhenConnectionIsLost(
+        browser,
+        appContext.appUrl,
+      );
       await testThemeSetupWaitsAfterDeviceReadbackFailure(
         browser,
         appContext.appUrl,
@@ -471,6 +475,10 @@ async function main() {
       appContext.appUrl,
     );
     await testThemeMissingDeviceChoosesThemeAndCompletesSetup(
+      browser,
+      appContext.appUrl,
+    );
+    await testThemeSetupLeavesChooserWhenConnectionIsLost(
       browser,
       appContext.appUrl,
     );
@@ -2945,6 +2953,51 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
       .count()) === 0,
     "A later unrelated ready=false state must not reopen completed theme setup",
   );
+  await page.close();
+}
+
+async function testThemeSetupLeavesChooserWhenConnectionIsLost(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const companionRoute = await routeCompanionOnline(
+    page,
+    installRequests,
+    () => {},
+    { device: themeMissingDevice },
+  );
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "Choose your VibeTV theme" })
+    .waitFor({ timeout: 10_000 });
+
+  companionRoute.setDevice({
+    ...themeMissingDevice,
+    connected: false,
+    ready: false,
+    connectionState: "reconnecting",
+    stream: {
+      healthy: false,
+      running: false,
+      detail: "VibeTV is waiting for signal.",
+    },
+  });
+
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 12_000 });
+  assert(
+    (await page
+      .getByRole("heading", { name: "Choose your VibeTV theme" })
+      .count()) === 0,
+    "A disconnected VibeTV must leave theme setup for the existing recovery UI",
+  );
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 

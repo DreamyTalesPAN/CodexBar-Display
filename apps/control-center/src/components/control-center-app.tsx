@@ -26,6 +26,7 @@ import {
   shouldUseHostedSetupShell,
 } from "./control-center-runtime";
 import {
+  deviceCanContinueThemeSetup,
   deviceCompletedThemeSetup,
   deviceIsActive,
   deviceImageIsStuck,
@@ -2667,6 +2668,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const themeSetupEntryRequired =
     companionStatus === "online" && deviceNeedsThemeSetup(device);
   const themeSetupSessionMatches =
+    deviceCanContinueThemeSetup(device) &&
     deviceMatchesThemeSetupIdentity(themeSetupIdentity, device);
   const themeSetupComplete = deviceCompletedThemeSetup(device);
   const themeSetupRequired =
