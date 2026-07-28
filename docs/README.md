@@ -21,6 +21,7 @@ Center on the customer's Mac.
 - [Hardware contract](hardware-contract.md): firmware, WiFi, display, and endpoint contract.
 - [Firmware provisioning](firmware-provisioning.md): provisioning and OTA packaging.
 - [Firmware guardrails](firmware-guardrails.md): firmware safety rules.
+- [ThemeSpec slot budget](themespec-slot-budget.md): measured RAM and transition cost of a second resident ThemeSpec.
 - [Operator runbook](operator-runbook.md): support, recovery, and smoke-test procedures.
 - [Usage polling architecture](usage-polling-architecture.md): usage collection and latency behavior.
 - [Preferences registry](preferences.md): typed local settings descriptors and the provider adapter.
