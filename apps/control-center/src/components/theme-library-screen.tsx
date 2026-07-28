@@ -167,6 +167,7 @@ export type ThemeLibraryScreenProps = {
   installEntry?: boolean;
   lastInstall?: ThemeInstallResult;
   requestedThemeId?: string;
+  setupMode?: boolean;
   storefrontConfigured: boolean;
   onSelectTheme: (themeId: string) => void;
   onInstallCustomTheme: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
@@ -183,6 +184,7 @@ export function ThemeLibraryScreen({
   installStatus,
   lastInstall,
   requestedThemeId,
+  setupMode = false,
   companionStatus,
   storefrontConfigured,
   themeInstallEnabled,
@@ -206,13 +208,15 @@ export function ThemeLibraryScreen({
   const [preparingInstallThemeId, setPreparingInstallThemeId] = useState("");
   const [previewTheme, setPreviewTheme] = useState<ThemeLibraryItem | null>(null);
   const libraryThemes: ThemeLibraryItem[] = [
-    ...userThemes.map((custom) => ({
-      kind: "custom" as const,
-      custom,
-      id: custom.id,
-      themeId: custom.document.spec.themeId,
-      title: custom.document.packName,
-    })),
+    ...(setupMode
+      ? []
+      : userThemes.map((custom) => ({
+          kind: "custom" as const,
+          custom,
+          id: custom.id,
+          themeId: custom.document.spec.themeId,
+          title: custom.document.packName,
+        }))),
     ...visibleThemes.map((product) => ({
       kind: "published" as const,
       id: product.id,
@@ -226,9 +230,19 @@ export function ThemeLibraryScreen({
     visibleThemes.find((theme) => theme.themeId === selectedThemeId);
   const catalogEmpty = libraryThemes.length === 0;
   const requestedThemeMissing = Boolean(
-    requestedThemeId && selectedThemeId === requestedThemeId && !displayTheme,
+    !setupMode &&
+      requestedThemeId &&
+      selectedThemeId === requestedThemeId &&
+      !displayTheme,
   );
-  const readiness = requestedThemeMissing
+  const readiness = setupMode
+    ? {
+        title: "Choose your VibeTV theme",
+        detail: "",
+        buttonReason: "",
+        icon: <Library size={22} aria-hidden />,
+      }
+    : requestedThemeMissing
     ? {
         title: "Choose an available theme",
         detail:
@@ -243,6 +257,9 @@ export function ThemeLibraryScreen({
         themeInstallEnabled,
       });
   useEffect(() => {
+    if (setupMode) {
+      return;
+    }
     const timer = window.setTimeout(() => {
       const themesResult = loadUserThemes();
       if (themesResult.ok) {
@@ -267,7 +284,7 @@ export function ThemeLibraryScreen({
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [setupMode]);
 
   function persistUserThemes(next: UserThemeRecord[]) {
     if (storageLocked) {
@@ -477,37 +494,54 @@ export function ThemeLibraryScreen({
   }
 
   return (
-    <div className="mx-auto max-w-[1180px]">
-      <section className="grid gap-5 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+    <div
+      className={cn(
+        "mx-auto w-full max-w-[1180px]",
+        setupMode && "px-5 sm:px-7 lg:px-10",
+      )}
+      data-theme-setup={setupMode ? "" : undefined}
+    >
+      <section
+        className={cn(
+          "grid gap-5 py-5",
+          !setupMode &&
+            "sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center",
+        )}
+      >
         <h2
-          className="truncate text-3xl font-black leading-tight text-[#1B1B1B] outline-none"
+          className={cn(
+            "text-3xl font-black leading-tight text-[#1B1B1B] outline-none",
+            !setupMode && "truncate",
+          )}
           ref={libraryHeadingRef}
           tabIndex={-1}
         >
-          Themes
+          {setupMode ? "Choose your VibeTV theme" : "Themes"}
         </h2>
-        <Button onClick={openBlankTheme} type="button">
-          <Plus data-icon="inline-start" aria-hidden />
-          <span>Create Theme</span>
-        </Button>
+        {!setupMode ? (
+          <Button onClick={openBlankTheme} type="button">
+            <Plus data-icon="inline-start" aria-hidden />
+            <span>Create Theme</span>
+          </Button>
+        ) : null}
       </section>
 
       <section className="py-8">
-        {storageWarning ? (
+        {!setupMode && storageWarning ? (
           <Alert className="mb-5">
             <Lock aria-hidden />
             <AlertTitle>Theme storage needs attention</AlertTitle>
             <AlertDescription>{storageWarning}</AlertDescription>
           </Alert>
         ) : null}
-        {libraryError ? (
+        {!setupMode && libraryError ? (
           <Alert className="mb-5" variant="destructive">
             <Lock aria-hidden />
             <AlertTitle>Theme action failed</AlertTitle>
             <AlertDescription>{libraryError}</AlertDescription>
           </Alert>
         ) : null}
-        {recovery ? (
+        {!setupMode && recovery ? (
           <RecoveryCard
             onDiscard={discardRecovery}
             onResume={resumeRecovery}
@@ -533,7 +567,7 @@ export function ThemeLibraryScreen({
                 <ThemeListItem
                   busyAction={busyAction}
                   device={device}
-                  displayThemeId={displayTheme?.themeId}
+                  displayThemeId={setupMode ? undefined : displayTheme?.themeId}
                   item={theme}
                   installStatus={installStatus}
                   key={theme.themeId}
@@ -545,6 +579,7 @@ export function ThemeLibraryScreen({
                   onPreviewTheme={setPreviewTheme}
                   preparingInstallThemeId={preparingInstallThemeId}
                   selectedThemeId={selectedThemeId}
+                  setupMode={setupMode}
                   themeInstallBlockedReason={readiness.buttonReason}
                   themeInstallEnabled={themeInstallEnabled}
                   themeStorageLocked={storageLocked}
@@ -555,7 +590,7 @@ export function ThemeLibraryScreen({
         )}
       </section>
 
-      {previewTheme ? (
+      {!setupMode && previewTheme ? (
         <Dialog open onOpenChange={(open) => !open && setPreviewTheme(null)}>
           <DialogContent
             aria-describedby="theme-library-example-data"
@@ -574,7 +609,7 @@ export function ThemeLibraryScreen({
           </DialogContent>
         </Dialog>
       ) : null}
-      {deleteTheme ? (
+      {!setupMode && deleteTheme ? (
         <DeleteThemeDialog
           error={deleteError}
           onCancel={cancelDeleteTheme}
@@ -750,6 +785,7 @@ function ThemeListItem({
   onPreviewTheme,
   preparingInstallThemeId,
   selectedThemeId,
+  setupMode,
   themeInstallBlockedReason,
   themeInstallEnabled,
   themeStorageLocked,
@@ -767,6 +803,7 @@ function ThemeListItem({
   onPreviewTheme: (theme: ThemeLibraryItem) => void;
   preparingInstallThemeId: string;
   selectedThemeId: string;
+  setupMode: boolean;
   themeInstallBlockedReason: string;
   themeInstallEnabled: boolean;
   themeStorageLocked: boolean;
@@ -788,6 +825,7 @@ function ThemeListItem({
     ? buildThemeInstallBlocker({
         device,
         theme,
+        allowUnreadyInstall: setupMode,
         themeInstallBlockedReason,
         themeInstallEnabled,
       })
@@ -811,31 +849,44 @@ function ThemeListItem({
   return (
     <Item
       role="listitem"
-      variant={item.themeId === displayThemeId ? "muted" : "outline"}
+      variant={
+        !setupMode && item.themeId === displayThemeId ? "muted" : "outline"
+      }
     >
       <ItemMedia className="w-28 sm:w-36">
-        <Button
-          aria-label={`Preview ${item.title}`}
-          className="h-auto w-full justify-start p-0"
-          onClick={() => onPreviewTheme(item)}
-          type="button"
-          variant="ghost"
-        >
+        {setupMode ? (
           <ThemePreview theme={item} />
-        </Button>
+        ) : (
+          <Button
+            aria-label={`Preview ${item.title}`}
+            className="h-auto w-full justify-start p-0"
+            onClick={() => onPreviewTheme(item)}
+            type="button"
+            variant="ghost"
+          >
+            <ThemePreview theme={item} />
+          </Button>
+        )}
       </ItemMedia>
       <ItemContent className="min-w-[180px]">
-          <ItemTitle className="text-lg font-bold">{item.title}</ItemTitle>
+        <ItemTitle className="text-lg font-bold">{item.title}</ItemTitle>
+        {!setupMode ? (
           <ItemDescription className="font-semibold uppercase text-ring">
             {isCustom ? "Custom" : "Published"}
           </ItemDescription>
+        ) : null}
       </ItemContent>
       <ItemActions
-          className={cn(
-            "basis-full grid w-full gap-2 sm:basis-auto sm:w-auto",
-            isCustom ? "sm:grid-cols-3" : "sm:grid-cols-2",
-          )}
-        >
+        className={cn(
+          "basis-full grid w-full gap-2 sm:basis-auto sm:w-auto",
+          setupMode
+            ? "sm:grid-cols-1"
+            : isCustom
+              ? "sm:grid-cols-3"
+              : "sm:grid-cols-2",
+        )}
+      >
+        {!setupMode ? (
           <Button
             disabled={Boolean(loadingEditorThemeId)}
             onClick={() => void onEditTheme(item)}
@@ -850,44 +901,48 @@ function ThemeListItem({
             )}
             <span>{loadingEdit ? "Opening" : "Edit"}</span>
           </Button>
+        ) : null}
+        <Button
+          className={
+            setupMode ? "h-12 text-base sm:h-9 sm:text-[0.8rem]" : undefined
+          }
+          disabled={disabled}
+          onClick={() => {
+            if (!blocker) {
+              onInstallTheme(item);
+            }
+          }}
+          title={title}
+          type="button"
+          size="sm"
+        >
+          {labelForInstallButton({
+            actionInFlight,
+            blockedLabel,
+            installInFlight: installInFlight || preparingInstall,
+            installed,
+            selected: item.themeId === selectedThemeId,
+            disabled,
+          })}
+        </Button>
+        {!setupMode && item.kind === "custom" ? (
           <Button
-            disabled={disabled}
-            onClick={() => {
-              if (!blocker) {
-                onInstallTheme(item);
-              }
-            }}
-            title={title}
+            aria-label={`Delete ${item.title}`}
+            disabled={themeStorageLocked}
+            onClick={() => onDeleteTheme(item.custom)}
+            title={
+              themeStorageLocked
+                ? "Theme storage needs attention before deleting themes."
+                : `Delete ${item.title}`
+            }
             type="button"
             size="sm"
+            variant="destructive"
           >
-            {labelForInstallButton({
-              actionInFlight,
-              blockedLabel,
-              installInFlight: installInFlight || preparingInstall,
-              installed,
-              selected: item.themeId === selectedThemeId,
-              disabled,
-            })}
+            <Trash2 data-icon="inline-start" aria-hidden />
+            <span>Delete</span>
           </Button>
-          {item.kind === "custom" ? (
-            <Button
-              aria-label={`Delete ${item.title}`}
-              disabled={themeStorageLocked}
-              onClick={() => onDeleteTheme(item.custom)}
-              title={
-                themeStorageLocked
-                  ? "Theme storage needs attention before deleting themes."
-                  : `Delete ${item.title}`
-              }
-              type="button"
-              size="sm"
-              variant="destructive"
-            >
-              <Trash2 data-icon="inline-start" aria-hidden />
-              <span>Delete</span>
-            </Button>
-          ) : null}
+        ) : null}
       </ItemActions>
       {visibleInstallStatus ? (
         <ItemFooter className="block">
@@ -1177,11 +1232,13 @@ function installDisabledReason({
 }
 
 function buildThemeInstallBlocker({
+  allowUnreadyInstall = false,
   device,
   theme,
   themeInstallBlockedReason,
   themeInstallEnabled,
 }: {
+  allowUnreadyInstall?: boolean;
   device: ThemeLibraryDeviceInfo | null;
   theme: ThemeProduct;
   themeInstallBlockedReason: string;
@@ -1191,7 +1248,11 @@ function buildThemeInstallBlocker({
   if (metadataBlocker) {
     return metadataBlocker;
   }
-  if (device?.ready !== true) {
+  const canInstallMissingTheme =
+    allowUnreadyInstall &&
+    device?.connected === true &&
+    device.paired === true;
+  if (device?.ready !== true && !canInstallMissingTheme) {
     return { reason: themeInstallBlockedReason || "Connect VibeTV first." };
   }
   if (!device.paired) {

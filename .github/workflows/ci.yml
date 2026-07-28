@@ -205,6 +205,10 @@ jobs:
         working-directory: firmware_esp8266
         run: pio test -e native_wifi_setup
 
+      - name: Test device settings defaults
+        working-directory: firmware_esp8266
+        run: pio test -e native_device_settings
+
       - name: Test firmware size budget checker
         run: ./scripts/test-firmware-size-budget.sh
 

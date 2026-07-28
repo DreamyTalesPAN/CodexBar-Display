@@ -1,23 +1,37 @@
-Bei n8n Workflows gilt als Naming Convention: immer CODEX vorne dran schreiben. Bei GitHub-Repositories ebenfalls.
-Bevor du Trial-and-Error für Fehler machst, suche zuerst nach dem Fehler oder lies die offiziellen Docs.
-Wenn du fertig bist, laber den Nutzer nicht voll mit "Wenn du willst ...", solange es nicht wirklich Sinn macht.
-Im Deutschen benutzt du Umlaute.
-Bevor du pro Chat anfängst zu bauen, prüfe einmal, ob der Remote-Branch vor lokal ist. Falls ja, erst fetchen. Nur einmal pro Chat.
+Use this naming convention for n8n workflows: always prefix the name with CODEX. Do the same for GitHub repositories.
+Before using trial and error on an error, search for the error or read the official documentation first.
+When the task is complete, do not overwhelm the user with "If you want, I can..." suggestions unless they are genuinely useful.
+When writing in German, use umlauts.
+Before building anything, check once per chat whether the remote branch is ahead of the local branch. If it is, fetch first. Perform this check only once per chat.
 
-## Merge-, Release- und Production-Guardrails
+## Primary Development Principle: Maximum Simplicity, Minimum Code
 
-- Niemals `gh pr merge`, `git merge` nach `main`, `git push origin main`, `git tag`, `git push origin refs/tags/*`, `gh release ...` oder einen Release-Workflow auslösen, außer der Nutzer gibt in der aktuellen Unterhaltung eine explizite Freigabe für genau diese Aktion und genau dieses Ziel.
-- Eine Freigabe für `deploy`, `live app ready`, `push branch`, `prüfen`, `vorbereiten`, `testen` oder `fixen` ist keine Freigabe für Merge, Main-Push, Release oder Tag.
-- Vor jeder Merge-, Main-Push-, Tag- oder Release-Aktion: in einer separaten Nachricht Aktion, Ziel und Risiko nennen und auf ausdrückliche Bestätigung warten. Ohne Bestätigung stoppen.
-- `app.vibetv.shop` deployen ist ein anderer Vorgang als `main` mergen oder einen Release-Tag setzen.
-- Lokale Git-Guardrails müssen aktiv sein: `./scripts/install-agent-git-guardrails.sh` installiert einen `pre-push`-Hook, der `main`-Pushes und Tag-Pushes blockiert, solange nicht bewusst ein Override gesetzt wurde.
-- Wenn versehentlich eine verbotene Aktion gestartet wurde: sofort stoppen, laufende Release-Jobs abbrechen, lokale/remote Tags entfernen, Status melden und keine weitere Änderung an `main` ohne neue Freigabe.
+- The goal of every change is the desired outcome with as little code, complexity, state, abstraction, and special-case handling as possible.
+- Always work in this order:
+  1. Delete unnecessary code.
+  2. Simplify or consolidate existing code.
+  3. Write new code only when the first two steps are insufficient.
+- Before adding code, check whether deleting or simplifying existing code can achieve the goal.
+- Prefer one small central solution over multiple local special cases.
+- Do not add speculative abstractions, frameworks, configuration options, fallbacks, or compatibility layers without a concrete current requirement.
+- When multiple solutions are correct, choose the one with less code and fewer moving parts.
+- Before finishing, review the complete diff against `main` and remove everything that is not strictly required for the desired outcome.
+- Simplicity does not mean omitting required functionality, tests, error handling, or safety mechanisms.
+
+## Merge, Release, and Production Guardrails
+
+- Never run `gh pr merge`, merge into `main` with `git merge`, run `git push origin main`, create a tag with `git tag`, run `git push origin refs/tags/*`, run `gh release ...`, or trigger a release workflow unless the user gives explicit approval in the current conversation for that exact action and target.
+- Approval to `deploy`, make the `live app ready`, `push branch`, `check`, `prepare`, `test`, or `fix` is not approval to merge, push `main`, release, or tag.
+- Before every merge, `main` push, tag, or release action, state the action, target, and risk in a separate message and wait for explicit confirmation. Stop without confirmation.
+- Deploying `app.vibetv.shop` is a different action from merging `main` or creating a release tag.
+- Local Git guardrails must be active: `./scripts/install-agent-git-guardrails.sh` installs a `pre-push` hook that blocks `main` pushes and tag pushes unless an override is deliberately set.
+- If a prohibited action is started accidentally, stop immediately, cancel running release jobs, remove local and remote tags, report the status, and make no further changes to `main` without new approval.
 
 ## Live VibeTV Guardrails
 
-- Das angeschlossene VibeTV ist kein Routine-Testziel.
-- Keine Firmware-Updates, Theme-Pack-Installs, Asset-Uploads, `POST /v1/themes/install`, `codexbar-display theme-pack install`, `POST /assets`, `POST /theme/active`, `POST /frame`, `POST /reset-wifi` oder ähnliche Schreibzugriffe gegen eine Geräte-IP ohne eine aktuelle, explizite Nutzerfreigabe genau für diesen Hardware-Test.
-- Read-only Checks sind erlaubt: `GET /hello`, `GET /health`, `GET /assets`, Companion `GET /v1/status`, `GET /v1/device`, `POST /v1/device/discover`.
-- Für Hardware-Schreibtests muss vorher klar im Chat stehen: welches Gerät, welcher Befehl, welches Risiko, und dass der Nutzer jetzt testen will.
-- Nach einem fehlgeschlagenen Hardware-Schreibtest keine Wiederholung ohne neue explizite Freigabe.
-- Release taggen, mergen oder `main` pushen fällt zusätzlich unter die Merge-, Release- und Production-Guardrails oben.
+- The connected VibeTV is not a routine test target.
+- Do not perform firmware updates, theme-pack installs, asset uploads, `POST /v1/themes/install`, `codexbar-display theme-pack install`, `POST /assets`, `POST /theme/active`, `POST /frame`, `POST /reset-wifi`, or similar writes to a device IP without current, explicit user approval for that exact hardware test.
+- Read-only checks are allowed: `GET /hello`, `GET /health`, `GET /assets`, Companion `GET /v1/status`, `GET /v1/device`, and `POST /v1/device/discover`.
+- Before a hardware write test, clearly state in the chat which device and command are involved, what the risk is, and that the user wants to test now.
+- After a failed hardware write test, do not retry without new explicit approval.
+- Tagging a release, merging, or pushing `main` is also governed by the Merge, Release, and Production Guardrails above.

@@ -12,6 +12,7 @@
 #include "../../firmware_shared/theme_spec_renderer_core.h"
 #include "asset_path_policy.h"
 #include "connected_setup_policy.h"
+#include "device_settings.h"
 #include "wifi_security_policy.h"
 #include "gif_asset_validator_file.h"
 #include "renderer_esp8266.h"
@@ -67,9 +68,12 @@ constexpr unsigned long kRawOtaProgressTimeoutMs = 30000UL;
 constexpr size_t kRawOtaReadBufferBytes = 512;
 constexpr size_t kMaxStoredThemeSpecBytes = 4096;
 constexpr size_t kMaxThemeGifAssetBytes = codexbar_display::themespec::kMaxThemeSpecGifAssetBytes;
-constexpr uint8_t kDefaultBrightnessPercent = 100;
-constexpr uint8_t kMinBrightnessPercent = 10;
-constexpr uint8_t kMaxBrightnessPercent = 100;
+constexpr uint8_t kDefaultBrightnessPercent =
+    codexbar_display::esp8266::device_settings::kDefaultBrightnessPercent;
+constexpr uint8_t kMinBrightnessPercent =
+    codexbar_display::esp8266::device_settings::kMinBrightnessPercent;
+constexpr uint8_t kMaxBrightnessPercent =
+    codexbar_display::esp8266::device_settings::kMaxBrightnessPercent;
 const char kSetupApSsid[] = "VibeTV-Setup";
 const char kSetupAddress[] = "192.168.4.1";
 const char kCustomerAppHost[] = "app.vibetv.shop";
@@ -291,13 +295,7 @@ void appendJSONNullableString(String& out, const String& value) {
 }
 
 uint8_t clampBrightnessPercent(int value) {
-  if (value < kMinBrightnessPercent) {
-    return kMinBrightnessPercent;
-  }
-  if (value > kMaxBrightnessPercent) {
-    return kMaxBrightnessPercent;
-  }
-  return static_cast<uint8_t>(value);
+  return codexbar_display::esp8266::device_settings::ClampBrightnessPercent(value);
 }
 
 void applyDeviceSettings() {
@@ -319,13 +317,10 @@ bool loadDeviceSettings() {
   }
   const int brightness = file.read();
   file.close();
-  if (brightness <= 0) {
-    applyDeviceSettings();
-    return false;
-  }
-  deviceSettings.brightnessPercent = clampBrightnessPercent(brightness);
+  deviceSettings.brightnessPercent =
+      codexbar_display::esp8266::device_settings::BrightnessFromPersistedByte(brightness);
   applyDeviceSettings();
-  return true;
+  return brightness > 0;
 }
 
 bool saveDeviceSettings() {
@@ -475,8 +470,14 @@ void appendAuthStatusJSON(String& out) {
 }
 
 void appendBrightnessCapabilityJSON(String& out) {
-  out += "{\"supported\":";
-  out += renderer.SupportsBrightnessControl() ? "true" : "false";
+  if (!renderer.SupportsBrightnessControl()) {
+    out += "{\"supported\":false}";
+    return;
+  }
+  out += "{\"supported\":true,\"minPercent\":";
+  out += String(kMinBrightnessPercent);
+  out += ",\"maxPercent\":";
+  out += String(kMaxBrightnessPercent);
   out += "}";
 }
 
@@ -1239,7 +1240,7 @@ void handleHello() {
   out += "\",\"maxFrameBytes\":";
   out += String(kMaxFrameBytes);
   out += ",\"capabilities\":{\"display\":{\"brightness\":";
-  out += renderer.SupportsBrightnessControl() ? "{\"supported\":true}" : "{\"supported\":false}";
+  appendBrightnessCapabilityJSON(out);
   out += "},\"theme\":";
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
   out += themeCapabilitiesJSON(false, true);
