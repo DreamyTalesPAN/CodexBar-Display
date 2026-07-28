@@ -1131,6 +1131,9 @@ func runThemeApply(args []string) error {
 	if err != nil {
 		return err
 	}
+	if selectedTransport.Name() == "wifi" {
+		requestedTarget = resolveThemeSpecWiFiTarget(requestedTarget, flagWasSet(fs, "target"))
+	}
 
 	spec, raw, resolvedTarget, caps, err := loadAndValidateThemeSpec(
 		strings.TrimSpace(*specPath),
@@ -1179,7 +1182,7 @@ func runThemeApply(args []string) error {
 		selectedTransport.Name(),
 		frame.V,
 		caps.Board,
-		resolvedTarget,
+		publicDeviceTargetForConfig(resolvedTarget),
 	)
 	return nil
 }
@@ -1342,6 +1345,45 @@ func loadRuntimeConfigForCommand() (runtimeconfig.Config, bool) {
 		return runtimeconfig.Config{}, false
 	}
 	return cfg, true
+}
+
+func resolveThemeSpecWiFiTarget(requested string, targetExplicit bool) string {
+	requested = strings.TrimSpace(requested)
+	cfg, ok := loadRuntimeConfigForCommand()
+	if !ok {
+		return requested
+	}
+
+	if !targetExplicit && strings.TrimSpace(cfg.DeviceTarget) != "" {
+		requested = strings.TrimSpace(cfg.DeviceTarget)
+	}
+	publicRequested := publicDeviceTargetForConfig(requested)
+	if publicRequested == "" {
+		return requested
+	}
+
+	token := ""
+	if sameCommandDeviceTarget(publicRequested, cfg.DeviceTarget) {
+		token = strings.TrimSpace(cfg.DeviceToken)
+	}
+	if token == "" {
+		for _, known := range cfg.KnownDevices {
+			if sameCommandDeviceTarget(publicRequested, known.Target) {
+				token = strings.TrimSpace(known.DeviceToken)
+				break
+			}
+		}
+	}
+	if token == "" {
+		return requested
+	}
+	return targetWithQueryToken(publicRequested, token)
+}
+
+func sameCommandDeviceTarget(left, right string) bool {
+	left = publicDeviceTargetForConfig(left)
+	right = publicDeviceTargetForConfig(right)
+	return left != "" && right != "" && strings.EqualFold(left, right)
 }
 
 func targetWithQueryToken(target, token string) string {

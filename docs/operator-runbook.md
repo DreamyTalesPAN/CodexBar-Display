@@ -335,6 +335,11 @@ If hello negotiation is temporarily unavailable, you can opt into local USB fall
 ../codexbar-display theme-apply --allow-unknown-capabilities --spec ../protocol/fixtures/v2/theme_spec_mini_transport.json
 ```
 
+For WiFi, `theme-apply` uses the saved pairing token only when the requested
+target exactly matches that saved device. It authenticates `/hello` before
+sending `/frame`, never reuses a token for a different target, and does not
+print the token in command output.
+
 Validation checks:
 - ThemeSpec schema/field rules (`protocol/theme_spec_v1.schema.json`)
 - capability compatibility (`maxThemeSpecBytes`, `maxThemePrimitives`, `builtinThemes`)

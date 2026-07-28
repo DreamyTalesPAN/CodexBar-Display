@@ -36,6 +36,32 @@ func TestWiFiTransportDeviceCapabilitiesReadsHello(t *testing.T) {
 	}
 }
 
+func TestWiFiTransportDeviceCapabilitiesAuthenticatesWhenTargetHasToken(t *testing.T) {
+	const token = "pair-token-123"
+	var gotToken string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		gotToken = r.Header.Get(deviceAuthHeader)
+		if gotToken != token {
+			http.Error(w, "pairing token required", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
+	defer server.Close()
+
+	transport := NewWiFiTransportWithClient(server.Client())
+	if _, err := transport.DeviceCapabilities(server.URL + "/?token=" + token); err != nil {
+		t.Fatalf("DeviceCapabilities returned error: %v", err)
+	}
+	if gotToken != token {
+		t.Fatalf("unexpected auth token %q", gotToken)
+	}
+}
+
 func TestWiFiTransportSendLinePostsFrame(t *testing.T) {
 	var gotBody string
 	var gotToken string
