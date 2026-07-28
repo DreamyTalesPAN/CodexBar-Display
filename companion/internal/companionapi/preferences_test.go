@@ -72,6 +72,31 @@ func TestPreferencesMarksUnavailableProviderStaleFromPersistedUsage(t *testing.T
 	}
 }
 
+func TestPreferencesMarkFreshCollectorProviderHealthy(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	collectedAt := time.Date(2026, 7, 28, 12, 45, 0, 0, time.UTC)
+	server.now = func() time.Time { return collectedAt }
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{
+			ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthUnavailable, Service: codexbar.ProviderServiceUnknown,
+		}}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return freshProviderUsage("codex", "Codex", collectedAt), true
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+	var response preferencesResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Items) != 1 || response.Items[0].Health.State != "healthy" ||
+		response.Items[0].Health.Message != "Provider is working." {
+		t.Fatalf("fresh collector usage did not reconcile provider health: %#v", response.Items)
+	}
+}
+
 func TestPreferencesReturnsDynamicInventoryBeforeSlowHealthProbeFinishes(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	healthStarted := make(chan struct{})

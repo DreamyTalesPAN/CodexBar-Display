@@ -591,9 +591,11 @@ func filterDisabledProviders(resp usageResponse, settings []codexbar.ProviderSet
 }
 
 func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []preferenceDescriptor {
+	now := s.currentTime().UTC()
 	lastSuccess := make(map[string]string)
+	freshSuccess := make(map[string]codexbar.ProviderReadiness)
 	if s.loadUsage != nil {
-		if usage, ok := s.loadUsage(s.currentTime().UTC()); ok {
+		if usage, ok := s.loadUsage(now); ok {
 			for _, provider := range usage.Providers {
 				id := strings.TrimSpace(strings.ToLower(provider.Provider))
 				if id == "" {
@@ -601,6 +603,9 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				}
 				if id != "" && !provider.CollectedAt.IsZero() {
 					lastSuccess[id] = provider.CollectedAt.UTC().Format(time.RFC3339)
+				}
+				if readiness, ready := freshUsableUsageProviderReadiness(provider, now); ready {
+					freshSuccess[readiness.ID] = readiness
 				}
 			}
 		}
@@ -613,6 +618,9 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		if !setting.Enabled {
 			state = "disabled"
 			message = "Provider is off."
+		} else if _, ready := freshSuccess[setting.ID]; ready {
+			state = string(codexbar.ProviderHealthHealthy)
+			message = providerHealthMessage(codexbar.ProviderHealthHealthy)
 		} else if setting.Service == codexbar.ProviderServiceOutage &&
 			(setting.Health == codexbar.ProviderHealthHealthy || setting.Health == codexbar.ProviderHealthChecking) {
 			state = "service_outage"

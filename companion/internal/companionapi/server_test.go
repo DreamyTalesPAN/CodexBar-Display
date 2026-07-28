@@ -7766,6 +7766,9 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
 		return githubRelease{TagName: "v1.0.0"}, nil
 	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{}, false
+	}
 	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
 		return codexbar.ProviderSetup{
 			Status: "ready",
