@@ -36,6 +36,14 @@ const (
 	maxZipEntries      = 256
 )
 
+// Pack categories. `kind` marks the file format; `usage` marks what the pack is
+// for. Packs written before this field exist are live themes.
+const (
+	UsageLive        = "live"
+	UsageScreensaver = "screensaver"
+	UsageBoth        = "both"
+)
+
 var packIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9\-_]{2,63}$`)
 var spriteColorPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
@@ -46,6 +54,7 @@ type Manifest struct {
 	Name        string      `json:"name"`
 	Version     string      `json:"version,omitempty"`
 	MinFirmware string      `json:"minFirmware,omitempty"`
+	Usage       string      `json:"usage,omitempty"`
 	ThemeSpec   FileEntry   `json:"themeSpec"`
 	Assets      []FileEntry `json:"assets,omitempty"`
 }
@@ -359,6 +368,35 @@ func validateManifestFields(manifest Manifest) error {
 	}
 	if strings.TrimSpace(manifest.Name) == "" {
 		return errors.New("name is required")
+	}
+	return validateUsage(manifest.Usage)
+}
+
+// validateUsage accepts an empty value because packs without the field are live
+// themes.
+func validateUsage(usage string) error {
+	switch strings.TrimSpace(usage) {
+	case "", UsageLive, UsageScreensaver, UsageBoth:
+		return nil
+	}
+	return fmt.Errorf("usage %q unsupported (expected %q, %q or %q)", usage, UsageLive, UsageScreensaver, UsageBoth)
+}
+
+// PackUsage returns the declared category, defaulting to live.
+func (m Manifest) PackUsage() string {
+	if usage := strings.TrimSpace(m.Usage); usage != "" {
+		return usage
+	}
+	return UsageLive
+}
+
+// CheckSlot rejects a pack whose category does not cover the target slot.
+func (m Manifest) CheckSlot(slot string) error {
+	if slot != UsageLive && slot != UsageScreensaver {
+		return fmt.Errorf("unknown install slot %q", slot)
+	}
+	if usage := m.PackUsage(); usage != slot && usage != UsageBoth {
+		return fmt.Errorf("theme pack %q is a %s pack and cannot be installed into the %s slot", m.ID, usage, slot)
 	}
 	return nil
 }

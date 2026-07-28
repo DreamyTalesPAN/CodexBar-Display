@@ -153,6 +153,15 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	if err != nil {
 		return Result{}, err
 	}
+	// The device has one slot today, so every install targets the live theme.
+	if err := pack.Manifest.CheckSlot(themepack.UsageLive); err != nil {
+		return Result{}, &InstallError{
+			Op:   "theme-pack/usage",
+			Code: errcode.ProtocolThemeSpecIncompatible,
+			Err:  err,
+			Hint: "pick a pack with usage live or both for the live theme slot",
+		}
+	}
 	themeName := strings.TrimSpace(pack.Manifest.Name)
 	if themeName == "" {
 		themeName = pack.Manifest.ID

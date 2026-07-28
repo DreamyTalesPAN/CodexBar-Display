@@ -1217,6 +1217,9 @@ func runThemePackCatalog(args []string) error {
 			title = theme.ID
 		}
 		fmt.Printf("- %s: %s", theme.ID, title)
+		if usage := strings.TrimSpace(theme.Usage); usage != "" {
+			fmt.Printf(" usage=%s", usage)
+		}
 		if theme.ThemeRev > 0 {
 			fmt.Printf(" rev=%d", theme.ThemeRev)
 		}
@@ -1248,9 +1251,10 @@ func runThemePackValidate(args []string) error {
 		return err
 	}
 	fmt.Printf(
-		"theme-pack valid: id=%s name=%q themeId=%s rev=%d assets=%d themeSpecBytes=%d\n",
+		"theme-pack valid: id=%s name=%q usage=%s themeId=%s rev=%d assets=%d themeSpecBytes=%d\n",
 		pack.Manifest.ID,
 		pack.Manifest.Name,
+		pack.Manifest.PackUsage(),
 		pack.ThemeSpec.ThemeID,
 		pack.ThemeSpec.ThemeRev,
 		len(pack.Assets),

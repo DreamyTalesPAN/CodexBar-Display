@@ -59,6 +59,7 @@ for (const theme of themeDirs) {
   catalog.themes.push({
     id: manifest.id,
     title: manifest.name || manifest.id,
+    usage: manifest.usage || "live",
     themeRev: await themeRevFromManifest(manifest),
     downloadAsset: zipName,
     sha256: createHash("sha256").update(zipBytes).digest("hex"),

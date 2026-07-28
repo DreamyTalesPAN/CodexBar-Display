@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
@@ -83,6 +84,81 @@ func TestInstallUsesValidInMemoryPackBytes(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Theme source: local upload") {
 		t.Fatalf("expected local upload source log, got:\n%s", out.String())
+	}
+}
+
+func TestInstallRejectsScreensaverPackInLiveSlotBeforeDeviceAccess(t *testing.T) {
+	packBytes := zipThemePackFiles(t, map[string]string{
+		"manifest.json": `{
+			"kind":"vibetv-theme-pack",
+			"schemaVersion":1,
+			"id":"night-clock",
+			"name":"Night Clock",
+			"usage":"screensaver",
+			"themeSpec":{"path":"/themes/u/night.json","file":"theme.json"}
+		}`,
+		"theme.json": `{"v":1,"id":"night-clock","rev":1,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"v":"OK","s":1}]}`,
+	})
+
+	_, err := Install(context.Background(), Options{
+		PackBytes: packBytes,
+		// Unreachable on purpose: the usage check must fail before device access.
+		Target: "http://127.0.0.1:1",
+	})
+	want := `theme pack "night-clock" is a screensaver pack and cannot be installed into the live slot`
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("expected %q, got %v", want, err)
+	}
+	if got := errcode.Of(err); got != errcode.ProtocolThemeSpecIncompatible {
+		t.Fatalf("unexpected error code %q", got)
+	}
+}
+
+func TestInstallAcceptsBothUsagePackInLiveSlot(t *testing.T) {
+	withFastActivationRetries(t)
+	dir := t.TempDir()
+	spec := `{"v":1,"id":"synthwave","rev":1,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"v":"OK","s":1}]}`
+	manifest := `{
+		"kind":"vibetv-theme-pack",
+		"schemaVersion":1,
+		"id":"synthwave",
+		"name":"Synthwave",
+		"usage":"both",
+		"themeSpec":{"path":"/themes/u/synth.json","file":"theme.json"}
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "theme.json"), []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	const activePath = "/themes/u/synth.json"
+	currentActivePath := "/themes/u/claude.json"
+	server := themeInstallDeviceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/theme/active":
+			currentActivePath = activePath
+			w.WriteHeader(http.StatusOK)
+		case "/health":
+			writeThemeHealth(t, w, currentActivePath)
+		}
+	})
+	defer server.Close()
+
+	result, err := Install(context.Background(), Options{
+		PackBytes:          zipMinimalThemePack(t, dir),
+		Target:             server.URL,
+		SkipFirmwareUpdate: true,
+		HTTPClient:         server.Client(),
+		UploadSettleDelay:  -1,
+		FetchLiveFrame:     testLiveFrame,
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	if result.ActivePath != activePath {
+		t.Fatalf("unexpected install result: %+v", result)
 	}
 }
 

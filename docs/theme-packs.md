@@ -16,6 +16,7 @@ Each pack is either a directory or a `.zip` with `manifest.json` at the root.
   "name": "Cozy Meadow",
   "version": "0.1.0",
   "minFirmware": "1.0.0",
+  "usage": "live",
   "themeSpec": {
     "path": "/themes/u/cm.json",
     "file": "theme.json",
@@ -33,6 +34,14 @@ Each pack is either a directory or a `.zip` with `manifest.json` at the root.
 
 Rules:
 
+- `kind` marks the file format. `usage` marks what the pack is for: `live`,
+  `screensaver`, or `both`. The field is optional; a pack without it is a `live`
+  theme, so packs written before the field keep working.
+- The live theme slot accepts `live` and `both`. A `screensaver` pack installed
+  into it is rejected before anything is uploaded to the device:
+  `theme pack "night-clock" is a screensaver pack and cannot be installed into the live slot`.
+- Generated catalog entries carry `usage`, normalized to `live` when the
+  manifest omits it.
 - Device paths must start with `/themes/`.
 - Device paths must be 31 characters or shorter because ESP8266 LittleFS paths are short.
 - ThemeSpec `gif` and `sprite` primitives must reference files listed in `assets`.

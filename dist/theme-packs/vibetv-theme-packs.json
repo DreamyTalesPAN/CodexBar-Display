@@ -4,6 +4,7 @@
     {
       "id": "claude-creature",
       "title": "Claude Creature",
+      "usage": "live",
       "themeRev": 1,
       "downloadAsset": "vibetv-theme-claude-creature.zip",
       "sha256": "255391213d56cb83fc0ba5e0b09d1c126875dba593ce3f252f7c9d23ee78b6ba",
@@ -12,6 +13,7 @@
     {
       "id": "clippy",
       "title": "Clippy",
+      "usage": "live",
       "themeRev": 1,
       "downloadAsset": "vibetv-theme-clippy.zip",
       "sha256": "cda451b4654c20deca9b4ae84de1ce002391d32e021c330a69612d6b85ef1898",
@@ -20,6 +22,7 @@
     {
       "id": "cozy-meadow",
       "title": "Cozy Meadow",
+      "usage": "live",
       "themeRev": 1,
       "downloadAsset": "vibetv-theme-cozy-meadow.zip",
       "sha256": "f11110986e6487b040089598a9222973998a3c0fa6585b9f63b2aa8cd9b0f3f6",
@@ -28,6 +31,7 @@
     {
       "id": "mini-classic",
       "title": "Mini Classic",
+      "usage": "live",
       "themeRev": 1,
       "downloadAsset": "vibetv-theme-mini-classic.zip",
       "sha256": "6336afdd8434628040632cc1bfe7d0dda24dea3f229345a1639420dd05c36b5a",
@@ -36,6 +40,7 @@
     {
       "id": "synthwave",
       "title": "Synthwave",
+      "usage": "live",
       "themeRev": 1,
       "downloadAsset": "vibetv-theme-synthwave.zip",
       "sha256": "d60c34a2e2a9ccf947e125a5f8108976ed51970db8afa8cf7923661ca223ac38",
