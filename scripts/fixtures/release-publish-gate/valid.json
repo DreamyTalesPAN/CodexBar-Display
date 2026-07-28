@@ -68,7 +68,7 @@
         "name": "appcast.xml",
         "path": "publish/appcast.xml",
         "sha256": "",
-        "role": "production-appcast",
+        "role": "sparkle-appcast",
         "publish": true
       },
       {

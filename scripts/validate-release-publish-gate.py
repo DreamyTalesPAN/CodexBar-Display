@@ -291,22 +291,22 @@ def validate_publish_scope(
         item
         for item in published
         if item["name"] == "appcast.xml"
-        and item["role"] == "production-appcast"
+        and item["role"] == "sparkle-appcast"
     ]
     if len(appcast_items) != 1:
-        fail("candidate publish scope must identify one production appcast")
+        fail("candidate publish scope must identify one Sparkle appcast")
     appcast = safe_artifact(candidate_dir, appcast_items[0]["path"])
     try:
         root = ET.parse(appcast).getroot()
     except (ET.ParseError, OSError) as exc:
-        fail(f"production appcast is invalid XML: {exc}")
+        fail(f"Sparkle appcast is invalid XML: {exc}")
     enclosure_urls = [
         element.attrib.get("url")
         for element in root.iter()
         if element.tag.rsplit("}", 1)[-1] == "enclosure"
     ]
     if not enclosure_urls or any(not url for url in enclosure_urls):
-        fail("production appcast must contain enclosure URL values")
+        fail("Sparkle appcast must contain enclosure URL values")
     for url in enclosure_urls:
         asset = url.removeprefix(release_prefix) if url else ""
         if (

@@ -200,6 +200,76 @@ class PublishGateFixtureTests(unittest.TestCase):
         self.assertTrue(VALIDATOR.is_file(), "publish-gate validator is missing")
 
     @unittest.skipUnless(VALIDATOR.is_file(), "validator not implemented yet")
+    def test_hosted_candidate_fixture_contract_is_accepted(self) -> None:
+        manifest_artifacts = self.fixture["candidateManifest"]["artifacts"]
+        artifacts = {
+            item["name"]: (item["path"], item["role"], item["publish"])
+            for item in manifest_artifacts
+        }
+        self.assertEqual(len(artifacts), len(manifest_artifacts))
+        self.assertEqual(
+            artifacts,
+            {
+                "VibeTV-Control-Center.dmg": (
+                    "publish/VibeTV-Control-Center.dmg",
+                    "signed-dmg",
+                    True,
+                ),
+                "appcast.xml": (
+                    "publish/appcast.xml",
+                    "sparkle-appcast",
+                    True,
+                ),
+                "install.sh": ("publish/install.sh", "installer", True),
+                "install-control-center-companion.sh": (
+                    "publish/install-control-center-companion.sh",
+                    "installer",
+                    True,
+                ),
+                "codexbar-display-darwin-amd64-v1.2.3": (
+                    "publish/codexbar-display-darwin-amd64-v1.2.3",
+                    "companion-amd64",
+                    True,
+                ),
+                "codexbar-display-darwin-arm64-v1.2.3": (
+                    "publish/codexbar-display-darwin-arm64-v1.2.3",
+                    "companion-arm64",
+                    True,
+                ),
+                "firmware.bin": ("publish/firmware.bin", "firmware", True),
+                "firmware-manifest.json": (
+                    "publish/firmware-manifest.json",
+                    "firmware-manifest",
+                    True,
+                ),
+                "firmware-manifest-v1.2.3.json": (
+                    "publish/firmware-manifest-v1.2.3.json",
+                    "firmware-manifest",
+                    True,
+                ),
+                "checksums-v1.2.3.txt": (
+                    "publish/checksums-v1.2.3.txt",
+                    "checksums",
+                    True,
+                ),
+                "codexbar-display": (
+                    "test/codexbar-display",
+                    "test-companion",
+                    False,
+                ),
+                "virtual-vibetv": (
+                    "test/virtual-vibetv",
+                    "virtual-vibetv",
+                    False,
+                ),
+            },
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(VALIDATOR.is_file(), "validator not implemented yet")
     def test_valid_fixture_produces_payload_and_exact_asset_copy(self) -> None:
         result = self._run()
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -255,7 +325,7 @@ class PublishGateFixtureTests(unittest.TestCase):
         self.assertIn("firmware", result.stderr)
 
     @unittest.skipUnless(VALIDATOR.is_file(), "validator not implemented yet")
-    def test_rejects_wrong_production_appcast_url(self) -> None:
+    def test_rejects_wrong_sparkle_appcast_url(self) -> None:
         self._replace_asset_and_rebind(
             "publish/appcast.xml",
             '<rss><channel><item><enclosure url="https://example.com/wrong.dmg" /></item></channel></rss>\n',
