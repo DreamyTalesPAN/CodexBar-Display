@@ -92,7 +92,7 @@ jobs:
           }
           pip install platformio
           source_sha="$(git rev-parse HEAD)"
-          version="0.0.0-pr${{ inputs.pr_number }}.${GITHUB_RUN_NUMBER}"
+          version="9999.0.${GITHUB_RUN_NUMBER}"
           mkdir -p dist/macos tmp/vibetv-merge
           (
             cd apps/control-center
@@ -124,6 +124,14 @@ jobs:
             CODEXBAR_DISPLAY_FW_VERSION="$version" pio run -e esp8266_smalltv_st7789
           )
           cp firmware_esp8266/.pio/build/esp8266_smalltv_st7789/firmware.bin tmp/vibetv-merge/firmware.bin
+          python3 - "$version" tmp/vibetv-merge/firmware.bin > tmp/vibetv-merge/firmware-manifest.json <<'PY'
+          import hashlib, json, sys
+          version, firmware = sys.argv[1:]
+          with open(firmware, "rb") as source:
+              digest = hashlib.sha256(source.read()).hexdigest()
+          json.dump({"schemaVersion": 1, "release": "v" + version, "artifacts": [{"firmwareEnv": "esp8266_smalltv_st7789", "board": "esp8266-smalltv-st7789", "firmwareVersion": version, "asset": "firmware.bin", "firmwareUrl": "firmware.bin", "sha256": digest}]}, sys.stdout)
+          print()
+          PY
           printf '%s\n' "$source_sha" > tmp/vibetv-merge/source-sha.txt
           printf '%s\n' "$version" > tmp/vibetv-merge/version.txt
 
@@ -188,7 +196,9 @@ jobs:
           files = [
               ("VibeTV-Control-Center.dmg", "dist/macos/VibeTV-Control-Center.dmg", "signed-dmg"),
               ("appcast.xml", "dist/macos/appcast.xml", "sparkle-appcast"),
+              ("codexbar-display", "tmp/vibetv-merge/codexbar-display", "companion"),
               ("firmware.bin", "tmp/vibetv-merge/firmware.bin", "firmware"),
+              ("firmware-manifest.json", "tmp/vibetv-merge/firmware-manifest.json", "firmware-manifest"),
               ("virtual-vibetv", "tmp/vibetv-merge/virtual-vibetv", "virtual-vibetv"),
           ]
           manifest = {
@@ -214,7 +224,9 @@ jobs:
             dist/macos/appcast.xml
             dist/macos/candidate-manifest.json
             tmp/vibetv-merge/virtual-vibetv
+            tmp/vibetv-merge/codexbar-display
             tmp/vibetv-merge/firmware.bin
+            tmp/vibetv-merge/firmware-manifest.json
           retention-days: 7
           compression-level: 0
 
@@ -284,7 +296,8 @@ jobs:
           fi
           ./scripts/test-vibetv-hosted-guest.sh \
             --dmg candidate/VibeTV-Control-Center.dmg --appcast candidate/appcast.xml \
-            --virtual-vibetv candidate/virtual-vibetv --firmware candidate/firmware.bin \
+            --virtual-vibetv candidate/virtual-vibetv --companion candidate/codexbar-display \
+            --firmware candidate/firmware.bin --firmware-manifest candidate/firmware-manifest.json \
             --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]}"
       - uses: actions/upload-artifact@v4
         if: always()

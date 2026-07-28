@@ -2,182 +2,127 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DMG=""
-APPCAST=""
-VIRTUAL_VIBETV=""
-FIRMWARE=""
-VERSION=""
-STATE=""
-OUTPUT=""
-BASELINE_DMG=""
-BASELINE_APPCAST=""
+INSTALL_APP='/Applications/VibeTV Control Center.app'
+DMG="" APPCAST="" VIRTUAL_VIBETV="" COMPANION="" FIRMWARE="" FIRMWARE_MANIFEST="" VERSION="" STATE="" OUTPUT=""
+BASELINE_DMG="" BASELINE_APPCAST=""
 
-die() {
-  printf 'error: %s\n' "$*" >&2
-  exit 1
-}
-
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --dmg) DMG="${2:-}"; shift 2 ;;
-    --appcast) APPCAST="${2:-}"; shift 2 ;;
-    --virtual-vibetv) VIRTUAL_VIBETV="${2:-}"; shift 2 ;;
-    --firmware) FIRMWARE="${2:-}"; shift 2 ;;
-    --version) VERSION="${2#v}"; shift 2 ;;
-    --state) STATE="${2:-}"; shift 2 ;;
-    --output) OUTPUT="${2:-}"; shift 2 ;;
-    --baseline-dmg) BASELINE_DMG="${2:-}"; shift 2 ;;
-    --baseline-appcast) BASELINE_APPCAST="${2:-}"; shift 2 ;;
-    *) die "unknown argument: $1" ;;
+    --dmg) DMG="${2:-}"; shift 2 ;; --appcast) APPCAST="${2:-}"; shift 2 ;;
+    --virtual-vibetv) VIRTUAL_VIBETV="${2:-}"; shift 2 ;; --companion) COMPANION="${2:-}"; shift 2 ;;
+    --firmware) FIRMWARE="${2:-}"; shift 2 ;; --firmware-manifest) FIRMWARE_MANIFEST="${2:-}"; shift 2 ;;
+    --version) VERSION="${2#v}"; shift 2 ;; --state) STATE="${2:-}"; shift 2 ;;
+    --output) OUTPUT="${2:-}"; shift 2 ;; --baseline-dmg) BASELINE_DMG="${2:-}"; shift 2 ;;
+    --baseline-appcast) BASELINE_APPCAST="${2:-}"; shift 2 ;; *) die "unknown argument: $1" ;;
   esac
 done
-
-[[ -f "$DMG" ]] || die '--dmg must name the signed candidate DMG'
-[[ -f "$APPCAST" ]] || die '--appcast must name the signed candidate appcast'
-[[ -x "$VIRTUAL_VIBETV" ]] || die '--virtual-vibetv must name the Core-provided executable'
-[[ -f "$FIRMWARE" ]] || die '--firmware must name the candidate firmware image'
+for file in "$DMG" "$APPCAST" "$FIRMWARE" "$FIRMWARE_MANIFEST"; do [[ -f "$file" ]] || die "required file missing: $file"; done
+[[ -x "$VIRTUAL_VIBETV" ]] || die '--virtual-vibetv must be executable'
+[[ -x "$COMPANION" ]] || die '--companion must be the exact candidate companion executable'
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || die '--version must be SemVer'
-[[ "$STATE" == clean_os || "$STATE" == current_public || "$STATE" == previous_public ]] || die '--state is invalid'
+[[ "$STATE" =~ ^(clean_os|current_public|previous_public)$ ]] || die '--state is invalid'
 [[ -n "$OUTPUT" && ! -e "$OUTPUT" ]] || die '--output must be a new directory'
 [[ "$(uname -s)" == Darwin ]] || die 'hosted guest test requires macOS'
-if [[ "$STATE" == clean_os ]]; then
-  [[ -z "$BASELINE_DMG" && -z "$BASELINE_APPCAST" ]] || die 'clean_os must not receive a public baseline'
-else
-  [[ -f "$BASELINE_DMG" && -f "$BASELINE_APPCAST" ]] || die 'public states require a frozen baseline DMG and appcast'
-fi
+if [[ "$STATE" == clean_os ]]; then [[ -z "$BASELINE_DMG$BASELINE_APPCAST" ]] || die 'clean_os must not receive a baseline'; else [[ -f "$BASELINE_DMG" && -f "$BASELINE_APPCAST" ]] || die 'public state needs frozen baseline files'; fi
+[[ ! -e "$INSTALL_APP" ]] || die "disposable guest is not clean: ${INSTALL_APP} exists"
 
 mkdir -p "$OUTPUT"
-MOUNT="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-hosted-mount.XXXXXX")"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-hosted-guest.XXXXXX")"
-VIRTUAL_PID=""
+CANDIDATE_MOUNT="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-candidate-mount.XXXXXX")"
+BASELINE_MOUNT="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-baseline-mount.XXXXXX")"
+VIRTUAL_PID="" HTTP_PID=""
 cleanup() {
   [[ -z "$VIRTUAL_PID" ]] || kill "$VIRTUAL_PID" >/dev/null 2>&1 || true
-  [[ -z "$VIRTUAL_PID" ]] || wait "$VIRTUAL_PID" 2>/dev/null || true
-  hdiutil detach "$MOUNT" -quiet >/dev/null 2>&1 || true
-  rm -rf "$MOUNT" "$WORK"
+  [[ -z "$HTTP_PID" ]] || kill "$HTTP_PID" >/dev/null 2>&1 || true
+  hdiutil detach "$CANDIDATE_MOUNT" -quiet >/dev/null 2>&1 || true
+  hdiutil detach "$BASELINE_MOUNT" -quiet >/dev/null 2>&1 || true
+  [[ ! -e "$INSTALL_APP" ]] || rm -rf "$INSTALL_APP" || true
+  rm -rf "$WORK" "$CANDIDATE_MOUNT" "$BASELINE_MOUNT"
 }
 trap cleanup EXIT HUP INT TERM
 
 sw_vers > "$OUTPUT/macos-version.txt"
 ps -axo pid=,ppid=,comm= > "$OUTPUT/processes-before.txt"
-lsof -nP -iTCP@127.0.0.1:47832 -sTCP:LISTEN > "$OUTPUT/port-47832-before.txt" 2>&1 || true
+"$ROOT/scripts/verify-macos-control-center-dmg.sh" --dmg "$DMG" > "$OUTPUT/candidate-dmg-verification.txt" 2>&1
+hdiutil attach -readonly -nobrowse -mountpoint "$CANDIDATE_MOUNT" "$DMG" > "$OUTPUT/candidate-dmg-mount.txt" 2>&1
+CANDIDATE_APP="$CANDIDATE_MOUNT/VibeTV Control Center.app"
+[[ -d "$CANDIDATE_APP" ]] || die 'candidate DMG has no app'
+codesign --verify --deep --strict --verbose=2 "$CANDIDATE_APP" > "$OUTPUT/candidate-app-codesign.txt" 2>&1
 
-if [[ -n "$BASELINE_DMG" ]]; then
-  "$ROOT/scripts/verify-macos-control-center-dmg.sh" --dmg "$BASELINE_DMG" > "$OUTPUT/baseline-dmg-verification.txt" 2>&1
-  python3 - "$BASELINE_APPCAST" "$OUTPUT/baseline-appcast-check.json" <<'PY'
-import json
-import sys
-import xml.etree.ElementTree as ET
-
-root = ET.parse(sys.argv[1]).getroot()
-namespace = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
-if not any(item.find("enclosure") is not None and item.find("enclosure").get(namespace + "edSignature") for item in root.findall("./channel/item")):
-    raise SystemExit("public baseline appcast has no signed Sparkle enclosure")
-with open(sys.argv[2], "w", encoding="utf-8") as output:
-    json.dump({"baseline": "signed-public-appcast"}, output)
-    output.write("\n")
+mkdir -p "$WORK/serve"
+cp "$DMG" "$WORK/serve/VibeTV-Control-Center.dmg"
+cp "$APPCAST" "$WORK/serve/appcast.xml"
+cp "$FIRMWARE" "$WORK/serve/firmware.bin"
+cp "$FIRMWARE_MANIFEST" "$WORK/serve/firmware-manifest.template.json"
+python3 - "$WORK/serve" "$WORK/serve/port" <<'PY' > "$OUTPUT/loopback-server.log" 2>&1 &
+import http.server, pathlib, socketserver, sys
+root, port_file = map(pathlib.Path, sys.argv[1:])
+import os
+os.chdir(root)
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, fmt, *args): print(fmt % args, flush=True)
+with socketserver.TCPServer(("127.0.0.1", 0), Handler) as server:
+    port_file.write_text(str(server.server_address[1]), encoding="utf-8")
+    server.serve_forever()
 PY
+HTTP_PID=$!
+for _ in $(seq 1 30); do [[ -s "$WORK/serve/port" ]] && break; sleep 1; done
+[[ -s "$WORK/serve/port" ]] || die 'local candidate artifact server did not start'
+PORT="$(cat "$WORK/serve/port")"
+SERVER_URL="http://127.0.0.1:${PORT}"
+
+if [[ "$STATE" == clean_os ]]; then
+  ditto "$CANDIDATE_APP" "$INSTALL_APP"
+else
+  "$ROOT/scripts/verify-macos-control-center-dmg.sh" --dmg "$BASELINE_DMG" > "$OUTPUT/baseline-dmg-verification.txt" 2>&1
+  hdiutil attach -readonly -nobrowse -mountpoint "$BASELINE_MOUNT" "$BASELINE_DMG" > "$OUTPUT/baseline-dmg-mount.txt" 2>&1
+  BASELINE_APP="$BASELINE_MOUNT/VibeTV Control Center.app"
+  [[ -d "$BASELINE_APP" ]] || die 'baseline DMG has no app'
+  ditto "$BASELINE_APP" "$INSTALL_APP"
+  plutil -extract CFBundleShortVersionString raw -o - "$INSTALL_APP/Contents/Info.plist" > "$OUTPUT/baseline-version.txt"
+  # Sparkle's official CLI is intentionally mandatory. Do not downgrade this
+  # to XML parsing: if the hosted image lacks it, the gate must fail loudly.
+  sparkle_dir="$("$ROOT/scripts/fetch-sparkle.sh")"
+  SPARKLE_CLI="${SPARKLE_CLI:-${sparkle_dir}/bin/sparkle}"
+  [[ -x "$SPARKLE_CLI" ]] || die "official Sparkle CLI is unavailable at ${SPARKLE_CLI}; cannot prove Sparkle update"
+  # Official Sparkle CLI: sparkle bundle APP --check-immediately --feed-url URL.
+  "$SPARKLE_CLI" bundle "$INSTALL_APP" --check-immediately --feed-url "$SERVER_URL/appcast.xml" > "$OUTPUT/sparkle-update.txt" 2>&1
 fi
 
-"$ROOT/scripts/verify-macos-control-center-dmg.sh" --dmg "$DMG" > "$OUTPUT/dmg-verification.txt" 2>&1
-hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT" "$DMG" > "$OUTPUT/dmg-mount.txt" 2>&1
-APP="$MOUNT/VibeTV Control Center.app"
-[[ -d "$APP" ]] || die 'candidate DMG has no VibeTV Control Center.app'
-codesign --verify --deep --strict --verbose=2 "$APP" > "$OUTPUT/app-codesign.txt" 2>&1
-plutil -extract CFBundleShortVersionString raw -o - "$APP/Contents/Info.plist" > "$OUTPUT/app-version.txt"
-[[ "$(cat "$OUTPUT/app-version.txt")" == "$VERSION" ]] || die 'candidate app version does not match requested version'
+plutil -extract CFBundleShortVersionString raw -o - "$INSTALL_APP/Contents/Info.plist" > "$OUTPUT/installed-candidate-version.txt"
+[[ "$(cat "$OUTPUT/installed-candidate-version.txt")" == "$VERSION" ]] || die 'installed app is not the candidate version after Sparkle/direct install'
+cmp "$COMPANION" "$INSTALL_APP/Contents/Helpers/codexbar-display" || die 'installed app does not contain the candidate companion artifact'
 
-python3 - "$APPCAST" "$VERSION" "$OUTPUT/appcast-check.json" <<'PY'
-import json
-import sys
-import xml.etree.ElementTree as ET
-
-appcast, version, output = sys.argv[1:]
-root = ET.parse(appcast).getroot()
-namespace = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
-items = root.findall("./channel/item")
-if not items:
-    raise SystemExit("appcast has no item")
-for item in items:
-    enclosure = item.find("enclosure")
-    if enclosure is None:
-        continue
-    if enclosure.get(namespace + "edSignature") and enclosure.get(namespace + "shortVersionString") == version:
-        with open(output, "w", encoding="utf-8") as destination:
-            json.dump({"sparkleUpdate": "signed-appcast-candidate", "version": version}, destination)
-            destination.write("\n")
-        break
-else:
-    raise SystemExit("appcast has no signed enclosure for the candidate version")
+python3 - "$WORK/serve/firmware-manifest.template.json" "$WORK/serve/firmware-manifest.json" "$SERVER_URL/firmware.bin" <<'PY'
+import json, sys
+source, output, url = sys.argv[1:]
+manifest = json.load(open(source, encoding="utf-8"))
+for artifact in manifest.get("artifacts", []): artifact["firmwareUrl"] = url
+json.dump(manifest, open(output, "w", encoding="utf-8"), indent=2)
 PY
-
-# GitHub-hosted macOS runners are disposable guests. This test deliberately
-# uses the real signed app and only a loopback Virtual VibeTV; it never reaches
-# physical hardware. The Core branch supplies virtual-vibetv.
 firmware_sha="$(shasum -a 256 "$FIRMWARE" | awk '{print $1}')"
-"$VIRTUAL_VIBETV" \
-  --addr 127.0.0.1:47834 \
-  --firmware 0.0.0 \
-  --candidate-firmware "$VERSION" \
-  --expected-firmware-sha256 "$firmware_sha" \
-  > "$OUTPUT/virtual-vibetv.log" 2>&1 &
-VIRTUAL_PID=$!
-for _ in $(seq 1 30); do
-  curl --fail --silent --show-error http://127.0.0.1:47834/health > "$WORK/health.json" && break
-  sleep 1
-done
-[[ -s "$WORK/health.json" ]] || die 'Virtual VibeTV did not become healthy'
-curl --fail --silent --show-error http://127.0.0.1:47834/hello > "$OUTPUT/virtual-hello.json"
-curl --fail --silent --show-error http://127.0.0.1:47834/health > "$OUTPUT/virtual-health-before.json"
-curl --fail --silent --show-error \
-  -H 'X-VibeTV-Token: virtual-pair-token' \
-  -H 'Content-Type: application/json' \
-  --data '{"provider":"vibetv","label":"Hosted gate"}' \
-  http://127.0.0.1:47834/frame > "$OUTPUT/virtual-frame.txt"
-curl --fail --silent --show-error \
-  -H 'X-VibeTV-Token: virtual-pair-token' \
-  --data-binary "@$FIRMWARE" \
-  http://127.0.0.1:47834/update/firmware > "$OUTPUT/virtual-ota.txt"
-for _ in $(seq 1 30); do
-  curl --fail --silent --show-error http://127.0.0.1:47834/health > "$OUTPUT/virtual-health-after.json" && break
-  sleep 1
-done
-curl --fail --silent --show-error http://127.0.0.1:47834/__virtual/state > "$OUTPUT/virtual-state.json"
+"$VIRTUAL_VIBETV" --addr 127.0.0.1:47834 --raw-addr 127.0.0.1:8081 --firmware 0.0.0 --candidate-firmware "$VERSION" --expected-firmware-sha256 "$firmware_sha" > "$OUTPUT/virtual-vibetv.log" 2>&1 & VIRTUAL_PID=$!
+for _ in $(seq 1 30); do curl --fail --silent "$SERVER_URL/firmware-manifest.json" >/dev/null && curl --fail --silent http://127.0.0.1:47834/health > "$OUTPUT/virtual-health-before.json" && break; sleep 1; done
+[[ -s "$OUTPUT/virtual-health-before.json" ]] || die 'Virtual VibeTV did not become healthy'
+CANDIDATE_COMPANION="$INSTALL_APP/Contents/Helpers/codexbar-display"
+"$CANDIDATE_COMPANION" install-update --target http://127.0.0.1:47834 --manifest-url "$SERVER_URL/firmware-manifest.json" --skip-launchagent-pause > "$OUTPUT/candidate-install-update.txt" 2>&1
+"$CANDIDATE_COMPANION" install-update --target http://127.0.0.1:47834 --manifest-url "$SERVER_URL/firmware-manifest.json" --skip-launchagent-pause > "$OUTPUT/candidate-already-current.txt" 2>&1
+grep -F 'Firmware: already current' "$OUTPUT/candidate-already-current.txt" >/dev/null || die 'candidate companion did not prove already_current'
+"$CANDIDATE_COMPANION" daemon --transport wifi --target http://127.0.0.1:47834 --once --api-addr 127.0.0.1:47832 > "$OUTPUT/candidate-daemon-once.txt" 2>&1
+curl --fail --silent http://127.0.0.1:47834/__virtual/state > "$OUTPUT/virtual-state.json"
 python3 - "$OUTPUT/virtual-state.json" <<'PY'
-import json
-import sys
-
+import json, sys
 state = json.load(open(sys.argv[1], encoding="utf-8"))
-if state.get("updateUploads") != 1 or state.get("framesAccepted", 0) < 1 or state.get("violations"):
-    raise SystemExit("Virtual VibeTV did not record a healthy render/stream/OTA sequence")
+if state.get("updateUploads") != 1 or state.get("violations") or state.get("framesAccepted", 0) < 1:
+    raise SystemExit("candidate companion did not complete raw OTA/render/no-op sequence")
+if not any(event.get("path") == "/update/firmware.raw" for event in state.get("events", [])):
+    raise SystemExit("candidate companion did not use Raw OTA port 8081")
 PY
 
-# The exact same firmware is now current. A second upload must be rejected,
-# which is the no-op guard against a duplicate OTA after a transient response.
-status="$(curl --silent --output "$OUTPUT/virtual-no-op.txt" --write-out '%{http_code}' \
-  -H 'X-VibeTV-Token: virtual-pair-token' --data-binary "@$FIRMWARE" \
-  http://127.0.0.1:47834/update/firmware)"
-[[ "$status" == 409 ]] || die "Virtual VibeTV no-op OTA must return 409, got $status"
-
-CODEX_ALLOW_MACOS_RUNTIME_VALIDATION=1 \
-  "$ROOT/scripts/validate-macos-control-center-runtime.sh" \
-  --real --app "$APP" --expected-version "$VERSION" \
-  > "$OUTPUT/companion-port-47832.txt" 2>&1
-ps -axo pid=,ppid=,comm= > "$OUTPUT/processes-after.txt"
-lsof -nP -iTCP@127.0.0.1:47832 -sTCP:LISTEN > "$OUTPUT/port-47832-after.txt" 2>&1 || true
+CODEX_ALLOW_MACOS_RUNTIME_VALIDATION=1 "$ROOT/scripts/validate-macos-control-center-runtime.sh" --real --installed-app --app "$INSTALL_APP" --expected-version "$VERSION" > "$OUTPUT/companion-port-47832.txt" 2>&1
 screencapture -x "$OUTPUT/guest-${STATE}.png"
-
 python3 - "$OUTPUT/result.json" "$STATE" "$VERSION" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], "w", encoding="utf-8") as output:
-    json.dump({
-        "schemaVersion": 1,
-        "state": sys.argv[2],
-        "version": sys.argv[3],
-        "status": "passed",
-        "checks": ["signed-dmg", "signed-app", "sparkle-update", "companion-port-47832", "virtual-health-render-stream-ota-no-op"],
-    }, output, indent=2)
-    output.write("\n")
+import json, sys
+json.dump({"schemaVersion": 1, "state": sys.argv[2], "version": sys.argv[3], "status": "passed", "checks": ["signed-dmg", "installed-baseline-to-sparkle-update", "candidate-companion-raw-ota-rediscovery-no-op", "candidate-daemon-render", "installed-runtime-port-47832"]}, open(sys.argv[1], "w", encoding="utf-8"), indent=2)
 PY

@@ -75,6 +75,14 @@ jobs:
             CODEXBAR_DISPLAY_FW_VERSION="$version" pio run -e esp8266_smalltv_st7789
           )
           cp firmware_esp8266/.pio/build/esp8266_smalltv_st7789/firmware.bin tmp/vibetv-rc/firmware.bin
+          python3 - "$version" tmp/vibetv-rc/firmware.bin > tmp/vibetv-rc/firmware-manifest.json <<'PY'
+          import hashlib, json, sys
+          version, firmware = sys.argv[1:]
+          with open(firmware, "rb") as source:
+              digest = hashlib.sha256(source.read()).hexdigest()
+          json.dump({"schemaVersion": 1, "release": "v" + version, "artifacts": [{"firmwareEnv": "esp8266_smalltv_st7789", "board": "esp8266-smalltv-st7789", "firmwareVersion": version, "asset": "firmware.bin", "firmwareUrl": "firmware.bin", "sha256": digest}]}, sys.stdout)
+          print()
+          PY
           printf '%s\n' "$version" > tmp/vibetv-rc/version.txt
           printf '%s\n' "$GITHUB_SHA" > tmp/vibetv-rc/source-sha.txt
       - uses: actions/upload-artifact@v4
@@ -127,7 +135,9 @@ jobs:
           files = [
               ("VibeTV-Control-Center.dmg", "dist/macos/VibeTV-Control-Center.dmg", "signed-dmg"),
               ("appcast.xml", "dist/macos/appcast.xml", "sparkle-appcast"),
+              ("codexbar-display", "tmp/vibetv-rc/codexbar-display", "companion"),
               ("firmware.bin", "tmp/vibetv-rc/firmware.bin", "firmware"),
+              ("firmware-manifest.json", "tmp/vibetv-rc/firmware-manifest.json", "firmware-manifest"),
               ("virtual-vibetv", "tmp/vibetv-rc/virtual-vibetv", "virtual-vibetv"),
           ]
           artifacts = []
@@ -151,7 +161,9 @@ jobs:
             dist/macos/appcast.xml
             dist/macos/candidate-manifest.json
             tmp/vibetv-rc/virtual-vibetv
+            tmp/vibetv-rc/codexbar-display
             tmp/vibetv-rc/firmware.bin
+            tmp/vibetv-rc/firmware-manifest.json
           retention-days: 7
           compression-level: 0
 
@@ -213,10 +225,49 @@ jobs:
           if [[ '${{ matrix.state }}' != clean_os ]]; then
             baseline_args=(--baseline-dmg baseline.dmg --baseline-appcast baseline-appcast.xml)
           fi
-          ./scripts/test-vibetv-hosted-guest.sh --dmg candidate/VibeTV-Control-Center.dmg --appcast candidate/appcast.xml --virtual-vibetv candidate/virtual-vibetv --firmware candidate/firmware.bin --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]}"
+          ./scripts/test-vibetv-hosted-guest.sh --dmg candidate/VibeTV-Control-Center.dmg --appcast candidate/appcast.xml --virtual-vibetv candidate/virtual-vibetv --companion candidate/codexbar-display --firmware candidate/firmware.bin --firmware-manifest candidate/firmware-manifest.json --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: CODEX-vibetv-rc-results-${{ matrix.state }}-${{ github.run_id }}
           path: results
+          retention-days: 7
+
+  aggregate-result:
+    if: always()
+    needs: [sign-and-package, guest-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vibetv-release-candidate
+          path: candidate
+      - name: Write immutable candidate result
+        env:
+          MATRIX_RESULT: ${{ needs.guest-test.result }}
+        run: |
+          python3 - "candidate/candidate-manifest.json" candidate-result.json "$MATRIX_RESULT" <<'PY'
+          import json, sys
+          manifest_path, output, matrix_result = sys.argv[1:]
+          manifest = json.load(open(manifest_path, encoding="utf-8"))
+          result = "success" if matrix_result == "success" else "failure"
+          with open(output, "w", encoding="utf-8") as destination:
+              json.dump({
+                  "schemaVersion": 1,
+                  "repository": manifest["repository"],
+                  "sourceSha": manifest["sourceSha"],
+                  "version": manifest["version"],
+                  "candidateRunId": manifest["candidateRunId"],
+                  "result": result,
+                  "artifactHashes": manifest["artifacts"],
+              }, destination, indent=2)
+              destination.write("\n")
+          if result != "success":
+              raise SystemExit("candidate matrix did not pass; result artifact is intentionally non-publishable")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vibetv-release-candidate-result
+          path: candidate-result.json
           retention-days: 7

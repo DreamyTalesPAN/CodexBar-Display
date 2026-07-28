@@ -101,6 +101,8 @@ main() {
     'only the trusted status job may write the merge-gate commit status'
   assert_contains "$MERGE_WORKFLOW" 'runs-on: macos-15' \
     'merge gate must run its direct macOS checks on GitHub-hosted macOS 15'
+  assert_contains "$MERGE_WORKFLOW" '9999.0.${GITHUB_RUN_NUMBER}' \
+    'merge candidate must always sort above public releases for Sparkle'
   assert_contains "$MERGE_WORKFLOW" 'clean_os' \
     'merge gate must cover a clean macOS customer state'
   assert_contains "$MERGE_WORKFLOW" 'current_public' \
@@ -135,6 +137,12 @@ main() {
   done
   assert_contains "$RC_WORKFLOW" 'retention-days: 7' \
     'release candidate artifacts and reports must remain available for seven days'
+  assert_contains "$RC_WORKFLOW" 'name: vibetv-release-candidate-result' \
+    'release candidate result artifact name must remain stable for publish gates'
+  for field in artifactHashes candidate-result.json 'result = "success"'; do
+    assert_contains "$RC_WORKFLOW" "$field" \
+      "candidate result must include ${field}"
+  done
   assert_not_contains "$RC_WORKFLOW" 'self-hosted' \
     'release candidate must not depend on a self-hosted runner'
   assert_not_contains "$RC_WORKFLOW" 'tart' \
@@ -150,6 +158,18 @@ main() {
     'direct guest test must prove no-op firmware behavior'
   assert_contains "$GUEST_TEST" 'screencapture' \
     'direct guest test must preserve a macOS screenshot artifact'
+  assert_contains "$GUEST_TEST" '/Applications/VibeTV Control Center.app' \
+    'guest test must install the baseline or candidate app in Applications'
+  assert_contains "$GUEST_TEST" 'sparkle bundle' \
+    'guest test must run the official Sparkle CLI instead of parsing XML'
+  assert_contains "$GUEST_TEST" '--check-immediately' \
+    'guest test must force a live Sparkle update check'
+  assert_contains "$GUEST_TEST" 'CANDIDATE_COMPANION' \
+    'guest test must select the installed candidate companion for OTA'
+  assert_contains "$GUEST_TEST" 'install-update --target' \
+    'guest test must use the bundled candidate companion for OTA'
+  assert_contains "$GUEST_TEST" 'daemon --transport wifi' \
+    'guest test must exercise the bundled candidate companion render path'
 
   assert_safe_app_extractor
   printf 'PASS: hosted VibeTV merge and release-candidate gate contracts\n'
