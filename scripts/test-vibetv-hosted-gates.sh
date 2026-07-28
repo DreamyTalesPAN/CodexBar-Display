@@ -180,6 +180,8 @@ main() {
     'candidate result must expose publish validators a path-to-hash map'
   assert_contains "$RC_WORKFLOW" 'check-firmware-size-budget.sh' \
     'release candidate must enforce the release firmware size budgets'
+  assert_contains "$RC_WORKFLOW" 'shasum -a 256 -c "checksums-v${version}.txt"' \
+    'release candidate must verify its publish checksum asset before upload'
   assert_contains "$RC_WORKFLOW" '"protocolVersion":config.get' \
     'release candidate must preserve release firmware protocol metadata'
   assert_contains "$SPARKLE_BUILDER" '6276ba2b404829d139c45ff98427cf90e2efc59b' \
