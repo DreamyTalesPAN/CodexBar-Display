@@ -78,7 +78,28 @@ e={'schemaVersion':1,'repository':b['repository'],'sourceSha':b['sourceSha'],'ve
 json.dump(e,open(out,'w'),separators=(',',':'))
 PY
 }
-hello="$(curl -fsS "$TARGET/hello")"; health="$(curl -fsS "$TARGET/health")"
+wait_for_resume_health() {
+  local deadline=$((SECONDS + 90)) state="$1"
+  while (( SECONDS < deadline )); do
+    local next_hello next_health
+    if next_hello="$(curl -fsS --max-time 3 "$TARGET/hello" 2>/dev/null)" && next_health="$(curl -fsS --max-time 3 "$TARGET/health" 2>/dev/null)" &&
+      python3 - "$state" "$next_hello" "$next_health" <<'PY'
+import json,sys
+s=json.load(open(sys.argv[1])); h=json.loads(sys.argv[2]); x=json.loads(sys.argv[3])
+assert h.get('deviceId') == s['deviceId'] and h.get('board') == s['board'] and h.get('firmware') == s['firmware']
+assert x.get('ok') is True and x.get('display',{}).get('themeSpec',{}).get('renderOk') is True
+PY
+    then RESUME_HELLO="$next_hello"; RESUME_HEALTH="$next_health"; return 0; fi
+    sleep 1
+  done
+  return 1
+}
+if [[ -n "$RESUME_STATE" ]]; then
+  wait_for_resume_health "$RESUME_STATE" || die "resume timed out after 90 seconds waiting for /hello and /health"
+  hello="$RESUME_HELLO"; health="$RESUME_HEALTH"
+else
+  hello="$(curl -fsS --max-time 5 "$TARGET/hello")"; health="$(curl -fsS --max-time 5 "$TARGET/health")"
+fi
 read -r board before < <(python3 - "$hello" "$health" "$EXPECTED_DEVICE_ID" <<'PY'
 import json,sys
 h=json.loads(sys.argv[1]); x=json.loads(sys.argv[2]); w=sys.argv[3]
@@ -103,6 +124,10 @@ s=json.load(open(state)); h=json.loads(health)
 assert s['target']==target and s['deviceId']==device and s['board']==board and s['firmware']==version
 assert h.get('ok') is True and h.get('display',{}).get('themeSpec',{}).get('renderOk') is True
 PY
+  if ! resume_daemon_output="$("$companion" daemon --transport wifi --target "$TARGET" --once 2>&1)" || [[ "$resume_daemon_output" != *"sent frame ->"* ]]; then
+    write_evidence blocked "${EVIDENCE_BEFORE:-$before}" "$before" || true
+    die "resume daemon/render failed; success evidence was not written"
+  fi
   write_evidence success "${EVIDENCE_BEFORE:-$before}" "$before"
   echo "Evidence written: $OUTPUT_DIR/hardware-canary.json"
   exit 0

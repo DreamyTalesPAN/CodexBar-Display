@@ -125,6 +125,8 @@ PY
   grep -F 'serve/candidate' "${CANARY}" >/dev/null || die "canary does not use a separate serve symlink"
   grep -F 'candidateRunId' "${CANARY}" >/dev/null || die "pending state does not retain candidate run identity"
   grep -F 'gh api user --jq .login' "${CANARY}" >/dev/null || die "canary does not resolve a GitHub actor"
+  grep -F 'wait_for_resume_health' "${CANARY}" >/dev/null || die "resume does not bound hello and health polling"
+  grep -F 'daemon --transport wifi --target "$TARGET" --once' "${CANARY}" >/dev/null || die "resume does not rerun the candidate daemon"
 }
 
 main "$@"
