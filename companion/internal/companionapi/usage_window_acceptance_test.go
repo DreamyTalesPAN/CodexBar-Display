@@ -136,13 +136,7 @@ func assertUsageResponseWindows(t *testing.T, got []usageWindowInfo, want []expe
 	t.Helper()
 	normalized := make([]expectedUsageWindow, 0, len(got))
 	for _, window := range got {
-		normalized = append(normalized, expectedUsageWindow{
-			ID:            window.ID,
-			Label:         window.Label,
-			UsedPercent:   window.UsedPercent,
-			ResetSec:      window.ResetSec,
-			WindowMinutes: window.WindowMinutes,
-		})
+		normalized = append(normalized, expectedUsageWindow(window))
 	}
 	if !reflect.DeepEqual(normalized, want) {
 		t.Fatalf("usage API windows mismatch:\ngot:  %+v\nwant: %+v", normalized, want)

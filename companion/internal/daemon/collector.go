@@ -567,13 +567,6 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 	return frames
 }
 
-func (c *providerCollector) dashboardInfo() codexbar.DashboardServeInfo {
-	if c == nil || c.dashboard == nil {
-		return codexbar.DashboardServeInfo{}
-	}
-	return c.dashboard.Info()
-}
-
 func (c *providerCollector) resolveRequestedPort() string {
 	if c == nil {
 		return ""
