@@ -53,6 +53,7 @@ def candidate(root):
         if not isinstance(item, dict): fail("candidate artifact must be an object")
         for key in ("name", "path", "sha256", "role"):
             if not isinstance(item.get(key), str) or not item[key].strip(): fail(f"candidate artifact missing {key}")
+        if not isinstance(item.get("publish"), bool): fail("candidate artifact publish must be boolean")
         if item["path"] in seen_paths or not SHA256.fullmatch(item["sha256"].lower()): fail("duplicate artifact path or invalid sha256")
         seen_paths.add(item["path"]); roles.add(item["role"])
         actual = digest(safe_file(root, item["path"]))

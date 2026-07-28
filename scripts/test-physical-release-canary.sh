@@ -6,7 +6,7 @@ VALIDATOR="${ROOT}/scripts/validate-hardware-canary.py"
 REPO="DreamyTalesPAN/CodexBar-Display"
 CANDIDATE_RUN_ID=""; CANDIDATE_DIR=""; TARGET=""; EXPECTED_DEVICE_ID=""; OUTPUT_DIR=""
 RECOVERY_PORT=""; CONFIRM_DEVICE_ID=""; CONFIRM_WRITE_RISK=""; DRY_RUN=0
-CONFIRM_RENDER=""; CONFIRM_POWER_CYCLE=""; ACTOR="${USER:-unknown}"
+CONFIRM_RENDER=""; CONFIRM_POWER_CYCLE=""; ACTOR=""
 RESUME_STATE=""
 
 usage() { echo "usage: $0 (--candidate-run-id ID|--candidate-dir DIR) --target URL --expected-device-id ID --output-dir DIR [--recovery-port PORT --confirm-device-id ID --confirm-hardware-write-risk] [--dry-run]" >&2; exit 2; }
@@ -40,9 +40,9 @@ PY
 
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 if [[ -n "$RESUME_STATE" ]]; then
-  CANDIDATE_DIR="$(python3 - "$RESUME_STATE" <<'PY'
+  read -r CANDIDATE_DIR CANDIDATE_RUN_ID EVIDENCE_BEFORE < <(python3 - "$RESUME_STATE" <<'PY'
 import json,sys
-print(json.load(open(sys.argv[1]))['candidateDir'])
+s=json.load(open(sys.argv[1])); print(s.get('candidateDir',''),s.get('candidateRunId',''),s['firmwareBefore'])
 PY
 )"
 fi
@@ -52,6 +52,8 @@ if [[ -n "$CANDIDATE_RUN_ID" ]]; then
   CANDIDATE_DIR="$work/candidate"
   "$VALIDATOR" candidate-result --candidate-dir "$CANDIDATE_DIR" --result "$work/candidate-result/candidate-result.json" >/dev/null
 fi
+mkdir -p "$OUTPUT_DIR"
+if [[ -z "$ACTOR" ]]; then ACTOR="$(gh api user --jq .login)"; fi
 "$VALIDATOR" candidate --candidate-dir "$CANDIDATE_DIR" >/dev/null
 manifest="$CANDIDATE_DIR/candidate-manifest.json"
 read_json() { python3 - "$manifest" "$1" <<'PY'
@@ -101,7 +103,7 @@ s=json.load(open(state)); h=json.loads(health)
 assert s['target']==target and s['deviceId']==device and s['board']==board and s['firmware']==version
 assert h.get('ok') is True and h.get('display',{}).get('themeSpec',{}).get('renderOk') is True
 PY
-  write_evidence success "$before" "$before"
+  write_evidence success "${EVIDENCE_BEFORE:-$before}" "$before"
   echo "Evidence written: $OUTPUT_DIR/hardware-canary.json"
   exit 0
 fi
@@ -111,8 +113,9 @@ if [[ "$(semver_compare "$candidate_version" "$before")" == 1 ]]; then
   "${ROOT}/scripts/esp8266-backup.sh" "$RECOVERY_PORT" "$OUTPUT_DIR/usb-backup.bin" 0x400000
   cp "$firmware_manifest" "$OUTPUT_DIR/candidate-firmware-manifest.json"
 fi
-ln -s "$CANDIDATE_DIR" "$work/candidate"
-python3 -u -m http.server 0 --directory "$work" >"$work/http.log" 2>&1 & server_pid=$!
+mkdir -p "$work/serve"
+ln -s "$CANDIDATE_DIR" "$work/serve/candidate"
+python3 -u -m http.server 0 --directory "$work/serve" >"$work/http.log" 2>&1 & server_pid=$!
 trap 'kill "$server_pid" 2>/dev/null || true; rm -rf "$work"' EXIT
 port="$(python3 -u - "$work/http.log" <<'PY'
 import sys,time,re
@@ -126,11 +129,13 @@ PY
 )"
 [[ -n "$port" ]] || die "local candidate manifest server did not start"
 local_manifest="$work/candidate-firmware-manifest.json"
-python3 - "$firmware_manifest" "$local_manifest" "$port" <<'PY'
+python3 - "$firmware_manifest" "$manifest" "$local_manifest" "$port" <<'PY'
 import json,sys
-src,out,port=sys.argv[1:]; body=json.load(open(src))
+src,candidate,out,port=sys.argv[1:]; body=json.load(open(src)); candidate=json.load(open(candidate))
 for artifact in body['artifacts']:
- artifact['firmwareUrl']='http://127.0.0.1:%s/candidate/%s' % (port, artifact['firmwareUrl'].lstrip('/'))
+ match=next((x['path'] for x in candidate['artifacts'] if x['role']=='firmware' and x['path'].endswith(artifact.get('asset','').lstrip('/'))),None)
+ if not match: raise SystemExit('candidate firmware artifact missing for '+artifact.get('board',''))
+ artifact['firmwareUrl']='http://127.0.0.1:%s/candidate/%s' % (port, match)
 json.dump(body,open(out,'w'),separators=(',',':'))
 PY
 cp "$local_manifest" "$OUTPUT_DIR/candidate-firmware-manifest.json"
@@ -147,8 +152,8 @@ fi
 echo "Manual checks required: visually confirm one rendered frame, then power-cycle VibeTV for 10 seconds and confirm it returns."
 pending="$OUTPUT_DIR/hardware-canary-pending.json"
 mkdir -p "$OUTPUT_DIR"
-python3 - "$pending" "$TARGET" "$EXPECTED_DEVICE_ID" "$board" "$candidate_version" "$CANDIDATE_DIR" <<'PY'
+python3 - "$pending" "$TARGET" "$EXPECTED_DEVICE_ID" "$board" "$candidate_version" "$CANDIDATE_DIR" "$CANDIDATE_RUN_ID" "$before" <<'PY'
 import json,sys
-json.dump(dict(target=sys.argv[2],deviceId=sys.argv[3],board=sys.argv[4],firmware=sys.argv[5],candidateDir=sys.argv[6]),open(sys.argv[1],'w'))
+json.dump(dict(target=sys.argv[2],deviceId=sys.argv[3],board=sys.argv[4],firmware=sys.argv[5],candidateDir=sys.argv[6],candidateRunId=sys.argv[7],firmwareBefore=sys.argv[8]),open(sys.argv[1],'w'))
 PY
 echo "Power-cycle VibeTV for 10 seconds, then resume read-only: $0 --resume $pending --target $TARGET --expected-device-id $EXPECTED_DEVICE_ID --output-dir $OUTPUT_DIR --confirm-render-visible --confirm-power-cycle-10s"

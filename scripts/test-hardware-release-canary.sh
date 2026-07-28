@@ -27,7 +27,7 @@ make_candidate() {
   printf '<appcast/>\n' >"${dir}/macos/appcast.xml"
   printf 'virtual VibeTV fixture\n' >"${dir}/virtual/virtual-vibetv"
   cat >"${dir}/firmware/firmware-manifest.json" <<'JSON'
-{"schemaVersion":1,"artifacts":[{"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","firmwareUrl":"firmware/firmware.bin","sha256":"placeholder"}]}
+{"schemaVersion":1,"artifacts":[{"board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware/firmware.bin","firmwareUrl":"https://example.invalid/firmware.bin","sha256":"placeholder"}]}
 JSON
   local firmware_hash manifest_hash companion_hash
   firmware_hash="$(sha256 "${dir}/firmware/firmware.bin")"
@@ -43,7 +43,7 @@ PY
   manifest_hash="$(sha256 "${dir}/firmware/firmware-manifest.json")"
   companion_hash="$(sha256 "${dir}/companion/codexbar-display")"
   cat >"${dir}/candidate-manifest.json" <<JSON
-{"schemaVersion":1,"repository":"DreamyTalesPAN/CodexBar-Display","sourceSha":"0123456789abcdef0123456789abcdef01234567","version":"1.0.1","candidateRunId":"123","createdAt":"2026-07-28T00:00:00Z","artifacts":[{"name":"signed-dmg","path":"macos/VibeTV-Control-Center.dmg","sha256":"$(sha256 "${dir}/macos/VibeTV-Control-Center.dmg")","role":"signed-dmg"},{"name":"sparkle-appcast","path":"macos/appcast.xml","sha256":"$(sha256 "${dir}/macos/appcast.xml")","role":"sparkle-appcast"},{"name":"candidate-companion","path":"companion/codexbar-display","sha256":"${companion_hash}","role":"companion"},{"name":"virtual-vibetv","path":"virtual/virtual-vibetv","sha256":"$(sha256 "${dir}/virtual/virtual-vibetv")","role":"virtual-vibetv"},{"name":"firmware-manifest","path":"firmware/firmware-manifest.json","sha256":"${manifest_hash}","role":"firmware-manifest"},{"name":"firmware-image","path":"firmware/firmware.bin","sha256":"${firmware_hash}","role":"firmware"}],"virtualGate":{"result":"pending","runId":"123"}}
+{"schemaVersion":1,"repository":"DreamyTalesPAN/CodexBar-Display","sourceSha":"0123456789abcdef0123456789abcdef01234567","version":"1.0.1","candidateRunId":"123","createdAt":"2026-07-28T00:00:00Z","artifacts":[{"name":"signed-dmg","path":"macos/VibeTV-Control-Center.dmg","sha256":"$(sha256 "${dir}/macos/VibeTV-Control-Center.dmg")","role":"signed-dmg","publish":true},{"name":"sparkle-appcast","path":"macos/appcast.xml","sha256":"$(sha256 "${dir}/macos/appcast.xml")","role":"sparkle-appcast","publish":true},{"name":"candidate-companion","path":"companion/codexbar-display","sha256":"${companion_hash}","role":"companion","publish":true},{"name":"virtual-vibetv","path":"virtual/virtual-vibetv","sha256":"$(sha256 "${dir}/virtual/virtual-vibetv")","role":"virtual-vibetv","publish":false},{"name":"firmware-manifest","path":"firmware/firmware-manifest.json","sha256":"${manifest_hash}","role":"firmware-manifest","publish":true},{"name":"firmware-image","path":"firmware/firmware.bin","sha256":"${firmware_hash}","role":"firmware","publish":true}],"virtualGate":{"result":"pending","runId":"123"}}
 JSON
 }
 
@@ -122,6 +122,9 @@ PY
   grep -F 'headBranch' "${WORKFLOW}" >/dev/null || die "workflow does not check candidate main branch"
   grep -F 'workflow_dispatch' "${WORKFLOW}" >/dev/null || die "workflow does not check candidate dispatch event"
   grep -F 'actor' "${WORKFLOW}" >/dev/null || die "workflow does not bind evidence actor"
+  grep -F 'serve/candidate' "${CANARY}" >/dev/null || die "canary does not use a separate serve symlink"
+  grep -F 'candidateRunId' "${CANARY}" >/dev/null || die "pending state does not retain candidate run identity"
+  grep -F 'gh api user --jq .login' "${CANARY}" >/dev/null || die "canary does not resolve a GitHub actor"
 }
 
 main "$@"
