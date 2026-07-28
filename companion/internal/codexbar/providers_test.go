@@ -59,7 +59,7 @@ func TestParseProviderHealthClassifiesSafeStatesAndService(t *testing.T) {
 }
 
 func TestFetchProviderSettingsUsesStatusEvenAfterNonzeroExit(t *testing.T) {
-	withProviderCommandTestBinary(t, "0.44.0")
+	withProviderCommandTestBinary(t, "0.45.2")
 	original := runProviderCommandFn
 	t.Cleanup(func() { runProviderCommandFn = original })
 	runProviderCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
@@ -87,7 +87,7 @@ func TestFetchProviderSettingsRequiresFeatureVersion(t *testing.T) {
 }
 
 func TestSetProviderEnabledUsesExactProcessArguments(t *testing.T) {
-	withProviderCommandTestBinary(t, "0.44.0")
+	withProviderCommandTestBinary(t, "0.45.2")
 	original := runProviderCommandFn
 	t.Cleanup(func() { runProviderCommandFn = original })
 	var calls [][]string
@@ -121,7 +121,7 @@ func TestSetProviderEnabledUsesExactProcessArguments(t *testing.T) {
 }
 
 func TestSetProviderEnabledRejectsUnknownProviderBeforeWrite(t *testing.T) {
-	withProviderCommandTestBinary(t, "0.44.0")
+	withProviderCommandTestBinary(t, "0.45.2")
 	original := runProviderCommandFn
 	t.Cleanup(func() { runProviderCommandFn = original })
 	writes := 0
