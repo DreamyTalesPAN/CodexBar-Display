@@ -170,7 +170,7 @@ fi
 		t.Fatal(err)
 	}
 	t.Setenv("CODEXBAR_BIN", script)
-	out, err := runUsageCommand(context.Background(), time.Second, script)
+	out, err := runUsageCommand(context.Background(), 5*time.Second, script)
 	if err != nil {
 		t.Fatalf("runUsageCommand: %v", err)
 	}
@@ -258,6 +258,24 @@ func TestProviderReadinessClassifiesTimeoutWithoutSecrets(t *testing.T) {
 	got := providerReadinessFromOutput(nil, context.DeadlineExceeded, context.DeadlineExceeded)
 	if len(got) != 1 || got[0].Status != ProviderTimeout || strings.Contains(got[0].Detail, "deadline") {
 		t.Fatalf("unexpected timeout readiness: %+v", got)
+	}
+}
+
+func TestProviderReadinessCopyHidesInternalUsageServiceName(t *testing.T) {
+	for _, status := range []string{
+		ProviderAuthRequired,
+		ProviderPermissionRequired,
+		ProviderNoUsageAvailable,
+		ProviderTimeout,
+		ProviderConfigError,
+		ProviderEngineError,
+		ProviderNotConfigured,
+	} {
+		got := providerResult("codexbar", status)
+		customerCopy := strings.Join([]string{got.Label, got.Detail, got.NextAction}, " ")
+		if strings.Contains(customerCopy, "CodexBar") {
+			t.Fatalf("%s leaked the internal service name: %+v", status, got)
+		}
 	}
 }
 

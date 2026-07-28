@@ -390,3 +390,20 @@ issue scope, or release permission never implies UI permission.
   as `??`. Legacy provider payloads without a window list retain the existing
   two-lane fallback.
 - Approved files: `usage-screen.tsx` and its focused unit tests.
+
+## 2026-07-27 — Usage loading stays separate from provider readiness
+
+- User approval: The user explicitly required that customers never see the
+  internal `CodexBar` name, that the token area keep showing a spinner with
+  `Loading usage` until token history is actually ready, and that the provider
+  list may finish and appear independently. After reviewing the KISS plan, the
+  user ordered its implementation with `na dann mach das`.
+- Approved customer-visible result: Usage never names `CodexBar`. While token
+  history is pending, the token area shows only `Loading usage`; it does not
+  show a misleading empty or zero state. The independently loaded AI provider
+  list remains visible and usable. A successful token-history result containing
+  zero shows the real zero/no-data result. No extra global refresh control is
+  added.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`,
+  `provider-setup-card.tsx`, `usage-screen.tsx`, `usage-screen.test.tsx`, and
+  the matching customer-flow assertions in `test-customer-flows.mjs`.

@@ -20,7 +20,10 @@ jobs:
     if: >-
       github.repository == 'DreamyTalesPAN/CodexBar-Display' &&
       github.ref == 'refs/heads/main' &&
-      github.actor == github.repository_owner
+      (
+        github.actor == github.repository_owner ||
+        github.actor == 'marcus7989'
+      )
     runs-on: macos-15
     timeout-minutes: 45
     steps:

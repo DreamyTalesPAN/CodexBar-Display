@@ -674,6 +674,7 @@ type usageResponse struct {
 	GeneratedAt     string              `json:"generatedAt"`
 	Source          string              `json:"source"`
 	UsageMode       string              `json:"usageMode"`
+	TokenUsageReady bool                `json:"tokenUsageReady"`
 	CurrentProvider string              `json:"currentProvider,omitempty"`
 	Providers       []usageProviderInfo `json:"providers"`
 }
@@ -1338,8 +1339,8 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 			w,
 			http.StatusServiceUnavailable,
 			"usage_unavailable",
-			"Usage is not ready.",
-			"Open CodexBar and the Mac App, then try again.",
+			"Usage is still loading.",
+			"Keep this page open. VibeTV will retry automatically.",
 		)
 		return
 	}
@@ -1441,19 +1442,20 @@ func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
 		if !ok {
 			continue
 		}
-		if provider.SessionTokens == 0 {
-			provider.SessionTokens = cached.SessionTokens
-		}
-		if provider.WeekTokens == 0 {
-			provider.WeekTokens = cached.WeekTokens
-		}
-		if provider.TotalTokens == 0 {
-			provider.TotalTokens = cached.TotalTokens
-		}
 		if provider.Cost == nil {
+			if provider.SessionTokens == 0 {
+				provider.SessionTokens = cached.SessionTokens
+			}
+			if provider.WeekTokens == 0 {
+				provider.WeekTokens = cached.WeekTokens
+			}
+			if provider.TotalTokens == 0 {
+				provider.TotalTokens = cached.TotalTokens
+			}
 			provider.Cost = cached.Cost
 		}
 	}
+	fresh.TokenUsageReady = usageProvidersHaveTokenResult(fresh.Providers)
 	return fresh
 }
 
@@ -1682,7 +1684,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			Status:     "attention",
 			Detail:     device.Stream.Detail,
 			ErrorCode:  "provider_setup_required",
-			NextAction: "Connect an AI provider in CodexBar, then click Check again.",
+			NextAction: "Open provider setup, connect an AI provider, then click Check again.",
 		})
 	} else {
 		checks = append(checks, diagnosticCheck{
@@ -1925,6 +1927,7 @@ func usageResponseFromPersisted(now time.Time, usage daemon.PersistedUsage) usag
 	resp.CurrentProvider = strings.TrimSpace(usage.CurrentProvider)
 	resp.Providers = providers
 	resp.UsageMode = usageModeForProviders(providers)
+	resp.TokenUsageReady = usageProvidersHaveTokenResult(providers)
 	if resp.CurrentProvider == "" && len(providers) > 0 {
 		resp.CurrentProvider = providers[0].ID
 	}
@@ -1941,6 +1944,7 @@ func usageResponseFromParsed(now time.Time, parsed []codexbar.ParsedFrame) usage
 	resp := emptyUsageResponse(now, "codexbar")
 	resp.Providers = providers
 	resp.UsageMode = usageModeForProviders(providers)
+	resp.TokenUsageReady = usageProvidersHaveTokenResult(providers)
 	if len(providers) > 0 {
 		resp.CurrentProvider = providers[0].ID
 	}
@@ -1963,6 +1967,15 @@ func emptyUsageResponse(now time.Time, source string) usageResponse {
 func usageResponseHasFreshProvider(resp usageResponse) bool {
 	for _, provider := range resp.Providers {
 		if !provider.Stale {
+			return true
+		}
+	}
+	return false
+}
+
+func usageProvidersHaveTokenResult(providers []usageProviderInfo) bool {
+	for _, provider := range providers {
+		if provider.Cost != nil {
 			return true
 		}
 	}

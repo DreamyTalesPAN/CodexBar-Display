@@ -101,15 +101,40 @@ export function UsageScreen({
     usage?.currentProvider,
   );
   const hasProviders = providers.length > 0;
+  const tokenUsageReady =
+    usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);
+  const tokenUsageLoading =
+    companionStatus === "online" && !usageError && !tokenUsageReady;
 
   return (
     <div className="mx-auto max-w-[1180px]">
       <section className="py-10">
         {usageError ? (
-          <Alert className="mb-6 bg-muted"><AlertTriangle /><AlertTitle>{usageError.message}</AlertTitle><AlertDescription>{usageError.nextAction}</AlertDescription></Alert>
+          <Alert className="mb-6 bg-muted">
+            <AlertTriangle />
+            <AlertTitle>{usageError.message}</AlertTitle>
+            <AlertDescription className="grid justify-items-start gap-3">
+              <span>{usageError.nextAction}</span>
+              {onRefresh ? (
+                <Button
+                  aria-busy={refreshing}
+                  disabled={refreshing}
+                  onClick={onRefresh}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
+                  {refreshing ? "Trying again" : "Try again"}
+                </Button>
+              ) : null}
+            </AlertDescription>
+          </Alert>
         ) : null}
 
-        {hasProviders ? (
+        {tokenUsageLoading ? (
+          <UsageEmptyState companionStatus={companionStatus} loading />
+        ) : hasProviders ? (
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}
             providers={providers}
@@ -117,7 +142,7 @@ export function UsageScreen({
           />
         ) : null}
 
-        {hasProviders ? (
+        {!tokenUsageLoading && hasProviders ? (
           <ol className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
             {providers.map((provider) => (
               <li className="min-w-0" key={provider.id}>
@@ -125,12 +150,12 @@ export function UsageScreen({
               </li>
             ))}
           </ol>
-        ) : usageError ? null : (
+        ) : !tokenUsageLoading && !usageError ? (
           <UsageEmptyState
             companionStatus={companionStatus}
-            refreshing={refreshing}
+            loading={false}
           />
-        )}
+        ) : null}
 
         <ProviderPreferencesPanel
           error={preferencesError}
@@ -358,7 +383,7 @@ function TokenUsageOverTimePanel({
   const providerNames = displayedHistories.map(
     ({ provider }) => provider.label || provider.id,
   );
-  const last30DaysTokens = getLast30DaysTokenTotal(providers);
+  const last30DaysTokens = getLast30DaysTokenTotal(providers) ?? 0;
 
   return (
     <>
@@ -700,34 +725,40 @@ function UsageWindowBar({
 
 function UsageEmptyState({
   companionStatus,
-  refreshing,
+  loading,
 }: {
   companionStatus: CompanionStatus;
-  refreshing: boolean;
+  loading: boolean;
 }) {
   const message =
     companionStatus === "online"
-      ? refreshing
-        ? "Loading provider usage."
+      ? loading
+        ? "Loading usage"
         : "No provider usage is available yet."
       : "Mac App needs setup.";
   const action =
     companionStatus === "online"
-      ? "Enable a provider below to start seeing usage."
+      ? loading
+        ? null
+        : "Enable a provider below to start seeing usage."
       : "Run setup again, then refresh usage.";
 
   return (
-    <Empty className="bg-muted/50 py-10 ring-1 ring-foreground/10">
+    <Empty
+      aria-live="polite"
+      className="bg-muted/50 py-10 ring-1 ring-foreground/10"
+      role="status"
+    >
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          {refreshing ? (
-            <RefreshCw className="animate-spin" size={17} aria-hidden />
+          {loading ? (
+            <Spinner />
           ) : (
             <BarChart3 size={17} aria-hidden />
           )}
         </EmptyMedia>
         <EmptyTitle>{message}</EmptyTitle>
-        <EmptyDescription>{action}</EmptyDescription>
+        {action ? <EmptyDescription>{action}</EmptyDescription> : null}
       </EmptyHeader>
     </Empty>
   );
@@ -779,6 +810,12 @@ function providerHasTokens(provider: UsageProviderInfo): boolean {
     (provider.weekTokens || 0) > 0 ||
     (provider.totalTokens || 0) > 0
   );
+}
+
+function usageProvidersHaveTokenResult(
+  providers: UsageProviderInfo[],
+): boolean {
+  return providers.some((provider) => provider.cost != null);
 }
 
 function providerHasCost(provider: UsageProviderInfo): boolean {
