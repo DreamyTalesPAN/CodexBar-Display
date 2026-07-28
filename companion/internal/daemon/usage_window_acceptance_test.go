@@ -1,0 +1,200 @@
+package daemon
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+)
+
+type usageWindowAcceptanceFixture struct {
+	Version       int                         `json:"version"`
+	MaxFrameBytes int                         `json:"maxFrameBytes"`
+	Cases         []usageWindowAcceptanceCase `json:"cases"`
+	LastGoodCases []lastGoodAcceptanceCase    `json:"lastGoodCases"`
+}
+
+type usageWindowAcceptanceCase struct {
+	Name                         string                `json:"name"`
+	Now                          string                `json:"now"`
+	SnapshotFetches              int                   `json:"snapshotFetches"`
+	ShowUsed                     bool                  `json:"showUsed"`
+	DashboardProvider            json.RawMessage       `json:"dashboardProvider"`
+	UsageProvider                json.RawMessage       `json:"usageProvider"`
+	ExpectedControlCenterWindows []expectedUsageWindow `json:"expectedControlCenterWindows"`
+	ExpectedDeviceFrame          protocol.Frame        `json:"expectedDeviceFrame"`
+}
+
+type lastGoodAcceptanceCase struct {
+	Name          string         `json:"name"`
+	Provider      string         `json:"provider"`
+	Now           string         `json:"now"`
+	PreviousFrame protocol.Frame `json:"previousFrame"`
+	ErrorFrame    protocol.Frame `json:"errorFrame"`
+	ExpectedFrame protocol.Frame `json:"expectedFrame"`
+}
+
+type expectedUsageWindow struct {
+	ID            string `json:"id"`
+	Label         string `json:"label"`
+	UsedPercent   int    `json:"usedPercent"`
+	ResetSec      int64  `json:"resetSecs"`
+	WindowMinutes int    `json:"windowMinutes"`
+}
+
+func TestUsageWindowAcceptanceMatrixNormalizesToDeviceFrame(t *testing.T) {
+	fixture := loadUsageWindowAcceptanceFixture(t)
+	if fixture.Version != 1 {
+		t.Fatalf("unexpected fixture version %d", fixture.Version)
+	}
+
+	for _, tc := range fixture.Cases {
+		tc := tc
+		t.Run(tc.Name, func(t *testing.T) {
+			now := parseAcceptanceTime(t, tc.Now)
+			server := newUsageWindowAcceptanceServer(t, tc.DashboardProvider, tc.UsageProvider)
+			defer server.Close()
+
+			result, err := codexbar.FetchDashboardProviders(context.Background(), codexbar.DashboardServeInfo{
+				Endpoint: server.URL,
+				Token:    "fixture-token",
+				Running:  true,
+				Healthy:  true,
+				PID:      275,
+			}, now, tc.SnapshotFetches)
+			if err != nil {
+				t.Fatalf("fetch dashboard fixture: %v", err)
+			}
+			if len(result.Providers) != 1 {
+				t.Fatalf("expected one provider, got %+v", result.Providers)
+			}
+
+			parsed := result.Providers[0]
+			assertAcceptanceWindows(t, parsed.Meta.Windows, tc.ExpectedControlCenterWindows)
+
+			frame := applyUsageBarsPreference(parsed.Frame, tc.ShowUsed)
+			line, marshaledFrame, err := marshalFrameWithinLimit(frame, fixture.MaxFrameBytes)
+			if err != nil {
+				t.Fatalf("marshal frame within %d bytes: %v", fixture.MaxFrameBytes, err)
+			}
+			if len(line) > fixture.MaxFrameBytes {
+				t.Fatalf("device frame exceeds budget: bytes=%d max=%d frame=%s", len(line), fixture.MaxFrameBytes, line)
+			}
+			assertFrameMatch(t, marshaledFrame.Normalize(), tc.ExpectedDeviceFrame.Normalize())
+			if len(marshaledFrame.UsageSlots) > 2 {
+				t.Fatalf("device frame must not expose more than two physical slots: %+v", marshaledFrame.UsageSlots)
+			}
+		})
+	}
+}
+
+func TestUsageWindowAcceptanceProviderErrorKeepsLastGood(t *testing.T) {
+	fixture := loadUsageWindowAcceptanceFixture(t)
+	for _, tc := range fixture.LastGoodCases {
+		tc := tc
+		t.Run(tc.Name, func(t *testing.T) {
+			now := parseAcceptanceTime(t, tc.Now)
+			collector := &providerCollector{
+				now:            func() time.Time { return now },
+				logf:           func(string, ...any) {},
+				order:          []string{tc.Provider},
+				interval:       time.Minute,
+				snapshotMaxAge: time.Hour,
+				providers: map[string]providerSnapshot{
+					tc.Provider: {
+						Provider:  tc.Provider,
+						Frame:     tc.PreviousFrame,
+						Collected: now.Add(-time.Minute),
+					},
+				},
+				fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+					return []codexbar.ParsedFrame{{
+						Provider:    tc.Provider,
+						Frame:       tc.ErrorFrame,
+						CollectedAt: now,
+					}}, nil
+				},
+			}
+
+			collector.collectOnce(context.Background())
+			got := collector.providers[tc.Provider].Frame.Normalize()
+			assertFrameMatch(t, got, tc.ExpectedFrame.Normalize())
+		})
+	}
+}
+
+func newUsageWindowAcceptanceServer(t *testing.T, provider json.RawMessage, usage json.RawMessage) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/dashboard/v1/snapshot", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer fixture-token" {
+			http.Error(w, "missing bearer token", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"schemaVersion":1,"providers":[`))
+		_, _ = w.Write(provider)
+		_, _ = w.Write([]byte(`]}`))
+	})
+	mux.HandleFunc("/usage", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[ `))
+		_, _ = w.Write(usage)
+		_, _ = w.Write([]byte(` ]`))
+	})
+	return httptest.NewServer(mux)
+}
+
+func loadUsageWindowAcceptanceFixture(t *testing.T) usageWindowAcceptanceFixture {
+	t.Helper()
+	path := filepath.Join(repoRoot(t), "protocol", "fixtures", "v1", "usage_window_acceptance.json")
+	raw := mustReadFile(t, path)
+	var fixture usageWindowAcceptanceFixture
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatalf("parse acceptance fixture: %v", err)
+	}
+	return fixture
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return raw
+}
+
+func parseAcceptanceTime(t *testing.T, raw string) time.Time {
+	t.Helper()
+	ts, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		t.Fatalf("parse time %q: %v", raw, err)
+	}
+	return ts
+}
+
+func assertAcceptanceWindows(t *testing.T, got []codexbar.UsageWindow, want []expectedUsageWindow) {
+	t.Helper()
+	normalized := make([]expectedUsageWindow, 0, len(got))
+	for _, window := range got {
+		normalized = append(normalized, expectedUsageWindow{
+			ID:            window.ID,
+			Label:         window.Label,
+			UsedPercent:   window.UsedPercent,
+			ResetSec:      window.ResetSec,
+			WindowMinutes: window.WindowMinutes,
+		})
+	}
+	if !reflect.DeepEqual(normalized, want) {
+		t.Fatalf("control center windows mismatch:\ngot:  %+v\nwant: %+v", normalized, want)
+	}
+}
