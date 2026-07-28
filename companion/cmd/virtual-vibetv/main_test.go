@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -18,7 +19,13 @@ func TestCommandServesDedicatedRawOTAAndStopsOnSignal(t *testing.T) {
 	rawAddr := freeLoopbackAddress(t)
 	firmware := []byte("virtual candidate firmware")
 	sum := sha256.Sum256(firmware)
-	command := exec.Command("go", "run", ".",
+	binary := filepath.Join(t.TempDir(), "virtual-vibetv")
+	build := exec.Command("go", "build", "-o", binary, ".")
+	build.Dir = "."
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build virtual VibeTV command: %v\n%s", err, output)
+	}
+	command := exec.Command(binary,
 		"--addr", addr,
 		"--raw-addr", rawAddr,
 		"--firmware", "1.0.0",
