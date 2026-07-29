@@ -3283,6 +3283,38 @@ func TestRunCycleFromCollectorSendsSnapshotCollectedAfterSlowFetch(t *testing.T)
 	}
 }
 
+func TestProviderCollectorUsesFetchCompletionForDashboardWithoutProducerTime(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex"},
+		interval:        30 * time.Second,
+		timeout:         time.Minute,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		dashboard:       staticDashboardServe{info: testDashboardServeInfo(1001)},
+		fetchDashboard: func(context.Context, codexbar.DashboardServeInfo, time.Time, int) (codexbar.DashboardFetchResult, error) {
+			current = current.Add(40 * time.Second)
+			return codexbar.DashboardFetchResult{
+				Providers: []codexbar.ParsedFrame{dashboardParsedFrame("codex", "Weekly", "Codex Spark Weekly", 24, 0)},
+			}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+
+	frames := collector.providerFrames(current)
+	if len(frames) != 1 || frames[0].Stale || frames[0].Frame.UsageUnavailable {
+		t.Fatalf("slow dashboard fetch without producer time should be fresh at fetch completion, got %#v", frames)
+	}
+	if !frames[0].CollectedAt.Equal(current) {
+		t.Fatalf("expected fetch completion collectedAt %s, got %s", current, frames[0].CollectedAt)
+	}
+}
+
 func TestRunCycleFromCollectorSendsFreshDashboardQuotaWithOldActivityTime(t *testing.T) {
 	prepareFastTestEnv(t)
 

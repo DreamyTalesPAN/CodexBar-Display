@@ -52,12 +52,16 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 		return DashboardFetchResult{}, fmt.Errorf("decode dashboard usage: %w", err)
 	}
 
+	snapshotCollectedAt := time.Time{}
+	if snapshot.GeneratedAt != nil {
+		snapshotCollectedAt = snapshot.GeneratedAt.UTC()
+	}
 	coldSource := snapshotFetches < 2
 	out := make([]ParsedFrame, 0, len(snapshot.Providers))
 	for _, provider := range snapshot.Providers {
 		usage, usageOK := dashboardusage.UsageForProvider(usageProviders, provider.ID)
 		normalized := dashboardusage.NormalizeProvider(provider, usage)
-		parsed := parsedFrameFromDashboardProvider(provider, normalized, now, usage.Error)
+		parsed := parsedFrameFromDashboardProvider(provider, normalized, now, snapshotCollectedAt, usage.Error)
 		if coldSource || provider.UpdatedAt == nil || !usageOK {
 			parsed.Frame.UsageUnavailable = true
 			parsed.Frame.UsageWindows = nil
@@ -97,7 +101,7 @@ func fetchDashboardJSON(ctx context.Context, client *http.Client, url string, to
 	return raw, nil
 }
 
-func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider, normalized dashboardusage.ProviderWindows, now time.Time, usageError json.RawMessage) ParsedFrame {
+func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider, normalized dashboardusage.ProviderWindows, now time.Time, collectedAt time.Time, usageError json.RawMessage) ParsedFrame {
 	id := strings.TrimSpace(strings.ToLower(provider.ID))
 	label := strings.TrimSpace(provider.Name)
 	if label == "" {
@@ -135,7 +139,7 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 		Provider:           id,
 		Source:             "codexbar-dashboard",
 		Meta:               ProviderUsageMeta{Windows: metaWindows},
-		CollectedAt:        now.UTC(),
+		CollectedAt:        collectedAt.UTC(),
 		ActivityObservedAt: activityObservedAt,
 		RateLimited:        dashboardErrorsAreRateLimited(provider.Error, usageError),
 		RateLimitedUntil:   rateLimitedUntilFromDashboardErrors(provider.Error, usageError),

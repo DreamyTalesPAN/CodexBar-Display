@@ -49,17 +49,54 @@ func TestFetchDashboardProvidersWithholdsColdFirstSnapshot(t *testing.T) {
 	if len(warm.Providers[0].Meta.Windows) != 2 {
 		t.Fatalf("expected all valid windows in metadata, got %+v", warm.Providers[0].Meta.Windows)
 	}
-	if got, want := warm.Providers[0].CollectedAt, now; !got.Equal(want) {
-		t.Fatalf("dashboard provider freshness must use successful fetch time, got %s want %s", got, want)
+	if got, want := warm.Providers[0].CollectedAt, time.Date(2026, 7, 28, 8, 29, 45, 0, time.UTC); !got.Equal(want) {
+		t.Fatalf("dashboard provider freshness must use snapshot generatedAt, got %s want %s", got, want)
 	}
 	if got, want := warm.Providers[0].ActivityObservedAt, time.Date(2026, 7, 28, 8, 1, 0, 0, time.UTC); !got.Equal(want) {
 		t.Fatalf("dashboard activity timestamp must stay separate, got %s want %s", got, want)
 	}
 }
 
+func TestFetchDashboardProvidersKeepsCachedSnapshotFreshnessStable(t *testing.T) {
+	server := newDashboardFetchTestServer(t)
+	defer server.Close()
+
+	info := DashboardServeInfo{
+		Endpoint: server.URL,
+		Token:    "test-token",
+		Running:  true,
+		Healthy:  true,
+		PID:      1234,
+	}
+	firstNow := time.Date(2026, 7, 28, 8, 30, 0, 0, time.UTC)
+	secondNow := firstNow.Add(45 * time.Second)
+
+	first, err := FetchDashboardProviders(context.Background(), info, firstNow, 2)
+	if err != nil {
+		t.Fatalf("first dashboard fetch failed: %v", err)
+	}
+	second, err := FetchDashboardProviders(context.Background(), info, secondNow, 3)
+	if err != nil {
+		t.Fatalf("second dashboard fetch failed: %v", err)
+	}
+	if len(first.Providers) != 1 || len(second.Providers) != 1 {
+		t.Fatalf("expected one provider from both cached reads, first=%+v second=%+v", first.Providers, second.Providers)
+	}
+	if got, want := first.Providers[0].CollectedAt, time.Date(2026, 7, 28, 8, 29, 45, 0, time.UTC); !got.Equal(want) {
+		t.Fatalf("first collectedAt=%s want %s", got, want)
+	}
+	if !second.Providers[0].CollectedAt.Equal(first.Providers[0].CollectedAt) {
+		t.Fatalf("cached snapshot reread must not be restamped, first=%s second=%s", first.Providers[0].CollectedAt, second.Providers[0].CollectedAt)
+	}
+	if !second.Providers[0].ActivityObservedAt.Equal(first.Providers[0].ActivityObservedAt) {
+		t.Fatalf("cached snapshot reread must preserve activity time, first=%s second=%s", first.Providers[0].ActivityObservedAt, second.Providers[0].ActivityObservedAt)
+	}
+}
+
 func TestFetchDashboardProvidersRequiresProviderUpdatedAt(t *testing.T) {
 	server := newDashboardFetchTestServerWithSnapshot(t, `{
 	  "schemaVersion": 1,
+	  "generatedAt": "2026-07-28T08:29:45Z",
 	  "providers": [{
 	    "id": "codex",
 	    "name": "Codex",
@@ -91,6 +128,7 @@ func TestFetchDashboardProvidersRequiresProviderUpdatedAt(t *testing.T) {
 func TestFetchDashboardProvidersKeepsProviderErrorUnavailable(t *testing.T) {
 	server := newDashboardFetchTestServerWithSnapshot(t, `{
 	  "schemaVersion": 1,
+	  "generatedAt": "2026-07-28T08:29:45Z",
 	  "providers": [{
 	    "id": "codex",
 	    "name": "Codex",
@@ -124,6 +162,7 @@ func newDashboardFetchTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return newDashboardFetchTestServerWithSnapshot(t, `{
 	  "schemaVersion": 1,
+	  "generatedAt": "2026-07-28T08:29:45Z",
 	  "providers": [{
 	    "id": "codex",
 	    "name": "Codex",
