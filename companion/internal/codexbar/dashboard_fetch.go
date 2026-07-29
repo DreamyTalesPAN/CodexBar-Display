@@ -60,10 +60,12 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 		parsed := parsedFrameFromDashboardProvider(provider, normalized, now, usage.Error)
 		if coldSource || provider.UpdatedAt == nil || !usageOK {
 			parsed.Frame.UsageUnavailable = true
+			parsed.Frame.UsageWindows = nil
 			parsed.Frame.UsageSlots = nil
 			parsed.Frame.Session = 0
 			parsed.Frame.Weekly = 0
 			parsed.Frame.ResetSec = 0
+			parsed.Frame = parsed.Frame.Normalize()
 			parsed.Meta.Windows = nil
 			parsed.Stale = true
 		}
@@ -102,27 +104,28 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 		label = humanLabel(id)
 	}
 	metaWindows := usageWindowsFromDashboardWindows(normalized.Windows, now)
-	slots := usageSlotsFromWindows(metaWindows)
+	windows := usageWindowsFromWindows(metaWindows)
 	frame := protocol.Frame{
-		V:          1,
-		Provider:   id,
-		Label:      label,
-		UsageSlots: slots,
+		V:            protocol.ProtocolVersionV2,
+		Provider:     id,
+		Label:        label,
+		UsageWindows: windows,
 	}
-	if len(slots) > 0 {
-		frame.Session = slots[0].Percent
-		frame.ResetSec = slots[0].ResetSec
+	if len(windows) > 0 {
+		frame.Session = windows[0].Percent
+		frame.ResetSec = windows[0].ResetSec
 	}
-	if len(slots) > 1 {
-		frame.Weekly = slots[1].Percent
+	if len(windows) > 1 {
+		frame.Weekly = windows[1].Percent
 	}
 	if normalized.Unavailable {
 		frame.UsageUnavailable = true
-		frame.UsageSlots = nil
+		frame.UsageWindows = nil
 		frame.Session = 0
 		frame.Weekly = 0
 		frame.ResetSec = 0
 	}
+	frame = frame.Normalize()
 	activityObservedAt := time.Time{}
 	if normalized.UpdatedAt != nil {
 		activityObservedAt = normalized.UpdatedAt.UTC()

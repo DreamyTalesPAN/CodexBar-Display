@@ -3,12 +3,13 @@ package protocol
 import "strings"
 
 const (
-	FeatureTheme         = "theme"
-	FeatureThemeSpecV1   = "theme-spec-v1"
-	FeatureUsageSlotsV1  = "usage-slots-v1"
-	DefaultMaxFrameBytes = 512
-	DefaultMinBrightness = 10
-	DefaultMaxBrightness = 100
+	FeatureTheme          = "theme"
+	FeatureThemeSpecV1    = "theme-spec-v1"
+	FeatureUsageSlotsV1   = "usage-slots-v1"
+	FeatureUsageWindowsV1 = "usage-windows-v1"
+	DefaultMaxFrameBytes  = 512
+	DefaultMinBrightness  = 10
+	DefaultMaxBrightness  = 100
 )
 
 type DisplayBrightnessCapabilities struct {
@@ -27,6 +28,8 @@ type DisplayCapabilities struct {
 type ThemeCapabilities struct {
 	SupportsThemeSpecV1     bool     `json:"supportsThemeSpecV1,omitempty"`
 	SupportsUsageSlotsV1    bool     `json:"supportsUsageSlotsV1,omitempty"`
+	SupportsUsageWindowsV1  bool     `json:"supportsUsageWindowsV1,omitempty"`
+	MaxUsageWindows         int      `json:"maxUsageWindows,omitempty"`
 	SupportsStoredThemes    bool     `json:"supportsStoredThemes,omitempty"`
 	MaxThemeSpecBytes       int      `json:"maxThemeSpecBytes,omitempty"`
 	MaxStoredThemeSpecBytes int      `json:"maxStoredThemeSpecBytes,omitempty"`
@@ -139,6 +142,8 @@ type DeviceCapabilities struct {
 	SupportsTheme              bool
 	SupportsThemeSpecV1        bool
 	SupportsUsageSlotsV1       bool
+	SupportsUsageWindowsV1     bool
+	MaxUsageWindows            int
 	SupportsStoredThemes       bool
 	MaxFrameBytes              int
 	MaxThemeSpecBytes          int
@@ -180,7 +185,8 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 	negotiated := NegotiateProtocolVersion(supportedProtocols, h.PreferredProtocolVersion, h.ProtocolVersion)
 	supportsTheme := h.HasFeature(FeatureTheme)
 	supportsThemeSpecV1 := h.HasFeature(FeatureThemeSpecV1) || h.Capabilities.Theme.SupportsThemeSpecV1
-	supportsUsageSlotsV1 := h.HasFeature(FeatureUsageSlotsV1) || h.Capabilities.Theme.SupportsUsageSlotsV1
+	supportsUsageWindowsV1 := h.HasFeature(FeatureUsageWindowsV1) || h.Capabilities.Theme.SupportsUsageWindowsV1
+	supportsUsageSlotsV1 := h.HasFeature(FeatureUsageSlotsV1) || h.Capabilities.Theme.SupportsUsageSlotsV1 || supportsUsageWindowsV1
 	supportsStoredThemes := h.Capabilities.Theme.SupportsStoredThemes || h.Capabilities.Theme.MaxStoredThemeSpecBytes > 0
 	if !supportsTheme {
 		supportsTheme = len(h.Capabilities.Theme.BuiltinThemes) > 0 || supportsThemeSpecV1
@@ -197,6 +203,8 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		SupportsTheme:              supportsTheme,
 		SupportsThemeSpecV1:        supportsThemeSpecV1,
 		SupportsUsageSlotsV1:       supportsUsageSlotsV1,
+		SupportsUsageWindowsV1:     supportsUsageWindowsV1,
+		MaxUsageWindows:            h.Capabilities.Theme.MaxUsageWindows,
 		SupportsStoredThemes:       supportsStoredThemes,
 		MaxFrameBytes:              h.MaxFrameBytes,
 		MaxThemeSpecBytes:          h.Capabilities.Theme.MaxThemeSpecBytes,
@@ -238,6 +246,8 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		h.Capabilities.Display.HeightPx > 0 ||
 		h.Capabilities.Theme.MaxThemeSpecBytes > 0 ||
 		h.Capabilities.Theme.SupportsUsageSlotsV1 ||
+		h.Capabilities.Theme.SupportsUsageWindowsV1 ||
+		h.Capabilities.Theme.MaxUsageWindows > 0 ||
 		h.Capabilities.Theme.MaxStoredThemeSpecBytes > 0 ||
 		h.Capabilities.Theme.MaxThemePrimitives > 0 ||
 		h.Capabilities.Theme.MaxThemeGifBytes > 0 ||

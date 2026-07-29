@@ -28,7 +28,7 @@ func TestFetchDashboardProvidersWithholdsColdFirstSnapshot(t *testing.T) {
 	if len(cold.Providers) != 1 || !cold.Providers[0].Frame.UsageUnavailable {
 		t.Fatalf("expected cold provider to be unavailable, got %+v", cold.Providers)
 	}
-	if len(cold.Providers[0].Frame.UsageSlots) != 0 || len(cold.Providers[0].Meta.Windows) != 0 {
+	if len(cold.Providers[0].Frame.UsageWindows) != 0 || len(cold.Providers[0].Meta.Windows) != 0 {
 		t.Fatalf("cold values must be withheld from frame and metadata, got %+v", cold.Providers[0])
 	}
 
@@ -40,11 +40,11 @@ func TestFetchDashboardProvidersWithholdsColdFirstSnapshot(t *testing.T) {
 		t.Fatalf("expected one warm provider, got %+v", warm.Providers)
 	}
 	frame := warm.Providers[0].Frame
-	if frame.UsageUnavailable || len(frame.UsageSlots) != 2 {
-		t.Fatalf("expected warm slotted frame, got %+v", frame)
+	if frame.UsageUnavailable || len(frame.UsageWindows) != 2 {
+		t.Fatalf("expected warm usage-window frame, got %+v", frame)
 	}
-	if frame.UsageSlots[0].Label != "Weekly" || frame.UsageSlots[1].Label != "Codex Spark Weekly" {
-		t.Fatalf("expected Codex dashboard labels, got %+v", frame.UsageSlots)
+	if frame.UsageWindows[0].Label != "Weekly" || frame.UsageWindows[1].Label != "Codex Spark Weekly" {
+		t.Fatalf("expected Codex dashboard labels, got %+v", frame.UsageWindows)
 	}
 	if len(warm.Providers[0].Meta.Windows) != 2 {
 		t.Fatalf("expected all valid windows in metadata, got %+v", warm.Providers[0].Meta.Windows)

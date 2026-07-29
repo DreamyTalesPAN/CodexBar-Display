@@ -763,27 +763,28 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 	}
 
 	meta := parseProviderUsageMeta(payload)
-	usageSlots := usageSlotsFromWindows(meta.Windows)
-	if len(usageSlots) > 0 {
-		session = usageSlots[0].Percent
-		resetSecs = usageSlots[0].ResetSec
+	usageWindows := usageWindowsFromWindows(meta.Windows)
+	if len(usageWindows) > 0 {
+		session = usageWindows[0].Percent
+		resetSecs = usageWindows[0].ResetSec
 	}
-	if len(usageSlots) > 1 {
-		weekly = usageSlots[1].Percent
+	if len(usageWindows) > 1 {
+		weekly = usageWindows[1].Percent
 	}
+	frame := protocol.Frame{
+		V:                  protocol.ProtocolVersionV2,
+		Provider:           provider,
+		Label:              label,
+		Session:            session,
+		Weekly:             weekly,
+		ResetSec:           resetSecs,
+		UsageWindows:       usageWindows,
+		UsageUnavailable:   !sessionKnown && !weeklyKnown,
+		SessionUnavailable: !sessionKnown,
+		WeeklyUnavailable:  !weeklyKnown,
+	}.Normalize()
 	return ParsedFrame{
-		Frame: protocol.Frame{
-			V:                  1,
-			Provider:           provider,
-			Label:              label,
-			Session:            session,
-			Weekly:             weekly,
-			ResetSec:           resetSecs,
-			UsageSlots:         usageSlots,
-			UsageUnavailable:   !sessionKnown && !weeklyKnown,
-			SessionUnavailable: !sessionKnown,
-			WeeklyUnavailable:  !weeklyKnown,
-		},
+		Frame:              frame,
 		Provider:           provider,
 		Source:             source,
 		AccountEmail:       accountEmail,
@@ -792,26 +793,23 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 	}, nil
 }
 
-func usageSlotsFromWindows(windows []UsageWindow) []protocol.UsageSlot {
+func usageWindowsFromWindows(windows []UsageWindow) []protocol.UsageWindow {
 	if len(windows) == 0 {
 		return nil
 	}
-	slots := make([]protocol.UsageSlot, 0, 2)
+	out := make([]protocol.UsageWindow, 0, len(windows))
 	for _, window := range windows {
-		if len(slots) == 2 {
-			break
-		}
 		if strings.TrimSpace(window.ID) == "" || strings.TrimSpace(window.Label) == "" {
 			continue
 		}
-		slots = append(slots, protocol.UsageSlot{
+		out = append(out, protocol.UsageWindow{
 			ID:       window.ID,
 			Label:    window.Label,
 			Percent:  window.UsedPercent,
 			ResetSec: window.ResetSec,
 		})
 	}
-	return slots
+	return out
 }
 
 func parseProviderUsageMeta(payload map[string]any) ProviderUsageMeta {
@@ -1380,22 +1378,23 @@ func recoverCodexFrameFromErrorPayload(payload map[string]any) (ParsedFrame, boo
 		return ParsedFrame{}, false
 	}
 
+	frame := protocol.Frame{
+		V:        protocol.ProtocolVersionV2,
+		Provider: "codex",
+		Label:    "Codex",
+		Session:  session,
+		Weekly:   weekly,
+		ResetSec: resetSecs,
+		UsageWindows: recoveredCodexUsageWindows(
+			session,
+			hasPrimary,
+			weekly,
+			hasWeekly,
+			resetSecs,
+		),
+	}.Normalize()
 	return ParsedFrame{
-		Frame: protocol.Frame{
-			V:        1,
-			Provider: "codex",
-			Label:    "Codex",
-			Session:  session,
-			Weekly:   weekly,
-			ResetSec: resetSecs,
-			UsageSlots: recoveredCodexUsageSlots(
-				session,
-				hasPrimary,
-				weekly,
-				hasWeekly,
-				resetSecs,
-			),
-		},
+		Frame:            frame,
 		Provider:         "codex",
 		Source:           "openai-web-recovered",
 		RateLimited:      payloadIsRateLimited(payload),
@@ -1403,19 +1402,19 @@ func recoverCodexFrameFromErrorPayload(payload map[string]any) (ParsedFrame, boo
 	}, true
 }
 
-func recoveredCodexUsageSlots(
+func recoveredCodexUsageWindows(
 	session int,
 	hasSession bool,
 	weekly int,
 	hasWeekly bool,
 	resetSecs int64,
-) []protocol.UsageSlot {
+) []protocol.UsageWindow {
 	// This recovery payload has no display labels. Keep the legacy structural
 	// labels only so migrated themes do not go blank; #254 replaces this
 	// transitional fallback with CodexBar dashboard labels.
-	slots := make([]protocol.UsageSlot, 0, 2)
+	windows := make([]protocol.UsageWindow, 0, 2)
 	if hasSession {
-		slots = append(slots, protocol.UsageSlot{
+		windows = append(windows, protocol.UsageWindow{
 			ID:       "primary",
 			Label:    "Session",
 			Percent:  session,
@@ -1423,13 +1422,13 @@ func recoveredCodexUsageSlots(
 		})
 	}
 	if hasWeekly {
-		slots = append(slots, protocol.UsageSlot{
+		windows = append(windows, protocol.UsageWindow{
 			ID:      "secondary",
 			Label:   "Weekly",
 			Percent: weekly,
 		})
 	}
-	return slots
+	return windows
 }
 
 func decodeEmbeddedJSONBody(message string) (map[string]any, bool) {

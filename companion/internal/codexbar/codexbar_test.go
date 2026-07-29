@@ -44,10 +44,9 @@ func TestParseProviderPayloadPreservesKnownLaneWhenOtherLaneIsUnknown(t *testing
 			knownPercent:      17,
 		},
 		{
-			name:               "explicit unknown primary",
-			raw:                `[{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":0,"usageKnown":false},"secondary":{"usedPercent":57},"extra":[{"id":"codex-spark-weekly","label":"Codex Spark Weekly","usedPercent":12}]}}]`,
-			sessionUnavailable: true,
-			knownPercent:       57,
+			name:         "explicit unknown primary",
+			raw:          `[{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":0,"usageKnown":false},"secondary":{"usedPercent":57},"extra":[{"id":"codex-spark-weekly","label":"Codex Spark Weekly","usedPercent":12}]}}]`,
+			knownPercent: 57,
 		},
 	}
 	for _, test := range tests {
@@ -284,10 +283,10 @@ func TestParseUsageWindowKeepsPresentZeroPercent(t *testing.T) {
 	}
 }
 
-func TestRecoveredCodexSlotsDoNotInventMissingSecondary(t *testing.T) {
-	slots := recoveredCodexUsageSlots(0, true, 0, false, 0)
-	if len(slots) != 1 || slots[0].ID != "primary" || slots[0].Percent != 0 {
-		t.Fatalf("expected only present primary slot, got %+v", slots)
+func TestRecoveredCodexWindowsDoNotInventMissingSecondary(t *testing.T) {
+	windows := recoveredCodexUsageWindows(0, true, 0, false, 0)
+	if len(windows) != 1 || windows[0].ID != "primary" || windows[0].Percent != 0 {
+		t.Fatalf("expected only present primary window, got %+v", windows)
 	}
 }
 
@@ -1210,10 +1209,10 @@ func TestFetchAllProvidersFallsBackToCodexCLIOnAggregateCommandFailure(t *testin
 	if parsed[0].Frame.Session != 7 || parsed[0].Frame.Weekly != 13 {
 		t.Fatalf("expected fallback session=7 weekly=13, got session=%d weekly=%d", parsed[0].Frame.Session, parsed[0].Frame.Weekly)
 	}
-	if slots := parsed[0].Frame.UsageSlots; len(slots) != 2 ||
-		slots[0].Label != "Session" || slots[0].Percent != 7 ||
-		slots[1].Label != "Weekly" || slots[1].Percent != 13 {
-		t.Fatalf("expected transitional fallback slots, got %#v", slots)
+	if windows := parsed[0].Frame.UsageWindows; len(windows) != 2 ||
+		windows[0].Label != "Session" || windows[0].Percent != 7 ||
+		windows[1].Label != "Weekly" || windows[1].Percent != 13 {
+		t.Fatalf("expected transitional fallback windows, got %#v", windows)
 	}
 }
 
@@ -1707,7 +1706,7 @@ func testSignal(at time.Time, confidence activitySignalConfidence, evidence stri
 	}
 }
 
-func TestParseProviderPayloadBuildsTwoTransitionalUsageSlots(t *testing.T) {
+func TestParseProviderPayloadBuildsOrderedUsageWindows(t *testing.T) {
 	raw := []byte(`[
 		{
 			"provider":"antigravity",
@@ -1728,18 +1727,18 @@ func TestParseProviderPayloadBuildsTwoTransitionalUsageSlots(t *testing.T) {
 	}
 	// The one-shot CLI path still uses structural primary/secondary labels.
 	// #254 replaces these transitional labels with CodexBar dashboard labels
-	// and generic deduplication; this test only locks the two-slot transport.
-	slots := parsed[0].Frame.UsageSlots
-	if len(slots) != 2 {
-		t.Fatalf("expected two bounded device slots, got %+v", slots)
+	// and generic deduplication; this test only locks ordered window transport.
+	windows := parsed[0].Frame.UsageWindows
+	if len(windows) != 4 {
+		t.Fatalf("expected complete ordered windows, got %+v", windows)
 	}
-	if slots[0].Label != "Session" || slots[0].Percent != 11 || slots[0].ResetSec != 100 {
-		t.Fatalf("expected first valid source window in slot 1, got %+v", slots[0])
+	if windows[0].Label != "Session" || windows[0].Percent != 11 || windows[0].ResetSec != 100 {
+		t.Fatalf("expected first valid source window, got %+v", windows[0])
 	}
-	if slots[1].Label != "Weekly" || slots[1].Percent != 22 || slots[1].ResetSec != 200 {
-		t.Fatalf("expected second valid source window in slot 2, got %+v", slots[1])
+	if windows[3].Label != "Claude/GPT weekly" || windows[3].Percent != 44 || windows[3].ResetSec != 400 {
+		t.Fatalf("expected overflow source window to be preserved, got %+v", windows[3])
 	}
 	if parsed[0].Frame.Session != 11 || parsed[0].Frame.Weekly != 22 || parsed[0].Frame.ResetSec != 100 {
-		t.Fatalf("expected legacy aliases to mirror the two slots, got %+v", parsed[0].Frame)
+		t.Fatalf("expected legacy aliases to mirror the first two windows, got %+v", parsed[0].Frame)
 	}
 }

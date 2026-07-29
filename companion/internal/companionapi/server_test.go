@@ -2294,17 +2294,17 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	if got.Frame.Provider != "codex" || got.Frame.Label != "Vibe TV" {
 		t.Fatalf("unexpected frame identity: %+v", got.Frame)
 	}
-	if got.Frame.Session != 0 || got.Frame.Weekly != 58 || got.Frame.ResetSec != 2733 ||
-		!got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
+	if got.Frame.Session != 75 || got.Frame.Weekly != 0 || got.Frame.ResetSec != 490812 ||
+		got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
 		t.Fatalf("unexpected sent frame values: %+v", got.Frame)
 	}
 	if got.Frame.UsageMode != "remaining" || got.Frame.Activity != "coding" {
 		t.Fatalf("unexpected sent frame state: %+v", got.Frame)
 	}
-	if len(got.Frame.UsageSlots) != 2 ||
-		got.Frame.UsageSlots[0].Label != "Weekly" ||
-		got.Frame.UsageSlots[1].Label != "Codex Spark Weekly" {
-		t.Fatalf("expected sent usage slots in display preview, got %+v", got.Frame.UsageSlots)
+	if len(got.Frame.UsageWindows) != 2 ||
+		got.Frame.UsageWindows[0].Label != "Weekly" ||
+		got.Frame.UsageWindows[1].Label != "Codex Spark Weekly" {
+		t.Fatalf("expected sent usage windows in display preview, got %+v", got.Frame.UsageWindows)
 	}
 }
 

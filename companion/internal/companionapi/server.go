@@ -135,6 +135,7 @@ var displayStreamLogKeys = []string{
 	"sessionUnavailable",
 	"weeklyUnavailable",
 	"reset",
+	"usageWindows",
 	"usageSlots",
 	"activity",
 	"time",
@@ -7295,9 +7296,15 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
 		frame.ResetSec = reset
 	}
-	if encodedSlots := displayStreamLogValue(line, "usageSlots"); encodedSlots != "" {
+	if encodedWindows := displayStreamLogValue(line, "usageWindows"); encodedWindows != "" {
+		if rawWindows, err := url.QueryUnescape(encodedWindows); err == nil {
+			_ = json.Unmarshal([]byte(rawWindows), &frame.UsageWindows)
+			frame.V = protocol.ProtocolVersionV2
+		}
+	} else if encodedSlots := displayStreamLogValue(line, "usageSlots"); encodedSlots != "" {
 		if rawSlots, err := url.QueryUnescape(encodedSlots); err == nil {
 			_ = json.Unmarshal([]byte(rawSlots), &frame.UsageSlots)
+			frame.V = protocol.ProtocolVersionV2
 		}
 	}
 	return frame.Normalize(), true
