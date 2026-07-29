@@ -1,0 +1,129 @@
+name: CODEX Test VibeTV Gate Repair
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Open gate-repair pull request number to test
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codex-vibetv-gate-repair-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  resolve-pr:
+    if: >-
+      github.repository == 'DreamyTalesPAN/CodexBar-Display' &&
+      github.ref == 'refs/heads/main' &&
+      (github.actor == github.repository_owner || github.actor == 'marcus7989')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      base_sha: ${{ steps.pr.outputs.base_sha }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+    steps:
+      - id: pr
+        name: Resolve exact open PR commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] || { echo 'invalid PR number' >&2; exit 1; }
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" > pr.json
+          python3 - "$GITHUB_OUTPUT" pr.json "$GITHUB_REPOSITORY" <<'PY'
+          import json
+          import sys
+
+          output, source, repository = sys.argv[1:]
+          value = json.load(open(source, encoding="utf-8"))
+          if value.get("state") != "open" or value.get("base", {}).get("ref") != "main":
+              raise SystemExit("PR must be open against main")
+          if value.get("head", {}).get("repo", {}).get("full_name") != repository:
+              raise SystemExit("gate repair PR must come from this repository")
+          base_sha = str(value.get("base", {}).get("sha", "")).strip()
+          head_sha = str(value.get("head", {}).get("sha", "")).strip()
+          if len(base_sha) != 40 or len(head_sha) != 40:
+              raise SystemExit("PR has no immutable 40-character commit SHAs")
+          with open(output, "a", encoding="utf-8") as destination:
+              destination.write(f"base_sha={base_sha}\nhead_sha={head_sha}\n")
+          PY
+
+  verify-scope:
+    needs: resolve-pr
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted main scope policy
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch exact untrusted commits without checkout
+        env:
+          BASE_SHA: ${{ needs.resolve-pr.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.resolve-pr.outputs.head_sha }}
+        run: git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+
+      - name: Reject product or release changes
+        env:
+          BASE_SHA: ${{ needs.resolve-pr.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.resolve-pr.outputs.head_sha }}
+        run: ./scripts/check-vibetv-gate-repair-scope.sh "$BASE_SHA" "$HEAD_SHA"
+
+  test-repair:
+    needs: [resolve-pr, verify-scope]
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact untrusted gate repair without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-pr.outputs.head_sha }}
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+
+      - name: Test hosted gate contracts
+        run: ./scripts/test-vibetv-hosted-gates.sh
+
+      - name: Test Virtual VibeTV behavior
+        working-directory: companion
+        run: go test ./internal/virtualvibetv ./cmd/codexbar-display
+
+  report-status:
+    if: always() && needs.resolve-pr.result == 'success'
+    needs: [resolve-pr, verify-scope, test-repair]
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    steps:
+      - name: Publish stable gate-repair commit status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.resolve-pr.outputs.head_sha }}
+          SCOPE_RESULT: ${{ needs.verify-scope.result }}
+          TEST_RESULT: ${{ needs.test-repair.result }}
+        run: |
+          set -euo pipefail
+          state=success
+          description='Secrets-free VibeTV gate repair check passed'
+          if [[ "$SCOPE_RESULT" != success || "$TEST_RESULT" != success ]]; then
+            state=failure
+            description='Secrets-free VibeTV gate repair check failed'
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
+            -f state="$state" -f context='CODEX VibeTV Gate Repair' -f description="$description" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"

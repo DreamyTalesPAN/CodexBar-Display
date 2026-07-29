@@ -5,6 +5,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CI_WORKFLOW="${ROOT}/.github/workflows/ci.yml"
 MERGE_WORKFLOW="${ROOT}/.github/workflows/vibetv-merge-gate.yml"
 RC_WORKFLOW="${ROOT}/.github/workflows/vibetv-release-candidate.yml"
+GATE_REPAIR_WORKFLOW="${ROOT}/.github/workflows/vibetv-gate-repair.yml"
+GATE_REPAIR_SCOPE="${ROOT}/scripts/check-vibetv-gate-repair-scope.sh"
 EXTRACTOR="${ROOT}/scripts/extract-vibetv-candidate-app.sh"
 GUEST_TEST="${ROOT}/scripts/test-vibetv-hosted-guest.sh"
 SPARKLE_BUILDER="${ROOT}/scripts/build-sparkle-cli.sh"
@@ -70,10 +72,45 @@ PY
   fi
 }
 
+assert_gate_repair_scope() {
+  local work base_sha allowed_sha blocked_sha scope_error
+  work="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-gate-repair-scope.XXXXXX")"
+  trap 'rm -rf "${work:-}"' RETURN
+
+  git -C "$work" init -q
+  git -C "$work" config user.name "CODEX Gate Test"
+  git -C "$work" config user.email "gate-test@vibetv.invalid"
+  printf 'baseline\n' > "$work/README.md"
+  git -C "$work" add README.md
+  git -C "$work" commit -qm baseline
+  base_sha="$(git -C "$work" rev-parse HEAD)"
+
+  mkdir -p "$work/scripts"
+  printf '# allowed gate test\n' > "$work/scripts/test-vibetv-hosted-gates.sh"
+  git -C "$work" add scripts/test-vibetv-hosted-gates.sh
+  git -C "$work" commit -qm allowed
+  allowed_sha="$(git -C "$work" rev-parse HEAD)"
+  (cd "$work" && "$GATE_REPAIR_SCOPE" "$base_sha" "$allowed_sha" >/dev/null) \
+    || die "safe gate repair scope was rejected"
+
+  mkdir -p "$work/firmware_esp8266/src"
+  printf '// blocked product change\n' > "$work/firmware_esp8266/src/main.cpp"
+  git -C "$work" add firmware_esp8266/src/main.cpp
+  git -C "$work" commit -qm blocked
+  blocked_sha="$(git -C "$work" rev-parse HEAD)"
+  if scope_error="$(cd "$work" && "$GATE_REPAIR_SCOPE" "$base_sha" "$blocked_sha" 2>&1)"; then
+    die "product code was accepted as a gate-only repair"
+  fi
+  [[ "$scope_error" == *"outside the safe scope"* ]] \
+    || die "unsafe gate repair scope failed for the wrong reason: $scope_error"
+}
+
 main() {
   assert_file "$CI_WORKFLOW"
   assert_file "$MERGE_WORKFLOW"
   assert_file "$RC_WORKFLOW"
+  assert_file "$GATE_REPAIR_WORKFLOW"
+  assert_file "$GATE_REPAIR_SCOPE"
   assert_file "$EXTRACTOR"
   assert_file "$GUEST_TEST"
   assert_file "$SPARKLE_BUILDER"
@@ -115,6 +152,20 @@ main() {
     'merge gate must not depend on a self-hosted runner'
   assert_not_contains "$MERGE_WORKFLOW" 'tart' \
     'merge gate must not use Tart'
+
+  assert_contains "$CI_WORKFLOW" './scripts/test-vibetv-hosted-gates.sh' \
+    'normal PR CI must test changes to the hosted VibeTV gate itself'
+
+  assert_contains "$GATE_REPAIR_WORKFLOW" 'name: CODEX Test VibeTV Gate Repair' \
+    'gate repair workflow needs the stable CODEX name'
+  assert_contains "$GATE_REPAIR_WORKFLOW" 'ref: ${{ github.workflow_sha }}' \
+    'gate repair scope validation must use trusted main code'
+  assert_contains "$GATE_REPAIR_WORKFLOW" 'persist-credentials: false' \
+    'untrusted gate repair checkouts must not persist GitHub credentials'
+  assert_contains "$GATE_REPAIR_WORKFLOW" 'CODEX VibeTV Gate Repair' \
+    'gate repair workflow must publish its stable commit status context'
+  assert_not_contains "$GATE_REPAIR_WORKFLOW" 'secrets.' \
+    'gate repair workflow must remain completely secrets-free'
 
   local untrusted_build
   untrusted_build="$(job_block "$MERGE_WORKFLOW" 'build-untrusted')"
@@ -197,6 +248,7 @@ main() {
   assert_contains "$GUEST_TEST" 'daemon --transport wifi' \
     'guest test must exercise the bundled candidate companion render path'
 
+  assert_gate_repair_scope
   assert_safe_app_extractor
   printf 'PASS: hosted VibeTV merge and release-candidate gate contracts\n'
 }

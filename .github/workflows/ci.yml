@@ -60,6 +60,9 @@ jobs:
       - name: Test agent git guardrails
         run: ./scripts/test-agent-git-guardrails.sh
 
+      - name: Test hosted VibeTV gate contracts
+        run: ./scripts/test-vibetv-hosted-gates.sh
+
       - name: Check ESP8266 soak gate
         run: ./scripts/check-esp8266-soak-gate.sh
 
