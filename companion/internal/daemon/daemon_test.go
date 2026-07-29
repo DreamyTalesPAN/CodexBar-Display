@@ -3873,6 +3873,103 @@ func TestProviderCollectorSuccessfulEmptyTokenStatsClearsLastGood(t *testing.T) 
 	}
 }
 
+func TestProviderCollectorPartialTokenScanKeepsFailedProviderLastGood(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 29, 10, 0, 0, 0, time.UTC)
+	oldTokenStats := current.Add(-10*time.Minute + time.Second)
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex", "claude"},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:  "codex",
+				Frame:     protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42, TotalTokens: 7},
+				Collected: current,
+			},
+			"claude": {
+				Provider:            "claude",
+				Frame:               protocol.Frame{Provider: "claude", Label: "Claude", Weekly: 31, TotalTokens: 99},
+				Collected:           current,
+				TokenStatsCollected: oldTokenStats,
+				Meta:                codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{UpdatedAt: oldTokenStats, Last30DaysTokens: 99}},
+			},
+		},
+	}
+	collector.fetchTokenStatsReport = func(context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport) {
+		return map[string]codexbar.ProviderTokenStats{
+			"codex": {
+				TotalTokens: 12,
+				UpdatedAt:   current,
+				Cost:        &codexbar.ProviderCostUsage{UpdatedAt: current, Last30DaysTokens: 12},
+			},
+		}, codexbar.ProviderTokenStatsReport{OK: true, Reason: "success", FailedProviders: []string{"claude"}}
+	}
+
+	collector.collectTokenStatsOnce(context.Background())
+	if got := collector.providers["claude"]; got.Frame.TotalTokens != 99 || got.Meta.Cost == nil {
+		t.Fatalf("partial token scan erased failed provider last-good data: %#v", got)
+	}
+
+	current = current.Add(2 * time.Second)
+	for _, frame := range collector.providerFrames(current) {
+		if frame.Provider == "claude" && (frame.Frame.TotalTokens != 0 || frame.Meta.Cost != nil) {
+			t.Fatalf("failed provider token data outlived its freshness bound: %#v", frame)
+		}
+	}
+}
+
+func TestProviderCollectorExpiredQuotaKeepsFreshTokenStats(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 29, 10, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:            func() time.Time { return now },
+		logf:           func(string, ...any) {},
+		order:          []string{"codex"},
+		snapshotMaxAge: 10 * time.Minute,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider: "codex",
+				Frame: protocol.Frame{
+					Provider:     "codex",
+					Label:        "Codex",
+					Session:      17,
+					Weekly:       42,
+					ResetSec:     3600,
+					Activity:     "coding",
+					TotalTokens:  99,
+					UsageSlots:   []protocol.UsageSlot{{ID: "weekly", Label: "Weekly", Percent: 42}},
+					UsageWindows: []protocol.UsageWindow{{ID: "weekly", Label: "Weekly", Percent: 42}},
+				},
+				Collected:           now.Add(-10*time.Minute - time.Second),
+				TokenStatsCollected: now,
+				ActivityObservedAt:  now,
+				Meta: codexbar.ProviderUsageMeta{
+					Windows: []codexbar.UsageWindow{{ID: "weekly", Label: "Weekly", UsedPercent: 42}},
+					Cost:    &codexbar.ProviderCostUsage{UpdatedAt: now, Last30DaysTokens: 99},
+					Status:  &codexbar.ProviderStatus{Description: "Operational"},
+				},
+			},
+		},
+	}
+
+	frames := collector.providerFrames(now)
+	if len(frames) != 1 {
+		t.Fatalf("expected one provider frame, got %#v", frames)
+	}
+	got := frames[0]
+	if !got.Frame.UsageUnavailable || got.Frame.Session != 0 || got.Frame.Weekly != 0 || len(got.Frame.UsageSlots) != 0 || len(got.Meta.Windows) != 0 {
+		t.Fatalf("expired quota values were retained: %#v", got)
+	}
+	if got.Frame.TotalTokens != 99 || got.Meta.Cost == nil || got.Frame.Activity != "coding" || !got.ActivityObservedAt.Equal(now) {
+		t.Fatalf("fresh token, cost, or activity data was erased with expired quota: %#v", got)
+	}
+}
+
 func TestProviderCollectorSlowTokenScanDoesNotOverlapAndRecovers(t *testing.T) {
 	prepareFastTestEnv(t)
 

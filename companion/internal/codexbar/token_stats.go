@@ -28,6 +28,7 @@ type ProviderTokenStatsReport struct {
 	OK              bool
 	Reason          string
 	ProviderCount   int
+	FailedProviders []string
 	BinaryDuration  time.Duration
 	VersionDuration time.Duration
 	CostDuration    time.Duration
@@ -78,7 +79,7 @@ func fetchProviderTokenStatsWithReport(ctx context.Context, bin string, report P
 	}
 
 	parseStarted := time.Now()
-	parsed, err := parseProviderTokenStats(raw)
+	parsed, failedProviders, err := parseProviderTokenStatsWithFailures(raw)
 	report.ParseDuration = time.Since(parseStarted)
 	if errors.Is(err, ErrNoProviders) {
 		report.OK = true
@@ -92,6 +93,7 @@ func fetchProviderTokenStatsWithReport(ctx context.Context, bin string, report P
 	report.OK = true
 	report.Reason = "success"
 	report.ProviderCount = len(parsed)
+	report.FailedProviders = failedProviders
 	return parsed, report
 }
 
@@ -117,18 +119,29 @@ func tokenStatsFailureReason(ctx context.Context, err error, elapsed, timeout ti
 }
 
 func parseProviderTokenStats(raw []byte) (map[string]ProviderTokenStats, error) {
+	parsed, _, err := parseProviderTokenStatsWithFailures(raw)
+	return parsed, err
+}
+
+func parseProviderTokenStatsWithFailures(raw []byte) (map[string]ProviderTokenStats, []string, error) {
 	providers, err := extractProvidersFromRawJSON(raw)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(providers) == 0 {
-		return nil, ErrNoProviders
+		return nil, nil, ErrNoProviders
 	}
 
 	parsed := make(map[string]ProviderTokenStats, len(providers))
+	failed := make(map[string]struct{})
 	for _, providerAny := range providers {
 		payload, ok := providerAny.(map[string]any)
 		if !ok {
+			continue
+		}
+		key := strings.TrimSpace(strings.ToLower(firstString(payload, "provider", "id", "slug", "name")))
+		if key != "" && providerPayloadHasError(payload) {
+			failed[key] = struct{}{}
 			continue
 		}
 
@@ -140,9 +153,14 @@ func parseProviderTokenStats(raw []byte) (map[string]ProviderTokenStats, error) 
 	}
 
 	if len(parsed) == 0 {
-		return nil, ErrUnexpectedProviderShape
+		return nil, nil, ErrUnexpectedProviderShape
 	}
-	return parsed, nil
+	failedProviders := make([]string, 0, len(failed))
+	for key := range failed {
+		failedProviders = append(failedProviders, key)
+	}
+	sort.Strings(failedProviders)
+	return parsed, failedProviders, nil
 }
 
 func parseProviderTokenStatsPayload(payload map[string]any) (string, ProviderTokenStats, bool) {

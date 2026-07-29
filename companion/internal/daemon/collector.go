@@ -506,7 +506,12 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 	updated := 0
 
 	c.mu.Lock()
-	seen := make(map[string]struct{}, len(statsByProvider))
+	seen := make(map[string]struct{}, len(statsByProvider)+len(report.FailedProviders))
+	for _, provider := range report.FailedProviders {
+		if key := normalizeProviderKey(provider); key != "" {
+			seen[key] = struct{}{}
+		}
+	}
 	for rawKey, stats := range statsByProvider {
 		key := normalizeProviderKey(rawKey)
 		if key == "" || !stats.HasAny() {
@@ -708,6 +713,9 @@ func snapshotWithExpiredUsageCleared(snapshot providerSnapshot, now time.Time, m
 	if isLastGoodFreshAt(snapshot.Collected, now, maxAge) {
 		return snapshot
 	}
+	if !snapshotTokenStatsFresh(snapshot, now, maxAge) {
+		clearSnapshotTokenStats(&snapshot)
+	}
 
 	frame := snapshot.Frame.Normalize()
 	frame.UsageUnavailable = true
@@ -718,12 +726,14 @@ func snapshotWithExpiredUsageCleared(snapshot providerSnapshot, now time.Time, m
 	frame.ResetSec = 0
 	frame.UsageWindows = nil
 	frame.UsageSlots = nil
-	frame.SessionTokens = 0
-	frame.WeekTokens = 0
-	frame.TotalTokens = 0
 	snapshot.Frame = frame
-	snapshot.Meta = codexbar.ProviderUsageMeta{Status: snapshot.Meta.Status}
-	snapshot.TokenStatsCollected = time.Time{}
+	meta := snapshot.Meta
+	meta.Windows = nil
+	meta.Credits = nil
+	meta.ResetCredits = nil
+	meta.Pace = nil
+	meta.OverTime = nil
+	snapshot.Meta = meta
 	return snapshot
 }
 

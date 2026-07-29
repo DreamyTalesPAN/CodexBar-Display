@@ -169,6 +169,24 @@ func TestFetchProviderTokenStatsReportAcceptsEmptyProviderResult(t *testing.T) {
 	}
 }
 
+func TestFetchProviderTokenStatsReportKeepsPerProviderFailures(t *testing.T) {
+	runCostCommandFn = func(_ context.Context, _ time.Duration, _ string, _ ...string) ([]byte, error) {
+		return []byte(`[
+			{"provider":"codex","updatedAt":"2026-07-29T10:00:00Z","totals":{"totalTokens":12}},
+			{"provider":"claude","error":{"message":"temporarily unavailable"}}
+		]`), nil
+	}
+	t.Cleanup(func() { runCostCommandFn = runUsageCommand })
+
+	stats, report := fetchProviderTokenStatsWithReport(context.Background(), "/tmp/CodexBarCLI", ProviderTokenStatsReport{})
+	if !report.OK || len(stats) != 1 || stats["codex"].TotalTokens != 12 {
+		t.Fatalf("expected valid provider to succeed, report=%+v stats=%#v", report, stats)
+	}
+	if len(report.FailedProviders) != 1 || report.FailedProviders[0] != "claude" {
+		t.Fatalf("expected Claude to remain a bounded per-provider failure, report=%+v", report)
+	}
+}
+
 func TestFetchProviderTokenStatsReportClassifiesParseFailure(t *testing.T) {
 	runCostCommandFn = func(_ context.Context, _ time.Duration, _ string, _ ...string) ([]byte, error) {
 		return []byte(`{"providers":[{"provider":"codex","error":"not available"}]}`), nil
