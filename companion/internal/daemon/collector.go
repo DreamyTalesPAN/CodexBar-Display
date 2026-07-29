@@ -373,6 +373,7 @@ func (c *providerCollector) fetchProvidersForCollect(ctx context.Context, now ti
 			c.logf("collector dashboard-unavailable source=codexbar-dashboard err=%v\n", err)
 			return nil, "codexbar-dashboard", err
 		}
+		return nil, "codexbar-dashboard", errors.New("dashboard serve unavailable")
 	}
 	if c.fetchProviders == nil {
 		return nil, "codexbar-usage-json", errors.New("usage provider fetcher unavailable")

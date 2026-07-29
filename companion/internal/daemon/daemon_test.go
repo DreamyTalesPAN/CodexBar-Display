@@ -4515,6 +4515,38 @@ func TestProviderCollectorDoesNotFallBackToUsageJSONWhenDashboardUnavailable(t *
 	}
 }
 
+func TestProviderCollectorDashboardNotRunningDoesNotUseUsageJSONFallback(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	fallbackCalls := 0
+	dashboardCalls := 0
+	collector := &providerCollector{
+		now:       func() time.Time { return time.Date(2026, 7, 29, 18, 0, 0, 0, time.UTC) },
+		logf:      func(string, ...any) {},
+		providers: make(map[string]providerSnapshot),
+		dashboard: staticDashboardServe{info: codexbar.DashboardServeInfo{}},
+		fetchDashboard: func(_ context.Context, _ codexbar.DashboardServeInfo, _ time.Time, _ int) (codexbar.DashboardFetchResult, error) {
+			dashboardCalls++
+			return codexbar.DashboardFetchResult{}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			fallbackCalls++
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 14, 22, 3600)}, nil
+		},
+	}
+
+	providers, source, err := collector.fetchProvidersForCollect(context.Background(), collector.now())
+	if err == nil || !strings.Contains(err.Error(), "dashboard serve unavailable") {
+		t.Fatalf("expected dashboard unavailable error, got providers=%+v source=%s err=%v", providers, source, err)
+	}
+	if source != "codexbar-dashboard" {
+		t.Fatalf("expected dashboard source, got %q", source)
+	}
+	if dashboardCalls != 0 || fallbackCalls != 0 {
+		t.Fatalf("dashboard not running must not call fetchers, dashboard=%d fallback=%d", dashboardCalls, fallbackCalls)
+	}
+}
+
 func TestProviderCollectorStartupWithoutDashboardSnapshotDoesNotUseFallback(t *testing.T) {
 	prepareFastTestEnv(t)
 
