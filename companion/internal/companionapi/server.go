@@ -3898,13 +3898,19 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 			})
 			return
 		}
+		// A screensaver is stored for standby, not put on screen, so saying it
+		// is active would be wrong.
+		done := "Theme is active on VibeTV."
+		if req.Slot == themepack.UsageScreensaver {
+			done = "Screensaver is ready on VibeTV."
+		}
 		s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
 			job.Phase = "complete"
-			job.Message = "Theme is active on VibeTV."
+			job.Message = done
 			job.Progress = 100
 			job.FinishedAt = &finishedAt
 			job.Result = &result
-			appendInstallJobLog(job, "Theme is active on VibeTV.")
+			appendInstallJobLog(job, done)
 		})
 	}()
 }
