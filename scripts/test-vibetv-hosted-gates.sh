@@ -176,6 +176,22 @@ main() {
     'guest test must require a replacement Candidate process after Sparkle'
   assert_contains "$GUEST_TEST" 'gzip -cd' \
     'guest test must hash the raw firmware bytes sent through OTA'
+  assert_contains "$GUEST_TEST" 'if gzip -t "$FIRMWARE"' \
+    'guest test must accept both compressed release firmware and raw merge firmware'
+  assert_contains "$MERGE_WORKFLOW" '--download-url-prefix "https://github.com/${REPOSITORY}/releases/download/v${version}/"' \
+    'merge appcast must use a GitHub enclosure URL that the guest can rewrite'
+  assert_contains "$MERGE_WORKFLOW" 'path: tmp/vibetv-merge/candidate' \
+    'merge candidate must be uploaded from one artifact root'
+  assert_contains "$MERGE_WORKFLOW" 'chmod +x candidate/virtual-vibetv candidate/codexbar-display' \
+    'merge guest must restore executable bits lost by artifact download'
+  assert_contains "$RC_WORKFLOW" 'chmod +x candidate/test/virtual-vibetv candidate/test/codexbar-display' \
+    'release guest must restore executable bits lost by artifact download'
+  assert_contains "$RC_WORKFLOW" 'baselines/baselines/${{ matrix.state }}.dmg' \
+    'release guest must read frozen baselines from the downloaded artifact layout'
+  assert_contains "$RC_WORKFLOW" '! -name "$checksums"' \
+    'release checksum generation must exclude the checksum manifest itself'
+  assert_contains "$SPARKLE_BUILDER" 'checkout -q --detach FETCH_HEAD' \
+    'Sparkle builder must check out the pinned fetched source before verification'
   assert_contains "$RC_WORKFLOW" 'artifactHashes": {item["path"]' \
     'candidate result must expose publish validators a path-to-hash map'
   assert_contains "$RC_WORKFLOW" 'check-firmware-size-budget.sh' \

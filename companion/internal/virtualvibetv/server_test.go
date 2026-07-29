@@ -6,7 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
 
 func TestStartServesCompanionAndRawOTAOnSeparateListeners(t *testing.T) {
@@ -108,7 +111,14 @@ func TestScenariosExposeRequiredFailureStates(t *testing.T) {
 		{
 			name: "stream restart failure",
 			cfg:  func(cfg *Config) { cfg.StreamRestartFails = true },
-			want: func(t *testing.T, _ *Server, baseURL string) { assertHealth(t, baseURL, true, true, false) },
+			want: func(t *testing.T, _ *Server, baseURL string) {
+				assertHealth(t, baseURL, true, true, false)
+				t.Setenv("CODEXBAR_DISPLAY_DEVICE_TOKEN", DefaultConfig().PairingToken)
+				err := transport.NewWiFiTransportWithClient(http.DefaultClient).SendLine(baseURL, []byte(`{"version":1}`))
+				if err == nil || !strings.Contains(err.Error(), "status=503") {
+					t.Fatalf("real WiFi frame path did not observe stream failure: %v", err)
+				}
+			},
 		},
 	}
 	for _, tt := range tests {

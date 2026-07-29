@@ -189,7 +189,7 @@ jobs:
           set -euo pipefail
           version="$(cat tmp/vibetv-merge/version.txt)"
           sparkle_dir="$(./scripts/fetch-sparkle.sh)"
-          printf '%s' "$SPARKLE_ED25519_PRIVATE_KEY" | "$sparkle_dir/bin/generate_appcast" --ed-key-file - --maximum-deltas 0 --link https://app.vibetv.shop -o dist/macos/appcast.xml dist/macos
+          printf '%s' "$SPARKLE_ED25519_PRIVATE_KEY" | "$sparkle_dir/bin/generate_appcast" --ed-key-file - --maximum-deltas 0 --link https://app.vibetv.shop --download-url-prefix "https://github.com/${REPOSITORY}/releases/download/v${version}/" -o dist/macos/appcast.xml dist/macos
           python3 - "$SOURCE_SHA" "$version" "$REPOSITORY" "$CANDIDATE_RUN_ID" dist/macos/candidate-manifest.json <<'PY'
           import datetime, hashlib, json, sys
           sha, version, repository, run_id, output = sys.argv[1:]
@@ -214,19 +214,17 @@ jobs:
               json.dump(manifest, destination, indent=2)
               destination.write("\n")
           PY
+          mkdir -p tmp/vibetv-merge/candidate
+          cp dist/macos/VibeTV-Control-Center.dmg dist/macos/appcast.xml dist/macos/candidate-manifest.json \
+            tmp/vibetv-merge/virtual-vibetv tmp/vibetv-merge/codexbar-display \
+            tmp/vibetv-merge/firmware.bin tmp/vibetv-merge/firmware-manifest.json \
+            tmp/vibetv-merge/candidate/
 
       - name: Upload signed merge candidate
         uses: actions/upload-artifact@v4
         with:
           name: CODEX-vibetv-merge-candidate-${{ github.run_id }}
-          path: |
-            dist/macos/VibeTV-Control-Center.dmg
-            dist/macos/appcast.xml
-            dist/macos/candidate-manifest.json
-            tmp/vibetv-merge/virtual-vibetv
-            tmp/vibetv-merge/codexbar-display
-            tmp/vibetv-merge/firmware.bin
-            tmp/vibetv-merge/firmware-manifest.json
+          path: tmp/vibetv-merge/candidate
           retention-days: 7
           compression-level: 0
 
@@ -273,6 +271,8 @@ jobs:
         with:
           name: CODEX-vibetv-merge-baselines-${{ github.run_id }}
           path: baselines
+      - name: Restore candidate executable permissions
+        run: chmod +x candidate/virtual-vibetv candidate/codexbar-display
       - name: Download frozen public baseline when required
         if: matrix.state != 'clean_os'
         run: |
