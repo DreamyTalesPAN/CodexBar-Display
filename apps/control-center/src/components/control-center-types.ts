@@ -154,6 +154,13 @@ export type SupportReportClientState = {
   device?: DeviceInfo | null;
   deviceSearchState: DeviceSearchState;
   deviceCandidates: DeviceCandidate[];
+  deviceRecovery?: {
+    preferredDeviceId?: string;
+    failedNormalChecks: number;
+    pickerReason?: string | null;
+    normalFailureLimit: number;
+    operationFailureLimit: number;
+  };
   providerSetup?: ProviderSetupInfo | null;
   lastError?: ApiError | null;
   recentEvents: ControlCenterEvent[];
