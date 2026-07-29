@@ -521,6 +521,17 @@ func retryableAssetStatus(statusCode int) bool {
 }
 
 func (t WiFiTransport) ActivateStoredTheme(target, devicePath string) error {
+	return t.activateSlot(target, "/theme/active", devicePath)
+}
+
+// ActivateScreensaver points the screensaver slot at a stored ThemeSpec. The
+// device only records the reference here; it never redraws, so the live theme
+// keeps running.
+func (t WiFiTransport) ActivateScreensaver(target, devicePath string) error {
+	return t.activateSlot(target, "/screensaver/active", devicePath)
+}
+
+func (t WiFiTransport) activateSlot(target, endpoint, devicePath string) error {
 	base, err := normalizeWiFiTarget(target)
 	if err != nil {
 		return err
@@ -531,7 +542,7 @@ func (t WiFiTransport) ActivateStoredTheme(target, devicePath string) error {
 	if err != nil {
 		return fmt.Errorf("marshal theme activation: %w", err)
 	}
-	req, err := http.NewRequest(http.MethodPost, base+"/theme/active", bytes.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, base+endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("build theme activation request: %w", err)
 	}

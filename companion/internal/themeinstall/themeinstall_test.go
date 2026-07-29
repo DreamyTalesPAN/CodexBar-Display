@@ -19,6 +19,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 )
 
@@ -88,20 +89,8 @@ func TestInstallUsesValidInMemoryPackBytes(t *testing.T) {
 }
 
 func TestInstallRejectsScreensaverPackInLiveSlotBeforeDeviceAccess(t *testing.T) {
-	packBytes := zipThemePackFiles(t, map[string]string{
-		"manifest.json": `{
-			"kind":"vibetv-theme-pack",
-			"schemaVersion":1,
-			"id":"night-clock",
-			"name":"Night Clock",
-			"usage":"screensaver",
-			"themeSpec":{"path":"/themes/u/night.json","file":"theme.json"}
-		}`,
-		"theme.json": `{"v":1,"id":"night-clock","rev":1,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"v":"OK","s":1}]}`,
-	})
-
 	_, err := Install(context.Background(), Options{
-		PackBytes: packBytes,
+		PackBytes: zipThemePackFiles(t, screensaverPackFiles),
 		// Unreachable on purpose: the usage check must fail before device access.
 		Target: "http://127.0.0.1:1",
 	})
@@ -114,51 +103,81 @@ func TestInstallRejectsScreensaverPackInLiveSlotBeforeDeviceAccess(t *testing.T)
 	}
 }
 
-func TestInstallAcceptsBothUsagePackInLiveSlot(t *testing.T) {
-	withFastActivationRetries(t)
-	dir := t.TempDir()
-	spec := `{"v":1,"id":"synthwave","rev":1,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"v":"OK","s":1}]}`
-	manifest := `{
-		"kind":"vibetv-theme-pack",
-		"schemaVersion":1,
-		"id":"synthwave",
-		"name":"Synthwave",
-		"usage":"both",
-		"themeSpec":{"path":"/themes/u/synth.json","file":"theme.json"}
-	}`
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "theme.json"), []byte(spec), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	const activePath = "/themes/u/synth.json"
-	currentActivePath := "/themes/u/claude.json"
-	server := themeInstallDeviceServer(t, func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/theme/active":
-			currentActivePath = activePath
-			w.WriteHeader(http.StatusOK)
-		case "/health":
-			writeThemeHealth(t, w, currentActivePath)
-		}
+func TestInstallRejectsLivePackInScreensaverSlotBeforeDeviceAccess(t *testing.T) {
+	_, err := Install(context.Background(), Options{
+		Slot:      themepack.UsageScreensaver,
+		PackBytes: zipMinimalThemePack(t, writeMinimalThemePack(t)),
+		// Unreachable on purpose: the usage check must fail before device access.
+		Target: "http://127.0.0.1:1",
 	})
-	defer server.Close()
+	want := `theme pack "synthwave" is a live pack and cannot be installed into the screensaver slot`
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("expected %q, got %v", want, err)
+	}
+	if got := errcode.Of(err); got != errcode.ProtocolThemeSpecIncompatible {
+		t.Fatalf("unexpected error code %q", got)
+	}
+}
 
+func TestInstallScreensaverPackLeavesLiveThemeAlone(t *testing.T) {
+	device := newScreensaverDeviceServer(t, true)
+	device.assets["/themes/u/claude.json"] = 900
+	device.assets["/themes/s/old.json"] = 700
+	defer device.server.Close()
+
+	var out bytes.Buffer
 	result, err := Install(context.Background(), Options{
-		PackBytes:          zipMinimalThemePack(t, dir),
-		Target:             server.URL,
+		Slot:               themepack.UsageScreensaver,
+		PackBytes:          zipThemePackFiles(t, screensaverPackFiles),
+		Target:             device.server.URL,
 		SkipFirmwareUpdate: true,
-		HTTPClient:         server.Client(),
+		Out:                &out,
+		HTTPClient:         device.server.Client(),
 		UploadSettleDelay:  -1,
 		FetchLiveFrame:     testLiveFrame,
 	})
 	if err != nil {
-		t.Fatalf("Install returned error: %v", err)
+		t.Fatalf("Install returned error: %v\nlogs:\n%s", err, out.String())
 	}
-	if result.ActivePath != activePath {
-		t.Fatalf("unexpected install result: %+v", result)
+	if result.Slot != themepack.UsageScreensaver || result.ActivePath != screensaverSpecPath {
+		t.Fatalf("unexpected screensaver install result: %+v", result)
+	}
+	if device.screensaverPath != screensaverSpecPath {
+		t.Fatalf("screensaver slot=%q, want %q", device.screensaverPath, screensaverSpecPath)
+	}
+	if _, uploaded := device.assets[screensaverSpecPath]; !uploaded {
+		t.Fatalf("screensaver spec was not uploaded: %v", device.assets)
+	}
+	if _, kept := device.assets["/themes/u/claude.json"]; !kept {
+		t.Fatalf("live theme file was deleted: %v", device.deleted)
+	}
+	if strings.Join(device.deleted, ",") != "/themes/s/old.json" {
+		t.Fatalf("unexpected deleted paths: %v", device.deleted)
+	}
+}
+
+func TestInstallScreensaverRejectsDeviceWithoutStandbySupport(t *testing.T) {
+	device := newScreensaverDeviceServer(t, false)
+	defer device.server.Close()
+
+	_, err := Install(context.Background(), Options{
+		Slot:               themepack.UsageScreensaver,
+		PackBytes:          zipThemePackFiles(t, screensaverPackFiles),
+		Target:             device.server.URL,
+		SkipFirmwareUpdate: true,
+		HTTPClient:         device.server.Client(),
+		UploadSettleDelay:  -1,
+		FetchLiveFrame:     testLiveFrame,
+	})
+	want := "VibeTV does not advertise a screensaver slot"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("expected %q, got %v", want, err)
+	}
+	if got := errcode.Of(err); got != errcode.ProtocolThemeSpecIncompatible {
+		t.Fatalf("unexpected error code %q", got)
+	}
+	if len(device.assets) != 0 || device.screensaverPath != "" {
+		t.Fatalf("device was written to before the capability check: %v %q", device.assets, device.screensaverPath)
 	}
 }
 
@@ -278,29 +297,20 @@ func TestPairThemeInstallTargetStoresTokenAndReturnsTokenizedTarget(t *testing.T
 	}
 }
 
-func TestCleanupThemeUserAssetsDeletesOnlyUserThemeFiles(t *testing.T) {
+func TestCleanupSlotAssetsDeletesOnlyItsOwnSlotFiles(t *testing.T) {
 	var deleted []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/assets" {
-			t.Fatalf("unexpected path %s", r.URL.Path)
-		}
-		switch r.Method {
-		case http.MethodGet:
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"assets":[{"path":"/themes/u/old.cba","sizeBytes":12000},{"path":"/themes/u/old.json","sizeBytes":900},{"path":"/themes/mini/mini.gif","sizeBytes":14336}]}`))
-		case http.MethodDelete:
-			deleted = append(deleted, r.URL.Query().Get("path"))
-			w.WriteHeader(http.StatusOK)
-		default:
-			t.Fatalf("unexpected assets method %s", r.Method)
-		}
-	}))
+	server := assetCleanupServer(t, `{"assets":[
+		{"path":"/themes/u/old.cba","sizeBytes":12000},
+		{"path":"/themes/u/old.json","sizeBytes":900},
+		{"path":"/themes/s/night.json","sizeBytes":700},
+		{"path":"/themes/mini/mini.gif","sizeBytes":14336}
+	]}`, &deleted)
 	defer server.Close()
 
 	wifi := transportlayer.NewWiFiTransportWithClient(server.Client())
 	target := server.URL
 	var out bytes.Buffer
-	cleanupThemeUserAssets(wifi, &target, nil, &out, nil)
+	cleanupSlotAssets(wifi, &target, nil, &out, themepack.LivePathPrefix, nil)
 
 	if strings.Join(deleted, ",") != "/themes/u/old.cba,/themes/u/old.json" {
 		t.Fatalf("unexpected deleted paths: %v", deleted)
@@ -310,29 +320,40 @@ func TestCleanupThemeUserAssetsDeletesOnlyUserThemeFiles(t *testing.T) {
 	}
 }
 
-func TestCleanupThemeUserAssetsKeepsInstalledThemeFiles(t *testing.T) {
+func TestCleanupSlotAssetsSweepsTheScreensaverDirectory(t *testing.T) {
 	var deleted []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/assets" {
-			t.Fatalf("unexpected path %s", r.URL.Path)
-		}
-		switch r.Method {
-		case http.MethodGet:
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"assets":[{"path":"/themes/u/new.json","sizeBytes":900},{"path":"/themes/u/new.cbi","sizeBytes":12000},{"path":"/themes/u/old.json","sizeBytes":900}]}`))
-		case http.MethodDelete:
-			deleted = append(deleted, r.URL.Query().Get("path"))
-			w.WriteHeader(http.StatusOK)
-		default:
-			t.Fatalf("unexpected assets method %s", r.Method)
-		}
-	}))
+	server := assetCleanupServer(t, `{"assets":[
+		{"path":"/themes/u/claude.json","sizeBytes":900},
+		{"path":"/themes/s/night.json","sizeBytes":700},
+		{"path":"/themes/s/old.json","sizeBytes":600}
+	]}`, &deleted)
 	defer server.Close()
 
 	wifi := transportlayer.NewWiFiTransportWithClient(server.Client())
 	target := server.URL
 	var out bytes.Buffer
-	cleanupThemeUserAssets(wifi, &target, nil, &out, map[string]bool{
+	cleanupSlotAssets(wifi, &target, nil, &out, themepack.ScreensaverPathPrefix, map[string]bool{
+		"/themes/s/night.json": true,
+	})
+
+	if strings.Join(deleted, ",") != "/themes/s/old.json" {
+		t.Fatalf("unexpected deleted paths: %v", deleted)
+	}
+}
+
+func TestCleanupSlotAssetsKeepsInstalledThemeFiles(t *testing.T) {
+	var deleted []string
+	server := assetCleanupServer(t, `{"assets":[
+		{"path":"/themes/u/new.json","sizeBytes":900},
+		{"path":"/themes/u/new.cbi","sizeBytes":12000},
+		{"path":"/themes/u/old.json","sizeBytes":900}
+	]}`, &deleted)
+	defer server.Close()
+
+	wifi := transportlayer.NewWiFiTransportWithClient(server.Client())
+	target := server.URL
+	var out bytes.Buffer
+	cleanupSlotAssets(wifi, &target, nil, &out, themepack.LivePathPrefix, map[string]bool{
 		"/themes/u/new.json": true,
 		"/themes/u/new.cbi":  true,
 	})
@@ -340,6 +361,25 @@ func TestCleanupThemeUserAssetsKeepsInstalledThemeFiles(t *testing.T) {
 	if strings.Join(deleted, ",") != "/themes/u/old.json" {
 		t.Fatalf("unexpected deleted paths: %v", deleted)
 	}
+}
+
+func assetCleanupServer(t *testing.T, assets string, deleted *[]string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/assets" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		switch r.Method {
+		case http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(assets))
+		case http.MethodDelete:
+			*deleted = append(*deleted, r.URL.Query().Get("path"))
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected assets method %s", r.Method)
+		}
+	}))
 }
 
 func TestVerifyThemeInstallHealthRejectsGIFDecoderFailure(t *testing.T) {
@@ -999,6 +1039,97 @@ func makeTwelveBitGIF(t *testing.T) []byte {
 		data = data[size:]
 	}
 	return append(gif, 0, 0x3b)
+}
+
+const screensaverSpecPath = "/themes/s/night.json"
+
+var screensaverPackFiles = map[string]string{
+	"manifest.json": `{
+		"kind":"vibetv-theme-pack",
+		"schemaVersion":1,
+		"id":"night-clock",
+		"name":"Night Clock",
+		"usage":"screensaver",
+		"themeSpec":{"path":"` + screensaverSpecPath + `","file":"theme.json"}
+	}`,
+	"theme.json": `{"v":1,"id":"night-clock","rev":1,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"v":"OK","s":1}]}`,
+}
+
+// screensaverDevice is a device that serves the screensaver slot. It fails the
+// test on any write that belongs to the live slot, which is what "installing a
+// screensaver never disturbs the live theme" means at the wire level.
+type screensaverDevice struct {
+	server          *httptest.Server
+	assets          map[string]int
+	deleted         []string
+	screensaverPath string
+}
+
+func newScreensaverDeviceServer(t *testing.T, supportsStandby bool) *screensaverDevice {
+	t.Helper()
+	device := &screensaverDevice{assets: make(map[string]int)}
+	device.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			writeThemeHelloWithStandby(t, w, supportsStandby)
+		case "/health":
+			// Read-only: the upload verification polls it after every write.
+			writeThemeHealth(t, w, "/themes/u/claude.json")
+		case "/assets":
+			switch r.Method {
+			case http.MethodGet:
+				writeAssetList(t, w, device.assets)
+			case http.MethodPost:
+				device.assets[r.URL.Query().Get("path")] = readUploadedAssetSize(t, r)
+				w.WriteHeader(http.StatusOK)
+			case http.MethodDelete:
+				path := r.URL.Query().Get("path")
+				device.deleted = append(device.deleted, path)
+				delete(device.assets, path)
+				w.WriteHeader(http.StatusOK)
+			default:
+				t.Fatalf("unexpected assets method %s", r.Method)
+			}
+		case "/screensaver/active":
+			var body struct {
+				Path string `json:"path"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode screensaver activation: %v", err)
+			}
+			if _, stored := device.assets[body.Path]; !stored {
+				t.Fatalf("screensaver activated before its spec was uploaded: %q", body.Path)
+			}
+			device.screensaverPath = body.Path
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"path":"` + body.Path + `"}`))
+		default:
+			t.Fatalf("unexpected live-slot request during screensaver install: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	return device
+}
+
+func writeThemeHelloWithStandby(t *testing.T, w http.ResponseWriter, supported bool) {
+	t.Helper()
+	standby := `{"supported":false}`
+	if supported {
+		standby = `{"supported":true,"minTimeoutMinutes":1,"maxTimeoutMinutes":240,"defaultTimeoutMinutes":10,"screensaverSlot":true}`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{
+		"kind":"hello",
+		"protocolVersion":2,
+		"board":"esp8266-smalltv-st7789",
+		"firmware":"1.0.41",
+		"features":["theme","theme-spec-v1"],
+		"maxFrameBytes":1024,
+		"capabilities":{
+			"theme":{"supportsThemeSpecV1":true,"supportsStoredThemes":true,"maxThemeSpecBytes":2048,"maxStoredThemeSpecBytes":4096,"maxThemePrimitives":32},
+			"standby":` + standby + `,
+			"transport":{"active":"wifi"}
+		}
+	}`))
 }
 
 func themeInstallDeviceServer(t *testing.T, handle func(http.ResponseWriter, *http.Request)) *httptest.Server {

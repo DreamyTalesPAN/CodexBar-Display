@@ -1265,6 +1265,7 @@ func runThemePackValidate(args []string) error {
 
 func runThemePackInstall(args []string) error {
 	fs := flag.NewFlagSet("theme-pack install", flag.ContinueOnError)
+	slot := fs.String("slot", themepack.UsageLive, "device slot to install into: live or screensaver")
 	packPath := fs.String("pack", "", "path or HTTP(S) URL to VibeTV theme pack directory or zip")
 	packSHA256 := fs.String("pack-sha256", "", "expected SHA-256 for a remote theme pack")
 	packSizeBytes := fs.Int64("pack-size-bytes", 0, "expected byte size for a remote theme pack")
@@ -1282,8 +1283,13 @@ func runThemePackInstall(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	installSlot := strings.TrimSpace(*slot)
+	if installSlot != themepack.UsageLive && installSlot != themepack.UsageScreensaver {
+		return fmt.Errorf("unknown slot %q (expected %q or %q)", installSlot, themepack.UsageLive, themepack.UsageScreensaver)
+	}
 	installTarget := resolveThemePackInstallTarget(fs, strings.TrimSpace(*target))
 	_, err := themeinstall.Install(context.Background(), themeinstall.Options{
+		Slot:                installSlot,
 		PackURL:             strings.TrimSpace(*packPath),
 		PackSHA256:          strings.TrimSpace(*packSHA256),
 		PackSizeBytes:       *packSizeBytes,

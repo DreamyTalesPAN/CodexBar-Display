@@ -438,6 +438,9 @@ type deviceSearchEntry struct {
 }
 
 type themeInstallRequest struct {
+	// Slot is themepack.UsageLive or themepack.UsageScreensaver. Empty means
+	// the live theme slot.
+	Slot               string `json:"slot"`
 	ThemeID            string `json:"themeId"`
 	ThemeName          string `json:"themeName"`
 	PackURL            string `json:"packUrl"`
@@ -674,12 +677,15 @@ type displaySettings struct {
 	BrightnessPercent int `json:"brightnessPercent"`
 }
 
-// standbySettings carries the three configurable standby values only. The
-// screensaver slot selection stays out of it on purpose.
+// standbySettings mirrors the device standby block. ScreensaverPath is the
+// screensaver slot: the stored ThemeSpec the device shows in standby, null
+// while the slot is empty. It is a pointer so that a write can leave the slot
+// untouched by omitting the field.
 type standbySettings struct {
-	Enabled           bool `json:"enabled"`
-	TimeoutMinutes    int  `json:"timeoutMinutes"`
-	BrightnessPercent int  `json:"brightnessPercent"`
+	Enabled           bool    `json:"enabled"`
+	TimeoutMinutes    int     `json:"timeoutMinutes"`
+	BrightnessPercent int     `json:"brightnessPercent"`
+	ScreensaverPath   *string `json:"screensaverPath"`
 }
 
 type usageResponse struct {
@@ -3106,6 +3112,11 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 		form.Set("sb", enabled)
 		form.Set("st", strconv.Itoa(req.Standby.TimeoutMinutes))
 		form.Set("sbr", strconv.Itoa(req.Standby.BrightnessPercent))
+		// Omitting screensaverPath leaves the slot as it is; an empty string
+		// clears it. The device rejects a path it has no file for.
+		if req.Standby.ScreensaverPath != nil {
+			form.Set("ss", strings.TrimSpace(*req.Standby.ScreensaverPath))
+		}
 	} else {
 		brightness := req.BrightnessPercent
 		if brightness == 0 {
@@ -3170,6 +3181,11 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_theme_source", "themeId or packUrl is required.", "Select a theme and retry.")
 		return
 	}
+	req.Slot = installSlot(req.Slot)
+	if req.Slot == "" {
+		writeError(w, http.StatusBadRequest, "invalid_install_slot", "This theme cannot be installed here.", "Reload Control Center, then try again.")
+		return
+	}
 	if !validRemoteThemePackURL(req.PackURL) || !validRemoteThemePackURL(req.CatalogURL) {
 		writeError(
 			w,
@@ -3218,6 +3234,18 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	}{OK: true, Result: result, Logs: splitInstallLog(installLog.String())})
 }
 
+// installSlot normalizes the requested slot and returns "" for an unknown one.
+func installSlot(raw string) string {
+	switch slot := strings.TrimSpace(raw); slot {
+	case "", themepack.UsageLive:
+		return themepack.UsageLive
+	case themepack.UsageScreensaver:
+		return themepack.UsageScreensaver
+	default:
+		return ""
+	}
+}
+
 func decodeThemeInstallRequest(w http.ResponseWriter, r *http.Request) (themeInstallRequest, bool) {
 	var req themeInstallRequest
 	contentType := strings.TrimSpace(strings.SplitN(r.Header.Get("Content-Type"), ";", 2)[0])
@@ -3256,6 +3284,7 @@ func decodeThemeInstallRequest(w http.ResponseWriter, r *http.Request) (themeIns
 	}
 
 	return themeInstallRequest{
+		Slot:      strings.TrimSpace(r.URL.Query().Get("slot")),
 		ThemeID:   strings.TrimSpace(r.URL.Query().Get("themeId")),
 		ThemeName: strings.TrimSpace(r.URL.Query().Get("themeName")),
 		PackBytes: packBytes,
@@ -3581,16 +3610,22 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			},
 		}
 	}
-	s.clearDisplayVerification(cfg.DeviceTarget)
-	baseline, err := s.captureDisplayRenderBaseline(ctx, cfg.DeviceTarget, cfg.DeviceToken)
-	if err != nil {
-		return themeinstall.Result{}, &statusAPIError{
-			status: http.StatusBadGateway,
-			api: apiError{
-				Code:       "display_render_failed",
-				Message:    "Mac App could not read the current VibeTV screen state.",
-				NextAction: "Keep VibeTV powered on, then retry the theme install.",
-			},
+	// Only a live theme install changes what is on screen, so only it has a
+	// render to baseline and verify against afterwards.
+	live := req.Slot != themepack.UsageScreensaver
+	var baseline deviceHealth
+	if live {
+		s.clearDisplayVerification(cfg.DeviceTarget)
+		baseline, err = s.captureDisplayRenderBaseline(ctx, cfg.DeviceTarget, cfg.DeviceToken)
+		if err != nil {
+			return themeinstall.Result{}, &statusAPIError{
+				status: http.StatusBadGateway,
+				api: apiError{
+					Code:       "display_render_failed",
+					Message:    "Mac App could not read the current VibeTV screen state.",
+					NextAction: "Keep VibeTV powered on, then retry the theme install.",
+				},
+			}
 		}
 	}
 
@@ -3600,6 +3635,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	}
 	pairedDuringThemeInstall := false
 	result, err := s.installTheme(ctx, themeinstall.Options{
+		Slot:               req.Slot,
 		ThemeID:            strings.TrimSpace(req.ThemeID),
 		PackURL:            strings.TrimSpace(req.PackURL),
 		PackBytes:          req.PackBytes,
@@ -3635,6 +3671,12 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		} else {
 			fmt.Fprintln(out, "Preview cache: ready")
 		}
+	}
+	if !live {
+		// The live theme rendered throughout, so there is no new image to wait
+		// for and no verification to run.
+		resumeStream()
+		return result, nil
 	}
 	fmt.Fprintln(out, "Refreshing display stream...")
 	resumeStream()

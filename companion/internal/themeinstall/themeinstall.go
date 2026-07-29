@@ -45,6 +45,9 @@ type FirmwareUpdater func(ctx context.Context, target, manifestURL string) error
 type PairTokenStore func(target, token string) error
 
 type Options struct {
+	// Slot is themepack.UsageLive or themepack.UsageScreensaver. Empty means
+	// the live theme slot.
+	Slot                string
 	PackURL             string
 	PackBytes           []byte
 	PackSHA256          string
@@ -69,6 +72,7 @@ type Result struct {
 	ThemeID           string `json:"themeId"`
 	PackID            string `json:"packId"`
 	Name              string `json:"name"`
+	Slot              string `json:"slot"`
 	Target            string `json:"target"`
 	ActivePath        string `json:"activePath"`
 	ThemeRevision     int    `json:"themeRev"`
@@ -153,13 +157,17 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	if err != nil {
 		return Result{}, err
 	}
-	// The device has one slot today, so every install targets the live theme.
-	if err := pack.Manifest.CheckSlot(themepack.UsageLive); err != nil {
+	slot := strings.TrimSpace(opts.Slot)
+	if slot == "" {
+		slot = themepack.UsageLive
+	}
+	live := slot == themepack.UsageLive
+	if err := pack.Manifest.CheckSlot(slot); err != nil {
 		return Result{}, &InstallError{
 			Op:   "theme-pack/usage",
 			Code: errcode.ProtocolThemeSpecIncompatible,
 			Err:  err,
-			Hint: "pick a pack with usage live or both for the live theme slot",
+			Hint: fmt.Sprintf("pick a pack with usage %s for this slot", slot),
 		}
 	}
 	themeName := strings.TrimSpace(pack.Manifest.Name)
@@ -237,40 +245,53 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		fmt.Fprintln(out, "Firmware check: skipped")
 	}
 
-	previousThemePath, previousThemePathErr := currentStoredThemePath(wifi, resolvedTarget)
-	if previousThemePathErr != nil && opts.Verbose {
-		fmt.Fprintf(out, "Restore snapshot: skipped (%v)\n", previousThemePathErr)
+	if !live && caps.Known && !caps.SupportsStandby {
+		return Result{}, &InstallError{
+			Op:   "theme-pack/capabilities",
+			Code: errcode.ProtocolThemeSpecIncompatible,
+			Err:  errors.New("VibeTV does not advertise a screensaver slot"),
+			Hint: "update VibeTV firmware, then retry the screensaver install",
+		}
 	}
-	installScreenShown := false
-	defer func() {
-		if retErr == nil || !installScreenShown {
-			return
+
+	// The install screen and its restore belong to the live slot. A screensaver
+	// install must leave the running theme on screen untouched.
+	if live {
+		previousThemePath, previousThemePathErr := currentStoredThemePath(wifi, resolvedTarget)
+		if previousThemePathErr != nil && opts.Verbose {
+			fmt.Fprintf(out, "Restore snapshot: skipped (%v)\n", previousThemePathErr)
 		}
-		restoreThemeInstallScreen(ctx, wifi, &resolvedTarget, caps, previousThemePath, opts.PairTokenStore, opts.FetchLiveFrame, out)
-	}()
-	if err := sendInstallingThemeFrame(wifi, resolvedTarget, caps); err != nil {
-		if authRequired(err) {
-			pairedTarget, pairErr := pairThemeInstallTarget(wifi, resolvedTarget, opts.PairTokenStore)
-			if pairErr != nil {
-				return Result{}, &InstallError{
-					Op:   "theme-pack/pair",
-					Code: errcode.UpgradeFlashFirmware,
-					Err:  pairErr,
-					Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
-				}
+		installScreenShown := false
+		defer func() {
+			if retErr == nil || !installScreenShown {
+				return
 			}
-			resolvedTarget = pairedTarget
-			err = sendInstallingThemeFrame(wifi, resolvedTarget, caps)
-		}
-		if err != nil {
-			fmt.Fprintf(out, "Install screen: skipped (%v)\n", err)
+			restoreThemeInstallScreen(ctx, wifi, &resolvedTarget, caps, previousThemePath, opts.PairTokenStore, opts.FetchLiveFrame, out)
+		}()
+		if err := sendInstallingThemeFrame(wifi, resolvedTarget, caps); err != nil {
+			if authRequired(err) {
+				pairedTarget, pairErr := pairThemeInstallTarget(wifi, resolvedTarget, opts.PairTokenStore)
+				if pairErr != nil {
+					return Result{}, &InstallError{
+						Op:   "theme-pack/pair",
+						Code: errcode.UpgradeFlashFirmware,
+						Err:  pairErr,
+						Hint: "keep VibeTV powered and on the same WiFi, then retry theme install",
+					}
+				}
+				resolvedTarget = pairedTarget
+				err = sendInstallingThemeFrame(wifi, resolvedTarget, caps)
+			}
+			if err != nil {
+				fmt.Fprintf(out, "Install screen: skipped (%v)\n", err)
+			} else {
+				installScreenShown = true
+				fmt.Fprintln(out, "Install screen: showing on VibeTV")
+			}
 		} else {
 			installScreenShown = true
 			fmt.Fprintln(out, "Install screen: showing on VibeTV")
 		}
-	} else {
-		installScreenShown = true
-		fmt.Fprintln(out, "Install screen: showing on VibeTV")
 	}
 
 	retryNoted := false
@@ -316,39 +337,57 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		fmt.Fprintf(out, "Uploaded theme spec: %s bytes=%d\n", pack.ThemeSpecFile.Entry.Path, len(pack.ThemeSpecRaw))
 	}
 
-	fmt.Fprintln(out, "Activating theme...")
-	if err := activateAndVerifyTheme(
-		ctx,
-		wifi,
-		&resolvedTarget,
-		caps,
-		pack.ThemeSpecFile.Entry.Path,
-		requiredGIFAssets(pack.ThemeSpec),
-		opts.PairTokenStore,
-		opts.FetchLiveFrame,
-		out,
-	); err != nil {
-		op := "theme-pack/activate"
-		hint := "keep VibeTV powered and on the same WiFi, then retry theme install"
-		var phaseErr *themeActivationError
-		if errors.As(err, &phaseErr) {
-			op = phaseErr.op
-			err = phaseErr.err
-			if op == "theme-pack/render-health" {
-				hint = "keep VibeTV powered and retry theme install; if this repeats, contact support with `codexbar-display health` output"
+	if live {
+		fmt.Fprintln(out, "Activating theme...")
+		if err := activateAndVerifyTheme(
+			ctx,
+			wifi,
+			&resolvedTarget,
+			caps,
+			pack.ThemeSpecFile.Entry.Path,
+			requiredGIFAssets(pack.ThemeSpec),
+			opts.PairTokenStore,
+			opts.FetchLiveFrame,
+			out,
+		); err != nil {
+			op := "theme-pack/activate"
+			hint := "keep VibeTV powered and on the same WiFi, then retry theme install"
+			var phaseErr *themeActivationError
+			if errors.As(err, &phaseErr) {
+				op = phaseErr.op
+				err = phaseErr.err
+				if op == "theme-pack/render-health" {
+					hint = "keep VibeTV powered and retry theme install; if this repeats, contact support with `codexbar-display health` output"
+				}
+			}
+			return Result{}, &InstallError{
+				Op:   op,
+				Code: errcode.UpgradeFlashFirmware,
+				Err:  err,
+				Hint: hint,
 			}
 		}
-		return Result{}, &InstallError{
-			Op:   op,
-			Code: errcode.UpgradeFlashFirmware,
-			Err:  err,
-			Hint: hint,
+	} else {
+		// Selecting the screensaver only records a reference on the device, so
+		// there is nothing rendered to verify and nothing to retry against.
+		fmt.Fprintln(out, "Selecting screensaver...")
+		if err := activateScreensaverWithPairRetry(wifi, &resolvedTarget, pack.ThemeSpecFile.Entry.Path, opts.PairTokenStore); err != nil {
+			return Result{}, &InstallError{
+				Op:   "theme-pack/activate",
+				Code: errcode.UpgradeFlashFirmware,
+				Err:  err,
+				Hint: "keep VibeTV powered and on the same WiFi, then retry the screensaver install",
+			}
 		}
 	}
 
-	cleanupThemeUserAssets(wifi, &resolvedTarget, opts.PairTokenStore, out, themePackDevicePaths(pack))
+	cleanupSlotAssets(wifi, &resolvedTarget, opts.PairTokenStore, out, themepack.SlotPathPrefix(slot), themePackDevicePaths(pack))
 
-	fmt.Fprintf(out, "Done: theme %s installed on %s\n", pack.Manifest.ID, displayTarget)
+	installed := "theme"
+	if !live {
+		installed = "screensaver"
+	}
+	fmt.Fprintf(out, "Done: %s %s installed on %s\n", installed, pack.Manifest.ID, displayTarget)
 	if opts.Verbose {
 		fmt.Fprintf(out, "Active theme path: %s themeId=%s rev=%d\n", pack.ThemeSpecFile.Entry.Path, pack.ThemeSpec.ThemeID, pack.ThemeSpec.ThemeRev)
 	}
@@ -356,6 +395,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		ThemeID:           pack.ThemeSpec.ThemeID,
 		PackID:            pack.Manifest.ID,
 		Name:              themeName,
+		Slot:              slot,
 		Target:            displayTarget,
 		ActivePath:        pack.ThemeSpecFile.Entry.Path,
 		ThemeRevision:     pack.ThemeSpec.ThemeRev,
@@ -661,13 +701,15 @@ func sendClearThemeSpecFrameWithPairRetry(
 	return sendClearThemeSpecFrame(ctx, wifi, *target, caps, fetchFrame)
 }
 
-func cleanupThemeUserAssets(wifi transportlayer.WiFiTransport, target *string, store PairTokenStore, out io.Writer, keepPaths map[string]bool) {
+// cleanupSlotAssets sweeps only the directory the installed slot owns, so a
+// screensaver install cannot delete live theme files and vice versa.
+func cleanupSlotAssets(wifi transportlayer.WiFiTransport, target *string, store PairTokenStore, out io.Writer, slotPrefix string, keepPaths map[string]bool) {
 	assets, err := wifi.DeviceAssets(*target)
 	if err != nil {
 		fmt.Fprintf(out, "Theme file cleanup: skipped (%v)\n", err)
 		return
 	}
-	paths := cleanupThemeUserAssetPaths(assets, keepPaths)
+	paths := cleanupSlotAssetPaths(assets, slotPrefix, keepPaths)
 	if len(paths) == 0 {
 		return
 	}
@@ -679,8 +721,8 @@ func cleanupThemeUserAssets(wifi transportlayer.WiFiTransport, target *string, s
 	}
 }
 
-func cleanupThemeUserAssetPaths(assets transportlayer.DeviceAssetsSnapshot, keepPaths map[string]bool) []string {
-	paths := assets.PathsWithPrefix("/themes/u/")
+func cleanupSlotAssetPaths(assets transportlayer.DeviceAssetsSnapshot, slotPrefix string, keepPaths map[string]bool) []string {
+	paths := assets.PathsWithPrefix(slotPrefix)
 	filtered := paths[:0]
 	for _, devicePath := range paths {
 		if keepPaths[strings.TrimSpace(devicePath)] {
@@ -795,6 +837,19 @@ func activateThemeWithPairRetry(wifi transportlayer.WiFiTransport, target *strin
 	}
 	*target = pairedTarget
 	return wifi.ActivateStoredTheme(*target, devicePath)
+}
+
+func activateScreensaverWithPairRetry(wifi transportlayer.WiFiTransport, target *string, devicePath string, store PairTokenStore) error {
+	err := wifi.ActivateScreensaver(*target, devicePath)
+	if err == nil || !authRequired(err) {
+		return err
+	}
+	pairedTarget, pairErr := pairThemeInstallTarget(wifi, *target, store)
+	if pairErr != nil {
+		return pairErr
+	}
+	*target = pairedTarget
+	return wifi.ActivateScreensaver(*target, devicePath)
 }
 
 func pairThemeInstallTarget(wifi transportlayer.WiFiTransport, target string, store PairTokenStore) (string, error) {

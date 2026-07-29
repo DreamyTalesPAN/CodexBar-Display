@@ -6274,6 +6274,61 @@ func TestThemeInstallCapturesRenderBaselineBeforeActivation(t *testing.T) {
 	}
 }
 
+func TestThemeInstallScreensaverSlotSkipsTheLiveRenderVerification(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("a screensaver install must not read the live render state: %s", r.URL.Path)
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	var gotSlot string
+	server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+		gotSlot = opts.Slot
+		return themeinstall.Result{ThemeID: "night-clock", Slot: opts.Slot}, nil
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		t.Fatal("a screensaver install has no new image to wait for")
+		return deviceHealth{}, nil
+	}
+
+	result, err := server.runThemeInstall(
+		context.Background(),
+		cfg,
+		themeInstallRequest{ThemeID: "night-clock", Slot: themepack.UsageScreensaver},
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("run screensaver install: %v", err)
+	}
+	if gotSlot != themepack.UsageScreensaver || result.Slot != themepack.UsageScreensaver {
+		t.Fatalf("expected the screensaver slot to reach the installer, got %q and %+v", gotSlot, result)
+	}
+}
+
+func TestThemeInstallRejectsUnknownSlot(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		t.Fatal("an unknown slot must be rejected before the install starts")
+		return themeinstall.Result{}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(`{"themeId":"cozy-meadow","slot":"wall"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "invalid_install_slot") {
+		t.Fatalf("expected invalid_install_slot, got %s", rec.Body.String())
+	}
+}
+
 func TestThemeInstallAcceptsZipAndReadsAsyncFromQuery(t *testing.T) {
 	device := newThemeInstallReadyDeviceServer(t)
 	defer device.Close()
@@ -7540,11 +7595,104 @@ func TestSettingsForwardsStandbyAndPassesTheCapabilityThrough(t *testing.T) {
 		t.Fatalf("expected one forwarded settings call, got %d", settingsCalls)
 	}
 	body := recorder.Body.String()
-	if !strings.Contains(body, `"standby":{"enabled":true,"timeoutMinutes":30,"brightnessPercent":15}`) {
+	if !strings.Contains(body, `"standby":{"enabled":true,"timeoutMinutes":30,"brightnessPercent":15,"screensaverPath":null}`) {
 		t.Fatalf("expected the stored standby settings in the response, got %s", body)
 	}
 	if !strings.Contains(body, `"standby":{"supported":true,"minTimeoutMinutes":1,"maxTimeoutMinutes":240,"defaultTimeoutMinutes":10,"screensaverSlot":true}`) {
 		t.Fatalf("expected the standby capability to reach the Control Center, got %s", body)
+	}
+}
+
+func TestSettingsReadsAndWritesTheScreensaverSlot(t *testing.T) {
+	const slotPath = "/themes/s/night.json"
+	storedSlot := ""
+	settings := func() string {
+		slot := "null"
+		if storedSlot != "" {
+			slot = `"` + storedSlot + `"`
+		}
+		return `{"display":{"brightnessPercent":40},"standby":{"enabled":true,"timeoutMinutes":10,"brightnessPercent":20,"screensaverPath":` + slot + `}}`
+	}
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"display":{"brightness":{"supported":true}},"standby":{"supported":true,"screensaverSlot":true},"transport":{"active":"wifi"}}}`))
+		case "/api/settings":
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse form: %v", err)
+			}
+			if got := r.Form.Get("ss"); got != slotPath {
+				t.Fatalf("expected screensaver slot ss=%q, got %q", slotPath, got)
+			}
+			storedSlot = slotPath
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":` + settings() + `}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":` + settings() + `}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/settings", strings.NewReader(
+		`{"standby":{"enabled":true,"timeoutMinutes":10,"brightnessPercent":20,"screensaverPath":"`+slotPath+`"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected screensaver slot write status 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	recorder = httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/settings", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected settings read status 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"screensaverPath":"`+slotPath+`"`) {
+		t.Fatalf("expected the screensaver slot in the settings read, got %s", recorder.Body.String())
+	}
+}
+
+func TestSettingsLeavesTheScreensaverSlotAloneWhenOmitted(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"display":{"brightness":{"supported":true}},"standby":{"supported":true},"transport":{"active":"wifi"}}}`))
+		case "/api/settings":
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse form: %v", err)
+			}
+			if r.Form.Has("ss") {
+				t.Fatalf("a standby write without screensaverPath must not touch the slot")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40},"standby":{"enabled":false,"timeoutMinutes":10,"brightnessPercent":20,"screensaverPath":"/themes/s/night.json"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":{"display":{"brightnessPercent":40},"standby":{"enabled":false,"timeoutMinutes":10,"brightnessPercent":20,"screensaverPath":"/themes/s/night.json"}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/settings", strings.NewReader(`{"standby":{"enabled":false,"timeoutMinutes":10,"brightnessPercent":20}}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected standby write status 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"screensaverPath":"/themes/s/night.json"`) {
+		t.Fatalf("expected the untouched screensaver slot in the response, got %s", recorder.Body.String())
 	}
 }
 

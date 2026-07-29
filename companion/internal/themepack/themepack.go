@@ -38,11 +38,22 @@ const (
 
 // Pack categories. `kind` marks the file format; `usage` marks what the pack is
 // for. Packs written before this field exist are live themes.
+//
+// There is no category covering both slots: the two slots own separate device
+// directories, so one pack cannot sit in both at once.
 const (
 	UsageLive        = "live"
 	UsageScreensaver = "screensaver"
-	UsageBoth        = "both"
 )
+
+// ScreensaverPathPrefix is the device directory the screensaver slot owns.
+// Keeping the slots in separate directories is what makes installing into one
+// of them unable to delete the other one's files.
+const ScreensaverPathPrefix = "/themes/s/"
+
+// LivePathPrefix is the device directory the live slot owns. Live packs may
+// also ship files outside it — the bundled theme directories are not swept.
+const LivePathPrefix = "/themes/u/"
 
 var packIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9\-_]{2,63}$`)
 var spriteColorPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
@@ -328,6 +339,7 @@ func loadFromReader(readFile func(string) ([]byte, error)) (*Pack, error) {
 	}
 
 	assets := make([]File, 0, len(manifest.Assets))
+	devicePaths := []string{themeSpecFile.Entry.Path}
 	seenDevicePaths := map[string]struct{}{themeSpecFile.Entry.Path: {}}
 	for index, entry := range manifest.Assets {
 		file, err := loadEntry(readFile, entry)
@@ -338,7 +350,11 @@ func loadFromReader(readFile func(string) ([]byte, error)) (*Pack, error) {
 			return nil, fmt.Errorf("assets[%d]: duplicate device path %s", index, file.Entry.Path)
 		}
 		seenDevicePaths[file.Entry.Path] = struct{}{}
+		devicePaths = append(devicePaths, file.Entry.Path)
 		assets = append(assets, file)
+	}
+	if err := validateSlotPaths(manifest.PackUsage(), devicePaths); err != nil {
+		return nil, err
 	}
 	if err := validateReferencedAssets(spec, assets); err != nil {
 		return nil, err
@@ -376,10 +392,35 @@ func validateManifestFields(manifest Manifest) error {
 // themes.
 func validateUsage(usage string) error {
 	switch strings.TrimSpace(usage) {
-	case "", UsageLive, UsageScreensaver, UsageBoth:
+	case "", UsageLive, UsageScreensaver:
 		return nil
 	}
-	return fmt.Errorf("usage %q unsupported (expected %q, %q or %q)", usage, UsageLive, UsageScreensaver, UsageBoth)
+	return fmt.Errorf("usage %q unsupported (expected %q or %q)", usage, UsageLive, UsageScreensaver)
+}
+
+// SlotPathPrefix reports the device directory a slot owns and sweeps when a new
+// pack is installed into it.
+func SlotPathPrefix(slot string) string {
+	if slot == UsageScreensaver {
+		return ScreensaverPathPrefix
+	}
+	return LivePathPrefix
+}
+
+// validateSlotPaths keeps every screensaver file below the screensaver prefix
+// and every other file out of it.
+func validateSlotPaths(usage string, devicePaths []string) error {
+	screensaver := usage == UsageScreensaver
+	for _, devicePath := range devicePaths {
+		if strings.HasPrefix(devicePath, ScreensaverPathPrefix) == screensaver {
+			continue
+		}
+		if screensaver {
+			return fmt.Errorf("device path %s must start with %s in a screensaver pack", devicePath, ScreensaverPathPrefix)
+		}
+		return fmt.Errorf("device path %s is reserved for screensaver packs", devicePath)
+	}
+	return nil
 }
 
 // PackUsage returns the declared category, defaulting to live.
@@ -390,12 +431,12 @@ func (m Manifest) PackUsage() string {
 	return UsageLive
 }
 
-// CheckSlot rejects a pack whose category does not cover the target slot.
+// CheckSlot rejects a pack whose category does not match the target slot.
 func (m Manifest) CheckSlot(slot string) error {
 	if slot != UsageLive && slot != UsageScreensaver {
 		return fmt.Errorf("unknown install slot %q", slot)
 	}
-	if usage := m.PackUsage(); usage != slot && usage != UsageBoth {
+	if usage := m.PackUsage(); usage != slot {
 		return fmt.Errorf("theme pack %q is a %s pack and cannot be installed into the %s slot", m.ID, usage, slot)
 	}
 	return nil
