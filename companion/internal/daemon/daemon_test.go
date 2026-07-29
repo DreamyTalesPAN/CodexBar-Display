@@ -1999,6 +1999,52 @@ func TestMarshalFrameWithinLimitDropsTokenStatsBeforeFallback(t *testing.T) {
 	}
 }
 
+func TestMarshalFrameWithinLimitCompactsOptionalFieldsBeforeUsageWindows(t *testing.T) {
+	frame := protocol.Frame{
+		V:             protocol.ProtocolVersionV2,
+		Provider:      "codex",
+		Label:         "Codex",
+		Theme:         "classic",
+		Time:          "12:34",
+		Date:          "Tue, 24 Feb",
+		SessionTokens: 1437166,
+		WeekTokens:    382243544,
+		TotalTokens:   1078397605,
+		UsageWindows: []protocol.UsageWindow{
+			{ID: "session", Label: "Session", Percent: 12, ResetSec: 3600},
+			{ID: "weekly", Label: "Weekly", Percent: 30, ResetSec: 604800},
+			{ID: "spark", Label: "Spark", Percent: 42, ResetSec: 604800},
+		},
+	}
+
+	withoutOptionalFields := frame
+	withoutOptionalFields.Theme = ""
+	withoutOptionalFields.Time = ""
+	withoutOptionalFields.Date = ""
+	withoutOptionalFields.SessionTokens = 0
+	withoutOptionalFields.WeekTokens = 0
+	withoutOptionalFields.TotalTokens = 0
+	limitLine, err := withoutOptionalFields.MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal fully compacted frame: %v", err)
+	}
+
+	line, marshaled, err := marshalFrameWithinLimit(frame, len(limitLine))
+	if err != nil {
+		t.Fatalf("marshal within limit: %v", err)
+	}
+	if len(line) > len(limitLine) {
+		t.Fatalf("expected line to fit limit %d, got %d", len(limitLine), len(line))
+	}
+	if marshaled.Theme != "" || marshaled.Time != "" || marshaled.Date != "" ||
+		marshaled.SessionTokens != 0 || marshaled.WeekTokens != 0 || marshaled.TotalTokens != 0 {
+		t.Fatalf("expected optional fields to be compacted, got %+v", marshaled)
+	}
+	if len(marshaled.UsageWindows) != len(frame.UsageWindows) {
+		t.Fatalf("expected all usage windows to survive optional-field compaction, got %+v", marshaled.UsageWindows)
+	}
+}
+
 func TestRunCycleWithDepsUsesMaxFrameBytesFromDeviceHello(t *testing.T) {
 	prepareFastTestEnv(t)
 

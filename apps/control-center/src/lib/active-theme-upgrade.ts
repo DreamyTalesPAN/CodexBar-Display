@@ -33,26 +33,25 @@ export function resolveActiveThemeUpgrade(
       needed: false,
       needsFirmwareCapability: false,
       needsThemeSpec: false,
-    unresolved: needsUsageSlots || needsUsageWindows,
+      unresolved: needsUsageSlots || needsUsageWindows,
     };
   }
+  const expectedPath = theme.themeSpecPath?.trim();
+  const activePath = device.display?.themeSpec?.path?.trim();
+  const pathIsOutdated = Boolean(expectedPath && expectedPath !== activePath);
   if (!theme.requiredCapabilities) {
     return {
-      needed: false,
+      needed: pathIsOutdated,
       needsFirmwareCapability: false,
-      needsThemeSpec: false,
+      needsThemeSpec: pathIsOutdated,
       theme,
       unresolved: needsUsageSlots || needsUsageWindows,
     };
   }
   const needsRequiredCapability =
     (theme.requiredCapabilities.includes("usage-slots-v1") && needsUsageSlots) ||
-    (theme.requiredCapabilities.includes("usage-windows-v1") && needsUsageWindows);
-  const expectedPath = theme.themeSpecPath?.trim();
-  const activePath = device.display?.themeSpec?.path?.trim();
-  const pathIsOutdated = Boolean(
-    expectedPath && activePath && expectedPath !== activePath,
-  );
+    (theme.requiredCapabilities.includes("usage-windows-v1") &&
+      needsUsageWindows);
   return {
     needed: needsRequiredCapability || pathIsOutdated,
     needsFirmwareCapability: needsRequiredCapability,

@@ -233,6 +233,19 @@ const companionDevice = {
   display: {
     themeSpec: {
       active: true,
+      path: "/themes/u/clippy-3-fe3fd4.json",
+      renderOk: true,
+    },
+  },
+};
+
+const synthwaveDevice = {
+  ...companionDevice,
+  activeTheme: "synthwave",
+  display: {
+    themeSpec: {
+      active: true,
+      path: "/themes/u/synthwa-3-619665.json",
       renderOk: true,
     },
   },
@@ -2927,9 +2940,8 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
   });
   const installRequests = [];
   const readyDevice = {
-    ...companionDevice,
+    ...synthwaveDevice,
     deviceId: "fixture-device-1",
-    activeTheme: "synthwave",
     connectionState: "ready",
   };
   const companionRoute = await routeCompanionOnline(
@@ -2943,7 +2955,6 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
       },
       deviceAfterThemeInstall: {
         ...readyDevice,
-        activeTheme: "synthwave",
         ready: false,
         connectionState: "reconnecting",
       },
@@ -3155,8 +3166,7 @@ async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
   let installStarted = false;
   let postInstallDeviceReads = 0;
   const readyDevice = {
-    ...companionDevice,
-    activeTheme: "synthwave",
+    ...synthwaveDevice,
     connectionState: "ready",
   };
   const companionRoute = await routeCompanionOnline(
@@ -4777,8 +4787,7 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.99",
     device: {
-      ...companionDevice,
-      activeTheme: "synthwave",
+      ...synthwaveDevice,
       firmware: "1.0.32",
       capabilities: {
         ...companionDevice.capabilities,
@@ -4801,8 +4810,7 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
     },
     dropBoardAfterFirmwareUpdate: true,
     deviceAfterFirmwareUpdate: {
-      ...companionDevice,
-      activeTheme: "synthwave",
+      ...synthwaveDevice,
       connectionState: "ready",
       deviceId: "firmware-device-1",
       firmware: "1.0.33",
@@ -4997,8 +5005,7 @@ async function testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.99",
     device: {
-      ...companionDevice,
-      activeTheme: "synthwave",
+      ...synthwaveDevice,
       firmware: "1.0.40",
       display: {
         themeSpec: {
@@ -5119,8 +5126,7 @@ async function testThemeRefreshRetryDoesNotFlashFirmwareAgain(browser, appUrl) {
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.99",
     device: {
-      ...companionDevice,
-      activeTheme: "synthwave",
+      ...synthwaveDevice,
       firmware: "1.0.32",
       capabilities: {
         ...companionDevice.capabilities,
@@ -5131,8 +5137,7 @@ async function testThemeRefreshRetryDoesNotFlashFirmwareAgain(browser, appUrl) {
       },
     },
     deviceAfterFirmwareUpdate: {
-      ...companionDevice,
-      activeTheme: "synthwave",
+      ...synthwaveDevice,
       firmware: "1.0.33",
     },
     onUpdate: (postData) => {
@@ -5546,8 +5551,7 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
   await routeCompanionOnline(page, installRequests, () => {}, {
     companionVersion: "1.0.33",
     device: {
-      ...companionDevice,
-      activeTheme: "synthwave",
+      ...synthwaveDevice,
       firmware: "1.0.32",
       ready: true,
       stream: {
@@ -5670,8 +5674,7 @@ async function testOverviewWaitsForRealUsage(browser, appUrl) {
     companionVersion: "1.0.33",
     displayFrameUnavailableResponses: 2,
     device: {
-      ...companionDevice,
-      activeTheme: "synthwave",
+      ...synthwaveDevice,
       firmware: "1.0.32",
       stream: {
         healthy: true,
@@ -5743,8 +5746,7 @@ async function testOverviewRejectsInvalidDisplayFrame(browser, appUrl) {
       },
     },
     device: {
-      ...companionDevice,
-      activeTheme: "synthwave",
+      ...synthwaveDevice,
       firmware: "1.0.32",
     },
     usageResponse: {
@@ -6898,8 +6900,7 @@ async function testMatchingDevFirmwareUnlocksThemes(browser, appUrl) {
   const installRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: {
-      ...companionDevice,
-      activeTheme: "synthwave",
+      ...synthwaveDevice,
       firmware: "1.0.40-dev.a5f52c7",
     },
   });

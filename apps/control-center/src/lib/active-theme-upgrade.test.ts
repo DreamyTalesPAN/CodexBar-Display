@@ -24,6 +24,7 @@ function device(
     capabilities: {
       theme: {
         supportsUsageSlotsV1,
+        supportsUsageWindowsV1: supportsUsageSlotsV1,
       },
     },
     connected: true,
@@ -65,6 +66,26 @@ describe("resolveActiveThemeUpgrade", () => {
       needsFirmwareCapability: false,
       needsThemeSpec: true,
       theme: slotTheme,
+      unresolved: false,
+    });
+  });
+
+  it("reinstalls a cataloged ThemeSpec missing from the device status", () => {
+    const themeWithoutCapabilities = {
+      ...slotTheme,
+      requiredCapabilities: undefined,
+    };
+    const missingActivePath: DeviceInfo = {
+      ...device(true),
+      display: { themeSpec: { active: true } },
+    };
+    expect(
+      resolveActiveThemeUpgrade([themeWithoutCapabilities], missingActivePath),
+    ).toEqual({
+      needed: true,
+      needsFirmwareCapability: false,
+      needsThemeSpec: true,
+      theme: themeWithoutCapabilities,
       unresolved: false,
     });
   });

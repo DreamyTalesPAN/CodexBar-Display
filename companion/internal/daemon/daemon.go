@@ -2249,6 +2249,7 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		if len(line) <= maxBytes {
 			return line, normalized, nil
 		}
+		frame = normalized
 	}
 
 	if frame.Theme != "" {
@@ -2262,6 +2263,7 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		if len(line) <= maxBytes {
 			return line, normalized, nil
 		}
+		frame = normalized
 	}
 
 	if frame.SessionTokens > 0 || frame.WeekTokens > 0 || frame.TotalTokens > 0 {
@@ -2277,6 +2279,7 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		if len(line) <= maxBytes {
 			return line, normalized, nil
 		}
+		frame = normalized
 	}
 
 	if frame.Time != "" || frame.Date != "" {
@@ -2291,6 +2294,7 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		if len(line) <= maxBytes {
 			return line, normalized, nil
 		}
+		frame = normalized
 	}
 
 	if len(frame.UsageWindows) > 0 {
