@@ -3429,9 +3429,20 @@ func TestRunCycleFromCollectorSendsFreshDashboardQuotaWithOldActivityTime(t *tes
 		t.Fatalf("publisher should send fresh dashboard quota despite old activity time: %v", err)
 	}
 	frame := decodeFrameLine(t, sentLine)
-	if frame.Provider != "codex" || frame.Label != "Codex" || len(frame.UsageWindows) != 2 ||
-		frame.UsageWindows[0].Label != "Weekly" || frame.UsageWindows[1].Label != "Codex Spark Weekly" {
-		t.Fatalf("expected Codex dashboard usage windows in sent frame, got %+v", frame)
+	if strings.Contains(string(sentLine), `"usageWindows"`) {
+		t.Fatalf("v1 collector frame must not send usageWindows: %s", sentLine)
+	}
+	if frame.V != protocol.ProtocolVersionV1 ||
+		frame.Provider != "codex" ||
+		frame.Label != "Codex" ||
+		len(frame.UsageWindows) != 0 ||
+		len(frame.UsageSlots) != 2 ||
+		frame.UsageSlots[0].Label != "Weekly" ||
+		frame.UsageSlots[1].Label != "Codex Spark Weekly" ||
+		frame.Session != 24 ||
+		frame.Weekly != 0 ||
+		frame.ResetSec != 3600 {
+		t.Fatalf("expected Codex dashboard usage as v1 legacy slots in sent frame, got %+v", frame)
 	}
 }
 
