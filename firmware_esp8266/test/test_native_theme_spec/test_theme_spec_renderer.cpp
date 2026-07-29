@@ -1651,6 +1651,35 @@ void testStoredThemeActivationLiveFrameUsesPartialRenderEvent() {
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
 }
 
+void testStoredThemeBootActivationRestoresFrameAndFullRenderIntent() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* raw = R"JSON({"v":1,"id":"clippy","rev":7,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"{session}%"}]})JSON";
+
+  TEST_ASSERT_TRUE(RestoreStoredThemeSpecFrame(state, "clippy", 7, raw, 4000, event));
+  TEST_ASSERT_TRUE(state.hasFrame);
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+  TEST_ASSERT_EQUAL_STRING("clippy", state.current.themeSpecId.c_str());
+  TEST_ASSERT_EQUAL_INT(7, state.current.themeSpecRev);
+  TEST_ASSERT_EQUAL_STRING("clippy", state.cachedThemeId.c_str());
+  TEST_ASSERT_EQUAL_INT(7, state.cachedThemeRev);
+  TEST_ASSERT_TRUE(ThemeSpecRawForFrame(state, state.current).indexOf("{session}%") >= 0);
+  TEST_ASSERT_TRUE(event.frameAccepted);
+  TEST_ASSERT_TRUE(event.themeSpecChanged);
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+}
+
+void testStoredThemeBootActivationRejectsInvalidRaw() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(state, "clippy", 7, "{}", 4000, event));
+  TEST_ASSERT_FALSE(state.hasFrame);
+  TEST_ASSERT_FALSE(state.current.hasThemeSpec);
+  TEST_ASSERT_FALSE(event.frameAccepted);
+}
+
 void testThemeSpecErrorFrameUsesFullRender() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -2014,6 +2043,8 @@ int main() {
   RUN_TEST(testThemeSpecActivityChangeUsesPartialRenderEvent);
   RUN_TEST(testLegacyThemeFieldsAreIgnored);
   RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);
+  RUN_TEST(testStoredThemeBootActivationRestoresFrameAndFullRenderIntent);
+  RUN_TEST(testStoredThemeBootActivationRejectsInvalidRaw);
   RUN_TEST(testThemeSpecErrorFrameUsesFullRender);
   RUN_TEST(testThemeSpecErrorFrameDoesNotReplaceItselfWithCachedTheme);
   RUN_TEST(testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset);

@@ -1863,34 +1863,14 @@ bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String
 }
 
 void activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev) {
+  codexbar_display::core::SerialConsumeEvent event;
+  if (!codexbar_display::core::RestoreStoredThemeSpecFrame(
+          runtimeCtx.runtime, themeId, themeRev, raw, millis(), event)) {
+    return;
+  }
   renderer.ResetGifStateForAssetUpdate();
-
-  const bool hadFrame = codexbar_display::app::HasFrame(runtimeCtx);
-  const codexbar_display::core::Frame previous = runtimeCtx.runtime.current;
-  codexbar_display::core::Frame next = hadFrame ? previous : codexbar_display::core::Frame{};
-
-  next.hasError = false;
-  next.error = "";
-  next.clearThemeSpec = false;
-  next.hasThemeSpec = true;
-  next.themeSpecId = themeId;
-  next.themeSpecRev = themeRev;
-  next.themeSpecRaw = "";
-  runtimeCtx.runtime.cachedThemeId = themeId;
-  runtimeCtx.runtime.cachedThemeRev = themeRev;
-  runtimeCtx.runtime.cachedThemeSpecRaw = raw;
-  runtimeCtx.runtime.current = next;
-  runtimeCtx.runtime.hasFrame = true;
-  runtimeCtx.runtime.resetBaseSecs = next.resetSecs;
-  runtimeCtx.runtime.resetBaseMillis = millis();
   activeThemeSpecPath = path;
   activeThemeSpecHash = hashHex8(raw);
-
-  codexbar_display::core::SerialConsumeEvent event;
-  event.frameAccepted = true;
-  event.hadFrame = hadFrame;
-  event.themeSpecChanged = true;
-  event.visualChanged = !hadFrame || codexbar_display::core::FrameVisualChanged(previous, next) || event.themeSpecChanged;
   markFrameAccepted(event, "theme");
 }
 
@@ -1993,11 +1973,7 @@ bool loadStoredThemeSpecCacheFromPath(const String& path) {
     return false;
   }
 
-  runtimeCtx.runtime.cachedThemeId = themeId;
-  runtimeCtx.runtime.cachedThemeRev = themeRev;
-  runtimeCtx.runtime.cachedThemeSpecRaw = raw;
-  activeThemeSpecPath = path;
-  activeThemeSpecHash = hashHex8(raw);
+  activateStoredThemeSpec(path, raw, themeId, themeRev);
   Serial.printf("theme_cache_loaded path=%s id=%s rev=%d\n", path.c_str(), themeId.c_str(), themeRev);
   return true;
 }

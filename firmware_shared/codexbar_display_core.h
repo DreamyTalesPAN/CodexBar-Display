@@ -783,6 +783,43 @@ inline bool FrameVisualChanged(const Frame& previous, const Frame& next) {
 #endif
 }
 
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+inline bool RestoreStoredThemeSpecFrame(
+    RuntimeState& runtimeState,
+    const String& themeId,
+    int themeRev,
+    const String& raw,
+    unsigned long nowMillis,
+    SerialConsumeEvent& outEvent) {
+  outEvent = {};
+  if (themeId.length() == 0 || themeRev <= 0 || !ThemeSpecRawLooksRenderable(raw)) {
+    return false;
+  }
+
+  const bool hadFrame = runtimeState.hasFrame;
+  Frame next = hadFrame ? runtimeState.current : Frame{};
+  next.hasError = false;
+  next.error = "";
+  next.clearThemeSpec = false;
+  next.hasThemeSpec = true;
+  next.themeSpecId = themeId;
+  next.themeSpecRev = themeRev;
+  next.themeSpecRaw = "";
+  runtimeState.cachedThemeId = themeId;
+  runtimeState.cachedThemeRev = themeRev;
+  runtimeState.cachedThemeSpecRaw = raw;
+  runtimeState.current = next;
+  runtimeState.hasFrame = true;
+  runtimeState.resetBaseSecs = next.resetSecs;
+  runtimeState.resetBaseMillis = nowMillis;
+  outEvent.frameAccepted = true;
+  outEvent.hadFrame = hadFrame;
+  outEvent.themeSpecChanged = true;
+  outEvent.visualChanged = true;
+  return true;
+}
+#endif
+
 inline void ApplyThemeSpecCache(RuntimeState& runtimeState, const Frame& previous, Frame& next, SerialConsumeEvent& outEvent) {
   if (next.hasError) {
     return;
