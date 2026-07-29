@@ -203,6 +203,7 @@ const missingAssetReleaseFixture = {
 };
 
 const companionDevice = {
+  deviceId: "vibetv-fixture-1",
   target: "http://192.168.178.163",
   active: true,
   connected: true,
