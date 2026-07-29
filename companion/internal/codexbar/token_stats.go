@@ -3,13 +3,17 @@ package codexbar
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 )
 
-const tokenStatsCommandTimeout = 60 * time.Second
+// Local token-history scans are source-bound. Measured cold history on
+// 2026-07-29 took about 78s, so keep the command budget above that instead of
+// assuming the fast quota path's latency.
+const tokenStatsCommandTimeout = 120 * time.Second
 
 type ProviderTokenStats struct {
 	SessionTokens int64
@@ -20,32 +24,96 @@ type ProviderTokenStats struct {
 	Cost          *ProviderCostUsage
 }
 
+type ProviderTokenStatsReport struct {
+	OK              bool
+	Reason          string
+	ProviderCount   int
+	BinaryDuration  time.Duration
+	VersionDuration time.Duration
+	CostDuration    time.Duration
+	ParseDuration   time.Duration
+}
+
 func (s ProviderTokenStats) HasAny() bool {
 	return s.SessionTokens > 0 || s.WeekTokens > 0 || s.TotalTokens > 0 || s.Cost != nil
 }
 
 func FetchProviderTokenStats(ctx context.Context) (map[string]ProviderTokenStats, bool) {
+	stats, report := FetchProviderTokenStatsWithReport(ctx)
+	return stats, report.OK
+}
+
+func FetchProviderTokenStatsWithReport(ctx context.Context) (map[string]ProviderTokenStats, ProviderTokenStatsReport) {
+	report := ProviderTokenStatsReport{}
+	binaryStarted := time.Now()
 	bin, err := FindBinary()
+	report.BinaryDuration = time.Since(binaryStarted)
 	if err != nil {
-		return nil, false
+		report.Reason = "binary"
+		return nil, report
 	}
+
+	versionStarted := time.Now()
 	if err := CheckMinimumVersion(ctx, bin); err != nil {
-		return nil, false
+		report.VersionDuration = time.Since(versionStarted)
+		report.Reason = "version"
+		return nil, report
 	}
-	return fetchProviderTokenStats(ctx, bin)
+	report.VersionDuration = time.Since(versionStarted)
+	return fetchProviderTokenStatsWithReport(ctx, bin, report)
 }
 
 func fetchProviderTokenStats(ctx context.Context, bin string) (map[string]ProviderTokenStats, bool) {
+	stats, report := fetchProviderTokenStatsWithReport(ctx, bin, ProviderTokenStatsReport{})
+	return stats, report.OK
+}
+
+func fetchProviderTokenStatsWithReport(ctx context.Context, bin string, report ProviderTokenStatsReport) (map[string]ProviderTokenStats, ProviderTokenStatsReport) {
+	costStarted := time.Now()
 	raw, err := runCostCommandFn(ctx, tokenStatsCommandTimeout, bin, "cost", "--json")
+	report.CostDuration = time.Since(costStarted)
 	if err != nil {
-		return nil, false
+		report.Reason = tokenStatsFailureReason(ctx, err, report.CostDuration, tokenStatsCommandTimeout, "cost")
+		return nil, report
 	}
 
+	parseStarted := time.Now()
 	parsed, err := parseProviderTokenStats(raw)
-	if err != nil || len(parsed) == 0 {
-		return nil, false
+	report.ParseDuration = time.Since(parseStarted)
+	if errors.Is(err, ErrNoProviders) {
+		report.OK = true
+		report.Reason = "no_providers"
+		return map[string]ProviderTokenStats{}, report
 	}
-	return parsed, true
+	if err != nil {
+		report.Reason = "parse"
+		return nil, report
+	}
+	report.OK = true
+	report.Reason = "success"
+	report.ProviderCount = len(parsed)
+	return parsed, report
+}
+
+func tokenStatsFailureReason(ctx context.Context, err error, elapsed, timeout time.Duration, fallback string) string {
+	if ctx != nil {
+		switch ctx.Err() {
+		case context.DeadlineExceeded:
+			return "timeout"
+		case context.Canceled:
+			return "canceled"
+		}
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "canceled"
+	}
+	if timeout > 0 && elapsed >= timeout-time.Second {
+		return "timeout"
+	}
+	return fallback
 }
 
 func parseProviderTokenStats(raw []byte) (map[string]ProviderTokenStats, error) {

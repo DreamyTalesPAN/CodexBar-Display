@@ -12,7 +12,9 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
-const tokenStatsCollectorTimeout = 60 * time.Second
+// Give codexbar cost --json its full source budget plus a small collector
+// margin, so the parent scan does not cancel at the same instant as the command.
+const tokenStatsCollectorTimeout = 125 * time.Second
 
 type providerSnapshot struct {
 	Provider            string                     `json:"provider"`
@@ -32,25 +34,26 @@ type persistedProviderSnapshots struct {
 }
 
 type providerCollector struct {
-	now              func() time.Time
-	logf             func(string, ...any)
-	fetchProviders   func(context.Context) ([]codexbar.ParsedFrame, error)
-	fetchDashboard   func(context.Context, codexbar.DashboardServeInfo, time.Time, int) (codexbar.DashboardFetchResult, error)
-	fetchInventory   func(context.Context) ([]codexbar.ProviderSetting, error)
-	fetchTokenStats  func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
-	dashboard        codexbar.DashboardServe
-	resolvePort      func(string) (string, error)
-	requestedPort    string
-	requestedPortFn  func() string
-	transportName    string
-	order            []string
-	interval         time.Duration
-	activityPoll     time.Duration
-	timeout          time.Duration
-	snapshotMaxAge   time.Duration
-	persistInterval  time.Duration
-	wake             <-chan struct{}
-	afterWakeCollect func()
+	now                   func() time.Time
+	logf                  func(string, ...any)
+	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
+	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time, int) (codexbar.DashboardFetchResult, error)
+	fetchInventory        func(context.Context) ([]codexbar.ProviderSetting, error)
+	fetchTokenStats       func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
+	fetchTokenStatsReport func(context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport)
+	dashboard             codexbar.DashboardServe
+	resolvePort           func(string) (string, error)
+	requestedPort         string
+	requestedPortFn       func() string
+	transportName         string
+	order                 []string
+	interval              time.Duration
+	activityPoll          time.Duration
+	timeout               time.Duration
+	snapshotMaxAge        time.Duration
+	persistInterval       time.Duration
+	wake                  <-chan struct{}
+	afterWakeCollect      func()
 
 	mu                       sync.RWMutex
 	providers                map[string]providerSnapshot
@@ -77,23 +80,24 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 	}
 
 	collector := &providerCollector{
-		now:             nowFn,
-		logf:            logFn,
-		fetchProviders:  deps.fetchProviders,
-		fetchDashboard:  deps.fetchDashboard,
-		fetchInventory:  deps.fetchInventory,
-		fetchTokenStats: deps.fetchTokenStats,
-		dashboard:       deps.dashboard,
-		resolvePort:     deps.resolvePort,
-		requestedPort:   requestedDeviceTarget(opts),
-		transportName:   usageSourceOrDefault(deps.transportName, "usb"),
-		order:           collectorProviderOrder(),
-		interval:        collectorInterval(opts.Interval),
-		activityPoll:    activityPollInterval(),
-		timeout:         collectorProviderTimeout(),
-		snapshotMaxAge:  providerSnapshotMaxAge(),
-		persistInterval: 1 * time.Minute,
-		providers:       make(map[string]providerSnapshot),
+		now:                   nowFn,
+		logf:                  logFn,
+		fetchProviders:        deps.fetchProviders,
+		fetchDashboard:        deps.fetchDashboard,
+		fetchInventory:        deps.fetchInventory,
+		fetchTokenStats:       deps.fetchTokenStats,
+		fetchTokenStatsReport: deps.fetchTokenStatsReport,
+		dashboard:             deps.dashboard,
+		resolvePort:           deps.resolvePort,
+		requestedPort:         requestedDeviceTarget(opts),
+		transportName:         usageSourceOrDefault(deps.transportName, "usb"),
+		order:                 collectorProviderOrder(),
+		interval:              collectorInterval(opts.Interval),
+		activityPoll:          activityPollInterval(),
+		timeout:               collectorProviderTimeout(),
+		snapshotMaxAge:        providerSnapshotMaxAge(),
+		persistInterval:       1 * time.Minute,
+		providers:             make(map[string]providerSnapshot),
 	}
 	if normalizeTransportName(opts.Transport) == "wifi" || deps.transportName == "wifi" {
 		collector.requestedPortFn = func() string {
@@ -124,6 +128,7 @@ func (c *providerCollector) run(ctx context.Context) {
 	}
 	defer c.shutdownTokenStatsScan()
 	c.collectOnce(ctx)
+	c.requestTokenStatsScan(ctx)
 
 	usageTicker := time.NewTicker(c.interval)
 	defer usageTicker.Stop()
@@ -135,8 +140,10 @@ func (c *providerCollector) run(ctx context.Context) {
 			return
 		case <-usageTicker.C:
 			c.collectOnce(ctx)
+			c.requestTokenStatsScan(ctx)
 		case <-c.wake:
 			c.collectOnce(ctx)
+			c.requestTokenStatsScan(ctx)
 			if c.afterWakeCollect != nil {
 				c.afterWakeCollect()
 			}
@@ -475,13 +482,8 @@ func mergeProviderOrder(current, previous []string) []string {
 }
 
 func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
-	if c == nil || c.fetchTokenStats == nil {
+	if c == nil || (c.fetchTokenStats == nil && c.fetchTokenStatsReport == nil) {
 		return
-	}
-	if c.resolvePort != nil {
-		if _, err := c.resolvePort(c.resolveRequestedPort()); err != nil {
-			return
-		}
 	}
 
 	ctx := parent
@@ -493,8 +495,9 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 	}
 	defer cancel()
 
-	statsByProvider, ok := c.fetchTokenStats(ctx)
-	if !ok || len(statsByProvider) == 0 {
+	statsByProvider, report := c.fetchTokenStatsWithReport(ctx)
+	if !report.OK {
+		c.logTokenStatsReport(report, 0)
 		return
 	}
 
@@ -577,6 +580,50 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 	if updated > 0 {
 		c.persistIfNeeded(now)
 	}
+	c.logTokenStatsReport(report, updated)
+}
+
+func (c *providerCollector) fetchTokenStatsWithReport(ctx context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport) {
+	if c.fetchTokenStatsReport != nil {
+		return c.fetchTokenStatsReport(ctx)
+	}
+	statsByProvider, ok := c.fetchTokenStats(ctx)
+	report := codexbar.ProviderTokenStatsReport{
+		OK:            ok,
+		ProviderCount: len(statsByProvider),
+	}
+	if ok {
+		report.Reason = "success"
+	} else {
+		report.Reason = "unavailable"
+	}
+	return statsByProvider, report
+}
+
+func (c *providerCollector) logTokenStatsReport(report codexbar.ProviderTokenStatsReport, accepted int) {
+	if c == nil || c.logf == nil {
+		return
+	}
+	reason := strings.TrimSpace(report.Reason)
+	if reason == "" {
+		if report.OK {
+			reason = "success"
+		} else {
+			reason = "unavailable"
+		}
+	}
+	c.logf(
+		"collector token-stats fresh=%t providers=%d accepted=%d reason=%s binary=%s version=%s cost=%s parse=%s timeout=%s\n",
+		report.OK,
+		report.ProviderCount,
+		accepted,
+		reason,
+		report.BinaryDuration.Round(time.Millisecond),
+		report.VersionDuration.Round(time.Millisecond),
+		report.CostDuration.Round(time.Millisecond),
+		report.ParseDuration.Round(time.Millisecond),
+		tokenStatsCollectorTimeout,
+	)
 }
 
 func carryForwardSnapshotTokenStats(previous providerSnapshot, next *providerSnapshot, now time.Time, maxAge time.Duration) {

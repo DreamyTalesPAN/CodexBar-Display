@@ -3464,6 +3464,95 @@ func TestProviderCollectorPreservesTokenStatsAcrossTemporaryFailureAndRecovers(t
 	}
 }
 
+func TestProviderCollectorTokenStatsDoNotDependOnDeviceTransport(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 29, 8, 0, 0, 0, time.UTC)
+	var tokenFetches int
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		resolvePort:     func(string) (string, error) { return "", errors.New("no usb serial ports found") },
+		order:           []string{"codex"},
+		interval:        30 * time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:  "codex",
+				Frame:     protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42},
+				Collected: current,
+			},
+		},
+	}
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		tokenFetches++
+		return map[string]codexbar.ProviderTokenStats{
+			"codex": {
+				SessionTokens: 12,
+				WeekTokens:    34,
+				TotalTokens:   56,
+				UpdatedAt:     current,
+				Cost:          &codexbar.ProviderCostUsage{UpdatedAt: current, Last30DaysTokens: 56, LatestTokens: 12},
+			},
+		}, true
+	}
+
+	collector.collectTokenStatsOnce(context.Background())
+
+	got := collector.providers["codex"]
+	if tokenFetches != 1 || got.Frame.TotalTokens != 56 || got.Meta.Cost == nil {
+		t.Fatalf("local token scan must ignore device transport failure, fetches=%d snapshot=%#v", tokenFetches, got)
+	}
+}
+
+func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 29, 8, 30, 0, 0, time.UTC)
+	wake := make(chan struct{}, 1)
+	var tokenFetches atomic.Int32
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex"},
+		interval:        time.Hour,
+		activityPoll:    time.Hour,
+		timeout:         time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		wake:            wake,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 17, 42, 3600)}, nil
+		},
+	}
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		count := tokenFetches.Add(1)
+		return map[string]codexbar.ProviderTokenStats{
+			"codex": {
+				TotalTokens: int64(100 + count),
+				UpdatedAt:   current,
+				Cost:        &codexbar.ProviderCostUsage{UpdatedAt: current, Last30DaysTokens: int64(100 + count)},
+			},
+		}, true
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go collector.run(ctx)
+	waitForCondition(t, time.Second, func() bool {
+		return tokenFetches.Load() == 1
+	})
+
+	wake <- struct{}{}
+	waitForCondition(t, time.Second, func() bool {
+		return tokenFetches.Load() == 2
+	})
+	cancel()
+	collector.shutdownTokenStatsScan()
+}
+
 func TestProviderCollectorTokenStatsFreshnessSemantics(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -3604,6 +3693,42 @@ func TestProviderCollectorTokenStatsFreshnessSemantics(t *testing.T) {
 	}
 }
 
+func TestProviderCollectorSuccessfulEmptyTokenStatsClearsLastGood(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 29, 9, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex"},
+		interval:        30 * time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:            "codex",
+				Frame:               protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42, TotalTokens: 99},
+				Collected:           current,
+				TokenStatsCollected: current,
+				Meta:                codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{UpdatedAt: current, Last30DaysTokens: 99}},
+			},
+		},
+	}
+	collector.fetchTokenStatsReport = func(context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport) {
+		return map[string]codexbar.ProviderTokenStats{}, codexbar.ProviderTokenStatsReport{
+			OK:     true,
+			Reason: "no_providers",
+		}
+	}
+
+	collector.collectTokenStatsOnce(context.Background())
+
+	got := collector.providers["codex"]
+	if got.Frame.TotalTokens != 0 || got.Meta.Cost != nil || !got.TokenStatsCollected.IsZero() {
+		t.Fatalf("successful empty token scan did not clear last-good token stats: %#v", got)
+	}
+}
+
 func TestProviderCollectorSlowTokenScanDoesNotOverlapAndRecovers(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -3679,6 +3804,49 @@ func TestProviderCollectorSlowTokenScanDoesNotOverlapAndRecovers(t *testing.T) {
 		t.Fatal("expected later token scan to start after recovery")
 	}
 	collector.shutdownTokenStatsScan()
+}
+
+func TestProviderCollectorAcceptedTokenStatsPersistForImmediateUsageAPIRead(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 29, 9, 30, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex"},
+		interval:        30 * time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:  "codex",
+				Frame:     protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42, UsageMode: "used"},
+				Collected: current,
+			},
+		},
+	}
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return map[string]codexbar.ProviderTokenStats{
+			"codex": {
+				SessionTokens: 12,
+				WeekTokens:    34,
+				TotalTokens:   56,
+				UpdatedAt:     current,
+				Cost:          &codexbar.ProviderCostUsage{UpdatedAt: current, Last30DaysTokens: 56, LatestTokens: 12},
+			},
+		}, true
+	}
+
+	collector.collectTokenStatsOnce(context.Background())
+
+	usage, ok := LoadPersistedUsage(current)
+	if !ok || len(usage.Providers) != 1 {
+		t.Fatalf("expected persisted usage after accepted token scan, ok=%t usage=%#v", ok, usage)
+	}
+	got := usage.Providers[0]
+	if got.Frame.TotalTokens != 56 || got.Meta.Cost == nil || got.TokenStatsCollectedAt.IsZero() {
+		t.Fatalf("accepted token stats were not immediately visible through persisted usage: %#v", got)
+	}
 }
 
 func TestProviderCollectorTokenStatsTimeoutPreservesLastGood(t *testing.T) {
