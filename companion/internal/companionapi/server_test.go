@@ -2339,6 +2339,43 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	}
 }
 
+func TestDisplayFrameLatestUsesUsageSlotsWhenUsageWindowsPlaceholder(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	usageSlots := url.QueryEscape(`[{"id":"secondary","label":"Weekly","percent":75,"resetSecs":490812},{"id":"codex-spark-weekly","label":"Codex Spark Weekly","percent":0,"resetSecs":604794}]`)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=0 weekly=58 sessionUnavailable=true weeklyUnavailable=false reset=2733s usageWindows=- usageSlots=`+usageSlots+` activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
+		0o644,
+	); err != nil {
+		t.Fatalf("write display stream log: %v", err)
+	}
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/display-frame/latest", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got displayFrameResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Frame.Session != 75 || got.Frame.Weekly != 0 || got.Frame.ResetSec != 490812 ||
+		got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
+		t.Fatalf("expected usageSlots to drive legacy preview values, got %+v", got.Frame)
+	}
+	if len(got.Frame.UsageWindows) != 2 ||
+		got.Frame.UsageWindows[0].Label != "Weekly" ||
+		got.Frame.UsageWindows[0].ResetSec != 490812 ||
+		got.Frame.UsageWindows[1].Label != "Codex Spark Weekly" ||
+		got.Frame.UsageWindows[1].ResetSec != 604794 {
+		t.Fatalf("expected usageSlots to populate usage windows, got %+v", got.Frame.UsageWindows)
+	}
+}
+
 func TestInspectDisplayStreamUsesConfiguredRuntimeLabelAndSharedLog(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
 	t.Setenv(displayStreamOutLogEnv, logPath)
