@@ -158,7 +158,8 @@ jobs:
           mkdir -p tmp/vibetv-rc/publish/macos
           cp dist/macos/VibeTV-Control-Center.dmg tmp/vibetv-rc/publish/macos/VibeTV-Control-Center.dmg
           printf '%s' "$SPARKLE_ED25519_PRIVATE_KEY" | "$sparkle_dir/bin/generate_appcast" --ed-key-file - --maximum-deltas 0 --link https://app.vibetv.shop --download-url-prefix "https://github.com/${REPOSITORY}/releases/download/v${version}/" -o tmp/vibetv-rc/publish/macos/appcast.xml tmp/vibetv-rc/publish/macos
-          (cd tmp/vibetv-rc/publish && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 > "checksums-v${version}.txt")
+          checksums="checksums-v${version}.txt"
+          (cd tmp/vibetv-rc/publish && find . -type f ! -name "$checksums" -print0 | sort -z | xargs -0 shasum -a 256 > "$checksums")
           (cd tmp/vibetv-rc/publish && shasum -a 256 -c "checksums-v${version}.txt")
           python3 - "$source_sha" "$version" "$REPOSITORY" "$CANDIDATE_RUN_ID" tmp/vibetv-rc/candidate-manifest.json tmp/vibetv-rc <<'PY'
           import datetime, hashlib, json, sys
@@ -248,6 +249,8 @@ jobs:
         with:
           name: CODEX-vibetv-rc-baselines-${{ github.run_id }}
           path: baselines
+      - name: Restore candidate executable permissions
+        run: chmod +x candidate/test/virtual-vibetv candidate/test/codexbar-display
       - name: Download frozen public baseline when required
         if: matrix.state != 'clean_os'
         run: |
@@ -257,9 +260,9 @@ jobs:
           print("DMG_URL=" + shlex.quote(baseline["dmgUrl"]))
           print("APPCAST_URL=" + shlex.quote(baseline["appcastUrl"]))
           PY
-          cp "baselines/${{ matrix.state }}.dmg" baseline.dmg
-          cp "baselines/${{ matrix.state }}.appcast.xml" baseline-appcast.xml
-          cp "baselines/${{ matrix.state }}.firmware-manifest.json" baseline-firmware-manifest.json
+          cp "baselines/baselines/${{ matrix.state }}.dmg" baseline.dmg
+          cp "baselines/baselines/${{ matrix.state }}.appcast.xml" baseline-appcast.xml
+          cp "baselines/baselines/${{ matrix.state }}.firmware-manifest.json" baseline-firmware-manifest.json
           shasum -a 256 baseline.dmg baseline-appcast.xml
       - name: Run full direct hosted macOS guest matrix
         run: |
@@ -271,7 +274,7 @@ jobs:
             baseline_args=(--baseline-dmg baseline.dmg --baseline-appcast baseline-appcast.xml)
             current_firmware="$(python3 -c 'import json; print(next(a["firmwareVersion"] for a in json.load(open("baseline-firmware-manifest.json"))["artifacts"] if a["firmwareEnv"] == "esp8266_smalltv_st7789"))')"
           fi
-          ./scripts/test-vibetv-hosted-guest.sh --dmg candidate/publish/macos/VibeTV-Control-Center.dmg --appcast candidate/publish/macos/appcast.xml --virtual-vibetv candidate/test/virtual-vibetv --companion candidate/test/codexbar-display --firmware candidate/publish/firmware/codexbar-display-firmware-esp8266_smalltv_st7789-v$(python3 -c 'import json; print(next(a["firmwareVersion"] for a in json.load(open("release/firmware-versions.json"))["artifacts"] if a["firmwareEnv"] == "esp8266_smalltv_st7789")').bin.gz --firmware-manifest candidate/publish/firmware/firmware-manifest.json --current-firmware "$current_firmware" --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]}"
+          ./scripts/test-vibetv-hosted-guest.sh --dmg candidate/publish/macos/VibeTV-Control-Center.dmg --appcast candidate/publish/macos/appcast.xml --virtual-vibetv candidate/test/virtual-vibetv --companion candidate/test/codexbar-display --firmware candidate/publish/firmware/codexbar-display-firmware-esp8266_smalltv_st7789-v$(python3 -c 'import json; print(next(a["firmwareVersion"] for a in json.load(open("release/firmware-versions.json"))["artifacts"] if a["firmwareEnv"] == "esp8266_smalltv_st7789"))').bin.gz --firmware-manifest candidate/publish/firmware/firmware-manifest.json --current-firmware "$current_firmware" --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

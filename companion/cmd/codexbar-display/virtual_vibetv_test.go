@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -25,7 +26,7 @@ func TestRunInstallUpdateUsesDedicatedRawOTAAndDoesNotFlashAlreadyCurrentDevice(
 	t.Setenv("HOME", t.TempDir())
 	firmwareHTTPVerifyPollInterval = time.Millisecond
 
-	image := []byte("virtual raw OTA candidate")
+	image := bytes.Repeat([]byte{0xa5}, 2*otaRawAckBlockBytes+17)
 	cfg := virtualvibetv.DefaultConfig()
 	cfg.HTTPListenAddr, cfg.RawOTAListenAddr = "127.0.0.1:0", "127.0.0.1:0"
 	cfg.RebootUnavailableRequests = 0

@@ -320,6 +320,10 @@ func (s *Server) handleFrame(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
+	if s.cfg.StreamRestartFails {
+		s.respond(w, r, http.StatusServiceUnavailable, "display stream unavailable", "stream restart failed")
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 4097))
 	if err != nil || len(body) == 0 || len(body) > 4096 || !json.Valid(body) {
 		s.respond(w, r, http.StatusBadRequest, "invalid frame", "invalid frame")

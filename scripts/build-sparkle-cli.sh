@@ -13,6 +13,7 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/sparkle-cli.XXXXXX")"; trap 'rm -rf "$work"' 
 git init -q "$work/source"
 git -C "$work/source" remote add origin "$REPOSITORY"
 git -C "$work/source" fetch -q --depth=1 origin "$COMMIT"
+git -C "$work/source" checkout -q --detach FETCH_HEAD
 [[ "$(git -C "$work/source" rev-parse HEAD)" == "$COMMIT" ]] || { echo 'error: Sparkle source commit mismatch' >&2; exit 1; }
 xcodebuild -project "$work/source/Sparkle.xcodeproj" -scheme sparkle-cli -configuration Release -derivedDataPath "$work/derived" CODE_SIGNING_ALLOWED=NO build >/dev/null
 cli="$(find "$work/derived" -type f -path '*/sparkle.app/Contents/MacOS/sparkle' -print -quit)"

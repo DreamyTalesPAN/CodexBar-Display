@@ -47,12 +47,16 @@ assert_safe_app_extractor() {
   work="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-hosted-gate.XXXXXX")"
   trap 'rm -rf "${work:-}"' RETURN
 
-  mkdir -p "$work/safe/VibeTV Control Center.app/Contents"
+  mkdir -p "$work/safe/VibeTV Control Center.app/Contents/Frameworks/Test.framework/Versions/B/Resources"
   printf '<plist version="1.0"><dict/></plist>\n' > "$work/safe/VibeTV Control Center.app/Contents/Info.plist"
+  ln -s B "$work/safe/VibeTV Control Center.app/Contents/Frameworks/Test.framework/Versions/Current"
+  ln -s Versions/Current/Resources "$work/safe/VibeTV Control Center.app/Contents/Frameworks/Test.framework/Resources"
   COPYFILE_DISABLE=1 tar -czf "$work/safe.tar.gz" -C "$work/safe" "VibeTV Control Center.app"
   "$EXTRACTOR" --archive "$work/safe.tar.gz" --output "$work/extracted" >/dev/null
   [[ -f "$work/extracted/VibeTV Control Center.app/Contents/Info.plist" ]] \
     || die "safe candidate archive was not extracted"
+  [[ -d "$work/extracted/VibeTV Control Center.app/Contents/Frameworks/Test.framework/Resources" ]] \
+    || die "safe framework symlinks were not preserved"
 
   python3 - "$work/unsafe.tar.gz" <<'PY'
 import io
@@ -68,6 +72,23 @@ PY
   if "$EXTRACTOR" --archive "$work/unsafe.tar.gz" --output "$work/unsafe" >/dev/null 2>&1; then
     die "unsafe candidate archive path was accepted"
   fi
+
+  python3 - "$work/unsafe-link.tar.gz" <<'PY'
+import sys
+import tarfile
+
+with tarfile.open(sys.argv[1], "w:gz") as archive:
+    member = tarfile.TarInfo("VibeTV Control Center.app/Contents/Frameworks/escape")
+    member.type = tarfile.SYMTYPE
+    member.linkname = "../../../../escape"
+    archive.addfile(member)
+PY
+  local unsafe_link_error
+  if unsafe_link_error="$("$EXTRACTOR" --archive "$work/unsafe-link.tar.gz" --output "$work/unsafe-link" 2>&1)"; then
+    die "escaping candidate archive symlink was accepted"
+  fi
+  [[ "$unsafe_link_error" == *"unsafe candidate archive symlink"* ]] \
+    || die "escaping symlink test failed for the wrong reason: $unsafe_link_error"
 }
 
 main() {
@@ -176,6 +197,22 @@ main() {
     'guest test must require a replacement Candidate process after Sparkle'
   assert_contains "$GUEST_TEST" 'gzip -cd' \
     'guest test must hash the raw firmware bytes sent through OTA'
+  assert_contains "$GUEST_TEST" 'if gzip -t "$FIRMWARE"' \
+    'guest test must accept both compressed release firmware and raw merge firmware'
+  assert_contains "$MERGE_WORKFLOW" '--download-url-prefix "https://github.com/${REPOSITORY}/releases/download/v${version}/"' \
+    'merge appcast must use a GitHub enclosure URL that the guest can rewrite'
+  assert_contains "$MERGE_WORKFLOW" 'path: tmp/vibetv-merge/candidate' \
+    'merge candidate must be uploaded from one artifact root'
+  assert_contains "$MERGE_WORKFLOW" 'chmod +x candidate/virtual-vibetv candidate/codexbar-display' \
+    'merge guest must restore executable bits lost by artifact download'
+  assert_contains "$RC_WORKFLOW" 'chmod +x candidate/test/virtual-vibetv candidate/test/codexbar-display' \
+    'release guest must restore executable bits lost by artifact download'
+  assert_contains "$RC_WORKFLOW" 'baselines/baselines/${{ matrix.state }}.dmg' \
+    'release guest must read frozen baselines from the downloaded artifact layout'
+  assert_contains "$RC_WORKFLOW" '! -name "$checksums"' \
+    'release checksum generation must exclude the checksum manifest itself'
+  assert_contains "$SPARKLE_BUILDER" 'checkout -q --detach FETCH_HEAD' \
+    'Sparkle builder must check out the pinned fetched source before verification'
   assert_contains "$RC_WORKFLOW" 'artifactHashes": {item["path"]' \
     'candidate result must expose publish validators a path-to-hash map'
   assert_contains "$RC_WORKFLOW" 'check-firmware-size-budget.sh' \
