@@ -431,7 +431,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testConfiguredDeviceShowsReconnectingWithoutSetup(
+      await testConfiguredOfflineDeviceOpensRecoveryWithoutWrites(
         browser,
         appContext.appUrl,
       );
@@ -528,7 +528,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testOfflineActiveDeviceStaysInOverview(
+    await testOfflineActiveDeviceOpensReadOnlyPicker(
       browser,
       appContext.appUrl,
     );
@@ -573,7 +573,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testConfiguredDeviceShowsReconnectingWithoutSetup(
+    await testConfiguredOfflineDeviceOpensRecoveryWithoutWrites(
       browser,
       appContext.appUrl,
     );
@@ -1532,7 +1532,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
 
     await clickNavigation(page, "Usage");
     await page
-      .getByText("Loading usage", { exact: true })
+      .getByText("Token history is loading", { exact: true })
       .waitFor({ timeout: 10_000 });
     await page
       .getByRole("heading", { name: "AI providers", exact: true })
@@ -1972,7 +1972,7 @@ async function testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
   await page.close();
 }
 
-async function testOfflineActiveDeviceStaysInOverview(browser, appUrl) {
+async function testOfflineActiveDeviceOpensReadOnlyPicker(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const deviceWriteRequests = [];
@@ -2006,22 +2006,22 @@ async function testOfflineActiveDeviceStaysInOverview(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "VibeTV status" }).waitFor({
+  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
   assert(
-    (await page.getByTestId("device-startup-screen").count()) === 0,
-    "An active VibeTV must keep the Control Center shell open while offline",
+    (await page.getByTestId("device-startup-screen").count()) === 1,
+    "An unavailable saved VibeTV must open the device picker",
   );
   assert(
     (await page
       .getByRole("heading", { name: "Set up your VibeTV" })
       .count()) === 0,
-    "Cold-start reconnect must not appear inside Setup",
+    "Cold-start recovery must use the device picker, not first-time Setup",
   );
   assert(
-    (await page.getByText("VibeTV device-82", { exact: true }).count()) === 0,
-    "An alternative VibeTV must not replace the active device automatically",
+    (await page.getByText("VibeTV device-82", { exact: true }).count()) === 1,
+    "The picker must show other discovered VibeTVs without selecting them",
   );
   assert(
     deviceWriteRequests.length === 0,
@@ -2906,7 +2906,7 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
     {
       device: {
         ...themeMissingDevice,
-        deviceId: undefined,
+        deviceId: "fixture-device-1",
       },
       deviceAfterThemeInstall: {
         ...readyDevice,
@@ -3227,7 +3227,7 @@ async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
   await page.close();
 }
 
-async function testConfiguredDeviceShowsReconnectingWithoutSetup(
+async function testConfiguredOfflineDeviceOpensRecoveryWithoutWrites(
   browser,
   appUrl,
 ) {
@@ -3248,43 +3248,29 @@ async function testConfiguredDeviceShowsReconnectingWithoutSetup(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("navigation", { name: "Control Center" }).waitFor({
-    timeout: 10_000,
-  });
-  await page.getByRole("heading", { name: "VibeTV status" }).waitFor();
-  await page.getByText("Reconnecting to VibeTV", { exact: true }).waitFor();
   await page
-    .getByRole("img", { name: "VibeTV live preview is offline" })
-    .waitFor();
-  await page
-    .getByText("Reconnect VibeTV to continue", { exact: true })
-    .waitFor();
+    .getByRole("heading", { name: "We couldn't find your VibeTV" })
+    .waitFor({
+      timeout: 10_000,
+    });
   assert(
     (await page
       .getByRole("heading", { name: "Set up your VibeTV" })
       .count()) === 0,
-    "Setup must stay hidden while the automatic scan is still running",
+    "Recovery must not fall back to first-time Setup",
   );
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
-      1,
-    "A known VibeTV must keep Overview open while reconnecting",
+      0,
+    "A known VibeTV that is already offline at startup must open recovery",
   );
   assert(
     repairRequests.length === 0,
     "The browser must let the Companion own bounded automatic recovery",
   );
   assert(
-    (await page.getByText("Plug VibeTV into power.").count()) === 0,
-    "A configured VibeTV must not fall back to first-run WiFi instructions",
-  );
-  await page
-    .locator('[data-slot="item-title"]')
-    .filter({ hasText: /^Not connected$/ })
-    .waitFor();
-  assert(
-    (await page.getByTestId("device-startup-screen").count()) === 0,
-    "Opening Control Center for a configured VibeTV must keep the shell visible",
+    (await page.getByTestId("device-startup-screen").count()) === 1,
+    "Opening Control Center for an unavailable configured VibeTV must show recovery",
   );
   assertNoInstallRequests(installRequests);
   await page.close();

@@ -460,10 +460,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const applyPolledDeviceSnapshot = useCallback(
-    (next: DeviceInfo | null | undefined, sourcePoll: string) => {
+    (
+      next: DeviceInfo | null | undefined,
+      sourcePoll: string,
+      countFailure = false,
+    ) => {
       const transition = applyDeviceRecoveryStatus(
         deviceRecoveryGateRef.current,
         {
+          countFailure,
           device: next,
           operationInProgress: operationRecoveryGraceActive,
         },
@@ -1142,7 +1147,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           firmwareUpdateStatusFromJob(payload.firmwareUpdate),
         );
       }
-      applyPolledDeviceSnapshot(payload.device, "/v1/status");
+      applyPolledDeviceSnapshot(payload.device, "/v1/status", true);
     } catch (error) {
       if (setupGeneration !== setupGenerationRef.current) {
         return;

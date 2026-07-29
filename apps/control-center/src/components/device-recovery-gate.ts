@@ -56,6 +56,7 @@ export function applyDeviceRecoveryStatus(
   state: DeviceRecoveryGateState,
   status: {
     device?: Pick<DeviceInfo, "connected" | "deviceId" | "target"> | null;
+    countFailure?: boolean;
     operationInProgress?: boolean;
   },
 ): DeviceRecoveryGateResult {
@@ -91,6 +92,15 @@ export function applyDeviceRecoveryStatus(
         ...state,
         failedNormalChecks: 0,
       },
+    };
+  }
+
+  if (status.countFailure === false) {
+    return {
+      acceptDevice: false,
+      closePicker: false,
+      openPicker: false,
+      state,
     };
   }
 

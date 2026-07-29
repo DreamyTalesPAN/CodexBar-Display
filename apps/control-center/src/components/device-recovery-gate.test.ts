@@ -44,6 +44,20 @@ describe("device recovery gate", () => {
     expect(fourth.state.pickerReason).toBe("confirmed-loss");
   });
 
+  it("does not count initial or diagnostic reads as recovery failures", () => {
+    const state = selectRecoveryDevice(createDeviceRecoveryGateState(), {
+      deviceId: "stable-a",
+    });
+
+    const result = applyDeviceRecoveryStatus(state, {
+      device: null,
+      countFailure: false,
+    });
+
+    expect(result.openPicker).toBe(false);
+    expect(result.state.failedNormalChecks).toBe(0);
+  });
+
   it("uses a longer grace while firmware or theme operations are running", () => {
     let state = selectRecoveryDevice(createDeviceRecoveryGateState(), {
       deviceId: "stable-a",
