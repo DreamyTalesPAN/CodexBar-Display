@@ -2,6 +2,7 @@ package codexbar
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
 	"os"
@@ -269,6 +270,65 @@ func TestParseProviderPayloadReadsExtraRateWindows(t *testing.T) {
 	}
 	if windows[1].ID != "codex-spark-weekly" || windows[1].Label != "Codex Spark Weekly" || windows[1].UsedPercent != 0 || windows[1].WindowMinutes != 10080 || windows[1].ResetSec <= 0 {
 		t.Fatalf("expected nested Codex Spark window, got %+v", windows[1])
+	}
+}
+
+func TestParseProviderPayloadTreatsNamedOnlyUsageWindowsAsAvailable(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		id   string
+	}{
+		{
+			name: "tertiary",
+			raw:  `{"provider":"codex","usage":{"tertiary":{"usedPercent":42,"resetSecs":300}}}`,
+			id:   "tertiary",
+		},
+		{
+			name: "extra rate window",
+			raw:  `{"provider":"codex","usage":{"extraRateWindows":[{"id":"spark-weekly","label":"Spark weekly","usedPercent":21,"resetSecs":600}]}}`,
+			id:   "spark-weekly",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(tt.raw), &payload); err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := parseProviderPayload(payload)
+			if err != nil {
+				t.Fatalf("parseProviderPayload failed: %v", err)
+			}
+			frame := parsed.Frame
+			if frame.UsageUnavailable || frame.SessionUnavailable || !frame.WeeklyUnavailable {
+				t.Fatalf("named-only window must be available with one legacy lane: %+v", frame)
+			}
+			if len(frame.UsageWindows) != 1 || frame.UsageWindows[0].ID != tt.id || frame.Session != frame.UsageWindows[0].Percent {
+				t.Fatalf("expected the named window to be preserved and projected, got %+v", frame)
+			}
+		})
+	}
+}
+
+func TestParseProviderPayloadKeepsUnknownNamedOnlyUsageUnavailable(t *testing.T) {
+	parsed, err := parseProviderPayload(map[string]any{
+		"provider": "codex",
+		"usage": map[string]any{
+			"extraRateWindows": []any{map[string]any{
+				"id":          "unknown-percent",
+				"label":       "Unknown percent",
+				"usageKnown":  false,
+				"usedPercent": 21,
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("parseProviderPayload failed: %v", err)
+	}
+	if !parsed.Frame.UsageUnavailable || len(parsed.Frame.UsageWindows) != 0 {
+		t.Fatalf("unknown named-only window must remain unavailable, got %+v", parsed.Frame)
 	}
 }
 

@@ -756,7 +756,7 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		Weekly:             weekly,
 		ResetSec:           resetSecs,
 		UsageWindows:       usageWindows,
-		UsageUnavailable:   !sessionKnown && !weeklyKnown,
+		UsageUnavailable:   !sessionKnown && !weeklyKnown && len(usageWindows) == 0,
 		SessionUnavailable: !sessionKnown,
 		WeeklyUnavailable:  !weeklyKnown,
 	}.Normalize()
