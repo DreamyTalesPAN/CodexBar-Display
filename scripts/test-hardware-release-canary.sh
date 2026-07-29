@@ -114,10 +114,10 @@ PY
   grep -F -- '--confirm-power-cycle-10s' "${CANARY}" >/dev/null || die "canary lacks explicit power-cycle confirmation"
   grep -F 'write_evidence unknown' "${CANARY}" >/dev/null || die "canary lacks unknown-write evidence"
   grep -F "role']=='companion'" "${CANARY}" >/dev/null || die "canary does not select the candidate companion role"
-  if grep -F -- '--recovery-port' "${CANARY}" >/dev/null || grep -F 'esp8266-backup.sh' "${CANARY}" >/dev/null; then
-    die "customer hardware canary must not require a nonexistent USB recovery path"
-  fi
-  grep -F 'WiFi-only' "${CANARY}" >/dev/null || die "canary does not disclose the WiFi-only update risk"
+  grep -F -- '--recovery-port' "${CANARY}" >/dev/null || die "canary lacks optional future lab USB recovery"
+  grep -F 'if [[ -n "$RECOVERY_PORT" ]]' "${CANARY}" >/dev/null || die "USB recovery must remain optional"
+  grep -F 'esp8266-backup.sh' "${CANARY}" >/dev/null || die "lab recovery path does not create a full USB backup"
+  grep -F 'this VibeTV has no USB recovery path' "${CANARY}" >/dev/null || die "canary does not disclose the current WiFi-only update risk"
   grep -F 'vibetv-hardware-canary' "${WORKFLOW}" >/dev/null || die "workflow uses the wrong evidence artifact name"
   grep -F 'semver_compare' "${CANARY}" >/dev/null || die "canary does not compare firmware versions as SemVer"
   grep -F 'candidate-firmware-manifest.json' "${CANARY}" >/dev/null || die "canary does not create a local absolute firmware manifest"
