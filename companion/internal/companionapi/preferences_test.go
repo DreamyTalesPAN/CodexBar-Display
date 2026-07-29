@@ -573,6 +573,90 @@ func TestExactUsageCacheRejectsOldOrUndatedSnapshots(t *testing.T) {
 	}
 }
 
+func TestExactUsageCacheOnlyOverlaysItsProviderOntoCurrentSnapshots(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 29, 10, 30, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+
+	previous := daemon.PersistedUsage{
+		CurrentProvider: "codex",
+		Providers: []daemon.ProviderUsageSnapshot{
+			{
+				Provider: "codex",
+				Frame: protocol.Frame{
+					Provider: "codex", Label: "Codex", Weekly: 10,
+				},
+				Source: "old-codex", CollectedAt: now.Add(-time.Minute), Stale: true,
+			},
+			{
+				Provider: "claude",
+				Frame: protocol.Frame{
+					Provider: "claude", Label: "Claude", Weekly: 31,
+				},
+				Source: "old-claude", CollectedAt: now.Add(-time.Minute),
+				Meta: codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{{
+					ID: "weekly", Label: "Old weekly", UsedPercent: 31,
+				}}},
+			},
+			{
+				Provider: "gemini",
+				Frame:    protocol.Frame{Provider: "gemini", Label: "Gemini", Weekly: 22},
+				Source:   "old-gemini", CollectedAt: now.Add(-time.Minute),
+			},
+		},
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return previous, true }
+	server.cacheExactProviderUsage(codexbar.ParsedFrame{
+		Provider:    "codex",
+		Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 77},
+		Source:      "exact-probe",
+		CollectedAt: now,
+	})
+
+	current := daemon.PersistedUsage{
+		CurrentProvider: "claude",
+		Providers: []daemon.ProviderUsageSnapshot{
+			{
+				Provider: "claude",
+				Frame: protocol.Frame{
+					Provider: "claude", Label: "Claude", Weekly: 66,
+				},
+				Source: "fresh-claude", CollectedAt: now,
+				Meta: codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{{
+					ID: "monthly", Label: "Current monthly", UsedPercent: 66,
+				}}},
+			},
+			{
+				Provider: "codex",
+				Frame:    protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 10},
+				Source:   "stale-codex", CollectedAt: now.Add(-time.Minute), Stale: true,
+			},
+			{
+				Provider: "gemini",
+				Frame:    protocol.Frame{Provider: "gemini", Error: "current collector error"},
+				Source:   "current-gemini", CollectedAt: now,
+			},
+		},
+	}
+
+	got, ok := server.cachedExactUsageOverlay(now, current)
+	if !ok {
+		t.Fatal("expected exact Codex cache to overlay the stale Codex snapshot")
+	}
+	if got.Source != "codexbar-display" || got.CurrentProvider != "codex" {
+		t.Fatalf("expected current response metadata with exact current provider, got %#v", got)
+	}
+	if len(got.Providers) != 2 || got.Providers[0].ID != "claude" || got.Providers[1].ID != "codex" {
+		t.Fatalf("expected current provider ordering and no cached Gemini after its error, got %#v", got.Providers)
+	}
+	if claude := got.Providers[0]; claude.Weekly != 66 || claude.Source != "fresh-claude" || len(claude.Windows) != 1 || claude.Windows[0].Label != "Current monthly" {
+		t.Fatalf("latest Claude snapshot was replaced by the old cache: %#v", claude)
+	}
+	if codex := got.Providers[1]; codex.Weekly != 77 || codex.Source != "exact-probe" || codex.Stale {
+		t.Fatalf("exact Codex cache did not replace only Codex: %#v", codex)
+	}
+}
+
 func TestStaleUsageSnapshotNeverPresentsUnknownPercentagesAsRealZero(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)

@@ -1519,13 +1519,48 @@ func (s *Server) cachedExactUsageOverlay(now time.Time, usage daemon.PersistedUs
 	cachedAt := s.usageCacheAt
 	s.usageCacheMu.RUnlock()
 
+	cachedProviderID := strings.TrimSpace(cached.CurrentProvider)
+	var cachedProvider usageProviderInfo
+	for _, provider := range cached.Providers {
+		if provider.ID == cachedProviderID {
+			cachedProvider = provider
+			break
+		}
+	}
+	if cachedProvider.ID == "" {
+		return cached, true
+	}
+
 	for _, provider := range usage.Providers {
 		id := usageProviderID(provider.Provider, provider.Frame.Provider)
-		if id == cached.CurrentProvider && !provider.Stale && !provider.CollectedAt.Before(cachedAt) {
+		if id == cachedProviderID && !provider.Stale && !provider.CollectedAt.Before(cachedAt) {
 			return usageResponse{}, false
 		}
 	}
-	return cached, true
+	if len(usage.Providers) == 0 {
+		return cached, true
+	}
+
+	current := usageResponseFromPersisted(now, usage)
+	replaced := false
+	for i := range current.Providers {
+		if current.Providers[i].ID != cachedProviderID {
+			continue
+		}
+		current.Providers[i] = mergePersistedUsageDetails(
+			usageResponse{Providers: []usageProviderInfo{cachedProvider}},
+			usageResponse{Providers: []usageProviderInfo{current.Providers[i]}},
+		).Providers[0]
+		replaced = true
+		break
+	}
+	if !replaced {
+		current.Providers = append(current.Providers, cachedProvider)
+	}
+	current.CurrentProvider = cachedProviderID
+	current.UsageMode = usageModeForProviders(current.Providers)
+	current.TokenUsageReady = usageProvidersHaveTokenResult(current.Providers)
+	return current, true
 }
 
 func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
