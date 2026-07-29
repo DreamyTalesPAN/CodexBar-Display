@@ -729,7 +729,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           markCompanionAccessBlocked();
         } else if (isCompanionMissingError(normalized)) {
           markCompanionUnavailable();
-        } else {
+        } else if (!quiet) {
           applyPolledDeviceSnapshot(null, "/v1/device");
         }
         if (!quiet) {

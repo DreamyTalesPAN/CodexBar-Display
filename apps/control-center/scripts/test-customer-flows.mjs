@@ -3339,6 +3339,7 @@ async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
     otherInstallButton,
     "Theme setup should finish processing the failed readback before the assertion",
   );
+  await page.waitForTimeout(250);
   assert(
     (await page
       .getByRole("heading", { name: "VibeTV is connected" })
