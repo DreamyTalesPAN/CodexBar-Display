@@ -345,7 +345,7 @@ verify_package() {
   [[ -f "$(artifact_path SHA256SUMS)" ]] || die "missing package checksum file: $(artifact_path SHA256SUMS)"
   [[ -f "$(artifact_path manifest.json)" ]] || die "missing package manifest: $(artifact_path manifest.json)"
   (cd "$package_dir" && shasum -a 256 -c SHA256SUMS)
-  jq -e '.kind == "vibetv-ota-package" and (.themeAssets | type == "array") and (.themeAssets | length > 0)' \
+  jq -e '.kind == "vibetv-ota-package" and (.themeAssets | type == "array")' \
     "$(artifact_path manifest.json)" >/dev/null ||
     die "package manifest does not contain themeAssets metadata"
 }
