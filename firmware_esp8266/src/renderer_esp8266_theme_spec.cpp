@@ -1077,16 +1077,22 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   frame.weekly = CurrentFrame().weekly;
   frame.resetSecs = CurrentRemainingSecs();
   frame.usageUnavailable = CurrentFrame().usageUnavailable;
-  frame.usageSlot1Label = CurrentFrame().usageSlots[0].label.c_str();
-  frame.usageSlot1Percent = CurrentFrame().usageSlots[0].percent;
-  frame.usageSlot1ResetSecs =
-      codexbar_display::core::CurrentUsageSlotRemainingSecs(RuntimeState(), 0, millis());
-  frame.usageSlot1Available = CurrentFrame().usageSlots[0].available && !CurrentFrame().usageUnavailable;
-  frame.usageSlot2Label = CurrentFrame().usageSlots[1].label.c_str();
-  frame.usageSlot2Percent = CurrentFrame().usageSlots[1].percent;
-  frame.usageSlot2ResetSecs =
-      codexbar_display::core::CurrentUsageSlotRemainingSecs(RuntimeState(), 1, millis());
-  frame.usageSlot2Available = CurrentFrame().usageSlots[1].available && !CurrentFrame().usageUnavailable;
+  for (size_t i = 0; i < codexbar_display::themespec::kMaxThemeSpecUsageWindows &&
+                     i < codexbar_display::core::kMaxUsageWindows; ++i) {
+    frame.usageWindows[i].label = CurrentFrame().usageWindows[i].label.c_str();
+    frame.usageWindows[i].percent = CurrentFrame().usageWindows[i].percent;
+    frame.usageWindows[i].resetSecs =
+        codexbar_display::core::CurrentUsageWindowRemainingSecs(RuntimeState(), i, millis());
+    frame.usageWindows[i].available = CurrentFrame().usageWindows[i].available && !CurrentFrame().usageUnavailable;
+  }
+  frame.usageSlot1Label = frame.usageWindows[0].label;
+  frame.usageSlot1Percent = frame.usageWindows[0].percent;
+  frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs;
+  frame.usageSlot1Available = frame.usageWindows[0].available;
+  frame.usageSlot2Label = frame.usageWindows[1].label;
+  frame.usageSlot2Percent = frame.usageWindows[1].percent;
+  frame.usageSlot2ResetSecs = frame.usageWindows[1].resetSecs;
+  frame.usageSlot2Available = frame.usageWindows[1].available;
   frame.sessionUnavailable = CurrentFrame().sessionUnavailable;
   frame.weeklyUnavailable = CurrentFrame().weeklyUnavailable;
   frame.usageMode = usageModeText();
@@ -1106,11 +1112,11 @@ void MarkThemeSpecCountdownsRendered() {
   const int64_t remain = CurrentRemainingSecs();
   LastRenderedSecs() = remain;
   LastRenderedMinuteBucket() = remain / 60;
-  for (size_t i = 0; i < codexbar_display::core::kMaxUsageSlots; ++i) {
+  for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
     const int64_t slotRemain =
-        codexbar_display::core::CurrentUsageSlotRemainingSecs(RuntimeState(), i, now);
-    Context().lastRenderedUsageSlotSecs[i] = slotRemain;
-    Context().lastRenderedUsageSlotMinuteBuckets[i] = slotRemain / 60;
+        codexbar_display::core::CurrentUsageWindowRemainingSecs(RuntimeState(), i, now);
+    Context().lastRenderedUsageWindowSecs[i] = slotRemain;
+    Context().lastRenderedUsageWindowMinuteBuckets[i] = slotRemain / 60;
   }
 }
 

@@ -96,9 +96,11 @@ String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   String out;
   out.reserve(compact ? 180 : 260);
   if (!enabled) {
-    return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
+    return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"supportsUsageWindowsV1\":false,\"maxUsageWindows\":0,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
   }
-  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
+  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"maxUsageWindows\":";
+  out += String(codexbar_display::core::kMaxUsageWindows);
+  out += ",\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
   out += String(codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives);
   if (!compact) {
     out += ",\"supportedPrimitiveTypes\":[\"text\",\"rect\",\"progress\",\"gif\",\"sprite\",\"pixels\"]";
@@ -2716,17 +2718,17 @@ void loop() {
         runtimeCtx.lastRenderedSecs = remain;
       }
     }
-    for (size_t i = 0; i < codexbar_display::core::kMaxUsageSlots; ++i) {
+    for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
       const int64_t slotRemain =
-          codexbar_display::app::CurrentUsageSlotRemainingSecs(runtimeCtx, i, millis());
-      if (slotRemain == runtimeCtx.lastRenderedUsageSlotSecs[i]) {
+          codexbar_display::app::CurrentUsageWindowRemainingSecs(runtimeCtx, i, millis());
+      if (slotRemain == runtimeCtx.lastRenderedUsageWindowSecs[i]) {
         continue;
       }
       if (codexbar_display::core::RemainingMinuteBucketChanged(
-              slotRemain, runtimeCtx.lastRenderedUsageSlotMinuteBuckets[i])) {
+              slotRemain, runtimeCtx.lastRenderedUsageWindowMinuteBuckets[i])) {
         countdownMinuteChanged = true;
       } else {
-        runtimeCtx.lastRenderedUsageSlotSecs[i] = slotRemain;
+        runtimeCtx.lastRenderedUsageWindowSecs[i] = slotRemain;
       }
     }
     if (countdownMinuteChanged) {
