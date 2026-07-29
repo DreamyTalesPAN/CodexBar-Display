@@ -7,6 +7,7 @@ Goal: keep firmware transport/theme evolution modular and prevent monolith regre
 - `firmware_shared/app_transport.h`: transport hello emission + serial consume bridge.
 - `firmware_shared/device_clock.h`: device wall clock state math (SNTP epoch, learned UTC offset, resolved `time`/`date` text). Pure state, no board calls, natively tested.
 - `firmware_esp8266/src/standby_settings.h`: standby configuration state — clamping, screensaver slot reference, and the persisted record encoding. Pure state, no board calls, natively tested. Deciding when the device is idle and what it renders does not belong here.
+- `firmware_esp8266/src/standby_state.h`: when the device is idle and when it wakes. Pure state math, no board calls, natively tested. It reports transitions; loading a spec, repainting, and brightness stay with the caller.
 - `firmware_shared/app_runtime.h`: runtime context wrapper.
 - `firmware_shared/app_renderer.h`: renderer lifecycle contract.
 - `firmware_esp8266/src/renderer_esp8266_*`: board-specific theme rendering details.

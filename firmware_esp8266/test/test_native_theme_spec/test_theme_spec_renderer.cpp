@@ -1407,14 +1407,37 @@ void testFrameActivityDefaultsToCodingWhenUsageChanges() {
   const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
   TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+  TEST_ASSERT_FALSE(event.usageProgressed);
 
   const char* idleFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, idleFrame, 2000, event));
   TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+  TEST_ASSERT_FALSE(event.usageProgressed);
 
   const char* codingFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":120,"weekTokens":220,"totalTokens":340})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, codingFrame, 3000, event));
   TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+  TEST_ASSERT_TRUE(event.usageProgressed);
+}
+
+// Standby's activity clock hangs on this event, so a frame that only claims to
+// be coding, or an error frame, must not count as activity.
+void testUsageProgressEventIgnoresDeclaredActivityAndErrors() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+
+  const char* declaredCoding = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"activity":"coding"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, declaredCoding, 2000, event));
+  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* errorFrame = R"JSON({"v":2,"error":"runtime/cycle-timeout","session":80,"weekly":90})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, errorFrame, 3000, event));
+  TEST_ASSERT_TRUE(state.current.hasError);
+  TEST_ASSERT_FALSE(event.usageProgressed);
 }
 
 void testThemeSpecActivityChangeUsesPartialRenderEvent() {
@@ -2034,6 +2057,7 @@ int main() {
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
   RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
+  RUN_TEST(testUsageProgressEventIgnoresDeclaredActivityAndErrors);
   RUN_TEST(testThemeSpecActivityChangeUsesPartialRenderEvent);
   RUN_TEST(testLegacyThemeFieldsAreIgnored);
   RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);

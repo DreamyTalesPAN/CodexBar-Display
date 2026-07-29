@@ -114,6 +114,12 @@ bit-identical across rounds, so the release path leaves nothing behind.
 
 ## Recommendation
 
+**Superseded on 2026-07-29 by a user decision:** the screensaver is loaded from
+LittleFS on every standby transition and no second slot is held resident. The
+250-420 ms wake latency measured above is accepted, and #284 ships exactly one
+load path in each direction. The measurements below stand; the recommendation
+they led to does not.
+
 1. **Build the second slot as resident**, but cap the screensaver slot. A cap of
    ~2 KB resident (roughly 12 primitives and a 1 KB spec) keeps the asset-heavy
    live-theme case above the animation threshold with margin. Theme Studio
