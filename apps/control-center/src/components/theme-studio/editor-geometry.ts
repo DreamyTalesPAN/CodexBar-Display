@@ -15,6 +15,12 @@ const DEFAULT_FRAME = {
   session: 62,
   weekly: 62,
   resetSecs: 3600,
+  usageWindows: [
+    { label: "Weekly", percent: 62, reset: "1h", available: true },
+    { label: "Codex Spark Weekly", percent: 38, reset: "2h", available: true },
+    { label: "Daily", percent: 14, reset: "45m", available: true },
+    { label: "Monthly", percent: 80, reset: "6d", available: true },
+  ],
   usageSlot1Label: "Weekly",
   usageSlot1Percent: 62,
   usageSlot1Reset: "1h",
@@ -357,6 +363,24 @@ export function primitiveTitle(primitive: ThemeStudioPrimitive): string {
 }
 
 function boundText(binding: string): string {
+  const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(binding);
+  if (usageMatch) {
+    const window = DEFAULT_FRAME.usageWindows[Number(usageMatch[1])];
+    const field = usageMatch[2];
+    if (field === "available") {
+      return String(window?.available === true);
+    }
+    if (!window?.available) {
+      return "";
+    }
+    if (field === "label") {
+      return window.label;
+    }
+    if (field === "reset") {
+      return window.reset;
+    }
+    return String(window.percent);
+  }
   switch (binding) {
     case "label":
       return DEFAULT_FRAME.label;
@@ -407,7 +431,7 @@ function boundText(binding: string): string {
 }
 
 function substituteText(value: string): string {
-  return value.replace(/\{([a-zA-Z0-9_-]+)\}/g, (_match, key: string) =>
+  return value.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_match, key: string) =>
     boundText(key),
   );
 }

@@ -85,6 +85,10 @@ func (p *Pack) ValidateAgainstCapabilities(caps protocol.DeviceCapabilities) err
 			if !caps.SupportsUsageSlotsV1 {
 				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureUsageSlotsV1)
 			}
+		case protocol.FeatureUsageWindowsV1:
+			if !caps.SupportsUsageWindowsV1 {
+				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureUsageWindowsV1)
+			}
 		default:
 			return fmt.Errorf("theme pack requires unsupported capability %q", capability)
 		}
@@ -372,7 +376,9 @@ func validateManifestFields(manifest Manifest) error {
 		return errors.New("name is required")
 	}
 	for _, capability := range manifest.RequiredCapabilities {
-		if strings.TrimSpace(strings.ToLower(capability)) != protocol.FeatureUsageSlotsV1 {
+		switch strings.TrimSpace(strings.ToLower(capability)) {
+		case protocol.FeatureUsageSlotsV1, protocol.FeatureUsageWindowsV1:
+		default:
 			return fmt.Errorf("required capability %q is unsupported", capability)
 		}
 	}

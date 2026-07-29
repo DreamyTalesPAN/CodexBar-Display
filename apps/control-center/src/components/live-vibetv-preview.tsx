@@ -60,6 +60,7 @@ type UsageSlotFrame = {
   percent?: number;
   resetSecs?: number;
 };
+type UsageWindowFrame = UsageSlotFrame;
 
 type DisplayFrame = {
   v?: number;
@@ -71,6 +72,7 @@ type DisplayFrame = {
   weeklyUnavailable?: boolean;
   resetSecs?: number;
   usageMode?: string;
+  usageWindows?: UsageWindowFrame[];
   usageSlots?: UsageSlotFrame[];
   activity?: string;
   sessionTokens?: number;
@@ -102,6 +104,8 @@ export type ThemePrimitive = {
   h?: number;
   slot?: number;
   sl?: number;
+  usageIndex?: number;
+  ui?: number;
   text?: string;
   v?: string;
   binding?: string;
@@ -149,6 +153,12 @@ type FrameData = {
   weeklyUnavailable: boolean;
   resetSecs: number;
   usageMode: string;
+  usageWindows: Array<{
+    label: string;
+    percent: number;
+    resetSecs: number;
+    available: boolean;
+  }>;
   usageSlot1Label: string;
   usageSlot1Percent: number;
   usageSlot1ResetSecs: number;
@@ -177,6 +187,10 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   weeklyUnavailable: false,
   resetSecs: 3600,
   usageMode: "used",
+  usageWindows: [
+    { label: "Session", percent: 64, resetSecs: 3600, available: true },
+    { label: "Weekly", percent: 28, resetSecs: 7200, available: true },
+  ],
   usageSlot1Label: "Session",
   usageSlot1Percent: 64,
   usageSlot1ResetSecs: 3600,
@@ -990,7 +1004,9 @@ export function hasRenderableUsage(
   const hasLegacyUsage = [displayFrame.session, displayFrame.weekly].some(
     (value) => typeof value === "number" && Number.isFinite(value),
   );
-  const hasSlotUsage = (displayFrame.usageSlots || []).some(
+  const frameUsageWindows =
+    displayFrame.usageWindows?.length ? displayFrame.usageWindows : displayFrame.usageSlots;
+  const hasSlotUsage = (frameUsageWindows || []).some(
     (slot) =>
       Boolean(slot.id?.trim() && slot.label?.trim()) &&
       typeof slot.percent === "number" &&
@@ -1006,7 +1022,7 @@ export function buildFrameData(
   const now = generatedAt ? new Date(generatedAt) : new Date();
   const usableDate = Number.isNaN(now.getTime()) ? new Date() : now;
   const sourceUsageMode = frameUsageMode(displayFrame);
-  const slots = (displayFrame.usageSlots || []).filter(
+  const slots = ((displayFrame.usageWindows?.length ? displayFrame.usageWindows : displayFrame.usageSlots) || []).filter(
     (slot) => Boolean(slot.id?.trim() && slot.label?.trim()),
   );
   const slot1 = slots[0];
@@ -1020,6 +1036,12 @@ export function buildFrameData(
     weeklyUnavailable: displayFrame.weeklyUnavailable === true,
     resetSecs: displayFrame.resetSecs ?? 0,
     usageMode: sourceUsageMode,
+    usageWindows: slots.map((slot) => ({
+      label: slot.label || "",
+      percent: clampPercent(slot.percent),
+      resetSecs: slot.resetSecs ?? 0,
+      available: true,
+    })),
     usageSlot1Label: slot1?.label || "",
     usageSlot1Percent: clampPercent(slot1?.percent),
     usageSlot1ResetSecs: slot1?.resetSecs ?? 0,
@@ -1047,6 +1069,10 @@ export function primitiveUsageSlotVisible(
   primitive: ThemePrimitive,
   frame: FrameData,
 ): boolean {
+  const usageIndex = primitive.usageIndex ?? primitive.ui;
+  if (typeof usageIndex === "number") {
+    return frame.usageWindows[usageIndex]?.available === true;
+  }
   const slot = primitive.slot ?? primitive.sl;
   if (slot === 1) {
     return frame.usageSlot1Available;
@@ -1058,14 +1084,9 @@ export function primitiveUsageSlotVisible(
 }
 
 export function themeSpecAriaLabel(themeId: string, frame: FrameData): string {
-  const usage = [
-    frame.usageSlot1Available
-      ? `${frame.usageSlot1Label} ${frame.usageSlot1Percent}% ${frame.usageMode}`
-      : "",
-    frame.usageSlot2Available
-      ? `${frame.usageSlot2Label} ${frame.usageSlot2Percent}% ${frame.usageMode}`
-      : "",
-  ].filter(Boolean);
+  const usage = frame.usageWindows
+    .filter((window) => window.available)
+    .map((window) => `${window.label} ${window.percent}% ${frame.usageMode}`);
   return `Rendered VibeTV theme ${themeId} showing ${frame.label}, ${usage.length > 0 ? usage.join(", ") : "no usage windows available"}`;
 }
 
@@ -1165,12 +1186,30 @@ function renderTextPrimitive(primitive: ThemePrimitive, frame: FrameData): strin
     return boundValue(binding, frame);
   }
   const raw = primitive.text || primitive.v || "";
-  return raw.replace(/\{([a-zA-Z0-9_-]+)\}/g, (_match, key: string) =>
+  return raw.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_match, key: string) =>
     boundValue(key, frame),
   );
 }
 
 export function boundValue(key: string, frame: FrameData): string {
+  const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(key);
+  if (usageMatch) {
+    const window = frame.usageWindows[Number(usageMatch[1])];
+    const field = usageMatch[2];
+    if (field === "available") {
+      return String(window?.available === true);
+    }
+    if (!window?.available) {
+      return "";
+    }
+    if (field === "label") {
+      return window.label;
+    }
+    if (field === "reset") {
+      return formatReset(window.resetSecs);
+    }
+    return String(window.percent);
+  }
   switch (key) {
     case "label":
     case "providerLabel":
@@ -1243,6 +1282,11 @@ export function boundValue(key: string, frame: FrameData): string {
 
 export function progressPercent(primitive: ThemePrimitive, frame: FrameData): number {
   const binding = primitive.binding || primitive.b || "";
+  const usageMatch = /^usage\.(\d+)\.percent$/.exec(binding);
+  if (usageMatch) {
+    const window = frame.usageWindows[Number(usageMatch[1])];
+    return window?.available ? window.percent : 0;
+  }
   if (binding === "usageSlot1Percent" || binding === "us1p") {
     return frame.usageSlot1Available ? frame.usageSlot1Percent : 0;
   }

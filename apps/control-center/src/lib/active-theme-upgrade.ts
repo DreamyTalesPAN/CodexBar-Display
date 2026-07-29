@@ -23,6 +23,8 @@ export function resolveActiveThemeUpgrade(
   }
   const needsUsageSlots =
     device.capabilities?.theme?.supportsUsageSlotsV1 !== true;
+  const needsUsageWindows =
+    device.capabilities?.theme?.supportsUsageWindowsV1 !== true;
   const theme = themes.find(
     (candidate) => candidate.themeId === device.activeTheme,
   );
@@ -31,7 +33,7 @@ export function resolveActiveThemeUpgrade(
       needed: false,
       needsFirmwareCapability: false,
       needsThemeSpec: false,
-      unresolved: needsUsageSlots,
+    unresolved: needsUsageSlots || needsUsageWindows,
     };
   }
   if (!theme.requiredCapabilities) {
@@ -40,11 +42,12 @@ export function resolveActiveThemeUpgrade(
       needsFirmwareCapability: false,
       needsThemeSpec: false,
       theme,
-      unresolved: needsUsageSlots,
+      unresolved: needsUsageSlots || needsUsageWindows,
     };
   }
   const needsRequiredCapability =
-    theme.requiredCapabilities.includes("usage-slots-v1") && needsUsageSlots;
+    (theme.requiredCapabilities.includes("usage-slots-v1") && needsUsageSlots) ||
+    (theme.requiredCapabilities.includes("usage-windows-v1") && needsUsageWindows);
   const expectedPath = theme.themeSpecPath?.trim();
   const activePath = device.display?.themeSpec?.path?.trim();
   const pathIsOutdated = Boolean(

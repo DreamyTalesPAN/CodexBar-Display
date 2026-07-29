@@ -355,23 +355,30 @@ func themePackCapabilitiesError(err error) *InstallError {
 }
 
 func canRetryAfterUsageSlotsFirmwareUpdate(pack *themepack.Pack, caps protocol.DeviceCapabilities, err error, opts Options) bool {
-	if opts.SkipFirmwareUpdate || opts.FirmwareUpdater == nil || !caps.Known || !caps.SupportsThemeSpecV1 || caps.SupportsUsageSlotsV1 {
+	if opts.SkipFirmwareUpdate || opts.FirmwareUpdater == nil || !caps.Known || !caps.SupportsThemeSpecV1 {
 		return false
 	}
-	if !isMissingUsageSlotsV1Error(err) {
+	missingSlots := isMissingUsageCapabilityError(err, protocol.FeatureUsageSlotsV1)
+	missingWindows := isMissingUsageCapabilityError(err, protocol.FeatureUsageWindowsV1)
+	if (!missingSlots || caps.SupportsUsageSlotsV1) && (!missingWindows || caps.SupportsUsageWindowsV1) {
 		return false
 	}
 	updatedCaps := caps
-	updatedCaps.SupportsUsageSlotsV1 = true
+	if missingSlots {
+		updatedCaps.SupportsUsageSlotsV1 = true
+	}
+	if missingWindows {
+		updatedCaps.SupportsUsageWindowsV1 = true
+	}
 	return pack.ValidateAgainstCapabilities(updatedCaps) == nil
 }
 
-func isMissingUsageSlotsV1Error(err error) bool {
+func isMissingUsageCapabilityError(err error, capability string) bool {
 	if err == nil {
 		return false
 	}
 	message := err.Error()
-	return strings.Contains(message, "usage-slots-v1") && strings.Contains(message, "does not advertise")
+	return strings.Contains(message, capability) && strings.Contains(message, "does not advertise")
 }
 
 func themeInstallCapabilities(
