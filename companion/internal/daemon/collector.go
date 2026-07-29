@@ -12,9 +12,14 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
-// Give codexbar cost --json its full source budget plus a small collector
-// margin, so the parent scan does not cancel at the same instant as the command.
-const tokenStatsCollectorTimeout = 125 * time.Second
+const (
+	// Give codexbar cost --json its full source budget plus a small collector
+	// margin, so the parent scan does not cancel at the same instant as the command.
+	tokenStatsCollectorTimeout = 125 * time.Second
+	// Cost history scans can take over a minute. Keep their post-completion
+	// cadence below the ten-minute last-good window without running continuously.
+	tokenStatsScanCooldown = 5 * time.Minute
+)
 
 type providerSnapshot struct {
 	Provider            string                     `json:"provider"`
@@ -67,6 +72,8 @@ type providerCollector struct {
 	tokenStatsRunning        bool
 	tokenStatsCancel         context.CancelFunc
 	tokenStatsWG             sync.WaitGroup
+	tokenStatsCooldown       time.Duration
+	tokenStatsLastCompleted  time.Time
 }
 
 func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
@@ -97,6 +104,7 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		timeout:               collectorProviderTimeout(),
 		snapshotMaxAge:        providerSnapshotMaxAge(),
 		persistInterval:       1 * time.Minute,
+		tokenStatsCooldown:    tokenStatsScanCooldown,
 		providers:             make(map[string]providerSnapshot),
 	}
 	if normalizeTransportName(opts.Transport) == "wifi" || deps.transportName == "wifi" {
@@ -163,7 +171,11 @@ func (c *providerCollector) requestTokenStatsScan(parent context.Context) bool {
 
 	ctx, cancel := context.WithCancel(parent)
 	c.tokenStatsMu.Lock()
-	if c.tokenStatsRunning {
+	now := c.now().UTC()
+	if c.tokenStatsRunning ||
+		(c.tokenStatsCooldown > 0 &&
+			!c.tokenStatsLastCompleted.IsZero() &&
+			now.Before(c.tokenStatsLastCompleted.Add(c.tokenStatsCooldown))) {
 		c.tokenStatsMu.Unlock()
 		cancel()
 		return false
@@ -182,6 +194,7 @@ func (c *providerCollector) requestTokenStatsScan(parent context.Context) bool {
 
 func (c *providerCollector) finishTokenStatsScan() {
 	c.tokenStatsMu.Lock()
+	c.tokenStatsLastCompleted = c.now().UTC()
 	c.tokenStatsRunning = false
 	c.tokenStatsCancel = nil
 	c.tokenStatsMu.Unlock()

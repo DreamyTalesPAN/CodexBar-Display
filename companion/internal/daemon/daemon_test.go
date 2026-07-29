@@ -3806,30 +3806,39 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	current := time.Date(2026, 7, 29, 8, 30, 0, 0, time.UTC)
+	var clockNanos atomic.Int64
+	clockNanos.Store(current.UnixNano())
+	now := func() time.Time {
+		return time.Unix(0, clockNanos.Load()).UTC()
+	}
 	wake := make(chan struct{}, 1)
+	afterWake := make(chan struct{}, 2)
 	var tokenFetches atomic.Int32
 	collector := &providerCollector{
-		now:             func() time.Time { return current },
-		logf:            func(string, ...any) {},
-		order:           []string{"codex"},
-		interval:        time.Hour,
-		activityPoll:    time.Hour,
-		timeout:         time.Second,
-		snapshotMaxAge:  10 * time.Minute,
-		persistInterval: time.Minute,
-		wake:            wake,
-		providers:       make(map[string]providerSnapshot),
+		now:                now,
+		logf:               func(string, ...any) {},
+		order:              []string{"codex"},
+		interval:           time.Hour,
+		activityPoll:       time.Hour,
+		timeout:            time.Second,
+		snapshotMaxAge:     10 * time.Minute,
+		persistInterval:    time.Minute,
+		tokenStatsCooldown: tokenStatsScanCooldown,
+		wake:               wake,
+		afterWakeCollect:   func() { afterWake <- struct{}{} },
+		providers:          make(map[string]providerSnapshot),
 		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
 			return []codexbar.ParsedFrame{testParsedFrame("codex", 17, 42, 3600)}, nil
 		},
 	}
 	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
 		count := tokenFetches.Add(1)
+		collectedAt := now()
 		return map[string]codexbar.ProviderTokenStats{
 			"codex": {
 				TotalTokens: int64(100 + count),
-				UpdatedAt:   current,
-				Cost:        &codexbar.ProviderCostUsage{UpdatedAt: current, Last30DaysTokens: int64(100 + count)},
+				UpdatedAt:   collectedAt,
+				Cost:        &codexbar.ProviderCostUsage{UpdatedAt: collectedAt, Last30DaysTokens: int64(100 + count)},
 			},
 		}, true
 	}
@@ -3840,8 +3849,34 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	waitForCondition(t, time.Second, func() bool {
 		return tokenFetches.Load() == 1
 	})
+	waitForCondition(t, time.Second, func() bool {
+		collector.tokenStatsMu.Lock()
+		defer collector.tokenStatsMu.Unlock()
+		return !collector.tokenStatsRunning
+	})
+	collector.mu.RLock()
+	firstTokenCollection := collector.providers["codex"].TokenStatsCollected
+	collector.mu.RUnlock()
 
+	clockNanos.Add(int64(time.Minute))
 	wake <- struct{}{}
+	<-afterWake
+	if got := tokenFetches.Load(); got != 1 {
+		t.Fatalf("manual wake bypassed global token scan cooldown: fetches=%d", got)
+	}
+	collector.mu.RLock()
+	afterCooldownWake := collector.providers["codex"]
+	collector.mu.RUnlock()
+	if !afterCooldownWake.Collected.Equal(now()) {
+		t.Fatalf("manual wake did not refresh quota snapshot: collected=%s want=%s", afterCooldownWake.Collected, now())
+	}
+	if !afterCooldownWake.TokenStatsCollected.Equal(firstTokenCollection) {
+		t.Fatalf("skipped token scan falsely advanced freshness: got=%s want=%s", afterCooldownWake.TokenStatsCollected, firstTokenCollection)
+	}
+
+	clockNanos.Add(int64(tokenStatsScanCooldown - time.Minute))
+	wake <- struct{}{}
+	<-afterWake
 	waitForCondition(t, time.Second, func() bool {
 		return tokenFetches.Load() == 2
 	})
@@ -4182,10 +4217,15 @@ func TestProviderCollectorExpiredQuotaKeepsFreshTokenStats(t *testing.T) {
 	}
 }
 
-func TestProviderCollectorSlowTokenScanDoesNotOverlapAndRecovers(t *testing.T) {
+func TestProviderCollectorSlowTokenScanUsesPostCompletionCooldown(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	current := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	var clockNanos atomic.Int64
+	clockNanos.Store(current.UnixNano())
+	now := func() time.Time {
+		return time.Unix(0, clockNanos.Load()).UTC()
+	}
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
 	var calls atomic.Int32
@@ -4193,12 +4233,13 @@ func TestProviderCollectorSlowTokenScanDoesNotOverlapAndRecovers(t *testing.T) {
 	var maxInFlight atomic.Int32
 
 	collector := &providerCollector{
-		now:             func() time.Time { return current },
-		logf:            func(string, ...any) {},
-		order:           []string{"codex"},
-		interval:        30 * time.Second,
-		snapshotMaxAge:  10 * time.Minute,
-		persistInterval: time.Minute,
+		now:                now,
+		logf:               func(string, ...any) {},
+		order:              []string{"codex"},
+		interval:           30 * time.Second,
+		snapshotMaxAge:     10 * time.Minute,
+		persistInterval:    time.Minute,
+		tokenStatsCooldown: tokenStatsScanCooldown,
 		providers: map[string]providerSnapshot{
 			"codex": {
 				Provider:  "codex",
@@ -4223,8 +4264,9 @@ func TestProviderCollectorSlowTokenScanDoesNotOverlapAndRecovers(t *testing.T) {
 		}
 		select {
 		case <-release:
+			collectedAt := now()
 			return map[string]codexbar.ProviderTokenStats{
-				"codex": {SessionTokens: 12, WeekTokens: 34, TotalTokens: 56, UpdatedAt: current},
+				"codex": {SessionTokens: 12, WeekTokens: 34, TotalTokens: 56, UpdatedAt: collectedAt},
 			}, true
 		case <-ctx.Done():
 			return nil, false
@@ -4237,7 +4279,7 @@ func TestProviderCollectorSlowTokenScanDoesNotOverlapAndRecovers(t *testing.T) {
 	<-started
 	for i := 0; i < 5; i++ {
 		if collector.requestTokenStatsScan(context.Background()) {
-			t.Fatalf("fast poll %d started overlapping token scan", i)
+			t.Fatalf("activity tick %d started overlapping token scan", i)
 		}
 	}
 	if got := calls.Load(); got != 1 {
@@ -4247,16 +4289,33 @@ func TestProviderCollectorSlowTokenScanDoesNotOverlapAndRecovers(t *testing.T) {
 		t.Fatalf("expected max one in-flight scan, got %d", got)
 	}
 
+	// Model a documented long history scan. The cooldown starts when that scan
+	// finishes, not when it started.
+	clockNanos.Add(int64(78 * time.Second))
 	close(release)
 	waitForCondition(t, time.Second, func() bool {
-		collector.mu.RLock()
-		defer collector.mu.RUnlock()
-		return collector.providers["codex"].Frame.TotalTokens == 56
+		collector.tokenStatsMu.Lock()
+		defer collector.tokenStatsMu.Unlock()
+		return !collector.tokenStatsRunning
 	})
+	if collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("activity tick immediately restarted a completed long token scan")
+	}
+	clockNanos.Add(int64(tokenStatsScanCooldown - time.Nanosecond))
+	if collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("activity tick started a token scan before cooldown expiry")
+	}
+	clockNanos.Add(int64(time.Nanosecond))
 	if !collector.requestTokenStatsScan(context.Background()) {
-		t.Fatal("expected later token scan to start after recovery")
+		t.Fatal("expected token scan to start when cooldown expired")
 	}
 	collector.shutdownTokenStatsScan()
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("expected exactly two scans across cooldown, got %d", got)
+	}
+	if got := maxInFlight.Load(); got != 1 {
+		t.Fatalf("expected max one in-flight scan after cooldown, got %d", got)
+	}
 }
 
 func TestProviderCollectorAcceptedTokenStatsPersistForImmediateUsageAPIRead(t *testing.T) {
