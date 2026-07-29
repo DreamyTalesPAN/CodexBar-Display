@@ -112,6 +112,14 @@
             "type": "integer",
             "enum": [1, 2]
           },
+          "usageIndex": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ui": {
+            "type": "integer",
+            "minimum": 0
+          },
           "text": {
             "type": "string"
           },
@@ -348,6 +356,14 @@
           "sl": {
             "type": "integer",
             "enum": [1, 2]
+          },
+          "usageIndex": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ui": {
+            "type": "integer",
+            "minimum": 0
           },
           "text": {
             "type": "string"

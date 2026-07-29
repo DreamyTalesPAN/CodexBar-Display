@@ -1369,6 +1369,9 @@ function themeCapabilityBlocker(
     if (capability === "usage-slots-v1") {
       return device.capabilities?.theme?.supportsUsageSlotsV1 !== true;
     }
+    if (capability === "usage-windows-v1") {
+      return device.capabilities?.theme?.supportsUsageWindowsV1 !== true;
+    }
     return true;
   });
   if (missing.length === 0) {
