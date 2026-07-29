@@ -2046,35 +2046,28 @@ func TestMarshalFrameWithinLimitCompactsOptionalFieldsBeforeUsageWindows(t *test
 }
 
 func TestMarshalFrameWithinAdvertisedEscapedUsageWindowCapacity(t *testing.T) {
-	const advertisedMaxUsageWindows = 4
+	const advertisedMaxUsageWindows = 3
+	worstEscapedText := func(maxBytes int) string {
+		return strings.Repeat("&<>", maxBytes/3) + strings.Repeat("&", maxBytes%3)
+	}
 	frame := protocol.Frame{
 		V:         protocol.ProtocolVersionV2,
-		Provider:  "generic",
-		Label:     "Generic",
+		Provider:  strings.Repeat(worstEscapedText(protocol.DefaultProviderBytes), 3),
+		Label:     strings.Repeat(worstEscapedText(protocol.DefaultProviderLabelBytes), 3),
 		UsageMode: "used",
 	}
-	ids := []string{
-		strings.Repeat("&<>", 10) + "&<",
-		strings.Repeat(`"`, protocol.DefaultUsageWindowIDBytes),
-		strings.Repeat(`\`, protocol.DefaultUsageWindowIDBytes),
-		strings.Repeat("&<>", 10) + "&<",
-		"must-trim",
-	}
-	labels := []string{
-		strings.Repeat("&<>", 8),
-		strings.Repeat(`"`, protocol.DefaultUsageWindowLabelBytes),
-		strings.Repeat(`\`, protocol.DefaultUsageWindowLabelBytes),
-		strings.Repeat("&<>", 8),
-		"must-trim",
-	}
-	for i, label := range labels {
+	maxID := worstEscapedText(protocol.DefaultUsageWindowIDBytes)
+	maxLabel := worstEscapedText(protocol.DefaultUsageWindowLabelBytes)
+	for i := 0; i < advertisedMaxUsageWindows+1; i++ {
 		frame.UsageWindows = append(frame.UsageWindows, protocol.UsageWindow{
-			ID:       ids[i],
-			Label:    label,
+			ID:       maxID,
+			Label:    maxLabel,
 			Percent:  100,
 			ResetSec: 9223372036854775807,
 		})
 	}
+	frame.UsageWindows[advertisedMaxUsageWindows].ID = "must-trim"
+	frame.UsageWindows[advertisedMaxUsageWindows].Label = "must-trim"
 
 	bounded := applyDeviceUsageWindowLimit(frame, protocol.DeviceCapabilities{
 		MaxUsageWindows: advertisedMaxUsageWindows,
@@ -2090,14 +2083,14 @@ func TestMarshalFrameWithinAdvertisedEscapedUsageWindowCapacity(t *testing.T) {
 		t.Fatalf("expected all advertised usage windows to survive, got %+v", marshaled.UsageWindows)
 	}
 	for i := 0; i < advertisedMaxUsageWindows; i++ {
-		if marshaled.UsageWindows[i].ID != ids[i] {
-			t.Fatalf("expected escaped usage window ID %d to survive: got=%q want=%q", i, marshaled.UsageWindows[i].ID, ids[i])
+		if marshaled.UsageWindows[i].ID != maxID {
+			t.Fatalf("expected escaped usage window ID %d to survive: got=%q want=%q", i, marshaled.UsageWindows[i].ID, maxID)
 		}
 	}
 	if strings.Contains(string(line), "must-trim") {
 		t.Fatalf("frame included usage window above advertised capacity: %s", line)
 	}
-	for _, escaped := range []string{`\u0026`, `\u003c`, `\u003e`, `\"`, `\\`} {
+	for _, escaped := range []string{`\u0026`, `\u003c`, `\u003e`} {
 		if !strings.Contains(string(line), escaped) {
 			t.Fatalf("frame missing escaped usage-window text %q: %s", escaped, line)
 		}

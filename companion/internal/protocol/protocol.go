@@ -11,6 +11,8 @@ import (
 const (
 	DefaultUsageWindowLabelBytes = 24
 	DefaultUsageWindowIDBytes    = 32
+	DefaultProviderBytes         = DefaultUsageWindowIDBytes
+	DefaultProviderLabelBytes    = DefaultUsageWindowLabelBytes
 )
 
 type UsageWindow struct {
@@ -63,6 +65,8 @@ type UpdateState struct {
 func (f Frame) Normalize() Frame {
 	f.V = NormalizeProtocolVersion(f.V)
 	protocolVersion := f.V
+	f.Provider = truncateUTF8Bytes(strings.TrimSpace(f.Provider), DefaultProviderBytes)
+	f.Label = truncateUTF8Bytes(strings.TrimSpace(f.Label), DefaultProviderLabelBytes)
 	if f.Session < 0 {
 		f.Session = 0
 	}

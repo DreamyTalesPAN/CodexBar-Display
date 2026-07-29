@@ -492,8 +492,7 @@ void testUsageWindowResetCountdownsTickIndependently() {
 }
 
 void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
-  std::string frameLine =
-      "{\"v\":2,\"provider\":\"p\",\"label\":\"Provider\",\"session\":100,\"weekly\":100,\"resetSecs\":9223372036854775807,\"usageMode\":\"remaining\",\"usageWindows\":[";
+  std::string frameLine;
   const auto appendEscapedText = [&frameLine](size_t decodedBytes, size_t variant) {
     for (size_t j = 0; j < decodedBytes; ++j) {
       if (variant == 0) {
@@ -509,6 +508,12 @@ void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
       }
     }
   };
+  frameLine =
+      "{\"v\":2,\"provider\":\"";
+  appendEscapedText(codexbar_display::core::kProviderWireBytes, 2);
+  frameLine += "\",\"label\":\"";
+  appendEscapedText(codexbar_display::core::kProviderLabelWireBytes, 2);
+  frameLine += "\",\"session\":100,\"weekly\":100,\"resetSecs\":9223372036854775807,\"usageMode\":\"remaining\",\"usageWindows\":[";
   for (size_t i = 0; i < codexbar_display::core::kAdvertisedMaxUsageWindows; ++i) {
     if (i > 0) {
       frameLine += ",";
@@ -521,7 +526,7 @@ void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
   }
   frameLine += "]}";
 
-  TEST_ASSERT_EQUAL_UINT32(4, codexbar_display::core::kAdvertisedMaxUsageWindows);
+  TEST_ASSERT_EQUAL_UINT32(3, codexbar_display::core::kAdvertisedMaxUsageWindows);
   TEST_ASSERT_TRUE(codexbar_display::core::kAdvertisedMaxUsageWindows > 0);
   TEST_ASSERT_TRUE(codexbar_display::core::kAdvertisedMaxUsageWindows <= codexbar_display::core::kMaxUsageWindows);
   TEST_ASSERT_TRUE(frameLine.size() + 1 <= codexbar_display::core::kFrameLineBufferBytes);

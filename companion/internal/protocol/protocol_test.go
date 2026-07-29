@@ -244,6 +244,20 @@ func TestFrameNormalizeKeepsConfirmedThemeSpecClear(t *testing.T) {
 	}
 }
 
+func TestFrameNormalizeBoundsProviderText(t *testing.T) {
+	frame := Frame{
+		Provider: " " + strings.Repeat("provider", 8),
+		Label:    " " + strings.Repeat("Wöchentlich", 8),
+	}
+
+	normalized := frame.Normalize()
+	if len(normalized.Provider) > DefaultProviderBytes ||
+		len(normalized.Label) > DefaultProviderLabelBytes ||
+		!utf8.ValidString(normalized.Label) {
+		t.Fatalf("expected bounded provider text, got provider=%q label=%q", normalized.Provider, normalized.Label)
+	}
+}
+
 func TestFrameNormalizeTrimsUpdateState(t *testing.T) {
 	frame := Frame{
 		Update: &UpdateState{

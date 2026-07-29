@@ -17,6 +17,8 @@ namespace codexbar_display {
 namespace core {
 
 constexpr size_t kFrameLineBufferBytes = 2048;
+constexpr size_t kProviderWireBytes = 32;
+constexpr size_t kProviderLabelWireBytes = 24;
 constexpr size_t kUsageWindowIDWireBytes = 32;
 constexpr size_t kUsageWindowLabelWireBytes = 24;
 constexpr size_t kUsageWindowPercentWireDigits = 3;
@@ -31,6 +33,10 @@ constexpr size_t kUsageWindowWireBudgetBytes =
     kUsageWindowResetSecsWireDigits;
 constexpr size_t kUsageWindowWireBudgetWithCommaBytes = kUsageWindowWireBudgetBytes + 1;
 constexpr size_t kUsageWindowJSONStringWorstCaseExpansionBytes = 6;
+constexpr size_t kProviderEscapedWireBytes =
+    kProviderWireBytes * kUsageWindowJSONStringWorstCaseExpansionBytes;
+constexpr size_t kProviderLabelEscapedWireBytes =
+    kProviderLabelWireBytes * kUsageWindowJSONStringWorstCaseExpansionBytes;
 constexpr size_t kUsageWindowEscapedIDWireBytes =
     kUsageWindowIDWireBytes * kUsageWindowJSONStringWorstCaseExpansionBytes;
 constexpr size_t kUsageWindowEscapedLabelWireBytes =
@@ -49,19 +55,28 @@ constexpr size_t kUsageWindowFrameOverheadBytes =
     kUsageWindowPercentWireDigits +
     kUsageWindowResetSecsWireDigits;
 static_assert(kFrameLineBufferBytes > kUsageWindowFrameOverheadBytes, "usage window frame overhead must fit");
+constexpr size_t kUsageWindowFrameOverheadWithProviderBytes =
+    kUsageWindowFrameOverheadBytes +
+    kProviderWireBytes +
+    kProviderLabelWireBytes;
+static_assert(kFrameLineBufferBytes > kUsageWindowFrameOverheadWithProviderBytes, "usage window frame overhead with provider text must fit");
 constexpr size_t kMaxUsageWindows =
-    (kFrameLineBufferBytes - kUsageWindowFrameOverheadBytes + 1) /
+    (kFrameLineBufferBytes - kUsageWindowFrameOverheadWithProviderBytes + 1) /
     kUsageWindowWireBudgetWithCommaBytes;
 static_assert(
-    kUsageWindowFrameOverheadBytes + (kMaxUsageWindows * kUsageWindowWireBudgetWithCommaBytes) - 1 <= kFrameLineBufferBytes,
+    kUsageWindowFrameOverheadWithProviderBytes + (kMaxUsageWindows * kUsageWindowWireBudgetWithCommaBytes) - 1 <= kFrameLineBufferBytes,
     "normal usage window parser capacity must fit max frame bytes");
+constexpr size_t kAdvertisedUsageWindowFrameOverheadBytes =
+    kUsageWindowFrameOverheadBytes +
+    kProviderEscapedWireBytes +
+    kProviderLabelEscapedWireBytes;
 constexpr size_t kAdvertisedMaxUsageWindows =
-    (kFrameLineBufferBytes - kUsageWindowFrameOverheadBytes + 1) /
+    (kFrameLineBufferBytes - kAdvertisedUsageWindowFrameOverheadBytes + 1) /
     kAdvertisedUsageWindowWireBudgetWithCommaBytes;
 static_assert(kAdvertisedMaxUsageWindows > 0, "advertised usage window capability must be positive");
 static_assert(kAdvertisedMaxUsageWindows <= kMaxUsageWindows, "advertised usage window capability must not exceed parser capacity");
 static_assert(
-    kUsageWindowFrameOverheadBytes + (kAdvertisedMaxUsageWindows * kAdvertisedUsageWindowWireBudgetWithCommaBytes) - 1 <= kFrameLineBufferBytes,
+    kAdvertisedUsageWindowFrameOverheadBytes + (kAdvertisedMaxUsageWindows * kAdvertisedUsageWindowWireBudgetWithCommaBytes) - 1 <= kFrameLineBufferBytes,
     "advertised usage window capability must fit escaped max frame bytes");
 
 struct UsageWindow {
