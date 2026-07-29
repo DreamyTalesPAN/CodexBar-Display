@@ -1009,9 +1009,6 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		collectedAt = now
 		decision.Selected.CollectedAt = collectedAt
 	}
-	if !result.frame.UsageUnavailable {
-		updateLastGoodState(state, result.frame, collectedAt, deps)
-	}
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
 }
@@ -1226,6 +1223,9 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		}
 	}
 	persistActiveWiFiTarget(port, deps)
+	if result.failureErr == nil && !frame.UsageUnavailable {
+		updateLastGoodState(state, frame, deps.now(), deps)
+	}
 
 	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
 		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)

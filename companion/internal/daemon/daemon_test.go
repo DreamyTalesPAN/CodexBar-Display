@@ -882,6 +882,104 @@ func TestRunCycleWithDepsUsesColdStartFetchTimeout(t *testing.T) {
 	}
 }
 
+func TestRunCycleWithDepsDoesNotPersistLastGoodWhenInitialSendFails(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 29, 21, 22, 11, 0, time.UTC)
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+
+	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.UnknownDeviceCapabilities(), nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{
+				testParsedFrame("codex", 12, 30, 3600),
+			}, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(string, []byte) error {
+			return errors.New("device send timed out")
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected failed device send")
+	}
+	if state.hasLastGood {
+		t.Fatalf("failed initial send must not create in-memory last-good frame: %+v", state.lastGood)
+	}
+	if _, _, ok := loadPersistedLastGoodAnyAge(); ok {
+		t.Fatalf("failed initial send must not persist a last-good frame")
+	}
+}
+
+func TestRunCycleWithDepsFailedSendDoesNotOverwriteLastGood(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 29, 21, 22, 11, 0, time.UTC)
+	current := now
+	state := &runtimeState{
+		selector: codexbar.NewProviderSelector(),
+	}
+	providers := []codexbar.ParsedFrame{
+		testParsedFrame("codex", 12, 30, 3600),
+	}
+	failSend := false
+
+	deps := runtimeDeps{
+		now:         func() time.Time { return current },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.UnknownDeviceCapabilities(), nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return providers, nil
+		},
+		logf: func(string, ...any) {},
+		sendLine: func(string, []byte) error {
+			if failSend {
+				return errors.New("device send timed out")
+			}
+			return nil
+		},
+	}
+
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected first send to succeed, got %v", err)
+	}
+	persisted, savedAt, ok := loadPersistedLastGoodAnyAge()
+	if !ok {
+		t.Fatalf("expected successful send to persist last-good frame")
+	}
+	if persisted.Provider != "codex" || !savedAt.Equal(now) {
+		t.Fatalf("unexpected initial last-good frame: frame=%+v savedAt=%s", persisted, savedAt)
+	}
+
+	current = current.Add(lastGoodPersistInterval + time.Second)
+	providers = []codexbar.ParsedFrame{
+		testParsedFrame("claude", 70, 80, 7200),
+	}
+	failSend = true
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err == nil {
+		t.Fatalf("expected second send to fail")
+	}
+
+	persisted, savedAt, ok = loadPersistedLastGoodAnyAge()
+	if !ok {
+		t.Fatalf("expected previous last-good frame to remain persisted")
+	}
+	if persisted.Provider != "codex" || persisted.Session != 12 || !savedAt.Equal(now) {
+		t.Fatalf("failed send overwrote persisted last-good: frame=%+v savedAt=%s", persisted, savedAt)
+	}
+	if !state.hasLastGood || state.lastGood.Provider != "codex" || state.lastGood.Session != 12 {
+		t.Fatalf("failed send overwrote in-memory last-good: %+v", state.lastGood)
+	}
+}
+
 func TestPersistAndLoadLastGood(t *testing.T) {
 	prepareFastTestEnv(t)
 
