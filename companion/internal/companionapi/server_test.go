@@ -2762,6 +2762,48 @@ func TestUsageUnavailableWhenCollectorHasNoUsableSnapshot(t *testing.T) {
 	}
 }
 
+func TestUsageShowsExpiredPersistedProviderAsUnavailable(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 6, 26, 13, 0, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{
+				{
+					Provider:    "codex",
+					Source:      "codexbar-dashboard",
+					CollectedAt: now.Add(-11 * time.Minute),
+					Stale:       true,
+					Frame: protocol.Frame{
+						Provider:           "codex",
+						Label:              "Codex",
+						UsageUnavailable:   true,
+						SessionUnavailable: true,
+						WeeklyUnavailable:  true,
+					},
+				},
+			},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got.Providers) != 1 || got.Providers[0].ID != "codex" || !got.Providers[0].UsageUnavailable ||
+		got.Providers[0].Session != 0 || got.Providers[0].Weekly != 0 || len(got.Providers[0].Windows) != 0 {
+		t.Fatalf("expected cleared unavailable provider, got %+v", got)
+	}
+}
+
 func TestUsageRefreshesStaleProviderSnapshots(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 6, 26, 13, 0, 0, 0, time.UTC)
