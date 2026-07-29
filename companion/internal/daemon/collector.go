@@ -558,12 +558,15 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		}
 
 		c.providers[key] = providerSnapshot{
-			Provider:            key,
-			Frame:               frame,
-			Source:              source,
-			Meta:                meta,
-			Collected:           snapshot.Collected,
-			TokenStatsCollected: tokenStatsCollectedAt(stats, now),
+			Provider:  key,
+			Frame:     frame,
+			Source:    source,
+			Meta:      meta,
+			Collected: snapshot.Collected,
+			// A successful scan makes these totals current even when CodexBar
+			// reports that no new activity occurred. UpdatedAt remains the
+			// activity timestamp above, not the token-stat freshness timestamp.
+			TokenStatsCollected: now,
 			ActivityObservedAt:  activityObservedAt,
 			RateLimited:         snapshot.RateLimited,
 			RateLimitedUntil:    snapshot.RateLimitedUntil,
@@ -670,16 +673,6 @@ func clearSnapshotTokenStats(snapshot *providerSnapshot) {
 	snapshot.Frame.TotalTokens = 0
 	snapshot.Meta.Cost = nil
 	snapshot.TokenStatsCollected = time.Time{}
-}
-
-func tokenStatsCollectedAt(stats codexbar.ProviderTokenStats, fallback time.Time) time.Time {
-	if !stats.UpdatedAt.IsZero() {
-		return stats.UpdatedAt.UTC()
-	}
-	if stats.Cost != nil && !stats.Cost.UpdatedAt.IsZero() {
-		return stats.Cost.UpdatedAt.UTC()
-	}
-	return fallback.UTC()
 }
 
 func parsedTokenStatsCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time) time.Time {

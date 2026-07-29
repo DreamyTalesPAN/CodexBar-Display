@@ -3837,6 +3837,66 @@ func TestProviderCollectorTokenStatsFreshnessSemantics(t *testing.T) {
 	}
 }
 
+func TestProviderCollectorSuccessfulIdleTokenScanRefreshesAtCollectionTime(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 29, 11, 0, 0, 0, time.UTC)
+	activityObservedAt := current.Add(-time.Hour)
+	collector := &providerCollector{
+		now:            func() time.Time { return current },
+		logf:           func(string, ...any) {},
+		order:          []string{"codex"},
+		snapshotMaxAge: 10 * time.Minute,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:  "codex",
+				Frame:     protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42},
+				Collected: current,
+			},
+		},
+	}
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return map[string]codexbar.ProviderTokenStats{
+			"codex": {
+				TotalTokens: 99,
+				UpdatedAt:   activityObservedAt,
+				Cost:        &codexbar.ProviderCostUsage{UpdatedAt: activityObservedAt, Last30DaysTokens: 99},
+			},
+		}, true
+	}
+
+	collector.collectTokenStatsOnce(context.Background())
+	firstSuccessfulScan := collector.providers["codex"]
+	if !firstSuccessfulScan.TokenStatsCollected.Equal(current) || !firstSuccessfulScan.ActivityObservedAt.Equal(activityObservedAt) {
+		t.Fatalf("successful idle scan must refresh totals at collection time without changing activity: %#v", firstSuccessfulScan)
+	}
+
+	current = current.Add(9 * time.Minute)
+	collector.collectTokenStatsOnce(context.Background())
+	secondSuccessfulScan := collector.providers["codex"]
+	if !secondSuccessfulScan.TokenStatsCollected.Equal(current) || !secondSuccessfulScan.ActivityObservedAt.Equal(activityObservedAt) {
+		t.Fatalf("later successful idle scan did not refresh token freshness independently of activity: %#v", secondSuccessfulScan)
+	}
+
+	current = current.Add(9*time.Minute + 30*time.Second)
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		return nil, false
+	}
+	collector.collectTokenStatsOnce(context.Background())
+	failedScan := collector.providers["codex"]
+	if !failedScan.TokenStatsCollected.Equal(secondSuccessfulScan.TokenStatsCollected) {
+		t.Fatalf("failed token scan refreshed last-good token totals: %#v", failedScan)
+	}
+	if frames := collector.providerFrames(current); len(frames) != 1 || frames[0].Frame.TotalTokens != 99 || frames[0].Meta.Cost == nil {
+		t.Fatalf("fresh last-good totals were not retained after a failed scan: %#v", frames)
+	}
+
+	current = current.Add(31 * time.Second)
+	if frames := collector.providerFrames(current); len(frames) != 1 || frames[0].Frame.TotalTokens != 0 || frames[0].Meta.Cost != nil {
+		t.Fatalf("failed scan kept token totals fresh beyond their last successful collection: %#v", frames)
+	}
+}
+
 func TestProviderCollectorSuccessfulEmptyTokenStatsClearsLastGood(t *testing.T) {
 	prepareFastTestEnv(t)
 
