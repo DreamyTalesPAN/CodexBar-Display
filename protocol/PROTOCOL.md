@@ -187,22 +187,23 @@ Design constraints:
 When the ESP8266 is connected to WiFi, it serves:
 
 - `GET /hello`: returns the same Device Hello JSON shape as USB Serial. For WiFi, `capabilities.transport.active` is `wifi` and `supported` includes both `usb` and `wifi`.
-- `GET /health`: returns current WiFi/filesystem/display diagnostics plus `system.freeHeap`, `system.bootId`, `system.uptimeMs`, `system.resetCount`, `system.resetReason`, and ThemeSpec render status fields (`renderOk`, `renderError`, `renderFailures`). A changed `bootId` proves a reboot; `uptimeMs` lets the Companion calculate the reset timestamp using the Mac clock. The `clock` object reports the device wall clock: `synced` (SNTP delivered a plausible epoch), `source` (`device`, `companion` or `unknown` — which source the rendered time actually came from), `epoch` (device UTC, `0` when unsynced), `utcOffsetMinutes` (learned local offset or `null`), `lastSyncAgeMs`, `syncCount`, and the resolved `time`/`date` texts.
+- `GET /health`: returns current WiFi/filesystem/display diagnostics plus `system.freeHeap`, `system.bootId`, `system.uptimeMs`, `system.resetCount`, `system.resetReason`, and ThemeSpec render status fields (`renderOk`, `renderError`, `renderFailures`). A changed `bootId` proves a reboot; `uptimeMs` lets the Companion calculate the reset timestamp using the Mac clock. The `clock` object reports the device wall clock: `synced` (SNTP delivered a plausible epoch), `source` (`device`, `companion` or `unknown` — which source the rendered time actually came from), `epoch` (device UTC, `0` when unsynced), `utcOffsetMinutes` (learned local offset or `null`), `lastSyncAgeMs`, `syncCount`, and the resolved `time`/`date` texts. The `settings.standby` object reports the persisted standby configuration: `enabled`, `timeoutMinutes`, `brightnessPercent`, and `screensaverPath` (the selected slot reference, or `null` when nothing is selected). All of it survives a reboot.
 - `POST /frame`: accepts one newline-delimited JSON frame as the request body and feeds it into the same firmware parser used by USB Serial.
 - Frame payloads may include a local `update` object (`available`, `latestVersion`, `status`, `lastError`). This updates the cached display/diagnostic update state. On built-in themes, `available=true` renders a firmware-level notice that cycles through the provider, `Update available`, and `app.vibetv.shop`. ThemeSpec themes receive the same values through the existing `{label}` / `label` binding. The ESP8266 firmware must not fetch public HTTPS manifests directly.
 - `POST /reset-wifi`: with the current pairing token, clears saved WiFi credentials and restarts the device into setup mode.
 - `POST /api/pair`: creates or rotates the local LAN pairing token. Starting with firmware `1.0.39`, an explicit local-WiFi Connect may always replace the previous token; the most recently connected Mac wins. Firmware `1.0.38` retains its legacy 30-minute recovery window. Include `api=1` for a JSON response (`{"ok":true,"token":"..."}`).
-- `POST /api/settings`: updates persisted device settings. Form field `b` sets display brightness percent. Include `api=1` for a JSON/CORS response; omit it for the built-in IP-based form redirect.
+- `POST /api/settings`: updates persisted device settings. Form field `b` sets display brightness percent. Standby fields: `sb` enables standby (`0`/`1`), `st` sets the inactivity timeout in minutes, `sbr` sets the brightness that applies only while the screensaver shows, and `ss` selects the screensaver slot by stored ThemeSpec path (empty clears it). Every field is optional and at least one must be present; out-of-range numbers are clamped rather than rejected, while an unusable `ss` path returns `400`. Include `api=1` for a JSON/CORS response; omit it for the built-in IP-based form redirect.
 - `GET /assets`: returns mounted filesystem status and stored `/themes/` asset paths/sizes. Internal firmware control files are never listed.
 - `POST /assets?path=/themes/<short-id>/<asset>`: uploads one theme asset using multipart field `asset`.
 - `DELETE /assets?path=/themes/<short-id>/<asset>`: deletes one stored asset. Firmware rejects deletion of the currently active stored ThemeSpec.
 - `POST /theme/active`: activates a stored ThemeSpec JSON file uploaded via `/assets`. Body: `{"path":"/themes/u/<short-id>.json"}`. This loads the spec into the firmware cache, so future `/frame` requests can stay small and only include live usage values. The response and `/health` diagnostics include a content `hash` for firmware that supports stored-theme verification.
+- `POST /screensaver/active`: selects which stored ThemeSpec the screensaver slot points at. Body: `{"path":"/themes/u/<short-id>.json"}`, or `{"path":""}` to clear the slot. The screensaver slot is independent of the live theme slot: this call never changes the live theme, and `/theme/active` never changes the screensaver. It records the selection only — it does not render and does not enter standby. Returns `404` when the file does not exist and `400` for a path outside `/themes/`.
 
 Pairing/auth:
 - Firmware `1.0.39` accepts every local-WiFi `/api/pair` request and immediately replaces the previous token. It has no physical pairing gesture or pairing window.
 - Firmware `1.0.38` remains compatible with its legacy first-pair and three-power-cycle 30-minute recovery window.
 - Protected write APIs require `X-VibeTV-Token: <token>` or the documented query fallback used by native tooling and raw OTA.
-- Protected write APIs include `POST /frame`, `POST /api/settings`, WiFi credential writes, `POST /assets`, `DELETE /assets`, `POST /theme/active`, and firmware/filesystem OTA upload paths. OTA upload always requires a configured device and its current token.
+- Protected write APIs include `POST /frame`, `POST /api/settings`, WiFi credential writes, `POST /assets`, `DELETE /assets`, `POST /theme/active`, `POST /screensaver/active`, and firmware/filesystem OTA upload paths. OTA upload always requires a configured device and its current token.
 - Read APIs such as `GET /hello`, `GET /health`, and `GET /assets` stay open for diagnostics.
 - The unauthenticated device page never renders the pairing token. Firmware `1.0.39` WiFi `/hello` reports `capabilities.auth.paired` and `tokenHeader`; legacy firmware may additionally report pairing-window fields. No firmware reports the token value.
 - Fresh setup and automatic WiFi fallback use the same open, writable setup portal. Saving WiFi preserves device authentication, themes, and settings.
@@ -248,6 +249,13 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
       "colorDepthBits": 16,
       "brightness": {"supported": true, "minPercent": 1, "maxPercent": 100}
     },
+    "standby": {
+      "supported": true,
+      "minTimeoutMinutes": 1,
+      "maxTimeoutMinutes": 240,
+      "defaultTimeoutMinutes": 10,
+      "screensaverSlot": true
+    },
     "theme": {
       "supportsThemeSpecV1": true,
       "maxThemeSpecBytes": 2048,
@@ -279,6 +287,9 @@ Fields:
 - `capabilities` (object, optional): extended block for display/theme/transport limits.
   - `display.brightness.supported` describes browser-adjustable backlight support when the board exposes it. `display.brightness.minPercent` and `maxPercent` report the supported range; the current ESP8266 implementation uses 1-100 percent. Hosts that see no range fall back to 10-100 percent.
   - A VibeTV without saved display settings starts at 20 percent brightness.
+  - `standby.supported` tells hosts whether this firmware has the standby settings and the screensaver slot at all. It is `false` on builds without the ThemeSpec renderer, because the screensaver slot is a second ThemeSpec slot. Hosts must read this flag instead of inferring standby support from the firmware version, and must hide standby controls when it is `false`.
+  - `standby.minTimeoutMinutes`, `maxTimeoutMinutes`, and `defaultTimeoutMinutes` report the accepted inactivity range and the factory default.
+  - `standby.screensaverSlot` reports whether `POST /screensaver/active` exists.
   - `theme.maxThemeSpecBytes` is the inline `themeSpec` frame byte limit.
   - `theme.maxStoredThemeSpecBytes` is the uploaded/stored ThemeSpec JSON byte limit for WiFi themes.
   - `theme.maxThemePrimitives` is the maximum primitive count accepted by the renderer.

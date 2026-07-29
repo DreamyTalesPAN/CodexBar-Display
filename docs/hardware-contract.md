@@ -72,6 +72,9 @@ Companion negotiation:
 - `GET /assets` returns `filesystem.mounted` plus an `assets` array. Every asset entry includes `path` and `sizeBytes`; `sha256` is optional so small ESP8266 builds do not need to carry hashing code.
 - `GET /health` returns `display.activeTheme`, compact `display.themeSpec` render health, and `display.gif` so provisioning can see the active GIF path, file presence, decoder state, blocked state, and the last GIF open/decode error.
 - `GET /health` returns `settings.display.brightnessPercent` for support diagnostics. A VibeTV without saved display settings reports the 20 percent factory default.
+- `GET /health` returns `settings.standby` with `enabled`, `timeoutMinutes`, `brightnessPercent` and `screensaverPath`. `GET /hello` reports `capabilities.standby.supported`, which is the only way a host may decide whether standby exists on this device.
+- The screensaver slot is a second, independent ThemeSpec slot. `POST /screensaver/active` sets it and never changes the live theme; `POST /theme/active` never changes the screensaver.
+- Standby settings and the screensaver slot reference live in the same device settings record as brightness, which is append-only: a shorter stored record is an older one and every reader length-checks its own section. Firmware without standby support keeps working against a record that has it.
 - `GET /health` returns `reset` with the sanitized countdown the device is willing to stand behind: `trust` (`live`, `offline`, `stale`, `unknown`), `deadlineSecs`, `trustSecs`, `basisAgeSecs` and `source`. `deadlineSecs` is `0` whenever `trust` is `stale`, which is exactly what the renderer shows as unavailable. There is no wall clock on the device, so `basisAgeSecs` is the wall-clock-free form of "last fresh at". See `protocol/PROTOCOL.md`, Reset Freshness and Trust.
 
 ## Theme Contract

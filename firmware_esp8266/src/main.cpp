@@ -14,6 +14,7 @@
 #include "asset_path_policy.h"
 #include "connected_setup_policy.h"
 #include "device_settings.h"
+#include "standby_settings.h"
 #include "wifi_security_policy.h"
 #include "gif_asset_validator_file.h"
 #include "renderer_esp8266.h"
@@ -84,6 +85,13 @@ const char kSetupAddress[] = "192.168.4.1";
 const char kCustomerAppHost[] = "app.vibetv.shop";
 const char kCustomerAppUrl[] = "https://app.vibetv.shop";
 const char kDeviceSettingsPath[] = "/s";
+// The device settings record grew twice and stays append-only: brightness byte,
+// then the learned UTC offset, then standby. A shorter file is an older record,
+// so every reader must length-check its own section instead of assuming the
+// full size.
+constexpr size_t kStandbyRecordOffset = 1 + codexbar_display::deviceclock::kUtcOffsetRecordBytes;
+constexpr size_t kDeviceSettingsRecordBytes =
+    kStandbyRecordOffset + codexbar_display::esp8266::standby::kRecordBytes;
 const char kResetTrustHandoverPath[] = "/rt";
 const char kDeviceAuthTokenPath[] = "/auth";
 const char kActiveThemeSpecPathFile[] = "/theme-active";
@@ -176,8 +184,11 @@ struct RuntimeRenderDiagnostics {
   unsigned long lastAtMs = 0;
 };
 
+namespace standby = codexbar_display::esp8266::standby;
+
 struct DeviceSettings {
   uint8_t brightnessPercent = kDefaultBrightnessPercent;
+  standby::Settings standby;
 };
 
 namespace deviceclock = codexbar_display::deviceclock;
@@ -331,7 +342,7 @@ bool loadDeviceSettings() {
     applyDeviceSettings();
     return false;
   }
-  uint8_t record[1 + deviceclock::kUtcOffsetRecordBytes] = {};
+  uint8_t record[kDeviceSettingsRecordBytes] = {};
   const int readBytes = file.read(record, sizeof(record));
   file.close();
   const int brightness = readBytes >= 1 ? record[0] : -1;
@@ -343,6 +354,13 @@ bool loadDeviceSettings() {
   if (readBytes >= 1 &&
       deviceclock::DecodeUtcOffset(record + 1, static_cast<size_t>(readBytes) - 1, offsetMinutes)) {
     deviceclock::RestoreUtcOffset(runtimeCtx.clock, offsetMinutes);
+  }
+  // Records written before standby existed stop here, which leaves the standby
+  // factory defaults in place.
+  if (readBytes > static_cast<int>(kStandbyRecordOffset)) {
+    standby::Decode(record + kStandbyRecordOffset,
+                    static_cast<size_t>(readBytes) - kStandbyRecordOffset,
+                    deviceSettings.standby);
   }
   applyDeviceSettings();
   return brightness > 0;
@@ -356,9 +374,10 @@ bool saveDeviceSettings() {
   if (!file) {
     return false;
   }
-  uint8_t record[1 + deviceclock::kUtcOffsetRecordBytes] = {};
+  uint8_t record[kDeviceSettingsRecordBytes] = {};
   record[0] = deviceSettings.brightnessPercent;
   deviceclock::EncodeUtcOffset(runtimeCtx.clock, record + 1);
+  standby::Encode(deviceSettings.standby, record + kStandbyRecordOffset);
   const size_t written = file.write(record, sizeof(record));
   file.close();
   return written > 0;
@@ -561,9 +580,40 @@ void appendBrightnessCapabilityJSON(String& out) {
   out += "}";
 }
 
+// Standby needs a second ThemeSpec slot, so a build without the ThemeSpec
+// renderer cannot support it. Hosts must read this instead of assuming that a
+// given firmware version implies standby support.
+void appendStandbyCapabilityJSON(String& out) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  out += "{\"supported\":true,\"minTimeoutMinutes\":";
+  out += String(standby::kMinTimeoutMinutes);
+  out += ",\"maxTimeoutMinutes\":";
+  out += String(standby::kMaxTimeoutMinutes);
+  out += ",\"defaultTimeoutMinutes\":";
+  out += String(standby::kDefaultTimeoutMinutes);
+  out += ",\"screensaverSlot\":true}";
+#else
+  out += "{\"supported\":false}";
+#endif
+}
+
 void appendSettingsJSON(String& out) {
   out += "\"settings\":{\"display\":{\"brightnessPercent\":";
   out += String(deviceSettings.brightnessPercent);
+  out += "},\"standby\":{\"enabled\":";
+  out += deviceSettings.standby.enabled ? "true" : "false";
+  out += ",\"timeoutMinutes\":";
+  out += String(deviceSettings.standby.timeoutMinutes);
+  out += ",\"brightnessPercent\":";
+  out += String(deviceSettings.standby.brightnessPercent);
+  out += ",\"screensaverPath\":";
+  if (standby::HasScreensaver(deviceSettings.standby)) {
+    out += "\"";
+    out += jsonEscape(String(deviceSettings.standby.screensaverPath));
+    out += "\"";
+  } else {
+    out += "null";
+  }
   out += "}}";
 }
 
@@ -1399,7 +1449,7 @@ void handleHello() {
   }
 
   String out;
-  out.reserve(760);
+  out.reserve(900);
   out += "{\"kind\":\"hello\",\"protocolVersion\":2,\"board\":\"";
   out += CODEXBAR_DISPLAY_BOARD_ID;
   out += "\",\"deviceId\":\"";
@@ -1412,7 +1462,9 @@ void handleHello() {
   out += String(kMaxFrameBytes);
   out += ",\"capabilities\":{\"display\":{\"brightness\":";
   appendBrightnessCapabilityJSON(out);
-  out += "},\"theme\":";
+  out += "},\"standby\":";
+  appendStandbyCapabilityJSON(out);
+  out += ",\"theme\":";
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
   out += themeCapabilitiesJSON(false, true);
 #else
@@ -1611,6 +1663,36 @@ void handleHealth() {
   webServer.send(200, "application/json", out);
 }
 
+// Records which stored ThemeSpec the screensaver slot points at. Loading it
+// into the second render slot is the standby state machine's job; this only
+// validates and stores the reference. An empty path clears the selection.
+bool setStandbyScreensaverPath(standby::Settings& target, const String& rawPath, String& error) {
+  String path = rawPath;
+  path.trim();
+  if (path.length() == 0) {
+    standby::ClearScreensaverPath(target);
+    return true;
+  }
+  if (!isSafeAssetPath(path) ||
+      !standby::ScreensaverPathValid(path.c_str(), path.length())) {
+    error = "invalid screensaver path";
+    return false;
+  }
+  if (!LittleFS.begin()) {
+    error = "filesystem mount failed";
+    return false;
+  }
+  if (!LittleFS.exists(path)) {
+    error = "screensaver file not found";
+    return false;
+  }
+  if (!standby::SetScreensaverPath(target, path.c_str(), path.length())) {
+    error = "invalid screensaver path";
+    return false;
+  }
+  return true;
+}
+
 bool persistDeviceSettings(const DeviceSettings& next) {
   const DeviceSettings previous = deviceSettings;
   deviceSettings = next;
@@ -1630,9 +1712,33 @@ void handleSettingsAPI() {
   }
   DeviceSettings next = deviceSettings;
   const bool apiResponse = webServer.hasArg("api");
+  bool changed = false;
   if (webServer.hasArg("b")) {
     next.brightnessPercent = clampBrightnessPercent(webServer.arg("b").toInt());
-  } else {
+    changed = true;
+  }
+  if (webServer.hasArg("sb")) {
+    next.standby.enabled = webServer.arg("sb").toInt() != 0;
+    changed = true;
+  }
+  if (webServer.hasArg("st")) {
+    next.standby.timeoutMinutes = standby::ClampTimeoutMinutes(webServer.arg("st").toInt());
+    changed = true;
+  }
+  if (webServer.hasArg("sbr")) {
+    next.standby.brightnessPercent =
+        standby::ClampBrightnessPercent(webServer.arg("sbr").toInt());
+    changed = true;
+  }
+  if (webServer.hasArg("ss")) {
+    String error;
+    if (!setStandbyScreensaverPath(next.standby, webServer.arg("ss"), error)) {
+      webServer.send(400, "text/plain; charset=utf-8", error);
+      return;
+    }
+    changed = true;
+  }
+  if (!changed) {
     webServer.send(400, "text/plain; charset=utf-8", "bad");
     return;
   }
@@ -2165,6 +2271,62 @@ void handleThemeActive() {
 #endif
 }
 
+// Selects which stored ThemeSpec the screensaver slot points at. Mirrors the
+// /theme/active contract but touches a different, independent slot: it never
+// changes the live theme and never renders anything. Standby rendering is the
+// state machine's job.
+void handleScreensaverActive() {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  addCorsHeaders();
+  if (!requireWriteAuth()) {
+    return;
+  }
+  String body = webServer.arg("plain");
+  body.trim();
+  if (body.length() == 0 || body.length() > 160) {
+    webServer.send(400, "text/plain; charset=utf-8", "invalid screensaver activation body");
+    return;
+  }
+
+  JsonDocument doc;
+  const DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    webServer.send(400, "text/plain; charset=utf-8", "bad screensaver activation json");
+    return;
+  }
+  String path = String(doc["path"] | "");
+  path.trim();
+
+  DeviceSettings next = deviceSettings;
+  String error;
+  if (!setStandbyScreensaverPath(next.standby, path, error)) {
+    webServer.send(error == "screensaver file not found" ? 404 : 400,
+                   "text/plain; charset=utf-8", error);
+    return;
+  }
+  if (!persistDeviceSettings(next)) {
+    webServer.send(500, "text/plain; charset=utf-8", "save failed");
+    return;
+  }
+
+  String out;
+  out.reserve(120);
+  out += "{\"ok\":true,\"path\":";
+  if (standby::HasScreensaver(deviceSettings.standby)) {
+    out += "\"";
+    out += jsonEscape(String(deviceSettings.standby.screensaverPath));
+    out += "\"";
+  } else {
+    out += "null";
+  }
+  out += "}";
+  webServer.send(200, "application/json", out);
+#else
+  addCorsHeaders();
+  webServer.send(501, "text/plain; charset=utf-8", "theme spec renderer disabled");
+#endif
+}
+
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 bool loadStoredThemeSpecCacheFromPath(const String& path) {
   String error;
@@ -2669,6 +2831,7 @@ void startHttpServer() {
       handleAssetUpload);
   webServer.on("/assets", HTTP_DELETE, handleAssetDelete);
   webServer.on("/theme/active", HTTP_POST, handleThemeActive);
+  webServer.on("/screensaver/active", HTTP_POST, handleScreensaverActive);
   webServer.on("/frame", HTTP_POST, handleFrame);
   webServer.on("/update", HTTP_GET, handleUpdatePage);
   webServer.on(
