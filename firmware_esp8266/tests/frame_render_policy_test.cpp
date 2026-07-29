@@ -81,6 +81,22 @@ bool testThemeActivationUsesDeferredRenderTransport(const std::string& source) {
       "theme activation must queue HTTP render work instead of rendering inside /theme/active");
 }
 
+bool testThemeActivationDoesNotCloseFilesystemBeforeResponse(const std::string& source) {
+  const std::size_t activateStart = source.find("void activateStoredThemeSpec(");
+  const std::size_t activateEnd = source.find("\nbool activateStoredThemePath(", activateStart);
+  if (!expect(
+          activateStart != std::string::npos && activateEnd != std::string::npos,
+          "theme activation body must remain discoverable")) {
+    return false;
+  }
+
+  const std::string activate = source.substr(activateStart, activateEnd - activateStart);
+  return expect(
+      activate.find("close_all_fs()") == std::string::npos &&
+          activate.find("LittleFS.end()") == std::string::npos,
+      "theme activation must not unmount LittleFS before the HTTP response");
+}
+
 bool testPendingHttpRenderRunsBeforeUsb(const std::string& source) {
   const std::size_t loopStart = source.find("void loop()");
   const std::size_t pending = source.find("if (pendingHttpRender)", loopStart);
@@ -119,6 +135,7 @@ int main(int argc, char** argv) {
   if (!testWifiHandlerAcknowledgesBeforeDispatch(source) ||
       !testHttpCallbackDispatchStoresOnePendingEvent(source) ||
       !testThemeActivationUsesDeferredRenderTransport(source) ||
+      !testThemeActivationDoesNotCloseFilesystemBeforeResponse(source) ||
       !testPendingHttpRenderRunsBeforeUsb(source) ||
       !testHelloAdvertisesEscapedUsageWindowCapacity(source)) {
     return 1;

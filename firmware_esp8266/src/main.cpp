@@ -1864,7 +1864,6 @@ bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String
 
 void activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev) {
   renderer.ResetGifStateForAssetUpdate();
-  close_all_fs();
 
   const bool hadFrame = codexbar_display::app::HasFrame(runtimeCtx);
   const codexbar_display::core::Frame previous = runtimeCtx.runtime.current;
