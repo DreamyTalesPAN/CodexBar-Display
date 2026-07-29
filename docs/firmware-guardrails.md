@@ -64,73 +64,106 @@ if(updateStartAddress < currentSketchSize) {
   _setError(UPDATE_ERROR_SPACE);
 ```
 
-In plain terms, with both sizes rounded up to a 4096-byte sector:
+With both sizes rounded up to a 4096-byte sector:
 
 ```
-currentSketchSize + newSketchSize  <=  _FS_start - 0x40200000
+currentImageSize + newImageSize  <=  _FS_start - 0x40200000
 ```
+
+"Image size" means the whole `firmware.bin`, including the 4096-byte eboot
+region — `ESP.getSketchSize()` (`Esp.cpp:591`) walks the image header from
+`APP_START_OFFSET`, so it measures the file, not a section of it. Getting this
+wrong understates every ceiling below.
 
 `_FS_start` comes from the linker script, so **the board's `board_build.ldscript`
 sets the OTA ceiling**, not the firmware.
 
-**Why it bit us.** Until `fcdf470` (2026-05-19) the board used
-`eagle.flash.4m3m.ld`: a 3 MB filesystem puts `_FS_start` at the 1 MB mark, so
-both sketches had to share 1048576 bytes and neither could exceed roughly
-524288. That is the wall the failing devices hit. The board now uses
-`eagle.flash.4m2m.ld`, which moves `_FS_start` to 2 MB.
+**Do not use PlatformIO's Flash percentage as the ceiling.** Its numerator and
+denominator do not match: the numerator counts `.irom0.text` plus the
+RAM-loaded `.text/.text1/.data/.rodata`, while the denominator is only
+`irom0_0_seg len` (`0xfeff0` = 1044464). The reported "used" figure is also
+4145 bytes smaller than the real `.bin`, because eboot and the headers are not
+counted at all. The percentage is a useful trend line and nothing more.
 
-**Where we stand today** (`eagle.flash.4m2m.ld`, values from `_FS_start` in the
-built ELF):
+| measured on this branch | bytes |
+|---|---|
+| `firmware.bin` | 479088 |
+| PlatformIO "used" | 474943 |
+| difference (eboot + headers + checksum) | 4145 |
+| `.irom0.text` alone | 433112 |
+| non-irom0 payload inside the `.bin` | 45976 |
+
+**Where we stand today** (`eagle.flash.4m2m.ld`):
 
 | | bytes |
 |---|---|
 | OTA region (`_FS_start` offset) | 2097152 |
-| Executable sketch cap, PlatformIO's 100 percent | 1044464 |
-| Firmware after #283 | 479088 |
-| Headroom to the executable cap | 565376 |
+| Real per-image ceiling (region / 2) | 1048576 |
+| `firmware.bin` after #283 | 479088 |
+| Headroom to the real ceiling | 569488 |
 
-At the current size the OTA rule is not the binding constraint — the executable
-cap is. But the margin at the very top is thin: two sector-rounded 1044464-byte
-sketches need 2088960 of the 2097152 available, leaving 8192 bytes. The two
-limits nearly coincide, so there is no comfortable zone above the cap.
+The linker would permit an image of roughly 1090440 bytes (1044464 of irom0
+plus the ~46000 of non-irom0 payload), which is *above* the OTA ceiling. **The
+OTA rule binds first, by about 42 KB.** There is no safe zone between the two.
 
-**Where the 46 percent CI gate comes from.** It is not an arbitrary number and
-it no longer means what it originally meant. Under `eagle.flash.4m3m.ld` the OTA
-wall sat at 524288 bytes, which is 50.2 percent of the 1044464-byte cap, so
-`max_flash_pct: 46` was set just below it as a genuine safety limit. It has not
-been touched since March 2026, while the layout moved in May 2026 (`fcdf470`).
-The wall it guarded is gone; the gate stayed.
+**Why it bit us.** Until `fcdf470` (2026-05-19) the board used
+`eagle.flash.4m3m.ld`, which puts `_FS_start` at the 1 MB mark. Both images then
+had to share 1048576 bytes, so neither could exceed 524288. That is the wall the
+failing devices hit. `fcdf470` moved `_FS_start` to 2 MB.
 
-Note that `irom0_0_seg len = 0xfeff0` is identical in both ldscripts, so the
-percentage denominator never changed — only `_FS_start` did. Today the gate is a
-deliberate frugality rule, not a safety limit. Treat a build that exceeds it as
-a prompt to reclaim flash, not as an emergency.
+**Where the CI gate values come from.** `fcdf470` raised `max_flash_pct` 45 to
+46 and `max_bin_bytes` 470000 to 482000 and added `max_gzip_bytes`, *in the same
+commit that moved the ldscript*. They were bumped to fit the new theme pipeline,
+not derived from the layout. Verify with
+`git show fcdf470 -- .github/workflows/ci.yml firmware_esp8266/platformio.ini`.
+No gate value in this repo has ever been derived from the OTA ceiling.
+
+**State of each gate** (audited 2026-07-29):
+
+- `max_bin_bytes: 482000` is the only gate measuring the physically constrained
+  quantity — the same bytes `Update.begin()` compares. Treat it as a ratchet,
+  not a limit. The hard line is 1048576.
+- `max_flash_pct: 46` is **inoperative**. 46 percent allows a `.bin` of about
+  484598, which `max_bin_bytes` already forbids at 482000, so the bin gate always
+  trips first.
+- `max_ram_pct: 82` is dangerously loose. The denominator is `dram0_0_seg`
+  (81920) and it counts only static allocation, not the runtime heap that
+  actually limits this firmware. At 82 percent just 14746 bytes remain for heap
+  and stack together, while WiFi plus the HTTP upload path plus the GIF decoder
+  need far more. A build that passes this gate would not run. Current use is
+  53.4 percent. The value was raised 72 to 82 in `2cad00b` to fit a build.
+- `max_gzip_bytes: 350000` has no physical referent. Nothing here ships gzipped
+  firmware: `firmware.bin` is fetched raw and `Updater.cpp` has no decompressor.
 
 **Rules.**
-- Never raise the CI flash gate to make a build fit. Reclaim flash instead (#309).
+- Never raise a CI gate to make a build fit. That is how all of the current
+  values were set, and it is why none of them mean anything. Reclaim flash
+  instead (#309).
 - Changing `board_build.ldscript` changes the OTA ceiling and moves the
   filesystem, which relocates customer themes on devices already in the field.
-  Growing the filesystem back to 3 MB would restore the ~524288-byte wall.
+  Growing the filesystem back to 3 MB would restore the 524288-byte wall.
 - The ceiling is a property of the *running* firmware plus the *incoming* one.
   A device stuck on an oversized build cannot be rescued over WiFi; it needs USB.
 
-**Verified on hardware** (2026-07-29, ESP8266EX over USB, MAC `d8:bf:c0:58:91:dc`).
-`_FS_start` is a compile-time symbol, so the check was to read the flash and find
-where the live filesystem actually begins:
+**Verified on hardware** (2026-07-29, ESP8266EX over USB, MAC
+`d8:bf:c0:58:91:dc`, 4 MB chip). `_FS_start` is compile-time only, so the check
+is to find where the live filesystem actually begins. Do **not** identify it by
+grepping for filenames — a valid littlefs superblock exists at both candidate
+addresses. Decode `block_count` from the superblock instead, which is
+self-describing:
 
-- `esptool.py flash_id` reports a 4 MB chip, as the layout assumes.
-- `read_flash 0x200000` holds the running filesystem — `theme-active`, `auth`,
-  `themes`, and a stored `/themes/u/mini-cl-*.json`, at 20 percent erased.
-- `read_flash 0x100000` holds unrelated leftovers from the board's original
-  vendor firmware (`photo_config.json`, `theme_config.txt`, `*.gif`), at 95
-  percent erased. It is dead data, not a VibeTV filesystem.
+| superblock at | block_size | block_count | region | layout |
+|---|---|---|---|---|
+| `0x100000` | 8192 | 381 | 3121152 | 4m3m |
+| `0x200000` | 8192 | 253 | 2072576 | 4m2m |
 
-So the device confirms `_FS_start` at the 2 MB mark and an OTA region of
-2097152 bytes. All reads were non-destructive; the device was hard-reset back
-into normal operation afterwards.
+The device's live filesystem is the one at `0x200000` (revision counter in the
+billions, and it holds `auth`, `themes`, `theme-active`). The `0x100000` region
+is dead vendor-firmware data with revision 5 — see #310. All reads were
+non-destructive.
 
-To re-run this check: `esptool.py --port <port> --after hard_reset read_flash
-0x200000 0x20000 out.bin`, then look for `theme-active` in the dump.
+To re-run: `esptool.py --port <port> --after hard_reset read_flash 0x200000
+0x2000 out.bin`, then decode `block_count` at the superblock.
 
 **Reading the runtime numbers.** `ESP.getFreeSketchSpace()` and the derived
 `maxSize` are captured at OTA start (`firmware_esp8266/src/main.cpp:2458`) but
