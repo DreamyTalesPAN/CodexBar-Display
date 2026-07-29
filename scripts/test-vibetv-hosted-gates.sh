@@ -105,6 +105,8 @@ main() {
     'stable aggregation status must be named CODEX CI'
   assert_contains "$CI_WORKFLOW" 'if: always()' \
     'CODEX CI must report failure even when an upstream job fails'
+  assert_contains "$CI_WORKFLOW" './scripts/test-vibetv-hosted-gates.sh' \
+    'normal PR CI must run the hosted VibeTV gate contracts'
 
   assert_contains "$MERGE_WORKFLOW" 'name: CODEX Test VibeTV Merge' \
     'merge gate workflow needs the stable CODEX name'
