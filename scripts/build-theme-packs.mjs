@@ -13,6 +13,29 @@ const renderRoot = path.join(distRoot, "render");
 const companionRoot = path.join(repoRoot, "companion");
 const currentCatalogName = "vibetv-theme-packs-v2.json";
 const deterministicZipTimestamp = "200001010000.00";
+// This mirrors the path-scoped in-memory compatibility substitution in
+// firmware_esp8266/src/main.cpp. The preserved file remains byte-exact to the
+// factory image; only the preview render pack receives the runtime labels.
+const preservedFactoryRenderPacks = [
+  {
+    asset: {
+      contentType: "image/gif",
+      devicePath: "/themes/mini/mini.gif",
+      expectedSha256: "146563e7d7ce76589f50ea80977c1f8cb32a15468a4a9f3da4152c4de1b37230",
+      sourceFile: "theme-packs/mini-classic/assets/mini.gif",
+    },
+    compatibility: {
+      expectedReplacements: 2,
+      from: '"v":"left"',
+      to: '"v":"{usageMode}"',
+    },
+    expectedSourceSha256: "a9184e6974b5b22d7f7e7d3cc3d8dc5d99de7859f8297caeedf0a610cf3ee808",
+    name: "Mini Classic",
+    sourceFile: "theme-render-packs/preserved/mini-classic/mini-cl-1-410a37.json",
+    specPath: "/themes/u/mini-cl-1-410a37.json",
+    themeId: "mini-classic",
+  },
+];
 
 await mkdir(distRoot, { recursive: true });
 
@@ -198,6 +221,10 @@ async function writeRenderPacks() {
       await rm(extractRoot, { force: true, recursive: true });
     }
   }
+
+  for (const preserved of preservedFactoryRenderPacks) {
+    await writeRenderPack(await readPreservedFactoryRenderPack(preserved), false);
+  }
 }
 
 async function readRenderPack(themeDir, fallbackThemeID) {
@@ -228,6 +255,54 @@ async function readRenderPack(themeDir, fallbackThemeID) {
     specHash: fnv1aHex8(specRaw),
     specPath: String(manifest.themeSpec?.path || "").trim(),
     assets,
+  };
+}
+
+async function readPreservedFactoryRenderPack(preserved) {
+  const factoryRaw = (
+    await readFile(path.join(repoRoot, cleanRelativeFile(preserved.sourceFile)), "utf8")
+  ).trim();
+  const sourceSha256 = createHash("sha256").update(factoryRaw).digest("hex");
+  if (sourceSha256 !== preserved.expectedSourceSha256) {
+    throw new Error(
+      `preserved factory ThemeSpec changed for ${preserved.themeId}: ${sourceSha256}`,
+    );
+  }
+
+  const replacementCount = factoryRaw.split(preserved.compatibility.from).length - 1;
+  if (replacementCount !== preserved.compatibility.expectedReplacements) {
+    throw new Error(
+      `preserved factory compatibility mismatch for ${preserved.themeId}: ` +
+        `expected ${preserved.compatibility.expectedReplacements} replacements, got ${replacementCount}`,
+    );
+  }
+  const compatibleRaw = factoryRaw
+    .split(preserved.compatibility.from)
+    .join(preserved.compatibility.to);
+
+  const assetFile = path.join(repoRoot, cleanRelativeFile(preserved.asset.sourceFile));
+  const assetData = await readFile(assetFile);
+  const assetSha256 = createHash("sha256").update(assetData).digest("hex");
+  if (assetSha256 !== preserved.asset.expectedSha256) {
+    throw new Error(
+      `preserved factory asset changed for ${preserved.themeId}: ${assetSha256}`,
+    );
+  }
+
+  return {
+    ok: true,
+    themeId: cleanThemeID(preserved.themeId),
+    name: preserved.name,
+    spec: JSON.parse(compatibleRaw),
+    specHash: fnv1aHex8(compatibleRaw),
+    specPath: preserved.specPath,
+    assets: {
+      [preserved.asset.devicePath]: {
+        contentType: preserved.asset.contentType,
+        data: assetData.toString("base64"),
+        encoding: "base64",
+      },
+    },
   };
 }
 

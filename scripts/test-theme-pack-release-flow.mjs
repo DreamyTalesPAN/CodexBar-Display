@@ -11,6 +11,13 @@ const legacyCatalogPath = path.join(distRoot, "vibetv-theme-packs.json");
 const currentCatalogPath = path.join(distRoot, "vibetv-theme-packs-v2.json");
 const frozenLegacyCatalogSha256 =
   "f704a52016a7a5ca1a66e10a432e80b59b56a122dcd360db4198858431c67800";
+const frozenLegacyThemeSpecPaths = new Map([
+  ["claude-creature", "/themes/u/claude--1-623de0.json"],
+  ["clippy", "/themes/u/clippy-1-caafce.json"],
+  ["cozy-meadow", "/themes/u/cm.json"],
+  ["mini-classic", "/themes/u/mini-cl-1-e4fe6b.json"],
+  ["synthwave", "/themes/u/synthwa-1-6b39a3.json"],
+]);
 
 const legacyCatalogBytes = await readFile(legacyCatalogPath);
 assert(
@@ -118,6 +125,8 @@ for (const catalogTheme of currentCatalog.themes) {
   assert(await isDirectory(themeDir), `current catalog has no source for ${catalogTheme.id}`);
 }
 
+await assertPreservedFactoryMiniRenderPack();
+
 console.log(
   `theme pack release flow ok: ${legacyCatalog.themes.length} frozen legacy themes, ${currentCatalog.themes.length} current themes`,
 );
@@ -137,28 +146,26 @@ async function assertCatalogAsset(theme, generation) {
 
 async function assertRenderPack(theme, generation) {
   const revisionDir = path.join(distRoot, "render", theme.id);
-  const candidates = [];
-  for (const entry of await readdir(revisionDir, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith(".json")) {
-      continue;
-    }
-    const pack = JSON.parse(
-      await readFile(path.join(revisionDir, entry.name), "utf8"),
-    );
-    if (Number(pack.spec?.rev || pack.spec?.themeRev || 1) === theme.themeRev) {
-      candidates.push({ entry, pack });
-    }
-  }
+  const expectedSpecPath =
+    theme.themeSpecPath ||
+    (generation === "legacy" ? frozenLegacyThemeSpecPaths.get(theme.id) : "");
+  const specFile = path.posix.basename(expectedSpecPath || "");
   assert(
-    candidates.length === 1,
-    `${generation} render pack revision is ambiguous for ${theme.id}`,
+    /^[a-zA-Z0-9._-]+\.json$/.test(specFile),
+    `${generation} render pack path is unsafe for ${theme.id}`,
   );
-  const [{ entry, pack }] = candidates;
+  const pack = JSON.parse(
+    await readFile(path.join(revisionDir, specFile), "utf8"),
+  );
   assert(pack.ok === true, `${generation} render pack is not ready for ${theme.id}`);
   assert(pack.themeId === theme.id, `${generation} render pack id mismatch for ${theme.id}`);
   assert(
-    path.posix.basename(pack.specPath || "") === entry.name,
+    pack.specPath === expectedSpecPath,
     `${generation} render pack path mismatch for ${theme.id}`,
+  );
+  assert(
+    Number(pack.spec?.rev || pack.spec?.themeRev || 1) === theme.themeRev,
+    `${generation} render pack revision mismatch for ${theme.id}`,
   );
   assert(
     /^[a-f0-9]{8}$/.test(pack.specHash || ""),
@@ -173,6 +180,72 @@ async function assertRenderPack(theme, generation) {
       `current render pack alias mismatch for ${theme.id}`,
     );
   }
+}
+
+async function assertPreservedFactoryMiniRenderPack() {
+  const specPath = "/themes/u/mini-cl-1-410a37.json";
+  const firmwareSource = await readFile(
+    path.join(repoRoot, "firmware_esp8266", "src", "main.cpp"),
+    "utf8",
+  );
+  assert(
+    firmwareSource.includes(
+      'kLegacyMiniThemeSpecPath = "/themes/u/mini-cl-1-410a37.json"',
+    ) &&
+      firmwareSource.includes(
+        'raw.replace("\\"v\\":\\"left\\"", "\\"v\\":\\"{usageMode}\\"")',
+      ),
+    "preserved factory Mini build compatibility drifted from firmware",
+  );
+
+  const pack = JSON.parse(
+    await readFile(
+      path.join(distRoot, "render", "mini-classic", path.posix.basename(specPath)),
+      "utf8",
+    ),
+  );
+  assert(pack.ok === true, "preserved factory Mini render pack is not ready");
+  assert(pack.themeId === "mini-classic", "preserved factory Mini id changed");
+  assert(pack.specPath === specPath, "preserved factory Mini path changed");
+  assert(pack.specHash === "28095cf9", "preserved factory Mini runtime hash changed");
+  assert(
+    JSON.stringify(pack.spec).includes('"v":"left"') === false,
+    "preserved factory Mini kept incompatible hard-coded labels",
+  );
+  assert(
+    JSON.stringify(pack.spec).split('"v":"{usageMode}"').length - 1 === 2,
+    "preserved factory Mini compatibility substitution changed",
+  );
+  assert(
+    Object.keys(pack.assets || {}).length === 1 &&
+      pack.assets["/themes/mini/mini.gif"]?.encoding === "base64" &&
+      sha256(
+        Buffer.from(pack.assets["/themes/mini/mini.gif"].data, "base64"),
+      ) === "146563e7d7ce76589f50ea80977c1f8cb32a15468a4a9f3da4152c4de1b37230",
+    "preserved factory Mini asset mapping changed",
+  );
+
+  const currentMini = currentById.get("mini-classic");
+  const currentAlias = JSON.parse(
+    await readFile(path.join(distRoot, "render", "mini-classic.json"), "utf8"),
+  );
+  assert(
+    currentAlias.specPath === currentMini?.themeSpecPath &&
+      currentAlias.specPath !== specPath,
+    "preserved factory Mini must not replace the current alias",
+  );
+
+  const legacyMini = JSON.parse(
+    await readFile(
+      path.join(distRoot, "render", "mini-classic", "mini-cl-1-e4fe6b.json"),
+      "utf8",
+    ),
+  );
+  assert(
+    legacyMini.specPath === "/themes/u/mini-cl-1-e4fe6b.json" &&
+      legacyMini.specPath !== specPath,
+    "preserved factory Mini must not replace the frozen legacy archive",
+  );
 }
 
 async function isDirectory(value) {
