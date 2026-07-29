@@ -26,6 +26,7 @@ import type {
 } from "./control-center-types";
 import {
   deviceIsActive,
+  deviceIsCustomerConnected,
   deviceIsReady,
   deviceIsWaitingForUsage,
 } from "./control-center-types";
@@ -50,7 +51,7 @@ export function OverviewScreen({
   usage,
 }: OverviewScreenProps) {
   const pairingRejected = device?.paired === false;
-  const connected = device?.connected === true && !pairingRejected;
+  const connected = deviceIsCustomerConnected(device);
   const displayReady = deviceIsReady(device);
   const waitingForUsage = deviceIsWaitingForUsage(device);
   const reconnecting =

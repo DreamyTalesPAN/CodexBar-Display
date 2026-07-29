@@ -26,6 +26,26 @@ describe("OverviewScreen", () => {
     expect(html).not.toContain("Start using any AI provider.");
   });
 
+  it("keeps a genuinely disconnected selected VibeTV not connected", () => {
+    const html = renderToStaticMarkup(
+      <OverviewScreen
+        companionStatus="online"
+        device={{
+          active: true,
+          connected: false,
+          deviceId: "14799300",
+          paired: true,
+          ready: false,
+          connectionState: "reconnecting",
+        }}
+      />,
+    );
+
+    expect(html).toContain("VibeTV status");
+    expect(html).toContain("Not connected");
+    expect(html).not.toContain("VibeTV is connected");
+  });
+
   it("keeps an active VibeTV in Overview while it reconnects", () => {
     const html = renderToStaticMarkup(
       <OverviewScreen

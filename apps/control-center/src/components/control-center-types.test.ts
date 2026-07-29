@@ -3,20 +3,41 @@ import {
   deviceCanContinueThemeSetup,
   deviceCompletedThemeSetup,
   deviceIsActive,
+  deviceIsCustomerConnected,
   deviceIsReady,
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
 } from "./control-center-types";
 
 describe("device connection contract", () => {
-  it("only treats an explicit ready=true as connected", () => {
+  it("keeps customer-visible connection separate from display readiness", () => {
+    const waitingDevice = {
+      active: true,
+      connected: true,
+      paired: true,
+      ready: false,
+      connectionState: "ready" as const,
+      stream: { healthy: false, running: true },
+    };
+
+    expect(deviceIsCustomerConnected(waitingDevice)).toBe(true);
+    expect(deviceIsReady(waitingDevice)).toBe(false);
     expect(
-      deviceIsReady({
-        connected: true,
-        paired: true,
-        ready: false,
-        connectionState: "ready",
-        stream: { healthy: true, running: true },
+      deviceIsCustomerConnected({
+        ...waitingDevice,
+        connected: false,
+      }),
+    ).toBe(false);
+    expect(
+      deviceIsCustomerConnected({
+        ...waitingDevice,
+        active: false,
+      }),
+    ).toBe(false);
+    expect(
+      deviceIsCustomerConnected({
+        ...waitingDevice,
+        paired: false,
       }),
     ).toBe(false);
     expect(deviceIsReady({ connected: true, ready: true })).toBe(true);
@@ -36,7 +57,7 @@ describe("device connection contract", () => {
     );
   });
 
-  it("never flashes Connected during fast reachable-before-ready updates", () => {
+  it("never treats fast reachable-before-selected updates as customer connected", () => {
     const updates = [
       { connected: false, ready: false },
       { connected: true, paired: undefined, ready: false },
@@ -44,7 +65,12 @@ describe("device connection contract", () => {
       { connected: true, paired: true, ready: true },
     ];
 
-    expect(updates.map(deviceIsReady)).toEqual([false, false, false, true]);
+    expect(updates.map(deviceIsCustomerConnected)).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
   });
 
   it("returns a reachable device with a missing key to the Connect screen", () => {

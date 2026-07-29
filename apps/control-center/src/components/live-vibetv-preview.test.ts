@@ -8,6 +8,7 @@ import {
   fetchThemeRenderPackRevision,
   hasRenderableUsage,
   LiveVibeTVPreview,
+  livePreviewDisplayFrame,
   primitiveUsageSlotVisible,
   progressPercent,
   THEME_CATALOG_PREVIEW_FRAME,
@@ -25,7 +26,44 @@ const lane1: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 1 };
 const lane2: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 2 };
 
 describe("dynamic usage slot preview", () => {
-  it("shows usage loading instead of an offline preview for a reachable VibeTV", () => {
+  it("keeps a prior valid frame for a selected reachable VibeTV while readiness waits", () => {
+    const device = {
+      active: true,
+      connected: true,
+      paired: true,
+      ready: false,
+      activeTheme: "synthwave",
+      stream: {
+        healthy: false,
+        running: true,
+      },
+    };
+    const displayFrame = {
+      ok: true,
+      frame: {
+        v: 2,
+        provider: "codex",
+        label: "Codex",
+        usageSlots: [{ id: "weekly", label: "Weekly", percent: 29 }],
+      },
+    };
+
+    expect(livePreviewDisplayFrame(device, displayFrame)).toBe(displayFrame);
+
+    const markup = renderToStaticMarkup(
+      createElement(LiveVibeTVPreview, {
+        device,
+        displayFrame,
+        usage: null,
+      }),
+    );
+
+    expect(markup).toContain("Loading preview");
+    expect(markup).not.toContain("Waiting for usage");
+    expect(markup).not.toContain("Reconnect VibeTV to continue");
+  });
+
+  it("shows usage loading only when no renderable last frame exists", () => {
     const markup = renderToStaticMarkup(
       createElement(LiveVibeTVPreview, {
         device: {
@@ -38,24 +76,44 @@ describe("dynamic usage slot preview", () => {
             running: true,
           },
         },
-        displayFrame: {
-          ok: true,
-          frame: {
-            v: 2,
-            provider: "codex",
-            label: "Codex",
-            usageSlots: [
-              { id: "weekly", label: "Weekly", percent: 29 },
-            ],
-          },
-        },
+        displayFrame: null,
         usage: null,
       }),
     );
 
     expect(markup).toContain("Waiting for usage");
     expect(markup).not.toContain("Reconnect VibeTV to continue");
-    expect(markup).not.toContain("Codex");
+  });
+
+  it("ignores a prior frame when the selected VibeTV is disconnected", () => {
+    const displayFrame = {
+      ok: true,
+      frame: {
+        v: 2,
+        provider: "codex",
+        label: "Codex",
+        usageSlots: [{ id: "weekly", label: "Weekly", percent: 29 }],
+      },
+    };
+    const device = {
+      active: true,
+      connected: false,
+      paired: true,
+      ready: false,
+    };
+
+    expect(livePreviewDisplayFrame(device, displayFrame)).toBeNull();
+
+    const markup = renderToStaticMarkup(
+      createElement(LiveVibeTVPreview, {
+        device,
+        displayFrame,
+        usage: null,
+      }),
+    );
+
+    expect(markup).toContain("Reconnect VibeTV to continue");
+    expect(markup).not.toContain("Waiting for usage");
   });
 
   it("waits for actual usage instead of accepting a provider label alone", () => {

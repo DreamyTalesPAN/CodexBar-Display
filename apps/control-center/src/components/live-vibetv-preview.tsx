@@ -8,6 +8,7 @@ import type {
   UsageSnapshot,
 } from "./control-center-types";
 import {
+  deviceIsCustomerConnected,
   deviceIsReady,
   deviceIsWaitingForUsage,
 } from "./control-center-types";
@@ -296,11 +297,10 @@ export function LiveVibeTVPreview({
   const themeSpecHash = normalizeThemeSpecHash(
     device?.display?.themeSpec?.hash,
   );
-  const deviceConnected =
-    device?.connected === true && device.paired !== false;
+  const deviceConnected = deviceIsCustomerConnected(device);
   const deviceReady = deviceIsReady(device);
   const waitingForUsage = deviceIsWaitingForUsage(device);
-  const effectiveDisplayFrame = deviceReady ? displayFrame : null;
+  const effectiveDisplayFrame = livePreviewDisplayFrame(device, displayFrame);
   const frame = hasRenderableUsage(effectiveDisplayFrame)
     ? buildFrameData(
         effectiveDisplayFrame?.savedAt || usage?.generatedAt,
@@ -386,12 +386,6 @@ export function LiveVibeTVPreview({
       <VibeTVCaseShell>
         {!deviceConnected || (!deviceReady && !waitingForUsage) ? (
           <ThemePreviewOffline />
-        ) : waitingForUsage ? (
-          <ThemeSpecLoading
-            message="Waiting for usage…"
-            status="loading"
-            themeId={themeId}
-          />
         ) : pack?.spec && frame ? (
           <ThemeSpecSVG
             assets={pack.assets || {}}
@@ -399,12 +393,30 @@ export function LiveVibeTVPreview({
             spec={pack.spec}
             themeId={pack.themeId || themeId}
           />
+        ) : frame ? (
+          <ThemeSpecLoading status={packStatus} themeId={themeId} />
+        ) : waitingForUsage ? (
+          <ThemeSpecLoading
+            message="Waiting for usage…"
+            status="loading"
+            themeId={themeId}
+          />
         ) : (
           <ThemeSpecLoading status={packStatus} themeId={themeId} />
         )}
       </VibeTVCaseShell>
     </figure>
   );
+}
+
+export function livePreviewDisplayFrame(
+  device: DeviceInfo | null | undefined,
+  displayFrame: DisplayFrameSnapshot | null | undefined,
+) {
+  if (!deviceIsCustomerConnected(device) || !hasRenderableUsage(displayFrame)) {
+    return null;
+  }
+  return displayFrame;
 }
 
 export function ThemeSpecPreview({

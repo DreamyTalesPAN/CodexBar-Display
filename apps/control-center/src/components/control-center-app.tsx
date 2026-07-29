@@ -30,6 +30,7 @@ import {
   deviceCanContinueThemeSetup,
   deviceCompletedThemeSetup,
   deviceIsActive,
+  deviceIsCustomerConnected,
   deviceImageIsStuck,
   deviceIsReady,
   deviceNeedsExplicitConnect,
@@ -2991,13 +2992,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const imageNeedsReload = Boolean(
     deviceIsReady(device) && deviceImageIsStuck(device),
   );
+  const deviceConnected = deviceIsCustomerConnected(device);
   const deviceReady = deviceIsReady(device);
   const handleDisplayFrame = useCallback((frame: DisplayFrameSnapshot) => {
     if (hasRenderableUsage(frame)) {
       setHasEnteredControlCenter(true);
     }
   }, []);
-  const displayFrame = useLatestDisplayFrame(deviceReady, handleDisplayFrame);
+  const displayFrame = useLatestDisplayFrame(deviceConnected, handleDisplayFrame);
   const hasActiveDevice = deviceIsActive(device);
   const connectionRecoveryRequired =
     isConnectionRecoveryError(lastError) || deviceNeedsExplicitConnect(device);

@@ -1096,6 +1096,7 @@ async function testLocalWifiVerificationWithoutFrameWaitsForUsage(
   const selectRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: { connected: false, paired: false, ready: false },
+    displayFrameStatus: 404,
     onSelect: () => ({
       ...reachableUnreadyDevice,
       deviceId: "fixture-device-1",
@@ -1662,6 +1663,7 @@ async function testTransientFirstFrameStaysCustomerFriendly(
   const technicalStreamDetail =
     "Display stream could not find VibeTV and is reconnecting.";
   await routeCompanionOnline(page, [], () => {}, {
+    displayFrameStatus: 404,
     device: {
       ...reachableUnreadyDevice,
       deviceId: "vibetv-customer",
@@ -2915,6 +2917,7 @@ async function testLocalReachableWithoutFrameWaitsForUsage(browser, appUrl) {
   const repairRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: reachableUnreadyDevice,
+    displayFrameStatus: 404,
     onRepair: (postData) => {
       repairRequests.push(postData || "");
       return reachableUnreadyDevice;

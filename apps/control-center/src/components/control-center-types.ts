@@ -488,12 +488,21 @@ export function deviceIsReady(device: DeviceInfo | null | undefined) {
   return device?.ready === true;
 }
 
+export function deviceIsCustomerConnected(
+  device: DeviceInfo | null | undefined,
+): device is DeviceInfo & { active: true; connected: true } {
+  return Boolean(
+    device?.active === true &&
+      device.connected === true &&
+      device.paired !== false,
+  );
+}
+
 export function deviceIsWaitingForUsage(
   device: DeviceInfo | null | undefined,
 ) {
   return Boolean(
-    device?.connected === true &&
-      device.paired !== false &&
+    deviceIsCustomerConnected(device) &&
       device.ready !== true &&
       device.stream?.running === true &&
       device.stream.healthy !== true &&
