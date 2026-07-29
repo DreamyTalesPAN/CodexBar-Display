@@ -48,6 +48,67 @@ Rules:
   transport or retry in the same device boot.
 - A stored ThemeSpec activation must not keep the previous Mini GIF decoder open unless the new ThemeSpec actually uses that GIF.
 
+## ESP8266 Flash Budget and the OTA Ceiling
+
+This has already cost us once: a firmware grew past the ceiling, and affected
+devices could no longer be updated over WiFi at all. They built fine and ran
+fine. Read this before changing firmware size or the flash layout.
+
+**The rule.** During an OTA the running firmware writes the incoming image into
+the same region it lives in, so both must fit there at once. `Updater.cpp:135`
+rejects the update with `UPDATE_ERROR_SPACE` when they do not:
+
+```cpp
+//make sure that the size of both sketches is less than the total space
+if(updateStartAddress < currentSketchSize) {
+  _setError(UPDATE_ERROR_SPACE);
+```
+
+In plain terms, with both sizes rounded up to a 4096-byte sector:
+
+```
+currentSketchSize + newSketchSize  <=  _FS_start - 0x40200000
+```
+
+`_FS_start` comes from the linker script, so **the board's `board_build.ldscript`
+sets the OTA ceiling**, not the firmware.
+
+**Why it bit us.** Until `fcdf470` (2026-05-19) the board used
+`eagle.flash.4m3m.ld`: a 3 MB filesystem puts `_FS_start` at the 1 MB mark, so
+both sketches had to share 1048576 bytes and neither could exceed roughly
+524288. That is the wall the failing devices hit. The board now uses
+`eagle.flash.4m2m.ld`, which moves `_FS_start` to 2 MB.
+
+**Where we stand today** (`eagle.flash.4m2m.ld`, values from `_FS_start` in the
+built ELF):
+
+| | bytes |
+|---|---|
+| OTA region (`_FS_start` offset) | 2097152 |
+| Executable sketch cap, PlatformIO's 100 percent | 1044464 |
+| Firmware after #283 | 479088 |
+| Headroom to the executable cap | 565376 |
+
+At the current size the OTA rule is not the binding constraint — the executable
+cap is. But the margin at the very top is thin: two sector-rounded 1044464-byte
+sketches need 2088960 of the 2097152 available, leaving 8192 bytes. The two
+limits nearly coincide, so there is no comfortable zone above the cap.
+
+**Rules.**
+- Never raise the CI flash gate to make a build fit. Reclaim flash instead (#309).
+- Changing `board_build.ldscript` changes the OTA ceiling and moves the
+  filesystem, which relocates customer themes on devices already in the field.
+  Growing the filesystem back to 3 MB would restore the ~524288-byte wall.
+- The ceiling is a property of the *running* firmware plus the *incoming* one.
+  A device stuck on an oversized build cannot be rescued over WiFi; it needs USB.
+
+**Reading the real numbers.** `ESP.getFreeSketchSpace()` and the derived
+`maxSize` are captured at OTA start (`firmware_esp8266/src/main.cpp:2458`) but
+only ever printed to Serial — no HTTP endpoint reports them. Over WiFi the
+numbers are therefore unreadable, with or without performing an update, so the
+table above is derived from the linker layout and the Updater source rather than
+read from a device. Exposing them in `GET /health` is tracked in #309.
+
 ## Split Thresholds (mandatory refactor trigger)
 - Any single `.cpp`/`.h` file > 800 LOC and touching > 3 responsibilities:
   - split within same milestone.
