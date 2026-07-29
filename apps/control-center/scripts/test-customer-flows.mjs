@@ -6483,12 +6483,16 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     ),
     "Theme Studio should not create horizontal body overflow at 1180x820",
   );
-  const firstUsageLaneLayer = page.getByText("usageSlot1Percent", {
+  const firstUsageLaneLayer = page.getByText("Usage window 1 %", {
     exact: true,
   });
   assert(
     (await firstUsageLaneLayer.count()) === 1,
     "migrated theme should expose exactly one first-slot progress layer",
+  );
+  assert(
+    (await page.getByText("usageSlot1Percent", { exact: true }).count()) === 0,
+    "migrated theme should not expose stored usage binding names in Layers",
   );
   await firstUsageLaneLayer.click();
   assert(

@@ -348,10 +348,10 @@ export function textPrimitiveFontSizeFromVisualHeight(
 
 export function primitiveTitle(primitive: ThemeStudioPrimitive): string {
   if (primitive.type === "text") {
-    return primitive.text || primitive.binding || "Text";
+    return primitive.text || bindingDisplayLabel(primitive.binding) || "Text";
   }
   if (primitive.type === "progress") {
-    return primitive.binding || "session";
+    return bindingDisplayLabel(primitive.binding) || "session";
   }
   if (primitive.type === "gif" || primitive.type === "sprite") {
     return primitive.assetPath?.split("/").pop() || "Asset";
@@ -360,6 +360,28 @@ export function primitiveTitle(primitive: ThemeStudioPrimitive): string {
     return `${primitive.width ?? 0}x${primitive.height ?? 0}`;
   }
   return primitive.color || "Rect";
+}
+
+const USAGE_BINDING_LABELS: Record<string, string> = {
+  usageSlot1Label: "Usage window 1 label",
+  usageSlot1Percent: "Usage window 1 %",
+  usageSlot1Reset: "Usage window 1 reset",
+  usageSlot2Label: "Usage window 2 label",
+  usageSlot2Percent: "Usage window 2 %",
+  usageSlot2Reset: "Usage window 2 reset",
+};
+
+export function bindingDisplayLabel(binding: string | undefined): string {
+  if (!binding) {
+    return "";
+  }
+  const usageMatch = /^usage\.(\d+)\.(label|percent|reset)$/.exec(binding);
+  if (usageMatch) {
+    const windowIndex = Number(usageMatch[1]) + 1;
+    const field = usageMatch[2];
+    return `Usage window ${windowIndex} ${field === "percent" ? "%" : field}`;
+  }
+  return USAGE_BINDING_LABELS[binding] || binding;
 }
 
 function boundText(binding: string): string {
