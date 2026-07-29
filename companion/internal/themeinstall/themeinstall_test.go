@@ -176,11 +176,12 @@ func TestCurrentStoredThemePathReadsTheLiveSlotDuringStandby(t *testing.T) {
 	}
 }
 
-func TestInstallScreensaverKeepsTheFilesOfTheScreensaverOnScreen(t *testing.T) {
+func TestInstallScreensaverTakesTheShowingOneOffScreenBeforeOverwritingIt(t *testing.T) {
 	device := newScreensaverDeviceServer(t, true)
 	device.standbyActive = true
-	device.assets["/themes/s/old.json"] = 700
-	device.assets["/themes/s/old.cbi"] = 400
+	// The same pack keeps its device paths across versions, so reinstalling it
+	// writes into the files the running render is reading.
+	device.assets[screensaverSpecPath] = 60
 	defer device.server.Close()
 
 	var out bytes.Buffer
@@ -196,14 +197,67 @@ func TestInstallScreensaverKeepsTheFilesOfTheScreensaverOnScreen(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Install returned error: %v\nlogs:\n%s", err, out.String())
 	}
-	if len(device.deleted) != 0 {
-		t.Fatalf("the screensaver on screen must keep its files, deleted: %v", device.deleted)
+	if len(device.ops) == 0 || device.ops[0] != "clear" {
+		t.Fatalf("the showing screensaver must be cleared before anything is written, got: %v", device.ops)
 	}
 	if device.screensaverPath != screensaverSpecPath {
 		t.Fatalf("screensaver slot=%q, want %q", device.screensaverPath, screensaverSpecPath)
 	}
-	if !strings.Contains(out.String(), "skipped while the screensaver is showing") {
-		t.Fatalf("expected the skipped-cleanup log, got:\n%s", out.String())
+	if !strings.Contains(out.String(), "Taking the current screensaver off screen") {
+		t.Fatalf("expected the off-screen log, got:\n%s", out.String())
+	}
+}
+
+func TestInstallScreensaverLeavesAnIdleDeviceAlone(t *testing.T) {
+	device := newScreensaverDeviceServer(t, true)
+	defer device.server.Close()
+
+	if _, err := Install(context.Background(), Options{
+		Slot:               themepack.UsageScreensaver,
+		PackBytes:          zipThemePackFiles(t, screensaverPackFiles),
+		Target:             device.server.URL,
+		SkipFirmwareUpdate: true,
+		Out:                io.Discard,
+		HTTPClient:         device.server.Client(),
+		UploadSettleDelay:  -1,
+		FetchLiveFrame:     testLiveFrame,
+	}); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	for _, op := range device.ops {
+		if op == "clear" {
+			t.Fatalf("nothing is on screen to clear when standby is idle, got: %v", device.ops)
+		}
+	}
+}
+
+func TestScreensaverSweepSafeSkipsAShowingScreensaver(t *testing.T) {
+	tests := []struct {
+		name   string
+		active bool
+		want   bool
+	}{
+		{name: "idle device sweeps", active: false, want: true},
+		{name: "showing screensaver keeps its files", active: true, want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/health" {
+					t.Fatalf("unexpected path %s", r.URL.Path)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(fmt.Sprintf(
+					`{"ok":true,"display":{"themeSpec":{"active":true,"path":"/themes/s/night.json"}},"standby":{"active":%t}}`, test.active)))
+			}))
+			defer server.Close()
+
+			var out bytes.Buffer
+			got := screensaverSweepSafe(transportlayer.NewWiFiTransportWithClient(server.Client()), server.URL, &out)
+			if got != test.want {
+				t.Fatalf("screensaverSweepSafe()=%t, want %t", got, test.want)
+			}
+		})
 	}
 }
 
@@ -1115,6 +1169,7 @@ type screensaverDevice struct {
 	deleted         []string
 	screensaverPath string
 	standbyActive   bool
+	ops             []string
 }
 
 func newScreensaverDeviceServer(t *testing.T, supportsStandby bool) *screensaverDevice {
@@ -1138,10 +1193,13 @@ func newScreensaverDeviceServer(t *testing.T, supportsStandby bool) *screensaver
 			case http.MethodGet:
 				writeAssetList(t, w, device.assets)
 			case http.MethodPost:
-				device.assets[r.URL.Query().Get("path")] = readUploadedAssetSize(t, r)
+				path := r.URL.Query().Get("path")
+				device.ops = append(device.ops, "upload "+path)
+				device.assets[path] = readUploadedAssetSize(t, r)
 				w.WriteHeader(http.StatusOK)
 			case http.MethodDelete:
 				path := r.URL.Query().Get("path")
+				device.ops = append(device.ops, "delete "+path)
 				device.deleted = append(device.deleted, path)
 				delete(device.assets, path)
 				w.WriteHeader(http.StatusOK)
@@ -1155,9 +1213,19 @@ func newScreensaverDeviceServer(t *testing.T, supportsStandby bool) *screensaver
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Fatalf("decode screensaver activation: %v", err)
 			}
+			if body.Path == "" {
+				// Clearing the slot makes the firmware leave standby.
+				device.ops = append(device.ops, "clear")
+				device.screensaverPath = ""
+				device.standbyActive = false
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"ok":true,"path":null}`))
+				return
+			}
 			if _, stored := device.assets[body.Path]; !stored {
 				t.Fatalf("screensaver activated before its spec was uploaded: %q", body.Path)
 			}
+			device.ops = append(device.ops, "select "+body.Path)
 			device.screensaverPath = body.Path
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"path":"` + body.Path + `"}`))
