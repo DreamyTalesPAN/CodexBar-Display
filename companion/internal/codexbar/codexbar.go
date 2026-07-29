@@ -45,9 +45,8 @@ var readFileFn = os.ReadFile
 var executablePathFn = os.Executable
 
 const (
-	minSharedFallbackTimeBudget = 4 * time.Second
-	minSupportedVersionString   = "0.23"
-	versionCheckTimeout         = 2 * time.Second
+	minSupportedVersionString = "0.23"
+	versionCheckTimeout       = 2 * time.Second
 )
 
 const usageModeEnvVar = "CODEXBAR_DISPLAY_USAGE_MODE"
@@ -209,9 +208,6 @@ func isExecutable(path string) bool {
 }
 
 // FetchAllProviders reads provider usage from CodexBar and normalizes it.
-//
-// It prefers one aggregate `usage --json` call. If aggregate usage is
-// unavailable, a Codex CLI-only fallback can still return a minimal payload.
 func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	bin, err := FindBinary()
 	if err != nil {
@@ -224,18 +220,6 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	timeout := commandTimeout()
 	out, err := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
 	allParsed, parseErr := parseAllProviders(out)
-
-	// A non-zero exit may still contain useful provider rows. Fall back only
-	// when the aggregate payload itself is unusable.
-	if parseErr != nil && !errors.Is(parseErr, errGlobalCLI) {
-		fallbackCtx, fallbackCancel := fallbackContext(ctx)
-		defer fallbackCancel()
-		if fallback, ok := fetchCodexCLIOnly(fallbackCtx, cliFallbackTimeout(timeout), bin); ok {
-			allParsed = fallback
-			err = nil
-			parseErr = nil
-		}
-	}
 
 	if err != nil {
 		if len(bytes.TrimSpace(out)) == 0 {
@@ -286,13 +270,6 @@ func FetchProvider(ctx context.Context, provider string) (ParsedFrame, error) {
 	}
 
 	timeout := commandTimeout()
-	if key == "codex" {
-		if codexCLI, ok := fetchCodexCLIProvider(ctx, cliFallbackTimeout(timeout), bin); ok {
-			codexCLI.Frame = codexCLI.Frame.Normalize()
-			return codexCLI, nil
-		}
-	}
-
 	parsed, err := fetchProviderScopedUsageDetailed(ctx, providerScopedFallbackTimeout(timeout), bin, key, providerScopedWebTimeoutSeconds(), "")
 	if err != nil {
 		return ParsedFrame{}, err
@@ -2688,34 +2665,6 @@ func indexOfProviderKey(all []ParsedFrame, key string) int {
 	return -1
 }
 
-func fetchCodexCLIOnly(ctx context.Context, timeout time.Duration, bin string) ([]ParsedFrame, bool) {
-	codexParsed, ok := fetchCodexCLIProvider(ctx, timeout, bin)
-	if !ok {
-		return nil, false
-	}
-	codexParsed.Source = fallbackSource(codexParsed.Source, "codex-cli-fallback")
-	return []ParsedFrame{codexParsed}, true
-}
-
-func fetchCodexCLIProvider(ctx context.Context, timeout time.Duration, bin string) (ParsedFrame, bool) {
-	cliOut, cliErr := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
-	if cliErr != nil {
-		return ParsedFrame{}, false
-	}
-	cliAll, cliParseErr := parseAllProviders(cliOut)
-	if cliParseErr != nil || len(cliAll) == 0 {
-		return ParsedFrame{}, false
-	}
-
-	for _, candidate := range cliAll {
-		if providerKey(candidate) == "codex" {
-			candidate.Source = fallbackSource(candidate.Source, "codex-cli")
-			return candidate, true
-		}
-	}
-	return ParsedFrame{}, false
-}
-
 func fetchProviderScopedUsageDetailed(ctx context.Context, timeout time.Duration, bin string, provider string, webTimeoutSeconds int, source string) (ParsedFrame, error) {
 	key := strings.TrimSpace(strings.ToLower(provider))
 	if key == "" {
@@ -2761,28 +2710,6 @@ func fetchProviderScopedUsageDetailed(ctx context.Context, timeout time.Duration
 	)
 }
 
-func fallbackContext(parent context.Context) (context.Context, context.CancelFunc) {
-	if parent == nil {
-		return context.WithTimeout(context.Background(), minSharedFallbackTimeBudget)
-	}
-	if parent.Err() != nil {
-		return context.WithTimeout(context.Background(), minSharedFallbackTimeBudget)
-	}
-	if deadline, ok := parent.Deadline(); ok {
-		if time.Until(deadline) < minSharedFallbackTimeBudget {
-			return context.WithTimeout(context.Background(), minSharedFallbackTimeBudget)
-		}
-	}
-	return parent, func() {}
-}
-
-func cliFallbackTimeout(primaryTimeout time.Duration) time.Duration {
-	if primaryTimeout > 0 {
-		return primaryTimeout
-	}
-	return commandTimeout()
-}
-
 func providerScopedFallbackTimeout(primaryTimeout time.Duration) time.Duration {
 	const (
 		minTimeout = 4 * time.Second
@@ -2824,61 +2751,6 @@ func providerScopedWebTimeoutSeconds() int {
 		return max
 	}
 	return n
-}
-
-func needsCodexCLIPriority(all []ParsedFrame) bool {
-	for _, parsed := range all {
-		if providerKey(parsed) == "codex" {
-			// Keep aggregated codex usage as-is to mirror CodexBar desktop values.
-			return false
-		}
-	}
-	return true
-}
-
-func replaceOrAppendCodexProvider(all []ParsedFrame, codex ParsedFrame) []ParsedFrame {
-	out := make([]ParsedFrame, 0, len(all)+1)
-	replaced := false
-	for _, parsed := range all {
-		if providerKey(parsed) != "codex" {
-			out = append(out, parsed)
-			continue
-		}
-		if !replaced {
-			out = append(out, codex)
-			replaced = true
-		}
-	}
-	if !replaced {
-		out = append(out, codex)
-	}
-	return out
-}
-
-func repairCodexFromCLI(ctx context.Context, timeout time.Duration, bin string, all []ParsedFrame) []ParsedFrame {
-	if !needsCodexCLIPriority(all) {
-		return all
-	}
-
-	fallbackCtx, fallbackCancel := fallbackContext(ctx)
-	defer fallbackCancel()
-	codexCLI, ok := fetchCodexCLIProvider(fallbackCtx, cliFallbackTimeout(timeout), bin)
-	if !ok {
-		return all
-	}
-	codexCLI.Source = fallbackSource(codexCLI.Source, "codex-cli-repair")
-	return replaceOrAppendCodexProvider(all, codexCLI)
-}
-
-func fallbackSource(current string, fallback string) string {
-	current = strings.TrimSpace(strings.ToLower(current))
-	if current == "" {
-		return fallback
-	}
-	if strings.Contains(current, "fallback") || strings.Contains(current, "repair") {
-		return current
-	}
-	return current + "+" + fallback
 }
 
 func extractProviderList(root any) []any {

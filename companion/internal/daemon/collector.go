@@ -350,7 +350,8 @@ func (c *providerCollector) fetchProvidersForCollect(ctx context.Context, now ti
 				}
 				return result.Providers, "codexbar-dashboard", nil
 			}
-			c.logf("collector dashboard-unavailable source=codexbar-dashboard fallback=usage-json err=%v\n", err)
+			c.logf("collector dashboard-unavailable source=codexbar-dashboard err=%v\n", err)
+			return nil, "codexbar-dashboard", err
 		}
 	}
 	if c.fetchProviders == nil {
@@ -656,6 +657,28 @@ func snapshotWithFreshTokenStats(snapshot providerSnapshot, now time.Time, maxAg
 	return snapshot
 }
 
+func snapshotWithExpiredUsageCleared(snapshot providerSnapshot, now time.Time, maxAge time.Duration) providerSnapshot {
+	if isLastGoodFreshAt(snapshot.Collected, now, maxAge) {
+		return snapshot
+	}
+
+	frame := snapshot.Frame.Normalize()
+	frame.UsageUnavailable = true
+	frame.SessionUnavailable = true
+	frame.WeeklyUnavailable = true
+	frame.Session = 0
+	frame.Weekly = 0
+	frame.ResetSec = 0
+	frame.UsageSlots = nil
+	frame.SessionTokens = 0
+	frame.WeekTokens = 0
+	frame.TotalTokens = 0
+	snapshot.Frame = frame
+	snapshot.Meta = codexbar.ProviderUsageMeta{Status: snapshot.Meta.Status}
+	snapshot.TokenStatsCollected = time.Time{}
+	return snapshot
+}
+
 func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame {
 	if c == nil {
 		return nil
@@ -675,13 +698,11 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			continue
 		}
 		snapshot = snapshotWithFreshTokenStats(snapshot, now, c.snapshotMaxAge)
+		snapshot = snapshotWithExpiredUsageCleared(snapshot, now, c.snapshotMaxAge)
 		frame := snapshot.Frame.Normalize()
 		frame.Provider = normalizeProviderKey(frame.Provider)
 		if frame.Provider == "" {
 			frame.Provider = key
-		}
-		if snapshot.Collected.IsZero() || !isLastGoodFreshAt(snapshot.Collected, now, c.snapshotMaxAge) {
-			frame.UsageUnavailable = true
 		}
 		frames = append(frames, codexbar.ParsedFrame{
 			Frame:              frame,
