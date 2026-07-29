@@ -3283,6 +3283,67 @@ func TestRunCycleFromCollectorSendsSnapshotCollectedAfterSlowFetch(t *testing.T)
 	}
 }
 
+func TestRunCycleFromCollectorSendsFreshDashboardQuotaWithOldActivityTime(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	oldActivity := current.Add(-2 * time.Minute)
+	collector := &providerCollector{
+		now:             func() time.Time { return current },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex"},
+		interval:        30 * time.Second,
+		timeout:         time.Minute,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			frame := testParsedFrame("codex", 24, 0, 3600)
+			frame.Source = "codexbar-dashboard"
+			frame.CollectedAt = current
+			frame.ActivityObservedAt = oldActivity
+			frame.Frame.Label = "Codex"
+			frame.Frame.UsageWindows = []protocol.UsageWindow{
+				{ID: "weekly", Label: "Weekly", Percent: 24, ResetSec: 3600},
+				{ID: "codex-spark-weekly", Label: "Codex Spark Weekly", Percent: 0, ResetSec: 3600},
+			}
+			frame.Meta.Windows = []codexbar.UsageWindow{
+				{ID: "weekly", Label: "Weekly", UsedPercent: 24, ResetSec: 3600},
+				{ID: "codex-spark-weekly", Label: "Codex Spark Weekly", UsedPercent: 0, ResetSec: 3600},
+			}
+			return []codexbar.ParsedFrame{frame}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+
+	frames := collector.providerFrames(current)
+	if len(frames) != 1 || frames[0].Stale || frames[0].Frame.UsageUnavailable {
+		t.Fatalf("successful dashboard fetch must be stream-fresh at collection time, got %#v", frames)
+	}
+	if !frames[0].CollectedAt.Equal(current) || !frames[0].ActivityObservedAt.Equal(oldActivity) {
+		t.Fatalf("collectedAt and activityObservedAt must stay separate, got collected=%s activity=%s", frames[0].CollectedAt, frames[0].ActivityObservedAt)
+	}
+
+	var sentLine []byte
+	err := runCycleFromCollector(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, collector, runtimeDeps{
+		now:         func() time.Time { return current },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("publisher should send fresh dashboard quota despite old activity time: %v", err)
+	}
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Provider != "codex" || frame.Label != "Codex" || len(frame.UsageWindows) != 2 ||
+		frame.UsageWindows[0].Label != "Weekly" || frame.UsageWindows[1].Label != "Codex Spark Weekly" {
+		t.Fatalf("expected Codex dashboard usage windows in sent frame, got %+v", frame)
+	}
+}
+
 func TestProviderCollectorLearnsDynamicCodexBarOrder(t *testing.T) {
 	prepareFastTestEnv(t)
 

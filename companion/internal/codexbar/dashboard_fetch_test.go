@@ -49,8 +49,11 @@ func TestFetchDashboardProvidersWithholdsColdFirstSnapshot(t *testing.T) {
 	if len(warm.Providers[0].Meta.Windows) != 2 {
 		t.Fatalf("expected all valid windows in metadata, got %+v", warm.Providers[0].Meta.Windows)
 	}
-	if got, want := warm.Providers[0].CollectedAt, time.Date(2026, 7, 28, 8, 1, 0, 0, time.UTC); !got.Equal(want) {
-		t.Fatalf("dashboard provider freshness must use provider updatedAt, got %s want %s", got, want)
+	if got, want := warm.Providers[0].CollectedAt, now; !got.Equal(want) {
+		t.Fatalf("dashboard provider freshness must use successful fetch time, got %s want %s", got, want)
+	}
+	if got, want := warm.Providers[0].ActivityObservedAt, time.Date(2026, 7, 28, 8, 1, 0, 0, time.UTC); !got.Equal(want) {
+		t.Fatalf("dashboard activity timestamp must stay separate, got %s want %s", got, want)
 	}
 }
 
@@ -79,6 +82,41 @@ func TestFetchDashboardProvidersRequiresProviderUpdatedAt(t *testing.T) {
 	}
 	if len(result.Providers) != 1 || !result.Providers[0].Frame.UsageUnavailable {
 		t.Fatalf("expected null updatedAt to withhold values, got %+v", result.Providers)
+	}
+	if !result.Providers[0].Stale || len(result.Providers[0].Frame.UsageWindows) != 0 || len(result.Providers[0].Meta.Windows) != 0 {
+		t.Fatalf("unknown dashboard usage must stay stale and unavailable, got %+v", result.Providers[0])
+	}
+}
+
+func TestFetchDashboardProvidersKeepsProviderErrorUnavailable(t *testing.T) {
+	server := newDashboardFetchTestServerWithSnapshot(t, `{
+	  "schemaVersion": 1,
+	  "providers": [{
+	    "id": "codex",
+	    "name": "Codex",
+	    "windows": [{"kind": "weekly", "label": "Weekly", "usedPercent": 68, "resetAt": "2026-08-01T00:00:00Z"}],
+	    "error": {"message":"provider unavailable"},
+	    "updatedAt": "2026-07-28T08:01:00Z"
+	  }]
+	}`)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 28, 8, 30, 0, 0, time.UTC)
+	result, err := FetchDashboardProviders(context.Background(), DashboardServeInfo{
+		Endpoint: server.URL,
+		Token:    "test-token",
+		Running:  true,
+		Healthy:  true,
+		PID:      1234,
+	}, now, 2)
+	if err != nil {
+		t.Fatalf("dashboard fetch failed: %v", err)
+	}
+	if len(result.Providers) != 1 || !result.Providers[0].Frame.UsageUnavailable || !result.Providers[0].Stale {
+		t.Fatalf("provider error must stay unavailable and stale, got %+v", result.Providers)
+	}
+	if len(result.Providers[0].Frame.UsageWindows) != 0 || len(result.Providers[0].Meta.Windows) != 0 {
+		t.Fatalf("provider error must not expose usage windows, got %+v", result.Providers[0])
 	}
 }
 
