@@ -1163,6 +1163,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		return nil
 	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
+	frame = applyDeviceUsageWindowLimit(frame, caps)
 	frame = attachClockFields(frame, deps.now())
 
 	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
@@ -1226,8 +1227,8 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 	persistActiveWiFiTarget(port, deps)
 
-	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
-		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageSlotsLogValue(frame.UsageSlots), frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
+	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
+		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -1251,6 +1252,17 @@ func usageSlotsLogValue(slots []protocol.UsageSlot) string {
 	raw, err := json.Marshal(slots)
 	if err != nil {
 		return ""
+	}
+	return url.QueryEscape(string(raw))
+}
+
+func usageWindowsLogValue(windows []protocol.UsageWindow) string {
+	if len(windows) == 0 {
+		return "-"
+	}
+	raw, err := json.Marshal(windows)
+	if err != nil {
+		return "-"
 	}
 	return url.QueryEscape(string(raw))
 }
@@ -1541,6 +1553,14 @@ func applyThemeToFrame(frame protocol.Frame, selectedTheme string, caps protocol
 	return frame, true
 }
 
+func applyDeviceUsageWindowLimit(frame protocol.Frame, caps protocol.DeviceCapabilities) protocol.Frame {
+	if caps.MaxUsageWindows <= 0 || len(frame.UsageWindows) <= caps.MaxUsageWindows {
+		return frame
+	}
+	frame.UsageWindows = append([]protocol.UsageWindow(nil), frame.UsageWindows[:caps.MaxUsageWindows]...)
+	return frame.Normalize()
+}
+
 func applyUsageBarsPreference(frame protocol.Frame, showUsed bool) protocol.Frame {
 	if strings.TrimSpace(frame.Error) != "" {
 		return frame
@@ -1551,21 +1571,14 @@ func applyUsageBarsPreference(frame protocol.Frame, showUsed bool) protocol.Fram
 		return frame
 	}
 
-	if len(frame.UsageSlots) == 0 {
+	if len(frame.UsageWindows) == 0 {
 		frame.Session = 100 - clampPercent(frame.Session)
 		frame.Weekly = 100 - clampPercent(frame.Weekly)
 	} else {
-		frame.Session = 0
-		frame.Weekly = 0
-		if len(frame.UsageSlots) > 0 {
-			frame.Session = 100 - clampPercent(frame.UsageSlots[0].Percent)
+		for i := range frame.UsageWindows {
+			frame.UsageWindows[i].Percent = 100 - clampPercent(frame.UsageWindows[i].Percent)
 		}
-		if len(frame.UsageSlots) > 1 {
-			frame.Weekly = 100 - clampPercent(frame.UsageSlots[1].Percent)
-		}
-	}
-	for i := range frame.UsageSlots {
-		frame.UsageSlots[i].Percent = 100 - clampPercent(frame.UsageSlots[i].Percent)
+		frame = frame.Normalize()
 	}
 	frame.UsageMode = "remaining"
 	return frame
@@ -2203,6 +2216,7 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		maxBytes = protocol.DefaultMaxFrameBytes
 	}
 
+	frame = frame.Normalize()
 	line, err := frame.MarshalLine()
 	if err != nil {
 		return nil, protocol.Frame{}, err
@@ -2212,38 +2226,41 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 	}
 
 	if frame.Update != nil {
-		compactUpdate := frame
+		compactUpdate := frame.Normalize()
 		compactUpdate.Update = compactFrameUpdate(frame.Update)
 		for _, candidate := range compactUpdateCandidates(compactUpdate) {
-			line, err = candidate.MarshalLine()
+			normalized := candidate.Normalize()
+			line, err = normalized.MarshalLine()
 			if err != nil {
 				return nil, protocol.Frame{}, err
 			}
 			if len(line) <= maxBytes {
-				return line, candidate, nil
+				return line, normalized, nil
 			}
 		}
 
-		noUpdate := frame
+		noUpdate := frame.Normalize()
 		noUpdate.Update = nil
-		line, err = noUpdate.MarshalLine()
+		normalized := noUpdate.Normalize()
+		line, err = normalized.MarshalLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, noUpdate, nil
+			return line, normalized, nil
 		}
 	}
 
 	if frame.Theme != "" {
 		noTheme := frame
 		noTheme.Theme = ""
-		line, err = noTheme.MarshalLine()
+		normalized := noTheme.Normalize()
+		line, err = normalized.MarshalLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, noTheme, nil
+			return line, normalized, nil
 		}
 	}
 
@@ -2252,12 +2269,13 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		noTokens.SessionTokens = 0
 		noTokens.WeekTokens = 0
 		noTokens.TotalTokens = 0
-		line, err = noTokens.MarshalLine()
+		normalized := noTokens.Normalize()
+		line, err = normalized.MarshalLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, noTokens, nil
+			return line, normalized, nil
 		}
 	}
 
@@ -2265,16 +2283,32 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		noClock := frame
 		noClock.Time = ""
 		noClock.Date = ""
-		line, err = noClock.MarshalLine()
+		normalized := noClock.Normalize()
+		line, err = normalized.MarshalLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, noClock, nil
+			return line, normalized, nil
 		}
 	}
 
-	fallback := protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorFrameTooLarge))
+	if len(frame.UsageWindows) > 0 {
+		for limit := len(frame.UsageWindows) - 1; limit >= 0; limit-- {
+			trimmed := frame
+			trimmed.UsageWindows = append([]protocol.UsageWindow(nil), frame.UsageWindows[:limit]...)
+			normalized := trimmed.Normalize()
+			line, err = normalized.MarshalLine()
+			if err != nil {
+				return nil, protocol.Frame{}, err
+			}
+			if len(line) <= maxBytes {
+				return line, normalized, nil
+			}
+		}
+	}
+
+	fallback := protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorFrameTooLarge)).Normalize()
 	line, err = fallback.MarshalLine()
 	if err != nil {
 		return nil, protocol.Frame{}, err

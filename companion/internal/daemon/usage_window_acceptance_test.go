@@ -88,9 +88,12 @@ func TestUsageWindowAcceptanceMatrixNormalizesToDeviceFrame(t *testing.T) {
 			if len(line) > fixture.MaxFrameBytes {
 				t.Fatalf("device frame exceeds budget: bytes=%d max=%d frame=%s", len(line), fixture.MaxFrameBytes, line)
 			}
-			assertFrameMatch(t, marshaledFrame.Normalize(), tc.ExpectedDeviceFrame.Normalize())
-			if len(marshaledFrame.UsageSlots) > 2 {
-				t.Fatalf("device frame must not expose more than two physical slots: %+v", marshaledFrame.UsageSlots)
+			assertFrameMatch(t, marshaledFrame.Normalize(), expectedDeviceFrameForAcceptance(tc))
+			if len(marshaledFrame.UsageSlots) > 0 {
+				t.Fatalf("v2 device frame must not duplicate legacy usageSlots: %+v", marshaledFrame.UsageSlots)
+			}
+			if len(marshaledFrame.UsageWindows) != len(parsed.Meta.Windows) {
+				t.Fatalf("device frame must transport ordered usageWindows: got=%d want=%d frame=%+v", len(marshaledFrame.UsageWindows), len(parsed.Meta.Windows), marshaledFrame.UsageWindows)
 			}
 		})
 	}
@@ -128,6 +131,41 @@ func TestUsageWindowAcceptanceProviderErrorKeepsLastGood(t *testing.T) {
 			got := collector.providers[tc.Provider].Frame.Normalize()
 			assertFrameMatch(t, got, tc.ExpectedFrame.Normalize())
 		})
+	}
+}
+
+func TestDeviceUsageWindowLimitBoundsOnlySendFrame(t *testing.T) {
+	frame := protocol.Frame{
+		V:        protocol.ProtocolVersionV2,
+		Provider: "generic",
+		Label:    "Generic",
+		UsageWindows: []protocol.UsageWindow{
+			{ID: "a", Label: "A", Percent: 10, ResetSec: 1},
+			{ID: "b", Label: "B", Percent: 20, ResetSec: 2},
+			{ID: "c", Label: "C", Percent: 30, ResetSec: 3},
+			{ID: "d", Label: "D", Percent: 40, ResetSec: 4},
+			{ID: "e", Label: "E", Percent: 50, ResetSec: 5},
+			{ID: "f", Label: "F", Percent: 60, ResetSec: 6},
+			{ID: "g", Label: "G", Percent: 70, ResetSec: 7},
+			{ID: "h", Label: "H", Percent: 80, ResetSec: 8},
+			{ID: "i", Label: "I", Percent: 90, ResetSec: 9},
+			{ID: "j", Label: "J", Percent: 100, ResetSec: 10},
+		},
+	}
+
+	bounded := applyDeviceUsageWindowLimit(frame, protocol.DeviceCapabilities{
+		MaxUsageWindows: 8,
+	})
+	if len(frame.UsageWindows) != 10 {
+		t.Fatalf("source frame must stay complete, got %+v", frame.UsageWindows)
+	}
+	if len(bounded.UsageWindows) != 8 ||
+		bounded.UsageWindows[0].ID != "a" ||
+		bounded.UsageWindows[7].ID != "h" {
+		t.Fatalf("device frame must keep first N windows in order, got %+v", bounded.UsageWindows)
+	}
+	if bounded.Session != 10 || bounded.Weekly != 20 || bounded.ResetSec != 1 {
+		t.Fatalf("legacy projection must follow bounded windows, got session=%d weekly=%d reset=%d", bounded.Session, bounded.Weekly, bounded.ResetSec)
 	}
 }
 
@@ -197,4 +235,24 @@ func assertAcceptanceWindows(t *testing.T, got []codexbar.UsageWindow, want []ex
 	if !reflect.DeepEqual(normalized, want) {
 		t.Fatalf("control center windows mismatch:\ngot:  %+v\nwant: %+v", normalized, want)
 	}
+}
+
+func expectedDeviceFrameForAcceptance(tc usageWindowAcceptanceCase) protocol.Frame {
+	frame := tc.ExpectedDeviceFrame
+	frame.V = protocol.ProtocolVersionV2
+	frame.UsageSlots = nil
+	frame.UsageWindows = make([]protocol.UsageWindow, 0, len(tc.ExpectedControlCenterWindows))
+	for _, window := range tc.ExpectedControlCenterWindows {
+		percent := window.UsedPercent
+		if !tc.ShowUsed {
+			percent = 100 - percent
+		}
+		frame.UsageWindows = append(frame.UsageWindows, protocol.UsageWindow{
+			ID:       window.ID,
+			Label:    window.Label,
+			Percent:  percent,
+			ResetSec: window.ResetSec,
+		})
+	}
+	return frame.Normalize()
 }

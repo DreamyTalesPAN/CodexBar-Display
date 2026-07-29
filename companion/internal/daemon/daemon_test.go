@@ -1653,6 +1653,42 @@ func TestMarshalFrameWithinLimitKeepsCompactUpdateBeforeTokens(t *testing.T) {
 	}
 }
 
+func TestMarshalFrameWithinLimitTrimsUsageWindowsInOrder(t *testing.T) {
+	frame := protocol.Frame{
+		V:         protocol.ProtocolVersionV2,
+		Provider:  "codex",
+		Label:     "Codex",
+		UsageMode: "used",
+		UsageWindows: []protocol.UsageWindow{
+			{ID: "alpha", Label: "Alpha", Percent: 10, ResetSec: 1},
+			{ID: "beta", Label: "Beta", Percent: 20, ResetSec: 2},
+			{ID: "gamma", Label: "Gamma", Percent: 30, ResetSec: 3},
+			{ID: "delta", Label: "Delta", Percent: 40, ResetSec: 4},
+			{ID: "epsilon", Label: "Epsilon", Percent: 50, ResetSec: 5},
+		},
+	}
+	threeWindows := frame
+	threeWindows.UsageWindows = append([]protocol.UsageWindow(nil), frame.UsageWindows[:3]...)
+	limitLine, err := threeWindows.MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal limit frame: %v", err)
+	}
+
+	line, marshaled, err := marshalFrameWithinLimit(frame, len(limitLine))
+	if err != nil {
+		t.Fatalf("marshal within limit: %v", err)
+	}
+	if len(line) > len(limitLine) {
+		t.Fatalf("expected trimmed line to fit limit %d, got %d", len(limitLine), len(line))
+	}
+	if len(marshaled.UsageWindows) != 3 ||
+		marshaled.UsageWindows[0].ID != "alpha" ||
+		marshaled.UsageWindows[1].ID != "beta" ||
+		marshaled.UsageWindows[2].ID != "gamma" {
+		t.Fatalf("expected first three usage windows to be preserved, got %+v", marshaled.UsageWindows)
+	}
+}
+
 func TestMarshalFrameWithinLimitFallsBackToErrorFrame(t *testing.T) {
 	frame := protocol.Frame{
 		Provider: "codex",

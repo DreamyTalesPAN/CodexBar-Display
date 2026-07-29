@@ -8,12 +8,19 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
 )
 
-type UsageSlot struct {
+const (
+	DefaultUsageWindowLabelBytes = 24
+	DefaultUsageWindowIDBytes    = 32
+)
+
+type UsageWindow struct {
 	ID       string `json:"id"`
 	Label    string `json:"label"`
 	Percent  int    `json:"percent"`
 	ResetSec int64  `json:"resetSecs"`
 }
+
+type UsageSlot = UsageWindow
 
 type Frame struct {
 	V                     int             `json:"v"`
@@ -26,6 +33,7 @@ type Frame struct {
 	SessionUnavailable    bool            `json:"sessionUnavailable,omitempty"`
 	WeeklyUnavailable     bool            `json:"weeklyUnavailable,omitempty"`
 	UsageMode             string          `json:"usageMode,omitempty"`
+	UsageWindows          []UsageWindow   `json:"usageWindows,omitempty"`
 	UsageSlots            []UsageSlot     `json:"usageSlots,omitempty"`
 	Time                  string          `json:"time,omitempty"`
 	Date                  string          `json:"date,omitempty"`
@@ -54,6 +62,7 @@ type UpdateState struct {
 
 func (f Frame) Normalize() Frame {
 	f.V = NormalizeProtocolVersion(f.V)
+	protocolVersion := f.V
 	if f.Session < 0 {
 		f.Session = 0
 	}
@@ -69,7 +78,13 @@ func (f Frame) Normalize() Frame {
 	if f.ResetSec < 0 {
 		f.ResetSec = 0
 	}
-	f.UsageSlots = normalizeUsageSlots(f.UsageSlots)
+	f.UsageWindows = normalizeUsageWindows(firstNonEmptyUsageWindows(f.UsageWindows, f.UsageSlots))
+	if protocolVersion >= ProtocolVersionV2 {
+		f.UsageSlots = nil
+	} else {
+		f.UsageSlots = legacyUsageSlots(f.UsageWindows)
+	}
+	f = applyLegacyUsageProjection(f)
 	if f.SessionTokens < 0 {
 		f.SessionTokens = 0
 	}
@@ -111,36 +126,73 @@ func (f Frame) Normalize() Frame {
 	return f
 }
 
-func normalizeUsageSlots(slots []UsageSlot) []UsageSlot {
-	if len(slots) == 0 {
+func firstNonEmptyUsageWindows(windows []UsageWindow, slots []UsageSlot) []UsageWindow {
+	if len(windows) > 0 {
+		return windows
+	}
+	return slots
+}
+
+func normalizeUsageWindows(windows []UsageWindow) []UsageWindow {
+	if len(windows) == 0 {
 		return nil
 	}
-	out := make([]UsageSlot, 0, 2)
-	for _, slot := range slots {
-		if len(out) == 2 {
-			break
+	out := make([]UsageWindow, 0, len(windows))
+	for _, window := range windows {
+		window.ID = truncateUTF8Bytes(strings.TrimSpace(strings.ToLower(window.ID)), DefaultUsageWindowIDBytes)
+		window.Label = truncateUTF8Bytes(strings.TrimSpace(window.Label), DefaultUsageWindowLabelBytes)
+		if window.Label == "" {
+			window.Label = window.ID
 		}
-		slot.ID = truncateUTF8Bytes(strings.TrimSpace(strings.ToLower(slot.ID)), 32)
-		slot.Label = truncateUTF8Bytes(strings.TrimSpace(slot.Label), 24)
-		if slot.Label == "" {
-			slot.Label = slot.ID
-		}
-		slot.Label = truncateUTF8Bytes(slot.Label, 24)
-		if slot.ID == "" || slot.Label == "" {
+		window.Label = truncateUTF8Bytes(window.Label, DefaultUsageWindowLabelBytes)
+		if window.ID == "" || window.Label == "" {
 			continue
 		}
-		if slot.Percent < 0 {
-			slot.Percent = 0
+		if window.Percent < 0 {
+			window.Percent = 0
 		}
-		if slot.Percent > 100 {
-			slot.Percent = 100
+		if window.Percent > 100 {
+			window.Percent = 100
 		}
-		if slot.ResetSec < 0 {
-			slot.ResetSec = 0
+		if window.ResetSec < 0 {
+			window.ResetSec = 0
 		}
-		out = append(out, slot)
+		out = append(out, window)
 	}
 	return out
+}
+
+func legacyUsageSlots(windows []UsageWindow) []UsageSlot {
+	if len(windows) == 0 {
+		return nil
+	}
+	limit := minInt(len(windows), 2)
+	out := make([]UsageSlot, limit)
+	copy(out, windows[:limit])
+	return out
+}
+
+func applyLegacyUsageProjection(f Frame) Frame {
+	if len(f.UsageWindows) == 0 {
+		return f
+	}
+	f.Session = f.UsageWindows[0].Percent
+	f.ResetSec = f.UsageWindows[0].ResetSec
+	if len(f.UsageWindows) > 1 {
+		f.Weekly = f.UsageWindows[1].Percent
+	} else {
+		f.Weekly = 0
+	}
+	f.SessionUnavailable = false
+	f.WeeklyUnavailable = len(f.UsageWindows) < 2
+	return f
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func truncateUTF8Bytes(value string, maxBytes int) string {
