@@ -587,20 +587,22 @@ function UsageProviderTile({
 }: {
   provider: UsageProviderInfo;
 }) {
+  const tokenEvidence = providerHasTokenEvidence(provider);
+  const providerStale = provider.stale && !tokenEvidence;
   return (
     <Card
       className={cn(
         "h-full min-h-[248px] [--card-spacing:--spacing(5)]",
-        provider.stale && "opacity-65",
+        providerStale && "opacity-65",
       )}
     >
       <CardHeader>
         <CardTitle className="break-words text-xl font-black">
           {provider.label || provider.id}
         </CardTitle>
-        {provider.stale || provider.status ? (
+        {providerStale || provider.status ? (
           <CardDescription className="flex flex-wrap items-center gap-2">
-            {provider.stale ? <StatusPill>Stale</StatusPill> : null}
+            {providerStale ? <StatusPill>Stale</StatusPill> : null}
             {provider.status ? (
               <StatusPill>{providerStatusLabel(provider.status.description)}</StatusPill>
             ) : null}
@@ -619,6 +621,7 @@ function UsageProviderTile({
 }
 
 function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
+  const unavailableDetail = quotaUnavailableDetail(provider);
   if (provider.windows?.length) {
     return (
       <div className="grid gap-4">
@@ -627,6 +630,7 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
             key={window.id}
             mode={provider.usageMode}
             unavailable={provider.usageUnavailable}
+            unavailableDetail={unavailableDetail}
             window={window}
           />
         ))}
@@ -643,6 +647,7 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
         unavailable={
           provider.usageUnavailable || provider.sessionUnavailable
         }
+        unavailableDetail={unavailableDetail}
         value={provider.session}
       />
       <UsageBar
@@ -650,6 +655,7 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
         mode={provider.usageMode}
         resetSecs={provider.resetSecs}
         unavailable={provider.usageUnavailable || provider.weeklyUnavailable}
+        unavailableDetail={unavailableDetail}
         value={provider.weekly}
       />
     </div>
@@ -661,15 +667,18 @@ function UsageBar({
   mode,
   resetSecs,
   unavailable,
+  unavailableDetail,
   value,
 }: {
   label: string;
   mode?: string;
   resetSecs?: number;
   unavailable?: boolean;
+  unavailableDetail?: string;
   value: number;
 }) {
   const percent = clampPercent(value);
+  const detail = unavailableDetail || "Usage limits unavailable.";
   return (
     <div>
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
@@ -685,12 +694,15 @@ function UsageBar({
       <Progress
         aria-label={
           unavailable
-            ? `${label}: usage unavailable`
+            ? `${label}: ${detail}`
             : `${label}: ${percent}% ${usageModeShortLabel(mode)}`
         }
         className="h-2"
         value={unavailable ? 0 : percent}
       />
+      {unavailable ? (
+        <p className="mt-1 text-xs font-semibold text-[#6A5B00]">{detail}</p>
+      ) : null}
     </div>
   );
 }
@@ -756,13 +768,16 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
 function UsageWindowBar({
   mode,
   unavailable,
+  unavailableDetail,
   window,
 }: {
   mode?: string;
   unavailable?: boolean;
+  unavailableDetail?: string;
   window: UsageWindowInfo;
 }) {
   const percent = clampPercent(window.usedPercent);
+  const detail = unavailableDetail || "Usage limits unavailable.";
   return (
     <div>
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
@@ -778,12 +793,15 @@ function UsageWindowBar({
       <Progress
         aria-label={
           unavailable
-            ? `${window.label}: usage unavailable`
+            ? `${window.label}: ${detail}`
             : `${window.label}: ${percent}% ${usageModeShortLabel(mode)}`
         }
         className="h-2"
         value={unavailable ? 0 : percent}
       />
+      {unavailable ? (
+        <p className="mt-1 text-xs font-semibold text-[#6A5B00]">{detail}</p>
+      ) : null}
     </div>
   );
 }
@@ -896,6 +914,16 @@ function providerHasCost(provider: UsageProviderInfo): boolean {
     (cost.latestTokens || 0) > 0 ||
     Boolean(cost.topModel?.trim())
   );
+}
+
+function providerHasTokenEvidence(provider: UsageProviderInfo): boolean {
+  return providerHasTokens(provider) || providerHasCost(provider);
+}
+
+function quotaUnavailableDetail(provider: UsageProviderInfo): string {
+  return provider.stale
+    ? "Usage limits are stale."
+    : "Usage limits unavailable.";
 }
 
 function normalizeTokenHistory(days: UsageCostDay[]) {

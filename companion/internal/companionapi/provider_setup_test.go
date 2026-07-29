@@ -251,6 +251,117 @@ func TestProviderSetupDoesNotReconcileFromStaleOrUnavailableUsage(t *testing.T) 
 	}
 }
 
+func TestProviderSetupUsesFreshTokenEvidenceWithoutClaimingQuotaReady(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 29, 12, 15, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
+		return codexbar.ProviderSetup{
+			Status: "setup_required",
+			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+			Providers: []codexbar.ProviderReadiness{{
+				ID: "codexbar", Label: "Usage service", Enabled: true, Status: codexbar.ProviderEngineError,
+				Detail: "The usage service could not read this provider.",
+			}},
+		}
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{}, false
+	}
+	server.currentProviderSetup(context.Background(), true)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return tokenRichQuotaUnavailableUsage("codex", "Codex", now), true
+	}
+
+	statusRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(statusRec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	var status statusResponse
+	if err := json.Unmarshal(statusRec.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	assertReadyProviderSetup(t, status.ProviderSetup, "codex")
+	if providerByID(status.ProviderSetup.Providers, "codexbar") != nil {
+		t.Fatalf("token evidence must clear generic codexbar setup failure: %+v", status.ProviderSetup)
+	}
+	if got := providerByID(status.ProviderSetup.Providers, "codex"); got == nil ||
+		!strings.Contains(got.Detail, "usage limits are temporarily unavailable") {
+		t.Fatalf("token readiness did not keep quota limitation visible: %+v", status.ProviderSetup)
+	}
+
+	usageRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(usageRec, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	var usage usageResponse
+	if err := json.Unmarshal(usageRec.Body.Bytes(), &usage); err != nil {
+		t.Fatal(err)
+	}
+	if len(usage.Providers) != 1 || !usage.TokenUsageReady || !usage.Providers[0].UsageUnavailable || !usage.Providers[0].Stale {
+		t.Fatalf("token evidence fabricated quota readiness: %+v", usage)
+	}
+}
+
+func TestProviderSetupTokenEvidencePreservesSpecificProviderFailures(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 29, 12, 20, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
+		return codexbar.ProviderSetup{
+			Status: "setup_required",
+			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+			Providers: []codexbar.ProviderReadiness{{
+				ID: "codex", Label: "Codex", Enabled: true, Status: codexbar.ProviderAuthRequired,
+				Detail: "This provider needs an active sign-in.",
+			}},
+		}
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return tokenRichQuotaUnavailableUsage("codex", "Codex", now), true
+	}
+	server.currentProviderSetup(context.Background(), true)
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	codex := providerByID(got.ProviderSetup.Providers, "codex")
+	if got.ProviderSetup.Status == codexbar.ProviderReady || codex == nil || codex.Status != codexbar.ProviderAuthRequired {
+		t.Fatalf("token evidence overwrote a specific provider failure: %+v", got.ProviderSetup)
+	}
+}
+
+func TestProviderSetupTokenEvidenceKeepsOneHealthyOneFailingIsolated(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 29, 12, 25, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
+		return codexbar.ProviderSetup{
+			Status: "setup_required",
+			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+			Providers: []codexbar.ProviderReadiness{{
+				ID: "claude", Label: "Claude", Enabled: true, Status: codexbar.ProviderAuthRequired,
+				Detail: "This provider needs an active sign-in.",
+			}},
+		}
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return tokenRichQuotaUnavailableUsage("codex", "Codex", now), true
+	}
+	server.currentProviderSetup(context.Background(), true)
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	assertReadyProviderSetup(t, got.ProviderSetup, "codex")
+	claude := providerByID(got.ProviderSetup.Providers, "claude")
+	if claude == nil || claude.Status != codexbar.ProviderAuthRequired {
+		t.Fatalf("failing provider was hidden or changed: %+v", got.ProviderSetup)
+	}
+}
+
 func TestStatusDoesNotWaitForColdProviderSetupProbe(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	started := make(chan struct{})
@@ -548,6 +659,35 @@ func freshProviderUsage(id, label string, collectedAt time.Time) daemon.Persiste
 				{ID: "weekly", Label: "Weekly", UsedPercent: 34},
 			}},
 			CollectedAt: collectedAt,
+		}},
+	}
+}
+
+func tokenRichQuotaUnavailableUsage(id, label string, tokenAt time.Time) daemon.PersistedUsage {
+	return daemon.PersistedUsage{
+		SavedAt:         tokenAt,
+		CurrentProvider: id,
+		Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: id,
+			Frame: protocol.Frame{
+				Provider:           id,
+				Label:              label,
+				UsageMode:          "used",
+				UsageUnavailable:   true,
+				SessionUnavailable: true,
+				WeeklyUnavailable:  true,
+				SessionTokens:      12,
+				WeekTokens:         34,
+				TotalTokens:        56,
+			},
+			Meta: codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{
+				UpdatedAt:        tokenAt,
+				Last30DaysTokens: 56,
+				LatestTokens:     12,
+			}},
+			CollectedAt:           tokenAt.Add(-20 * time.Minute),
+			TokenStatsCollectedAt: tokenAt,
+			Stale:                 true,
 		}},
 	}
 }

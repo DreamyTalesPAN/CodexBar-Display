@@ -249,10 +249,68 @@ describe("UsageScreen", () => {
 
     expect(html).toContain("Session: ??");
     expect(html).toContain("Weekly: ??");
-    expect(html).toContain("usage unavailable");
+    expect(html).toContain("Usage limits unavailable.");
     expect(html).not.toContain("Session: 0%");
     expect(html).not.toContain("Weekly: 0%");
     expect(html).not.toContain("Reset in");
+  });
+
+  it("keeps token history visible when quota limits are stale", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        onPreferenceChange={vi.fn()}
+        onRefresh={vi.fn()}
+        pendingPreferenceIds={new Set()}
+        preferences={[
+          {
+            ...codexPreference,
+            health: {
+              state: "healthy",
+              service: "operational",
+              message:
+                "Token history is available; usage limits are temporarily unavailable.",
+            },
+          },
+        ]}
+        usage={{
+          ...usage,
+          providers: [
+            {
+              ...usage.providers[0],
+              stale: true,
+              usageUnavailable: true,
+              sessionUnavailable: true,
+              weeklyUnavailable: true,
+              sessionTokens: 12,
+              weekTokens: 34,
+              totalTokens: 56,
+              cost: {
+                daily: [
+                  {
+                    day: "2026-07-29",
+                    totalTokens: 56,
+                  },
+                ],
+                last30DaysTokens: 56,
+                latestTokens: 12,
+              },
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(html).toContain("Total tokens in the last 30 days");
+    expect(html).toContain("Token usage");
+    expect(html).toContain("Session: ??");
+    expect(html).toContain("Weekly: ??");
+    expect(html).toContain("Usage limits are stale.");
+    expect(html).toContain(
+      "Token history is available; usage limits are temporarily unavailable.",
+    );
+    expect(html).not.toContain("Provider is not responding right now.");
+    expect(html).not.toContain(">Unavailable<");
   });
 
   it("renders only normalized windows reported by CodexBar", () => {

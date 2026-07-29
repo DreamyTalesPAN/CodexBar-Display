@@ -594,6 +594,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 	now := s.currentTime().UTC()
 	lastSuccess := make(map[string]string)
 	freshSuccess := make(map[string]codexbar.ProviderReadiness)
+	freshTokenSuccess := make(map[string]codexbar.ProviderReadiness)
 	if s.loadUsage != nil {
 		if usage, ok := s.loadUsage(now); ok {
 			for _, provider := range usage.Providers {
@@ -606,6 +607,9 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				}
 				if readiness, ready := freshUsableUsageProviderReadiness(provider, now); ready {
 					freshSuccess[readiness.ID] = readiness
+				}
+				if readiness, ready := freshTokenUsageProviderReadiness(provider, now); ready {
+					freshTokenSuccess[readiness.ID] = readiness
 				}
 			}
 		}
@@ -621,6 +625,9 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		} else if _, ready := freshSuccess[setting.ID]; ready {
 			state = string(codexbar.ProviderHealthHealthy)
 			message = providerHealthMessage(codexbar.ProviderHealthHealthy)
+		} else if _, ready := freshTokenSuccess[setting.ID]; ready && providerHealthCanUseTokenEvidence(setting.Health) {
+			state = string(codexbar.ProviderHealthHealthy)
+			message = "Token history is available; usage limits are temporarily unavailable."
 		} else if setting.Service == codexbar.ProviderServiceOutage &&
 			(setting.Health == codexbar.ProviderHealthHealthy || setting.Health == codexbar.ProviderHealthChecking) {
 			state = "service_outage"
@@ -649,6 +656,13 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		})
 	}
 	return items
+}
+
+func providerHealthCanUseTokenEvidence(state codexbar.ProviderHealthState) bool {
+	return state == "" ||
+		state == codexbar.ProviderHealthHealthy ||
+		state == codexbar.ProviderHealthChecking ||
+		state == codexbar.ProviderHealthUnavailable
 }
 
 func providerPreferenceID(providerID string) string {

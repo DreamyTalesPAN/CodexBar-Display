@@ -93,7 +93,11 @@ func (s *Server) providerSetupWithFreshUsage(setup codexbar.ProviderSetup, now t
 	}
 	readiness := freshUsableUsageReadiness(usage, now, exactProvider)
 	if len(readiness) == 0 {
-		return setup
+		tokenReadiness := freshTokenUsageReadiness(usage, now, exactProvider)
+		if len(tokenReadiness) == 0 {
+			return setup
+		}
+		return reconcileProviderSetupWithTokenEvidence(setup, tokenReadiness, now)
 	}
 	return reconcileProviderSetupWithUsage(setup, readiness, now)
 }
@@ -143,6 +147,58 @@ func freshUsableUsageProviderReadiness(snapshot daemon.ProviderUsageSnapshot, no
 	}, true
 }
 
+func freshTokenUsageReadiness(usage daemon.PersistedUsage, now time.Time, exactProvider string) []codexbar.ProviderReadiness {
+	exactProvider = strings.TrimSpace(strings.ToLower(exactProvider))
+	out := make([]codexbar.ProviderReadiness, 0, len(usage.Providers))
+	for _, snapshot := range usage.Providers {
+		readiness, ok := freshTokenUsageProviderReadiness(snapshot, now)
+		if !ok {
+			continue
+		}
+		if exactProvider != "" && readiness.ID != exactProvider {
+			continue
+		}
+		out = append(out, readiness)
+	}
+	return out
+}
+
+func freshTokenUsageProviderReadiness(snapshot daemon.ProviderUsageSnapshot, now time.Time) (codexbar.ProviderReadiness, bool) {
+	if snapshot.TokenStatsCollectedAt.IsZero() {
+		return codexbar.ProviderReadiness{}, false
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	tokenAt := snapshot.TokenStatsCollectedAt.UTC()
+	if tokenAt.After(now.UTC().Add(5*time.Minute)) || now.Sub(tokenAt) > exactUsageCacheMaxAge {
+		return codexbar.ProviderReadiness{}, false
+	}
+	if strings.TrimSpace(snapshot.Frame.Normalize().Error) != "" {
+		return codexbar.ProviderReadiness{}, false
+	}
+	info, ok := usageProviderFromSnapshot(snapshot)
+	if !ok || !usageProviderHasTokenEvidence(info) {
+		return codexbar.ProviderReadiness{}, false
+	}
+	return codexbar.ProviderReadiness{
+		ID:          info.ID,
+		Label:       info.Label,
+		Enabled:     true,
+		Status:      codexbar.ProviderReady,
+		Source:      strings.TrimSpace(info.Source),
+		CollectedAt: tokenAt.Format(time.RFC3339),
+		Detail:      "Token history is available; usage limits are temporarily unavailable.",
+	}, true
+}
+
+func usageProviderHasTokenEvidence(provider usageProviderInfo) bool {
+	return provider.Cost != nil ||
+		provider.SessionTokens > 0 ||
+		provider.WeekTokens > 0 ||
+		provider.TotalTokens > 0
+}
+
 func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codexbar.ProviderReadiness, now time.Time) codexbar.ProviderSetup {
 	if len(ready) == 0 {
 		return setup
@@ -173,6 +229,52 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 			continue
 		}
 		if id == "codexbar" {
+			continue
+		}
+		provider.ID = id
+		providers = append(providers, provider)
+	}
+	setup.Providers = providers
+	return setup
+}
+
+func reconcileProviderSetupWithTokenEvidence(setup codexbar.ProviderSetup, ready []codexbar.ProviderReadiness, now time.Time) codexbar.ProviderSetup {
+	if len(ready) == 0 {
+		return setup
+	}
+	original := setup
+	if setup.CheckedAt == "" {
+		setup.CheckedAt = now.UTC().Format(time.RFC3339Nano)
+	}
+
+	existingByID := make(map[string]struct{}, len(setup.Providers))
+	for _, provider := range setup.Providers {
+		id := strings.TrimSpace(strings.ToLower(provider.ID))
+		if id != "" && id != "codexbar" {
+			existingByID[id] = struct{}{}
+		}
+	}
+
+	providers := make([]codexbar.ProviderReadiness, 0, len(ready)+len(setup.Providers))
+	for _, provider := range ready {
+		id := strings.TrimSpace(strings.ToLower(provider.ID))
+		if id == "" {
+			continue
+		}
+		if _, preserveSpecificIssue := existingByID[id]; preserveSpecificIssue {
+			continue
+		}
+		provider.ID = id
+		providers = append(providers, provider)
+	}
+	if len(providers) == 0 {
+		return original
+	}
+	setup.Status = codexbar.ProviderReady
+	setup.Engine.Status = codexbar.ProviderReady
+	for _, provider := range setup.Providers {
+		id := strings.TrimSpace(strings.ToLower(provider.ID))
+		if id == "" || id == "codexbar" {
 			continue
 		}
 		provider.ID = id

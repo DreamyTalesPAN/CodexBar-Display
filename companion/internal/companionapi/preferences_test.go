@@ -97,6 +97,39 @@ func TestPreferencesMarkFreshCollectorProviderHealthy(t *testing.T) {
 	}
 }
 
+func TestPreferencesMarkFreshTokenProviderHealthyWithoutClaimingQuotaReady(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 29, 12, 30, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthUnavailable, Service: codexbar.ProviderServiceUnknown},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthAuthRequired, Service: codexbar.ProviderServiceUnknown},
+		}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return tokenRichQuotaUnavailableUsage("codex", "Codex", now), true
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+	var response preferencesResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Items) != 2 {
+		t.Fatalf("unexpected preferences: %#v", response.Items)
+	}
+	if response.Items[0].Health.State != "healthy" ||
+		!strings.Contains(response.Items[0].Health.Message, "usage limits are temporarily unavailable") ||
+		strings.Contains(response.Items[0].Health.Message, "not responding") {
+		t.Fatalf("fresh token evidence did not clear provider-wide unavailable copy: %#v", response.Items[0].Health)
+	}
+	if response.Items[1].Health.State != "auth_required" {
+		t.Fatalf("token evidence changed a genuine auth failure: %#v", response.Items[1].Health)
+	}
+}
+
 func TestPreferencesReturnsDynamicInventoryBeforeSlowHealthProbeFinishes(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	healthStarted := make(chan struct{})
