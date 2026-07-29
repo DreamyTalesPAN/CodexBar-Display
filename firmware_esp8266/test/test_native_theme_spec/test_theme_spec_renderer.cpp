@@ -612,6 +612,25 @@ void testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw() {
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
 }
 
+void testWhitespaceUsageWindowOwnersTriggerLiveRedraw() {
+  RuntimeState usageIndexState;
+  SerialConsumeEvent event;
+  const char* usageIndexFrame = R"JSON({"v":2,"provider":"codex","themeSpec":{"v":1,"id":"usage-index-owner-redraw","rev":1,"p":[{"t":"r","x":0,"y":0,"w":100,"h":8,"usageIndex":
+  0,"c":"#FFFFFF"}]}})JSON";
+  const char* slotAppears = R"JSON({"v":2,"provider":"codex","usageWindows":[{"id":"weekly","label":"Weekly","percent":0,"resetSecs":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(usageIndexState, usageIndexFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(usageIndexState, slotAppears, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+
+  RuntimeState slotState;
+  const char* slotFrame = "{\"v\":2,\"provider\":\"codex\",\"themeSpec\":{\"v\":1,\"id\":\"slot-owner-tab-redraw\",\"rev\":1,\"p\":[{\"t\":\"r\",\"x\":0,\"y\":0,\"w\":100,\"h\":8,\"slot\":\t1,\"c\":\"#FFFFFF\"}]}}";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(slotState, slotFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(slotState, slotAppears, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+}
+
 void testPartialUsageProtocolRendersOnlyUnknownLane() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -2006,6 +2025,7 @@ int main() {
   RUN_TEST(testHighestAdvertisedUsageWindowBindingCompiles);
   RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
   RUN_TEST(testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw);
+  RUN_TEST(testWhitespaceUsageWindowOwnersTriggerLiveRedraw);
   RUN_TEST(testPartialUsageProtocolRendersOnlyUnknownLane);
   RUN_TEST(testLabelBindingUsesProviderLabelWithoutUpdateNotice);
   RUN_TEST(testChangedLabelPassUsesSynchronizedUpdateNoticeText);

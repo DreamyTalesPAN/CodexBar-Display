@@ -292,43 +292,62 @@ inline bool FrameTokenStatsVisualChanged(const Frame& previous, const Frame& nex
 }
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+inline bool ThemeSpecJsonWhitespace(char ch) {
+  return ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t';
+}
+
+inline bool ThemeSpecRawHasJsonNumber(const String& raw, const char* key, unsigned expected) {
+  char quotedKey[24] = {0};
+  std::snprintf(quotedKey, sizeof(quotedKey), "\"%s\"", key);
+
+  const char* pos = std::strstr(raw.c_str(), quotedKey);
+  while (pos != nullptr) {
+    const char* cursor = pos + std::strlen(quotedKey);
+    while (ThemeSpecJsonWhitespace(*cursor)) {
+      ++cursor;
+    }
+    if (*cursor == ':') {
+      ++cursor;
+      while (ThemeSpecJsonWhitespace(*cursor)) {
+        ++cursor;
+      }
+
+      unsigned value = 0;
+      bool hasDigit = false;
+      while (*cursor != '\0') {
+        if (*cursor < '0' || *cursor > '9') {
+          break;
+        }
+        hasDigit = true;
+        value = (value * 10U) + static_cast<unsigned>(*cursor - '0');
+        ++cursor;
+      }
+      if (hasDigit && value == expected) {
+        return true;
+      }
+    }
+    pos = std::strstr(pos + 1, quotedKey);
+  }
+  return false;
+}
+
 inline bool ThemeSpecUsesUsageWindowBinding(const String& raw, size_t slotIndex) {
   char longName[16] = {0};
   char indexedName[16] = {0};
-  char compactOwner[16] = {0};
-  char compactOwnerSpaced[17] = {0};
-  char readableOwner[20] = {0};
-  char readableOwnerSpaced[21] = {0};
-  char legacyCompactOwner[12] = {0};
-  char legacyCompactOwnerSpaced[13] = {0};
-  char legacyReadableOwner[16] = {0};
-  char legacyReadableOwnerSpaced[17] = {0};
   char compactPrefix[8] = {0};
   char compactTemplate[8] = {0};
   std::snprintf(longName, sizeof(longName), "usageSlot%u", static_cast<unsigned>(slotIndex + 1));
   std::snprintf(indexedName, sizeof(indexedName), "usage.%u.", static_cast<unsigned>(slotIndex));
-  std::snprintf(compactOwner, sizeof(compactOwner), "\"ui\":%u", static_cast<unsigned>(slotIndex));
-  std::snprintf(compactOwnerSpaced, sizeof(compactOwnerSpaced), "\"ui\": %u", static_cast<unsigned>(slotIndex));
-  std::snprintf(readableOwner, sizeof(readableOwner), "\"usageIndex\":%u", static_cast<unsigned>(slotIndex));
-  std::snprintf(readableOwnerSpaced, sizeof(readableOwnerSpaced), "\"usageIndex\": %u", static_cast<unsigned>(slotIndex));
   std::snprintf(compactPrefix, sizeof(compactPrefix), "\"us%u", static_cast<unsigned>(slotIndex + 1));
   std::snprintf(compactTemplate, sizeof(compactTemplate), "{us%u", static_cast<unsigned>(slotIndex + 1));
-  std::snprintf(legacyCompactOwner, sizeof(legacyCompactOwner), "\"sl\":%u", static_cast<unsigned>(slotIndex + 1));
-  std::snprintf(legacyCompactOwnerSpaced, sizeof(legacyCompactOwnerSpaced), "\"sl\": %u", static_cast<unsigned>(slotIndex + 1));
-  std::snprintf(legacyReadableOwner, sizeof(legacyReadableOwner), "\"slot\":%u", static_cast<unsigned>(slotIndex + 1));
-  std::snprintf(legacyReadableOwnerSpaced, sizeof(legacyReadableOwnerSpaced), "\"slot\": %u", static_cast<unsigned>(slotIndex + 1));
   return raw.indexOf(longName) >= 0 ||
          raw.indexOf(indexedName) >= 0 ||
          raw.indexOf(compactPrefix) >= 0 ||
          raw.indexOf(compactTemplate) >= 0 ||
-         raw.indexOf(compactOwner) >= 0 ||
-         raw.indexOf(compactOwnerSpaced) >= 0 ||
-         raw.indexOf(readableOwner) >= 0 ||
-         raw.indexOf(readableOwnerSpaced) >= 0 ||
-         raw.indexOf(legacyCompactOwner) >= 0 ||
-         raw.indexOf(legacyCompactOwnerSpaced) >= 0 ||
-         raw.indexOf(legacyReadableOwner) >= 0 ||
-         raw.indexOf(legacyReadableOwnerSpaced) >= 0;
+         ThemeSpecRawHasJsonNumber(raw, "ui", static_cast<unsigned>(slotIndex)) ||
+         ThemeSpecRawHasJsonNumber(raw, "usageIndex", static_cast<unsigned>(slotIndex)) ||
+         ThemeSpecRawHasJsonNumber(raw, "sl", static_cast<unsigned>(slotIndex + 1)) ||
+         ThemeSpecRawHasJsonNumber(raw, "slot", static_cast<unsigned>(slotIndex + 1));
 }
 
 inline bool ThemeSpecUsesUsageWindowResetBinding(const String& raw, size_t slotIndex) {
