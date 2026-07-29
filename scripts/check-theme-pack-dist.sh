@@ -6,6 +6,7 @@ cd "${ROOT_DIR}"
 
 node scripts/build-theme-packs.mjs
 node scripts/test-theme-pack-release-flow.mjs
+./scripts/test-theme-pack-history.sh
 ./scripts/check-theme-pack-history.sh
 
 if ! git diff --exit-code -- dist/theme-packs || ! git diff --cached --exit-code -- dist/theme-packs; then

@@ -37,4 +37,16 @@ done < <(
     ':(glob)dist/theme-packs/vibetv-theme-*-v*.zip'
 )
 
+while IFS=$'\t' read -r status asset _; do
+  [[ -z "${status}" ]] && continue
+  if [[ "${status}" != "A" ]]; then
+    echo "::error::immutable render revision changed: ${status} ${asset}"
+    echo "::error::publish a new ThemeSpec revision JSON instead"
+    exit 1
+  fi
+done < <(
+  git diff --name-status "${BASE_REF}" -- \
+    ':(glob)dist/theme-packs/render/*/*.json'
+)
+
 echo "theme pack history ok against ${BASE_REF}"
