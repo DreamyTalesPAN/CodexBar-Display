@@ -494,30 +494,34 @@ void testUsageWindowResetCountdownsTickIndependently() {
 void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
   std::string frameLine =
       "{\"v\":2,\"provider\":\"p\",\"label\":\"Provider\",\"session\":100,\"weekly\":100,\"resetSecs\":9223372036854775807,\"usageMode\":\"remaining\",\"usageWindows\":[";
+  const auto appendEscapedText = [&frameLine](size_t decodedBytes, size_t variant) {
+    for (size_t j = 0; j < decodedBytes; ++j) {
+      if (variant == 0) {
+        frameLine += "\\\"";
+      } else if (variant == 1) {
+        frameLine += "\\\\";
+      } else if (j % 3 == 0) {
+        frameLine += "\\u0026";
+      } else if (j % 3 == 1) {
+        frameLine += "\\u003c";
+      } else {
+        frameLine += "\\u003e";
+      }
+    }
+  };
   for (size_t i = 0; i < codexbar_display::core::kAdvertisedMaxUsageWindows; ++i) {
     if (i > 0) {
       frameLine += ",";
     }
     frameLine += "{\"id\":\"";
-    frameLine += std::string(codexbar_display::core::kUsageWindowIDWireBytes, 'i');
+    appendEscapedText(codexbar_display::core::kUsageWindowIDWireBytes, i);
     frameLine += "\",\"label\":\"";
-    if (i == 0) {
-      for (size_t j = 0; j < codexbar_display::core::kUsageWindowLabelWireBytes; ++j) {
-        frameLine += "\\\"";
-      }
-    } else if (i == 1) {
-      for (size_t j = 0; j < codexbar_display::core::kUsageWindowLabelWireBytes; ++j) {
-        frameLine += "\\\\";
-      }
-    } else {
-      for (size_t j = 0; j < codexbar_display::core::kUsageWindowLabelWireBytes / 3; ++j) {
-        frameLine += "\\u0026\\u003c\\u003e";
-      }
-    }
+    appendEscapedText(codexbar_display::core::kUsageWindowLabelWireBytes, i);
     frameLine += "\",\"percent\":100,\"resetSecs\":9223372036854775807}";
   }
   frameLine += "]}";
 
+  TEST_ASSERT_EQUAL_UINT32(4, codexbar_display::core::kAdvertisedMaxUsageWindows);
   TEST_ASSERT_TRUE(codexbar_display::core::kAdvertisedMaxUsageWindows > 0);
   TEST_ASSERT_TRUE(codexbar_display::core::kAdvertisedMaxUsageWindows <= codexbar_display::core::kMaxUsageWindows);
   TEST_ASSERT_TRUE(frameLine.size() + 1 <= codexbar_display::core::kFrameLineBufferBytes);

@@ -423,7 +423,7 @@ func TestValidateStoredAgainstCapabilitiesUsesStoredLimit(t *testing.T) {
 }
 
 func TestValidateAgainstCapabilitiesAcceptsHighestAdvertisedUsageWindowIndex(t *testing.T) {
-	const advertisedMaxUsageWindows = 7
+	const advertisedMaxUsageWindows = 4
 	highestAdvertisedIndex := advertisedMaxUsageWindows - 1
 	spec := Spec{
 		ThemeSpecVersion: 1,

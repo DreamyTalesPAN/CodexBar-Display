@@ -31,11 +31,13 @@ constexpr size_t kUsageWindowWireBudgetBytes =
     kUsageWindowResetSecsWireDigits;
 constexpr size_t kUsageWindowWireBudgetWithCommaBytes = kUsageWindowWireBudgetBytes + 1;
 constexpr size_t kUsageWindowJSONStringWorstCaseExpansionBytes = 6;
+constexpr size_t kUsageWindowEscapedIDWireBytes =
+    kUsageWindowIDWireBytes * kUsageWindowJSONStringWorstCaseExpansionBytes;
 constexpr size_t kUsageWindowEscapedLabelWireBytes =
     kUsageWindowLabelWireBytes * kUsageWindowJSONStringWorstCaseExpansionBytes;
 constexpr size_t kAdvertisedUsageWindowWireBudgetBytes =
     kUsageWindowObjectSyntaxBytes +
-    kUsageWindowIDWireBytes +
+    kUsageWindowEscapedIDWireBytes +
     kUsageWindowEscapedLabelWireBytes +
     kUsageWindowPercentWireDigits +
     kUsageWindowResetSecsWireDigits;

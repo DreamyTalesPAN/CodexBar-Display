@@ -158,24 +158,28 @@ func TestFrameMarshalLaneUnavailableFieldsAreOptionalAndBackwardCompatible(t *te
 	}
 }
 
-func TestFrameMarshalEscapesUsageWindowLabelsOnWire(t *testing.T) {
+func TestFrameMarshalEscapesUsageWindowIDsAndLabelsOnWire(t *testing.T) {
 	line, err := (Frame{
 		V:        ProtocolVersionV2,
 		Provider: "generic",
 		Label:    "Generic",
 		UsageWindows: []UsageWindow{
-			{ID: "html", Label: "&<>", Percent: 10},
-			{ID: "quote", Label: `"`, Percent: 20},
-			{ID: "backslash", Label: `\`, Percent: 30},
+			{ID: "&<>", Label: "&<>", Percent: 10},
+			{ID: `"`, Label: `"`, Percent: 20},
+			{ID: `\`, Label: `\`, Percent: 30},
 		},
 	}).MarshalLine()
 	if err != nil {
 		t.Fatalf("marshal frame: %v", err)
 	}
 	raw := string(line)
-	for _, want := range []string{`"\u0026\u003c\u003e"`, `"\""`, `"\\"`} {
+	for _, want := range []string{
+		`"id":"\u0026\u003c\u003e","label":"\u0026\u003c\u003e"`,
+		`"id":"\"","label":"\""`,
+		`"id":"\\","label":"\\"`,
+	} {
 		if !strings.Contains(raw, want) {
-			t.Fatalf("marshaled frame missing escaped label %s: %s", want, raw)
+			t.Fatalf("marshaled frame missing escaped usage-window text %s: %s", want, raw)
 		}
 	}
 }

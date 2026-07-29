@@ -2046,27 +2046,30 @@ func TestMarshalFrameWithinLimitCompactsOptionalFieldsBeforeUsageWindows(t *test
 }
 
 func TestMarshalFrameWithinAdvertisedEscapedUsageWindowCapacity(t *testing.T) {
-	const advertisedMaxUsageWindows = 7
+	const advertisedMaxUsageWindows = 4
 	frame := protocol.Frame{
 		V:         protocol.ProtocolVersionV2,
 		Provider:  "generic",
 		Label:     "Generic",
 		UsageMode: "used",
 	}
+	ids := []string{
+		strings.Repeat("&<>", 10) + "&<",
+		strings.Repeat(`"`, protocol.DefaultUsageWindowIDBytes),
+		strings.Repeat(`\`, protocol.DefaultUsageWindowIDBytes),
+		strings.Repeat("&<>", 10) + "&<",
+		"must-trim",
+	}
 	labels := []string{
 		strings.Repeat("&<>", 8),
 		strings.Repeat(`"`, protocol.DefaultUsageWindowLabelBytes),
 		strings.Repeat(`\`, protocol.DefaultUsageWindowLabelBytes),
 		strings.Repeat("&<>", 8),
-		strings.Repeat("&<>", 8),
-		strings.Repeat("&<>", 8),
-		strings.Repeat("&<>", 8),
 		"must-trim",
 	}
 	for i, label := range labels {
-		id := fmt.Sprintf("window-%02d-%s", i+1, strings.Repeat("i", protocol.DefaultUsageWindowIDBytes-len("window-00-")))
 		frame.UsageWindows = append(frame.UsageWindows, protocol.UsageWindow{
-			ID:       id,
+			ID:       ids[i],
 			Label:    label,
 			Percent:  100,
 			ResetSec: 9223372036854775807,
@@ -2086,11 +2089,18 @@ func TestMarshalFrameWithinAdvertisedEscapedUsageWindowCapacity(t *testing.T) {
 	if len(marshaled.UsageWindows) != advertisedMaxUsageWindows {
 		t.Fatalf("expected all advertised usage windows to survive, got %+v", marshaled.UsageWindows)
 	}
-	if !strings.HasPrefix(marshaled.UsageWindows[advertisedMaxUsageWindows-1].ID, "window-07-") {
-		t.Fatalf("expected highest advertised usage window to survive, got %+v", marshaled.UsageWindows)
+	for i := 0; i < advertisedMaxUsageWindows; i++ {
+		if marshaled.UsageWindows[i].ID != ids[i] {
+			t.Fatalf("expected escaped usage window ID %d to survive: got=%q want=%q", i, marshaled.UsageWindows[i].ID, ids[i])
+		}
 	}
 	if strings.Contains(string(line), "must-trim") {
 		t.Fatalf("frame included usage window above advertised capacity: %s", line)
+	}
+	for _, escaped := range []string{`\u0026`, `\u003c`, `\u003e`, `\"`, `\\`} {
+		if !strings.Contains(string(line), escaped) {
+			t.Fatalf("frame missing escaped usage-window text %q: %s", escaped, line)
+		}
 	}
 }
 
