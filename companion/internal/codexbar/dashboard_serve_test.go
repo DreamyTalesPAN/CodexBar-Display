@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -18,6 +21,12 @@ type dashboardServeHelperRecord struct {
 	Args     []string `json:"args"`
 	EnvToken string   `json:"envToken"`
 	PID      int      `json:"pid"`
+}
+
+type dashboardServeRoundTripper func(*http.Request) (*http.Response, error)
+
+func (fn dashboardServeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }
 
 func TestDashboardServeSupervisorStartsPrivateLoopbackChild(t *testing.T) {
@@ -107,6 +116,83 @@ func TestDashboardServeSupervisorRestartsCrashedChildWithBackoff(t *testing.T) {
 		if argValue(record.Args, "--port") == "8080" {
 			t.Fatalf("restart used forbidden port 8080: %v", record.Args)
 		}
+	}
+}
+
+func TestDashboardServeSupervisorRestartsChildAfterConsecutiveHealthFailures(t *testing.T) {
+	recordPath := t.TempDir() + "/dashboard-helper.jsonl"
+	supervisor := newTestDashboardServeSupervisor(t, "serve", recordPath, 60*time.Second)
+	supervisor.client = &http.Client{Transport: dashboardServeRoundTripper(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("health unavailable")
+	})}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		supervisor.Run(ctx)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		waitForDashboardSupervisorDone(t, done)
+	}()
+
+	records := waitForDashboardServeRecords(t, recordPath, 2)
+	if records[0].PID == records[1].PID {
+		t.Fatalf("expected a new child after repeated failed health checks, got %#v", records)
+	}
+}
+
+func TestDashboardServeSupervisorHealthSuccessResetsFailureCount(t *testing.T) {
+	recordPath := t.TempDir() + "/dashboard-helper.jsonl"
+	supervisor := newTestDashboardServeSupervisor(t, "serve", recordPath, 60*time.Second)
+	responses := []bool{false, false, true, false, false, true}
+	checks := 0
+	var checksMu sync.Mutex
+	supervisor.client = &http.Client{Transport: dashboardServeRoundTripper(func(req *http.Request) (*http.Response, error) {
+		checksMu.Lock()
+		defer checksMu.Unlock()
+		checks++
+		healthy := checks > len(responses) || responses[checks-1]
+		if !healthy {
+			return nil, errors.New("health unavailable")
+		}
+		return &http.Response{
+			StatusCode: http.StatusNoContent,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Request:    req,
+		}, nil
+	})}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		supervisor.Run(ctx)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		waitForDashboardSupervisorDone(t, done)
+	}()
+
+	waitForDashboardServeRecords(t, recordPath, 1)
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		checksMu.Lock()
+		completed := checks >= len(responses)
+		checksMu.Unlock()
+		if completed {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	checksMu.Lock()
+	completed := checks >= len(responses)
+	checkCount := checks
+	checksMu.Unlock()
+	if !completed {
+		t.Fatalf("expected %d health checks, got %d", len(responses), checkCount)
+	}
+	if records := readDashboardServeRecords(t, recordPath); len(records) != 1 {
+		t.Fatalf("a successful health check must reset failures, got %#v", records)
 	}
 }
 

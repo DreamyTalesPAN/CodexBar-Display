@@ -26,6 +26,7 @@ const (
 	dashboardServeDefaultBackoffMax      = 30 * time.Second
 	dashboardServeDefaultHealthInterval  = 2 * time.Second
 	dashboardServeHealthTimeout          = 2 * time.Second
+	dashboardServeMaxHealthFailures      = 3
 )
 
 type DashboardServe interface {
@@ -216,7 +217,18 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 
 	ticker := time.NewTicker(s.healthInterval)
 	defer ticker.Stop()
-	s.checkHealth(ctx, endpoint)
+	healthFailures := 0
+	checkHealth := func() bool {
+		if s.checkHealth(ctx, endpoint) {
+			healthFailures = 0
+			return false
+		}
+		healthFailures++
+		return healthFailures >= dashboardServeMaxHealthFailures
+	}
+	if checkHealth() {
+		return s.stopUnhealthyDashboardServeChild(endpoint, cmd, waitc)
+	}
 	for {
 		select {
 		case err := <-waitc:
@@ -230,7 +242,9 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 			}
 			return err
 		case <-ticker.C:
-			s.checkHealth(ctx, endpoint)
+			if checkHealth() {
+				return s.stopUnhealthyDashboardServeChild(endpoint, cmd, waitc)
+			}
 		case <-ctx.Done():
 			select {
 			case err := <-waitc:
@@ -248,26 +262,46 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 	}
 }
 
-func (s *DashboardServeSupervisor) checkHealth(ctx context.Context, endpoint string) {
+func (s *DashboardServeSupervisor) stopUnhealthyDashboardServeChild(endpoint string, cmd *exec.Cmd, waitc <-chan error) error {
+	if s.logf != nil {
+		s.logf("codexbar-dashboard event=child-unhealthy failures=%d\n", dashboardServeMaxHealthFailures)
+	}
+	if cmd.Process != nil {
+		if err := cmd.Process.Kill(); err != nil {
+			err = fmt.Errorf("stop unhealthy codexbar serve: %w", err)
+			s.setStopped(endpoint, err)
+			return err
+		}
+	}
+	err := <-waitc
+	s.setStopped(endpoint, err)
+	if err != nil {
+		return err
+	}
+	return errors.New("unhealthy codexbar serve exited")
+}
+
+func (s *DashboardServeSupervisor) checkHealth(ctx context.Context, endpoint string) bool {
 	if s == nil || s.client == nil {
-		return
+		return false
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+dashboardServeHealthPath, nil)
 	if err != nil {
 		s.setHealth(false, err)
-		return
+		return false
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
 		s.setHealth(false, err)
-		return
+		return false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		s.setHealth(false, fmt.Errorf("GET /health returned HTTP %d", resp.StatusCode))
-		return
+		return false
 	}
 	s.setHealth(true, nil)
+	return true
 }
 
 func (s *DashboardServeSupervisor) setStarted(endpoint string, pid int) {
