@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertImmutableFile, writeImmutableFile } from "./immutable-publish.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoot = path.join(repoRoot, "theme-packs");
@@ -110,20 +111,12 @@ async function buildImmutableZip(themeDir, themeId, zipPath) {
 
     validatePack(tempZipPath);
     const zipBytes = await readFile(tempZipPath);
-    let publishedBytes;
-    try {
-      publishedBytes = await readFile(zipPath);
-    } catch (error) {
-      if (error?.code !== "ENOENT") {
-        throw error;
-      }
-    }
-    if (publishedBytes && !publishedBytes.equals(zipBytes)) {
-      throw new Error(
-        `refusing to overwrite immutable theme asset ${path.basename(zipPath)}; bump manifest.version`,
-      );
-    }
-    if (!publishedBytes) {
+    const published = await assertImmutableFile(
+      zipPath,
+      zipBytes,
+      `refusing to overwrite immutable theme asset ${path.basename(zipPath)}; bump manifest.version`,
+    );
+    if (!published) {
       await rename(tempZipPath, zipPath);
     }
     return zipBytes;
@@ -311,7 +304,11 @@ async function writeRenderPack(pack, writeLatestAlias) {
   const revisionDir = path.join(renderRoot, pack.themeId);
   const payload = `${JSON.stringify(pack)}\n`;
   await mkdir(revisionDir, { recursive: true });
-  await writeFile(path.join(revisionDir, specFile), payload);
+  await writeImmutableFile(
+    path.join(revisionDir, specFile),
+    payload,
+    `refusing to overwrite immutable theme render revision ${specFile}; use a new ThemeSpec path`,
+  );
   if (writeLatestAlias) {
     await writeFile(path.join(renderRoot, `${pack.themeId}.json`), payload);
   }

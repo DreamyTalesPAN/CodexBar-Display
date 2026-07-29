@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeImmutableFile } from "./immutable-publish.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoot = path.join(repoRoot, "theme-packs");
@@ -126,6 +128,7 @@ for (const catalogTheme of currentCatalog.themes) {
 }
 
 await assertPreservedFactoryMiniRenderPack();
+await assertImmutableRevisionPublishing();
 
 console.log(
   `theme pack release flow ok: ${legacyCatalog.themes.length} frozen legacy themes, ${currentCatalog.themes.length} current themes`,
@@ -246,6 +249,39 @@ async function assertPreservedFactoryMiniRenderPack() {
       legacyMini.specPath !== specPath,
     "preserved factory Mini must not replace the frozen legacy archive",
   );
+}
+
+async function assertImmutableRevisionPublishing() {
+  const tempRoot = await mkdtemp(path.join(tmpdir(), "vibetv-render-revision-"));
+  const revisionPath = path.join(tempRoot, "theme-1-aaaaaaaa.json");
+  const original = Buffer.from('{"specHash":"aaaaaaaa"}\n');
+  const conflict = Buffer.from('{"specHash":"bbbbbbbb"}\n');
+  const conflictMessage = "refusing to overwrite immutable test revision";
+
+  try {
+    assert(
+      await writeImmutableFile(revisionPath, original, conflictMessage),
+      "new immutable render revision was not written",
+    );
+    assert(
+      !(await writeImmutableFile(revisionPath, original, conflictMessage)),
+      "matching immutable render revision was rewritten",
+    );
+
+    let rejected = false;
+    try {
+      await writeImmutableFile(revisionPath, conflict, conflictMessage);
+    } catch (error) {
+      rejected = error instanceof Error && error.message === conflictMessage;
+    }
+    assert(rejected, "conflicting immutable render revision was not rejected");
+    assert(
+      (await readFile(revisionPath)).equals(original),
+      "conflicting immutable render revision changed published bytes",
+    );
+  } finally {
+    await rm(tempRoot, { force: true, recursive: true });
+  }
 }
 
 async function isDirectory(value) {
