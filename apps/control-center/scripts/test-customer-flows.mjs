@@ -79,6 +79,21 @@ const catalogFixture = {
       requiredCapabilities: ["usage-slots-v1"],
     },
     {
+      id: "usage-windows",
+      title: "Fixture Usage Windows Theme",
+      description:
+        "A compact usage theme that requires the firmware usage windows contract.",
+      downloadUrl: "https://cdn.example.test/usage-windows.vibetv-theme",
+      sha256: fixturePackSHA256,
+      bytes: fixturePackBytes,
+      version: "1.1.1",
+      themeRev: 3,
+      themeSpecPath: "/themes/u/usage-w-3-0e3fd4.json",
+      compatibleBoards: ["esp8266_smalltv_st7789"],
+      requiresFirmware: "1.0.0",
+      requiredCapabilities: ["usage-windows-v1"],
+    },
+    {
       id: "claude-creature",
       title: "Fixture Claude Creature Theme",
       description:
@@ -386,7 +401,11 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      console.log("control-center theme setup firmware flow test passed");
+      await testPostFlashMissingUsageWindowsKeepsThemeAttention(
+        browser,
+        appContext.appUrl,
+      );
+      console.log("control-center theme setup firmware flow tests passed");
       return;
     }
     if (providerSettingsOnly) {
@@ -455,6 +474,10 @@ async function main() {
         appContext.appUrl,
       );
       await testThemeSetupUpdatesFirmwareBeforeThemeInstall(
+        browser,
+        appContext.appUrl,
+      );
+      await testPostFlashMissingUsageWindowsKeepsThemeAttention(
         browser,
         appContext.appUrl,
       );
@@ -605,6 +628,10 @@ async function main() {
       appContext.appUrl,
     );
     await testThemeSetupUpdatesFirmwareBeforeThemeInstall(
+      browser,
+      appContext.appUrl,
+    );
+    await testPostFlashMissingUsageWindowsKeepsThemeAttention(
       browser,
       appContext.appUrl,
     );
@@ -3374,6 +3401,90 @@ async function testThemeSetupUpdatesFirmwareBeforeThemeInstall(
     `Theme setup must keep firmware and theme writes separate, got ${installRequests[0]}`,
   );
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testPostFlashMissingUsageWindowsKeepsThemeAttention(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const firmwareUpdateRequests = [];
+  const oldFirmwareDevice = {
+    ...synthwaveDevice,
+    activeTheme: "usage-windows",
+    firmware: "1.0.32",
+    display: {
+      themeSpec: {
+        active: true,
+        path: "/themes/u/usage-w-1-0e3fd4.json",
+        renderOk: true,
+      },
+    },
+    capabilities: {
+      ...synthwaveDevice.capabilities,
+      theme: {
+        ...synthwaveDevice.capabilities.theme,
+        supportsUsageSlotsV1: false,
+        supportsUsageWindowsV1: false,
+      },
+    },
+  };
+  const updatedFirmwareDevice = {
+    ...oldFirmwareDevice,
+    firmware: "1.0.33",
+    capabilities: {
+      ...oldFirmwareDevice.capabilities,
+      theme: {
+        ...oldFirmwareDevice.capabilities.theme,
+        supportsUsageSlotsV1: true,
+        supportsUsageWindowsV1: false,
+      },
+    },
+  };
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.99",
+    device: oldFirmwareDevice,
+    deviceAfterFirmwareUpdate: updatedFirmwareDevice,
+    onUpdate: (postData) => {
+      firmwareUpdateRequests.push(postData || "");
+    },
+    updateStatusSequence: [
+      {
+        phase: "complete",
+        message: "Update complete.",
+        progress: 100,
+        logs: [
+          "Preparing VibeTV update.",
+          "Updating VibeTV.",
+          "Update complete.",
+        ],
+        result: { firmware: "1.0.33" },
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Updates");
+  await page
+    .getByRole("button", { name: "Update", exact: true })
+    .waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Update", exact: true }).click();
+  await page
+    .getByRole("status")
+    .filter({ hasText: /Firmware current.*attention needed/ })
+    .waitFor({ timeout: 10_000 });
+  await page.waitForTimeout(250);
+  assert(
+    firmwareUpdateRequests.length === 1,
+    `Missing usage windows capability should start firmware once, got ${firmwareUpdateRequests.length}`,
+  );
+  assertNoInstallRequests(installRequests);
+  assert(
+    (await page.getByText("Update complete", { exact: true }).count()) === 0,
+    "Missing post-flash usage windows capability must not report a complete update",
+  );
   await page.close();
 }
 

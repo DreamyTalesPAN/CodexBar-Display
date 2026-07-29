@@ -2503,8 +2503,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return true;
       }
       if (shouldUpgradeActiveTheme) {
+        const refreshedActiveThemeUpgrade = resolveActiveThemeUpgrade(
+          catalog.themes,
+          refreshedDevice,
+        );
         if (
-          refreshedDevice?.capabilities?.theme?.supportsUsageSlotsV1 !== true
+          !refreshedActiveThemeUpgrade.theme ||
+          refreshedActiveThemeUpgrade.needsFirmwareCapability
         ) {
           const message =
             "The firmware is current, but VibeTV still needs attention.";
@@ -2534,7 +2539,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           logs,
           result: finishedJob.result,
         });
-        if (!(await installTheme(activeThemeUpgrade.theme))) {
+        if (!(await installTheme(refreshedActiveThemeUpgrade.theme))) {
           const message =
             "The firmware is current, but VibeTV still needs attention.";
           setFirmwareUpdateStatus({
