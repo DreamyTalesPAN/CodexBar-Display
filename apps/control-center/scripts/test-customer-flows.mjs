@@ -152,6 +152,7 @@ const companionDevice = {
       pairingWindowOpen: false,
       pairingWindowSeconds: 0,
     },
+    standby: { supported: true },
   },
   stream: {
     healthy: true,
@@ -3641,6 +3642,77 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     `Save brightness should write 42, got ${JSON.stringify(settingsWrites[0])}`,
   );
 
+  const screensaverSwitch = page.getByRole("switch", {
+    name: "Show screensaver",
+  });
+  const showAfter = page.getByRole("combobox", { name: "Show after" });
+  const screensaverBrightness = page.getByRole("slider", {
+    name: "Brightness in screensaver",
+  });
+  assert(
+    (await showAfter.count()) === 0 &&
+      (await screensaverBrightness.count()) === 0,
+    "screensaver details must stay collapsed while the screensaver is off",
+  );
+
+  await screensaverSwitch.click();
+  await waitForCondition(
+    () => settingsWrites.length === 2,
+    "Show screensaver should write once",
+  );
+  assert(
+    settingsWrites[1]?.standby?.enabled === true &&
+      settingsWrites[1]?.standby?.timeoutMinutes === 10 &&
+      settingsWrites[1]?.standby?.brightnessPercent === 20,
+    `Show screensaver should keep the saved timeout and screensaver brightness, got ${JSON.stringify(settingsWrites[1])}`,
+  );
+  await showAfter.waitFor({ timeout: 10_000 });
+  await screensaverBrightness.waitFor({ timeout: 10_000 });
+
+  await showAfter.click();
+  await page.getByRole("option", { name: "30 minutes" }).click();
+  await waitForCondition(
+    () => settingsWrites.length === 3,
+    "Show after should write once",
+  );
+  assert(
+    settingsWrites[2]?.standby?.timeoutMinutes === 30,
+    `Show after should write 30 minutes, got ${JSON.stringify(settingsWrites[2])}`,
+  );
+
+  await page
+    .locator('#vibetv-standby-brightness[aria-disabled="false"]')
+    .waitFor({ timeout: 10_000 });
+  await screensaverBrightness.press("End");
+  await waitForCondition(
+    () => settingsWrites.length === 4,
+    "Brightness in screensaver should write once",
+  );
+  assert(
+    settingsWrites[3]?.standby?.brightnessPercent === 100 &&
+      settingsWrites[3]?.standby?.timeoutMinutes === 30,
+    `Brightness in screensaver must not reset the timeout, got ${JSON.stringify(settingsWrites[3])}`,
+  );
+
+  await clickNavigation(page, "Overview");
+  await clickNavigation(page, "Settings");
+  await showAfter.waitFor({ timeout: 10_000 });
+  assert(
+    (await showAfter.textContent())?.includes("30 minutes"),
+    "reopening Settings must show the saved screensaver timeout",
+  );
+
+  await screensaverSwitch.click();
+  await waitForCondition(
+    () => settingsWrites.length === 5,
+    "Turning the screensaver off should write once",
+  );
+  assert(
+    settingsWrites[4]?.standby?.enabled === false,
+    `Turning the screensaver off should write enabled false, got ${JSON.stringify(settingsWrites[4])}`,
+  );
+  await showAfter.waitFor({ state: "detached", timeout: 10_000 });
+
   const hiddenCustomerText = [
     "Connection controls",
     "VibeTV target",
@@ -6731,6 +6803,11 @@ async function routeCompanionOnline(
   let firmwareStatusIndex = 0;
   let displayFrameRequestCount = 0;
   let settingsRequestCount = 0;
+  let currentStandby = {
+    enabled: false,
+    timeoutMinutes: 10,
+    brightnessPercent: 20,
+  };
   let currentProviderSetup = providerSetup;
   let currentPreferences = structuredClone(
     preferencesResponse || {
@@ -7439,6 +7516,12 @@ async function routeCompanionOnline(
           ]
         : 50;
       settingsRequestCount += 1;
+      const requestedStandby = JSON.parse(
+        route.request().postData() || "{}",
+      ).standby;
+      if (requestedStandby) {
+        currentStandby = requestedStandby;
+      }
       if (settingsDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, settingsDelayMs));
       }
@@ -7447,7 +7530,7 @@ async function routeCompanionOnline(
         contentType: "application/json",
         body: JSON.stringify({
           ok: true,
-          settings: { display: { brightnessPercent } },
+          settings: { display: { brightnessPercent }, standby: currentStandby },
           device: responseDevice,
         }),
       });

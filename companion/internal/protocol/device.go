@@ -23,6 +23,16 @@ type DisplayCapabilities struct {
 	Brightness     DisplayBrightnessCapabilities `json:"brightness,omitempty"`
 }
 
+// StandbyCapabilities mirrors the device hello block verbatim so hosts keep the
+// advertised limits when the capabilities travel through the Companion.
+type StandbyCapabilities struct {
+	Supported             bool `json:"supported,omitempty"`
+	MinTimeoutMinutes     int  `json:"minTimeoutMinutes,omitempty"`
+	MaxTimeoutMinutes     int  `json:"maxTimeoutMinutes,omitempty"`
+	DefaultTimeoutMinutes int  `json:"defaultTimeoutMinutes,omitempty"`
+	ScreensaverSlot       bool `json:"screensaverSlot,omitempty"`
+}
+
 type ThemeCapabilities struct {
 	SupportsThemeSpecV1     bool     `json:"supportsThemeSpecV1,omitempty"`
 	SupportsStoredThemes    bool     `json:"supportsStoredThemes,omitempty"`
@@ -56,6 +66,7 @@ type AuthCapabilities struct {
 
 type CapabilityBlock struct {
 	Display   DisplayCapabilities   `json:"display,omitempty"`
+	Standby   StandbyCapabilities   `json:"standby,omitempty"`
 	Theme     ThemeCapabilities     `json:"theme,omitempty"`
 	Auth      *AuthCapabilities     `json:"auth,omitempty"`
 	Transport TransportCapabilities `json:"transport,omitempty"`
@@ -157,6 +168,7 @@ type DeviceCapabilities struct {
 	SupportsBrightness         bool
 	MinBrightnessPercent       int
 	MaxBrightnessPercent       int
+	SupportsStandby            bool
 	ActiveTransport            string
 	SupportedTransportChannels []string
 }
@@ -213,6 +225,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		SupportsBrightness:         h.Capabilities.Display.Brightness.Supported,
 		MinBrightnessPercent:       h.Capabilities.Display.Brightness.MinPercent,
 		MaxBrightnessPercent:       h.Capabilities.Display.Brightness.MaxPercent,
+		SupportsStandby:            h.Capabilities.Standby.Supported,
 		ActiveTransport:            h.Capabilities.Transport.Active,
 		SupportedTransportChannels: append([]string(nil), h.Capabilities.Transport.Supported...),
 	}

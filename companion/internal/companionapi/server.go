@@ -666,11 +666,20 @@ type settingsResponse struct {
 }
 
 type deviceSettings struct {
-	Display displaySettings `json:"display"`
+	Display displaySettings  `json:"display"`
+	Standby *standbySettings `json:"standby,omitempty"`
 }
 
 type displaySettings struct {
 	BrightnessPercent int `json:"brightnessPercent"`
+}
+
+// standbySettings carries the three configurable standby values only. The
+// screensaver slot selection stays out of it on purpose.
+type standbySettings struct {
+	Enabled           bool `json:"enabled"`
+	TimeoutMinutes    int  `json:"timeoutMinutes"`
+	BrightnessPercent int  `json:"brightnessPercent"`
 }
 
 type usageResponse struct {
@@ -3075,30 +3084,50 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 		Display           struct {
 			BrightnessPercent int `json:"brightnessPercent"`
 		} `json:"display"`
+		Standby *standbySettings `json:"standby"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	brightness := req.BrightnessPercent
-	if brightness == 0 {
-		brightness = req.Display.BrightnessPercent
-	}
 	caps := protocol.CapabilitiesFromHello(hello)
-	if caps.Known && !caps.SupportsBrightness {
-		writeError(w, http.StatusBadRequest, "brightness_unsupported", "This VibeTV does not advertise brightness control.", "Update firmware or use a device with brightness support.")
-		return
+	form := url.Values{}
+	form.Set("api", "1")
+	if req.Standby != nil {
+		if caps.Known && !caps.SupportsStandby {
+			writeError(w, http.StatusBadRequest, "standby_unsupported", "This VibeTV cannot show a screensaver.", "Update VibeTV, then try again.")
+			return
+		}
+		enabled := "0"
+		if req.Standby.Enabled {
+			enabled = "1"
+		}
+		// The device clamps timeout and screensaver brightness and answers with
+		// the stored values, so the Companion does not repeat that arithmetic.
+		form.Set("sb", enabled)
+		form.Set("st", strconv.Itoa(req.Standby.TimeoutMinutes))
+		form.Set("sbr", strconv.Itoa(req.Standby.BrightnessPercent))
+	} else {
+		brightness := req.BrightnessPercent
+		if brightness == 0 {
+			brightness = req.Display.BrightnessPercent
+		}
+		if caps.Known && !caps.SupportsBrightness {
+			writeError(w, http.StatusBadRequest, "brightness_unsupported", "This VibeTV does not advertise brightness control.", "Update firmware or use a device with brightness support.")
+			return
+		}
+		minBrightness := protocol.DefaultMinBrightness
+		maxBrightness := protocol.DefaultMaxBrightness
+		if caps.SupportsBrightness {
+			minBrightness = caps.MinBrightnessPercent
+			maxBrightness = caps.MaxBrightnessPercent
+		}
+		if brightness < minBrightness || brightness > maxBrightness {
+			writeError(w, http.StatusBadRequest, "invalid_brightness", fmt.Sprintf("Brightness must be between %d and %d.", minBrightness, maxBrightness), "Choose a supported brightness value and retry.")
+			return
+		}
+		form.Set("b", strconv.Itoa(brightness))
 	}
-	minBrightness := protocol.DefaultMinBrightness
-	maxBrightness := protocol.DefaultMaxBrightness
-	if caps.SupportsBrightness {
-		minBrightness = caps.MinBrightnessPercent
-		maxBrightness = caps.MaxBrightnessPercent
-	}
-	if brightness < minBrightness || brightness > maxBrightness {
-		writeError(w, http.StatusBadRequest, "invalid_brightness", fmt.Sprintf("Brightness must be between %d and %d.", minBrightness, maxBrightness), "Choose a supported brightness value and retry.")
-		return
-	}
-	settings, err := s.updateBrightness(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, brightness)
+	settings, err := s.updateDeviceSettings(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, form)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "settings_write_failed", "Could not update VibeTV settings.", "Keep VibeTV powered on and retry.")
 		return
@@ -5811,10 +5840,7 @@ func (s *Server) reactivateCurrentThemeAndWaitForFullRender(
 	return health, nil
 }
 
-func (s *Server) updateBrightness(ctx context.Context, target, token string, brightness int) (deviceSettings, error) {
-	form := url.Values{}
-	form.Set("api", "1")
-	form.Set("b", fmt.Sprintf("%d", brightness))
+func (s *Server) updateDeviceSettings(ctx context.Context, target, token string, form url.Values) (deviceSettings, error) {
 	var response struct {
 		Settings deviceSettings `json:"settings"`
 	}

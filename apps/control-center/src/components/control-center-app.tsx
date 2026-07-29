@@ -44,6 +44,7 @@ import {
   type DeviceState,
   type ProviderSetupInfo,
   type PreferenceDescriptor,
+  type StandbySettings,
   type SupportDiagnostics,
   type UsageSnapshot,
 } from "./control-center-types";
@@ -94,6 +95,7 @@ type SettingsResponse = {
     display?: {
       brightnessPercent?: number;
     };
+    standby?: StandbySettings;
   };
   device?: DeviceInfo;
 };
@@ -279,6 +281,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
   const [deviceTarget, setDeviceTarget] = useState(readInitialDeviceTarget);
   const [brightness, setBrightness] = useState<number | null>(null);
+  const [standby, setStandby] = useState<StandbySettings | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [supportReportBusy, setSupportReportBusy] = useState(false);
   const [lastError, setLastError] = useState<ApiError | null>(null);
@@ -315,6 +318,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
   const brightnessDirtyRef = useRef(false);
+  const standbyDirtyRef = useRef(false);
   const setupGenerationRef = useRef(0);
   const deviceSearchAttemptRef = useRef(0);
   const didRunInitialConnectionCheck = useRef(false);
@@ -651,6 +655,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         payload.settings?.display?.brightnessPercent ?? null;
       if (!brightnessDirtyRef.current) {
         setBrightness(loadedBrightness);
+      }
+      if (!standbyDirtyRef.current) {
+        setStandby(payload.settings?.standby ?? null);
       }
       if (payload.device) {
         if (
@@ -1622,6 +1629,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setDeviceSearchState("idle");
       brightnessDirtyRef.current = false;
       setBrightness(null);
+      standbyDirtyRef.current = false;
+      setStandby(null);
       setLastInstall(undefined);
       setThemeInstallStatus(null);
       setSupportDiagnostics(null);
@@ -1738,6 +1747,70 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const changeBrightness = useCallback((value: number) => {
     brightnessDirtyRef.current = true;
     setBrightness(value);
+  }, []);
+
+  const saveStandby = useCallback(
+    async (value: StandbySettings) => {
+      const setupGeneration = setupGenerationRef.current;
+      standbyDirtyRef.current = true;
+      setStandby(value);
+      setBusyAction("standby");
+      try {
+        const payload = await runCompanion<SettingsResponse>("/v1/settings", {
+          method: "POST",
+          body: JSON.stringify({ standby: value }),
+        });
+        if (setupGeneration !== setupGenerationRef.current) {
+          return;
+        }
+        const saved = payload.settings?.standby ?? value;
+        standbyDirtyRef.current = false;
+        setStandby(saved);
+        addEvent({
+          label: "Screensaver saved",
+          detail: saved.enabled
+            ? `The screensaver starts after ${saved.timeoutMinutes} minutes at ${saved.brightnessPercent}% brightness.`
+            : "The screensaver is off.",
+          tone: "ready",
+        });
+      } catch (error) {
+        if (setupGeneration !== setupGenerationRef.current) {
+          return;
+        }
+        const normalized = normalizeCaughtError(
+          error,
+          "Screensaver needs attention.",
+        );
+        if (isLocalNetworkAccessError(normalized)) {
+          markCompanionAccessBlocked();
+        } else if (isCompanionMissingError(normalized)) {
+          markCompanionUnavailable();
+        }
+        setLastError(normalized);
+        addEvent({
+          label: "Screensaver save needs attention",
+          detail: normalized.nextAction,
+          tone: "attention",
+        });
+      } finally {
+        if (setupGeneration === setupGenerationRef.current) {
+          setBusyAction(null);
+        }
+      }
+    },
+    [
+      addEvent,
+      markCompanionAccessBlocked,
+      markCompanionUnavailable,
+      runCompanion,
+    ],
+  );
+
+  const changeStandbyBrightness = useCallback((value: number) => {
+    standbyDirtyRef.current = true;
+    setStandby((current) =>
+      current ? { ...current, brightnessPercent: value } : current,
+    );
   }, []);
 
   const installTheme = useCallback(
@@ -3103,9 +3176,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           brightness={brightness}
           busyAction={busyAction}
           device={device}
+          standby={standby}
           onBrightnessChange={changeBrightness}
           onResetSetup={resetSetup}
           onSaveBrightness={saveBrightness}
+          onSaveStandby={saveStandby}
+          onStandbyBrightnessChange={changeStandbyBrightness}
         />
       ) : null}
 

@@ -423,3 +423,23 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-app.tsx`, `control-center-types.ts`,
   `provider-setup-card.tsx`, `usage-screen.tsx`, `usage-screen.test.tsx`, and
   the matching customer-flow assertions in `test-customer-flows.mjs`.
+
+## 2026-07-29 — Screensaver controls in Settings Display
+
+- User approval: The user recorded the approved visible result for issue #288 on
+  2026-07-29 in the issue itself and required the approval entry to land in the
+  implementing change instead of ahead of it.
+- Approved customer-visible result: The `Display` card gains three controls below
+  `Brightness`: `Show screensaver` (on/off), `Show after` with the choices 5, 10,
+  15, 30 and 60 minutes and 10 minutes as the default, and
+  `Brightness in screensaver`. `Show after` and `Brightness in screensaver` stay
+  collapsed while `Show screensaver` is off. On a VibeTV that does not support a
+  screensaver the whole block is hidden, not disabled. The card description
+  changes from `Adjust the screen brightness of the connected VibeTV.` to
+  `Adjust the screen of the connected VibeTV.`. The three controls save on
+  change, so no extra save action appears; `Save brightness` keeps owning the
+  normal brightness, which stays a separate value.
+- Approved files: `settings-screen.tsx`, `settings-screen.test.tsx`,
+  `control-center-app.tsx`, `control-center-types.ts`, the matching
+  customer-flow assertions in `test-customer-flows.mjs`, and the Mac App
+  standby settings and capability pass-through with its tests.

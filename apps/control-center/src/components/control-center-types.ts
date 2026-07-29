@@ -241,6 +241,9 @@ export type DeviceInfo = {
       widthPx?: number;
       heightPx?: number;
     };
+    standby?: {
+      supported?: boolean;
+    };
     theme?: {
       supportsThemeSpecV1?: boolean;
       supportsStoredThemes?: boolean;
@@ -260,6 +263,12 @@ export type DeviceInfo = {
       active?: string;
     };
   };
+};
+
+export type StandbySettings = {
+  enabled: boolean;
+  timeoutMinutes: number;
+  brightnessPercent: number;
 };
 
 export type ActiveTab =
