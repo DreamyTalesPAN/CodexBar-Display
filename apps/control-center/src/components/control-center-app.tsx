@@ -93,6 +93,7 @@ const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
 const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
+const FIRST_USAGE_ENTRY_TIMEOUT_MS = 30_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
 const LAUNCHD_RECOVERY_GRACE_MS = 12_000;
 const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 55_000;
@@ -3033,6 +3034,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     device.paired !== false &&
     !connectionRecoveryRequired &&
     !hasEnteredControlCenter;
+  useEffect(() => {
+    if (!waitingForFirstUsage || themeSetupRequired) {
+      return;
+    }
+
+    const timer = window.setTimeout(
+      () => setHasEnteredControlCenter(true),
+      FIRST_USAGE_ENTRY_TIMEOUT_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [
+    device?.deviceId,
+    device?.target,
+    themeSetupRequired,
+    waitingForFirstUsage,
+  ]);
   const startupDeviceSearchState: DeviceSearchState =
     waitingForFirstUsage
       ? "waiting"

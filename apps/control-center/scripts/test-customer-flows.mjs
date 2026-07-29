@@ -29,6 +29,7 @@ const desktopViewport = { width: 1280, height: 900 };
 const themeStudioViewport = { width: 1180, height: 820 };
 const smokeOnly = process.argv.includes("--smoke");
 const providerSettingsOnly = process.argv.includes("--provider-settings");
+const startupTimeoutOnly = process.argv.includes("--startup-timeout");
 const migrationScreenshotDir =
   process.env.CONTROL_CENTER_CAPTURE_MIGRATION_SCREENSHOTS?.trim() || "";
 const themeStudioSafetyOnly = process.argv.includes("--theme-studio-safety");
@@ -384,6 +385,14 @@ async function main() {
       console.log("control-center provider settings test passed");
       return;
     }
+    if (startupTimeoutOnly) {
+      await testLocalReachableWithoutFrameEntersAfterTimeout(
+        browser,
+        appContext.appUrl,
+      );
+      console.log("control-center startup timeout test passed");
+      return;
+    }
     await testStartupStateMachine(browser, appContext.appUrl);
     if (wifiRescanOnly) {
       await testLocalWifiSetupRescansAfterNoResults(browser, appContext.appUrl);
@@ -571,6 +580,10 @@ async function main() {
     );
     await testPairingStreamErrorDoesNotInventRecovery(browser, appContext.appUrl);
     await testLocalReachableWithoutFrameWaitsForUsage(
+      browser,
+      appContext.appUrl,
+    );
+    await testLocalReachableWithoutFrameEntersAfterTimeout(
       browser,
       appContext.appUrl,
     );
@@ -2928,6 +2941,83 @@ async function testLocalReachableWithoutFrameWaitsForUsage(browser, appUrl) {
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testLocalReachableWithoutFrameEntersAfterTimeout(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const noProviderUsage = {
+    ok: true,
+    generatedAt: "2026-07-29T08:00:00Z",
+    providers: [],
+  };
+  let recovered = false;
+  let recoveredFrameRequests = 0;
+  await page.clock.install({ time: new Date("2026-07-29T08:00:00Z") });
+  await routeCompanionOnline(page, [], () => {}, {
+    device: companionDevice,
+    displayFrameResponse: () => {
+      if (!recovered) {
+        return undefined;
+      }
+      recoveredFrameRequests += 1;
+      return {
+        ok: true,
+        savedAt: "2026-07-29T08:01:00Z",
+        frame: {
+          v: 1,
+          provider: "codex",
+          label: "Codex",
+          session: 12,
+        },
+      };
+    },
+    preferencesResponse: { ok: true, items: [] },
+    providerSetup: {
+      status: "not_configured",
+      engine: { status: "not_configured" },
+      providers: [],
+    },
+    usageResponse: noProviderUsage,
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.clock.runFor(0);
+  await page.getByText("Waiting for usage…", { exact: true }).waitFor({
+    timeout: 10_000,
+  });
+  await page.clock.runFor(25_000);
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "Startup must remain visible before its stated 30-second limit",
+  );
+
+  await page.clock.runFor(5_000);
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByRole("navigation", { name: "Control Center", exact: true })
+    .getByRole("button", { name: "Usage" })
+    .click();
+  await page.getByRole("heading", { name: "AI providers" }).waitFor({
+    timeout: 10_000,
+  });
+  assert(
+    (await page.getByText("No provider usage is available yet.").count()) ===
+      1,
+    "Timed startup entry must not invent provider usage",
+  );
+
+  recovered = true;
+  await page.clock.runFor(1_000);
+  await waitForCondition(
+    () => recoveredFrameRequests > 0,
+    "Display-frame recovery must keep polling after startup entry",
+  );
   await page.close();
 }
 
@@ -7637,11 +7727,15 @@ async function routeCompanionOnline(
         });
         return;
       }
-      if (displayFrameResponse !== undefined) {
+      const nextDisplayFrame =
+        typeof displayFrameResponse === "function"
+          ? displayFrameResponse(displayFrameRequestCount)
+          : displayFrameResponse;
+      if (nextDisplayFrame !== undefined) {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify(displayFrameResponse),
+          body: JSON.stringify(nextDisplayFrame),
         });
         return;
       }
