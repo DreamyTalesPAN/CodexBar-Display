@@ -83,9 +83,12 @@ with tarfile.open(sys.argv[1], "w:gz") as archive:
     member.linkname = "../../../../escape"
     archive.addfile(member)
 PY
-  if "$EXTRACTOR" --archive "$work/unsafe-link.tar.gz" --output "$work/unsafe-link" >/dev/null 2>&1; then
+  local unsafe_link_error
+  if unsafe_link_error="$("$EXTRACTOR" --archive "$work/unsafe-link.tar.gz" --output "$work/unsafe-link" 2>&1)"; then
     die "escaping candidate archive symlink was accepted"
   fi
+  [[ "$unsafe_link_error" == *"unsafe candidate archive symlink"* ]] \
+    || die "escaping symlink test failed for the wrong reason: $unsafe_link_error"
 }
 
 main() {
