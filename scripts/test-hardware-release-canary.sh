@@ -73,6 +73,7 @@ PY
 
 main() {
   [[ -x "${CANARY}" ]] || die "physical canary script is missing or not executable"
+  bash -n "${CANARY}" || die "physical canary script has invalid Bash syntax"
   [[ -x "${VALIDATOR}" ]] || die "hardware canary validator is missing or not executable"
   [[ -f "${WORKFLOW}" ]] || die "hardware canary workflow is missing"
 

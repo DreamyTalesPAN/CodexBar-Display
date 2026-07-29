@@ -44,7 +44,7 @@ if [[ -n "$RESUME_STATE" ]]; then
 import json,sys
 s=json.load(open(sys.argv[1])); print(s.get('candidateDir',''),s.get('candidateRunId',''),s['firmwareBefore'])
 PY
-)"
+)
 fi
 if [[ -n "$CANDIDATE_RUN_ID" ]]; then
   gh run download "$CANDIDATE_RUN_ID" --repo "$REPO" --name vibetv-release-candidate --dir "$work/candidate"
