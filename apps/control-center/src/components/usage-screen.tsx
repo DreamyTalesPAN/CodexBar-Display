@@ -103,8 +103,13 @@ export function UsageScreen({
   const hasProviders = providers.length > 0;
   const tokenUsageReady =
     usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);
-  const tokenUsageLoading =
-    companionStatus === "online" && !usageError && !tokenUsageReady;
+  const usageLoading =
+    companionStatus === "online" && !usageError && !usage && !hasProviders;
+  const tokenUsagePending =
+    companionStatus === "online" &&
+    !usageError &&
+    hasProviders &&
+    !tokenUsageReady;
   const refreshNotice = usageRefreshNotice(usage?.refresh);
 
   return (
@@ -140,17 +145,26 @@ export function UsageScreen({
           </Alert>
         ) : null}
 
-        {tokenUsageLoading ? (
+        {usageLoading ? (
           <UsageEmptyState companionStatus={companionStatus} loading />
-        ) : hasProviders ? (
+        ) : tokenUsageReady && hasProviders ? (
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}
             providers={providers}
             refreshing={refreshing}
           />
+        ) : tokenUsagePending ? (
+          <Alert className="mb-6 bg-muted">
+            <Info />
+            <AlertTitle>Token history is loading</AlertTitle>
+            <AlertDescription>
+              Provider quotas stay visible while VibeTV reads local token
+              history.
+            </AlertDescription>
+          </Alert>
         ) : null}
 
-        {!tokenUsageLoading && hasProviders ? (
+        {hasProviders ? (
           <ol className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
             {providers.map((provider) => (
               <li className="min-w-0" key={provider.id}>
@@ -158,7 +172,7 @@ export function UsageScreen({
               </li>
             ))}
           </ol>
-        ) : !tokenUsageLoading && !usageError ? (
+        ) : !usageLoading && !usageError ? (
           <UsageEmptyState
             companionStatus={companionStatus}
             loading={false}

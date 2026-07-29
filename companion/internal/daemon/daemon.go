@@ -125,29 +125,30 @@ func (e *RuntimeError) RecoveryAction() string {
 }
 
 type runtimeDeps struct {
-	transport         transportlayer.DeviceTransport
-	now               func() time.Time
-	after             func(time.Duration) <-chan time.Time
-	resolvePort       func(string) (string, error)
-	deviceCaps        func(string) (protocol.DeviceCapabilities, error)
-	fetchProviders    func(context.Context) ([]codexbar.ParsedFrame, error)
-	fetchDashboard    func(context.Context, codexbar.DashboardServeInfo, time.Time, int) (codexbar.DashboardFetchResult, error)
-	fetchProvider     func(context.Context, string) (codexbar.ParsedFrame, error)
-	fetchInventory    func(context.Context) ([]codexbar.ProviderSetting, error)
-	fetchTokenStats   func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
-	startDashboard    func(context.Context, func(string, ...any)) codexbar.DashboardServe
-	dashboard         codexbar.DashboardServe
-	usageBarsShowUsed func() bool
-	beginDeviceWrite  func() func()
-	sendLine          func(string, []byte) error
-	fetchUpdateState  func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
-	newSelector       func() *codexbar.ProviderSelector
-	logf              func(string, ...any)
-	homeDir           func() (string, error)
-	loadConfig        func(string) (runtimeconfig.Config, error)
-	saveConfig        func(string, runtimeconfig.Config) error
-	discoverWiFi      func([]string) (transportlayer.WiFiDiscoveryResult, error)
-	transportName     string
+	transport             transportlayer.DeviceTransport
+	now                   func() time.Time
+	after                 func(time.Duration) <-chan time.Time
+	resolvePort           func(string) (string, error)
+	deviceCaps            func(string) (protocol.DeviceCapabilities, error)
+	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
+	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time, int) (codexbar.DashboardFetchResult, error)
+	fetchProvider         func(context.Context, string) (codexbar.ParsedFrame, error)
+	fetchInventory        func(context.Context) ([]codexbar.ProviderSetting, error)
+	fetchTokenStats       func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
+	fetchTokenStatsReport func(context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport)
+	startDashboard        func(context.Context, func(string, ...any)) codexbar.DashboardServe
+	dashboard             codexbar.DashboardServe
+	usageBarsShowUsed     func() bool
+	beginDeviceWrite      func() func()
+	sendLine              func(string, []byte) error
+	fetchUpdateState      func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
+	newSelector           func() *codexbar.ProviderSelector
+	logf                  func(string, ...any)
+	homeDir               func() (string, error)
+	loadConfig            func(string) (runtimeconfig.Config, error)
+	saveConfig            func(string, runtimeconfig.Config) error
+	discoverWiFi          func([]string) (transportlayer.WiFiDiscoveryResult, error)
+	transportName         string
 }
 
 func (d runtimeDeps) withDefaults() runtimeDeps {
@@ -183,6 +184,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.fetchTokenStats == nil {
 		d.fetchTokenStats = codexbar.FetchProviderTokenStats
+		if d.fetchTokenStatsReport == nil {
+			d.fetchTokenStatsReport = codexbar.FetchProviderTokenStatsWithReport
+		}
 	}
 	if d.usageBarsShowUsed == nil {
 		d.usageBarsShowUsed = func() bool { return true }

@@ -108,7 +108,7 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("CodexBar");
   });
 
-  it("keeps token usage loading while an already loaded provider list remains visible", () => {
+  it("keeps provider windows visible while token usage is pending", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
@@ -128,9 +128,14 @@ describe("UsageScreen", () => {
       />,
     );
 
-    expect(html).toContain("Loading usage");
+    expect(html).toContain("Token history is loading");
+    expect(html).toContain("Provider quotas stay visible");
+    expect(html).toContain("Codex");
+    expect(html).toContain("Session: 12% used");
+    expect(html).toContain("Weekly: 34% used");
     expect(html).toContain("AI providers");
     expect(html).toContain('aria-label="Disable Codex"');
+    expect(html).not.toContain("Loading usage");
     expect(html).not.toContain("Total tokens in the last 30 days");
     expect(html).not.toContain("Tokens used over time");
   });

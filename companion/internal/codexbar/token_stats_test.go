@@ -153,3 +153,42 @@ exit 64
 		t.Fatalf("fake process should prove completion after two seconds, elapsed=%s", elapsed)
 	}
 }
+
+func TestFetchProviderTokenStatsReportAcceptsEmptyProviderResult(t *testing.T) {
+	runCostCommandFn = func(_ context.Context, _ time.Duration, _ string, _ ...string) ([]byte, error) {
+		return []byte(`[]`), nil
+	}
+	t.Cleanup(func() { runCostCommandFn = runUsageCommand })
+
+	stats, report := fetchProviderTokenStatsWithReport(context.Background(), "/tmp/CodexBarCLI", ProviderTokenStatsReport{})
+	if !report.OK || report.Reason != "no_providers" || len(stats) != 0 {
+		t.Fatalf("expected successful empty token result, report=%+v stats=%#v", report, stats)
+	}
+	if report.CostDuration <= 0 || report.ParseDuration <= 0 {
+		t.Fatalf("expected cost and parse durations, got %+v", report)
+	}
+}
+
+func TestFetchProviderTokenStatsReportClassifiesParseFailure(t *testing.T) {
+	runCostCommandFn = func(_ context.Context, _ time.Duration, _ string, _ ...string) ([]byte, error) {
+		return []byte(`{"providers":[{"provider":"codex","error":"not available"}]}`), nil
+	}
+	t.Cleanup(func() { runCostCommandFn = runUsageCommand })
+
+	stats, report := fetchProviderTokenStatsWithReport(context.Background(), "/tmp/CodexBarCLI", ProviderTokenStatsReport{})
+	if report.OK || report.Reason != "parse" || stats != nil {
+		t.Fatalf("expected parse failure report, report=%+v stats=%#v", report, stats)
+	}
+}
+
+func TestFetchProviderTokenStatsReportClassifiesTimeout(t *testing.T) {
+	runCostCommandFn = func(_ context.Context, _ time.Duration, _ string, _ ...string) ([]byte, error) {
+		return nil, context.DeadlineExceeded
+	}
+	t.Cleanup(func() { runCostCommandFn = runUsageCommand })
+
+	stats, report := fetchProviderTokenStatsWithReport(context.Background(), "/tmp/CodexBarCLI", ProviderTokenStatsReport{})
+	if report.OK || report.Reason != "timeout" || stats != nil {
+		t.Fatalf("expected timeout report, report=%+v stats=%#v", report, stats)
+	}
+}
