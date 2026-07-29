@@ -51,30 +51,6 @@ source for version, ZIP URL, checksum, size, firmware, and capability
 requirements. Shopify pack metadata is only used when that theme ID does not
 have complete technical metadata in the current GitHub catalog.
 
-### Theme generation release guard
-
-Release invariant: `SHOPIFY_PACK_METADATA_GENERATION=legacy`.
-
-Do not change `vibetv.theme_version`, `vibetv.manifest_url`,
-`vibetv.pack_url`, its checksum, or its byte size for an existing theme ID to
-the v2 pack. Older hosted/non-static Control Center builds prefer a complete
-Shopify pack triplet and cannot distinguish v2 from legacy. Those Shopify
-technical fields must continue to describe the frozen legacy pack. The current
-app gets v2 technical metadata from `vibetv-theme-packs-v2.json` instead.
-
-If Shopify itself ever needs to expose a newer incompatible pack directly, it
-needs a separately targeted collection/app generation. Do not add its theme ID
-to the shared `themes-2` collection and never overwrite technical metadata for
-an ID consumed by older code.
-
-Every public release reads the real `themes-2` product metafields through the
-Shopify Admin GraphQL API before building customer artifacts. The release stops
-when an ID is missing from the frozen legacy catalog, when pack metadata is only
-partly filled, or when a complete URL/checksum/size/version set differs from
-`release/shopify-theme-pack-legacy-lock.json`. Empty pack metadata is safe:
-older apps then use their bundled generation-1 catalog, while the current app
-uses its bundled generation-2 catalog.
-
 ## Product Button
 
 The preferred launch action opens hosted setup with the selected theme:

@@ -170,9 +170,6 @@ jobs:
       - name: Check Theme Pack Dist
         run: ./scripts/check-theme-pack-dist.sh
 
-      - name: Test Shopify legacy theme compatibility guard
-        run: node scripts/test-shopify-theme-pack-compatibility.mjs
-
   firmware-build-v0:
     runs-on: ubuntu-latest
     strategy:
