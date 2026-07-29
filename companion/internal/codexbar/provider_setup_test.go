@@ -184,6 +184,7 @@ func TestFindBinaryPrefersBundledCLI(t *testing.T) {
 	originalExecutable := executablePathFn
 	defer func() { executablePathFn = originalExecutable }()
 	t.Setenv("CODEXBAR_BIN", "")
+	t.Setenv(appManagedCodexBarVersionEnvVar, "")
 	dir := t.TempDir()
 	executablePathFn = func() (string, error) { return filepath.Join(dir, "codexbar-display"), nil }
 	bundled := filepath.Join(dir, "CodexBarCLI")
@@ -206,6 +207,7 @@ func TestFindBinaryPrefersUserApplicationsAppOverPATH(t *testing.T) {
 	systemAppBinaryPaths = nil
 	executablePathFn = func() (string, error) { return filepath.Join(t.TempDir(), "codexbar-display"), nil }
 	t.Setenv("CODEXBAR_BIN", "")
+	t.Setenv(appManagedCodexBarVersionEnvVar, "")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	pathDir := t.TempDir()
@@ -223,6 +225,48 @@ func TestFindBinaryPrefersUserApplicationsAppOverPATH(t *testing.T) {
 	got, err := FindBinary()
 	if err != nil || got != appCLI {
 		t.Fatalf("expected installed app CLI %q before PATH %q, got %q err=%v", appCLI, pathCLI, got, err)
+	}
+}
+
+func TestFindBinaryUsesOnlyAppManagedPinnedPayload(t *testing.T) {
+	originalExecutable := executablePathFn
+	originalSystemApps := systemAppBinaryPaths
+	defer func() {
+		executablePathFn = originalExecutable
+		systemAppBinaryPaths = originalSystemApps
+	}()
+	executablePathFn = func() (string, error) { return filepath.Join(t.TempDir(), "codexbar-display"), nil }
+	t.Setenv("CODEXBAR_BIN", "")
+	t.Setenv(appManagedCodexBarVersionEnvVar, "0.46.0")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	privateCLI := filepath.Join(home, "Library", "Application Support", "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
+	systemCLI := filepath.Join(t.TempDir(), "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
+	pathDir := t.TempDir()
+	pathCLI := filepath.Join(pathDir, "codexbar")
+	systemAppBinaryPaths = []string{systemCLI}
+	t.Setenv("PATH", pathDir)
+	for _, path := range []string{privateCLI, systemCLI, pathCLI} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := FindBinary()
+	if err != nil || got != privateCLI {
+		t.Fatalf("expected app-managed CLI %q, got %q err=%v", privateCLI, got, err)
+	}
+
+	if err := os.Remove(privateCLI); err != nil {
+		t.Fatal(err)
+	}
+	got, err = FindBinary()
+	if err == nil || got != "" {
+		t.Fatalf("expected app-managed mode to fail closed, got %q err=%v", got, err)
 	}
 }
 

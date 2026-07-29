@@ -159,21 +159,19 @@ func runURLSchemeTests() {
             && !redactedLog.contains("raw-userinfo"),
         "support report must redact secrets embedded in log strings"
     )
-    require(
-        isCompatibleCodexBarVersion("0.23.0"),
-        "the minimum supported CodexBar version must be compatible"
+    let appSupportURL = URL(
+        fileURLWithPath: "/Users/customer/Library/Application Support/codexbar-display",
+        isDirectory: true
     )
     require(
-        isCompatibleCodexBarVersion("0.45.0"),
-        "a newer CodexBar version must be reusable"
+        appManagedCodexBarAppURL(applicationSupportURL: appSupportURL).path
+            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.46.0/CodexBar.app",
+        "VibeTV must publish CodexBar only into its private versioned app support directory"
     )
     require(
-        isCompatibleCodexBarVersion("0.43.0"),
-        "an existing CodexBar 0.43 installation must remain reusable"
-    )
-    require(
-        !isCompatibleCodexBarVersion("0.22.0"),
-        "an unsupported CodexBar version must not replace the pinned bootstrap"
+        appManagedCodexBarCLIURL(applicationSupportURL: appSupportURL).path
+            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.46.0/CodexBar.app/Contents/Helpers/CodexBarCLI",
+        "the Companion must use the exact private CodexBarCLI path"
     )
     let commandFixtureDirectory = FileManager.default.temporaryDirectory
         .appendingPathComponent("vibetv-command-\(UUID().uuidString)")
@@ -200,72 +198,6 @@ func runURLSchemeTests() {
     require(
         verboseResult?.exitCode == 0 && verboseResult?.output.count == 200000,
         "command output must be drained while a verbose child process is running"
-    )
-    let codexBarCandidates = codexBarInstalledAppCandidates(
-        homeDirectory: URL(fileURLWithPath: "/Users/customer", isDirectory: true)
-    )
-    require(
-        codexBarCandidates.map(\.path) == [
-            "/Applications/CodexBar.app",
-            "/Users/customer/Applications/CodexBar.app",
-        ],
-        "CodexBar discovery must prefer the shared app and then the user app"
-    )
-    let configFixtureDirectory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("vibetv-codexbar-config-\(UUID().uuidString)")
-    try! FileManager.default.createDirectory(
-        at: configFixtureDirectory,
-        withIntermediateDirectories: false
-    )
-    defer { try? FileManager.default.removeItem(at: configFixtureDirectory) }
-    let fakeCodexBarCLI = configFixtureDirectory.appendingPathComponent("CodexBarCLI")
-    try! Data(
-        """
-        #!/bin/sh
-        case "${1:-} ${2:-}" in
-          "config dump")
-            printf '{"version":42,"providers":[{"id":"future-provider","enabled":true}]}'
-            ;;
-          "config validate")
-            printf '[]'
-            ;;
-          *)
-            exit 64
-            ;;
-        esac
-        """.utf8
-    ).write(to: fakeCodexBarCLI)
-    try! FileManager.default.setAttributes(
-        [.posixPermissions: 0o700],
-        ofItemAtPath: fakeCodexBarCLI.path
-    )
-    let generatedConfigURL = configFixtureDirectory.appendingPathComponent("config.json")
-    require(
-        writeCodexBarOwnedDefaultConfig(
-            executableURL: fakeCodexBarCLI,
-            targetURL: generatedConfigURL
-        ),
-        "fresh installs must ask CodexBar to render and validate its own defaults"
-    )
-    let generatedConfigData = try! Data(contentsOf: generatedConfigURL)
-    let config = try! JSONSerialization.jsonObject(
-        with: generatedConfigData
-    ) as! [String: Any]
-    let generatedProviders = config["providers"] as? [[String: Any]]
-    require(
-        config["version"] as? Int == 42
-            && generatedProviders?.first?["id"] as? String == "future-provider",
-        "VibeTV must preserve CodexBar's dynamic provider inventory and defaults"
-    )
-    let existingConfigData = Data(#"{"existing":true}"#.utf8)
-    try! existingConfigData.write(to: generatedConfigURL, options: .atomic)
-    require(
-        writeCodexBarOwnedDefaultConfig(
-            executableURL: fakeCodexBarCLI,
-            targetURL: generatedConfigURL
-        )
-            && (try! Data(contentsOf: generatedConfigURL)) == existingConfigData,
-        "an existing CodexBar config must remain untouched"
     )
     require(
         RuntimePreparationOutcome.nativeRuntimeReady.shouldReloadControlCenter,

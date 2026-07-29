@@ -50,6 +50,7 @@ const (
 )
 
 const usageModeEnvVar = "CODEXBAR_DISPLAY_USAGE_MODE"
+const appManagedCodexBarVersionEnvVar = "VIBETV_CODEXBAR_PINNED_VERSION"
 
 type FetchErrorKind string
 
@@ -120,6 +121,10 @@ func FindBinary() (string, error) {
 		return "", fmt.Errorf("CODEXBAR_BIN is not executable: %s", env)
 	}
 
+	if version := strings.TrimSpace(os.Getenv(appManagedCodexBarVersionEnvVar)); version != "" {
+		return findAppManagedBinary(version)
+	}
+
 	// The native Control Center ships CodexBarCLI next to codexbar-display.
 	// Prefer that pinned copy over an unrelated Homebrew/PATH installation.
 	if executable, err := executablePathFn(); err == nil {
@@ -167,6 +172,35 @@ func FindBinary() (string, error) {
 	}
 
 	return "", errors.New("could not find CodexBar CLI binary")
+}
+
+func findAppManagedBinary(version string) (string, error) {
+	if !regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`).MatchString(version) {
+		return "", fmt.Errorf("%s has invalid version: %s", appManagedCodexBarVersionEnvVar, version)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory for app-managed CodexBar: %w", err)
+	}
+	if strings.TrimSpace(home) == "" {
+		return "", errors.New("home directory for app-managed CodexBar is empty")
+	}
+	bin := filepath.Join(
+		home,
+		"Library",
+		"Application Support",
+		"codexbar-display",
+		"CodexBar",
+		version,
+		"CodexBar.app",
+		"Contents",
+		"Helpers",
+		"CodexBarCLI",
+	)
+	if isExecutable(bin) {
+		return bin, nil
+	}
+	return "", fmt.Errorf("app-managed CodexBar %s is not executable: %s", version, bin)
 }
 
 func MinimumSupportedVersion() string {
