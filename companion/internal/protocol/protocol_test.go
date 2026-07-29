@@ -297,6 +297,53 @@ func TestFrameNormalizeKeepsOnlyTwoValidUsageSlots(t *testing.T) {
 	}
 }
 
+func TestFrameNormalizeV1OmitsUsageWindowsOnWire(t *testing.T) {
+	frame := Frame{
+		V:        ProtocolVersionV1,
+		Provider: "codex",
+		UsageWindows: []UsageWindow{
+			{ID: "session", Label: "Session", Percent: 12, ResetSec: 60},
+			{ID: "weekly", Label: "Weekly", Percent: 34, ResetSec: 120},
+			{ID: "monthly", Label: "Monthly", Percent: 56, ResetSec: 180},
+		},
+	}
+
+	normalized := frame.Normalize()
+	if len(normalized.UsageWindows) != 0 {
+		t.Fatalf("v1 frame must not retain usageWindows, got %+v", normalized.UsageWindows)
+	}
+	if len(normalized.UsageSlots) != 2 {
+		t.Fatalf("expected two legacy slots, got %+v", normalized.UsageSlots)
+	}
+	if normalized.Session != 12 || normalized.Weekly != 34 || normalized.ResetSec != 60 {
+		t.Fatalf("legacy projection mismatch: got session=%d weekly=%d reset=%d", normalized.Session, normalized.Weekly, normalized.ResetSec)
+	}
+
+	line, err := frame.MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal v1 frame: %v", err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(line, &raw); err != nil {
+		t.Fatalf("parse v1 wire frame: %v", err)
+	}
+	if _, ok := raw["usageWindows"]; ok {
+		t.Fatalf("usageWindows must be omitted from v1 wire frame: %s", line)
+	}
+	var wire Frame
+	if err := json.Unmarshal(line, &wire); err != nil {
+		t.Fatalf("parse typed v1 wire frame: %v", err)
+	}
+	if len(wire.UsageSlots) != 2 ||
+		wire.UsageSlots[0].ID != "session" ||
+		wire.UsageSlots[1].ID != "weekly" {
+		t.Fatalf("expected first two usage windows as legacy slots, got %+v", wire.UsageSlots)
+	}
+	if wire.Session != 12 || wire.Weekly != 34 || wire.ResetSec != 60 {
+		t.Fatalf("wire legacy projection mismatch: got session=%d weekly=%d reset=%d", wire.Session, wire.Weekly, wire.ResetSec)
+	}
+}
+
 func TestMaximumUsageSlotFrameStaysInsideDocumentedBudget(t *testing.T) {
 	frame := Frame{
 		V:         2,

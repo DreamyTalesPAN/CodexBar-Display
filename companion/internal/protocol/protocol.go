@@ -79,12 +79,13 @@ func (f Frame) Normalize() Frame {
 		f.ResetSec = 0
 	}
 	f.UsageWindows = normalizeUsageWindows(firstNonEmptyUsageWindows(f.UsageWindows, f.UsageSlots))
+	f = applyLegacyUsageProjection(f)
 	if protocolVersion >= ProtocolVersionV2 {
 		f.UsageSlots = nil
 	} else {
 		f.UsageSlots = legacyUsageSlots(f.UsageWindows)
+		f.UsageWindows = nil
 	}
-	f = applyLegacyUsageProjection(f)
 	if f.SessionTokens < 0 {
 		f.SessionTokens = 0
 	}
