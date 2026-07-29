@@ -126,6 +126,9 @@ struct SerialConsumeEvent {
   bool themeSpecChanged = false;
   bool themeSpecCacheHit = false;
   bool themeSpecPartialRender = false;
+  // The frame moved the usage numbers, which is the only signal the device has
+  // that someone is coding. Standby uses it as its activity clock.
+  bool usageProgressed = false;
   uint32_t themeSpecChangedFields = 0;
 };
 
@@ -957,8 +960,10 @@ inline bool ConsumeFrameLine(
 
   const Frame previous = runtimeState.current;
   ApplyThemeSpecCache(runtimeState, previous, next, outEvent);
+  outEvent.usageProgressed =
+      !next.hasError && runtimeState.hasFrame && UsageProgressChanged(previous, next);
   if (!next.hasError && next.activity.length() == 0) {
-    next.activity = runtimeState.hasFrame && UsageProgressChanged(previous, next) ? "coding" : "idle";
+    next.activity = outEvent.usageProgressed ? "coding" : "idle";
   }
 
   outEvent.hadFrame = runtimeState.hasFrame;

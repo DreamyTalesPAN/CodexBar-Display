@@ -208,6 +208,10 @@ jobs:
         working-directory: firmware_esp8266
         run: pio test -e native_standby_settings
 
+      - name: Test standby state machine
+        working-directory: firmware_esp8266
+        run: pio test -e native_standby_state
+
       - name: Test firmware size budget checker
         run: ./scripts/test-firmware-size-budget.sh
 

@@ -15,6 +15,7 @@
 #include "connected_setup_policy.h"
 #include "device_settings.h"
 #include "standby_settings.h"
+#include "standby_state.h"
 #include "wifi_security_policy.h"
 #include "gif_asset_validator_file.h"
 #include "renderer_esp8266.h"
@@ -214,6 +215,11 @@ size_t assetUploadBytesSeen = 0;
 File assetUploadFile;
 String activeThemeSpecPath;
 String activeThemeSpecHash;
+standby::State standbyState;
+// Captured when standby takes the screen, so the way back is the theme that was
+// really drawn. There is no second resident ThemeSpec slot: both directions
+// reload from LittleFS, which #277 measured at 250-420 ms.
+String standbyLiveThemePath;
 codexbar_display::esp8266::wifi_setup::State setupWifiState;
 bool rebootPending = false;
 unsigned long rebootAtMs = 0;
@@ -325,9 +331,13 @@ uint8_t clampBrightnessPercent(int value) {
   return codexbar_display::esp8266::device_settings::ClampBrightnessPercent(value);
 }
 
+// Single place that decides how bright the panel is, so entering standby,
+// waking up and editing either brightness value all go through one path.
 void applyDeviceSettings() {
   if (renderer.SupportsBrightnessControl()) {
-    renderer.ApplyBrightnessPercent(deviceSettings.brightnessPercent);
+    renderer.ApplyBrightnessPercent(standbyState.active
+                                        ? deviceSettings.standby.brightnessPercent
+                                        : deviceSettings.brightnessPercent);
   }
 }
 
@@ -595,6 +605,17 @@ void appendStandbyCapabilityJSON(String& out) {
 #else
   out += "{\"supported\":false}";
 #endif
+}
+
+// Live standby state, kept out of the HTTP handler so the USB status channel
+// (#301) can emit the same shape. It must never go into hello, which is a boot
+// snapshot emitted once in setup().
+void appendStandbyStateJSON(String& out) {
+  out += "\"standby\":{\"active\":";
+  out += standbyState.active ? "true" : "false";
+  out += ",\"idleSecs\":";
+  out += String((millis() - standbyState.lastActivityMs) / 1000UL);
+  out += "}";
 }
 
 void appendSettingsJSON(String& out) {
@@ -953,6 +974,9 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
     runtimeCtx.screenDirty = true;
   }
   lastFrameAcceptedAtMs = millis();
+  if (event.usageProgressed) {
+    standby::NoteUsageActivity(standbyState, lastFrameAcceptedAtMs);
+  }
   // SNTP delivers UTC only. The Mac is the only local-offset source the device
   // has, so learn it while the Mac is here and persist it for the next boot.
   if (deviceclock::ObserveCompanionClock(
@@ -1591,9 +1615,10 @@ void handleHealth() {
   const codexbar_display::esp8266::RendererHealthSnapshot snapshot = renderer.HealthSnapshot();
 
   String out;
-  // Sized for the full payload: #280 added the clock block and #279 the reset
-  // trust block, and growing this String mid-build fragments a tight heap.
-  out.reserve(1280);
+  // Sized for the full payload: #280 added the clock block, #279 the reset
+  // trust block and #284 the standby state, and growing this String mid-build
+  // fragments a tight heap.
+  out.reserve(1344);
   out += "{\"ok\":true,\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
   out += "\",\"system\":{\"freeHeap\":";
@@ -1655,6 +1680,8 @@ void handleHealth() {
   out += "\"},";
   appendClockJSON(out);
   appendResetTrustJSON(out);
+  appendStandbyStateJSON(out);
+  out += ",";
   appendSettingsJSON(out);
   out += "}";
 
@@ -2188,7 +2215,11 @@ void activateStoredThemeSpec(const String& path, const String& raw, const String
   markFrameAccepted(event, "theme");
 }
 
-bool activateStoredThemePath(const String& path, String& themeId, int& themeRev, String& error) {
+// `persist` is false for standby transitions: the customer's live theme choice
+// must survive the screensaver, and a flash write per transition would be wear
+// for nothing.
+bool activateStoredThemePath(
+    const String& path, bool persist, String& themeId, int& themeRev, String& error) {
   String raw;
   if (!readStoredThemeSpec(path, raw, error)) {
     return false;
@@ -2197,13 +2228,24 @@ bool activateStoredThemePath(const String& path, String& themeId, int& themeRev,
   if (!themeSpecMetadata(raw, themeId, themeRev, error)) {
     return false;
   }
-  if (!saveActiveThemeSpecPath(path)) {
+  if (persist && !saveActiveThemeSpecPath(path)) {
     error = "save active theme failed";
     return false;
   }
 
   activateStoredThemeSpec(path, raw, themeId, themeRev);
   return true;
+}
+
+bool renderStoredThemeSpecForStandby(const String& path) {
+  String themeId;
+  int themeRev = 0;
+  String error;
+  if (activateStoredThemePath(path, false, themeId, themeRev, error)) {
+    return true;
+  }
+  Serial.printf("standby_load_failed path=%s err=%s\n", path.c_str(), error.c_str());
+  return false;
 }
 
 #endif
@@ -2238,11 +2280,17 @@ void handleThemeActive() {
   String themeId;
   int themeRev = 0;
   String error;
-  if (!activateStoredThemePath(path, themeId, themeRev, error)) {
+  if (!activateStoredThemePath(path, true, themeId, themeRev, error)) {
     addCorsHeaders();
     webServer.send(error == "theme file not found" ? 404 : 400, "text/plain; charset=utf-8", error);
     return;
   }
+  // The customer just picked the live theme, so it is now the screen standby
+  // has to hand back — and standby ends here rather than dimming that choice.
+  standbyLiveThemePath = "";
+  standbyState.active = false;
+  standby::NoteUsageActivity(standbyState, millis());
+  applyDeviceSettings();
 
   if (formMode) {
     webServer.keepAlive(false);
@@ -2372,7 +2420,46 @@ void loadDefaultStoredThemeSpecCache() {
     runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
   }
 }
+
+// Standby only takes a screen it can hand back. A setup or OTA status screen
+// and an error frame stay where they are, and without a stored live theme there
+// would be no way home.
+bool standbyReady() {
+  return !setupMode &&
+         !waitStatusRendered &&
+         !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
+         activeThemeSpecPath.length() > 0;
+}
 #endif
+
+// Decided in the loop, never in an HTTP handler: ESP8266WebServer runs those
+// inside handleClient(), where display work does not belong.
+void maintainStandby() {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  const unsigned long nowMs = millis();
+  const standby::Transition transition =
+      standby::Tick(standbyState, deviceSettings.standby, standbyReady(), nowMs);
+  if (transition == standby::Transition::None) {
+    return;
+  }
+  if (transition == standby::Transition::Enter) {
+    const String livePath = activeThemeSpecPath;
+    if (!renderStoredThemeSpecForStandby(String(deviceSettings.standby.screensaverPath))) {
+      // A deleted screensaver must not dim the panel or reopen the file every
+      // loop. Sit out another full timeout before trying again.
+      standbyState.active = false;
+      standby::NoteUsageActivity(standbyState, nowMs);
+      return;
+    }
+    standbyLiveThemePath = livePath;
+  } else if (standbyLiveThemePath.length() > 0) {
+    renderStoredThemeSpecForStandby(standbyLiveThemePath);
+    standbyLiveThemePath = "";
+  }
+  applyDeviceSettings();
+  Serial.printf("standby active=%d\n", standbyState.active ? 1 : 0);
+#endif
+}
 
 String updatePageHTML() {
   const String installCommand = updateInstallCommand();
@@ -3078,6 +3165,8 @@ void loop() {
     delay(1);
     return;
   }
+
+  maintainStandby();
 
   if (!waitStatusRendered &&
       codexbar_display::app::HasFrame(runtimeCtx) &&
