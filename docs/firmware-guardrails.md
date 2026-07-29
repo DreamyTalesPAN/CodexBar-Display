@@ -94,6 +94,18 @@ cap is. But the margin at the very top is thin: two sector-rounded 1044464-byte
 sketches need 2088960 of the 2097152 available, leaving 8192 bytes. The two
 limits nearly coincide, so there is no comfortable zone above the cap.
 
+**Where the 46 percent CI gate comes from.** It is not an arbitrary number and
+it no longer means what it originally meant. Under `eagle.flash.4m3m.ld` the OTA
+wall sat at 524288 bytes, which is 50.2 percent of the 1044464-byte cap, so
+`max_flash_pct: 46` was set just below it as a genuine safety limit. It has not
+been touched since March 2026, while the layout moved in May 2026 (`fcdf470`).
+The wall it guarded is gone; the gate stayed.
+
+Note that `irom0_0_seg len = 0xfeff0` is identical in both ldscripts, so the
+percentage denominator never changed — only `_FS_start` did. Today the gate is a
+deliberate frugality rule, not a safety limit. Treat a build that exceeds it as
+a prompt to reclaim flash, not as an emergency.
+
 **Rules.**
 - Never raise the CI flash gate to make a build fit. Reclaim flash instead (#309).
 - Changing `board_build.ldscript` changes the OTA ceiling and moves the
