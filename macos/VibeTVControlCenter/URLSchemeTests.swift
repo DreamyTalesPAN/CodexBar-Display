@@ -173,6 +173,7 @@ func runURLSchemeTests() {
             == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.46.0/CodexBar.app/Contents/Helpers/CodexBarCLI",
         "the Companion must use the exact private CodexBarCLI path"
     )
+    testPrivateCodexBarTargetRejectsSymlinks()
     let commandFixtureDirectory = FileManager.default.temporaryDirectory
         .appendingPathComponent("vibetv-command-\(UUID().uuidString)")
     try! FileManager.default.createDirectory(
@@ -949,6 +950,82 @@ private func testLegacyTerminalAppDetection() {
             expectedBundleIdentifier: "shop.vibetv.control-center"
         ),
         "the currently running app must never migrate itself"
+    )
+}
+
+private func testPrivateCodexBarTargetRejectsSymlinks() {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory
+        .appendingPathComponent("vibetv-private-codexbar-\(UUID().uuidString)", isDirectory: true)
+    let home = root.appendingPathComponent("home", isDirectory: true)
+    let realAppSupport = home
+        .appendingPathComponent("Library/Application Support/codexbar-display", isDirectory: true)
+    defer {
+        try? fileManager.removeItem(at: root)
+    }
+    do {
+        try fileManager.createDirectory(at: realAppSupport, withIntermediateDirectories: true)
+    } catch {
+        require(false, "could not prepare private CodexBar symlink test: \(error)")
+        return
+    }
+    let targetApp = appManagedCodexBarAppURL(applicationSupportURL: realAppSupport)
+    require(
+        privateCodexBarTargetIsSafe(
+            applicationSupportURL: realAppSupport,
+            homeURL: home,
+            targetAppURL: targetApp
+        ),
+        "private CodexBar target must allow a direct app support path"
+    )
+
+    let linkedTargetRoot = root.appendingPathComponent("linked-target", isDirectory: true)
+    let linkedTarget = linkedTargetRoot.appendingPathComponent("CodexBar.app", isDirectory: true)
+    do {
+        try fileManager.createDirectory(at: linkedTarget, withIntermediateDirectories: true)
+        try fileManager.createDirectory(
+            at: targetApp.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try fileManager.createSymbolicLink(
+            at: targetApp,
+            withDestinationURL: linkedTarget
+        )
+    } catch {
+        require(false, "could not prepare private target symlink: \(error)")
+        return
+    }
+    require(
+        !privateCodexBarTargetIsSafe(
+            applicationSupportURL: realAppSupport,
+            homeURL: home,
+            targetAppURL: targetApp
+        ),
+        "private CodexBar target must reject CodexBar.app symlinks"
+    )
+
+    let symlinkHome = root.appendingPathComponent("symlink-home", isDirectory: true)
+    let symlinkLibraryTarget = root.appendingPathComponent("real-library", isDirectory: true)
+    let symlinkAppSupport = symlinkHome
+        .appendingPathComponent("Library/Application Support/codexbar-display", isDirectory: true)
+    do {
+        try fileManager.createDirectory(at: symlinkHome, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: symlinkLibraryTarget, withIntermediateDirectories: true)
+        try fileManager.createSymbolicLink(
+            at: symlinkHome.appendingPathComponent("Library", isDirectory: true),
+            withDestinationURL: symlinkLibraryTarget
+        )
+    } catch {
+        require(false, "could not prepare private ancestor symlink: \(error)")
+        return
+    }
+    require(
+        !privateCodexBarTargetIsSafe(
+            applicationSupportURL: symlinkAppSupport,
+            homeURL: symlinkHome,
+            targetAppURL: appManagedCodexBarAppURL(applicationSupportURL: symlinkAppSupport)
+        ),
+        "private CodexBar target must reject symlinks in parent segments"
     )
 }
 #endif

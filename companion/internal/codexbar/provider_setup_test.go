@@ -271,6 +271,81 @@ func TestFindBinaryUsesOnlyAppManagedPinnedPayload(t *testing.T) {
 	}
 }
 
+func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, home string)
+	}{
+		{
+			name: "target app",
+			setup: func(t *testing.T, home string) {
+				targetApp := filepath.Join(home, "Library", "Application Support", "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app")
+				realApp := filepath.Join(t.TempDir(), "CodexBar.app")
+				writeExecutable(t, filepath.Join(realApp, "Contents", "Helpers", "CodexBarCLI"))
+				if err := os.MkdirAll(filepath.Dir(targetApp), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(realApp, targetApp); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "parent segment",
+			setup: func(t *testing.T, home string) {
+				targetParent := filepath.Join(home, "Library", "Application Support", "codexbar-display", "CodexBar")
+				realParent := filepath.Join(t.TempDir(), "CodexBar")
+				writeExecutable(t, filepath.Join(realParent, "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
+				if err := os.MkdirAll(filepath.Dir(targetParent), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(realParent, targetParent); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "ancestor segment",
+			setup: func(t *testing.T, home string) {
+				realLibrary := filepath.Join(t.TempDir(), "Library")
+				writeExecutable(t, filepath.Join(realLibrary, "Application Support", "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
+				if err := os.MkdirAll(home, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(realLibrary, filepath.Join(home, "Library")); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			originalExecutable := executablePathFn
+			originalSystemApps := systemAppBinaryPaths
+			defer func() {
+				executablePathFn = originalExecutable
+				systemAppBinaryPaths = originalSystemApps
+			}()
+			executablePathFn = func() (string, error) { return filepath.Join(t.TempDir(), "codexbar-display"), nil }
+			systemAppBinaryPaths = nil
+			t.Setenv(appManagedCodexBarVersionEnvVar, "0.46.0")
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			foreignCLI := filepath.Join(t.TempDir(), "false-codexbar")
+			writeExecutable(t, foreignCLI)
+			t.Setenv("CODEXBAR_BIN", foreignCLI)
+			tc.setup(t, home)
+
+			got, err := FindBinary()
+			if err == nil || got != "" {
+				t.Fatalf("expected symlinked app-managed path to fail closed, got %q err=%v", got, err)
+			}
+			if !strings.Contains(err.Error(), "symlink") {
+				t.Fatalf("expected symlink error, got %v", err)
+			}
+		})
+	}
+}
+
 func TestProviderReadinessClassifiesStructuredFixtures(t *testing.T) {
 	raw := []byte(`[
       {"provider":"codex","usage":{"primary":{"usedPercent":0}}},
@@ -398,6 +473,16 @@ func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 	want := []string{"usage", "--json", "--provider", "antigravity", "--source", "auto", "--web-timeout", "8"}
 	if !reflect.DeepEqual(usageArgs, want) {
 		t.Fatalf("unexpected exact usage args: got %v want %v", usageArgs, want)
+	}
+}
+
+func writeExecutable(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
 	}
 }
 

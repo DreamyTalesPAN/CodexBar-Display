@@ -681,6 +681,10 @@ required_source = [
     'arguments: ["--verify", "--deep", "--strict", "--verbose=2", appURL.path]',
     'arguments: ["--assess", "--type", "execute", "--verbose=4", appURL.path]',
     'arguments: ["-x", "-k", archiveURL.path, stagingURL.path]',
+    'codexBarDisallowedSigningXattrs = [',
+    'removexattr(url.path, $0, XATTR_NOFOLLOW)',
+    'normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)',
+    'privateCodexBarTargetIsSafe(',
     'appManagedCodexBarAppURL(',
     'applicationSupportURL: applicationSupportURL()',
     'replaceItemAt(',
@@ -845,15 +849,23 @@ prepare_payload_end = source.find("private func bootstrapCodexBar()", prepare_pa
 prepare_payload = source[prepare_payload_start:prepare_payload_end]
 if (
     'appManagedCodexBarAppURL(' not in prepare_payload
-    or 'applicationSupportURL: applicationSupportURL()' not in prepare_payload
-    or 'validatedPinnedCodexBarCLI(at: targetAppURL)' not in prepare_payload
+    or 'let appSupportURL = applicationSupportURL()' not in prepare_payload
+    or 'guard privateCodexBarTargetIsSafe(' not in prepare_payload
+    or 'if let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL)' in prepare_payload
+    or 'return cliURL' in prepare_payload
+    or 'normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)' not in prepare_payload
     or 'validatedPinnedCodexBarCLI(at: stagedAppURL)' not in prepare_payload
+    or 'return validatedPinnedCodexBarCLI(at: targetAppURL)' not in prepare_payload
     or 'replaceItemAt(' not in prepare_payload
+    or prepare_payload.find('normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)')
+        > prepare_payload.find('validatedPinnedCodexBarCLI(at: stagedAppURL)')
     or prepare_payload.find('validatedPinnedCodexBarCLI(at: stagedAppURL)')
         > prepare_payload.find('replaceItemAt(')
+    or prepare_payload.find('replaceItemAt(')
+        > prepare_payload.find('return validatedPinnedCodexBarCLI(at: targetAppURL)')
 ):
     raise SystemExit(
-        "native CodexBar payload must validate the staged private app before atomic replacement"
+        "native CodexBar payload must always stage the bundled ZIP, normalize xattrs, validate, publish, then revalidate"
     )
 native_ready = prepare_method.find("return .nativeRuntimeReady")
 if not (0 <= prepare_method.find("var health = await waitForHealthyRuntime") < native_ready):

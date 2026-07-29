@@ -197,6 +197,11 @@ func findAppManagedBinary(version string) (string, error) {
 		"Helpers",
 		"CodexBarCLI",
 	)
+	if linkPath, err := firstSymlinkInPathUnder(home, bin); err != nil {
+		return "", fmt.Errorf("verify app-managed CodexBar path: %w", err)
+	} else if linkPath != "" {
+		return "", fmt.Errorf("app-managed CodexBar path contains symlink: %s", linkPath)
+	}
 	if isExecutable(bin) {
 		return bin, nil
 	}
@@ -239,6 +244,41 @@ func isExecutable(path string) bool {
 		return false
 	}
 	return info.Mode()&0o111 != 0
+}
+
+func firstSymlinkInPathUnder(root, path string) (string, error) {
+	cleanRoot := filepath.Clean(root)
+	cleanPath := filepath.Clean(path)
+	if cleanPath != cleanRoot && !strings.HasPrefix(cleanPath, cleanRoot+string(os.PathSeparator)) {
+		return cleanPath, nil
+	}
+	if info, err := os.Lstat(cleanRoot); err != nil {
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+	} else if info.Mode()&os.ModeSymlink != 0 {
+		return cleanRoot, nil
+	}
+	rest := strings.TrimPrefix(cleanPath, cleanRoot)
+	rest = strings.TrimPrefix(rest, string(os.PathSeparator))
+	current := cleanRoot
+	for _, component := range strings.Split(rest, string(os.PathSeparator)) {
+		if component == "" || component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return "", nil
+			}
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return current, nil
+		}
+	}
+	return "", nil
 }
 
 // FetchAllProviders reads provider usage from CodexBar and normalizes it.
