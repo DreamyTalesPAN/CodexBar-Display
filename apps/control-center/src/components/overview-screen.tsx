@@ -5,35 +5,20 @@ import {
   ArrowUpFromLine,
   Check,
   CircleHelp,
-  Download,
   Monitor,
   WifiOff,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Item,
-  ItemActions,
   ItemContent,
   ItemDescription,
   ItemGroup,
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
-import {
-  availableMacAppDmgDownloadUrl,
-  type CompanionReleaseInfo,
-} from "@/lib/companion-release";
-import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import type {
   CompanionStatus,
   DeviceInfo,
@@ -51,24 +36,18 @@ import {
 
 type OverviewScreenProps = {
   companionVersion?: string;
-  companionRelease?: CompanionReleaseInfo | null;
   companionStatus: CompanionStatus;
   device: DeviceInfo | null;
   displayFrame?: DisplayFrameSnapshot | null;
-  firmwareUpdate?: FirmwareUpdateInfo | null;
   usage?: UsageSnapshot | null;
-  requiresMacAppMigration?: boolean;
 };
 
 export function OverviewScreen({
   companionVersion,
-  companionRelease,
   companionStatus,
   device,
   displayFrame = null,
-  firmwareUpdate,
   usage,
-  requiresMacAppMigration = false,
 }: OverviewScreenProps) {
   const pairingRejected = device?.paired === false;
   const connected = device?.connected === true && !pairingRejected;
@@ -80,11 +59,6 @@ export function OverviewScreen({
     !pairingRejected &&
     !waitingForUsage;
   const hero = buildHeroCopy(companionStatus, connected);
-  const firmwareUpdateAvailable = hasFirmwareUpdate(firmwareUpdate);
-  const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
-  const macAppMigrationUrl = requiresMacAppMigration
-    ? availableMacAppDmgDownloadUrl(companionRelease)
-    : undefined;
 
   return (
     <div className="mx-auto max-w-[1180px] py-4">
@@ -115,19 +89,12 @@ export function OverviewScreen({
 
           <ItemGroup className="grid w-full gap-3 lg:grid-cols-4">
             <StatusItem
-              badge={
-                requiresMacAppMigration
-                  ? "New App"
-                  : macAppUpdateAvailable
-                    ? "Update"
-                    : undefined
-              }
               icon={<AppWindow aria-hidden />}
               label="Mac App"
               value={labelForCompanion(companionStatus, companionVersion)}
             />
             <StatusItem
-              icon={<Monitor aria-hidden />}
+              icon={<ArrowUpFromLine aria-hidden />}
               label="VibeTV"
               value={connected ? "Connected" : "Not connected"}
             />
@@ -150,17 +117,12 @@ export function OverviewScreen({
               }
             />
             <StatusItem
-              badge={firmwareUpdateAvailable ? "Update" : undefined}
-              icon={<ArrowUpFromLine aria-hidden />}
+              icon={<Monitor aria-hidden />}
               label="VibeTV firmware"
               value={device?.firmware || "Waiting for VibeTV"}
             />
           </ItemGroup>
         </div>
-
-        {requiresMacAppMigration ? (
-          <MacAppMigrationCard downloadUrl={macAppMigrationUrl} />
-        ) : null}
       </section>
     </div>
   );
@@ -182,42 +144,12 @@ function ReconnectNotice({ device }: { device: DeviceInfo | null }) {
   );
 }
 
-function MacAppMigrationCard({ downloadUrl }: { downloadUrl?: string }) {
-  return (
-    <Card
-      aria-labelledby="mac-app-migration-title"
-      className="mx-auto mt-4 max-w-[1040px]"
-    >
-      <CardHeader>
-        <CardTitle id="mac-app-migration-title">
-          {downloadUrl ? "Update available" : "Mac App update not ready"}
-        </CardTitle>
-        <CardDescription>
-          Keep the Control Center and VibeTV connection on the latest version.
-        </CardDescription>
-      </CardHeader>
-      {downloadUrl ? (
-        <CardFooter>
-          <Button asChild size="lg">
-            <a href={downloadUrl}>
-              <Download data-icon="inline-start" />
-              <span>Update</span>
-            </a>
-          </Button>
-        </CardFooter>
-      ) : null}
-    </Card>
-  );
-}
-
 function StatusItem({
-  badge,
   detail,
   icon,
   label,
   value,
 }: {
-  badge?: string;
   detail?: string;
   icon: ReactNode;
   label: string;
@@ -231,9 +163,6 @@ function StatusItem({
         <ItemTitle>{value}</ItemTitle>
         {detail ? <ItemDescription>{detail}</ItemDescription> : null}
       </ItemContent>
-      <ItemActions className="flex-wrap justify-end">
-        {badge ? <Badge>{badge}</Badge> : null}
-      </ItemActions>
     </Item>
   );
 }

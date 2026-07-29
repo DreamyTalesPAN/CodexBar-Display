@@ -1534,6 +1534,13 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     await page
       .getByText("Token history is loading", { exact: true })
       .waitFor({ timeout: 10_000 });
+    assert(
+      (await page
+        .getByTestId("token-history-loading")
+        .locator('[data-slot="spinner"]')
+        .count()) === 1,
+      "Token history loading must use the compact spinner",
+    );
     await page
       .getByRole("heading", { name: "AI providers", exact: true })
       .waitFor({ timeout: 10_000 });
@@ -4372,17 +4379,11 @@ async function testLegacyInstallMigratesToDmgAtSameVersion(browser, appUrl) {
     status: "available",
     updateAvailable: false,
   });
-  await page
-    .getByRole("heading", { name: "Update available" })
-    .waitFor({ timeout: 10_000 });
-  const overviewDownload = page.getByRole("link", {
-    name: "Update",
-  });
-  await overviewDownload.waitFor({ timeout: 10_000 });
   assert(
-    assetName(await overviewDownload.getAttribute("href")) ===
-      "VibeTV-Control-Center.dmg",
-    "Legacy Overview must use the verified DMG release asset",
+    (await page.getByRole("heading", { name: "Update available" }).count()) === 0 &&
+      (await page.getByRole("link", { name: "Update" }).count()) === 0 &&
+      (await page.getByText("New App", { exact: true }).count()) === 0,
+    "Overview must keep all update announcements in the Updates tab",
   );
   await captureMigrationScreenshot(page, "01-legacy-overview.png");
 
@@ -4435,6 +4436,12 @@ async function testLegacyFeatureFallbackMigratesAtSameVersion(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  assert(
+    (await page.getByRole("heading", { name: "Update available" }).count()) === 0 &&
+      (await page.getByRole("link", { name: "Update" }).count()) === 0,
+    "Legacy feature fallback must not announce updates on Overview",
+  );
+  await clickNavigation(page, "Updates");
   await page
     .getByRole("heading", { name: "Update available" })
     .waitFor({ timeout: 10_000 });
@@ -5241,16 +5248,20 @@ async function testUpdatesKeepDmgHiddenWithoutVerifiedAsset(browser, appUrl) {
     status: "available",
     updateAvailable: false,
   });
-  await page
-    .getByRole("heading", { name: "Update not ready" })
-    .waitFor({ timeout: 10_000 });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
   assert(
-    (await page
-      .getByRole("button", { name: "Update", exact: true })
-      .count()) === 0,
-    "Legacy Overview must hide an unavailable update action",
+    (await page.getByRole("heading", { name: "Update not ready" }).count()) === 0 &&
+      (await page
+        .getByRole("button", { name: "Update", exact: true })
+        .count()) === 0,
+    "Overview must not announce an unavailable update",
   );
   await clickNavigation(page, "Updates");
+  await page.getByRole("heading", { name: "Up to date" }).waitFor({
+    timeout: 10_000,
+  });
   const unavailableButton = page.getByRole("button", {
     name: "Update",
     exact: true,
@@ -6188,8 +6199,9 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   );
   await firstUsageLaneLayer.click();
   assert(
-    (await page.getByLabel("Usage lane").innerText()) === "Hide with slot 1",
-    "migrated first-slot layer should expose its lane ownership in the inspector",
+    (await page.getByLabel("Show when").innerText()) ===
+      "Usage window 1 has data",
+    "migrated first-window layer should explain when it is visible",
   );
   await captureMigrationScreenshot(page, "08-theme-studio-1180x820.png");
   assert(

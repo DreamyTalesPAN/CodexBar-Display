@@ -154,14 +154,15 @@ export function UsageScreen({
             refreshing={refreshing}
           />
         ) : tokenUsagePending ? (
-          <Alert className="mb-6 bg-muted">
-            <Info />
-            <AlertTitle>Token history is loading</AlertTitle>
-            <AlertDescription>
-              Provider quotas stay visible while VibeTV reads local token
-              history.
-            </AlertDescription>
-          </Alert>
+          <div
+            aria-live="polite"
+            className="mb-6 flex items-center gap-2 text-sm text-muted-foreground"
+            data-testid="token-history-loading"
+            role="status"
+          >
+            <Spinner className="size-5" />
+            <span>Token history is loading</span>
+          </div>
         ) : null}
 
         {hasProviders ? (

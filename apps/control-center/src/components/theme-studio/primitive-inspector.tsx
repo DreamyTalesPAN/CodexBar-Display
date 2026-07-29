@@ -10,12 +10,12 @@ const DEFAULT_SPRITE_FPS = 8;
 
 const VARIABLE_TOKENS = [
   { label: "Label", token: "{label}" },
-  { label: "Slot 1 label", token: "{usageSlot1Label}" },
-  { label: "Slot 1 %", token: "{usageSlot1Percent}" },
-  { label: "Slot 1 reset", token: "{usageSlot1Reset}" },
-  { label: "Slot 2 label", token: "{usageSlot2Label}" },
-  { label: "Slot 2 %", token: "{usageSlot2Percent}" },
-  { label: "Slot 2 reset", token: "{usageSlot2Reset}" },
+  { label: "Usage window 1 label", token: "{usageSlot1Label}" },
+  { label: "Usage window 1 %", token: "{usageSlot1Percent}" },
+  { label: "Usage window 1 reset", token: "{usageSlot1Reset}" },
+  { label: "Usage window 2 label", token: "{usageSlot2Label}" },
+  { label: "Usage window 2 %", token: "{usageSlot2Percent}" },
+  { label: "Usage window 2 reset", token: "{usageSlot2Reset}" },
   { label: "Mode", token: "{usageMode}" },
   { label: "Time", token: "{time}" },
 ];
@@ -48,13 +48,13 @@ export function PrimitiveInspector({
       </div>
 
       <SelectField
-        label="Usage lane"
+        label="Show when"
         value={primitive.slot ? String(primitive.slot) : ""}
         onChange={(value) => onChange("slot", value ? Number(value) : "")}
         options={[
-          ["", "Always visible"],
-          ["1", "Hide with slot 1"],
-          ["2", "Hide with slot 2"],
+          ["", "Always"],
+          ["1", "Usage window 1 has data"],
+          ["2", "Usage window 2 has data"],
         ]}
       />
 
@@ -102,12 +102,12 @@ export function PrimitiveInspector({
             options={[
               ["", "None"],
               ["label", "Label"],
-              ["usageSlot1Label", "Slot 1 label"],
-              ["usageSlot1Percent", "Slot 1 %"],
-              ["usageSlot1Reset", "Slot 1 reset"],
-              ["usageSlot2Label", "Slot 2 label"],
-              ["usageSlot2Percent", "Slot 2 %"],
-              ["usageSlot2Reset", "Slot 2 reset"],
+              ["usageSlot1Label", "Usage window 1 label"],
+              ["usageSlot1Percent", "Usage window 1 %"],
+              ["usageSlot1Reset", "Usage window 1 reset"],
+              ["usageSlot2Label", "Usage window 2 label"],
+              ["usageSlot2Percent", "Usage window 2 %"],
+              ["usageSlot2Reset", "Usage window 2 reset"],
               ["session", "Session (legacy)"],
               ["weekly", "Weekly (legacy)"],
               ["reset", "Reset (legacy)"],
@@ -169,8 +169,8 @@ export function PrimitiveInspector({
             value={primitive.binding || "session"}
             onChange={(value) => onChange("binding", value)}
             options={[
-              ["usageSlot1Percent", "Slot 1 %"],
-              ["usageSlot2Percent", "Slot 2 %"],
+              ["usageSlot1Percent", "Usage window 1 %"],
+              ["usageSlot2Percent", "Usage window 2 %"],
               ["session", "Session (legacy)"],
               ["weekly", "Weekly (legacy)"],
             ]}

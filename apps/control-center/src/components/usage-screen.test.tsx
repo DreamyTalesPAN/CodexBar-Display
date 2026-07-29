@@ -129,7 +129,8 @@ describe("UsageScreen", () => {
     );
 
     expect(html).toContain("Token history is loading");
-    expect(html).toContain("Provider quotas stay visible");
+    expect(html).toContain('data-testid="token-history-loading"');
+    expect(html).toContain('data-slot="spinner"');
     expect(html).toContain("Codex");
     expect(html).toContain("Session: 12% used");
     expect(html).toContain("Weekly: 34% used");

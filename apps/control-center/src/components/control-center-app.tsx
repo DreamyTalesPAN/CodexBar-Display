@@ -3379,13 +3379,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     >
       {activeShellTab === "overview" ? (
         <OverviewScreen
-          companionRelease={companionRelease}
           companionVersion={companionInfo?.version}
           companionStatus={companionStatus}
           device={device}
           displayFrame={displayFrame}
-          firmwareUpdate={effectiveFirmwareUpdate}
-          requiresMacAppMigration={requiresMacAppMigration}
           usage={usage}
         />
       ) : null}
