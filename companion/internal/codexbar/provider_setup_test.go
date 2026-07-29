@@ -236,18 +236,19 @@ func TestFindBinaryUsesOnlyAppManagedPinnedPayload(t *testing.T) {
 		systemAppBinaryPaths = originalSystemApps
 	}()
 	executablePathFn = func() (string, error) { return filepath.Join(t.TempDir(), "codexbar-display"), nil }
-	t.Setenv("CODEXBAR_BIN", "")
 	t.Setenv(appManagedCodexBarVersionEnvVar, "0.46.0")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	privateCLI := filepath.Join(home, "Library", "Application Support", "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
+	foreignCLI := filepath.Join(t.TempDir(), "false-codexbar")
 	systemCLI := filepath.Join(t.TempDir(), "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
 	pathDir := t.TempDir()
 	pathCLI := filepath.Join(pathDir, "codexbar")
 	systemAppBinaryPaths = []string{systemCLI}
 	t.Setenv("PATH", pathDir)
-	for _, path := range []string{privateCLI, systemCLI, pathCLI} {
+	t.Setenv("CODEXBAR_BIN", foreignCLI)
+	for _, path := range []string{privateCLI, foreignCLI, systemCLI, pathCLI} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
 		}

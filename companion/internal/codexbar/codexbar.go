@@ -114,15 +114,15 @@ func classifyParseError(err error) FetchErrorKind {
 }
 
 func FindBinary() (string, error) {
+	if version := strings.TrimSpace(os.Getenv(appManagedCodexBarVersionEnvVar)); version != "" {
+		return findAppManagedBinary(version)
+	}
+
 	if env := strings.TrimSpace(os.Getenv("CODEXBAR_BIN")); env != "" {
 		if isExecutable(env) {
 			return env, nil
 		}
 		return "", fmt.Errorf("CODEXBAR_BIN is not executable: %s", env)
-	}
-
-	if version := strings.TrimSpace(os.Getenv(appManagedCodexBarVersionEnvVar)); version != "" {
-		return findAppManagedBinary(version)
 	}
 
 	// The native Control Center ships CodexBarCLI next to codexbar-display.
