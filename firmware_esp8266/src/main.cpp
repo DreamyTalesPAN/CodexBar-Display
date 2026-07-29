@@ -615,6 +615,11 @@ void appendStandbyStateJSON(String& out) {
   out += standbyState.active ? "true" : "false";
   out += ",\"idleSecs\":";
   out += String((millis() - standbyState.lastActivityMs) / 1000UL);
+  // While standby draws the screensaver, display.themeSpec.path is the
+  // screensaver, not the live slot. A host that restores the live theme has to
+  // read this instead, or it would write the screensaver into the live slot.
+  out += ",\"liveThemePath\":";
+  appendJSONNullableString(out, standbyLiveThemePath);
   out += "}";
 }
 

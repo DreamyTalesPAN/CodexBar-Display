@@ -73,6 +73,25 @@ type DeviceHealthSnapshot struct {
 			LastErrorStage   string `json:"lastErrorStage"`
 		} `json:"gif"`
 	} `json:"display"`
+	// While Standby.Active is true the device draws the screensaver, so
+	// Display.ThemeSpec.Path is the screensaver and LiveThemePath is the live
+	// slot the device will return to.
+	Standby struct {
+		Active        bool   `json:"active"`
+		LiveThemePath string `json:"liveThemePath"`
+	} `json:"standby"`
+}
+
+// LiveThemeSpecPath reports the live slot regardless of what is drawn right
+// now, so a caller cannot mistake a screensaver on screen for the live theme.
+func (s DeviceHealthSnapshot) LiveThemeSpecPath() string {
+	if s.Standby.Active {
+		return strings.TrimSpace(s.Standby.LiveThemePath)
+	}
+	if !s.Display.ThemeSpec.Active {
+		return ""
+	}
+	return strings.TrimSpace(s.Display.ThemeSpec.Path)
 }
 
 type DeviceAsset struct {

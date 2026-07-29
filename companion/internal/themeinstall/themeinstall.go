@@ -381,7 +381,9 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		}
 	}
 
-	cleanupSlotAssets(wifi, &resolvedTarget, opts.PairTokenStore, out, themepack.SlotPathPrefix(slot), themePackDevicePaths(pack))
+	if live || screensaverSweepSafe(wifi, resolvedTarget, out) {
+		cleanupSlotAssets(wifi, &resolvedTarget, opts.PairTokenStore, out, themepack.SlotPathPrefix(slot), themePackDevicePaths(pack))
+	}
 
 	installed := "theme"
 	if !live {
@@ -541,13 +543,16 @@ func sendClearThemeSpecFrame(ctx context.Context, wifi transportlayer.WiFiTransp
 	return nil
 }
 
+// currentStoredThemePath is the live theme to return to if the install fails.
+// It reads the live slot, never the screen: during standby the screensaver is
+// what is drawn, and restoring that would write it into the live slot for good.
 func currentStoredThemePath(wifi transportlayer.WiFiTransport, target string) (string, error) {
 	health, err := wifi.DeviceHealthSnapshot(target)
 	if err != nil {
 		return "", err
 	}
-	path := strings.TrimSpace(health.Display.ThemeSpec.Path)
-	if !health.Display.ThemeSpec.Active || path == "" || strings.EqualFold(strings.TrimSpace(health.Display.ActiveTheme), "installing") {
+	path := health.LiveThemeSpecPath()
+	if path == "" || strings.EqualFold(strings.TrimSpace(health.Display.ActiveTheme), "installing") {
 		return "", nil
 	}
 	return path, nil
@@ -699,6 +704,24 @@ func sendClearThemeSpecFrameWithPairRetry(
 	}
 	*target = pairedTarget
 	return sendClearThemeSpecFrame(ctx, wifi, *target, caps, fetchFrame)
+}
+
+// screensaverSweepSafe reports whether the screensaver directory can be swept.
+// Selecting a screensaver does not redraw, so the previous one stays on screen
+// until the next standby transition: deleting its files now would leave a
+// broken render until the customer wakes the device. The stale files are swept
+// by the next screensaver install that runs while the device is awake.
+func screensaverSweepSafe(wifi transportlayer.WiFiTransport, target string, out io.Writer) bool {
+	health, err := wifi.DeviceHealthSnapshot(target)
+	if err != nil {
+		fmt.Fprintf(out, "Theme file cleanup: skipped (%v)\n", err)
+		return false
+	}
+	if health.Standby.Active {
+		fmt.Fprintln(out, "Theme file cleanup: skipped while the screensaver is showing")
+		return false
+	}
+	return true
 }
 
 // cleanupSlotAssets sweeps only the directory the installed slot owns, so a
