@@ -1222,6 +1222,9 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	persistActiveWiFiTarget(port, deps)
 	if result.failureErr == nil && !frame.UsageUnavailable {
 		updateLastGoodState(state, frame, deps.now(), deps)

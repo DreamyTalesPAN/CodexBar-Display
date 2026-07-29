@@ -980,6 +980,127 @@ func TestRunCycleWithDepsFailedSendDoesNotOverwriteLastGood(t *testing.T) {
 	}
 }
 
+func TestTimedOutCycleDoesNotPersistAfterLateSuccessfulSend(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	oldTarget := "http://192.168.178.20"
+	newTarget := "http://192.168.178.99"
+	oldAt := time.Date(2026, 7, 29, 21, 22, 11, 0, time.UTC)
+	newAt := oldAt.Add(2 * time.Second)
+	current := oldAt
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	cfg := runtimeconfig.Config{
+		DeviceID:     "vibetv-test-device",
+		DeviceTarget: oldTarget,
+		DeviceToken:  "pair-token",
+	}
+	sendStarted := make(chan struct{})
+	releaseSend := make(chan struct{})
+	cycleFinished := make(chan error, 1)
+	timeoutResult := make(chan error, 1)
+	saveConfigCalls := 0
+
+	go func() {
+		timeoutResult <- runCycleWithTimeout(context.Background(), 100*time.Millisecond, func(ctx context.Context) error {
+			err := runCycleWithDeps(ctx, oldTarget, state, runtimeDeps{
+				now:           func() time.Time { return current },
+				transportName: "wifi",
+				homeDir:       func() (string, error) { return "/tmp/codexbar-display-test", nil },
+				loadConfig: func(string) (runtimeconfig.Config, error) {
+					return cfg, nil
+				},
+				saveConfig: func(_ string, saved runtimeconfig.Config) error {
+					saveConfigCalls++
+					cfg = saved
+					return nil
+				},
+				resolvePort: func(target string) (string, error) {
+					return target, nil
+				},
+				deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+					return protocol.DeviceCapabilities{
+						Known:                     true,
+						Board:                     "esp8266-smalltv-st7789",
+						NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+						MaxFrameBytes:             2048,
+					}, nil
+				},
+				fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+					return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 30, 3600)}, nil
+				},
+				logf: func(string, ...any) {},
+				sendLine: func(string, []byte) error {
+					close(sendStarted)
+					<-releaseSend
+					return nil
+				},
+			})
+			cycleFinished <- err
+			return err
+		})
+	}()
+
+	select {
+	case <-sendStarted:
+	case <-time.After(time.Second):
+		t.Fatalf("old cycle did not reach sendLine")
+	}
+	select {
+	case err := <-timeoutResult:
+		if err == nil {
+			t.Fatalf("expected old cycle to time out")
+		}
+		if runtimeErr := asRuntimeError(err); runtimeErr.Kind != runtimeErrorCycleTimeout {
+			t.Fatalf("expected runtime cycle timeout, got %s", runtimeErr.Kind)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("old cycle did not time out while sendLine was blocked")
+	}
+
+	newFrame := protocol.Frame{
+		Provider: "claude",
+		Label:    "Claude",
+		Session:  70,
+		Weekly:   80,
+		ResetSec: 7200,
+	}.Normalize()
+	current = newAt
+	state.lastGood = newFrame
+	state.lastGoodAt = newAt
+	state.hasLastGood = true
+	state.lastPersistedGood = newFrame
+	state.lastPersistedAt = newAt
+	state.hasPersistedGood = true
+	if err := persistLastGood(newFrame, newAt); err != nil {
+		t.Fatalf("persist newer last-good frame: %v", err)
+	}
+	cfg.DeviceTarget = newTarget
+
+	close(releaseSend)
+	select {
+	case err := <-cycleFinished:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected timed-out cycle to finish as canceled, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("timed-out cycle did not finish after releasing sendLine")
+	}
+
+	if state.lastGood.Provider != "claude" || state.lastGood.Session != 70 || !state.lastGoodAt.Equal(newAt) {
+		t.Fatalf("timed-out old cycle overwrote runtime last-good: %+v at %s", state.lastGood, state.lastGoodAt)
+	}
+	persisted, savedAt, ok := loadPersistedLastGoodAnyAge()
+	if !ok {
+		t.Fatalf("expected newer persisted last-good frame to remain")
+	}
+	if persisted.Provider != "claude" || persisted.Session != 70 || !savedAt.Equal(newAt) {
+		t.Fatalf("timed-out old cycle overwrote persisted last-good: frame=%+v savedAt=%s", persisted, savedAt)
+	}
+	if cfg.DeviceTarget != newTarget || saveConfigCalls != 0 {
+		t.Fatalf("timed-out old cycle persisted stale WiFi target: target=%q saves=%d", cfg.DeviceTarget, saveConfigCalls)
+	}
+}
+
 func TestPersistAndLoadLastGood(t *testing.T) {
 	prepareFastTestEnv(t)
 
