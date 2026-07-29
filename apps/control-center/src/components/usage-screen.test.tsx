@@ -130,6 +130,9 @@ describe("UsageScreen", () => {
 
     expect(html).toContain("Token history is loading");
     expect(html).toContain('data-testid="token-history-loading"');
+    expect(html).toContain('data-slot="card"');
+    expect(html).toContain("min-h-[294px]");
+    expect(html).toContain("items-center justify-center");
     expect(html).toContain('data-slot="spinner"');
     expect(html).toContain("Codex");
     expect(html).toContain("Session: 12% used");

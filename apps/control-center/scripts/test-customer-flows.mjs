@@ -1534,12 +1534,38 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     await page
       .getByText("Token history is loading", { exact: true })
       .waitFor({ timeout: 10_000 });
+    const tokenHistoryLoading = page.getByTestId("token-history-loading");
+    const tokenHistorySpinner = tokenHistoryLoading.locator(
+      '[data-slot="spinner"]',
+    );
     assert(
-      (await page
-        .getByTestId("token-history-loading")
-        .locator('[data-slot="spinner"]')
-        .count()) === 1,
-      "Token history loading must use the compact spinner",
+      (await tokenHistoryLoading.getAttribute("data-slot")) === "card",
+      "Token history loading must use the full token card placeholder",
+    );
+    assert(
+      (await tokenHistorySpinner.count()) === 1,
+      "Token history loading must use the existing spinner",
+    );
+    const tokenHistoryCardBox = await tokenHistoryLoading.boundingBox();
+    const tokenHistorySpinnerBox = await tokenHistorySpinner.boundingBox();
+    assert(
+      tokenHistoryCardBox && tokenHistoryCardBox.height >= 294,
+      "Token history loading card must reserve the token chart height",
+    );
+    assert(
+      tokenHistoryCardBox &&
+        tokenHistorySpinnerBox &&
+        Math.abs(
+          tokenHistorySpinnerBox.x +
+            tokenHistorySpinnerBox.width / 2 -
+            (tokenHistoryCardBox.x + tokenHistoryCardBox.width / 2),
+        ) <= 1 &&
+        Math.abs(
+          tokenHistorySpinnerBox.y +
+            tokenHistorySpinnerBox.height / 2 -
+            (tokenHistoryCardBox.y + tokenHistoryCardBox.height / 2),
+        ) <= 1,
+      "Token history spinner must be centered in its placeholder card",
     );
     await page
       .getByRole("heading", { name: "AI providers", exact: true })

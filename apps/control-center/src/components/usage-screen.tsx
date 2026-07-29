@@ -154,15 +154,15 @@ export function UsageScreen({
             refreshing={refreshing}
           />
         ) : tokenUsagePending ? (
-          <div
+          <Card
             aria-live="polite"
-            className="mb-6 flex items-center gap-2 text-sm text-muted-foreground"
+            className="mb-6 min-h-[294px] items-center justify-center"
             data-testid="token-history-loading"
             role="status"
           >
-            <Spinner className="size-5" />
-            <span>Token history is loading</span>
-          </div>
+            <Spinner className="size-6" />
+            <span className="sr-only">Token history is loading</span>
+          </Card>
         ) : null}
 
         {hasProviders ? (
