@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1515,7 +1516,7 @@ func (s *Server) cachedExactUsageOverlay(now time.Time, usage daemon.PersistedUs
 		s.usageCacheMu.RUnlock()
 		return usageResponse{}, false
 	}
-	cached := *s.usageCache
+	cached := cloneCachedUsageResponse(*s.usageCache)
 	cachedAt := s.usageCacheAt
 	s.usageCacheMu.RUnlock()
 
@@ -1561,6 +1562,14 @@ func (s *Server) cachedExactUsageOverlay(now time.Time, usage daemon.PersistedUs
 	current.UsageMode = usageModeForProviders(current.Providers)
 	current.TokenUsageReady = usageProvidersHaveTokenResult(current.Providers)
 	return current, true
+}
+
+func cloneCachedUsageResponse(response usageResponse) usageResponse {
+	response.Providers = slices.Clone(response.Providers)
+	for i := range response.Providers {
+		response.Providers[i].Windows = slices.Clone(response.Providers[i].Windows)
+	}
+	return response
 }
 
 func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {

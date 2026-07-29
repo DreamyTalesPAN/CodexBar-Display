@@ -586,6 +586,80 @@ func TestFreshExactZeroUsageDisplacesStaleGeminiSnapshot(t *testing.T) {
 	t.Fatalf("fresh zero-usage Antigravity snapshot missing: %#v", server.usageCache)
 }
 
+func TestCachedExactUsageOverlayDoesNotShareProvidersWithConcurrentWriter(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 29, 10, 30, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	parsed := func(weekly int) codexbar.ParsedFrame {
+		return codexbar.ParsedFrame{
+			Provider: "codex",
+			Frame: protocol.Frame{
+				Provider: "codex",
+				Label:    "Codex",
+				Weekly:   weekly,
+			},
+			Meta: codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{{
+				ID: "weekly", Label: "Weekly", UsedPercent: weekly,
+			}}},
+			CollectedAt: now,
+		}
+	}
+	server.cacheExactProviderUsage(parsed(10))
+
+	readerReady := make(chan usageResponse, 1)
+	writerDone := make(chan struct{})
+	result := make(chan usageResponse, 1)
+	go func() {
+		snapshot, ok := server.cachedExactUsageOverlay(now, daemon.PersistedUsage{})
+		if !ok {
+			snapshot = usageResponse{}
+		}
+		readerReady <- snapshot
+		<-writerDone
+		result <- snapshot
+	}()
+
+	if snapshot := <-readerReady; len(snapshot.Providers) != 1 {
+		t.Fatalf("cached usage reader did not return a snapshot: %#v", snapshot)
+	}
+	server.cacheExactProviderUsage(parsed(90))
+	close(writerDone)
+
+	snapshot := <-result
+	if len(snapshot.Providers) != 1 ||
+		snapshot.Providers[0].Weekly != 10 ||
+		len(snapshot.Providers[0].Windows) != 1 ||
+		snapshot.Providers[0].Windows[0].UsedPercent != 10 {
+		t.Fatalf("concurrent cache write mutated the reader snapshot: %#v", snapshot.Providers)
+	}
+}
+
+func TestCachedExactUsageOverlayOwnsMutableWindows(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 29, 10, 30, 0, 0, time.UTC)
+	server.usageCache = &usageResponse{
+		CurrentProvider: "codex",
+		Providers: []usageProviderInfo{{
+			ID:        "codex",
+			UsageMode: "used",
+			Windows:   []usageWindowInfo{{ID: "weekly", UsedPercent: 10}},
+		}},
+	}
+	server.usageCacheAt = now
+
+	snapshot, ok := server.cachedExactUsageOverlay(now, daemon.PersistedUsage{})
+	if !ok {
+		t.Fatal("expected cached usage snapshot")
+	}
+	_ = usageResponseForDisplayMode(snapshot, false)
+
+	server.usageCacheMu.RLock()
+	defer server.usageCacheMu.RUnlock()
+	if got := server.usageCache.Providers[0].Windows[0].UsedPercent; got != 10 {
+		t.Fatalf("display conversion mutated cached window: got %d want 10", got)
+	}
+}
+
 func TestExactUsageCacheRejectsOldOrUndatedSnapshots(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
