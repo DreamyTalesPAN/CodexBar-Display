@@ -5,15 +5,15 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VALIDATOR="${ROOT}/scripts/validate-hardware-canary.py"
 REPO="DreamyTalesPAN/CodexBar-Display"
 CANDIDATE_RUN_ID=""; CANDIDATE_DIR=""; TARGET=""; EXPECTED_DEVICE_ID=""; OUTPUT_DIR=""
-RECOVERY_PORT=""; CONFIRM_DEVICE_ID=""; CONFIRM_WRITE_RISK=""; DRY_RUN=0
+CONFIRM_DEVICE_ID=""; CONFIRM_WRITE_RISK=""; DRY_RUN=0
 CONFIRM_RENDER=""; CONFIRM_POWER_CYCLE=""; ACTOR=""
 RESUME_STATE=""
 
-usage() { echo "usage: $0 (--candidate-run-id ID|--candidate-dir DIR) --target URL --expected-device-id ID --output-dir DIR [--recovery-port PORT --confirm-device-id ID --confirm-hardware-write-risk] [--dry-run]" >&2; exit 2; }
+usage() { echo "usage: $0 (--candidate-run-id ID|--candidate-dir DIR) --target URL --expected-device-id ID --output-dir DIR [--confirm-device-id ID --confirm-hardware-write-risk] [--dry-run]" >&2; exit 2; }
 die() { echo "error: $*" >&2; exit 1; }
 while [[ $# -gt 0 ]]; do case "$1" in
   --candidate-run-id) CANDIDATE_RUN_ID="${2:-}"; shift 2;; --candidate-dir) CANDIDATE_DIR="${2:-}"; shift 2;; --target) TARGET="${2:-}"; shift 2;; --expected-device-id) EXPECTED_DEVICE_ID="${2:-}"; shift 2;; --output-dir) OUTPUT_DIR="${2:-}"; shift 2;;
-  --recovery-port) RECOVERY_PORT="${2:-}"; shift 2;; --confirm-device-id) CONFIRM_DEVICE_ID="${2:-}"; shift 2;; --confirm-hardware-write-risk) CONFIRM_WRITE_RISK=1; shift;; --confirm-render-visible) CONFIRM_RENDER=1; shift;; --confirm-power-cycle-10s) CONFIRM_POWER_CYCLE=1; shift;; --actor) ACTOR="${2:-}"; shift 2;; --resume) RESUME_STATE="${2:-}"; shift 2;; --dry-run) DRY_RUN=1; shift;; *) usage;; esac; done
+  --confirm-device-id) CONFIRM_DEVICE_ID="${2:-}"; shift 2;; --confirm-hardware-write-risk) CONFIRM_WRITE_RISK=1; shift;; --confirm-render-visible) CONFIRM_RENDER=1; shift;; --confirm-power-cycle-10s) CONFIRM_POWER_CYCLE=1; shift;; --actor) ACTOR="${2:-}"; shift 2;; --resume) RESUME_STATE="${2:-}"; shift 2;; --dry-run) DRY_RUN=1; shift;; *) usage;; esac; done
 [[ -n "$TARGET" && -n "$EXPECTED_DEVICE_ID" && -n "$OUTPUT_DIR" ]] || usage
 if [[ -z "$RESUME_STATE" ]]; then
   [[ -n "$CANDIDATE_RUN_ID" || -n "$CANDIDATE_DIR" ]] && [[ -z "$CANDIDATE_RUN_ID" || -z "$CANDIDATE_DIR" ]] || usage
@@ -22,7 +22,7 @@ if (( DRY_RUN )); then
   [[ -n "$CANDIDATE_DIR" ]] && "$VALIDATOR" candidate --candidate-dir "$CANDIDATE_DIR" >/dev/null
   echo "DRY RUN: no network, launchctl, or hardware command will run"
   echo "candidate verified${CANDIDATE_DIR:+: ${CANDIDATE_DIR}}"
-  echo "plan: read-only /hello and /health; exact candidate daemon render; firmware write only with recovery port and both confirmations"
+  echo "plan: read-only /hello and /health; exact candidate daemon render; WiFi OTA only with exact device ID and explicit hardware-risk confirmation"
   exit 0
 fi
 
@@ -133,10 +133,10 @@ PY
   exit 0
 fi
 if [[ "$(semver_compare "$candidate_version" "$before")" == 1 ]]; then
-  [[ "$board" == "esp8266-smalltv-st7789" ]] || die "firmware write blocked for board $board: no recovery/backup path is implemented"
-  [[ -n "$RECOVERY_PORT" && "$CONFIRM_DEVICE_ID" == "$EXPECTED_DEVICE_ID" && -n "$CONFIRM_WRITE_RISK" ]] || die "firmware write requires --recovery-port, exact --confirm-device-id, and --confirm-hardware-write-risk"
+  [[ "$board" == "esp8266-smalltv-st7789" ]] || die "firmware write blocked for unsupported board $board"
+  [[ "$CONFIRM_DEVICE_ID" == "$EXPECTED_DEVICE_ID" && -n "$CONFIRM_WRITE_RISK" ]] || die "WiFi firmware write requires exact --confirm-device-id and --confirm-hardware-write-risk"
+  echo "WARNING: VibeTV firmware updates are WiFi-only. There is no USB backup or automatic rollback; an interrupted OTA may require service or device replacement." >&2
   mkdir -p "$OUTPUT_DIR"
-  "${ROOT}/scripts/esp8266-backup.sh" "$RECOVERY_PORT" "$OUTPUT_DIR/usb-backup.bin" 0x400000
   cp "$firmware_manifest" "$OUTPUT_DIR/candidate-firmware-manifest.json"
 fi
 mkdir -p "$work/serve"
@@ -167,7 +167,7 @@ PY
 cp "$local_manifest" "$OUTPUT_DIR/candidate-firmware-manifest.json"
 if ! "$companion" install-update --target "$TARGET" --manifest-url "http://127.0.0.1:$port/${local_manifest#$work/}" --skip-launchagent-pause; then
   write_evidence unknown "$before" "" || true
-  echo "OTA outcome unknown: STOP. Read-only diagnosis only; no retry or rollback. Recovery: $companion restore-known-good --port $RECOVERY_PORT" >&2
+  echo "OTA outcome unknown: STOP. Read-only diagnosis only; no retry or automatic rollback. The WiFi-only device may require service or replacement." >&2
   exit 1
 fi
 if ! daemon_output="$("$companion" daemon --transport wifi --target "$TARGET" --once 2>&1)" || [[ "$daemon_output" != *"sent frame ->"* ]]; then

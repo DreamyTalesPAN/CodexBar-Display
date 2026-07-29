@@ -114,7 +114,10 @@ PY
   grep -F -- '--confirm-power-cycle-10s' "${CANARY}" >/dev/null || die "canary lacks explicit power-cycle confirmation"
   grep -F 'write_evidence unknown' "${CANARY}" >/dev/null || die "canary lacks unknown-write evidence"
   grep -F "role']=='companion'" "${CANARY}" >/dev/null || die "canary does not select the candidate companion role"
-  grep -F 'esp8266-backup.sh' "${CANARY}" >/dev/null || die "canary does not create the required full USB backup"
+  if grep -F -- '--recovery-port' "${CANARY}" >/dev/null || grep -F 'esp8266-backup.sh' "${CANARY}" >/dev/null; then
+    die "customer hardware canary must not require a nonexistent USB recovery path"
+  fi
+  grep -F 'WiFi-only' "${CANARY}" >/dev/null || die "canary does not disclose the WiFi-only update risk"
   grep -F 'vibetv-hardware-canary' "${WORKFLOW}" >/dev/null || die "workflow uses the wrong evidence artifact name"
   grep -F 'semver_compare' "${CANARY}" >/dev/null || die "canary does not compare firmware versions as SemVer"
   grep -F 'candidate-firmware-manifest.json' "${CANARY}" >/dev/null || die "canary does not create a local absolute firmware manifest"
@@ -128,8 +131,9 @@ PY
   grep -F 'gh api user --jq .login' "${CANARY}" >/dev/null || die "canary does not resolve a GitHub actor"
   grep -F 'wait_for_resume_health' "${CANARY}" >/dev/null || die "resume does not bound hello and health polling"
   grep -F 'daemon --transport wifi --target "$TARGET" --once' "${CANARY}" >/dev/null || die "resume does not rerun the candidate daemon"
-  grep -F 'esp8266-smalltv-st7789' "${CANARY}" >/dev/null || die "canary does not gate ESP8266 backup by board"
-  grep -F 'no recovery/backup path is implemented' "${CANARY}" >/dev/null || die "canary does not fail closed for unsupported firmware boards"
+  grep -F 'esp8266-smalltv-st7789' "${CANARY}" >/dev/null || die "canary does not gate firmware writes by supported board"
+  grep -F 'firmware write blocked for unsupported board' "${CANARY}" >/dev/null || die "canary does not fail closed for unsupported firmware boards"
+  grep -F 'exact --confirm-device-id and --confirm-hardware-write-risk' "${CANARY}" >/dev/null || die "canary does not require exact device and risk confirmation"
   if grep -F 'resume read-only' "${CANARY}" >/dev/null; then die "resume is misleadingly labelled read-only despite its frame send"; fi
 }
 
