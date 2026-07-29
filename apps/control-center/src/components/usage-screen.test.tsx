@@ -267,7 +267,7 @@ describe("UsageScreen", () => {
       })),
     });
 
-    expect(html).toContain("Stale");
+    expect(html).toContain("Usage limits are stale.");
     expect(html).toContain("Session: ??");
     expect(html).toContain("Token usage");
     expect(html).not.toContain("Usage is still loading");
