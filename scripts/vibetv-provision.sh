@@ -210,22 +210,24 @@ build_theme_assets_json() {
   local assets_json="[]"
   local asset normalized rel src bytes sha
 
-  for asset in "${required_assets[@]}"; do
-    normalized="$(normalize_asset_path "$asset")"
-    rel="${normalized#/}"
-    src="${project_dir}/data/${rel}"
-    [[ -f "$src" ]] || die "required theme asset not found in data dir: ${src}"
-    bytes="$(wc -c <"$src" | tr -d ' ')"
-    [[ "$bytes" -gt 0 ]] || die "required theme asset is empty: ${src}"
-    sha="$(sha256_file "$src")"
-    assets_json="$(jq -c \
-      --arg path "$normalized" \
-      --arg file "data/${rel}" \
-      --arg sha "$sha" \
-      --argjson bytes "$bytes" \
-      '. + [{"path":$path,"file":$file,"bytes":$bytes,"sha256":$sha,"required":true}] | unique_by(.path)' \
-      <<<"$assets_json")"
-  done
+  if (( ${#required_assets[@]} > 0 )); then
+    for asset in "${required_assets[@]}"; do
+      normalized="$(normalize_asset_path "$asset")"
+      rel="${normalized#/}"
+      src="${project_dir}/data/${rel}"
+      [[ -f "$src" ]] || die "required theme asset not found in data dir: ${src}"
+      bytes="$(wc -c <"$src" | tr -d ' ')"
+      [[ "$bytes" -gt 0 ]] || die "required theme asset is empty: ${src}"
+      sha="$(sha256_file "$src")"
+      assets_json="$(jq -c \
+        --arg path "$normalized" \
+        --arg file "data/${rel}" \
+        --arg sha "$sha" \
+        --argjson bytes "$bytes" \
+        '. + [{"path":$path,"file":$file,"bytes":$bytes,"sha256":$sha,"required":true}] | unique_by(.path)' \
+        <<<"$assets_json")"
+    done
+  fi
 
   printf '%s\n' "$assets_json"
 }
@@ -494,13 +496,15 @@ check_assets() {
     "$(artifact_path manifest.json)" >>"$expected_file"
 
   local asset normalized
-  for asset in "${required_assets[@]}"; do
-    if [[ -z "$asset" ]]; then
-      continue
-    fi
-    normalized="$(normalize_asset_path "$asset")"
-    printf '%s\t\t\n' "$normalized" >>"$expected_file"
-  done
+  if (( ${#required_assets[@]} > 0 )); then
+    for asset in "${required_assets[@]}"; do
+      if [[ -z "$asset" ]]; then
+        continue
+      fi
+      normalized="$(normalize_asset_path "$asset")"
+      printf '%s\t\t\n' "$normalized" >>"$expected_file"
+    done
+  fi
   sort -u "$expected_file" >"$sorted_expected_file"
 
   local expected_path expected_bytes expected_sha asset_metadata actual_bytes actual_sha
