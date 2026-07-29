@@ -384,7 +384,7 @@ export function LiveVibeTVPreview({
   return (
     <figure className="w-full max-w-[520px]">
       <VibeTVCaseShell>
-        {!deviceConnected || (!deviceReady && !waitingForUsage) ? (
+        {!deviceConnected || (!deviceReady && !waitingForUsage && !frame) ? (
           <ThemePreviewOffline />
         ) : pack?.spec && frame ? (
           <ThemeSpecSVG

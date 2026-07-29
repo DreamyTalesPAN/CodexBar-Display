@@ -85,6 +85,38 @@ describe("dynamic usage slot preview", () => {
     expect(markup).not.toContain("Reconnect VibeTV to continue");
   });
 
+  it("keeps a prior valid frame when a connected VibeTV is not display-ready but the stream is healthy", () => {
+    const displayFrame = {
+      ok: true,
+      frame: {
+        v: 2,
+        provider: "codex",
+        label: "Codex",
+        usageSlots: [{ id: "weekly", label: "Weekly", percent: 29 }],
+      },
+    };
+    const markup = renderToStaticMarkup(
+      createElement(LiveVibeTVPreview, {
+        device: {
+          active: true,
+          connected: true,
+          paired: true,
+          ready: false,
+          activeTheme: "synthwave",
+          stream: {
+            healthy: true,
+            running: true,
+          },
+        },
+        displayFrame,
+        usage: null,
+      }),
+    );
+
+    expect(markup).toContain("Loading preview");
+    expect(markup).not.toContain("Reconnect VibeTV to continue");
+  });
+
   it("ignores a prior frame when the selected VibeTV is disconnected", () => {
     const displayFrame = {
       ok: true,
