@@ -23,6 +23,7 @@ done
 
 python3 - "$ARCHIVE" "$OUTPUT" <<'PY'
 import pathlib
+import posixpath
 import shutil
 import sys
 import tarfile
@@ -41,7 +42,12 @@ with tarfile.open(archive, "r:gz") as candidate:
             raise SystemExit(f"unsafe candidate archive path: {member.name}")
         if not path.parts or path.parts[0] != expected_root:
             raise SystemExit(f"unexpected candidate archive root: {member.name}")
-        if not (member.isdir() or member.isfile()):
+        if member.issym():
+            link = pathlib.PurePosixPath(member.linkname)
+            resolved = pathlib.PurePosixPath(posixpath.normpath(str(path.parent / link)))
+            if not member.linkname or link.is_absolute() or not resolved.parts or resolved.parts[0] != expected_root:
+                raise SystemExit(f"unsafe candidate archive symlink: {member.name} -> {member.linkname}")
+        elif not (member.isdir() or member.isfile()):
             raise SystemExit(f"candidate archive contains a non-regular entry: {member.name}")
     output.mkdir(parents=True)
     candidate.extractall(output)
