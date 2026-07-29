@@ -102,12 +102,29 @@ limits nearly coincide, so there is no comfortable zone above the cap.
 - The ceiling is a property of the *running* firmware plus the *incoming* one.
   A device stuck on an oversized build cannot be rescued over WiFi; it needs USB.
 
-**Reading the real numbers.** `ESP.getFreeSketchSpace()` and the derived
+**Verified on hardware** (2026-07-29, ESP8266EX over USB, MAC `d8:bf:c0:58:91:dc`).
+`_FS_start` is a compile-time symbol, so the check was to read the flash and find
+where the live filesystem actually begins:
+
+- `esptool.py flash_id` reports a 4 MB chip, as the layout assumes.
+- `read_flash 0x200000` holds the running filesystem — `theme-active`, `auth`,
+  `themes`, and a stored `/themes/u/mini-cl-*.json`, at 20 percent erased.
+- `read_flash 0x100000` holds unrelated leftovers from the board's original
+  vendor firmware (`photo_config.json`, `theme_config.txt`, `*.gif`), at 95
+  percent erased. It is dead data, not a VibeTV filesystem.
+
+So the device confirms `_FS_start` at the 2 MB mark and an OTA region of
+2097152 bytes. All reads were non-destructive; the device was hard-reset back
+into normal operation afterwards.
+
+To re-run this check: `esptool.py --port <port> --after hard_reset read_flash
+0x200000 0x20000 out.bin`, then look for `theme-active` in the dump.
+
+**Reading the runtime numbers.** `ESP.getFreeSketchSpace()` and the derived
 `maxSize` are captured at OTA start (`firmware_esp8266/src/main.cpp:2458`) but
-only ever printed to Serial — no HTTP endpoint reports them. Over WiFi the
-numbers are therefore unreadable, with or without performing an update, so the
-table above is derived from the linker layout and the Updater source rather than
-read from a device. Exposing them in `GET /health` is tracked in #309.
+only ever printed to Serial — no HTTP endpoint reports them. Over WiFi they are
+unreadable, with or without performing an update. Exposing them in `GET /health`
+is tracked in #309.
 
 ## Split Thresholds (mandatory refactor trigger)
 - Any single `.cpp`/`.h` file > 800 LOC and touching > 3 responsibilities:
