@@ -37,7 +37,7 @@ bool testWifiHandlerAcknowledgesBeforeDispatch(const std::string& source) {
       "WiFi frame handler must ACK before dispatching accepted frame work");
 }
 
-bool testWifiDispatchStoresOnePendingEvent(const std::string& source) {
+bool testHttpCallbackDispatchStoresOnePendingEvent(const std::string& source) {
   const std::size_t dispatchStart = source.find("void markFrameAccepted(");
   const std::size_t dispatchEnd = source.find("\nconst char* transportCapabilitiesJSON", dispatchStart);
   if (!expect(
@@ -47,25 +47,49 @@ bool testWifiDispatchStoresOnePendingEvent(const std::string& source) {
   }
 
   const std::string dispatch = source.substr(dispatchStart, dispatchEnd - dispatchStart);
-  const std::size_t wifiCheck = dispatch.find("if (wifiTransport && event.visualChanged)");
-  const std::size_t store = dispatch.find("pendingWifiRenderEvent = event", wifiCheck);
-  const std::size_t pending = dispatch.find("pendingWifiRender = true", store);
+  const std::size_t deferCheck = dispatch.find("if (deferRender && event.visualChanged)");
+  const std::size_t store = dispatch.find("pendingHttpRenderEvent = event", deferCheck);
+  const std::size_t pending = dispatch.find("pendingHttpRender = true", store);
   const std::size_t directRender = dispatch.find("renderAcceptedFrame(event)", pending);
   return expect(
-      wifiCheck != std::string::npos && store != std::string::npos && pending != std::string::npos &&
-          directRender != std::string::npos && wifiCheck < store && store < pending && pending < directRender,
-      "WiFi visual frames must store one pending event while non-WiFi frames render directly");
+      deferCheck != std::string::npos && store != std::string::npos && pending != std::string::npos &&
+          directRender != std::string::npos && deferCheck < store && store < pending && pending < directRender,
+      "HTTP callback visual frames must store one pending event while USB frames render directly");
 }
 
-bool testPendingWifiRenderRunsBeforeUsb(const std::string& source) {
+bool testThemeActivationUsesDeferredRenderTransport(const std::string& source) {
+  const std::size_t policyStart = source.find("bool acceptedFrameRenderDeferredForTransport(");
+  const std::size_t policyEnd = source.find("\nvoid markFrameAccepted(", policyStart);
+  const std::size_t activateStart = source.find("void activateStoredThemeSpec(");
+  const std::size_t activateEnd = source.find("\nbool activateStoredThemePath(", activateStart);
+  if (!expect(
+          policyStart != std::string::npos && policyEnd != std::string::npos &&
+              activateStart != std::string::npos && activateEnd != std::string::npos,
+          "theme activation render policy must remain discoverable")) {
+    return false;
+  }
+
+  const std::string policy = source.substr(policyStart, policyEnd - policyStart);
+  const std::string activate = source.substr(activateStart, activateEnd - activateStart);
+  const std::size_t wifi = policy.find("strcmp(transport, \"wifi\") == 0");
+  const std::size_t theme = policy.find("strcmp(transport, \"theme\") == 0");
+  const std::size_t dispatch = activate.find("markFrameAccepted(event, \"theme\")");
+  const std::size_t directRender = activate.find("renderAcceptedFrame(event)");
+  return expect(
+      wifi != std::string::npos && theme != std::string::npos &&
+          dispatch != std::string::npos && directRender == std::string::npos,
+      "theme activation must queue HTTP render work instead of rendering inside /theme/active");
+}
+
+bool testPendingHttpRenderRunsBeforeUsb(const std::string& source) {
   const std::size_t loopStart = source.find("void loop()");
-  const std::size_t pending = source.find("if (pendingWifiRender)", loopStart);
+  const std::size_t pending = source.find("if (pendingHttpRender)", loopStart);
   const std::size_t render = source.find("renderAcceptedFrame(event)", pending);
   const std::size_t usb = source.find("ConsumeSerial(runtimeCtx, millis(), event)", render);
   return expect(
       loopStart != std::string::npos && pending != std::string::npos && render != std::string::npos &&
           usb != std::string::npos && pending < render && render < usb,
-      "the pending WiFi event must render before USB can replace the current frame");
+      "the pending HTTP event must render before USB can replace the current frame");
 }
 
 bool testHelloAdvertisesEscapedUsageWindowCapacity(const std::string& source) {
@@ -93,8 +117,9 @@ int main(int argc, char** argv) {
 
   const std::string source = readFile(argv[1]);
   if (!testWifiHandlerAcknowledgesBeforeDispatch(source) ||
-      !testWifiDispatchStoresOnePendingEvent(source) ||
-      !testPendingWifiRenderRunsBeforeUsb(source) ||
+      !testHttpCallbackDispatchStoresOnePendingEvent(source) ||
+      !testThemeActivationUsesDeferredRenderTransport(source) ||
+      !testPendingHttpRenderRunsBeforeUsb(source) ||
       !testHelloAdvertisesEscapedUsageWindowCapacity(source)) {
     return 1;
   }

@@ -197,8 +197,8 @@ codexbar_display::esp8266::wifi_setup::State setupWifiState;
 bool rebootPending = false;
 unsigned long rebootAtMs = 0;
 unsigned long lastFrameAcceptedAtMs = 0;
-bool pendingWifiRender = false;
-codexbar_display::core::SerialConsumeEvent pendingWifiRenderEvent;
+bool pendingHttpRender = false;
+codexbar_display::core::SerialConsumeEvent pendingHttpRenderEvent;
 bool frameStaleStatusRendered = false;
 bool captiveDnsStarted = false;
 unsigned long wifiDisconnectedAtMs = 0;
@@ -730,6 +730,14 @@ void renderAcceptedFrame(const codexbar_display::core::SerialConsumeEvent& event
   }
 }
 
+bool acceptedFrameRenderDeferredForTransport(const char* transport) {
+  if (transport == nullptr) {
+    return false;
+  }
+  return strcmp(transport, "wifi") == 0 ||
+         strcmp(transport, "theme") == 0;
+}
+
 void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, const char* transport) {
   if (statusScreenLocked()) {
     Serial.printf("frame_ignored transport=%s reason=status_screen_locked\n", transport);
@@ -765,14 +773,13 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
 #endif
   }
 
-  const bool wifiTransport = transport != nullptr && strcmp(transport, "wifi") == 0;
-  if (wifiTransport && event.visualChanged) {
-    // ESP8266WebServer invokes this from handleClient(). Keep all display work
-    // out of that callback; the event is consumed before any new frame can
-    // replace the runtime state at the start of the next loop.
-    pendingWifiRenderEvent = event;
-    pendingWifiRender = true;
-  } else if (!wifiTransport) {
+  const bool deferRender = acceptedFrameRenderDeferredForTransport(transport);
+  if (deferRender && event.visualChanged) {
+    // ESP8266WebServer invokes WiFi frame and theme activation callbacks from
+    // handleClient(). Keep display work out of those callbacks so HTTP can ACK.
+    pendingHttpRenderEvent = event;
+    pendingHttpRender = true;
+  } else if (!deferRender) {
     renderAcceptedFrame(event);
   }
   Serial.printf("frame_received transport=%s\n", transport);
@@ -2677,9 +2684,9 @@ void loop() {
   bool rendered = false;
   unsigned long renderDurationUs = 0;
 
-  if (pendingWifiRender) {
-    const codexbar_display::core::SerialConsumeEvent event = pendingWifiRenderEvent;
-    pendingWifiRender = false;
+  if (pendingHttpRender) {
+    const codexbar_display::core::SerialConsumeEvent event = pendingHttpRenderEvent;
+    pendingHttpRender = false;
     renderAcceptedFrame(event);
   }
 

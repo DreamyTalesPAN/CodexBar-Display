@@ -600,7 +600,7 @@ func activateAndVerifyTheme(
 		if err := activateThemeWithPairRetry(wifi, target, activePath, store); err != nil {
 			lastErr = err
 			lastOp = "theme-pack/activate"
-			if !themeInstallRetryableError(err) || attempt == attempts {
+			if !themeActivationRetryableError(err) || attempt == attempts {
 				return &themeActivationError{op: lastOp, err: lastErr}
 			}
 			fmt.Fprintln(out, "Theme activation interrupted, retrying...")
@@ -877,6 +877,36 @@ func themeInstallRetryableError(err error) bool {
 		"server closed idle connection",
 		"eof",
 		"temporary",
+	} {
+		if strings.Contains(msg, part) {
+			return true
+		}
+	}
+	return false
+}
+
+func themeActivationRetryableError(err error) bool {
+	if activationErrorSuggestsDeviceReboot(err) {
+		return false
+	}
+	return themeInstallRetryableError(err)
+}
+
+func activationErrorSuggestsDeviceReboot(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, part := range []string{
+		"connection reset",
+		"connection refused",
+		"broken pipe",
+		"server closed idle connection",
+		"unexpected eof",
+		"eof",
+		"no route to host",
+		"network is unreachable",
+		"host is down",
 	} {
 		if strings.Contains(msg, part) {
 			return true

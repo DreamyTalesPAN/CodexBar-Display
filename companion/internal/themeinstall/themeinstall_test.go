@@ -378,6 +378,53 @@ func TestInstallRetriesTransientThemeActivationFailure(t *testing.T) {
 	}
 }
 
+func TestActivateAndVerifyThemeDoesNotRetryPossibleDeviceReboot(t *testing.T) {
+	withFastActivationRetries(t)
+	const activePath = "/themes/u/synth.json"
+	var activationAttempts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/theme/active" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		activationAttempts++
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("test server cannot hijack connection")
+		}
+		conn, _, err := hijacker.Hijack()
+		if err != nil {
+			t.Fatalf("hijack activation response: %v", err)
+		}
+		_ = conn.Close()
+	}))
+	defer server.Close()
+
+	wifi := transportlayer.NewWiFiTransportWithClient(server.Client())
+	target := server.URL
+	var out bytes.Buffer
+	err := activateAndVerifyTheme(
+		context.Background(),
+		wifi,
+		&target,
+		protocol.DeviceCapabilities{},
+		activePath,
+		nil,
+		nil,
+		testLiveFrame,
+		&out,
+	)
+	if err == nil {
+		t.Fatal("expected activation error")
+	}
+	if activationAttempts != 1 {
+		t.Fatalf("expected exactly one activation attempt, got %d", activationAttempts)
+	}
+	if strings.Contains(out.String(), "Theme activation interrupted") ||
+		strings.Contains(out.String(), "Theme activation retry") {
+		t.Fatalf("reboot-like activation failure must not log retry copy:\n%s", out.String())
+	}
+}
+
 func TestInstallReactivatesWhenHealthStillShowsPreviousTheme(t *testing.T) {
 	withFastActivationRetries(t)
 	packDir := writeMinimalThemePack(t)
