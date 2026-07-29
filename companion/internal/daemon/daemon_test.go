@@ -2045,6 +2045,55 @@ func TestMarshalFrameWithinLimitCompactsOptionalFieldsBeforeUsageWindows(t *test
 	}
 }
 
+func TestMarshalFrameWithinAdvertisedEscapedUsageWindowCapacity(t *testing.T) {
+	const advertisedMaxUsageWindows = 7
+	frame := protocol.Frame{
+		V:         protocol.ProtocolVersionV2,
+		Provider:  "generic",
+		Label:     "Generic",
+		UsageMode: "used",
+	}
+	labels := []string{
+		strings.Repeat("&<>", 8),
+		strings.Repeat(`"`, protocol.DefaultUsageWindowLabelBytes),
+		strings.Repeat(`\`, protocol.DefaultUsageWindowLabelBytes),
+		strings.Repeat("&<>", 8),
+		strings.Repeat("&<>", 8),
+		strings.Repeat("&<>", 8),
+		strings.Repeat("&<>", 8),
+		"must-trim",
+	}
+	for i, label := range labels {
+		id := fmt.Sprintf("window-%02d-%s", i+1, strings.Repeat("i", protocol.DefaultUsageWindowIDBytes-len("window-00-")))
+		frame.UsageWindows = append(frame.UsageWindows, protocol.UsageWindow{
+			ID:       id,
+			Label:    label,
+			Percent:  100,
+			ResetSec: 9223372036854775807,
+		})
+	}
+
+	bounded := applyDeviceUsageWindowLimit(frame, protocol.DeviceCapabilities{
+		MaxUsageWindows: advertisedMaxUsageWindows,
+	})
+	line, marshaled, err := marshalFrameWithinLimit(bounded, 2048)
+	if err != nil {
+		t.Fatalf("marshal within advertised escaped usage-window capacity: %v", err)
+	}
+	if len(line) > 2048 {
+		t.Fatalf("expected advertised usage windows to fit 2048 bytes, got %d", len(line))
+	}
+	if len(marshaled.UsageWindows) != advertisedMaxUsageWindows {
+		t.Fatalf("expected all advertised usage windows to survive, got %+v", marshaled.UsageWindows)
+	}
+	if !strings.HasPrefix(marshaled.UsageWindows[advertisedMaxUsageWindows-1].ID, "window-07-") {
+		t.Fatalf("expected highest advertised usage window to survive, got %+v", marshaled.UsageWindows)
+	}
+	if strings.Contains(string(line), "must-trim") {
+		t.Fatalf("frame included usage window above advertised capacity: %s", line)
+	}
+}
+
 func TestRunCycleWithDepsUsesMaxFrameBytesFromDeviceHello(t *testing.T) {
 	prepareFastTestEnv(t)
 

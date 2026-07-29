@@ -68,6 +68,21 @@ bool testPendingWifiRenderRunsBeforeUsb(const std::string& source) {
       "the pending WiFi event must render before USB can replace the current frame");
 }
 
+bool testHelloAdvertisesEscapedUsageWindowCapacity(const std::string& source) {
+  const std::size_t capabilitiesStart = source.find("String themeCapabilitiesJSON(");
+  const std::size_t capabilitiesEnd = source.find("\nstruct WifiCredentials", capabilitiesStart);
+  if (!expect(
+          capabilitiesStart != std::string::npos && capabilitiesEnd != std::string::npos,
+          "theme capabilities builder must remain discoverable")) {
+    return false;
+  }
+
+  const std::string capabilities = source.substr(capabilitiesStart, capabilitiesEnd - capabilitiesStart);
+  return expect(
+      capabilities.find("String(codexbar_display::core::kAdvertisedMaxUsageWindows)") != std::string::npos,
+      "hello must advertise escaped JSON-safe usage window capacity");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -79,7 +94,8 @@ int main(int argc, char** argv) {
   const std::string source = readFile(argv[1]);
   if (!testWifiHandlerAcknowledgesBeforeDispatch(source) ||
       !testWifiDispatchStoresOnePendingEvent(source) ||
-      !testPendingWifiRenderRunsBeforeUsb(source)) {
+      !testPendingWifiRenderRunsBeforeUsb(source) ||
+      !testHelloAdvertisesEscapedUsageWindowCapacity(source)) {
     return 1;
   }
 

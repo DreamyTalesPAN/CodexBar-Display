@@ -99,7 +99,7 @@ String themeCapabilitiesJSON(bool enabled, bool compact = false) {
     return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"supportsUsageWindowsV1\":false,\"maxUsageWindows\":0,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
   }
   out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"maxUsageWindows\":";
-  out += String(codexbar_display::core::kMaxUsageWindows);
+  out += String(codexbar_display::core::kAdvertisedMaxUsageWindows);
   out += ",\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
   out += String(codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives);
   if (!compact) {

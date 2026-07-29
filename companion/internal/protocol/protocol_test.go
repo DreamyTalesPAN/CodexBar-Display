@@ -158,6 +158,28 @@ func TestFrameMarshalLaneUnavailableFieldsAreOptionalAndBackwardCompatible(t *te
 	}
 }
 
+func TestFrameMarshalEscapesUsageWindowLabelsOnWire(t *testing.T) {
+	line, err := (Frame{
+		V:        ProtocolVersionV2,
+		Provider: "generic",
+		Label:    "Generic",
+		UsageWindows: []UsageWindow{
+			{ID: "html", Label: "&<>", Percent: 10},
+			{ID: "quote", Label: `"`, Percent: 20},
+			{ID: "backslash", Label: `\`, Percent: 30},
+		},
+	}).MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal frame: %v", err)
+	}
+	raw := string(line)
+	for _, want := range []string{`"\u0026\u003c\u003e"`, `"\""`, `"\\"`} {
+		if !strings.Contains(raw, want) {
+			t.Fatalf("marshaled frame missing escaped label %s: %s", want, raw)
+		}
+	}
+}
+
 func TestFrameNormalizeKeepsSafeActivity(t *testing.T) {
 	frame := Frame{
 		Provider: "codex",

@@ -494,6 +494,49 @@ void testUsageWindowResetCountdownsTickIndependently() {
 void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
   std::string frameLine =
       "{\"v\":2,\"provider\":\"p\",\"label\":\"Provider\",\"session\":100,\"weekly\":100,\"resetSecs\":9223372036854775807,\"usageMode\":\"remaining\",\"usageWindows\":[";
+  for (size_t i = 0; i < codexbar_display::core::kAdvertisedMaxUsageWindows; ++i) {
+    if (i > 0) {
+      frameLine += ",";
+    }
+    frameLine += "{\"id\":\"";
+    frameLine += std::string(codexbar_display::core::kUsageWindowIDWireBytes, 'i');
+    frameLine += "\",\"label\":\"";
+    if (i == 0) {
+      for (size_t j = 0; j < codexbar_display::core::kUsageWindowLabelWireBytes; ++j) {
+        frameLine += "\\\"";
+      }
+    } else if (i == 1) {
+      for (size_t j = 0; j < codexbar_display::core::kUsageWindowLabelWireBytes; ++j) {
+        frameLine += "\\\\";
+      }
+    } else {
+      for (size_t j = 0; j < codexbar_display::core::kUsageWindowLabelWireBytes / 3; ++j) {
+        frameLine += "\\u0026\\u003c\\u003e";
+      }
+    }
+    frameLine += "\",\"percent\":100,\"resetSecs\":9223372036854775807}";
+  }
+  frameLine += "]}";
+
+  TEST_ASSERT_TRUE(codexbar_display::core::kAdvertisedMaxUsageWindows > 0);
+  TEST_ASSERT_TRUE(codexbar_display::core::kAdvertisedMaxUsageWindows <= codexbar_display::core::kMaxUsageWindows);
+  TEST_ASSERT_TRUE(frameLine.size() + 1 <= codexbar_display::core::kFrameLineBufferBytes);
+
+  codexbar_display::core::Frame frame;
+  TEST_ASSERT_TRUE(codexbar_display::core::ParseFrameLine(frameLine.c_str(), frame));
+  for (size_t i = 0; i < codexbar_display::core::kAdvertisedMaxUsageWindows; ++i) {
+    TEST_ASSERT_TRUE(frame.usageWindows[i].available);
+    TEST_ASSERT_EQUAL_UINT32(codexbar_display::core::kUsageWindowIDWireBytes, frame.usageWindows[i].id.length());
+    TEST_ASSERT_EQUAL_UINT32(codexbar_display::core::kUsageWindowLabelWireBytes, frame.usageWindows[i].label.length());
+    TEST_ASSERT_EQUAL_INT(100, frame.usageWindows[i].percent);
+    TEST_ASSERT_EQUAL_INT64(9223372036854775807LL, frame.usageWindows[i].resetSecs);
+  }
+  TEST_ASSERT_TRUE(frame.usageWindows[codexbar_display::core::kAdvertisedMaxUsageWindows - 1].available);
+}
+
+void testRawUsageWindowParserCapacityStillAcceptsNormalLabels() {
+  std::string frameLine =
+      "{\"v\":2,\"provider\":\"p\",\"label\":\"Provider\",\"session\":100,\"weekly\":100,\"resetSecs\":9223372036854775807,\"usageMode\":\"remaining\",\"usageWindows\":[";
   for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
     if (i > 0) {
       frameLine += ",";
@@ -506,18 +549,30 @@ void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
   }
   frameLine += "]}";
 
-  TEST_ASSERT_TRUE(codexbar_display::core::kMaxUsageWindows > 0);
   TEST_ASSERT_TRUE(frameLine.size() + 1 <= codexbar_display::core::kFrameLineBufferBytes);
 
   codexbar_display::core::Frame frame;
   TEST_ASSERT_TRUE(codexbar_display::core::ParseFrameLine(frameLine.c_str(), frame));
-  for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
-    TEST_ASSERT_TRUE(frame.usageWindows[i].available);
-    TEST_ASSERT_EQUAL_UINT32(codexbar_display::core::kUsageWindowIDWireBytes, frame.usageWindows[i].id.length());
-    TEST_ASSERT_EQUAL_UINT32(codexbar_display::core::kUsageWindowLabelWireBytes, frame.usageWindows[i].label.length());
-    TEST_ASSERT_EQUAL_INT(100, frame.usageWindows[i].percent);
-    TEST_ASSERT_EQUAL_INT64(9223372036854775807LL, frame.usageWindows[i].resetSecs);
-  }
+  TEST_ASSERT_TRUE(frame.usageWindows[codexbar_display::core::kMaxUsageWindows - 1].available);
+}
+
+void testHighestAdvertisedUsageWindowBindingCompiles() {
+  char binding[40];
+  std::snprintf(
+      binding,
+      sizeof(binding),
+      "{usageSlot%uLabel}",
+      static_cast<unsigned>(codexbar_display::core::kAdvertisedMaxUsageWindows));
+  std::string spec = "{\"p\":[{\"t\":\"tx\",\"x\":0,\"y\":0,\"v\":\"";
+  spec += binding;
+  spec += "\"}]}";
+
+  JsonDocument doc;
+  TEST_ASSERT_FALSE(deserializeJson(doc, spec.c_str()));
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec.c_str(), doc, scene));
+  TEST_ASSERT_TRUE(scene.primitiveCount == 1);
+  ReleaseCompiledThemeSpec(scene);
 }
 
 void testCompactUsageWindowBindingTriggersLiveRedraw() {
@@ -1914,6 +1969,8 @@ int main() {
   RUN_TEST(testUsageWindowOwnershipHidesCompleteMissingLane);
   RUN_TEST(testUsageWindowResetCountdownsTickIndependently);
   RUN_TEST(testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses);
+  RUN_TEST(testRawUsageWindowParserCapacityStillAcceptsNormalLabels);
+  RUN_TEST(testHighestAdvertisedUsageWindowBindingCompiles);
   RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
   RUN_TEST(testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw);
   RUN_TEST(testPartialUsageProtocolRendersOnlyUnknownLane);

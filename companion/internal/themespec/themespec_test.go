@@ -422,6 +422,49 @@ func TestValidateStoredAgainstCapabilitiesUsesStoredLimit(t *testing.T) {
 	}
 }
 
+func TestValidateAgainstCapabilitiesAcceptsHighestAdvertisedUsageWindowIndex(t *testing.T) {
+	const advertisedMaxUsageWindows = 7
+	highestAdvertisedIndex := advertisedMaxUsageWindows - 1
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "usage-window-limit",
+		ThemeRev:         1,
+		Primitives: []Primitive{{
+			Type:       "text",
+			X:          1,
+			Y:          1,
+			UsageIndex: &highestAdvertisedIndex,
+			Text:       "{usage.label}",
+		}},
+	}
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal raw: %v", err)
+	}
+	caps := protocol.DeviceCapabilities{
+		Known:                  true,
+		SupportsThemeSpecV1:    true,
+		SupportsUsageWindowsV1: true,
+		MaxUsageWindows:        advertisedMaxUsageWindows,
+		MaxThemeSpecBytes:      2048,
+		MaxThemePrimitives:     8,
+	}
+
+	if err := ValidateAgainstCapabilities(spec, raw, caps); err != nil {
+		t.Fatalf("expected highest advertised usage window index to validate: %v", err)
+	}
+
+	firstRejectedIndex := advertisedMaxUsageWindows
+	spec.Primitives[0].UsageIndex = &firstRejectedIndex
+	raw, err = json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal rejected raw: %v", err)
+	}
+	if err := ValidateAgainstCapabilities(spec, raw, caps); err == nil {
+		t.Fatalf("expected first usage window index above advertised limit to be rejected")
+	}
+}
+
 func TestValidateStoredAgainstCapabilitiesFallsBackToInlineLimit(t *testing.T) {
 	spec := Spec{
 		ThemeSpecVersion: 1,
