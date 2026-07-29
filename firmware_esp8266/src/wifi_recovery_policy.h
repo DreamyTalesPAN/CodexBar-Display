@@ -6,7 +6,7 @@ namespace codexbar_display {
 namespace esp8266 {
 namespace wifi_recovery {
 
-constexpr uint32_t kRetryIntervalMs = 120000UL;
+constexpr uint32_t kRetryIntervalMs = 5000UL;
 constexpr uint32_t kAttemptTimeoutMs = 20000UL;
 
 enum class Action : uint8_t {

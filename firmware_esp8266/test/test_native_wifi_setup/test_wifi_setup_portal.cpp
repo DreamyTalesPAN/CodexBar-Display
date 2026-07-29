@@ -175,19 +175,19 @@ void test_clean_automatic_fallback_does_not_render_or_prefill_old_ssid() {
   TEST_ASSERT_TRUE(contains(fallbackServer.output, "Search again"));
 }
 
-void test_recovery_waits_120_seconds_before_starting_once() {
+void test_recovery_waits_5_seconds_before_starting_once() {
   wifi_recovery::State state;
   wifi_recovery::EnterSetup(state, 0);
 
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::None),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(119999))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(4999))));
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::StartAttempt),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120000))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(5000))));
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::None),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120001))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(5001))));
 }
 
 void test_recovery_scheduling_handles_millis_wraparound() {
@@ -197,10 +197,10 @@ void test_recovery_scheduling_handles_millis_wraparound() {
 
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::None),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(0x0001D3BFUL))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(0x00001287UL))));
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::StartAttempt),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(0x0001D3C0UL))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(0x00001288UL))));
 }
 
 void test_recovery_does_not_retry_without_credentials() {
@@ -219,11 +219,11 @@ void test_recovery_busy_gate_defers_attempt() {
 
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::None),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120000, true, true))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(5000, true, true))));
   TEST_ASSERT_FALSE(state.attemptInProgress);
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::StartAttempt),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120001))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(5001))));
 }
 
 void test_recovery_busy_gate_defers_connected_transition() {
@@ -231,7 +231,7 @@ void test_recovery_busy_gate_defers_connected_transition() {
   wifi_recovery::EnterSetup(state, 0);
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::StartAttempt),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120000))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(5000))));
 
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::None),
@@ -247,10 +247,10 @@ void test_recovery_does_not_begin_again_while_attempt_is_running() {
 
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::StartAttempt),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120000))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(5000))));
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::None),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120001))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(5001))));
 }
 
 void test_recovery_timeout_stays_in_setup_and_schedules_next_attempt() {
@@ -258,18 +258,18 @@ void test_recovery_timeout_stays_in_setup_and_schedules_next_attempt() {
   wifi_recovery::EnterSetup(state, 0);
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::StartAttempt),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120000))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(5000))));
 
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::Timeout),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(140000))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(25000))));
   TEST_ASSERT_FALSE(state.attemptInProgress);
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::None),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(140001))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(25001))));
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::StartAttempt),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(260000))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(30000))));
 }
 
 void test_recovery_connected_later_leaves_setup_state() {
@@ -277,11 +277,11 @@ void test_recovery_connected_later_leaves_setup_state() {
   wifi_recovery::EnterSetup(state, 0);
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::StartAttempt),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(120000))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(5000))));
 
   TEST_ASSERT_EQUAL_INT(
       static_cast<int>(wifi_recovery::Action::Connected),
-      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(125000, true, false, true))));
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(10000, true, false, true))));
   TEST_ASSERT_FALSE(state.attemptInProgress);
   TEST_ASSERT_FALSE(state.retryScheduled);
 }
@@ -314,7 +314,7 @@ int main(int, char**) {
   RUN_TEST(test_page_publishes_no_placeholder_without_support_url);
   RUN_TEST(test_automatic_setup_ap_renders_normal_writable_setup_page);
   RUN_TEST(test_clean_automatic_fallback_does_not_render_or_prefill_old_ssid);
-  RUN_TEST(test_recovery_waits_120_seconds_before_starting_once);
+  RUN_TEST(test_recovery_waits_5_seconds_before_starting_once);
   RUN_TEST(test_recovery_scheduling_handles_millis_wraparound);
   RUN_TEST(test_recovery_does_not_retry_without_credentials);
   RUN_TEST(test_recovery_busy_gate_defers_attempt);
