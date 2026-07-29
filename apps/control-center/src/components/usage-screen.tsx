@@ -103,6 +103,8 @@ export function UsageScreen({
   const hasProviders = providers.length > 0;
   const tokenUsageReady =
     usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);
+  const hasUsableVisibleUsageContent =
+    hasProviders || usageProvidersHaveTokenResult(providers);
   const usageLoading =
     companionStatus === "online" && !usageError && !usage && !hasProviders;
   const tokenUsagePending =
@@ -110,7 +112,11 @@ export function UsageScreen({
     !usageError &&
     hasProviders &&
     !tokenUsageReady;
-  const refreshNotice = usageRefreshNotice(usage?.refresh);
+  const refreshNotice = usageRefreshNotice(usage?.refresh, {
+    companionStatus,
+    hasUsableVisibleUsageContent,
+    usageError,
+  });
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -191,7 +197,18 @@ export function UsageScreen({
   );
 }
 
-function usageRefreshNotice(refresh: UsageSnapshot["refresh"] | undefined) {
+function usageRefreshNotice(
+  refresh: UsageSnapshot["refresh"] | undefined,
+  {
+    companionStatus,
+    hasUsableVisibleUsageContent,
+    usageError,
+  }: {
+    companionStatus: CompanionStatus;
+    hasUsableVisibleUsageContent: boolean;
+    usageError?: ApiError | null;
+  },
+) {
   switch (refresh?.state) {
     case "refreshing":
       return {
@@ -211,6 +228,13 @@ function usageRefreshNotice(refresh: UsageSnapshot["refresh"] | undefined) {
       };
     }
     case "unavailable":
+      if (
+        companionStatus !== "online" ||
+        usageError ||
+        hasUsableVisibleUsageContent
+      ) {
+        return null;
+      }
       return {
         tone: "attention" as const,
         title: "Usage is still loading",

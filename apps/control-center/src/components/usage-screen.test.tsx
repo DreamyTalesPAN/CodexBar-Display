@@ -233,6 +233,83 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Try again after");
   });
 
+  it("does not show the global loading banner when unavailable refresh has token history", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      refresh: {
+        state: "unavailable",
+      },
+    });
+
+    expect(html).toContain("Total tokens in the last 30 days");
+    expect(html).toContain("Tokens used over time");
+    expect(html).toContain("Codex");
+    expect(html).not.toContain("Usage is still loading");
+  });
+
+  it("does not show the global loading banner for stale provider tokens", () => {
+    const html = renderUsage(null, {
+      ...usage,
+      refresh: {
+        state: "unavailable",
+      },
+      providers: usage.providers.map((provider) => ({
+        ...provider,
+        session: 0,
+        weekly: 0,
+        stale: true,
+        usageUnavailable: true,
+        sessionUnavailable: true,
+        weeklyUnavailable: true,
+        sessionTokens: 1200,
+        weekTokens: 3400,
+        totalTokens: 5600,
+      })),
+    });
+
+    expect(html).toContain("Stale");
+    expect(html).toContain("Session: ??");
+    expect(html).toContain("Token usage");
+    expect(html).not.toContain("Usage is still loading");
+  });
+
+  it("keeps the global loading banner for an empty unavailable usage snapshot", () => {
+    const html = renderUsage(null, {
+      ok: true,
+      refresh: {
+        state: "unavailable",
+      },
+      tokenUsageReady: false,
+      providers: [],
+    });
+
+    expect(html).toContain("Usage is still loading");
+    expect(html).toContain("No provider usage is available yet.");
+    expect(html).not.toContain("Total tokens in the last 30 days");
+  });
+
+  it("clears the global loading banner when usable data arrives later", () => {
+    const pending = renderUsage(null, {
+      ok: true,
+      refresh: {
+        state: "unavailable",
+      },
+      tokenUsageReady: false,
+      providers: [],
+    });
+    const recovered = renderUsage(null, {
+      ...usage,
+      refresh: {
+        state: "unavailable",
+      },
+    });
+
+    expect(pending).toContain("Usage is still loading");
+    expect(recovered).toContain("Total tokens in the last 30 days");
+    expect(recovered).toContain("Codex");
+    expect(recovered).not.toContain("Usage is still loading");
+  });
+
   it("renders unavailable percentages as unknown without reset claims", () => {
     const html = renderUsage(null, {
       ...usage,
