@@ -35,6 +35,7 @@ const migrationScreenshotDir =
 const themeStudioSafetyOnly = process.argv.includes("--theme-studio-safety");
 const themeReleaseOnly = process.argv.includes("--theme-release");
 const themePreviewsOnly = process.argv.includes("--theme-previews");
+const themeSetupFirmwareOnly = process.argv.includes("--theme-setup-firmware");
 const updateThemePreviewVectorGoldens =
   process.env.CONTROL_CENTER_UPDATE_THEME_PREVIEW_GOLDENS === "1";
 const wifiRescanOnly = process.argv.includes("--wifi-rescan");
@@ -380,6 +381,14 @@ async function main() {
       console.log("control-center theme preview tests passed");
       return;
     }
+    if (themeSetupFirmwareOnly) {
+      await testThemeSetupUpdatesFirmwareBeforeThemeInstall(
+        browser,
+        appContext.appUrl,
+      );
+      console.log("control-center theme setup firmware flow test passed");
+      return;
+    }
     if (providerSettingsOnly) {
       await testUsageManagesProviderPreferences(browser, appContext.appUrl);
       console.log("control-center provider settings test passed");
@@ -442,6 +451,10 @@ async function main() {
         appContext.appUrl,
       );
       await testThemeMissingDeviceChoosesThemeAndCompletesSetup(
+        browser,
+        appContext.appUrl,
+      );
+      await testThemeSetupUpdatesFirmwareBeforeThemeInstall(
         browser,
         appContext.appUrl,
       );
@@ -588,6 +601,10 @@ async function main() {
       appContext.appUrl,
     );
     await testThemeMissingDeviceChoosesThemeAndCompletesSetup(
+      browser,
+      appContext.appUrl,
+    );
+    await testThemeSetupUpdatesFirmwareBeforeThemeInstall(
       browser,
       appContext.appUrl,
     );
@@ -3203,6 +3220,160 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
       .count()) === 0,
     "A later unrelated ready=false state must not reopen completed theme setup",
   );
+  await page.close();
+}
+
+async function testThemeSetupUpdatesFirmwareBeforeThemeInstall(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const firmwareUpdateRequests = [];
+  const oldFirmwareDevice = {
+    ...themeMissingDevice,
+    firmware: "1.0.32",
+    capabilities: {
+      ...themeMissingDevice.capabilities,
+      theme: {
+        ...themeMissingDevice.capabilities.theme,
+        supportsUsageSlotsV1: false,
+      },
+    },
+  };
+  const updatedFirmwareDevice = {
+    ...oldFirmwareDevice,
+    firmware: "1.0.33",
+    capabilities: {
+      ...oldFirmwareDevice.capabilities,
+      theme: {
+        ...oldFirmwareDevice.capabilities.theme,
+        supportsUsageSlotsV1: true,
+      },
+    },
+  };
+  const readyDevice = {
+    ...synthwaveDevice,
+    firmware: "1.0.33",
+    deviceId: oldFirmwareDevice.deviceId,
+    ready: true,
+    connectionState: "ready",
+  };
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.99",
+    companionApp: {
+      version: "1.0.99",
+      build: "199",
+      path: "/Applications/VibeTV Control Center.app",
+      installationMode: "dmg",
+      installedInApplications: true,
+    },
+    device: oldFirmwareDevice,
+    deviceAfterFirmwareUpdate: updatedFirmwareDevice,
+    deviceAfterThemeInstall: readyDevice,
+    onUpdate: (postData) => {
+      firmwareUpdateRequests.push(postData || "");
+    },
+    updateStatusSequence: [
+      {
+        phase: "complete",
+        message: "Update complete.",
+        progress: 100,
+        logs: [
+          "Preparing VibeTV update.",
+          "Updating VibeTV.",
+          "Update complete.",
+        ],
+        result: { firmware: "1.0.33" },
+      },
+    ],
+    installStatusSequence: [
+      {
+        phase: "complete",
+        message: "Theme is active on VibeTV.",
+        progress: 100,
+        logs: [
+          "Preparing theme files.",
+          "Uploading theme files.",
+          "Theme is active on VibeTV.",
+        ],
+        result: {
+          themeId: "synthwave",
+          packId: "synthwave",
+          name: "Synthwave",
+          activePath: "/themes/u/synthwave.json",
+          themeRev: 1,
+        },
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "Choose your VibeTV theme" })
+    .waitFor({ timeout: 10_000 });
+  const synthwaveRow = page
+    .getByRole("listitem")
+    .filter({ hasText: "Fixture Synthwave Theme" });
+  const updateButton = page.getByRole("button", {
+    name: "Update VibeTV",
+    exact: true,
+  });
+  await updateButton.waitFor({ timeout: 10_000 });
+  const blockedInstallButton = synthwaveRow.getByRole("button", {
+    name: "Update Needed",
+    exact: true,
+  });
+  assert(
+    await blockedInstallButton.isDisabled(),
+    "Mandatory theme setup must keep theme install locked before firmware update",
+  );
+  assertNoInstallRequests(installRequests);
+  assert(
+    firmwareUpdateRequests.length === 0,
+    "Mandatory theme setup must not start firmware automatically",
+  );
+
+  await updateButton.click();
+  await waitForCondition(
+    () => firmwareUpdateRequests.length === 1,
+    "Explicit setup update must reach the existing firmware install endpoint",
+  );
+  const installButton = synthwaveRow.getByRole("button", {
+    name: "Install",
+    exact: true,
+  });
+  await waitForEnabled(
+    page,
+    installButton,
+    "Theme install must unlock after updated capabilities are read back",
+  );
+  assert(
+    firmwareUpdateRequests.length === 1,
+    `Explicit setup update must start firmware exactly once, got ${firmwareUpdateRequests.length}`,
+  );
+  assertNoInstallRequests(installRequests);
+
+  await installButton.click();
+  await page
+    .getByRole("heading", { name: "VibeTV is connected" })
+    .waitFor({ timeout: 12_000 });
+  assert(
+    firmwareUpdateRequests.length === 1,
+    "Theme install must not start another firmware update",
+  );
+  assert(
+    installRequests.length === 1,
+    `Customer must install the theme separately after firmware, got ${installRequests.length} requests`,
+  );
+  const install = parseJSON(installRequests[0]);
+  assert(
+    install?.themeId === "synthwave" && install?.skipFirmwareUpdate === true,
+    `Theme setup must keep firmware and theme writes separate, got ${installRequests[0]}`,
+  );
+  await assertNoMobileOverflow(page);
   await page.close();
 }
 

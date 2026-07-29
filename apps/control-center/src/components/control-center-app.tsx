@@ -2478,7 +2478,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         });
       }
       const completedLogs = logs;
-      if (activeThemeUpgrade.unresolved) {
+      if (
+        activeThemeUpgrade.unresolved &&
+        !deviceNeedsThemeSetup(refreshedDevice)
+      ) {
         const message =
           "The firmware is current, but VibeTV still needs attention.";
         setFirmwareUpdateStatus({
@@ -3367,9 +3370,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         catalogIssue={catalog.issue}
         companionStatus={companionStatus}
         device={device}
+        firmwareUpdate={effectiveFirmwareUpdate}
+        firmwareUpdateStatus={firmwareUpdateStatus}
         installStatus={themeInstallStatus}
         lastInstall={lastInstall}
         onInstallCustomTheme={installCustomTheme}
+        onInstallFirmwareUpdate={installFirmwareUpdate}
         onInstallTheme={installTheme}
         onSelectTheme={setSelectedThemeId}
         requestedThemeId={initialThemeId}
