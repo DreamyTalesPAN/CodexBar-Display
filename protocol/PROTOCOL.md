@@ -28,8 +28,9 @@ Fields:
 - `resetSecs` (number, optional): seconds remaining until reset.
 - `usageUnavailable` (boolean, optional): both current quota values are not trustworthy; missing/false remains backward compatible. ThemeSpec text bindings show unknown values while progress keeps the numeric carrier values.
 - `sessionUnavailable` / `weeklyUnavailable` (boolean, optional): only that legacy usage lane is unknown. Missing/false remains backward compatible. Its text binding shows `??` and its progress primitive is omitted. `usageUnavailable:true` still overrides both lanes, including stale frames.
-- `usageMode` (string, optional): semantic of `session`/`weekly` and `usageSlots[].percent` (`used` or `remaining`).
-- `usageSlots` (array, optional): compact provider-aware display slots, max two entries. Each emitted slot carries `id` (max 32 UTF-8 bytes), `label` (max 24 UTF-8 bytes), `percent`, and its own `resetSecs`. Presence means availability; missing or unavailable source windows are omitted rather than coerced to `0`/`100`. Legacy `session`, `weekly`, and shared `resetSecs` remain deprecated compatibility aliases for slots 1, 2, and slot 1's reset.
+- `usageMode` (string, optional): semantic of `session`/`weekly` and `usageWindows[].percent` (`used` or `remaining`).
+- `usageWindows` (array, optional, v2): generic ordered provider usage windows. Each emitted window carries `id` (max 32 UTF-8 bytes), `label` (max 24 UTF-8 bytes), `percent`, and its own `resetSecs`. Presence means availability; missing or unavailable source windows are omitted rather than coerced to `0`/`100`. Legacy `session`, `weekly`, and shared `resetSecs` remain compatibility aliases for windows 1, 2, and window 1's reset.
+- `usageSlots` (array, optional, legacy): compatibility input/output for v1-era two-slot readers. The Companion normalizes slots into `usageWindows` when no windows are present; normalized v2 frames omit `usageSlots`.
 - `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
 - `weekTokens` (number, optional): rolling 7-day token total when available.
 - `totalTokens` (number, optional): lifetime token total when available.
@@ -41,7 +42,7 @@ Fields:
 Example with additive token stats + theme:
 
 ```json
-{"v":2,"provider":"codex","label":"Codex","session":42,"weekly":7,"resetSecs":15480,"usageSlots":[{"id":"secondary","label":"Weekly","percent":42,"resetSecs":15480},{"id":"codex-spark-weekly","label":"Codex Spark Weekly","percent":7,"resetSecs":604800}],"sessionTokens":1437166,"weekTokens":384312010,"totalTokens":1078397605,"theme":"mini"}
+{"v":2,"provider":"codex","label":"Codex","session":42,"weekly":7,"resetSecs":15480,"usageWindows":[{"id":"secondary","label":"Weekly","percent":42,"resetSecs":15480},{"id":"codex-spark-weekly","label":"Codex Spark Weekly","percent":7,"resetSecs":604800}],"sessionTokens":1437166,"weekTokens":384312010,"totalTokens":1078397605,"theme":"mini"}
 ```
 
 Theme registry source of truth:
