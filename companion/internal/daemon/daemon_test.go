@@ -3298,6 +3298,85 @@ func TestProviderCollectorDoesNotMakeOldProviderObservationFresh(t *testing.T) {
 	}
 }
 
+func TestProviderCollectorUsesDashboardServeTTLForSnapshotFreshness(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 7, 29, 18, 30, 0, 0, time.UTC)
+	collectedAt := now.Add(-39 * time.Second)
+	dashboard := testParsedFrame("codex", 24, 0, 3600)
+	dashboard.Source = "codexbar-dashboard"
+	cli := testParsedFrame("claude", 13, 3, 3600)
+	cli.Source = "codexbar-usage-json"
+
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		order:           []string{"codex", "claude"},
+		interval:        30 * time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:  "codex",
+				Source:    dashboard.Source,
+				Collected: collectedAt,
+				Frame:     dashboard.Frame,
+			},
+			"claude": {
+				Provider:  "claude",
+				Source:    cli.Source,
+				Collected: collectedAt,
+				Frame:     cli.Frame,
+			},
+		},
+	}
+
+	frames := collector.providerFrames(now)
+	if len(frames) != 2 {
+		t.Fatalf("expected two provider frames, got %#v", frames)
+	}
+	if frames[0].Provider != "codex" || frames[0].Stale || frames[0].Frame.UsageUnavailable {
+		t.Fatalf("dashboard snapshot inside serve TTL must stay fresh, got %#v", frames[0])
+	}
+	if frames[1].Provider != "claude" || !frames[1].Stale {
+		t.Fatalf("non-dashboard snapshot beyond collector jitter must stay stale, got %#v", frames[1])
+	}
+
+	var sentLine []byte
+	err := runCycleFromCollector(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, collector, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("publisher should send dashboard snapshot inside serve TTL: %v", err)
+	}
+	if frame := decodeFrameLine(t, sentLine); frame.Provider != "codex" || frame.Session != 24 {
+		t.Fatalf("expected sent Codex dashboard frame, got %+v", frame)
+	}
+
+	if err := persistProviderSnapshots(collector.providers, now); err != nil {
+		t.Fatalf("persist provider snapshots: %v", err)
+	}
+	usage, ok := LoadPersistedUsage(now)
+	if !ok || len(usage.Providers) != 2 {
+		t.Fatalf("expected persisted usage for both providers, ok=%t usage=%#v", ok, usage)
+	}
+	var dashboardUsage *ProviderUsageSnapshot
+	for i := range usage.Providers {
+		if usage.Providers[i].Provider == "codex" {
+			dashboardUsage = &usage.Providers[i]
+		}
+	}
+	if dashboardUsage == nil || dashboardUsage.Stale {
+		t.Fatalf("persisted dashboard usage inside serve TTL must stay fresh, got %#v", usage.Providers)
+	}
+}
+
 func TestRunCycleFromCollectorSendsSnapshotCollectedAfterSlowFetch(t *testing.T) {
 	prepareFastTestEnv(t)
 

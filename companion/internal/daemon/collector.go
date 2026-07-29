@@ -18,7 +18,8 @@ const (
 	tokenStatsCollectorTimeout = 125 * time.Second
 	// Cost history scans can take over a minute. Keep their post-completion
 	// cadence below the ten-minute last-good window without running continuously.
-	tokenStatsScanCooldown = 5 * time.Minute
+	tokenStatsScanCooldown          = 5 * time.Minute
+	providerSnapshotFreshnessJitter = 5 * time.Second
 )
 
 type providerSnapshot struct {
@@ -795,6 +796,10 @@ func (c *providerCollector) resolveRequestedPort() string {
 }
 
 func (c *providerCollector) snapshotIsFresh(snapshot providerSnapshot, now time.Time) bool {
+	return providerSnapshotIsFresh(snapshot, now, c.interval)
+}
+
+func providerSnapshotIsFresh(snapshot providerSnapshot, now time.Time, interval time.Duration) bool {
 	if snapshot.Collected.IsZero() || now.IsZero() {
 		return false
 	}
@@ -802,11 +807,24 @@ func (c *providerCollector) snapshotIsFresh(snapshot providerSnapshot, now time.
 	if age < 0 {
 		return true
 	}
-	freshFor := c.interval + 5*time.Second
-	if freshFor <= 5*time.Second {
+	freshFor := providerSnapshotFreshnessWindow(snapshot, interval)
+	return age <= freshFor
+}
+
+func providerSnapshotFreshnessWindow(snapshot providerSnapshot, interval time.Duration) time.Duration {
+	if strings.TrimSpace(snapshot.Source) == "codexbar-dashboard" {
+		refreshInterval := codexbar.DashboardServeDefaultRefreshInterval
+		if refreshInterval < codexbar.DashboardServeMinimumRefreshInterval {
+			refreshInterval = codexbar.DashboardServeMinimumRefreshInterval
+		}
+		return refreshInterval + providerSnapshotFreshnessJitter
+	}
+
+	freshFor := interval + providerSnapshotFreshnessJitter
+	if freshFor <= providerSnapshotFreshnessJitter {
 		freshFor = 35 * time.Second
 	}
-	return age <= freshFor
+	return freshFor
 }
 
 func (c *providerCollector) orderedKeysLocked() []string {

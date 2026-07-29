@@ -2054,15 +2054,7 @@ func orderedProviderUsageKeys(snapshots map[string]providerSnapshot) []string {
 }
 
 func providerUsageSnapshotIsStale(snapshot providerSnapshot, now time.Time) bool {
-	if snapshot.Collected.IsZero() || now.IsZero() {
-		return true
-	}
-	age := now.Sub(snapshot.Collected)
-	if age < 0 {
-		return false
-	}
-	freshFor := collectorInterval(0) + 5*time.Second
-	return age > freshFor
+	return !providerSnapshotIsFresh(snapshot, now, collectorInterval(0))
 }
 
 func encodeProviderSnapshotsForCompare(snapshots map[string]providerSnapshot) string {
