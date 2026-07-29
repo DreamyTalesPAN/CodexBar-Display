@@ -1022,14 +1022,12 @@ PY
     || die "CodexBar distribution version must stay pinned"
   grep -qF 'SHA256="958c4b3fc64367d833b6e26df98d262b16384a52dcf6b8181f9b98091505671f"' "${ROOT}/scripts/fetch-codexbar.sh" \
     || die "CodexBar distribution checksum must stay pinned"
-  grep -qF 'verify-bundled-codexbar.sh' "${ROOT}/.github/workflows/release.yml" \
-    || die "release workflow must verify the bundled CodexBar payload"
-  grep -qF 'generate_appcast' "${ROOT}/.github/workflows/release.yml" \
-    || die "release workflow must generate a Sparkle appcast"
-  grep -qF 'sparkle:edSignature=' "${ROOT}/.github/workflows/release.yml" \
-    || die "release workflow must verify the appcast signature"
-  grep -qF 'SPARKLE_ED25519_PRIVATE_KEY' "${ROOT}/.github/workflows/release.yml" \
-    || die "release workflow must source the Sparkle private key from Actions secrets"
+  grep -qF 'verify-bundled-codexbar.sh' "${ROOT}/.github/workflows/validate-macos-dmg.yml" \
+    || die "the signed DMG workflow must verify the bundled CodexBar payload"
+  ! grep -Eq \
+    'APPLE_SIGNING_CERTIFICATE|APPLE_NOTARY|SPARKLE_ED25519_PRIVATE_KEY|generate_appcast' \
+    "${ROOT}/.github/workflows/release.yml" \
+    || die "publish workflow must consume signed candidate assets without signing or appcast secrets"
 
   grep -qF "com.codexbar-display.daemon" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     || die "native app shell must detect the old LaunchAgent"

@@ -27,6 +27,14 @@ Sparkle metadata, checks the Companion's loopback port `47832`, captures JSON
 and a screenshot, and drives health, render, stream, OTA, and duplicate-OTA
 no-op behavior through the Core branch's `virtual-vibetv` executable.
 
+The guided physical canary always uses the device's real update path: an
+authenticated OTA update over local WiFi. Current customer VibeTV units expose
+no USB data or recovery port, so they run the canary without a USB backup.
+Future lab hardware can supply an optional recovery port; the canary then
+creates a full backup before the WiFi OTA. Both paths require the exact device
+ID and an explicit hardware-risk confirmation. If the OTA result is unclear,
+the canary stops without a retry or automatic rollback.
+
 ## Current dependency
 
 The current main branch does not yet contain Issue #177 Core's
