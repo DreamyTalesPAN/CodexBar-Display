@@ -50,6 +50,7 @@ describe("SettingsScreen standby controls", () => {
     expect(html).toContain("Show screensaver");
     expect(html).not.toContain("Show after");
     expect(html).not.toContain("Brightness in screensaver");
+    expect(html).not.toContain("Save screensaver brightness");
   });
 
   it("shows timeout and screensaver brightness once the screensaver is on", () => {
@@ -65,6 +66,8 @@ describe("SettingsScreen standby controls", () => {
     expect(html).toContain('id="vibetv-standby-timeout"');
     expect(html).toContain("Brightness in screensaver");
     expect(html).toContain('id="vibetv-standby-brightness"');
+    // The screensaver brightness is saved deliberately, like the normal one.
+    expect(html).toContain("Save screensaver brightness");
   });
 
   it("describes the card as the whole screen, not only brightness", () => {

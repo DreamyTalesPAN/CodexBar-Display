@@ -3684,9 +3684,17 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     .locator('#vibetv-standby-brightness[aria-disabled="false"]')
     .waitFor({ timeout: 10_000 });
   await screensaverBrightness.press("End");
+  assert(
+    settingsWrites.length === 3,
+    "moving the screensaver brightness slider must not write to VibeTV",
+  );
+
+  await page
+    .getByRole("button", { name: "Save screensaver brightness" })
+    .click();
   await waitForCondition(
     () => settingsWrites.length === 4,
-    "Brightness in screensaver should write once",
+    "Save screensaver brightness should write once",
   );
   assert(
     settingsWrites[3]?.standby?.brightnessPercent === 100 &&

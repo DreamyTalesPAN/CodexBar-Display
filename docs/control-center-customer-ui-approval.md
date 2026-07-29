@@ -443,3 +443,18 @@ issue scope, or release permission never implies UI permission.
   `control-center-app.tsx`, `control-center-types.ts`, the matching
   customer-flow assertions in `test-customer-flows.mjs`, and the Mac App
   standby settings and capability pass-through with its tests.
+
+## 2026-07-29 — Deliberate save for the screensaver brightness
+
+- User approval: Asked on 2026-07-29 whether the new standby controls should save
+  on change, because the approval above covered the controls but not how they are
+  saved, the user chose a deliberate save action for the screensaver brightness.
+  This supersedes the "three controls save on change" sentence in the entry above.
+- Approved customer-visible result: `Show screensaver` and `Show after` keep
+  saving on change. `Brightness in screensaver` no longer writes while the slider
+  moves; it gets its own `Save screensaver brightness` action below the slider,
+  which shows `Working...` while the write runs. Both brightness sliders in the
+  `Display` card now behave the same way, and `Save brightness` still owns the
+  normal brightness.
+- Approved files: `settings-screen.tsx`, `settings-screen.test.tsx`, and the
+  matching customer-flow assertions in `test-customer-flows.mjs`.

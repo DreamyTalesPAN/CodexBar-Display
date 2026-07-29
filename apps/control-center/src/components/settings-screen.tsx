@@ -195,15 +195,25 @@ export function SettingsScreen({
                             values[0] ?? standbyValues.brightnessPercent,
                           )
                         }
-                        onValueCommit={(values) =>
-                          onSaveStandby({
-                            ...standbyValues,
-                            brightnessPercent:
-                              values[0] ?? standbyValues.brightnessPercent,
-                          })
-                        }
                         value={[standbyValues.brightnessPercent]}
                       />
+                      <Button
+                        className="h-12"
+                        disabled={standbyDisabled}
+                        onClick={() => onSaveStandby(standbyValues)}
+                        type="button"
+                      >
+                        {busyAction === "standby" ? (
+                          <Spinner data-icon="inline-start" />
+                        ) : (
+                          <Check data-icon="inline-start" aria-hidden />
+                        )}
+                        <span>
+                          {busyAction === "standby"
+                            ? "Working..."
+                            : "Save screensaver brightness"}
+                        </span>
+                      </Button>
                     </Field>
                   </>
                 ) : null}
