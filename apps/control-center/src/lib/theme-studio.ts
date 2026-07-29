@@ -430,7 +430,9 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
         ? primitive.slot
         : undefined,
     usageIndex:
-      Number.isInteger(primitive.usageIndex) && primitive.usageIndex >= 0
+      typeof primitive.usageIndex === "number" &&
+      Number.isInteger(primitive.usageIndex) &&
+      primitive.usageIndex >= 0
         ? primitive.usageIndex
         : undefined,
     color: normalizeColor(primitive.color),

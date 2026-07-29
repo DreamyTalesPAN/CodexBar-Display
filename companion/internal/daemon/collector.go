@@ -716,6 +716,7 @@ func snapshotWithExpiredUsageCleared(snapshot providerSnapshot, now time.Time, m
 	frame.Session = 0
 	frame.Weekly = 0
 	frame.ResetSec = 0
+	frame.UsageWindows = nil
 	frame.UsageSlots = nil
 	frame.SessionTokens = 0
 	frame.WeekTokens = 0
