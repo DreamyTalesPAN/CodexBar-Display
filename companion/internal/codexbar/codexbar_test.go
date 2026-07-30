@@ -343,10 +343,32 @@ func TestParseUsageWindowKeepsPresentZeroPercent(t *testing.T) {
 	}
 }
 
-func TestRecoveredCodexWindowsDoNotInventMissingSecondary(t *testing.T) {
-	windows := recoveredCodexUsageWindows(0, true, 0, false, 0)
-	if len(windows) != 1 || windows[0].ID != "primary" || windows[0].Percent != 0 {
-		t.Fatalf("expected only present primary window, got %+v", windows)
+func TestParseProviderPayloadKeepsErroredCodexBodyUnavailable(t *testing.T) {
+	parsed, err := parseProviderPayload(map[string]any{
+		"provider": "codex",
+		"source":   "oauth",
+		"error": map[string]any{
+			"kind": "provider",
+			"message": `request failed body={
+				"rate_limit":{
+					"primary_window":{"used_percent":17,"reset_after_seconds":300},
+					"secondary_window":{"used_percent":31}
+				}
+			}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("parseProviderPayload failed: %v", err)
+	}
+	frame := parsed.Frame.Normalize()
+	if !frame.UsageUnavailable || !parsed.Stale {
+		t.Fatalf("errored Codex payload became available: %+v", parsed)
+	}
+	if frame.Session != 0 || frame.Weekly != 0 || len(frame.UsageWindows) != 0 {
+		t.Fatalf("errored Codex payload invented usage: %+v", frame)
+	}
+	if parsed.Source != "oauth" {
+		t.Fatalf("provider source changed: %q", parsed.Source)
 	}
 }
 

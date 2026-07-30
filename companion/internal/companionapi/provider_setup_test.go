@@ -487,6 +487,45 @@ func TestProviderRetryCanTargetExactProvider(t *testing.T) {
 	}
 }
 
+func TestExactProviderRetryPreservesFreshAuthFailureOverLastGoodUsage(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 30, 14, 30, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return freshProviderUsage("codex", "Codex", now.Add(-time.Minute)), true
+	}
+	server.probeExactProvider = func(_ context.Context, _ string, providerID string) codexbar.ProviderSetup {
+		return codexbar.ProviderSetup{
+			Status:    "setup_required",
+			CheckedAt: now.Format(time.RFC3339Nano),
+			Engine:    codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+			Providers: []codexbar.ProviderReadiness{{
+				ID: providerID, Label: "Codex", Enabled: true, Status: codexbar.ProviderAuthRequired,
+			}},
+		}
+	}
+	woke := false
+	server.wakeDisplayStream = func() { woke = true }
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(
+		rec,
+		httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=codex", nil),
+	)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got providerSetupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	provider := providerByID(got.ProviderSetup.Providers, "codex")
+	if got.ProviderSetup.Status != "setup_required" || provider == nil ||
+		provider.Status != codexbar.ProviderAuthRequired || woke {
+		t.Fatalf("fresh exact auth failure was overwritten: woke=%t setup=%+v", woke, got.ProviderSetup)
+	}
+}
+
 func TestExactProviderRetryIsSingleFlight(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	var probes atomic.Int32

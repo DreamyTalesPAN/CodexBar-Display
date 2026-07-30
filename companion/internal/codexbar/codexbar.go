@@ -735,9 +735,6 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		if provider == "cli" && source == "cli" {
 			return ParsedFrame{}, errGlobalCLI
 		}
-		if recovered, ok := recoverCodexFrameFromErrorPayload(payload); ok {
-			return recovered, nil
-		}
 		if provider == "" {
 			return ParsedFrame{}, errors.New("provider error payload has no identity")
 		}
@@ -1395,118 +1392,6 @@ func parseProviderPace(payload map[string]any) []ProviderPace {
 		out = append(out, pace)
 	}
 	return out
-}
-
-func recoverCodexFrameFromErrorPayload(payload map[string]any) (ParsedFrame, bool) {
-	provider := strings.TrimSpace(strings.ToLower(firstString(payload, "provider", "id", "slug", "name")))
-	if provider != "codex" {
-		return ParsedFrame{}, false
-	}
-
-	errorPayload, ok := payload["error"].(map[string]any)
-	if !ok {
-		return ParsedFrame{}, false
-	}
-	message, ok := anyToString(errorPayload["message"])
-	if !ok || !strings.Contains(message, "body=") {
-		return ParsedFrame{}, false
-	}
-
-	body, ok := decodeEmbeddedJSONBody(message)
-	if !ok {
-		return ParsedFrame{}, false
-	}
-
-	session, hasSession := percentAtPathsWithPresence(body, "rate_limit.primary_window.used_percent")
-	weekly, hasWeekly := percentAtPathsWithPresence(body, "rate_limit.secondary_window.used_percent")
-	resetSecs := int64(0)
-	n, hasPrimaryReset := intAtPath(body, "rate_limit.primary_window.reset_after_seconds")
-	if hasPrimaryReset && n > 0 {
-		resetSecs = int64(n)
-	}
-	hasPrimary := hasSession || hasPrimaryReset
-	if !hasPrimary && !hasWeekly {
-		return ParsedFrame{}, false
-	}
-
-	frame := protocol.Frame{
-		V:        protocol.ProtocolVersionV2,
-		Provider: "codex",
-		Label:    "Codex",
-		Session:  session,
-		Weekly:   weekly,
-		ResetSec: resetSecs,
-		UsageWindows: recoveredCodexUsageWindows(
-			session,
-			hasPrimary,
-			weekly,
-			hasWeekly,
-			resetSecs,
-		),
-	}.Normalize()
-	return ParsedFrame{
-		Frame:            frame,
-		Provider:         "codex",
-		Source:           "openai-web-recovered",
-		RateLimited:      payloadIsRateLimited(payload),
-		RateLimitedUntil: rateLimitedUntilFromPayload(payload),
-	}, true
-}
-
-func recoveredCodexUsageWindows(
-	session int,
-	hasSession bool,
-	weekly int,
-	hasWeekly bool,
-	resetSecs int64,
-) []protocol.UsageWindow {
-	// This recovery payload has no display labels. Keep the legacy structural
-	// labels only so migrated themes do not go blank; #254 replaces this
-	// transitional fallback with CodexBar dashboard labels.
-	windows := make([]protocol.UsageWindow, 0, 2)
-	if hasSession {
-		windows = append(windows, protocol.UsageWindow{
-			ID:       "primary",
-			Label:    "Session",
-			Percent:  session,
-			ResetSec: resetSecs,
-		})
-	}
-	if hasWeekly {
-		windows = append(windows, protocol.UsageWindow{
-			ID:      "secondary",
-			Label:   "Weekly",
-			Percent: weekly,
-		})
-	}
-	return windows
-}
-
-func decodeEmbeddedJSONBody(message string) (map[string]any, bool) {
-	idx := strings.Index(message, "body=")
-	if idx == -1 {
-		return nil, false
-	}
-	remainder := message[idx+len("body="):]
-	start := strings.Index(remainder, "{")
-	if start == -1 {
-		return nil, false
-	}
-
-	dec := json.NewDecoder(strings.NewReader(remainder[start:]))
-	var body map[string]any
-	if err := dec.Decode(&body); err != nil {
-		return nil, false
-	}
-	return body, len(body) > 0
-}
-
-func intAtPath(m map[string]any, path string) (int, bool) {
-	v, ok := getPath(m, path)
-	if !ok {
-		return 0, false
-	}
-	return anyToInt(v)
 }
 
 func intAtPaths(m map[string]any, paths ...string) int {

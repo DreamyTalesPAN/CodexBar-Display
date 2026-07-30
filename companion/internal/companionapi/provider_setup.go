@@ -33,7 +33,7 @@ func (s *Server) currentProviderSetup(ctx context.Context, force bool) codexbar.
 		if age >= 0 && (age < providerSetupCacheTTL && !force || age < time.Second) {
 			cached := s.providerSetupCache
 			s.providerSetupMu.Unlock()
-			return s.providerSetupWithFreshUsage(cached, now, "")
+			return s.providerSetupWithFreshUsage(cached, now)
 		}
 	}
 	probe := s.probeProviderSetup
@@ -44,7 +44,7 @@ func (s *Server) currentProviderSetup(ctx context.Context, force bool) codexbar.
 	s.providerSetupCache = setup
 	s.providerSetupCachedAt = now
 	s.providerSetupMu.Unlock()
-	return s.providerSetupWithFreshUsage(setup, now, "")
+	return s.providerSetupWithFreshUsage(setup, now)
 }
 
 // providerSetupForStatus keeps the general status endpoint responsive while a
@@ -53,7 +53,7 @@ func (s *Server) currentProviderSetup(ctx context.Context, force bool) codexbar.
 func (s *Server) providerSetupForStatus() codexbar.ProviderSetup {
 	now := s.currentTime()
 	if !s.providerSetupMu.TryLock() {
-		return s.providerSetupWithFreshUsage(checkingProviderSetup(now), now, "")
+		return s.providerSetupWithFreshUsage(checkingProviderSetup(now), now)
 	}
 	cached := s.providerSetupCache
 	cachedAt := s.providerSetupCachedAt
@@ -62,7 +62,7 @@ func (s *Server) providerSetupForStatus() codexbar.ProviderSetup {
 	if !cachedAt.IsZero() {
 		age := now.Sub(cachedAt)
 		if age >= 0 && age < providerSetupCacheTTL {
-			return s.providerSetupWithFreshUsage(cached, now, "")
+			return s.providerSetupWithFreshUsage(cached, now)
 		}
 	}
 
@@ -75,12 +75,12 @@ func (s *Server) providerSetupForStatus() codexbar.ProviderSetup {
 		}()
 	}
 	if !cachedAt.IsZero() {
-		return s.providerSetupWithFreshUsage(cached, now, "")
+		return s.providerSetupWithFreshUsage(cached, now)
 	}
-	return s.providerSetupWithFreshUsage(checkingProviderSetup(now), now, "")
+	return s.providerSetupWithFreshUsage(checkingProviderSetup(now), now)
 }
 
-func (s *Server) providerSetupWithFreshUsage(setup codexbar.ProviderSetup, now time.Time, exactProvider string) codexbar.ProviderSetup {
+func (s *Server) providerSetupWithFreshUsage(setup codexbar.ProviderSetup, now time.Time) codexbar.ProviderSetup {
 	if s == nil || s.loadUsage == nil {
 		return setup
 	}
@@ -91,9 +91,9 @@ func (s *Server) providerSetupWithFreshUsage(setup codexbar.ProviderSetup, now t
 	if !ok || len(usage.Providers) == 0 {
 		return setup
 	}
-	readiness := freshUsableUsageReadiness(usage, now, exactProvider)
+	readiness := freshUsableUsageReadiness(usage, now)
 	if len(readiness) == 0 {
-		tokenReadiness := freshTokenUsageReadiness(usage, now, exactProvider)
+		tokenReadiness := freshTokenUsageReadiness(usage, now)
 		if len(tokenReadiness) == 0 {
 			return setup
 		}
@@ -102,15 +102,11 @@ func (s *Server) providerSetupWithFreshUsage(setup codexbar.ProviderSetup, now t
 	return reconcileProviderSetupWithUsage(setup, readiness, now)
 }
 
-func freshUsableUsageReadiness(usage daemon.PersistedUsage, now time.Time, exactProvider string) []codexbar.ProviderReadiness {
-	exactProvider = strings.TrimSpace(strings.ToLower(exactProvider))
+func freshUsableUsageReadiness(usage daemon.PersistedUsage, now time.Time) []codexbar.ProviderReadiness {
 	out := make([]codexbar.ProviderReadiness, 0, len(usage.Providers))
 	for _, snapshot := range usage.Providers {
 		readiness, ok := freshUsableUsageProviderReadiness(snapshot, now)
 		if !ok {
-			continue
-		}
-		if exactProvider != "" && readiness.ID != exactProvider {
 			continue
 		}
 		out = append(out, readiness)
@@ -147,15 +143,11 @@ func freshUsableUsageProviderReadiness(snapshot daemon.ProviderUsageSnapshot, no
 	}, true
 }
 
-func freshTokenUsageReadiness(usage daemon.PersistedUsage, now time.Time, exactProvider string) []codexbar.ProviderReadiness {
-	exactProvider = strings.TrimSpace(strings.ToLower(exactProvider))
+func freshTokenUsageReadiness(usage daemon.PersistedUsage, now time.Time) []codexbar.ProviderReadiness {
 	out := make([]codexbar.ProviderReadiness, 0, len(usage.Providers))
 	for _, snapshot := range usage.Providers {
 		readiness, ok := freshTokenUsageProviderReadiness(snapshot, now)
 		if !ok {
-			continue
-		}
-		if exactProvider != "" && readiness.ID != exactProvider {
 			continue
 		}
 		out = append(out, readiness)
@@ -348,7 +340,6 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 		setup = s.currentProviderSetup(ctx, true)
 	} else {
 		setup = s.currentExactProviderSetup(ctx, providerID)
-		setup = s.providerSetupWithFreshUsage(setup, s.currentTime(), providerID)
 	}
 	if setup.Status == codexbar.ProviderReady && s.wakeDisplayStream != nil {
 		s.wakeDisplayStream()
