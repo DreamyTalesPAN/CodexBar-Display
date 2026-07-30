@@ -50,10 +50,6 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	if snapshot.GeneratedAt != nil {
 		snapshotCollectedAt = snapshot.GeneratedAt.UTC()
 	}
-	freshUntil := time.Time{}
-	if !snapshotCollectedAt.IsZero() && snapshot.StaleAfterSeconds > 0 {
-		freshUntil = snapshotCollectedAt.Add(time.Duration(snapshot.StaleAfterSeconds) * time.Second)
-	}
 	out := make([]ParsedFrame, 0, len(snapshot.Providers))
 	for _, provider := range snapshot.Providers {
 		usage, usageOK := dashboardusage.UsageForProvider(usageProviders, provider.ID)
@@ -62,7 +58,6 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 			dashboardusage.NormalizeProvider(provider, usage),
 			now,
 			snapshotCollectedAt,
-			freshUntil,
 			usage.Error,
 		)
 		if !usageOK {
@@ -104,7 +99,7 @@ func fetchDashboardJSON(ctx context.Context, url string, token string) ([]byte, 
 	return raw, nil
 }
 
-func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider, normalized dashboardusage.ProviderWindows, now time.Time, collectedAt time.Time, freshUntil time.Time, usageError json.RawMessage) ParsedFrame {
+func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider, normalized dashboardusage.ProviderWindows, now time.Time, collectedAt time.Time, usageError json.RawMessage) ParsedFrame {
 	id := strings.TrimSpace(strings.ToLower(provider.ID))
 	label := strings.TrimSpace(provider.Name)
 	if label == "" {
@@ -143,11 +138,10 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 		Source:             "codexbar-dashboard",
 		Meta:               ProviderUsageMeta{Windows: metaWindows},
 		CollectedAt:        collectedAt.UTC(),
-		FreshUntil:         freshUntil.UTC(),
 		ActivityObservedAt: activityObservedAt,
 		RateLimited:        dashboardErrorsAreRateLimited(provider.Error, usageError),
 		RateLimitedUntil:   rateLimitedUntilFromDashboardErrors(provider.Error, usageError),
-		Stale:              frame.UsageUnavailable || freshUntil.IsZero() || now.After(freshUntil),
+		Stale:              frame.UsageUnavailable,
 	}
 }
 

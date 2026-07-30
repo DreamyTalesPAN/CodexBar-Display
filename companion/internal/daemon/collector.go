@@ -17,8 +17,7 @@ const (
 	tokenStatsCollectorTimeout = 125 * time.Second
 	// Cost history scans can take over a minute. Keep their post-completion
 	// cadence below the ten-minute last-good window without running continuously.
-	tokenStatsScanCooldown          = 5 * time.Minute
-	providerSnapshotFreshnessJitter = 5 * time.Second
+	tokenStatsScanCooldown = 5 * time.Minute
 )
 
 type providerSnapshot struct {
@@ -27,7 +26,6 @@ type providerSnapshot struct {
 	Source              string                     `json:"source,omitempty"`
 	Meta                codexbar.ProviderUsageMeta `json:"meta,omitempty"`
 	Collected           time.Time                  `json:"collectedAt"`
-	FreshUntil          time.Time                  `json:"freshUntil,omitempty"`
 	TokenStatsCollected time.Time                  `json:"tokenStatsCollectedAt,omitempty"`
 	ActivityObservedAt  time.Time                  `json:"activityObservedAt,omitempty"`
 	RateLimited         bool                       `json:"rateLimited,omitempty"`
@@ -311,7 +309,6 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 					Frame:            frame,
 					Source:           strings.TrimSpace(parsed.Source),
 					Collected:        parsedCollectedAt,
-					FreshUntil:       parsed.FreshUntil.UTC(),
 					RateLimited:      parsed.RateLimited,
 					RateLimitedUntil: parsed.RateLimitedUntil.UTC(),
 				}
@@ -325,7 +322,6 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			Source:              strings.TrimSpace(parsed.Source),
 			Meta:                parsed.Meta,
 			Collected:           parsedCollectedAt,
-			FreshUntil:          parsed.FreshUntil.UTC(),
 			TokenStatsCollected: parsedTokenStatsCollectedAt(parsed, now),
 			ActivityObservedAt:  parsed.ActivityObservedAt,
 			RateLimited:         false,
@@ -766,7 +762,6 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			Source:             snapshot.Source,
 			Meta:               snapshot.Meta,
 			CollectedAt:        snapshot.Collected,
-			FreshUntil:         snapshot.FreshUntil,
 			ActivityObservedAt: snapshot.ActivityObservedAt,
 			RateLimited:        snapshot.RateLimited,
 			RateLimitedUntil:   snapshot.RateLimitedUntil,
@@ -787,28 +782,11 @@ func (c *providerCollector) resolveRequestedPort() string {
 }
 
 func (c *providerCollector) snapshotIsFresh(snapshot providerSnapshot, now time.Time) bool {
-	return providerSnapshotIsFresh(snapshot, now, c.interval)
+	return providerSnapshotIsFresh(snapshot, now, c.snapshotMaxAge)
 }
 
-func providerSnapshotIsFresh(snapshot providerSnapshot, now time.Time, interval time.Duration) bool {
-	if now.IsZero() {
-		return false
-	}
-	if !snapshot.FreshUntil.IsZero() {
-		return !now.After(snapshot.FreshUntil)
-	}
-	if snapshot.Collected.IsZero() {
-		return false
-	}
-	age := now.Sub(snapshot.Collected)
-	if age < 0 {
-		return true
-	}
-	freshFor := interval + providerSnapshotFreshnessJitter
-	if freshFor <= providerSnapshotFreshnessJitter {
-		freshFor = 35 * time.Second
-	}
-	return age <= freshFor
+func providerSnapshotIsFresh(snapshot providerSnapshot, now time.Time, maxAge time.Duration) bool {
+	return isLastGoodFreshAt(snapshot.Collected, now, maxAge)
 }
 
 func (c *providerCollector) orderedKeysLocked() []string {

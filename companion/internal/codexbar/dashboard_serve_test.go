@@ -87,6 +87,9 @@ func TestDashboardServeSupervisorStartsPrivateLoopbackChild(t *testing.T) {
 	if got := argValue(record.Args, "--refresh-interval"); got != "60" {
 		t.Fatalf("expected refresh interval to clamp to 60 seconds, got %q in %v", got, record.Args)
 	}
+	if got := argValue(record.Args, "--request-timeout"); got != "0" {
+		t.Fatalf("expected request timeout to be disabled, got %q in %v", got, record.Args)
+	}
 }
 
 func TestDashboardServeSupervisorRestartsCrashedChildWithBackoff(t *testing.T) {

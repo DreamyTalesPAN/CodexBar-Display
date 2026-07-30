@@ -42,12 +42,9 @@ func TestFetchDashboardProvidersUsesSnapshotAsAuthority(t *testing.T) {
 		got.Frame.UsageWindows[1].Label != "Codex Spark Weekly" {
 		t.Fatalf("expected CodexBar dashboard windows, got %+v", got.Frame.UsageWindows)
 	}
-	if want := time.Date(2026, 7, 28, 8, 32, 45, 0, time.UTC); !got.FreshUntil.Equal(want) {
-		t.Fatalf("freshUntil=%s want %s", got.FreshUntil, want)
-	}
 }
 
-func TestFetchDashboardProvidersUsesCodexBarStaleDeadline(t *testing.T) {
+func TestFetchDashboardProvidersIgnoresCodexBarStaleDeadline(t *testing.T) {
 	server := newDashboardFetchTestServer(t, `{
 	  "schemaVersion": 1,
 	  "generatedAt": "2026-07-28T08:29:45Z",
@@ -61,24 +58,16 @@ func TestFetchDashboardProvidersUsesCodexBarStaleDeadline(t *testing.T) {
 	}`)
 	defer server.Close()
 
-	before, err := FetchDashboardProviders(
-		context.Background(),
-		dashboardFetchTestInfo(server),
-		time.Date(2026, 7, 28, 8, 32, 44, 0, time.UTC),
-	)
-	if err != nil {
-		t.Fatalf("fresh dashboard fetch failed: %v", err)
-	}
-	after, err := FetchDashboardProviders(
+	providers, err := FetchDashboardProviders(
 		context.Background(),
 		dashboardFetchTestInfo(server),
 		time.Date(2026, 7, 28, 8, 32, 46, 0, time.UTC),
 	)
 	if err != nil {
-		t.Fatalf("stale dashboard fetch failed: %v", err)
+		t.Fatalf("dashboard fetch failed: %v", err)
 	}
-	if before[0].Stale || !after[0].Stale {
-		t.Fatalf("expected stale transition at CodexBar deadline, before=%t after=%t", before[0].Stale, after[0].Stale)
+	if providers[0].Stale || providers[0].Frame.UsageUnavailable {
+		t.Fatalf("dashboard snapshot must stay usable past CodexBar's deadline, got %+v", providers[0])
 	}
 }
 

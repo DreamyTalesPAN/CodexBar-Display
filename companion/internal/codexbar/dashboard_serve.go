@@ -194,6 +194,7 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 		"--host", DashboardServeHost,
 		"--port", strconv.Itoa(port),
 		"--refresh-interval", strconv.Itoa(durationSecondsCeil(s.refreshInterval)),
+		"--request-timeout", "0",
 	)
 
 	cmd := exec.CommandContext(ctx, bin, args...)

@@ -2464,8 +2464,8 @@ func TestLoadPersistedUsageReturnsOrderedProviderSnapshots(t *testing.T) {
 	if usage.Providers[0].Provider != "claude" || usage.Providers[1].Provider != "codex" {
 		t.Fatalf("expected generic alphabetical fallback without a VibeTV provider list; got %+v", usage.Providers)
 	}
-	if !usage.Providers[0].Stale {
-		t.Fatalf("expected stale claude snapshot, got %+v", usage.Providers[0])
+	if usage.Providers[0].Stale {
+		t.Fatalf("expected Claude snapshot within last-good window, got %+v", usage.Providers[0])
 	}
 	if usage.Providers[1].Stale {
 		t.Fatalf("expected fresh codex snapshot, got %+v", usage.Providers[1])
@@ -3383,13 +3383,13 @@ func TestProviderCollectorCollectOnceKeepsPerProviderLastGood(t *testing.T) {
 
 	second := collector.providerFrames(current)
 	if len(second) != 2 {
-		t.Fatalf("expected codex stale + claude fresh snapshots, got %#v", second)
+		t.Fatalf("expected two retained fresh snapshots, got %#v", second)
 	}
 	if second[0].Provider != "claude" || second[1].Provider != "codex" {
 		t.Fatalf("expected current CodexBar order first, then retained snapshot; got %#v", second)
 	}
-	if second[0].Stale || !second[1].Stale {
-		t.Fatalf("expected claude fresh and retained codex stale snapshots, got %#v", second)
+	if second[0].Stale || second[1].Stale {
+		t.Fatalf("expected retained snapshots within last-good window to stay fresh, got %#v", second)
 	}
 
 	current = current.Add(3 * time.Hour)
@@ -3510,7 +3510,7 @@ func TestProviderCollectorDoesNotMakeOldProviderObservationFresh(t *testing.T) {
 	}
 }
 
-func TestProviderCollectorUsesCodexBarFreshUntil(t *testing.T) {
+func TestProviderCollectorKeepsDashboardSnapshotThroughLastGoodWindow(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	now := time.Date(2026, 7, 29, 18, 30, 0, 0, time.UTC)
@@ -3529,11 +3529,10 @@ func TestProviderCollectorUsesCodexBarFreshUntil(t *testing.T) {
 		persistInterval: time.Minute,
 		providers: map[string]providerSnapshot{
 			"codex": {
-				Provider:   "codex",
-				Source:     dashboard.Source,
-				Collected:  collectedAt,
-				FreshUntil: now.Add(time.Second),
-				Frame:      dashboard.Frame,
+				Provider:  "codex",
+				Source:    dashboard.Source,
+				Collected: collectedAt,
+				Frame:     dashboard.Frame,
 			},
 			"claude": {
 				Provider:  "claude",
@@ -3549,10 +3548,10 @@ func TestProviderCollectorUsesCodexBarFreshUntil(t *testing.T) {
 		t.Fatalf("expected two provider frames, got %#v", frames)
 	}
 	if frames[0].Provider != "codex" || frames[0].Stale || frames[0].Frame.UsageUnavailable {
-		t.Fatalf("dashboard snapshot before CodexBar deadline must stay fresh, got %#v", frames[0])
+		t.Fatalf("dashboard snapshot within last-good window must stay fresh, got %#v", frames[0])
 	}
-	if frames[1].Provider != "claude" || !frames[1].Stale {
-		t.Fatalf("non-dashboard snapshot beyond collector jitter must stay stale, got %#v", frames[1])
+	if frames[1].Provider != "claude" || frames[1].Stale {
+		t.Fatalf("snapshot within the last-good window must stay fresh, got %#v", frames[1])
 	}
 
 	var sentLine []byte
@@ -3586,16 +3585,16 @@ func TestProviderCollectorUsesCodexBarFreshUntil(t *testing.T) {
 		}
 	}
 	if dashboardUsage == nil || dashboardUsage.Stale {
-		t.Fatalf("persisted dashboard usage before CodexBar deadline must stay fresh, got %#v", usage.Providers)
+		t.Fatalf("persisted dashboard usage within last-good window must stay fresh, got %#v", usage.Providers)
 	}
 
-	usage, ok = LoadPersistedUsage(now.Add(2 * time.Second))
+	usage, ok = LoadPersistedUsage(now.Add(10*time.Minute + 2*time.Second))
 	if !ok || len(usage.Providers) != 2 {
-		t.Fatalf("dashboard usage must become stale after CodexBar deadline, ok=%t usage=%#v", ok, usage)
+		t.Fatalf("persisted usage must remain readable after its last-good window, ok=%t usage=%#v", ok, usage)
 	}
 	for _, provider := range usage.Providers {
 		if provider.Provider == "codex" && !provider.Stale {
-			t.Fatalf("dashboard usage must become stale after CodexBar deadline, usage=%#v", usage)
+			t.Fatalf("dashboard usage must become stale after its last-good window, usage=%#v", usage)
 		}
 	}
 }
@@ -4795,8 +4794,8 @@ func TestProviderCollectorDoesNotFallBackToUsageJSONWhenDashboardUnavailable(t *
 			}
 			if len(frames) != 1 || frames[0].Source != "codexbar-dashboard" || frames[0].Frame.Session != 68 ||
 				len(frames[0].Frame.UsageSlots) != 2 || frames[0].Frame.UsageSlots[0].Label != "Weekly" ||
-				!frames[0].Stale || frames[0].Frame.UsageUnavailable {
-				t.Fatalf("expected bounded stale dashboard snapshot unchanged, got %+v", frames)
+				frames[0].Stale || frames[0].Frame.UsageUnavailable {
+				t.Fatalf("expected dashboard snapshot within last-good window unchanged, got %+v", frames)
 			}
 
 			current = current.Add(2 * time.Second)
@@ -5159,9 +5158,6 @@ func TestRunCycleFromCollectorKeepsLastGoodWhenUsageAndInventoryFail(t *testing.
 	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
 		now:         func() time.Time { return now },
 		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
-		fetchProvider: func(context.Context, string) (codexbar.ParsedFrame, error) {
-			return codexbar.ParsedFrame{}, codexbar.ErrNoProviders
-		},
 		sendLine: func(_ string, line []byte) error {
 			sentLine = append([]byte(nil), line...)
 			return nil
@@ -5196,11 +5192,7 @@ func TestRunCycleFromCollectorClearsDisabledLastGoodAndPersistedRestartFallback(
 	deps := runtimeDeps{
 		now:         func() time.Time { return now },
 		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
-		fetchProvider: func(context.Context, string) (codexbar.ParsedFrame, error) {
-			t.Fatal("disabled provider must not be probed directly")
-			return codexbar.ParsedFrame{}, codexbar.ErrNoProviders
-		},
-		logf: func(string, ...any) {},
+		logf:        func(string, ...any) {},
 	}
 	deps = deps.withDefaults()
 	state := initializeRuntimeState(now, Options{}, deps)
@@ -5245,50 +5237,6 @@ func TestRunCycleFromCollectorClearsDisabledLastGoodAndPersistedRestartFallback(
 	restarted := initializeRuntimeState(now.Add(time.Minute), Options{}, deps)
 	if restarted.hasLastGood || restarted.hasPersistedGood {
 		t.Fatalf("restart resurrected disabled last-good frame: %+v", restarted)
-	}
-}
-
-func TestRunCycleFromCollectorUsesDirectProviderFallbackWhenCollectorEmpty(t *testing.T) {
-	prepareFastTestEnv(t)
-
-	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
-	state := &runtimeState{
-		selector: codexbar.NewProviderSelector(),
-	}
-
-	collector := &providerCollector{
-		now:            func() time.Time { return now },
-		logf:           func(string, ...any) {},
-		order:          []string{"codex", "claude", "cursor"},
-		snapshotMaxAge: 2 * time.Hour,
-		providers:      map[string]providerSnapshot{},
-	}
-
-	var sentLine []byte
-	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
-		now:         func() time.Time { return now },
-		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
-		fetchProvider: func(_ context.Context, provider string) (codexbar.ParsedFrame, error) {
-			switch provider {
-			case "codex":
-				return testParsedFrame("codex", 12, 34, 3600), nil
-			default:
-				return codexbar.ParsedFrame{}, codexbar.ErrNoProviders
-			}
-		},
-		sendLine: func(_ string, line []byte) error {
-			sentLine = append([]byte(nil), line...)
-			return nil
-		},
-		logf: func(string, ...any) {},
-	})
-	if err != nil {
-		t.Fatalf("expected direct provider fallback success, got %v", err)
-	}
-
-	frame := decodeFrameLine(t, sentLine)
-	if frame.Provider != "codex" || frame.Session != 12 || frame.Weekly != 34 {
-		t.Fatalf("expected direct fallback codex frame, got %+v", frame)
 	}
 }
 
