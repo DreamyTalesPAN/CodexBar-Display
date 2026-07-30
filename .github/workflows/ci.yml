@@ -90,6 +90,9 @@ jobs:
       - name: Test macOS Control Center DMG prep
         run: ./scripts/test-macos-control-center-app-bundle.sh
 
+      - name: Test hosted VibeTV gate contracts on macOS
+        run: ./scripts/test-vibetv-hosted-gates.sh
+
   theme-studio-tests:
     runs-on: ubuntu-latest
     steps:

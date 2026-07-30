@@ -150,6 +150,59 @@ PY
   fi
   [[ "$duplicate_path_error" == *"duplicate candidate archive path"* ]] \
     || die "duplicate path test failed for the wrong reason: $duplicate_path_error"
+
+  python3 - "$work/casefold-parent.tar.gz" <<'PY'
+import io
+import sys
+import tarfile
+
+root = "VibeTV Control Center.app"
+with tarfile.open(sys.argv[1], "w:gz") as archive:
+    plist = tarfile.TarInfo(f"{root}/Contents/Info.plist")
+    plist_payload = b'<plist version="1.0"><dict/></plist>\n'
+    plist.size = len(plist_payload)
+    archive.addfile(plist, io.BytesIO(plist_payload))
+    link = tarfile.TarInfo(f"{root}/A")
+    link.type = tarfile.SYMTYPE
+    link.linkname = "."
+    archive.addfile(link)
+    nested = tarfile.TarInfo(f"{root}/a/payload")
+    payload = b"case-insensitive parent"
+    nested.size = len(payload)
+    archive.addfile(nested, io.BytesIO(payload))
+PY
+  local casefold_parent_error
+  if casefold_parent_error="$("$EXTRACTOR" --archive "$work/casefold-parent.tar.gz" --output "$work/casefold-output" 2>&1)"; then
+    die "archive with a case-variant symlink parent was accepted"
+  fi
+  [[ "$casefold_parent_error" == *"candidate archive member descends through symlink"* ]] \
+    || die "casefold symlink ancestor test failed for the wrong reason: $casefold_parent_error"
+
+  python3 - "$work/symlink-cycle.tar.gz" <<'PY'
+import io
+import sys
+import tarfile
+
+root = "VibeTV Control Center.app"
+with tarfile.open(sys.argv[1], "w:gz") as archive:
+    plist = tarfile.TarInfo(f"{root}/Contents/Info.plist")
+    plist_payload = b'<plist version="1.0"><dict/></plist>\n'
+    plist.size = len(plist_payload)
+    archive.addfile(plist, io.BytesIO(plist_payload))
+    for name, target in [(f"{root}/a", "b"), (f"{root}/b", "a")]:
+        link = tarfile.TarInfo(name)
+        link.type = tarfile.SYMTYPE
+        link.linkname = target
+        archive.addfile(link)
+PY
+  local symlink_cycle_error
+  if symlink_cycle_error="$("$EXTRACTOR" --archive "$work/symlink-cycle.tar.gz" --output "$work/symlink-cycle-output" 2>&1)"; then
+    die "archive with a symlink cycle was accepted"
+  fi
+  [[ "$symlink_cycle_error" == *"unsafe candidate archive symlink cannot resolve"* ]] \
+    || die "symlink cycle test failed for the wrong reason: $symlink_cycle_error"
+  [[ ! -e "$work/symlink-cycle-output" ]] \
+    || die "symlink cycle left a partially extracted candidate app behind"
 }
 
 main() {
