@@ -17,6 +17,7 @@ import (
 const (
 	dashboardSnapshotPath = "/dashboard/v1/snapshot"
 	dashboardUsagePath    = "/usage"
+	dashboardFetchTimeout = 45 * time.Second
 )
 
 type DashboardFetchResult struct {
@@ -33,12 +34,15 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 		now = time.Now().UTC()
 	}
 
-	client := &http.Client{Timeout: dashboardServeHealthTimeout}
-	snapshotRaw, err := fetchDashboardJSON(ctx, client, endpoint+dashboardSnapshotPath, strings.TrimSpace(info.Token))
+	fetchCtx, cancel := context.WithTimeout(ctx, dashboardFetchTimeout)
+	defer cancel()
+
+	client := &http.Client{}
+	snapshotRaw, err := fetchDashboardJSON(fetchCtx, client, endpoint+dashboardSnapshotPath, strings.TrimSpace(info.Token))
 	if err != nil {
 		return DashboardFetchResult{}, err
 	}
-	usageRaw, err := fetchDashboardJSON(ctx, client, endpoint+dashboardUsagePath, "")
+	usageRaw, err := fetchDashboardJSON(fetchCtx, client, endpoint+dashboardUsagePath, "")
 	if err != nil {
 		return DashboardFetchResult{}, err
 	}

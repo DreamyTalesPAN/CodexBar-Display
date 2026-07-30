@@ -2,6 +2,7 @@ package codexbar
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -158,6 +159,51 @@ func TestFetchDashboardProvidersKeepsProviderErrorUnavailable(t *testing.T) {
 	}
 }
 
+func TestFetchDashboardProvidersAllowsSlowDataFetch(t *testing.T) {
+	server := newDashboardFetchTestServerWithSnapshotDelay(t, `{
+	  "schemaVersion": 1,
+	  "generatedAt": "2026-07-28T08:29:45Z",
+	  "providers": [{
+	    "id": "codex",
+	    "name": "Codex",
+	    "windows": [{"kind": "weekly", "label": "Weekly", "usedPercent": 68, "resetAt": "2026-08-01T00:00:00Z"}],
+	    "error": null,
+	    "updatedAt": "2026-07-28T08:01:00Z"
+	  }]
+	}`, dashboardServeHealthTimeout+100*time.Millisecond)
+	defer server.Close()
+
+	result, err := FetchDashboardProviders(context.Background(), DashboardServeInfo{
+		Endpoint: server.URL,
+		Token:    "test-token",
+		Running:  true,
+		Healthy:  true,
+	}, time.Date(2026, 7, 28, 8, 30, 0, 0, time.UTC), 2)
+	if err != nil {
+		t.Fatalf("slow dashboard fetch failed: %v", err)
+	}
+	if len(result.Providers) != 1 || result.Providers[0].Frame.UsageUnavailable {
+		t.Fatalf("expected slow fetch inside data limit to succeed, got %+v", result.Providers)
+	}
+}
+
+func TestFetchDashboardProvidersTimesOut(t *testing.T) {
+	server := newDashboardFetchTestServerWithSnapshotDelay(t, `{}`, time.Second)
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	_, err := FetchDashboardProviders(ctx, DashboardServeInfo{
+		Endpoint: server.URL,
+		Token:    "test-token",
+		Running:  true,
+		Healthy:  true,
+	}, time.Now(), 2)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected dashboard fetch timeout, got %v", err)
+	}
+}
+
 func newDashboardFetchTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return newDashboardFetchTestServerWithSnapshot(t, `{
@@ -178,10 +224,20 @@ func newDashboardFetchTestServer(t *testing.T) *httptest.Server {
 
 func newDashboardFetchTestServerWithSnapshot(t *testing.T, snapshot string) *httptest.Server {
 	t.Helper()
+	return newDashboardFetchTestServerWithSnapshotDelay(t, snapshot, 0)
+}
+
+func newDashboardFetchTestServerWithSnapshotDelay(t *testing.T, snapshot string, delay time.Duration) *httptest.Server {
+	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc(dashboardSnapshotPath, func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
 			http.Error(w, "missing bearer token", http.StatusUnauthorized)
+			return
+		}
+		select {
+		case <-time.After(delay):
+		case <-r.Context().Done():
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
