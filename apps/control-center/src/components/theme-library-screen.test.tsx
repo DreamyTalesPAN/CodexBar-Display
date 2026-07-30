@@ -168,3 +168,37 @@ describe("theme setup firmware update eligibility", () => {
     expect(html.match(/<span>Update VibeTV<\/span>/g)).toHaveLength(1);
   });
 });
+
+describe("theme library connection readiness", () => {
+  it("keeps installs available when only display readiness is stale", () => {
+    const html = renderToStaticMarkup(
+      <ThemeLibraryScreen
+        busyAction={null}
+        companionStatus="online"
+        device={{
+          ...device,
+          ready: false,
+          capabilities: {
+            theme: {
+              supportsThemeSpecV1: true,
+              supportsUsageSlotsV1: true,
+            },
+          },
+        }}
+        onInstallCustomTheme={async () => false}
+        onInstallTheme={vi.fn()}
+        onSelectTheme={vi.fn()}
+        selectedTheme={theme}
+        selectedThemeId={theme.themeId}
+        storefrontConfigured
+        themeInstallEnabled
+        themes={[theme]}
+      />,
+    );
+
+    expect(html).not.toContain("VibeTV not found");
+    expect(html).toContain(
+      'title="Install Synthwave" type="button">Install</button>',
+    );
+  });
+});

@@ -3762,6 +3762,45 @@ func TestStatusKeepsConfiguredDeviceReconnectingDuringTransientProbeFailure(t *t
 	}
 }
 
+func TestStatusKeepsHealthyPairedDeviceConnectedWhileDisplayStreamIsStale(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.44","deviceId":"vibetv-canary","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":3,"partialCount":1,"lastKind":"usage"}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "vibetv-canary",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Running: true, Healthy: false}
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if got.Device.Ready {
+		t.Fatalf("stale display stream must keep strict readiness false: %+v", got.Device)
+	}
+	if got.Device.ConnectionState != deviceConnectionReady || !got.Device.Connected || !got.Device.Paired || got.Device.Health == nil || !got.Device.Health.OK {
+		t.Fatalf("healthy paired device must stay connected: %+v", got.Device)
+	}
+}
+
 func TestStatusIsReadOnlyAndKeepsOfflineActiveDevice(t *testing.T) {
 	var postCalls atomic.Int32
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

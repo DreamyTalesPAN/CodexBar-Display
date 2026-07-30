@@ -1326,7 +1326,7 @@ func (s *Server) withConfiguredConnectionState(
 	if reachable {
 		state.lastSeenAt = now
 	}
-	if device.Ready {
+	if reachable && device.Paired && device.Health != nil && device.Health.OK {
 		device.ConnectionState = deviceConnectionReady
 		device.LastSeenAt = now.UTC().Format(time.RFC3339Nano)
 		return device

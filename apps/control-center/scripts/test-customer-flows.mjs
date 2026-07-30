@@ -3247,6 +3247,10 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
       .count()) === 0,
     "A later unrelated ready=false state must not reopen completed theme setup",
   );
+  await page.getByRole("button", { name: "Theme Library" }).click();
+  await page
+    .getByRole("heading", { name: "Themes" })
+    .waitFor({ timeout: 12_000 });
   await page.close();
 }
 

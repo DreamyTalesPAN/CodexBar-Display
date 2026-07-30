@@ -3083,7 +3083,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : !deviceReady
         ? firmwareUpdateInProgress
           ? ["settings", "theme-library"]
-          : ["settings", "theme-library", "updates"]
+          : ["settings", "updates"]
       : []
     : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
   const activeShellTab = disabledTabs.includes(activeTab)

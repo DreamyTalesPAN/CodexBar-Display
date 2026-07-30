@@ -857,7 +857,6 @@ function ThemeListItem({
     ? buildThemeInstallBlocker({
         device,
         theme,
-        allowUnreadyInstall: setupMode,
         themeInstallBlockedReason,
         themeInstallEnabled,
       })
@@ -1100,7 +1099,7 @@ function buildCustomThemeInstallBlocker({
   themeInstallBlockedReason: string;
   themeInstallEnabled: boolean;
 }): ThemeInstallBlocker | null {
-  if (device?.ready !== true) {
+  if (device?.connected !== true) {
     return { reason: themeInstallBlockedReason || "Connect VibeTV first." };
   }
   if (!device.paired) {
@@ -1181,7 +1180,7 @@ function buildInstallReadiness({
       icon: <Wifi size={22} aria-hidden />,
     };
   }
-  if (device?.ready !== true) {
+  if (device?.connected !== true) {
     return {
       title: "VibeTV not found",
       detail:
@@ -1264,13 +1263,11 @@ function installDisabledReason({
 }
 
 function buildThemeInstallBlocker({
-  allowUnreadyInstall = false,
   device,
   theme,
   themeInstallBlockedReason,
   themeInstallEnabled,
 }: {
-  allowUnreadyInstall?: boolean;
   device: ThemeLibraryDeviceInfo | null;
   theme: ThemeProduct;
   themeInstallBlockedReason: string;
@@ -1280,11 +1277,7 @@ function buildThemeInstallBlocker({
   if (metadataBlocker) {
     return metadataBlocker;
   }
-  const canInstallMissingTheme =
-    allowUnreadyInstall &&
-    device?.connected === true &&
-    device.paired === true;
-  if (device?.ready !== true && !canInstallMissingTheme) {
+  if (device?.connected !== true) {
     return { reason: themeInstallBlockedReason || "Connect VibeTV first." };
   }
   if (!device.paired) {
@@ -1483,7 +1476,6 @@ export function themeNeedsUpgradeableFirmware(
   }
   return Boolean(
     buildThemeInstallBlocker({
-      allowUnreadyInstall: true,
       device,
       theme,
       themeInstallBlockedReason: "",
