@@ -36,6 +36,7 @@ with tarfile.open(archive, "r:gz") as candidate:
     members = candidate.getmembers()
     if not members:
         raise SystemExit("candidate app archive is empty")
+    member_paths = set()
     symlink_paths = set()
     for member in members:
         path = pathlib.PurePosixPath(member.name)
@@ -43,6 +44,9 @@ with tarfile.open(archive, "r:gz") as candidate:
             raise SystemExit(f"unsafe candidate archive path: {member.name}")
         if not path.parts or path.parts[0] != expected_root:
             raise SystemExit(f"unexpected candidate archive root: {member.name}")
+        if path in member_paths:
+            raise SystemExit(f"duplicate candidate archive path: {member.name}")
+        member_paths.add(path)
         if member.issym():
             link = pathlib.PurePosixPath(member.linkname)
             resolved = pathlib.PurePosixPath(posixpath.normpath(str(path.parent / link)))

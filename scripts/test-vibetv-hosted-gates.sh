@@ -123,6 +123,33 @@ PY
     || die "symlink ancestor test failed for the wrong reason: $chained_link_error"
   [[ ! -e "$work/escaped" ]] \
     || die "archive symlink chain wrote outside the output directory"
+
+  python3 - "$work/duplicate-path.tar.gz" <<'PY'
+import io
+import sys
+import tarfile
+
+root = "VibeTV Control Center.app"
+with tarfile.open(sys.argv[1], "w:gz") as archive:
+    plist = tarfile.TarInfo(f"{root}/Contents/Info.plist")
+    plist_payload = b'<plist version="1.0"><dict/></plist>\n'
+    plist.size = len(plist_payload)
+    archive.addfile(plist, io.BytesIO(plist_payload))
+    link = tarfile.TarInfo(f"{root}/duplicate")
+    link.type = tarfile.SYMTYPE
+    link.linkname = "Contents/Info.plist"
+    archive.addfile(link)
+    duplicate = tarfile.TarInfo(f"{root}/duplicate")
+    payload = b"duplicate path"
+    duplicate.size = len(payload)
+    archive.addfile(duplicate, io.BytesIO(payload))
+PY
+  local duplicate_path_error
+  if duplicate_path_error="$("$EXTRACTOR" --archive "$work/duplicate-path.tar.gz" --output "$work/duplicate-output" 2>&1)"; then
+    die "archive with a duplicate symlink path was accepted"
+  fi
+  [[ "$duplicate_path_error" == *"duplicate candidate archive path"* ]] \
+    || die "duplicate path test failed for the wrong reason: $duplicate_path_error"
 }
 
 main() {
