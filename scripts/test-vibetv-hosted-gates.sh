@@ -266,6 +266,8 @@ main() {
     'release-candidate workflow must require a candidate version'
   assert_contains "$RC_WORKFLOW" 'ref: ${{ github.sha }}' \
     'release candidate must build the exact main SHA that dispatched it'
+  assert_contains "$RC_WORKFLOW" 'pip install platformio intelhex' \
+    'release candidate must install the ESP32 bootloader dependency on macOS'
   assert_contains "$RC_WORKFLOW" 'candidate-manifest.json' \
     'release candidate must emit an immutable candidate manifest'
   assert_contains "$RC_WORKFLOW" 'name: vibetv-release-candidate' \
