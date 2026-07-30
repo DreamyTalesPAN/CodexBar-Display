@@ -89,6 +89,40 @@ PY
   fi
   [[ "$unsafe_link_error" == *"unsafe candidate archive symlink"* ]] \
     || die "escaping symlink test failed for the wrong reason: $unsafe_link_error"
+
+  python3 - "$work/chained-link.tar.gz" <<'PY'
+import io
+import sys
+import tarfile
+
+root = "VibeTV Control Center.app"
+with tarfile.open(sys.argv[1], "w:gz") as archive:
+    plist = tarfile.TarInfo(f"{root}/Contents/Info.plist")
+    plist_payload = b'<plist version="1.0"><dict/></plist>\n'
+    plist.size = len(plist_payload)
+    archive.addfile(plist, io.BytesIO(plist_payload))
+    for name, target in [
+        (f"{root}/a", "."),
+        (f"{root}/a/b", ".."),
+        (f"{root}/a/b/c", ".."),
+    ]:
+        link = tarfile.TarInfo(name)
+        link.type = tarfile.SYMTYPE
+        link.linkname = target
+        archive.addfile(link)
+    escaped = tarfile.TarInfo(f"{root}/a/b/c/escaped")
+    payload = b"outside output"
+    escaped.size = len(payload)
+    archive.addfile(escaped, io.BytesIO(payload))
+PY
+  local chained_link_error
+  if chained_link_error="$("$EXTRACTOR" --archive "$work/chained-link.tar.gz" --output "$work/chained-output" 2>&1)"; then
+    die "archive with a symlinked parent was accepted"
+  fi
+  [[ "$chained_link_error" == *"candidate archive member descends through symlink"* ]] \
+    || die "symlink ancestor test failed for the wrong reason: $chained_link_error"
+  [[ ! -e "$work/escaped" ]] \
+    || die "archive symlink chain wrote outside the output directory"
 }
 
 main() {

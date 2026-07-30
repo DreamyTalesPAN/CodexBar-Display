@@ -36,6 +36,7 @@ with tarfile.open(archive, "r:gz") as candidate:
     members = candidate.getmembers()
     if not members:
         raise SystemExit("candidate app archive is empty")
+    symlink_paths = set()
     for member in members:
         path = pathlib.PurePosixPath(member.name)
         if path.is_absolute() or ".." in path.parts:
@@ -47,8 +48,13 @@ with tarfile.open(archive, "r:gz") as candidate:
             resolved = pathlib.PurePosixPath(posixpath.normpath(str(path.parent / link)))
             if not member.linkname or link.is_absolute() or not resolved.parts or resolved.parts[0] != expected_root:
                 raise SystemExit(f"unsafe candidate archive symlink: {member.name} -> {member.linkname}")
+            symlink_paths.add(path)
         elif not (member.isdir() or member.isfile()):
             raise SystemExit(f"candidate archive contains a non-regular entry: {member.name}")
+    for member in members:
+        path = pathlib.PurePosixPath(member.name)
+        if any(parent in symlink_paths for parent in path.parents):
+            raise SystemExit(f"candidate archive member descends through symlink: {member.name}")
     output.mkdir(parents=True)
     candidate.extractall(output)
 
