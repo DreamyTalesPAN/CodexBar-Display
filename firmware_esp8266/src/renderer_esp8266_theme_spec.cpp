@@ -161,8 +161,9 @@ void cancelAnimatedSpriteFrame(AnimatedSpriteCache& cache) {
 }
 
 void cooperativeYield() {
-  if (ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(
-          State().displayTransactionDepth)) {
+  if (ThemeSpecRuntimePolicy::CanCooperativelyYield(
+          State().displayTransactionDepth,
+          can_yield())) {
     yield();
   }
 }
