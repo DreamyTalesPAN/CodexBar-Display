@@ -101,8 +101,10 @@ class ThemeSpecRuntimePolicy {
            maxFreeBlockBytes >= bufferBytes;
   }
 
-  static bool CanYieldAtDisplayTransactionDepth(uint16_t transactionDepth) {
-    return transactionDepth == 0;
+  static bool CanCooperativelyYield(
+      uint16_t transactionDepth,
+      bool continuationCanSuspend) {
+    return transactionDepth == 0 && continuationCanSuspend;
   }
 
   static int InitialAnimatedIndexedFrameCount(int frameCount) {

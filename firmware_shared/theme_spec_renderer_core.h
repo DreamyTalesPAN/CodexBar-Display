@@ -34,7 +34,11 @@ constexpr int kMaxThemeSpecGifHeight = 80;
 constexpr int kMaxThemeSpecGifPixels = kMaxThemeSpecGifWidth * kMaxThemeSpecGifHeight;
 
 inline void RenderYield() {
-#if defined(ARDUINO)
+#if defined(ARDUINO_ARCH_ESP8266)
+  if (can_yield()) {
+    yield();
+  }
+#elif defined(ARDUINO)
   yield();
 #endif
 }

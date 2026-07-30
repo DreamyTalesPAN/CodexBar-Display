@@ -521,15 +521,17 @@ bool testEsp8266CbaCooperativeAnimationPolicy() {
     return false;
   }
   return expect(
-      ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(0) &&
-          !ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(1) &&
-          !ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(2),
-      "yield boundaries must require display transaction depth zero");
+      ThemeSpecRuntimePolicy::CanCooperativelyYield(0, true) &&
+          !ThemeSpecRuntimePolicy::CanCooperativelyYield(0, false) &&
+          !ThemeSpecRuntimePolicy::CanCooperativelyYield(1, true) &&
+          !ThemeSpecRuntimePolicy::CanCooperativelyYield(1, false),
+      "yield boundaries must require transaction depth zero and a suspendable continuation");
 }
 
 bool testRendererUsesResumableCbaAnimation(
     const char* themeSpecRendererPath,
-    const char* displayRendererPath) {
+    const char* displayRendererPath,
+    const char* sharedRendererPath) {
   const std::string renderer = readFile(themeSpecRendererPath);
   const std::size_t loadStart = renderer.find("bool loadAnimatedSpriteCache(");
   const std::size_t drawStart = renderer.find("bool drawAnimatedSpriteAsset(", loadStart);
@@ -582,8 +584,16 @@ bool testRendererUsesResumableCbaAnimation(
     return false;
   }
   if (!expect(
-          renderer.find("CanYieldAtDisplayTransactionDepth") != std::string::npos,
-          "all explicit theme-renderer yields must be guarded by transaction depth")) {
+          renderer.find("CanCooperativelyYield") != std::string::npos &&
+              renderer.find("can_yield()") != std::string::npos,
+          "explicit theme-renderer yields must require a suspendable continuation")) {
+    return false;
+  }
+  const std::string sharedRenderer = readFile(sharedRendererPath);
+  if (!expect(
+          sharedRenderer.find("inline void RenderYield()") != std::string::npos &&
+              sharedRenderer.find("if (can_yield())") != std::string::npos,
+          "shared ESP8266 render yields must require a suspendable continuation")) {
     return false;
   }
   const std::size_t pushImage = renderer.find("Tft().pushImage(");
@@ -817,10 +827,10 @@ int main(int argc, char** argv) {
   if (!testEsp8266CbaCooperativeAnimationPolicy()) {
     return 1;
   }
-  if (!expect(argc == 6, "source paths are required for firmware policy tests")) {
+  if (!expect(argc == 7, "source paths are required for firmware policy tests")) {
     return 1;
   }
-  if (!testRendererUsesResumableCbaAnimation(argv[1], argv[4])) {
+  if (!testRendererUsesResumableCbaAnimation(argv[1], argv[4], argv[6])) {
     return 1;
   }
   if (!testDecoderAllocationStaysInsideRealPlayback(argv[1], argv[2])) {
