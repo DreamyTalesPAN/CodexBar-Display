@@ -48,7 +48,7 @@ jobs:
           version="${VERSION#v}"
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || { echo 'version must be SemVer' >&2; exit 1; }
           test -d companion/cmd/virtual-vibetv || { echo 'error: Issue #177 Core is required: companion/cmd/virtual-vibetv is missing.' >&2; exit 1; }
-          pip install platformio
+          pip install platformio intelhex
           mkdir -p dist/macos tmp/vibetv-rc/publish/companion tmp/vibetv-rc/publish/firmware tmp/vibetv-rc/test
           (
             cd apps/control-center
