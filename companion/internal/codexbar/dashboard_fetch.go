@@ -19,50 +19,53 @@ const (
 	dashboardUsagePath    = "/usage"
 )
 
-type DashboardFetchResult struct {
-	Providers []ParsedFrame
-	Cold      bool
-}
-
-func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now time.Time, snapshotFetches int) (DashboardFetchResult, error) {
+func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now time.Time) ([]ParsedFrame, error) {
 	endpoint := strings.TrimRight(strings.TrimSpace(info.Endpoint), "/")
 	if endpoint == "" || strings.TrimSpace(info.Token) == "" || !info.Running || !info.Healthy {
-		return DashboardFetchResult{}, fmt.Errorf("dashboard serve unavailable")
+		return nil, fmt.Errorf("dashboard serve unavailable")
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
 
-	client := &http.Client{Timeout: dashboardServeHealthTimeout}
-	snapshotRaw, err := fetchDashboardJSON(ctx, client, endpoint+dashboardSnapshotPath, strings.TrimSpace(info.Token))
+	snapshotRaw, err := fetchDashboardJSON(ctx, endpoint+dashboardSnapshotPath, strings.TrimSpace(info.Token))
 	if err != nil {
-		return DashboardFetchResult{}, err
+		return nil, err
 	}
-	usageRaw, err := fetchDashboardJSON(ctx, client, endpoint+dashboardUsagePath, "")
+	usageRaw, err := fetchDashboardJSON(ctx, endpoint+dashboardUsagePath, "")
 	if err != nil {
-		return DashboardFetchResult{}, err
+		return nil, err
 	}
 
 	snapshot, err := dashboardusage.DecodeSnapshot(snapshotRaw)
 	if err != nil {
-		return DashboardFetchResult{}, fmt.Errorf("decode dashboard snapshot: %w", err)
+		return nil, fmt.Errorf("decode dashboard snapshot: %w", err)
 	}
 	usageProviders, err := dashboardusage.DecodeUsage(usageRaw)
 	if err != nil {
-		return DashboardFetchResult{}, fmt.Errorf("decode dashboard usage: %w", err)
+		return nil, fmt.Errorf("decode dashboard usage: %w", err)
 	}
 
 	snapshotCollectedAt := time.Time{}
 	if snapshot.GeneratedAt != nil {
 		snapshotCollectedAt = snapshot.GeneratedAt.UTC()
 	}
-	coldSource := snapshotFetches < 2
+	freshUntil := time.Time{}
+	if !snapshotCollectedAt.IsZero() && snapshot.StaleAfterSeconds > 0 {
+		freshUntil = snapshotCollectedAt.Add(time.Duration(snapshot.StaleAfterSeconds) * time.Second)
+	}
 	out := make([]ParsedFrame, 0, len(snapshot.Providers))
 	for _, provider := range snapshot.Providers {
 		usage, usageOK := dashboardusage.UsageForProvider(usageProviders, provider.ID)
-		normalized := dashboardusage.NormalizeProvider(provider, usage)
-		parsed := parsedFrameFromDashboardProvider(provider, normalized, now, snapshotCollectedAt, usage.Error)
-		if coldSource || provider.UpdatedAt == nil || !usageOK {
+		parsed := parsedFrameFromDashboardProvider(
+			provider,
+			dashboardusage.NormalizeProvider(provider, usage),
+			now,
+			snapshotCollectedAt,
+			freshUntil,
+			usage.Error,
+		)
+		if !usageOK {
 			parsed.Frame.UsageUnavailable = true
 			parsed.Frame.UsageWindows = nil
 			parsed.Frame.UsageSlots = nil
@@ -75,10 +78,10 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 		}
 		out = append(out, parsed)
 	}
-	return DashboardFetchResult{Providers: out, Cold: coldSource}, nil
+	return out, nil
 }
 
-func fetchDashboardJSON(ctx context.Context, client *http.Client, url string, token string) ([]byte, error) {
+func fetchDashboardJSON(ctx context.Context, url string, token string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -86,7 +89,7 @@ func fetchDashboardJSON(ctx context.Context, client *http.Client, url string, to
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := client.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +104,7 @@ func fetchDashboardJSON(ctx context.Context, client *http.Client, url string, to
 	return raw, nil
 }
 
-func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider, normalized dashboardusage.ProviderWindows, now time.Time, collectedAt time.Time, usageError json.RawMessage) ParsedFrame {
+func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider, normalized dashboardusage.ProviderWindows, now time.Time, collectedAt time.Time, freshUntil time.Time, usageError json.RawMessage) ParsedFrame {
 	id := strings.TrimSpace(strings.ToLower(provider.ID))
 	label := strings.TrimSpace(provider.Name)
 	if label == "" {
@@ -140,10 +143,11 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 		Source:             "codexbar-dashboard",
 		Meta:               ProviderUsageMeta{Windows: metaWindows},
 		CollectedAt:        collectedAt.UTC(),
+		FreshUntil:         freshUntil.UTC(),
 		ActivityObservedAt: activityObservedAt,
 		RateLimited:        dashboardErrorsAreRateLimited(provider.Error, usageError),
 		RateLimitedUntil:   rateLimitedUntilFromDashboardErrors(provider.Error, usageError),
-		Stale:              frame.UsageUnavailable,
+		Stale:              frame.UsageUnavailable || freshUntil.IsZero() || now.After(freshUntil),
 	}
 }
 

@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"errors"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +27,7 @@ type providerSnapshot struct {
 	Source              string                     `json:"source,omitempty"`
 	Meta                codexbar.ProviderUsageMeta `json:"meta,omitempty"`
 	Collected           time.Time                  `json:"collectedAt"`
+	FreshUntil          time.Time                  `json:"freshUntil,omitempty"`
 	TokenStatsCollected time.Time                  `json:"tokenStatsCollectedAt,omitempty"`
 	ActivityObservedAt  time.Time                  `json:"activityObservedAt,omitempty"`
 	RateLimited         bool                       `json:"rateLimited,omitempty"`
@@ -43,7 +43,7 @@ type providerCollector struct {
 	now                   func() time.Time
 	logf                  func(string, ...any)
 	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
-	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time, int) (codexbar.DashboardFetchResult, error)
+	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error)
 	fetchInventory        func(context.Context) ([]codexbar.ProviderSetting, error)
 	fetchTokenStats       func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
 	fetchTokenStatsReport func(context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport)
@@ -61,20 +61,18 @@ type providerCollector struct {
 	wake                  <-chan struct{}
 	afterWakeCollect      func()
 
-	mu                       sync.RWMutex
-	providers                map[string]providerSnapshot
-	lastPersistedRaw         string
-	lastPersistedAt          time.Time
-	dashboardProcessKey      string
-	dashboardSnapshotFetches int
-	inventoryKnown           bool
-	inventoryEnabled         map[string]struct{}
-	tokenStatsMu             sync.Mutex
-	tokenStatsRunning        bool
-	tokenStatsCancel         context.CancelFunc
-	tokenStatsWG             sync.WaitGroup
-	tokenStatsCooldown       time.Duration
-	tokenStatsLastCompleted  time.Time
+	mu                      sync.RWMutex
+	providers               map[string]providerSnapshot
+	lastPersistedRaw        string
+	lastPersistedAt         time.Time
+	inventoryKnown          bool
+	inventoryEnabled        map[string]struct{}
+	tokenStatsMu            sync.Mutex
+	tokenStatsRunning       bool
+	tokenStatsCancel        context.CancelFunc
+	tokenStatsWG            sync.WaitGroup
+	tokenStatsCooldown      time.Duration
+	tokenStatsLastCompleted time.Time
 }
 
 func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
@@ -313,6 +311,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 					Frame:            frame,
 					Source:           strings.TrimSpace(parsed.Source),
 					Collected:        parsedCollectedAt,
+					FreshUntil:       parsed.FreshUntil.UTC(),
 					RateLimited:      parsed.RateLimited,
 					RateLimitedUntil: parsed.RateLimitedUntil.UTC(),
 				}
@@ -326,6 +325,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			Source:              strings.TrimSpace(parsed.Source),
 			Meta:                parsed.Meta,
 			Collected:           parsedCollectedAt,
+			FreshUntil:          parsed.FreshUntil.UTC(),
 			TokenStatsCollected: parsedTokenStatsCollectedAt(parsed, now),
 			ActivityObservedAt:  parsed.ActivityObservedAt,
 			RateLimited:         false,
@@ -356,20 +356,10 @@ func parsedProviderCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time) 
 func (c *providerCollector) fetchProvidersForCollect(ctx context.Context, now time.Time) ([]codexbar.ParsedFrame, string, error) {
 	if c.dashboard != nil && c.fetchDashboard != nil {
 		info := c.dashboard.Info()
-		processKey := dashboardServeProcessKey(info)
-		if processKey != "" {
-			if processKey != c.dashboardProcessKey {
-				c.dashboardProcessKey = processKey
-				c.dashboardSnapshotFetches = 0
-			}
-			nextFetch := c.dashboardSnapshotFetches + 1
-			result, err := c.fetchDashboard(ctx, info, now, nextFetch)
+		if strings.TrimSpace(info.Endpoint) != "" && info.Running {
+			providers, err := c.fetchDashboard(ctx, info, now)
 			if err == nil {
-				c.dashboardSnapshotFetches = nextFetch
-				if result.Cold {
-					c.logf("collector dashboard-warmup source=codexbar-dashboard snapshotFetches=%d\n", c.dashboardSnapshotFetches)
-				}
-				return result.Providers, "codexbar-dashboard", nil
+				return providers, "codexbar-dashboard", nil
 			}
 			c.logf("collector dashboard-unavailable source=codexbar-dashboard err=%v\n", err)
 			return nil, "codexbar-dashboard", err
@@ -776,6 +766,7 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			Source:             snapshot.Source,
 			Meta:               snapshot.Meta,
 			CollectedAt:        snapshot.Collected,
+			FreshUntil:         snapshot.FreshUntil,
 			ActivityObservedAt: snapshot.ActivityObservedAt,
 			RateLimited:        snapshot.RateLimited,
 			RateLimitedUntil:   snapshot.RateLimitedUntil,
@@ -800,31 +791,24 @@ func (c *providerCollector) snapshotIsFresh(snapshot providerSnapshot, now time.
 }
 
 func providerSnapshotIsFresh(snapshot providerSnapshot, now time.Time, interval time.Duration) bool {
-	if snapshot.Collected.IsZero() || now.IsZero() {
+	if now.IsZero() {
+		return false
+	}
+	if !snapshot.FreshUntil.IsZero() {
+		return !now.After(snapshot.FreshUntil)
+	}
+	if snapshot.Collected.IsZero() {
 		return false
 	}
 	age := now.Sub(snapshot.Collected)
 	if age < 0 {
 		return true
 	}
-	freshFor := providerSnapshotFreshnessWindow(snapshot, interval)
-	return age <= freshFor
-}
-
-func providerSnapshotFreshnessWindow(snapshot providerSnapshot, interval time.Duration) time.Duration {
-	if strings.TrimSpace(snapshot.Source) == "codexbar-dashboard" {
-		refreshInterval := codexbar.DashboardServeDefaultRefreshInterval
-		if refreshInterval < codexbar.DashboardServeMinimumRefreshInterval {
-			refreshInterval = codexbar.DashboardServeMinimumRefreshInterval
-		}
-		return refreshInterval + providerSnapshotFreshnessJitter
-	}
-
 	freshFor := interval + providerSnapshotFreshnessJitter
 	if freshFor <= providerSnapshotFreshnessJitter {
 		freshFor = 35 * time.Second
 	}
-	return freshFor
+	return age <= freshFor
 }
 
 func (c *providerCollector) orderedKeysLocked() []string {
@@ -869,12 +853,4 @@ func (c *providerCollector) persistIfNeeded(now time.Time) {
 	}
 	c.lastPersistedRaw = encoded
 	c.lastPersistedAt = now
-}
-
-func dashboardServeProcessKey(info codexbar.DashboardServeInfo) string {
-	endpoint := strings.TrimSpace(info.Endpoint)
-	if endpoint == "" || !info.Running {
-		return ""
-	}
-	return endpoint + "#" + strconv.Itoa(info.PID)
 }

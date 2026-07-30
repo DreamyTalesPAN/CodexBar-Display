@@ -131,7 +131,7 @@ type runtimeDeps struct {
 	resolvePort           func(string) (string, error)
 	deviceCaps            func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
-	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time, int) (codexbar.DashboardFetchResult, error)
+	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error)
 	fetchProvider         func(context.Context, string) (codexbar.ParsedFrame, error)
 	fetchInventory        func(context.Context) ([]codexbar.ProviderSetting, error)
 	fetchTokenStats       func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)

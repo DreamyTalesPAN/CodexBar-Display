@@ -25,7 +25,6 @@ type usageWindowAcceptanceFixture struct {
 type usageWindowAcceptanceCase struct {
 	Name                         string                `json:"name"`
 	Now                          string                `json:"now"`
-	SnapshotFetches              int                   `json:"snapshotFetches"`
 	ShowUsed                     bool                  `json:"showUsed"`
 	DashboardProvider            json.RawMessage       `json:"dashboardProvider"`
 	UsageProvider                json.RawMessage       `json:"usageProvider"`
@@ -63,21 +62,21 @@ func TestUsageWindowAcceptanceMatrixNormalizesToDeviceFrame(t *testing.T) {
 			server := newUsageWindowAcceptanceServer(t, tc.DashboardProvider, tc.UsageProvider)
 			defer server.Close()
 
-			result, err := codexbar.FetchDashboardProviders(context.Background(), codexbar.DashboardServeInfo{
+			providers, err := codexbar.FetchDashboardProviders(context.Background(), codexbar.DashboardServeInfo{
 				Endpoint: server.URL,
 				Token:    "fixture-token",
 				Running:  true,
 				Healthy:  true,
 				PID:      275,
-			}, now, tc.SnapshotFetches)
+			}, now)
 			if err != nil {
 				t.Fatalf("fetch dashboard fixture: %v", err)
 			}
-			if len(result.Providers) != 1 {
-				t.Fatalf("expected one provider, got %+v", result.Providers)
+			if len(providers) != 1 {
+				t.Fatalf("expected one provider, got %+v", providers)
 			}
 
-			parsed := result.Providers[0]
+			parsed := providers[0]
 			assertAcceptanceWindows(t, parsed.Meta.Windows, tc.ExpectedControlCenterWindows)
 
 			frame := applyUsageBarsPreference(parsed.Frame, tc.ShowUsed)

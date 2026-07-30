@@ -432,6 +432,7 @@ type ParsedFrame struct {
 	AccountEmail       string
 	Meta               ProviderUsageMeta
 	CollectedAt        time.Time
+	FreshUntil         time.Time
 	ActivityObservedAt time.Time
 	RateLimited        bool
 	RateLimitedUntil   time.Time

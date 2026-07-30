@@ -193,7 +193,6 @@
       "name": "zero-source-windows",
       "criteria": ["237-02-missing-not-100-remaining"],
       "now": "2026-07-28T08:30:00Z",
-      "snapshotFetches": 2,
       "showUsed": true,
       "dashboardProvider": {
         "id": "empty",
@@ -224,7 +223,6 @@
       "name": "one-valid-weekly-remaining",
       "criteria": ["237-01-one-window-one-lane", "237-02-missing-not-100-remaining", "237-09-used-remaining-valid-only"],
       "now": "2026-07-28T08:30:00Z",
-      "snapshotFetches": 2,
       "showUsed": false,
       "dashboardProvider": {
         "id": "codex",
@@ -269,7 +267,6 @@
       "name": "codex-weekly-spark-zero",
       "criteria": ["237-03-codex-weekly-spark", "237-05-provider-labels-reach-display", "237-06-per-slot-reset"],
       "now": "2026-07-28T08:30:00Z",
-      "snapshotFetches": 2,
       "showUsed": true,
       "dashboardProvider": {
         "id": "codex",
@@ -318,7 +315,6 @@
       "name": "four-unique-overflow",
       "criteria": ["237-04-antigravity-overflow-control-center", "237-05-provider-labels-reach-display", "237-06-per-slot-reset", "237-13-frame-budget", "259-09-physical-same-snapshot"],
       "now": "2026-07-28T08:30:00Z",
-      "snapshotFetches": 2,
       "showUsed": true,
       "dashboardProvider": {
         "id": "generic",
@@ -373,7 +369,6 @@
       "name": "antigravity-generic-dedupe",
       "criteria": ["237-04-antigravity-overflow-control-center", "237-12-no-provider-specific-mapping"],
       "now": "2026-07-28T08:30:00Z",
-      "snapshotFetches": 2,
       "showUsed": true,
       "dashboardProvider": {
         "id": "antigravity",
@@ -426,7 +421,6 @@
       "name": "filter-unknown-synthetic-usageknown",
       "criteria": ["237-07-unknown-usageknown-synthetic-hidden"],
       "now": "2026-07-28T08:30:00Z",
-      "snapshotFetches": 2,
       "showUsed": true,
       "dashboardProvider": {
         "id": "mixed",
@@ -475,7 +469,6 @@
       "name": "provider-window-rename",
       "criteria": ["237-08-provider-window-changes-update"],
       "now": "2026-07-28T08:30:00Z",
-      "snapshotFetches": 2,
       "showUsed": true,
       "dashboardProvider": {
         "id": "claude",

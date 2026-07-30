@@ -11,9 +11,10 @@ import (
 var ErrUnexpectedPayload = errors.New("unexpected dashboard usage payload")
 
 type Snapshot struct {
-	SchemaVersion int                 `json:"schemaVersion"`
-	GeneratedAt   *time.Time          `json:"generatedAt"`
-	Providers     []DashboardProvider `json:"providers"`
+	SchemaVersion     int                 `json:"schemaVersion"`
+	GeneratedAt       *time.Time          `json:"generatedAt"`
+	StaleAfterSeconds int                 `json:"staleAfterSeconds"`
+	Providers         []DashboardProvider `json:"providers"`
 }
 
 type DashboardProvider struct {
