@@ -969,7 +969,7 @@ inline bool ConsumeFrameLine(
     return false;
   }
 
-  const Frame previous = runtimeState.current;
+  const Frame& previous = runtimeState.current;
   ApplyThemeSpecCache(runtimeState, previous, next, outEvent);
   if (!next.hasError && next.activity.length() == 0) {
     next.activity = runtimeState.hasFrame && UsageProgressChanged(previous, next) ? "coding" : "idle";

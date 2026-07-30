@@ -597,6 +597,27 @@ void testCompactUsageWindowBindingTriggersLiveRedraw() {
   TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindows) != 0);
 }
 
+void testConsumeFrameLineComparesCurrentBeforeAssignment() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":100,"usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":100}],"themeSpec":{"v":1,"id":"clippy","rev":1,"p":[{"t":"sp","x":83,"y":54,"w":74,"h":74,"a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":0,"y":0,"w":100,"h":8,"sl":1,"b":"us1p"}]}})JSON";
+  const char* nextFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":100,"usageWindows":[{"id":"weekly","label":"Weekly","percent":43,"resetSecs":99}]})JSON";
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+  TEST_ASSERT_FALSE(event.hadFrame);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, nextFrame, 2000, event));
+  TEST_ASSERT_TRUE(event.hadFrame);
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldActivity) != 0);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindows) != 0);
+}
+
 void testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw() {
   RuntimeState ownershipState;
   SerialConsumeEvent event;
@@ -2029,6 +2050,7 @@ int main() {
   RUN_TEST(testRawUsageWindowParserCapacityStillAcceptsNormalLabels);
   RUN_TEST(testHighestAdvertisedUsageWindowBindingCompiles);
   RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
+  RUN_TEST(testConsumeFrameLineComparesCurrentBeforeAssignment);
   RUN_TEST(testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw);
   RUN_TEST(testWhitespaceUsageWindowOwnersTriggerLiveRedraw);
   RUN_TEST(testPartialUsageProtocolRendersOnlyUnknownLane);
