@@ -1,176 +1,159 @@
-# Usage Polling Architecture and Benchmarks
+# Usage Data Architecture
 
-This document is the reference for how `codexbar-display` fetches usage data, why stale values can appear, and how to benchmark/tune polling behavior.
+This document describes the normal Mac App runtime path for provider usage and
+token history.
 
 ## Goal
 
-Keep firmware dumb and mirror CodexBar desktop values on the device, while keeping render cycles responsive even when upstream usage calls are slow.
+Mirror CodexBar's provider data in Control Center and on VibeTV without
+reimplementing provider behavior. Firmware stays dumb, the Mac App stays
+provider-neutral, and temporary collection failures do not create a second
+source of truth.
 
-## Upstream CodexBar References
+## Ownership
 
-- CLI reference: <https://github.com/steipete/CodexBar/blob/main/docs/cli.md>
-- Refresh loop: <https://github.com/steipete/CodexBar/blob/main/docs/refresh-loop.md>
-- Status polling: <https://github.com/steipete/CodexBar/blob/main/docs/status.md>
+- **CodexBar** owns provider integrations, authentication, provider-specific
+  fallbacks, quota mapping, usage-window meaning, provider errors, and provider
+  inventory.
+- **VibeTV Mac App** supervises the bundled CodexBar process, maps generic
+  provider data into the VibeTV protocol, keeps one bounded last-good state, and
+  transports the same state to Control Center and VibeTV.
+- **Control Center** renders the local API. It does not fetch providers directly,
+  keep a second usage cache, or decide provider freshness.
+- **VibeTV firmware** renders the generic frame it receives.
 
-## Manual Refresh And Rate Limits
+Before changing this path, identify the exact CodexBar version pinned by
+`scripts/fetch-codexbar.sh` and inspect that version's output and source.
+Upstream `main` and older CodexBar releases are useful context, not the runtime
+contract for the bundled app.
 
-Control Center manual refresh requests do not start a second CodexBar fetch path.
-They wake the existing display-stream collector and report an explicit refresh
-state at `/v1/usage`:
+## Normal Runtime Path
 
-- `refreshing`: the collector has not produced a snapshot at or after the user
-  request yet; last-good values remain visible.
-- `rate_limited`: CodexBar reported a provider rate limit; last-good values
-  remain visible.
-- `fresh`: at least one collector snapshot is fresh for the current request.
-- `unavailable`: no usable collector snapshot exists yet.
-
-`blockedUntil` is preserved only when CodexBar exposes a real timestamp in the
-provider error payload, for example `error.blockedUntil` or `error.retryAfter`.
-CodexBar `0.45.2` keeps the Claude CLI gate timestamp in `UserDefaults` but its
-`ProviderErrorPayload`, `codexbar usage --json`, and `/dashboard/v1/snapshot`
-JSON contracts expose only `code`, `message`, and `kind`. VibeTV therefore does
-not synthesize `now + cooldown`; when `0.45.2` only emits the rate-limit message,
-the API returns `rate_limited` without `blockedUntil`.
-
-Primary commands used by companion:
-
-- Aggregated usage: `codexbar usage --json --web-timeout 8`
-- Codex CLI fallback: `codexbar usage --json --provider codex --source cli`
-- Absolute token stats: `codexbar cost --json`
-
-## Current Runtime Architecture
-
-### 1) Daemon cadence
-
-- LaunchAgent runs `codexbar-display daemon --interval 30s` for WiFi devices.
-- Daemon starts a background collector (`mode=fetch-all`).
-- Render cycle reads collector snapshots and sends one serial frame to device.
-
-### 2) Collector behavior
-
-Collector is aggregate-first:
-
-1. Call `codexbar usage --json --web-timeout 8`.
-2. Optional retry after starting CodexBar app when output indicates app/bootstrap issue.
-3. If aggregate still fails, try codex CLI-only fallback (`--provider codex --source cli`).
-4. If no usable payload exists, daemon serves last-good frame (stale-while-revalidate).
-
-A non-zero aggregate exit does not discard parseable provider results. Valid
-usage rows and sanitized provider-error rows may coexist; the Codex-only
-fallback runs only when the aggregate payload is unusable.
-
-Notes:
-
-- No per-provider fanout polling loop in daemon collector mode.
-- Aggregate Codex values are preserved as-is (no replacement by separate codex-cli value when aggregate already contains Codex).
-- Provider inventory and ordering come from CodexBar output. VibeTV does not
-  maintain a fallback provider list.
-- A provider is rendered as unavailable when either normalized primary or
-  secondary usage is missing or explicitly marked unknown. Numeric zero is
-  trusted only when CodexBar marks that lane as known.
-
-### 2b) Token stats side-channel
-
-Absolute token stats are fetched separately from the percentage collector:
-
-1. Read provider usage/quota percentages from `codexbar usage --json`.
-2. Read local token totals from `codexbar cost --json`.
-3. Poll local token totals every 2 seconds with `codexbar cost --json` and a short cache.
-4. On token-stats refresh failure, reuse cached values for up to 15 minutes instead of failing the main percentage pipeline.
-5. Merge token stats into provider frames only when reliable values are available.
-
-Notes:
-
-- Token deltas switch to `coding` immediately.
-- `coding` only returns to `idle` after the minimum hold window and enough fresh CodexBar snapshots with no newer token delta. Repeated cached `cost` snapshots with the same `updatedAt` do not count as idle evidence.
-- The percentage/quota display remains authoritative for session/weekly bars and reset countdowns.
-- Frame size enforcement drops `theme` first, then token stats, before falling back to a runtime error frame.
-
-### 3) Selection and staleness
-
-Provider selection in render cycles uses CodexBar token/usage deltas + sticky/current behavior. If collector fetch fails temporarily:
-
-- previous provider snapshots can still be used,
-- then persisted last-good frame fallback is used within max-age window.
-
-Inside the default 10-minute last-good window, cached numbers remain normally
-visible. After it, provider identity and last numeric values remain as
-ThemeSpec/progress carriers while `usageUnavailable` makes session/weekly text
-render as `??` and reset text as `Reset unavailable`. Token-stat refreshes do
-not refresh quota snapshot age.
-
-## Runtime Defaults and Env Knobs
-
-| Area | Env | Default | Bounds / Notes |
-|---|---|---:|---|
-| Collector fetch timeout | `CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS` | `600s` | clamped `60..900s` |
-| CodexBar command timeout | `CODEXBAR_DISPLAY_TIMEOUT_SECS` | `300s` | used by usage command calls |
-| Token stats refresh interval | built-in | `1.5s` | cache TTL for `codexbar cost --json` |
-| Token stats stale max age | built-in | `15m` | stale cache fallback when cost refresh fails |
-| Cycle watchdog timeout | `CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS` | `180s` | clamped `5..600s` |
-| Collector interval | `CODEXBAR_DISPLAY_COLLECTOR_INTERVAL_SECS` | `60s` | clamped `30..60s` |
-| Activity poll interval | `CODEXBAR_DISPLAY_ACTIVITY_POLL_SECS` | `2s` | clamped `1..10s` |
-| Minimum coding hold after token delta | `CODEXBAR_DISPLAY_ACTIVITY_HOLD_SECS` | `180s` | clamped `5..600s`; does not switch to idle by itself |
-| Fresh no-delta snapshots required before idle | `CODEXBAR_DISPLAY_ACTIVITY_IDLE_EVIDENCE` | `2` | clamped `1..10`; cached repeated snapshots do not count |
-| Cold-start fetch timeout (sync path) | `CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS` | `2s` | only when no last-good frame exists |
-| Last-good frame max age | `CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE` | `10m` | stale frame serving window |
-| Provider snapshot max age | `CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE` | inherits last-good max age | snapshot freshness gate |
-
-## Benchmark Workflow
-
-### A) Command latency benchmark
-
-Quick loop benchmark:
-
-```bash
-./scripts/bench-codexbar-usage-latency.sh 5
+```text
+bundled CodexBar
+  -> private loopback `codexbar serve`
+  -> `/dashboard/v1/snapshot` plus `/usage`
+  -> provider-neutral Companion collector
+  -> one persisted provider snapshot set
+  -> `/v1/usage` and the VibeTV display stream
 ```
 
-Single-shot check:
+1. The Mac App starts one private CodexBar serve process on loopback.
+2. CodexBar owns its refresh loop. The Mac App disables the serve request
+   deadline so a slow successful refresh can complete instead of becoming a
+   local HTTP timeout.
+3. The collector reads the dashboard snapshot and usage payload from that same
+   serve process and maps the returned ordered usage windows generically.
+4. The collector stores one snapshot per enabled provider and applies one
+   bounded last-good policy.
+5. The local API and device frame are derived from that collector-owned state.
 
-```bash
-/usr/bin/time -p codexbar usage --json --web-timeout 8 > /tmp/codexbar-usage.json
+The two dashboard endpoints are parts of one CodexBar serve contract, not
+independent fallback paths. If the configured serve path is unavailable, the
+normal Mac App runtime does not start provider-specific probes or substitute a
+different CLI result.
+
+## Provider-Neutral Rules
+
+- Preserve CodexBar provider IDs, ordering, labels, and ordered usage windows.
+- Do not assume every provider has Session and Weekly windows.
+- Do not invent a missing window, percentage, reset time, or provider.
+- A known zero remains zero. Missing or explicitly unknown data remains
+  unavailable.
+- One unavailable window does not invalidate other known windows.
+- Provider-specific source selection, authentication, retries, and quota
+  interpretation remain in CodexBar.
+- Active-provider selection may use generic activity and usage signals, but it
+  must not branch on provider IDs.
+
+## Manual Refresh
+
+Control Center manual refresh wakes the existing collector. It never starts a
+second CodexBar fetch path.
+
+`/v1/usage` reports:
+
+- `refreshing`: the requested collection has not completed; usable last-good
+  values remain visible.
+- `rate_limited`: CodexBar reported a provider rate limit; usable last-good
+  values remain visible.
+- `fresh`: at least one usable collector snapshot satisfies the request.
+- `unavailable`: no usable collector snapshot exists.
+
+`blockedUntil` is returned only when CodexBar supplies a real timestamp. The Mac
+App does not synthesize a cooldown from an error message.
+
+## Freshness Signals
+
+Keep these meanings separate:
+
+- **quota collection time**: when the authoritative CodexBar snapshot was
+  generated;
+- **provider activity time**: when provider activity was observed;
+- **token-history collection time**: when `codexbar cost --json` completed;
+- **manual refresh state**: whether a requested collection has completed;
+- **last sent frame time**: when the Mac App last wrote a frame to VibeTV.
+
+None of these timestamps refreshes another. The Mac App does not copy
+CodexBar's client staleness hint into a second provider deadline. Product-level
+availability uses the collector's central bounded last-good policy; after that
+window expires, old percentages and reset times become unavailable.
+
+## Token History
+
+Absolute token history is a separate CodexBar contract:
+
+```text
+codexbar cost --json
 ```
 
-### B) Daemon micro-benchmarks
+One collector-owned, single-in-flight background scan reads that contract.
+Token fields are merged only when reliable values are available. A slow or
+failed token scan does not start another token path, does not refresh quota age,
+and does not make otherwise valid quota windows unavailable.
 
-```bash
-cd companion
-go test ./internal/daemon -run '^$' -bench 'BenchmarkRunCycleWithDeps|BenchmarkMarshalFrameWithinLimit' -benchmem -count=1
+## Debugging Order
+
+Do not start by adding a fallback, cache, timeout, or provider condition. Find
+the first boundary where correct data changes or disappears:
+
+```text
+bundled CodexBar output
+  -> private serve health and payload
+  -> collector snapshot
+  -> persisted usage
+  -> `/v1/usage`
+  -> selected display frame
+  -> VibeTV
 ```
 
-Optional budget gate:
-
-```bash
-./scripts/check-companion-bench-budget.sh
-```
-
-### C) Runtime observability checks
+Useful read-only checks:
 
 ```bash
 codexbar-display health
+curl -fsS http://127.0.0.1:47832/v1/status
+curl -fsS http://127.0.0.1:47832/v1/usage
 tail -n 200 /tmp/codexbar-display-daemon.out.log
 ```
 
-Look for:
+When direct CodexBar output and the Mac App disagree, treat the direct command
+as a diagnostic clue, not permission to add it as a runtime fallback. Inspect
+the bundled version and the private serve path first.
 
-- `collector started ... mode=fetch-all`
-- `collector complete providers=... succeeded=... timeout=... mode=fetch-all`
-- `sent frame -> ...`
-- absence of `fatal cycle timeout` and `collector fetch-all err=...`
+## Change Checklist
 
-## Benchmark Template
+Before changing usage code:
 
-| UTC timestamp | Machine load | Command | Real seconds | Providers returned | Notes |
-|---|---|---|---:|---:|---|
-| `<timestamp>` | `<idle or loaded>` | `codexbar usage --json --web-timeout 8` | `<seconds>` | `<count>` | `<result>` |
+1. Confirm the bundled CodexBar version and its real contract.
+2. Identify the current owner of the incorrect decision.
+3. Trace the complete data path and find the first wrong transformation.
+4. Delete a conflicting local rule or duplicate path before adding code.
+5. Keep the result provider-neutral and preserve unavailable data honestly.
+6. Verify the same collector truth reaches `/v1/usage` and the device frame.
+7. Run the focused CodexBar and daemon tests, then review the complete diff for
+   unnecessary state, timers, caches, and fallbacks.
 
-## Tuning Checklist
-
-1. Measure `p50/p95` usage latency on target hardware (idle + loaded).
-2. Keep collector timeout above observed `p95` with margin.
-3. Verify `collector complete ... succeeded>0` in normal operation.
-4. Verify `codexbar-display health` shows fresh `last sent frame`.
-5. Re-run daemon micro-benchmarks after runtime changes.
-6. Periodically do parity check: device frame session/weekly vs `codexbar usage --json` codex remaining values.
+```bash
+cd companion
+go test ./internal/codexbar ./internal/daemon
+```

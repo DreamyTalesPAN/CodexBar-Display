@@ -511,10 +511,20 @@ tail -n 100 /tmp/codexbar-display-daemon.err.log
 
 ### `runtime/codexbar-command`
 
+First verify the bundled CodexBar version and inspect the Mac App's dashboard
+supervisor and collector logs. The normal Mac App runtime uses its single
+private CodexBar serve path; the direct command below is an upstream diagnostic,
+not a runtime fallback:
+
 ```bash
-codexbar usage --json --provider codex --source cli
+codexbar --version
 codexbar usage --json --web-timeout 8
 ```
+
+Do not add a provider-specific probe or alternate CLI path because this
+diagnostic succeeds while the runtime path fails. Trace the first disagreement
+through CodexBar serve, the collector, persisted usage, `/v1/usage`, and the
+last sent frame.
 
 ## Error Code Recovery Map
 
