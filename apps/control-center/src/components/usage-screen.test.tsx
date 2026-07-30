@@ -398,6 +398,7 @@ describe("UsageScreen", () => {
           ...usage.providers[0],
           session: 0,
           weekly: 57,
+          stale: true,
           sessionUnavailable: true,
           windows: [
             {
@@ -417,6 +418,7 @@ describe("UsageScreen", () => {
 
     expect(html).toContain("7-day quota: 57% used");
     expect(html).toContain("Codex Spark Weekly: 12% used");
+    expect(html).toContain(">Stale<");
     expect(html.indexOf("7-day quota: 57% used")).toBeLessThan(
       html.indexOf("Codex Spark Weekly: 12% used"),
     );

@@ -1817,6 +1817,30 @@ func TestUsageReturnsFreshPartialProviderWindows(t *testing.T) {
 	}
 }
 
+func TestUsageKeepsStaleDynamicWindowsAsLastKnownValues(t *testing.T) {
+	provider, ok := usageProviderFromSnapshot(daemon.ProviderUsageSnapshot{
+		Provider: "codex",
+		Frame: protocol.Frame{
+			Provider:           "codex",
+			Weekly:             57,
+			SessionUnavailable: true,
+		},
+		Meta: codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{
+			{ID: "weekly", Label: "Weekly", UsedPercent: 57},
+			{ID: "codex-spark-weekly", Label: "Codex Spark Weekly", UsedPercent: 12},
+		}},
+		Stale: true,
+	})
+
+	if !ok || !provider.Stale || provider.UsageUnavailable || provider.WeeklyUnavailable {
+		t.Fatalf("stale last-known windows must stay available and marked stale, got %+v", provider)
+	}
+	if len(provider.Windows) != 2 || provider.Windows[0].UsedPercent != 57 ||
+		provider.Windows[1].ID != "codex-spark-weekly" {
+		t.Fatalf("stale dynamic windows changed, got %+v", provider.Windows)
+	}
+}
+
 func TestUsageHonorsCodexBarRemainingPreference(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "remaining")
@@ -1986,6 +2010,39 @@ func TestUsageManualRefreshDoesNotCompleteForCachedDashboardSnapshotReread(t *te
 	}
 	if rec.Code != http.StatusOK || got.Refresh.State != "refreshing" || got.Providers[0].Weekly != 42 {
 		t.Fatalf("cached dashboard reread must not complete manual refresh, status=%d got %+v", rec.Code, got)
+	}
+}
+
+func TestUsageManualRefreshStopsRefreshingAfterTimeout(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	collectedAt := now.Add(-time.Minute)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         collectedAt,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42, UsageMode: "used"},
+				CollectedAt: collectedAt,
+			}},
+		}, true
+	}
+
+	first := httptest.NewRecorder()
+	server.Handler().ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+	now = now.Add(usageManualRefreshTimeout)
+	timedOut := httptest.NewRecorder()
+	server.Handler().ServeHTTP(timedOut, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(timedOut.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if timedOut.Code != http.StatusOK || got.Refresh.State != "unavailable" || got.Providers[0].Weekly != 42 {
+		t.Fatalf("manual refresh must finish at its timeout and keep current values, status=%d got %+v", timedOut.Code, got)
 	}
 }
 

@@ -1486,6 +1486,11 @@ func (s *Server) usageRefreshInfo(now time.Time, usage daemon.PersistedUsage) us
 			s.usageRefreshMu.Unlock()
 			return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh", time.Time{})}
 		}
+		if !now.Before(requestedAt.Add(usageManualRefreshTimeout)) {
+			s.usageRefresh.RequestedAt = time.Time{}
+			s.usageRefreshMu.Unlock()
+			return usageRefreshInfo{State: "unavailable", Message: usageRefreshMessage("unavailable", time.Time{})}
+		}
 		s.usageRefreshMu.Unlock()
 		return usageRefreshInfo{
 			State:       "refreshing",
@@ -1500,6 +1505,8 @@ func (s *Server) usageRefreshInfo(now time.Time, usage daemon.PersistedUsage) us
 	}
 	return usageRefreshInfo{State: "unavailable", Message: usageRefreshMessage("unavailable", time.Time{})}
 }
+
+const usageManualRefreshTimeout = 60 * time.Second
 
 const exactUsageCacheMaxAge = 15 * time.Minute
 
@@ -2211,6 +2218,7 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 	if id == "" {
 		return usageProviderInfo{}, false
 	}
+	staleWithoutWindows := snapshot.Stale && len(snapshot.Meta.Windows) == 0
 	return usageProviderInfo{
 		ID:                 id,
 		Label:              usageProviderLabel(id, frame.Label),
@@ -2224,9 +2232,9 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		TotalTokens:        frame.TotalTokens,
 		Activity:           strings.TrimSpace(frame.Activity),
 		Stale:              snapshot.Stale,
-		UsageUnavailable:   snapshot.Stale || (frame.UsageUnavailable && len(snapshot.Meta.Windows) == 0),
-		SessionUnavailable: snapshot.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
-		WeeklyUnavailable:  snapshot.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
+		UsageUnavailable:   staleWithoutWindows || (frame.UsageUnavailable && len(snapshot.Meta.Windows) == 0),
+		SessionUnavailable: staleWithoutWindows || frame.UsageUnavailable || frame.SessionUnavailable,
+		WeeklyUnavailable:  staleWithoutWindows || frame.UsageUnavailable || frame.WeeklyUnavailable,
 		CollectedAt:        formatOptionalTime(snapshot.CollectedAt),
 		ActivityObservedAt: formatOptionalTime(snapshot.ActivityObservedAt),
 		RateLimited:        snapshot.RateLimited,
@@ -2270,6 +2278,7 @@ func usageProviderFromParsed(parsed codexbar.ParsedFrame) (usageProviderInfo, bo
 	if id == "" {
 		return usageProviderInfo{}, false
 	}
+	staleWithoutWindows := parsed.Stale && len(parsed.Meta.Windows) == 0
 	return usageProviderInfo{
 		ID:                 id,
 		Label:              usageProviderLabel(id, frame.Label),
@@ -2283,9 +2292,9 @@ func usageProviderFromParsed(parsed codexbar.ParsedFrame) (usageProviderInfo, bo
 		TotalTokens:        frame.TotalTokens,
 		Activity:           strings.TrimSpace(frame.Activity),
 		Stale:              parsed.Stale,
-		UsageUnavailable:   parsed.Stale || (frame.UsageUnavailable && len(parsed.Meta.Windows) == 0),
-		SessionUnavailable: parsed.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
-		WeeklyUnavailable:  parsed.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
+		UsageUnavailable:   staleWithoutWindows || (frame.UsageUnavailable && len(parsed.Meta.Windows) == 0),
+		SessionUnavailable: staleWithoutWindows || frame.UsageUnavailable || frame.SessionUnavailable,
+		WeeklyUnavailable:  staleWithoutWindows || frame.UsageUnavailable || frame.WeeklyUnavailable,
 		CollectedAt:        formatOptionalTime(parsed.CollectedAt),
 		ActivityObservedAt: formatOptionalTime(parsed.ActivityObservedAt),
 		Windows:            usageWindowsFromMeta(parsed.Meta),

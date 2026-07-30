@@ -611,8 +611,7 @@ function UsageProviderTile({
 }: {
   provider: UsageProviderInfo;
 }) {
-  const tokenEvidence = providerHasTokenEvidence(provider);
-  const providerStale = provider.stale && !tokenEvidence;
+  const providerStale = provider.stale && !provider.usageUnavailable;
   return (
     <Card
       className={cn(
@@ -938,10 +937,6 @@ function providerHasCost(provider: UsageProviderInfo): boolean {
     (cost.latestTokens || 0) > 0 ||
     Boolean(cost.topModel?.trim())
   );
-}
-
-function providerHasTokenEvidence(provider: UsageProviderInfo): boolean {
-  return providerHasTokens(provider) || providerHasCost(provider);
 }
 
 function quotaUnavailableDetail(provider: UsageProviderInfo): string {
