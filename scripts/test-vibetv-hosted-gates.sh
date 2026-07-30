@@ -47,12 +47,16 @@ assert_safe_app_extractor() {
   work="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-hosted-gate.XXXXXX")"
   trap 'rm -rf "${work:-}"' RETURN
 
-  mkdir -p "$work/safe/VibeTV Control Center.app/Contents"
+  mkdir -p "$work/safe/VibeTV Control Center.app/Contents/Frameworks/Test.framework/Versions/B/Resources"
   printf '<plist version="1.0"><dict/></plist>\n' > "$work/safe/VibeTV Control Center.app/Contents/Info.plist"
+  ln -s B "$work/safe/VibeTV Control Center.app/Contents/Frameworks/Test.framework/Versions/Current"
+  ln -s Versions/Current/Resources "$work/safe/VibeTV Control Center.app/Contents/Frameworks/Test.framework/Resources"
   COPYFILE_DISABLE=1 tar -czf "$work/safe.tar.gz" -C "$work/safe" "VibeTV Control Center.app"
   "$EXTRACTOR" --archive "$work/safe.tar.gz" --output "$work/extracted" >/dev/null
   [[ -f "$work/extracted/VibeTV Control Center.app/Contents/Info.plist" ]] \
     || die "safe candidate archive was not extracted"
+  [[ -d "$work/extracted/VibeTV Control Center.app/Contents/Frameworks/Test.framework/Resources" ]] \
+    || die "safe framework symlinks were not preserved"
 
   python3 - "$work/unsafe.tar.gz" <<'PY'
 import io
@@ -68,6 +72,137 @@ PY
   if "$EXTRACTOR" --archive "$work/unsafe.tar.gz" --output "$work/unsafe" >/dev/null 2>&1; then
     die "unsafe candidate archive path was accepted"
   fi
+
+  python3 - "$work/unsafe-link.tar.gz" <<'PY'
+import sys
+import tarfile
+
+with tarfile.open(sys.argv[1], "w:gz") as archive:
+    member = tarfile.TarInfo("VibeTV Control Center.app/Contents/Frameworks/escape")
+    member.type = tarfile.SYMTYPE
+    member.linkname = "../../../../escape"
+    archive.addfile(member)
+PY
+  local unsafe_link_error
+  if unsafe_link_error="$("$EXTRACTOR" --archive "$work/unsafe-link.tar.gz" --output "$work/unsafe-link" 2>&1)"; then
+    die "escaping candidate archive symlink was accepted"
+  fi
+  [[ "$unsafe_link_error" == *"unsafe candidate archive symlink"* ]] \
+    || die "escaping symlink test failed for the wrong reason: $unsafe_link_error"
+
+  python3 - "$work/chained-link.tar.gz" <<'PY'
+import io
+import sys
+import tarfile
+
+root = "VibeTV Control Center.app"
+with tarfile.open(sys.argv[1], "w:gz") as archive:
+    plist = tarfile.TarInfo(f"{root}/Contents/Info.plist")
+    plist_payload = b'<plist version="1.0"><dict/></plist>\n'
+    plist.size = len(plist_payload)
+    archive.addfile(plist, io.BytesIO(plist_payload))
+    for name, target in [
+        (f"{root}/a", "."),
+        (f"{root}/a/b", ".."),
+        (f"{root}/a/b/c", ".."),
+    ]:
+        link = tarfile.TarInfo(name)
+        link.type = tarfile.SYMTYPE
+        link.linkname = target
+        archive.addfile(link)
+    escaped = tarfile.TarInfo(f"{root}/a/b/c/escaped")
+    payload = b"outside output"
+    escaped.size = len(payload)
+    archive.addfile(escaped, io.BytesIO(payload))
+PY
+  local chained_link_error
+  if chained_link_error="$("$EXTRACTOR" --archive "$work/chained-link.tar.gz" --output "$work/chained-output" 2>&1)"; then
+    die "archive with a symlinked parent was accepted"
+  fi
+  [[ "$chained_link_error" == *"candidate archive member descends through symlink"* ]] \
+    || die "symlink ancestor test failed for the wrong reason: $chained_link_error"
+  [[ ! -e "$work/escaped" ]] \
+    || die "archive symlink chain wrote outside the output directory"
+
+  python3 - "$work/duplicate-path.tar.gz" <<'PY'
+import io
+import sys
+import tarfile
+
+root = "VibeTV Control Center.app"
+with tarfile.open(sys.argv[1], "w:gz") as archive:
+    plist = tarfile.TarInfo(f"{root}/Contents/Info.plist")
+    plist_payload = b'<plist version="1.0"><dict/></plist>\n'
+    plist.size = len(plist_payload)
+    archive.addfile(plist, io.BytesIO(plist_payload))
+    link = tarfile.TarInfo(f"{root}/duplicate")
+    link.type = tarfile.SYMTYPE
+    link.linkname = "Contents/Info.plist"
+    archive.addfile(link)
+    duplicate = tarfile.TarInfo(f"{root}/duplicate")
+    payload = b"duplicate path"
+    duplicate.size = len(payload)
+    archive.addfile(duplicate, io.BytesIO(payload))
+PY
+  local duplicate_path_error
+  if duplicate_path_error="$("$EXTRACTOR" --archive "$work/duplicate-path.tar.gz" --output "$work/duplicate-output" 2>&1)"; then
+    die "archive with a duplicate symlink path was accepted"
+  fi
+  [[ "$duplicate_path_error" == *"duplicate candidate archive path"* ]] \
+    || die "duplicate path test failed for the wrong reason: $duplicate_path_error"
+
+  python3 - "$work/casefold-parent.tar.gz" <<'PY'
+import io
+import sys
+import tarfile
+
+root = "VibeTV Control Center.app"
+with tarfile.open(sys.argv[1], "w:gz") as archive:
+    plist = tarfile.TarInfo(f"{root}/Contents/Info.plist")
+    plist_payload = b'<plist version="1.0"><dict/></plist>\n'
+    plist.size = len(plist_payload)
+    archive.addfile(plist, io.BytesIO(plist_payload))
+    link = tarfile.TarInfo(f"{root}/A")
+    link.type = tarfile.SYMTYPE
+    link.linkname = "."
+    archive.addfile(link)
+    nested = tarfile.TarInfo(f"{root}/a/payload")
+    payload = b"case-insensitive parent"
+    nested.size = len(payload)
+    archive.addfile(nested, io.BytesIO(payload))
+PY
+  local casefold_parent_error
+  if casefold_parent_error="$("$EXTRACTOR" --archive "$work/casefold-parent.tar.gz" --output "$work/casefold-output" 2>&1)"; then
+    die "archive with a case-variant symlink parent was accepted"
+  fi
+  [[ "$casefold_parent_error" == *"candidate archive member descends through symlink"* ]] \
+    || die "casefold symlink ancestor test failed for the wrong reason: $casefold_parent_error"
+
+  python3 - "$work/symlink-cycle.tar.gz" <<'PY'
+import io
+import sys
+import tarfile
+
+root = "VibeTV Control Center.app"
+with tarfile.open(sys.argv[1], "w:gz") as archive:
+    plist = tarfile.TarInfo(f"{root}/Contents/Info.plist")
+    plist_payload = b'<plist version="1.0"><dict/></plist>\n'
+    plist.size = len(plist_payload)
+    archive.addfile(plist, io.BytesIO(plist_payload))
+    for name, target in [(f"{root}/a", "b"), (f"{root}/b", "a")]:
+        link = tarfile.TarInfo(name)
+        link.type = tarfile.SYMTYPE
+        link.linkname = target
+        archive.addfile(link)
+PY
+  local symlink_cycle_error
+  if symlink_cycle_error="$("$EXTRACTOR" --archive "$work/symlink-cycle.tar.gz" --output "$work/symlink-cycle-output" 2>&1)"; then
+    die "archive with a symlink cycle was accepted"
+  fi
+  [[ "$symlink_cycle_error" == *"unsafe candidate archive symlink cannot resolve"* ]] \
+    || die "symlink cycle test failed for the wrong reason: $symlink_cycle_error"
+  [[ ! -e "$work/symlink-cycle-output" ]] \
+    || die "symlink cycle left a partially extracted candidate app behind"
 }
 
 main() {
@@ -84,6 +219,8 @@ main() {
     'stable aggregation status must be named CODEX CI'
   assert_contains "$CI_WORKFLOW" 'if: always()' \
     'CODEX CI must report failure even when an upstream job fails'
+  assert_contains "$CI_WORKFLOW" './scripts/test-vibetv-hosted-gates.sh' \
+    'normal PR CI must run the hosted VibeTV gate contracts'
 
   assert_contains "$MERGE_WORKFLOW" 'name: CODEX Test VibeTV Merge' \
     'merge gate workflow needs the stable CODEX name'
