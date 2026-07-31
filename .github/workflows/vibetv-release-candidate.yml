@@ -158,7 +158,7 @@ jobs:
           mkdir -p tmp/vibetv-rc/publish/macos
           cp dist/macos/VibeTV-Control-Center.dmg tmp/vibetv-rc/publish/macos/VibeTV-Control-Center.dmg
           printf '%s' "$SPARKLE_ED25519_PRIVATE_KEY" | "$sparkle_dir/bin/generate_appcast" --ed-key-file - --maximum-deltas 0 --link https://app.vibetv.shop --download-url-prefix "https://github.com/${REPOSITORY}/releases/download/v${version}/" -o tmp/vibetv-rc/publish/macos/appcast.xml tmp/vibetv-rc/publish/macos
-          (cd tmp/vibetv-rc/publish && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 > "checksums-v${version}.txt")
+          (cd tmp/vibetv-rc/publish && find . -type f ! -name "checksums-*" -print0 | sort -z | xargs -0 shasum -a 256 > "checksums-v${version}.txt")
           (cd tmp/vibetv-rc/publish && shasum -a 256 -c "checksums-v${version}.txt")
           python3 - "$source_sha" "$version" "$REPOSITORY" "$CANDIDATE_RUN_ID" tmp/vibetv-rc/candidate-manifest.json tmp/vibetv-rc <<'PY'
           import datetime, hashlib, json, sys
