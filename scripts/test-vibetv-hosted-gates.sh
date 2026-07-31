@@ -334,10 +334,14 @@ main() {
     'guest test must start the public baseline before Sparkle'
   assert_contains "$GUEST_TEST" 'replace and relaunch' \
     'guest test must require a replacement Candidate process after Sparkle'
-  assert_not_contains "$GUEST_TEST" 'gzip -cd' \
-    'merge guest test must not decompress the already raw candidate firmware'
-  assert_contains "$GUEST_TEST" 'shasum -a 256 "$FIRMWARE"' \
-    'guest test must hash the raw candidate firmware bytes sent through OTA'
+  assert_contains "$GUEST_TEST" 'gzip -t "$FIRMWARE"' \
+    'guest test must distinguish compressed release firmware from raw merge firmware'
+  assert_contains "$GUEST_TEST" 'gzip -cd "$FIRMWARE"' \
+    'guest test must derive raw OTA bytes from compressed release firmware'
+  assert_contains "$GUEST_TEST" 'cp "$FIRMWARE" "$RAW_FIRMWARE"' \
+    'guest test must preserve already raw merge firmware bytes'
+  assert_contains "$GUEST_TEST" 'shasum -a 256 "$RAW_FIRMWARE"' \
+    'guest test must hash the raw firmware bytes sent through OTA'
   assert_contains "$RC_WORKFLOW" 'artifactHashes": {item["path"]' \
     'candidate result must expose publish validators a path-to-hash map'
   assert_contains "$RC_WORKFLOW" 'check-firmware-size-budget.sh' \
