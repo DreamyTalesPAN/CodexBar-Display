@@ -503,3 +503,16 @@ issue scope, or release permission never implies UI permission.
   copy, control, or layout changes.
 - Approved files: `control-center-app.tsx`, its customer-flow assertion, and
   this approval record.
+
+## 2026-07-31 — Screensaver install slot review fix
+
+- User approval: During the final KISS review of issues #286-#288, the user
+  ordered the screensaver installation paths to be corrected with one `usage`
+  value as their single source of truth and requested published, custom, and
+  live regression coverage.
+- Approved customer-visible result: Published and custom screensavers install
+  into the VibeTV screensaver slot and keep screensaver selection and completion
+  wording. Existing themes continue to install into the live-theme slot. No new
+  control, setting, screen, or customer decision appears.
+- Approved files: `control-center-app.tsx`, `theme-library-screen.tsx`, theme
+  usage typing, their focused tests, and the matching customer-flow assertions.
