@@ -37,6 +37,7 @@ import {
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
   type ActiveTab,
+  type AppearanceSection,
   type ApiError,
   type CompanionInfo,
   type CompanionStatus,
@@ -119,7 +120,12 @@ type InstallResponse = {
 
 type InstallableTheme = Pick<
   ThemeProduct,
-  "packUrl" | "packSha256" | "packSizeBytes" | "themeId" | "title"
+  | "packUrl"
+  | "packSha256"
+  | "packSizeBytes"
+  | "themeId"
+  | "title"
+  | "usage"
 > & {
   packBytes?: Uint8Array;
   slot?: ThemeStudioUsage;
@@ -234,9 +240,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         : undefined,
     [catalog.themes, initialThemeId],
   );
+  const initialThemeIsScreensaver = initialTheme?.usage === "screensaver";
   const [selectedThemeId, setSelectedThemeId] = useState(
-    initialTheme?.themeId || initialThemeId || "",
+    initialThemeIsScreensaver
+      ? ""
+      : initialTheme?.themeId || initialThemeId || "",
   );
+  const [selectedScreensaverId, setSelectedScreensaverId] = useState(
+    initialThemeIsScreensaver ? initialTheme?.themeId || "" : "",
+  );
+  const [appearanceSection, setAppearanceSection] =
+    useState<AppearanceSection>(
+      initialThemeIsScreensaver ? "screensavers" : "themes",
+    );
   const [activeTab, setActiveTab] = useState<ActiveTab>(
     initialThemeId ? "theme-library" : "overview",
   );
@@ -349,6 +365,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const selectedTheme = useMemo(
     () => catalog.themes.find((theme) => theme.themeId === selectedThemeId),
     [catalog.themes, selectedThemeId],
+  );
+  const selectedScreensaver = useMemo(
+    () =>
+      catalog.themes.find(
+        (theme) => theme.themeId === selectedScreensaverId,
+      ),
+    [catalog.themes, selectedScreensaverId],
   );
   const localControlCenterPath = useMemo(
     () => localControlCenterPathForTheme(initialThemeId),
@@ -735,7 +758,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const status = themeInstallStatusFromJob(job, catalog.themes, fallback);
       setThemeInstallStatus(status);
       if (job.phase === "installing" && status.themeId) {
-        setSelectedThemeId(status.themeId);
+        const usage =
+          catalog.themes.find((theme) => theme.themeId === status.themeId)
+            ?.usage || "live";
+        if (usage === "screensaver") {
+          setSelectedScreensaverId(status.themeId);
+          setAppearanceSection("screensavers");
+        } else {
+          setSelectedThemeId(status.themeId);
+          setAppearanceSection("themes");
+        }
       }
       if (job.phase === "complete" && job.result) {
         setLastInstall(job.result);
@@ -1825,13 +1857,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return false;
       }
       const requiresThemeSetupVerification =
-        deviceNeedsThemeSetup(device) ||
-        deviceMatchesThemeSetupIdentity(themeSetupIdentity, device);
+        theme.usage !== "screensaver" &&
+        (deviceNeedsThemeSetup(device) ||
+          deviceMatchesThemeSetupIdentity(themeSetupIdentity, device));
       setBusyAction("install");
       setLastInstall(undefined);
-      setSelectedThemeId(theme.themeId);
+      if (theme.usage === "screensaver") {
+        setSelectedScreensaverId(theme.themeId);
+      } else {
+        setSelectedThemeId(theme.themeId);
+      }
       const startedAt = formatTime();
       const initialLogs = ["Preparing theme install."];
+      const completeMessage =
+        theme.usage === "screensaver"
+          ? "Screensaver is ready on VibeTV."
+          : "Theme is active on VibeTV.";
       let installJobId = "";
       const applyInstallJob = (job: ThemeInstallJob) => {
         const phase =
@@ -1948,9 +1989,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           title: theme.title,
           startedAt,
           finishedAt,
-          message: "Theme is active on VibeTV.",
+          message: completeMessage,
           progress: 100,
-          logs: customerInstallLogs([...logs, "Theme is active on VibeTV."]),
+          logs: customerInstallLogs([...logs, completeMessage]),
           result,
         });
         const [, verifiedDevice] = await Promise.all([
@@ -1962,7 +2003,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           deviceCompletedThemeSetup(verifiedDevice);
         addEvent({
           label: setupVerified
-            ? "Theme installed"
+            ? theme.usage === "screensaver"
+              ? "Screensaver installed"
+              : "Theme installed"
             : "Waiting for VibeTV confirmation",
           detail: setupVerified
             ? result.name || theme.title
@@ -3143,9 +3186,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   return (
     <ControlCenterShell
       activeTab={activeShellTab}
+      activeAppearanceSection={appearanceSection}
       disabledTabs={disabledTabs}
       device={device}
       updateAvailable={anyUpdateAvailable}
+      onAppearanceSectionChange={setAppearanceSection}
       onTabChange={(tab) => {
         if (disabledTabs.includes(tab)) {
           return;
@@ -3186,6 +3231,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           device={device}
           standby={standby}
           onBrightnessChange={changeBrightness}
+          onChooseScreensaver={() => {
+            setAppearanceSection("screensavers");
+            setActiveTab("theme-library");
+          }}
           onResetSetup={resetSetup}
           onSaveBrightness={saveBrightness}
           onSaveStandby={saveStandby}
@@ -3203,14 +3252,33 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           lastInstall={lastInstall}
           onInstallCustomTheme={installCustomTheme}
           onInstallTheme={installTheme}
-          onSelectTheme={setSelectedThemeId}
-          installEntry={Boolean(initialThemeId)}
-          requestedThemeId={initialThemeId}
-          selectedTheme={selectedTheme}
-          selectedThemeId={selectedThemeId}
+          onSelectTheme={
+            appearanceSection === "screensavers"
+              ? setSelectedScreensaverId
+              : setSelectedThemeId
+          }
+          installEntry={
+            appearanceSection === "themes" && Boolean(initialThemeId)
+          }
+          requestedThemeId={
+            appearanceSection === "themes" ? initialThemeId : undefined
+          }
+          selectedTheme={
+            appearanceSection === "screensavers"
+              ? selectedScreensaver
+              : selectedTheme
+          }
+          selectedThemeId={
+            appearanceSection === "screensavers"
+              ? selectedScreensaverId
+              : selectedThemeId
+          }
           storefrontConfigured={catalog.storefrontConfigured}
           themeInstallEnabled={themeInstallEnabled}
           themes={catalog.themes}
+          usage={
+            appearanceSection === "screensavers" ? "screensaver" : "live"
+          }
         />
       ) : null}
 

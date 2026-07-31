@@ -47,6 +47,17 @@ const catalogFixture = {
       requiresFirmware: "1.0.0",
     },
     {
+      id: "night-clock",
+      title: "Fixture Night Clock Screensaver",
+      description: "A dark standby clock for the VibeTV screen.",
+      downloadUrl: "https://cdn.example.test/night-clock.vibetv-theme",
+      sha256: fixturePackSHA256,
+      bytes: fixturePackBytes,
+      compatibleBoards: ["esp8266_smalltv_st7789"],
+      requiresFirmware: "1.0.0",
+      usage: "screensaver",
+    },
+    {
       id: "claude-creature",
       title: "Fixture Claude Creature Theme",
       description:
@@ -381,6 +392,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testAppearanceSidebarNavigation(browser, appContext.appUrl);
       await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
         browser,
         appContext.appUrl,
@@ -527,6 +539,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testAppearanceSidebarNavigation(browser, appContext.appUrl);
     await testDesktopHeaderDoesNotClaimDeviceDuringSetup(
       browser,
       appContext.appUrl,
@@ -3491,7 +3504,7 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
   for (const tabName of [
     "Overview",
     "Settings",
-    "Theme Library",
+    "Appearance",
     "Updates",
     "Support",
   ]) {
@@ -3523,7 +3536,7 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
-  await clickNavigation(page, "Theme Library");
+  await clickNavigation(page, "Themes");
   await page
     .getByRole("heading", { name: "Themes" })
     .waitFor({ timeout: 10_000 });
@@ -3531,6 +3544,61 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
   await page.getByText("Fixture Clippy Theme").waitFor({ timeout: 10_000 });
   assertNoInstallRequests(installRequests);
   await page.close();
+}
+
+async function testAppearanceSidebarNavigation(browser, appUrl) {
+  for (const testViewport of [viewport, desktopViewport]) {
+    const page = await newCustomerPage(browser, appUrl, {
+      viewport: testViewport,
+    });
+    const installRequests = [];
+    await routeCompanionOnline(page, installRequests);
+
+    await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+    await clickNavigation(page, "Appearance");
+    await page
+      .getByRole("heading", { name: "Themes", exact: true })
+      .waitFor({ timeout: 10_000 });
+    await page.getByText("Fixture Synthwave Theme").waitFor();
+    assert(
+      (await page.getByText("Fixture Night Clock Screensaver").count()) === 0,
+      "Themes must not include screensaver packs",
+    );
+
+    await clickNavigation(page, "Screensavers");
+    await page
+      .getByRole("heading", { name: "Screensavers", exact: true })
+      .waitFor({ timeout: 10_000 });
+    await page.getByText("Fixture Night Clock Screensaver").waitFor();
+    assert(
+      (await page.getByText("Fixture Synthwave Theme").count()) === 0,
+      "Screensavers must not include live theme packs",
+    );
+    assert(
+      (await page
+        .locator("main.control-center-shell")
+        .getByRole("button", { name: "Screensavers", exact: true })
+        .count()) === 0,
+      "Appearance sections must stay in the sidebar, not become content tabs",
+    );
+
+    await clickNavigation(page, "Themes");
+    await page
+      .getByRole("heading", { name: "Themes", exact: true })
+      .waitFor({ timeout: 10_000 });
+    await page.getByText("Fixture Synthwave Theme").waitFor();
+
+    await clickNavigation(page, "Settings");
+    await page
+      .getByRole("button", { name: "Choose screensaver", exact: true })
+      .click();
+    await page
+      .getByRole("heading", { name: "Screensavers", exact: true })
+      .waitFor({ timeout: 10_000 });
+
+    assertNoInstallRequests(installRequests);
+    await page.close();
+  }
 }
 
 async function testDesktopHeaderDoesNotClaimDeviceDuringSetup(browser, appUrl) {
@@ -3572,6 +3640,12 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     {
       settingsBrightnessSequence: [null, 50, 100, 42],
       settingsDelayMs: 150,
+      standbySettings: {
+        enabled: false,
+        timeoutMinutes: 10,
+        brightnessPercent: 20,
+        screensaverPath: "/themes/s/night.json",
+      },
       onRequest: (pathname, method, body) => {
         if (pathname !== "/v1/settings") {
           return;
@@ -5615,7 +5689,7 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await clickNavigation(page, "Theme Library");
+  await clickNavigation(page, "Themes");
   const synthwavePreview = page.getByRole("img", {
     name: /Rendered VibeTV theme synthwave showing VibeTV, 62% session remaining, 62% weekly remaining/,
   });
@@ -6785,6 +6859,7 @@ async function routeCompanionOnline(
     statusDelayAfterFirstMs = 0,
     settingsDelayMs = 0,
     settingsBrightnessSequence,
+    standbySettings,
     onSettingsResponse = () => {},
     statusDeviceSequence,
     firmwareStatusDeviceSequence,
@@ -6811,7 +6886,7 @@ async function routeCompanionOnline(
   let firmwareStatusIndex = 0;
   let displayFrameRequestCount = 0;
   let settingsRequestCount = 0;
-  let currentStandby = {
+  let currentStandby = standbySettings || {
     enabled: false,
     timeoutMinutes: 10,
     brightnessPercent: 20,

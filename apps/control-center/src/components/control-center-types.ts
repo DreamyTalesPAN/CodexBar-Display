@@ -269,7 +269,10 @@ export type StandbySettings = {
   enabled: boolean;
   timeoutMinutes: number;
   brightnessPercent: number;
+  screensaverPath?: string | null;
 };
+
+export type AppearanceSection = "themes" | "screensavers";
 
 export type ActiveTab =
   "overview" | "usage" | "settings" | "theme-library" | "updates" | "logs";

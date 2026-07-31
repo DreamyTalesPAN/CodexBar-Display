@@ -3,6 +3,7 @@ import path from "node:path";
 import { isRemoteThemePackUrl } from "./theme-pack-url";
 
 export type ThemeSource = "shopify" | "github-catalog" | "fallback";
+export type ThemeUsage = "live" | "screensaver";
 
 export type ThemeProduct = {
   id: string;
@@ -15,6 +16,7 @@ export type ThemeProduct = {
   priceLabel: string;
   isFree: boolean;
   themeId: string;
+  usage?: ThemeUsage;
   themeVersion?: string;
   manifestUrl?: string;
   packUrl?: string;
@@ -102,6 +104,7 @@ type ThemePackCatalog = {
     version?: string;
     compatibleBoards?: string[];
     requiresFirmware?: string;
+    usage?: string;
     sha256?: string;
     bytes?: number;
   }>;
@@ -256,6 +259,7 @@ function mapShopifyProduct(
     priceLabel: isFree ? "Kostenlos" : formatMoney(amount, currency),
     isFree,
     themeId,
+    usage: "live",
     themeVersion:
       product.themeVersion?.value?.trim() ||
       product.legacyThemeVersion?.value?.trim() ||
@@ -357,6 +361,7 @@ function mapThemePackCatalogEntry(
     packSizeBytes: theme.bytes,
     compatibleBoards: theme.compatibleBoards,
     requiresFirmware: theme.requiresFirmware,
+    usage: theme.usage === "screensaver" ? "screensaver" : "live",
     source: "github-catalog",
   };
 }
@@ -406,6 +411,7 @@ async function enrichThemesWithGitHubCatalog(
         requiresFirmware:
           theme.requiresFirmware || fallback.requiresFirmware,
         themeVersion: theme.themeVersion || fallback.themeVersion,
+        usage: fallback.usage || theme.usage,
       };
     });
   } catch {

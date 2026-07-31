@@ -4,6 +4,28 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ControlCenterShell } from "./control-center-shell";
 
 describe("ControlCenterShell", () => {
+  it("renders Appearance with its two sidebar children", () => {
+    const html = renderToStaticMarkup(
+      <TooltipProvider>
+        <ControlCenterShell
+          activeAppearanceSection="screensavers"
+          activeTab="theme-library"
+          device={{ connected: true, paired: true, ready: true }}
+          onTabChange={vi.fn()}
+        >
+          <div>Screensavers</div>
+        </ControlCenterShell>
+      </TooltipProvider>,
+    );
+
+    expect(html).toContain(">Appearance<");
+    expect(html).toContain(">Themes<");
+    expect(html).toContain(">Screensavers<");
+    expect(html).toContain('data-sidebar="menu-sub"');
+    expect(html).toContain('aria-current="page"');
+    expect(html).not.toContain(">Theme Library<");
+  });
+
   it("does not call a merely reachable device connected", () => {
     const html = renderToStaticMarkup(
       <TooltipProvider>

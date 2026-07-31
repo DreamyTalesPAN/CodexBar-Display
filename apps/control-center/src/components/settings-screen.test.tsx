@@ -13,6 +13,7 @@ const savedStandby: StandbySettings = {
   enabled: false,
   timeoutMinutes: 10,
   brightnessPercent: 20,
+  screensaverPath: "/themes/s/night.json",
 };
 
 function render(
@@ -26,6 +27,7 @@ function render(
       device={device}
       standby={standby}
       onBrightnessChange={vi.fn()}
+      onChooseScreensaver={vi.fn()}
       onResetSetup={vi.fn()}
       onSaveBrightness={vi.fn()}
       onSaveStandby={vi.fn()}
@@ -53,11 +55,24 @@ describe("SettingsScreen standby controls", () => {
     expect(html).not.toContain("Save screensaver brightness");
   });
 
+  it("offers screensaver selection instead of an unusable switch", () => {
+    const html = render(standbyDevice, {
+      enabled: false,
+      timeoutMinutes: 10,
+      brightnessPercent: 20,
+      screensaverPath: null,
+    });
+
+    expect(html).toContain("Choose screensaver");
+    expect(html).not.toContain('aria-label="Show screensaver"');
+  });
+
   it("shows timeout and screensaver brightness once the screensaver is on", () => {
     const html = render(standbyDevice, {
       enabled: true,
       timeoutMinutes: 30,
       brightnessPercent: 35,
+      screensaverPath: "/themes/s/night.json",
     });
 
     expect(html).toContain("Show screensaver");

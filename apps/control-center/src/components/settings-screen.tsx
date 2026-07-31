@@ -41,6 +41,7 @@ export type SettingsScreenProps = {
   busyAction: string | null;
   standby: StandbySettings | null;
   onBrightnessChange: (value: number) => void;
+  onChooseScreensaver: () => void;
   onResetSetup: () => void;
   onSaveBrightness: (value: number) => void;
   onSaveStandby: (value: StandbySettings) => void;
@@ -53,6 +54,7 @@ export function SettingsScreen({
   busyAction,
   standby,
   onBrightnessChange,
+  onChooseScreensaver,
   onResetSetup,
   onSaveBrightness,
   onSaveStandby,
@@ -79,6 +81,7 @@ export function SettingsScreen({
   };
   const standbyDisabled =
     !deviceIsReady(device) || standby == null || localActionBusy;
+  const hasScreensaver = Boolean(standbyValues.screensaverPath);
 
   return (
     <div className="mx-auto flex max-w-[1040px] flex-col gap-4 py-4">
@@ -134,21 +137,40 @@ export function SettingsScreen({
 
             {standbySupport ? (
               <>
-                <Field orientation="horizontal">
-                  <FieldLabel htmlFor="vibetv-standby">
-                    Show screensaver
-                  </FieldLabel>
-                  <Switch
-                    aria-label="Show screensaver"
-                    checked={standbyValues.enabled}
-                    disabled={standbyDisabled}
-                    id="vibetv-standby"
-                    onCheckedChange={(enabled) =>
-                      onSaveStandby({ ...standbyValues, enabled })
-                    }
-                  />
-                </Field>
-                {standbyValues.enabled ? (
+                {hasScreensaver ? (
+                  <Field orientation="horizontal">
+                    <FieldLabel htmlFor="vibetv-standby">
+                      Show screensaver
+                    </FieldLabel>
+                    <Switch
+                      aria-label="Show screensaver"
+                      checked={standbyValues.enabled}
+                      disabled={standbyDisabled}
+                      id="vibetv-standby"
+                      onCheckedChange={(enabled) =>
+                        onSaveStandby({ ...standbyValues, enabled })
+                      }
+                    />
+                  </Field>
+                ) : (
+                  <Field orientation="horizontal">
+                    <div>
+                      <FieldLabel>Screensaver</FieldLabel>
+                      <FieldDescription>
+                        Choose a screensaver before turning it on.
+                      </FieldDescription>
+                    </div>
+                    <Button
+                      disabled={standbyDisabled}
+                      onClick={onChooseScreensaver}
+                      type="button"
+                      variant="outline"
+                    >
+                      Choose screensaver
+                    </Button>
+                  </Field>
+                )}
+                {standbyValues.enabled && hasScreensaver ? (
                   <>
                     <Field>
                       <FieldLabel htmlFor="vibetv-standby-timeout">

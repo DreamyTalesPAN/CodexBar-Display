@@ -75,7 +75,7 @@ import {
   type UserThemeRecord,
 } from "@/lib/theme-studio-storage";
 import type { ThemeStudioDeviceCapabilities } from "@/lib/theme-studio-capabilities";
-import type { ThemeProduct } from "@/lib/themes";
+import type { ThemeProduct, ThemeUsage } from "@/lib/themes";
 import { themeRenderPackUrl } from "./control-center-runtime";
 import {
   ThemeSpecPreview,
@@ -132,6 +132,10 @@ type ThemeLibraryItem =
       title: string;
     };
 
+type AppearanceEditorTheme = ThemeStudioEditorTheme & {
+  usage?: ThemeUsage;
+};
+
 export type ThemeInstallResult = {
   themeId: string;
   packId: string;
@@ -155,6 +159,7 @@ export type ThemeInstallStatus = {
 
 export type ThemeLibraryScreenProps = {
   themes: ThemeProduct[];
+  usage?: ThemeUsage;
   selectedTheme?: ThemeProduct;
   selectedThemeId: string;
   catalogIssue?: string;
@@ -175,6 +180,7 @@ export type ThemeLibraryScreenProps = {
 
 export function ThemeLibraryScreen({
   themes,
+  usage = "live",
   selectedTheme,
   selectedThemeId,
   busyAction,
@@ -191,11 +197,14 @@ export function ThemeLibraryScreen({
   onSelectTheme,
   onInstallTheme,
 }: ThemeLibraryScreenProps) {
-  const visibleThemes = themes;
+  const visibleThemes = themes.filter(
+    (theme) => (theme.usage || "live") === usage,
+  );
+  const screensavers = usage === "screensaver";
   const [userThemes, setUserThemes] = useState<UserThemeRecord[]>([]);
   const [recovery, setRecovery] = useState<ThemeStudioRecovery | null>(null);
   const [editingTheme, setEditingTheme] =
-    useState<ThemeStudioEditorTheme | null>(null);
+    useState<AppearanceEditorTheme | null>(null);
   const [libraryError, setLibraryError] = useState("");
   const [storageWarning, setStorageWarning] = useState("");
   const [storageLocked, setStorageLocked] = useState(false);
@@ -206,16 +215,22 @@ export function ThemeLibraryScreen({
   const [loadingEditorThemeId, setLoadingEditorThemeId] = useState("");
   const [preparingInstallThemeId, setPreparingInstallThemeId] = useState("");
   const [previewTheme, setPreviewTheme] = useState<ThemeLibraryItem | null>(null);
+  const recoveryMatchesUsage =
+    (recovery ? themeDocumentUsage(recovery.document) : "live") === usage;
   const libraryThemes: ThemeLibraryItem[] = [
     ...(setupMode
       ? []
-      : userThemes.map((custom) => ({
-          kind: "custom" as const,
-          custom,
-          id: custom.id,
-          themeId: custom.document.spec.themeId,
-          title: custom.document.packName,
-        }))),
+      : userThemes
+          .filter(
+            (custom) => themeDocumentUsage(custom.document) === usage,
+          )
+          .map((custom) => ({
+            kind: "custom" as const,
+            custom,
+            id: custom.id,
+            themeId: custom.document.spec.themeId,
+            title: custom.document.packName,
+          }))),
     ...visibleThemes.map((product) => ({
       kind: "published" as const,
       id: product.id,
@@ -229,6 +244,7 @@ export function ThemeLibraryScreen({
     visibleThemes.find((theme) => theme.themeId === selectedThemeId);
   const catalogEmpty = libraryThemes.length === 0;
   const requestedThemeMissing = Boolean(
+    !screensavers &&
     !setupMode &&
       requestedThemeId &&
       selectedThemeId === requestedThemeId &&
@@ -302,13 +318,17 @@ export function ThemeLibraryScreen({
   function openBlankTheme() {
     const existingIds = allThemeIds(themes, userThemes);
     const spec = createBlankThemeSpec();
-    spec.themeId = uniqueThemeId("my-theme", existingIds);
+    spec.themeId = uniqueThemeId(
+      screensavers ? "my-screensaver" : "my-theme",
+      existingIds,
+    );
     setLibraryError("");
     setEditingTheme({
       assets: {},
-      packName: "New Theme",
+      packName: screensavers ? "New Screensaver" : "New Theme",
       source: "blank",
       spec,
+      ...(screensavers ? { usage } : {}),
     });
   }
 
@@ -321,6 +341,7 @@ export function ThemeLibraryScreen({
         packName: item.custom.document.packName,
         source: "custom",
         spec: item.custom.document.spec,
+        usage: themeDocumentUsage(item.custom.document),
       });
       return;
     }
@@ -337,6 +358,7 @@ export function ThemeLibraryScreen({
         packName: `${payload.name || item.product.title} Custom`,
         source: "published",
         spec,
+        usage: item.product.usage || "live",
       });
     } catch (error) {
       setLibraryError(
@@ -354,6 +376,8 @@ export function ThemeLibraryScreen({
       : undefined;
     const existingIds = allThemeIds(themes, userThemes, currentId);
     const spec = normalizeThemeSpec(payload.spec);
+    const savedUsage =
+      (payload as { usage?: ThemeUsage }).usage || editingTheme?.usage || usage;
     spec.themeId = uniqueThemeId(spec.themeId, existingIds);
     const id = currentId || spec.themeId;
     const nextRecord: UserThemeRecord = {
@@ -361,6 +385,7 @@ export function ThemeLibraryScreen({
         assets: payload.assets,
         packName: payload.packName || titleFromThemeId(spec.themeId),
         spec,
+        ...(savedUsage === "screensaver" ? { usage: savedUsage } : {}),
       },
       id,
       originThemeId:
@@ -406,6 +431,7 @@ export function ThemeLibraryScreen({
           : recovery.source,
       recovered: true,
       spec: recovery.document.spec,
+      usage: themeDocumentUsage(recovery.document),
     });
   }
 
@@ -465,6 +491,9 @@ export function ThemeLibraryScreen({
         assets: item.custom.document.assets,
         packName: item.custom.document.packName,
         spec: item.custom.document.spec,
+        ...(themeDocumentUsage(item.custom.document) === "screensaver"
+          ? { usage: "screensaver" as const }
+          : {}),
       });
     } catch (error) {
       setLibraryError(
@@ -512,12 +541,16 @@ export function ThemeLibraryScreen({
           ref={libraryHeadingRef}
           tabIndex={-1}
         >
-          {setupMode ? "Choose your VibeTV theme" : "Themes"}
+          {setupMode
+            ? "Choose your VibeTV theme"
+            : screensavers
+              ? "Screensavers"
+              : "Themes"}
         </h2>
         {!setupMode ? (
           <Button onClick={openBlankTheme} type="button">
             <Plus data-icon="inline-start" aria-hidden />
-            <span>Create Theme</span>
+            <span>{screensavers ? "Create Screensaver" : "Create Theme"}</span>
           </Button>
         ) : null}
       </section>
@@ -537,7 +570,7 @@ export function ThemeLibraryScreen({
             <AlertDescription>{libraryError}</AlertDescription>
           </Alert>
         ) : null}
-        {!setupMode && recovery ? (
+        {!setupMode && recovery && recoveryMatchesUsage ? (
           <RecoveryCard
             onDiscard={discardRecovery}
             onResume={resumeRecovery}
@@ -548,6 +581,7 @@ export function ThemeLibraryScreen({
           <CatalogEmptyState
             catalogIssue={catalogIssue}
             requestedThemeId={requestedThemeId}
+            screensavers={screensavers}
             storefrontConfigured={storefrontConfigured}
           />
         ) : (
@@ -576,6 +610,7 @@ export function ThemeLibraryScreen({
                   preparingInstallThemeId={preparingInstallThemeId}
                   selectedThemeId={selectedThemeId}
                   setupMode={setupMode}
+                  usage={usage}
                   themeInstallBlockedReason={readiness.buttonReason}
                   themeInstallEnabled={themeInstallEnabled}
                   themeStorageLocked={storageLocked}
@@ -609,6 +644,12 @@ export function ThemeLibraryScreen({
       ) : null}
     </div>
   );
+}
+
+function themeDocumentUsage(
+  document: UserThemeRecord["document"],
+): ThemeUsage {
+  return (document as { usage?: ThemeUsage }).usage || "live";
 }
 
 function themeStudioCapabilitiesFromDevice(
@@ -702,12 +743,30 @@ function DeleteThemeDialog({
 function CatalogEmptyState({
   catalogIssue,
   requestedThemeId,
+  screensavers,
   storefrontConfigured,
 }: {
   catalogIssue?: string;
   requestedThemeId?: string;
+  screensavers: boolean;
   storefrontConfigured: boolean;
 }) {
+  if (screensavers && !catalogIssue) {
+    return (
+      <Empty className="border bg-card py-10">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Monitor aria-hidden />
+          </EmptyMedia>
+          <EmptyTitle>No screensavers yet</EmptyTitle>
+          <EmptyDescription>
+            Create a screensaver to add it to this list.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
+
   const detail = requestedThemeId
     ? "This theme is not available right now. Reload the catalog or try again later."
     : storefrontConfigured || catalogIssue
@@ -776,6 +835,7 @@ function ThemeListItem({
   preparingInstallThemeId,
   selectedThemeId,
   setupMode,
+  usage,
   themeInstallBlockedReason,
   themeInstallEnabled,
   themeStorageLocked,
@@ -794,6 +854,7 @@ function ThemeListItem({
   preparingInstallThemeId: string;
   selectedThemeId: string;
   setupMode: boolean;
+  usage: ThemeUsage;
   themeInstallBlockedReason: string;
   themeInstallEnabled: boolean;
   themeStorageLocked: boolean;
@@ -801,7 +862,8 @@ function ThemeListItem({
   const theme = item.kind === "published" ? item.product : null;
   const isCustom = item.kind === "custom";
   const installed =
-    lastInstall?.themeId === item.themeId || device?.activeTheme === item.themeId;
+    lastInstall?.themeId === item.themeId ||
+    (usage === "live" && device?.activeTheme === item.themeId);
   const installInFlight =
     busyAction === "install" || installStatus?.phase === "installing";
   const preparingInstall = preparingInstallThemeId === item.themeId;
@@ -940,6 +1002,7 @@ function ThemeListItem({
             canRetry={!disabled}
             onRetry={() => onInstallTheme(item)}
             status={installStatus!}
+            usage={usage}
           />
         </ItemFooter>
       ) : null}
@@ -951,10 +1014,12 @@ function InlineInstallProgress({
   canRetry,
   onRetry,
   status,
+  usage,
 }: {
   canRetry: boolean;
   onRetry: () => void;
   status: ThemeInstallStatus;
+  usage: ThemeUsage;
 }) {
   const failed = status.phase === "error";
   const complete = status.phase === "complete";
@@ -969,7 +1034,9 @@ function InlineInstallProgress({
   const detail = failed
     ? status.error || "Theme was not installed. Try again."
     : complete
-      ? "Theme is active on VibeTV."
+      ? usage === "screensaver"
+        ? "Screensaver is ready on VibeTV."
+        : "Theme is active on VibeTV."
       : status.message ||
         status.logs[status.logs.length - 1] ||
         "Preparing theme install.";

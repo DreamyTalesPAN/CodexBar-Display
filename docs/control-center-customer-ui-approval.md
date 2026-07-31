@@ -473,3 +473,23 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `theme-studio-screen.tsx`, Theme Studio pack, asset, storage,
   and editor-state modules, the existing custom-install adapter, their focused
   tests, and this approval record.
+
+## 2026-07-31 — Appearance sidebar with Themes and Screensavers
+
+- User approval: The user explicitly corrected the issue proposal and required
+  `Appearance` to be a sidebar parent with two indented sidebar children,
+  `Themes` and `Screensavers`, with no switch or tabs in the content area. The
+  user approved the remaining proposed behavior and ordered issues #286-#289
+  to be implemented with the smallest possible solution.
+- Approved customer-visible result: `Theme Library` is renamed to `Appearance`
+  in the sidebar. Directly below it, both desktop and mobile navigation show the
+  indented entries `Themes` and `Screensavers`. `Themes` keeps the existing
+  library. `Screensavers` uses the same library layout filtered to screensaver
+  packs, shows `Create Screensaver`, and has a clear `No screensavers yet`
+  state. The content area has no second tab control. Settings shows `Choose
+  screensaver` instead of an unusable standby switch until a screensaver has
+  been selected; that action opens Appearance > Screensavers.
+- Approved files: `control-center-shell.tsx`, `control-center-app.tsx`,
+  `control-center-types.ts`, `settings-screen.tsx`,
+  `theme-library-screen.tsx`, theme catalog usage mapping, their focused tests,
+  and this approval record.

@@ -20,6 +20,9 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
@@ -27,6 +30,7 @@ import {
 } from "@/components/ui/sidebar";
 import {
   type ActiveTab,
+  type AppearanceSection,
   type DeviceInfo,
   type ShellNavItem,
   deviceIsReady,
@@ -36,6 +40,8 @@ import { ShellConnectionStatus } from "./shell-connection-status";
 
 type ControlCenterShellProps = {
   activeTab: ActiveTab;
+  activeAppearanceSection?: AppearanceSection;
+  onAppearanceSectionChange?: (section: AppearanceSection) => void;
   onTabChange: (tab: ActiveTab) => void;
   children: ReactNode;
   device: DeviceInfo | null;
@@ -62,7 +68,7 @@ const NAV_ITEMS: ShellNavItem[] = [
   },
   {
     id: "theme-library",
-    label: "Theme Library",
+    label: "Appearance",
     icon: <Grid2X2 aria-hidden />,
   },
   {
@@ -79,6 +85,8 @@ const NAV_ITEMS: ShellNavItem[] = [
 
 export function ControlCenterShell({
   activeTab,
+  activeAppearanceSection = "themes",
+  onAppearanceSectionChange,
   onTabChange,
   children,
   device,
@@ -115,7 +123,9 @@ export function ControlCenterShell({
           <SidebarContent>
             <ControlCenterNavigation
               activeTab={activeTab}
+              activeAppearanceSection={activeAppearanceSection}
               isTabDisabled={isTabDisabled}
+              onAppearanceSectionChange={onAppearanceSectionChange}
               onTabChange={onTabChange}
               updateAvailable={updateAvailable}
             />
@@ -179,12 +189,16 @@ function BrandHomeButton({
 
 function ControlCenterNavigation({
   activeTab,
+  activeAppearanceSection,
   isTabDisabled,
+  onAppearanceSectionChange,
   onTabChange,
   updateAvailable,
 }: {
   activeTab: ActiveTab;
+  activeAppearanceSection: AppearanceSection;
   isTabDisabled: (tab: ActiveTab) => boolean;
+  onAppearanceSectionChange?: (section: AppearanceSection) => void;
   onTabChange: (tab: ActiveTab) => void;
   updateAvailable: boolean;
 }) {
@@ -195,17 +209,44 @@ function ControlCenterNavigation({
       <SidebarGroupContent>
         <nav aria-label={isMobile ? "Control Center mobile" : "Control Center"}>
           <SidebarMenu className="gap-1">
-            {NAV_ITEMS.map((item) => (
-              <SidebarMenuItem key={item.id}>
-                <ShellNavButton
-                  active={item.id === activeTab}
-                  disabled={isTabDisabled(item.id)}
-                  item={item}
-                  notify={item.id === "updates" && updateAvailable}
-                  onClick={() => onTabChange(item.id)}
-                />
-              </SidebarMenuItem>
-            ))}
+            {NAV_ITEMS.map((item) => {
+              const appearance = item.id === "theme-library";
+              const disabled = isTabDisabled(item.id);
+              return (
+                <SidebarMenuItem key={item.id}>
+                  <ShellNavButton
+                    active={item.id === activeTab}
+                    current={!appearance}
+                    disabled={disabled}
+                    item={item}
+                    notify={item.id === "updates" && updateAvailable}
+                    onClick={() => onTabChange(item.id)}
+                  />
+                  {appearance ? (
+                    <SidebarMenuSub>
+                      {(["themes", "screensavers"] as const).map((section) => (
+                        <SidebarMenuSubItem key={section}>
+                          <AppearanceNavButton
+                            active={
+                              activeTab === "theme-library" &&
+                              activeAppearanceSection === section
+                            }
+                            disabled={disabled}
+                            label={
+                              section === "themes" ? "Themes" : "Screensavers"
+                            }
+                            onClick={() => {
+                              onAppearanceSectionChange?.(section);
+                              onTabChange("theme-library");
+                            }}
+                          />
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  ) : null}
+                </SidebarMenuItem>
+              );
+            })}
           </SidebarMenu>
         </nav>
       </SidebarGroupContent>
@@ -215,12 +256,14 @@ function ControlCenterNavigation({
 
 function ShellNavButton({
   active,
+  current = true,
   disabled,
   item,
   notify,
   onClick,
 }: {
   active: boolean;
+  current?: boolean;
   disabled?: boolean;
   item: ShellNavItem;
   notify?: boolean;
@@ -231,7 +274,7 @@ function ShellNavButton({
   return (
     <>
       <SidebarMenuButton
-        aria-current={active ? "page" : undefined}
+        aria-current={active && current ? "page" : undefined}
         className="h-11 rounded-[var(--radius-control)] px-3 text-sm data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:[&_svg]:text-sidebar-primary group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11! [&_svg]:size-5!"
         disabled={disabled}
         isActive={active}
@@ -256,5 +299,38 @@ function ShellNavButton({
         </SidebarMenuBadge>
       ) : null}
     </>
+  );
+}
+
+function AppearanceNavButton({
+  active,
+  disabled,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  disabled: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  const { isMobile, setOpenMobile } = useSidebar();
+
+  return (
+    <SidebarMenuSubButton asChild isActive={active}>
+      <button
+        aria-current={active ? "page" : undefined}
+        className="h-11"
+        disabled={disabled}
+        onClick={() => {
+          onClick();
+          if (isMobile) {
+            setOpenMobile(false);
+          }
+        }}
+        type="button"
+      >
+        <span>{label}</span>
+      </button>
+    </SidebarMenuSubButton>
   );
 }
