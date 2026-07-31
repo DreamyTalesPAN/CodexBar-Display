@@ -2831,17 +2831,6 @@ func firstRFC3339AtPaths(m map[string]any, paths ...string) time.Time {
 	return parsed.UTC()
 }
 
-func percentAtPathsWithPresence(m map[string]any, paths ...string) (int, bool) {
-	for _, p := range paths {
-		if v, ok := getPath(m, p); ok {
-			if n, ok := anyToInt(v); ok {
-				return clampPercent(n), true
-			}
-		}
-	}
-	return 0, false
-}
-
 func knownUsagePercentAtPaths(m map[string]any, paths ...string) (int, bool) {
 	for _, path := range paths {
 		value, ok := getPath(m, path)
