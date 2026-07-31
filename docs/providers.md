@@ -112,7 +112,7 @@ Cursor, Gemini, and other tools during the same day.
 Token stats are read through:
 
 ```bash
-codexbar cost --json
+codexbar cost --refresh --days 30 --json
 ```
 
 VibeTV maps reliable token stats to:

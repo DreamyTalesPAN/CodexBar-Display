@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -96,7 +97,7 @@ func TestParseProviderTokenStatsKeepsSuccessfulZeroResult(t *testing.T) {
 	}
 }
 
-func TestFetchProviderTokenStatsReadsCodexBarCostWithoutRefresh(t *testing.T) {
+func TestFetchProviderTokenStatsRequestsCompleteCostScan(t *testing.T) {
 	var gotBin string
 	var gotArgs []string
 	runCostCommandFn = func(_ context.Context, timeout time.Duration, bin string, args ...string) ([]byte, error) {
@@ -124,8 +125,8 @@ func TestFetchProviderTokenStatsReadsCodexBarCostWithoutRefresh(t *testing.T) {
 	if gotBin != "/tmp/CodexBarCLI" {
 		t.Fatalf("unexpected binary %q", gotBin)
 	}
-	if len(gotArgs) != 2 || gotArgs[0] != "cost" || gotArgs[1] != "--json" {
-		t.Fatalf("expected codexbar cost --json without refresh, got %#v", gotArgs)
+	if !slices.Equal(gotArgs, []string{"cost", "--json", "--refresh", "--days", "30"}) {
+		t.Fatalf("expected an explicit complete 30-day cost scan, got %#v", gotArgs)
 	}
 }
 

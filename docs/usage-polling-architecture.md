@@ -104,8 +104,14 @@ window expires, old percentages and reset times become unavailable.
 Absolute token history is a separate CodexBar contract:
 
 ```text
-codexbar cost --json
+codexbar cost --refresh --days 30 --json
 ```
+
+Request the window explicitly and force the scan. `codexbar cost --json` alone
+returns cached scan results, and CodexBar reports its window total as
+`last30DaysTokens` regardless of the window length. Reading the plain command
+therefore accepts a warming or shorter-window cache entry and presents it as a
+complete 30-day history.
 
 One collector-owned, single-in-flight background scan reads that contract.
 Token fields are merged only when reliable values are available. A slow or

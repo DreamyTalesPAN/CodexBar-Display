@@ -15,6 +15,18 @@ import (
 // assuming the fast quota path's latency.
 const tokenStatsCommandTimeout = 120 * time.Second
 
+// tokenStatsHistoryDays is the history window this product presents. CodexBar
+// names its window total `last30DaysTokens` for every window length, so the
+// window has to be requested explicitly instead of inherited from whatever the
+// last scan used.
+const tokenStatsHistoryDays = "30"
+
+// tokenStatsCostArgs asks CodexBar for a complete scan of that window.
+// `codexbar cost --json` returns cached scan results unless `--refresh` is
+// given, so without it a warming or shorter-window cache entry would be
+// presented as the finished history.
+var tokenStatsCostArgs = []string{"cost", "--json", "--refresh", "--days", tokenStatsHistoryDays}
+
 type ProviderTokenStats struct {
 	SessionTokens int64
 	WeekTokens    int64
@@ -71,7 +83,7 @@ func fetchProviderTokenStats(ctx context.Context, bin string) (map[string]Provid
 
 func fetchProviderTokenStatsWithReport(ctx context.Context, bin string, report ProviderTokenStatsReport) (map[string]ProviderTokenStats, ProviderTokenStatsReport) {
 	costStarted := time.Now()
-	raw, err := runCostCommandFn(ctx, tokenStatsCommandTimeout, bin, "cost", "--json")
+	raw, err := runCostCommandFn(ctx, tokenStatsCommandTimeout, bin, tokenStatsCostArgs...)
 	report.CostDuration = time.Since(costStarted)
 	if err != nil {
 		report.Reason = tokenStatsFailureReason(ctx, err, report.CostDuration, tokenStatsCommandTimeout, "cost")
