@@ -65,6 +65,7 @@ import {
   importThemeSpec,
   normalizeThemeSpec,
   type ThemeStudioAsset,
+  type ThemeStudioUsage,
 } from "@/lib/theme-studio";
 import {
   clearThemeStudioRecovery,
@@ -75,7 +76,7 @@ import {
   type UserThemeRecord,
 } from "@/lib/theme-studio-storage";
 import type { ThemeStudioDeviceCapabilities } from "@/lib/theme-studio-capabilities";
-import type { ThemeProduct, ThemeUsage } from "@/lib/themes";
+import type { ThemeProduct } from "@/lib/themes";
 import { themeRenderPackUrl } from "./control-center-runtime";
 import {
   ThemeSpecPreview,
@@ -132,10 +133,6 @@ type ThemeLibraryItem =
       title: string;
     };
 
-type AppearanceEditorTheme = ThemeStudioEditorTheme & {
-  usage?: ThemeUsage;
-};
-
 export type ThemeInstallResult = {
   themeId: string;
   packId: string;
@@ -159,7 +156,7 @@ export type ThemeInstallStatus = {
 
 export type ThemeLibraryScreenProps = {
   themes: ThemeProduct[];
-  usage?: ThemeUsage;
+  usage?: ThemeStudioUsage;
   selectedTheme?: ThemeProduct;
   selectedThemeId: string;
   catalogIssue?: string;
@@ -204,7 +201,7 @@ export function ThemeLibraryScreen({
   const [userThemes, setUserThemes] = useState<UserThemeRecord[]>([]);
   const [recovery, setRecovery] = useState<ThemeStudioRecovery | null>(null);
   const [editingTheme, setEditingTheme] =
-    useState<AppearanceEditorTheme | null>(null);
+    useState<ThemeStudioEditorTheme | null>(null);
   const [libraryError, setLibraryError] = useState("");
   const [storageWarning, setStorageWarning] = useState("");
   const [storageLocked, setStorageLocked] = useState(false);
@@ -376,8 +373,7 @@ export function ThemeLibraryScreen({
       : undefined;
     const existingIds = allThemeIds(themes, userThemes, currentId);
     const spec = normalizeThemeSpec(payload.spec);
-    const savedUsage =
-      (payload as { usage?: ThemeUsage }).usage || editingTheme?.usage || usage;
+    const savedUsage = payload.usage || editingTheme?.usage || usage;
     spec.themeId = uniqueThemeId(spec.themeId, existingIds);
     const id = currentId || spec.themeId;
     const nextRecord: UserThemeRecord = {
@@ -648,8 +644,8 @@ export function ThemeLibraryScreen({
 
 function themeDocumentUsage(
   document: UserThemeRecord["document"],
-): ThemeUsage {
-  return (document as { usage?: ThemeUsage }).usage || "live";
+): ThemeStudioUsage {
+  return document.usage || "live";
 }
 
 function themeStudioCapabilitiesFromDevice(
@@ -854,7 +850,7 @@ function ThemeListItem({
   preparingInstallThemeId: string;
   selectedThemeId: string;
   setupMode: boolean;
-  usage: ThemeUsage;
+  usage: ThemeStudioUsage;
   themeInstallBlockedReason: string;
   themeInstallEnabled: boolean;
   themeStorageLocked: boolean;
@@ -1019,7 +1015,7 @@ function InlineInstallProgress({
   canRetry: boolean;
   onRetry: () => void;
   status: ThemeInstallStatus;
-  usage: ThemeUsage;
+  usage: ThemeStudioUsage;
 }) {
   const failed = status.phase === "error";
   const complete = status.phase === "complete";

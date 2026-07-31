@@ -307,6 +307,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testThemeStudioScreensaverInstallUsesScreensaverSlot(
+        browser,
+        appContext.appUrl,
+      );
       console.log("control-center Theme Studio safety test passed");
       return;
     }
@@ -393,6 +397,10 @@ async function main() {
         appContext.appUrl,
       );
       await testAppearanceSidebarNavigation(browser, appContext.appUrl);
+      await testPublishedAppearanceInstallsUseTheirSlots(
+        browser,
+        appContext.appUrl,
+      );
       await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
         browser,
         appContext.appUrl,
@@ -540,6 +548,10 @@ async function main() {
       appContext.appUrl,
     );
     await testAppearanceSidebarNavigation(browser, appContext.appUrl);
+    await testPublishedAppearanceInstallsUseTheirSlots(
+      browser,
+      appContext.appUrl,
+    );
     await testDesktopHeaderDoesNotClaimDeviceDuringSetup(
       browser,
       appContext.appUrl,
@@ -3601,6 +3613,81 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
   }
 }
 
+async function testPublishedAppearanceInstallsUseTheirSlots(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    installStatusSequence: [
+      {
+        phase: "complete",
+        message: "Theme is active on VibeTV.",
+        progress: 100,
+        logs: ["Theme is active on VibeTV."],
+        result: {
+          themeId: "synthwave",
+          packId: "synthwave",
+          name: "Fixture Synthwave Theme",
+          activePath: "/themes/u/synthwave.json",
+          themeRev: 1,
+        },
+      },
+      {
+        phase: "complete",
+        message: "Screensaver is ready on VibeTV.",
+        progress: 100,
+        logs: ["Screensaver is ready on VibeTV."],
+        result: {
+          themeId: "night-clock",
+          packId: "night-clock",
+          name: "Fixture Night Clock Screensaver",
+          activePath: "/themes/s/night-clock.json",
+          themeRev: 1,
+        },
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Themes");
+  const liveThemeRow = page
+    .getByRole("listitem")
+    .filter({ hasText: "Fixture Synthwave Theme" });
+  await liveThemeRow
+    .getByRole("button", { name: "Install", exact: true })
+    .click();
+  await waitForCondition(
+    () => installRequests.length === 1,
+    "expected one published live-theme install request",
+  );
+  await liveThemeRow
+    .getByRole("button", { name: "Installed", exact: true })
+    .waitFor();
+
+  await clickNavigation(page, "Screensavers");
+  await page
+    .getByRole("listitem")
+    .filter({ hasText: "Fixture Night Clock Screensaver" })
+    .getByRole("button", { name: "Install", exact: true })
+    .click();
+  await waitForCondition(
+    () => installRequests.length === 2,
+    "expected one published screensaver install request",
+  );
+
+  const [liveRequest, screensaverRequest] = installRequests.map(parseJSON);
+  assert(
+    liveRequest?.slot === "live",
+    `published themes must install into the live slot, got ${JSON.stringify(liveRequest)}`,
+  );
+  assert(
+    screensaverRequest?.slot === "screensaver",
+    `published screensavers must install into the screensaver slot, got ${JSON.stringify(screensaverRequest)}`,
+  );
+  await page.close();
+}
+
 async function testDesktopHeaderDoesNotClaimDeviceDuringSetup(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
@@ -6043,7 +6130,8 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   const installUrl = new URL(installRequest.url);
   assert(
     installUrl.pathname === "/v1/themes/install" &&
-      installUrl.searchParams.get("async") === "true",
+      installUrl.searchParams.get("async") === "true" &&
+      installUrl.searchParams.get("slot") === "live",
     `Theme Studio should use the asynchronous Companion install route, got ${installRequest.url}`,
   );
   assert(
@@ -6165,6 +6253,88 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   assert(
     await page.getByRole("button", { name: "Save theme" }).isDisabled(),
     "invalid recovery data should lock theme saving until it is handled",
+  );
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await page.close();
+}
+
+async function testThemeStudioScreensaverInstallUsesScreensaverSlot(
+  browser,
+  appUrl,
+) {
+  const localAppUrl = "http://127.0.0.1:47832/control-center";
+  const page = await browser.newPage({ viewport: themeStudioViewport });
+  const installRequests = [];
+  const themeInstallRequests = [];
+  const browserRequests = [];
+
+  page.on("request", (request) => {
+    browserRequests.push(request.url());
+  });
+  await routeLocalCompanionAppThroughLocalNext(page, appUrl);
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.33",
+    device: {
+      ...companionDevice,
+      firmware: "1.0.32",
+    },
+    installStatusSequence: [
+      {
+        phase: "complete",
+        message: "Screensaver is ready on VibeTV.",
+        progress: 100,
+        logs: ["Screensaver is ready on VibeTV."],
+        result: {
+          themeId: "my-screensaver",
+          packId: "my-screensaver-1",
+          name: "New Screensaver",
+          activePath: "/themes/s/my-screensaver.json",
+          themeRev: 1,
+        },
+      },
+    ],
+    onThemeInstallRequest: (request) => {
+      themeInstallRequests.push(request);
+    },
+  });
+
+  await page.goto(localAppUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Screensavers");
+  await page.getByRole("button", { name: "Create Screensaver" }).click();
+  await page.getByRole("button", { name: "Send to VibeTV" }).click();
+  await waitForCondition(
+    () => themeInstallRequests.length === 1,
+    "expected one custom screensaver install request",
+  );
+  await page
+    .getByText("Screensaver is ready on VibeTV.", { exact: true })
+    .waitFor({ timeout: 10_000 });
+
+  const installRequest = themeInstallRequests[0];
+  const installUrl = new URL(installRequest.url);
+  assert(
+    installUrl.pathname === "/v1/themes/install" &&
+      installUrl.searchParams.get("async") === "true" &&
+      installUrl.searchParams.get("slot") === "screensaver",
+    `custom screensavers must use the asynchronous screensaver slot, got ${installRequest.url}`,
+  );
+  assert(
+    installRequest.headers["content-type"] === "application/zip",
+    `custom screensavers should send application/zip, got ${installRequest.headers["content-type"]}`,
+  );
+  assert(
+    installRequest.body.length >= 4 &&
+      installRequest.body[0] === 0x50 &&
+      installRequest.body[1] === 0x4b &&
+      installRequest.body[2] === 0x03 &&
+      installRequest.body[3] === 0x04,
+    "custom screensaver install body should start with the ZIP PK signature",
+  );
+  const unsafeRequests = browserRequests.filter(isDirectDeviceWriteUrl);
+  assert(
+    unsafeRequests.length === 0,
+    `Theme Studio must not write directly to a device: ${JSON.stringify(unsafeRequests)}`,
   );
 
   await page.unrouteAll({ behavior: "ignoreErrors" });

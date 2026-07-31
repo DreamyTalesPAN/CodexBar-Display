@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { isRemoteThemePackUrl } from "./theme-pack-url";
+import type { ThemeStudioUsage } from "./theme-studio";
 
 export type ThemeSource = "shopify" | "github-catalog" | "fallback";
-export type ThemeUsage = "live" | "screensaver";
 
 export type ThemeProduct = {
   id: string;
@@ -16,7 +16,7 @@ export type ThemeProduct = {
   priceLabel: string;
   isFree: boolean;
   themeId: string;
-  usage?: ThemeUsage;
+  usage?: ThemeStudioUsage;
   themeVersion?: string;
   manifestUrl?: string;
   packUrl?: string;

@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { ThemeProduct, ThemeUsage } from "@/lib/themes";
+import type { ThemeStudioUsage } from "@/lib/theme-studio";
+import type { ThemeProduct } from "@/lib/themes";
 import { ThemeLibraryScreen } from "./theme-library-screen";
 
 const themes: ThemeProduct[] = [
@@ -30,7 +31,7 @@ const themes: ThemeProduct[] = [
   },
 ];
 
-function renderLibrary(usage: ThemeUsage, catalog = themes) {
+function renderLibrary(usage: ThemeStudioUsage, catalog = themes) {
   return renderToStaticMarkup(
     <ThemeLibraryScreen
       busyAction={null}
