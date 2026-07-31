@@ -516,3 +516,19 @@ issue scope, or release permission never implies UI permission.
   control, setting, screen, or customer decision appears.
 - Approved files: `control-center-app.tsx`, `theme-library-screen.tsx`, theme
   usage typing, their focused tests, and the matching customer-flow assertions.
+
+## 2026-07-31 — Collapsible Appearance navigation
+
+- User approval: After reviewing the implemented Appearance sidebar, the user
+  explicitly required `Themes` and `Screensavers` to remain hidden until
+  `Appearance` is clicked, requested the native shadcn behavior, and asked for
+  a quieter selected state without a filled button background.
+- Approved customer-visible result: `Appearance` uses the native shadcn
+  collapsible sidebar pattern. Its `Themes` and `Screensavers` children are
+  collapsed initially and appear after clicking `Appearance`; the native
+  chevron motion communicates the state. The selected child uses brighter,
+  semibold text without an active background fill. No custom component,
+  animation, color, or parallel navigation state is added.
+- Approved files: `control-center-shell.tsx`, its focused test, the matching
+  customer-flow assertions in `test-customer-flows.mjs`, and this approval
+  record.

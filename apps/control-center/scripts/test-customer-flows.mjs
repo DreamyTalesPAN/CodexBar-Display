@@ -3568,6 +3568,7 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
 
     await page.goto(appUrl, { waitUntil: "domcontentloaded" });
     await clickNavigation(page, "Appearance");
+    await clickNavigation(page, "Themes");
     await page
       .getByRole("heading", { name: "Themes", exact: true })
       .waitFor({ timeout: 10_000 });
@@ -8656,6 +8657,12 @@ async function getNavigationButton(page, name) {
 }
 
 async function clickNavigation(page, name) {
+  if (name === "Themes" || name === "Screensavers") {
+    const appearance = await getNavigationButton(page, "Appearance");
+    if ((await appearance.getAttribute("aria-expanded")) !== "true") {
+      await appearance.click({ timeout: 10_000 });
+    }
+  }
   await page.waitForTimeout(350);
   await (await getNavigationButton(page, name)).click({ timeout: 10_000 });
 }

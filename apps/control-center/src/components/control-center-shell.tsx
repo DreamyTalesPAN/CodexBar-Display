@@ -3,12 +3,18 @@
 import {
   Activity,
   BarChart3,
+  ChevronRight,
   FileText,
   Grid2X2,
   RefreshCw,
   SlidersHorizontal,
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Sidebar,
   SidebarContent,
@@ -212,10 +218,11 @@ function ControlCenterNavigation({
             {NAV_ITEMS.map((item) => {
               const appearance = item.id === "theme-library";
               const disabled = isTabDisabled(item.id);
-              return (
+              const menuItem = (
                 <SidebarMenuItem key={item.id}>
                   <ShellNavButton
                     active={item.id === activeTab}
+                    collapsible={appearance}
                     current={!appearance}
                     disabled={disabled}
                     item={item}
@@ -223,28 +230,45 @@ function ControlCenterNavigation({
                     onClick={() => onTabChange(item.id)}
                   />
                   {appearance ? (
-                    <SidebarMenuSub>
-                      {(["themes", "screensavers"] as const).map((section) => (
-                        <SidebarMenuSubItem key={section}>
-                          <AppearanceNavButton
-                            active={
-                              activeTab === "theme-library" &&
-                              activeAppearanceSection === section
-                            }
-                            disabled={disabled}
-                            label={
-                              section === "themes" ? "Themes" : "Screensavers"
-                            }
-                            onClick={() => {
-                              onAppearanceSectionChange?.(section);
-                              onTabChange("theme-library");
-                            }}
-                          />
-                        </SidebarMenuSubItem>
-                      ))}
-                    </SidebarMenuSub>
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        {(["themes", "screensavers"] as const).map(
+                          (section) => (
+                            <SidebarMenuSubItem key={section}>
+                              <AppearanceNavButton
+                                active={
+                                  activeTab === "theme-library" &&
+                                  activeAppearanceSection === section
+                                }
+                                disabled={disabled}
+                                label={
+                                  section === "themes"
+                                    ? "Themes"
+                                    : "Screensavers"
+                                }
+                                onClick={() => {
+                                  onAppearanceSectionChange?.(section);
+                                  onTabChange("theme-library");
+                                }}
+                              />
+                            </SidebarMenuSubItem>
+                          ),
+                        )}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
                   ) : null}
                 </SidebarMenuItem>
+              );
+              return appearance ? (
+                <Collapsible
+                  key={item.id}
+                  asChild
+                  className="group/collapsible"
+                >
+                  {menuItem}
+                </Collapsible>
+              ) : (
+                menuItem
               );
             })}
           </SidebarMenu>
@@ -256,6 +280,7 @@ function ControlCenterNavigation({
 
 function ShellNavButton({
   active,
+  collapsible = false,
   current = true,
   disabled,
   item,
@@ -263,6 +288,7 @@ function ShellNavButton({
   onClick,
 }: {
   active: boolean;
+  collapsible?: boolean;
   current?: boolean;
   disabled?: boolean;
   item: ShellNavItem;
@@ -271,25 +297,38 @@ function ShellNavButton({
 }) {
   const { isMobile, setOpenMobile } = useSidebar();
 
+  const button = (
+    <SidebarMenuButton
+      aria-current={active && current ? "page" : undefined}
+      className="h-11 rounded-[var(--radius-control)] px-3 text-sm data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:[&_svg]:text-sidebar-primary group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11! [&_svg]:size-5!"
+      disabled={disabled}
+      isActive={active}
+      onClick={() => {
+        if (!collapsible) {
+          onClick();
+        }
+        if (isMobile && !collapsible) {
+          setOpenMobile(false);
+        }
+      }}
+      tooltip={item.label}
+      type="button"
+    >
+      {item.icon}
+      <span className="min-w-0 truncate">{item.label}</span>
+      {collapsible ? (
+        <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+      ) : null}
+    </SidebarMenuButton>
+  );
+
   return (
     <>
-      <SidebarMenuButton
-        aria-current={active && current ? "page" : undefined}
-        className="h-11 rounded-[var(--radius-control)] px-3 text-sm data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:[&_svg]:text-sidebar-primary group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11! [&_svg]:size-5!"
-        disabled={disabled}
-        isActive={active}
-        onClick={() => {
-          onClick();
-          if (isMobile) {
-            setOpenMobile(false);
-          }
-        }}
-        tooltip={item.label}
-        type="button"
-      >
-        {item.icon}
-        <span className="min-w-0 truncate">{item.label}</span>
-      </SidebarMenuButton>
+      {collapsible ? (
+        <CollapsibleTrigger asChild>{button}</CollapsibleTrigger>
+      ) : (
+        button
+      )}
       {notify ? (
         <SidebarMenuBadge
           aria-label="Update available"
@@ -316,10 +355,13 @@ function AppearanceNavButton({
   const { isMobile, setOpenMobile } = useSidebar();
 
   return (
-    <SidebarMenuSubButton asChild isActive={active}>
+    <SidebarMenuSubButton
+      asChild
+      className="h-11 data-active:bg-transparent data-active:font-semibold data-active:text-sidebar-accent-foreground"
+      isActive={active}
+    >
       <button
         aria-current={active ? "page" : undefined}
-        className="h-11"
         disabled={disabled}
         onClick={() => {
           onClick();

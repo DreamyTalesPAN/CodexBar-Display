@@ -4,7 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ControlCenterShell } from "./control-center-shell";
 
 describe("ControlCenterShell", () => {
-  it("renders Appearance with its two sidebar children", () => {
+  it("keeps Appearance children hidden until Appearance is opened", () => {
     const html = renderToStaticMarkup(
       <TooltipProvider>
         <ControlCenterShell
@@ -13,16 +13,16 @@ describe("ControlCenterShell", () => {
           device={{ connected: true, paired: true, ready: true }}
           onTabChange={vi.fn()}
         >
-          <div>Screensavers</div>
+          <div>Appearance content</div>
         </ControlCenterShell>
       </TooltipProvider>,
     );
 
     expect(html).toContain(">Appearance<");
-    expect(html).toContain(">Themes<");
-    expect(html).toContain(">Screensavers<");
-    expect(html).toContain('data-sidebar="menu-sub"');
-    expect(html).toContain('aria-current="page"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain(">Themes<");
+    expect(html).not.toContain(">Screensavers<");
+    expect(html).not.toContain('data-sidebar="menu-sub"');
     expect(html).not.toContain(">Theme Library<");
   });
 

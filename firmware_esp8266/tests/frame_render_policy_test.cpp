@@ -79,6 +79,21 @@ bool testUsbHelloReportsStandbyCapability(const std::string& source) {
       "USB hello must report one supported standby capability with a screensaver slot");
 }
 
+bool testWifiHelloReportsStandbyCapability(const std::string& source) {
+  const std::size_t handlerStart = source.find("void handleHello()");
+  const std::size_t handlerEnd = source.find("\nbool isSafeAssetPath", handlerStart);
+  if (!expect(
+          handlerStart != std::string::npos && handlerEnd != std::string::npos,
+          "WiFi hello handler must remain discoverable")) {
+    return false;
+  }
+
+  const std::string handler = source.substr(handlerStart, handlerEnd - handlerStart);
+  return expect(
+      handler.find("appendStandbyCapabilityJSON(out)") != std::string::npos,
+      "WiFi hello must report the supported standby capability with a screensaver slot");
+}
+
 bool testPendingWifiRenderRunsBeforeUsb(const std::string& source) {
   const std::size_t loopStart = source.find("void loop()");
   const std::size_t pending = source.find("if (pendingWifiRender)", loopStart);
@@ -102,6 +117,7 @@ int main(int argc, char** argv) {
   if (!testWifiHandlerAcknowledgesBeforeDispatch(source) ||
       !testWifiDispatchStoresOnePendingEvent(source) ||
       !testUsbHelloReportsStandbyCapability(source) ||
+      !testWifiHelloReportsStandbyCapability(source) ||
       !testPendingWifiRenderRunsBeforeUsb(source)) {
     return 1;
   }
