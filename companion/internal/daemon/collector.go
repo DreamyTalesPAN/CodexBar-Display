@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,8 @@ const (
 	tokenStatsCollectorTimeout = 125 * time.Second
 	// Cost history scans can take over a minute. Keep their post-completion
 	// cadence below the ten-minute last-good window without running continuously.
+	// This cadence applies only once a provider's history stopped growing;
+	// see tokenStatsHistorySettled.
 	tokenStatsScanCooldown = 5 * time.Minute
 )
 
@@ -27,6 +30,7 @@ type providerSnapshot struct {
 	Meta                codexbar.ProviderUsageMeta `json:"meta,omitempty"`
 	Collected           time.Time                  `json:"collectedAt"`
 	TokenStatsCollected time.Time                  `json:"tokenStatsCollectedAt,omitempty"`
+	TokenHistorySettled bool                       `json:"tokenHistorySettled,omitempty"`
 	ActivityObservedAt  time.Time                  `json:"activityObservedAt,omitempty"`
 	RateLimited         bool                       `json:"rateLimited,omitempty"`
 	RateLimitedUntil    time.Time                  `json:"rateLimitedUntil,omitempty"`
@@ -71,6 +75,8 @@ type providerCollector struct {
 	tokenStatsWG            sync.WaitGroup
 	tokenStatsCooldown      time.Duration
 	tokenStatsLastCompleted time.Time
+	tokenStatsSettled       bool
+	tokenHistoryPrints      map[string]string
 }
 
 func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
@@ -169,10 +175,14 @@ func (c *providerCollector) requestTokenStatsScan(parent context.Context) bool {
 	ctx, cancel := context.WithCancel(parent)
 	c.tokenStatsMu.Lock()
 	now := c.now().UTC()
-	if c.tokenStatsRunning ||
-		(c.tokenStatsCooldown > 0 &&
-			!c.tokenStatsLastCompleted.IsZero() &&
-			now.Before(c.tokenStatsLastCompleted.Add(c.tokenStatsCooldown))) {
+	// A still-growing history must be corrected by the next scan instead of
+	// waiting out the completed-scan cadence. Single-flight still prevents
+	// overlapping scans.
+	cooling := c.tokenStatsSettled &&
+		c.tokenStatsCooldown > 0 &&
+		!c.tokenStatsLastCompleted.IsZero() &&
+		now.Before(c.tokenStatsLastCompleted.Add(c.tokenStatsCooldown))
+	if c.tokenStatsRunning || cooling {
 		c.tokenStatsMu.Unlock()
 		cancel()
 		return false
@@ -328,6 +338,9 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			RateLimitedUntil:    time.Time{},
 		}
 		if previous, exists := c.providers[key]; exists {
+			// Only a token scan can change the history, so a quota collection
+			// must never reset how settled that history already is.
+			snapshot.TokenHistorySettled = previous.TokenHistorySettled
 			carryForwardSnapshotTokenStats(previous, &snapshot, now, c.snapshotMaxAge)
 		}
 		c.providers[key] = snapshot
@@ -505,8 +518,10 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 
 	now := c.now().UTC()
 	updated := 0
+	settled := true
 
 	c.mu.Lock()
+	prints := make(map[string]string, len(statsByProvider))
 	seen := make(map[string]struct{}, len(statsByProvider)+len(report.FailedProviders))
 	for _, provider := range report.FailedProviders {
 		if key := normalizeProviderKey(provider); key != "" {
@@ -558,6 +573,14 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			activityObservedAt = stats.UpdatedAt.UTC()
 		}
 
+		print := tokenHistoryFingerprint(stats.Cost, now)
+		prints[key] = print
+		previousPrint, hadPrevious := c.tokenHistoryPrints[key]
+		// Without a cost history there is nothing that can still grow, so such
+		// a provider must not keep the collector scanning.
+		providerSettled := stats.Cost == nil || (hadPrevious && previousPrint == print)
+		settled = settled && providerSettled
+
 		c.providers[key] = providerSnapshot{
 			Provider:  key,
 			Frame:     frame,
@@ -568,12 +591,14 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			// reports that no new activity occurred. UpdatedAt remains the
 			// activity timestamp above, not the token-stat freshness timestamp.
 			TokenStatsCollected: now,
+			TokenHistorySettled: providerSettled,
 			ActivityObservedAt:  activityObservedAt,
 			RateLimited:         snapshot.RateLimited,
 			RateLimitedUntil:    snapshot.RateLimitedUntil,
 		}
 		updated++
 	}
+	c.tokenHistoryPrints = prints
 	for key, snapshot := range c.providers {
 		if _, ok := seen[key]; ok {
 			continue
@@ -586,6 +611,10 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		updated++
 	}
 	c.mu.Unlock()
+
+	c.tokenStatsMu.Lock()
+	c.tokenStatsSettled = settled
+	c.tokenStatsMu.Unlock()
 
 	if updated > 0 {
 		c.persistIfNeeded(now)
@@ -652,9 +681,34 @@ func carryForwardSnapshotTokenStats(previous providerSnapshot, next *providerSna
 	next.Frame.TotalTokens = prevFrame.TotalTokens
 	next.Meta.Cost = previous.Meta.Cost
 	next.TokenStatsCollected = previous.TokenStatsCollected
+	next.TokenHistorySettled = previous.TokenHistorySettled
 	if next.ActivityObservedAt.IsZero() {
 		next.ActivityObservedAt = previous.ActivityObservedAt
 	}
+}
+
+// tokenHistoryFingerprint identifies the finished part of a provider's history.
+// CodexBar warms its cost scan incrementally and reports every intermediate
+// result as a success, so a history that stops changing is the only available
+// completeness signal. Today is excluded because a warming scan fills in older
+// days while ordinary usage only moves today, which would otherwise keep an
+// active provider permanently unsettled.
+func tokenHistoryFingerprint(cost *codexbar.ProviderCostUsage, now time.Time) string {
+	if cost == nil {
+		return ""
+	}
+	today := now.UTC().Format("2006-01-02")
+	var print strings.Builder
+	for _, day := range cost.Daily {
+		if day.Day == today {
+			continue
+		}
+		print.WriteString(day.Day)
+		print.WriteByte(':')
+		print.WriteString(strconv.FormatInt(day.TotalTokens, 10))
+		print.WriteByte(';')
+	}
+	return print.String()
 }
 
 func frameHasTokenStats(frame protocol.Frame) bool {
@@ -674,6 +728,7 @@ func clearSnapshotTokenStats(snapshot *providerSnapshot) {
 	snapshot.Frame.TotalTokens = 0
 	snapshot.Meta.Cost = nil
 	snapshot.TokenStatsCollected = time.Time{}
+	snapshot.TokenHistorySettled = false
 }
 
 func parsedTokenStatsCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time) time.Time {

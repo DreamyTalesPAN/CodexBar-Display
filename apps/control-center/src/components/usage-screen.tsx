@@ -103,6 +103,8 @@ export function UsageScreen({
   const hasProviders = providers.length > 0;
   const tokenUsageReady =
     usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);
+  // The Mac App owns this decision; the browser does not re-derive freshness.
+  const tokenUsageUpdating = usage?.tokenUsageUpdating === true;
   const hasUsableVisibleUsageContent =
     hasProviders || usageProvidersHaveTokenResult(providers);
   const usageLoading =
@@ -158,6 +160,7 @@ export function UsageScreen({
             onRefresh={onRefresh}
             providers={providers}
             refreshing={refreshing}
+            updating={tokenUsageUpdating}
           />
         ) : tokenUsagePending ? (
           <Card
@@ -456,10 +459,12 @@ function TokenUsageOverTimePanel({
   onRefresh,
   providers,
   refreshing,
+  updating,
 }: {
   onRefresh?: () => void;
   providers: UsageProviderInfo[];
   refreshing: boolean;
+  updating: boolean;
 }) {
   const currentProviderHistories = getProviderTokenHistories(providers);
   const hasCurrentData = currentProviderHistories.length > 0;
@@ -480,6 +485,17 @@ function TokenUsageOverTimePanel({
         aria-labelledby="total-tokens-heading"
         className="mb-6 px-4 text-center"
       >
+        {updating ? (
+          <Badge
+            aria-live="polite"
+            className="mb-3"
+            data-testid="token-history-updating"
+            variant="secondary"
+          >
+            <Spinner className="size-3" data-icon="inline-start" />
+            Still counting
+          </Badge>
+        ) : null}
         <h2
           className="text-sm font-bold uppercase tracking-wide text-muted-foreground"
           id="total-tokens-heading"

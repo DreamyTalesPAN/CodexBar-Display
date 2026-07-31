@@ -324,6 +324,7 @@ export type UsageProviderInfo = {
   credits?: UsageCreditsInfo;
   resetCredits?: UsageResetCreditsInfo;
   cost?: UsageCostInfo;
+  costSettled?: boolean;
   pace?: UsagePaceInfo[];
   usageOverTime?: UsageOverTimePoint[];
 };
@@ -406,6 +407,7 @@ export type UsageSnapshot = {
   usageMode?: "used" | "remaining" | string;
   refresh?: UsageRefreshInfo;
   tokenUsageReady?: boolean;
+  tokenUsageUpdating?: boolean;
   currentProvider?: string;
   providers: UsageProviderInfo[];
 };

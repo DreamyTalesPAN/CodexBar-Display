@@ -144,6 +144,50 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Tokens used over time");
   });
 
+  it("shows a growing token total immediately and marks it as still counting", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        onPreferenceChange={vi.fn()}
+        onRefresh={vi.fn()}
+        pendingPreferenceIds={new Set()}
+        preferences={[]}
+        usage={{
+          ...usage,
+          tokenUsageUpdating: true,
+        }}
+      />,
+    );
+
+    expect(html).toContain("Total tokens in the last 30 days");
+    expect(html).toContain('data-testid="token-history-updating"');
+    expect(html).toContain("Still counting");
+    expect(html.indexOf('data-testid="token-history-updating"')).toBeLessThan(
+      html.indexOf("Total tokens in the last 30 days"),
+    );
+    expect(html).not.toContain('data-testid="token-history-loading"');
+  });
+
+  it("drops the still counting badge once the token history settled", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        onPreferenceChange={vi.fn()}
+        onRefresh={vi.fn()}
+        pendingPreferenceIds={new Set()}
+        preferences={[]}
+        usage={{
+          ...usage,
+          tokenUsageUpdating: false,
+        }}
+      />,
+    );
+
+    expect(html).toContain("Total tokens in the last 30 days");
+    expect(html).not.toContain('data-testid="token-history-updating"');
+    expect(html).not.toContain("Still counting");
+  });
+
   it("renders a successful zero token result instead of staying in loading", () => {
     const html = renderToStaticMarkup(
       <UsageScreen

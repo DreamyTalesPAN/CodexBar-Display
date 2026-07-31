@@ -684,8 +684,11 @@ type usageResponse struct {
 	UsageMode       string              `json:"usageMode"`
 	Refresh         usageRefreshInfo    `json:"refresh"`
 	TokenUsageReady bool                `json:"tokenUsageReady"`
-	CurrentProvider string              `json:"currentProvider,omitempty"`
-	Providers       []usageProviderInfo `json:"providers"`
+	// TokenUsageUpdating reports that a shown token history is still growing,
+	// so the totals derived from it are not final yet.
+	TokenUsageUpdating bool                `json:"tokenUsageUpdating"`
+	CurrentProvider    string              `json:"currentProvider,omitempty"`
+	Providers          []usageProviderInfo `json:"providers"`
 }
 
 type usageRefreshTracker struct {
@@ -736,6 +739,7 @@ type usageProviderInfo struct {
 	Credits            *usageCreditsInfo        `json:"credits,omitempty"`
 	ResetCredits       *usageResetCreditsInfo   `json:"resetCredits,omitempty"`
 	Cost               *usageCostInfo           `json:"cost,omitempty"`
+	CostSettled        bool                     `json:"costSettled,omitempty"`
 	Pace               []usagePaceInfo          `json:"pace,omitempty"`
 	UsageOverTime      []usageOverTimePointInfo `json:"usageOverTime,omitempty"`
 }
@@ -1561,6 +1565,7 @@ func (s *Server) cachedExactUsageOverlay(now time.Time, usage daemon.PersistedUs
 	current.CurrentProvider = cachedProviderID
 	current.UsageMode = usageModeForProviders(current.Providers)
 	current.TokenUsageReady = usageProvidersHaveTokenResult(current.Providers)
+	current.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(current.Providers)
 	return current, true
 }
 
@@ -1614,6 +1619,7 @@ func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
 		clearUsageProviderTokenHistory(&base.Providers[i])
 	}
 	base.TokenUsageReady = usageProvidersHaveTokenResult(base.Providers)
+	base.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(base.Providers)
 	base.OK = true
 	base.GeneratedAt = now.Format(time.RFC3339)
 	base.Source = "codexbar"
@@ -1632,6 +1638,7 @@ func clearUsageProviderTokenHistory(provider *usageProviderInfo) {
 	provider.WeekTokens = 0
 	provider.TotalTokens = 0
 	provider.Cost = nil
+	provider.CostSettled = false
 }
 
 func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
@@ -1656,9 +1663,11 @@ func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
 				provider.TotalTokens = cached.TotalTokens
 			}
 			provider.Cost = cached.Cost
+			provider.CostSettled = cached.CostSettled
 		}
 	}
 	fresh.TokenUsageReady = usageProvidersHaveTokenResult(fresh.Providers)
+	fresh.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(fresh.Providers)
 	return fresh
 }
 
@@ -2184,6 +2193,7 @@ func usageResponseFromPersisted(now time.Time, usage daemon.PersistedUsage) usag
 	resp.Providers = providers
 	resp.UsageMode = usageModeForProviders(providers)
 	resp.TokenUsageReady = usageProvidersHaveTokenResult(providers)
+	resp.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(providers)
 	if resp.CurrentProvider == "" && len(providers) > 0 {
 		resp.CurrentProvider = providers[0].ID
 	}
@@ -2206,6 +2216,18 @@ func emptyUsageResponse(now time.Time, source string) usageResponse {
 func usageProvidersHaveTokenResult(providers []usageProviderInfo) bool {
 	for _, provider := range providers {
 		if provider.Cost != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// usageProvidersHaveUpdatingTokenHistory reports whether any shown token
+// history is still growing. One unsettled provider makes every total derived
+// from the shown set provisional.
+func usageProvidersHaveUpdatingTokenHistory(providers []usageProviderInfo) bool {
+	for _, provider := range providers {
+		if provider.Cost != nil && !provider.CostSettled {
 			return true
 		}
 	}
@@ -2249,6 +2271,7 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		Credits:            usageCreditsFromMeta(snapshot.Meta),
 		ResetCredits:       usageResetCreditsFromMeta(snapshot.Meta),
 		Cost:               usageCostFromMeta(snapshot.Meta),
+		CostSettled:        snapshot.TokenHistorySettled,
 		Pace:               usagePaceFromMeta(snapshot.Meta),
 		UsageOverTime:      usageOverTimeFromMeta(snapshot.Meta),
 	}, true

@@ -4628,6 +4628,89 @@ func TestProviderCollectorSlowTokenScanUsesPostCompletionCooldown(t *testing.T) 
 	}
 }
 
+func TestProviderCollectorKeepsScanningWhileTokenHistoryStillGrows(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 30, 11, 35, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:                func() time.Time { return current },
+		logf:               func(string, ...any) {},
+		order:              []string{"codex"},
+		interval:           30 * time.Second,
+		snapshotMaxAge:     10 * time.Minute,
+		persistInterval:    time.Minute,
+		tokenStatsCooldown: tokenStatsScanCooldown,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:  "codex",
+				Frame:     protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42, UsageMode: "used"},
+				Collected: current,
+			},
+		},
+	}
+
+	// CodexBar warms its cost scan incrementally: the same request returns more
+	// history each time until it stops changing.
+	histories := [][]codexbar.ProviderCostDay{
+		{{Day: "2026-07-30", TotalTokens: 120}},
+		{{Day: "2026-07-29", TotalTokens: 900}, {Day: "2026-07-30", TotalTokens: 120}},
+		{{Day: "2026-07-29", TotalTokens: 900}, {Day: "2026-07-30", TotalTokens: 120}},
+	}
+	scan := 0
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		days := histories[min(scan, len(histories)-1)]
+		scan++
+		var total int64
+		for _, day := range days {
+			total += day.TotalTokens
+		}
+		return map[string]codexbar.ProviderTokenStats{
+			"codex": {
+				TotalTokens: total,
+				UpdatedAt:   current,
+				Cost:        &codexbar.ProviderCostUsage{UpdatedAt: current, Last30DaysTokens: total, Daily: days},
+			},
+		}, true
+	}
+
+	settled := func() bool {
+		collector.tokenStatsMu.Lock()
+		defer collector.tokenStatsMu.Unlock()
+		return collector.tokenStatsSettled
+	}
+	snapshotSettled := func() bool {
+		collector.mu.RLock()
+		defer collector.mu.RUnlock()
+		return collector.providers["codex"].TokenHistorySettled
+	}
+
+	collector.collectTokenStatsOnce(context.Background())
+	if settled() || snapshotSettled() {
+		t.Fatal("a first history cannot be settled without a second agreeing scan")
+	}
+	if !collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("a growing history must not be held back by the completed-scan cooldown")
+	}
+	collector.shutdownTokenStatsScan()
+	if settled() || snapshotSettled() {
+		t.Fatal("a grown history must stay unsettled")
+	}
+
+	if !collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("expected the correcting scan to start immediately")
+	}
+	collector.shutdownTokenStatsScan()
+	if !settled() || !snapshotSettled() {
+		t.Fatal("two agreeing histories must settle the token result")
+	}
+	if collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("a settled history must fall back to the completed-scan cooldown")
+	}
+	if got := collector.providers["codex"].Meta.Cost.Last30DaysTokens; got != 1020 {
+		t.Fatalf("expected the settled total, got %d", got)
+	}
+}
+
 func TestProviderCollectorAcceptedTokenStatsPersistForImmediateUsageAPIRead(t *testing.T) {
 	prepareFastTestEnv(t)
 

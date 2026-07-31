@@ -5,6 +5,32 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-07-31 — Token total counts up while its history is still growing
+
+- User approval: After the local preview proved that CodexBar warms its cost
+  scan incrementally and reports every intermediate result as a success, the
+  user explicitly required that customers see a number quickly instead of
+  waiting minutes for the total, and specified the exact behavior: show the
+  number right away with a badge such as `still updating`, and remove that badge
+  once the same number was reported twice in a row. In the local preview, the
+  user explicitly moved that badge to the centered space above the summary
+  heading.
+- Approved customer-visible result: The `Total tokens in the last 30 days`
+  section shows the current total as soon as any token history exists. While
+  that history is still growing, a centered `Still counting` badge with a
+  spinner sits above the summary heading, and the number rises with each
+  completed scan until it stops changing. Once two consecutive scans report
+  the same history, the badge disappears and the total stands. The existing
+  full-height `Loading usage`
+  placeholder remains only while no token history exists at all. No other copy,
+  control, or layout changed; the provider list and its refresh action are
+  untouched. This supersedes the 2026-07-27 decision only for the headline
+  total, which may now be shown before the history is final because it is
+  explicitly labeled as still counting.
+- Approved files: `usage-screen.tsx`, `usage-screen.test.tsx`,
+  `control-center-types.ts`, the Companion collector convergence rule and its
+  usage response field, their Go regression tests, and this approval record.
+
 ## 2026-07-27 — Reachable VibeTV stays connected while usage loads
 
 - User approval: While testing preview 99.0.109, the user showed that a reachable VibeTV waiting for fresh usage was incorrectly presented as disconnected. Earlier in the same customer test, the user explicitly required that no incomplete preview appear before usage is ready and that this state use an understandable loading message.
