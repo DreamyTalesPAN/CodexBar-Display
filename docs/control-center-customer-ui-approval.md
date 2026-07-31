@@ -611,3 +611,19 @@ issue scope, or release permission never implies UI permission.
   later customer-visible change.
 - Approved files: All customer-facing Control Center files present in the
   reviewed PR #260 preview at commit `f16cc5a`, plus this approval record.
+
+## 2026-07-31 — PR #260 setup and post-update state fixes
+
+- User approval: The user tested preview `99.0.144` against the real VibeTV,
+  clicked the existing `Update` action, and confirmed that the completed
+  firmware change to `1.0.39` worked. After that real-device test, the user
+  explicitly said the result fits and approved the UI.
+- Approved customer-visible result: After a firmware update, Control Center
+  evaluates the refreshed VibeTV and theme state, reports the successful
+  update normally, and does not show a stale `VibeTV needs attention` result.
+  During first-time setup, a failed WiFi connection remains on the required
+  WiFi setup screen even when a stored theme exists. No copy, layout, control,
+  or additional customer decision changes.
+- Approved files: `control-center-app.tsx`, the matching setup and firmware
+  regression assertions in `test-customer-flows.mjs`, and this approval
+  record.
