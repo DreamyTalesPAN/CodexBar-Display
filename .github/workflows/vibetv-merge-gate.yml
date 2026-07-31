@@ -178,6 +178,7 @@ jobs:
           ./scripts/build-macos-control-center-dmg.sh --app 'dist/macos/VibeTV Control Center.app' --output dist/macos/VibeTV-Control-Center.dmg --staging-dir tmp/vibetv-merge/dmg-stage
           ./scripts/sign-notarize-macos-control-center.sh --app 'dist/macos/VibeTV Control Center.app' --dmg dist/macos/VibeTV-Control-Center.dmg --skip-app-sign
           ./scripts/verify-macos-control-center-dmg.sh --dmg dist/macos/VibeTV-Control-Center.dmg
+          cp 'dist/macos/VibeTV Control Center.app/Contents/Helpers/codexbar-display' tmp/vibetv-merge/codexbar-display
 
       - name: Build signed candidate appcast and immutable manifest
         env:
