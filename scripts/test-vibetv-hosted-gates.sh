@@ -261,6 +261,8 @@ main() {
   done
   assert_contains "$MERGE_WORKFLOW" '"${baseline_args[@]+"${baseline_args[@]}"}"' \
     'clean OS merge guest test must expand optional baseline arguments safely under set -u'
+  assert_contains "$MERGE_WORKFLOW" 'chmod +x candidate/tmp/vibetv-merge/virtual-vibetv candidate/tmp/vibetv-merge/codexbar-display' \
+    'merge guest matrix must restore executable bits lost during artifact transfer'
   assert_not_contains "$MERGE_WORKFLOW" 'self-hosted' \
     'merge gate must not depend on a self-hosted runner'
   assert_not_contains "$MERGE_WORKFLOW" 'tart' \

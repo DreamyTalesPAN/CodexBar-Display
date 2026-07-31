@@ -289,6 +289,7 @@ jobs:
       - name: Run direct hosted macOS guest checks
         run: |
           set -euo pipefail
+          chmod +x candidate/tmp/vibetv-merge/virtual-vibetv candidate/tmp/vibetv-merge/codexbar-display
           version="$(python3 -c 'import json; print(json.load(open("candidate/dist/macos/candidate-manifest.json"))["version"])')"
           baseline_args=()
           if [[ '${{ matrix.state }}' != clean_os ]]; then
