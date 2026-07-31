@@ -3525,6 +3525,7 @@ async function testFirmwareUpdateRechecksThemeCatalogAfterCapabilityUpgrade(
     },
   };
   await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.99",
     device: oldFirmwareDevice,
     deviceAfterFirmwareUpdate: updatedFirmwareDevice,
     onUpdate: (postData) => {
@@ -3547,6 +3548,9 @@ async function testFirmwareUpdateRechecksThemeCatalogAfterCapabilityUpgrade(
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await clickNavigation(page, "Updates");
+  await page
+    .getByRole("button", { name: "Update", exact: true })
+    .waitFor({ timeout: 10_000 });
   await page.getByRole("button", { name: "Update", exact: true }).click();
   await page
     .getByText("Update complete", { exact: true })
