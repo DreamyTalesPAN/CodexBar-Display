@@ -76,6 +76,7 @@ type providerCollector struct {
 	tokenStatsCooldown      time.Duration
 	tokenStatsLastCompleted time.Time
 	tokenStatsSettled       bool
+	tokenStatsFailed        bool
 	tokenHistoryPrints      map[string]string
 }
 
@@ -178,7 +179,7 @@ func (c *providerCollector) requestTokenStatsScan(parent context.Context) bool {
 	// A still-growing history must be corrected by the next scan instead of
 	// waiting out the completed-scan cadence. Single-flight still prevents
 	// overlapping scans.
-	cooling := c.tokenStatsSettled &&
+	cooling := (c.tokenStatsSettled || c.tokenStatsFailed) &&
 		c.tokenStatsCooldown > 0 &&
 		!c.tokenStatsLastCompleted.IsZero() &&
 		now.Before(c.tokenStatsLastCompleted.Add(c.tokenStatsCooldown))
@@ -512,6 +513,10 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 
 	statsByProvider, report := c.fetchTokenStatsWithReport(ctx)
 	if !report.OK {
+		c.tokenStatsMu.Lock()
+		c.tokenStatsSettled = false
+		c.tokenStatsFailed = true
+		c.tokenStatsMu.Unlock()
 		c.logTokenStatsReport(report, 0)
 		return
 	}
@@ -621,6 +626,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 
 	c.tokenStatsMu.Lock()
 	c.tokenStatsSettled = settled
+	c.tokenStatsFailed = false
 	c.tokenStatsMu.Unlock()
 
 	if updated > 0 {

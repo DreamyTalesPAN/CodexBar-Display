@@ -4658,6 +4658,68 @@ func TestProviderCollectorSlowTokenScanUsesPostCompletionCooldown(t *testing.T) 
 	}
 }
 
+func TestProviderCollectorFailedTokenScanUsesPostCompletionCooldown(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 28, 12, 15, 0, 0, time.UTC)
+	var clockNanos atomic.Int64
+	clockNanos.Store(current.UnixNano())
+	now := func() time.Time {
+		return time.Unix(0, clockNanos.Load()).UTC()
+	}
+	var calls atomic.Int32
+	collector := &providerCollector{
+		now:                now,
+		logf:               func(string, ...any) {},
+		order:              []string{"codex"},
+		tokenStatsCooldown: tokenStatsScanCooldown,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:            "codex",
+				Frame:               protocol.Frame{Provider: "codex", Label: "Codex", TotalTokens: 99},
+				TokenStatsCollected: current.Add(-time.Minute),
+				TokenHistorySettled: true,
+			},
+		},
+		tokenStatsSettled: true,
+	}
+	previousCollected := collector.providers["codex"].TokenStatsCollected
+	collector.fetchTokenStats = func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+		calls.Add(1)
+		return nil, false
+	}
+
+	if !collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("expected first failed token scan to start")
+	}
+	collector.shutdownTokenStatsScan()
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("expected one failed token scan, got %d", got)
+	}
+	collector.tokenStatsMu.Lock()
+	settled := collector.tokenStatsSettled
+	collector.tokenStatsMu.Unlock()
+	if settled {
+		t.Fatal("failed token scan must remain unsettled")
+	}
+	got := collector.providers["codex"]
+	if got.Frame.TotalTokens != 99 || !got.TokenStatsCollected.Equal(previousCollected) {
+		t.Fatalf("failed token scan changed token freshness or last-good data: %#v", got)
+	}
+	if collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("activity tick immediately restarted a failed token scan")
+	}
+
+	clockNanos.Add(int64(tokenStatsScanCooldown))
+	if !collector.requestTokenStatsScan(context.Background()) {
+		t.Fatal("expected failed token scan to retry after cooldown")
+	}
+	collector.shutdownTokenStatsScan()
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("expected exactly two failed scans across cooldown, got %d", got)
+	}
+}
+
 func TestProviderCollectorKeepsScanningWhileTokenHistoryStillGrows(t *testing.T) {
 	prepareFastTestEnv(t)
 
