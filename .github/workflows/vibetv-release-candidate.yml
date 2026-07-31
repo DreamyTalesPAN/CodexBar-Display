@@ -257,9 +257,9 @@ jobs:
           print("DMG_URL=" + shlex.quote(baseline["dmgUrl"]))
           print("APPCAST_URL=" + shlex.quote(baseline["appcastUrl"]))
           PY
-          cp "baselines/${{ matrix.state }}.dmg" baseline.dmg
-          cp "baselines/${{ matrix.state }}.appcast.xml" baseline-appcast.xml
-          cp "baselines/${{ matrix.state }}.firmware-manifest.json" baseline-firmware-manifest.json
+          cp "baselines/baselines/${{ matrix.state }}.dmg" baseline.dmg
+          cp "baselines/baselines/${{ matrix.state }}.appcast.xml" baseline-appcast.xml
+          cp "baselines/baselines/${{ matrix.state }}.firmware-manifest.json" baseline-firmware-manifest.json
           shasum -a 256 baseline.dmg baseline-appcast.xml
       - name: Run full direct hosted macOS guest matrix
         run: |
@@ -271,7 +271,7 @@ jobs:
             baseline_args=(--baseline-dmg baseline.dmg --baseline-appcast baseline-appcast.xml)
             current_firmware="$(python3 -c 'import json; print(next(a["firmwareVersion"] for a in json.load(open("baseline-firmware-manifest.json"))["artifacts"] if a["firmwareEnv"] == "esp8266_smalltv_st7789"))')"
           fi
-          ./scripts/test-vibetv-hosted-guest.sh --dmg candidate/publish/macos/VibeTV-Control-Center.dmg --appcast candidate/publish/macos/appcast.xml --virtual-vibetv candidate/test/virtual-vibetv --companion candidate/test/codexbar-display --firmware candidate/publish/firmware/codexbar-display-firmware-esp8266_smalltv_st7789-v$(python3 -c 'import json; print(next(a["firmwareVersion"] for a in json.load(open("release/firmware-versions.json"))["artifacts"] if a["firmwareEnv"] == "esp8266_smalltv_st7789")').bin.gz --firmware-manifest candidate/publish/firmware/firmware-manifest.json --current-firmware "$current_firmware" --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]}"
+          ./scripts/test-vibetv-hosted-guest.sh --dmg candidate/publish/macos/VibeTV-Control-Center.dmg --appcast candidate/publish/macos/appcast.xml --virtual-vibetv candidate/test/virtual-vibetv --companion candidate/test/codexbar-display --firmware candidate/publish/firmware/codexbar-display-firmware-esp8266_smalltv_st7789-v$(python3 -c 'import json; print(next(a["firmwareVersion"] for a in json.load(open("release/firmware-versions.json"))["artifacts"] if a["firmwareEnv"] == "esp8266_smalltv_st7789"))').bin.gz --firmware-manifest candidate/publish/firmware/firmware-manifest.json --current-firmware "$current_firmware" --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]+"${baseline_args[@]}"}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

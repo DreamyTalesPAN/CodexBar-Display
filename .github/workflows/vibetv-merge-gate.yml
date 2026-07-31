@@ -289,16 +289,16 @@ jobs:
       - name: Run direct hosted macOS guest checks
         run: |
           set -euo pipefail
-          version="$(python3 -c 'import json; print(json.load(open("candidate/candidate-manifest.json"))["version"])')"
+          version="$(python3 -c 'import json; print(json.load(open("candidate/dist/macos/candidate-manifest.json"))["version"])')"
           baseline_args=()
           if [[ '${{ matrix.state }}' != clean_os ]]; then
             baseline_args=(--baseline-dmg baseline.dmg --baseline-appcast baseline-appcast.xml)
           fi
           ./scripts/test-vibetv-hosted-guest.sh \
-            --dmg candidate/VibeTV-Control-Center.dmg --appcast candidate/appcast.xml \
-            --virtual-vibetv candidate/virtual-vibetv --companion candidate/codexbar-display \
-            --firmware candidate/firmware.bin --firmware-manifest candidate/firmware-manifest.json \
-            --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]}"
+            --dmg candidate/dist/macos/VibeTV-Control-Center.dmg --appcast candidate/dist/macos/appcast.xml \
+            --virtual-vibetv candidate/tmp/vibetv-merge/virtual-vibetv --companion candidate/tmp/vibetv-merge/codexbar-display \
+            --firmware candidate/tmp/vibetv-merge/firmware.bin --firmware-manifest candidate/tmp/vibetv-merge/firmware-manifest.json \
+            --version "$version" --state '${{ matrix.state }}' --output 'results/${{ matrix.state }}' "${baseline_args[@]+"${baseline_args[@]}"}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

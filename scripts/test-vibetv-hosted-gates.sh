@@ -248,6 +248,19 @@ main() {
     'merge gate must cover the current public customer state'
   assert_contains "$MERGE_WORKFLOW" 'previous_public' \
     'merge gate must cover the previous public customer state'
+  for merge_candidate_path in \
+    dist/macos/candidate-manifest.json \
+    dist/macos/VibeTV-Control-Center.dmg \
+    dist/macos/appcast.xml \
+    tmp/vibetv-merge/virtual-vibetv \
+    tmp/vibetv-merge/codexbar-display \
+    tmp/vibetv-merge/firmware.bin \
+    tmp/vibetv-merge/firmware-manifest.json; do
+    assert_contains "$MERGE_WORKFLOW" "candidate/${merge_candidate_path}" \
+      "merge guest matrix must consume the uploaded ${merge_candidate_path} path"
+  done
+  assert_contains "$MERGE_WORKFLOW" '"${baseline_args[@]+"${baseline_args[@]}"}"' \
+    'clean OS merge guest test must expand optional baseline arguments safely under set -u'
   assert_not_contains "$MERGE_WORKFLOW" 'self-hosted' \
     'merge gate must not depend on a self-hosted runner'
   assert_not_contains "$MERGE_WORKFLOW" 'tart' \
@@ -325,8 +338,15 @@ main() {
     'release candidate must exclude its checksum asset from its own checksum list'
   assert_contains "$RC_WORKFLOW" "kind + 'Sha256'" \
     'release candidate must freeze public baseline DMG hashes'
-  assert_contains "$RC_WORKFLOW" 'baselines/${{ matrix.state }}.dmg' \
-    'guest matrix must consume the frozen baseline bytes'
+  local frozen_baseline
+  for frozen_baseline in dmg appcast.xml firmware-manifest.json; do
+    assert_contains "$RC_WORKFLOW" 'baselines/baselines/${{ matrix.state }}.'"${frozen_baseline}" \
+      "guest matrix must consume the downloaded frozen ${frozen_baseline} bytes"
+  done
+  assert_contains "$RC_WORKFLOW" "esp8266_smalltv_st7789\"))').bin.gz" \
+    'release candidate must close the firmware-version Python expression'
+  assert_contains "$RC_WORKFLOW" '"${baseline_args[@]+"${baseline_args[@]}"}"' \
+    'clean OS guest test must expand optional baseline arguments safely under set -u'
   assert_contains "$RC_WORKFLOW" '"protocolVersion":config.get' \
     'release candidate must preserve release firmware protocol metadata'
   assert_contains "$SPARKLE_BUILDER" '6276ba2b404829d139c45ff98427cf90e2efc59b' \
