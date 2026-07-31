@@ -43,7 +43,11 @@ export function loadLocalThemeRenderPack(
     if (normalizeThemeId(document.spec.themeId) !== normalizedThemeId) {
       continue;
     }
-    const validation = validateThemeSpec(document.spec, document.assets);
+    const validation = validateThemeSpec(
+      document.spec,
+      document.assets,
+      document.usage || "live",
+    );
     if (validation.errors.length > 0) {
       continue;
     }

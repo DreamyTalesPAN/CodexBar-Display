@@ -72,11 +72,13 @@ import {
   type ThemeStudioAsset,
   type ThemeStudioPrimitive,
   type ThemeStudioSpec,
+  type ThemeStudioUsage,
 } from "@/lib/theme-studio";
 import {
   assetFileName,
   assetKind,
   fileToBase64,
+  formatBytes,
   importSpriteFile,
   spriteMetadata,
   themeAssetPathForFile,
@@ -148,6 +150,7 @@ export type ThemeStudioEditorTheme = {
   recovered?: boolean;
   source: ThemeStudioEditorSource;
   spec: ThemeStudioSpec;
+  usage?: ThemeStudioUsage;
 };
 
 export type ThemeStudioSavePayload = {
@@ -156,6 +159,7 @@ export type ThemeStudioSavePayload = {
   packName: string;
   source: ThemeStudioEditorSource;
   spec: ThemeStudioSpec;
+  usage?: ThemeStudioUsage;
 };
 
 export type ThemeStudioSaveResult = {
@@ -168,6 +172,7 @@ export type ThemeStudioInstallPayload = {
   assets: Record<string, ThemeStudioAsset>;
   packName: string;
   spec: ThemeStudioSpec;
+  usage?: ThemeStudioUsage;
 };
 
 export type ThemeStudioScreenProps = {
@@ -191,6 +196,8 @@ export function ThemeStudioScreen({
   onSaveToLibrary,
   saveBlockedReason,
 }: ThemeStudioScreenProps = {}) {
+  const usage = initialTheme?.usage || "live";
+  const screensaver = usage === "screensaver";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const gifInputRef = useRef<HTMLInputElement>(null);
   const libraryButtonRef = useRef<HTMLDivElement>(null);
@@ -212,6 +219,7 @@ export function ThemeStudioScreen({
         assets: {},
         packName: "Mini Classic",
         spec: createStarterThemeSpec(),
+        usage,
       }),
   );
   const { assets, packName, spec } = editorState.present;
@@ -257,8 +265,8 @@ export function ThemeStudioScreen({
   );
 
   const validation = useMemo(
-    () => validateThemeSpec(spec, assets),
-    [assets, spec],
+    () => validateThemeSpec(spec, assets, usage),
+    [assets, spec, usage],
   );
   const deviceValidation = useMemo(
     () =>
@@ -338,6 +346,7 @@ export function ThemeStudioScreen({
         assets: nextAssets || {},
         packName: nextPackName,
         spec: normalized,
+        usage,
       },
       type: markSaved ? "load" : "update",
     });
@@ -428,6 +437,7 @@ export function ThemeStudioScreen({
         packName,
         source: sourceRef.current,
         spec,
+        usage,
       });
       if (result.libraryId) {
         libraryIdRef.current = result.libraryId;
@@ -436,7 +446,7 @@ export function ThemeStudioScreen({
       recoveryWrittenRef.current = false;
       setRecoveryDirty(false);
       dispatchEditor({
-        document: result.document,
+        document: { ...result.document, usage },
         type: "mark_saved",
       });
       const clearedRecovery = clearThemeStudioRecovery();
@@ -638,7 +648,7 @@ export function ThemeStudioScreen({
       return;
     }
     try {
-      const assetPath = themeAssetPathForFile(file.name, ".gif");
+      const assetPath = themeAssetPathForFile(file.name, ".gif", usage);
       const asset: ThemeStudioAsset = {
         contentType: file.type || "image/gif",
         data: await fileToBase64(file),
@@ -677,7 +687,7 @@ export function ThemeStudioScreen({
       return;
     }
     try {
-      const imported = await importSpriteFile(file);
+      const imported = await importSpriteFile(file, usage);
       updateDocument((document) => {
         document.assets[imported.assetPath] = imported.asset;
         document.spec.primitives.push({
@@ -961,7 +971,7 @@ export function ThemeStudioScreen({
       return;
     }
     try {
-      const pack = buildThemePack(spec, packName, assets);
+      const pack = buildThemePack(spec, packName, assets, usage);
       const zipBuffer = new ArrayBuffer(pack.zipBytes.byteLength);
       new Uint8Array(zipBuffer).set(pack.zipBytes);
       const blob = new Blob([zipBuffer], { type: "application/zip" });
@@ -989,11 +999,11 @@ export function ThemeStudioScreen({
     if (dirty) {
       setDeviceStatus({
         tone: "attention",
-        message: "Save this theme before sending it to VibeTV.",
+        message: `Save this ${screensaver ? "screensaver" : "theme"} before sending it to VibeTV.`,
       });
       return;
     }
-    const checked = validateThemeSpec(spec, assets);
+    const checked = validateThemeSpec(spec, assets, usage);
     if (checked.errors.length > 0) {
       setDeviceStatus({
         tone: "attention",
@@ -1026,20 +1036,25 @@ export function ThemeStudioScreen({
     setSending(true);
     setDeviceStatus({
       tone: "unknown",
-      message: "Sending theme after your click.",
+      message: `Sending ${screensaver ? "screensaver" : "theme"} after your click.`,
     });
     try {
       const installed = await onInstallTheme({
         assets,
         packName,
         spec,
+        usage,
       });
       if (!installed) {
-        throw new Error("Theme install needs attention. Check the install status.");
+        throw new Error(
+          `${screensaver ? "Screensaver" : "Theme"} install needs attention. Check the install status.`,
+        );
       }
       setDeviceStatus({
         tone: "ready",
-        message: "Theme installed through the Mac App.",
+        message: screensaver
+          ? "Screensaver is ready on VibeTV."
+          : "Theme installed through the Mac App.",
       });
     } catch (error) {
       setDeviceStatus({
@@ -1063,8 +1078,11 @@ export function ThemeStudioScreen({
     <div
       className="mx-auto max-w-[1540px] text-foreground lg:h-screen lg:max-w-none lg:overflow-hidden"
       data-theme-studio-root
+      data-theme-studio-usage={usage}
     >
-      <h2 className="sr-only">Theme Studio</h2>
+      <h2 className="sr-only">
+        {screensaver ? "Screensaver Studio" : "Theme Studio"}
+      </h2>
       <section className="grid gap-4 py-4 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)]">
         <header className="grid gap-4 border-b pb-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="min-w-0">
@@ -1078,9 +1096,12 @@ export function ThemeStudioScreen({
                 </div>
               ) : null}
               <h3 className="truncate text-3xl font-black leading-tight text-foreground">
-                {packName || "Untitled theme"}
+                {packName || (screensaver ? "Untitled screensaver" : "Untitled theme")}
               </h3>
               <div className="flex min-w-0 flex-wrap items-center gap-2">
+                {screensaver ? (
+                  <StatusPill label="Screensaver" tone="neutral" />
+                ) : null}
                 <StatusPill
                   icon={
                     validationOk ? (
@@ -1093,8 +1114,16 @@ export function ThemeStudioScreen({
                   tone={validationOk ? "ready" : "attention"}
                 />
                 <StatusPill
-                  label={`${validation.bytes} B`}
-                  tone={validation.bytes > 4096 ? "attention" : "neutral"}
+                  label={
+                    screensaver
+                      ? `${validation.bytes} B / ${formatBytes(validation.maxBytes)}`
+                      : `${validation.bytes} B`
+                  }
+                  tone={
+                    validation.bytes > validation.maxBytes
+                      ? "attention"
+                      : "neutral"
+                  }
                 />
                 <StatusPill
                   label={`${validation.primitiveCount} elements`}

@@ -10,7 +10,10 @@ import {
 } from "react";
 import { availableMacAppDmgDownloadUrl } from "@/lib/companion-release";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
-import { buildThemePack } from "@/lib/theme-studio";
+import {
+  buildThemePack,
+  type ThemeStudioUsage,
+} from "@/lib/theme-studio";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
 import {
@@ -119,6 +122,7 @@ type InstallableTheme = Pick<
   "packUrl" | "packSha256" | "packSizeBytes" | "themeId" | "title"
 > & {
   packBytes?: Uint8Array;
+  slot?: ThemeStudioUsage;
 };
 
 type ThemeInstallJob = {
@@ -1878,6 +1882,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           new Uint8Array(body).set(uploadedPack);
           requestPath += `?${new URLSearchParams({
             async: "true",
+            slot: theme.slot || "live",
             themeId: theme.themeId,
             themeName: theme.title,
           }).toString()}`;
@@ -1895,6 +1900,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               packUrl: localizeCompanionAssetUrl(theme.packUrl),
               packSha256: theme.packSha256,
               packSizeBytes: theme.packSizeBytes,
+              slot: theme.slot || "live",
               skipFirmwareUpdate: true,
               async: true,
             }),
@@ -2018,10 +2024,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       assets,
       packName,
       spec,
+      usage = "live",
     }: ThemeStudioInstallPayload): Promise<boolean> => {
-      const pack = buildThemePack(spec, packName, assets);
+      const pack = buildThemePack(spec, packName, assets, usage);
       return installTheme({
         packBytes: pack.zipBytes,
+        slot: usage,
         themeId: pack.manifest.id,
         title: pack.manifest.name,
       });

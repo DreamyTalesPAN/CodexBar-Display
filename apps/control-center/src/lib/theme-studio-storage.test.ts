@@ -92,7 +92,10 @@ describe("Theme Studio library storage", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      value: { migrated: true, themes: [{ id: "my-theme" }] },
+      value: {
+        migrated: true,
+        themes: [{ document: { usage: "live" }, id: "my-theme" }],
+      },
     });
     expect(JSON.parse(storage.values.get(USER_THEMES_STORAGE_KEY)!)).toMatchObject({
       schemaVersion: THEME_STUDIO_STORAGE_SCHEMA_VERSION,
@@ -174,6 +177,29 @@ describe("Theme Studio library storage", () => {
       expect(failed.error.message).toContain("storage is blocked");
     }
   });
+
+  it("keeps explicit screensavers and treats old documents as live", () => {
+    const storage = new MemoryStorage();
+    const screensaver = record();
+    screensaver.document.usage = "screensaver";
+    expect(writeUserThemes([screensaver], storage)).toMatchObject({ ok: true });
+    expect(loadUserThemes(storage)).toMatchObject({
+      ok: true,
+      value: {
+        themes: [{ document: { usage: "screensaver" } }],
+      },
+    });
+
+    const oldTheme = record();
+    storage.values.set(
+      USER_THEMES_STORAGE_KEY,
+      JSON.stringify({ schemaVersion: 1, themes: [oldTheme] }),
+    );
+    expect(loadUserThemes(storage)).toMatchObject({
+      ok: true,
+      value: { themes: [{ document: { usage: "live" } }] },
+    });
+  });
 });
 
 describe("Theme Studio recovery storage", () => {
@@ -203,7 +229,11 @@ describe("Theme Studio recovery storage", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      value: { source: "blank", updatedAt: "2026-07-15T09:00:00.000Z" },
+      value: {
+        document: { usage: "live" },
+        source: "blank",
+        updatedAt: "2026-07-15T09:00:00.000Z",
+      },
     });
     expect(JSON.parse(storage.values.get(THEME_STUDIO_DRAFT_STORAGE_KEY)!)).toMatchObject({
       schemaVersion: 1,

@@ -57,6 +57,8 @@ export type ThemeStudioSpec = {
   primitives: ThemeStudioPrimitive[];
 };
 
+export type ThemeStudioUsage = "live" | "screensaver";
+
 export type ThemeStudioDraft = {
   assets?: Record<string, ThemeStudioAsset>;
   savedAt: string;
@@ -74,6 +76,7 @@ export type ThemeStudioValidation = {
   errors: string[];
   warnings: string[];
   bytes: number;
+  maxBytes: number;
   primitiveCount: number;
   themeSpecPath: string;
 };
@@ -93,6 +96,7 @@ type ThemePackManifest = {
   name: string;
   version: string;
   minFirmware: string;
+  usage?: ThemeStudioUsage;
   themeSpec: {
     path: string;
     file: "theme.json";
@@ -115,6 +119,7 @@ type ZipSourceFile = {
 const DISPLAY_SIZE = 240;
 const FIXED_THEME_REV = 1;
 const MAX_STORED_THEME_SPEC_BYTES = 4096;
+const MAX_STORED_SCREENSAVER_SPEC_BYTES = 2048;
 const MAX_THEME_PRIMITIVES = 32;
 const MAX_GIF_BYTES = 24 * 1024;
 const MAX_GIF_WIDTH = 80;
@@ -129,6 +134,7 @@ const MAX_SPRITE_TOTAL_PIXELS = 32768;
 const DEFAULT_SPRITE_FPS = 8;
 const MAX_ESP8266_LITTLEFS_PATH_CHARS = 31;
 const USER_THEME_ASSET_PATH_PREFIX = "/themes/u/";
+const USER_SCREENSAVER_ASSET_PATH_PREFIX = "/themes/s/";
 const THEME_ID_RE = /^[a-z0-9][a-z0-9_-]{2,63}$/;
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const SHORT_COLOR_RE = /^#[0-9a-fA-F]{3}$/;
@@ -429,11 +435,67 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
   return next;
 }
 
+function prepareThemePackContent(
+  spec: ThemeStudioSpec,
+  assets: Record<string, ThemeStudioAsset>,
+  usage: ThemeStudioUsage,
+): {
+  assets: Record<string, ThemeStudioAsset>;
+  spec: ThemeStudioSpec;
+} {
+  const normalized = normalizeThemeSpec(spec);
+  if (usage === "live") {
+    return { assets, spec: normalized };
+  }
+
+  const preparedAssets = Object.fromEntries(
+    Object.entries(assets).map(([path, asset]) => [
+      screensaverAssetPath(path),
+      asset,
+    ]),
+  );
+  for (const primitive of normalized.primitives) {
+    if (primitive.assetPath) {
+      primitive.assetPath = screensaverAssetPath(primitive.assetPath);
+    }
+    delete primitive.stateAssets;
+  }
+  return { assets: preparedAssets, spec: normalized };
+}
+
+function storedThemeSpecByteLimit(usage: ThemeStudioUsage): number {
+  return usage === "screensaver"
+    ? MAX_STORED_SCREENSAVER_SPEC_BYTES
+    : MAX_STORED_THEME_SPEC_BYTES;
+}
+
+function screensaverAssetPath(path: string): string {
+  if (path.startsWith(USER_SCREENSAVER_ASSET_PATH_PREFIX)) {
+    return path;
+  }
+  const fileName = path.split("/").pop() || "asset";
+  const maxFileNameLength =
+    MAX_ESP8266_LITTLEFS_PATH_CHARS -
+    USER_SCREENSAVER_ASSET_PATH_PREFIX.length;
+  if (fileName.length <= maxFileNameLength) {
+    return `${USER_SCREENSAVER_ASSET_PATH_PREFIX}${fileName}`;
+  }
+  const extensionIndex = fileName.lastIndexOf(".");
+  const extension = extensionIndex > 0 ? fileName.slice(extensionIndex) : "";
+  const base = extension ? fileName.slice(0, extensionIndex) : fileName;
+  return `${USER_SCREENSAVER_ASSET_PATH_PREFIX}${base.slice(
+    0,
+    Math.max(1, maxFileNameLength - extension.length),
+  )}${extension}`;
+}
+
 export function validateThemeSpec(
   spec: ThemeStudioSpec,
   assets: Record<string, ThemeStudioAsset> = {},
+  usage: ThemeStudioUsage = "live",
 ): ThemeStudioValidation {
-  const normalized = normalizeThemeSpec(spec);
+  const prepared = prepareThemePackContent(spec, assets, usage);
+  const normalized = prepared.spec;
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -456,14 +518,15 @@ export function validateThemeSpec(
   }
 
   normalized.primitives.forEach((primitive, index) => {
-    validatePrimitive(primitive, index, errors, warnings, assets);
+    validatePrimitive(primitive, index, errors, warnings, prepared.assets);
   });
 
   const themeJson = deviceThemeSpecJson(normalized);
   const bytes = new TextEncoder().encode(themeJson).byteLength;
-  if (bytes > MAX_STORED_THEME_SPEC_BYTES) {
+  const maxBytes = storedThemeSpecByteLimit(usage);
+  if (bytes > maxBytes) {
     errors.push(
-      `Theme file is too large: ${bytes}/${MAX_STORED_THEME_SPEC_BYTES} bytes.`,
+      `${usage === "screensaver" ? "Screensaver" : "Theme"} file is too large: ${bytes}/${maxBytes} bytes.`,
     );
   }
 
@@ -471,8 +534,9 @@ export function validateThemeSpec(
     errors,
     warnings,
     bytes,
+    maxBytes,
     primitiveCount: normalized.primitives.length,
-    themeSpecPath: themeSpecAssetPath(normalized),
+    themeSpecPath: themeSpecAssetPath(normalized, usage),
   };
 }
 
@@ -480,9 +544,11 @@ export function buildThemePack(
   spec: ThemeStudioSpec,
   packName: string,
   assets: Record<string, ThemeStudioAsset> = {},
+  usage: ThemeStudioUsage = "live",
 ): ThemePackBuild {
-  const normalized = normalizeThemeSpec(spec);
-  const validation = validateThemeSpec(normalized, assets);
+  const prepared = prepareThemePackContent(spec, assets, usage);
+  const normalized = prepared.spec;
+  const validation = validateThemeSpec(normalized, prepared.assets, usage);
   if (validation.errors.length > 0) {
     throw new Error(validation.errors[0]);
   }
@@ -492,7 +558,7 @@ export function buildThemePack(
   const referencedAssets = referencedThemeAssetPaths(normalized);
   const usedFiles = new Set(["manifest.json", "theme.json"]);
   const assetFiles = referencedAssets.map((assetPath, index) => {
-    const asset = assets[assetPath];
+    const asset = prepared.assets[assetPath];
     const file = uniquePackAssetFile(assetPath, usedFiles, index);
     return {
       asset,
@@ -509,6 +575,7 @@ export function buildThemePack(
     name: cleanPackName(packName) || titleFromThemeId(normalized.themeId),
     version: "0.1.0",
     minFirmware: "1.0.24",
+    ...(usage === "screensaver" ? { usage } : {}),
     themeSpec: {
       path: validation.themeSpecPath,
       file: "theme.json",
@@ -1077,12 +1144,19 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   return primitive;
 }
 
-function themeSpecAssetPath(spec: ThemeStudioSpec): string {
+function themeSpecAssetPath(
+  spec: ThemeStudioSpec,
+  usage: ThemeStudioUsage = "live",
+): string {
   const extension = ".json";
+  const pathPrefix =
+    usage === "screensaver"
+      ? USER_SCREENSAVER_ASSET_PATH_PREFIX
+      : USER_THEME_ASSET_PATH_PREFIX;
   const maxSegmentLength = Math.max(
     1,
     MAX_ESP8266_LITTLEFS_PATH_CHARS -
-      USER_THEME_ASSET_PATH_PREFIX.length -
+      pathPrefix.length -
       extension.length,
   );
   const revSuffix = `-${spec.themeRev || 1}-${themeSpecHash(spec).slice(0, 6)}`;
@@ -1092,7 +1166,7 @@ function themeSpecAssetPath(spec: ThemeStudioSpec): string {
     0,
     maxSegmentLength,
   );
-  return `${USER_THEME_ASSET_PATH_PREFIX}${base}${extension}`;
+  return `${pathPrefix}${base}${extension}`;
 }
 
 function themeSpecHash(spec: ThemeStudioSpec): string {

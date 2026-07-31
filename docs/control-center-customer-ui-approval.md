@@ -458,3 +458,18 @@ issue scope, or release permission never implies UI permission.
   normal brightness.
 - Approved files: `settings-screen.tsx`, `settings-screen.test.tsx`, and the
   matching customer-flow assertions in `test-customer-flows.mjs`.
+
+## 2026-07-31 — One Theme Studio for themes and screensavers
+
+- User approval: After reviewing the proposed #286-#289 screensaver work, the
+  user explicitly ordered all four issues to be implemented with the smallest
+  possible solution and specifically required reusing one Theme Studio instead
+  of adding parallel UI or state.
+- Approved customer-visible result: Theme Studio remains the single editor. In
+  screensaver mode it shows a `Screensaver` status, displays the tighter
+  `2 KB` file budget, and uses screensaver wording while sending the saved pack.
+  No motion warning, motion block, state-asset control, second editor, or new
+  binding appears. Theme mode remains unchanged.
+- Approved files: `theme-studio-screen.tsx`, Theme Studio pack, asset, storage,
+  and editor-state modules, the existing custom-install adapter, their focused
+  tests, and this approval record.

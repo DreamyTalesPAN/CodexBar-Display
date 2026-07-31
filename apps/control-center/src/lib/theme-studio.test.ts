@@ -30,7 +30,81 @@ function validSpec(): ThemeStudioSpec {
 
 describe("validateThemeSpec", () => {
   it("accepts a structurally valid portable theme", () => {
-    expect(validateThemeSpec(validSpec()).errors).toEqual([]);
+    const result = validateThemeSpec(validSpec());
+
+    expect(result.errors).toEqual([]);
+    expect(result.maxBytes).toBe(4096);
+    expect(result.themeSpecPath).toMatch(/^\/themes\/u\//);
+  });
+
+  it("builds a screensaver pack in its own slot without hidden state assets", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        assetPath: "/themes/u/main.cbi",
+        height: 1,
+        stateAssets: { coding: "/themes/u/coding.cbi" },
+        type: "sprite",
+        width: 1,
+        x: 0,
+        y: 0,
+      },
+    ];
+    const asset = {
+      contentType: "text/plain",
+      data: "CBI1\n1 1\n1\n#FFFFFF\na\n",
+      encoding: "text" as const,
+    };
+
+    const pack = buildThemePack(
+      spec,
+      "Test Screensaver",
+      {
+        "/themes/u/coding.cbi": asset,
+        "/themes/u/main.cbi": asset,
+      },
+      "screensaver",
+    );
+    const packedSpec = JSON.parse(pack.themeJson);
+
+    expect(pack.manifest.usage).toBe("screensaver");
+    expect(pack.themeSpecPath).toMatch(/^\/themes\/s\//);
+    expect(pack.manifest.assets).toEqual([
+      expect.objectContaining({ path: "/themes/s/main.cbi" }),
+    ]);
+    expect(packedSpec.p[0]).toMatchObject({ a: "/themes/s/main.cbi" });
+    expect(packedSpec.p[0]).not.toHaveProperty("sa");
+    expect(spec.primitives[0].stateAssets).toEqual({
+      coding: "/themes/u/coding.cbi",
+    });
+  });
+
+  it("enforces the central 2 KB screensaver budget without motion lint", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        color: "#FFFFFF",
+        fontSize: 1,
+        text: "x".repeat(2300),
+        type: "text",
+        width: 240,
+        x: 0,
+        y: 0,
+      },
+    ];
+
+    const live = validateThemeSpec(spec);
+    const screensaver = validateThemeSpec(spec, {}, "screensaver");
+
+    expect(live.errors).toEqual([]);
+    expect(live.maxBytes).toBe(4096);
+    expect(screensaver.maxBytes).toBe(2048);
+    expect(screensaver.errors).toContainEqual(
+      expect.stringContaining("Screensaver file is too large"),
+    );
+    expect(validateThemeSpec(validSpec(), {}, "screensaver").warnings).toEqual(
+      [],
+    );
   });
 
   it("accepts legacy fallback metadata but omits it from normalized exports", () => {
