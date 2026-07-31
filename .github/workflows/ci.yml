@@ -229,6 +229,10 @@ jobs:
             "${{ matrix.max_bin_bytes }}" \
             "${{ matrix.max_gzip_bytes }}"
 
+      - name: Build empty filesystem image
+        working-directory: ${{ matrix.firmware_dir }}
+        run: pio run -e "${{ matrix.env_name }}" -t buildfs
+
   firmware-build-experimental:
     runs-on: ubuntu-latest
     continue-on-error: true
