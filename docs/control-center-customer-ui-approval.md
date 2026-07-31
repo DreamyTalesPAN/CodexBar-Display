@@ -493,3 +493,13 @@ issue scope, or release permission never implies UI permission.
   `control-center-types.ts`, `settings-screen.tsx`,
   `theme-library-screen.tsx`, theme catalog usage mapping, their focused tests,
   and this approval record.
+
+## 2026-07-31 — Failed screensaver save rollback
+
+- User approval: The user approved the proposed issue #288 rollback with `rest
+  passt so` and instructed Codex to implement it.
+- Approved customer-visible result: A failed screensaver save restores the
+  previous value; a later settings read can show the current VibeTV value. No
+  copy, control, or layout changes.
+- Approved files: `control-center-app.tsx`, its customer-flow assertion, and
+  this approval record.

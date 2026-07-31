@@ -3633,7 +3633,7 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
   let settingsCalls = 0;
   let settingsReads = 0;
   const settingsWrites = [];
-  await routeCompanionOnline(
+  const companion = await routeCompanionOnline(
     page,
     installRequests,
     () => {},
@@ -3646,6 +3646,7 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
         brightnessPercent: 20,
         screensaverPath: "/themes/s/night.json",
       },
+      standbyWriteFailureAt: 4,
       onRequest: (pathname, method, body) => {
         if (pathname !== "/v1/settings") {
           return;
@@ -3793,7 +3794,26 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     settingsWrites[4]?.standby?.enabled === false,
     `Turning the screensaver off should write enabled false, got ${JSON.stringify(settingsWrites[4])}`,
   );
+  await page
+    .locator('#vibetv-standby[aria-checked="true"]')
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await screensaverSwitch.getAttribute("aria-checked")) === "true",
+    "a failed screensaver write must restore the previous visible value",
+  );
+
+  companion.setStandby({
+    enabled: false,
+    timeoutMinutes: 10,
+    brightnessPercent: 20,
+  });
+  await clickNavigation(page, "Overview");
+  await clickNavigation(page, "Settings");
   await showAfter.waitFor({ state: "detached", timeout: 10_000 });
+  assert(
+    (await screensaverSwitch.getAttribute("aria-checked")) === "false",
+    "a later settings read must reconcile the screensaver after a failed write",
+  );
 
   const hiddenCustomerText = [
     "Connection controls",
@@ -6860,6 +6880,7 @@ async function routeCompanionOnline(
     settingsDelayMs = 0,
     settingsBrightnessSequence,
     standbySettings,
+    standbyWriteFailureAt = 0,
     onSettingsResponse = () => {},
     statusDeviceSequence,
     firmwareStatusDeviceSequence,
@@ -6886,6 +6907,7 @@ async function routeCompanionOnline(
   let firmwareStatusIndex = 0;
   let displayFrameRequestCount = 0;
   let settingsRequestCount = 0;
+  let standbyWriteCount = 0;
   let currentStandby = standbySettings || {
     enabled: false,
     timeoutMinutes: 10,
@@ -7603,6 +7625,24 @@ async function routeCompanionOnline(
         route.request().postData() || "{}",
       ).standby;
       if (requestedStandby) {
+        standbyWriteCount += 1;
+      }
+      if (requestedStandby && standbyWriteCount === standbyWriteFailureAt) {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: false,
+            error: {
+              code: "standby_save_failed",
+              message: "Screensaver could not be saved.",
+              nextAction: "Try again.",
+            },
+          }),
+        });
+        return;
+      }
+      if (requestedStandby) {
         currentStandby = requestedStandby;
       }
       if (settingsDelayMs > 0) {
@@ -7699,6 +7739,9 @@ async function routeCompanionOnline(
   return {
     setDevice(nextDevice) {
       currentDevice = nextDevice;
+    },
+    setStandby(nextStandby) {
+      currentStandby = nextStandby;
     },
   };
 }

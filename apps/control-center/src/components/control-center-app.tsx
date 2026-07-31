@@ -1788,6 +1788,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const saveStandby = useCallback(
     async (value: StandbySettings) => {
       const setupGeneration = setupGenerationRef.current;
+      const previous = standby;
       standbyDirtyRef.current = true;
       setStandby(value);
       setBusyAction("standby");
@@ -1813,6 +1814,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (setupGeneration !== setupGenerationRef.current) {
           return;
         }
+        standbyDirtyRef.current = false;
+        setStandby(previous);
         const normalized = normalizeCaughtError(
           error,
           "Screensaver needs attention.",
@@ -1839,6 +1842,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       markCompanionAccessBlocked,
       markCompanionUnavailable,
       runCompanion,
+      standby,
     ],
   );
 
