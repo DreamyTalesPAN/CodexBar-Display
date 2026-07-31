@@ -321,6 +321,8 @@ main() {
     'release candidate must enforce the release firmware size budgets'
   assert_contains "$RC_WORKFLOW" 'shasum -a 256 -c "checksums-v${version}.txt"' \
     'release candidate must verify its publish checksum asset before upload'
+  assert_contains "$RC_WORKFLOW" 'find . -type f ! -name "checksums-*"' \
+    'release candidate must exclude its checksum asset from its own checksum list'
   assert_contains "$RC_WORKFLOW" "kind + 'Sha256'" \
     'release candidate must freeze public baseline DMG hashes'
   assert_contains "$RC_WORKFLOW" 'baselines/${{ matrix.state }}.dmg' \
