@@ -1096,6 +1096,7 @@ bool scanSetupNetworks(bool automatic) {
         automatic ? "automatic_already_started" : "already_running");
     return false;
   }
+  const bool recoveryAttemptInterrupted = automatic && wifiSetupRecoveryState.attemptInProgress;
 
   Serial.println("wifi_setup_scan_started");
   int networks = -2;
@@ -1120,6 +1121,12 @@ bool scanSetupNetworks(bool automatic) {
   }
   WiFi.scanDelete();
   FinishScan(setupWifiState, networks);
+  if (recoveryAttemptInterrupted) {
+    codexbar_display::esp8266::wifi_recovery::RescheduleAfterInterruption(
+        wifiSetupRecoveryState,
+        static_cast<uint32_t>(millis()));
+    Serial.println("wifi_setup_recovery_rescheduled reason=automatic_scan");
+  }
   if (setupMode) {
     WiFi.mode(WIFI_AP);
   }

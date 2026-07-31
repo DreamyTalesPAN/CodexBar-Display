@@ -313,6 +313,22 @@ void test_recovery_does_not_begin_again_while_attempt_is_running() {
       static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(5001))));
 }
 
+void test_interrupted_recovery_attempt_retries_immediately_after_scan() {
+  wifi_recovery::State state;
+  wifi_recovery::EnterSetup(state, 0);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::StartAttempt),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(5000))));
+
+  wifi_recovery::RescheduleAfterInterruption(state, 6000);
+
+  TEST_ASSERT_FALSE(state.attemptInProgress);
+  TEST_ASSERT_TRUE(state.retryScheduled);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::StartAttempt),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(6000))));
+}
+
 void test_recovery_timeout_stays_in_setup_and_schedules_next_attempt() {
   wifi_recovery::State state;
   wifi_recovery::EnterSetup(state, 0);
@@ -385,6 +401,7 @@ int main(int, char**) {
   RUN_TEST(test_recovery_busy_gate_defers_attempt);
   RUN_TEST(test_recovery_busy_gate_defers_connected_transition);
   RUN_TEST(test_recovery_does_not_begin_again_while_attempt_is_running);
+  RUN_TEST(test_interrupted_recovery_attempt_retries_immediately_after_scan);
   RUN_TEST(test_recovery_timeout_stays_in_setup_and_schedules_next_attempt);
   RUN_TEST(test_recovery_connected_later_leaves_setup_state);
   return UNITY_END();
