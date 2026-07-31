@@ -74,7 +74,17 @@ type DashboardServeSupervisor struct {
 }
 
 func StartDashboardServe(ctx context.Context, logf func(string, ...any)) DashboardServe {
-	supervisor, err := NewDashboardServeSupervisor(DashboardServeConfig{Logf: logf})
+	bin, err := FindBinary()
+	if err == nil {
+		err = CheckDashboardServeVersion(ctx, bin)
+	}
+	if err != nil {
+		if logf != nil {
+			logf("codexbar-dashboard event=supervisor-unavailable err=%v\n", err)
+		}
+		return nil
+	}
+	supervisor, err := NewDashboardServeSupervisor(DashboardServeConfig{Binary: bin, Logf: logf})
 	if err != nil {
 		if logf != nil {
 			logf("codexbar-dashboard event=supervisor-unavailable err=%v\n", err)

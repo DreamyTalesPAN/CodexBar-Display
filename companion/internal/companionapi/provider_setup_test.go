@@ -330,6 +330,37 @@ func TestProviderSetupTokenEvidencePreservesSpecificProviderFailures(t *testing.
 	}
 }
 
+func TestProviderSetupUsagePreservesSpecificProviderFailures(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 29, 12, 22, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
+		return codexbar.ProviderSetup{
+			Status: "setup_required",
+			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+			Providers: []codexbar.ProviderReadiness{{
+				ID: "codex", Label: "Codex", Enabled: true, Status: codexbar.ProviderAuthRequired,
+				Detail: "This provider needs an active sign-in.",
+			}},
+		}
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return freshProviderUsage("codex", "Codex", now), true
+	}
+	server.currentProviderSetup(context.Background(), true)
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	codex := providerByID(got.ProviderSetup.Providers, "codex")
+	if got.ProviderSetup.Status == codexbar.ProviderReady || codex == nil || codex.Status != codexbar.ProviderAuthRequired {
+		t.Fatalf("usage overwrote a specific provider failure: %+v", got.ProviderSetup)
+	}
+}
+
 func TestProviderSetupTokenEvidenceKeepsOneHealthyOneFailingIsolated(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 29, 12, 25, 0, 0, time.UTC)

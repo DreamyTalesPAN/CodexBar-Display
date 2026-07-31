@@ -678,12 +678,12 @@ type displaySettings struct {
 }
 
 type usageResponse struct {
-	OK              bool                `json:"ok"`
-	GeneratedAt     string              `json:"generatedAt"`
-	Source          string              `json:"source"`
-	UsageMode       string              `json:"usageMode"`
-	Refresh         usageRefreshInfo    `json:"refresh"`
-	TokenUsageReady bool                `json:"tokenUsageReady"`
+	OK              bool             `json:"ok"`
+	GeneratedAt     string           `json:"generatedAt"`
+	Source          string           `json:"source"`
+	UsageMode       string           `json:"usageMode"`
+	Refresh         usageRefreshInfo `json:"refresh"`
+	TokenUsageReady bool             `json:"tokenUsageReady"`
 	// TokenUsageUpdating reports that a shown token history is still growing,
 	// so the totals derived from it are not final yet.
 	TokenUsageUpdating bool                `json:"tokenUsageUpdating"`
@@ -740,6 +740,7 @@ type usageProviderInfo struct {
 	ResetCredits       *usageResetCreditsInfo   `json:"resetCredits,omitempty"`
 	Cost               *usageCostInfo           `json:"cost,omitempty"`
 	CostSettled        bool                     `json:"costSettled,omitempty"`
+	TokenUsageReady    bool                     `json:"-"`
 	Pace               []usagePaceInfo          `json:"pace,omitempty"`
 	UsageOverTime      []usageOverTimePointInfo `json:"usageOverTime,omitempty"`
 }
@@ -1605,6 +1606,7 @@ func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
 		if base.Providers[i].ID != fresh.ID {
 			continue
 		}
+		fresh.TokenUsageReady = base.Providers[i].TokenUsageReady
 		base.Providers[i] = fresh
 		replaced = true
 		break
@@ -1665,6 +1667,7 @@ func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
 			provider.Cost = cached.Cost
 			provider.CostSettled = cached.CostSettled
 		}
+		provider.TokenUsageReady = provider.TokenUsageReady || cached.TokenUsageReady
 	}
 	fresh.TokenUsageReady = usageProvidersHaveTokenResult(fresh.Providers)
 	fresh.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(fresh.Providers)
@@ -1691,12 +1694,15 @@ func usageHasFreshSnapshotAfter(usage daemon.PersistedUsage, requestedAt time.Ti
 	if requestedAt.IsZero() {
 		return usageHasFreshSnapshot(usage)
 	}
+	if len(usage.Providers) == 0 {
+		return false
+	}
 	for _, provider := range usage.Providers {
-		if !provider.Stale && !provider.CollectedAt.IsZero() && !provider.CollectedAt.Before(requestedAt) {
-			return true
+		if provider.Stale || provider.CollectedAt.IsZero() || provider.CollectedAt.Before(requestedAt) {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func usageHasFreshSnapshot(usage daemon.PersistedUsage) bool {
@@ -2215,7 +2221,7 @@ func emptyUsageResponse(now time.Time, source string) usageResponse {
 
 func usageProvidersHaveTokenResult(providers []usageProviderInfo) bool {
 	for _, provider := range providers {
-		if provider.Cost != nil {
+		if provider.TokenUsageReady || provider.Cost != nil {
 			return true
 		}
 	}
@@ -2272,6 +2278,7 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		ResetCredits:       usageResetCreditsFromMeta(snapshot.Meta),
 		Cost:               usageCostFromMeta(snapshot.Meta),
 		CostSettled:        snapshot.TokenHistorySettled,
+		TokenUsageReady:    !snapshot.TokenStatsCollectedAt.IsZero(),
 		Pace:               usagePaceFromMeta(snapshot.Meta),
 		UsageOverTime:      usageOverTimeFromMeta(snapshot.Meta),
 	}, true

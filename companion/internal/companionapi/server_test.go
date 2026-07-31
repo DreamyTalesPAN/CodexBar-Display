@@ -2018,6 +2018,57 @@ func TestUsageManualRefreshReportsFreshForNewCollectorSnapshot(t *testing.T) {
 	}
 }
 
+func TestUsageManualRefreshWaitsForEveryProvider(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	old := now.Add(-time.Minute)
+	usage := daemon.PersistedUsage{
+		SavedAt: now,
+		Providers: []daemon.ProviderUsageSnapshot{
+			{Provider: "codex", Frame: protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42, UsageMode: "used"}, CollectedAt: old},
+			{Provider: "claude", Frame: protocol.Frame{Provider: "claude", Label: "Claude", Weekly: 24, UsageMode: "used"}, CollectedAt: old},
+		},
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return usage, true }
+
+	refresh := func() usageResponse {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		var got usageResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		return got
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode initial response: %v", err)
+	}
+	if got.Refresh.State != "refreshing" {
+		t.Fatalf("expected initial refresh to wait for both providers, got %+v", got.Refresh)
+	}
+
+	usage.Providers[0].CollectedAt = now
+	got = refresh()
+	if got.Refresh.State != "refreshing" {
+		t.Fatalf("one fresh provider must not complete refresh: %+v", got.Refresh)
+	}
+
+	usage.Providers[1].CollectedAt = now
+	got = refresh()
+	if got.Refresh.State != "fresh" {
+		t.Fatalf("refresh should complete after every provider is fresh: %+v", got.Refresh)
+	}
+}
+
 func TestUsageManualRefreshReportsRateLimitAndBlockedUntil(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
@@ -2223,6 +2274,40 @@ func TestUsageTreatsExplicitZeroCostAsTokenResult(t *testing.T) {
 	}
 	if got.Providers[0].Cost.UpdatedAt != now.Format(time.RFC3339) {
 		t.Fatalf("expected zero cost provenance timestamp, got %+v", got.Providers[0].Cost)
+	}
+}
+
+func TestUsageTreatsSuccessfulEmptyTokenScanAsReady(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 12, 30, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: now,
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider: "codex",
+				Frame: protocol.Frame{
+					Provider:  "codex",
+					Label:     "Codex",
+					Weekly:    0,
+					UsageMode: "used",
+				},
+				CollectedAt:           now,
+				TokenStatsCollectedAt: now,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.TokenUsageReady || len(got.Providers) != 1 || got.Providers[0].Cost != nil {
+		t.Fatalf("successful empty token result should finish without inventing cost data: %+v", got)
 	}
 }
 

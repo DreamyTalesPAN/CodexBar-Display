@@ -198,9 +198,13 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 	if setup.CheckedAt == "" {
 		setup.CheckedAt = now.UTC().Format(time.RFC3339Nano)
 	}
-	setup.Status = codexbar.ProviderReady
-	setup.Engine.Status = codexbar.ProviderReady
-
+	protectedByID := make(map[string]struct{}, len(setup.Providers))
+	for _, provider := range setup.Providers {
+		id := strings.TrimSpace(strings.ToLower(provider.ID))
+		if id != "" && providerSetupFailureMustWin(provider.Status) {
+			protectedByID[id] = struct{}{}
+		}
+	}
 	readyByID := make(map[string]codexbar.ProviderReadiness, len(ready))
 	providers := make([]codexbar.ProviderReadiness, 0, len(ready)+len(setup.Providers))
 	for _, provider := range ready {
@@ -208,9 +212,18 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 		if id == "" {
 			continue
 		}
+		if _, protected := protectedByID[id]; protected {
+			continue
+		}
 		provider.ID = id
 		readyByID[id] = provider
 		providers = append(providers, provider)
+	}
+	if len(readyByID) > 0 {
+		setup.Status = codexbar.ProviderReady
+		setup.Engine.Status = codexbar.ProviderReady
+	} else if len(protectedByID) > 0 {
+		setup.Status = "setup_required"
 	}
 	for _, provider := range setup.Providers {
 		id := strings.TrimSpace(strings.ToLower(provider.ID))
@@ -228,6 +241,10 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 	}
 	setup.Providers = providers
 	return setup
+}
+
+func providerSetupFailureMustWin(status string) bool {
+	return status == codexbar.ProviderAuthRequired || status == codexbar.ProviderNotConfigured
 }
 
 func reconcileProviderSetupWithTokenEvidence(setup codexbar.ProviderSetup, ready []codexbar.ProviderReadiness, now time.Time) codexbar.ProviderSetup {

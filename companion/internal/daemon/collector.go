@@ -603,10 +603,17 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		if _, ok := seen[key]; ok {
 			continue
 		}
-		if !snapshotHasTokenStats(snapshot) {
+		hadTokenStats := snapshotHasTokenStats(snapshot)
+		if !hadTokenStats && snapshot.TokenStatsCollected.Equal(now) {
 			continue
 		}
-		clearSnapshotTokenStats(&snapshot)
+		if hadTokenStats {
+			clearSnapshotTokenStats(&snapshot)
+		}
+		// TokenStatsCollected is also the completion marker for a successful
+		// empty result. A failed provider remains in seen and keeps its
+		// previous marker instead.
+		snapshot.TokenStatsCollected = now
 		c.providers[key] = snapshot
 		updated++
 	}

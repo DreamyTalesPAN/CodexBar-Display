@@ -556,6 +556,22 @@ func TestCheckMinimumVersionRejectsTooOldVersion(t *testing.T) {
 	}
 }
 
+func TestCheckDashboardServeVersionRejectsCodexBarWithoutServeAPI(t *testing.T) {
+	originalRunVersion := runVersionCommandFn
+	t.Cleanup(func() {
+		runVersionCommandFn = originalRunVersion
+	})
+
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.26.0\n"), nil
+	}
+
+	err := CheckDashboardServeVersion(context.Background(), "/opt/homebrew/bin/codexbar")
+	if err == nil || !strings.Contains(err.Error(), "need >= 0.26.1") {
+		t.Fatalf("expected dashboard serve version error, got %v", err)
+	}
+}
+
 func TestParseBoolPreference(t *testing.T) {
 	cases := []struct {
 		raw  string

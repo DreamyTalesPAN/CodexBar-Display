@@ -4340,8 +4340,8 @@ func TestProviderCollectorTokenStatsFreshnessSemantics(t *testing.T) {
 	collector.providers["codex"] = codexSnapshot
 	collector.collectTokenStatsOnce(context.Background())
 	absent := collector.providers["codex"]
-	if absent.Frame.TotalTokens != 0 || absent.Meta.Cost != nil || !absent.TokenStatsCollected.IsZero() {
-		t.Fatalf("successful token scan without provider did not clear absent provider stats: %#v", absent)
+	if absent.Frame.TotalTokens != 0 || absent.Meta.Cost != nil || !absent.TokenStatsCollected.Equal(current) {
+		t.Fatalf("successful token scan without provider did not clear stats and mark completion: %#v", absent)
 	}
 
 	current = current.Add(time.Minute)
@@ -4455,8 +4455,8 @@ func TestProviderCollectorSuccessfulEmptyTokenStatsClearsLastGood(t *testing.T) 
 	collector.collectTokenStatsOnce(context.Background())
 
 	got := collector.providers["codex"]
-	if got.Frame.TotalTokens != 0 || got.Meta.Cost != nil || !got.TokenStatsCollected.IsZero() {
-		t.Fatalf("successful empty token scan did not clear last-good token stats: %#v", got)
+	if got.Frame.TotalTokens != 0 || got.Meta.Cost != nil || !got.TokenStatsCollected.Equal(current) {
+		t.Fatalf("successful empty token scan did not clear stats and mark completion: %#v", got)
 	}
 }
 

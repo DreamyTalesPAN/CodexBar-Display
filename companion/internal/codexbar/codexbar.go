@@ -46,6 +46,7 @@ var executablePathFn = os.Executable
 
 const (
 	minSupportedVersionString = "0.23"
+	minDashboardServeVersion  = "0.26.1"
 	versionCheckTimeout       = 2 * time.Second
 )
 
@@ -221,16 +222,24 @@ func MinimumSupportedVersion() string {
 }
 
 func CheckMinimumVersion(ctx context.Context, bin string) error {
+	return checkMinimumVersion(ctx, bin, minSupportedVersionString)
+}
+
+func CheckDashboardServeVersion(ctx context.Context, bin string) error {
+	return checkMinimumVersion(ctx, bin, minDashboardServeVersion)
+}
+
+func checkMinimumVersion(ctx context.Context, bin, minimumString string) error {
 	version, err := installedVersion(ctx, bin)
 	if err != nil {
 		return err
 	}
-	minimum, err := parseLooseVersion(minSupportedVersionString)
+	minimum, err := parseLooseVersion(minimumString)
 	if err != nil {
 		return err
 	}
 	if version.Compare(minimum) < 0 {
-		return fmt.Errorf("CodexBar %s is too old; need >= %s", version.String(), minSupportedVersionString)
+		return fmt.Errorf("CodexBar %s is too old; need >= %s", version.String(), minimumString)
 	}
 	return nil
 }

@@ -29,6 +29,21 @@ func (fn dashboardServeRoundTripper) RoundTrip(req *http.Request) (*http.Respons
 	return fn(req)
 }
 
+func TestStartDashboardServeSkipsCodexBarWithoutServeAPI(t *testing.T) {
+	t.Setenv("CODEXBAR_BIN", os.Args[0])
+	originalRunVersion := runVersionCommandFn
+	t.Cleanup(func() {
+		runVersionCommandFn = originalRunVersion
+	})
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.26.0\n"), nil
+	}
+
+	if got := StartDashboardServe(context.Background(), nil); got != nil {
+		t.Fatalf("old CodexBar must not create a dashboard supervisor: %#v", got.Info())
+	}
+}
+
 func TestDashboardServeSupervisorStartsPrivateLoopbackChild(t *testing.T) {
 	listener8080, err := net.Listen("tcp", net.JoinHostPort(DashboardServeHost, "8080"))
 	if err != nil {
