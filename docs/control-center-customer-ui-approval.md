@@ -573,3 +573,15 @@ issue scope, or release permission never implies UI permission.
   cadence.
 - Approved files: `device-startup-screen.tsx`, its unit test, and this approval
   record.
+
+## 2026-07-31 — PR #260 exact Control Center preview
+
+- User approval: The user reviewed the Control Center preview for PR #260 at
+  commit `f16cc5a` and explicitly approved the exact visible result, including
+  its layout, copy, states, and interaction flows.
+- Approved customer-visible result: The exact customer-facing Control Center
+  result rendered by PR #260 at commit `f16cc5a`, including its current layout,
+  copy, screen states, and interaction flows. This approval does not cover any
+  later customer-visible change.
+- Approved files: All customer-facing Control Center files present in the
+  reviewed PR #260 preview at commit `f16cc5a`, plus this approval record.
