@@ -242,6 +242,10 @@ main() {
     'merge gate must run its direct macOS checks on GitHub-hosted macOS 15'
   assert_contains "$MERGE_WORKFLOW" '9999.0.${GITHUB_RUN_NUMBER}' \
     'merge candidate must always sort above public releases for Sparkle'
+  assert_contains "$MERGE_WORKFLOW" 'build="${GITHUB_RUN_ID}"' \
+    'merge candidate build must sort above public release build numbers for Sparkle'
+  assert_contains "$MERGE_WORKFLOW" '--build "$build"' \
+    'merge candidate app must use the unique high Sparkle build number'
   assert_contains "$MERGE_WORKFLOW" 'clean_os' \
     'merge gate must cover a clean macOS customer state'
   assert_contains "$MERGE_WORKFLOW" 'current_public' \
@@ -330,8 +334,10 @@ main() {
     'guest test must start the public baseline before Sparkle'
   assert_contains "$GUEST_TEST" 'replace and relaunch' \
     'guest test must require a replacement Candidate process after Sparkle'
-  assert_contains "$GUEST_TEST" 'gzip -cd' \
-    'guest test must hash the raw firmware bytes sent through OTA'
+  assert_not_contains "$GUEST_TEST" 'gzip -cd' \
+    'merge guest test must not decompress the already raw candidate firmware'
+  assert_contains "$GUEST_TEST" 'shasum -a 256 "$FIRMWARE"' \
+    'guest test must hash the raw candidate firmware bytes sent through OTA'
   assert_contains "$RC_WORKFLOW" 'artifactHashes": {item["path"]' \
     'candidate result must expose publish validators a path-to-hash map'
   assert_contains "$RC_WORKFLOW" 'check-firmware-size-budget.sh' \

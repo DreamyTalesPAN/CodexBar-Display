@@ -132,8 +132,7 @@ def key(value): return tuple(int(part) for part in value.split('-')[0].split('.'
 print(1 if key(sys.argv[2]) > key(sys.argv[1]) else 0)
 PY
 )"
-RAW_FIRMWARE="$WORK/firmware.bin"; gzip -cd "$FIRMWARE" > "$RAW_FIRMWARE"
-firmware_sha="$(shasum -a 256 "$RAW_FIRMWARE" | awk '{print $1}')"
+firmware_sha="$(shasum -a 256 "$FIRMWARE" | awk '{print $1}')"
 "$VIRTUAL_VIBETV" --addr 127.0.0.1:47834 --raw-addr 127.0.0.1:8081 --firmware "$CURRENT_FIRMWARE" --candidate-firmware "$candidate_firmware" --expected-firmware-sha256 "$firmware_sha" > "$OUTPUT/virtual-vibetv.log" 2>&1 & VIRTUAL_PID=$!
 for _ in $(seq 1 30); do curl --fail --silent "$SERVER_URL/firmware-manifest.json" >/dev/null && curl --fail --silent http://127.0.0.1:47834/health > "$OUTPUT/virtual-health-before.json" && break; sleep 1; done
 [[ -s "$OUTPUT/virtual-health-before.json" ]] || die 'Virtual VibeTV did not become healthy'
