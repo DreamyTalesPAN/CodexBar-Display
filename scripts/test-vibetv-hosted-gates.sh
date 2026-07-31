@@ -248,6 +248,19 @@ main() {
     'merge gate must cover the current public customer state'
   assert_contains "$MERGE_WORKFLOW" 'previous_public' \
     'merge gate must cover the previous public customer state'
+  for merge_candidate_path in \
+    dist/macos/candidate-manifest.json \
+    dist/macos/VibeTV-Control-Center.dmg \
+    dist/macos/appcast.xml \
+    tmp/vibetv-merge/virtual-vibetv \
+    tmp/vibetv-merge/codexbar-display \
+    tmp/vibetv-merge/firmware.bin \
+    tmp/vibetv-merge/firmware-manifest.json; do
+    assert_contains "$MERGE_WORKFLOW" "candidate/${merge_candidate_path}" \
+      "merge guest matrix must consume the uploaded ${merge_candidate_path} path"
+  done
+  assert_contains "$MERGE_WORKFLOW" '"${baseline_args[@]+"${baseline_args[@]}"}"' \
+    'clean OS merge guest test must expand optional baseline arguments safely under set -u'
   assert_not_contains "$MERGE_WORKFLOW" 'self-hosted' \
     'merge gate must not depend on a self-hosted runner'
   assert_not_contains "$MERGE_WORKFLOW" 'tart' \
