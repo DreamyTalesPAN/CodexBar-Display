@@ -263,6 +263,8 @@ main() {
     'clean OS merge guest test must expand optional baseline arguments safely under set -u'
   assert_contains "$MERGE_WORKFLOW" 'chmod +x candidate/tmp/vibetv-merge/virtual-vibetv candidate/tmp/vibetv-merge/codexbar-display' \
     'merge guest matrix must restore executable bits lost during artifact transfer'
+  assert_contains "$MERGE_WORKFLOW" "cp 'dist/macos/VibeTV Control Center.app/Contents/Helpers/codexbar-display' tmp/vibetv-merge/codexbar-display" \
+    'merge candidate must compare the installed helper with the same signed companion artifact'
   assert_not_contains "$MERGE_WORKFLOW" 'self-hosted' \
     'merge gate must not depend on a self-hosted runner'
   assert_not_contains "$MERGE_WORKFLOW" 'tart' \
@@ -353,6 +355,8 @@ main() {
     'release candidate must preserve release firmware protocol metadata'
   assert_contains "$SPARKLE_BUILDER" '6276ba2b404829d139c45ff98427cf90e2efc59b' \
     'Sparkle CLI source must be pinned to the reviewed upstream commit'
+  assert_contains "$SPARKLE_BUILDER" 'git -C "$work/source" checkout -q --detach FETCH_HEAD' \
+    'Sparkle CLI build must check out the fetched pinned source commit'
   assert_contains "$GUEST_TEST" 'CANDIDATE_COMPANION' \
     'guest test must select the installed candidate companion for OTA'
   assert_contains "$GUEST_TEST" 'install-update --target' \
