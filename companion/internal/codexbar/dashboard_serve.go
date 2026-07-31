@@ -76,7 +76,7 @@ type DashboardServeSupervisor struct {
 func StartDashboardServe(ctx context.Context, logf func(string, ...any)) DashboardServe {
 	bin, err := FindBinary()
 	if err == nil {
-		err = CheckDashboardServeVersion(ctx, bin)
+		err = CheckDashboardSnapshotVersion(ctx, bin)
 	}
 	if err != nil {
 		if logf != nil {

@@ -29,14 +29,14 @@ func (fn dashboardServeRoundTripper) RoundTrip(req *http.Request) (*http.Respons
 	return fn(req)
 }
 
-func TestStartDashboardServeSkipsCodexBarWithoutServeAPI(t *testing.T) {
+func TestStartDashboardServeSkipsCodexBarWithoutDashboardSnapshotAPI(t *testing.T) {
 	t.Setenv("CODEXBAR_BIN", os.Args[0])
 	originalRunVersion := runVersionCommandFn
 	t.Cleanup(func() {
 		runVersionCommandFn = originalRunVersion
 	})
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.26.0\n"), nil
+		return []byte("CodexBar 0.43.9\n"), nil
 	}
 
 	if got := StartDashboardServe(context.Background(), nil); got != nil {

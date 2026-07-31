@@ -150,14 +150,14 @@ func TestProviderSetupRecoversFromCachedEngineErrorAfterLaterCollectorSuccess(t 
 	}
 }
 
-func TestProviderSetupKeepsFailingProviderScopedBesideHealthyCollectorProvider(t *testing.T) {
+func TestProviderSetupDoesNotPromoteGloballyWithHealthyAndFailingProviders(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 13, 0, 0, 0, time.UTC)
 	server.now = func() time.Time { return now }
 	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
 		return codexbar.ProviderSetup{
 			Status: "setup_required",
-			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderEngineError},
 			Providers: []codexbar.ProviderReadiness{{
 				ID: "claude", Label: "Claude", Enabled: true, Status: codexbar.ProviderAuthRequired,
 				Detail: "This provider needs an active sign-in.",
@@ -169,7 +169,10 @@ func TestProviderSetupKeepsFailingProviderScopedBesideHealthyCollectorProvider(t
 	}
 	server.currentProviderSetup(context.Background(), true)
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
-		return freshProviderUsage("codex", "Codex", now), true
+		usage := freshProviderUsage("codex", "Codex", now)
+		oldClaudeUsage := freshProviderUsage("claude", "Claude", now.Add(-time.Minute))
+		usage.Providers = append(usage.Providers, oldClaudeUsage.Providers...)
+		return usage, true
 	}
 
 	rec := httptest.NewRecorder()
@@ -178,7 +181,13 @@ func TestProviderSetupKeepsFailingProviderScopedBesideHealthyCollectorProvider(t
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	assertReadyProviderSetup(t, got.ProviderSetup, "codex")
+	if got.ProviderSetup.Status == codexbar.ProviderReady || got.ProviderSetup.Engine.Status == codexbar.ProviderReady {
+		t.Fatalf("a protected provider failure must block global ready promotion: %+v", got.ProviderSetup)
+	}
+	codex := providerByID(got.ProviderSetup.Providers, "codex")
+	if codex == nil || codex.Status != codexbar.ProviderReady {
+		t.Fatalf("healthy provider was not reconciled: %+v", got.ProviderSetup)
+	}
 	claude := providerByID(got.ProviderSetup.Providers, "claude")
 	if claude == nil || claude.Status != codexbar.ProviderAuthRequired {
 		t.Fatalf("failing provider was hidden or changed: %+v", got.ProviderSetup)

@@ -45,9 +45,9 @@ var readFileFn = os.ReadFile
 var executablePathFn = os.Executable
 
 const (
-	minSupportedVersionString = "0.23"
-	minDashboardServeVersion  = "0.26.1"
-	versionCheckTimeout       = 2 * time.Second
+	minSupportedVersionString      = "0.23"
+	minDashboardSnapshotAPIVersion = "0.44.0"
+	versionCheckTimeout            = 2 * time.Second
 )
 
 const usageModeEnvVar = "CODEXBAR_DISPLAY_USAGE_MODE"
@@ -222,14 +222,14 @@ func MinimumSupportedVersion() string {
 }
 
 func CheckMinimumVersion(ctx context.Context, bin string) error {
-	return checkMinimumVersion(ctx, bin, minSupportedVersionString)
+	return checkMinimumVersion(ctx, bin, minSupportedVersionString, "")
 }
 
-func CheckDashboardServeVersion(ctx context.Context, bin string) error {
-	return checkMinimumVersion(ctx, bin, minDashboardServeVersion)
+func CheckDashboardSnapshotVersion(ctx context.Context, bin string) error {
+	return checkMinimumVersion(ctx, bin, minDashboardSnapshotAPIVersion, "dashboard snapshot API")
 }
 
-func checkMinimumVersion(ctx context.Context, bin, minimumString string) error {
+func checkMinimumVersion(ctx context.Context, bin, minimumString, requirement string) error {
 	version, err := installedVersion(ctx, bin)
 	if err != nil {
 		return err
@@ -239,6 +239,9 @@ func checkMinimumVersion(ctx context.Context, bin, minimumString string) error {
 		return err
 	}
 	if version.Compare(minimum) < 0 {
+		if requirement != "" {
+			return fmt.Errorf("CodexBar %s is too old for the %s; need >= %s", version.String(), requirement, minimumString)
+		}
 		return fmt.Errorf("CodexBar %s is too old; need >= %s", version.String(), minimumString)
 	}
 	return nil

@@ -556,19 +556,34 @@ func TestCheckMinimumVersionRejectsTooOldVersion(t *testing.T) {
 	}
 }
 
-func TestCheckDashboardServeVersionRejectsCodexBarWithoutServeAPI(t *testing.T) {
+func TestCheckDashboardSnapshotVersionBoundary(t *testing.T) {
 	originalRunVersion := runVersionCommandFn
 	t.Cleanup(func() {
 		runVersionCommandFn = originalRunVersion
 	})
 
-	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.26.0\n"), nil
-	}
-
-	err := CheckDashboardServeVersion(context.Background(), "/opt/homebrew/bin/codexbar")
-	if err == nil || !strings.Contains(err.Error(), "need >= 0.26.1") {
-		t.Fatalf("expected dashboard serve version error, got %v", err)
+	for _, test := range []struct {
+		version string
+		wantErr bool
+	}{
+		{version: "0.43.9", wantErr: true},
+		{version: "0.44.0", wantErr: false},
+	} {
+		t.Run(test.version, func(t *testing.T) {
+			runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+				return []byte("CodexBar " + test.version + "\n"), nil
+			}
+			err := CheckDashboardSnapshotVersion(context.Background(), "/opt/homebrew/bin/codexbar")
+			if test.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "dashboard snapshot API") || !strings.Contains(err.Error(), "need >= 0.44.0") {
+					t.Fatalf("expected dashboard snapshot API version error, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("dashboard snapshot API should be available: %v", err)
+			}
+		})
 	}
 }
 

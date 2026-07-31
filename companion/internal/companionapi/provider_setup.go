@@ -219,11 +219,9 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 		readyByID[id] = provider
 		providers = append(providers, provider)
 	}
-	if len(readyByID) > 0 {
+	if len(readyByID) > 0 && len(protectedByID) == 0 {
 		setup.Status = codexbar.ProviderReady
 		setup.Engine.Status = codexbar.ProviderReady
-	} else if len(protectedByID) > 0 {
-		setup.Status = "setup_required"
 	}
 	for _, provider := range setup.Providers {
 		id := strings.TrimSpace(strings.ToLower(provider.ID))
