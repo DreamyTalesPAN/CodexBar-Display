@@ -5,6 +5,8 @@ It resolves the submitted PR to its immutable head SHA, builds that SHA without
 Apple or Sparkle secrets, then checks out the trusted main workflow revision for
 archive extraction, signing, notarization, and status publication. The final
 commit status is `CODEX VibeTV Merge Gate`.
+For test PRs, a successful virtual gate is integration evidence only and does
+not authorize merging or releasing.
 
 `CODEX Test VibeTV Release Candidate` is also owner-restricted and builds only
 the exact `main` SHA that dispatched it. It creates one signed candidate bundle
