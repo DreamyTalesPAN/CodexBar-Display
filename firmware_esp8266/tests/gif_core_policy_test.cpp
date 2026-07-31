@@ -282,7 +282,7 @@ bool testSetupPortalIsReadyBeforeJoinInstructions(const char* mainPath) {
     return false;
   }
   const std::string body = mainSource.substr(start, end - start);
-  const std::size_t clearError = body.find("ClearConnectionError(setupWifiState)");
+  const std::size_t resetPortal = body.find("ResetPortalState(setupWifiState)");
   const std::size_t stopReconnect = body.find("WiFi.setAutoReconnect(false)");
   const std::size_t disconnect = body.find("WiFi.disconnect(false)");
   const std::size_t apSta = body.find("WiFi.mode(WIFI_AP_STA)");
@@ -291,10 +291,10 @@ bool testSetupPortalIsReadyBeforeJoinInstructions(const char* mainPath) {
   const std::size_t http = body.find("startHttpServer()");
   const std::size_t joinInstructions = body.find("renderer.DrawSetupInstructions(");
   return expect(
-      clearError < stopReconnect && stopReconnect < disconnect && disconnect < apSta &&
+      resetPortal < stopReconnect && stopReconnect < disconnect && disconnect < apSta &&
           apSta < accessPoint && accessPoint < dns && dns < http &&
           http < joinInstructions && body.find("WiFi.mode(WIFI_AP)") == std::string::npos &&
-          body.find("scanSetupNetworks()") == std::string::npos,
+          body.find("scanSetupNetworks(") == std::string::npos,
       "setup display may invite joining only after the old STA attempt is stopped and AP_STA, DNS, and HTTP are ready");
 }
 
@@ -415,10 +415,11 @@ bool testCaptiveFirstResponseNeverBlocksOnWifiScan(const char* mainPath) {
   return expect(
       root.find("SendSetupPage(") != std::string::npos &&
           probe.find("SendSetupPage(") != std::string::npos &&
-          root.find("scanSetupNetworks()") == std::string::npos &&
-          probe.find("scanSetupNetworks()") == std::string::npos &&
-          scan.find("scanSetupNetworks()") != std::string::npos,
-      "iOS and other captive probes must get the normal setup form without a blocking scan; only Search again scans");
+          root.find("scanSetupNetworks(") == std::string::npos &&
+          probe.find("scanSetupNetworks(") == std::string::npos &&
+          scan.find("webServer.arg(\"automatic\")") != std::string::npos &&
+          scan.find("scanSetupNetworks(automatic)") != std::string::npos,
+      "captive probes must render before the browser starts the guarded automatic scan");
 }
 
 bool testAutomaticWifiFallbackNeverCarriesTheFailedSsid(const char* mainPath) {

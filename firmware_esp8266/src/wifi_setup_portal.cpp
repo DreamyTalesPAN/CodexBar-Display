@@ -16,6 +16,7 @@ const char kPageStart[] PROGMEM = R"HTML(<!doctype html><html lang="en"><head><m
 </style></head><body><main><header><h1>Connect to Wi-Fi</h1></header><section class="card" aria-labelledby="wifi-heading"><h2 id="wifi-heading" class="sr-only">Wi-Fi network</h2>)HTML";
 
 const char kScanForm[] PROGMEM = R"HTML(<form class="scan-form" method="post" action="/scan" onsubmit="const b=this.querySelector('button');if(b.disabled)return false;b.disabled=true;b.textContent='Searching…';b.setAttribute('aria-busy','true')"><button class="secondary" type="submit">Search again</button></form>)HTML";
+const char kAutomaticScanScript[] PROGMEM = R"HTML(<script>(()=>{const f=document.querySelector('.scan-form');const b=f&&f.querySelector('button');if(!b)return;b.disabled=true;b.textContent='Searching…';b.setAttribute('aria-busy','true');fetch('/scan?automatic=1',{method:'POST'}).then(()=>location.reload()).catch(()=>{b.disabled=false;b.textContent='Search again';b.removeAttribute('aria-busy')})})()</script>)HTML";
 
 const char kFieldsStart[] PROGMEM = R"HTML(<form method="post" action="/save"><label for="ssid">Wi-Fi network</label><p id="wifi-band-help" class="field-help">Only 2.4 GHz networks are shown.</p><select id="ssid" name="ssid" aria-describedby="setup-status wifi-band-help">)HTML";
 const char kFieldsManual[] PROGMEM = R"HTML(</select><label for="custom_ssid">Hidden network</label><input id="custom_ssid" name="custom_ssid" maxlength="32" autocomplete="off" placeholder="Enter Wi-Fi name" aria-describedby="setup-status")HTML";
@@ -96,6 +97,18 @@ bool BeginScan(State& state) {
   state.scanStatus = ScanStatus::Scanning;
   state.networkCount = 0;
   return true;
+}
+
+bool BeginAutomaticScan(State& state) {
+  if (state.automaticScanStarted) {
+    return false;
+  }
+  state.automaticScanStarted = true;
+  return BeginScan(state);
+}
+
+void ResetPortalState(State& state) {
+  state = State{};
 }
 
 bool AddScanResult(State& state, const String& ssid, int32_t rssi, int32_t channel) {
@@ -221,6 +234,9 @@ void SendSetupPage(
   server.sendContent_P(kFieldsManual);
   server.sendContent_P(kFieldsPassword);
   server.sendContent_P(kScanForm);
+  if (state.scanStatus == ScanStatus::NotStarted) {
+    server.sendContent_P(kAutomaticScanScript);
+  }
 
   if (supportUrl != nullptr && supportUrl[0] != '\0') {
     String help;
