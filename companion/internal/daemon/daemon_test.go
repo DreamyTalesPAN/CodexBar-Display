@@ -1908,6 +1908,36 @@ func TestMarshalFrameWithinLimitTrimsUsageWindowsInOrder(t *testing.T) {
 	}
 }
 
+func TestMarshalFrameWithinLimitTrimsV1UsageSlotsInOrder(t *testing.T) {
+	frame := protocol.Frame{
+		V:        protocol.ProtocolVersionV1,
+		Provider: "codex",
+		Label:    "Codex",
+		UsageSlots: []protocol.UsageSlot{
+			{ID: strings.Repeat("&", protocol.DefaultUsageWindowIDBytes), Label: strings.Repeat("<", protocol.DefaultUsageWindowLabelBytes), Percent: 10, ResetSec: 1},
+			{ID: strings.Repeat(`\\`, protocol.DefaultUsageWindowIDBytes), Label: strings.Repeat(`"`, protocol.DefaultUsageWindowLabelBytes), Percent: 20, ResetSec: 2},
+		},
+	}
+	oneSlot := frame
+	oneSlot.UsageSlots = oneSlot.UsageSlots[:1]
+	limitLine, err := oneSlot.MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal one-slot limit frame: %v", err)
+	}
+
+	line, marshaled, err := marshalFrameWithinLimit(frame, len(limitLine))
+	if err != nil {
+		t.Fatalf("marshal v1 frame within limit: %v", err)
+	}
+	if len(line) > len(limitLine) {
+		t.Fatalf("expected trimmed v1 line to fit limit %d, got %d", len(limitLine), len(line))
+	}
+	if len(marshaled.UsageWindows) != 0 || len(marshaled.UsageSlots) != 1 ||
+		marshaled.UsageSlots[0].ID != frame.UsageSlots[0].ID {
+		t.Fatalf("expected first legacy usage slot to survive, got %+v", marshaled)
+	}
+}
+
 func TestMarshalFrameWithinLimitFallsBackToErrorFrame(t *testing.T) {
 	frame := protocol.Frame{
 		Provider: "codex",

@@ -2248,10 +2248,19 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		frame = normalized
 	}
 
-	if len(frame.UsageWindows) > 0 {
-		for limit := len(frame.UsageWindows) - 1; limit >= 0; limit-- {
+	usageWindowsActive := len(frame.UsageWindows) > 0
+	usageCount := len(frame.UsageWindows)
+	if !usageWindowsActive {
+		usageCount = len(frame.UsageSlots)
+	}
+	if usageCount > 0 {
+		for limit := usageCount - 1; limit >= 0; limit-- {
 			trimmed := frame
-			trimmed.UsageWindows = append([]protocol.UsageWindow(nil), frame.UsageWindows[:limit]...)
+			if usageWindowsActive {
+				trimmed.UsageWindows = append([]protocol.UsageWindow(nil), frame.UsageWindows[:limit]...)
+			} else {
+				trimmed.UsageSlots = append([]protocol.UsageSlot(nil), frame.UsageSlots[:limit]...)
+			}
 			normalized := trimmed.Normalize()
 			line, err = normalized.MarshalLine()
 			if err != nil {

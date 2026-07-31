@@ -311,6 +311,67 @@ func TestFrameNormalizeKeepsOnlyTwoValidUsageSlots(t *testing.T) {
 	}
 }
 
+func TestFrameNormalizeBoundsUsageWindowTextByUTF8Bytes(t *testing.T) {
+	frame := Frame{
+		V: ProtocolVersionV2,
+		UsageWindows: []UsageWindow{
+			{ID: strings.Repeat("😀", 9), Label: strings.Repeat("ä", 13), Percent: 42},
+		},
+	}
+
+	normalized := frame.Normalize()
+	if len(normalized.UsageWindows) != 1 {
+		t.Fatalf("expected one usage window, got %+v", normalized.UsageWindows)
+	}
+	window := normalized.UsageWindows[0]
+	if len([]byte(window.ID)) > DefaultUsageWindowIDBytes || len([]byte(window.Label)) > DefaultUsageWindowLabelBytes ||
+		!utf8.ValidString(window.ID) || !utf8.ValidString(window.Label) {
+		t.Fatalf("expected valid UTF-8 byte-bounded usage text, got %+v", window)
+	}
+	if window.ID != strings.Repeat("😀", 8) || window.Label != strings.Repeat("ä", 12) {
+		t.Fatalf("expected truncation at complete UTF-8 characters, got id=%q label=%q", window.ID, window.Label)
+	}
+}
+
+func TestProtocolSchemaUsesSharedUTF8ByteLimits(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "protocol", "schema.json"))
+	if err != nil {
+		t.Fatalf("read frame schema: %v", err)
+	}
+	var schema struct {
+		Defs struct {
+			UsageWindow struct {
+				Properties struct {
+					ID struct {
+						MaxUTF8Bytes int `json:"x-maxUtf8Bytes"`
+					} `json:"id"`
+					Label struct {
+						MaxUTF8Bytes int `json:"x-maxUtf8Bytes"`
+					} `json:"label"`
+				} `json:"properties"`
+			} `json:"usageWindow"`
+		} `json:"$defs"`
+		Properties map[string]struct {
+			Items struct {
+				Ref string `json:"$ref"`
+			} `json:"items"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(data, &schema); err != nil {
+		t.Fatalf("parse frame schema: %v", err)
+	}
+	window := schema.Defs.UsageWindow
+	if window.Properties.ID.MaxUTF8Bytes != DefaultUsageWindowIDBytes ||
+		window.Properties.Label.MaxUTF8Bytes != DefaultUsageWindowLabelBytes {
+		t.Fatalf("schema byte limits do not match runtime: id=%d label=%d", window.Properties.ID.MaxUTF8Bytes, window.Properties.Label.MaxUTF8Bytes)
+	}
+	for _, name := range []string{"usageSlots", "usageWindows"} {
+		if got := schema.Properties[name].Items.Ref; got != "#/$defs/usageWindow" {
+			t.Fatalf("%s must use the shared usage-window schema, got %q", name, got)
+		}
+	}
+}
+
 func TestFrameNormalizeV1OmitsUsageWindowsOnWire(t *testing.T) {
 	frame := Frame{
 		V:        ProtocolVersionV1,
