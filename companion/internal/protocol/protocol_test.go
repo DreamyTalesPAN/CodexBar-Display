@@ -311,25 +311,74 @@ func TestFrameNormalizeKeepsOnlyTwoValidUsageSlots(t *testing.T) {
 	}
 }
 
-func TestFrameNormalizeBoundsUsageWindowTextByUTF8Bytes(t *testing.T) {
-	frame := Frame{
-		V: ProtocolVersionV2,
-		UsageWindows: []UsageWindow{
-			{ID: strings.Repeat("😀", 9), Label: strings.Repeat("ä", 13), Percent: 42},
+func TestFrameJSONRejectsUsageWindowTextOverUTF8ByteLimit(t *testing.T) {
+	cases := []struct {
+		name    string
+		version int
+		field   string
+		value   UsageWindow
+	}{
+		{
+			name:    "v2 id",
+			version: 2,
+			field:   "usageWindows",
+			value:   UsageWindow{ID: strings.Repeat("😀", 9), Label: "Session"},
+		},
+		{
+			name:    "v2 label",
+			version: 2,
+			field:   "usageWindows",
+			value:   UsageWindow{ID: "session", Label: strings.Repeat("😀", 24)},
+		},
+		{
+			name:    "v1 id",
+			version: 1,
+			field:   "usageSlots",
+			value:   UsageWindow{ID: strings.Repeat("😀", 9), Label: "Session"},
+		},
+		{
+			name:    "v1 label",
+			version: 1,
+			field:   "usageSlots",
+			value:   UsageWindow{ID: "session", Label: strings.Repeat("ä", 13)},
 		},
 	}
 
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(map[string]any{
+				"v":      tc.version,
+				tc.field: []UsageWindow{tc.value},
+			})
+			if err != nil {
+				t.Fatalf("marshal test frame: %v", err)
+			}
+
+			var frame Frame
+			if err := json.Unmarshal(data, &frame); err == nil {
+				t.Fatalf("expected oversized UTF-8 text to be rejected: %s", data)
+			}
+		})
+	}
+}
+
+func TestFrameJSONPreservesUsageWindowTextWithinUTF8ByteLimits(t *testing.T) {
+	want := UsageWindow{ID: strings.Repeat("😀", 8), Label: strings.Repeat("ä", 12), Percent: 42}
+	data, err := json.Marshal(map[string]any{
+		"v":            ProtocolVersionV2,
+		"usageWindows": []UsageWindow{want},
+	})
+	if err != nil {
+		t.Fatalf("marshal test frame: %v", err)
+	}
+
+	var frame Frame
+	if err := json.Unmarshal(data, &frame); err != nil {
+		t.Fatalf("unmarshal valid UTF-8 frame: %v", err)
+	}
 	normalized := frame.Normalize()
-	if len(normalized.UsageWindows) != 1 {
-		t.Fatalf("expected one usage window, got %+v", normalized.UsageWindows)
-	}
-	window := normalized.UsageWindows[0]
-	if len([]byte(window.ID)) > DefaultUsageWindowIDBytes || len([]byte(window.Label)) > DefaultUsageWindowLabelBytes ||
-		!utf8.ValidString(window.ID) || !utf8.ValidString(window.Label) {
-		t.Fatalf("expected valid UTF-8 byte-bounded usage text, got %+v", window)
-	}
-	if window.ID != strings.Repeat("😀", 8) || window.Label != strings.Repeat("ä", 12) {
-		t.Fatalf("expected truncation at complete UTF-8 characters, got id=%q label=%q", window.ID, window.Label)
+	if len(normalized.UsageWindows) != 1 || normalized.UsageWindows[0] != want {
+		t.Fatalf("valid UTF-8 usage text was changed: got %+v, want %+v", normalized.UsageWindows, []UsageWindow{want})
 	}
 }
 

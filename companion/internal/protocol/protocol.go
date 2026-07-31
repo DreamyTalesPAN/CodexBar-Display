@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -20,6 +21,22 @@ type UsageWindow struct {
 	Label    string `json:"label"`
 	Percent  int    `json:"percent"`
 	ResetSec int64  `json:"resetSecs"`
+}
+
+func (w *UsageWindow) UnmarshalJSON(data []byte) error {
+	type rawUsageWindow UsageWindow
+	var decoded rawUsageWindow
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	if len([]byte(decoded.ID)) > DefaultUsageWindowIDBytes {
+		return fmt.Errorf("usage window id exceeds %d UTF-8 bytes", DefaultUsageWindowIDBytes)
+	}
+	if len([]byte(decoded.Label)) > DefaultUsageWindowLabelBytes {
+		return fmt.Errorf("usage window label exceeds %d UTF-8 bytes", DefaultUsageWindowLabelBytes)
+	}
+	*w = UsageWindow(decoded)
+	return nil
 }
 
 type UsageSlot = UsageWindow
