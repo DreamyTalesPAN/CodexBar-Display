@@ -175,17 +175,22 @@ func FindBinary() (string, error) {
 }
 
 func findAppManagedBinary(version string) (string, error) {
+	_, bin, err := findAppManagedPayload(version)
+	return bin, err
+}
+
+func findAppManagedPayload(version string) (string, string, error) {
 	if !regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`).MatchString(version) {
-		return "", fmt.Errorf("%s has invalid version: %s", appManagedCodexBarVersionEnvVar, version)
+		return "", "", fmt.Errorf("%s has invalid version: %s", appManagedCodexBarVersionEnvVar, version)
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("resolve home directory for app-managed CodexBar: %w", err)
+		return "", "", fmt.Errorf("resolve home directory for app-managed CodexBar: %w", err)
 	}
 	if strings.TrimSpace(home) == "" {
-		return "", errors.New("home directory for app-managed CodexBar is empty")
+		return "", "", errors.New("home directory for app-managed CodexBar is empty")
 	}
-	bin := filepath.Join(
+	app := filepath.Join(
 		home,
 		"Library",
 		"Application Support",
@@ -193,19 +198,22 @@ func findAppManagedBinary(version string) (string, error) {
 		"CodexBar",
 		version,
 		"CodexBar.app",
+	)
+	bin := filepath.Join(
+		app,
 		"Contents",
 		"Helpers",
 		"CodexBarCLI",
 	)
 	if linkPath, err := firstSymlinkInPathUnder(home, bin); err != nil {
-		return "", fmt.Errorf("verify app-managed CodexBar path: %w", err)
+		return "", "", fmt.Errorf("verify app-managed CodexBar path: %w", err)
 	} else if linkPath != "" {
-		return "", fmt.Errorf("app-managed CodexBar path contains symlink: %s", linkPath)
+		return "", "", fmt.Errorf("app-managed CodexBar path contains symlink: %s", linkPath)
 	}
 	if isExecutable(bin) {
-		return bin, nil
+		return app, bin, nil
 	}
-	return "", fmt.Errorf("app-managed CodexBar %s is not executable: %s", version, bin)
+	return "", "", fmt.Errorf("app-managed CodexBar %s is not executable: %s", version, bin)
 }
 
 func MinimumSupportedVersion() string {

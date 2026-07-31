@@ -346,6 +346,73 @@ func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
 	}
 }
 
+func TestOpenAppUsesAppManagedPinnedApplication(t *testing.T) {
+	originalOpen := openCodexBarCommand
+	defer func() { openCodexBarCommand = originalOpen }()
+
+	t.Setenv(appManagedCodexBarVersionEnvVar, "0.46.0")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	privateApp := filepath.Join(
+		home,
+		"Library",
+		"Application Support",
+		"codexbar-display",
+		"CodexBar",
+		"0.46.0",
+		"CodexBar.app",
+	)
+	writeExecutable(t, filepath.Join(privateApp, "Contents", "Helpers", "CodexBarCLI"))
+
+	var args []string
+	openCodexBarCommand = func(_ context.Context, got ...string) error {
+		args = append([]string(nil), got...)
+		return nil
+	}
+
+	if err := OpenApp(context.Background()); err != nil {
+		t.Fatalf("OpenApp: %v", err)
+	}
+	if want := []string{"-a", privateApp}; !reflect.DeepEqual(args, want) {
+		t.Fatalf("expected exact private app arguments %v, got %v", want, args)
+	}
+}
+
+func TestOpenAppUsesBundleIdentifierWithoutAppManagedVersion(t *testing.T) {
+	originalOpen := openCodexBarCommand
+	defer func() { openCodexBarCommand = originalOpen }()
+
+	t.Setenv(appManagedCodexBarVersionEnvVar, "")
+	var args []string
+	openCodexBarCommand = func(_ context.Context, got ...string) error {
+		args = append([]string(nil), got...)
+		return nil
+	}
+
+	if err := OpenApp(context.Background()); err != nil {
+		t.Fatalf("OpenApp: %v", err)
+	}
+	if want := []string{"-b", "com.steipete.codexbar"}; !reflect.DeepEqual(args, want) {
+		t.Fatalf("expected bundle identifier arguments %v, got %v", want, args)
+	}
+}
+
+func TestOpenAppRejectsMissingAppManagedPayload(t *testing.T) {
+	originalOpen := openCodexBarCommand
+	defer func() { openCodexBarCommand = originalOpen }()
+
+	t.Setenv(appManagedCodexBarVersionEnvVar, "0.46.0")
+	t.Setenv("HOME", t.TempDir())
+	openCodexBarCommand = func(context.Context, ...string) error {
+		t.Fatal("open must not run for a missing app-managed payload")
+		return nil
+	}
+
+	if err := OpenApp(context.Background()); err == nil {
+		t.Fatal("expected missing app-managed payload to fail")
+	}
+}
+
 func TestProviderReadinessClassifiesStructuredFixtures(t *testing.T) {
 	raw := []byte(`[
       {"provider":"codex","usage":{"primary":{"usedPercent":0}}},
