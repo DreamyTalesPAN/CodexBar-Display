@@ -93,6 +93,7 @@ jobs:
           pip install platformio
           source_sha="$(git rev-parse HEAD)"
           version="9999.0.${GITHUB_RUN_NUMBER}"
+          build="${GITHUB_RUN_ID}"
           mkdir -p dist/macos tmp/vibetv-merge
           (
             cd apps/control-center
@@ -115,7 +116,7 @@ jobs:
           lipo -create -output tmp/vibetv-merge/codexbar-display \
             tmp/vibetv-merge/codexbar-display-amd64 tmp/vibetv-merge/codexbar-display-arm64
           ./scripts/build-macos-control-center-app.sh \
-            --version "$version" --build "$GITHUB_RUN_NUMBER" --universal \
+            --version "$version" --build "$build" --universal \
             --companion-binary tmp/vibetv-merge/codexbar-display \
             --output 'dist/macos/VibeTV Control Center.app'
           COPYFILE_DISABLE=1 tar -czf tmp/vibetv-merge/app.tar.gz -C dist/macos 'VibeTV Control Center.app'
