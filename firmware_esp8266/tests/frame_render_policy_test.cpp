@@ -57,6 +57,28 @@ bool testWifiDispatchStoresOnePendingEvent(const std::string& source) {
       "WiFi visual frames must store one pending event while non-WiFi frames render directly");
 }
 
+bool testUsbHelloReportsStandbyCapability(const std::string& source) {
+  const std::size_t builderStart = source.find("const char* transportCapabilitiesJSON");
+  const std::size_t builderEnd = source.find("\ncodexbar_display::app::TransportConfig makeTransportConfig", builderStart);
+  if (!expect(
+          builderStart != std::string::npos && builderEnd != std::string::npos,
+          "USB capability builder must remain discoverable")) {
+    return false;
+  }
+
+  const std::string builder = source.substr(builderStart, builderEnd - builderStart);
+  const std::size_t append = builder.find("appendStandbyCapabilityJSON(json)");
+  return expect(
+      append != std::string::npos &&
+          builder.find("appendStandbyCapabilityJSON(json)", append + 1) == std::string::npos &&
+          source.find("\\\"supported\\\":true") != std::string::npos &&
+          source.find("\\\"screensaverSlot\\\":true") != std::string::npos &&
+          source.find("config.capabilitiesJSON = transportCapabilitiesJSON(activeTransport)") !=
+              std::string::npos &&
+          source.find("EmitDeviceHello(makeTransportConfig(\"usb\"))") != std::string::npos,
+      "USB hello must report one supported standby capability with a screensaver slot");
+}
+
 bool testPendingWifiRenderRunsBeforeUsb(const std::string& source) {
   const std::size_t loopStart = source.find("void loop()");
   const std::size_t pending = source.find("if (pendingWifiRender)", loopStart);
@@ -79,6 +101,7 @@ int main(int argc, char** argv) {
   const std::string source = readFile(argv[1]);
   if (!testWifiHandlerAcknowledgesBeforeDispatch(source) ||
       !testWifiDispatchStoresOnePendingEvent(source) ||
+      !testUsbHelloReportsStandbyCapability(source) ||
       !testPendingWifiRenderRunsBeforeUsb(source)) {
     return 1;
   }

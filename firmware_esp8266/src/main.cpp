@@ -1033,7 +1033,9 @@ const char* transportCapabilitiesJSON(const char* activeTransport, bool compact 
   }
   json += "\"brightness\":";
   appendBrightnessCapabilityJSON(json);
-  json += "},\"theme\":";
+  json += "},\"standby\":";
+  appendStandbyCapabilityJSON(json);
+  json += ",\"theme\":";
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
   json += themeCapabilitiesJSON(false, compact);
 #else
