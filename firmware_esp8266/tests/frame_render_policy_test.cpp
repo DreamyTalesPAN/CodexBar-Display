@@ -97,6 +97,23 @@ bool testThemeActivationDoesNotCloseFilesystemBeforeResponse(const std::string& 
       "theme activation must not unmount LittleFS before the HTTP response");
 }
 
+bool testSetupAccessPointClearsPendingThemeRender(const std::string& source) {
+  const std::size_t setupStart = source.find("void startSetupAccessPoint()");
+  const std::size_t setupEnd = source.find("\nvoid maintainWifiConnection()", setupStart);
+  if (!expect(
+          setupStart != std::string::npos && setupEnd != std::string::npos,
+          "setup access point body must remain discoverable")) {
+    return false;
+  }
+
+  const std::string setup = source.substr(setupStart, setupEnd - setupStart);
+  const std::size_t setupMode = setup.find("setupMode = true;");
+  const std::size_t clearPending = setup.find("pendingHttpRender = false;", setupMode);
+  return expect(
+      setupMode != std::string::npos && clearPending != std::string::npos && setupMode < clearPending,
+      "entering Wi-Fi setup must clear a deferred theme render");
+}
+
 bool testPendingHttpRenderRunsBeforeUsb(const std::string& source) {
   const std::size_t loopStart = source.find("void loop()");
   const std::size_t pending = source.find("if (pendingHttpRender)", loopStart);
@@ -136,6 +153,7 @@ int main(int argc, char** argv) {
       !testHttpCallbackDispatchStoresOnePendingEvent(source) ||
       !testThemeActivationUsesDeferredRenderTransport(source) ||
       !testThemeActivationDoesNotCloseFilesystemBeforeResponse(source) ||
+      !testSetupAccessPointClearsPendingThemeRender(source) ||
       !testPendingHttpRenderRunsBeforeUsb(source) ||
       !testHelloAdvertisesEscapedUsageWindowCapacity(source)) {
     return 1;

@@ -2478,8 +2478,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         });
       }
       const completedLogs = logs;
+      const refreshedActiveThemeUpgrade = resolveActiveThemeUpgrade(
+        catalog.themes,
+        refreshedDevice,
+      );
       if (
-        activeThemeUpgrade.unresolved &&
+        refreshedActiveThemeUpgrade.unresolved &&
         !deviceNeedsThemeSetup(refreshedDevice)
       ) {
         const message =
@@ -2503,10 +2507,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return true;
       }
       if (shouldUpgradeActiveTheme) {
-        const refreshedActiveThemeUpgrade = resolveActiveThemeUpgrade(
-          catalog.themes,
-          refreshedDevice,
-        );
         if (
           !refreshedActiveThemeUpgrade.theme ||
           refreshedActiveThemeUpgrade.needsFirmwareCapability

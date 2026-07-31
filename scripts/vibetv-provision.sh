@@ -773,7 +773,11 @@ flash_package() {
   if [[ "$skip_smoke" != "1" ]]; then
     current_stage="smoke frame"
     send_smoke_frames "$frame_url"
-    check_post_smoke_theme_missing_state "$health_url"
+    if [[ "$skip_filesystem_ota" == "1" ]]; then
+      log "skip: missing-theme state check because filesystem OTA was skipped"
+    else
+      check_post_smoke_theme_missing_state "$health_url"
+    fi
   else
     log "skip: smoke frames"
   fi

@@ -2488,6 +2488,7 @@ void startHttpServer() {
 
 void startSetupAccessPoint() {
   setupMode = true;
+  pendingHttpRender = false;
   resetWifiReconnectState();
   codexbar_display::esp8266::wifi_setup::ClearConnectionError(setupWifiState);
   WiFi.setAutoReconnect(false);

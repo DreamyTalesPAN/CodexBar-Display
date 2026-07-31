@@ -405,6 +405,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testFirmwareUpdateRechecksThemeCatalogAfterCapabilityUpgrade(
+        browser,
+        appContext.appUrl,
+      );
       console.log("control-center theme setup firmware flow tests passed");
       return;
     }
@@ -3485,6 +3489,79 @@ async function testPostFlashMissingUsageWindowsKeepsThemeAttention(
     (await page.getByText("Update complete", { exact: true }).count()) === 0,
     "Missing post-flash usage windows capability must not report a complete update",
   );
+  await page.close();
+}
+
+async function testFirmwareUpdateRechecksThemeCatalogAfterCapabilityUpgrade(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const firmwareUpdateRequests = [];
+  const oldFirmwareDevice = {
+    ...synthwaveDevice,
+    activeTheme: "legacy-theme",
+    firmware: "1.0.32",
+    capabilities: {
+      ...synthwaveDevice.capabilities,
+      theme: {
+        ...synthwaveDevice.capabilities.theme,
+        supportsUsageSlotsV1: false,
+        supportsUsageWindowsV1: false,
+      },
+    },
+  };
+  const updatedFirmwareDevice = {
+    ...oldFirmwareDevice,
+    firmware: "1.0.33",
+    capabilities: {
+      ...oldFirmwareDevice.capabilities,
+      theme: {
+        ...oldFirmwareDevice.capabilities.theme,
+        supportsUsageSlotsV1: true,
+        supportsUsageWindowsV1: true,
+      },
+    },
+  };
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: oldFirmwareDevice,
+    deviceAfterFirmwareUpdate: updatedFirmwareDevice,
+    onUpdate: (postData) => {
+      firmwareUpdateRequests.push(postData || "");
+    },
+    updateStatusSequence: [
+      {
+        phase: "complete",
+        message: "Update complete.",
+        progress: 100,
+        logs: [
+          "Preparing VibeTV update.",
+          "Updating VibeTV.",
+          "Update complete.",
+        ],
+        result: { firmware: "1.0.33" },
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Updates");
+  await page.getByRole("button", { name: "Update", exact: true }).click();
+  await page
+    .getByText("Update complete", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    firmwareUpdateRequests.length === 1,
+    `Firmware update should run once, got ${firmwareUpdateRequests.length}`,
+  );
+  assert(
+    (await page
+      .getByText(/Firmware current.*attention needed/)
+      .count()) === 0,
+    "A capability-complete firmware update must not use the pre-update unresolved theme state",
+  );
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 

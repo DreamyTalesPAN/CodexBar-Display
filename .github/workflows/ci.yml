@@ -206,6 +206,9 @@ jobs:
         working-directory: firmware_esp8266
         run: pio test -e native_device_settings
 
+      - name: Test firmware-only provisioning contract
+        run: ./scripts/test-vibetv-provision.sh
+
       - name: Test firmware size budget checker
         run: ./scripts/test-firmware-size-budget.sh
 
