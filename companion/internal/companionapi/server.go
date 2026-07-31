@@ -1600,10 +1600,6 @@ func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
 		if base.Providers[i].ID != fresh.ID {
 			continue
 		}
-		fresh = mergePersistedUsageDetails(
-			usageResponse{Providers: []usageProviderInfo{fresh}},
-			usageResponse{Providers: []usageProviderInfo{base.Providers[i]}},
-		).Providers[0]
 		base.Providers[i] = fresh
 		replaced = true
 		break
@@ -1611,6 +1607,13 @@ func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
 	if !replaced {
 		base.Providers = append(base.Providers, fresh)
 	}
+	// This cache exists to overlay one probed provider's quota windows. Token
+	// history has one owner, so a cached copy must never outrank the newer
+	// collector snapshot merged in by cachedExactUsageOverlay.
+	for i := range base.Providers {
+		clearUsageProviderTokenHistory(&base.Providers[i])
+	}
+	base.TokenUsageReady = usageProvidersHaveTokenResult(base.Providers)
 	base.OK = true
 	base.GeneratedAt = now.Format(time.RFC3339)
 	base.Source = "codexbar"
@@ -1619,6 +1622,16 @@ func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
 	s.usageCache = &base
 	s.usageCacheAt = now
 	s.usageCacheMu.Unlock()
+}
+
+func clearUsageProviderTokenHistory(provider *usageProviderInfo) {
+	if provider == nil {
+		return
+	}
+	provider.SessionTokens = 0
+	provider.WeekTokens = 0
+	provider.TotalTokens = 0
+	provider.Cost = nil
 }
 
 func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {

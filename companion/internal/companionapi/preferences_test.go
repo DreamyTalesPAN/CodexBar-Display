@@ -764,6 +764,69 @@ func TestExactUsageCacheOnlyOverlaysItsProviderOntoCurrentSnapshots(t *testing.T
 	}
 }
 
+func TestExactUsageCacheNeverOutranksNewerCollectorTokenHistory(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 30, 11, 45, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+
+	partial := daemon.PersistedUsage{
+		CurrentProvider: "codex",
+		Providers: []daemon.ProviderUsageSnapshot{{
+			Provider:    "codex",
+			Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 10, TotalTokens: 120},
+			Source:      "collector",
+			CollectedAt: now.Add(-10 * time.Minute),
+			Meta: codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{
+				Last30DaysTokens: 120,
+				Daily:            []codexbar.ProviderCostDay{{Day: "2026-07-30", TotalTokens: 120}},
+			}},
+		}},
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return partial, true }
+	server.cacheExactProviderUsage(codexbar.ParsedFrame{
+		Provider:    "codex",
+		Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 77},
+		Source:      "exact-probe",
+		CollectedAt: now.Add(-9 * time.Minute),
+	})
+
+	complete := daemon.PersistedUsage{
+		CurrentProvider: "codex",
+		Providers: []daemon.ProviderUsageSnapshot{{
+			Provider:    "codex",
+			Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 10, TotalTokens: 1617381357},
+			Source:      "collector",
+			CollectedAt: now.Add(-10 * time.Minute),
+			Stale:       true,
+			Meta: codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{
+				Last30DaysTokens: 1617381357,
+				Daily: []codexbar.ProviderCostDay{
+					{Day: "2026-07-29", TotalTokens: 1617381237},
+					{Day: "2026-07-30", TotalTokens: 120},
+				},
+			}},
+		}},
+	}
+
+	got, ok := server.cachedExactUsageOverlay(now, complete)
+	if !ok || len(got.Providers) != 1 {
+		t.Fatalf("expected the exact cache to overlay one provider, got ok=%t %#v", ok, got.Providers)
+	}
+	codex := got.Providers[0]
+	if codex.Weekly != 77 || codex.Source != "exact-probe" {
+		t.Fatalf("expected the exact probe to keep owning quota values: %#v", codex)
+	}
+	if codex.Cost == nil || codex.Cost.Last30DaysTokens != 1617381357 || len(codex.Cost.Daily) != 2 {
+		t.Fatalf("older cached token history outranked the newer collector scan: %#v", codex.Cost)
+	}
+	if codex.TotalTokens != 1617381357 {
+		t.Fatalf("expected the newer collector token totals, got %d", codex.TotalTokens)
+	}
+	if !got.TokenUsageReady {
+		t.Fatalf("expected the complete collector history to mark token usage ready: %#v", got)
+	}
+}
+
 func TestStaleUsageSnapshotNeverPresentsUnknownPercentagesAsRealZero(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
