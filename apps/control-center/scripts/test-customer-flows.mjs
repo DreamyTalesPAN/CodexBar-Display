@@ -3893,6 +3893,7 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     enabled: false,
     timeoutMinutes: 10,
     brightnessPercent: 20,
+    screensaverPath: "/themes/s/night.json",
   });
   await clickNavigation(page, "Overview");
   await clickNavigation(page, "Settings");
