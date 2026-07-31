@@ -38,6 +38,15 @@
       "bytes": 18436
     },
     {
+      "id": "reset-countdown",
+      "title": "Reset Countdown",
+      "usage": "screensaver",
+      "themeRev": 1,
+      "downloadAsset": "vibetv-theme-reset-countdown.zip",
+      "sha256": "696c0204cc3b950940d1c32fcaae16ae936f8cd278b242591e3f3311b0cdd07c",
+      "bytes": 978
+    },
+    {
       "id": "synthwave",
       "title": "Synthwave",
       "usage": "live",

@@ -1,0 +1,25 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "reset-countdown",
+  "name": "Reset Countdown",
+  "version": "1.0.0",
+  "minFirmware": "1.0.40",
+  "usage": "screensaver",
+  "themeSpec": {
+    "path": "/themes/s/reset-1-39352d.json",
+    "file": "theme.json",
+    "bytes": 424,
+    "sha256": "39352d37f677b82ed6718de3e3788747486812919babe0fd28234b4423a38eda",
+    "contentType": "application/json"
+  },
+  "assets": [
+    {
+      "path": "/themes/s/rc-orbit.cba",
+      "file": "assets/rc-orbit.cba",
+      "bytes": 597,
+      "sha256": "ffcf66a6a53e17d11b750ce010ea5f7fd15c9073d22bbbf1848072de07b48648",
+      "contentType": "text/plain"
+    }
+  ]
+}
