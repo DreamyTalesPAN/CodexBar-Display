@@ -242,7 +242,9 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 }
 
 func providerSetupFailureMustWin(status string) bool {
-	return status == codexbar.ProviderAuthRequired || status == codexbar.ProviderNotConfigured
+	return status == codexbar.ProviderAuthRequired ||
+		status == codexbar.ProviderNotConfigured ||
+		status == codexbar.ProviderPermissionRequired
 }
 
 func reconcileProviderSetupWithTokenEvidence(setup codexbar.ProviderSetup, ready []codexbar.ProviderReadiness, now time.Time) codexbar.ProviderSetup {
