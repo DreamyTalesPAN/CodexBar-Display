@@ -2,6 +2,7 @@ package codexbar
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
 	"os"
@@ -44,10 +45,9 @@ func TestParseProviderPayloadPreservesKnownLaneWhenOtherLaneIsUnknown(t *testing
 			knownPercent:      17,
 		},
 		{
-			name:               "explicit unknown primary",
-			raw:                `[{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":0,"usageKnown":false},"secondary":{"usedPercent":57},"extra":[{"id":"codex-spark-weekly","label":"Codex Spark Weekly","usedPercent":12}]}}]`,
-			sessionUnavailable: true,
-			knownPercent:       57,
+			name:         "explicit unknown primary",
+			raw:          `[{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":0,"usageKnown":false},"secondary":{"usedPercent":57},"extra":[{"id":"codex-spark-weekly","label":"Codex Spark Weekly","usedPercent":12}]}}]`,
+			knownPercent: 57,
 		},
 	}
 	for _, test := range tests {
@@ -273,6 +273,105 @@ func TestParseProviderPayloadReadsExtraRateWindows(t *testing.T) {
 	}
 }
 
+func TestParseProviderPayloadTreatsNamedOnlyUsageWindowsAsAvailable(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		id   string
+	}{
+		{
+			name: "tertiary",
+			raw:  `{"provider":"codex","usage":{"tertiary":{"usedPercent":42,"resetSecs":300}}}`,
+			id:   "tertiary",
+		},
+		{
+			name: "extra rate window",
+			raw:  `{"provider":"codex","usage":{"extraRateWindows":[{"id":"spark-weekly","label":"Spark weekly","usedPercent":21,"resetSecs":600}]}}`,
+			id:   "spark-weekly",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(tt.raw), &payload); err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := parseProviderPayload(payload)
+			if err != nil {
+				t.Fatalf("parseProviderPayload failed: %v", err)
+			}
+			frame := parsed.Frame
+			if frame.UsageUnavailable || frame.SessionUnavailable || !frame.WeeklyUnavailable {
+				t.Fatalf("named-only window must be available with one legacy lane: %+v", frame)
+			}
+			if len(frame.UsageWindows) != 1 || frame.UsageWindows[0].ID != tt.id || frame.Session != frame.UsageWindows[0].Percent {
+				t.Fatalf("expected the named window to be preserved and projected, got %+v", frame)
+			}
+		})
+	}
+}
+
+func TestParseProviderPayloadKeepsUnknownNamedOnlyUsageUnavailable(t *testing.T) {
+	parsed, err := parseProviderPayload(map[string]any{
+		"provider": "codex",
+		"usage": map[string]any{
+			"extraRateWindows": []any{map[string]any{
+				"id":          "unknown-percent",
+				"label":       "Unknown percent",
+				"usageKnown":  false,
+				"usedPercent": 21,
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("parseProviderPayload failed: %v", err)
+	}
+	if !parsed.Frame.UsageUnavailable || len(parsed.Frame.UsageWindows) != 0 {
+		t.Fatalf("unknown named-only window must remain unavailable, got %+v", parsed.Frame)
+	}
+}
+
+func TestParseUsageWindowKeepsPresentZeroPercent(t *testing.T) {
+	window, ok := parseUsageWindowMap(
+		map[string]any{"usedPercent": float64(0), "resetSecs": float64(0)},
+		"primary",
+		"Session",
+	)
+	if !ok || window.UsedPercent != 0 || window.ResetSec != 0 {
+		t.Fatalf("expected present zero-percent window, got ok=%t window=%+v", ok, window)
+	}
+}
+
+func TestParseProviderPayloadKeepsErroredCodexBodyUnavailable(t *testing.T) {
+	parsed, err := parseProviderPayload(map[string]any{
+		"provider": "codex",
+		"source":   "oauth",
+		"error": map[string]any{
+			"kind": "provider",
+			"message": `request failed body={
+				"rate_limit":{
+					"primary_window":{"used_percent":17,"reset_after_seconds":300},
+					"secondary_window":{"used_percent":31}
+				}
+			}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("parseProviderPayload failed: %v", err)
+	}
+	frame := parsed.Frame.Normalize()
+	if !frame.UsageUnavailable || !parsed.Stale {
+		t.Fatalf("errored Codex payload became available: %+v", parsed)
+	}
+	if frame.Session != 0 || frame.Weekly != 0 || len(frame.UsageWindows) != 0 {
+		t.Fatalf("errored Codex payload invented usage: %+v", frame)
+	}
+	if parsed.Source != "oauth" {
+		t.Fatalf("provider source changed: %q", parsed.Source)
+	}
+}
+
 func TestParseProviderPayloadReadsCodexDailyBreakdown(t *testing.T) {
 	raw := []byte(`[
 		{
@@ -454,6 +553,37 @@ func TestCheckMinimumVersionRejectsTooOldVersion(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "need >= 0.23") {
 		t.Fatalf("expected recovery-ready version error, got %v", err)
+	}
+}
+
+func TestCheckDashboardSnapshotVersionBoundary(t *testing.T) {
+	originalRunVersion := runVersionCommandFn
+	t.Cleanup(func() {
+		runVersionCommandFn = originalRunVersion
+	})
+
+	for _, test := range []struct {
+		version string
+		wantErr bool
+	}{
+		{version: "0.43.9", wantErr: true},
+		{version: "0.44.0", wantErr: false},
+	} {
+		t.Run(test.version, func(t *testing.T) {
+			runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+				return []byte("CodexBar " + test.version + "\n"), nil
+			}
+			err := CheckDashboardSnapshotVersion(context.Background(), "/opt/homebrew/bin/codexbar")
+			if test.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "dashboard snapshot API") || !strings.Contains(err.Error(), "need >= 0.44.0") {
+					t.Fatalf("expected dashboard snapshot API version error, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("dashboard snapshot API should be available: %v", err)
+			}
+		})
 	}
 }
 
@@ -994,172 +1124,7 @@ func TestProviderSelectionMatrix30Scenarios(t *testing.T) {
 	}
 }
 
-func TestNeedsCodexCLIPriorityFalseForExistingWebCodex(t *testing.T) {
-	all := []ParsedFrame{
-		{
-			Provider: "codex",
-			Source:   "openai-web",
-			Frame:    protocol.Frame{Provider: "codex", Label: "Codex"},
-		},
-	}
-
-	if needsCodexCLIPriority(all) {
-		t.Fatalf("expected no CLI priority when aggregate payload already contains codex")
-	}
-}
-
-func TestNeedsCodexCLIPriorityWhenCodexMissing(t *testing.T) {
-	all := []ParsedFrame{
-		{
-			Provider: "claude",
-			Source:   "web",
-			Frame:    protocol.Frame{Provider: "claude", Label: "Claude"},
-		},
-	}
-
-	if !needsCodexCLIPriority(all) {
-		t.Fatalf("expected CLI priority when codex provider missing")
-	}
-}
-
-func TestNeedsCodexCLIPriorityFalseWhenCodexAlreadyCLI(t *testing.T) {
-	all := []ParsedFrame{
-		{
-			Provider: "codex",
-			Source:   "codex-cli",
-			Frame:    protocol.Frame{Provider: "codex", Label: "Codex"},
-		},
-	}
-
-	if needsCodexCLIPriority(all) {
-		t.Fatalf("expected no CLI repair when codex already from CLI")
-	}
-}
-
-func TestRepairCodexFromCLKeepsWebFrameWhenCLIRepairFails(t *testing.T) {
-	originalRunUsageCommand := runUsageCommandFn
-	defer func() {
-		runUsageCommandFn = originalRunUsageCommand
-	}()
-
-	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return nil, errors.New("temporary codex cli failure")
-	}
-
-	all := []ParsedFrame{
-		{
-			Provider: "codex",
-			Source:   "openai-web",
-			Frame: protocol.Frame{
-				Provider: "codex",
-				Label:    "Codex",
-				Session:  0,
-				Weekly:   1,
-				ResetSec: 540000,
-			},
-		},
-	}
-
-	repaired := repairCodexFromCLI(context.Background(), 5*time.Second, "/opt/homebrew/bin/codexbar", all)
-	if repaired[0].Frame.Session != 0 || repaired[0].Frame.Weekly != 1 {
-		t.Fatalf("expected original web frame on CLI failure, got session=%d weekly=%d", repaired[0].Frame.Session, repaired[0].Frame.Weekly)
-	}
-}
-
-func TestRepairCodexFromCLIPreservesAggregateCodex(t *testing.T) {
-	originalRunUsageCommand := runUsageCommandFn
-	defer func() {
-		runUsageCommandFn = originalRunUsageCommand
-	}()
-
-	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":3,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":11}}}]`), nil
-	}
-
-	all := []ParsedFrame{
-		{
-			Provider: "codex",
-			Source:   "openai-web",
-			Frame: protocol.Frame{
-				Provider: "codex",
-				Label:    "Codex",
-				Session:  0,
-				Weekly:   1,
-				ResetSec: 540000,
-			},
-		},
-	}
-
-	repaired := repairCodexFromCLI(context.Background(), 5*time.Second, "/opt/homebrew/bin/codexbar", all)
-	if repaired[0].Frame.Session != 0 || repaired[0].Frame.Weekly != 1 {
-		t.Fatalf("expected aggregate codex frame to be preserved, got session=%d weekly=%d", repaired[0].Frame.Session, repaired[0].Frame.Weekly)
-	}
-}
-
-func TestRepairCodexFromCLIDoesNotReplaceAggregateCodex(t *testing.T) {
-	originalRunUsageCommand := runUsageCommandFn
-	defer func() {
-		runUsageCommandFn = originalRunUsageCommand
-	}()
-
-	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":2,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":10}}}]`), nil
-	}
-
-	all := []ParsedFrame{
-		{
-			Provider: "codex",
-			Source:   "openai-web",
-			Frame: protocol.Frame{
-				Provider: "codex",
-				Label:    "Codex",
-				Session:  0,
-				Weekly:   40,
-				ResetSec: 150 * 60 * 60,
-			},
-		},
-	}
-
-	repaired := repairCodexFromCLI(context.Background(), 5*time.Second, "/opt/homebrew/bin/codexbar", all)
-	if repaired[0].Frame.Weekly != 40 {
-		t.Fatalf("expected aggregate weekly to be preserved, got %d", repaired[0].Frame.Weekly)
-	}
-}
-
-func TestRepairCodexFromCLIAppendsCodexWhenMissing(t *testing.T) {
-	originalRunUsageCommand := runUsageCommandFn
-	defer func() {
-		runUsageCommandFn = originalRunUsageCommand
-	}()
-
-	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":7,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":13}}}]`), nil
-	}
-
-	all := []ParsedFrame{
-		{
-			Provider: "claude",
-			Source:   "web",
-			Frame: protocol.Frame{
-				Provider: "claude",
-				Label:    "Claude",
-				Session:  5,
-				Weekly:   9,
-				ResetSec: 3600,
-			},
-		},
-	}
-
-	repaired := repairCodexFromCLI(context.Background(), 5*time.Second, "/opt/homebrew/bin/codexbar", all)
-	if len(repaired) != 2 {
-		t.Fatalf("expected codex provider to be appended, got %d providers", len(repaired))
-	}
-	if providerKey(repaired[1]) != "codex" {
-		t.Fatalf("expected appended provider codex, got %q", providerKey(repaired[1]))
-	}
-}
-
-func TestFetchAllProvidersFallsBackToCodexCLIOnAggregateCommandFailure(t *testing.T) {
+func TestFetchAllProvidersDoesNotFallBackToCodexCLIOnAggregateCommandFailure(t *testing.T) {
 	stubSupportedCodexBarVersion(t)
 
 	originalRunUsageCommand := runUsageCommandFn
@@ -1168,10 +1133,12 @@ func TestFetchAllProvidersFallsBackToCodexCLIOnAggregateCommandFailure(t *testin
 	}()
 
 	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	var cliFallbackCalls int
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		argLine := strings.Join(args, " ")
 		if strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli") {
-			return []byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":7,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":13}}}]`), nil
+			cliFallbackCalls++
+			return nil, errors.New("codex cli fallback must not run")
 		}
 		if strings.Contains(argLine, "--web-timeout 8") {
 			return []byte("signal: killed"), errors.New("signal: killed")
@@ -1180,17 +1147,43 @@ func TestFetchAllProvidersFallsBackToCodexCLIOnAggregateCommandFailure(t *testin
 	}
 
 	parsed, err := FetchAllProviders(context.Background())
+	if err == nil {
+		t.Fatalf("expected aggregate failure without CLI fallback, got %#v", parsed)
+	}
+	if cliFallbackCalls != 0 {
+		t.Fatalf("expected no Codex CLI fallback calls, got %d", cliFallbackCalls)
+	}
+}
+
+func TestFetchAllProvidersDoesNotRunCostScanOnFastPath(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+
+	originalRunUsageCommand := runUsageCommandFn
+	originalRunCostCommand := runCostCommandFn
+	defer func() {
+		runUsageCommandFn = originalRunUsageCommand
+		runCostCommandFn = originalRunCostCommand
+	}()
+
+	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		argLine := strings.Join(args, " ")
+		if strings.Contains(argLine, "usage --json") {
+			return []byte(`[{"provider":"codex","source":"local","usage":{"primary":{"usedPercent":11},"secondary":{"usedPercent":22}}}]`), nil
+		}
+		return nil, errors.New("unexpected command")
+	}
+	runCostCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		t.Fatal("fast provider usage path must not run codexbar cost --json")
+		return nil, nil
+	}
+
+	parsed, err := FetchAllProviders(context.Background())
 	if err != nil {
-		t.Fatalf("expected CLI fallback to succeed, got %v", err)
+		t.Fatalf("fetch all providers: %v", err)
 	}
-	if len(parsed) != 1 {
-		t.Fatalf("expected single fallback provider, got %d", len(parsed))
-	}
-	if providerKey(parsed[0]) != "codex" {
-		t.Fatalf("expected fallback provider codex, got %q", providerKey(parsed[0]))
-	}
-	if parsed[0].Frame.Session != 7 || parsed[0].Frame.Weekly != 13 {
-		t.Fatalf("expected fallback session=7 weekly=13, got session=%d weekly=%d", parsed[0].Frame.Session, parsed[0].Frame.Weekly)
+	if len(parsed) != 1 || parsed[0].Frame.Session != 11 || parsed[0].Frame.TotalTokens != 0 {
+		t.Fatalf("expected fast usage without token totals, got %#v", parsed)
 	}
 }
 
@@ -1268,6 +1261,7 @@ func TestFetchAllProvidersDoesNotRetryByStartingCodexBarApp(t *testing.T) {
 
 	t.Setenv("CODEXBAR_BIN", "/bin/sh")
 	var aggregateCalls int
+	var cliFallbackCalls int
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		argLine := strings.Join(args, " ")
 		if strings.Contains(argLine, "--web-timeout 8") {
@@ -1275,6 +1269,7 @@ func TestFetchAllProvidersDoesNotRetryByStartingCodexBarApp(t *testing.T) {
 			return []byte("dashboard data not found"), errors.New("exit status 1")
 		}
 		if strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli") {
+			cliFallbackCalls++
 			return nil, errors.New("codex cli unavailable")
 		}
 		return nil, errors.New("unexpected command")
@@ -1282,14 +1277,17 @@ func TestFetchAllProvidersDoesNotRetryByStartingCodexBarApp(t *testing.T) {
 
 	_, err := FetchAllProviders(context.Background())
 	if err == nil {
-		t.Fatalf("expected fetch to fail when aggregate and CLI fallback fail")
+		t.Fatalf("expected fetch to fail when aggregate usage fails")
 	}
 	if aggregateCalls != 1 {
 		t.Fatalf("expected exactly one aggregate usage attempt, got %d", aggregateCalls)
 	}
+	if cliFallbackCalls != 0 {
+		t.Fatalf("expected no Codex CLI fallback calls, got %d", cliFallbackCalls)
+	}
 }
 
-func TestFetchAllProvidersReturnsErrorWhenAggregateAndCLIFallbackFail(t *testing.T) {
+func TestFetchAllProvidersReturnsErrorWhenAggregateFails(t *testing.T) {
 	stubSupportedCodexBarVersion(t)
 
 	originalRunUsageCommand := runUsageCommandFn
@@ -1298,10 +1296,12 @@ func TestFetchAllProvidersReturnsErrorWhenAggregateAndCLIFallbackFail(t *testing
 	}()
 
 	t.Setenv("CODEXBAR_BIN", "/bin/sh")
+	var cliFallbackCalls int
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		argLine := strings.Join(args, " ")
 		if strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli") {
-			return nil, errors.New("codex cli crashed")
+			cliFallbackCalls++
+			return nil, errors.New("codex cli fallback must not run")
 		}
 		if strings.Contains(argLine, "--web-timeout 8") {
 			return []byte("signal: killed"), errors.New("signal: killed")
@@ -1311,45 +1311,10 @@ func TestFetchAllProvidersReturnsErrorWhenAggregateAndCLIFallbackFail(t *testing
 
 	_, err := FetchAllProviders(context.Background())
 	if err == nil {
-		t.Fatalf("expected fetch-all failure when no fallback succeeds")
+		t.Fatalf("expected fetch-all failure")
 	}
-}
-
-func TestFetchAllProvidersUsesDetachedContextForCLIFallback(t *testing.T) {
-	stubSupportedCodexBarVersion(t)
-
-	originalRunUsageCommand := runUsageCommandFn
-	defer func() {
-		runUsageCommandFn = originalRunUsageCommand
-	}()
-
-	t.Setenv("CODEXBAR_BIN", "/bin/sh")
-	cliCtxAlive := false
-
-	runUsageCommandFn = func(ctx context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
-		argLine := strings.Join(args, " ")
-		if strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli") {
-			cliCtxAlive = ctx.Err() == nil
-			return []byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":2,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":5}}}]`), nil
-		}
-		if strings.Contains(argLine, "--web-timeout 8") {
-			return []byte("signal: killed"), errors.New("signal: killed")
-		}
-		return nil, errors.New("unexpected command")
-	}
-
-	expiredCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
-	defer cancel()
-
-	parsed, err := FetchAllProviders(expiredCtx)
-	if err != nil {
-		t.Fatalf("expected CLI fallback to recover from expired parent context, got %v", err)
-	}
-	if !cliCtxAlive {
-		t.Fatalf("expected detached fallback context with remaining budget")
-	}
-	if len(parsed) != 1 || providerKey(parsed[0]) != "codex" {
-		t.Fatalf("expected codex fallback frame, got %#v", parsed)
+	if cliFallbackCalls != 0 {
+		t.Fatalf("expected no Codex CLI fallback calls, got %d", cliFallbackCalls)
 	}
 }
 
@@ -1472,31 +1437,7 @@ func TestLiveAntigravityAutoUsageMatchesCompanionNormalization(t *testing.T) {
 	)
 }
 
-func TestFallbackContextDetachedWhenParentExpired(t *testing.T) {
-	expiredCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
-	defer cancel()
-
-	fallbackCtx, fallbackCancel := fallbackContext(expiredCtx)
-	defer fallbackCancel()
-
-	if fallbackCtx.Err() != nil {
-		t.Fatalf("expected detached fallback context to be alive")
-	}
-}
-
-func TestFallbackContextReusesParentWhenBudgetIsSufficient(t *testing.T) {
-	parentCtx, parentCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer parentCancel()
-
-	fallbackCtx, fallbackCancel := fallbackContext(parentCtx)
-	defer fallbackCancel()
-
-	if fallbackCtx != parentCtx {
-		t.Fatalf("expected fallback context to reuse parent context")
-	}
-}
-
-func TestFetchProviderPrefersCodexCLI(t *testing.T) {
+func TestFetchProviderUsesProviderScopedUsageForCodex(t *testing.T) {
 	stubSupportedCodexBarVersion(t)
 
 	originalRunUsageCommand := runUsageCommandFn
@@ -1505,13 +1446,16 @@ func TestFetchProviderPrefersCodexCLI(t *testing.T) {
 	}()
 
 	t.Setenv("CODEXBAR_BIN", "/bin/sh")
-	cliCalled := false
+	var cliFallbackCalls int
 
 	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
 		argLine := strings.Join(args, " ")
 		if strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--source cli") {
-			cliCalled = true
-			return []byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":11,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":23}}}]`), nil
+			cliFallbackCalls++
+			return nil, errors.New("codex cli fallback must not run")
+		}
+		if strings.Contains(argLine, "--provider codex") && strings.Contains(argLine, "--web-timeout 3") {
+			return []byte(`[{"provider":"codex","source":"web","usage":{"primary":{"usedPercent":11,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":23}}}]`), nil
 		}
 		return nil, errors.New("unexpected command")
 	}
@@ -1520,8 +1464,8 @@ func TestFetchProviderPrefersCodexCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected codex provider fetch success, got %v", err)
 	}
-	if !cliCalled {
-		t.Fatalf("expected codex CLI command path")
+	if cliFallbackCalls != 0 {
+		t.Fatalf("expected no Codex CLI fallback calls, got %d", cliFallbackCalls)
 	}
 	if providerKey(parsed) != "codex" {
 		t.Fatalf("expected codex provider, got %q", providerKey(parsed))
@@ -1535,8 +1479,10 @@ func TestFetchProviderUsesProviderScopedUsage(t *testing.T) {
 	stubSupportedCodexBarVersion(t)
 
 	originalRunUsageCommand := runUsageCommandFn
+	originalRunCostCommand := runCostCommandFn
 	defer func() {
 		runUsageCommandFn = originalRunUsageCommand
+		runCostCommandFn = originalRunCostCommand
 	}()
 
 	t.Setenv("CODEXBAR_BIN", "/bin/sh")
@@ -1547,6 +1493,10 @@ func TestFetchProviderUsesProviderScopedUsage(t *testing.T) {
 			return []byte(`[{"provider":"claude","source":"web","usage":{"primary":{"usedPercent":17,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":31}}}]`), nil
 		}
 		return nil, errors.New("unexpected command")
+	}
+	runCostCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		t.Fatal("provider-scoped fast usage path must not run codexbar cost --json")
+		return nil, nil
 	}
 
 	parsed, err := FetchProvider(context.Background(), "claude")
@@ -1646,28 +1596,39 @@ func testSignal(at time.Time, confidence activitySignalConfidence, evidence stri
 	}
 }
 
-func TestParseUsageJSONTagsResetSourceWithProviderAndWindow(t *testing.T) {
-	primary, err := parseUsageJSON([]byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":1,"resetsAt":"2099-01-01T00:00:00Z"},"secondary":{"usedPercent":28}}}]`))
-	if err != nil {
-		t.Fatalf("parseUsageJSON failed: %v", err)
-	}
-	if primary.Frame.ResetSource != "codex:primary" {
-		t.Fatalf("expected codex:primary reset source, got %q", primary.Frame.ResetSource)
-	}
+func TestParseProviderPayloadBuildsOrderedUsageWindows(t *testing.T) {
+	raw := []byte(`[
+		{
+			"provider":"antigravity",
+			"usage":{
+				"primary":{"usedPercent":11,"resetSecs":100},
+				"secondary":{"usedPercent":22,"resetSecs":200},
+				"extraRateWindows":[
+					{"id":"gemini-weekly","label":"Gemini weekly","usedPercent":33,"resetSecs":300},
+					{"id":"claude-gpt-weekly","label":"Claude/GPT weekly","usedPercent":44,"resetSecs":400}
+				]
+			}
+		}
+	]`)
 
-	secondary, err := parseUsageJSON([]byte(`[{"provider":"claude","source":"claude-cli","usage":{"primary":{"usedPercent":1},"secondary":{"usedPercent":28,"resetsAt":"2099-01-01T00:00:00Z"}}}]`))
+	parsed, err := parseAllProviders(raw)
 	if err != nil {
-		t.Fatalf("parseUsageJSON failed: %v", err)
+		t.Fatalf("parseAllProviders failed: %v", err)
 	}
-	if secondary.Frame.ResetSource != "claude:secondary" {
-		t.Fatalf("expected claude:secondary reset source, got %q", secondary.Frame.ResetSource)
+	// The one-shot CLI path still uses structural primary/secondary labels.
+	// #254 replaces these transitional labels with CodexBar dashboard labels
+	// and generic deduplication; this test only locks ordered window transport.
+	windows := parsed[0].Frame.UsageWindows
+	if len(windows) != 4 {
+		t.Fatalf("expected complete ordered windows, got %+v", windows)
 	}
-
-	none, err := parseUsageJSON([]byte(`[{"provider":"codex","source":"codex-cli","usage":{"primary":{"usedPercent":1},"secondary":{"usedPercent":28}}}]`))
-	if err != nil {
-		t.Fatalf("parseUsageJSON failed: %v", err)
+	if windows[0].Label != "Session" || windows[0].Percent != 11 || windows[0].ResetSec != 100 {
+		t.Fatalf("expected first valid source window, got %+v", windows[0])
 	}
-	if none.Frame.ResetSource != "" {
-		t.Fatalf("expected no reset source without a deadline, got %q", none.Frame.ResetSource)
+	if windows[3].Label != "Claude/GPT weekly" || windows[3].Percent != 44 || windows[3].ResetSec != 400 {
+		t.Fatalf("expected overflow source window to be preserved, got %+v", windows[3])
+	}
+	if parsed[0].Frame.Session != 11 || parsed[0].Frame.Weekly != 22 || parsed[0].Frame.ResetSec != 100 {
+		t.Fatalf("expected legacy aliases to mirror the first two windows, got %+v", parsed[0].Frame)
 	}
 }

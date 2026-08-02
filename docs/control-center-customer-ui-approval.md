@@ -5,6 +5,86 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-07-31 — Token total counts up while its history is still growing
+
+- User approval: After the local preview proved that CodexBar warms its cost
+  scan incrementally and reports every intermediate result as a success, the
+  user explicitly required that customers see a number quickly instead of
+  waiting minutes for the total, and specified the exact behavior: show the
+  number right away with a badge such as `still updating`, and remove that badge
+  once the same number was reported twice in a row. In the local preview, the
+  user explicitly moved that badge to the centered space above the summary
+  heading.
+- Approved customer-visible result: The `Total tokens in the last 30 days`
+  section shows the current total as soon as any token history exists. While
+  that history is still growing, a centered `Still counting` badge with a
+  spinner sits above the summary heading, and the number rises with each
+  completed scan until it stops changing. Once two consecutive scans report
+  the same history, the badge disappears and the total stands. The existing
+  full-height `Loading usage`
+  placeholder remains only while no token history exists at all. No other copy,
+  control, or layout changed; the provider list and its refresh action are
+  untouched. This supersedes the 2026-07-27 decision only for the headline
+  total, which may now be shown before the history is final because it is
+  explicitly labeled as still counting.
+- Approved files: `usage-screen.tsx`, `usage-screen.test.tsx`,
+  `control-center-types.ts`, the Companion collector convergence rule and its
+  usage response field, their Go regression tests, and this approval record.
+
+## 2026-07-27 — Reachable VibeTV stays connected while usage loads
+
+- User approval: While testing preview 99.0.109, the user showed that a reachable VibeTV waiting for fresh usage was incorrectly presented as disconnected. Earlier in the same customer test, the user explicitly required that no incomplete preview appear before usage is ready and that this state use an understandable loading message.
+- Approved customer-visible result: A reachable and paired VibeTV remains `Connected` while its display waits for fresh usage. Overview and the device card no longer say `Not connected` or ask the customer to reconnect. The display and preview show `Waiting for usage`, with the existing expectation that this can take up to 30 seconds. A genuinely unreachable or rejected device keeps the existing reconnect state.
+- Approved files: Overview status semantics, live VibeTV preview loading state, their shared device-state helper and regression tests, and this approval record.
+
+## 2026-07-27 — Dynamic text sizing for provider usage windows
+
+- User approval: After showing that `Weekly used` and `Codex Spark Weekly used` were readable but unnecessarily small on the physical VibeTV, the user explicitly requested that theme text dynamically use the available text-box space like existing fitted status text.
+- Approved customer-visible result: Each bundled theme defines the largest label size its existing lane can hold and uses the firmware's shared shrink-to-fit behavior for longer provider window names. Short names render larger, long names shrink only as far as necessary, and the Mac previews mirror the same integer font-size choice.
+- Approved files: All five current theme-pack revisions and immutable release metadata, ThemeSpec fit schema and Theme Studio round-trip, Mac ThemeSpec preview sizing, release build preservation, customer-flow and unit assertions, and this approval log.
+
+## 2026-07-27 — Provider labels remain readable in WebKit
+
+- User approval: The user showed that provider labels were unreadable in the installed Mac App and explicitly instructed Codex to fix the problem locally for every bundled theme before pushing.
+- Approved customer-visible result: Every ThemeSpec text element uses a WebKit-stable alphabetic baseline with an explicit ascent inside the existing firmware clip box. Provider and usage-window labels remain readable in Overview, Theme Library, and Theme Studio across all bundled themes without provider- or theme-specific offsets.
+- Approved files: Live VibeTV ThemeSpec preview renderer, its unit and vector-golden assertions, and this approval log.
+
+## 2026-07-27 — ThemeSpec text uses the VibeTV top edge
+
+- User approval: The user compared the installed Synthwave theme on the physical VibeTV with the Mac App preview and explicitly reported that `SESSION used` and `WEEKLY used` render too high only in the preview.
+- Approved customer-visible result: ThemeSpec text uses its `y` coordinate as the top edge in every Mac preview, matching the VibeTV renderer without theme- or provider-specific offsets. Synthwave labels sit at the same vertical positions as the physical display; other approved preview behavior is unchanged.
+- Approved files: Live VibeTV ThemeSpec preview renderer, its unit and vector-golden assertions, and this approval log.
+
+## 2026-07-27 — Customer-safe internal preview wording
+
+- User approval: The user explicitly instructed Codex to continue after the KISS implementation and review.
+- Approved customer-visible result: No customer-visible change. The live preview test describes the backward-compatible render-cache fallback without exposing the internal Companion service name.
+- Approved files: Live VibeTV preview unit test and this approval log.
+
+## 2026-07-27 — KISS refactor preserves approved previews
+
+- User approval: The user explicitly requested a neutral KISS review and instructed that its findings be implemented, with the goal of substantially less code.
+- Approved customer-visible result: The already approved exact live previews and neutral Theme Library examples remain visually unchanged. The implementation uses one generated render-pack source, a direct revision cache, and deterministic unit coverage instead of a second proxied browser app.
+- Approved files: Hosted render-pack route, Live VibeTV preview resolution, Theme Library preview assertions, Companion revision cache, and their tests.
+
+## 2026-07-27 — Exact live previews and neutral catalog examples
+
+- User approval: After the preview failure and proposed separation of live, catalog, and editor previews were explained, the user explicitly instructed `rest so umsetzen` and clarified that Custom Themes must retain the preview behavior of the older Mac App while large catalog previews may use neutral example data.
+- Approved customer-visible result: Overview renders the exact installed published or Custom Theme revision with the latest real VibeTV frame. Known legacy revisions remain previewable. A disconnected VibeTV shows a clear paused-live state instead of loading forever. Theme Library thumbnails and the large preview use short neutral `Session`/`Weekly` example values; only the large preview labels them as example data.
+- Approved files: Live VibeTV preview, Theme Library preview, revisioned render-pack storage and serving, local Mac App theme bundle, and their unit, Companion, customer-flow, and visual assertions.
+
+## 2026-07-27 — Theme releases stay compatible by app generation
+
+- User approval: After the exact old-app/old-firmware and new-app/new-firmware theme release matrix was explained, the user explicitly instructed `dann bau das so` in the Codex task on 2026-07-27.
+- Approved customer-visible result: An older Mac App keeps its bundled legacy themes. The current Mac App uses the matching current theme generation, upgrades firmware before refreshing the active theme, and never exposes an incompatible current theme pack to an older app generation. Shopify presentation remains unchanged; matching GitHub catalog metadata supplies the generation-correct install package and requirements. No new customer controls or technical compatibility choices appear.
+- Approved files: Theme catalog selection and merge logic, the local Mac App theme bundle, immutable theme release metadata, and their unit, customer-flow, and release assertions.
+
+## 2026-07-27 — One update keeps the active theme compatible
+
+- User approval: The user explicitly required in the Codex task on 2026-07-27 that customers with an older VibeTV update everything needed for the new usage display.
+- Approved customer-visible result: The existing single `Update` action updates the Mac App first when needed, then VibeTV firmware, and automatically refreshes the active catalog theme after a capability upgrade. If only that final theme refresh fails, the existing `Try again` action repeats the theme step without flashing firmware again. Theme Library shows the existing `Update Needed` state whenever a theme requires a capability the connected VibeTV does not advertise. No technical substep or provider-specific choice appears.
+- Approved files: `control-center-app.tsx`, theme catalog metadata, the release firmware target, and their customer-flow and release-gate assertions.
+
 ## 2026-07-15 — One update action
 
 - User approval: Explicitly approved by the user in the Codex task on 2026-07-15.
@@ -313,6 +393,53 @@ issue scope, or release permission never implies UI permission.
   endpoint rediscovery, its macOS contract test, and the matching architecture
   documentation.
 
+## 2026-07-24 — Dynamic usage lanes in Theme Studio
+
+- User approval: The user reviewed the exact final `1180×820` Theme Studio
+  screenshot in the Codex task on 2026-07-24 and explicitly approved it with
+  `freigegeben`.
+- Approved customer-visible result: Theme Studio keeps the approved immersive
+  editor and adds one `Usage lane` selector to the Inspector. An element can be
+  `Always visible`, `Hide with slot 1`, or `Hide with slot 2`; the approved
+  screenshot shows the first usage progress bar selected with
+  `Hide with slot 1`. The preview uses the dynamic `Weekly` and
+  `Codex Spark Weekly` labels and keeps both lanes inside the 240×240 display.
+- Approved files: `primitive-inspector.tsx`, Theme Studio serialization,
+  geometry and capability validation, `live-vibetv-preview.tsx`, the display
+  frame route, and their unit and customer-flow assertions.
+
+## 2026-07-24 — Provider-neutral ThemeSpec label clipping
+
+- User approval: While testing the signed PR 260 preview against the real
+  VibeTV, the user explicitly required the Mac App and VibeTV label rendering
+  to be consistent, then rejected a Codex-only hotfix and required a scalable
+  solution for all providers.
+- Approved customer-visible result: Every provider label in a width-bounded
+  ThemeSpec text element stays inside its lane and uses the same overflow
+  alignment and clipping as the VibeTV firmware. In the connected
+  `claude-creature` Overview preview, the second lane visually shows
+  `Codex Spark` like the physical VibeTV instead of allowing the full raw
+  `Codex Spark Weekly` label to overlap the first lane or clipping it earlier
+  because the Mac uses different font widths. The complete raw label remains
+  available to usage data and accessibility text.
+- Approved files: `live-vibetv-preview.tsx`, its unit tests, and this approval
+  record.
+
+## 2026-07-24 — Firmware-font provider label parity
+
+- User approval: During the signed PR 260 hardware test, the user explicitly
+  required the Mac App label to show `Codex Spark` exactly like the connected
+  VibeTV and required the solution to scale to every provider rather than
+  special-casing Codex.
+- Approved customer-visible result: Width-bounded ThemeSpec text uses the
+  VibeTV font widths in every provider preview. The connected
+  `claude-creature` Overview therefore shows exactly `Codex Spark`, neither the
+  overlapping raw `Codex Spark Weekly` nor an earlier browser-only truncation.
+  The complete raw provider label remains unchanged in usage data and
+  accessibility text.
+- Approved files: `live-vibetv-preview.tsx`, its unit tests, and this approval
+  record.
+
 ## 2026-07-24 — Immediate provider activation with truthful pending usage
 
 - User approval: In the delegated issue #247 task, the user explicitly required
@@ -424,111 +551,79 @@ issue scope, or release permission never implies UI permission.
   `provider-setup-card.tsx`, `usage-screen.tsx`, `usage-screen.test.tsx`, and
   the matching customer-flow assertions in `test-customer-flows.mjs`.
 
-## 2026-07-29 — Screensaver controls in Settings Display
+## 2026-07-27 — Overview waits for complete usage
 
-- User approval: The user recorded the approved visible result for issue #288 on
-  2026-07-29 in the issue itself and required the approval entry to land in the
-  implementing change instead of ahead of it.
-- Approved customer-visible result: The `Display` card gains three controls below
-  `Brightness`: `Show screensaver` (on/off), `Show after` with the choices 5, 10,
-  15, 30 and 60 minutes and 10 minutes as the default, and
-  `Brightness in screensaver`. `Show after` and `Brightness in screensaver` stay
-  collapsed while `Show screensaver` is off. On a VibeTV that does not support a
-  screensaver the whole block is hidden, not disabled. The card description
-  changes from `Adjust the screen brightness of the connected VibeTV.` to
-  `Adjust the screen of the connected VibeTV.`. The three controls save on
-  change, so no extra save action appears; `Save brightness` keeps owning the
-  normal brightness, which stays a separate value.
-- Approved files: `settings-screen.tsx`, `settings-screen.test.tsx`,
-  `control-center-app.tsx`, `control-center-types.ts`, the matching
-  customer-flow assertions in `test-customer-flows.mjs`, and the Mac App
-  standby settings and capability pass-through with its tests.
+- User approval: While testing the signed PR 260 preview with the connected
+  VibeTV, the user explicitly required a KISS solution that keeps the existing
+  setup state visible until usage is ready and only shows Overview for the
+  first time once its preview is complete.
+- Approved customer-visible result: A connected and paired VibeTV without its
+  first real usage frame stays on `Connecting to VibeTV` with
+  `Waiting for usage…`. Neither the Mac App nor VibeTV shows a provider-only,
+  empty theme preview. The first Overview already contains the real usage
+  lanes. Later temporary reconnects keep the already opened Control Center
+  visible.
+- Approved files: `control-center-app.tsx`, `overview-screen.tsx`,
+  `live-vibetv-preview.tsx`, its unit tests, the Companion daemon frame gate and
+  its tests, the setup-flow principles, and the matching customer-flow
+  assertions in `test-customer-flows.mjs`.
 
-## 2026-07-29 — Deliberate save for the screensaver brightness
+## 2026-07-27 — Matching development firmware can install themes
 
-- User approval: Asked on 2026-07-29 whether the new standby controls should save
-  on change, because the approval above covered the controls but not how they are
-  saved, the user chose a deliberate save action for the screensaver brightness.
-  This supersedes the "three controls save on change" sentence in the entry above.
-- Approved customer-visible result: `Show screensaver` and `Show after` keep
-  saving on change. `Brightness in screensaver` no longer writes while the slider
-  moves; it gets its own `Save screensaver brightness` action below the slider,
-  which shows `Working...` while the write runs. Both brightness sliders in the
-  `Display` card now behave the same way, and `Save brightness` still owns the
-  normal brightness.
-- Approved files: `settings-screen.tsx`, `settings-screen.test.tsx`, and the
-  matching customer-flow assertions in `test-customer-flows.mjs`.
+- User approval: The user reported that the connected VibeTV already has the
+  required firmware and must therefore allow the new themes to be installed.
+- Approved customer-visible result: A VibeTV advertising the required
+  capabilities on a matching development firmware such as
+  `1.0.40-dev.a5f52c7` shows an enabled `Install` action for themes requiring
+  `1.0.40`. Lower firmware and devices missing a required capability remain
+  blocked with `Update Needed`.
+- Approved files: `theme-library-screen.tsx`, the matching customer-flow
+  assertion in `test-customer-flows.mjs`, and this approval record.
 
-## 2026-07-31 — One Theme Studio for themes and screensavers
+## 2026-07-27 — Setup screen uses only the VibeTV logo
 
-- User approval: After reviewing the proposed #286-#289 screensaver work, the
-  user explicitly ordered all four issues to be implemented with the smallest
-  possible solution and specifically required reusing one Theme Studio instead
-  of adding parallel UI or state.
-- Approved customer-visible result: Theme Studio remains the single editor. In
-  screensaver mode it shows a `Screensaver` status, displays the tighter
-  `2 KB` file budget, and uses screensaver wording while sending the saved pack.
-  No motion warning, motion block, state-asset control, second editor, or new
-  binding appears. Theme mode remains unchanged.
-- Approved files: `theme-studio-screen.tsx`, Theme Studio pack, asset, storage,
-  and editor-state modules, the existing custom-install adapter, their focused
-  tests, and this approval record.
+- User approval: While testing preview 99.0.109, the user explicitly required
+  removing the unreadable gray `Control Center` tagline below the VibeTV logo
+  on the setup screen.
+- Approved customer-visible result: Setup and loading screens show only the
+  VibeTV logo. The sidebar branding remains unchanged.
+- Approved files: `control-center-brand.tsx`, `setup-status-screen.tsx`, its
+  unit test, and this approval record.
 
-## 2026-07-31 — Appearance sidebar with Themes and Screensavers
+## 2026-07-27 — First usage wait sets a time expectation
 
-- User approval: The user explicitly corrected the issue proposal and required
-  `Appearance` to be a sidebar parent with two indented sidebar children,
-  `Themes` and `Screensavers`, with no switch or tabs in the content area. The
-  user approved the remaining proposed behavior and ordered issues #286-#289
-  to be implemented with the smallest possible solution.
-- Approved customer-visible result: `Theme Library` is renamed to `Appearance`
-  in the sidebar. Directly below it, both desktop and mobile navigation show the
-  indented entries `Themes` and `Screensavers`. `Themes` keeps the existing
-  library. `Screensavers` uses the same library layout filtered to screensaver
-  packs, shows `Create Screensaver`, and has a clear `No screensavers yet`
-  state. The content area has no second tab control. Settings shows `Choose
-  screensaver` instead of an unusable standby switch until a screensaver has
-  been selected; that action opens Appearance > Screensavers.
-- Approved files: `control-center-shell.tsx`, `control-center-app.tsx`,
-  `control-center-types.ts`, `settings-screen.tsx`,
-  `theme-library-screen.tsx`, theme catalog usage mapping, their focused tests,
-  and this approval record.
+- User approval: While testing the setup screen, the user explicitly required
+  the first-usage message to tell customers how long the wait can take.
+- Approved customer-visible result: The waiting screen says that loading the
+  first usage data can take up to 30 seconds, matching the collector retry
+  cadence.
+- Approved files: `device-startup-screen.tsx`, its unit test, and this approval
+  record.
 
-## 2026-07-31 — Failed screensaver save rollback
+## 2026-07-31 — PR #260 exact Control Center preview
 
-- User approval: The user approved the proposed issue #288 rollback with `rest
-  passt so` and instructed Codex to implement it.
-- Approved customer-visible result: A failed screensaver save restores the
-  previous value; a later settings read can show the current VibeTV value. No
-  copy, control, or layout changes.
-- Approved files: `control-center-app.tsx`, its customer-flow assertion, and
-  this approval record.
+- User approval: The user reviewed the Control Center preview for PR #260 at
+  commit `f16cc5a` and explicitly approved the exact visible result, including
+  its layout, copy, states, and interaction flows.
+- Approved customer-visible result: The exact customer-facing Control Center
+  result rendered by PR #260 at commit `f16cc5a`, including its current layout,
+  copy, screen states, and interaction flows. This approval does not cover any
+  later customer-visible change.
+- Approved files: All customer-facing Control Center files present in the
+  reviewed PR #260 preview at commit `f16cc5a`, plus this approval record.
 
-## 2026-07-31 — Screensaver install slot review fix
+## 2026-07-31 — PR #260 setup and post-update state fixes
 
-- User approval: During the final KISS review of issues #286-#288, the user
-  ordered the screensaver installation paths to be corrected with one `usage`
-  value as their single source of truth and requested published, custom, and
-  live regression coverage.
-- Approved customer-visible result: Published and custom screensavers install
-  into the VibeTV screensaver slot and keep screensaver selection and completion
-  wording. Existing themes continue to install into the live-theme slot. No new
-  control, setting, screen, or customer decision appears.
-- Approved files: `control-center-app.tsx`, `theme-library-screen.tsx`, theme
-  usage typing, their focused tests, and the matching customer-flow assertions.
-
-## 2026-07-31 — Collapsible Appearance navigation
-
-- User approval: After reviewing the implemented Appearance sidebar, the user
-  explicitly required `Themes` and `Screensavers` to remain hidden until
-  `Appearance` is clicked, requested the native shadcn behavior, and asked for
-  a quieter selected state without a filled button background.
-- Approved customer-visible result: `Appearance` uses the native shadcn
-  collapsible sidebar pattern. Its `Themes` and `Screensavers` children are
-  collapsed initially and appear after clicking `Appearance`; the native
-  chevron motion communicates the state. The selected child uses brighter,
-  semibold text without an active background fill. No custom component,
-  animation, color, or parallel navigation state is added.
-- Approved files: `control-center-shell.tsx`, its focused test, the matching
-  customer-flow assertions in `test-customer-flows.mjs`, and this approval
+- User approval: The user tested preview `99.0.144` against the real VibeTV,
+  clicked the existing `Update` action, and confirmed that the completed
+  firmware change to `1.0.39` worked. After that real-device test, the user
+  explicitly said the result fits and approved the UI.
+- Approved customer-visible result: After a firmware update, Control Center
+  evaluates the refreshed VibeTV and theme state, reports the successful
+  update normally, and does not show a stale `VibeTV needs attention` result.
+  During first-time setup, a failed WiFi connection remains on the required
+  WiFi setup screen even when a stored theme exists. No copy, layout, control,
+  or additional customer decision changes.
+- Approved files: `control-center-app.tsx`, the matching setup and firmware
+  regression assertions in `test-customer-flows.mjs`, and this approval
   record.

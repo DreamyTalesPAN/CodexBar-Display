@@ -19,4 +19,28 @@ describe("DeviceCandidateList", () => {
     expect(html.match(/data-slot="item"/g)).toHaveLength(count);
     expect(html.match(/>Connect<\/span>/g)).toHaveLength(count);
   });
+
+  it("shows selection progress only for the selected device", () => {
+    const html = renderToStaticMarkup(
+      <DeviceCandidateList
+        candidates={[
+          {
+            deviceId: "14799300",
+            target: "http://192.168.178.72",
+          },
+          {
+            deviceId: "5804508",
+            target: "http://192.168.178.94",
+          },
+        ]}
+        onSelect={vi.fn()}
+        selectingTarget="http://192.168.178.72"
+      />,
+    );
+
+    expect(html.match(/>Connecting<\/span>/g)).toHaveLength(1);
+    expect(html.match(/>Connect<\/span>/g)).toHaveLength(1);
+    expect(html.match(/data-slot="spinner"/g)).toHaveLength(1);
+    expect(html.match(/disabled=""/g)).toHaveLength(2);
+  });
 });

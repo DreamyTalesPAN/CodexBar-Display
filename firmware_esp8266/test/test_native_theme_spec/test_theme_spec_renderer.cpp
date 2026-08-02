@@ -438,6 +438,232 @@ void testUsageUnavailableKeepsThemeAndProgress() {
   TEST_ASSERT_EQUAL_STRING("Reset unavailable", reset);
 }
 
+void testUsageWindowOwnershipHidesCompleteMissingLane() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"usage-windows",
+    "rev":1,
+    "p":[
+      {"t":"tx","x":0,"y":0,"sl":1,"v":"{usageSlot1Label}"},
+      {"t":"r","x":0,"y":20,"w":100,"h":8,"sl":2,"c":"#FFFFFF"},
+      {"t":"p","x":0,"y":40,"w":100,"h":8,"sl":2,"b":"us2p"},
+      {"t":"tx","x":0,"y":60,"sl":2,"v":"{usageSlot2Label}"}
+    ]
+  })JSON";
+
+  FrameData frame;
+  frame.usageSlot1Label = "Weekly";
+  frame.usageSlot1Percent = 42;
+  frame.usageSlot1Available = true;
+
+  RecordingSink oneSlotSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, oneSlotSink));
+  TEST_ASSERT_EQUAL_UINT32(2, oneSlotSink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(oneSlotSink.commands[0].type));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(oneSlotSink.commands[1].type));
+  TEST_ASSERT_EQUAL_STRING("Weekly", oneSlotSink.commands[1].text.c_str());
+
+  frame.usageSlot2Label = "Codex Spark Weekly";
+  frame.usageSlot2Percent = 7;
+  frame.usageSlot2Available = true;
+  RecordingSink twoSlotSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, twoSlotSink));
+  TEST_ASSERT_EQUAL_UINT32(5, twoSlotSink.commands.size());
+}
+
+void testUsageWindowResetCountdownsTickIndependently() {
+  RuntimeState state;
+  state.hasFrame = true;
+  state.resetBaseMillis = 1000;
+  state.current.usageWindows[0].available = true;
+  state.current.usageWindows[0].resetSecs = 100;
+  state.current.usageWindows[1].available = true;
+  state.current.usageWindows[1].resetSecs = 200;
+
+  TEST_ASSERT_EQUAL_INT64(
+      40,
+      codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 0, 61000));
+  TEST_ASSERT_EQUAL_INT64(
+      140,
+      codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 1, 61000));
+  TEST_ASSERT_EQUAL_INT64(
+      0,
+      codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 0, 121000));
+  TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(40, 1));
+  TEST_ASSERT_TRUE(codexbar_display::core::RemainingMinuteBucketChanged(140, 3));
+  TEST_ASSERT_FALSE(codexbar_display::core::RemainingMinuteBucketChanged(139, 2));
+  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecUsesUsageWindowResetBinding(
+      String(R"JSON({"p":[{"t":"tx","v":"{usageSlot1Reset}"}]})JSON"), 0));
+  TEST_ASSERT_TRUE(codexbar_display::core::ThemeSpecUsesUsageWindowResetBinding(
+      String(R"JSON({"p":[{"t":"tx","v":"{us2r}"}]})JSON"), 1));
+}
+
+void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
+  std::string frameLine;
+  const auto appendEscapedText = [&frameLine](size_t decodedBytes, size_t variant) {
+    for (size_t j = 0; j < decodedBytes; ++j) {
+      if (variant == 0) {
+        frameLine += "\\\"";
+      } else if (variant == 1) {
+        frameLine += "\\\\";
+      } else if (j % 3 == 0) {
+        frameLine += "\\u0026";
+      } else if (j % 3 == 1) {
+        frameLine += "\\u003c";
+      } else {
+        frameLine += "\\u003e";
+      }
+    }
+  };
+  frameLine =
+      "{\"v\":2,\"provider\":\"";
+  appendEscapedText(codexbar_display::core::kProviderWireBytes, 2);
+  frameLine += "\",\"label\":\"";
+  appendEscapedText(codexbar_display::core::kProviderLabelWireBytes, 2);
+  frameLine += "\",\"session\":100,\"weekly\":100,\"resetSecs\":9223372036854775807,\"usageMode\":\"remaining\",\"usageWindows\":[";
+  for (size_t i = 0; i < codexbar_display::core::kAdvertisedMaxUsageWindows; ++i) {
+    if (i > 0) {
+      frameLine += ",";
+    }
+    frameLine += "{\"id\":\"";
+    appendEscapedText(codexbar_display::core::kUsageWindowIDWireBytes, i);
+    frameLine += "\",\"label\":\"";
+    appendEscapedText(codexbar_display::core::kUsageWindowLabelWireBytes, i);
+    frameLine += "\",\"percent\":100,\"resetSecs\":9223372036854775807}";
+  }
+  frameLine += "]}";
+
+  TEST_ASSERT_EQUAL_UINT32(3, codexbar_display::core::kAdvertisedMaxUsageWindows);
+  TEST_ASSERT_TRUE(codexbar_display::core::kAdvertisedMaxUsageWindows > 0);
+  TEST_ASSERT_TRUE(codexbar_display::core::kAdvertisedMaxUsageWindows <= codexbar_display::core::kMaxUsageWindows);
+  TEST_ASSERT_TRUE(frameLine.size() + 1 <= codexbar_display::core::kFrameLineBufferBytes);
+
+  codexbar_display::core::Frame frame;
+  TEST_ASSERT_TRUE(codexbar_display::core::ParseFrameLine(frameLine.c_str(), frame));
+  for (size_t i = 0; i < codexbar_display::core::kAdvertisedMaxUsageWindows; ++i) {
+    TEST_ASSERT_TRUE(frame.usageWindows[i].available);
+    TEST_ASSERT_EQUAL_UINT32(codexbar_display::core::kUsageWindowIDWireBytes, frame.usageWindows[i].id.length());
+    TEST_ASSERT_EQUAL_UINT32(codexbar_display::core::kUsageWindowLabelWireBytes, frame.usageWindows[i].label.length());
+    TEST_ASSERT_EQUAL_INT(100, frame.usageWindows[i].percent);
+    TEST_ASSERT_EQUAL_INT64(9223372036854775807LL, frame.usageWindows[i].resetSecs);
+  }
+  TEST_ASSERT_TRUE(frame.usageWindows[codexbar_display::core::kAdvertisedMaxUsageWindows - 1].available);
+}
+
+void testRawUsageWindowParserCapacityStillAcceptsNormalLabels() {
+  std::string frameLine =
+      "{\"v\":2,\"provider\":\"p\",\"label\":\"Provider\",\"session\":100,\"weekly\":100,\"resetSecs\":9223372036854775807,\"usageMode\":\"remaining\",\"usageWindows\":[";
+  for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
+    if (i > 0) {
+      frameLine += ",";
+    }
+    frameLine += "{\"id\":\"";
+    frameLine += std::string(codexbar_display::core::kUsageWindowIDWireBytes, 'i');
+    frameLine += "\",\"label\":\"";
+    frameLine += std::string(codexbar_display::core::kUsageWindowLabelWireBytes, 'L');
+    frameLine += "\",\"percent\":100,\"resetSecs\":9223372036854775807}";
+  }
+  frameLine += "]}";
+
+  TEST_ASSERT_TRUE(frameLine.size() + 1 <= codexbar_display::core::kFrameLineBufferBytes);
+
+  codexbar_display::core::Frame frame;
+  TEST_ASSERT_TRUE(codexbar_display::core::ParseFrameLine(frameLine.c_str(), frame));
+  TEST_ASSERT_TRUE(frame.usageWindows[codexbar_display::core::kMaxUsageWindows - 1].available);
+}
+
+void testHighestAdvertisedUsageWindowBindingCompiles() {
+  char binding[40];
+  std::snprintf(
+      binding,
+      sizeof(binding),
+      "{usageSlot%uLabel}",
+      static_cast<unsigned>(codexbar_display::core::kAdvertisedMaxUsageWindows));
+  std::string spec = "{\"p\":[{\"t\":\"tx\",\"x\":0,\"y\":0,\"v\":\"";
+  spec += binding;
+  spec += "\"}]}";
+
+  JsonDocument doc;
+  TEST_ASSERT_FALSE(deserializeJson(doc, spec.c_str()));
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec.c_str(), doc, scene));
+  TEST_ASSERT_TRUE(scene.primitiveCount == 1);
+  ReleaseCompiledThemeSpec(scene);
+}
+
+void testCompactUsageWindowBindingTriggersLiveRedraw() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":100}],"themeSpec":{"v":1,"id":"slot-redraw","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":8,"sl":1,"b":"us1p"}]}})JSON";
+  const char* nextFrame = R"JSON({"v":2,"provider":"codex","usageWindows":[{"id":"weekly","label":"Weekly","percent":43,"resetSecs":99}]})JSON";
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, nextFrame, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindows) != 0);
+}
+
+void testConsumeFrameLineComparesCurrentBeforeAssignment() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":100,"usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":100}],"themeSpec":{"v":1,"id":"clippy","rev":1,"p":[{"t":"sp","x":83,"y":54,"w":74,"h":74,"a":"/themes/u/cp-i.cba","sa":{"idle":"/themes/u/cp-i.cba","coding":"/themes/u/cp-c.cba"}},{"t":"p","x":0,"y":0,"w":100,"h":8,"sl":1,"b":"us1p"}]}})JSON";
+  const char* nextFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":100,"usageWindows":[{"id":"weekly","label":"Weekly","percent":43,"resetSecs":99}]})JSON";
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+  TEST_ASSERT_FALSE(event.hadFrame);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, nextFrame, 2000, event));
+  TEST_ASSERT_TRUE(event.hadFrame);
+  TEST_ASSERT_TRUE(event.themeSpecCacheHit);
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldActivity) != 0);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindows) != 0);
+}
+
+void testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw() {
+  RuntimeState ownershipState;
+  SerialConsumeEvent event;
+  const char* ownershipFrame = R"JSON({"v":2,"provider":"codex","themeSpec":{"v":1,"id":"slot-owner-redraw","rev":1,"p":[{"t":"r","x":0,"y":0,"w":100,"h":8,"sl":1,"c":"#FFFFFF"}]}})JSON";
+  const char* slotAppears = R"JSON({"v":2,"provider":"codex","usageWindows":[{"id":"weekly","label":"Weekly","percent":0,"resetSecs":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(ownershipState, ownershipFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(ownershipState, slotAppears, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindows) != 0);
+
+  RuntimeState compactTemplateState;
+  const char* compactTemplateFrame = R"JSON({"v":2,"provider":"codex","usageWindows":[{"id":"weekly","label":"Weekly","percent":0,"resetSecs":0}],"themeSpec":{"v":1,"id":"slot-template-redraw","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"{us1l}"}]}})JSON";
+  const char* labelChanges = R"JSON({"v":2,"provider":"codex","usageWindows":[{"id":"weekly","label":"This week","percent":0,"resetSecs":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(compactTemplateState, compactTemplateFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(compactTemplateState, labelChanges, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+}
+
+void testWhitespaceUsageWindowOwnersTriggerLiveRedraw() {
+  RuntimeState usageIndexState;
+  SerialConsumeEvent event;
+  const char* usageIndexFrame = R"JSON({"v":2,"provider":"codex","themeSpec":{"v":1,"id":"usage-index-owner-redraw","rev":1,"p":[{"t":"r","x":0,"y":0,"w":100,"h":8,"usageIndex":
+  0,"c":"#FFFFFF"}]}})JSON";
+  const char* slotAppears = R"JSON({"v":2,"provider":"codex","usageWindows":[{"id":"weekly","label":"Weekly","percent":0,"resetSecs":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(usageIndexState, usageIndexFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(usageIndexState, slotAppears, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+
+  RuntimeState slotState;
+  const char* slotFrame = "{\"v\":2,\"provider\":\"codex\",\"themeSpec\":{\"v\":1,\"id\":\"slot-owner-tab-redraw\",\"rev\":1,\"p\":[{\"t\":\"r\",\"x\":0,\"y\":0,\"w\":100,\"h\":8,\"slot\":\t1,\"c\":\"#FFFFFF\"}]}}";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(slotState, slotFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(slotState, slotAppears, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+}
+
 void testPartialUsageProtocolRendersOnlyUnknownLane() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -1500,6 +1726,35 @@ void testStoredThemeActivationLiveFrameUsesPartialRenderEvent() {
   TEST_ASSERT_TRUE(event.themeSpecPartialRender);
 }
 
+void testStoredThemeBootActivationRestoresFrameAndFullRenderIntent() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* raw = R"JSON({"v":1,"id":"clippy","rev":7,"p":[{"t":"tx","x":1,"y":2,"s":1,"v":"{session}%"}]})JSON";
+
+  TEST_ASSERT_TRUE(RestoreStoredThemeSpecFrame(state, "clippy", 7, raw, 4000, event));
+  TEST_ASSERT_TRUE(state.hasFrame);
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+  TEST_ASSERT_EQUAL_STRING("clippy", state.current.themeSpecId.c_str());
+  TEST_ASSERT_EQUAL_INT(7, state.current.themeSpecRev);
+  TEST_ASSERT_EQUAL_STRING("clippy", state.cachedThemeId.c_str());
+  TEST_ASSERT_EQUAL_INT(7, state.cachedThemeRev);
+  TEST_ASSERT_TRUE(ThemeSpecRawForFrame(state, state.current).indexOf("{session}%") >= 0);
+  TEST_ASSERT_TRUE(event.frameAccepted);
+  TEST_ASSERT_TRUE(event.themeSpecChanged);
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+}
+
+void testStoredThemeBootActivationRejectsInvalidRaw() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(state, "clippy", 7, "{}", 4000, event));
+  TEST_ASSERT_FALSE(state.hasFrame);
+  TEST_ASSERT_FALSE(state.current.hasThemeSpec);
+  TEST_ASSERT_FALSE(event.frameAccepted);
+}
+
 void testThemeSpecErrorFrameUsesFullRender() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -2023,6 +2278,15 @@ int main() {
   RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);
   RUN_TEST(testRendersCommandsAndBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
+  RUN_TEST(testUsageWindowOwnershipHidesCompleteMissingLane);
+  RUN_TEST(testUsageWindowResetCountdownsTickIndependently);
+  RUN_TEST(testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses);
+  RUN_TEST(testRawUsageWindowParserCapacityStillAcceptsNormalLabels);
+  RUN_TEST(testHighestAdvertisedUsageWindowBindingCompiles);
+  RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
+  RUN_TEST(testConsumeFrameLineComparesCurrentBeforeAssignment);
+  RUN_TEST(testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw);
+  RUN_TEST(testWhitespaceUsageWindowOwnersTriggerLiveRedraw);
   RUN_TEST(testPartialUsageProtocolRendersOnlyUnknownLane);
   RUN_TEST(testLabelBindingUsesProviderLabelWithoutUpdateNotice);
   RUN_TEST(testChangedLabelPassUsesSynchronizedUpdateNoticeText);
@@ -2061,6 +2325,8 @@ int main() {
   RUN_TEST(testThemeSpecActivityChangeUsesPartialRenderEvent);
   RUN_TEST(testLegacyThemeFieldsAreIgnored);
   RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);
+  RUN_TEST(testStoredThemeBootActivationRestoresFrameAndFullRenderIntent);
+  RUN_TEST(testStoredThemeBootActivationRejectsInvalidRaw);
   RUN_TEST(testThemeSpecErrorFrameUsesFullRender);
   RUN_TEST(testThemeSpecErrorFrameDoesNotReplaceItselfWithCachedTheme);
   RUN_TEST(testClippyLikeThemeSpecPartialEventCoversStateProgressAndReset);

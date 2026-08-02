@@ -59,15 +59,15 @@ var packIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9\-_]{2,63}$`)
 var spriteColorPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 type Manifest struct {
-	Kind        string      `json:"kind"`
-	Schema      int         `json:"schemaVersion"`
-	ID          string      `json:"id"`
-	Name        string      `json:"name"`
-	Version     string      `json:"version,omitempty"`
-	MinFirmware string      `json:"minFirmware,omitempty"`
-	Usage       string      `json:"usage,omitempty"`
-	ThemeSpec   FileEntry   `json:"themeSpec"`
-	Assets      []FileEntry `json:"assets,omitempty"`
+	Kind                 string      `json:"kind"`
+	Schema               int         `json:"schemaVersion"`
+	ID                   string      `json:"id"`
+	Name                 string      `json:"name"`
+	Version              string      `json:"version,omitempty"`
+	MinFirmware          string      `json:"minFirmware,omitempty"`
+	RequiredCapabilities []string    `json:"requiredCapabilities,omitempty"`
+	ThemeSpec            FileEntry   `json:"themeSpec"`
+	Assets               []FileEntry `json:"assets,omitempty"`
 }
 
 type FileEntry struct {
@@ -97,6 +97,20 @@ func (p *Pack) ValidateAgainstCapabilities(caps protocol.DeviceCapabilities) err
 	}
 	if err := themespec.ValidateStoredAgainstCapabilities(p.ThemeSpec, p.ThemeSpecRaw, caps); err != nil {
 		return err
+	}
+	for _, capability := range p.Manifest.RequiredCapabilities {
+		switch strings.TrimSpace(strings.ToLower(capability)) {
+		case protocol.FeatureUsageSlotsV1:
+			if !caps.SupportsUsageSlotsV1 {
+				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureUsageSlotsV1)
+			}
+		case protocol.FeatureUsageWindowsV1:
+			if !caps.SupportsUsageWindowsV1 {
+				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureUsageWindowsV1)
+			}
+		default:
+			return fmt.Errorf("theme pack requires unsupported capability %q", capability)
+		}
 	}
 	gifRefs := referencedGIFAssets(p.ThemeSpec)
 	assetsByPath := make(map[string]File, len(p.Assets))
@@ -385,59 +399,12 @@ func validateManifestFields(manifest Manifest) error {
 	if strings.TrimSpace(manifest.Name) == "" {
 		return errors.New("name is required")
 	}
-	return validateUsage(manifest.Usage)
-}
-
-// validateUsage accepts an empty value because packs without the field are live
-// themes.
-func validateUsage(usage string) error {
-	switch strings.TrimSpace(usage) {
-	case "", UsageLive, UsageScreensaver:
-		return nil
-	}
-	return fmt.Errorf("usage %q unsupported (expected %q or %q)", usage, UsageLive, UsageScreensaver)
-}
-
-// SlotPathPrefix reports the device directory a slot owns and sweeps when a new
-// pack is installed into it.
-func SlotPathPrefix(slot string) string {
-	if slot == UsageScreensaver {
-		return ScreensaverPathPrefix
-	}
-	return LivePathPrefix
-}
-
-// validateSlotPaths keeps every screensaver file below the screensaver prefix
-// and every other file out of it.
-func validateSlotPaths(usage string, devicePaths []string) error {
-	screensaver := usage == UsageScreensaver
-	for _, devicePath := range devicePaths {
-		if strings.HasPrefix(devicePath, ScreensaverPathPrefix) == screensaver {
-			continue
+	for _, capability := range manifest.RequiredCapabilities {
+		switch strings.TrimSpace(strings.ToLower(capability)) {
+		case protocol.FeatureUsageSlotsV1, protocol.FeatureUsageWindowsV1:
+		default:
+			return fmt.Errorf("required capability %q is unsupported", capability)
 		}
-		if screensaver {
-			return fmt.Errorf("device path %s must start with %s in a screensaver pack", devicePath, ScreensaverPathPrefix)
-		}
-		return fmt.Errorf("device path %s is reserved for screensaver packs", devicePath)
-	}
-	return nil
-}
-
-// PackUsage returns the declared category, defaulting to live.
-func (m Manifest) PackUsage() string {
-	if usage := strings.TrimSpace(m.Usage); usage != "" {
-		return usage
-	}
-	return UsageLive
-}
-
-// CheckSlot rejects a pack whose category does not match the target slot.
-func (m Manifest) CheckSlot(slot string) error {
-	if slot != UsageLive && slot != UsageScreensaver {
-		return fmt.Errorf("unknown install slot %q", slot)
-	}
-	if usage := m.PackUsage(); usage != slot {
-		return fmt.Errorf("theme pack %q is a %s pack and cannot be installed into the %s slot", m.ID, usage, slot)
 	}
 	return nil
 }

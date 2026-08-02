@@ -24,11 +24,12 @@ import (
 )
 
 const (
-	DefaultCatalogURL          = "https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json"
+	DefaultCatalogURL          = "https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs-v2.json"
 	DefaultWiFiTimeout         = 60 * time.Second
 	DefaultUploadSettleDelay   = 750 * time.Millisecond
 	DefaultFirmwareManifestURL = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
 	uploadVerifyAttempts       = 3
+	legacyMiniGIFPath          = "/themes/mini/mini.gif"
 )
 
 var (
@@ -208,14 +209,9 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := pack.ValidateAgainstCapabilities(caps); err != nil {
-		return Result{}, &InstallError{
-			Op:   "theme-pack/capabilities",
-			Code: errcode.ProtocolThemeSpecIncompatible,
-			Err:  err,
-		}
+	if err := pack.ValidateAgainstCapabilities(caps); err != nil && !canRetryAfterUsageSlotsFirmwareUpdate(pack, caps, err, opts) {
+		return Result{}, themePackCapabilitiesError(err)
 	}
-
 	if !opts.SkipFirmwareUpdate && opts.FirmwareUpdater != nil {
 		manifestURL := strings.TrimSpace(opts.FirmwareManifestURL)
 		if manifestURL == "" {
@@ -235,11 +231,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 			return Result{}, err
 		}
 		if err := pack.ValidateAgainstCapabilities(caps); err != nil {
-			return Result{}, &InstallError{
-				Op:   "theme-pack/capabilities",
-				Code: errcode.ProtocolThemeSpecIncompatible,
-				Err:  err,
-			}
+			return Result{}, themePackCapabilitiesError(err)
 		}
 	} else if opts.SkipFirmwareUpdate && opts.Verbose {
 		fmt.Fprintln(out, "Firmware check: skipped")
@@ -410,6 +402,41 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		ThemeRevision:     pack.ThemeSpec.ThemeRev,
 		CapabilitiesKnown: caps.Known,
 	}, nil
+}
+
+func themePackCapabilitiesError(err error) *InstallError {
+	return &InstallError{
+		Op:   "theme-pack/capabilities",
+		Code: errcode.ProtocolThemeSpecIncompatible,
+		Err:  err,
+	}
+}
+
+func canRetryAfterUsageSlotsFirmwareUpdate(pack *themepack.Pack, caps protocol.DeviceCapabilities, err error, opts Options) bool {
+	if opts.SkipFirmwareUpdate || opts.FirmwareUpdater == nil || !caps.Known || !caps.SupportsThemeSpecV1 {
+		return false
+	}
+	missingSlots := isMissingUsageCapabilityError(err, protocol.FeatureUsageSlotsV1)
+	missingWindows := isMissingUsageCapabilityError(err, protocol.FeatureUsageWindowsV1)
+	if (!missingSlots || caps.SupportsUsageSlotsV1) && (!missingWindows || caps.SupportsUsageWindowsV1) {
+		return false
+	}
+	updatedCaps := caps
+	if missingSlots {
+		updatedCaps.SupportsUsageSlotsV1 = true
+	}
+	if missingWindows {
+		updatedCaps.SupportsUsageWindowsV1 = true
+	}
+	return pack.ValidateAgainstCapabilities(updatedCaps) == nil
+}
+
+func isMissingUsageCapabilityError(err error, capability string) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, capability) && strings.Contains(message, "does not advertise")
 }
 
 func themeInstallCapabilities(
@@ -636,7 +663,7 @@ func activateAndVerifyTheme(
 		if err := activateThemeWithPairRetry(wifi, target, activePath, store); err != nil {
 			lastErr = err
 			lastOp = "theme-pack/activate"
-			if !themeInstallRetryableError(err) || attempt == attempts {
+			if !themeActivationRetryableError(err) || attempt == attempts {
 				return &themeActivationError{op: lastOp, err: lastErr}
 			}
 			fmt.Fprintln(out, "Theme activation interrupted, retrying...")
@@ -777,8 +804,11 @@ func cleanupSlotAssets(wifi transportlayer.WiFiTransport, target *string, store 
 	}
 }
 
-func cleanupSlotAssetPaths(assets transportlayer.DeviceAssetsSnapshot, slotPrefix string, keepPaths map[string]bool) []string {
-	paths := assets.PathsWithPrefix(slotPrefix)
+func cleanupThemeUserAssetPaths(assets transportlayer.DeviceAssetsSnapshot, keepPaths map[string]bool) []string {
+	paths := assets.PathsWithPrefix("/themes/u/")
+	if _, exists := assets.AssetSize(legacyMiniGIFPath); exists {
+		paths = append(paths, legacyMiniGIFPath)
+	}
 	filtered := paths[:0]
 	for _, devicePath := range paths {
 		if keepPaths[strings.TrimSpace(devicePath)] {
@@ -969,6 +999,36 @@ func themeInstallRetryableError(err error) bool {
 		"server closed idle connection",
 		"eof",
 		"temporary",
+	} {
+		if strings.Contains(msg, part) {
+			return true
+		}
+	}
+	return false
+}
+
+func themeActivationRetryableError(err error) bool {
+	if activationErrorSuggestsDeviceReboot(err) {
+		return false
+	}
+	return themeInstallRetryableError(err)
+}
+
+func activationErrorSuggestsDeviceReboot(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, part := range []string{
+		"connection reset",
+		"connection refused",
+		"broken pipe",
+		"server closed idle connection",
+		"unexpected eof",
+		"eof",
+		"no route to host",
+		"network is unreachable",
+		"host is down",
 	} {
 		if strings.Contains(msg, part) {
 			return true

@@ -422,6 +422,49 @@ func TestValidateStoredAgainstCapabilitiesUsesStoredLimit(t *testing.T) {
 	}
 }
 
+func TestValidateAgainstCapabilitiesAcceptsHighestAdvertisedUsageWindowIndex(t *testing.T) {
+	const advertisedMaxUsageWindows = 3
+	highestAdvertisedIndex := advertisedMaxUsageWindows - 1
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "usage-window-limit",
+		ThemeRev:         1,
+		Primitives: []Primitive{{
+			Type:       "text",
+			X:          1,
+			Y:          1,
+			UsageIndex: &highestAdvertisedIndex,
+			Text:       "{usage.label}",
+		}},
+	}
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal raw: %v", err)
+	}
+	caps := protocol.DeviceCapabilities{
+		Known:                  true,
+		SupportsThemeSpecV1:    true,
+		SupportsUsageWindowsV1: true,
+		MaxUsageWindows:        advertisedMaxUsageWindows,
+		MaxThemeSpecBytes:      2048,
+		MaxThemePrimitives:     8,
+	}
+
+	if err := ValidateAgainstCapabilities(spec, raw, caps); err != nil {
+		t.Fatalf("expected highest advertised usage window index to validate: %v", err)
+	}
+
+	firstRejectedIndex := advertisedMaxUsageWindows
+	spec.Primitives[0].UsageIndex = &firstRejectedIndex
+	raw, err = json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal rejected raw: %v", err)
+	}
+	if err := ValidateAgainstCapabilities(spec, raw, caps); err == nil {
+		t.Fatalf("expected first usage window index above advertised limit to be rejected")
+	}
+}
+
 func TestValidateStoredAgainstCapabilitiesFallsBackToInlineLimit(t *testing.T) {
 	spec := Spec{
 		ThemeSpecVersion: 1,
@@ -528,5 +571,68 @@ func TestValidateAgainstCapabilitiesAcceptsCompatibleSpec(t *testing.T) {
 	}
 	if err := ValidateAgainstCapabilities(spec, raw, caps); err != nil {
 		t.Fatalf("expected compatible spec, got %v", err)
+	}
+}
+
+func TestValidateUsageSlotOwnershipRequiresCapability(t *testing.T) {
+	spec, raw, err := Parse([]byte(`{
+		"v":1,
+		"id":"usage-slots",
+		"rev":1,
+		"p":[{"t":"tx","x":0,"y":0,"sl":2,"v":"{usageSlot2Label}"}]
+	}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+
+	legacyCaps := protocol.DeviceCapabilities{
+		Known:               true,
+		SupportsThemeSpecV1: true,
+	}
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err == nil ||
+		!strings.Contains(err.Error(), "usage-slots-v1") {
+		t.Fatalf("expected usage slot capability rejection, got %v", err)
+	}
+	legacyCaps.SupportsUsageSlotsV1 = true
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err != nil {
+		t.Fatalf("expected slot-capable device to accept spec: %v", err)
+	}
+}
+
+func TestValidateCompactUsageSlotTemplateRequiresCapability(t *testing.T) {
+	spec, raw, err := Parse([]byte(`{
+		"v":1,
+		"id":"usage-slots",
+		"rev":1,
+		"p":[{"t":"tx","x":0,"y":0,"v":"{us1p}%"}]
+	}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	legacyCaps := protocol.DeviceCapabilities{
+		Known:               true,
+		SupportsThemeSpecV1: true,
+	}
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err == nil ||
+		!strings.Contains(err.Error(), "usage-slots-v1") {
+		t.Fatalf("expected compact template capability rejection, got %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidUsageSlotOwnership(t *testing.T) {
+	spec, _, err := Parse([]byte(`{
+		"v":1,
+		"id":"usage-slots",
+		"rev":1,
+		"p":[{"t":"tx","x":0,"y":0,"sl":3,"v":"bad"}]
+	}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if err := Validate(spec); err == nil || !strings.Contains(err.Error(), "slot must be 1 or 2") {
+		t.Fatalf("expected invalid slot rejection, got %v", err)
 	}
 }

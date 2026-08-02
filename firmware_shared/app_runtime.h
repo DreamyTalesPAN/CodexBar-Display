@@ -16,6 +16,15 @@ struct RuntimeContext {
   String topLineOverride;
   int64_t lastRenderedSecs = -1;
   int64_t lastRenderedMinuteBucket = -1;
+  int64_t lastRenderedUsageWindowSecs[core::kMaxUsageWindows];
+  int64_t lastRenderedUsageWindowMinuteBuckets[core::kMaxUsageWindows];
+
+  RuntimeContext() {
+    for (size_t i = 0; i < core::kMaxUsageWindows; ++i) {
+      lastRenderedUsageWindowSecs[i] = -1;
+      lastRenderedUsageWindowMinuteBuckets[i] = -1;
+    }
+  }
 };
 
 // Resolved wall clock texts, device clock first and Companion string as
@@ -42,6 +51,13 @@ inline bool HasFrame(const RuntimeContext& ctx) {
 
 inline int64_t CurrentRemainingSecs(const RuntimeContext& ctx, unsigned long nowMillis) {
   return core::CurrentRemainingSecs(ctx.runtime, nowMillis);
+}
+
+inline int64_t CurrentUsageWindowRemainingSecs(
+    const RuntimeContext& ctx,
+    size_t windowIndex,
+    unsigned long nowMillis) {
+  return core::CurrentUsageWindowRemainingSecs(ctx.runtime, windowIndex, nowMillis);
 }
 
 inline String FormatDuration(int64_t secs) {

@@ -111,9 +111,11 @@ String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   String out;
   out.reserve(compact ? 180 : 260);
   if (!enabled) {
-    return "{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
+    return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"supportsUsageWindowsV1\":false,\"maxUsageWindows\":0,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
   }
-  out += "{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
+  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"maxUsageWindows\":";
+  out += String(codexbar_display::core::kAdvertisedMaxUsageWindows);
+  out += ",\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
   out += String(codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives);
   if (!compact) {
     out += ",\"supportedPrimitiveTypes\":[\"text\",\"rect\",\"progress\",\"gif\",\"sprite\",\"pixels\"]";
@@ -224,8 +226,8 @@ codexbar_display::esp8266::wifi_setup::State setupWifiState;
 bool rebootPending = false;
 unsigned long rebootAtMs = 0;
 unsigned long lastFrameAcceptedAtMs = 0;
-bool pendingWifiRender = false;
-codexbar_display::core::SerialConsumeEvent pendingWifiRenderEvent;
+bool pendingHttpRender = false;
+codexbar_display::core::SerialConsumeEvent pendingHttpRenderEvent;
 bool frameStaleStatusRendered = false;
 bool captiveDnsStarted = false;
 unsigned long wifiDisconnectedAtMs = 0;
@@ -244,11 +246,7 @@ uint32_t bootResetCounter = 0;
 void addCorsHeaders();
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-constexpr const char* kDefaultThemeSpecPath = "/themes/u/mini-cl-1-e4fe6b.json";
-constexpr const char* kPreviousDefaultThemeSpecPath = "/themes/u/mini-cl-1-b3c3f7.json";
-constexpr const char* kLegacyDefaultThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
-constexpr const char* kDefaultThemeSpecId = "mini-classic";
-constexpr int kDefaultThemeSpecRev = 1;
+constexpr const char* kLegacyMiniThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
 #endif
 
 void recordRenderFull(const char* kind, unsigned long durationUs) {
@@ -921,46 +919,12 @@ void renderAcceptedFrame(const codexbar_display::core::SerialConsumeEvent& event
   }
 }
 
-// The device clock owns {time}/{date}. SNTP corrects the system clock on its
-// own once the link is up, so this only samples it and repaints when the text
-// the customer sees actually changes. That covers the device clock, the
-// Companion fallback and the honest placeholder with one trigger.
-void maintainDeviceClock() {
-  const unsigned long nowMs = millis();
-  if (static_cast<long>(nowMs - nextDeviceClockPollAtMs) < 0) {
-    return;
+bool acceptedFrameRenderDeferredForTransport(const char* transport) {
+  if (transport == nullptr) {
+    return false;
   }
-  nextDeviceClockPollAtMs = nowMs + kDeviceClockPollMs;
-
-  const time_t systemEpoch = time(nullptr);
-  if (deviceclock::ObserveSystemEpoch(runtimeCtx.clock, static_cast<int64_t>(systemEpoch), nowMs)) {
-    Serial.printf("clock_synced epoch=%ld utc_offset_known=%d\n",
-                  static_cast<long>(systemEpoch),
-                  runtimeCtx.clock.hasUtcOffset ? 1 : 0);
-  }
-
-  char timeText[deviceclock::kTimeTextSize];
-  char dateText[deviceclock::kDateTextSize];
-  codexbar_display::app::ClockTimeText(runtimeCtx, nowMs, timeText, sizeof(timeText));
-  codexbar_display::app::ClockDateText(runtimeCtx, nowMs, dateText, sizeof(dateText));
-  if (strcmp(timeText, renderedClockTime) == 0 && strcmp(dateText, renderedClockDate) == 0) {
-    return;
-  }
-  strcpy(renderedClockTime, timeText);
-  strcpy(renderedClockDate, dateText);
-
-  if (setupMode ||
-      waitStatusRendered ||
-      frameStaleStatusRendered ||
-      runtimeCtx.screenDirty ||
-      !codexbar_display::app::HasFrame(runtimeCtx) ||
-      codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
-    return;
-  }
-  const unsigned long renderStartUs = micros();
-  if (renderer.DrawClock(runtimeCtx)) {
-    recordRenderPartial("clock", micros() - renderStartUs);
-  }
+  return strcmp(transport, "wifi") == 0 ||
+         strcmp(transport, "theme") == 0;
 }
 
 void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, const char* transport) {
@@ -1011,14 +975,13 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
 #endif
   }
 
-  const bool wifiTransport = transport != nullptr && strcmp(transport, "wifi") == 0;
-  if (wifiTransport && event.visualChanged) {
-    // ESP8266WebServer invokes this from handleClient(). Keep all display work
-    // out of that callback; the event is consumed before any new frame can
-    // replace the runtime state at the start of the next loop.
-    pendingWifiRenderEvent = event;
-    pendingWifiRender = true;
-  } else if (!wifiTransport) {
+  const bool deferRender = acceptedFrameRenderDeferredForTransport(transport);
+  if (deferRender && event.visualChanged) {
+    // ESP8266WebServer invokes WiFi frame and theme activation callbacks from
+    // handleClient(). Keep display work out of those callbacks so HTTP can ACK.
+    pendingHttpRenderEvent = event;
+    pendingHttpRender = true;
+  } else if (!deferRender) {
     renderAcceptedFrame(event);
   }
   Serial.printf("frame_received transport=%s\n", transport);
@@ -2137,11 +2100,9 @@ bool readStoredThemeSpec(const String& path, String& raw, String& error) {
   file.close();
   raw.trim();
 
-  // Firmware OTA intentionally preserves LittleFS. Devices upgraded from 1.0.36
-  // therefore keep this known factory Mini spec, whose labels were hard-coded
-  // to "left". Upgrade only that immutable legacy path in memory so the live
-  // usage mode is rendered without rewriting customer storage during OTA.
-  if (path == kLegacyDefaultThemeSpecPath) {
+  // Devices upgraded from 1.0.36 can still have this explicitly active Mini
+  // spec. Keep its label compatibility without treating it as a boot fallback.
+  if (path == kLegacyMiniThemeSpecPath) {
     raw.replace("\"v\":\"left\"", "\"v\":\"{usageMode}\"");
   }
   if (raw.length() == 0 || raw.length() > kMaxStoredThemeSpecBytes) {
@@ -2190,35 +2151,14 @@ bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String
 }
 
 void activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev) {
+  codexbar_display::core::SerialConsumeEvent event;
+  if (!codexbar_display::core::RestoreStoredThemeSpecFrame(
+          runtimeCtx.runtime, themeId, themeRev, raw, millis(), event)) {
+    return;
+  }
   renderer.ResetGifStateForAssetUpdate();
-  close_all_fs();
-
-  const bool hadFrame = codexbar_display::app::HasFrame(runtimeCtx);
-  const codexbar_display::core::Frame previous = runtimeCtx.runtime.current;
-  codexbar_display::core::Frame next = hadFrame ? previous : codexbar_display::core::Frame{};
-
-  next.hasError = false;
-  next.error = "";
-  next.clearThemeSpec = false;
-  next.hasThemeSpec = true;
-  next.themeSpecId = themeId;
-  next.themeSpecRev = themeRev;
-  next.themeSpecRaw = "";
-  runtimeCtx.runtime.cachedThemeId = themeId;
-  runtimeCtx.runtime.cachedThemeRev = themeRev;
-  runtimeCtx.runtime.cachedThemeSpecRaw = raw;
-  runtimeCtx.runtime.current = next;
-  runtimeCtx.runtime.hasFrame = true;
-  // A theme activation says nothing about the reset deadline, so it must not
-  // re-anchor the trust state: a restored or still valid countdown survives it.
   activeThemeSpecPath = path;
   activeThemeSpecHash = hashHex8(raw);
-
-  codexbar_display::core::SerialConsumeEvent event;
-  event.frameAccepted = true;
-  event.hadFrame = hadFrame;
-  event.themeSpecChanged = true;
-  event.visualChanged = !hadFrame || codexbar_display::core::FrameVisualChanged(previous, next) || event.themeSpecChanged;
   markFrameAccepted(event, "theme");
 }
 
@@ -2398,34 +2338,17 @@ bool loadStoredThemeSpecCacheFromPath(const String& path) {
     return false;
   }
 
-  runtimeCtx.runtime.cachedThemeId = themeId;
-  runtimeCtx.runtime.cachedThemeRev = themeRev;
-  runtimeCtx.runtime.cachedThemeSpecRaw = raw;
-  activeThemeSpecPath = path;
-  activeThemeSpecHash = hashHex8(raw);
+  activateStoredThemeSpec(path, raw, themeId, themeRev);
   Serial.printf("theme_cache_loaded path=%s id=%s rev=%d\n", path.c_str(), themeId.c_str(), themeRev);
   return true;
 }
 
-void loadDefaultStoredThemeSpecCache() {
+void loadActiveStoredThemeSpecCache() {
   String activePath;
-  if (readActiveThemeSpecPath(activePath) && loadStoredThemeSpecCacheFromPath(activePath)) {
+  if (!readActiveThemeSpecPath(activePath)) {
     return;
   }
-  if (loadStoredThemeSpecCacheFromPath(kDefaultThemeSpecPath)) {
-    runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
-    runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
-    return;
-  }
-  if (loadStoredThemeSpecCacheFromPath(kPreviousDefaultThemeSpecPath)) {
-    runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
-    runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
-    return;
-  }
-  if (loadStoredThemeSpecCacheFromPath(kLegacyDefaultThemeSpecPath)) {
-    runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
-    runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
-  }
+  (void)loadStoredThemeSpecCacheFromPath(activePath);
 }
 
 // Standby only takes a screen it can hand back. A setup or OTA status screen
@@ -2970,6 +2893,7 @@ void startHttpServer() {
 
 void startSetupAccessPoint() {
   setupMode = true;
+  pendingHttpRender = false;
   resetWifiReconnectState();
   codexbar_display::esp8266::wifi_setup::ClearConnectionError(setupWifiState);
   WiFi.setAutoReconnect(false);
@@ -3103,7 +3027,7 @@ void setup() {
   loadDeviceAuthToken();
   restoreResetTrustAfterRestart();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  loadDefaultStoredThemeSpecCache();
+  loadActiveStoredThemeSpecCache();
 #endif
   const unsigned long startupRenderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV", "Starting", "Please wait");
@@ -3146,9 +3070,9 @@ void loop() {
   bool rendered = false;
   unsigned long renderDurationUs = 0;
 
-  if (pendingWifiRender) {
-    const codexbar_display::core::SerialConsumeEvent event = pendingWifiRenderEvent;
-    pendingWifiRender = false;
+  if (pendingHttpRender) {
+    const codexbar_display::core::SerialConsumeEvent event = pendingHttpRenderEvent;
+    pendingHttpRender = false;
     renderAcceptedFrame(event);
   }
 
@@ -3183,23 +3107,37 @@ void loop() {
     renderer.TickActive(runtimeCtx);
     recordAnimatedTickAttempt();
     const int64_t remain = codexbar_display::app::CurrentRemainingSecs(runtimeCtx, millis());
+    bool countdownMinuteChanged = false;
     if (remain != runtimeCtx.lastRenderedSecs) {
-      const int64_t minuteBucket = remain / 60;
-      // Reaching zero always repaints, even inside the last minute: that is the
-      // moment the countdown becomes the unavailable marker.
-      if (minuteBucket != runtimeCtx.lastRenderedMinuteBucket ||
-          (remain == 0 && runtimeCtx.lastRenderedSecs != 0)) {
-#ifdef CODEXBAR_DISPLAY_PROBE_ONLY
-        runtimeCtx.screenDirty = true;
-#else
-        const unsigned long renderStartUs = micros();
-        renderer.DrawReset(runtimeCtx, remain);
-        drawFirmwareUpdateNotice();
-        recordRenderPartial("reset", micros() - renderStartUs);
-#endif
+      if (codexbar_display::core::RemainingMinuteBucketChanged(
+              remain, runtimeCtx.lastRenderedMinuteBucket)) {
+        countdownMinuteChanged = true;
       } else {
         runtimeCtx.lastRenderedSecs = remain;
       }
+    }
+    for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
+      const int64_t slotRemain =
+          codexbar_display::app::CurrentUsageWindowRemainingSecs(runtimeCtx, i, millis());
+      if (slotRemain == runtimeCtx.lastRenderedUsageWindowSecs[i]) {
+        continue;
+      }
+      if (codexbar_display::core::RemainingMinuteBucketChanged(
+              slotRemain, runtimeCtx.lastRenderedUsageWindowMinuteBuckets[i])) {
+        countdownMinuteChanged = true;
+      } else {
+        runtimeCtx.lastRenderedUsageWindowSecs[i] = slotRemain;
+      }
+    }
+    if (countdownMinuteChanged) {
+#ifdef CODEXBAR_DISPLAY_PROBE_ONLY
+      runtimeCtx.screenDirty = true;
+#else
+      const unsigned long renderStartUs = micros();
+      renderer.DrawReset(runtimeCtx, remain);
+      drawFirmwareUpdateNotice();
+      recordRenderPartial("reset", micros() - renderStartUs);
+#endif
     }
   }
 

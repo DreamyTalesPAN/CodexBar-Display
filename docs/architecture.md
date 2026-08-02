@@ -18,7 +18,7 @@ Simple version:
 
 ```text
 CodexBar reads AI usage on the Mac
-  -> VibeTV Mac App normalizes it
+  -> VibeTV Mac App transports it through a provider-neutral adapter
   -> local Control Center manages actions
   -> VibeTV renders it over local WiFi
 ```
@@ -46,7 +46,7 @@ display frames.
 | --- | --- |
 | VibeTV hardware | WiFi setup, device health, display settings, rendering frames, storing active ThemeSpec assets. |
 | CodexBar | Provider integrations, provider usage fetching, local token scans, provider status. |
-| VibeTV Mac App | Local API, device discovery, pairing, usage snapshots, theme install, firmware update, support diagnostics. |
+| VibeTV Mac App | Local API, device discovery, pairing, provider-neutral usage transport, one bounded last-good state, theme install, firmware update, support diagnostics. |
 | Control Center | Customer setup, next action UI, Theme Library, Usage view, Settings, Updates, Support logs. |
 | Shopify | Hardware product pages and theme catalog source for Control Center. |
 | GitHub releases | Mac App binaries, checksums, firmware binaries, installer script, theme-pack catalog artifacts. |
@@ -58,6 +58,17 @@ local files, CLIs, OAuth/API sources, browser sessions, and provider dashboards.
 VibeTV should not duplicate that provider work. It uses CodexBar as the source
 of usage truth, then focuses on physical display, setup, themes, updates, and
 hardware reliability.
+
+The Mac App maps CodexBar's generic provider and usage-window data into the
+VibeTV protocol. It does not own provider-specific fetching, authentication,
+window meaning, quota mapping, or provider error interpretation. It must not
+create alternate provider probes or a second provider truth when the
+authoritative CodexBar path is unavailable.
+
+Product-level availability has one owner in the Mac App: a bounded last-good
+snapshot used consistently by the display stream and local API. CodexBar
+collection freshness, provider activity, token-history freshness, manual
+refresh state, and the last sent device frame remain separate signals.
 
 ## Local Mac App
 

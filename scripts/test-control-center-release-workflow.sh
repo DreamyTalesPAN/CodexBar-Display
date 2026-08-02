@@ -169,7 +169,7 @@ main() {
     "macOS DMG job must upload the notarized DMG for the release job"
   assert_not_contains "$macos_job" "--dry-run" \
     "macOS DMG job must run the real signing/notarization path"
-  assert_contains "$release_job" "needs: build-macos-dmg" \
+  assert_contains "$release_job" "- build-macos-dmg" \
     "public release job must wait for the notarized Mac DMG"
   assert_contains "$release_job" "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')" \
     "public release job must run only for a release tag"
@@ -325,7 +325,7 @@ main() {
     || die "local installer must build local Control Center before companion binary"
   (( local_installer_build_line < local_installer_go_build_line )) \
     || die "local installer must embed local Control Center before Go binary is built"
-  assert_contains "$local_static_builder" "http://127.0.0.1:47832/theme-packs/vibetv-theme-packs.json" \
+  assert_contains "$local_static_builder" "http://127.0.0.1:47832/theme-packs/vibetv-theme-packs-v2.json" \
     "local static Control Center must resolve theme packs from the local Companion"
   assert_contains "$local_static_builder" "dist\", \"theme-packs" \
     "local static Control Center must embed built theme-pack downloads"
@@ -374,6 +374,33 @@ main() {
     "firmware update messages must name the VibeTV Mac App"
   assert_not_contains "$(grep '"message"' "$WORKFLOW")" "vibetv.shop" \
     "release workflow firmware message fallback must not send customers to a hosted URL"
+  python3 - \
+    "${ROOT}/release/firmware-versions.json" \
+    "${ROOT}/protocol/compatibility_matrix.json" <<'PY'
+import json
+import sys
+
+firmware_path, compatibility_path = sys.argv[1:]
+with open(firmware_path, encoding="utf-8") as source:
+    firmware = json.load(source)
+with open(compatibility_path, encoding="utf-8") as source:
+    compatibility = json.load(source)
+
+required = compatibility["featureRequirements"]["usageSlotsV1"]["firmwareMin"]
+published = next(
+    artifact["firmwareVersion"]
+    for artifact in firmware["artifacts"]
+    if artifact["board"] == "esp8266-smalltv-st7789"
+)
+
+def version_tuple(value):
+    return tuple(int(part) for part in value.split("-", 1)[0].split("."))
+
+if version_tuple(published) < version_tuple(required):
+    raise SystemExit(
+        f"ESP8266 release firmware {published} is older than usageSlotsV1 minimum {required}"
+    )
+PY
 
   printf 'control-center release workflow test passed\n'
 }

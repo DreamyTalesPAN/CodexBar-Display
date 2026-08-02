@@ -57,6 +57,10 @@ import {
 } from "@/components/ui/item";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  hasFirmwareUpdate,
+  type FirmwareUpdateInfo,
+} from "@/lib/firmware";
 import { compareSemVer, parseSemVer } from "@/lib/semver";
 import { cn } from "@/lib/utils";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
@@ -79,6 +83,7 @@ import type { ThemeStudioDeviceCapabilities } from "@/lib/theme-studio-capabilit
 import type { ThemeProduct } from "@/lib/themes";
 import { themeRenderPackUrl } from "./control-center-runtime";
 import {
+  THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
   type ThemeRenderPack,
 } from "./live-vibetv-preview";
@@ -111,6 +116,7 @@ export type ThemeLibraryDeviceInfo = {
 };
 
 type ThemeInstallBlocker = {
+  firmwareUpgradeable?: boolean;
   reason: string;
   readinessTitle?: string;
   readinessDetail?: string;
@@ -154,6 +160,14 @@ export type ThemeInstallStatus = {
   error?: string;
 };
 
+export type ThemeSetupFirmwareUpdateStatus = {
+  phase: "installing" | "complete" | "attention" | "error";
+  message?: string;
+  retryAllowed?: boolean;
+  error?: string;
+  progress?: number;
+};
+
 export type ThemeLibraryScreenProps = {
   themes: ThemeProduct[];
   usage?: ThemeStudioUsage;
@@ -165,6 +179,8 @@ export type ThemeLibraryScreenProps = {
   themeInstallEnabled: boolean;
   busyAction: string | null;
   installStatus?: ThemeInstallStatus | null;
+  firmwareUpdate?: FirmwareUpdateInfo | null;
+  firmwareUpdateStatus?: ThemeSetupFirmwareUpdateStatus | null;
   installEntry?: boolean;
   lastInstall?: ThemeInstallResult;
   requestedThemeId?: string;
@@ -172,6 +188,7 @@ export type ThemeLibraryScreenProps = {
   storefrontConfigured: boolean;
   onSelectTheme: (themeId: string) => void;
   onInstallCustomTheme: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
+  onInstallFirmwareUpdate?: () => Promise<boolean> | boolean | void;
   onInstallTheme: (theme: ThemeProduct) => Promise<unknown> | void;
 };
 
@@ -184,6 +201,8 @@ export function ThemeLibraryScreen({
   catalogIssue,
   device,
   installStatus,
+  firmwareUpdate,
+  firmwareUpdateStatus,
   lastInstall,
   requestedThemeId,
   setupMode = false,
@@ -191,6 +210,7 @@ export function ThemeLibraryScreen({
   storefrontConfigured,
   themeInstallEnabled,
   onInstallCustomTheme,
+  onInstallFirmwareUpdate,
   onSelectTheme,
   onInstallTheme,
 }: ThemeLibraryScreenProps) {
@@ -268,6 +288,12 @@ export function ThemeLibraryScreen({
         selectedTheme: displayTheme,
         themeInstallEnabled,
       });
+  const setupNeedsFirmwareUpdate =
+    setupMode &&
+    themeInstallEnabled &&
+    visibleThemes.some((theme) =>
+      themeNeedsUpgradeableFirmware(theme, device, themeInstallEnabled),
+    );
   useEffect(() => {
     if (setupMode) {
       return;
@@ -345,7 +371,10 @@ export function ThemeLibraryScreen({
 
     setLoadingEditorThemeId(item.themeId);
     try {
-      const payload = await fetchThemePackForEditing(item.product.themeId);
+      const payload = await fetchThemePackForEditing(
+        item.product.themeId,
+        item.product.themeSpecPath,
+      );
       const spec = importThemeSpec(payload.spec);
       const existingIds = allThemeIds(themes, userThemes);
       spec.themeId = uniqueThemeId(`${item.product.themeId}-custom`, existingIds);
@@ -552,6 +581,13 @@ export function ThemeLibraryScreen({
       </section>
 
       <section className="py-8">
+        {setupNeedsFirmwareUpdate ? (
+          <ThemeSetupFirmwareUpdate
+            firmwareUpdate={firmwareUpdate}
+            onInstallFirmwareUpdate={onInstallFirmwareUpdate}
+            status={firmwareUpdateStatus}
+          />
+        ) : null}
         {!setupMode && storageWarning ? (
           <Alert className="mb-5">
             <Lock aria-hidden />
@@ -620,12 +656,18 @@ export function ThemeLibraryScreen({
       {!setupMode && previewTheme ? (
         <Dialog open onOpenChange={(open) => !open && setPreviewTheme(null)}>
           <DialogContent
-            aria-describedby={undefined}
+            aria-describedby="theme-library-example-data"
             className="max-h-[calc(100dvh-2rem)] max-w-[640px] overflow-y-auto sm:max-w-[640px]"
           >
             <DialogHeader>
               <DialogTitle className="truncate text-2xl font-black">{previewTheme.title}</DialogTitle>
             </DialogHeader>
+            <p
+              className="-mt-2 text-sm text-muted-foreground"
+              id="theme-library-example-data"
+            >
+              Example data · This is a catalog preview, not live VibeTV data.
+            </p>
             <ThemePreview large theme={previewTheme} />
           </DialogContent>
         </Dialog>
@@ -1321,6 +1363,10 @@ function buildThemeInstallBlocker({
   if (boardBlocker) {
     return boardBlocker;
   }
+  const capabilityBlocker = themeCapabilityBlocker(theme, device);
+  if (capabilityBlocker) {
+    return capabilityBlocker;
+  }
   const firmwareBlocker = themeFirmwareBlocker(theme, device);
   if (firmwareBlocker) {
     return firmwareBlocker;
@@ -1409,6 +1455,45 @@ function themeBoardBlocker(
   };
 }
 
+function themeCapabilityBlocker(
+  theme: ThemeProduct,
+  device: ThemeLibraryDeviceInfo,
+): ThemeInstallBlocker | null {
+  const required = theme.requiredCapabilities || [];
+  const unsupported = required.filter(
+    (capability) =>
+      capability !== "usage-slots-v1" &&
+      capability !== "usage-windows-v1",
+  );
+  if (unsupported.length > 0) {
+    return {
+      reason: "This theme does not support this VibeTV.",
+      readinessTitle: "Not supported",
+      readinessDetail: "Choose another theme for this VibeTV.",
+      readinessIcon: <Lock size={22} aria-hidden />,
+    };
+  }
+  const missing = required.filter((capability) => {
+    if (capability === "usage-slots-v1") {
+      return device.capabilities?.theme?.supportsUsageSlotsV1 !== true;
+    }
+    if (capability === "usage-windows-v1") {
+      return device.capabilities?.theme?.supportsUsageWindowsV1 !== true;
+    }
+    return true;
+  });
+  if (missing.length === 0) {
+    return null;
+  }
+  return {
+    firmwareUpgradeable: true,
+    reason: "Update firmware first.",
+    readinessTitle: "Firmware update needed",
+    readinessDetail: `${theme.title} needs a VibeTV update before it can be installed.`,
+    readinessIcon: <RefreshCw size={22} aria-hidden />,
+  };
+}
+
 function themeFirmwareBlocker(
   theme: ThemeProduct,
   device: ThemeLibraryDeviceInfo,
@@ -1430,15 +1515,127 @@ function themeFirmwareBlocker(
       readinessIcon: <RefreshCw size={22} aria-hidden />,
     };
   }
-  if (compareSemVer(deviceParsed, requiredParsed) >= 0) {
+  const matchingDevelopmentCore =
+    deviceParsed.prerelease[0] === "dev" &&
+    requiredParsed.prerelease.length === 0 &&
+    deviceParsed.major === requiredParsed.major &&
+    deviceParsed.minor === requiredParsed.minor &&
+    deviceParsed.patch === requiredParsed.patch;
+  if (
+    compareSemVer(deviceParsed, requiredParsed) >= 0 ||
+    matchingDevelopmentCore
+  ) {
     return null;
   }
   return {
+    firmwareUpgradeable: true,
     reason: `Firmware ${required} or newer is required.`,
     readinessTitle: "Firmware too old",
     readinessDetail: `${theme.title} requires firmware ${required} or newer. Update firmware before installing this theme.`,
     readinessIcon: <RefreshCw size={22} aria-hidden />,
   };
+}
+
+export function themeNeedsUpgradeableFirmware(
+  theme: ThemeProduct,
+  device: ThemeLibraryDeviceInfo | null,
+  themeInstallEnabled: boolean,
+): boolean {
+  if (!themeInstallEnabled) {
+    return false;
+  }
+  return Boolean(
+    buildThemeInstallBlocker({
+      allowUnreadyInstall: true,
+      device,
+      theme,
+      themeInstallBlockedReason: "",
+      themeInstallEnabled,
+    })?.firmwareUpgradeable,
+  );
+}
+
+function ThemeSetupFirmwareUpdate({
+  firmwareUpdate,
+  onInstallFirmwareUpdate,
+  status,
+}: {
+  firmwareUpdate?: FirmwareUpdateInfo | null;
+  onInstallFirmwareUpdate?: () => Promise<boolean> | boolean | void;
+  status?: ThemeSetupFirmwareUpdateStatus | null;
+}) {
+  const installing = status?.phase === "installing";
+  const failed = status?.phase === "error";
+  const attention = status?.phase === "attention";
+  const complete = status?.phase === "complete";
+  const updateAvailable = hasFirmwareUpdate(firmwareUpdate);
+  const canStartUpdate =
+    updateAvailable &&
+    Boolean(onInstallFirmwareUpdate) &&
+    !installing &&
+    !complete;
+  const title = installing
+    ? "Updating VibeTV"
+    : failed || attention
+      ? "VibeTV update needs attention"
+      : complete
+        ? "VibeTV updated"
+        : updateAvailable
+          ? "Update VibeTV to continue"
+          : firmwareUpdate
+            ? "VibeTV update needed"
+            : "Checking for a VibeTV update";
+  const detail = installing
+    ? status?.message || "Keep VibeTV powered on while the update installs."
+    : failed || attention
+      ? status?.error ||
+        status?.message ||
+        "The update could not be completed."
+      : complete
+        ? "Checking theme support. Install a theme when its button becomes available."
+        : updateAvailable
+          ? "Install the firmware update first. Then choose and install a theme."
+          : firmwareUpdate?.message ||
+            "Theme install stays locked until a compatible update is available.";
+
+  return (
+    <Alert className="mb-5" variant={failed ? "destructive" : "default"}>
+      {installing ? (
+        <RefreshCw className="animate-spin" aria-hidden />
+      ) : complete ? (
+        <ShieldCheck aria-hidden />
+      ) : (
+        <RefreshCw aria-hidden />
+      )}
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription>{detail}</AlertDescription>
+      {installing ? (
+        <Progress
+          aria-label="VibeTV update progress"
+          className="mt-3"
+          value={clampInstallProgress(status?.progress)}
+        />
+      ) : null}
+      {canStartUpdate ||
+      (updateAvailable &&
+        (failed || attention) &&
+        status?.retryAllowed !== false &&
+        onInstallFirmwareUpdate) ? (
+        <AlertAction>
+          <Button
+            onClick={() => void onInstallFirmwareUpdate?.()}
+            size="sm"
+            type="button"
+          >
+            <RefreshCw data-icon="inline-start" aria-hidden />
+            <span>
+              {failed || attention ? "Try update again" : "Update VibeTV"}
+            </span>
+          </Button>
+        </AlertAction>
+      ) : null}
+    </Alert>
+  );
 }
 
 function normalizeBoard(value: string): string {
@@ -1457,17 +1654,20 @@ function ThemePreview({
 }) {
   const [packState, setPackState] = useState<{
     pack: ThemeRenderPack | null;
+    requestKey: string;
     status: "idle" | "loading" | "ready" | "error";
-    themeId: string;
   }>({
     pack: null,
+    requestKey: "",
     status: "idle",
-    themeId: "",
   });
   const className = large
     ? "relative block aspect-square w-full overflow-hidden border border-border bg-muted"
     : "relative block size-28 overflow-hidden border border-border bg-muted sm:size-36";
   const themeId = theme.themeId;
+  const themeSpecPath =
+    theme.kind === "published" ? theme.product.themeSpecPath || "" : "";
+  const requestKey = `${themeId}\n${themeSpecPath}`;
   const customPack =
     theme.kind === "custom"
       ? {
@@ -1480,11 +1680,15 @@ function ThemePreview({
       : null;
   const pack =
     customPack ||
-    (packState.themeId === themeId && packState.status === "ready"
+    (packState.requestKey === requestKey && packState.status === "ready"
       ? packState.pack
       : null);
   const status =
-    customPack ? "ready" : packState.themeId === themeId ? packState.status : "loading";
+    customPack
+      ? "ready"
+      : packState.requestKey === requestKey
+        ? packState.status
+        : "loading";
 
   useEffect(() => {
     if (theme.kind === "custom") {
@@ -1495,7 +1699,9 @@ function ThemePreview({
     }
 
     const controller = new AbortController();
-    fetch(themeRenderPackUrl(themeId), { signal: controller.signal })
+    fetch(themeRenderPackUrl(themeId, themeSpecPath), {
+      signal: controller.signal,
+    })
       .then((response) => {
         if (!response.ok) {
           throw new Error("theme preview unavailable");
@@ -1505,24 +1711,25 @@ function ThemePreview({
       .then((payload) => {
         setPackState({
           pack: payload,
+          requestKey,
           status: payload?.spec ? "ready" : "error",
-          themeId,
         });
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
         }
-        setPackState({ pack: null, status: "error", themeId });
+        setPackState({ pack: null, requestKey, status: "error" });
       });
 
     return () => controller.abort();
-  }, [theme.kind, themeId]);
+  }, [requestKey, theme.kind, themeId, themeSpecPath]);
 
   return (
     <span className={className}>
       <ThemeSpecPreview
         animate={Boolean(large)}
+        frame={THEME_CATALOG_PREVIEW_FRAME}
         pack={pack}
         status={status}
         themeId={themeId}
@@ -1531,12 +1738,15 @@ function ThemePreview({
   );
 }
 
-async function fetchThemePackForEditing(themeId: string): Promise<{
+async function fetchThemePackForEditing(
+  themeId: string,
+  themeSpecPath?: string,
+): Promise<{
   assets?: Record<string, ThemeStudioAsset>;
   name?: string;
   spec: unknown;
 }> {
-  const response = await fetch(themeRenderPackUrl(themeId));
+  const response = await fetch(themeRenderPackUrl(themeId, themeSpecPath));
   if (!response.ok) {
     throw new Error("Theme could not be opened.");
   }

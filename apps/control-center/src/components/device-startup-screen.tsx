@@ -36,6 +36,7 @@ type Props = {
   onPair: () => void;
   onSearch: () => void;
   onSelect: (candidate: DeviceCandidate) => void;
+  selectingDeviceTarget?: string;
   supportReportBusy?: boolean;
 };
 
@@ -52,6 +53,7 @@ export function DeviceStartupScreen({
   onPair,
   onSearch,
   onSelect,
+  selectingDeviceTarget,
   supportReportBusy = false,
 }: Props) {
   const selecting = busyAction === "select";
@@ -94,7 +96,8 @@ export function DeviceStartupScreen({
     detail = "Connecting to your saved VibeTV.";
   } else if (waiting) {
     title = "Connecting to VibeTV";
-    detail = "VibeTV was found. Waiting for the first usage data.";
+    detail =
+      "VibeTV was found. Waiting for the first usage data. This can take up to 30 seconds.";
   } else if (legacyRecovery) {
     title = "Reconnect this VibeTV";
     detail = "Follow these steps, then connect VibeTV again.";
@@ -201,7 +204,7 @@ export function DeviceStartupScreen({
             busy={Boolean(busyAction) && !selecting}
             candidates={deviceCandidates}
             onSelect={onSelect}
-            selecting={selecting}
+            selectingTarget={selectingDeviceTarget}
           />
         ) : null}
 

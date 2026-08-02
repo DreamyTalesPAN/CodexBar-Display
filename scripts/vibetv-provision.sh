@@ -36,7 +36,7 @@ poll_interval_secs=3
 curl_timeout_secs=30
 upload_timeout_secs=90
 filesystem_upload_timeout_secs=300
-required_assets=("/themes/mini/mini.gif" "/themes/u/mini-cl-1-e4fe6b.json")
+required_assets=()
 current_stage="startup"
 last_upload_result=""
 failure_reported=0
@@ -59,7 +59,8 @@ Usage:
 Builds firmware.bin + littlefs.bin, writes an OTA package with SHA-256 checksums,
 uploads firmware to the GeekMagic manufacturer updater, waits for VibeTV firmware,
 uploads LittleFS to the VibeTV updater, checks /health, /hello, and /assets,
-verifies required theme asset bytes plus SHA-256 when exposed, then sends a mini theme test frame.
+verifies explicitly requested asset bytes plus SHA-256 when exposed, then checks
+the intentional missing-theme screen.
 
 Commands:
   build                 Build and package artifacts only.
@@ -108,7 +109,7 @@ Flow toggles:
   --skip-filesystem     Do not upload littlefs.bin to VibeTV.
   --skip-health         Do not require /health during post-flash polling.
   --skip-asset-check    Do not require theme assets to be visible through /assets.
-  --skip-smoke          Do not send the mini test frame.
+  --skip-smoke          Do not send the missing-theme test frame.
   --allow-reboot-close  Treat curl exit 52/56 during OTA as a reboot close.
                         This is the default; post-upload checks still decide pass/fail.
   --strict-upload-response
@@ -118,8 +119,7 @@ Flow toggles:
   --filesystem-upload-timeout SECS
                         Upload timeout for LittleFS OTA requests. Default: 300.
   --require-asset PATH  Require an asset path in /assets after flashing.
-                        Repeatable. Defaults: /themes/mini/mini.gif and
-                        /themes/u/mini-cl-1-e4fe6b.json.
+                        Repeatable. No theme assets are required by default.
 
 Examples:
   ./scripts/vibetv-provision.sh build
@@ -210,22 +210,24 @@ build_theme_assets_json() {
   local assets_json="[]"
   local asset normalized rel src bytes sha
 
-  for asset in "${required_assets[@]}"; do
-    normalized="$(normalize_asset_path "$asset")"
-    rel="${normalized#/}"
-    src="${project_dir}/data/${rel}"
-    [[ -f "$src" ]] || die "required theme asset not found in data dir: ${src}"
-    bytes="$(wc -c <"$src" | tr -d ' ')"
-    [[ "$bytes" -gt 0 ]] || die "required theme asset is empty: ${src}"
-    sha="$(sha256_file "$src")"
-    assets_json="$(jq -c \
-      --arg path "$normalized" \
-      --arg file "data/${rel}" \
-      --arg sha "$sha" \
-      --argjson bytes "$bytes" \
-      '. + [{"path":$path,"file":$file,"bytes":$bytes,"sha256":$sha,"required":true}] | unique_by(.path)' \
-      <<<"$assets_json")"
-  done
+  if (( ${#required_assets[@]} > 0 )); then
+    for asset in "${required_assets[@]}"; do
+      normalized="$(normalize_asset_path "$asset")"
+      rel="${normalized#/}"
+      src="${project_dir}/data/${rel}"
+      [[ -f "$src" ]] || die "required theme asset not found in data dir: ${src}"
+      bytes="$(wc -c <"$src" | tr -d ' ')"
+      [[ "$bytes" -gt 0 ]] || die "required theme asset is empty: ${src}"
+      sha="$(sha256_file "$src")"
+      assets_json="$(jq -c \
+        --arg path "$normalized" \
+        --arg file "data/${rel}" \
+        --arg sha "$sha" \
+        --argjson bytes "$bytes" \
+        '. + [{"path":$path,"file":$file,"bytes":$bytes,"sha256":$sha,"required":true}] | unique_by(.path)' \
+        <<<"$assets_json")"
+    done
+  fi
 
   printf '%s\n' "$assets_json"
 }
@@ -343,7 +345,7 @@ verify_package() {
   [[ -f "$(artifact_path SHA256SUMS)" ]] || die "missing package checksum file: $(artifact_path SHA256SUMS)"
   [[ -f "$(artifact_path manifest.json)" ]] || die "missing package manifest: $(artifact_path manifest.json)"
   (cd "$package_dir" && shasum -a 256 -c SHA256SUMS)
-  jq -e '.kind == "vibetv-ota-package" and (.themeAssets | type == "array") and (.themeAssets | length > 0)' \
+  jq -e '.kind == "vibetv-ota-package" and (.themeAssets | type == "array")' \
     "$(artifact_path manifest.json)" >/dev/null ||
     die "package manifest does not contain themeAssets metadata"
 }
@@ -494,13 +496,15 @@ check_assets() {
     "$(artifact_path manifest.json)" >>"$expected_file"
 
   local asset normalized
-  for asset in "${required_assets[@]}"; do
-    if [[ -z "$asset" ]]; then
-      continue
-    fi
-    normalized="$(normalize_asset_path "$asset")"
-    printf '%s\t\t\n' "$normalized" >>"$expected_file"
-  done
+  if (( ${#required_assets[@]} > 0 )); then
+    for asset in "${required_assets[@]}"; do
+      if [[ -z "$asset" ]]; then
+        continue
+      fi
+      normalized="$(normalize_asset_path "$asset")"
+      printf '%s\t\t\n' "$normalized" >>"$expected_file"
+    done
+  fi
   sort -u "$expected_file" >"$sorted_expected_file"
 
   local expected_path expected_bytes expected_sha asset_metadata actual_bytes actual_sha
@@ -688,39 +692,31 @@ send_frame() {
 
 send_smoke_frames() {
   local frame_url="$1"
-  send_frame "mini" "$frame_url" \
-    '{"v":2,"provider":"vibetv","label":"Vibe TV","session":23,"weekly":64,"resetSecs":12000,"sessionTokens":203211,"weekTokens":9231002,"totalTokens":1087628607,"theme":"mini"}'
+  send_frame "theme-missing" "$frame_url" \
+    '{"v":2,"provider":"vibetv","label":"Vibe TV","session":23,"weekly":64,"resetSecs":12000,"sessionTokens":203211,"weekTokens":9231002,"totalTokens":1087628607}'
 }
 
-check_post_smoke_gif_state() {
+check_post_smoke_theme_missing_state() {
   local health_url="$1"
-  local body_file="/tmp/vibetv-provision-gif-health.$$"
-  local attempt stage error_path
+  local body_file="/tmp/vibetv-provision-theme-health.$$"
+  local attempt
 
   if [[ "$skip_health" == "1" ]]; then
-    log "skip: post-smoke GIF state check because health checks are disabled"
+    log "skip: post-smoke theme state check because health checks are disabled"
     return 0
   fi
   if [[ "$dry_run" == "1" ]]; then
-    log "dry-run: would verify mini GIF state via ${health_url}"
+    log "dry-run: would verify missing-theme state via ${health_url}"
     return 0
   fi
 
-  current_stage="post-smoke GIF state"
+  current_stage="post-smoke missing-theme state"
   for attempt in 1 2 3 4 5 6 7 8; do
     if curl_get "$health_url" >"$body_file"; then
-      if jq -e '.display.activeTheme == "mini-classic" and .display.themeSpec.active == true and .display.themeSpec.path == "/themes/u/mini-cl-1-e4fe6b.json" and .display.themeSpec.renderOk == true and .display.gif.activePath == "/themes/mini/mini.gif" and .display.gif.filePresent == true and .display.gif.decoderOpen == true and .display.gif.lastError == null' "$body_file" >/dev/null 2>&1; then
-        log "smoke: mini-classic ThemeSpec GIF decoder healthy"
+      if jq -e '.display.activeTheme == "theme-missing" and .display.themeSpec.active == false' "$body_file" >/dev/null 2>&1; then
+        log "smoke: missing-theme state healthy"
         rm -f "$body_file"
         return 0
-      fi
-      if jq -e '.display.gif.lastError != null' "$body_file" >/dev/null 2>&1; then
-        stage="$(jq -r '.display.gif.lastError.stage // "unknown"' "$body_file")"
-        error_path="$(jq -r '.display.gif.lastError.path // ""' "$body_file")"
-        log "health response:" >&2
-        sed 's/^/  /' "$body_file" >&2
-        rm -f "$body_file"
-        die "mini GIF renderer reported error stage=${stage} path=${error_path}"
       fi
     fi
     if [[ "$attempt" != "8" ]]; then
@@ -733,7 +729,7 @@ check_post_smoke_gif_state() {
     sed 's/^/  /' "$body_file" >&2
   fi
   rm -f "$body_file"
-  die "mini-classic ThemeSpec GIF decoder did not report healthy state after smoke frame"
+  die "missing-theme state did not report healthy after smoke frame"
 }
 
 flash_package() {
@@ -777,7 +773,11 @@ flash_package() {
   if [[ "$skip_smoke" != "1" ]]; then
     current_stage="smoke frame"
     send_smoke_frames "$frame_url"
-    check_post_smoke_gif_state "$health_url"
+    if [[ "$skip_filesystem_ota" == "1" ]]; then
+      log "skip: missing-theme state check because filesystem OTA was skipped"
+    else
+      check_post_smoke_theme_missing_state "$health_url"
+    fi
   else
     log "skip: smoke frames"
   fi

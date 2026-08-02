@@ -163,6 +163,7 @@ func (t WiFiTransport) DeviceCapabilities(target string) (protocol.DeviceCapabil
 		return protocol.DeviceCapabilities{}, fmt.Errorf("build device hello request: %w", err)
 	}
 	req.Close = true
+	applyDeviceAuth(req, target)
 	resp, err := t.client.Do(req)
 	if err != nil {
 		return protocol.DeviceCapabilities{}, fmt.Errorf("get device hello: %w", err)

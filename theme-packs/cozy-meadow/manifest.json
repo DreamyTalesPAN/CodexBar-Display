@@ -3,11 +3,14 @@
   "schemaVersion": 1,
   "id": "cozy-meadow",
   "name": "Cozy Meadow",
-  "version": "0.1.0",
-  "minFirmware": "1.0.0",
+  "version": "0.2.1",
+  "minFirmware": "1.0.40",
+  "requiredCapabilities": ["usage-slots-v1"],
   "themeSpec": {
-    "path": "/themes/u/cm.json",
+    "path": "/themes/u/cm-3-1ed79c.json",
     "file": "theme.json",
+    "bytes": 874,
+    "sha256": "1ed79c210b3ec85f819db972ae1b7dfa6f50aeeb545b6bbd247a60c949f6b67c",
     "contentType": "application/json"
   },
   "assets": [

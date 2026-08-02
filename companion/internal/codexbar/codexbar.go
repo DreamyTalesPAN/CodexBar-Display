@@ -45,12 +45,13 @@ var readFileFn = os.ReadFile
 var executablePathFn = os.Executable
 
 const (
-	minSharedFallbackTimeBudget = 4 * time.Second
-	minSupportedVersionString   = "0.23"
-	versionCheckTimeout         = 2 * time.Second
+	minSupportedVersionString      = "0.23"
+	minDashboardSnapshotAPIVersion = "0.44.0"
+	versionCheckTimeout            = 2 * time.Second
 )
 
 const usageModeEnvVar = "CODEXBAR_DISPLAY_USAGE_MODE"
+const appManagedCodexBarVersionEnvVar = "VIBETV_CODEXBAR_PINNED_VERSION"
 
 type FetchErrorKind string
 
@@ -114,6 +115,10 @@ func classifyParseError(err error) FetchErrorKind {
 }
 
 func FindBinary() (string, error) {
+	if version := strings.TrimSpace(os.Getenv(appManagedCodexBarVersionEnvVar)); version != "" {
+		return findAppManagedBinary(version)
+	}
+
 	if env := strings.TrimSpace(os.Getenv("CODEXBAR_BIN")); env != "" {
 		if isExecutable(env) {
 			return env, nil
@@ -170,21 +175,74 @@ func FindBinary() (string, error) {
 	return "", errors.New("could not find CodexBar CLI binary")
 }
 
+func findAppManagedBinary(version string) (string, error) {
+	_, bin, err := findAppManagedPayload(version)
+	return bin, err
+}
+
+func findAppManagedPayload(version string) (string, string, error) {
+	if !regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`).MatchString(version) {
+		return "", "", fmt.Errorf("%s has invalid version: %s", appManagedCodexBarVersionEnvVar, version)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", "", fmt.Errorf("resolve home directory for app-managed CodexBar: %w", err)
+	}
+	if strings.TrimSpace(home) == "" {
+		return "", "", errors.New("home directory for app-managed CodexBar is empty")
+	}
+	app := filepath.Join(
+		home,
+		"Library",
+		"Application Support",
+		"codexbar-display",
+		"CodexBar",
+		version,
+		"CodexBar.app",
+	)
+	bin := filepath.Join(
+		app,
+		"Contents",
+		"Helpers",
+		"CodexBarCLI",
+	)
+	if linkPath, err := firstSymlinkInPathUnder(home, bin); err != nil {
+		return "", "", fmt.Errorf("verify app-managed CodexBar path: %w", err)
+	} else if linkPath != "" {
+		return "", "", fmt.Errorf("app-managed CodexBar path contains symlink: %s", linkPath)
+	}
+	if isExecutable(bin) {
+		return app, bin, nil
+	}
+	return "", "", fmt.Errorf("app-managed CodexBar %s is not executable: %s", version, bin)
+}
+
 func MinimumSupportedVersion() string {
 	return minSupportedVersionString
 }
 
 func CheckMinimumVersion(ctx context.Context, bin string) error {
+	return checkMinimumVersion(ctx, bin, minSupportedVersionString, "")
+}
+
+func CheckDashboardSnapshotVersion(ctx context.Context, bin string) error {
+	return checkMinimumVersion(ctx, bin, minDashboardSnapshotAPIVersion, "dashboard snapshot API")
+}
+
+func checkMinimumVersion(ctx context.Context, bin, minimumString, requirement string) error {
 	version, err := installedVersion(ctx, bin)
 	if err != nil {
 		return err
 	}
-	minimum, err := parseLooseVersion(minSupportedVersionString)
+	minimum, err := parseLooseVersion(minimumString)
 	if err != nil {
 		return err
 	}
 	if version.Compare(minimum) < 0 {
-		return fmt.Errorf("CodexBar %s is too old; need >= %s", version.String(), minSupportedVersionString)
+		if requirement != "" {
+			return fmt.Errorf("CodexBar %s is too old for the %s; need >= %s", version.String(), requirement, minimumString)
+		}
+		return fmt.Errorf("CodexBar %s is too old; need >= %s", version.String(), minimumString)
 	}
 	return nil
 }
@@ -208,10 +266,42 @@ func isExecutable(path string) bool {
 	return info.Mode()&0o111 != 0
 }
 
+func firstSymlinkInPathUnder(root, path string) (string, error) {
+	cleanRoot := filepath.Clean(root)
+	cleanPath := filepath.Clean(path)
+	if cleanPath != cleanRoot && !strings.HasPrefix(cleanPath, cleanRoot+string(os.PathSeparator)) {
+		return cleanPath, nil
+	}
+	if info, err := os.Lstat(cleanRoot); err != nil {
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+	} else if info.Mode()&os.ModeSymlink != 0 {
+		return cleanRoot, nil
+	}
+	rest := strings.TrimPrefix(cleanPath, cleanRoot)
+	rest = strings.TrimPrefix(rest, string(os.PathSeparator))
+	current := cleanRoot
+	for _, component := range strings.Split(rest, string(os.PathSeparator)) {
+		if component == "" || component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return "", nil
+			}
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return current, nil
+		}
+	}
+	return "", nil
+}
+
 // FetchAllProviders reads provider usage from CodexBar and normalizes it.
-//
-// It prefers one aggregate `usage --json` call. If aggregate usage is
-// unavailable, a Codex CLI-only fallback can still return a minimal payload.
 func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	bin, err := FindBinary()
 	if err != nil {
@@ -225,18 +315,6 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	out, err := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
 	allParsed, parseErr := parseAllProviders(out)
 
-	// A non-zero exit may still contain useful provider rows. Fall back only
-	// when the aggregate payload itself is unusable.
-	if parseErr != nil && !errors.Is(parseErr, errGlobalCLI) {
-		fallbackCtx, fallbackCancel := fallbackContext(ctx)
-		defer fallbackCancel()
-		if fallback, ok := fetchCodexCLIOnly(fallbackCtx, cliFallbackTimeout(timeout), bin); ok {
-			allParsed = fallback
-			err = nil
-			parseErr = nil
-		}
-	}
-
 	if err != nil {
 		if len(bytes.TrimSpace(out)) == 0 {
 			return nil, wrapFetchError(FetchErrorCommand, fmt.Errorf("run codexbar usage --json: %w", err))
@@ -247,8 +325,6 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	} else if parseErr != nil {
 		return nil, wrapFetchError(classifyParseError(parseErr), parseErr)
 	}
-
-	allParsed = mergeTokenStats(ctx, allParsed, bin)
 
 	for i := range allParsed {
 		allParsed[i].Frame = allParsed[i].Frame.Normalize()
@@ -288,18 +364,10 @@ func FetchProvider(ctx context.Context, provider string) (ParsedFrame, error) {
 	}
 
 	timeout := commandTimeout()
-	if key == "codex" {
-		if codexCLI, ok := fetchCodexCLIProvider(ctx, cliFallbackTimeout(timeout), bin); ok {
-			codexCLI.Frame = codexCLI.Frame.Normalize()
-			return codexCLI, nil
-		}
-	}
-
 	parsed, err := fetchProviderScopedUsageDetailed(ctx, providerScopedFallbackTimeout(timeout), bin, key, providerScopedWebTimeoutSeconds(), "")
 	if err != nil {
 		return ParsedFrame{}, err
 	}
-	parsed = mergeProviderTokenStats(ctx, parsed, bin)
 	parsed.Frame = parsed.Frame.Normalize()
 	return parsed, nil
 }
@@ -385,6 +453,8 @@ type ParsedFrame struct {
 	Meta               ProviderUsageMeta
 	CollectedAt        time.Time
 	ActivityObservedAt time.Time
+	RateLimited        bool
+	RateLimitedUntil   time.Time
 	Stale              bool
 }
 
@@ -685,9 +755,6 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		if provider == "cli" && source == "cli" {
 			return ParsedFrame{}, errGlobalCLI
 		}
-		if recovered, ok := recoverCodexFrameFromErrorPayload(payload); ok {
-			return recovered, nil
-		}
 		if provider == "" {
 			return ParsedFrame{}, errors.New("provider error payload has no identity")
 		}
@@ -702,9 +769,11 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 				Label:            label,
 				UsageUnavailable: true,
 			},
-			Provider: provider,
-			Source:   source,
-			Stale:    true,
+			Provider:         provider,
+			Source:           source,
+			RateLimited:      payloadIsRateLimited(payload),
+			RateLimitedUntil: rateLimitedUntilFromPayload(payload),
+			Stale:            true,
 		}, nil
 	}
 
@@ -769,25 +838,54 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		label = "Provider"
 	}
 
+	meta := parseProviderUsageMeta(payload)
+	usageWindows := usageWindowsFromWindows(meta.Windows)
+	if len(usageWindows) > 0 {
+		session = usageWindows[0].Percent
+		resetSecs = usageWindows[0].ResetSec
+	}
+	if len(usageWindows) > 1 {
+		weekly = usageWindows[1].Percent
+	}
+	frame := protocol.Frame{
+		V:                  protocol.ProtocolVersionV2,
+		Provider:           provider,
+		Label:              label,
+		Session:            session,
+		Weekly:             weekly,
+		ResetSec:           resetSecs,
+		UsageWindows:       usageWindows,
+		UsageUnavailable:   !sessionKnown && !weeklyKnown && len(usageWindows) == 0,
+		SessionUnavailable: !sessionKnown,
+		WeeklyUnavailable:  !weeklyKnown,
+	}.Normalize()
 	return ParsedFrame{
-		Frame: protocol.Frame{
-			V:                  1,
-			Provider:           provider,
-			Label:              label,
-			Session:            session,
-			Weekly:             weekly,
-			ResetSec:           resetSecs,
-			ResetSource:        resetSource,
-			UsageUnavailable:   !sessionKnown && !weeklyKnown,
-			SessionUnavailable: !sessionKnown,
-			WeeklyUnavailable:  !weeklyKnown,
-		},
+		Frame:              frame,
 		Provider:           provider,
 		Source:             source,
 		AccountEmail:       accountEmail,
-		Meta:               parseProviderUsageMeta(payload),
+		Meta:               meta,
 		ActivityObservedAt: activityObservedAt,
 	}, nil
+}
+
+func usageWindowsFromWindows(windows []UsageWindow) []protocol.UsageWindow {
+	if len(windows) == 0 {
+		return nil
+	}
+	out := make([]protocol.UsageWindow, 0, len(windows))
+	for _, window := range windows {
+		if strings.TrimSpace(window.ID) == "" || strings.TrimSpace(window.Label) == "" {
+			continue
+		}
+		out = append(out, protocol.UsageWindow{
+			ID:       window.ID,
+			Label:    window.Label,
+			Percent:  window.UsedPercent,
+			ResetSec: window.ResetSec,
+		})
+	}
+	return out
 }
 
 func parseProviderUsageMeta(payload map[string]any) ProviderUsageMeta {
@@ -1148,8 +1246,8 @@ func parseUsageWindowMap(windowMap map[string]any, id string, label string) (Usa
 	if !known {
 		return UsageWindow{}, false
 	}
-	resetSec := resetSecondsFromWindowMap(windowMap)
-	windowMinutes := intAtPaths(windowMap, "windowMinutes", "window_minutes")
+	resetSec, _ := resetSecondsFromWindowMap(windowMap)
+	windowMinutes, _ := intAtPathsWithPresence(windowMap, "windowMinutes", "window_minutes")
 	return UsageWindow{
 		ID:            strings.TrimSpace(strings.ToLower(id)),
 		Label:         strings.TrimSpace(label),
@@ -1159,22 +1257,30 @@ func parseUsageWindowMap(windowMap map[string]any, id string, label string) (Usa
 	}, true
 }
 
-func resetSecondsFromWindowMap(windowMap map[string]any) int64 {
-	if n := intAtPaths(windowMap, "resetSecs", "resetSeconds", "reset_after_seconds"); n > 0 {
-		return int64(n)
+func resetSecondsFromWindowMap(windowMap map[string]any) (int64, bool) {
+	if n, ok := intAtPathsWithPresence(
+		windowMap,
+		"resetSecs",
+		"resetSeconds",
+		"reset_after_seconds",
+	); ok {
+		if n < 0 {
+			n = 0
+		}
+		return int64(n), true
 	}
 	resetAt := firstStringAtPaths(windowMap, "resetsAt", "resetAt")
 	if resetAt == "" {
-		return 0
+		return 0, false
 	}
 	t, err := time.Parse(time.RFC3339, resetAt)
 	if err != nil {
-		return 0
+		return 0, false
 	}
 	if d := time.Until(t); d > 0 {
-		return int64(d.Seconds())
+		return int64(d.Seconds()), true
 	}
-	return 0
+	return 0, true
 }
 
 func parseProviderStatus(payload map[string]any) (ProviderStatus, bool) {
@@ -1316,92 +1422,20 @@ func parseProviderPace(payload map[string]any) []ProviderPace {
 	return out
 }
 
-func recoverCodexFrameFromErrorPayload(payload map[string]any) (ParsedFrame, bool) {
-	provider := strings.TrimSpace(strings.ToLower(firstString(payload, "provider", "id", "slug", "name")))
-	if provider != "codex" {
-		return ParsedFrame{}, false
-	}
-
-	errorPayload, ok := payload["error"].(map[string]any)
-	if !ok {
-		return ParsedFrame{}, false
-	}
-	message, ok := anyToString(errorPayload["message"])
-	if !ok || !strings.Contains(message, "body=") {
-		return ParsedFrame{}, false
-	}
-
-	body, ok := decodeEmbeddedJSONBody(message)
-	if !ok {
-		return ParsedFrame{}, false
-	}
-
-	session := percentAtPaths(body, "rate_limit.primary_window.used_percent")
-	weekly := percentAtPaths(body, "rate_limit.secondary_window.used_percent")
-	resetSecs := int64(0)
-	if n, ok := intAtPath(body, "rate_limit.primary_window.reset_after_seconds"); ok && n > 0 {
-		resetSecs = int64(n)
-	}
-	if session == 0 && weekly == 0 && resetSecs == 0 {
-		return ParsedFrame{}, false
-	}
-
-	resetSource := ""
-	if resetSecs > 0 {
-		resetSource = protocol.ResetSourceKey("codex", "primary")
-	}
-
-	return ParsedFrame{
-		Frame: protocol.Frame{
-			V:           1,
-			Provider:    "codex",
-			Label:       "Codex",
-			Session:     session,
-			Weekly:      weekly,
-			ResetSec:    resetSecs,
-			ResetSource: resetSource,
-		},
-		Provider: "codex",
-		Source:   "openai-web-recovered",
-	}, true
-}
-
-func decodeEmbeddedJSONBody(message string) (map[string]any, bool) {
-	idx := strings.Index(message, "body=")
-	if idx == -1 {
-		return nil, false
-	}
-	remainder := message[idx+len("body="):]
-	start := strings.Index(remainder, "{")
-	if start == -1 {
-		return nil, false
-	}
-
-	dec := json.NewDecoder(strings.NewReader(remainder[start:]))
-	var body map[string]any
-	if err := dec.Decode(&body); err != nil {
-		return nil, false
-	}
-	return body, len(body) > 0
-}
-
-func intAtPath(m map[string]any, path string) (int, bool) {
-	v, ok := getPath(m, path)
-	if !ok {
-		return 0, false
-	}
-	return anyToInt(v)
-}
-
 func intAtPaths(m map[string]any, paths ...string) int {
+	n, _ := intAtPathsWithPresence(m, paths...)
+	return n
+}
+
+func intAtPathsWithPresence(m map[string]any, paths ...string) (int, bool) {
 	for _, path := range paths {
 		if v, ok := getPath(m, path); ok {
 			if n, ok := anyToInt(v); ok {
-				return n
+				return n, true
 			}
 		}
 	}
-	return 0
+	return 0, false
 }
 
 func floatAtPaths(m map[string]any, paths ...string) (float64, bool) {
@@ -1444,6 +1478,43 @@ func providerPayloadHasError(payload map[string]any) bool {
 	default:
 		return true
 	}
+}
+
+func rateLimitedUntilFromPayload(payload map[string]any) time.Time {
+	if !payloadIsRateLimited(payload) {
+		return time.Time{}
+	}
+	return firstRFC3339AtPaths(
+		payload,
+		"error.blockedUntil",
+		"error.blocked_until",
+		"error.retryAfter",
+		"error.retry_after",
+		"blockedUntil",
+		"blocked_until",
+		"retryAfter",
+		"retry_after",
+	)
+}
+
+func payloadIsRateLimited(payload map[string]any) bool {
+	message := strings.Join([]string{
+		firstStringAtPaths(payload, "error.message", "message", "diagnostic"),
+		firstStringAtPaths(payload, "error.kind", "error.code", "code"),
+	}, " ")
+	return isRateLimitMessage(message)
+}
+
+func isRateLimitMessage(message string) bool {
+	lower := strings.ToLower(strings.TrimSpace(message))
+	if lower == "" {
+		return false
+	}
+	return strings.Contains(lower, "rate_limit_error") ||
+		strings.Contains(lower, "rate limit") ||
+		strings.Contains(lower, "rate-limited") ||
+		strings.Contains(lower, "rate limited") ||
+		strings.Contains(lower, "too many requests")
 }
 
 const (
@@ -2580,34 +2651,6 @@ func indexOfProviderKey(all []ParsedFrame, key string) int {
 	return -1
 }
 
-func fetchCodexCLIOnly(ctx context.Context, timeout time.Duration, bin string) ([]ParsedFrame, bool) {
-	codexParsed, ok := fetchCodexCLIProvider(ctx, timeout, bin)
-	if !ok {
-		return nil, false
-	}
-	codexParsed.Source = fallbackSource(codexParsed.Source, "codex-cli-fallback")
-	return []ParsedFrame{codexParsed}, true
-}
-
-func fetchCodexCLIProvider(ctx context.Context, timeout time.Duration, bin string) (ParsedFrame, bool) {
-	cliOut, cliErr := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--provider", "codex", "--source", "cli")
-	if cliErr != nil {
-		return ParsedFrame{}, false
-	}
-	cliAll, cliParseErr := parseAllProviders(cliOut)
-	if cliParseErr != nil || len(cliAll) == 0 {
-		return ParsedFrame{}, false
-	}
-
-	for _, candidate := range cliAll {
-		if providerKey(candidate) == "codex" {
-			candidate.Source = fallbackSource(candidate.Source, "codex-cli")
-			return candidate, true
-		}
-	}
-	return ParsedFrame{}, false
-}
-
 func fetchProviderScopedUsageDetailed(ctx context.Context, timeout time.Duration, bin string, provider string, webTimeoutSeconds int, source string) (ParsedFrame, error) {
 	key := strings.TrimSpace(strings.ToLower(provider))
 	if key == "" {
@@ -2653,28 +2696,6 @@ func fetchProviderScopedUsageDetailed(ctx context.Context, timeout time.Duration
 	)
 }
 
-func fallbackContext(parent context.Context) (context.Context, context.CancelFunc) {
-	if parent == nil {
-		return context.WithTimeout(context.Background(), minSharedFallbackTimeBudget)
-	}
-	if parent.Err() != nil {
-		return context.WithTimeout(context.Background(), minSharedFallbackTimeBudget)
-	}
-	if deadline, ok := parent.Deadline(); ok {
-		if time.Until(deadline) < minSharedFallbackTimeBudget {
-			return context.WithTimeout(context.Background(), minSharedFallbackTimeBudget)
-		}
-	}
-	return parent, func() {}
-}
-
-func cliFallbackTimeout(primaryTimeout time.Duration) time.Duration {
-	if primaryTimeout > 0 {
-		return primaryTimeout
-	}
-	return commandTimeout()
-}
-
 func providerScopedFallbackTimeout(primaryTimeout time.Duration) time.Duration {
 	const (
 		minTimeout = 4 * time.Second
@@ -2716,61 +2737,6 @@ func providerScopedWebTimeoutSeconds() int {
 		return max
 	}
 	return n
-}
-
-func needsCodexCLIPriority(all []ParsedFrame) bool {
-	for _, parsed := range all {
-		if providerKey(parsed) == "codex" {
-			// Keep aggregated codex usage as-is to mirror CodexBar desktop values.
-			return false
-		}
-	}
-	return true
-}
-
-func replaceOrAppendCodexProvider(all []ParsedFrame, codex ParsedFrame) []ParsedFrame {
-	out := make([]ParsedFrame, 0, len(all)+1)
-	replaced := false
-	for _, parsed := range all {
-		if providerKey(parsed) != "codex" {
-			out = append(out, parsed)
-			continue
-		}
-		if !replaced {
-			out = append(out, codex)
-			replaced = true
-		}
-	}
-	if !replaced {
-		out = append(out, codex)
-	}
-	return out
-}
-
-func repairCodexFromCLI(ctx context.Context, timeout time.Duration, bin string, all []ParsedFrame) []ParsedFrame {
-	if !needsCodexCLIPriority(all) {
-		return all
-	}
-
-	fallbackCtx, fallbackCancel := fallbackContext(ctx)
-	defer fallbackCancel()
-	codexCLI, ok := fetchCodexCLIProvider(fallbackCtx, cliFallbackTimeout(timeout), bin)
-	if !ok {
-		return all
-	}
-	codexCLI.Source = fallbackSource(codexCLI.Source, "codex-cli-repair")
-	return replaceOrAppendCodexProvider(all, codexCLI)
-}
-
-func fallbackSource(current string, fallback string) string {
-	current = strings.TrimSpace(strings.ToLower(current))
-	if current == "" {
-		return fallback
-	}
-	if strings.Contains(current, "fallback") || strings.Contains(current, "repair") {
-		return current
-	}
-	return current + "+" + fallback
 }
 
 func extractProviderList(root any) []any {
@@ -2891,17 +2857,6 @@ func firstRFC3339AtPaths(m map[string]any, paths ...string) time.Time {
 		return time.Time{}
 	}
 	return parsed.UTC()
-}
-
-func percentAtPaths(m map[string]any, paths ...string) int {
-	for _, p := range paths {
-		if v, ok := getPath(m, p); ok {
-			if n, ok := anyToInt(v); ok {
-				return clampPercent(n)
-			}
-		}
-	}
-	return 0
 }
 
 func knownUsagePercentAtPaths(m map[string]any, paths ...string) (int, bool) {

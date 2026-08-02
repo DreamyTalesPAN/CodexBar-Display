@@ -138,13 +138,46 @@ export function localizeCompanionAssetUrl(
   return rawUrl;
 }
 
-export function localThemeRenderPackUrl(themeId: string): string {
-  return `/theme-packs/render/${encodeURIComponent(themeId)}.json`;
+export function localThemeRenderPackUrl(
+  themeId: string,
+  themeSpecPath?: string,
+  themeSpecHash?: string,
+): string {
+  const encodedThemeId = encodeURIComponent(themeId);
+  const specFile = themeSpecFileName(themeSpecPath);
+  const path = specFile
+    ? `/theme-packs/render/${encodedThemeId}/${encodeURIComponent(specFile)}`
+    : `/theme-packs/render/${encodedThemeId}.json`;
+  const specHash = normalizeThemeSpecHash(themeSpecHash);
+  return specHash ? `${path}?specHash=${specHash}` : path;
 }
 
-export function themeRenderPackUrl(themeId: string): string {
+export function themeRenderPackUrl(
+  themeId: string,
+  themeSpecPath?: string,
+  themeSpecHash?: string,
+): string {
   if (isLocalCompanionOrigin()) {
-    return localThemeRenderPackUrl(themeId);
+    return localThemeRenderPackUrl(themeId, themeSpecPath, themeSpecHash);
   }
-  return `/api/theme-pack/${encodeURIComponent(themeId)}`;
+  const url = `/api/theme-pack/${encodeURIComponent(themeId)}`;
+  const query = new URLSearchParams();
+  if (themeSpecPath) {
+    query.set("specPath", themeSpecPath);
+  }
+  const specHash = normalizeThemeSpecHash(themeSpecHash);
+  if (specHash) {
+    query.set("specHash", specHash);
+  }
+  return query.size > 0 ? `${url}?${query}` : url;
+}
+
+function themeSpecFileName(themeSpecPath: string | undefined): string {
+  const file = (themeSpecPath || "").trim().split("/").pop() || "";
+  return /^[a-zA-Z0-9._-]+\.json$/.test(file) ? file : "";
+}
+
+function normalizeThemeSpecHash(value: string | undefined): string {
+  const hash = (value || "").trim().toLowerCase();
+  return /^[a-f0-9]{8}$/.test(hash) ? hash : "";
 }

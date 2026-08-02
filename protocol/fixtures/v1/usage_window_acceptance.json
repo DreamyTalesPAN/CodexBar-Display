@@ -1,0 +1,558 @@
+{
+  "version": 1,
+  "maxFrameBytes": 512,
+  "testFiles": {
+    "matrix": [
+      "companion/internal/daemon/usage_window_acceptance_test.go",
+      "companion/internal/companionapi/usage_window_acceptance_test.go",
+      "apps/control-center/src/components/usage-window-acceptance.test.tsx"
+    ],
+    "existing": [
+      "companion/internal/codexbar/dashboard_fetch_test.go",
+      "companion/internal/codexbar/dashboard_serve_test.go",
+      "companion/internal/companionapi/server_test.go",
+      "companion/internal/daemon/daemon_test.go",
+      "companion/internal/protocol/protocol_test.go",
+      "companion/internal/daemon/protocol_golden_test.go",
+      "companion/internal/themespec/themespec_test.go",
+      "firmware_esp8266/test/test_native_theme_spec/test_theme_spec_renderer.cpp",
+      "apps/control-center/src/components/live-vibetv-preview.test.ts",
+      "apps/control-center/src/components/usage-surface-polling.test.ts",
+      "apps/control-center/src/lib/active-theme-upgrade.test.ts"
+    ]
+  },
+  "criteria": [
+    {
+      "id": "237-01-one-window-one-lane",
+      "source": "#237",
+      "text": "A provider with one valid window renders one complete lane and no empty second lane.",
+      "cases": ["one-valid-weekly-remaining"],
+      "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go", "apps/control-center/src/components/usage-window-acceptance.test.tsx", "firmware_esp8266/test/test_native_theme_spec/test_theme_spec_renderer.cpp"]
+    },
+    {
+      "id": "237-02-missing-not-100-remaining",
+      "source": "#237",
+      "text": "A missing session window is not shown as 0% used or 100% remaining.",
+      "cases": ["zero-source-windows", "one-valid-weekly-remaining"],
+      "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go", "apps/control-center/src/components/usage-window-acceptance.test.tsx"]
+    },
+    {
+      "id": "237-03-codex-weekly-spark",
+      "source": "#237",
+      "text": "Codex with Weekly and Codex Spark Weekly fills the two slots with those exact labels and values.",
+      "cases": ["codex-weekly-spark-zero"],
+      "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go", "companion/internal/codexbar/dashboard_fetch_test.go"]
+    },
+    {
+      "id": "237-04-antigravity-overflow-control-center",
+      "source": "#237",
+      "text": "Antigravity four-window input produces deterministic two-slot display output while all valid Control Center windows remain available.",
+      "cases": ["antigravity-generic-dedupe", "four-unique-overflow"],
+      "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go", "companion/internal/companionapi/usage_window_acceptance_test.go"]
+    },
+    {
+      "id": "237-05-provider-labels-reach-display",
+      "source": "#237",
+      "text": "Provider-specific labels reach the physical display and dynamic quota lanes do not hard-code Session and Weekly.",
+      "cases": ["codex-weekly-spark-zero", "four-unique-overflow"],
+      "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go", "firmware_esp8266/test/test_native_theme_spec/test_theme_spec_renderer.cpp"]
+    },
+    {
+      "id": "237-06-per-slot-reset",
+      "source": "#237",
+      "text": "Each displayed slot uses its own reset value.",
+      "cases": ["codex-weekly-spark-zero", "four-unique-overflow"],
+      "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go", "firmware_esp8266/test/test_native_theme_spec/test_theme_spec_renderer.cpp"]
+    },
+    {
+      "id": "237-07-unknown-usageknown-synthetic-hidden",
+      "source": "#237",
+      "text": "Unknown windows and usageKnown:false values are omitted rather than coerced to zero.",
+      "cases": ["filter-unknown-synthetic-usageknown"],
+      "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go"]
+    },
+    {
+      "id": "237-08-provider-window-changes-update",
+      "source": "#237",
+      "text": "Switching providers, or a provider adding, removing, or renaming windows, updates slot content and labels without reinstalling the theme.",
+      "cases": ["provider-window-rename"],
+      "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go", "companion/internal/daemon/daemon_test.go"]
+    },
+    {
+      "id": "237-09-used-remaining-valid-only",
+      "source": "#237",
+      "text": "Switching between Used and Remaining changes only valid slot percentages.",
+      "cases": ["one-valid-weekly-remaining"],
+      "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go", "companion/internal/daemon/daemon_test.go"]
+    },
+    {
+      "id": "237-10-preview-firmware-parity",
+      "source": "#237",
+      "text": "Theme Studio preview and firmware render the same slot labels, values, availability, and reset text.",
+      "cases": ["one-valid-weekly-remaining", "codex-weekly-spark-zero"],
+      "testFiles": ["apps/control-center/src/components/usage-window-acceptance.test.tsx", "firmware_esp8266/test/test_native_theme_spec/test_theme_spec_renderer.cpp"]
+    },
+    {
+      "id": "237-11-legacy-safe",
+      "source": "#237",
+      "text": "Existing legacy themes remain safe during migration and do not crash or render a black screen.",
+      "cases": ["codex-weekly-spark-zero"],
+      "testFiles": ["companion/internal/daemon/protocol_golden_test.go", "companion/internal/protocol/protocol_test.go", "firmware_esp8266/test/test_native_theme_spec/test_theme_spec_renderer.cpp"]
+    },
+    {
+      "id": "237-12-no-provider-specific-mapping",
+      "source": "#237",
+      "text": "No provider-specific mapping logic is introduced outside CodexBar.",
+      "cases": ["antigravity-generic-dedupe", "four-unique-overflow"],
+      "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go", "companion/internal/codexbar/dashboard_fetch_test.go"]
+    },
+    {
+      "id": "237-13-frame-budget",
+      "source": "#237",
+      "text": "The device frame and compiled ThemeSpec remain within existing ESP8266 size and memory limits.",
+      "cases": ["four-unique-overflow"],
+      "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go", "companion/internal/protocol/protocol_test.go", "firmware_esp8266/test/test_native_theme_spec/test_theme_spec_renderer.cpp"]
+    },
+    {
+      "id": "259-01-single-usage-path",
+      "source": "#259",
+      "text": "/v1/usage serves collector state; no second collection path and no separate HTTP-level usage cache remain.",
+      "testFiles": ["companion/internal/companionapi/server_test.go"]
+    },
+    {
+      "id": "259-02-refresh-interval",
+      "source": "#259",
+      "text": "Background refresh detects new Claude usage within a documented bounded interval and does not exceed CodexBar cadence.",
+      "testFiles": ["companion/internal/codexbar/dashboard_serve_test.go", "companion/internal/daemon/daemon_test.go"]
+    },
+    {
+      "id": "259-03-error-last-good",
+      "source": "#259",
+      "text": "A provider error never replaces last-good data with zeroed values.",
+      "cases": ["provider-error-last-good"],
+      "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go", "companion/internal/daemon/daemon_test.go"]
+    },
+    {
+      "id": "259-04-stale-clears",
+      "source": "#259",
+      "text": "Stale and Token totals not available clear automatically after a successful fresh collection.",
+      "testFiles": ["companion/internal/companionapi/server_test.go"]
+    },
+    {
+      "id": "259-05-manual-refresh-rate-limit",
+      "source": "#259",
+      "text": "Manual refresh returns fresh data or explicit still-refreshing/rate-limited state with blocked-until when active.",
+      "testFiles": ["companion/internal/companionapi/server_test.go", "apps/control-center/src/components/usage-screen.test.tsx"]
+    },
+    {
+      "id": "259-06-collected-at",
+      "source": "#259",
+      "text": "collectedAt is exposed per provider.",
+      "testFiles": ["companion/internal/companionapi/server_test.go"]
+    },
+    {
+      "id": "259-07-provider-health-polling",
+      "source": "#259",
+      "text": "Provider health is re-fetched on the same cadence as usage.",
+      "testFiles": ["apps/control-center/src/components/usage-surface-polling.test.ts"]
+    },
+    {
+      "id": "259-08-no-restart-required",
+      "source": "#259",
+      "text": "Restarting the Control Center is never required to resume normal usage updates.",
+      "testFiles": ["companion/internal/companionapi/server_test.go"]
+    },
+    {
+      "id": "259-09-physical-same-snapshot",
+      "source": "#259",
+      "text": "The physical VibeTV receives the same fresh normalized snapshot as the Control Center.",
+      "cases": ["codex-weekly-spark-zero", "four-unique-overflow"],
+      "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go", "companion/internal/companionapi/usage_window_acceptance_test.go"]
+    },
+    {
+      "id": "259-10-required-regressions",
+      "source": "#259",
+      "text": "Tests cover error last-good, stale-to-fresh recovery, restart-free convergence, and provider-health polling.",
+      "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go", "companion/internal/companionapi/server_test.go", "apps/control-center/src/components/usage-surface-polling.test.ts"]
+    },
+    {
+      "id": "259-11-provider-owned-behavior",
+      "source": "#259",
+      "text": "Keep provider behavior owned by CodexBar; do not add Claude-specific parsing, caching, or backoff logic.",
+      "testFiles": ["companion/internal/codexbar/dashboard_fetch_test.go", "companion/internal/codexbar/dashboard_serve_test.go"]
+    },
+    {
+      "id": "259-12-no-live-device-write",
+      "source": "#259",
+      "text": "No firmware or live-device write is required to diagnose or implement the data-path fix.",
+      "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go"]
+    }
+  ],
+  "cases": [
+    {
+      "name": "zero-source-windows",
+      "criteria": ["237-02-missing-not-100-remaining"],
+      "now": "2026-07-28T08:30:00Z",
+      "showUsed": true,
+      "dashboardProvider": {
+        "id": "empty",
+        "name": "Empty",
+        "windows": [],
+        "error": null,
+        "updatedAt": "2026-07-28T08:01:00Z"
+      },
+      "usageProvider": {
+        "provider": "empty",
+        "usage": {}
+      },
+      "expectedControlCenterWindows": [],
+      "expectedDeviceFrame": {
+        "v": 1,
+        "provider": "empty",
+        "label": "Empty",
+        "usageMode": "used"
+      },
+      "expectedRender": {
+        "slot1Visible": false,
+        "slot2Visible": false,
+        "ariaContains": ["no usage windows available"],
+        "ariaNotContains": ["100% remaining", "0% used"]
+      }
+    },
+    {
+      "name": "one-valid-weekly-remaining",
+      "criteria": ["237-01-one-window-one-lane", "237-02-missing-not-100-remaining", "237-09-used-remaining-valid-only"],
+      "now": "2026-07-28T08:30:00Z",
+      "showUsed": false,
+      "dashboardProvider": {
+        "id": "codex",
+        "name": "Codex",
+        "windows": [
+          {"kind": "weekly", "label": "Weekly", "usedPercent": 42, "remainingPercent": 58, "resetAt": "2026-07-28T10:30:00Z"}
+        ],
+        "error": null,
+        "updatedAt": "2026-07-28T08:02:00Z"
+      },
+      "usageProvider": {
+        "provider": "codex",
+        "usage": {
+          "secondary": {"usedPercent": 42, "windowMinutes": 10080, "resetsAt": "2026-07-28T10:30:00Z"}
+        }
+      },
+      "expectedControlCenterWindows": [
+        {"id": "weekly", "label": "Weekly", "usedPercent": 42, "resetSecs": 7200, "windowMinutes": 10080}
+      ],
+      "expectedAPIWindows": [
+        {"id": "weekly", "label": "Weekly", "usedPercent": 58, "resetSecs": 7200, "windowMinutes": 10080}
+      ],
+      "expectedDeviceFrame": {
+        "v": 1,
+        "provider": "codex",
+        "label": "Codex",
+        "session": 58,
+        "resetSecs": 7200,
+        "usageMode": "remaining",
+        "usageSlots": [
+          {"id": "weekly", "label": "Weekly", "percent": 58, "resetSecs": 7200}
+        ]
+      },
+      "expectedRender": {
+        "slot1Visible": true,
+        "slot2Visible": false,
+        "ariaContains": ["Weekly 58% remaining"],
+        "ariaNotContains": ["Codex Spark Weekly", "100% remaining"]
+      }
+    },
+    {
+      "name": "codex-weekly-spark-zero",
+      "criteria": ["237-03-codex-weekly-spark", "237-05-provider-labels-reach-display", "237-06-per-slot-reset"],
+      "now": "2026-07-28T08:30:00Z",
+      "showUsed": true,
+      "dashboardProvider": {
+        "id": "codex",
+        "name": "Codex",
+        "windows": [
+          {"kind": "weekly", "label": "Weekly", "usedPercent": 68, "remainingPercent": 32, "resetAt": "2026-07-28T10:30:00Z"},
+          {"kind": "codex-spark-weekly", "label": "Codex Spark Weekly", "usedPercent": 0, "remainingPercent": 100, "resetAt": "2026-08-01T08:30:00Z"}
+        ],
+        "error": null,
+        "updatedAt": "2026-07-28T08:03:00Z"
+      },
+      "usageProvider": {
+        "provider": "codex",
+        "usage": {
+          "secondary": {"usedPercent": 68, "windowMinutes": 10080, "resetsAt": "2026-07-28T10:30:00Z"},
+          "extraRateWindows": [
+            {"id": "codex-spark-weekly", "title": "Codex Spark Weekly", "usageKnown": true, "window": {"usedPercent": 0, "windowMinutes": 10080, "resetsAt": "2026-08-01T08:30:00Z"}}
+          ]
+        }
+      },
+      "expectedControlCenterWindows": [
+        {"id": "weekly", "label": "Weekly", "usedPercent": 68, "resetSecs": 7200, "windowMinutes": 10080},
+        {"id": "codex-spark-weekly", "label": "Codex Spark Weekly", "usedPercent": 0, "resetSecs": 345600, "windowMinutes": 10080}
+      ],
+      "expectedDeviceFrame": {
+        "v": 1,
+        "provider": "codex",
+        "label": "Codex",
+        "session": 68,
+        "weekly": 0,
+        "resetSecs": 7200,
+        "usageMode": "used",
+        "usageSlots": [
+          {"id": "weekly", "label": "Weekly", "percent": 68, "resetSecs": 7200},
+          {"id": "codex-spark-weekly", "label": "Codex Spark Weekly", "percent": 0, "resetSecs": 345600}
+        ]
+      },
+      "expectedRender": {
+        "slot1Visible": true,
+        "slot2Visible": true,
+        "ariaContains": ["Weekly 68% used", "Codex Spark Weekly 0% used"],
+        "ariaNotContains": ["Session 68%"]
+      }
+    },
+    {
+      "name": "four-unique-overflow",
+      "criteria": ["237-04-antigravity-overflow-control-center", "237-05-provider-labels-reach-display", "237-06-per-slot-reset", "237-13-frame-budget", "259-09-physical-same-snapshot"],
+      "now": "2026-07-28T08:30:00Z",
+      "showUsed": true,
+      "dashboardProvider": {
+        "id": "generic",
+        "name": "Generic",
+        "windows": [
+          {"kind": "alpha", "label": "Alpha Daily", "usedPercent": 10, "resetAt": "2026-07-28T09:30:00Z"},
+          {"kind": "beta", "label": "Beta Weekly", "usedPercent": 20, "resetAt": "2026-07-29T08:30:00Z"},
+          {"kind": "gamma", "label": "Gamma Monthly", "usedPercent": 30, "resetAt": "2026-08-28T08:30:00Z"},
+          {"kind": "delta", "label": "Delta Rolling", "usedPercent": 40, "resetAt": "2026-07-28T20:30:00Z"}
+        ],
+        "error": null,
+        "updatedAt": "2026-07-28T08:04:00Z"
+      },
+      "usageProvider": {
+        "provider": "generic",
+        "usage": {
+          "extraRateWindows": [
+            {"id": "alpha", "title": "Alpha Daily", "usageKnown": true, "window": {"usedPercent": 10, "windowMinutes": 1440, "resetsAt": "2026-07-28T09:30:00Z"}},
+            {"id": "beta", "title": "Beta Weekly", "usageKnown": true, "window": {"usedPercent": 20, "windowMinutes": 10080, "resetsAt": "2026-07-29T08:30:00Z"}},
+            {"id": "gamma", "title": "Gamma Monthly", "usageKnown": true, "window": {"usedPercent": 30, "windowMinutes": 43200, "resetsAt": "2026-08-28T08:30:00Z"}},
+            {"id": "delta", "title": "Delta Rolling", "usageKnown": true, "window": {"usedPercent": 40, "windowMinutes": 300, "resetsAt": "2026-07-28T20:30:00Z"}}
+          ]
+        }
+      },
+      "expectedControlCenterWindows": [
+        {"id": "alpha", "label": "Alpha Daily", "usedPercent": 10, "resetSecs": 3600, "windowMinutes": 1440},
+        {"id": "beta", "label": "Beta Weekly", "usedPercent": 20, "resetSecs": 86400, "windowMinutes": 10080},
+        {"id": "gamma", "label": "Gamma Monthly", "usedPercent": 30, "resetSecs": 2678400, "windowMinutes": 43200},
+        {"id": "delta", "label": "Delta Rolling", "usedPercent": 40, "resetSecs": 43200, "windowMinutes": 300}
+      ],
+      "expectedDeviceFrame": {
+        "v": 1,
+        "provider": "generic",
+        "label": "Generic",
+        "session": 10,
+        "weekly": 20,
+        "resetSecs": 3600,
+        "usageMode": "used",
+        "usageSlots": [
+          {"id": "alpha", "label": "Alpha Daily", "percent": 10, "resetSecs": 3600},
+          {"id": "beta", "label": "Beta Weekly", "percent": 20, "resetSecs": 86400}
+        ]
+      },
+      "expectedRender": {
+        "slot1Visible": true,
+        "slot2Visible": true,
+        "ariaContains": ["Alpha Daily 10% used", "Beta Weekly 20% used"],
+        "ariaNotContains": ["Gamma Monthly", "Delta Rolling"]
+      }
+    },
+    {
+      "name": "antigravity-generic-dedupe",
+      "criteria": ["237-04-antigravity-overflow-control-center", "237-12-no-provider-specific-mapping"],
+      "now": "2026-07-28T08:30:00Z",
+      "showUsed": true,
+      "dashboardProvider": {
+        "id": "antigravity",
+        "name": "Antigravity",
+        "windows": [
+          {"kind": "session", "label": "Gemini Models", "usedPercent": 18.97, "resetAt": "2026-08-03T08:30:00Z"},
+          {"kind": "weekly", "label": "Claude and GPT", "usedPercent": 0, "resetAt": "2026-08-03T08:30:00Z"},
+          {"kind": "gemini-weekly", "label": "Gemini weekly", "usedPercent": 18.97, "resetAt": "2026-08-03T08:30:00Z"},
+          {"kind": "claude-gpt-weekly", "label": "Claude/GPT weekly", "usedPercent": 0, "resetAt": "2026-08-03T08:30:00Z"}
+        ],
+        "error": null,
+        "updatedAt": "2026-07-28T08:05:00Z"
+      },
+      "usageProvider": {
+        "provider": "antigravity",
+        "usage": {
+          "primary": {"usedPercent": 18.97, "windowMinutes": 10080, "resetsAt": "2026-08-03T08:30:00Z"},
+          "secondary": {"usedPercent": 0, "windowMinutes": 10080, "resetsAt": "2026-08-03T08:30:00Z"},
+          "extraRateWindows": [
+            {"id": "gemini-weekly", "title": "Gemini weekly", "usageKnown": true, "window": {"usedPercent": 18.97, "windowMinutes": 10080, "resetsAt": "2026-08-03T08:30:00Z"}},
+            {"id": "claude-gpt-weekly", "title": "Claude/GPT weekly", "usageKnown": true, "window": {"usedPercent": 0, "windowMinutes": 10080, "resetsAt": "2026-08-03T08:30:00Z"}}
+          ]
+        }
+      },
+      "expectedControlCenterWindows": [
+        {"id": "gemini-weekly", "label": "Gemini weekly", "usedPercent": 19, "resetSecs": 518400, "windowMinutes": 10080},
+        {"id": "claude-gpt-weekly", "label": "Claude/GPT weekly", "usedPercent": 0, "resetSecs": 518400, "windowMinutes": 10080}
+      ],
+      "expectedDeviceFrame": {
+        "v": 1,
+        "provider": "antigravity",
+        "label": "Antigravity",
+        "session": 19,
+        "weekly": 0,
+        "resetSecs": 518400,
+        "usageMode": "used",
+        "usageSlots": [
+          {"id": "gemini-weekly", "label": "Gemini weekly", "percent": 19, "resetSecs": 518400},
+          {"id": "claude-gpt-weekly", "label": "Claude/GPT weekly", "percent": 0, "resetSecs": 518400}
+        ]
+      },
+      "expectedRender": {
+        "slot1Visible": true,
+        "slot2Visible": true,
+        "ariaContains": ["Gemini weekly 19% used", "Claude/GPT weekly 0% used"],
+        "ariaNotContains": ["Gemini Models", "Claude and GPT"]
+      }
+    },
+    {
+      "name": "filter-unknown-synthetic-usageknown",
+      "criteria": ["237-07-unknown-usageknown-synthetic-hidden"],
+      "now": "2026-07-28T08:30:00Z",
+      "showUsed": true,
+      "dashboardProvider": {
+        "id": "mixed",
+        "name": "Mixed",
+        "windows": [
+          {"kind": "session", "label": "Synthetic session", "usedPercent": 0, "resetAt": "2026-07-28T10:30:00Z"},
+          {"kind": "weekly", "label": "Known false weekly", "usedPercent": 44, "resetAt": "2026-07-29T08:30:00Z"},
+          {"kind": "unknown-extra", "label": "No metadata", "usedPercent": 12, "resetAt": "2026-07-29T08:30:00Z"},
+          {"kind": "known-extra", "label": "Known extra", "usedPercent": 23, "resetAt": "2026-07-29T08:30:00Z"}
+        ],
+        "error": null,
+        "updatedAt": "2026-07-28T08:06:00Z"
+      },
+      "usageProvider": {
+        "provider": "mixed",
+        "usage": {
+          "primary": {"usedPercent": 0, "windowMinutes": 300, "resetsAt": "2026-07-28T10:30:00Z", "isSyntheticPlaceholder": true},
+          "secondary": {"usedPercent": 44, "windowMinutes": 10080, "resetsAt": "2026-07-29T08:30:00Z", "usageKnown": false},
+          "extraRateWindows": [
+            {"id": "known-extra", "title": "Known extra", "usageKnown": true, "window": {"usedPercent": 23, "windowMinutes": 10080, "resetsAt": "2026-07-29T08:30:00Z"}}
+          ]
+        }
+      },
+      "expectedControlCenterWindows": [
+        {"id": "known-extra", "label": "Known extra", "usedPercent": 23, "resetSecs": 86400, "windowMinutes": 10080}
+      ],
+      "expectedDeviceFrame": {
+        "v": 1,
+        "provider": "mixed",
+        "label": "Mixed",
+        "session": 23,
+        "resetSecs": 86400,
+        "usageMode": "used",
+        "usageSlots": [
+          {"id": "known-extra", "label": "Known extra", "percent": 23, "resetSecs": 86400}
+        ]
+      },
+      "expectedRender": {
+        "slot1Visible": true,
+        "slot2Visible": false,
+        "ariaContains": ["Known extra 23% used"],
+        "ariaNotContains": ["Synthetic session", "Known false weekly", "No metadata"]
+      }
+    },
+    {
+      "name": "provider-window-rename",
+      "criteria": ["237-08-provider-window-changes-update"],
+      "now": "2026-07-28T08:30:00Z",
+      "showUsed": true,
+      "dashboardProvider": {
+        "id": "claude",
+        "name": "Claude",
+        "windows": [
+          {"kind": "session", "label": "Context window", "usedPercent": 55, "resetAt": "2026-07-28T12:30:00Z"},
+          {"kind": "weekly-team", "label": "Team Weekly", "usedPercent": 61, "resetAt": "2026-08-04T08:30:00Z"}
+        ],
+        "error": null,
+        "updatedAt": "2026-07-28T08:07:00Z"
+      },
+      "usageProvider": {
+        "provider": "claude",
+        "usage": {
+          "primary": {"usedPercent": 55, "windowMinutes": 300, "resetsAt": "2026-07-28T12:30:00Z"},
+          "extraRateWindows": [
+            {"id": "weekly-team", "title": "Team Weekly", "usageKnown": true, "window": {"usedPercent": 61, "windowMinutes": 10080, "resetsAt": "2026-08-04T08:30:00Z"}}
+          ]
+        }
+      },
+      "expectedControlCenterWindows": [
+        {"id": "session", "label": "Context window", "usedPercent": 55, "resetSecs": 14400, "windowMinutes": 300},
+        {"id": "weekly-team", "label": "Team Weekly", "usedPercent": 61, "resetSecs": 604800, "windowMinutes": 10080}
+      ],
+      "expectedDeviceFrame": {
+        "v": 1,
+        "provider": "claude",
+        "label": "Claude",
+        "session": 55,
+        "weekly": 61,
+        "resetSecs": 14400,
+        "usageMode": "used",
+        "usageSlots": [
+          {"id": "session", "label": "Context window", "percent": 55, "resetSecs": 14400},
+          {"id": "weekly-team", "label": "Team Weekly", "percent": 61, "resetSecs": 604800}
+        ]
+      },
+      "expectedRender": {
+        "slot1Visible": true,
+        "slot2Visible": true,
+        "ariaContains": ["Context window 55% used", "Team Weekly 61% used"],
+        "ariaNotContains": ["Session 55% used"]
+      }
+    }
+  ],
+  "lastGoodCases": [
+    {
+      "name": "provider-error-last-good",
+      "criteria": ["259-03-error-last-good"],
+      "provider": "claude",
+      "now": "2026-07-28T08:30:00Z",
+      "previousFrame": {
+        "v": 1,
+        "provider": "claude",
+        "label": "Claude",
+        "session": 64,
+        "weekly": 31,
+        "resetSecs": 3600,
+        "usageMode": "used",
+        "usageSlots": [
+          {"id": "session", "label": "Session", "percent": 64, "resetSecs": 3600},
+          {"id": "weekly", "label": "Weekly", "percent": 31, "resetSecs": 604800}
+        ]
+      },
+      "errorFrame": {
+        "v": 1,
+        "provider": "claude",
+        "label": "Claude",
+        "usageUnavailable": true,
+        "usageMode": "used"
+      },
+      "expectedFrame": {
+        "v": 1,
+        "provider": "claude",
+        "label": "Claude",
+        "session": 64,
+        "weekly": 31,
+        "resetSecs": 3600,
+        "usageMode": "used",
+        "usageSlots": [
+          {"id": "session", "label": "Session", "percent": 64, "resetSecs": 3600},
+          {"id": "weekly", "label": "Weekly", "percent": 31, "resetSecs": 604800}
+        ]
+      }
+    }
+  ]
+}

@@ -154,6 +154,13 @@ export type SupportReportClientState = {
   device?: DeviceInfo | null;
   deviceSearchState: DeviceSearchState;
   deviceCandidates: DeviceCandidate[];
+  deviceRecovery?: {
+    preferredDeviceId?: string;
+    failedNormalChecks: number;
+    pickerReason?: string | null;
+    normalFailureLimit: number;
+    operationFailureLimit: number;
+  };
   providerSetup?: ProviderSetupInfo | null;
   lastError?: ApiError | null;
   recentEvents: ControlCenterEvent[];
@@ -246,6 +253,9 @@ export type DeviceInfo = {
     };
     theme?: {
       supportsThemeSpecV1?: boolean;
+      supportsUsageSlotsV1?: boolean;
+      supportsUsageWindowsV1?: boolean;
+      maxUsageWindows?: number;
       supportsStoredThemes?: boolean;
       maxThemeSpecBytes?: number;
       maxStoredThemeSpecBytes?: number;
@@ -319,11 +329,14 @@ export type UsageProviderInfo = {
   weeklyUnavailable?: boolean;
   collectedAt?: string;
   activityObservedAt?: string;
+  rateLimited?: boolean;
+  blockedUntil?: string;
   windows?: UsageWindowInfo[];
   status?: UsageStatusInfo;
   credits?: UsageCreditsInfo;
   resetCredits?: UsageResetCreditsInfo;
   cost?: UsageCostInfo;
+  costSettled?: boolean;
   pace?: UsagePaceInfo[];
   usageOverTime?: UsageOverTimePoint[];
 };
@@ -404,9 +417,18 @@ export type UsageSnapshot = {
   generatedAt?: string;
   source?: string;
   usageMode?: "used" | "remaining" | string;
+  refresh?: UsageRefreshInfo;
   tokenUsageReady?: boolean;
+  tokenUsageUpdating?: boolean;
   currentProvider?: string;
   providers: UsageProviderInfo[];
+};
+
+export type UsageRefreshInfo = {
+  state: "refreshing" | "rate_limited" | "fresh" | "unavailable" | string;
+  requestedAt?: string;
+  blockedUntil?: string;
+  message?: string;
 };
 
 export type PreferenceHealthState =
@@ -478,6 +500,28 @@ export function deviceStreamIsReady(device: DeviceInfo | null | undefined) {
 
 export function deviceIsReady(device: DeviceInfo | null | undefined) {
   return device?.ready === true;
+}
+
+export function deviceIsCustomerConnected(
+  device: DeviceInfo | null | undefined,
+): device is DeviceInfo & { active: true; connected: true } {
+  return Boolean(
+    device?.active === true &&
+      device.connected === true &&
+      device.paired !== false,
+  );
+}
+
+export function deviceIsWaitingForUsage(
+  device: DeviceInfo | null | undefined,
+) {
+  return Boolean(
+    deviceIsCustomerConnected(device) &&
+      device.ready !== true &&
+      device.stream?.running === true &&
+      device.stream.healthy !== true &&
+      !device.stream.errorCode,
+  );
 }
 
 export function deviceIsActive(device: DeviceInfo | null | undefined) {

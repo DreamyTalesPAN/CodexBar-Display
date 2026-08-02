@@ -436,8 +436,8 @@ main() {
   [[ ! -e "${app}/Contents/Resources/companion" ]] \
     || die "Mach-O helpers must not be stored in the Resources directory"
   assert_file "${app}/Contents/Resources/VibeTVControlCenter.icns"
-  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-macos-universal-0.44.0.zip"
-  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-v0.44.0.manifest.json"
+  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-macos-universal-0.46.0.zip"
+  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-v0.46.0.manifest.json"
   assert_file "${app}/Contents/Resources/CodexBar/CodexBar-LICENSE.txt"
   assert_file "${app}/Contents/Library/LaunchAgents/shop.vibetv.control-center.runtime.plist"
   assert_file "${app}/Contents/Frameworks/Sparkle.framework/README.txt"
@@ -534,6 +534,10 @@ environment = agent.get("EnvironmentVariables", {})
 if environment.get("CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL") != agent.get("Label"):
     raise SystemExit(
         "DMG runtime must expose its LaunchAgent label to the Companion API"
+    )
+if environment.get("VIBETV_CODEXBAR_PINNED_VERSION") != "0.46.0":
+    raise SystemExit(
+        "DMG runtime must force the Companion to use VibeTV's pinned CodexBar"
     )
 if environment.get("VIBETV_DISABLE_MAC_APP_SELF_UPDATE") != "1":
     raise SystemExit(
@@ -670,19 +674,23 @@ required_source = [
     "button.intrinsicContentSize.width + 32",
     "button.widthAnchor.constraint(equalToConstant: shadcnButtonWidth)",
     'codexBarBundleIdentifier = "com.steipete.codexbar"',
-    'codexBarPinnedVersion = "0.44.0"',
-    'codexBarMinimumCompatibleVersion = "0.23.0"',
+    'codexBarPinnedVersion = "0.46.0"',
     'codexBarPinnedTeamIdentifier = "Y5PE65HELJ"',
-    'CodexBar-macos-universal-0.44.0.zip',
+    'CodexBar-macos-universal-0.46.0.zip',
     'bootstrapCodexBar()',
     'arguments: ["--verify", "--deep", "--strict", "--verbose=2", appURL.path]',
     'arguments: ["--assess", "--type", "execute", "--verbose=4", appURL.path]',
     'arguments: ["-x", "-k", archiveURL.path, stagingURL.path]',
-    'try fileManager.moveItem(at: stagedAppURL, to: targetURL)',
-    'configuration.activates = false',
-    'environment["CODEXBAR_CONFIG"] = configURL.path',
+    'codexBarDisallowedSigningXattrs = [',
+    'removexattr(url.path, $0, XATTR_NOFOLLOW)',
+    'normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)',
+    'privateCodexBarTargetIsSafe(',
+    'appManagedCodexBarAppURL(',
+    'applicationSupportURL: applicationSupportURL()',
+    'replaceItemAt(',
+    'withItemAt: stagedAppURL',
+    '"VIBETV_CODEXBAR_PINNED_VERSION": codexBarPinnedVersion',
     '[.posixPermissions: 0o700]',
-    '[.posixPermissions: 0o600]',
     '"VibeTV couldn’t start"',
     "runtimePortConflictDetail()",
     "parseLsofListenerProcesses(",
@@ -727,7 +735,7 @@ status_start = preparation_method.find("presentInstallationStatus(")
 preflight_call = preparation_method.find("await self?.performLocalNetworkPrivacyPreflight()")
 preparation_task = preparation_method.find("preparationTask = Task")
 prepare_runtime = preparation_method.find(
-    "let outcome = await self.prepareCompanionWithAutomaticCodexBarRepair()"
+    "let outcome = await self.prepareCompanion()"
 )
 native_case = preparation_method.find("case .nativeRuntimeReady:", prepare_runtime)
 webview_after_verify = preparation_method.find("self.presentControlCenter()", native_case)
@@ -810,6 +818,54 @@ prepare_method = source[prepare_start:prepare_end]
 if "/v1/device/repair" in prepare_method or "prepareExistingDeviceConnection" in prepare_method:
     raise SystemExit(
         "native installation must not probe, pair, or repair a VibeTV"
+    )
+for forbidden_codexbar_bootstrap in [
+    "codexBarInstalledAppCandidates",
+    "existingCodexBarApp",
+    "repairCodexBarInstallation",
+    "homeDirectoryForCurrentUser\n            .appendingPathComponent(\"Applications\"",
+    "URL(fileURLWithPath: \"/Applications/CodexBar.app\"",
+    "for requirePinnedVersion in [true, false]",
+    "isCompatibleCodexBarVersion",
+    "writeCodexBarOwnedDefaultConfig",
+]:
+    if forbidden_codexbar_bootstrap in source:
+        raise SystemExit(
+            f"native CodexBar bootstrap must not use public app candidates or repair paths: {forbidden_codexbar_bootstrap}"
+        )
+bootstrap_start = source.find("private func bootstrapCodexBar()")
+bootstrap_end = source.find("private func prepareCompanion() async", bootstrap_start)
+bootstrap_method = source[bootstrap_start:bootstrap_end]
+if (
+    "prepareBundledCodexBarCLI()" not in bootstrap_method
+    or "return true" not in bootstrap_method
+    or "openApplication(" in bootstrap_method
+):
+    raise SystemExit(
+        "native CodexBar bootstrap must prepare only the private pinned CLI"
+    )
+prepare_payload_start = source.find("private func prepareBundledCodexBarCLI()")
+prepare_payload_end = source.find("private func bootstrapCodexBar()", prepare_payload_start)
+prepare_payload = source[prepare_payload_start:prepare_payload_end]
+if (
+    'appManagedCodexBarAppURL(' not in prepare_payload
+    or 'let appSupportURL = applicationSupportURL()' not in prepare_payload
+    or 'guard privateCodexBarTargetIsSafe(' not in prepare_payload
+    or 'if let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL)' in prepare_payload
+    or 'return cliURL' in prepare_payload
+    or 'normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)' not in prepare_payload
+    or 'validatedPinnedCodexBarCLI(at: stagedAppURL)' not in prepare_payload
+    or 'return validatedPinnedCodexBarCLI(at: targetAppURL)' not in prepare_payload
+    or 'replaceItemAt(' not in prepare_payload
+    or prepare_payload.find('normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)')
+        > prepare_payload.find('validatedPinnedCodexBarCLI(at: stagedAppURL)')
+    or prepare_payload.find('validatedPinnedCodexBarCLI(at: stagedAppURL)')
+        > prepare_payload.find('replaceItemAt(')
+    or prepare_payload.find('replaceItemAt(')
+        > prepare_payload.find('return validatedPinnedCodexBarCLI(at: targetAppURL)')
+):
+    raise SystemExit(
+        "native CodexBar payload must always stage the bundled ZIP, normalize xattrs, validate, publish, then revalidate"
     )
 native_ready = prepare_method.find("return .nativeRuntimeReady")
 if not (0 <= prepare_method.find("var health = await waitForHealthyRuntime") < native_ready):
@@ -1018,9 +1074,9 @@ PY
     || die "Sparkle distribution version must stay pinned"
   grep -qF 'SHA256="1cb340cbbef04c6c0d162078610c25e2221031d794a3449d89f2f56f4df77c95"' "${ROOT}/scripts/fetch-sparkle.sh" \
     || die "Sparkle distribution checksum must stay pinned"
-  grep -qF 'VERSION="0.44.0"' "${ROOT}/scripts/fetch-codexbar.sh" \
+  grep -qF 'VERSION="0.46.0"' "${ROOT}/scripts/fetch-codexbar.sh" \
     || die "CodexBar distribution version must stay pinned"
-  grep -qF 'SHA256="958c4b3fc64367d833b6e26df98d262b16384a52dcf6b8181f9b98091505671f"' "${ROOT}/scripts/fetch-codexbar.sh" \
+  grep -qF 'SHA256="8fe3e93b84151d682c7b80a10e2878c72cbf2e59ff78dd616c26e8cc197a79a0"' "${ROOT}/scripts/fetch-codexbar.sh" \
     || die "CodexBar distribution checksum must stay pinned"
   grep -qF 'verify-bundled-codexbar.sh' "${ROOT}/.github/workflows/release.yml" \
     || die "release workflow must verify the bundled CodexBar payload"

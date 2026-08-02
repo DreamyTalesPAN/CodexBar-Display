@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "generation": 2,
+  "themes": [
+    {
+      "id": "claude-creature",
+      "title": "Claude Creature",
+      "version": "1.1.1",
+      "themeRev": 3,
+      "themeSpecPath": "/themes/u/claude--3-afab9c.json",
+      "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
+      "downloadAsset": "vibetv-theme-claude-creature-v1.1.1.zip",
+      "sha256": "2c4c52f1520a713ecaab8613e2e7064d02e609ebe878f72922f1bbf0e71476d9",
+      "bytes": 3343
+    },
+    {
+      "id": "clippy",
+      "title": "Clippy",
+      "version": "1.1.1",
+      "themeRev": 3,
+      "themeSpecPath": "/themes/u/clippy-3-fe3fd4.json",
+      "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
+      "downloadAsset": "vibetv-theme-clippy-v1.1.1.zip",
+      "sha256": "04f719de8afa4f7bfd0a320c56f11a37ba885a745de2a66933d964d436f9bcb1",
+      "bytes": 18640
+    },
+    {
+      "id": "cozy-meadow",
+      "title": "Cozy Meadow",
+      "version": "0.2.1",
+      "themeRev": 3,
+      "themeSpecPath": "/themes/u/cm-3-1ed79c.json",
+      "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
+      "downloadAsset": "vibetv-theme-cozy-meadow-v0.2.1.zip",
+      "sha256": "839c0efb5347414e55134b33b05c4957e2eed99239db8780e394088b86d28e61",
+      "bytes": 1016
+    },
+    {
+      "id": "mini-classic",
+      "title": "Mini Classic",
+      "version": "1.1.2",
+      "themeRev": 4,
+      "themeSpecPath": "/themes/u/mini-cl-4-656926.json",
+      "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
+      "downloadAsset": "vibetv-theme-mini-classic-v1.1.2.zip",
+      "sha256": "adf13daa1d2b0452757dba1fd523e7839a05a38dd0ad31730a3819bf9dc9768d",
+      "bytes": 18499
+    },
+    {
+      "id": "synthwave",
+      "title": "Synthwave",
+      "version": "1.1.1",
+      "themeRev": 3,
+      "themeSpecPath": "/themes/u/synthwa-3-619665.json",
+      "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
+      "downloadAsset": "vibetv-theme-synthwave-v1.1.1.zip",
+      "sha256": "9e1848b5a499545ded284798eedd4de0d8018193451ab2b4e1fd1097664c5a80",
+      "bytes": 1583
+    }
+  ]
+}

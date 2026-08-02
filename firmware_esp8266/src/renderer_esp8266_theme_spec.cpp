@@ -161,8 +161,9 @@ void cancelAnimatedSpriteFrame(AnimatedSpriteCache& cache) {
 }
 
 void cooperativeYield() {
-  if (ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(
-          State().displayTransactionDepth)) {
+  if (ThemeSpecRuntimePolicy::CanCooperativelyYield(
+          State().displayTransactionDepth,
+          can_yield())) {
     yield();
   }
 }
@@ -1077,6 +1078,22 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   frame.weekly = CurrentFrame().weekly;
   frame.resetSecs = CurrentRemainingSecs();
   frame.usageUnavailable = CurrentFrame().usageUnavailable;
+  for (size_t i = 0; i < codexbar_display::themespec::kMaxThemeSpecUsageWindows &&
+                     i < codexbar_display::core::kMaxUsageWindows; ++i) {
+    frame.usageWindows[i].label = CurrentFrame().usageWindows[i].label.c_str();
+    frame.usageWindows[i].percent = CurrentFrame().usageWindows[i].percent;
+    frame.usageWindows[i].resetSecs =
+        codexbar_display::core::CurrentUsageWindowRemainingSecs(RuntimeState(), i, millis());
+    frame.usageWindows[i].available = CurrentFrame().usageWindows[i].available && !CurrentFrame().usageUnavailable;
+  }
+  frame.usageSlot1Label = frame.usageWindows[0].label;
+  frame.usageSlot1Percent = frame.usageWindows[0].percent;
+  frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs;
+  frame.usageSlot1Available = frame.usageWindows[0].available;
+  frame.usageSlot2Label = frame.usageWindows[1].label;
+  frame.usageSlot2Percent = frame.usageWindows[1].percent;
+  frame.usageSlot2ResetSecs = frame.usageWindows[1].resetSecs;
+  frame.usageSlot2Available = frame.usageWindows[1].available;
   frame.sessionUnavailable = CurrentFrame().sessionUnavailable;
   frame.weeklyUnavailable = CurrentFrame().weeklyUnavailable;
   frame.usageMode = usageModeText();
@@ -1097,6 +1114,19 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
 }
 
 }  // namespace
+
+void MarkThemeSpecCountdownsRendered() {
+  const unsigned long now = millis();
+  const int64_t remain = CurrentRemainingSecs();
+  LastRenderedSecs() = remain;
+  LastRenderedMinuteBucket() = remain / 60;
+  for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
+    const int64_t slotRemain =
+        codexbar_display::core::CurrentUsageWindowRemainingSecs(RuntimeState(), i, now);
+    Context().lastRenderedUsageWindowSecs[i] = slotRemain;
+    Context().lastRenderedUsageWindowMinuteBuckets[i] = slotRemain / 60;
+  }
+}
 
 bool DrawThemeSpecUsage() {
   if (!CurrentFrame().hasThemeSpec) {
@@ -1139,9 +1169,7 @@ bool DrawThemeSpecUsage() {
   nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
                                       ? millis() + kThemeSpecAnimatedTickMs
                                       : 0;
-  const int64_t remain = CurrentRemainingSecs();
-  LastRenderedSecs() = remain;
-  LastRenderedMinuteBucket() = remain / 60;
+  MarkThemeSpecCountdownsRendered();
   return true;
 }
 
@@ -1220,9 +1248,7 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
   nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
                                       ? millis() + kThemeSpecAnimatedTickMs
                                       : 0;
-  const int64_t remain = CurrentRemainingSecs();
-  LastRenderedSecs() = remain;
-  LastRenderedMinuteBucket() = remain / 60;
+  MarkThemeSpecCountdownsRendered();
   return true;
 }
 

@@ -45,7 +45,6 @@ const (
 	startupFastPollWindow      = 2 * time.Minute
 	startupFastPollInterval    = 30 * time.Second
 	lastGoodPersistInterval    = 1 * time.Minute
-	directProviderProbeMax     = 3
 	themeEnvVar                = "CODEXBAR_DISPLAY_THEME"
 	coldStartTimeoutEnvVar     = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
 	cycleTimeoutEnvVar         = "CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS"
@@ -125,25 +124,30 @@ func (e *RuntimeError) RecoveryAction() string {
 }
 
 type runtimeDeps struct {
-	transport         transportlayer.DeviceTransport
-	now               func() time.Time
-	after             func(time.Duration) <-chan time.Time
-	resolvePort       func(string) (string, error)
-	deviceCaps        func(string) (protocol.DeviceCapabilities, error)
-	fetchProviders    func(context.Context) ([]codexbar.ParsedFrame, error)
-	fetchProvider     func(context.Context, string) (codexbar.ParsedFrame, error)
-	fetchInventory    func(context.Context) ([]codexbar.ProviderSetting, error)
-	fetchTokenStats   func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
-	usageBarsShowUsed func() bool
-	sendLine          func(string, []byte) error
-	fetchUpdateState  func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
-	newSelector       func() *codexbar.ProviderSelector
-	logf              func(string, ...any)
-	homeDir           func() (string, error)
-	loadConfig        func(string) (runtimeconfig.Config, error)
-	saveConfig        func(string, runtimeconfig.Config) error
-	discoverWiFi      func([]string) (transportlayer.WiFiDiscoveryResult, error)
-	transportName     string
+	transport             transportlayer.DeviceTransport
+	now                   func() time.Time
+	after                 func(time.Duration) <-chan time.Time
+	resolvePort           func(string) (string, error)
+	deviceCaps            func(string) (protocol.DeviceCapabilities, error)
+	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
+	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error)
+	fetchProvider         func(context.Context, string) (codexbar.ParsedFrame, error)
+	fetchInventory        func(context.Context) ([]codexbar.ProviderSetting, error)
+	fetchTokenStats       func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
+	fetchTokenStatsReport func(context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport)
+	startDashboard        func(context.Context, func(string, ...any)) codexbar.DashboardServe
+	dashboard             codexbar.DashboardServe
+	usageBarsShowUsed     func() bool
+	beginDeviceWrite      func() func()
+	sendLine              func(string, []byte) error
+	fetchUpdateState      func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
+	newSelector           func() *codexbar.ProviderSelector
+	logf                  func(string, ...any)
+	homeDir               func() (string, error)
+	loadConfig            func(string) (runtimeconfig.Config, error)
+	saveConfig            func(string, runtimeconfig.Config) error
+	discoverWiFi          func([]string) (transportlayer.WiFiDiscoveryResult, error)
+	transportName         string
 }
 
 func (d runtimeDeps) withDefaults() runtimeDeps {
@@ -168,6 +172,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	if d.fetchProviders == nil {
 		d.fetchProviders = codexbar.FetchAllProviders
 	}
+	if d.fetchDashboard == nil {
+		d.fetchDashboard = codexbar.FetchDashboardProviders
+	}
 	if d.fetchProvider == nil {
 		d.fetchProvider = codexbar.FetchProvider
 	}
@@ -176,6 +183,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.fetchTokenStats == nil {
 		d.fetchTokenStats = codexbar.FetchProviderTokenStats
+		if d.fetchTokenStatsReport == nil {
+			d.fetchTokenStatsReport = codexbar.FetchProviderTokenStatsWithReport
+		}
 	}
 	if d.usageBarsShowUsed == nil {
 		d.usageBarsShowUsed = func() bool { return true }
@@ -272,13 +282,17 @@ type PersistedUsage struct {
 }
 
 type ProviderUsageSnapshot struct {
-	Provider           string
-	Frame              protocol.Frame
-	Source             string
-	Meta               codexbar.ProviderUsageMeta
-	CollectedAt        time.Time
-	ActivityObservedAt time.Time
-	Stale              bool
+	Provider              string
+	Frame                 protocol.Frame
+	Source                string
+	Meta                  codexbar.ProviderUsageMeta
+	CollectedAt           time.Time
+	TokenStatsCollectedAt time.Time
+	TokenHistorySettled   bool
+	ActivityObservedAt    time.Time
+	RateLimited           bool
+	RateLimitedUntil      time.Time
+	Stale                 bool
 }
 
 func Run(ctx context.Context, opts Options) error {
@@ -300,6 +314,7 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 			transport:         transportlayer.NewWiFiTransport(),
 			transportName:     "wifi",
 			usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+			startDashboard:    codexbar.StartDashboardServe,
 			logf:              logf,
 		})
 	}
@@ -311,6 +326,7 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 		sendLine:          sender.Send,
 		transportName:     "usb",
 		usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+		startDashboard:    codexbar.StartDashboardServe,
 		logf:              logf,
 	})
 }
@@ -319,11 +335,31 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	if opts.Interval <= 0 {
 		opts.Interval = defaultIntervalForTransport(deps.transportName)
 	}
+	deps.beginDeviceWrite = opts.BeginDeviceWrite
 	syncCycleMode := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()
 
 	state := initializeRuntimeState(deps.now(), opts, deps)
-	collector, collectorCancel := startProviderCollector(ctx, opts, deps, syncCycleMode)
+	if !opts.Once && deps.startDashboard != nil {
+		deps.dashboard = deps.startDashboard(ctx, deps.logf)
+		if deps.dashboard != nil {
+			info := deps.dashboard.Info()
+			deps.logf("codexbar-dashboard event=supervisor-started refreshInterval=%s\n", info.RefreshInterval)
+		}
+	}
+	var collectorWake <-chan struct{}
+	var wakeAfterCollect func()
+	if !syncCycleMode && opts.Wake != nil {
+		collectorWakeCh := make(chan struct{}, 1)
+		cycleWakeCh := make(chan struct{}, 1)
+		go forwardWake(ctx, opts.Wake, collectorWakeCh)
+		collectorWake = collectorWakeCh
+		wakeAfterCollect = func() {
+			signalWake(cycleWakeCh)
+		}
+		opts.Wake = cycleWakeCh
+	}
+	collector, collectorCancel := startProviderCollector(ctx, opts, deps, syncCycleMode, collectorWake, wakeAfterCollect)
 	if collectorCancel != nil {
 		defer collectorCancel()
 	}
@@ -340,6 +376,30 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	}
 
 	return runDaemonLoop(ctx, opts, deps, runCycle)
+}
+
+func forwardWake(ctx context.Context, input <-chan struct{}, output chan<- struct{}) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case _, ok := <-input:
+			if !ok {
+				return
+			}
+			signalWake(output)
+		}
+	}
+}
+
+func signalWake(output chan<- struct{}) {
+	if output == nil {
+		return
+	}
+	select {
+	case output <- struct{}{}:
+	default:
+	}
 }
 
 func initializeRuntimeState(now time.Time, opts Options, deps runtimeDeps) *runtimeState {
@@ -386,7 +446,7 @@ func bootstrapStateFromPersistedLastGood(state *runtimeState, now time.Time, dep
 	}
 }
 
-func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps, syncCycleMode bool) (*providerCollector, context.CancelFunc) {
+func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps, syncCycleMode bool, wake <-chan struct{}, afterWakeCollect func()) (*providerCollector, context.CancelFunc) {
 	if syncCycleMode {
 		// Deterministic unit tests can run synchronous cycle fetches without a
 		// background collector goroutine by injecting only fetchProviders.
@@ -394,6 +454,8 @@ func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps,
 	}
 
 	collector := newProviderCollector(deps, opts)
+	collector.wake = wake
+	collector.afterWakeCollect = afterWakeCollect
 	collectorCtx, cancel := context.WithCancel(ctx)
 	collector.start(collectorCtx)
 	deps.logf("collector started transport=%s interval=%s timeout=%s providers=%s mode=fetch-all\n",
@@ -406,7 +468,6 @@ func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps,
 }
 
 func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle func(context.Context) error) error {
-	backoff := newRetryBackoff(opts.Interval)
 	cycleTimeout := cycleRunTimeout()
 	var lastCycleStart time.Time
 	var startedAt time.Time
@@ -415,7 +476,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 	for {
 		if opts.PauseDeviceWrites != nil && opts.PauseDeviceWrites() {
 			if !deviceWritesPaused {
-				deps.logf("runtime event=device-writes-paused reason=firmware-update\n")
+				deps.logf("runtime event=device-writes-paused reason=device-maintenance\n")
 				deviceWritesPaused = true
 			}
 			select {
@@ -427,7 +488,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 			continue
 		}
 		if deviceWritesPaused {
-			deps.logf("runtime event=device-writes-resumed reason=firmware-update-complete\n")
+			deps.logf("runtime event=device-writes-resumed reason=device-maintenance-complete\n")
 			deviceWritesPaused = false
 		}
 		cycleStart := deps.now()
@@ -435,23 +496,14 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 			startedAt = cycleStart
 		}
 		if detectSleepWakeGap(lastCycleStart, cycleStart, opts.Interval) {
-			deps.logf("runtime event=sleep-wake gap=%s threshold=%s action=reset-retry\n",
+			deps.logf("runtime event=sleep-wake gap=%s threshold=%s\n",
 				cycleStart.Sub(lastCycleStart),
 				sleepWakeGapThreshold(opts.Interval),
 			)
-			backoff.Reset()
 		}
 		lastCycleStart = cycleStart
 
-		runDeviceCycle := runCycle
-		if opts.BeginDeviceWrite != nil {
-			runDeviceCycle = func(cycleCtx context.Context) error {
-				release := opts.BeginDeviceWrite()
-				defer release()
-				return runCycle(cycleCtx)
-			}
-		}
-		err := runCycleWithTimeout(ctx, cycleTimeout, runDeviceCycle)
+		err := runCycleWithTimeout(ctx, cycleTimeout, runCycle)
 		if opts.Once {
 			return err
 		}
@@ -460,7 +512,6 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		if err != nil {
 			runtimeErr := asRuntimeError(err)
 			if runtimeErr.Kind == runtimeErrorCycleTimeout {
-				waitFor = backoff.Next()
 				deps.logf("cycle timeout: code=%s op=%s retry=%s recovery=%q err=%v\n",
 					runtimeErr.ErrorCode(),
 					runtimeErr.Op,
@@ -469,7 +520,6 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 					err,
 				)
 			} else {
-				waitFor = backoff.Next()
 				deps.logf("cycle error: code=%s op=%s retry=%s recovery=%q err=%v\n",
 					runtimeErr.ErrorCode(),
 					runtimeErr.Op,
@@ -479,7 +529,6 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 				)
 			}
 		} else {
-			backoff.Reset()
 			uptime := cycleStart.Sub(startedAt)
 			if !opts.DisableStartupFastPoll {
 				waitFor = startupInterval(waitFor, uptime)
@@ -963,10 +1012,6 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		collectedAt = now
 		decision.Selected.CollectedAt = collectedAt
 	}
-	result.resetBasisAt = collectedAt
-	if !result.frame.UsageUnavailable {
-		updateLastGoodState(state, result.frame, collectedAt, deps)
-	}
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
 }
@@ -1114,10 +1159,13 @@ func codingMaxAgeExpired(lastCodingAt time.Time, now time.Time) bool {
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
 	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
+	if !result.usageFresh && result.failureErr == nil {
+		deps.logf("runtime event=usage-waiting port=%s provider=%s reason=usage-not-fresh\n", publicPort, frame.Provider)
+		return nil
+	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
-	now := deps.now()
-	frame = attachClockFields(frame, now)
-	frame = frame.ApplyResetTrust(result.resetBasisAt, now, result.usageFresh)
+	frame = applyDeviceUsageWindowLimit(frame, caps)
+	frame = attachClockFields(frame, deps.now())
 
 	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
 		var applied bool
@@ -1162,18 +1210,32 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}
-	if err := deps.sendLine(sendTarget, line); err != nil {
+	releaseDeviceWrite := func() {}
+	if deps.beginDeviceWrite != nil {
+		if release := deps.beginDeviceWrite(); release != nil {
+			releaseDeviceWrite = release
+		}
+	}
+	sendErr := deps.sendLine(sendTarget, line)
+	releaseDeviceWrite()
+	if sendErr != nil {
 		return &RuntimeError{
 			Kind: runtimeErrorSerialWrite,
 			Op:   "send-line",
-			Err:  err,
+			Err:  sendErr,
 			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	persistActiveWiFiTarget(port, deps)
+	if result.failureErr == nil && !frame.UsageUnavailable {
+		updateLastGoodState(state, frame, deps.now(), deps)
+	}
 
-	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionUnavailable=%t weeklyUnavailable=%t reset=%ds resetTrust=%s resetAge=%ds resetTrustSecs=%ds resetSource=%q activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
-		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, frame.ResetTrust, frame.ResetAgeSec, frame.ResetTrustSec, frame.ResetSource, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
+	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
+		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -1188,6 +1250,28 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 
 	return nil
+}
+
+func usageSlotsLogValue(slots []protocol.UsageSlot) string {
+	if len(slots) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(slots)
+	if err != nil {
+		return ""
+	}
+	return url.QueryEscape(string(raw))
+}
+
+func usageWindowsLogValue(windows []protocol.UsageWindow) string {
+	if len(windows) == 0 {
+		return "-"
+	}
+	raw, err := json.Marshal(windows)
+	if err != nil {
+		return "-"
+	}
+	return url.QueryEscape(string(raw))
 }
 
 func sendTargetWithRuntimeAuth(target string, deps runtimeDeps) (string, error) {
@@ -1320,9 +1404,6 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	}
 	now := deps.now()
 	allProviders := collector.providerFrames(now)
-	if len(allProviders) == 0 {
-		allProviders = probeProvidersDirectly(ctx, collector.order, deps)
-	}
 	result := selectCycleFrameFromProviders(
 		state,
 		allProviders,
@@ -1362,48 +1443,6 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 		return
 	}
 	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-disabled\n", provider)
-}
-
-func probeProvidersDirectly(parent context.Context, order []string, deps runtimeDeps) []codexbar.ParsedFrame {
-	if deps.fetchProvider == nil {
-		return nil
-	}
-
-	ctx := parent
-	cancel := func() {}
-	if deadline, ok := parent.Deadline(); !ok || time.Until(deadline) > 20*time.Second {
-		ctx, cancel = context.WithTimeout(parent, 20*time.Second)
-	}
-	defer cancel()
-
-	providers := order
-	if len(providers) > directProviderProbeMax {
-		providers = providers[:directProviderProbeMax]
-	}
-
-	seen := make(map[string]struct{}, len(providers))
-	result := make([]codexbar.ParsedFrame, 0, len(providers))
-	for _, provider := range providers {
-		key := normalizeProviderKey(provider)
-		if key == "" {
-			continue
-		}
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-
-		parsed, err := deps.fetchProvider(ctx, key)
-		if err != nil {
-			continue
-		}
-		if strings.TrimSpace(parsed.Frame.Error) != "" {
-			continue
-		}
-		result = append(result, parsed)
-	}
-
-	return result
 }
 
 func updateLastGoodState(state *runtimeState, frame protocol.Frame, now time.Time, deps runtimeDeps) {
@@ -1476,6 +1515,14 @@ func applyThemeToFrame(frame protocol.Frame, selectedTheme string, caps protocol
 	return frame, true
 }
 
+func applyDeviceUsageWindowLimit(frame protocol.Frame, caps protocol.DeviceCapabilities) protocol.Frame {
+	if caps.MaxUsageWindows <= 0 || len(frame.UsageWindows) <= caps.MaxUsageWindows {
+		return frame
+	}
+	frame.UsageWindows = append([]protocol.UsageWindow(nil), frame.UsageWindows[:caps.MaxUsageWindows]...)
+	return frame.Normalize()
+}
+
 func applyUsageBarsPreference(frame protocol.Frame, showUsed bool) protocol.Frame {
 	if strings.TrimSpace(frame.Error) != "" {
 		return frame
@@ -1486,8 +1533,15 @@ func applyUsageBarsPreference(frame protocol.Frame, showUsed bool) protocol.Fram
 		return frame
 	}
 
-	frame.Session = 100 - clampPercent(frame.Session)
-	frame.Weekly = 100 - clampPercent(frame.Weekly)
+	if len(frame.UsageWindows) == 0 {
+		frame.Session = 100 - clampPercent(frame.Session)
+		frame.Weekly = 100 - clampPercent(frame.Weekly)
+	} else {
+		for i := range frame.UsageWindows {
+			frame.UsageWindows[i].Percent = 100 - clampPercent(frame.UsageWindows[i].Percent)
+		}
+		frame = frame.Normalize()
+	}
 	frame.UsageMode = "remaining"
 	return frame
 }
@@ -1857,6 +1911,13 @@ func loadPersistedProviderSnapshotsAnyAge() (map[string]providerSnapshot, time.T
 		if strings.TrimSpace(snapshot.Frame.Error) != "" {
 			continue
 		}
+		if snapshotHasTokenStats(snapshot) && snapshot.TokenStatsCollected.IsZero() {
+			if !snapshot.ActivityObservedAt.IsZero() {
+				snapshot.TokenStatsCollected = snapshot.ActivityObservedAt.UTC()
+			} else {
+				snapshot.TokenStatsCollected = snapshot.Collected.UTC()
+			}
+		}
 		out[key] = snapshot
 	}
 	if len(out) == 0 {
@@ -1894,14 +1955,28 @@ func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
 		if frame.UsageMode == "" {
 			frame.UsageMode = "used"
 		}
+		snapshot = snapshotWithFreshTokenStats(snapshot, now, providerSnapshotMaxAge())
+		snapshot = snapshotWithExpiredUsageCleared(snapshot, now, providerSnapshotMaxAge())
+		frame = snapshot.Frame.Normalize()
+		frame.Provider = normalizeProviderKey(frame.Provider)
+		if frame.Provider == "" {
+			frame.Provider = key
+		}
+		if frame.UsageMode == "" {
+			frame.UsageMode = "used"
+		}
 		usage.Providers = append(usage.Providers, ProviderUsageSnapshot{
-			Provider:           key,
-			Frame:              frame,
-			Source:             strings.TrimSpace(snapshot.Source),
-			Meta:               snapshot.Meta,
-			CollectedAt:        snapshot.Collected.UTC(),
-			ActivityObservedAt: snapshot.ActivityObservedAt.UTC(),
-			Stale:              providerUsageSnapshotIsStale(snapshot, now),
+			Provider:              key,
+			Frame:                 frame,
+			Source:                strings.TrimSpace(snapshot.Source),
+			Meta:                  snapshot.Meta,
+			CollectedAt:           snapshot.Collected.UTC(),
+			TokenStatsCollectedAt: snapshot.TokenStatsCollected.UTC(),
+			TokenHistorySettled:   snapshot.TokenHistorySettled,
+			ActivityObservedAt:    snapshot.ActivityObservedAt.UTC(),
+			RateLimited:           snapshot.RateLimited,
+			RateLimitedUntil:      snapshot.RateLimitedUntil.UTC(),
+			Stale:                 providerUsageSnapshotIsStale(snapshot, now),
 		})
 	}
 	if len(usage.Providers) == 0 {
@@ -1942,15 +2017,7 @@ func orderedProviderUsageKeys(snapshots map[string]providerSnapshot) []string {
 }
 
 func providerUsageSnapshotIsStale(snapshot providerSnapshot, now time.Time) bool {
-	if snapshot.Collected.IsZero() || now.IsZero() {
-		return true
-	}
-	age := now.Sub(snapshot.Collected)
-	if age < 0 {
-		return false
-	}
-	freshFor := collectorInterval(0) + 5*time.Second
-	return age > freshFor
+	return !providerSnapshotIsFresh(snapshot, now, providerSnapshotMaxAge())
 }
 
 func encodeProviderSnapshotsForCompare(snapshots map[string]providerSnapshot) string {
@@ -2104,6 +2171,7 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		maxBytes = protocol.DefaultMaxFrameBytes
 	}
 
+	frame = frame.Normalize()
 	line, err := frame.MarshalLine()
 	if err != nil {
 		return nil, protocol.Frame{}, err
@@ -2113,39 +2181,44 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 	}
 
 	if frame.Update != nil {
-		compactUpdate := frame
+		compactUpdate := frame.Normalize()
 		compactUpdate.Update = compactFrameUpdate(frame.Update)
 		for _, candidate := range compactUpdateCandidates(compactUpdate) {
-			line, err = candidate.MarshalLine()
+			normalized := candidate.Normalize()
+			line, err = normalized.MarshalLine()
 			if err != nil {
 				return nil, protocol.Frame{}, err
 			}
 			if len(line) <= maxBytes {
-				return line, candidate, nil
+				return line, normalized, nil
 			}
 		}
 
-		noUpdate := frame
+		noUpdate := frame.Normalize()
 		noUpdate.Update = nil
-		line, err = noUpdate.MarshalLine()
+		normalized := noUpdate.Normalize()
+		line, err = normalized.MarshalLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, noUpdate, nil
+			return line, normalized, nil
 		}
+		frame = normalized
 	}
 
 	if frame.Theme != "" {
 		noTheme := frame
 		noTheme.Theme = ""
-		line, err = noTheme.MarshalLine()
+		normalized := noTheme.Normalize()
+		line, err = normalized.MarshalLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, noTheme, nil
+			return line, normalized, nil
 		}
+		frame = normalized
 	}
 
 	if frame.SessionTokens > 0 || frame.WeekTokens > 0 || frame.TotalTokens > 0 {
@@ -2153,29 +2226,57 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		noTokens.SessionTokens = 0
 		noTokens.WeekTokens = 0
 		noTokens.TotalTokens = 0
-		line, err = noTokens.MarshalLine()
+		normalized := noTokens.Normalize()
+		line, err = normalized.MarshalLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, noTokens, nil
+			return line, normalized, nil
 		}
+		frame = normalized
 	}
 
 	if frame.Time != "" || frame.Date != "" {
 		noClock := frame
 		noClock.Time = ""
 		noClock.Date = ""
-		line, err = noClock.MarshalLine()
+		normalized := noClock.Normalize()
+		line, err = normalized.MarshalLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, noClock, nil
+			return line, normalized, nil
+		}
+		frame = normalized
+	}
+
+	usageWindowsActive := len(frame.UsageWindows) > 0
+	usageCount := len(frame.UsageWindows)
+	if !usageWindowsActive {
+		usageCount = len(frame.UsageSlots)
+	}
+	if usageCount > 0 {
+		for limit := usageCount - 1; limit >= 0; limit-- {
+			trimmed := frame
+			if usageWindowsActive {
+				trimmed.UsageWindows = append([]protocol.UsageWindow(nil), frame.UsageWindows[:limit]...)
+			} else {
+				trimmed.UsageSlots = append([]protocol.UsageSlot(nil), frame.UsageSlots[:limit]...)
+			}
+			normalized := trimmed.Normalize()
+			line, err = normalized.MarshalLine()
+			if err != nil {
+				return nil, protocol.Frame{}, err
+			}
+			if len(line) <= maxBytes {
+				return line, normalized, nil
+			}
 		}
 	}
 
-	fallback := protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorFrameTooLarge))
+	fallback := protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorFrameTooLarge)).Normalize()
 	line, err = fallback.MarshalLine()
 	if err != nil {
 		return nil, protocol.Frame{}, err

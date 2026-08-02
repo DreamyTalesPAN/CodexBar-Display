@@ -45,7 +45,7 @@ type DeviceCandidateListProps = {
   buttonVariant?: ComponentProps<typeof Button>["variant"];
   candidates: DeviceCandidate[];
   onSelect: (candidate: DeviceCandidate) => void;
-  selecting?: boolean;
+  selectingTarget?: string;
 };
 
 export function DeviceCandidateList({
@@ -53,32 +53,35 @@ export function DeviceCandidateList({
   buttonVariant = "default",
   candidates,
   onSelect,
-  selecting = false,
+  selectingTarget,
 }: DeviceCandidateListProps) {
   return (
     <ItemGroup className="grid gap-3 text-left">
-      {candidates.map((candidate) => (
-        <Item
-          key={`${candidate.deviceId || "legacy"}-${candidate.target}`}
-          variant="outline"
-        >
-          <ItemMedia variant="icon">
-            <Monitor aria-hidden />
-          </ItemMedia>
-          <DeviceCandidateDetails candidate={candidate} />
-          <ItemActions>
-            <Button
-              disabled={busy}
-              onClick={() => onSelect(candidate)}
-              type="button"
-              variant={buttonVariant}
-            >
-              {selecting ? <Spinner data-icon="inline-start" /> : null}
-              <span>{selecting ? "Connecting" : "Connect"}</span>
-            </Button>
-          </ItemActions>
-        </Item>
-      ))}
+      {candidates.map((candidate) => {
+        const selecting = selectingTarget === candidate.target;
+        return (
+          <Item
+            key={`${candidate.deviceId || "legacy"}-${candidate.target}`}
+            variant="outline"
+          >
+            <ItemMedia variant="icon">
+              <Monitor aria-hidden />
+            </ItemMedia>
+            <DeviceCandidateDetails candidate={candidate} />
+            <ItemActions>
+              <Button
+                disabled={busy || Boolean(selectingTarget)}
+                onClick={() => onSelect(candidate)}
+                type="button"
+                variant={buttonVariant}
+              >
+                {selecting ? <Spinner data-icon="inline-start" /> : null}
+                <span>{selecting ? "Connecting" : "Connect"}</span>
+              </Button>
+            </ItemActions>
+          </Item>
+        );
+      })}
     </ItemGroup>
   );
 }

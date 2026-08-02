@@ -2,23 +2,44 @@ package protocol
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
-	"time"
+	"unicode/utf8"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
 )
 
-// Reset trust states carried in a frame. The device re-evaluates trust with its
-// own monotonic clock and may only downgrade the host value, never upgrade it.
 const (
-	ResetTrustLive    = "live"
-	ResetTrustOffline = "offline"
-	ResetTrustStale   = "stale"
+	DefaultUsageWindowLabelBytes = 24
+	DefaultUsageWindowIDBytes    = 32
+	DefaultProviderBytes         = DefaultUsageWindowIDBytes
+	DefaultProviderLabelBytes    = DefaultUsageWindowLabelBytes
 )
 
-// ResetTrustHorizon is how long a collected reset deadline stays trustworthy
-// without fresh data.
-const ResetTrustHorizon = 5 * time.Hour
+type UsageWindow struct {
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Percent  int    `json:"percent"`
+	ResetSec int64  `json:"resetSecs"`
+}
+
+func (w *UsageWindow) UnmarshalJSON(data []byte) error {
+	type rawUsageWindow UsageWindow
+	var decoded rawUsageWindow
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	if len([]byte(decoded.ID)) > DefaultUsageWindowIDBytes {
+		return fmt.Errorf("usage window id exceeds %d UTF-8 bytes", DefaultUsageWindowIDBytes)
+	}
+	if len([]byte(decoded.Label)) > DefaultUsageWindowLabelBytes {
+		return fmt.Errorf("usage window label exceeds %d UTF-8 bytes", DefaultUsageWindowLabelBytes)
+	}
+	*w = UsageWindow(decoded)
+	return nil
+}
+
+type UsageSlot = UsageWindow
 
 type Frame struct {
 	V                     int             `json:"v"`
@@ -35,6 +56,8 @@ type Frame struct {
 	SessionUnavailable    bool            `json:"sessionUnavailable,omitempty"`
 	WeeklyUnavailable     bool            `json:"weeklyUnavailable,omitempty"`
 	UsageMode             string          `json:"usageMode,omitempty"`
+	UsageWindows          []UsageWindow   `json:"usageWindows,omitempty"`
+	UsageSlots            []UsageSlot     `json:"usageSlots,omitempty"`
 	Time                  string          `json:"time,omitempty"`
 	Date                  string          `json:"date,omitempty"`
 	SessionTokens         int64           `json:"sessionTokens,omitempty"`
@@ -62,6 +85,9 @@ type UpdateState struct {
 
 func (f Frame) Normalize() Frame {
 	f.V = NormalizeProtocolVersion(f.V)
+	protocolVersion := f.V
+	f.Provider = truncateUTF8Bytes(strings.TrimSpace(f.Provider), DefaultProviderBytes)
+	f.Label = truncateUTF8Bytes(strings.TrimSpace(f.Label), DefaultProviderLabelBytes)
 	if f.Session < 0 {
 		f.Session = 0
 	}
@@ -77,14 +103,14 @@ func (f Frame) Normalize() Frame {
 	if f.ResetSec < 0 {
 		f.ResetSec = 0
 	}
-	if f.ResetAgeSec < 0 {
-		f.ResetAgeSec = 0
+	f.UsageWindows = normalizeUsageWindows(firstNonEmptyUsageWindows(f.UsageWindows, f.UsageSlots))
+	f = applyLegacyUsageProjection(f)
+	if protocolVersion >= ProtocolVersionV2 {
+		f.UsageSlots = nil
+	} else {
+		f.UsageSlots = legacyUsageSlots(f.UsageWindows)
+		f.UsageWindows = nil
 	}
-	if f.ResetTrustSec < 0 {
-		f.ResetTrustSec = 0
-	}
-	f.ResetSource = normalizeResetSource(f.ResetSource)
-	f.ResetTrust = normalizeResetTrust(f.ResetTrust)
 	if f.SessionTokens < 0 {
 		f.SessionTokens = 0
 	}
@@ -124,6 +150,89 @@ func (f Frame) Normalize() Frame {
 		f.Update.SHA256 = strings.TrimSpace(f.Update.SHA256)
 	}
 	return f
+}
+
+func firstNonEmptyUsageWindows(windows []UsageWindow, slots []UsageSlot) []UsageWindow {
+	if len(windows) > 0 {
+		return windows
+	}
+	return slots
+}
+
+func normalizeUsageWindows(windows []UsageWindow) []UsageWindow {
+	if len(windows) == 0 {
+		return nil
+	}
+	out := make([]UsageWindow, 0, len(windows))
+	for _, window := range windows {
+		window.ID = truncateUTF8Bytes(strings.TrimSpace(strings.ToLower(window.ID)), DefaultUsageWindowIDBytes)
+		window.Label = truncateUTF8Bytes(strings.TrimSpace(window.Label), DefaultUsageWindowLabelBytes)
+		if window.Label == "" {
+			window.Label = window.ID
+		}
+		window.Label = truncateUTF8Bytes(window.Label, DefaultUsageWindowLabelBytes)
+		if window.ID == "" || window.Label == "" {
+			continue
+		}
+		if window.Percent < 0 {
+			window.Percent = 0
+		}
+		if window.Percent > 100 {
+			window.Percent = 100
+		}
+		if window.ResetSec < 0 {
+			window.ResetSec = 0
+		}
+		out = append(out, window)
+	}
+	return out
+}
+
+func legacyUsageSlots(windows []UsageWindow) []UsageSlot {
+	if len(windows) == 0 {
+		return nil
+	}
+	limit := minInt(len(windows), 2)
+	out := make([]UsageSlot, limit)
+	copy(out, windows[:limit])
+	return out
+}
+
+func applyLegacyUsageProjection(f Frame) Frame {
+	if len(f.UsageWindows) == 0 {
+		return f
+	}
+	f.Session = f.UsageWindows[0].Percent
+	f.ResetSec = f.UsageWindows[0].ResetSec
+	if len(f.UsageWindows) > 1 {
+		f.Weekly = f.UsageWindows[1].Percent
+	} else {
+		f.Weekly = 0
+	}
+	f.SessionUnavailable = false
+	f.WeeklyUnavailable = len(f.UsageWindows) < 2
+	return f
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func truncateUTF8Bytes(value string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(value) <= maxBytes {
+		return value
+	}
+	value = value[:maxBytes]
+	for !utf8.ValidString(value) {
+		value = value[:len(value)-1]
+	}
+	return value
 }
 
 func (f Frame) MarshalLine() ([]byte, error) {
