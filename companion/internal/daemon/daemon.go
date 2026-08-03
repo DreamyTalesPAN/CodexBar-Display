@@ -1488,7 +1488,20 @@ func directProviderProbeOrder(order []string, deps runtimeDeps) []string {
 	if !ok || cfg.ProviderDisplay == nil || len(cfg.ProviderDisplay.ProviderIDs) == 0 {
 		return order
 	}
-	return cfg.ProviderDisplay.ProviderIDs
+	enabled := make(map[string]struct{}, len(order))
+	for _, providerID := range order {
+		if providerID = normalizeProviderKey(providerID); providerID != "" {
+			enabled[providerID] = struct{}{}
+		}
+	}
+	providers := make([]string, 0, len(cfg.ProviderDisplay.ProviderIDs))
+	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
+		providerID = normalizeProviderKey(providerID)
+		if _, ok := enabled[providerID]; ok {
+			providers = append(providers, providerID)
+		}
+	}
+	return providers
 }
 
 func updateLastGoodState(state *runtimeState, frame protocol.Frame, now time.Time, deps runtimeDeps) {

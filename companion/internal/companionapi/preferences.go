@@ -571,6 +571,7 @@ func filterDisabledProviders(resp usageResponse, settings []codexbar.ProviderSet
 		resp.CurrentProvider = providers[0].ID
 	}
 	resp.UsageMode = usageModeForProviders(providers)
+	resp.TokenUsageReady = usageProvidersHaveTokenResult(providers)
 	return resp
 }
 

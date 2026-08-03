@@ -3686,6 +3686,18 @@ func TestRunCycleFromCollectorProbesFixedProviderBeforeDirectProbeLimit(t *testi
 	}
 }
 
+func TestDirectProviderProbeOrderExcludesDisplayProviderOutsideEnabledInventory(t *testing.T) {
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "automatic",
+		ProviderIDs: []string{"gemini", "claude"},
+	})
+
+	got := directProviderProbeOrder([]string{"codex", "claude"}, deps)
+	if !reflect.DeepEqual(got, []string{"claude"}) {
+		t.Fatalf("direct probe order=%v want enabled selected providers only", got)
+	}
+}
+
 func decodeFrameLine(t *testing.T, line []byte) protocol.Frame {
 	t.Helper()
 

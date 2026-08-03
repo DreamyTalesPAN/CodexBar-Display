@@ -223,6 +223,25 @@ func TestProviderDescriptorsDoNotShowStaleOrContradictedExactReadiness(t *testin
 	}
 }
 
+func TestFilterDisabledProvidersRecomputesTokenUsageReadiness(t *testing.T) {
+	response := usageResponse{
+		TokenUsageReady: true,
+		CurrentProvider: "claude",
+		Providers: []usageProviderInfo{
+			{ID: "codex"},
+			{ID: "claude", Cost: &usageCostInfo{}},
+		},
+	}
+
+	got := filterDisabledProviders(response, []codexbar.ProviderSetting{
+		{ID: "codex", Enabled: true},
+		{ID: "claude", Enabled: false},
+	})
+	if got.TokenUsageReady || len(got.Providers) != 1 || got.Providers[0].ID != "codex" {
+		t.Fatalf("disabled token provider left usage falsely ready: %+v", got)
+	}
+}
+
 func TestLegacyConfiguredDeviceDoesNotRequireProviderOnboarding(t *testing.T) {
 	progress := setupProgressForConfig(runtimeconfig.Config{DeviceID: "existing-device"})
 	if progress.ProviderSelectionRequired || !progress.ProviderSelectionComplete {
