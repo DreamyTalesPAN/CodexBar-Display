@@ -4498,7 +4498,10 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     "opening Settings should load brightness",
   );
   await page.getByText("50%", { exact: true }).waitFor({ timeout: 10_000 });
-  const brightnessSlider = page.getByRole("slider", { name: "Brightness" });
+  const brightnessSlider = page.getByRole("slider", {
+    name: "Brightness",
+    exact: true,
+  });
   assert(
     await brightnessSlider.isEnabled(),
     "brightness slider should be enabled after the Settings retry",
