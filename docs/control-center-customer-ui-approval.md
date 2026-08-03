@@ -760,3 +760,14 @@ issue scope, or release permission never implies UI permission.
   selected. Reloaded installs continue to reopen their existing progress.
 - Approved files: `themes.ts`, `test-customer-flows.mjs`, their focused
   assertions, and this approval record.
+
+## 2026-08-03 — Deterministic Theme Studio test cleanup
+
+- User approval: The user explicitly ordered PR #296 CI to be fixed, then
+  rejected the proposed cross-usage recovery UI because that crash-only case
+  is too marginal. The recovery UI change and its test were removed.
+- Approved customer-visible result: No customer-visible behavior changes. The
+  existing Theme Studio save, discard, recovery, theme, and screensaver flows
+  remain unchanged. Only the automated Playwright teardown waits for active
+  route handlers before stopping its local test server.
+- Approved files: `test-customer-flows.mjs` and this approval record.
