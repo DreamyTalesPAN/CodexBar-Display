@@ -528,7 +528,11 @@ func TestProviderRetryCanTargetExactProvider(t *testing.T) {
 }
 
 func TestExactProviderRetryPreservesFreshFailureOverLastGoodUsage(t *testing.T) {
-	for _, status := range []string{codexbar.ProviderAuthRequired, codexbar.ProviderPermissionRequired} {
+	for _, status := range []string{
+		codexbar.ProviderAuthRequired,
+		codexbar.ProviderPermissionRequired,
+		codexbar.ProviderConfigError,
+	} {
 		t.Run(status, func(t *testing.T) {
 			server := newTestServer(t, runtimeconfig.Config{})
 			now := time.Date(2026, 7, 30, 14, 30, 0, 0, time.UTC)
