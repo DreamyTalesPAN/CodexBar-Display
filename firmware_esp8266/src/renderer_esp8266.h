@@ -9,41 +9,8 @@ namespace codexbar_display {
 namespace esp8266 {
 
 struct RendererDebugSnapshot {
-  String activeTheme;
-  bool themeSpecActive = false;
-  String themeSpecId;
-  int themeSpecRev = 0;
   bool themeSpecRenderOk = true;
-  String themeSpecRenderError;
-  unsigned long themeSpecRenderFailures = 0;
-  bool themeSpecCompiled = false;
-  uint16_t themeSpecPrimitiveCount = 0;
-  uint16_t themeSpecPrimitiveCapacity = 0;
-  uint16_t themeSpecStringBytes = 0;
-  uint16_t themeSpecStringCapacity = 0;
-  bool themeSpecKeepsJsonDocument = false;
-  bool themeSpecHasAnimatedAssets = false;
-  unsigned long cbaCompletedFrames = 0;
-  unsigned long cbaLastFrameDurationMs = 0;
-  uint32_t cbaBufferBytes = 0;
-  unsigned long cbaBufferAllocationFailures = 0;
-  unsigned long cbaLastPushDurationUs = 0;
   unsigned long themeSpecPartialSuccesses = 0;
-  unsigned long themeSpecPartialFailures = 0;
-  uint32_t themeSpecLastPartialChangedFields = 0;
-  String themeSpecLastPartialError;
-  String gifActivePath;
-  bool gifFilePresent = false;
-  bool gifFileOpen = false;
-  bool gifDecoderAllocated = false;
-  bool gifDecoderOpen = false;
-  bool gifBlocked = false;
-  uint8_t gifConsecutiveFailures = 0;
-  unsigned long gifBackoffRemainingMs = 0;
-  String gifLastErrorPath;
-  String gifLastErrorStage;
-  unsigned int gifLastErrorFailures = 0;
-  unsigned long gifLastErrorAgeMs = 0;
 };
 
 struct RendererHealthSnapshot {

@@ -2053,6 +2053,23 @@ void testThemeSpecRuntimePolicyRejectsObservedFragmentedHeap() {
       ThemeSpecRuntimePolicy::kMinAnimationMaxFreeBlockBytes - 1));
 }
 
+void testCbaHeaderParserAcceptsWhitespaceAndExactIntegers() {
+  int values[4] = {0, 0, 0, 0};
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::ParseCbaHeader(" \t52  52\t12 6 \r\n", values, 4));
+  TEST_ASSERT_EQUAL_INT(52, values[0]);
+  TEST_ASSERT_EQUAL_INT(52, values[1]);
+  TEST_ASSERT_EQUAL_INT(12, values[2]);
+  TEST_ASSERT_EQUAL_INT(6, values[3]);
+}
+
+void testCbaHeaderParserRejectsMalformedOrTrailingInput() {
+  int values[4] = {0, 0, 0, 0};
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ParseCbaHeader("52 52 12", values, 4));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ParseCbaHeader("52 52 12 6 extra", values, 4));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ParseCbaHeader("52 -52 12 6", values, 4));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ParseCbaHeader("52 999999999999 12 6", values, 4));
+}
+
 void testAnimatedAssetDuePolicySkipsFilesystemWorkBetweenFrames() {
   TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::AnimatedAssetDue(true, true, 10, 10, 200, 100));
   TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::AnimatedAssetDue(false, false, 0, 0, 0, 100));
@@ -2367,6 +2384,8 @@ int main() {
   RUN_TEST(testUnconfirmedThemeSpecNullKeepsCachedLayout);
   RUN_TEST(testConfirmedThemeSpecNullClearsCachedLayout);
   RUN_TEST(testThemeSpecRuntimePolicyRejectsObservedFragmentedHeap);
+  RUN_TEST(testCbaHeaderParserAcceptsWhitespaceAndExactIntegers);
+  RUN_TEST(testCbaHeaderParserRejectsMalformedOrTrailingInput);
   RUN_TEST(testAnimatedAssetDuePolicySkipsFilesystemWorkBetweenFrames);
   RUN_TEST(testAssetDecodeYieldPolicyBoundsLongRleWork);
   RUN_TEST(testAnimatedSpriteFrameOffsetsAreIndexedOneFrameAtATime);

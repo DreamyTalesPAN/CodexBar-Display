@@ -99,7 +99,6 @@ const char kDeviceAuthTokenPath[] = "/auth";
 const char kActiveThemeSpecPathFile[] = "/theme-active";
 const char kAssetUploadTemporaryPath[] = "/.asset-upload.tmp";
 const char kDeviceAuthHeader[] = "X-VibeTV-Token";
-const char kFirmwareManifestUrl[] = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json";
 // Customer copy for the update notice. The installed VibeTV Mac App is the
 // only supported update destination; never point customers at a hosted URL.
 const char kFirmwareUpdateAvailableText[] = "Update available";
@@ -150,8 +149,6 @@ struct FirmwareUpdateState {
   String latestVersion;
   String lastStatus = "disabled";
   String lastError;
-  unsigned long lastCheckedAtMs = 0;
-  unsigned long nextCheckAtMs = 0;
   // Frame-driven gate: true while the Mac App reports an available update.
   // Cleared when a frame arrives without update info or with a current
   // firmware, which also removes the notice.
@@ -160,32 +157,10 @@ struct FirmwareUpdateState {
   unsigned long noticeSurfaceCheckedAtMs = 0;
 };
 
-struct OtaUploadDiagnostics {
-  const char* target = "none";
-  const char* status = "idle";
-  String filename;
-  String lastError;
-  int command = -1;
-  size_t contentLength = 0;
-  size_t totalSize = 0;
-  size_t maxSize = 0;
-  size_t freeSketchSpace = 0;
-  uint8_t updateError = UPDATE_ERROR_OK;
-  unsigned long startedAtMs = 0;
-  unsigned long endedAtMs = 0;
-  unsigned long successCount = 0;
-  unsigned long failureCount = 0;
-};
-
 struct RuntimeRenderDiagnostics {
   unsigned long fullCount = 0;
   unsigned long partialCount = 0;
-  unsigned long animatedTickAttempts = 0;
   const char* lastKind = "none";
-  const char* lastFullKind = "none";
-  const char* lastPartialKind = "none";
-  unsigned long lastDurationUs = 0;
-  unsigned long lastAtMs = 0;
 };
 
 namespace standby = codexbar_display::esp8266::standby;
@@ -243,7 +218,6 @@ unsigned long wifiReconnectAttemptAtMs = 0;
 bool wifiReconnectStatusRendered = false;
 FirmwareUpdateState firmwareUpdate;
 bool firmwareUpdateNoticeDirty = false;
-OtaUploadDiagnostics otaDiagnostics;
 RuntimeRenderDiagnostics renderDiagnostics;
 DeviceSettings deviceSettings;
 String deviceAuthToken;
@@ -260,23 +234,15 @@ constexpr const char* kLegacyMiniThemeSpecPath = "/themes/u/mini-cl-1-410a37.jso
 #endif
 
 void recordRenderFull(const char* kind, unsigned long durationUs) {
+  (void)durationUs;
   renderDiagnostics.fullCount++;
   renderDiagnostics.lastKind = kind;
-  renderDiagnostics.lastFullKind = kind;
-  renderDiagnostics.lastDurationUs = durationUs;
-  renderDiagnostics.lastAtMs = millis();
 }
 
 void recordRenderPartial(const char* kind, unsigned long durationUs) {
+  (void)durationUs;
   renderDiagnostics.partialCount++;
   renderDiagnostics.lastKind = kind;
-  renderDiagnostics.lastPartialKind = kind;
-  renderDiagnostics.lastDurationUs = durationUs;
-  renderDiagnostics.lastAtMs = millis();
-}
-
-void recordAnimatedTickAttempt() {
-  renderDiagnostics.animatedTickAttempts++;
 }
 
 String jsonEscape(const String& raw) {
@@ -832,8 +798,6 @@ void applyFrameUpdateState() {
   firmwareUpdate.available = frame.updateAvailable;
   firmwareUpdate.latestVersion = frame.updateLatestVersion;
   firmwareUpdate.lastError = frame.updateLastError;
-  firmwareUpdate.lastCheckedAtMs = millis();
-  firmwareUpdate.nextCheckAtMs = 0;
   firmwareUpdate.lastStatus = nextStatus;
 
   if (!firmwareUpdate.available) {
@@ -1137,29 +1101,7 @@ codexbar_display::app::TransportConfig makeTransportConfig(const char* activeTra
 }
 
 String htmlEscape(const String& raw) {
-  String escaped;
-  escaped.reserve(raw.length());
-  for (size_t i = 0; i < raw.length(); ++i) {
-    const char c = raw.charAt(i);
-    switch (c) {
-      case '&':
-        escaped += "&amp;";
-        break;
-      case '<':
-        escaped += "&lt;";
-        break;
-      case '>':
-        escaped += "&gt;";
-        break;
-      case '"':
-        escaped += "&quot;";
-        break;
-      default:
-        escaped += c;
-        break;
-    }
-  }
-  return escaped;
+  return codexbar_display::esp8266::wifi_setup::HtmlEscape(raw);
 }
 
 String macInstallerCommand() {
@@ -2540,10 +2482,6 @@ void handleUpdatePage() {
 
 void setOtaError(const String& message) {
   otaUploadError = message;
-  otaDiagnostics.status = "failed";
-  otaDiagnostics.lastError = message;
-  otaDiagnostics.updateError = Update.getError();
-  otaDiagnostics.endedAtMs = millis();
   Serial.printf("ota_error message=%s\n", otaUploadError.c_str());
   if (Update.hasError()) {
     Update.printError(Serial);
@@ -2596,25 +2534,13 @@ void handleOtaUpload(int command, const char* target) {
     otaUploadNeedsReboot = false;
     otaUploadError = "";
     const size_t maxSize = otaMaxSizeForCommand(command);
-    otaDiagnostics.target = target;
-    otaDiagnostics.status = "starting";
-    otaDiagnostics.filename = upload.filename;
-    otaDiagnostics.lastError = "";
-    otaDiagnostics.command = command;
-    otaDiagnostics.contentLength = upload.contentLength;
-    otaDiagnostics.totalSize = 0;
-    otaDiagnostics.maxSize = maxSize;
-    otaDiagnostics.freeSketchSpace = ESP.getFreeSketchSpace();
-    otaDiagnostics.updateError = UPDATE_ERROR_OK;
-    otaDiagnostics.startedAtMs = millis();
-    otaDiagnostics.endedAtMs = 0;
     Serial.printf(
         "ota_upload_start target=%s filename=%s content_length=%zu max_size=%zu free_sketch_space=%zu\n",
         target,
         upload.filename.c_str(),
         upload.contentLength,
         maxSize,
-        otaDiagnostics.freeSketchSpace);
+        ESP.getFreeSketchSpace());
     if (!requestHasValidOtaAuth()) {
       setOtaError("unauthorized");
       return;
@@ -2627,24 +2553,16 @@ void handleOtaUpload(int command, const char* target) {
     if (!Update.begin(maxSize, command)) {
       setOtaError(Update.getErrorString());
       resetOtaUpdaterAfterFailure();
-    } else {
-      otaDiagnostics.status = "writing";
     }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
-    otaDiagnostics.totalSize = upload.totalSize + upload.currentSize;
     if (otaUploadError.length() == 0 && Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
       setOtaError(Update.getErrorString());
       resetOtaUpdaterAfterFailure();
     }
     ESP.wdtFeed();
   } else if (upload.status == UPLOAD_FILE_END) {
-    otaDiagnostics.totalSize = upload.totalSize;
     if (otaUploadError.length() == 0 && Update.end(true)) {
       otaUploadSucceeded = true;
-      otaDiagnostics.status = "succeeded";
-      otaDiagnostics.updateError = UPDATE_ERROR_OK;
-      otaDiagnostics.endedAtMs = millis();
-      otaDiagnostics.successCount++;
       Serial.printf("ota_upload_success target=%s bytes=%zu\n", target, upload.totalSize);
     } else if (otaUploadError.length() == 0) {
       setOtaError(Update.getErrorString());
@@ -2653,7 +2571,6 @@ void handleOtaUpload(int command, const char* target) {
   } else if (upload.status == UPLOAD_FILE_ABORTED) {
     setOtaError("upload aborted");
     resetOtaUpdaterAfterFailure();
-    otaDiagnostics.totalSize = upload.totalSize;
     Serial.printf("ota_upload_aborted target=%s bytes=%zu\n", target, upload.totalSize);
   }
   yield();
@@ -2669,11 +2586,6 @@ void handleOtaResult(const char* target) {
   webServer.keepAlive(false);
   if (otaUploadError == "unauthorized") {
     otaUploadInProgress = false;
-    otaDiagnostics.status = "failed";
-    otaDiagnostics.lastError = otaUploadError;
-    otaDiagnostics.updateError = Update.getError();
-    otaDiagnostics.endedAtMs = millis();
-    otaDiagnostics.failureCount++;
     otaUploadNeedsReboot = false;
     addCorsHeaders();
     webServer.sendHeader("WWW-Authenticate", "VibeTV token");
@@ -2683,11 +2595,6 @@ void handleOtaResult(const char* target) {
   if (!otaUploadSucceeded || otaUploadError.length() > 0 || Update.hasError()) {
     otaUploadInProgress = false;
     const String error = otaUploadError.length() > 0 ? otaUploadError : Update.getErrorString();
-    otaDiagnostics.status = "failed";
-    otaDiagnostics.lastError = error;
-    otaDiagnostics.updateError = Update.getError();
-    otaDiagnostics.endedAtMs = millis();
-    otaDiagnostics.failureCount++;
     Serial.printf("ota_upload_failed target=%s error=%s\n", target, error.c_str());
     webServer.send(500, "text/plain; charset=utf-8", "Update failed: " + error);
     if (otaUploadNeedsReboot) {
@@ -2707,7 +2614,6 @@ void handleOtaResult(const char* target) {
   webServer.send(200, "text/html; charset=utf-8", html);
   drawUpdateStatus("Restarting");
   waitStatusRendered = true;
-  otaDiagnostics.status = "reboot_scheduled";
   scheduleReboot(target);
   otaUploadInProgress = false;
   otaUploadNeedsReboot = false;
@@ -2814,18 +2720,6 @@ void handleRawOtaClient() {
   otaUploadInProgress = true;
   otaUploadNeedsReboot = false;
   otaUploadError = "";
-  otaDiagnostics.target = "firmware_raw";
-  otaDiagnostics.status = "starting";
-  otaDiagnostics.filename = "raw";
-  otaDiagnostics.lastError = "";
-  otaDiagnostics.command = U_FLASH;
-  otaDiagnostics.contentLength = contentLength;
-  otaDiagnostics.totalSize = 0;
-  otaDiagnostics.maxSize = maxSize;
-  otaDiagnostics.freeSketchSpace = ESP.getFreeSketchSpace();
-  otaDiagnostics.updateError = UPDATE_ERROR_OK;
-  otaDiagnostics.startedAtMs = millis();
-  otaDiagnostics.endedAtMs = 0;
 
   enterOtaSafeMode(U_FLASH, &client);
   otaUploadNeedsReboot = true;
@@ -2835,8 +2729,6 @@ void handleRawOtaClient() {
   if (!Update.begin(contentLength, U_FLASH)) {
     setOtaError(Update.getErrorString());
     resetOtaUpdaterAfterFailure();
-  } else {
-    otaDiagnostics.status = "writing";
   }
 
   uint8_t buffer[kRawOtaReadBufferBytes];
@@ -2873,7 +2765,6 @@ void handleRawOtaClient() {
     const size_t got = static_cast<size_t>(readCount);
     lastProgressMs = millis();
     remaining -= got;
-    otaDiagnostics.totalSize += got;
     if (Update.write(buffer, got) != got) {
       setOtaError(Update.getErrorString());
       resetOtaUpdaterAfterFailure();
@@ -2885,14 +2776,9 @@ void handleRawOtaClient() {
 
   if (otaUploadError.length() == 0 && remaining == 0 && Update.end(false)) {
     otaUploadSucceeded = true;
-    otaDiagnostics.status = "succeeded";
-    otaDiagnostics.updateError = UPDATE_ERROR_OK;
-    otaDiagnostics.endedAtMs = millis();
-    otaDiagnostics.successCount++;
     sendRawOtaResponse(client, 200, "OK", "ok");
     drawUpdateStatus("Restarting");
     waitStatusRendered = true;
-    otaDiagnostics.status = "reboot_scheduled";
     scheduleReboot("firmware_raw");
     otaUploadNeedsReboot = false;
   } else {
@@ -2900,7 +2786,6 @@ void handleRawOtaClient() {
       setOtaError(Update.getErrorString());
       resetOtaUpdaterAfterFailure();
     }
-    otaDiagnostics.failureCount++;
     sendRawOtaResponse(client, 500, "Internal Server Error", "Update failed: " + otaUploadError);
     if (otaUploadNeedsReboot) {
       scheduleReboot("firmware_raw_failure");
@@ -3249,7 +3134,6 @@ void loop() {
       !runtimeCtx.screenDirty &&
       !frameStaleStatusRendered) {
     renderer.TickActive(runtimeCtx);
-    recordAnimatedTickAttempt();
     const int64_t remain = codexbar_display::app::CurrentRemainingSecs(runtimeCtx, millis());
     bool countdownMinuteChanged = false;
     if (remain != runtimeCtx.lastRenderedSecs) {
