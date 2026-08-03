@@ -622,16 +622,16 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		if !setting.Enabled {
 			state = "disabled"
 			message = "Provider is off."
+		} else if setting.Service == codexbar.ProviderServiceOutage &&
+			(setting.Health == codexbar.ProviderHealthHealthy || setting.Health == codexbar.ProviderHealthChecking) {
+			state = "service_outage"
+			message = "This provider is reporting a service outage."
 		} else if _, ready := freshSuccess[setting.ID]; ready && providerHealthCanUseCachedEvidence(setting.Health) {
 			state = string(codexbar.ProviderHealthHealthy)
 			message = providerHealthMessage(codexbar.ProviderHealthHealthy)
 		} else if _, ready := freshTokenSuccess[setting.ID]; ready && providerHealthCanUseCachedEvidence(setting.Health) {
 			state = string(codexbar.ProviderHealthHealthy)
 			message = "Token history is available; usage limits are temporarily unavailable."
-		} else if setting.Service == codexbar.ProviderServiceOutage &&
-			(setting.Health == codexbar.ProviderHealthHealthy || setting.Health == codexbar.ProviderHealthChecking) {
-			state = "service_outage"
-			message = "This provider is reporting a service outage."
 		} else if setting.Health == codexbar.ProviderHealthUnavailable && lastSuccess[setting.ID] != "" {
 			state = "stale"
 			message = "Live usage is unavailable; the last successful reading is still saved."

@@ -128,6 +128,39 @@ func TestPreferencesPreserveCurrentProviderFailureOverFreshCollectorUsage(t *tes
 	}
 }
 
+func TestPreferencesPreserveCurrentServiceOutageOverCachedUsage(t *testing.T) {
+	now := time.Date(2026, 7, 28, 13, 30, 0, 0, time.UTC)
+	for _, usage := range []struct {
+		name string
+		load func() daemon.PersistedUsage
+	}{
+		{name: "quota", load: func() daemon.PersistedUsage { return freshProviderUsage("codex", "Codex", now) }},
+		{name: "tokens", load: func() daemon.PersistedUsage { return tokenRichQuotaUnavailableUsage("codex", "Codex", now) }},
+	} {
+		t.Run(usage.name, func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			server.now = func() time.Time { return now }
+			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				return []codexbar.ProviderSetting{{
+					ID: "codex", Label: "Codex", Enabled: true,
+					Health: codexbar.ProviderHealthHealthy, Service: codexbar.ProviderServiceOutage,
+				}}, nil
+			}
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return usage.load(), true }
+
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+			var response preferencesResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if len(response.Items) != 1 || response.Items[0].Health.State != "service_outage" {
+				t.Fatalf("cached %s usage hid current service outage: %#v", usage.name, response.Items)
+			}
+		})
+	}
+}
+
 func TestPreferencesMarkFreshTokenProviderHealthyWithoutClaimingQuotaReady(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 29, 12, 30, 0, 0, time.UTC)
