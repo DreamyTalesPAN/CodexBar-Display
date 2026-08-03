@@ -192,7 +192,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := pack.ValidateAgainstCapabilities(caps); err != nil && !canRetryAfterUsageSlotsFirmwareUpdate(pack, caps, err, opts) {
+	if err := pack.ValidateAgainstCapabilities(caps); err != nil && !canRetryAfterUsageCapabilityFirmwareUpdate(pack, caps, err, opts) {
 		return Result{}, themePackCapabilitiesError(err)
 	}
 	if !opts.SkipFirmwareUpdate && opts.FirmwareUpdater != nil {
@@ -354,7 +354,7 @@ func themePackCapabilitiesError(err error) *InstallError {
 	}
 }
 
-func canRetryAfterUsageSlotsFirmwareUpdate(pack *themepack.Pack, caps protocol.DeviceCapabilities, err error, opts Options) bool {
+func canRetryAfterUsageCapabilityFirmwareUpdate(pack *themepack.Pack, caps protocol.DeviceCapabilities, err error, opts Options) bool {
 	if opts.SkipFirmwareUpdate || opts.FirmwareUpdater == nil || !caps.Known || !caps.SupportsThemeSpecV1 {
 		return false
 	}
@@ -364,12 +364,8 @@ func canRetryAfterUsageSlotsFirmwareUpdate(pack *themepack.Pack, caps protocol.D
 		return false
 	}
 	updatedCaps := caps
-	if missingSlots {
-		updatedCaps.SupportsUsageSlotsV1 = true
-	}
-	if missingWindows {
-		updatedCaps.SupportsUsageWindowsV1 = true
-	}
+	updatedCaps.SupportsUsageSlotsV1 = true
+	updatedCaps.SupportsUsageWindowsV1 = true
 	return pack.ValidateAgainstCapabilities(updatedCaps) == nil
 }
 
