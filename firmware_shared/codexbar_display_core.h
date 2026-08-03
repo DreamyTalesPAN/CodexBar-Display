@@ -145,11 +145,13 @@ struct Frame {
   String timeText;
   String dateText;
   // True when the frame carries a validated current offset. A non-zero
-  // transition epoch then carries the optional next transition.
+  // transition epoch then carries the optional next two transitions.
   bool hasClockSchedule = false;
   int16_t clockOffsetMinutes = 0;
   int64_t clockTransitionEpoch = 0;
   int16_t clockTransitionOffsetMinutes = 0;
+  int64_t clockFollowingTransitionEpoch = 0;
+  int16_t clockFollowingTransitionOffsetMinutes = 0;
   bool clearThemeSpec = false;
   bool hasThemeSpec = false;
   String themeSpecId;
@@ -907,6 +909,8 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   int clockOffsetMinutes = 0;
   int64_t clockTransitionEpoch = 0;
   int clockTransitionOffsetMinutes = 0;
+  int64_t clockFollowingTransitionEpoch = 0;
+  int clockFollowingTransitionOffsetMinutes = 0;
   if (doc["clockSchedule"].is<JsonObjectConst>()) {
     JsonObjectConst schedule = doc["clockSchedule"].as<JsonObjectConst>();
     if (schedule["currentOffsetMinutes"].is<int>()) {
@@ -916,11 +920,23 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
     clockTransitionEpoch = static_cast<int64_t>(
         schedule["transitionEpoch"] | static_cast<int64_t>(0));
     clockTransitionOffsetMinutes = schedule["offsetMinutes"] | 0;
+    clockFollowingTransitionEpoch = static_cast<int64_t>(
+        schedule["followingTransitionEpoch"] | static_cast<int64_t>(0));
+    clockFollowingTransitionOffsetMinutes = schedule["followingOffsetMinutes"] | 0;
     if (!hasClockSchedule ||
-        clockTransitionEpoch < deviceclock::kMinPlausibleEpoch ||
-        !deviceclock::UtcOffsetValid(clockTransitionOffsetMinutes)) {
+        (clockTransitionEpoch != 0 &&
+         (clockTransitionEpoch < deviceclock::kMinPlausibleEpoch ||
+          !deviceclock::UtcOffsetValid(clockTransitionOffsetMinutes))) ||
+        (clockTransitionEpoch == 0 && clockTransitionOffsetMinutes != 0) ||
+        (clockFollowingTransitionEpoch != 0 &&
+         (clockFollowingTransitionEpoch <= clockTransitionEpoch ||
+          clockFollowingTransitionEpoch < deviceclock::kMinPlausibleEpoch ||
+          !deviceclock::UtcOffsetValid(clockFollowingTransitionOffsetMinutes))) ||
+        (clockFollowingTransitionEpoch == 0 && clockFollowingTransitionOffsetMinutes != 0)) {
       clockTransitionEpoch = 0;
       clockTransitionOffsetMinutes = 0;
+      clockFollowingTransitionEpoch = 0;
+      clockFollowingTransitionOffsetMinutes = 0;
     }
   }
 
@@ -955,6 +971,9 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
     out.clockTransitionEpoch = clockTransitionEpoch;
     out.clockTransitionOffsetMinutes =
         static_cast<int16_t>(clockTransitionOffsetMinutes);
+    out.clockFollowingTransitionEpoch = clockFollowingTransitionEpoch;
+    out.clockFollowingTransitionOffsetMinutes =
+        static_cast<int16_t>(clockFollowingTransitionOffsetMinutes);
     out.clearThemeSpec = clearThemeSpec;
     out.hasThemeSpec = hasThemeSpec;
     out.themeSpecId = themeSpecId;
@@ -1015,6 +1034,9 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   out.clockTransitionEpoch = clockTransitionEpoch;
   out.clockTransitionOffsetMinutes =
       static_cast<int16_t>(clockTransitionOffsetMinutes);
+  out.clockFollowingTransitionEpoch = clockFollowingTransitionEpoch;
+  out.clockFollowingTransitionOffsetMinutes =
+      static_cast<int16_t>(clockFollowingTransitionOffsetMinutes);
   out.sessionTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["sessionTokens"] | static_cast<int64_t>(0)));
   out.weekTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["weekTokens"] | static_cast<int64_t>(0)));
   out.totalTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["totalTokens"] | static_cast<int64_t>(0)));

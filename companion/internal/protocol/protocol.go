@@ -52,14 +52,16 @@ type UsageSlot = UsageWindow
 
 const minClockTransitionEpoch int64 = 1735689600
 
-// ClockSchedule carries the already validated current offset and, when one
-// exists, the next local UTC-offset change. The device keeps UTC from SNTP and
-// applies OffsetMinutes when TransitionEpoch arrives; it does not need a
+// ClockSchedule carries the already validated current offset and, when they
+// exist, the next two local UTC-offset changes. The device keeps UTC from SNTP
+// and applies each offset when its transition epoch arrives; it does not need a
 // timezone database.
 type ClockSchedule struct {
-	CurrentOffsetMinutes int   `json:"currentOffsetMinutes"`
-	TransitionEpoch      int64 `json:"transitionEpoch,omitempty"`
-	OffsetMinutes        int   `json:"offsetMinutes"`
+	CurrentOffsetMinutes     int   `json:"currentOffsetMinutes"`
+	TransitionEpoch          int64 `json:"transitionEpoch,omitempty"`
+	OffsetMinutes            int   `json:"offsetMinutes"`
+	FollowingTransitionEpoch int64 `json:"followingTransitionEpoch,omitempty"`
+	FollowingOffsetMinutes   int   `json:"followingOffsetMinutes,omitempty"`
 }
 
 type Frame struct {
@@ -182,10 +184,20 @@ func validClockSchedule(schedule ClockSchedule) bool {
 		return false
 	}
 	if schedule.TransitionEpoch == 0 {
-		return schedule.OffsetMinutes == 0
+		return schedule.OffsetMinutes == 0 &&
+			schedule.FollowingTransitionEpoch == 0 &&
+			schedule.FollowingOffsetMinutes == 0
 	}
-	return schedule.TransitionEpoch >= minClockTransitionEpoch &&
-		validClockOffset(schedule.OffsetMinutes)
+	if schedule.TransitionEpoch < minClockTransitionEpoch ||
+		!validClockOffset(schedule.OffsetMinutes) {
+		return false
+	}
+	if schedule.FollowingTransitionEpoch == 0 {
+		return schedule.FollowingOffsetMinutes == 0
+	}
+	return schedule.FollowingTransitionEpoch > schedule.TransitionEpoch &&
+		schedule.FollowingTransitionEpoch >= minClockTransitionEpoch &&
+		validClockOffset(schedule.FollowingOffsetMinutes)
 }
 
 func validClockOffset(offsetMinutes int) bool {

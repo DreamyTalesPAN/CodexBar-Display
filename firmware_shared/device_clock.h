@@ -4,8 +4,8 @@
 //
 // The device gets its own UTC time over SNTP (UDP/123). SNTP delivers UTC only,
 // so the local UTC offset is learned from the Companion clock while the Mac is
-// reachable and persisted; the Companion also supplies the next offset
-// transition. No timezone database or libc timezone functions are needed.
+// reachable and persisted; the Companion also supplies the next two offset
+// transitions. No timezone database or libc timezone functions are needed.
 //
 // Everything here is pure state math so it can be tested natively. The board
 // only feeds it `time(nullptr)` and `millis()`.
@@ -55,6 +55,9 @@ struct DeviceClock {
   bool hasUtcOffsetTransition = false;
   int64_t utcOffsetTransitionEpoch = 0;
   int16_t utcOffsetTransitionMinutes = 0;
+  bool hasFollowingUtcOffsetTransition = false;
+  int64_t followingUtcOffsetTransitionEpoch = 0;
+  int16_t followingUtcOffsetTransitionMinutes = 0;
 };
 
 inline int64_t UtcNow(const DeviceClock& clock, unsigned long nowMillis) {
@@ -148,23 +151,41 @@ inline bool RestoreUtcOffset(DeviceClock& clock, int offsetMinutes) {
   return true;
 }
 
-// The Companion provides only the next transition. The device stores it until
-// its own SNTP epoch reaches the UTC instant, then consumes it exactly once.
+// The Companion provides the next two transitions. The device stores them until
+// its own SNTP epoch reaches each UTC instant, then consumes them in order.
 inline bool ObserveUtcOffsetTransition(
     DeviceClock& clock,
     int64_t transitionEpoch,
-    int offsetMinutes) {
+    int offsetMinutes,
+    int64_t followingTransitionEpoch = 0,
+    int followingOffsetMinutes = 0) {
   if (transitionEpoch < kMinPlausibleEpoch || !UtcOffsetValid(offsetMinutes)) {
+    return false;
+  }
+  const bool hasFollowingTransition = followingTransitionEpoch != 0 || followingOffsetMinutes != 0;
+  if (hasFollowingTransition &&
+      (followingTransitionEpoch <= transitionEpoch ||
+       followingTransitionEpoch < kMinPlausibleEpoch ||
+       !UtcOffsetValid(followingOffsetMinutes))) {
     return false;
   }
   if (clock.hasUtcOffsetTransition &&
       clock.utcOffsetTransitionEpoch == transitionEpoch &&
-      clock.utcOffsetTransitionMinutes == offsetMinutes) {
+      clock.utcOffsetTransitionMinutes == offsetMinutes &&
+      clock.hasFollowingUtcOffsetTransition == hasFollowingTransition &&
+      (!hasFollowingTransition ||
+       (clock.followingUtcOffsetTransitionEpoch == followingTransitionEpoch &&
+        clock.followingUtcOffsetTransitionMinutes == followingOffsetMinutes))) {
     return false;
   }
   clock.hasUtcOffsetTransition = true;
   clock.utcOffsetTransitionEpoch = transitionEpoch;
   clock.utcOffsetTransitionMinutes = static_cast<int16_t>(offsetMinutes);
+  clock.hasFollowingUtcOffsetTransition = hasFollowingTransition;
+  clock.followingUtcOffsetTransitionEpoch =
+      hasFollowingTransition ? followingTransitionEpoch : 0;
+  clock.followingUtcOffsetTransitionMinutes =
+      static_cast<int16_t>(hasFollowingTransition ? followingOffsetMinutes : 0);
   return true;
 }
 
@@ -175,24 +196,43 @@ inline bool ClearUtcOffsetTransition(DeviceClock& clock) {
   clock.hasUtcOffsetTransition = false;
   clock.utcOffsetTransitionEpoch = 0;
   clock.utcOffsetTransitionMinutes = 0;
+  clock.hasFollowingUtcOffsetTransition = false;
+  clock.followingUtcOffsetTransitionEpoch = 0;
+  clock.followingUtcOffsetTransitionMinutes = 0;
   return true;
 }
 
 inline bool ApplyDueUtcOffsetTransition(DeviceClock& clock, int64_t utcEpoch) {
-  if (!clock.hasUtcOffsetTransition || utcEpoch < clock.utcOffsetTransitionEpoch) {
-    return false;
+  bool applied = false;
+  while (clock.hasUtcOffsetTransition && utcEpoch >= clock.utcOffsetTransitionEpoch) {
+    clock.hasUtcOffset = true;
+    clock.utcOffsetMinutes = clock.utcOffsetTransitionMinutes;
+    applied = true;
+    if (clock.hasFollowingUtcOffsetTransition) {
+      clock.utcOffsetTransitionEpoch = clock.followingUtcOffsetTransitionEpoch;
+      clock.utcOffsetTransitionMinutes = clock.followingUtcOffsetTransitionMinutes;
+      clock.hasFollowingUtcOffsetTransition = false;
+      clock.followingUtcOffsetTransitionEpoch = 0;
+      clock.followingUtcOffsetTransitionMinutes = 0;
+    } else {
+      ClearUtcOffsetTransition(clock);
+    }
   }
-  clock.hasUtcOffset = true;
-  clock.utcOffsetMinutes = clock.utcOffsetTransitionMinutes;
-  ClearUtcOffsetTransition(clock);
-  return true;
+  return applied;
 }
 
 inline bool RestoreUtcOffsetTransition(
     DeviceClock& clock,
     int64_t transitionEpoch,
-    int offsetMinutes) {
-  return ObserveUtcOffsetTransition(clock, transitionEpoch, offsetMinutes);
+    int offsetMinutes,
+    int64_t followingTransitionEpoch = 0,
+    int followingOffsetMinutes = 0) {
+  return ObserveUtcOffsetTransition(
+      clock,
+      transitionEpoch,
+      offsetMinutes,
+      followingTransitionEpoch,
+      followingOffsetMinutes);
 }
 
 // True when the device can name the local wall clock on its own.
@@ -323,29 +363,51 @@ inline bool DecodeUtcOffset(const uint8_t* data, size_t len, int& outOffsetMinut
   return true;
 }
 
-// Appended after the existing settings record: epoch (little-endian uint64)
-// followed by the offset that becomes active at that epoch (little-endian int16).
-constexpr size_t kUtcOffsetTransitionRecordBytes = 10;
+// Appended after the existing settings record: two transition records, each
+// containing an epoch (little-endian uint64) followed by the offset that
+// becomes active at that epoch (little-endian int16). The legacy one-record
+// suffix remains readable for settings written by the first implementation.
+constexpr size_t kLegacyUtcOffsetTransitionRecordBytes = 10;
+constexpr size_t kUtcOffsetTransitionRecordBytes = 2 * kLegacyUtcOffsetTransitionRecordBytes;
 
-inline void EncodeUtcOffsetTransition(const DeviceClock& clock, uint8_t* out) {
-  const uint64_t epoch = clock.hasUtcOffsetTransition
-                             ? static_cast<uint64_t>(clock.utcOffsetTransitionEpoch)
-                             : 0;
+inline void EncodeUtcOffsetTransitionRecord(
+    int64_t transitionEpoch,
+    int offsetMinutes,
+    uint8_t* out) {
+  const uint64_t epoch = transitionEpoch > 0 ? static_cast<uint64_t>(transitionEpoch) : 0;
   for (size_t i = 0; i < 8; ++i) {
     out[i] = static_cast<uint8_t>((epoch >> (i * 8)) & 0xFF);
   }
-  const uint16_t offset = static_cast<uint16_t>(
-      clock.hasUtcOffsetTransition ? clock.utcOffsetTransitionMinutes : 0);
+  const uint16_t offset = static_cast<uint16_t>(offsetMinutes);
   out[8] = static_cast<uint8_t>(offset & 0xFF);
   out[9] = static_cast<uint8_t>((offset >> 8) & 0xFF);
+}
+
+inline void EncodeUtcOffsetTransition(const DeviceClock& clock, uint8_t* out) {
+  EncodeUtcOffsetTransitionRecord(
+      clock.hasUtcOffsetTransition ? clock.utcOffsetTransitionEpoch : 0,
+      clock.hasUtcOffsetTransition ? clock.utcOffsetTransitionMinutes : 0,
+      out);
+  EncodeUtcOffsetTransitionRecord(
+      clock.hasFollowingUtcOffsetTransition ? clock.followingUtcOffsetTransitionEpoch : 0,
+      clock.hasFollowingUtcOffsetTransition ? clock.followingUtcOffsetTransitionMinutes : 0,
+      out + kLegacyUtcOffsetTransitionRecordBytes);
 }
 
 inline bool DecodeUtcOffsetTransition(
     const uint8_t* data,
     size_t len,
     int64_t& outEpoch,
-    int& outOffsetMinutes) {
-  if (data == nullptr || len < kUtcOffsetTransitionRecordBytes) {
+    int& outOffsetMinutes,
+    int64_t* outFollowingEpoch = nullptr,
+    int* outFollowingOffsetMinutes = nullptr) {
+  if (outFollowingEpoch != nullptr) {
+    *outFollowingEpoch = 0;
+  }
+  if (outFollowingOffsetMinutes != nullptr) {
+    *outFollowingOffsetMinutes = 0;
+  }
+  if (data == nullptr || len < kLegacyUtcOffsetTransitionRecordBytes) {
     return false;
   }
   uint64_t rawEpoch = 0;
@@ -361,6 +423,33 @@ inline bool DecodeUtcOffsetTransition(
   }
   outEpoch = static_cast<int64_t>(rawEpoch);
   outOffsetMinutes = offset;
+  if (len < kUtcOffsetTransitionRecordBytes) {
+    return true;
+  }
+
+  uint64_t followingRawEpoch = 0;
+  for (size_t i = 0; i < 8; ++i) {
+    followingRawEpoch |= static_cast<uint64_t>(data[kLegacyUtcOffsetTransitionRecordBytes + i])
+                         << (i * 8);
+  }
+  const int16_t followingOffset = static_cast<int16_t>(
+      static_cast<uint16_t>(data[kLegacyUtcOffsetTransitionRecordBytes + 8]) |
+      (static_cast<uint16_t>(data[kLegacyUtcOffsetTransitionRecordBytes + 9]) << 8));
+  if (followingRawEpoch == 0 && followingOffset == 0) {
+    return true;
+  }
+  if (followingRawEpoch > static_cast<uint64_t>(INT64_MAX) ||
+      followingRawEpoch <= rawEpoch ||
+      followingRawEpoch < static_cast<uint64_t>(kMinPlausibleEpoch) ||
+      !UtcOffsetValid(followingOffset)) {
+    return false;
+  }
+  if (outFollowingEpoch != nullptr) {
+    *outFollowingEpoch = static_cast<int64_t>(followingRawEpoch);
+  }
+  if (outFollowingOffsetMinutes != nullptr) {
+    *outFollowingOffsetMinutes = followingOffset;
+  }
   return true;
 }
 

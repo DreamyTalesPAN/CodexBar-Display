@@ -21,6 +21,11 @@ func TestNextClockTransitionUsesLocationZoneBounds(t *testing.T) {
 		start.TransitionEpoch != wantStartEpoch || start.OffsetMinutes != 120 {
 		t.Fatalf("DST start = %+v, want current 60, epoch %d and offset 120", *start, wantStartEpoch)
 	}
+	wantFollowingStartEpoch := time.Date(2026, time.October, 25, 1, 0, 0, 0, time.UTC).Unix()
+	if start.FollowingTransitionEpoch != wantFollowingStartEpoch ||
+		start.FollowingOffsetMinutes != 60 {
+		t.Fatalf("following DST transition = %+v, want epoch %d and offset 60", *start, wantFollowingStartEpoch)
+	}
 
 	startOfStandardTime := time.Date(2026, time.October, 25, 1, 30, 0, 0, location)
 	end := nextClockTransition(startOfStandardTime)
@@ -32,13 +37,20 @@ func TestNextClockTransitionUsesLocationZoneBounds(t *testing.T) {
 		end.TransitionEpoch != wantEndEpoch || end.OffsetMinutes != 60 {
 		t.Fatalf("DST end = %+v, want current 120, epoch %d and offset 60", *end, wantEndEpoch)
 	}
+	wantFollowingEndEpoch := time.Date(2027, time.March, 28, 1, 0, 0, 0, time.UTC).Unix()
+	if end.FollowingTransitionEpoch != wantFollowingEndEpoch ||
+		end.FollowingOffsetMinutes != 120 {
+		t.Fatalf("following DST transition = %+v, want epoch %d and offset 120", *end, wantFollowingEndEpoch)
+	}
 }
 
 func TestNextClockTransitionCarriesFixedOffsetWithoutTransition(t *testing.T) {
 	fixedOffset := time.FixedZone("UTC+14", 14*60*60)
 	now := time.Date(2026, time.July, 29, 2, 34, 0, 0, fixedOffset)
 	got := nextClockTransition(now)
-	if got == nil || got.CurrentOffsetMinutes != 840 || got.TransitionEpoch != 0 || got.OffsetMinutes != 0 {
+	if got == nil || got.CurrentOffsetMinutes != 840 || got.TransitionEpoch != 0 ||
+		got.OffsetMinutes != 0 || got.FollowingTransitionEpoch != 0 ||
+		got.FollowingOffsetMinutes != 0 {
 		t.Fatalf("fixed offset schedule = %+v, want current 840 without transition", got)
 	}
 }

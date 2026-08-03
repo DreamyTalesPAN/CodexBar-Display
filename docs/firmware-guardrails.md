@@ -24,7 +24,7 @@ Rules:
   value must never be rendered as the current time.
 - Device clock code must not add a timezone database, POSIX TZ string, `setTZ`,
   `localtime_r`, or a string rule parser; Companion sends only the current
-  offset and the next transition needed by the device.
+  offset and the next two transitions needed by the device.
 
 ## Protocol/Theme Rules
 - Companion->device frame `v` is negotiated (prefer v2, fallback v1).

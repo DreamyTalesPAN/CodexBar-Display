@@ -247,6 +247,53 @@ void testOffsetTransitionPersistsAndAppliesAtItsUtcEpoch() {
   TEST_ASSERT_FALSE(ApplyDueUtcOffsetTransition(after, kTransitionEpoch + 1));
 }
 
+void testTwoOffsetTransitionsApplyWithoutCompanionFrame() {
+  constexpr int64_t kFirstTransitionEpoch = kNtpEpoch + 3600;
+  constexpr int64_t kSecondTransitionEpoch = kNtpEpoch + 7200;
+
+  DeviceClock before;
+  TEST_ASSERT_TRUE(RestoreUtcOffset(before, 60));
+  TEST_ASSERT_TRUE(ObserveUtcOffsetTransition(
+      before, kFirstTransitionEpoch, 120, kSecondTransitionEpoch, 60));
+
+  uint8_t record[kUtcOffsetTransitionRecordBytes] = {};
+  EncodeUtcOffsetTransition(before, record);
+
+  int64_t restoredEpoch = 0;
+  int restoredOffsetMinutes = 0;
+  int64_t restoredFollowingEpoch = 0;
+  int restoredFollowingOffsetMinutes = 0;
+  TEST_ASSERT_TRUE(DecodeUtcOffsetTransition(
+      record,
+      sizeof(record),
+      restoredEpoch,
+      restoredOffsetMinutes,
+      &restoredFollowingEpoch,
+      &restoredFollowingOffsetMinutes));
+  TEST_ASSERT_EQUAL_INT64(kFirstTransitionEpoch, restoredEpoch);
+  TEST_ASSERT_EQUAL_INT(120, restoredOffsetMinutes);
+  TEST_ASSERT_EQUAL_INT64(kSecondTransitionEpoch, restoredFollowingEpoch);
+  TEST_ASSERT_EQUAL_INT(60, restoredFollowingOffsetMinutes);
+
+  DeviceClock after;
+  TEST_ASSERT_TRUE(RestoreUtcOffset(after, 60));
+  TEST_ASSERT_TRUE(RestoreUtcOffsetTransition(
+      after,
+      restoredEpoch,
+      restoredOffsetMinutes,
+      restoredFollowingEpoch,
+      restoredFollowingOffsetMinutes));
+  TEST_ASSERT_FALSE(ApplyDueUtcOffsetTransition(after, kFirstTransitionEpoch - 1));
+  TEST_ASSERT_TRUE(ApplyDueUtcOffsetTransition(after, kFirstTransitionEpoch));
+  TEST_ASSERT_EQUAL_INT(120, after.utcOffsetMinutes);
+  TEST_ASSERT_TRUE(after.hasUtcOffsetTransition);
+  TEST_ASSERT_EQUAL_INT64(kSecondTransitionEpoch, after.utcOffsetTransitionEpoch);
+  TEST_ASSERT_TRUE(ApplyDueUtcOffsetTransition(after, kSecondTransitionEpoch));
+  TEST_ASSERT_EQUAL_INT(60, after.utcOffsetMinutes);
+  TEST_ASSERT_FALSE(after.hasUtcOffsetTransition);
+  TEST_ASSERT_FALSE(ApplyDueUtcOffsetTransition(after, kSecondTransitionEpoch + 1));
+}
+
 void testGarbageCompanionClockIsIgnoredForOffsetLearning() {
   DeviceClock clock;
   ObserveSystemEpoch(clock, kNtpEpoch, 1000);
@@ -289,6 +336,7 @@ void RunDeviceClockTests() {
   RUN_TEST(testCompanionOffsetKeepsUtcPlus13AndPlus14Date);
   RUN_TEST(testMissingCurrentOffsetPreservesFreshCompanionFallback);
   RUN_TEST(testOffsetTransitionPersistsAndAppliesAtItsUtcEpoch);
+  RUN_TEST(testTwoOffsetTransitionsApplyWithoutCompanionFrame);
   RUN_TEST(testGarbageCompanionClockIsIgnoredForOffsetLearning);
   RUN_TEST(testLocalDateRollsOverIncludingLeapDay);
 }

@@ -29,15 +29,19 @@ func TestFrameNormalizeDropsUnsupportedTheme(t *testing.T) {
 func TestFrameNormalizeKeepsValidClockSchedule(t *testing.T) {
 	frame := Frame{
 		NextClockTransition: &ClockSchedule{
-			CurrentOffsetMinutes: 60,
-			TransitionEpoch:      1792886400,
-			OffsetMinutes:        120,
+			CurrentOffsetMinutes:     60,
+			TransitionEpoch:          1792886400,
+			OffsetMinutes:            120,
+			FollowingTransitionEpoch: 1800000000,
+			FollowingOffsetMinutes:   60,
 		},
 	}
 
 	normalized := frame.Normalize()
 	if normalized.NextClockTransition == nil ||
-		normalized.NextClockTransition.CurrentOffsetMinutes != 60 {
+		normalized.NextClockTransition.CurrentOffsetMinutes != 60 ||
+		normalized.NextClockTransition.FollowingTransitionEpoch != 1800000000 ||
+		normalized.NextClockTransition.FollowingOffsetMinutes != 60 {
 		t.Fatalf("expected valid clock schedule to stay, got %+v", normalized.NextClockTransition)
 	}
 
@@ -46,7 +50,9 @@ func TestFrameNormalizeKeepsValidClockSchedule(t *testing.T) {
 		t.Fatalf("marshal clock schedule: %v", err)
 	}
 	if !strings.Contains(string(line), `"currentOffsetMinutes":60`) ||
-		!strings.Contains(string(line), `"offsetMinutes":120`) {
+		!strings.Contains(string(line), `"offsetMinutes":120`) ||
+		!strings.Contains(string(line), `"followingTransitionEpoch":1800000000`) ||
+		!strings.Contains(string(line), `"followingOffsetMinutes":60`) {
 		t.Fatalf("clock schedule missing from wire frame: %s", line)
 	}
 }
@@ -57,6 +63,18 @@ func TestFrameNormalizeDropsInvalidClockSchedule(t *testing.T) {
 	}
 	if normalized := frame.Normalize(); normalized.NextClockTransition != nil {
 		t.Fatalf("expected invalid clock schedule to be dropped, got %+v", normalized.NextClockTransition)
+	}
+	frame = Frame{
+		NextClockTransition: &ClockSchedule{
+			CurrentOffsetMinutes:     60,
+			TransitionEpoch:          1792886400,
+			OffsetMinutes:            120,
+			FollowingTransitionEpoch: 1792886399,
+			FollowingOffsetMinutes:   60,
+		},
+	}
+	if normalized := frame.Normalize(); normalized.NextClockTransition != nil {
+		t.Fatalf("expected out-of-order clock schedule to be dropped, got %+v", normalized.NextClockTransition)
 	}
 }
 

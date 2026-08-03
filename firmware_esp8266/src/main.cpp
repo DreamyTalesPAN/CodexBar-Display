@@ -88,9 +88,9 @@ const char kCustomerAppHost[] = "app.vibetv.shop";
 const char kCustomerAppUrl[] = "https://app.vibetv.shop";
 const char kDeviceSettingsPath[] = "/s";
 // The device settings record stays append-only: brightness byte, learned UTC
-// offset, standby, then one optional next UTC-offset transition. A shorter file
-// is an older record, so every reader must length-check its own section instead
-// of assuming the full size.
+// offset, standby, then optional next UTC-offset transitions. A shorter file is
+// an older record, so every reader must length-check its own section instead of
+// assuming the full size.
 constexpr size_t kStandbyRecordOffset = 1 + codexbar_display::deviceclock::kUtcOffsetRecordBytes;
 constexpr size_t kClockTransitionRecordOffset =
     kStandbyRecordOffset + codexbar_display::esp8266::standby::kRecordBytes;
@@ -348,13 +348,21 @@ bool loadDeviceSettings() {
   if (readBytes > static_cast<int>(kClockTransitionRecordOffset)) {
     int64_t transitionEpoch = 0;
     int transitionOffsetMinutes = 0;
+    int64_t followingTransitionEpoch = 0;
+    int followingTransitionOffsetMinutes = 0;
     if (deviceclock::DecodeUtcOffsetTransition(
             record + kClockTransitionRecordOffset,
             static_cast<size_t>(readBytes) - kClockTransitionRecordOffset,
             transitionEpoch,
-            transitionOffsetMinutes)) {
+            transitionOffsetMinutes,
+            &followingTransitionEpoch,
+            &followingTransitionOffsetMinutes)) {
       deviceclock::RestoreUtcOffsetTransition(
-          runtimeCtx.clock, transitionEpoch, transitionOffsetMinutes);
+          runtimeCtx.clock,
+          transitionEpoch,
+          transitionOffsetMinutes,
+          followingTransitionEpoch,
+          followingTransitionOffsetMinutes);
     }
   }
   applyDeviceSettings();
@@ -1036,8 +1044,8 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
     standby::NoteUsageActivity(standbyState, lastFrameAcceptedAtMs);
   }
   // SNTP delivers UTC only. The Companion supplies the current local date/time
-  // for fallback display, its current offset, and at most the next transition;
-  // the device stores the latter and consumes it against its own SNTP epoch.
+  // for fallback display, its current offset, and the next two transitions;
+  // the device stores and consumes those against its own SNTP epoch.
   const codexbar_display::core::Frame& currentFrame =
       codexbar_display::app::CurrentFrame(runtimeCtx);
   const bool clockOffsetChanged = deviceclock::ObserveCompanionClock(
@@ -1051,7 +1059,9 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
     clockScheduleChanged = deviceclock::ObserveUtcOffsetTransition(
         runtimeCtx.clock,
         currentFrame.clockTransitionEpoch,
-        currentFrame.clockTransitionOffsetMinutes);
+        currentFrame.clockTransitionOffsetMinutes,
+        currentFrame.clockFollowingTransitionEpoch,
+        currentFrame.clockFollowingTransitionOffsetMinutes);
   } else if (currentFrame.hasClockSchedule) {
     // A valid current offset without a next transition explicitly retires a
     // previously persisted schedule (for example after leaving DST).

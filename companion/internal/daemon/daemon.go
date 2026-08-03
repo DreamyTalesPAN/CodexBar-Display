@@ -1362,17 +1362,35 @@ func nextClockTransition(now time.Time) *protocol.ClockSchedule {
 	localNow := now.In(location)
 	_, currentOffset := localNow.Zone()
 	schedule := &protocol.ClockSchedule{CurrentOffsetMinutes: currentOffset / 60}
-	_, end := localNow.ZoneBounds()
-	if end.IsZero() {
-		return schedule
+	nowEpoch := now.UTC().Unix()
+	transitionsFound := 0
+	for transitionsFound < 2 {
+		_, end := localNow.ZoneBounds()
+		if end.IsZero() {
+			break
+		}
+		transitionEpoch := end.UTC().Unix()
+		if transitionEpoch <= nowEpoch {
+			localNow = end.Add(time.Nanosecond).In(location)
+			continue
+		}
+		afterTransition := end.Add(time.Nanosecond).In(location)
+		_, nextOffset := afterTransition.Zone()
+		if nextOffset == currentOffset {
+			localNow = afterTransition
+			continue
+		}
+		if transitionsFound == 0 {
+			schedule.TransitionEpoch = transitionEpoch
+			schedule.OffsetMinutes = nextOffset / 60
+		} else {
+			schedule.FollowingTransitionEpoch = transitionEpoch
+			schedule.FollowingOffsetMinutes = nextOffset / 60
+		}
+		currentOffset = nextOffset
+		localNow = afterTransition
+		transitionsFound++
 	}
-	_, nextOffset := end.In(location).Zone()
-	transitionEpoch := end.UTC().Unix()
-	if nextOffset == currentOffset || transitionEpoch <= now.UTC().Unix() {
-		return schedule
-	}
-	schedule.TransitionEpoch = transitionEpoch
-	schedule.OffsetMinutes = nextOffset / 60
 	return schedule
 }
 
