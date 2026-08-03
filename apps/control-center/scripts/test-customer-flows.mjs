@@ -5603,8 +5603,9 @@ async function testReloadRestoresRunningThemeInstall(browser, appUrl) {
     },
     statusThemeInstallJob: {
       id: "theme-job-from-closed-window",
-      themeId: "synthwave",
-      themeName: "Fixture Synthwave Theme",
+      themeId: "custom-screensaver",
+      themeName: "Custom Screensaver",
+      slot: "screensaver",
       phase: "installing",
       message: "Uploading theme files.",
       progress: 40,
@@ -5624,19 +5625,20 @@ async function testReloadRestoresRunningThemeInstall(browser, appUrl) {
       },
       {
         phase: "complete",
-        message: "Theme is active on VibeTV.",
+        message: "Screensaver is ready on VibeTV.",
         progress: 100,
         logs: [
           "Preparing theme files.",
           "Uploading theme files.",
           "Uploaded theme file 1.",
-          "Theme is active on VibeTV.",
+          "Screensaver is ready on VibeTV.",
         ],
         result: {
-          themeId: "synthwave",
-          packId: "synthwave",
-          name: "Fixture Synthwave Theme",
-          activePath: "/themes/u/synthwave.json",
+          themeId: "custom-screensaver",
+          packId: "custom-screensaver",
+          name: "Custom Screensaver",
+          slot: "screensaver",
+          activePath: "/themes/s/custom-screensaver.json",
           themeRev: 1,
         },
       },
@@ -5649,12 +5651,15 @@ async function testReloadRestoresRunningThemeInstall(browser, appUrl) {
   });
   assert(
     (await page
-      .getByRole("button", { name: /^(Themes|Theme Library)$/ })
+      .getByRole("button", { name: "Screensavers", exact: true })
       .getAttribute("aria-current")) === "page",
-    "A reopened app must return to the running theme install",
+    "A reopened app must return to the running screensaver install",
   );
   await page
-    .getByText("Theme is active on VibeTV.", { exact: true })
+    .getByRole("heading", { name: "Screensavers", exact: true })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByText("Screensaver is ready on VibeTV.", { exact: true })
     .waitFor({ timeout: 10_000 });
   assert(
     installStatusRequests >= 2,

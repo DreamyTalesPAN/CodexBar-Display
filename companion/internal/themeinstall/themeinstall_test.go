@@ -408,7 +408,7 @@ func TestPairThemeInstallTargetStoresTokenAndReturnsTokenizedTarget(t *testing.T
 	}
 }
 
-func TestCleanupThemeUserAssetsDeletesUserFilesAndLegacyMiniGIF(t *testing.T) {
+func TestCleanupSlotAssetsDeletesLiveUserFiles(t *testing.T) {
 	var deleted []string
 	server := assetCleanupServer(t, `{"assets":[
 		{"path":"/themes/u/old.cba","sizeBytes":12000},
@@ -423,44 +423,11 @@ func TestCleanupThemeUserAssetsDeletesUserFilesAndLegacyMiniGIF(t *testing.T) {
 	var out bytes.Buffer
 	cleanupSlotAssets(wifi, &target, nil, &out, themepack.LivePathPrefix, nil)
 
-	if strings.Join(deleted, ",") != "/themes/mini/mini.gif,/themes/u/old.cba,/themes/u/old.json" {
+	if strings.Join(deleted, ",") != "/themes/u/old.cba,/themes/u/old.json" {
 		t.Fatalf("unexpected deleted paths: %v", deleted)
 	}
 	if !strings.Contains(out.String(), "Cleaning old theme files") {
 		t.Fatalf("missing cleanup log: %s", out.String())
-	}
-}
-
-func TestCleanupSlotAssetsSweepsTheScreensaverDirectory(t *testing.T) {
-	var deleted []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/assets" {
-			t.Fatalf("unexpected path %s", r.URL.Path)
-		}
-		switch r.Method {
-		case http.MethodGet:
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"assets":[{"path":"/themes/u/new.json","sizeBytes":900},{"path":"/themes/u/new.cbi","sizeBytes":12000},{"path":"/themes/u/old.json","sizeBytes":900},{"path":"/themes/mini/mini.gif","sizeBytes":14336}]}`))
-		case http.MethodDelete:
-			deleted = append(deleted, r.URL.Query().Get("path"))
-			w.WriteHeader(http.StatusOK)
-		default:
-			t.Fatalf("unexpected assets method %s", r.Method)
-		}
-	}))
-	defer server.Close()
-
-	wifi := transportlayer.NewWiFiTransportWithClient(server.Client())
-	target := server.URL
-	var out bytes.Buffer
-	cleanupThemeUserAssets(wifi, &target, nil, &out, map[string]bool{
-		"/themes/u/new.json":    true,
-		"/themes/u/new.cbi":     true,
-		"/themes/mini/mini.gif": true,
-	})
-
-	if strings.Join(deleted, ",") != "/themes/u/old.json" {
-		t.Fatalf("unexpected deleted paths: %v", deleted)
 	}
 }
 

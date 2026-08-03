@@ -464,6 +464,7 @@ type themeInstallJob struct {
 	ID         string               `json:"id"`
 	ThemeID    string               `json:"themeId,omitempty"`
 	ThemeName  string               `json:"themeName,omitempty"`
+	Slot       string               `json:"slot,omitempty"`
 	Phase      string               `json:"phase"`
 	Message    string               `json:"message"`
 	Progress   int                  `json:"progress"`
@@ -4289,10 +4290,15 @@ func (s *Server) createThemeInstallJob(req themeInstallRequest) themeInstallJob 
 	}
 	s.nextInstallJob++
 	id := fmt.Sprintf("theme-install-%d-%d", time.Now().UnixNano(), s.nextInstallJob)
+	slot := strings.TrimSpace(req.Slot)
+	if slot == "" {
+		slot = themepack.UsageLive
+	}
 	job := &themeInstallJob{
 		ID:        id,
 		ThemeID:   strings.TrimSpace(req.ThemeID),
 		ThemeName: strings.TrimSpace(req.ThemeName),
+		Slot:      slot,
 		Phase:     "installing",
 		Message:   "Preparing theme install.",
 		Progress:  5,

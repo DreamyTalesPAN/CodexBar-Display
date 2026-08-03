@@ -146,6 +146,7 @@ type ThemeInstallJob = {
   id: string;
   themeId?: string;
   themeName?: string;
+  slot?: "live" | "screensaver";
   phase: "installing" | "complete" | "error";
   message?: string;
   progress?: number;
@@ -851,8 +852,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setThemeInstallStatus(status);
       if (job.phase === "installing" && status.themeId) {
         const usage =
+          job.slot ||
           catalog.themes.find((theme) => theme.themeId === status.themeId)
-            ?.usage || "live";
+            ?.usage ||
+          "live";
         if (usage === "screensaver") {
           setSelectedScreensaverId(status.themeId);
           setAppearanceSection("screensavers");

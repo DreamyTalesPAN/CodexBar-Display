@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   chooseCompleteThemePackMetadata,
+  getThemeCatalog,
   mergeThemeProductWithCatalog,
   requireCurrentThemeCatalog,
   type ThemeProduct,
@@ -8,6 +9,86 @@ import {
 
 const shopifySHA = "a".repeat(64);
 const githubSHA = "b".repeat(64);
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
+
+describe("Shopify theme usage", () => {
+  it("uses the usage metafield and defaults unsupported values to live", async () => {
+    vi.stubEnv("SHOPIFY_STORE_DOMAIN", "vibetv.shop");
+    vi.stubEnv("SHOPIFY_STOREFRONT_PRIVATE_TOKEN", "");
+    vi.stubEnv("SHOPIFY_STOREFRONT_ACCESS_TOKEN", "storefront-token");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input) => {
+        if (String(input).includes("/graphql.json")) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                collection: {
+                  products: {
+                    edges: [
+                      {
+                        node: {
+                          id: "gid://shopify/Product/screensaver",
+                          title: "Night Clock",
+                          handle: "night-clock",
+                          themeId: { value: "night-clock" },
+                          usage: null,
+                          legacyUsage: { value: "screensaver" },
+                          priceRange: {
+                            minVariantPrice: {
+                              amount: "0",
+                              currencyCode: "EUR",
+                            },
+                          },
+                        },
+                      },
+                      {
+                        node: {
+                          id: "gid://shopify/Product/unknown",
+                          title: "Unknown Usage",
+                          handle: "unknown-usage",
+                          themeId: { value: "unknown-usage" },
+                          usage: { value: "both" },
+                          legacyUsage: null,
+                          priceRange: {
+                            minVariantPrice: {
+                              amount: "0",
+                              currencyCode: "EUR",
+                            },
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response("catalog unavailable", { status: 503 });
+      },
+    );
+
+    const catalog = await getThemeCatalog();
+
+    expect(catalog.themes.map((theme) => theme.usage)).toEqual([
+      "screensaver",
+      "live",
+    ]);
+    const storefrontRequest = fetchMock.mock.calls[0]?.[1];
+    const query = JSON.parse(String(storefrontRequest?.body)).query as string;
+    expect(query).toContain(
+      'usage: metafield(namespace: "vibetv", key: "usage")',
+    );
+    expect(query).toContain(
+      'legacyUsage: metafield(namespace: "theme", key: "usage")',
+    );
+  });
+});
 
 describe("chooseCompleteThemePackMetadata", () => {
   it("keeps a complete valid Shopify metadata triplet", () => {

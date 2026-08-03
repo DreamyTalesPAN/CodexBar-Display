@@ -68,6 +68,8 @@ type ShopifyProduct = {
   };
   themeId?: ShopifyMetafield;
   legacyThemeId?: ShopifyMetafield;
+  usage?: ShopifyMetafield;
+  legacyUsage?: ShopifyMetafield;
   themeVersion?: ShopifyMetafield;
   legacyThemeVersion?: ShopifyMetafield;
   manifestUrl?: ShopifyMetafield;
@@ -265,7 +267,10 @@ function mapShopifyProduct(
     priceLabel: isFree ? "Kostenlos" : formatMoney(amount, currency),
     isFree,
     themeId,
-    usage: "live",
+    usage:
+      normalizeThemeUsage(product.usage?.value) ||
+      normalizeThemeUsage(product.legacyUsage?.value) ||
+      "live",
     themeVersion:
       product.themeVersion?.value?.trim() ||
       product.legacyThemeVersion?.value?.trim() ||
@@ -544,6 +549,13 @@ function splitList(value: string | undefined | null): string[] | undefined {
   return parts?.length ? parts : undefined;
 }
 
+function normalizeThemeUsage(
+  value: string | undefined | null,
+): ThemeStudioUsage | undefined {
+  const usage = value?.trim();
+  return usage === "live" || usage === "screensaver" ? usage : undefined;
+}
+
 function positiveInteger(value: string | undefined | null): number | undefined {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
@@ -582,6 +594,12 @@ const SHOPIFY_THEMES_QUERY = `#graphql
               value
             }
             legacyThemeId: metafield(namespace: "theme", key: "theme_id") {
+              value
+            }
+            usage: metafield(namespace: "vibetv", key: "usage") {
+              value
+            }
+            legacyUsage: metafield(namespace: "theme", key: "usage") {
               value
             }
             themeVersion: metafield(namespace: "vibetv", key: "theme_version") {

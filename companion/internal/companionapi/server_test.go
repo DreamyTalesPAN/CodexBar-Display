@@ -134,6 +134,7 @@ func TestStatusIncludesLatestThemeInstallJob(t *testing.T) {
 		ID:        "active-theme",
 		ThemeID:   "clippy",
 		ThemeName: "Clippy",
+		Slot:      themepack.UsageScreensaver,
 		Phase:     "installing",
 		Message:   "Uploading theme files.",
 		Progress:  40,
@@ -158,6 +159,9 @@ func TestStatusIncludesLatestThemeInstallJob(t *testing.T) {
 	}
 	if got.ThemeInstall.ThemeID != "clippy" || got.ThemeInstall.ThemeName != "Clippy" {
 		t.Fatalf("expected resumable theme identity, got %+v", got.ThemeInstall)
+	}
+	if got.ThemeInstall.Slot != themepack.UsageScreensaver {
+		t.Fatalf("expected resumable theme slot, got %+v", got.ThemeInstall)
 	}
 	if got.ThemeInstall.Phase != "installing" || got.ThemeInstall.Progress != 40 {
 		t.Fatalf("unexpected theme install snapshot: %+v", got.ThemeInstall)
@@ -7064,7 +7068,7 @@ func TestThemeInstallAcceptsZipAndReadsAsyncFromQuery(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true&themeId=cozy-meadow&themeName=Cozy%20Meadow", bytes.NewReader(zipBytes))
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true&slot=screensaver&themeId=cozy-meadow&themeName=Cozy%20Meadow", bytes.NewReader(zipBytes))
 	req.Header.Set("Content-Type", "application/zip")
 	server.Handler().ServeHTTP(rec, req)
 
@@ -7081,10 +7085,13 @@ func TestThemeInstallAcceptsZipAndReadsAsyncFromQuery(t *testing.T) {
 	if started.Job.ThemeID != "cozy-meadow" || started.Job.ThemeName != "Cozy Meadow" {
 		t.Fatalf("expected resumable theme identity, got %+v", started.Job)
 	}
+	if started.Job.Slot != themepack.UsageScreensaver {
+		t.Fatalf("expected resumable theme slot, got %+v", started.Job)
+	}
 
 	select {
 	case opts := <-gotOpts:
-		if opts.ThemeID != "cozy-meadow" || opts.PackURL != "" || opts.CatalogURL != "" {
+		if opts.ThemeID != "cozy-meadow" || opts.Slot != themepack.UsageScreensaver || opts.PackURL != "" || opts.CatalogURL != "" {
 			t.Fatalf("unexpected in-memory theme source: %+v", opts)
 		}
 		if !bytes.Equal(opts.PackBytes, zipBytes) {
