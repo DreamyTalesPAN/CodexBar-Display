@@ -3744,7 +3744,7 @@ async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
     {
       device: themeMissingDevice,
       deviceAfterThemeInstall: {
-        ...readyDevice,
+        ...themeMissingDevice,
         ready: false,
         connectionState: "reconnecting",
       },
