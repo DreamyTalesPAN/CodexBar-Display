@@ -6820,7 +6820,7 @@ async function testThemeLibraryRendersThemeSpecPreviews(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await clickNavigation(page, "Theme Library");
+  await clickNavigation(page, "Themes");
   for (const [themeId, expectedText] of Object.entries(themePreviewGoldens)) {
     const preview = page.getByRole("img", {
       name: new RegExp(`Rendered VibeTV theme ${themeId} showing VibeTV`),
@@ -7893,7 +7893,7 @@ async function testMatchingDevFirmwareUnlocksThemes(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await clickNavigation(page, "Theme Library");
+  await clickNavigation(page, "Themes");
   for (const title of [
     "Fixture Cozy Meadow Theme",
     "Fixture Mini Classic Theme",
