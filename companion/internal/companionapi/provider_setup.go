@@ -199,6 +199,10 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 		setup.CheckedAt = now.UTC().Format(time.RFC3339Nano)
 	}
 	protectedByID := make(map[string]struct{}, len(setup.Providers))
+	engineFailed := setup.Engine.Status == codexbar.ProviderEngineError
+	if engineFailed {
+		protectedByID["codexbar"] = struct{}{}
+	}
 	for _, provider := range setup.Providers {
 		id := strings.TrimSpace(strings.ToLower(provider.ID))
 		if id != "" && providerSetupFailureMustWin(provider.Status) {
@@ -231,7 +235,7 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 		if _, replaced := readyByID[id]; replaced {
 			continue
 		}
-		if id == "codexbar" {
+		if id == "codexbar" && !engineFailed {
 			continue
 		}
 		provider.ID = id
@@ -280,11 +284,14 @@ func reconcileProviderSetupWithTokenEvidence(setup codexbar.ProviderSetup, ready
 	if len(providers) == 0 {
 		return original
 	}
-	setup.Status = codexbar.ProviderReady
-	setup.Engine.Status = codexbar.ProviderReady
+	engineFailed := setup.Engine.Status == codexbar.ProviderEngineError
+	if !engineFailed {
+		setup.Status = codexbar.ProviderReady
+		setup.Engine.Status = codexbar.ProviderReady
+	}
 	for _, provider := range setup.Providers {
 		id := strings.TrimSpace(strings.ToLower(provider.ID))
-		if id == "" || id == "codexbar" {
+		if id == "" || (id == "codexbar" && !engineFailed) {
 			continue
 		}
 		provider.ID = id

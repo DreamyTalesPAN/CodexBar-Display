@@ -194,6 +194,38 @@ func TestProviderSetupDoesNotPromoteGloballyWithHealthyAndFailingProviders(t *te
 	}
 }
 
+func TestProviderSetupPreservesCurrentEngineErrorOverCachedUsage(t *testing.T) {
+	now := time.Date(2026, 7, 28, 13, 30, 0, 0, time.UTC)
+	setup := codexbar.ProviderSetup{
+		Status: "setup_required",
+		Engine: codexbar.EngineReadiness{Status: codexbar.ProviderEngineError},
+		Providers: []codexbar.ProviderReadiness{{
+			ID: "codexbar", Label: "Usage service", Enabled: true, Status: codexbar.ProviderEngineError,
+		}},
+	}
+	ready := []codexbar.ProviderReadiness{{
+		ID: "codex", Label: "Codex", Enabled: true, Status: codexbar.ProviderReady,
+	}}
+
+	for _, reconcile := range []struct {
+		name string
+		fn   func(codexbar.ProviderSetup, []codexbar.ProviderReadiness, time.Time) codexbar.ProviderSetup
+	}{
+		{name: "quota", fn: reconcileProviderSetupWithUsage},
+		{name: "tokens", fn: reconcileProviderSetupWithTokenEvidence},
+	} {
+		t.Run(reconcile.name, func(t *testing.T) {
+			got := reconcile.fn(setup, ready, now)
+			if got.Status == codexbar.ProviderReady || got.Engine.Status != codexbar.ProviderEngineError {
+				t.Fatalf("cached usage hid the current engine error: %+v", got)
+			}
+			if providerByID(got.Providers, "codexbar") == nil {
+				t.Fatalf("cached usage removed the current engine error: %+v", got)
+			}
+		})
+	}
+}
+
 func TestProviderSetupDoesNotReconcileFromStaleOrUnavailableUsage(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
