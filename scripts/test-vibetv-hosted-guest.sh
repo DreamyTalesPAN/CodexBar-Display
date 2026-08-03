@@ -147,7 +147,11 @@ CANDIDATE_COMPANION="$INSTALL_APP/Contents/Helpers/codexbar-display"
 "$CANDIDATE_COMPANION" install-update --target http://127.0.0.1:47834 --manifest-url "$SERVER_URL/firmware-manifest.json" --skip-launchagent-pause > "$OUTPUT/candidate-install-update.txt" 2>&1
 "$CANDIDATE_COMPANION" install-update --target http://127.0.0.1:47834 --manifest-url "$SERVER_URL/firmware-manifest.json" --skip-launchagent-pause > "$OUTPUT/candidate-already-current.txt" 2>&1
 grep -F 'Firmware: already current' "$OUTPUT/candidate-already-current.txt" >/dev/null || die 'candidate companion did not prove already_current'
-"$CANDIDATE_COMPANION" daemon --transport wifi --target http://127.0.0.1:47834 --once --api-addr 127.0.0.1:47832 > "$OUTPUT/candidate-daemon-once.txt" 2>&1
+# Sparkle relaunches the candidate runtime in public states, so it already owns
+# the display writer lock and proves rendering through the virtual state below.
+if [[ "$STATE" == clean_os ]]; then
+  "$CANDIDATE_COMPANION" daemon --transport wifi --target http://127.0.0.1:47834 --once > "$OUTPUT/candidate-daemon-once.txt" 2>&1
+fi
 curl --fail --silent http://127.0.0.1:47834/__virtual/state > "$OUTPUT/virtual-state.json"
 python3 - "$OUTPUT/virtual-state.json" "$expected_uploads" <<'PY'
 import json, sys

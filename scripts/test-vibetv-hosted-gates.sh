@@ -373,6 +373,10 @@ main() {
     'guest test must use the bundled candidate companion for OTA'
   assert_contains "$GUEST_TEST" 'daemon --transport wifi' \
     'guest test must exercise the bundled candidate companion render path'
+  assert_contains "$GUEST_TEST" 'if [[ "$STATE" == clean_os ]]; then' \
+    'guest test must run a standalone candidate daemon only on a clean OS'
+  assert_not_contains "$GUEST_TEST" '--once --api-addr' \
+    'one-shot candidate daemon must not keep a companion API server alive'
 
   assert_safe_app_extractor
   printf 'PASS: hosted VibeTV merge and release-candidate gate contracts\n'
