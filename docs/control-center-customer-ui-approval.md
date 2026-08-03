@@ -783,3 +783,13 @@ issue scope, or release permission never implies UI permission.
   when the update was started while the screensaver was visible.
 - Approved files: `control-center-app.tsx`, its existing customer-flow
   regression test, and this approval record.
+
+## 2026-08-03 — Invalidated live-preview frame
+
+- User approval: The user explicitly requested that every Codex reviewer
+  finding on PR #296 be fixed until the PR is ready to merge.
+- Approved customer-visible result: When the current display session has not
+  produced a usable frame yet, Overview stops showing the invalid frame from
+  the prior session and returns to the existing waiting-for-usage state.
+- Approved files: `live-vibetv-preview.tsx`, its existing customer-flow
+  coverage, and this approval record.

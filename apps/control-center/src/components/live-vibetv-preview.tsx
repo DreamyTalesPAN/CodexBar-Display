@@ -260,6 +260,7 @@ export function useLatestDisplayFrame(
         }
         const response = await fetch(url, requestInit);
         if (!response.ok) {
+          setDisplayFrame(null);
           throw new Error("display frame unavailable");
         }
         const nextFrame = (await response.json()) as DisplayFrameSnapshot;

@@ -652,6 +652,26 @@ void testQuotaReplenishmentDoesNotCountAsUsageProgress() {
   TEST_ASSERT_TRUE(event.usageProgressed);
 }
 
+void testUsageProgressRequiresStableProviderAndWindowIdentity() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* codexFrame = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":10,"weekly":20,"usageWindows":[{"id":"gone","label":"Gone","percent":10},{"id":"stable","label":"Stable","percent":20}]})JSON";
+  const char* claudeFrame = R"JSON({"v":2,"provider":"claude","usageMode":"used","session":30,"weekly":40,"usageWindows":[{"id":"stable","label":"Stable","percent":40}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, codexFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, claudeFrame, 2000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, codexFrame, 3000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+  const char* compactedFrame = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":20,"weekly":0,"usageWindows":[{"id":"stable","label":"Stable","percent":20}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, compactedFrame, 4000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* progressedFrame = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":21,"weekly":0,"usageWindows":[{"id":"stable","label":"Stable","percent":21}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, progressedFrame, 5000, event));
+  TEST_ASSERT_TRUE(event.usageProgressed);
+}
+
 void testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw() {
   RuntimeState ownershipState;
   SerialConsumeEvent event;
@@ -2437,6 +2457,7 @@ int main() {
   RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
   RUN_TEST(testConsumeFrameLineComparesCurrentBeforeAssignment);
   RUN_TEST(testQuotaReplenishmentDoesNotCountAsUsageProgress);
+  RUN_TEST(testUsageProgressRequiresStableProviderAndWindowIdentity);
   RUN_TEST(testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw);
   RUN_TEST(testWhitespaceUsageWindowOwnersTriggerLiveRedraw);
   RUN_TEST(testPartialUsageProtocolRendersOnlyUnknownLane);

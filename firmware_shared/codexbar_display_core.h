@@ -454,23 +454,40 @@ inline bool UsagePercentProgressed(
 
 inline bool UsageProgressChanged(const Frame& previous, const Frame& next) {
   const bool usageAvailable = !previous.usageUnavailable && !next.usageUnavailable;
-  if (usageAvailable &&
+  if (!usageAvailable || previous.provider != next.provider) {
+    return false;
+  }
+
+  bool previousHasWindows = false;
+  bool nextHasWindows = false;
+  for (size_t i = 0; i < kMaxUsageWindows; ++i) {
+    previousHasWindows = previousHasWindows || previous.usageWindows[i].available;
+    nextHasWindows = nextHasWindows || next.usageWindows[i].available;
+  }
+  if (!previousHasWindows && !nextHasWindows &&
       ((!previous.sessionUnavailable && !next.sessionUnavailable &&
         UsagePercentProgressed(previous, next, previous.session, next.session)) ||
        (!previous.weeklyUnavailable && !next.weeklyUnavailable &&
         UsagePercentProgressed(previous, next, previous.weekly, next.weekly)))) {
     return true;
   }
-  for (size_t i = 0; i < kMaxUsageWindows; ++i) {
+
+  for (size_t previousIndex = 0; previousIndex < kMaxUsageWindows; ++previousIndex) {
     // Countdown, label and availability changes redraw the theme, but do not
     // mean that the customer used their provider.
-    if (usageAvailable && previous.usageWindows[i].available && next.usageWindows[i].available &&
-        UsagePercentProgressed(
-            previous,
-            next,
-            previous.usageWindows[i].percent,
-            next.usageWindows[i].percent)) {
-      return true;
+    if (!previous.usageWindows[previousIndex].available) {
+      continue;
+    }
+    for (size_t nextIndex = 0; nextIndex < kMaxUsageWindows; ++nextIndex) {
+      if (next.usageWindows[nextIndex].available &&
+          previous.usageWindows[previousIndex].id == next.usageWindows[nextIndex].id &&
+          UsagePercentProgressed(
+              previous,
+              next,
+              previous.usageWindows[previousIndex].percent,
+              next.usageWindows[nextIndex].percent)) {
+        return true;
+      }
     }
   }
   // Token totals come from history scans. Expiry and recovery can change them
