@@ -293,7 +293,9 @@ inline int64_t CurrentUsageWindowRemainingSecs(
     const RuntimeState& state,
     size_t slotIndex,
     unsigned long nowMillis) {
-  if (!state.hasFrame || slotIndex >= kMaxUsageWindows ||
+  if (!state.hasFrame ||
+      CurrentResetTrust(state.reset, nowMillis) == ResetTrust::kStale ||
+      slotIndex >= kMaxUsageWindows ||
       !state.current.usageWindows[slotIndex].available) {
     return 0;
   }

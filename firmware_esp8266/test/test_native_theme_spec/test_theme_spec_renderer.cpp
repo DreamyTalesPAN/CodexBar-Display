@@ -474,6 +474,12 @@ void testUsageWindowOwnershipHidesCompleteMissingLane() {
 void testUsageWindowResetCountdownsTickIndependently() {
   RuntimeState state;
   state.hasFrame = true;
+  state.reset.hasDeadline = true;
+  state.reset.enforced = true;
+  state.reset.hostLive = true;
+  state.reset.deadlineSecs = 3600;
+  state.reset.trustSecs = codexbar_display::core::kResetTrustHorizonSecs;
+  state.reset.baseMillis = 1000;
   state.resetBaseMillis = 1000;
   state.current.usageWindows[0].available = true;
   state.current.usageWindows[0].resetSecs = 100;
@@ -2154,6 +2160,33 @@ void testResetTrustExpiredBudgetBlanksAStillRunningDeadline() {
   TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, past));
 }
 
+void testUsageWindowResetCountdownsStopWhenTrustExpires() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+  state.current.usageWindows[0].available = true;
+  state.current.usageWindows[0].resetSecs = 21600;
+  state.current.usageWindows[1].available = true;
+  state.current.usageWindows[1].resetSecs = 43200;
+
+  const unsigned long beforeExpiry = 1000 + 5 * kHourMs - 1000;
+  TEST_ASSERT_EQUAL_INT64(
+      3601,
+      codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 0, beforeExpiry));
+  TEST_ASSERT_EQUAL_INT64(
+      25201,
+      codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 1, beforeExpiry));
+
+  const unsigned long afterExpiry = 1000 + 5 * kHourMs + 1000;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, afterExpiry)));
+  TEST_ASSERT_EQUAL_INT64(
+      0,
+      codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 0, afterExpiry));
+  TEST_ASSERT_EQUAL_INT64(
+      0,
+      codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 1, afterExpiry));
+}
+
 void testResetTrustDeadlineReachedOfflineDoesNotStartNewCycle() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -2391,6 +2424,7 @@ int main() {
   RUN_TEST(testAnimatedSpriteFrameOffsetsAreIndexedOneFrameAtATime);
   RUN_TEST(testResetTrustLiveFrameCountsDownLocallyForFiveHours);
   RUN_TEST(testResetTrustExpiredBudgetBlanksAStillRunningDeadline);
+  RUN_TEST(testUsageWindowResetCountdownsStopWhenTrustExpires);
   RUN_TEST(testResetTrustDeadlineReachedOfflineDoesNotStartNewCycle);
   RUN_TEST(testResetTrustSourceChangeNeverInheritsPreviousDeadline);
   RUN_TEST(testResetTrustOfflineResendCannotExtendDeadlineOrBudget);
