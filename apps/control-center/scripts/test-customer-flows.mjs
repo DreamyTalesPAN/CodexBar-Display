@@ -4518,7 +4518,19 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     "expected delayed brightness refresh to finish",
   );
   const settingsResponsesBeforeBrightness = settingsCalls;
-  await brightnessSlider.press("End");
+  assert(
+    await brightnessSlider.isEnabled(),
+    "brightness slider should stay enabled before saving",
+  );
+  const brightnessBeforeSave = Number(
+    await brightnessSlider.getAttribute("aria-valuenow"),
+  );
+  const brightnessMin = Number(
+    await brightnessSlider.getAttribute("aria-valuemin"),
+  );
+  await brightnessSlider.press(
+    brightnessBeforeSave === brightnessMin ? "End" : "Home",
+  );
   await waitForCondition(
     () => settingsWrites.length === 1,
     "changing brightness should write once",
