@@ -2222,7 +2222,7 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 	}
 
 	frame = frame.Normalize()
-	line, err := frame.MarshalLine()
+	line, err := frame.MarshalNormalizedLine()
 	if err != nil {
 		return nil, protocol.Frame{}, err
 	}
@@ -2231,44 +2231,41 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 	}
 
 	if frame.Update != nil {
-		compactUpdate := frame.Normalize()
+		compactUpdate := frame
 		compactUpdate.Update = compactFrameUpdate(frame.Update)
 		for _, candidate := range compactUpdateCandidates(compactUpdate) {
-			normalized := candidate.Normalize()
-			line, err = normalized.MarshalLine()
+			line, err = candidate.MarshalNormalizedLine()
 			if err != nil {
 				return nil, protocol.Frame{}, err
 			}
 			if len(line) <= maxBytes {
-				return line, normalized, nil
+				return line, candidate, nil
 			}
 		}
 
-		noUpdate := frame.Normalize()
+		noUpdate := frame
 		noUpdate.Update = nil
-		normalized := noUpdate.Normalize()
-		line, err = normalized.MarshalLine()
+		line, err = noUpdate.MarshalNormalizedLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, normalized, nil
+			return line, noUpdate, nil
 		}
-		frame = normalized
+		frame = noUpdate
 	}
 
 	if frame.Theme != "" {
 		noTheme := frame
 		noTheme.Theme = ""
-		normalized := noTheme.Normalize()
-		line, err = normalized.MarshalLine()
+		line, err = noTheme.MarshalNormalizedLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, normalized, nil
+			return line, noTheme, nil
 		}
-		frame = normalized
+		frame = noTheme
 	}
 
 	if frame.SessionTokens > 0 || frame.WeekTokens > 0 || frame.TotalTokens > 0 {
@@ -2276,30 +2273,28 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		noTokens.SessionTokens = 0
 		noTokens.WeekTokens = 0
 		noTokens.TotalTokens = 0
-		normalized := noTokens.Normalize()
-		line, err = normalized.MarshalLine()
+		line, err = noTokens.MarshalNormalizedLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, normalized, nil
+			return line, noTokens, nil
 		}
-		frame = normalized
+		frame = noTokens
 	}
 
 	if frame.Time != "" || frame.Date != "" {
 		noClock := frame
 		noClock.Time = ""
 		noClock.Date = ""
-		normalized := noClock.Normalize()
-		line, err = normalized.MarshalLine()
+		line, err = noClock.MarshalNormalizedLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, normalized, nil
+			return line, noClock, nil
 		}
-		frame = normalized
+		frame = noClock
 	}
 
 	usageWindowsActive := len(frame.UsageWindows) > 0
@@ -2316,7 +2311,7 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 				trimmed.UsageSlots = append([]protocol.UsageSlot(nil), frame.UsageSlots[:limit]...)
 			}
 			normalized := trimmed.Normalize()
-			line, err = normalized.MarshalLine()
+			line, err = normalized.MarshalNormalizedLine()
 			if err != nil {
 				return nil, protocol.Frame{}, err
 			}
@@ -2327,7 +2322,7 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 	}
 
 	fallback := protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorFrameTooLarge)).Normalize()
-	line, err = fallback.MarshalLine()
+	line, err = fallback.MarshalNormalizedLine()
 	if err != nil {
 		return nil, protocol.Frame{}, err
 	}

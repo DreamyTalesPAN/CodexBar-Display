@@ -1950,7 +1950,8 @@ func TestMarshalFrameWithinLimitTrimsV1UsageSlotsInOrder(t *testing.T) {
 		t.Fatalf("expected trimmed v1 line to fit limit %d, got %d", len(limitLine), len(line))
 	}
 	if len(marshaled.UsageWindows) != 0 || len(marshaled.UsageSlots) != 1 ||
-		marshaled.UsageSlots[0].ID != frame.UsageSlots[0].ID {
+		marshaled.UsageSlots[0].ID != frame.UsageSlots[0].ID ||
+		marshaled.Weekly != 0 || !marshaled.WeeklyUnavailable {
 		t.Fatalf("expected first legacy usage slot to survive, got %+v", marshaled)
 	}
 }

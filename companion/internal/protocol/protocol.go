@@ -305,8 +305,13 @@ func truncateUTF8Bytes(value string, maxBytes int) string {
 }
 
 func (f Frame) MarshalLine() ([]byte, error) {
-	n := f.Normalize()
-	b, err := json.Marshal(n)
+	return f.Normalize().MarshalNormalizedLine()
+}
+
+// MarshalNormalizedLine serializes a frame that has already been normalized.
+// It is for callers that need the normalized frame as well as its wire form.
+func (f Frame) MarshalNormalizedLine() ([]byte, error) {
+	b, err := json.Marshal(f)
 	if err != nil {
 		return nil, err
 	}

@@ -8,19 +8,24 @@ max_cycle_ns="${MAX_CYCLE_NS:-50000}"
 max_cycle_allocs="${MAX_CYCLE_ALLOCS:-160}"
 max_marshal_ns="${MAX_MARSHAL_NS:-1000}"
 max_marshal_allocs="${MAX_MARSHAL_ALLOCS:-4}"
-sample_count=5
 
-output="$(cd "$companion_dir" && go test ./internal/daemon -run '^$' -bench 'BenchmarkRunCycleWithDeps|BenchmarkMarshalFrameWithinLimit' -benchmem -benchtime=1s -count="$sample_count" 2>&1)"
-echo "$output"
+run_benchmark() {
+  local benchmark="$1"
+  local output
 
-benchmark_metrics="$(printf '%s\n' "$output" | awk '
-  $1 ~ /^BenchmarkRunCycleWithDeps-/ {
-    kind = "cycle"
-  }
-  $1 ~ /^BenchmarkMarshalFrameWithinLimit-/ {
-    kind = "marshal"
-  }
-  kind != "" {
+  if ! output="$(cd "$companion_dir" && go test ./internal/daemon -run '^$' -bench "^${benchmark}$" -benchmem -benchtime=3s -count=1 2>&1)"; then
+    printf '%s\n' "$output"
+    return 1
+  fi
+  printf '%s\n' "$output"
+}
+
+parse_metric() {
+  local output="$1"
+  local benchmark="$2"
+
+  printf '%s\n' "$output" | awk -v benchmark="$benchmark" '
+  index($1, benchmark) == 1 {
     ns = ""
     allocs = ""
     for (i = 1; i <= NF; i++) {
@@ -34,40 +39,35 @@ benchmark_metrics="$(printf '%s\n' "$output" | awk '
     if (ns == "" || allocs == "") {
       exit 1
     }
-    print kind, ns, allocs
-    kind = ""
+    print ns, allocs
+    exit
   }
-')"
-
-metric_count() {
-  printf '%s\n' "$benchmark_metrics" | awk -v wanted="$1" '$1 == wanted {count++} END {print count + 0}'
+  '
 }
 
-# Shared-runner contention only inflates elapsed time; allocations stay strict.
-best_metric() {
-  LC_ALL=C sort -n | awk 'NR == 1 {print; exit}'
-}
-
-max_metric() {
-  awk 'NR == 1 || $1 > max {max = $1} END {print max}'
-}
-
-if [ "$(metric_count cycle)" -ne "$sample_count" ] || [ "$(metric_count marshal)" -ne "$sample_count" ]; then
-  echo "failed to parse benchmark samples" >&2
+if ! cycle_output="$(run_benchmark BenchmarkRunCycleWithDeps)"; then
   exit 1
 fi
+printf '%s\n' "$cycle_output"
 
-cycle_ns="$(printf '%s\n' "$benchmark_metrics" | awk '$1 == "cycle" {print $2}' | best_metric)"
-cycle_allocs="$(printf '%s\n' "$benchmark_metrics" | awk '$1 == "cycle" {print $3}' | max_metric)"
-marshal_ns="$(printf '%s\n' "$benchmark_metrics" | awk '$1 == "marshal" {print $2}' | best_metric)"
-marshal_allocs="$(printf '%s\n' "$benchmark_metrics" | awk '$1 == "marshal" {print $3}' | max_metric)"
+if ! marshal_output="$(run_benchmark BenchmarkMarshalFrameWithinLimit)"; then
+  exit 1
+fi
+printf '%s\n' "$marshal_output"
+
+cycle_metrics="$(parse_metric "$cycle_output" BenchmarkRunCycleWithDeps)"
+marshal_metrics="$(parse_metric "$marshal_output" BenchmarkMarshalFrameWithinLimit)"
+cycle_ns="$(printf '%s\n' "$cycle_metrics" | awk '{print $1}')"
+cycle_allocs="$(printf '%s\n' "$cycle_metrics" | awk '{print $2}')"
+marshal_ns="$(printf '%s\n' "$marshal_metrics" | awk '{print $1}')"
+marshal_allocs="$(printf '%s\n' "$marshal_metrics" | awk '{print $2}')"
 
 if [ -z "$cycle_ns" ] || [ -z "$cycle_allocs" ] || [ -z "$marshal_ns" ] || [ -z "$marshal_allocs" ]; then
   echo "failed to parse benchmark metrics" >&2
   exit 1
 fi
 
-echo "bench budget samples=${sample_count} cycle_ns=${cycle_ns}/${max_cycle_ns} cycle_allocs=${cycle_allocs}/${max_cycle_allocs} marshal_ns=${marshal_ns}/${max_marshal_ns} marshal_allocs=${marshal_allocs}/${max_marshal_allocs}"
+echo "bench budget processes=2 benchtime=3s cycle_ns=${cycle_ns}/${max_cycle_ns} cycle_allocs=${cycle_allocs}/${max_cycle_allocs} marshal_ns=${marshal_ns}/${max_marshal_ns} marshal_allocs=${marshal_allocs}/${max_marshal_allocs}"
 
 ok_cycle_ns="$(awk -v used="$cycle_ns" -v max="$max_cycle_ns" 'BEGIN{if (used <= max) print "1"; else print "0"}')"
 ok_cycle_allocs="$(awk -v used="$cycle_allocs" -v max="$max_cycle_allocs" 'BEGIN{if (used <= max) print "1"; else print "0"}')"
