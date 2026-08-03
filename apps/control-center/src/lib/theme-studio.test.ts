@@ -71,13 +71,62 @@ describe("validateThemeSpec", () => {
     expect(pack.manifest.usage).toBe("screensaver");
     expect(pack.themeSpecPath).toMatch(/^\/themes\/s\//);
     expect(pack.manifest.assets).toEqual([
-      expect.objectContaining({ path: "/themes/s/main.cbi" }),
+      expect.objectContaining({
+        path: expect.stringMatching(
+          /^\/themes\/s\/main-[0-9a-f]{8}\.cbi$/,
+        ),
+      }),
     ]);
-    expect(packedSpec.p[0]).toMatchObject({ a: "/themes/s/main.cbi" });
+    expect(packedSpec.p[0].a).toMatch(/^\/themes\/s\/main-[0-9a-f]{8}\.cbi$/);
     expect(packedSpec.p[0]).not.toHaveProperty("sa");
     expect(spec.primitives[0].stateAssets).toEqual({
       coding: "/themes/u/coding.cbi",
     });
+  });
+
+  it("keeps screensaver assets with matching file names distinct", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        assetPath: "/themes/u/idle/icon.cbi",
+        height: 1,
+        type: "sprite",
+        width: 1,
+        x: 0,
+        y: 0,
+      },
+      {
+        assetPath: "/themes/u/coding/icon.cbi",
+        height: 1,
+        type: "sprite",
+        width: 1,
+        x: 1,
+        y: 0,
+      },
+    ];
+    const asset = {
+      contentType: "text/plain",
+      data: "CBI1\n1 1\n1\n#FFFFFF\na\n",
+      encoding: "text" as const,
+    };
+
+    const pack = buildThemePack(
+      spec,
+      "Distinct Screensaver Assets",
+      {
+        "/themes/u/idle/icon.cbi": asset,
+        "/themes/u/coding/icon.cbi": asset,
+      },
+      "screensaver",
+    );
+    const packedSpec = JSON.parse(pack.themeJson);
+    const assetPaths = pack.manifest.assets.map((entry) => entry.path);
+
+    expect(assetPaths).toHaveLength(2);
+    expect(new Set(assetPaths).size).toBe(2);
+    expect(packedSpec.p.map((primitive: { a: string }) => primitive.a)).toEqual(
+      assetPaths,
+    );
   });
 
   it("enforces the central 2 KB screensaver budget without motion lint", () => {

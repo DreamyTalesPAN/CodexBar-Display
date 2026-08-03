@@ -512,19 +512,17 @@ function screensaverAssetPath(path: string): string {
     return path;
   }
   const fileName = path.split("/").pop() || "asset";
-  const maxFileNameLength =
-    MAX_ESP8266_LITTLEFS_PATH_CHARS -
-    USER_SCREENSAVER_ASSET_PATH_PREFIX.length;
-  if (fileName.length <= maxFileNameLength) {
-    return `${USER_SCREENSAVER_ASSET_PATH_PREFIX}${fileName}`;
-  }
   const extensionIndex = fileName.lastIndexOf(".");
   const extension = extensionIndex > 0 ? fileName.slice(extensionIndex) : "";
   const base = extension ? fileName.slice(0, extensionIndex) : fileName;
+  const pathSuffix = `-${fnv1aHex8(path)}`;
+  const maxFileNameLength =
+    MAX_ESP8266_LITTLEFS_PATH_CHARS -
+    USER_SCREENSAVER_ASSET_PATH_PREFIX.length;
   return `${USER_SCREENSAVER_ASSET_PATH_PREFIX}${base.slice(
     0,
-    Math.max(1, maxFileNameLength - extension.length),
-  )}${extension}`;
+    Math.max(1, maxFileNameLength - pathSuffix.length - extension.length),
+  )}${pathSuffix}${extension}`;
 }
 
 export function validateThemeSpec(
