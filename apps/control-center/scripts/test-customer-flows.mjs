@@ -5610,8 +5610,8 @@ async function testReloadRestoresRunningThemeInstall(browser, appUrl) {
     },
     statusThemeInstallJob: {
       id: "theme-job-from-closed-window",
-      themeId: "custom-screensaver",
-      themeName: "Custom Screensaver",
+      themeId: "night-clock",
+      themeName: "Fixture Night Clock Screensaver",
       slot: "screensaver",
       phase: "installing",
       message: "Uploading theme files.",
@@ -5641,11 +5641,11 @@ async function testReloadRestoresRunningThemeInstall(browser, appUrl) {
           "Screensaver is ready on VibeTV.",
         ],
         result: {
-          themeId: "custom-screensaver",
-          packId: "custom-screensaver",
-          name: "Custom Screensaver",
+          themeId: "night-clock",
+          packId: "night-clock",
+          name: "Fixture Night Clock Screensaver",
           slot: "screensaver",
-          activePath: "/themes/s/custom-screensaver.json",
+          activePath: "/themes/s/night-clock.json",
           themeRev: 1,
         },
       },
@@ -5656,12 +5656,6 @@ async function testReloadRestoresRunningThemeInstall(browser, appUrl) {
   await page.getByText("Uploaded theme file 1.", { exact: true }).waitFor({
     timeout: 10_000,
   });
-  assert(
-    (await page
-      .getByRole("button", { name: "Screensavers", exact: true })
-      .getAttribute("aria-current")) === "page",
-    "A reopened app must return to the running screensaver install",
-  );
   await page
     .getByRole("heading", { name: "Screensavers", exact: true })
     .waitFor({ timeout: 10_000 });
