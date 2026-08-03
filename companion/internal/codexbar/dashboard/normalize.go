@@ -142,6 +142,7 @@ func NormalizeProvider(provider DashboardProvider, usage UsageProvider) Provider
 	}
 	out.Windows = dedupeStructuralAliases(candidates)
 	if len(out.Windows) == 0 {
+		out.Unavailable = true
 		out.Windows = nil
 	}
 	return out

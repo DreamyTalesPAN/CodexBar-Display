@@ -57,6 +57,29 @@ func TestNormalizeKeepsGenuineZeroWindow(t *testing.T) {
 	}
 }
 
+func TestNormalizeMarksProviderWithOnlyFilteredWindowsUnavailable(t *testing.T) {
+	zero := 0.0
+	unknown := false
+	result := NormalizeProvider(
+		DashboardProvider{
+			ID: "codex",
+			Windows: []DashboardWindow{
+				{Kind: "session", Label: "Session", UsedPercent: &zero},
+			},
+		},
+		UsageProvider{
+			Provider: "codex",
+			Usage: UsageMetadata{
+				Primary: &RateWindow{UsageKnown: &unknown},
+			},
+		},
+	)
+
+	if !result.Unavailable || len(result.Windows) != 0 {
+		t.Fatalf("expected filtered provider windows to remain unavailable, got %+v", result)
+	}
+}
+
 func TestNormalizeDeduplicatesWhenOnlyOneWindowHasWindowMinutes(t *testing.T) {
 	result := normalizeFixture(t, missingWindowMinutesDashboardFixture, missingWindowMinutesUsageFixture, "missing-minutes")
 

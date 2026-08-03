@@ -210,7 +210,8 @@
         "v": 1,
         "provider": "empty",
         "label": "Empty",
-        "usageMode": "used"
+        "usageMode": "used",
+        "usageUnavailable": true
       },
       "expectedRender": {
         "slot1Visible": false,
