@@ -283,6 +283,23 @@ func clearResetCountdowns(f *Frame) {
 	}
 }
 
+func hasResetCountdown(f Frame) bool {
+	if f.ResetSec > 0 {
+		return true
+	}
+	for _, window := range f.UsageWindows {
+		if window.ResetSec > 0 {
+			return true
+		}
+	}
+	for _, slot := range f.UsageSlots {
+		if slot.ResetSec > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func minInt(a, b int) int {
 	if a < b {
 		return a
@@ -374,7 +391,7 @@ func (f Frame) ApplyResetTrust(collectedAt time.Time, sendAt time.Time, sourceLi
 	}
 
 	switch {
-	case !basisKnown, f.ResetSec <= 0, f.ResetTrustSec <= 0, f.ResetSource == "":
+	case !basisKnown, !hasResetCountdown(f), f.ResetTrustSec <= 0, f.ResetSource == "":
 		// Expired, unknown, or unattributable: never hand the device a number
 		// it could keep counting down as if it were real.
 		f.ResetTrust = ResetTrustStale

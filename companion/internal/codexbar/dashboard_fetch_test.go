@@ -42,6 +42,45 @@ func TestFetchDashboardProvidersUsesSnapshotAsAuthority(t *testing.T) {
 		got.Frame.UsageWindows[1].Label != "Codex Spark Weekly" {
 		t.Fatalf("expected CodexBar dashboard windows, got %+v", got.Frame.UsageWindows)
 	}
+	resetAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	wantSnapshotReset := int64(resetAt.Sub(got.CollectedAt).Seconds())
+	if got.Frame.UsageWindows[0].ResetSec != wantSnapshotReset {
+		t.Fatalf("countdown must be anchored to snapshot time: got=%d want=%d", got.Frame.UsageWindows[0].ResetSec, wantSnapshotReset)
+	}
+	trusted := got.Frame.ApplyResetTrust(got.CollectedAt, now, true)
+	wantSendReset := int64(resetAt.Sub(now).Seconds())
+	if trusted.UsageWindows[0].ResetSec != wantSendReset {
+		t.Fatalf("countdown must age exactly once before send: got=%d want=%d", trusted.UsageWindows[0].ResetSec, wantSendReset)
+	}
+}
+
+func TestFetchDashboardProvidersKeepsLaterWindowResetTrusted(t *testing.T) {
+	server := newDashboardFetchTestServer(t, `{
+	  "schemaVersion": 1,
+	  "generatedAt": "2026-07-28T08:29:45Z",
+	  "staleAfterSeconds": 180,
+	  "providers": [{
+	    "id": "codex",
+	    "name": "Codex",
+	    "windows": [
+	      {"kind": "weekly", "label": "Weekly", "usedPercent": 68},
+	      {"kind": "codex-spark-weekly", "label": "Codex Spark Weekly", "usedPercent": 0, "resetAt": "2026-07-28T08:40:00Z"}
+	    ],
+	    "error": null
+	  }]
+	}`)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 28, 8, 30, 0, 0, time.UTC)
+	providers, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), now)
+	if err != nil {
+		t.Fatalf("dashboard fetch failed: %v", err)
+	}
+	trusted := providers[0].Frame.ApplyResetTrust(providers[0].CollectedAt, now, true)
+	if trusted.ResetTrust != "live" || trusted.ResetSec != 0 ||
+		len(trusted.UsageWindows) != 2 || trusted.UsageWindows[1].ResetSec != 600 {
+		t.Fatalf("later reset must remain trusted when the first window has none: %+v", trusted)
+	}
 }
 
 func TestFetchDashboardProvidersIgnoresCodexBarStaleDeadline(t *testing.T) {
