@@ -9,7 +9,7 @@ max_cycle_allocs="${MAX_CYCLE_ALLOCS:-160}"
 max_marshal_ns="${MAX_MARSHAL_NS:-1000}"
 max_marshal_allocs="${MAX_MARSHAL_ALLOCS:-4}"
 
-output="$(cd "$companion_dir" && go test ./internal/daemon -run '^$' -bench 'BenchmarkRunCycleWithDeps|BenchmarkMarshalFrameWithinLimit' -benchmem -count=1 2>&1)"
+output="$(cd "$companion_dir" && go test ./internal/daemon -run '^$' -bench 'BenchmarkRunCycleWithDeps|BenchmarkMarshalFrameWithinLimit' -benchmem -benchtime=3s -count=1 2>&1)"
 echo "$output"
 
 cycle_line="$(echo "$output" | grep 'BenchmarkRunCycleWithDeps' | tail -n 1)"
