@@ -353,19 +353,6 @@ func (f Frame) ApplyResetTrust(collectedAt time.Time, sendAt time.Time, sourceLi
 	return f.Normalize()
 }
 
-func normalizeResetTrust(raw string) string {
-	switch strings.TrimSpace(strings.ToLower(raw)) {
-	case ResetTrustLive:
-		return ResetTrustLive
-	case ResetTrustOffline:
-		return ResetTrustOffline
-	case ResetTrustStale:
-		return ResetTrustStale
-	default:
-		return ""
-	}
-}
-
 func normalizeResetSource(raw string) string {
 	source := strings.TrimSpace(strings.ToLower(raw))
 	if source == "" || len(source) > 31 {
