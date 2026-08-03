@@ -9,7 +9,7 @@ export async function collectSupportReport(
 ): Promise<SupportDiagnostics> {
   const generatedAt = new Date().toISOString();
   const client = {
-    environment: readClientEnvironment(),
+    environment: readClientEnvironment(state.runtimeSurface),
     state,
   };
 
@@ -72,11 +72,13 @@ export function supportReportFilename(value?: string): string {
   return `vibetv-support-report-${safeTimestamp}.json`;
 }
 
-function readClientEnvironment() {
+function readClientEnvironment(
+  runtimeSurface: SupportReportClientState["runtimeSurface"],
+) {
   if (typeof window === "undefined" || typeof navigator === "undefined") {
     return {};
   }
-  return {
+  const environment = {
     userAgent: navigator.userAgent,
     platform: navigator.platform,
     language: navigator.language,
@@ -84,8 +86,13 @@ function readClientEnvironment() {
     viewport: `${window.innerWidth}x${window.innerHeight}@${window.devicePixelRatio}`,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     visibility: document.visibilityState,
-    page: `${window.location.origin}${window.location.pathname}`,
   };
+  return runtimeSurface === "hosted-setup"
+    ? {
+        ...environment,
+        page: `${window.location.origin}${window.location.pathname}`,
+      }
+    : environment;
 }
 
 function safeErrorMessage(error: unknown): string {
