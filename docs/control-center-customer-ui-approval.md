@@ -448,3 +448,14 @@ issue scope, or release permission never implies UI permission.
   selection.
 - Approved files: `provider-picker.tsx`, `setup-screen.tsx`, and their unit and
   customer-flow assertions.
+
+## 2026-08-03 — Cancelling fixed mode preserves Automatic
+
+- User approval: The user's explicit approval of the provider-selection UI
+  includes a separate Automatic pool that stays selected until the customer
+  changes it.
+- Approved customer-visible result: If the customer opens `Always show one`
+  but returns to `Automatic` without choosing a fixed provider, the complete
+  saved Automatic provider pool remains unchanged.
+- Approved files: `provider-picker.tsx` and the matching customer-flow
+  assertion.

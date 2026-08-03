@@ -4170,12 +4170,23 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
     "a broken enabled provider must block setup completion",
   );
 
+  const displayWritesBeforeDraft = requests.filter(
+    (request) =>
+      request.path === "/v1/provider-display" && request.method === "PATCH",
+  ).length;
   await page.getByRole("button", { name: "Always show one" }).click();
   assert(
     await finish.isDisabled(),
     "an unsaved fixed-mode draft must block setup completion",
   );
   await page.getByRole("button", { name: "Automatic" }).click();
+  assert(
+    requests.filter(
+      (request) =>
+        request.path === "/v1/provider-display" && request.method === "PATCH",
+    ).length === displayWritesBeforeDraft,
+    "cancelling a fixed-mode draft must preserve the saved automatic pool",
+  );
 
   await page
     .getByLabel("Include Claude in Automatic")

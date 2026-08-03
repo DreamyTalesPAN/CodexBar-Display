@@ -93,6 +93,11 @@ export function ProviderPicker({
       setDraftMode("fixed");
       return;
     }
+    if (display?.mode === "automatic") {
+      onDisplayDraftChange?.(false);
+      setDraftMode(null);
+      return;
+    }
     const seed = display?.providerIds[0] || enabledProviders[0]?.providerId;
     if (!seed) {
       return;
