@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 )
 
@@ -499,6 +500,46 @@ func TestFrameNormalizeV1OmitsUsageWindowsOnWire(t *testing.T) {
 	}
 	if wire.Session != 12 || wire.Weekly != 34 || wire.ResetSec != 60 {
 		t.Fatalf("wire legacy projection mismatch: got session=%d weekly=%d reset=%d", wire.Session, wire.Weekly, wire.ResetSec)
+	}
+}
+
+func TestApplyResetTrustReanchorsAllResetCountdowns(t *testing.T) {
+	sendAt := time.Date(2026, 8, 3, 9, 0, 0, 0, time.UTC)
+	collectedAt := sendAt.Add(-30 * time.Second)
+
+	windows := (Frame{
+		V:            ProtocolVersionV2,
+		Provider:     "codex",
+		ResetSec:     120,
+		ResetSource:  "codex:primary",
+		UsageWindows: []UsageWindow{{ID: "primary", Label: "Primary", ResetSec: 120}},
+	}).ApplyResetTrust(collectedAt, sendAt, true)
+	if windows.ResetSec != 90 || len(windows.UsageWindows) != 1 || windows.UsageWindows[0].ResetSec != 90 {
+		t.Fatalf("expected root and usage window countdowns re-anchored to 90, got root=%d windows=%+v", windows.ResetSec, windows.UsageWindows)
+	}
+
+	slots := (Frame{
+		V:           ProtocolVersionV1,
+		Provider:    "codex",
+		ResetSec:    120,
+		ResetSource: "codex:primary",
+		UsageSlots:  []UsageSlot{{ID: "primary", Label: "Primary", ResetSec: 120}},
+	}).ApplyResetTrust(collectedAt, sendAt, true)
+	if slots.ResetSec != 90 || len(slots.UsageSlots) != 1 || slots.UsageSlots[0].ResetSec != 90 {
+		t.Fatalf("expected root and legacy slot countdowns re-anchored to 90, got root=%d slots=%+v", slots.ResetSec, slots.UsageSlots)
+	}
+
+	stale := (Frame{
+		V:            ProtocolVersionV1,
+		Provider:     "codex",
+		ResetSec:     120,
+		ResetSource:  "codex:primary",
+		UsageWindows: []UsageWindow{{ID: "primary", Label: "Primary", ResetSec: 120}},
+		UsageSlots:   []UsageSlot{{ID: "primary", Label: "Primary", ResetSec: 120}},
+	}).ApplyResetTrust(time.Time{}, sendAt, true)
+	if stale.ResetTrust != ResetTrustStale || stale.ResetSec != 0 || stale.ResetTrustSec != 0 ||
+		len(stale.UsageSlots) != 1 || stale.UsageSlots[0].ResetSec != 0 {
+		t.Fatalf("expected stale root and usage countdowns to be zero, got %+v", stale)
 	}
 }
 

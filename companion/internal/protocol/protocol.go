@@ -254,6 +254,23 @@ func applyLegacyUsageProjection(f Frame) Frame {
 	return f
 }
 
+func reanchorResetSec(resetSec int64, age int64) int64 {
+	if resetSec <= 0 || resetSec <= age {
+		return 0
+	}
+	return resetSec - age
+}
+
+func clearResetCountdowns(f *Frame) {
+	f.ResetSec = 0
+	for i := range f.UsageWindows {
+		f.UsageWindows[i].ResetSec = 0
+	}
+	for i := range f.UsageSlots {
+		f.UsageSlots[i].ResetSec = 0
+	}
+}
+
 func minInt(a, b int) int {
 	if a < b {
 		return a
@@ -328,11 +345,12 @@ func (f Frame) ApplyResetTrust(collectedAt time.Time, sendAt time.Time, sourceLi
 	if f.ResetTrustSec < 0 {
 		f.ResetTrustSec = 0
 	}
-	if f.ResetSec > 0 {
-		f.ResetSec -= age
-		if f.ResetSec < 0 {
-			f.ResetSec = 0
-		}
+	f.ResetSec = reanchorResetSec(f.ResetSec, age)
+	for i := range f.UsageWindows {
+		f.UsageWindows[i].ResetSec = reanchorResetSec(f.UsageWindows[i].ResetSec, age)
+	}
+	for i := range f.UsageSlots {
+		f.UsageSlots[i].ResetSec = reanchorResetSec(f.UsageSlots[i].ResetSec, age)
 	}
 	if f.ResetSource == "" {
 		f.ResetSource = ResetSourceKey(f.Provider, "")
@@ -343,7 +361,7 @@ func (f Frame) ApplyResetTrust(collectedAt time.Time, sendAt time.Time, sourceLi
 		// Expired, unknown, or unattributable: never hand the device a number
 		// it could keep counting down as if it were real.
 		f.ResetTrust = ResetTrustStale
-		f.ResetSec = 0
+		clearResetCountdowns(&f)
 		f.ResetTrustSec = 0
 	case !sourceLive:
 		f.ResetTrust = ResetTrustOffline
