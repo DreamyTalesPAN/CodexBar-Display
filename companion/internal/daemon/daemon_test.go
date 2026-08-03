@@ -105,6 +105,7 @@ func TestRunCycleCoordinatesOnlyTheDeviceWrite(t *testing.T) {
 
 func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	prepareFastTestEnv(t)
+	t.Setenv("CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE", "168h")
 
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	state := &runtimeState{
@@ -160,7 +161,7 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 		t.Fatalf("expected unavailable usage to preserve the one valid frame, got %d sends", len(sentLines))
 	}
 
-	now = now.Add(lastGoodMaxAge() + time.Second)
+	now = now.Add(providerSnapshotMaxAge() + time.Second)
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected expired usage to send unavailable state, got %v", err)
 	}

@@ -1160,7 +1160,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	authoritativeFrame := result.frame
 	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 	if !result.usageFresh && result.failureErr == nil {
-		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), lastGoodMaxAge())
+		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
 		if !frame.UsageUnavailable || !expiredLastGood {
 			deps.logf("runtime event=usage-waiting port=%s provider=%s reason=usage-not-fresh\n", publicPort, frame.Provider)
 			return nil
