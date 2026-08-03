@@ -760,3 +760,15 @@ issue scope, or release permission never implies UI permission.
   selected. Reloaded installs continue to reopen their existing progress.
 - Approved files: `themes.ts`, `test-customer-flows.mjs`, their focused
   assertions, and this approval record.
+
+## 2026-08-03 — PR #296 merge-readiness test maintenance
+
+- User approval: The user explicitly requested that PR #296 be made ready to
+  merge, with its CI repaired and the existing screensaver packaging path ready
+  for the next creative phase. No new customer-visible UI was requested.
+- Approved customer-visible result: The already approved Appearance,
+  Screensavers, Theme Studio, and Settings behavior stays unchanged. This round
+  only makes the automated route cleanup and brightness-save assertion
+  deterministic and verifies that screensaver artifacts ship in the Mac App.
+- Approved files: `test-customer-flows.mjs`, the screensaver packaging tests,
+  the matching technical documentation, and this approval record.
