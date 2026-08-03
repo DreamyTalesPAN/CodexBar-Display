@@ -87,6 +87,7 @@ const char kSetupAddress[] = "192.168.4.1";
 const char kCustomerAppHost[] = "app.vibetv.shop";
 const char kCustomerAppUrl[] = "https://app.vibetv.shop";
 const char kDeviceSettingsPath[] = "/s";
+const char kDeviceSettingsTemporaryPath[] = "/s.tmp";
 // The device settings record stays append-only: brightness byte, learned UTC
 // offset, standby, then optional next UTC-offset transitions. A shorter file is
 // an older record, so every reader must length-check its own section instead of
@@ -373,7 +374,7 @@ bool saveDeviceSettings() {
   if (!LittleFS.begin()) {
     return false;
   }
-  File file = LittleFS.open(kDeviceSettingsPath, "w");
+  File file = LittleFS.open(kDeviceSettingsTemporaryPath, "w");
   if (!file) {
     return false;
   }
@@ -385,7 +386,15 @@ bool saveDeviceSettings() {
       runtimeCtx.clock, record + kClockTransitionRecordOffset);
   const size_t written = file.write(record, sizeof(record));
   file.close();
-  return written == sizeof(record);
+  if (written != sizeof(record)) {
+    LittleFS.remove(kDeviceSettingsTemporaryPath);
+    return false;
+  }
+  if (!LittleFS.rename(kDeviceSettingsTemporaryPath, kDeviceSettingsPath)) {
+    LittleFS.remove(kDeviceSettingsTemporaryPath);
+    return false;
+  }
+  return true;
 }
 
 // Reset-deadline handover across a self-initiated restart.
