@@ -20,12 +20,13 @@ SERVICE_PID=""
 CLEANUP_ARMED=0
 LAUNCH_ENV_SET=0
 INSTALLED=0
+INSTALLED_APP=0
 
 usage() {
   cat <<'EOF'
 Usage:
   validate-macos-control-center-runtime.sh --dry-run --app path.app --expected-version x.y.z
-  CODEX_ALLOW_MACOS_RUNTIME_VALIDATION=1 validate-macos-control-center-runtime.sh --real --app path.app --expected-version x.y.z [--timeout-seconds n]
+  CODEX_ALLOW_MACOS_RUNTIME_VALIDATION=1 validate-macos-control-center-runtime.sh --real [--installed-app] --app path.app --expected-version x.y.z [--timeout-seconds n]
 
 Real mode is destructive and intentionally limited to a clean validation Mac.
 It installs the signed app in /Applications, uses only a loopback fake VibeTV,
@@ -53,6 +54,10 @@ while [[ $# -gt 0 ]]; do
       need_value "$1" "${2:-}"
       SOURCE_APP="$2"
       shift 2
+      ;;
+    --installed-app)
+      INSTALLED_APP=1
+      shift
       ;;
     --expected-version)
       need_value "$1" "${2:-}"
@@ -106,7 +111,11 @@ for command in cat codesign curl defaults ditto launchctl lsof open paste plutil
 done
 
 [[ -d "$SOURCE_APP" ]] || die "signed app not found: $SOURCE_APP"
-[[ ! -e "$INSTALL_APP" ]] || die "clean host required: $INSTALL_APP already exists"
+if [[ "$INSTALLED_APP" == "1" ]]; then
+  [[ "$SOURCE_APP" == "$INSTALL_APP" ]] || die '--installed-app requires /Applications/VibeTV Control Center.app'
+else
+  [[ ! -e "$INSTALL_APP" ]] || die "clean host required: $INSTALL_APP already exists"
+fi
 [[ -w /Applications ]] || die "/Applications is not writable"
 
 APP_SUPPORT="${HOME}/Library/Application Support/codexbar-display"
@@ -371,7 +380,9 @@ launchctl setenv CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL off
 launchctl setenv CODEXBAR_BIN /usr/bin/false
 LAUNCH_ENV_SET=1
 
-ditto "$SOURCE_APP" "$INSTALL_APP"
+if [[ "$INSTALLED_APP" != "1" ]]; then
+  ditto "$SOURCE_APP" "$INSTALL_APP"
+fi
 INSTALLED=1
 codesign --verify --deep --strict --verbose=2 "$INSTALL_APP"
 open -na "$INSTALL_APP"

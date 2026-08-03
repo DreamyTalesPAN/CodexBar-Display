@@ -71,6 +71,7 @@ var (
 	flashReleaseFirmwareImageFn                        = flashReleaseFirmwareImage
 	uploadFirmwareOTAFn                                = uploadFirmwareOTA
 	firmwareRawDialContextFn                           = dialFirmwareRawConnection
+	firmwareRawOTAPort                                 = "8081"
 	firmwareHTTPVerifyPollInterval                     = 2 * time.Second
 	firmwareHTTPVerifyProbeTimeout                     = 2 * time.Second
 	firmwareUpdateRediscoveryAfter                     = 10 * time.Second
@@ -779,6 +780,11 @@ func discoverInstallUpdateTarget(ctx context.Context, home, base, deviceID strin
 	})
 	if err != nil {
 		return "", err
+	}
+	expectedDeviceID := strings.TrimSpace(deviceID)
+	discoveredDeviceID := strings.TrimSpace(result.Hello.DeviceID)
+	if expectedDeviceID != "" && discoveredDeviceID != "" && !strings.EqualFold(discoveredDeviceID, expectedDeviceID) {
+		return "", fmt.Errorf("rediscovered deviceId %q does not match original deviceId %q", discoveredDeviceID, expectedDeviceID)
 	}
 	target, err := normalizeHTTPBaseURL(result.Target)
 	if err != nil {
@@ -1700,7 +1706,11 @@ func rawFirmwareEndpoint(base string) (string, error) {
 	if host == "" {
 		return "", fmt.Errorf("target host is required")
 	}
-	parsed.Host = host + ":8081"
+	port := strings.TrimSpace(firmwareRawOTAPort)
+	if port == "" {
+		port = "8081"
+	}
+	parsed.Host = net.JoinHostPort(host, port)
 	parsed.Path = "/update/firmware.raw"
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
