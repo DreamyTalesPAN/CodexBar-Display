@@ -1400,12 +1400,13 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	}()
 	var inventory []codexbar.ProviderSetting
 	inventoryLoaded := false
-	writeUsage := func(resp usageResponse) {
+	writeUsage := func(resp usageResponse, usage daemon.PersistedUsage) {
 		if !inventoryLoaded {
 			inventory = <-inventoryCh
 			inventoryLoaded = true
 		}
 		resp = filterDisabledProviders(resp, inventory)
+		resp.Refresh = s.usageRefreshInfo(now, usageForVisibleProviders(usage, resp.Providers))
 		writeJSON(w, http.StatusOK, usageResponseForDisplayMode(resp, showUsed))
 	}
 	if s.loadUsage != nil {
@@ -1415,23 +1416,20 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 				resp = cached
 			}
 			if len(resp.Providers) > 0 {
-				resp.Refresh = s.usageRefreshInfo(now, usage)
-				writeUsage(resp)
+				writeUsage(resp, usage)
 				return
 			}
 		}
 	}
 
 	if cached, ok := s.cachedExactUsageOverlay(now, daemon.PersistedUsage{}); ok {
-		cached.Refresh = s.usageRefreshInfo(now, daemon.PersistedUsage{})
-		writeUsage(cached)
+		writeUsage(cached, daemon.PersistedUsage{})
 		return
 	}
 
 	if manualRefresh {
 		resp := emptyUsageResponse(now, "codexbar-display")
-		resp.Refresh = s.usageRefreshInfo(now, daemon.PersistedUsage{})
-		writeUsage(resp)
+		writeUsage(resp, daemon.PersistedUsage{})
 		return
 	}
 
@@ -1442,6 +1440,22 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		"Usage is still loading.",
 		"Keep this page open. VibeTV will retry automatically.",
 	)
+}
+
+func usageForVisibleProviders(usage daemon.PersistedUsage, visible []usageProviderInfo) daemon.PersistedUsage {
+	visibleByID := make(map[string]struct{}, len(visible))
+	for _, provider := range visible {
+		visibleByID[provider.ID] = struct{}{}
+	}
+	providers := make([]daemon.ProviderUsageSnapshot, 0, len(visibleByID))
+	for _, provider := range usage.Providers {
+		id := usageProviderID(provider.Provider, provider.Frame.Provider)
+		if _, ok := visibleByID[id]; ok {
+			providers = append(providers, provider)
+		}
+	}
+	usage.Providers = providers
+	return usage
 }
 
 func usageRefreshRequested(r *http.Request) bool {

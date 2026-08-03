@@ -316,17 +316,17 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		parsedCollectedAt := parsedProviderCollectedAt(parsed, collectedAt)
 		if frame.UsageUnavailable {
 			lastGood, exists := c.providers[key]
-			if exists && !lastGood.Frame.UsageUnavailable {
+			if exists {
 				lastGood.RateLimited = parsed.RateLimited
 				lastGood.RateLimitedUntil = parsed.RateLimitedUntil.UTC()
 				c.providers[key] = lastGood
 				updated = true
-				if isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
+				if !lastGood.Frame.UsageUnavailable && isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
 					continue
 				}
 				lastGood.Frame.UsageUnavailable = true
 				c.providers[key] = lastGood
-			} else if !exists {
+			} else {
 				c.providers[key] = providerSnapshot{
 					Provider:         key,
 					Frame:            frame,

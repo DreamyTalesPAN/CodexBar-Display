@@ -4146,6 +4146,24 @@ func TestProviderCollectorReplacesRateLimitMetadataOnLaterUnavailableResponse(t 
 	if got.RateLimited || !got.RateLimitedUntil.IsZero() || got.Frame.UsageUnavailable || got.Frame.Session != 64 {
 		t.Fatalf("later unavailable error must clear only obsolete rate limit metadata, got %#v", got)
 	}
+
+	now = now.Add(11 * time.Minute)
+	blockedUntil = now.Add(2 * time.Minute)
+	current.RateLimited = true
+	current.RateLimitedUntil = blockedUntil
+	collector.collectOnce(context.Background())
+	got = collector.providers["claude"]
+	if !got.Frame.UsageUnavailable || !got.RateLimited || !got.RateLimitedUntil.Equal(blockedUntil) {
+		t.Fatalf("already unavailable provider did not receive current rate limit metadata: %#v", got)
+	}
+
+	current.RateLimited = false
+	current.RateLimitedUntil = time.Time{}
+	collector.collectOnce(context.Background())
+	got = collector.providers["claude"]
+	if !got.Frame.UsageUnavailable || got.RateLimited || !got.RateLimitedUntil.IsZero() {
+		t.Fatalf("already unavailable provider kept obsolete rate limit metadata: %#v", got)
+	}
 }
 
 func TestProviderCollectorPreservesTokenStatsAcrossTemporaryFailureAndRecovers(t *testing.T) {
