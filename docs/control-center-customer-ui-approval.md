@@ -747,3 +747,16 @@ issue scope, or release permission never implies UI permission.
   Appearance > Screensavers flow can be used.
 - Approved files: `settings-screen.tsx`, its focused test, the matching
   customer-flow test, and this approval record.
+
+## 2026-08-03 — Stable PR #296 CI assertions
+
+- User approval: The user explicitly ordered all PR #296 CI and Bug Detector
+  findings to be fixed with KISS and dead-code removal. The exact visible
+  Appearance split and Settings selection guard were already explicitly
+  approved in the entries above; this CI repair preserves those results.
+- Approved customer-visible result: No new visible UI is introduced. `Themes`
+  continues to contain live themes, `Screensavers` contains standby themes,
+  and Settings keeps screensaver activation unavailable until a screensaver is
+  selected. Reloaded installs continue to reopen their existing progress.
+- Approved files: `themes.ts`, `test-customer-flows.mjs`, their focused
+  assertions, and this approval record.
