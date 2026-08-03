@@ -1230,17 +1230,19 @@ async function testConnectedUnreadyDeviceKeepsSettingsAvailable(
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   let settingsReads = 0;
-  await routeCompanionOnline(page, [], () => {}, {
-    device: {
-      ...reachableUnreadyDevice,
+  const connectedUnreadyDevice = {
+    ...reachableUnreadyDevice,
+    active: true,
+    activeTheme: "external-theme",
+    themeSpec: {
       active: true,
-      activeTheme: "external-theme",
-      themeSpec: {
-        active: true,
-        path: "/themes/u/external-theme.json",
-        renderOk: true,
-      },
+      path: "/themes/u/external-theme.json",
+      renderOk: true,
     },
+  };
+  await routeCompanionOnline(page, [], () => {}, {
+    device: companionDevice,
+    statusDeviceSequence: [companionDevice, connectedUnreadyDevice],
     onRequest: (pathname, method) => {
       if (pathname === "/v1/settings" && method === "GET") {
         settingsReads += 1;
@@ -1249,9 +1251,6 @@ async function testConnectedUnreadyDeviceKeepsSettingsAvailable(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("navigation", { name: "Control Center" }).waitFor({
-    timeout: 10_000,
-  });
   const settingsButton = await getNavigationButton(page, "Settings");
   assert(
     await settingsButton.isEnabled(),
@@ -7072,7 +7071,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   );
 
   await page.goto(localAppUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: /^(Themes|Theme Library)$/ }).click();
+  await clickNavigation(page, "Themes");
   const publishedThemeRow = page
     .getByRole("listitem")
     .filter({ hasText: "Fixture Synthwave Theme" });
@@ -7372,7 +7371,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     );
   });
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: /^(Themes|Theme Library)$/ }).click();
+  await clickNavigation(page, "Themes");
   await page
     .getByText("Continue your unsaved theme", { exact: true })
     .waitFor();
@@ -7407,7 +7406,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     );
   });
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: /^(Themes|Theme Library)$/ }).click();
+  await clickNavigation(page, "Themes");
   await page
     .getByText("Theme storage needs attention", { exact: true })
     .waitFor();

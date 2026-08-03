@@ -735,3 +735,15 @@ issue scope, or release permission never implies UI permission.
   save only when the interaction ends, without save buttons.
 - Approved files: `settings-screen.tsx`, its focused test, and this approval
   record.
+
+## 2026-08-03 — Screensaver selection guard
+
+- User approval: The user explicitly requested that the Settings screensaver
+  switch remain unavailable until a `screensaverPath` is selected, while the
+  existing `Choose screensaver` path remains the way to select one.
+- Approved customer-visible result: Settings keeps the screensaver controls
+  visible, disables only activation and dependent controls until a screensaver
+  is chosen, and keeps `Choose screensaver` available so the existing
+  Appearance > Screensavers flow can be used.
+- Approved files: `settings-screen.tsx`, its focused test, the matching
+  customer-flow test, and this approval record.

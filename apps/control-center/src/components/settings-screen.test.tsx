@@ -66,7 +66,7 @@ describe("SettingsScreen standby controls", () => {
     expect(html).not.toContain("Save screensaver brightness");
   });
 
-  it("keeps the toggle and settings available before a screensaver is chosen", () => {
+  it("keeps the settings available before a screensaver is chosen", () => {
     const html = render(standbyDevice, {
       enabled: false,
       timeoutMinutes: 10,
@@ -77,6 +77,10 @@ describe("SettingsScreen standby controls", () => {
     expect(html).toContain("Choose screensaver");
     expect(html).toContain('aria-label="Show screensaver"');
     expect(html).toContain('aria-checked="false"');
+    const standbySwitch = html.match(
+      /<button[^>]*id="vibetv-standby"[^>]*>/,
+    )?.[0];
+    expect(standbySwitch).toContain('disabled=""');
     expect(html).toContain('id="vibetv-standby-timeout"');
     expect(html).toContain('id="vibetv-standby-brightness"');
     expect(html).not.toContain("Choose a screensaver before turning it on.");

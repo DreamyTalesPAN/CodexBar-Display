@@ -79,7 +79,9 @@ export function SettingsScreen({
     brightnessPercent: 20,
   };
   const standbyToggleDisabled =
-    !deviceIsCustomerConnected(device) || localActionBusy;
+    !deviceIsCustomerConnected(device) ||
+    !standbyValues.screensaverPath ||
+    localActionBusy;
   const standbyDetailsDisabled =
     standbyToggleDisabled || !standbyValues.enabled;
 
