@@ -804,6 +804,19 @@ func cleanupSlotAssets(wifi transportlayer.WiFiTransport, target *string, store 
 	}
 }
 
+func cleanupSlotAssetPaths(assets transportlayer.DeviceAssetsSnapshot, slotPrefix string, keepPaths map[string]bool) []string {
+	paths := assets.PathsWithPrefix(slotPrefix)
+	filtered := paths[:0]
+	for _, devicePath := range paths {
+		if keepPaths[strings.TrimSpace(devicePath)] {
+			continue
+		}
+		filtered = append(filtered, devicePath)
+	}
+	sort.Strings(filtered)
+	return filtered
+}
+
 func cleanupThemeUserAssetPaths(assets transportlayer.DeviceAssetsSnapshot, keepPaths map[string]bool) []string {
 	paths := assets.PathsWithPrefix("/themes/u/")
 	if _, exists := assets.AssetSize(legacyMiniGIFPath); exists {

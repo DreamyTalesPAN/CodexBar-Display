@@ -518,7 +518,7 @@ expected_arguments = [
     "--transport",
     "wifi",
     "--interval",
-    "5s",
+    "30s",
     "--api-addr",
     "127.0.0.1:47832",
     "--api-dev-origin",
@@ -563,6 +563,19 @@ if stop_legacy > register_runtime:
     raise SystemExit(
         "native app must stop legacy display writers before registering the new LaunchAgent"
     )
+
+preview_runtime_start = source.index(
+    "private func registerLocalPreviewRuntimeService()"
+)
+preview_runtime_end = source.index(
+    "private func unregisterLocalPreviewRuntimeService()",
+    preview_runtime_start,
+)
+preview_runtime_source = source[preview_runtime_start:preview_runtime_end]
+if '"--interval",\n                "30s"' not in preview_runtime_source:
+    raise SystemExit("local preview runtime must use the stable 30s interval")
+if '"--interval",\n                "5s"' in preview_runtime_source:
+    raise SystemExit("local preview runtime must not restore the overloaded 5s interval")
 
 required_source = [
     "import ServiceManagement",

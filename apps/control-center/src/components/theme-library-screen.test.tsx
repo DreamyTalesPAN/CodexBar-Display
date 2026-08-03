@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import type { ThemeStudioUsage } from "@/lib/theme-studio";
 import type { ThemeProduct } from "@/lib/themes";
 import {
   ThemeLibraryScreen,
@@ -21,6 +22,33 @@ const theme: ThemeProduct = {
   requiredCapabilities: ["usage-slots-v1"],
   source: "github-catalog",
 };
+
+const themes: ThemeProduct[] = [
+  {
+    id: "live-theme",
+    isFree: true,
+    packSha256: "a".repeat(64),
+    packSizeBytes: 100,
+    packUrl: "https://example.com/live.zip",
+    priceLabel: "Kostenlos",
+    source: "github-catalog",
+    themeId: "live-theme",
+    title: "Live Theme",
+    usage: "live",
+  },
+  {
+    id: "night-clock",
+    isFree: true,
+    packSha256: "b".repeat(64),
+    packSizeBytes: 100,
+    packUrl: "https://example.com/screensaver.zip",
+    priceLabel: "Kostenlos",
+    source: "github-catalog",
+    themeId: "night-clock",
+    title: "Night Clock",
+    usage: "screensaver",
+  },
+];
 
 const device: ThemeLibraryDeviceInfo = {
   connected: true,
@@ -78,12 +106,42 @@ function renderThemeSetup({
       onInstallCustomTheme={async () => false}
       onInstallFirmwareUpdate={vi.fn()}
       onInstallTheme={vi.fn()}
+      onSaveStandby={vi.fn()}
       onSelectTheme={vi.fn()}
       selectedThemeId=""
       setupMode
       storefrontConfigured
       themeInstallEnabled
       themes={[setupTheme]}
+    />,
+  );
+}
+
+function renderLibrary(
+  usage: ThemeStudioUsage,
+  catalog = themes,
+  standby = {
+    enabled: false,
+    timeoutMinutes: 10,
+    brightnessPercent: 20,
+    screensaverPath: "/themes/s/night.json",
+  },
+) {
+  return renderToStaticMarkup(
+    <ThemeLibraryScreen
+      busyAction={null}
+      companionStatus="online"
+      device={null}
+      onInstallCustomTheme={async () => false}
+      onInstallTheme={vi.fn()}
+      onSaveStandby={vi.fn()}
+      onSelectTheme={vi.fn()}
+      selectedThemeId=""
+      storefrontConfigured={false}
+      standby={standby}
+      themeInstallEnabled={false}
+      themes={catalog}
+      usage={usage}
     />,
   );
 }
@@ -166,5 +224,55 @@ describe("theme setup firmware update eligibility", () => {
     const html = renderThemeSetup({});
     expect(html).toContain("Update VibeTV to continue");
     expect(html.match(/<span>Update VibeTV<\/span>/g)).toHaveLength(1);
+  });
+});
+
+describe("ThemeLibraryScreen Appearance sections", () => {
+  it("keeps the existing Themes list restricted to live packs", () => {
+    const html = renderLibrary("live");
+
+    expect(html).toContain(">Themes<");
+    expect(html).toContain(
+      "Customize how your live usage screen looks while VibeTV is active.",
+    );
+    expect(html).toContain("Create Theme");
+    expect(html).toContain("Live Theme");
+    expect(html).not.toContain("Night Clock");
+  });
+
+  it("shows only screensaver packs and the screensaver create action", () => {
+    const html = renderLibrary("screensaver");
+
+    expect(html).toContain(">Screensavers<");
+    expect(html).toContain(
+      "Choose what appears when VibeTV enters standby after being idle.",
+    );
+    expect(html).toContain("Create Screensaver");
+    expect(html).toContain('aria-label="Show screensaver"');
+    expect(html).toContain("Screensaver is turned off");
+    expect(html).toContain("Night Clock");
+    expect(html).not.toContain("Live Theme");
+  });
+
+  it("removes the warning without hiding the library when enabled", () => {
+    const html = renderLibrary("screensaver", themes, {
+      enabled: true,
+      timeoutMinutes: 10,
+      brightnessPercent: 20,
+      screensaverPath: "/themes/s/night.json",
+    });
+
+    expect(html).toContain('aria-checked="true"');
+    expect(html).not.toContain("Screensaver is turned off");
+    expect(html).toContain("Night Clock");
+  });
+
+  it("shows a clear empty state when the catalog has no screensavers", () => {
+    const html = renderLibrary("screensaver", [themes[0]]);
+
+    expect(html).toContain("No screensavers yet");
+    expect(html).toContain("Create a screensaver to add it to this list.");
+    expect(html).toContain("Create Screensaver");
+    expect(html).not.toContain("Reload catalog");
   });
 });

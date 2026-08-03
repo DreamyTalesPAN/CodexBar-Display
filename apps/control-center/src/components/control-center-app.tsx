@@ -137,12 +137,7 @@ type InstallResponse = {
 
 type InstallableTheme = Pick<
   ThemeProduct,
-  | "packUrl"
-  | "packSha256"
-  | "packSizeBytes"
-  | "themeId"
-  | "title"
-  | "usage"
+  "packUrl" | "packSha256" | "packSizeBytes" | "themeId" | "title" | "usage"
 > & {
   packBytes?: Uint8Array;
 };
@@ -203,11 +198,7 @@ type FirmwareUpdateStatus = {
 };
 
 type RepairConnectionOutcome =
-  | "ready"
-  | "waiting"
-  | "failed"
-  | "pairing-rate-limited"
-  | "stale";
+  "ready" | "waiting" | "failed" | "pairing-rate-limited" | "stale";
 
 type FirmwareUpdateResponse = {
   job?: FirmwareUpdateJob;
@@ -265,10 +256,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [selectedScreensaverId, setSelectedScreensaverId] = useState(
     initialThemeIsScreensaver ? initialTheme?.themeId || "" : "",
   );
-  const [appearanceSection, setAppearanceSection] =
-    useState<AppearanceSection>(
-      initialThemeIsScreensaver ? "screensavers" : "themes",
-    );
+  const [appearanceSection, setAppearanceSection] = useState<AppearanceSection>(
+    initialThemeIsScreensaver ? "screensavers" : "themes",
+  );
   const [activeTab, setActiveTab] = useState<ActiveTab>(
     initialThemeId ? "theme-library" : "overview",
   );
@@ -305,14 +295,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const setDevice = useCallback(
     (
       update:
-        | DeviceInfo
-        | null
-        | ((current: DeviceInfo | null) => DeviceInfo | null),
+        DeviceInfo | null | ((current: DeviceInfo | null) => DeviceInfo | null),
     ) => {
       setDeviceSession((current) => ({
         ...current,
-        device:
-          typeof update === "function" ? update(current.device) : update,
+        device: typeof update === "function" ? update(current.device) : update,
       }));
     },
     [],
@@ -395,9 +382,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
   const selectedScreensaver = useMemo(
     () =>
-      catalog.themes.find(
-        (theme) => theme.themeId === selectedScreensaverId,
-      ),
+      catalog.themes.find((theme) => theme.themeId === selectedScreensaverId),
     [catalog.themes, selectedScreensaverId],
   );
   const localControlCenterPath = useMemo(
@@ -453,17 +438,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [],
   );
 
-  const setDeviceRecoveryGate = useCallback(
-    (next: DeviceRecoveryGateState) => {
-      deviceRecoveryGateRef.current = next;
-      setDeviceRecoveryPickerReason(next.pickerReason);
-      if (!next.pickerReason) {
-        recoverySearchStartedRef.current = false;
-        recoveryPreferredConnectAttemptRef.current = "";
-      }
-    },
-    [],
-  );
+  const setDeviceRecoveryGate = useCallback((next: DeviceRecoveryGateState) => {
+    deviceRecoveryGateRef.current = next;
+    setDeviceRecoveryPickerReason(next.pickerReason);
+    if (!next.pickerReason) {
+      recoverySearchStartedRef.current = false;
+      recoveryPreferredConnectAttemptRef.current = "";
+    }
+  }, []);
 
   const operationRecoveryGraceActive =
     firmwareUpdateStatus?.phase === "installing" ||
@@ -848,17 +830,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runCompanion,
   ]);
 
-  const deviceReadyForSettings = deviceIsReady(device);
+  const deviceConnectedForSettings = deviceIsCustomerConnected(device);
 
   useEffect(() => {
-    if (activeTab !== "settings" || !deviceReadyForSettings) {
+    if (activeTab !== "settings" || !deviceConnectedForSettings) {
       return;
     }
     const timer = window.setTimeout(() => {
       void loadSettings();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [activeTab, device?.target, deviceReadyForSettings, loadSettings]);
+  }, [activeTab, device?.target, deviceConnectedForSettings, loadSettings]);
 
   const applyThemeInstallJob = useCallback(
     (
@@ -1333,10 +1315,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           return "stale" as RepairConnectionOutcome;
         }
         const normalized = connectionErrorForCustomer(
-          normalizeCaughtError(
-            error,
-            "VibeTV connection needs attention.",
-          ),
+          normalizeCaughtError(error, "VibeTV connection needs attention."),
         );
         if (isLocalNetworkAccessError(normalized)) {
           markCompanionAccessBlocked();
@@ -1351,18 +1330,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               return "stale" as RepairConnectionOutcome;
             }
             const statusDevice = statusPayload.device;
-            const targetMatches =
-              !target ||
-              (Boolean(statusDevice?.target) &&
-                normalizeDeviceTarget(statusDevice?.target || "") === target);
-            const identityMatches =
-              !options?.expectedDeviceId ||
-              statusDevice?.deviceId === options.expectedDeviceId;
             if (
-              statusDevice?.connected &&
-              statusDevice.paired &&
-              targetMatches &&
-              identityMatches
+              deviceMatchesExpectedConnection(
+                statusDevice,
+                target,
+                options?.expectedDeviceId,
+              )
             ) {
               acceptDeviceSnapshot(statusDevice);
               setLastError(null);
@@ -1426,64 +1399,61 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ],
   );
 
-  const searchAndConnect = useCallback(
-    async () => {
-      const setupGeneration = setupGenerationRef.current;
-      const searchAttempt = ++deviceSearchAttemptRef.current;
-      const searchIsCurrent = () =>
-        setupGeneration === setupGenerationRef.current &&
-        searchAttempt === deviceSearchAttemptRef.current;
-      setBusyAction("search");
-      pendingPairingCandidate.current = null;
-      setDeviceCandidates([]);
-      setDeviceSearchState("searching");
-      setLastError(null);
-      try {
-        const payload = await runCompanion<{ devices?: DeviceCandidate[] }>(
-          "/v1/device/search",
-          { method: "POST" },
-          { timeoutMs: DEVICE_SEARCH_REQUEST_TIMEOUT_MS },
-        );
-        if (!searchIsCurrent()) {
-          return;
-        }
-        const candidates = (payload.devices || []).filter(
-          (candidate) => candidate.target && candidate.networkMode !== "setup",
-        );
-        if (candidates.length > 0) {
-          setDeviceCandidates(candidates);
-          setDeviceSearchState("multiple");
-          return;
-        }
+  const searchAndConnect = useCallback(async () => {
+    const setupGeneration = setupGenerationRef.current;
+    const searchAttempt = ++deviceSearchAttemptRef.current;
+    const searchIsCurrent = () =>
+      setupGeneration === setupGenerationRef.current &&
+      searchAttempt === deviceSearchAttemptRef.current;
+    setBusyAction("search");
+    pendingPairingCandidate.current = null;
+    setDeviceCandidates([]);
+    setDeviceSearchState("searching");
+    setLastError(null);
+    try {
+      const payload = await runCompanion<{ devices?: DeviceCandidate[] }>(
+        "/v1/device/search",
+        { method: "POST" },
+        { timeoutMs: DEVICE_SEARCH_REQUEST_TIMEOUT_MS },
+      );
+      if (!searchIsCurrent()) {
+        return;
+      }
+      const candidates = (payload.devices || []).filter(
+        (candidate) => candidate.target && candidate.networkMode !== "setup",
+      );
+      if (candidates.length > 0) {
+        setDeviceCandidates(candidates);
+        setDeviceSearchState("multiple");
+        return;
+      }
+      setDeviceSearchState("not-found");
+      setDeviceState("offline");
+    } catch (error) {
+      if (!searchIsCurrent()) {
+        return;
+      }
+      const normalized = normalizeCaughtError(
+        error,
+        "Automatic VibeTV search could not finish.",
+      );
+      if (isCompanionMissingError(normalized)) {
+        handleCompanionUnavailableForRepair(false);
+        setDeviceSearchState("failed");
+      } else if (normalized.code === "device_not_found") {
         setDeviceSearchState("not-found");
         setDeviceState("offline");
-      } catch (error) {
-        if (!searchIsCurrent()) {
-          return;
-        }
-        const normalized = normalizeCaughtError(
-          error,
-          "Automatic VibeTV search could not finish.",
-        );
-        if (isCompanionMissingError(normalized)) {
-          handleCompanionUnavailableForRepair(false);
-          setDeviceSearchState("failed");
-        } else if (normalized.code === "device_not_found") {
-          setDeviceSearchState("not-found");
-          setDeviceState("offline");
-          setLastError(null);
-        } else {
-          setDeviceSearchState("failed");
-          setLastError(normalized);
-        }
-      } finally {
-        if (searchIsCurrent()) {
-          setBusyAction(null);
-        }
+        setLastError(null);
+      } else {
+        setDeviceSearchState("failed");
+        setLastError(normalized);
       }
-    },
-    [handleCompanionUnavailableForRepair, runCompanion],
-  );
+    } finally {
+      if (searchIsCurrent()) {
+        setBusyAction(null);
+      }
+    }
+  }, [handleCompanionUnavailableForRepair, runCompanion]);
 
   useEffect(() => {
     if (deviceRecoveryPickerReason !== "confirmed-loss") {
@@ -1550,6 +1520,40 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             "The selected VibeTV could not be connected.",
           ),
         );
+        try {
+          const statusPayload = await runCompanion<{ device?: DeviceInfo }>(
+            "/v1/status",
+            undefined,
+            { preserveLastError: true },
+          );
+          if (setupGeneration !== setupGenerationRef.current) {
+            return;
+          }
+          if (
+            deviceMatchesExpectedConnection(
+              statusPayload.device,
+              candidate.target,
+              candidate.deviceId,
+            )
+          ) {
+            acceptDeviceSnapshot(statusPayload.device);
+            setDeviceCandidates([]);
+            pendingPairingCandidate.current = null;
+            setDeviceSearchState("idle");
+            setLastError(null);
+            addEvent({
+              label: "VibeTV selected",
+              detail:
+                "The selected VibeTV is connected. Its display will update automatically.",
+              tone: "ready",
+            });
+            void loadSettings();
+            return;
+          }
+        } catch {
+          // Keep the select error unless a read-only status check proves that
+          // the requested VibeTV is already connected and paired.
+        }
         setLastError(normalized);
         setDeviceCandidates((current) =>
           current.length > 0 ? current : [candidate],
@@ -2252,14 +2256,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           pendingPairingCandidate.current?.target || deviceTarget,
         );
         const candidates = (payload.devices || []).filter(
-          (candidate) =>
-            candidate.target && candidate.networkMode !== "setup",
+          (candidate) => candidate.target && candidate.networkMode !== "setup",
         );
         const candidate =
           candidates.find(
             (entry) =>
-              Boolean(expectedDeviceId) &&
-              entry.deviceId === expectedDeviceId,
+              Boolean(expectedDeviceId) && entry.deviceId === expectedDeviceId,
           ) ||
           candidates.find(
             (entry) =>
@@ -2436,14 +2438,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const initialLogs = ["Preparing VibeTV update."];
     const firmwareIsKnownCurrent = Boolean(
       firmwareUpdate?.status === "current" &&
-        (!firmwareUpdate.installedFirmware ||
-          firmwareUpdate.installedFirmware === device?.firmware),
+      (!firmwareUpdate.installedFirmware ||
+        firmwareUpdate.installedFirmware === device?.firmware),
     );
     const shouldUpgradeOnlyActiveTheme = Boolean(
       activeThemeUpgrade.theme &&
-        activeThemeUpgrade.needsThemeSpec &&
-        !activeThemeUpgrade.needsFirmwareCapability &&
-        firmwareIsKnownCurrent,
+      activeThemeUpgrade.needsThemeSpec &&
+      !activeThemeUpgrade.needsFirmwareCapability &&
+      firmwareIsKnownCurrent,
     );
     if (shouldUpgradeOnlyActiveTheme && activeThemeUpgrade.theme) {
       setBusyAction("firmware-update");
@@ -3102,8 +3104,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const activeThemeUpgrade = resolveActiveThemeUpgrade(catalog.themes, device);
   const activeThemeUpdateAvailable = Boolean(
     activeThemeUpgrade.theme &&
-      activeThemeUpgrade.needed &&
-      !activeThemeUpgrade.unresolved,
+    activeThemeUpgrade.needed &&
+    !activeThemeUpgrade.unresolved,
   );
   const companionRelease =
     hostedCompanionRelease?.status === "check_failed" && companionInfo?.update
@@ -3131,7 +3133,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setHasEnteredControlCenter(true);
     }
   }, []);
-  const displayFrame = useLatestDisplayFrame(deviceConnected, handleDisplayFrame);
+  const displayFrame = useLatestDisplayFrame(
+    deviceConnected,
+    handleDisplayFrame,
+  );
   const hasActiveDevice = deviceIsActive(device);
   const connectionRecoveryRequired =
     isConnectionRecoveryError(lastError) || deviceNeedsExplicitConnect(device);
@@ -3184,12 +3189,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     themeSetupRequired,
     waitingForFirstUsage,
   ]);
-  const startupDeviceSearchState: DeviceSearchState =
-    waitingForFirstUsage
-      ? "waiting"
-      : connectionRecoveryRequired && startupDeviceCandidates.length > 0
-        ? "multiple"
-        : deviceSearchState;
+  const startupDeviceSearchState: DeviceSearchState = waitingForFirstUsage
+    ? "waiting"
+    : connectionRecoveryRequired && startupDeviceCandidates.length > 0
+      ? "multiple"
+      : deviceSearchState;
   const recoveryPickerOpen = deviceRecoveryPickerReason !== null;
 
   const setupComplete = Boolean(
@@ -3203,12 +3207,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     hasActiveDevice && !connectionRecoveryRequired && !recoveryPickerOpen;
   const disabledTabs: ActiveTab[] = controlCenterAvailable
     ? imageNeedsReload
-      ? ["settings", "theme-library", "updates"]
+      ? ["theme-library", "updates"]
       : !deviceReady
         ? firmwareUpdateInProgress
-          ? ["settings", "theme-library"]
-          : ["settings", "theme-library", "updates"]
-      : []
+          ? ["theme-library"]
+          : ["theme-library", "updates"]
+        : []
     : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
   const activeShellTab = disabledTabs.includes(activeTab)
     ? "overview"
@@ -3260,11 +3264,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       requestRuntimeRepair();
     }, LAUNCHD_RECOVERY_GRACE_MS);
     return () => window.clearTimeout(timer);
-  }, [
-    clearRuntimeRepairTimeout,
-    needsRuntimeRecovery,
-    requestRuntimeRepair,
-  ]);
+  }, [clearRuntimeRepairTimeout, needsRuntimeRecovery, requestRuntimeRepair]);
 
   useEffect(() => {
     const handleRuntimeRepairResult = (event: Event) => {
@@ -3337,8 +3337,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
     return startUsageSurfacePolling({
       refreshUsage: () => refreshUsage({ quiet: true }),
-      refreshProviderHealth: () =>
-        refreshProviderPreferences({ quiet: true }),
+      refreshProviderHealth: () => refreshProviderPreferences({ quiet: true }),
     });
   }, [
     activeShellTab,
@@ -3606,12 +3605,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               ? selectedScreensaverId
               : selectedThemeId
           }
+          standby={standby}
           storefrontConfigured={catalog.storefrontConfigured}
           themeInstallEnabled={themeInstallEnabled}
           themes={catalog.themes}
-          usage={
-            appearanceSection === "screensavers" ? "screensaver" : "live"
-          }
+          usage={appearanceSection === "screensavers" ? "screensaver" : "live"}
+          onSaveStandby={saveStandby}
         />
       ) : null}
 
@@ -4081,7 +4080,6 @@ function companionUnavailableError(): ApiError {
   };
 }
 
-
 function isCompanionConnectionError(error: Error): boolean {
   return /failed to fetch|fetch failed|load failed|networkerror|connection refused|err_connection_refused|couldn'?t connect/i.test(
     error.message,
@@ -4204,9 +4202,7 @@ function deviceMatchesThemeSetupIdentity(
     return identity.deviceId === candidate.deviceId;
   }
   return Boolean(
-    identity.target &&
-      candidate.target &&
-      identity.target === candidate.target,
+    identity.target && candidate.target && identity.target === candidate.target,
   );
 }
 
@@ -4365,6 +4361,24 @@ function normalizeDeviceTarget(target: string): string {
     return trimmed;
   }
   return `http://${trimmed}`;
+}
+
+export function deviceMatchesExpectedConnection(
+  device: DeviceInfo | null | undefined,
+  expectedTarget?: string,
+  expectedDeviceId?: string,
+): device is DeviceInfo {
+  if (!device?.connected || !device.paired) {
+    return false;
+  }
+  const targetMatches =
+    !expectedTarget ||
+    (Boolean(device.target) &&
+      normalizeDeviceTarget(device.target || "") ===
+        normalizeDeviceTarget(expectedTarget));
+  const identityMatches =
+    !expectedDeviceId || device.deviceId === expectedDeviceId;
+  return targetMatches && identityMatches;
 }
 
 function formatTime(): string {

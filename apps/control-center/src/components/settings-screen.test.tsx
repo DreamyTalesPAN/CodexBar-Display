@@ -1,10 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { DeviceInfo, StandbySettings } from "./control-center-types";
-import { SettingsScreen } from "./settings-screen";
+import { SettingsScreen, standbyTimeoutLabel } from "./settings-screen";
 
 const standbyDevice: DeviceInfo = {
+  active: true,
   connected: true,
+  paired: true,
   ready: true,
   capabilities: { standby: { supported: true } },
 };
@@ -46,16 +48,25 @@ describe("SettingsScreen standby controls", () => {
     expect(html).not.toContain("Brightness in screensaver");
   });
 
-  it("collapses the screensaver details while the screensaver is off", () => {
+  it("keeps every screensaver setting visible while the screensaver is off", () => {
     const html = render(standbyDevice);
 
+    expect(html).toContain(">Screensaver</h3>");
     expect(html).toContain("Show screensaver");
-    expect(html).not.toContain("Show after");
-    expect(html).not.toContain("Brightness in screensaver");
+    expect(html.indexOf('id="vibetv-standby"')).toBeLessThan(
+      html.indexOf('for="vibetv-standby"'),
+    );
+    expect(html).toContain("Show after");
+    expect(html).toContain("Brightness in screensaver");
+    expect(html).toContain("Choose screensaver");
+    expect(html).toMatch(/role="combobox"[^>]*disabled=""/);
+    expect(html).toMatch(
+      /aria-disabled="true"[^>]*id="vibetv-standby-brightness"/,
+    );
     expect(html).not.toContain("Save screensaver brightness");
   });
 
-  it("offers screensaver selection instead of an unusable switch", () => {
+  it("keeps the toggle and settings available before a screensaver is chosen", () => {
     const html = render(standbyDevice, {
       enabled: false,
       timeoutMinutes: 10,
@@ -64,7 +75,14 @@ describe("SettingsScreen standby controls", () => {
     });
 
     expect(html).toContain("Choose screensaver");
-    expect(html).not.toContain('aria-label="Show screensaver"');
+    expect(html).toContain('aria-label="Show screensaver"');
+    expect(html).toContain('aria-checked="false"');
+    expect(html).toContain('id="vibetv-standby-timeout"');
+    expect(html).toContain('id="vibetv-standby-brightness"');
+    expect(html).not.toContain("Choose a screensaver before turning it on.");
+    expect(html).not.toContain('data-variant="link"');
+    expect(html).toContain('<a class="inline-block');
+    expect(html).toContain('href="#screensavers"');
   });
 
   it("shows timeout and screensaver brightness once the screensaver is on", () => {
@@ -78,16 +96,43 @@ describe("SettingsScreen standby controls", () => {
     expect(html).toContain("Show screensaver");
     expect(html).toContain('aria-checked="true"');
     expect(html).toContain("Show after");
+    expect(html).toMatch(
+      /data-orientation="horizontal"[^>]*><label[^>]+for="vibetv-standby-timeout"/,
+    );
     expect(html).toContain('id="vibetv-standby-timeout"');
     expect(html).toContain("Brightness in screensaver");
     expect(html).toContain('id="vibetv-standby-brightness"');
-    // The screensaver brightness is saved deliberately, like the normal one.
-    expect(html).toContain("Save screensaver brightness");
+    expect(html).toContain(">35%</output>");
+    expect(html).not.toContain("Save screensaver brightness");
   });
 
-  it("describes the card as the whole screen, not only brightness", () => {
-    expect(render(standbyDevice)).toContain(
-      "Adjust the screen of the connected VibeTV.",
+  it("shows the one-minute firmware minimum as a readable timeout", () => {
+    expect(standbyTimeoutLabel(1)).toBe("1 minute");
+    expect(standbyTimeoutLabel(5)).toBe("5 minutes");
+  });
+
+  it("uses flat sections with dividers instead of cards", () => {
+    const html = render(standbyDevice);
+
+    expect(html).not.toContain("Adjust the screen of the connected VibeTV.");
+    expect(html).not.toContain(
+      "Show your selected screensaver when VibeTV is idle.",
+    );
+    expect(html).not.toContain("minimum");
+    expect(html).not.toContain("Save brightness");
+    expect(html).toContain('data-slot="item-separator"');
+    expect(html).not.toContain('data-slot="card"');
+  });
+
+  it("uses responsive intro and control columns for every section", () => {
+    const html = render(standbyDevice);
+
+    expect(html.match(/grid-cols-1/g)).toHaveLength(3);
+    expect(
+      html.match(/md:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/g),
+    ).toHaveLength(3);
+    expect(html).toMatch(
+      /<h3>Setup<\/h3>.*Connect this Mac to another VibeTV\.<\/p><\/div><div data-slot="item-actions"/,
     );
   });
 });

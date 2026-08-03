@@ -65,6 +65,7 @@ type Manifest struct {
 	Name                 string      `json:"name"`
 	Version              string      `json:"version,omitempty"`
 	MinFirmware          string      `json:"minFirmware,omitempty"`
+	Usage                string      `json:"usage,omitempty"`
 	RequiredCapabilities []string    `json:"requiredCapabilities,omitempty"`
 	ThemeSpec            FileEntry   `json:"themeSpec"`
 	Assets               []FileEntry `json:"assets,omitempty"`
@@ -405,6 +406,52 @@ func validateManifestFields(manifest Manifest) error {
 		default:
 			return fmt.Errorf("required capability %q is unsupported", capability)
 		}
+	}
+	return validateUsage(manifest.Usage)
+}
+
+func validateUsage(usage string) error {
+	switch strings.TrimSpace(usage) {
+	case "", UsageLive, UsageScreensaver:
+		return nil
+	}
+	return fmt.Errorf("usage %q unsupported (expected %q or %q)", usage, UsageLive, UsageScreensaver)
+}
+
+func SlotPathPrefix(slot string) string {
+	if slot == UsageScreensaver {
+		return ScreensaverPathPrefix
+	}
+	return LivePathPrefix
+}
+
+func validateSlotPaths(usage string, devicePaths []string) error {
+	screensaver := usage == UsageScreensaver
+	for _, devicePath := range devicePaths {
+		if strings.HasPrefix(devicePath, ScreensaverPathPrefix) == screensaver {
+			continue
+		}
+		if screensaver {
+			return fmt.Errorf("device path %s must start with %s in a screensaver pack", devicePath, ScreensaverPathPrefix)
+		}
+		return fmt.Errorf("device path %s is reserved for screensaver packs", devicePath)
+	}
+	return nil
+}
+
+func (m Manifest) PackUsage() string {
+	if usage := strings.TrimSpace(m.Usage); usage != "" {
+		return usage
+	}
+	return UsageLive
+}
+
+func (m Manifest) CheckSlot(slot string) error {
+	if slot != UsageLive && slot != UsageScreensaver {
+		return fmt.Errorf("unknown install slot %q", slot)
+	}
+	if usage := m.PackUsage(); usage != slot {
+		return fmt.Errorf("theme pack %q is a %s pack and cannot be installed into the %s slot", m.ID, usage, slot)
 	}
 	return nil
 }

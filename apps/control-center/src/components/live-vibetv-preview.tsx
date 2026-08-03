@@ -3,10 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import type { ReactNode } from "react";
-import type {
-  DeviceInfo,
-  UsageSnapshot,
-} from "./control-center-types";
+import type { DeviceInfo, UsageSnapshot } from "./control-center-types";
 import {
   deviceIsCustomerConnected,
   deviceIsReady,
@@ -328,10 +325,7 @@ export function LiveVibeTVPreview({
     }
 
     const localPack = loadLocalThemeRenderPack(themeId, themeSpecPath);
-    if (
-      localPack &&
-      (!themeSpecHash || localPack.specHash === themeSpecHash)
-    ) {
+    if (localPack && (!themeSpecHash || localPack.specHash === themeSpecHash)) {
       const timer = window.setTimeout(() => {
         setPackState({
           themeId,
@@ -394,7 +388,11 @@ export function LiveVibeTVPreview({
             themeId={pack.themeId || themeId}
           />
         ) : frame ? (
-          <ThemeSpecLoading status={packStatus} themeId={themeId} />
+          <ThemeSpecLoading
+            message={liveThemePreviewMessage(packStatus)}
+            status={packStatus}
+            themeId={themeId}
+          />
         ) : waitingForUsage ? (
           <ThemeSpecLoading
             message="Waiting for usage…"
@@ -407,6 +405,14 @@ export function LiveVibeTVPreview({
       </VibeTVCaseShell>
     </figure>
   );
+}
+
+export function liveThemePreviewMessage(
+  packStatus: "idle" | "loading" | "ready" | "error",
+): string | undefined {
+  return packStatus === "error"
+    ? "Theme active on VibeTV. Preview not stored on this Mac."
+    : undefined;
 }
 
 export function livePreviewDisplayFrame(
@@ -449,10 +455,7 @@ export function ThemeSpecPreview({
 
 function VibeTVCaseShell({ children }: { children: ReactNode }) {
   return (
-    <div
-      className="relative mx-auto w-full"
-      data-testid="vibetv-case"
-    >
+    <div className="relative mx-auto w-full" data-testid="vibetv-case">
       <Image
         aria-hidden
         alt=""
@@ -503,7 +506,11 @@ function ThemeSpecSVG({
       role="img"
       viewBox="0 0 240 240"
     >
-      <rect height="240" width="240" fill={colorFor(spec.bgColor || spec.bg, "#000000")} />
+      <rect
+        height="240"
+        width="240"
+        fill={colorFor(spec.bgColor || spec.bg, "#000000")}
+      />
       {primitives.map((primitive, index) => (
         <ThemePrimitiveNode
           assets={assets}
@@ -561,7 +568,8 @@ function ThemePrimitiveNode({
 
   if (type === "text" || type === "tx") {
     const text = renderTextPrimitive(primitive, frame);
-    const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
+    const maxWidth =
+      primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
     const font = primitive.font || primitive.f || 1;
     const maxSize = Math.max(1, primitive.fontSize || primitive.s || 1);
     const size = themeTextFittedSize(
@@ -592,7 +600,12 @@ function ThemePrimitiveNode({
     return <ThemeProgress frame={frame} primitive={primitive} />;
   }
 
-  if (type === "sprite" || type === "sp" || type === "image" || type === "img") {
+  if (
+    type === "sprite" ||
+    type === "sp" ||
+    type === "image" ||
+    type === "img"
+  ) {
     const assetPath = activeAssetPath(primitive, frame);
     const sprite = assetPath ? sprites[assetPath] : undefined;
     const renderWidth = width || sprite?.width || 0;
@@ -609,7 +622,9 @@ function ThemePrimitiveNode({
       ) : null;
     }
     const currentFrame =
-      sprite.frames[spriteFrameIndex(sprite, animationTick)] || sprite.frames[0] || [];
+      sprite.frames[spriteFrameIndex(sprite, animationTick)] ||
+      sprite.frames[0] ||
+      [];
     return (
       <g>
         {(primitive.bg || primitive.bgColor) && (
@@ -621,7 +636,14 @@ function ThemePrimitiveNode({
             y={y}
           />
         )}
-        {scaleSpriteRects(currentFrame, sprite, x, y, renderWidth, renderHeight).map((rect, index) => (
+        {scaleSpriteRects(
+          currentFrame,
+          sprite,
+          x,
+          y,
+          renderWidth,
+          renderHeight,
+        ).map((rect, index) => (
           <rect
             fill={rect.color}
             height={rect.height}
@@ -804,7 +826,10 @@ function ThemeProgress({
   const width = primitive.width || primitive.w || 0;
   const height = primitive.height || primitive.h || 0;
   const percent = progressPercent(primitive, frame);
-  const borderColor = colorFor(primitive.borderColor || primitive.bc, "#7BEF7B");
+  const borderColor = colorFor(
+    primitive.borderColor || primitive.bc,
+    "#7BEF7B",
+  );
   const bgColor = colorFor(primitive.bgColor || primitive.bg, "#000000");
   const fillColor = colorFor(primitive.color || primitive.c, "#FFFFFF");
   const innerWidth = Math.max(0, width - 2);
@@ -824,8 +849,25 @@ function ThemeProgress({
 
   return (
     <g>
-      <rect fill="none" height={height} rx={radius} ry={radius} stroke={borderColor} width={width} x={x} y={y} />
-      <rect fill={bgColor} height={innerHeight} rx={innerRadius} ry={innerRadius} width={innerWidth} x={x + 1} y={y + 1} />
+      <rect
+        fill="none"
+        height={height}
+        rx={radius}
+        ry={radius}
+        stroke={borderColor}
+        width={width}
+        x={x}
+        y={y}
+      />
+      <rect
+        fill={bgColor}
+        height={innerHeight}
+        rx={innerRadius}
+        ry={innerRadius}
+        width={innerWidth}
+        x={x + 1}
+        y={y + 1}
+      />
       {segmented ? (
         <SegmentedProgress
           fillColor={fillColor}
@@ -924,18 +966,20 @@ function PixelRows({
   if (palette.length > 0 && rows.length > 0) {
     return (
       <g>
-        {decodeRleRows(rows, width, palette.map((entry) => colorFor(entry, "#000000"))).map(
-          (rect, index) => (
-            <rect
-              fill={rect.color}
-              height={rect.height}
-              key={index}
-              width={rect.width}
-              x={x + rect.x}
-              y={y + rect.y}
-            />
-          ),
-        )}
+        {decodeRleRows(
+          rows,
+          width,
+          palette.map((entry) => colorFor(entry, "#000000")),
+        ).map((rect, index) => (
+          <rect
+            fill={rect.color}
+            height={rect.height}
+            key={index}
+            width={rect.width}
+            x={x + rect.x}
+            y={y + rect.y}
+          />
+        ))}
       </g>
     );
   }
@@ -1016,8 +1060,9 @@ export function hasRenderableUsage(
   const hasLegacyUsage = [displayFrame.session, displayFrame.weekly].some(
     (value) => typeof value === "number" && Number.isFinite(value),
   );
-  const frameUsageWindows =
-    displayFrame.usageWindows?.length ? displayFrame.usageWindows : displayFrame.usageSlots;
+  const frameUsageWindows = displayFrame.usageWindows?.length
+    ? displayFrame.usageWindows
+    : displayFrame.usageSlots;
   const hasSlotUsage = (frameUsageWindows || []).some(
     (slot) =>
       Boolean(slot.id?.trim() && slot.label?.trim()) &&
@@ -1034,9 +1079,11 @@ export function buildFrameData(
   const now = generatedAt ? new Date(generatedAt) : new Date();
   const usableDate = Number.isNaN(now.getTime()) ? new Date() : now;
   const sourceUsageMode = frameUsageMode(displayFrame);
-  const slots = ((displayFrame.usageWindows?.length ? displayFrame.usageWindows : displayFrame.usageSlots) || []).filter(
-    (slot) => Boolean(slot.id?.trim() && slot.label?.trim()),
-  );
+  const slots = (
+    (displayFrame.usageWindows?.length
+      ? displayFrame.usageWindows
+      : displayFrame.usageSlots) || []
+  ).filter((slot) => Boolean(slot.id?.trim() && slot.label?.trim()));
   const slot1 = slots[0];
   const slot2 = slots[1];
   return {
@@ -1102,10 +1149,11 @@ export function themeSpecAriaLabel(themeId: string, frame: FrameData): string {
   return `Rendered VibeTV theme ${themeId} showing ${frame.label}, ${usage.length > 0 ? usage.join(", ") : "no usage windows available"}`;
 }
 
-function frameUsageMode(
-  displayFrame: DisplayFrame | undefined,
-): string {
-  if (displayFrame?.usageMode === "remaining" || displayFrame?.usageMode === "used") {
+function frameUsageMode(displayFrame: DisplayFrame | undefined): string {
+  if (
+    displayFrame?.usageMode === "remaining" ||
+    displayFrame?.usageMode === "used"
+  ) {
     return displayFrame.usageMode;
   }
   return "used";
@@ -1192,7 +1240,10 @@ export function themeRenderPackMatchesActiveRevision(
   );
 }
 
-function renderTextPrimitive(primitive: ThemePrimitive, frame: FrameData): string {
+function renderTextPrimitive(
+  primitive: ThemePrimitive,
+  frame: FrameData,
+): string {
   const binding = primitive.binding || primitive.b;
   if (binding) {
     return boundValue(binding, frame);
@@ -1204,7 +1255,9 @@ function renderTextPrimitive(primitive: ThemePrimitive, frame: FrameData): strin
 }
 
 export function boundValue(key: string, frame: FrameData): string {
-  const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(key);
+  const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(
+    key,
+  );
   if (usageMatch) {
     const window = frame.usageWindows[Number(usageMatch[1])];
     const field = usageMatch[2];
@@ -1250,7 +1303,9 @@ export function boundValue(key: string, frame: FrameData): string {
       return frame.usageSlot1Available ? String(frame.usageSlot1Percent) : "";
     case "usageSlot1Reset":
     case "us1r":
-      return frame.usageSlot1Available ? formatReset(frame.usageSlot1ResetSecs) : "";
+      return frame.usageSlot1Available
+        ? formatReset(frame.usageSlot1ResetSecs)
+        : "";
     case "usageSlot1Available":
     case "us1a":
       return String(frame.usageSlot1Available);
@@ -1262,7 +1317,9 @@ export function boundValue(key: string, frame: FrameData): string {
       return frame.usageSlot2Available ? String(frame.usageSlot2Percent) : "";
     case "usageSlot2Reset":
     case "us2r":
-      return frame.usageSlot2Available ? formatReset(frame.usageSlot2ResetSecs) : "";
+      return frame.usageSlot2Available
+        ? formatReset(frame.usageSlot2ResetSecs)
+        : "";
     case "usageSlot2Available":
     case "us2a":
       return String(frame.usageSlot2Available);
@@ -1292,7 +1349,10 @@ export function boundValue(key: string, frame: FrameData): string {
   }
 }
 
-export function progressPercent(primitive: ThemePrimitive, frame: FrameData): number {
+export function progressPercent(
+  primitive: ThemePrimitive,
+  frame: FrameData,
+): number {
   const binding = primitive.binding || primitive.b || "";
   const usageMatch = /^usage\.(\d+)\.percent$/.exec(binding);
   if (usageMatch) {
@@ -1357,9 +1417,9 @@ function decodeSprite(raw: string): DecodedSprite | null {
   if (width <= 0 || height <= 0 || frameCount <= 0 || paletteSize <= 0) {
     return null;
   }
-  const palette = lines.slice(3, 3 + paletteSize).map((entry) =>
-    colorFor(entry, "#000000"),
-  );
+  const palette = lines
+    .slice(3, 3 + paletteSize)
+    .map((entry) => colorFor(entry, "#000000"));
   const rowStart = 3 + paletteSize;
   const frames: Array<Array<SpriteRect>> = [];
   for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
@@ -1448,7 +1508,10 @@ function useAnimationTick(framesPerSecond: number): number {
   return framesPerSecond > 0 ? tick : 0;
 }
 
-function spriteFrameIndex(sprite: DecodedSprite, animationTick: number): number {
+function spriteFrameIndex(
+  sprite: DecodedSprite,
+  animationTick: number,
+): number {
   if (sprite.frames.length <= 1 || sprite.fps <= 0) {
     return 0;
   }
@@ -1467,9 +1530,11 @@ function scaleSpriteRects(
   const drawHeight = targetHeight > 0 ? targetHeight : sprite.height;
   return rects.map((rect) => {
     const x1 = x + Math.floor((rect.x * drawWidth) / sprite.width);
-    const x2 = x + Math.ceil(((rect.x + rect.width) * drawWidth) / sprite.width);
+    const x2 =
+      x + Math.ceil(((rect.x + rect.width) * drawWidth) / sprite.width);
     const y1 = y + Math.floor((rect.y * drawHeight) / sprite.height);
-    const y2 = y + Math.ceil(((rect.y + rect.height) * drawHeight) / sprite.height);
+    const y2 =
+      y + Math.ceil(((rect.y + rect.height) * drawHeight) / sprite.height);
     return {
       ...rect,
       height: Math.max(1, y2 - y1),
@@ -1516,7 +1581,11 @@ function decodeRleRows(
   return rects;
 }
 
-function decodeBitmapBits(data: string, width: number, height: number): SpriteRect[] {
+function decodeBitmapBits(
+  data: string,
+  width: number,
+  height: number,
+): SpriteRect[] {
   const rects: SpriteRect[] = [];
   if (!data || width <= 0 || height <= 0) {
     return rects;
@@ -1528,7 +1597,13 @@ function decodeBitmapBits(data: string, width: number, height: number): SpriteRe
       if (bit && runStart < 0) {
         runStart = x;
       } else if (!bit && runStart >= 0) {
-        rects.push({ x: runStart, y, width: x - runStart, height: 1, color: "" });
+        rects.push({
+          x: runStart,
+          y,
+          width: x - runStart,
+          height: 1,
+          color: "",
+        });
         runStart = -1;
       }
     }
@@ -1637,10 +1712,10 @@ export function themeTextFittedSize(
 // Mirrors TFT_eSPI 2.5.43 Fonts/Font16.c, pinned in
 // firmware_esp8266/platformio.ini. Update both together when the pin changes.
 const TFT_ESPI_FONT2_WIDTHS = [
-  6, 3, 4, 9, 8, 9, 9, 3, 7, 7, 8, 6, 3, 6, 5, 7, 8, 8, 8, 8, 8, 8, 8, 8,
-  8, 8, 3, 3, 6, 6, 6, 8, 9, 8, 8, 8, 8, 8, 8, 8, 8, 4, 8, 8, 7, 10, 8, 8,
-  8, 8, 8, 8, 8, 8, 8, 10, 8, 8, 8, 4, 7, 4, 7, 9, 5, 7, 7, 7, 7, 7, 6, 7,
-  7, 4, 5, 6, 4, 8, 7, 8, 7, 8, 6, 6, 5, 7, 8, 8, 6, 7, 7, 5, 3, 5, 8, 6,
+  6, 3, 4, 9, 8, 9, 9, 3, 7, 7, 8, 6, 3, 6, 5, 7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+  3, 3, 6, 6, 6, 8, 9, 8, 8, 8, 8, 8, 8, 8, 8, 4, 8, 8, 7, 10, 8, 8, 8, 8, 8, 8,
+  8, 8, 8, 10, 8, 8, 8, 4, 7, 4, 7, 9, 5, 7, 7, 7, 7, 7, 6, 7, 7, 4, 5, 6, 4, 8,
+  7, 8, 7, 8, 6, 6, 5, 7, 8, 8, 6, 7, 7, 5, 3, 5, 8, 6,
 ] as const;
 
 // Mirrors the classic GLCD font's CP437 glyph order in TFT_eSPI 2.5.43.
@@ -1664,7 +1739,8 @@ export function themeFirmwareTextMetrics(
   const scale = Math.max(1, size);
   let layoutOffset = 0;
   let drawOffset = 0;
-  const glyphs: Array<{ character: string; offset: number; width: number }> = [];
+  const glyphs: Array<{ character: string; offset: number; width: number }> =
+    [];
   for (const character of Array.from(text)) {
     const codePoint = character.codePointAt(0);
     if (codePoint === undefined) {

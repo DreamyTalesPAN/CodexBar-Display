@@ -273,6 +273,40 @@ func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 	}
 }
 
+func TestSavedPairingRemainsValidUntilExplicitlyRejected(t *testing.T) {
+	tests := []struct {
+		name          string
+		savedToken    string
+		tokenRejected bool
+		streamError   string
+		want          bool
+	}{
+		{name: "busy device fallback", savedToken: "saved-token", want: true},
+		{name: "explicit token rejection", savedToken: "saved-token", tokenRejected: true, want: false},
+		{name: "stream requests pairing", savedToken: "saved-token", streamError: "device_pairing_required", want: false},
+		{name: "no saved token", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := savedPairingRemainsValid(tt.savedToken, tt.tokenRejected, tt.streamError); got != tt.want {
+				t.Fatalf("savedPairingRemainsValid() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPairingTokenForReadinessUsesSavedTokenAfterPublicFallback(t *testing.T) {
+	if got := pairingTokenForReadiness("saved-token", "", true); got != "saved-token" {
+		t.Fatalf("paired public fallback must keep the saved token for readiness, got %q", got)
+	}
+	if got := pairingTokenForReadiness("saved-token", "verified-token", true); got != "verified-token" {
+		t.Fatalf("authenticated probe token must win, got %q", got)
+	}
+	if got := pairingTokenForReadiness("saved-token", "", false); got != "" {
+		t.Fatalf("unpaired device must not receive a saved readiness token, got %q", got)
+	}
+}
+
 func TestStatusDoesNotAdoptDifferentDeviceAtConfiguredAddress(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -4256,6 +4290,15 @@ func TestRenderHealthyRequiresCountersAndUsageKind(t *testing.T) {
 		if renderHealthyFromHealth(health) {
 			t.Fatalf("local %s render must not prove that the Mac sent a frame", localRenderKind)
 		}
+	}
+}
+
+func TestClockRenderKeepsTheLiveScreenReadyWithoutProvingAFrame(t *testing.T) {
+	if !liveScreenRenderKind("clock") {
+		t.Fatal("a clock repaint is still the live customer screen")
+	}
+	if usageRenderKind("clock") || localOverlayRenderKind("clock") {
+		t.Fatal("a clock repaint must not prove that the Mac sent a fresh usage frame")
 	}
 }
 

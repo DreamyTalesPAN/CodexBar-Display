@@ -48,18 +48,22 @@ import (
 var embeddedControlCenterStatic embed.FS
 
 const (
-	DefaultAddr                  = "127.0.0.1:47832"
-	appOrigin                    = "https://app.vibetv.shop"
-	defaultDevOrigin             = "http://localhost:3000"
-	previewOriginHostPrefix      = "codex-vibetv-control-center-"
-	previewOriginHostSuffix      = "-paul-anduschus-projects.vercel.app"
-	nativeControlCenterUA        = "VibeTVControlCenter/"
-	deviceConnectionReady        = "ready"
-	deviceConnectionRetrying     = "reconnecting"
-	deviceConnectionSetup        = "setup_required"
-	deviceTimeout                = 15 * time.Second
-	deviceSearchWindow           = 30 * time.Second
-	discoveryProbeTime           = 1500 * time.Millisecond
+	DefaultAddr              = "127.0.0.1:47832"
+	appOrigin                = "https://app.vibetv.shop"
+	defaultDevOrigin         = "http://localhost:3000"
+	previewOriginHostPrefix  = "codex-vibetv-control-center-"
+	previewOriginHostSuffix  = "-paul-anduschus-projects.vercel.app"
+	nativeControlCenterUA    = "VibeTVControlCenter/"
+	deviceConnectionReady    = "ready"
+	deviceConnectionRetrying = "reconnecting"
+	deviceConnectionSetup    = "setup_required"
+	deviceTimeout            = 15 * time.Second
+	deviceSearchWindow       = 30 * time.Second
+	// Device requests are serialized because the ESP8266 serves one request at
+	// a time. A read-only probe can therefore wait behind a frame render before
+	// it reaches the device; keep this below the client timeout, but long enough
+	// to cover the normal render acknowledgement on stored themes.
+	discoveryProbeTime           = 12 * time.Second
 	deviceProbeCacheTime         = 750 * time.Millisecond
 	repairDiscoveryAttempts      = 3
 	repairDiscoveryRetryGap      = 1200 * time.Millisecond
@@ -1280,9 +1284,11 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 				reachable = true
 				device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
 				device.Active = configuredID != "" && strings.EqualFold(configuredID, observedID)
-				device.Paired = strings.TrimSpace(cfg.DeviceToken) != "" &&
-					probeToken == cfg.DeviceToken &&
-					stream.ErrorCode != "device_pairing_required"
+				device.Paired = savedPairingRemainsValid(
+					cfg.DeviceToken,
+					tokenRejected,
+					stream.ErrorCode,
+				)
 				if tokenRejected {
 					device.Paired = false
 					stream.Healthy = false
@@ -1290,10 +1296,17 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 					stream.Detail = "VibeTV connection needs attention."
 					device.Stream = streamPointer(stream)
 				}
+				readinessToken := pairingTokenForReadiness(
+					cfg.DeviceToken,
+					probeToken,
+					device.Paired,
+				)
 				// /health is intentionally public and therefore only reports device
-				// health. Pairing is proven by the authenticated /hello probe above.
+				// health. Only an explicit rejection invalidates a saved pairing; a
+				// busy device may answer the public fallback after the authenticated
+				// probe timed out.
 				if health, healthErr := s.getHealthProbe(r.Context(), cfg.DeviceTarget, "", deviceHealthProbeTime); healthErr == nil {
-					device = s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, probeToken, false)
+					device = s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, readinessToken, false)
 				} else {
 					device = withDeviceHealthProbeError(device, healthErr)
 				}
@@ -1317,6 +1330,22 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		ThemeInstall:   themeInstall,
 		FirmwareUpdate: firmwareUpdate,
 	})
+}
+
+func savedPairingRemainsValid(savedToken string, tokenRejected bool, streamError string) bool {
+	return strings.TrimSpace(savedToken) != "" &&
+		!tokenRejected &&
+		strings.TrimSpace(streamError) != "device_pairing_required"
+}
+
+func pairingTokenForReadiness(savedToken string, probeToken string, paired bool) string {
+	if token := strings.TrimSpace(probeToken); token != "" {
+		return token
+	}
+	if paired {
+		return strings.TrimSpace(savedToken)
+	}
+	return ""
 }
 
 func (s *Server) withConfiguredConnectionState(
@@ -6270,7 +6299,7 @@ func localOverlayRenderKind(raw string) bool {
 }
 
 func liveScreenRenderKind(raw string) bool {
-	return usageRenderKind(raw) || localOverlayRenderKind(raw)
+	return usageRenderKind(raw) || localOverlayRenderKind(raw) || strings.TrimSpace(raw) == "clock"
 }
 
 func correlatedOverlayProvesUsage(

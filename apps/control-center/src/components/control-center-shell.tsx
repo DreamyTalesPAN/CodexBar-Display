@@ -357,7 +357,7 @@ function AppearanceNavButton({
   return (
     <SidebarMenuSubButton
       asChild
-      className="h-11 data-active:bg-transparent data-active:font-semibold data-active:text-sidebar-accent-foreground"
+      className="h-11 data-active:bg-transparent! data-active:font-semibold data-active:text-sidebar-accent-foreground"
       isActive={active}
     >
       <button

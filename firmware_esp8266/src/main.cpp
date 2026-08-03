@@ -222,6 +222,10 @@ standby::State standbyState;
 // really drawn. There is no second resident ThemeSpec slot: both directions
 // reload from LittleFS, which #277 measured at 250-420 ms.
 String standbyLiveThemePath;
+// A real usage frame is rendered before maintainStandby() observes the wake.
+// Remember that proof so the exit path does not restore and redraw the same
+// live theme a second time in the next loop.
+bool standbyWakeRenderedByUsageFrame = false;
 codexbar_display::esp8266::wifi_setup::State setupWifiState;
 bool rebootPending = false;
 unsigned long rebootAtMs = 0;
@@ -919,6 +923,44 @@ void renderAcceptedFrame(const codexbar_display::core::SerialConsumeEvent& event
   }
 }
 
+void maintainDeviceClock() {
+  const unsigned long nowMs = millis();
+  if (static_cast<long>(nowMs - nextDeviceClockPollAtMs) < 0) {
+    return;
+  }
+  nextDeviceClockPollAtMs = nowMs + kDeviceClockPollMs;
+
+  const time_t systemEpoch = time(nullptr);
+  if (deviceclock::ObserveSystemEpoch(runtimeCtx.clock, static_cast<int64_t>(systemEpoch), nowMs)) {
+    Serial.printf("clock_synced epoch=%ld utc_offset_known=%d\n",
+                  static_cast<long>(systemEpoch),
+                  runtimeCtx.clock.hasUtcOffset ? 1 : 0);
+  }
+
+  char timeText[deviceclock::kTimeTextSize];
+  char dateText[deviceclock::kDateTextSize];
+  codexbar_display::app::ClockTimeText(runtimeCtx, nowMs, timeText, sizeof(timeText));
+  codexbar_display::app::ClockDateText(runtimeCtx, nowMs, dateText, sizeof(dateText));
+  if (strcmp(timeText, renderedClockTime) == 0 && strcmp(dateText, renderedClockDate) == 0) {
+    return;
+  }
+  strcpy(renderedClockTime, timeText);
+  strcpy(renderedClockDate, dateText);
+
+  if (setupMode ||
+      waitStatusRendered ||
+      frameStaleStatusRendered ||
+      runtimeCtx.screenDirty ||
+      !codexbar_display::app::HasFrame(runtimeCtx) ||
+      codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
+    return;
+  }
+  const unsigned long renderStartUs = micros();
+  if (renderer.DrawClock(runtimeCtx)) {
+    recordRenderPartial("clock", micros() - renderStartUs);
+  }
+}
+
 bool acceptedFrameRenderDeferredForTransport(const char* transport) {
   if (transport == nullptr) {
     return false;
@@ -943,7 +985,12 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
     runtimeCtx.screenDirty = true;
   }
   lastFrameAcceptedAtMs = millis();
-  if (event.usageProgressed) {
+  // Loading a stored ThemeSpec is an internal screen transition. In
+  // particular, entering standby must not count as fresh customer usage or the
+  // next loop immediately exits standby and restores the live theme again.
+  // Real Wi-Fi and USB usage frames still reset the idle timer as before.
+  if (event.usageProgressed && strcmp(transport, "theme") != 0) {
+    standbyWakeRenderedByUsageFrame = standbyState.active && event.visualChanged;
     standby::NoteUsageActivity(standbyState, lastFrameAcceptedAtMs);
   }
   // SNTP delivers UTC only. The Mac is the only local-offset source the device
@@ -2351,12 +2398,12 @@ void loadActiveStoredThemeSpecCache() {
   (void)loadStoredThemeSpecCacheFromPath(activePath);
 }
 
-// Standby only takes a screen it can hand back. A setup or OTA status screen
-// and an error frame stay where they are, and without a stored live theme there
-// would be no way home.
+// Standby only takes a screen it can hand back. Setup and error frames stay
+// where they are, and without a stored live theme there would be no way home.
+// The connected "Open App" screen is intentionally not a veto: replacing it
+// while the Mac is off is the screensaver's main job.
 bool standbyReady() {
   return !setupMode &&
-         !waitStatusRendered &&
          !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
          activeThemeSpecPath.length() > 0;
 }
@@ -2373,8 +2420,13 @@ void maintainStandby() {
     return;
   }
   if (transition == standby::Transition::Enter) {
+    standbyWakeRenderedByUsageFrame = false;
     const String livePath = activeThemeSpecPath;
-    if (!renderStoredThemeSpecForStandby(String(deviceSettings.standby.screensaverPath))) {
+    const String screensaverPath(deviceSettings.standby.screensaverPath);
+    // Selecting the live theme as the screensaver only changes brightness.
+    // Reloading the identical ThemeSpec would schedule a redundant full render
+    // and can starve the ESP8266 Wi-Fi stack long enough to trip its watchdog.
+    if (screensaverPath != livePath && !renderStoredThemeSpecForStandby(screensaverPath)) {
       // A deleted screensaver must not dim the panel or reopen the file every
       // loop. Sit out another full timeout before trying again.
       standbyState.active = false;
@@ -2382,8 +2434,13 @@ void maintainStandby() {
       return;
     }
     standbyLiveThemePath = livePath;
-  } else if (standbyLiveThemePath.length() > 0) {
-    renderStoredThemeSpecForStandby(standbyLiveThemePath);
+  } else {
+    if (!standbyWakeRenderedByUsageFrame &&
+        standbyLiveThemePath.length() > 0 &&
+        standbyLiveThemePath != activeThemeSpecPath) {
+      renderStoredThemeSpecForStandby(standbyLiveThemePath);
+    }
+    standbyWakeRenderedByUsageFrame = false;
     standbyLiveThemePath = "";
   }
   applyDeviceSettings();

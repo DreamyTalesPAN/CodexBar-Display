@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/theme"
@@ -15,6 +16,14 @@ const (
 	DefaultProviderBytes         = DefaultUsageWindowIDBytes
 	DefaultProviderLabelBytes    = DefaultUsageWindowLabelBytes
 )
+
+const (
+	ResetTrustLive    = "live"
+	ResetTrustOffline = "offline"
+	ResetTrustStale   = "stale"
+)
+
+const ResetTrustHorizon = 5 * time.Hour
 
 type UsageWindow struct {
 	ID       string `json:"id"`

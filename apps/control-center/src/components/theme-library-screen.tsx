@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CircleAlert,
   Edit3,
   Library,
   Lock,
@@ -45,6 +46,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { Field, FieldLabel } from "@/components/ui/field";
 import {
   Item,
   ItemActions,
@@ -57,6 +59,7 @@ import {
 } from "@/components/ui/item";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
 import {
   hasFirmwareUpdate,
   type FirmwareUpdateInfo,
@@ -82,6 +85,7 @@ import {
 import type { ThemeStudioDeviceCapabilities } from "@/lib/theme-studio-capabilities";
 import type { ThemeProduct } from "@/lib/themes";
 import { themeRenderPackUrl } from "./control-center-runtime";
+import type { StandbySettings } from "./control-center-types";
 import {
   THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
@@ -186,10 +190,12 @@ export type ThemeLibraryScreenProps = {
   requestedThemeId?: string;
   setupMode?: boolean;
   storefrontConfigured: boolean;
+  standby?: StandbySettings | null;
   onSelectTheme: (themeId: string) => void;
   onInstallCustomTheme: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
   onInstallFirmwareUpdate?: () => Promise<boolean> | boolean | void;
   onInstallTheme: (theme: ThemeProduct) => Promise<unknown> | void;
+  onSaveStandby?: (value: StandbySettings) => Promise<void> | void;
 };
 
 export function ThemeLibraryScreen({
@@ -208,11 +214,13 @@ export function ThemeLibraryScreen({
   setupMode = false,
   companionStatus,
   storefrontConfigured,
+  standby,
   themeInstallEnabled,
   onInstallCustomTheme,
   onInstallFirmwareUpdate,
   onSelectTheme,
   onInstallTheme,
+  onSaveStandby,
 }: ThemeLibraryScreenProps) {
   const visibleThemes = themes.filter(
     (theme) => (theme.usage || "live") === usage,
@@ -558,20 +566,29 @@ export function ThemeLibraryScreen({
             "sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center",
         )}
       >
-        <h2
-          className={cn(
-            "text-3xl font-black leading-tight text-[#1B1B1B] outline-none",
-            !setupMode && "truncate",
-          )}
-          ref={libraryHeadingRef}
-          tabIndex={-1}
-        >
-          {setupMode
-            ? "Choose your VibeTV theme"
-            : screensavers
-              ? "Screensavers"
-              : "Themes"}
-        </h2>
+        <div>
+          <h2
+            className={cn(
+              "text-3xl font-black leading-tight text-[#1B1B1B] outline-none",
+              !setupMode && "truncate",
+            )}
+            ref={libraryHeadingRef}
+            tabIndex={-1}
+          >
+            {setupMode
+              ? "Choose your VibeTV theme"
+              : screensavers
+                ? "Screensavers"
+                : "Themes"}
+          </h2>
+          {!setupMode ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              {screensavers
+                ? "Choose what appears when VibeTV enters standby after being idle."
+                : "Customize how your live usage screen looks while VibeTV is active."}
+            </p>
+          ) : null}
+        </div>
         {!setupMode ? (
           <Button onClick={openBlankTheme} type="button">
             <Plus data-icon="inline-start" aria-hidden />
@@ -579,6 +596,40 @@ export function ThemeLibraryScreen({
           </Button>
         ) : null}
       </section>
+
+      {screensavers && !setupMode && standby ? (
+        <section className="space-y-3 pb-5">
+          <Field className="border-y py-4" orientation="horizontal">
+            <FieldLabel htmlFor="vibetv-library-standby">
+              Show screensaver
+            </FieldLabel>
+            <Switch
+              aria-label="Show screensaver"
+              checked={standby.enabled}
+              disabled={
+                !standby.screensaverPath ||
+                busyAction === "standby" ||
+                device?.ready !== true
+              }
+              id="vibetv-library-standby"
+              onCheckedChange={(enabled) =>
+                onSaveStandby?.({ ...standby, enabled })
+              }
+            />
+          </Field>
+          {!standby.enabled ? (
+            <Alert variant="destructive">
+              <CircleAlert aria-hidden />
+              <AlertTitle>Screensaver is turned off</AlertTitle>
+              <AlertDescription>
+                {standby.screensaverPath
+                  ? "You can still manage screensavers here. Turn on Show screensaver to use the selected screensaver."
+                  : "You can still manage screensavers here. Install one before turning it on."}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="py-8">
         {setupNeedsFirmwareUpdate ? (

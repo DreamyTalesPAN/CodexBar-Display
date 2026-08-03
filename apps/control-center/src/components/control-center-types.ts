@@ -443,13 +443,7 @@ export type PreferenceHealthState =
   | string;
 
 export type PreferenceType =
-  | "boolean"
-  | "enum"
-  | "integer"
-  | "duration"
-  | "string"
-  | "secret"
-  | "action";
+  "boolean" | "enum" | "integer" | "duration" | "string" | "secret" | "action";
 
 export type PreferenceValue = boolean | number | string | null;
 
@@ -475,10 +469,7 @@ export type PreferenceDescriptor = {
   };
   requiredCapability?: string;
   writeStrategy:
-    | "codexbar_command"
-    | "vibetv_override"
-    | "device_api"
-    | "secure_session";
+    "codexbar_command" | "vibetv_override" | "device_api" | "secure_session";
   writable: boolean;
   secretState?: "configured" | "not_configured";
   health?: {
@@ -507,20 +498,18 @@ export function deviceIsCustomerConnected(
 ): device is DeviceInfo & { active: true; connected: true } {
   return Boolean(
     device?.active === true &&
-      device.connected === true &&
-      device.paired !== false,
+    device.connected === true &&
+    device.paired !== false,
   );
 }
 
-export function deviceIsWaitingForUsage(
-  device: DeviceInfo | null | undefined,
-) {
+export function deviceIsWaitingForUsage(device: DeviceInfo | null | undefined) {
   return Boolean(
     deviceIsCustomerConnected(device) &&
-      device.ready !== true &&
-      device.stream?.running === true &&
-      device.stream.healthy !== true &&
-      !device.stream.errorCode,
+    device.ready !== true &&
+    device.stream?.running === true &&
+    device.stream.healthy !== true &&
+    !device.stream.errorCode,
   );
 }
 
@@ -540,9 +529,7 @@ export function deviceNeedsExplicitConnect(
   );
 }
 
-export function deviceNeedsThemeSetup(
-  device: DeviceInfo | null | undefined,
-) {
+export function deviceNeedsThemeSetup(device: DeviceInfo | null | undefined) {
   if (!deviceCanContinueThemeSetup(device) || device?.ready === true) {
     return false;
   }
@@ -574,8 +561,7 @@ export function deviceCompletedThemeSetup(
 ) {
   return (
     deviceCanContinueThemeSetup(device) &&
-    device?.ready === true &&
-    device.display?.themeSpec?.active === true &&
+    device?.display?.themeSpec?.active === true &&
     device.display.themeSpec.renderOk === true
   );
 }

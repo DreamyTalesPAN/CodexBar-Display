@@ -83,7 +83,8 @@ func TestFirmwareRawWritePauseKeepsLegacyReceiverPacing(t *testing.T) {
 	}{
 		{firmware: "1.0.36", want: otaRawWritePause},
 		{firmware: "1.0.37", want: 0},
-		{firmware: "1.0.37-dev.90d0575", want: 0},
+		{firmware: "1.0.37-dev.90d0575", want: otaRawWritePause},
+		{firmware: "1.0.40-dev.ddc9332", want: otaRawWritePause},
 		{firmware: "1.0.38", want: 0},
 		{firmware: "invalid", want: otaRawWritePause},
 	}
@@ -1084,6 +1085,36 @@ func TestFetchDeviceHelloHTTPWithTokenRedactsTokenFromTransportError(t *testing.
 	}
 	if !errors.Is(err, transportErr) {
 		t.Fatalf("expected original transport error to remain unwrap-compatible, got: %v", err)
+	}
+}
+
+func TestFetchDeviceHelloHTTPWithTokenUsesFreshConnection(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+	})
+
+	releaseHTTPClient = releaseHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+		if !req.Close {
+			t.Fatal("expected device hello request to close its connection")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(
+				`{"kind":"hello","deviceId":"device-new","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.1"}`,
+			)),
+			Request: req,
+		}, nil
+	})
+
+	hello, err := fetchDeviceHelloHTTPWithToken(context.Background(), "http://192.0.2.10", "pair-token")
+	if err != nil {
+		t.Fatalf("fetch authenticated hello: %v", err)
+	}
+	if hello.DeviceID != "device-new" {
+		t.Fatalf("unexpected device hello: %+v", hello)
 	}
 }
 

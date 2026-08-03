@@ -177,6 +177,8 @@ struct RuntimeState {
   Frame current;
   bool hasFrame = false;
   ResetTrustState reset;
+  unsigned long resetBaseMillis = 0;
+  int64_t resetBaseSecs = 0;
   String cachedThemeId;
   int cachedThemeRev = 0;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
@@ -224,6 +226,61 @@ inline int64_t ResetElapsedSecs(const ResetTrustState& state, unsigned long nowM
   return static_cast<int64_t>((nowMillis - state.baseMillis) / 1000UL);
 }
 
+inline int64_t ResetDeadlineSecs(const ResetTrustState& state, unsigned long nowMillis) {
+  if (!state.hasDeadline) {
+    return 0;
+  }
+  const int64_t remain = state.deadlineSecs - ResetElapsedSecs(state, nowMillis);
+  return remain > 0 ? remain : 0;
+}
+
+inline int64_t ResetTrustBudgetSecs(const ResetTrustState& state, unsigned long nowMillis) {
+  if (!state.enforced) {
+    return kResetTrustHorizonSecs;
+  }
+  const int64_t remain = state.trustSecs - ResetElapsedSecs(state, nowMillis);
+  return remain > 0 ? remain : 0;
+}
+
+inline int64_t ResetBasisAgeSecs(const ResetTrustState& state, unsigned long nowMillis) {
+  return kResetTrustHorizonSecs - ResetTrustBudgetSecs(state, nowMillis);
+}
+
+inline ResetTrust CurrentResetTrust(const ResetTrustState& state, unsigned long nowMillis) {
+  if (!state.hasDeadline ||
+      ResetDeadlineSecs(state, nowMillis) <= 0 ||
+      ResetTrustBudgetSecs(state, nowMillis) <= 0) {
+    return ResetTrust::kStale;
+  }
+  if (!state.enforced) {
+    return ResetTrust::kUnknown;
+  }
+  if (!state.hostLive || ResetBasisAgeSecs(state, nowMillis) > kResetLiveMaxAgeSecs) {
+    return ResetTrust::kOffline;
+  }
+  return ResetTrust::kLive;
+}
+
+inline const char* ResetTrustName(ResetTrust trust) {
+  switch (trust) {
+    case ResetTrust::kLive:
+      return "live";
+    case ResetTrust::kOffline:
+      return "offline";
+    case ResetTrust::kStale:
+      return "stale";
+    default:
+      return "unknown";
+  }
+}
+
+inline int64_t CurrentRemainingSecs(const RuntimeState& state, unsigned long nowMillis) {
+  if (!state.hasFrame || CurrentResetTrust(state.reset, nowMillis) == ResetTrust::kStale) {
+    return 0;
+  }
+  return ResetDeadlineSecs(state.reset, nowMillis);
+}
+
 inline int64_t CurrentUsageWindowRemainingSecs(
     const RuntimeState& state,
     size_t slotIndex,
@@ -238,7 +295,7 @@ inline int64_t CurrentUsageWindowRemainingSecs(
   return remain < 0 ? 0 : remain;
 }
 
-inline bool IsSafeActivityName(const String& value) {
+inline bool IsSafeIdentifier(const String& value, bool allowSourceChars) {
   const size_t len = value.length();
   if (len == 0 || len > 31) {
     return false;
@@ -254,6 +311,110 @@ inline bool IsSafeActivityName(const String& value) {
       return false;
     }
   }
+  return true;
+}
+
+inline bool IsSafeActivityName(const String& value) {
+  return IsSafeIdentifier(value, false);
+}
+
+inline ResetTrust ParseResetTrustName(const String& value) {
+  if (value == "live") {
+    return ResetTrust::kLive;
+  }
+  if (value == "offline") {
+    return ResetTrust::kOffline;
+  }
+  if (value == "stale") {
+    return ResetTrust::kStale;
+  }
+  return ResetTrust::kUnknown;
+}
+
+inline void ApplyFrameResetTrust(ResetTrustState& state, const Frame& frame, unsigned long nowMillis) {
+  if (frame.hasError || !frame.hasResetFields) {
+    return;
+  }
+
+  const bool enforced = frame.resetTrust != ResetTrust::kUnknown;
+  int64_t deadlineSecs = frame.resetSecs;
+  int64_t trustSecs = enforced ? frame.resetTrustSecs : 0;
+  if (enforced && frame.resetTrust == ResetTrust::kOffline &&
+      state.enforced && state.hasDeadline && state.source == frame.resetSource) {
+    const int64_t heldDeadline = ResetDeadlineSecs(state, nowMillis);
+    const int64_t heldTrust = ResetTrustBudgetSecs(state, nowMillis);
+    if (deadlineSecs > heldDeadline) {
+      deadlineSecs = heldDeadline;
+    }
+    if (trustSecs > heldTrust) {
+      trustSecs = heldTrust;
+    }
+  }
+
+  const bool usable = deadlineSecs > 0 &&
+                      frame.resetTrust != ResetTrust::kStale &&
+                      (!enforced || (trustSecs > 0 && frame.resetSource.length() > 0));
+  state = ResetTrustState{};
+  state.enforced = enforced;
+  state.baseMillis = nowMillis;
+  if (!usable) {
+    return;
+  }
+  state.hasDeadline = true;
+  state.hostLive = frame.resetTrust == ResetTrust::kLive;
+  state.deadlineSecs = deadlineSecs;
+  state.trustSecs = trustSecs;
+  state.source = frame.resetSource;
+}
+
+inline String EncodeResetTrustRecord(const ResetTrustState& state, unsigned long nowMillis) {
+  const int64_t deadlineSecs = ResetDeadlineSecs(state, nowMillis);
+  const int64_t trustSecs = ResetTrustBudgetSecs(state, nowMillis);
+  if (!state.enforced || !state.hasDeadline || deadlineSecs <= 0 || trustSecs <= 0) {
+    return String();
+  }
+  String out = "1 ";
+  out += String(static_cast<long>(deadlineSecs));
+  out += " ";
+  out += String(static_cast<long>(trustSecs));
+  out += " ";
+  out += state.source;
+  return out;
+}
+
+inline bool DecodeResetTrustRecord(
+    const String& raw,
+    int64_t downtimeSecs,
+    unsigned long nowMillis,
+    ResetTrustState& out) {
+  out = ResetTrustState{};
+  const int firstSpace = raw.indexOf(' ');
+  const int secondSpace = firstSpace < 0 ? -1 : raw.indexOf(' ', firstSpace + 1);
+  const int thirdSpace = secondSpace < 0 ? -1 : raw.indexOf(' ', secondSpace + 1);
+  if (thirdSpace < 0 || raw.substring(0, firstSpace) != "1") {
+    return false;
+  }
+
+  String source = raw.substring(thirdSpace + 1);
+  source.trim();
+  if (!IsSafeIdentifier(source, true)) {
+    return false;
+  }
+  const int64_t deadlineSecs =
+      static_cast<int64_t>(raw.substring(firstSpace + 1, secondSpace).toInt()) - downtimeSecs;
+  const int64_t trustSecs =
+      static_cast<int64_t>(raw.substring(secondSpace + 1, thirdSpace).toInt()) - downtimeSecs;
+  if (deadlineSecs <= 0 || trustSecs <= 0 || trustSecs > kResetTrustHorizonSecs) {
+    return false;
+  }
+
+  out.hasDeadline = true;
+  out.enforced = true;
+  out.hostLive = false;
+  out.deadlineSecs = deadlineSecs;
+  out.trustSecs = trustSecs;
+  out.baseMillis = nowMillis;
+  out.source = source;
   return true;
 }
 
@@ -773,6 +934,11 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   out.session = ClampPct(doc["session"] | 0);
   out.weekly = ClampPct(doc["weekly"] | 0);
   out.resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(doc["resetSecs"] | static_cast<int64_t>(0)));
+  out.resetTrustSecs =
+      ClampNonNegativeInt64(static_cast<int64_t>(doc["resetTrustSecs"] | static_cast<int64_t>(0)));
+  out.resetSource = resetSource;
+  out.resetTrust = resetTrust;
+  out.hasResetFields = hasResetFields;
   out.usageUnavailable = doc["usageUnavailable"] | false;
   if (doc["usageWindows"].is<JsonArrayConst>() || doc["usageSlots"].is<JsonArrayConst>()) {
     JsonArrayConst slots = doc["usageWindows"].is<JsonArrayConst>()
@@ -900,8 +1066,6 @@ inline bool RestoreStoredThemeSpecFrame(
   runtimeState.cachedThemeSpecRaw = raw;
   runtimeState.current = next;
   runtimeState.hasFrame = true;
-  runtimeState.resetBaseSecs = next.resetSecs;
-  runtimeState.resetBaseMillis = nowMillis;
   outEvent.frameAccepted = true;
   outEvent.hadFrame = hadFrame;
   outEvent.themeSpecChanged = true;
@@ -1049,6 +1213,8 @@ inline bool ConsumeFrameLine(
 
   runtimeState.current = next;
   runtimeState.hasFrame = true;
+  runtimeState.resetBaseSecs = next.resetSecs;
+  runtimeState.resetBaseMillis = nowMillis;
   ApplyFrameResetTrust(runtimeState.reset, next, nowMillis);
   outEvent.frameAccepted = true;
   return true;

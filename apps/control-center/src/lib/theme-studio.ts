@@ -108,6 +108,7 @@ type ThemePackManifest = {
   version: string;
   minFirmware: string;
   requiredCapabilities?: string[];
+  usage?: ThemeStudioUsage;
   themeSpec: {
     path: string;
     file: "theme.json";
@@ -583,10 +584,11 @@ export function buildThemePack(
   assets: Record<string, ThemeStudioAsset> = {},
   usage: ThemeStudioUsage = "live",
 ): ThemePackBuild {
-  const normalized = normalizeThemeSpec(spec);
+  const prepared = prepareThemePackContent(spec, assets, usage);
+  const normalized = prepared.spec;
   const usesUsageWindows = themeStudioSpecUsesUsageWindows(normalized);
   const usesUsageSlots = themeStudioSpecUsesUsageSlots(normalized);
-  const validation = validateThemeSpec(normalized, assets);
+  const validation = validateThemeSpec(normalized, prepared.assets, usage);
   if (validation.errors.length > 0) {
     throw new Error(validation.errors[0]);
   }
@@ -613,6 +615,7 @@ export function buildThemePack(
     name: cleanPackName(packName) || titleFromThemeId(normalized.themeId),
     version: "0.1.0",
     minFirmware: usesUsageWindows || usesUsageSlots ? "1.0.40" : "1.0.24",
+    ...(usage === "screensaver" ? { usage } : {}),
     ...(usesUsageWindows || usesUsageSlots
       ? { requiredCapabilities: [usesUsageWindows ? "usage-windows-v1" : "usage-slots-v1"] }
       : {}),

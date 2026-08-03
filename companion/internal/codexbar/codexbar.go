@@ -854,6 +854,7 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		Session:            session,
 		Weekly:             weekly,
 		ResetSec:           resetSecs,
+		ResetSource:        resetSource,
 		UsageWindows:       usageWindows,
 		UsageUnavailable:   !sessionKnown && !weeklyKnown && len(usageWindows) == 0,
 		SessionUnavailable: !sessionKnown,

@@ -627,3 +627,111 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-app.tsx`, the matching setup and firmware
   regression assertions in `test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-07-31 — Appearance section descriptions
+
+- User approval: The user selected and explicitly approved the proposed short
+  descriptions for both Appearance sections and instructed Codex to continue.
+- Approved customer-visible result: `Themes` explains that it customizes the
+  live usage screen while VibeTV is active. `Screensavers` explains that it
+  appears when VibeTV enters standby after being idle. Both descriptions sit
+  directly below their section heading and use the approved wording.
+- Approved files: `theme-library-screen.tsx`, its focused test, the final
+  selected-state correction in `control-center-shell.tsx`, and this approval
+  record.
+
+## 2026-07-31 — Flat Settings sections
+
+- User approval: After reviewing the current Settings screen and a compact
+  settings-row reference, the user explicitly requested removing the cards,
+  separating the screensaver from display brightness, and rebuilding the full
+  tab as sections with stronger headings and dividers.
+- Approved customer-visible result: Settings uses flat `Display`, screensaver,
+  and `Setup` sections separated by native dividers. `Show screensaver` has its
+  own section and no longer appears inside the display-brightness area. Existing
+  controls, actions, progressive disclosure, and VibeTV brand styling remain.
+- Approved files: `settings-screen.tsx`, its focused test and matching
+  customer-flow coverage, and this approval record.
+
+## 2026-07-31 — Screensaver section hierarchy
+
+- User approval: After reviewing the local flat Settings preview, the user
+  explicitly corrected the screensaver heading to `Screensaver` and requested
+  `Show screensaver` as the first toggle option below it.
+- Approved customer-visible result: The section heading reads `Screensaver`.
+  Its first setting is `Show screensaver`, with the existing explanation and
+  toggle beside it. The enabled-only settings continue below that first option.
+- Approved files: `settings-screen.tsx`, its focused test, and this approval
+  record.
+
+## 2026-07-31 — Lean Settings headings
+
+- User approval: After reviewing the corrected local Settings preview, the user
+  explicitly requested deleting the explanatory lines below `Display` and
+  `Show screensaver`.
+- Approved customer-visible result: `Display` and `Show screensaver` no longer
+  repeat their meaning in secondary copy. Their headings, controls, values, and
+  all functional behavior remain unchanged.
+- Approved files: `settings-screen.tsx`, its focused test, and this approval
+  record.
+
+## 2026-07-31 — Screensaver toggle in Appearance
+
+- User approval: The user explicitly requested an on/off toggle at the top of
+  Appearance > Screensavers and a prominent disabled-state notice that does not
+  lock the tab.
+- Approved customer-visible result: Appearance > Screensavers shows `Show
+  screensaver` above the library. When off, a native destructive alert explains
+  that the screensaver is disabled while every library action remains usable.
+  The toggle writes through the same saved standby state as Settings.
+- Approved files: `theme-library-screen.tsx`, `control-center-app.tsx`, their
+  focused tests and customer-flow coverage, and this approval record.
+
+## 2026-07-31 — Compact shared brightness control
+
+- User approval: After reviewing the flat Settings preview, the user explicitly
+  requested compact save actions beside both percentage sliders, removal of the
+  minimum/maximum explanation, and one shared UI element for both brightness
+  settings.
+- Approved customer-visible result: Display brightness and screensaver
+  brightness use the same compact control: label and percentage, followed by a
+  slider and non-stretched save button in one row. The redundant brightness
+  range sentence is removed.
+- Approved files: `settings-screen.tsx`, its focused test and matching
+  customer-flow coverage, and this approval record.
+
+## 2026-07-31 — Compact screensaver timeout
+
+- User approval: The user explicitly requested placing `Show after` and its
+  dropdown in the same row.
+- Approved customer-visible result: The screensaver timeout uses the native
+  horizontal field layout, with its label on the left and dropdown on the
+  right. Its values and save behavior remain unchanged.
+- Approved files: `settings-screen.tsx`, its focused test, and this approval
+  record.
+
+## 2026-07-31 — Auto-saving brightness sliders
+
+- User approval: The user explicitly requested moving each percentage below
+  its slider thumb, removing both primary save buttons, and saving automatically
+  when the slider interaction ends.
+- Approved customer-visible result: Both brightness controls show their current
+  percentage directly below the thumb. Dragging updates the value locally;
+  releasing the thumb saves that exact value through the existing setting
+  write. No brightness save button remains.
+- Approved files: `settings-screen.tsx`, its focused test and matching
+  customer-flow coverage, and this approval record.
+
+## 2026-08-02 — Two-column Settings layout
+
+- User approval: The user provided a new Settings reference and explicitly
+  requested desktop section rows with the section intro on the left, controls
+  on the right, and a clean single-column mobile layout.
+- Approved customer-visible result: `Display`, `Screensaver`, and `Setup` use
+  two columns on desktop and one column on mobile. Display and Screensaver keep
+  only their title on the left; Setup keeps its existing description there.
+  Controls and actions stay on the right. Toggle rows place the switch before
+  its label. Both brightness sliders keep their percentage below the thumb and
+  save only when the interaction ends, without save buttons.
+- Approved files: `settings-screen.tsx`, its focused test, and this approval
+  record.

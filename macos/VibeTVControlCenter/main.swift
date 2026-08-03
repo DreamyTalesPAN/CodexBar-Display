@@ -2971,7 +2971,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 "--transport",
                 "wifi",
                 "--interval",
-                "5s",
+                "30s",
                 "--api-addr",
                 "127.0.0.1:47832",
                 "--api-dev-origin",

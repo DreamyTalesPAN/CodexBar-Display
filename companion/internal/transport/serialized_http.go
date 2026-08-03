@@ -39,7 +39,9 @@ func (t *serializedDeviceRoundTripper) RoundTrip(req *http.Request) (*http.Respo
 		return nil, err
 	}
 
-	response, err := t.base.RoundTrip(req)
+	freshRequest := req.Clone(req.Context())
+	freshRequest.Close = true
+	response, err := t.base.RoundTrip(freshRequest)
 	if err != nil {
 		release()
 		return nil, err
