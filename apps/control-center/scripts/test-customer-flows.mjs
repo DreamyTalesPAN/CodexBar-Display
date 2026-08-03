@@ -7418,7 +7418,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     "invalid recovery data should lock theme saving until it is handled",
   );
 
-  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await page.unrouteAll({ behavior: "wait" });
   await page.close();
 }
 
@@ -7500,7 +7500,7 @@ async function testThemeStudioScreensaverInstallUsesScreensaverSlot(
     `Theme Studio must not write directly to a device: ${JSON.stringify(unsafeRequests)}`,
   );
 
-  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await page.unrouteAll({ behavior: "wait" });
   await page.close();
 }
 
