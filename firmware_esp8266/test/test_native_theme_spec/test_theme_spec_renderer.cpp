@@ -464,6 +464,27 @@ void testUsageWindowOwnershipHidesCompleteMissingLane() {
   TEST_ASSERT_EQUAL_UINT32(5, twoSlotSink.commands.size());
 }
 
+void testIndexedProgressHidesMissingWindow() {
+  const char* spec = R"JSON({"v":1,"id":"indexed-progress","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":8,"b":"usage.2.percent"}]})JSON";
+
+  FrameData frame;
+  frame.usageWindows[0].available = true;
+  frame.usageWindows[1].available = true;
+
+  RecordingSink missingWindowSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, missingWindowSink));
+  TEST_ASSERT_EQUAL_UINT32(1, missingWindowSink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(missingWindowSink.commands[0].type));
+
+  frame.usageWindows[2].available = true;
+  frame.usageWindows[2].percent = 37;
+  RecordingSink availableWindowSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, availableWindowSink));
+  TEST_ASSERT_EQUAL_UINT32(2, availableWindowSink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Progress), static_cast<int>(availableWindowSink.commands[1].type));
+  TEST_ASSERT_EQUAL_INT(37, availableWindowSink.commands[1].percent);
+}
+
 void testUsageWindowResetCountdownsTickIndependently() {
   RuntimeState state;
   state.hasFrame = true;
@@ -2059,6 +2080,7 @@ int main() {
   RUN_TEST(testRendersCommandsAndBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testUsageWindowOwnershipHidesCompleteMissingLane);
+  RUN_TEST(testIndexedProgressHidesMissingWindow);
   RUN_TEST(testUsageWindowResetCountdownsTickIndependently);
   RUN_TEST(testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses);
   RUN_TEST(testRawUsageWindowParserCapacityStillAcceptsNormalLabels);

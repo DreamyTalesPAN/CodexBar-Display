@@ -1347,6 +1347,10 @@ inline int CompiledProgressPercentFor(const CompiledPrimitive& primitive, const 
 }
 
 inline bool CompiledProgressLaneUnavailable(const CompiledPrimitive& primitive, const FrameData& frame) {
+  const int slotIndex = UsageWindowBindingIndex(primitive.binding);
+  if (slotIndex >= 0) {
+    return !BoundUsageWindowFor(frame, primitive.binding, slotIndex).available;
+  }
   if (frame.usageUnavailable) {
     return false;
   }
