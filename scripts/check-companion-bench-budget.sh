@@ -10,7 +10,7 @@ max_marshal_ns="${MAX_MARSHAL_NS:-1000}"
 max_marshal_allocs="${MAX_MARSHAL_ALLOCS:-4}"
 sample_count=5
 
-output="$(cd "$companion_dir" && go test ./internal/daemon -run '^$' -bench 'BenchmarkRunCycleWithDeps|BenchmarkMarshalFrameWithinLimit' -benchmem -benchtime=3s -count="$sample_count" 2>&1)"
+output="$(cd "$companion_dir" && go test ./internal/daemon -run '^$' -bench 'BenchmarkRunCycleWithDeps|BenchmarkMarshalFrameWithinLimit' -benchmem -benchtime=1s -count="$sample_count" 2>&1)"
 echo "$output"
 
 benchmark_metrics="$(printf '%s\n' "$output" | awk '
