@@ -36,6 +36,7 @@ export type ProviderPickerProps = {
     selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
     providerId: string,
   ) => void | Promise<void>;
+  onDisplayDraftChange?: (hasDraft: boolean) => void;
   onPreferenceChange: (
     item: PreferenceDescriptor,
     value: boolean,
@@ -61,6 +62,7 @@ export function ProviderPicker({
   pendingPreferenceIds,
   onCheck,
   onDisplayChange,
+  onDisplayDraftChange,
   onPreferenceChange,
   onRecovery,
   setupMode = false,
@@ -87,6 +89,7 @@ export function ProviderPicker({
       return;
     }
     if (nextMode === "fixed") {
+      onDisplayDraftChange?.(true);
       setDraftMode("fixed");
       return;
     }
@@ -94,6 +97,7 @@ export function ProviderPicker({
     if (!seed) {
       return;
     }
+    onDisplayDraftChange?.(false);
     setDraftMode(null);
     void onDisplayChange(
       { mode: "automatic", providerIds: [seed] },
@@ -106,6 +110,7 @@ export function ProviderPicker({
       return;
     }
     if (mode === "fixed") {
+      onDisplayDraftChange?.(false);
       setDraftMode(null);
       void onDisplayChange(
         { mode: "fixed", providerIds: [item.providerId] },
@@ -346,6 +351,7 @@ export function providerSetupCanFinish(
   pendingPreferenceIds: Set<string>,
   pendingCheckIds: Set<string>,
   displayPendingProviderId?: string | null,
+  hasDisplayDraft = false,
   now = Date.now(),
 ): boolean {
   const enabled = (items || []).filter(isProviderItem).filter((item) => item.value);
@@ -354,7 +360,8 @@ export function providerSetupCanFinish(
     !display?.valid ||
     pendingPreferenceIds.size > 0 ||
     pendingCheckIds.size > 0 ||
-    displayPendingProviderId
+    displayPendingProviderId ||
+    hasDisplayDraft
   ) {
     return false;
   }

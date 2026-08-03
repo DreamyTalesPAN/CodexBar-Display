@@ -105,6 +105,7 @@ export function SetupScreen({
 }: SetupScreenProps) {
   const [wifiConfirmedState, setWifiConfirmedState] = useState(false);
   const [dmgDownloadStarted, setDmgDownloadStarted] = useState(false);
+  const [providerDisplayDraft, setProviderDisplayDraft] = useState(false);
   const [macAppConfirmedState, setMacAppConfirmedState] = useState(false);
   const macAppMissing = isCompanionMissingError(lastError);
   const macAppReady = companionStatus === "online";
@@ -367,7 +368,11 @@ export function SetupScreen({
             >
               {activeStep === "providers" ? (
                 <div className="grid gap-4">
-                  <ProviderPicker {...providerPicker} setupMode />
+                  <ProviderPicker
+                    {...providerPicker}
+                    onDisplayDraftChange={setProviderDisplayDraft}
+                    setupMode
+                  />
                   <Button
                     className="min-h-12 w-full"
                     disabled={
@@ -378,6 +383,7 @@ export function SetupScreen({
                         providerPicker.pendingPreferenceIds,
                         providerPicker.pendingCheckIds,
                         providerPicker.displayPendingProviderId,
+                        providerDisplayDraft,
                       )
                     }
                     onClick={() => void onCompleteProviderSetup?.()}

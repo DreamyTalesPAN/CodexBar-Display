@@ -4170,6 +4170,13 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
     "a broken enabled provider must block setup completion",
   );
 
+  await page.getByRole("button", { name: "Always show one" }).click();
+  assert(
+    await finish.isDisabled(),
+    "an unsaved fixed-mode draft must block setup completion",
+  );
+  await page.getByRole("button", { name: "Automatic" }).click();
+
   await page
     .getByLabel("Include Claude in Automatic")
     .uncheck({ force: true });

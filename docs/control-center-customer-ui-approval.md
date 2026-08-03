@@ -437,3 +437,14 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-app.tsx`, `control-center-types.ts`,
   `provider-picker.tsx`, `settings-screen.tsx`, `setup-screen.tsx`,
   `usage-screen.tsx`, and their unit and customer-flow assertions.
+
+## 2026-08-03 — Unsaved fixed selection blocks setup completion
+
+- User approval: The user's explicit approval of the provider-selection UI
+  includes setup completion only after the display selection is valid.
+- Approved customer-visible result: Choosing `Always show one` keeps `Finish
+  setup` disabled until the customer selects and saves the provider that VibeTV
+  should always show. Returning to `Automatic` restores the saved automatic
+  selection.
+- Approved files: `provider-picker.tsx`, `setup-screen.tsx`, and their unit and
+  customer-flow assertions.

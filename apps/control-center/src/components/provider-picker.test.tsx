@@ -82,6 +82,16 @@ describe("ProviderPicker", () => {
         automatic,
         new Set(),
         new Set(),
+        null,
+        true,
+      ),
+    ).toBe(false);
+    expect(
+      providerSetupCanFinish(
+        [codex, claude],
+        automatic,
+        new Set(),
+        new Set(),
       ),
     ).toBe(true);
   });
