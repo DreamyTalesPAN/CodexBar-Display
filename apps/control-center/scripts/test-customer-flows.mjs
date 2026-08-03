@@ -5681,7 +5681,15 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
     companionVersion: "1.0.99",
     device: {
       ...synthwaveDevice,
+      activeTheme: "night-clock",
       firmware: "1.0.32",
+      display: {
+        themeSpec: {
+          active: true,
+          path: "/themes/s/night-clock.json",
+          renderOk: true,
+        },
+      },
       capabilities: {
         ...companionDevice.capabilities,
         theme: {
@@ -5707,6 +5715,13 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
       connectionState: "ready",
       deviceId: "firmware-device-1",
       firmware: "1.0.33",
+      display: {
+        themeSpec: {
+          active: true,
+          path: "/themes/u/synthwa-1-6b39a3.json",
+          renderOk: true,
+        },
+      },
     },
     firmwareStatusDeviceSequence: [
       {

@@ -772,3 +772,14 @@ issue scope, or release permission never implies UI permission.
   deterministic and verifies that screensaver artifacts ship in the Mac App.
 - Approved files: `test-customer-flows.mjs`, the screensaver packaging tests,
   the matching technical documentation, and this approval record.
+
+## 2026-08-03 — Standby firmware-update migration guard
+
+- User approval: The user explicitly requested that all Codex reviewer findings
+  on PR #296 be fixed until the PR is ready to merge. No new customer-visible UI
+  was requested.
+- Approved customer-visible result: The existing firmware-update flow remains
+  visually unchanged. After a restart, it also migrates an outdated live theme
+  when the update was started while the screensaver was visible.
+- Approved files: `control-center-app.tsx`, its existing customer-flow
+  regression test, and this approval record.

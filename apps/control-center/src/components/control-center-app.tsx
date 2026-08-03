@@ -2635,7 +2635,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         });
         return true;
       }
-      if (shouldUpgradeActiveTheme) {
+      if (shouldUpgradeActiveTheme || refreshedActiveThemeUpgrade.needed) {
         if (
           !refreshedActiveThemeUpgrade.theme ||
           refreshedActiveThemeUpgrade.needsFirmwareCapability
