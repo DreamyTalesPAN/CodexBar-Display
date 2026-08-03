@@ -793,3 +793,14 @@ issue scope, or release permission never implies UI permission.
   the prior session and returns to the existing waiting-for-usage state.
 - Approved files: `live-vibetv-preview.tsx`, its existing customer-flow
   coverage, and this approval record.
+
+## 2026-08-03 — Live-preview reset countdown parity
+
+- User approval: The user explicitly requested that every Codex reviewer
+  finding on PR #296 be fixed until the PR is ready to merge.
+- Approved customer-visible result: Reset countdowns in the existing Overview
+  preview advance once per second between Mac App frames and stop at zero,
+  matching the VibeTV instead of freezing and jumping. No copy, control, or
+  hierarchy changes.
+- Approved files: `live-vibetv-preview.tsx`, its focused unit test, and this
+  approval record.
