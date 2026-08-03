@@ -303,6 +303,7 @@ export function LiveVibeTVPreview({
     ? buildFrameData(
         effectiveDisplayFrame?.savedAt || usage?.generatedAt,
         effectiveDisplayFrame.frame,
+        new Date(),
       )
     : null;
   const [packState, setPackState] = useState<ThemePackState | null>(null);
@@ -1076,9 +1077,16 @@ export function hasRenderableUsage(
 export function buildFrameData(
   generatedAt: string | undefined,
   displayFrame: DisplayFrame,
+  currentTime = new Date(),
 ): FrameData {
-  const now = generatedAt ? new Date(generatedAt) : new Date();
-  const usableDate = Number.isNaN(now.getTime()) ? new Date() : now;
+  const savedAt = generatedAt ? new Date(generatedAt) : currentTime;
+  const usableDate = Number.isNaN(savedAt.getTime()) ? currentTime : savedAt;
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor((currentTime.getTime() - usableDate.getTime()) / 1000),
+  );
+  const remainingResetSeconds = (seconds: number | undefined) =>
+    Math.max(0, (seconds ?? 0) - elapsedSeconds);
   const sourceUsageMode = frameUsageMode(displayFrame);
   const slots = (
     (displayFrame.usageWindows?.length
@@ -1094,21 +1102,21 @@ export function buildFrameData(
     weekly: clampPercent(displayFrame.weekly),
     sessionUnavailable: displayFrame.sessionUnavailable === true,
     weeklyUnavailable: displayFrame.weeklyUnavailable === true,
-    resetSecs: displayFrame.resetSecs ?? 0,
+    resetSecs: remainingResetSeconds(displayFrame.resetSecs),
     usageMode: sourceUsageMode,
     usageWindows: slots.map((slot) => ({
       label: slot.label || "",
       percent: clampPercent(slot.percent),
-      resetSecs: slot.resetSecs ?? 0,
+      resetSecs: remainingResetSeconds(slot.resetSecs),
       available: true,
     })),
     usageSlot1Label: slot1?.label || "",
     usageSlot1Percent: clampPercent(slot1?.percent),
-    usageSlot1ResetSecs: slot1?.resetSecs ?? 0,
+    usageSlot1ResetSecs: remainingResetSeconds(slot1?.resetSecs),
     usageSlot1Available: Boolean(slot1),
     usageSlot2Label: slot2?.label || "",
     usageSlot2Percent: clampPercent(slot2?.percent),
-    usageSlot2ResetSecs: slot2?.resetSecs ?? 0,
+    usageSlot2ResetSecs: remainingResetSeconds(slot2?.resetSecs),
     usageSlot2Available: Boolean(slot2),
     activity: displayFrame.activity || "idle",
     sessionTokens: displayFrame.sessionTokens ?? 0,

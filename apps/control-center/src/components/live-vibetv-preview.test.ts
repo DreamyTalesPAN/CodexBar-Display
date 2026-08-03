@@ -176,6 +176,30 @@ describe("dynamic usage slot preview", () => {
     ).toBe(true);
   });
 
+  it("advances every reset countdown from the saved frame time", () => {
+    const frame = buildFrameData(
+      "2026-07-24T10:30:00Z",
+      {
+        v: 2,
+        provider: "codex",
+        label: "Codex",
+        resetSecs: 100,
+        usageSlots: [
+          { id: "session", label: "Session", percent: 10, resetSecs: 100 },
+          { id: "weekly", label: "Weekly", percent: 20, resetSecs: 10 },
+        ],
+      },
+      new Date("2026-07-24T10:30:35.900Z"),
+    );
+
+    expect(frame.resetSecs).toBe(65);
+    expect(frame.usageWindows.map((window) => window.resetSecs)).toEqual([
+      65, 0,
+    ]);
+    expect(frame.usageSlot1ResetSecs).toBe(65);
+    expect(frame.usageSlot2ResetSecs).toBe(0);
+  });
+
   it("uses a legacy render cache only when its path matches the active Custom Theme", async () => {
     const oldCompanionPack = {
       themeId: "my-custom",
