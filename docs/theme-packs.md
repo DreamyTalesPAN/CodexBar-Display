@@ -76,6 +76,13 @@ dist/theme-packs/vibetv-theme-<theme-id>-v<theme-version>.zip
 dist/theme-packs/render/<theme-id>/<theme-spec-file>.json
 ```
 
+Adding another shipped screensaver needs no separate app or firmware work:
+copy an existing screensaver directory such as `theme-packs/reset-countdown`,
+give it a unique `id`, `version`, ThemeSpec `rev`, and `/themes/s/` path, then
+run `node scripts/build-theme-packs.mjs`. The same build produces its ZIP,
+catalog entry, and exact preview render pack; `npm run build:local` copies all
+of those artifacts into the Mac App.
+
 The revisioned render packs contain both frozen legacy and current revisions.
 They power exact previews in the hosted Control Center and are copied into the
 Mac App. The unqualified `render/<theme-id>.json` alias points only to the

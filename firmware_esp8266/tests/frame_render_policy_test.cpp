@@ -250,7 +250,7 @@ bool testScreensaverSelectionValidatesBeforePersisting(const std::string& source
   const std::size_t validationFailure = selection.find("return false;", validation);
   const std::size_t read = helper.find("readStoredThemeSpec(");
   const std::size_t metadata = helper.find("themeSpecMetadata(");
-  const std::size_t renderable = helper.find("ThemeSpecRawLooksRenderable(raw)");
+  const std::size_t renderable = helper.find("CompileThemeSpec(raw.c_str(), doc, scene)");
   const std::size_t set = handler.find("setStandbyScreensaverPath(");
   const std::size_t persist = handler.find("persistDeviceSettings(next)", set);
   const std::size_t activationValidation = activation.find("readValidatedStoredThemeSpec(");

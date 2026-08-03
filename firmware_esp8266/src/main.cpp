@@ -2291,7 +2291,11 @@ bool readValidatedStoredThemeSpec(
   if (!themeSpecMetadata(raw, themeId, themeRev, error)) {
     return false;
   }
-  if (!codexbar_display::core::ThemeSpecRawLooksRenderable(raw)) {
+  JsonDocument doc;
+  codexbar_display::themespec::CompiledThemeSpec scene;
+  const bool renderable = codexbar_display::themespec::CompileThemeSpec(raw.c_str(), doc, scene);
+  codexbar_display::themespec::ReleaseCompiledThemeSpec(scene);
+  if (!renderable) {
     error = "theme spec has no renderable content";
     return false;
   }

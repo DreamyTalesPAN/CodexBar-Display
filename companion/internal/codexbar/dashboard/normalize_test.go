@@ -27,12 +27,13 @@ func TestNormalizeClaudeWindowsPreservesEveryValidOrderedWindow(t *testing.T) {
 	}
 }
 
-func TestNormalizeAntigravityWindowsDeduplicatesStructuralAliases(t *testing.T) {
+func TestNormalizeAntigravityWindowsPreservesCodexBarOrder(t *testing.T) {
 	result := normalizeFixture(t, antigravityDashboardFixture, antigravityUsageFixture, "antigravity")
 
-	assertWindowLabels(t, result.Windows, "Gemini weekly", "Claude/GPT weekly")
-	if result.Windows[0].UsedPercent != 18.97 || result.Windows[1].UsedPercent != 0 {
-		t.Fatalf("expected named extra percentages, got %+v", result.Windows)
+	assertWindowLabels(t, result.Windows, "Gemini Models", "Claude and GPT", "Gemini weekly", "Claude/GPT weekly")
+	if result.Windows[0].UsedPercent != 18.97 || result.Windows[1].UsedPercent != 0 ||
+		result.Windows[2].UsedPercent != 18.97 || result.Windows[3].UsedPercent != 0 {
+		t.Fatalf("expected every CodexBar window in source order, got %+v", result.Windows)
 	}
 }
 
@@ -57,10 +58,10 @@ func TestNormalizeKeepsGenuineZeroWindow(t *testing.T) {
 	}
 }
 
-func TestNormalizeDeduplicatesWhenOnlyOneWindowHasWindowMinutes(t *testing.T) {
+func TestNormalizePreservesDistinctIDsWithMatchingValues(t *testing.T) {
 	result := normalizeFixture(t, missingWindowMinutesDashboardFixture, missingWindowMinutesUsageFixture, "missing-minutes")
 
-	assertWindowLabels(t, result.Windows, "Named weekly")
+	assertWindowLabels(t, result.Windows, "Weekly", "Named weekly")
 }
 
 func TestNormalizeDoesNotDeduplicateWhenBothWindowMinutesDisagree(t *testing.T) {

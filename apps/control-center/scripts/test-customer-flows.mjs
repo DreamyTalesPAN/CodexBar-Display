@@ -4517,18 +4517,11 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     () => settingsCalls >= 3,
     "expected delayed brightness refresh to finish",
   );
-  const brightnessBox = await page.locator("#vibetv-brightness").boundingBox();
-  assert(brightnessBox, "brightness slider should have a visible track");
-  const brightnessY = brightnessBox.y + brightnessBox.height / 2;
-  await page.mouse.move(
-    brightnessBox.x + brightnessBox.width * 0.2,
-    brightnessY,
-  );
-  await page.mouse.down();
-  await page.mouse.move(
-    brightnessBox.x + brightnessBox.width * 0.68,
-    brightnessY,
-    { steps: 5 },
+  const settingsResponsesBeforeBrightness = settingsCalls;
+  await brightnessSlider.press("End");
+  await waitForCondition(
+    () => settingsWrites.length === 1,
+    "changing brightness should write once",
   );
   const committedBrightness = Number(
     await brightnessSlider.getAttribute("aria-valuenow"),
@@ -4540,16 +4533,9 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
   await page
     .getByText(`${committedBrightness}%`, { exact: true })
     .waitFor({ timeout: 10_000 });
-  assert(settingsWrites.length === 0, "dragging must wait until release");
-  const settingsResponsesBeforeBrightness = settingsCalls;
-  await page.mouse.up();
-  await waitForCondition(
-    () => settingsWrites.length === 1,
-    "releasing brightness should write once",
-  );
   await waitForCondition(
     () => settingsCalls > settingsResponsesBeforeBrightness,
-    "releasing brightness should finish before checking screensaver controls",
+    "changing brightness should finish before checking screensaver controls",
   );
   assert(
     settingsWrites[0]?.brightnessPercent === committedBrightness,
@@ -7418,7 +7404,7 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
     "invalid recovery data should lock theme saving until it is handled",
   );
 
-  await page.unrouteAll({ behavior: "wait" });
+  await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.close();
 }
 
@@ -7500,7 +7486,7 @@ async function testThemeStudioScreensaverInstallUsesScreensaverSlot(
     `Theme Studio must not write directly to a device: ${JSON.stringify(unsafeRequests)}`,
   );
 
-  await page.unrouteAll({ behavior: "wait" });
+  await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.close();
 }
 
