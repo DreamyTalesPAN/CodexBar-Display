@@ -63,6 +63,40 @@ void test_scan_keeps_only_ten_strongest_networks() {
   TEST_ASSERT_FALSE(contains(BuildNetworkOptionsHTML(state), "Too weak"));
 }
 
+void test_automatic_scan_starts_only_once_per_portal_session() {
+  State state;
+
+  TEST_ASSERT_TRUE(BeginAutomaticScan(state));
+  TEST_ASSERT_TRUE(state.automaticScanStarted);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Scanning), static_cast<int>(state.scanStatus));
+  TEST_ASSERT_FALSE(BeginAutomaticScan(state));
+
+  FinishScan(state, 0);
+  TEST_ASSERT_FALSE(BeginAutomaticScan(state));
+}
+
+void test_manual_scan_remains_available_after_automatic_scan() {
+  State state;
+  TEST_ASSERT_TRUE(BeginAutomaticScan(state));
+  FinishScan(state, 0);
+
+  TEST_ASSERT_TRUE(BeginScan(state));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Scanning), static_cast<int>(state.scanStatus));
+}
+
+void test_new_portal_session_resets_automatic_scan_guard() {
+  State state;
+  TEST_ASSERT_TRUE(BeginAutomaticScan(state));
+  FinishScan(state, 0);
+
+  ResetPortalState(state);
+
+  TEST_ASSERT_FALSE(state.automaticScanStarted);
+  TEST_ASSERT_FALSE(state.scanInProgress);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::NotStarted), static_cast<int>(state.scanStatus));
+  TEST_ASSERT_TRUE(BeginAutomaticScan(state));
+}
+
 void test_signal_labels_use_traffic_lights() {
   TEST_ASSERT_EQUAL_STRING("🟢", SignalLabel(-60));
   TEST_ASSERT_EQUAL_STRING("🟡", SignalLabel(-61));
@@ -175,6 +209,32 @@ void test_clean_automatic_fallback_does_not_render_or_prefill_old_ssid() {
   TEST_ASSERT_TRUE(contains(fallbackServer.output, "Search again"));
 }
 
+void test_initial_page_triggers_one_automatic_scan_after_render() {
+  State state;
+  ESP8266WebServer server;
+
+  SendSetupPage(server, state, kSupportUrl, "192.168.4.1");
+
+  TEST_ASSERT_TRUE(contains(server.output, "fetch('/scan?automatic=1'"));
+  TEST_ASSERT_TRUE(contains(server.output, "b.textContent='Searching…'"));
+  TEST_ASSERT_TRUE(contains(server.output, "location.reload()"));
+  TEST_ASSERT_TRUE(server.output.find("Search again</button>") < server.output.find("fetch('/scan?automatic=1'"));
+}
+
+void test_completed_scan_page_keeps_manual_rescan_without_auto_trigger() {
+  State state;
+  TEST_ASSERT_TRUE(BeginAutomaticScan(state));
+  FinishScan(state, 0);
+  ESP8266WebServer server;
+
+  SendSetupPage(server, state, kSupportUrl, "192.168.4.1");
+
+  TEST_ASSERT_TRUE(contains(server.output, "action=\"/scan\""));
+  TEST_ASSERT_TRUE(contains(server.output, "Search again"));
+  TEST_ASSERT_FALSE(contains(server.output, "/scan?automatic=1"));
+  TEST_ASSERT_FALSE(contains(server.output, "location.reload()"));
+}
+
 void test_recovery_waits_5_seconds_before_starting_once() {
   wifi_recovery::State state;
   wifi_recovery::EnterSetup(state, 0);
@@ -253,6 +313,22 @@ void test_recovery_does_not_begin_again_while_attempt_is_running() {
       static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(5001))));
 }
 
+void test_interrupted_recovery_attempt_retries_immediately_after_scan() {
+  wifi_recovery::State state;
+  wifi_recovery::EnterSetup(state, 0);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::StartAttempt),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(5000))));
+
+  wifi_recovery::RescheduleAfterInterruption(state, 6000);
+
+  TEST_ASSERT_FALSE(state.attemptInProgress);
+  TEST_ASSERT_TRUE(state.retryScheduled);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(wifi_recovery::Action::StartAttempt),
+      static_cast<int>(wifi_recovery::Tick(state, recoveryInputs(6000))));
+}
+
 void test_recovery_timeout_stays_in_setup_and_schedules_next_attempt() {
   wifi_recovery::State state;
   wifi_recovery::EnterSetup(state, 0);
@@ -308,18 +384,24 @@ int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_scan_filters_deduplicates_and_sorts);
   RUN_TEST(test_scan_keeps_only_ten_strongest_networks);
+  RUN_TEST(test_automatic_scan_starts_only_once_per_portal_session);
+  RUN_TEST(test_manual_scan_remains_available_after_automatic_scan);
+  RUN_TEST(test_new_portal_session_resets_automatic_scan_guard);
   RUN_TEST(test_signal_labels_use_traffic_lights);
   RUN_TEST(test_options_escape_ssids_and_stay_inside_budget);
   RUN_TEST(test_page_uses_inline_band_guidance_and_links_to_public_support);
   RUN_TEST(test_page_publishes_no_placeholder_without_support_url);
   RUN_TEST(test_automatic_setup_ap_renders_normal_writable_setup_page);
   RUN_TEST(test_clean_automatic_fallback_does_not_render_or_prefill_old_ssid);
+  RUN_TEST(test_initial_page_triggers_one_automatic_scan_after_render);
+  RUN_TEST(test_completed_scan_page_keeps_manual_rescan_without_auto_trigger);
   RUN_TEST(test_recovery_waits_5_seconds_before_starting_once);
   RUN_TEST(test_recovery_scheduling_handles_millis_wraparound);
   RUN_TEST(test_recovery_does_not_retry_without_credentials);
   RUN_TEST(test_recovery_busy_gate_defers_attempt);
   RUN_TEST(test_recovery_busy_gate_defers_connected_transition);
   RUN_TEST(test_recovery_does_not_begin_again_while_attempt_is_running);
+  RUN_TEST(test_interrupted_recovery_attempt_retries_immediately_after_scan);
   RUN_TEST(test_recovery_timeout_stays_in_setup_and_schedules_next_attempt);
   RUN_TEST(test_recovery_connected_later_leaves_setup_state);
   return UNITY_END();

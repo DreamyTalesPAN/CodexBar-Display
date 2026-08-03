@@ -282,7 +282,7 @@ bool testSetupPortalIsReadyBeforeJoinInstructions(const char* mainPath) {
     return false;
   }
   const std::string body = mainSource.substr(start, end - start);
-  const std::size_t clearError = body.find("ClearConnectionError(setupWifiState)");
+  const std::size_t resetPortal = body.find("ResetPortalState(setupWifiState)");
   const std::size_t stopReconnect = body.find("WiFi.setAutoReconnect(false)");
   const std::size_t disconnect = body.find("WiFi.disconnect(false)");
   const std::size_t apSta = body.find("WiFi.mode(WIFI_AP_STA)");
@@ -291,10 +291,10 @@ bool testSetupPortalIsReadyBeforeJoinInstructions(const char* mainPath) {
   const std::size_t http = body.find("startHttpServer()");
   const std::size_t joinInstructions = body.find("renderer.DrawSetupInstructions(");
   return expect(
-      clearError < stopReconnect && stopReconnect < disconnect && disconnect < apSta &&
+      resetPortal < stopReconnect && stopReconnect < disconnect && disconnect < apSta &&
           apSta < accessPoint && accessPoint < dns && dns < http &&
           http < joinInstructions && body.find("WiFi.mode(WIFI_AP)") == std::string::npos &&
-          body.find("scanSetupNetworks()") == std::string::npos,
+          body.find("scanSetupNetworks(") == std::string::npos,
       "setup display may invite joining only after the old STA attempt is stopped and AP_STA, DNS, and HTTP are ready");
 }
 
@@ -415,10 +415,32 @@ bool testCaptiveFirstResponseNeverBlocksOnWifiScan(const char* mainPath) {
   return expect(
       root.find("SendSetupPage(") != std::string::npos &&
           probe.find("SendSetupPage(") != std::string::npos &&
-          root.find("scanSetupNetworks()") == std::string::npos &&
-          probe.find("scanSetupNetworks()") == std::string::npos &&
-          scan.find("scanSetupNetworks()") != std::string::npos,
-      "iOS and other captive probes must get the normal setup form without a blocking scan; only Search again scans");
+          root.find("scanSetupNetworks(") == std::string::npos &&
+          probe.find("scanSetupNetworks(") == std::string::npos &&
+          scan.find("webServer.arg(\"automatic\")") != std::string::npos &&
+          scan.find("scanSetupNetworks(automatic)") != std::string::npos,
+      "captive probes must render before the browser starts the guarded automatic scan");
+}
+
+bool testAutomaticScanReschedulesInterruptedWifiRecovery(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t scanStart = mainSource.find("bool scanSetupNetworks(bool automatic)");
+  const std::size_t scanEnd = mainSource.find("String connectedPageHTML()", scanStart);
+  if (scanStart == std::string::npos || scanEnd == std::string::npos) {
+    return false;
+  }
+  const std::string scan = mainSource.substr(scanStart, scanEnd - scanStart);
+  const std::size_t interruption = scan.find("wifiSetupRecoveryState.attemptInProgress");
+  const std::size_t disconnect = scan.find("WiFi.disconnect(false)");
+  const std::size_t finish = scan.find("FinishScan(setupWifiState, networks)");
+  const std::size_t reschedule = scan.find("RescheduleAfterInterruption(");
+  const std::size_t rescheduledState = scan.find("wifiSetupRecoveryState", reschedule);
+  return expect(
+      interruption != std::string::npos && disconnect != std::string::npos &&
+          finish != std::string::npos && reschedule != std::string::npos &&
+          rescheduledState != std::string::npos && interruption < disconnect &&
+          finish < reschedule && reschedule < rescheduledState,
+      "an automatic scan that interrupts WiFi recovery must reschedule it immediately");
 }
 
 bool testAutomaticWifiFallbackNeverCarriesTheFailedSsid(const char* mainPath) {
@@ -986,6 +1008,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testCaptiveFirstResponseNeverBlocksOnWifiScan(argv[3])) {
+    return 1;
+  }
+  if (!testAutomaticScanReschedulesInterruptedWifiRecovery(argv[3])) {
     return 1;
   }
   if (!testAutomaticWifiFallbackNeverCarriesTheFailedSsid(argv[3])) {
