@@ -3698,6 +3698,18 @@ func TestDirectProviderProbeOrderExcludesDisplayProviderOutsideEnabledInventory(
 	}
 }
 
+func TestDirectProviderProbeOrderUsesDisplayProvidersWhenInventoryIsUnknown(t *testing.T) {
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"gemini"},
+	})
+
+	got := directProviderProbeOrder(nil, deps)
+	if !reflect.DeepEqual(got, []string{"gemini"}) {
+		t.Fatalf("direct probe order=%v want configured provider when inventory is unknown", got)
+	}
+}
+
 func decodeFrameLine(t *testing.T, line []byte) protocol.Frame {
 	t.Helper()
 

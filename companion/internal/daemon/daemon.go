@@ -1488,6 +1488,9 @@ func directProviderProbeOrder(order []string, deps runtimeDeps) []string {
 	if !ok || cfg.ProviderDisplay == nil || len(cfg.ProviderDisplay.ProviderIDs) == 0 {
 		return order
 	}
+	if len(order) == 0 {
+		return cfg.ProviderDisplay.ProviderIDs
+	}
 	enabled := make(map[string]struct{}, len(order))
 	for _, providerID := range order {
 		if providerID = normalizeProviderKey(providerID); providerID != "" {
