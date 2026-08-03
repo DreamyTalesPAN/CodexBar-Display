@@ -162,6 +162,7 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	}
 
 	now = now.Add(providerSnapshotMaxAge() + time.Second)
+	deps.usageBarsShowUsed = func() bool { return false }
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected expired usage to send unavailable state, got %v", err)
 	}
@@ -169,7 +170,7 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 		t.Fatalf("expected unavailable state after last-good expiry, got %d sends", len(sentLines))
 	}
 	frame = decodeFrameLine(t, sentLines[1])
-	if frame.Provider != "claude" || !frame.UsageUnavailable {
+	if frame.Provider != "claude" || !frame.UsageUnavailable || frame.Session != 0 || frame.Weekly != 0 || frame.UsageMode != "remaining" {
 		t.Fatalf("expected expired Claude usage to become unavailable, got %+v", frame)
 	}
 }

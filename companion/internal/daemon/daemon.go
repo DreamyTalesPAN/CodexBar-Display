@@ -1549,6 +1549,10 @@ func applyUsageBarsPreference(frame protocol.Frame, showUsed bool) protocol.Fram
 		frame.UsageMode = "used"
 		return frame
 	}
+	if frame.UsageUnavailable {
+		frame.UsageMode = "remaining"
+		return frame
+	}
 
 	if len(frame.UsageWindows) == 0 {
 		frame.Session = 100 - clampPercent(frame.Session)
