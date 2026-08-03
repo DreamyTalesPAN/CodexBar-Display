@@ -110,6 +110,7 @@ type ThemePackCatalog = {
     themeRev?: number;
     themeSpecPath?: string;
     version?: string;
+    usage?: string;
     compatibleBoards?: string[];
     requiresFirmware?: string;
     requiredCapabilities?: string[];
@@ -369,6 +370,7 @@ function mapThemePackCatalogEntry(
       theme.version || (theme.themeRev ? `rev ${theme.themeRev}` : undefined),
     themeRev: theme.themeRev,
     themeSpecPath: theme.themeSpecPath,
+    usage: normalizeThemeUsage(theme.usage) || "live",
     manifestUrl: theme.manifestUrl,
     packUrl,
     packSha256: theme.sha256?.trim().toLowerCase(),
