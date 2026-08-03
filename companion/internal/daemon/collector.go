@@ -140,9 +140,13 @@ func (c *providerCollector) run(ctx context.Context) {
 	}
 	defer c.shutdownTokenStatsScan()
 	c.collectOnce(ctx)
-	c.mu.RLock()
-	retryWhenDashboardReady := c.dashboard != nil && len(c.providers) == 0
-	c.mu.RUnlock()
+	retryWhenDashboardReady := c.dashboard != nil
+	for _, frame := range c.providerFrames(c.now().UTC()) {
+		if !frame.Stale {
+			retryWhenDashboardReady = false
+			break
+		}
+	}
 	c.requestTokenStatsScan(ctx)
 
 	usageTicker := time.NewTicker(c.interval)

@@ -3496,7 +3496,7 @@ func TestProviderCollectorWakeCollectsBeforeDisplayWake(t *testing.T) {
 	}
 }
 
-func TestProviderCollectorRetriesInitialCollectionWhenDashboardBecomesHealthy(t *testing.T) {
+func TestProviderCollectorRetriesInitialCollectionWhenDashboardBecomesHealthyWithOnlyExpiredSnapshots(t *testing.T) {
 	prepareFastTestEnv(t)
 
 	now := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
@@ -3526,7 +3526,13 @@ func TestProviderCollectorRetriesInitialCollectionWhenDashboardBecomesHealthy(t 
 		timeout:         time.Second,
 		snapshotMaxAge:  10 * time.Minute,
 		persistInterval: time.Minute,
-		providers:       make(map[string]providerSnapshot),
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:  "codex",
+				Frame:     protocol.Frame{Provider: "codex", Session: 9},
+				Collected: now.Add(-11 * time.Minute),
+			},
+		},
 		dashboard: dashboardServeFunc(func() codexbar.DashboardServeInfo {
 			return dashboardInfo.Load().(codexbar.DashboardServeInfo)
 		}),
