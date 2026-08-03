@@ -84,7 +84,12 @@ export function ProviderPicker({
   const mode = draftMode || display?.mode || "automatic";
   const selected = new Set(display?.providerIds || []);
   const enabledProviders = providers.filter((item) => item.value);
+  const displayControlsDisabled =
+    display === null || Boolean(displayPendingProviderId);
   function chooseMode(nextMode: "automatic" | "fixed") {
+    if (!display) {
+      return;
+    }
     if (nextMode === mode) {
       return;
     }
@@ -111,7 +116,7 @@ export function ProviderPicker({
   }
 
   function chooseProvider(item: ProviderItem, checked: boolean) {
-    if (!item.value) {
+    if (!display || !item.value) {
       return;
     }
     if (mode === "fixed") {
@@ -164,7 +169,7 @@ export function ProviderPicker({
               aria-pressed={mode === "automatic"}
               className="min-h-12 justify-start"
               disabled={
-                enabledProviders.length === 0 || Boolean(displayPendingProviderId)
+                enabledProviders.length === 0 || displayControlsDisabled
               }
               onClick={() => chooseMode("automatic")}
               type="button"
@@ -176,7 +181,7 @@ export function ProviderPicker({
               aria-pressed={mode === "fixed"}
               className="min-h-12 justify-start"
               disabled={
-                enabledProviders.length === 0 || Boolean(displayPendingProviderId)
+                enabledProviders.length === 0 || displayControlsDisabled
               }
               onClick={() => chooseMode("fixed")}
               type="button"
@@ -300,7 +305,7 @@ export function ProviderPicker({
                           checked={isSelected && display?.mode === "fixed"}
                           className="size-5 accent-primary"
                           disabled={
-                            !item.value || Boolean(displayPendingProviderId)
+                            !item.value || displayControlsDisabled
                           }
                           name="fixed-provider"
                           onChange={() => chooseProvider(item, true)}
@@ -313,7 +318,7 @@ export function ProviderPicker({
                           checked={isSelected}
                           disabled={
                             !item.value ||
-                            Boolean(displayPendingProviderId) ||
+                            displayControlsDisabled ||
                             (isSelected && selected.size === 1)
                           }
                           onCheckedChange={(checked) =>

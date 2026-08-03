@@ -488,3 +488,13 @@ issue scope, or release permission never implies UI permission.
   says `Service outage` shows that status once instead of rendering a duplicate
   outage badge beside it.
 - Approved files: `provider-picker.tsx` and its unit test.
+
+## 2026-08-03 — Display choices wait for saved selection
+
+- User approval: The user's explicit approval requires the provider display
+  selection to be stored and changed atomically without losing prior choices.
+- Approved customer-visible result: Provider enablement and readiness remain
+  available while display selection loads, but display mode and Include or
+  Always-show choices unlock only after the saved selection is available.
+- Approved files: `provider-picker.tsx`, its unit test, and the matching
+  customer-flow assertion.

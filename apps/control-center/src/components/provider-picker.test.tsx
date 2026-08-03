@@ -73,6 +73,30 @@ describe("ProviderPicker", () => {
     expect(html).not.toContain('aria-label="Saving display choice for Codex"');
   });
 
+  it("disables display choices until the saved selection loads", () => {
+    const html = renderToStaticMarkup(
+      <ProviderPicker
+        display={null}
+        items={[codex]}
+        onCheck={vi.fn()}
+        onDisplayChange={vi.fn()}
+        onPreferenceChange={vi.fn()}
+        onRecovery={vi.fn()}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+      />,
+    );
+
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Automatic<\/button>/);
+    expect(html).toMatch(
+      /<button[^>]*disabled=""[^>]*>Always show one<\/button>/,
+    );
+    expect(html).toMatch(
+      /role="checkbox"[^>]*disabled=""[^>]*aria-label="Include Codex in Automatic"/,
+    );
+    expect(html).not.toMatch(/role="switch"[^>]*disabled=""/);
+  });
+
   it("renders a service outage only once when it is the provider health state", () => {
     const outage = provider({
       id: "codexbar.providers.gemini.enabled",

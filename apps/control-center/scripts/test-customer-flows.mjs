@@ -4123,6 +4123,7 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
       configured: true,
       valid: true,
     },
+    providerDisplayGetDelayMs: 1_500,
     providerDisplayPatchDelayMs: 1_500,
     providerSelectionSetup: {
       providerSelectionRequired: true,
@@ -4149,6 +4150,19 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
   await page
     .getByRole("heading", { name: "AI providers", exact: true })
     .waitFor({ timeout: 10_000 });
+  const automaticMode = page.getByRole("button", { name: "Automatic" });
+  assert(
+    await automaticMode.isDisabled(),
+    "display mode must stay disabled until the saved selection loads",
+  );
+  assert(
+    await page.getByLabel("Include Codex in Automatic").isDisabled(),
+    "provider display choices must stay disabled until the saved selection loads",
+  );
+  await waitForCondition(
+    async () => !(await automaticMode.isDisabled()),
+    "display controls did not unlock after the saved selection loaded",
+  );
   await waitForCondition(
     () =>
       requests.filter((request) => request.path === "/v1/providers/retry")
@@ -6997,6 +7011,7 @@ async function routeCompanionOnline(
       configured: true,
       valid: true,
     },
+    providerDisplayGetDelayMs = 0,
     providerDisplayPatchDelayMs = 0,
     providerSelectionSetup = {
       providerSelectionRequired: false,
@@ -7111,6 +7126,10 @@ async function routeCompanionOnline(
           configured: true,
           valid: true,
         };
+      } else if (providerDisplayGetDelayMs > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, providerDisplayGetDelayMs),
+        );
       }
       await route.fulfill({
         status: 200,
