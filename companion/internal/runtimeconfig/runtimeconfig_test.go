@@ -221,6 +221,35 @@ func TestSetActiveDeviceKeepsPreviousDeviceKnown(t *testing.T) {
 	}
 }
 
+func TestProviderDisplayNormalizeAndSetupMigration(t *testing.T) {
+	cfg := Config{ProviderDisplay: &ProviderDisplayConfig{
+		Mode:        " Automatic ",
+		ProviderIDs: []string{" Codex ", "codex", " CLAUDE ", ""},
+	}}
+	cfg.Normalize()
+
+	if cfg.ProviderDisplay.Mode != "automatic" || !reflect.DeepEqual(cfg.ProviderDisplay.ProviderIDs, []string{"codex", "claude"}) {
+		t.Fatalf("unexpected provider display normalization: %+v", cfg.ProviderDisplay)
+	}
+	if cfg.ProviderSelectionSetupIsComplete() {
+		t.Fatal("new configuration must require provider setup")
+	}
+
+	cfg.SetActiveDevice(KnownDevice{DeviceID: "device-a", Target: "192.168.1.20"})
+	if cfg.ProviderSelectionSetupIsComplete() {
+		t.Fatal("first device selection must keep provider setup open")
+	}
+	cfg.SetProviderSelectionSetupComplete(true)
+	if !cfg.ProviderSelectionSetupIsComplete() {
+		t.Fatal("explicit completion was not preserved")
+	}
+
+	legacy := Config{DeviceID: "existing-device"}
+	if !legacy.ProviderSelectionSetupIsComplete() {
+		t.Fatal("legacy connected installation should remain complete")
+	}
+}
+
 func TestClearDevicesRemovesActiveAndKnownProfiles(t *testing.T) {
 	cfg := Config{
 		DeviceID:     "device-a",

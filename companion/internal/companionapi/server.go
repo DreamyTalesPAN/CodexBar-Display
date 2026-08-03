@@ -211,6 +211,8 @@ type Server struct {
 	providerSetupRefresh   atomic.Bool
 	providerSetupCache     codexbar.ProviderSetup
 	providerSetupCachedAt  time.Time
+	providerReadinessMu    sync.Mutex
+	providerReadiness      map[string]providerReadinessRecord
 	providerPreferences    providerPreferencesState
 	preferenceAdapters     []preferenceAdapter
 	updateFirmware         func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
@@ -414,6 +416,7 @@ type statusResponse struct {
 	Companion      companion              `json:"companion"`
 	Device         deviceInfo             `json:"device"`
 	ProviderSetup  codexbar.ProviderSetup `json:"providerSetup"`
+	Setup          setupProgress          `json:"setup"`
 	ThemeInstall   *themeInstallJob       `json:"themeInstall,omitempty"`
 	FirmwareUpdate *firmwareUpdateJob     `json:"firmwareUpdate,omitempty"`
 }
@@ -933,6 +936,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/usage", s.handleUsage)
 	mux.HandleFunc("/v1/preferences", s.handlePreferences)
 	mux.HandleFunc("/v1/preferences/", s.handlePreference)
+	mux.HandleFunc("/v1/provider-display", s.handleProviderDisplay)
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/providers/retry", s.handleProviderRetry)
@@ -945,6 +949,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/device", s.handleDevice)
 	mux.HandleFunc("/v1/device/pair", s.handleDevicePair)
 	mux.HandleFunc("/v1/setup/reset", s.handleSetupReset)
+	mux.HandleFunc("/v1/setup/providers/complete", s.handleProviderSetupComplete)
 	mux.HandleFunc("/v1/settings", s.handleSettings)
 	mux.HandleFunc("/v1/themes/install", s.handleThemeInstall)
 	mux.HandleFunc("/v1/themes/install/status", s.handleThemeInstallStatus)
@@ -1191,6 +1196,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Companion:      s.companionInfo(r.Context()),
 		Device:         device,
 		ProviderSetup:  s.providerSetupForStatus(),
+		Setup:          setupProgressForConfig(cfg),
 		ThemeInstall:   themeInstall,
 		FirmwareUpdate: firmwareUpdate,
 	})
@@ -2547,6 +2553,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	defer s.repairMu.Unlock()
 	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
 		cfg.ClearDevices()
+		cfg.SetProviderSelectionSetupComplete(false)
 	})
 	if err != nil {
 		writeInternalError(w, err)
@@ -2558,6 +2565,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 		OK:        true,
 		Companion: s.companionInfo(r.Context()),
 		Device:    deviceInfo{Connected: false},
+		Setup:     setupProgress{ProviderSelectionRequired: true},
 	})
 }
 

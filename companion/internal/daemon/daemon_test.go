@@ -3634,6 +3634,55 @@ func testParsedFrame(provider string, session, weekly int, reset int64) codexbar
 	}
 }
 
+func TestApplyProviderDisplaySelectionRestrictsAutomaticPoolAndSkipsUnavailable(t *testing.T) {
+	state := &runtimeState{
+		selector:    codexbar.NewProviderSelector(),
+		lastGood:    protocol.Frame{Provider: "cursor", Session: 88},
+		lastGoodAt:  time.Now(),
+		hasLastGood: true,
+	}
+	codex := testParsedFrame("codex", 10, 20, 3600)
+	codex.Frame.UsageUnavailable = true
+	claude := testParsedFrame("claude", 30, 40, 3600)
+	cursor := testParsedFrame("cursor", 50, 60, 3600)
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "automatic",
+		ProviderIDs: []string{"codex", "claude"},
+	})
+
+	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{codex, claude, cursor}, deps)
+	if len(got) != 1 || got[0].Frame.Provider != "claude" {
+		t.Fatalf("automatic pool selection=%+v want ready claude only", got)
+	}
+	if state.hasLastGood {
+		t.Fatalf("last-good outside pool survived: %+v", state.lastGood)
+	}
+}
+
+func TestApplyProviderDisplaySelectionKeepsFixedProviderWithoutFallback(t *testing.T) {
+	codex := testParsedFrame("codex", 10, 20, 3600)
+	codex.Frame.UsageUnavailable = true
+	claude := testParsedFrame("claude", 30, 40, 3600)
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	})
+
+	got := applyProviderDisplaySelection(&runtimeState{selector: codexbar.NewProviderSelector()}, []codexbar.ParsedFrame{codex, claude}, deps)
+	if len(got) != 1 || got[0].Frame.Provider != "codex" || !got[0].Frame.UsageUnavailable {
+		t.Fatalf("fixed selection silently fell back: %+v", got)
+	}
+}
+
+func providerDisplayTestDeps(display runtimeconfig.ProviderDisplayConfig) runtimeDeps {
+	return runtimeDeps{
+		homeDir: func() (string, error) { return "/tmp/provider-display-test", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{ProviderDisplay: &display}, nil
+		},
+	}
+}
+
 func prepareFastTestEnv(t *testing.T) {
 	t.Helper()
 

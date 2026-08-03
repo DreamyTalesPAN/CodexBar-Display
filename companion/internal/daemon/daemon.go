@@ -935,6 +935,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		selectionDetail: emptyDetail,
 		errorSource:     errorSource,
 	}
+	allProviders = applyProviderDisplaySelection(state, allProviders, deps)
 
 	if len(allProviders) == 0 {
 		result.failureKind = runtimeErrorNoProviders
@@ -965,6 +966,56 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	}
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
+}
+
+func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps) []codexbar.ParsedFrame {
+	cfg, ok := loadRuntimeConfig(deps)
+	if !ok || cfg.ProviderDisplay == nil {
+		return preferAvailableProviders(providers)
+	}
+	allowed := make(map[string]struct{}, len(cfg.ProviderDisplay.ProviderIDs))
+	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
+		providerID = normalizeProviderKey(providerID)
+		if providerID != "" {
+			allowed[providerID] = struct{}{}
+		}
+	}
+	if state != nil && state.hasLastGood {
+		if _, permitted := allowed[normalizeProviderKey(state.lastGood.Provider)]; !permitted {
+			state.lastGood = protocol.Frame{}
+			state.lastGoodAt = time.Time{}
+			state.hasLastGood = false
+			state.lastPersistedGood = protocol.Frame{}
+			state.lastPersistedAt = time.Time{}
+			state.hasPersistedGood = false
+			if state.selector != nil {
+				state.selector.SetCurrentProvider("")
+			}
+		}
+	}
+	filtered := make([]codexbar.ParsedFrame, 0, len(providers))
+	for _, provider := range providers {
+		if _, permitted := allowed[normalizeProviderKey(provider.Frame.Provider)]; permitted {
+			filtered = append(filtered, provider)
+		}
+	}
+	if cfg.ProviderDisplay.Mode == "fixed" {
+		return filtered
+	}
+	return preferAvailableProviders(filtered)
+}
+
+func preferAvailableProviders(providers []codexbar.ParsedFrame) []codexbar.ParsedFrame {
+	available := make([]codexbar.ParsedFrame, 0, len(providers))
+	for _, provider := range providers {
+		if !provider.Stale && !provider.Frame.UsageUnavailable {
+			available = append(available, provider)
+		}
+	}
+	if len(available) > 0 {
+		return available
+	}
+	return providers
 }
 
 func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time) cycleResult {

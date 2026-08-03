@@ -21,6 +21,7 @@ import {
   localControlCenterUrl,
   needsLoopbackTargetAddressSpace,
   repairLocalControlCenterRuntime,
+  launchCodexBarRepair,
   restartLocalControlCenterApp,
   shouldRedirectToLocalControlCenter,
   shouldUseHostedSetupShell,
@@ -43,6 +44,8 @@ import {
   type DeviceSearchState,
   type DeviceState,
   type ProviderSetupInfo,
+  type ProviderDisplaySelection,
+  type ProviderSelectionSetup,
   type PreferenceDescriptor,
   type SupportDiagnostics,
   type UsageSnapshot,
@@ -300,10 +303,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   >(null);
   const [providerPreferencesError, setProviderPreferencesError] =
     useState<ApiError | null>(null);
+  const [providerDisplay, setProviderDisplay] =
+    useState<ProviderDisplaySelection | null>(null);
+  const [providerDisplayError, setProviderDisplayError] =
+    useState<ApiError | null>(null);
+  const [providerSelectionSetup, setProviderSelectionSetup] =
+    useState<ProviderSelectionSetup | null>(null);
+  const [pendingProviderCheckIds, setPendingProviderCheckIds] = useState<
+    Set<string>
+  >(() => new Set());
+  const [pendingProviderDisplayId, setPendingProviderDisplayId] = useState<
+    string | null
+  >(null);
   const [pendingPreferenceIds, setPendingPreferenceIds] = useState<Set<string>>(
     () => new Set(),
   );
   const providerReconcileDeadlineRef = useRef(0);
+  const providerAutoCheckIdsRef = useRef(new Set<string>());
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
   );
@@ -551,10 +567,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const payload = await runCompanion<{
         companion?: CompanionInfo;
         providerSetup?: ProviderSetupInfo;
+        setup?: ProviderSelectionSetup;
       }>("/v1/status", undefined, { preserveLastError: true });
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
       setProviderSetup(payload.providerSetup || null);
+      setProviderSelectionSetup(payload.setup || null);
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
@@ -848,6 +866,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           themeInstall?: ThemeInstallJob;
           firmwareUpdate?: FirmwareUpdateJob;
           providerSetup?: ProviderSetupInfo;
+          setup?: ProviderSelectionSetup;
         }>("/v1/status", undefined, { preserveLastError: quiet });
         if (setupGeneration !== setupGenerationRef.current) {
           return;
@@ -857,6 +876,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setCompanionStatus("online");
         setCompanionInfo(payload.companion || null);
         setProviderSetup(payload.providerSetup || null);
+        setProviderSelectionSetup(payload.setup || null);
         const pairingRejection = pairingRejectionForDevice(payload.device);
         if (pairingRejection) {
           setLastError(pairingRejection);
@@ -1018,6 +1038,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         themeInstall?: ThemeInstallJob;
         firmwareUpdate?: FirmwareUpdateJob;
         providerSetup?: ProviderSetupInfo;
+        setup?: ProviderSelectionSetup;
       }>("/v1/status", undefined, { preserveLastError: true });
       if (setupGeneration !== setupGenerationRef.current) {
         return;
@@ -1025,6 +1046,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
       setProviderSetup(payload.providerSetup || null);
+      setProviderSelectionSetup(payload.setup || null);
       const pairingRejection = pairingRejectionForDevice(payload.device);
       if (pairingRejection) {
         setLastError(pairingRejection);
@@ -1111,6 +1133,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               companion?: CompanionInfo;
               device?: DeviceInfo;
               providerSetup?: ProviderSetupInfo;
+              setup?: ProviderSelectionSetup;
             }>("/v1/status", undefined, { preserveLastError: quiet });
             if (setupGeneration !== setupGenerationRef.current) {
               return "stale" as RepairConnectionOutcome;
@@ -1118,6 +1141,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             setCompanionStatus("online");
             setCompanionInfo(statusPayload.companion || null);
             setProviderSetup(statusPayload.providerSetup || null);
+            setProviderSelectionSetup(statusPayload.setup || null);
             setThemeInstallEnabled(
               Boolean(statusPayload.companion?.features?.themeInstallEnabled),
             );
@@ -1606,6 +1630,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         companion?: CompanionInfo;
         device?: DeviceInfo;
         providerSetup?: ProviderSetupInfo;
+        setup?: ProviderSelectionSetup;
       }>("/v1/setup/reset", { method: "POST" });
       if (setupGeneration !== setupGenerationRef.current) {
         return;
@@ -1633,11 +1658,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       didRunAutoDisplayReload.current = false;
       didRunAutomaticDeviceSearch.current = false;
       didRunSetupVerification.current = false;
+      providerAutoCheckIdsRef.current.clear();
       setSetupPreviewStep(null);
       setActiveTab("overview");
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
       setProviderSetup(payload.providerSetup || null);
+      setProviderSelectionSetup(
+        payload.setup || {
+          providerSelectionRequired: true,
+          providerSelectionComplete: false,
+        },
+      );
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
@@ -2452,6 +2484,150 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [runCompanion],
   );
 
+  const refreshProviderDisplay = useCallback(
+    async (options?: { quiet?: boolean }) => {
+      try {
+        const payload = await runCompanion<{
+          selection: ProviderDisplaySelection;
+        }>("/v1/provider-display", undefined, {
+          preserveLastError: Boolean(options?.quiet),
+        });
+        setProviderDisplay(payload.selection);
+        setProviderDisplayError(null);
+      } catch (error) {
+        setProviderDisplayError(
+          normalizeCaughtError(error, "Display selection needs attention."),
+        );
+      }
+    },
+    [runCompanion],
+  );
+
+  const checkProvider = useCallback(
+    async (item: PreferenceDescriptor) => {
+      const providerId = item.providerId?.trim().toLowerCase();
+      if (!providerId) {
+        return;
+      }
+      setPendingProviderCheckIds((current) =>
+        new Set(current).add(providerId),
+      );
+      try {
+        await runCompanion(
+          `/v1/providers/retry?provider=${encodeURIComponent(providerId)}`,
+          { method: "POST" },
+        );
+        await refreshProviderPreferences({ quiet: true });
+        setProviderPreferencesError(null);
+      } catch (error) {
+        setProviderPreferencesError(
+          normalizeCaughtError(error, `${item.label} could not be checked.`),
+        );
+      } finally {
+        setPendingProviderCheckIds((current) => {
+          const next = new Set(current);
+          next.delete(providerId);
+          return next;
+        });
+      }
+    },
+    [refreshProviderPreferences, runCompanion],
+  );
+
+  const updateProviderDisplay = useCallback(
+    async (
+      selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
+      providerId: string,
+    ) => {
+      const previous = providerDisplay;
+      setPendingProviderDisplayId(providerId);
+      setProviderDisplay({ ...selection, configured: true, valid: true });
+      try {
+        const payload = await runCompanion<{
+          selection: ProviderDisplaySelection;
+        }>("/v1/provider-display", {
+          method: "PATCH",
+          body: JSON.stringify(selection),
+        });
+        setProviderDisplay(payload.selection);
+        setProviderDisplayError(null);
+        void refreshUsage({ quiet: true });
+      } catch (error) {
+        setProviderDisplay(previous);
+        setProviderDisplayError(
+          normalizeCaughtError(error, "Display selection could not be saved."),
+        );
+      } finally {
+        setPendingProviderDisplayId(null);
+      }
+    },
+    [providerDisplay, refreshUsage, runCompanion],
+  );
+
+  const recoverProvider = useCallback(
+    async (item: PreferenceDescriptor) => {
+      if (item.health?.recoveryAction === "check_again") {
+        await checkProvider(item);
+        return;
+      }
+      if (item.health?.recoveryAction === "repair_usage_service") {
+        launchCodexBarRepair();
+        return;
+      }
+      try {
+        await runCompanion("/v1/providers/open-codexbar", { method: "POST" });
+      } catch (error) {
+        setProviderPreferencesError(
+          normalizeCaughtError(error, "Provider setup could not be opened."),
+        );
+      }
+    },
+    [checkProvider, runCompanion],
+  );
+
+  const completeProviderSetup = useCallback(async () => {
+    setBusyAction("provider-setup-complete");
+    try {
+      const payload = await runCompanion<{
+        setup: ProviderSelectionSetup;
+      }>("/v1/setup/providers/complete", { method: "POST" });
+      setProviderSelectionSetup(payload.setup);
+      setProviderDisplayError(null);
+      setLastError(null);
+    } catch (error) {
+      setProviderDisplayError(
+        normalizeCaughtError(error, "Provider setup is not complete yet."),
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }, [runCompanion]);
+
+  useEffect(() => {
+    if (!providerSelectionSetup?.providerSelectionRequired) {
+      return;
+    }
+    const now = Date.now();
+    for (const item of providerPreferences || []) {
+      const providerId = item.providerId?.trim().toLowerCase();
+      const verifiedAt = Date.parse(item.health?.verifiedAt || "");
+      const verificationAge = now - verifiedAt;
+      if (
+        item.section !== "providers" ||
+        item.value !== true ||
+        !providerId ||
+        (Number.isFinite(verifiedAt) &&
+          verificationAge >= 0 &&
+          verificationAge <= 5 * 60 * 1000) ||
+        providerAutoCheckIdsRef.current.has(providerId)
+      ) {
+        continue;
+      }
+      providerAutoCheckIdsRef.current.add(providerId);
+      void checkProvider(item);
+    }
+  }, [checkProvider, providerPreferences, providerSelectionSetup]);
+
   const updateProviderPreference = useCallback(
     async (item: PreferenceDescriptor, value: boolean) => {
       if (value) {
@@ -2494,8 +2670,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           ),
         );
         setProviderPreferencesError(null);
+        if (value) {
+          await checkProvider(payload.item);
+        }
         void Promise.all([
           refreshProviderPreferences({ quiet: true }),
+          refreshProviderDisplay({ quiet: true }),
           refreshUsage({ quiet: true }),
         ]);
       } catch (error) {
@@ -2515,7 +2695,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         });
       }
     },
-    [refreshProviderPreferences, refreshUsage, runCompanion],
+    [
+      checkProvider,
+      refreshProviderDisplay,
+      refreshProviderPreferences,
+      refreshUsage,
+      runCompanion,
+    ],
   );
 
   useEffect(() => {
@@ -2743,8 +2929,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const setupComplete = Boolean(
     !setupPreviewStep &&
     companionStatus === "online" &&
-    deviceReady,
+    deviceReady &&
+    providerSelectionSetup?.providerSelectionComplete,
   );
+  const providerPickerProps = {
+    display: providerDisplay,
+    displayError: providerDisplayError,
+    displayPendingProviderId: pendingProviderDisplayId,
+    items: providerPreferences,
+    preferencesError: providerPreferencesError,
+    pendingCheckIds: pendingProviderCheckIds,
+    pendingPreferenceIds,
+    onCheck: checkProvider,
+    onDisplayChange: updateProviderDisplay,
+    onPreferenceChange: updateProviderPreference,
+    onRecovery: recoverProvider,
+  };
   const needsRuntimeRecovery = companionStatus === "missing";
   const controlCenterAvailable =
     hasActiveDevice && !connectionRecoveryRequired;
@@ -2899,14 +3099,27 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [activeShellTab, companionStatus, controlCenterAvailable, refreshUsage]);
 
   useEffect(() => {
-    if (activeShellTab !== "usage" || companionStatus !== "online") {
+    if (
+      companionStatus !== "online" ||
+      (activeShellTab !== "settings" &&
+        !providerSelectionSetup?.providerSelectionRequired)
+    ) {
       return;
     }
     const timer = window.setTimeout(() => {
-      void refreshProviderPreferences({ quiet: true });
+      void Promise.all([
+        refreshProviderPreferences({ quiet: true }),
+        refreshProviderDisplay({ quiet: true }),
+      ]);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [activeShellTab, companionStatus, refreshProviderPreferences]);
+  }, [
+    activeShellTab,
+    companionStatus,
+    providerSelectionSetup?.providerSelectionRequired,
+    refreshProviderDisplay,
+    refreshProviderPreferences,
+  ]);
 
   const renderSetupScreen = (showIntro: boolean) => (
     <SetupScreen
@@ -2946,6 +3159,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }}
       onResetSetup={resetSetup}
       onCreateSupportReport={loadSupportDiagnostics}
+      onCompleteProviderSetup={completeProviderSetup}
+      providerPicker={providerPickerProps}
     />
   );
 
@@ -3036,6 +3251,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     );
   }
 
+  if (
+    companionStatus === "online" &&
+    deviceReady &&
+    providerSelectionSetup?.providerSelectionRequired
+  ) {
+    return renderSetupScreen(false);
+  }
+
   if (themeSetupRequired) {
     return (
       <ThemeLibraryScreen
@@ -3089,12 +3312,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           busyAction={busyAction}
           companionStatus={companionStatus}
           onRefresh={() => refreshUsage()}
-          pendingPreferenceIds={pendingPreferenceIds}
-          preferences={providerPreferences}
-          preferencesError={providerPreferencesError}
           usage={usage}
           usageError={usageError}
-          onPreferenceChange={updateProviderPreference}
         />
       ) : null}
 
@@ -3106,6 +3325,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onBrightnessChange={changeBrightness}
           onResetSetup={resetSetup}
           onSaveBrightness={saveBrightness}
+          providerPicker={providerPickerProps}
         />
       ) : null}
 

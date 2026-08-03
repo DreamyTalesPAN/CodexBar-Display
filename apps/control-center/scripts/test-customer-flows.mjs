@@ -281,6 +281,10 @@ async function main() {
     app = appContext.app;
     if (providerSettingsOnly) {
       await testUsageManagesProviderPreferences(browser, appContext.appUrl);
+      await testProviderOnboardingRequiresEveryEnabledProvider(
+        browser,
+        appContext.appUrl,
+      );
       console.log("control-center provider settings test passed");
       return;
     }
@@ -532,6 +536,10 @@ async function main() {
     );
     await testUsagePrioritizesProviderTokenHistory(browser, appContext.appUrl);
     await testUsageManagesProviderPreferences(browser, appContext.appUrl);
+    await testProviderOnboardingRequiresEveryEnabledProvider(
+      browser,
+      appContext.appUrl,
+    );
     await testUsageShowsMacAppUpdateForOldMacApp(browser, appContext.appUrl);
     await testRunSetupAgainReturnsToWifiOnboarding(browser, appContext.appUrl);
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
@@ -1354,25 +1362,48 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     {
       status: "auth_required",
       expected: "Sign in to Claude in CodexBar, then check again.",
+      healthState: "auth_required",
+      healthLabel: "Sign-in needed",
+      nextAction:
+        "Open provider setup, sign in again, then check this provider.",
+      recoveryAction: "open_provider_setup",
     },
     {
       status: "permission_required",
       expected:
         "Claude needs permission to read your sign-in. Open CodexBar and allow access, then check again.",
+      healthState: "permission_required",
+      healthLabel: "Permission needed",
+      nextAction:
+        "Allow the required macOS access, then check this provider.",
+      recoveryAction: "open_provider_setup",
     },
     {
       status: "no_usage_available",
       expected:
         "Claude is connected, but this account does not expose usage limits. Choose another provider.",
+      healthState: "no_usage_available",
+      healthLabel: "No usage available",
+      nextAction:
+        "Use this provider once or connect an account with usage, then check again.",
+      recoveryAction: "open_provider_setup",
     },
     {
       status: "config_error",
       expected:
         "CodexBar could not save its provider settings. Open CodexBar and finish provider setup there.",
+      healthState: "config_error",
+      healthLabel: "Settings problem",
+      nextAction: "Repair the usage service, then check this provider again.",
+      recoveryAction: "repair_usage_service",
     },
     {
       status: "not_configured",
       expected: "No usable AI provider is configured yet.",
+      healthState: "setup_required",
+      healthLabel: "Setup needed",
+      nextAction: "Finish setup for this provider, then check again.",
+      recoveryAction: "open_provider_setup",
     },
   ];
 
@@ -1383,6 +1414,21 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       device: companionDevice,
       onRequest: (path, method) => requests.push(`${method} ${path}`),
       providerSetup: providerSetupFixture(fixture.status),
+      preferencesResponse: {
+        ok: true,
+        items: [
+          {
+            ...providerPreferenceFixture("codex", "Codex"),
+            health: {
+              state: fixture.healthState,
+              service: "unknown",
+              message: "Provider needs attention.",
+              nextAction: fixture.nextAction,
+              recoveryAction: fixture.recoveryAction,
+            },
+          },
+        ],
+      },
     });
 
     await page.goto(appUrl, { waitUntil: "domcontentloaded" });
@@ -1413,12 +1459,12 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     await page
       .getByText("Loading usage", { exact: true })
       .waitFor({ timeout: 10_000 });
-    await page
-      .getByRole("heading", { name: "AI providers", exact: true })
-      .waitFor({ timeout: 10_000 });
-    await page
-      .getByRole("switch", { name: "Disable Codex" })
-      .waitFor({ timeout: 10_000 });
+    assert(
+      (await page
+        .getByRole("heading", { name: "AI providers", exact: true })
+        .count()) === 0,
+      "Usage must not show provider settings",
+    );
     assert(
       (await page
         .getByText("Total tokens in the last 30 days", { exact: true })
@@ -1445,6 +1491,16 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       requests.every((request) => !request.includes("/v1/providers/")),
       `${fixture.status} must not trigger provider repair requests from Usage`,
     );
+
+    await clickNavigation(page, "Settings");
+    await page
+      .getByRole("heading", { name: "AI providers", exact: true })
+      .waitFor({ timeout: 10_000 });
+    await page.getByText(fixture.healthLabel).waitFor({ timeout: 10_000 });
+    await page.getByText(fixture.nextAction).waitFor({ timeout: 10_000 });
+    await page
+      .getByRole("button", { name: "Open recovery" })
+      .waitFor({ timeout: 10_000 });
 
     await assertNoMobileOverflow(page);
     await page.close();
@@ -2135,6 +2191,21 @@ async function testKnownDeviceCompanionRecoveryRehydratesStatusAndUsage(
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: knownDevice,
+    usageResponse: {
+      ok: true,
+      tokenUsageReady: true,
+      currentProvider: "codex",
+      providers: [
+        {
+          id: "codex",
+          label: "Codex",
+          session: 12,
+          weekly: 34,
+          usageMode: "used",
+          cost: { daily: [] },
+        },
+      ],
+    },
     onRequest: (pathname, method) => {
       if (method === "POST" && pathname.startsWith("/v1/device/")) {
         deviceWriteRequests.push(pathname);
@@ -3920,6 +3991,8 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
           owner: "codexbar",
           type: "boolean",
           label: "Codex",
+          providerId: "codex",
+          description: "Usage from the Codex subscription.",
           value: true,
           effectiveValue: true,
           allowsDefault: false,
@@ -3938,6 +4011,8 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
           owner: "codexbar",
           type: "boolean",
           label: "GitHub Copilot",
+          providerId: "copilot",
+          description: "Usage from GitHub Copilot.",
           value: false,
           effectiveValue: false,
           allowsDefault: false,
@@ -3956,6 +4031,8 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
           owner: "codexbar",
           type: "boolean",
           label: "Claude",
+          providerId: "claude",
+          description: "Usage from Claude.",
           value: true,
           effectiveValue: true,
           allowsDefault: false,
@@ -3974,17 +4051,33 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await clickNavigation(page, "Usage");
-  const panel = page.locator('[aria-labelledby="provider-settings-title"]');
+  assert(
+    (await page.getByRole("heading", { name: "AI providers" }).count()) === 0,
+    "Usage must stay read-only without provider controls",
+  );
+  await clickNavigation(page, "Settings");
+  const panel = page
+    .locator('[data-slot="card"]')
+    .filter({ has: page.getByRole("heading", { name: "AI providers" }) });
   await panel.getByText("Sign-in needed").waitFor({ timeout: 10_000 });
   await panel.getByText("Service outage").waitFor({ timeout: 10_000 });
-  await panel.getByText("GitHub Copilot").waitFor({ timeout: 10_000 });
+  await panel
+    .getByText("GitHub Copilot", { exact: true })
+    .waitFor({ timeout: 10_000 });
 
-  const itemLabels = await panel
-    .locator('[data-slot="item-title"] > span:first-child')
-    .allTextContents();
+  const itemLabels = (await panel.locator("h3").allTextContents()).filter(
+    (label) => label !== "AI providers",
+  );
   assert(itemLabels[0] === "Claude", "providers needing attention should sort first");
 
   const search = panel.getByLabel("Search AI providers");
+  await search.fill("codex");
+  assert(
+    (await panel.getByText("Codex", { exact: true }).count()) === 1 &&
+      (await panel.getByText("Claude", { exact: true }).count()) === 0 &&
+      (await panel.getByText("GitHub Copilot", { exact: true }).count()) === 0,
+    "provider search must use provider identity, not the shared descriptor prefix",
+  );
   await search.fill("Copilot");
   assert((await panel.getByText("Codex", { exact: true }).count()) === 0, "provider search should filter the list");
   await search.fill("");
@@ -3996,7 +4089,7 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   });
   assert(await pendingCopilot.isDisabled(), "changed provider should be pending");
   assert(
-    !(await panel.getByRole("switch", { name: "Disable Codex" }).isDisabled()),
+    !(await panel.getByRole("switch", { name: "Disable Claude" }).isDisabled()),
     "unrelated provider should stay interactive",
   );
   await panel
@@ -4014,6 +4107,149 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
   await page.close();
+}
+
+async function testProviderOnboardingRequiresEveryEnabledProvider(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const requests = [];
+  await routeCompanionOnline(page, [], () => {}, {
+    onRequest: (path, method, body) => requests.push({ path, method, body }),
+    providerDisplay: {
+      mode: "automatic",
+      providerIds: ["codex", "claude"],
+      configured: true,
+      valid: true,
+    },
+    providerSelectionSetup: {
+      providerSelectionRequired: true,
+      providerSelectionComplete: false,
+    },
+    onProviderRetry: (_setup, providerId) =>
+      exactProviderSetup(
+        providerId,
+        providerId === "claude" ? "auth_required" : "ready",
+      ),
+    preferencesResponse: {
+      ok: true,
+      items: [
+        providerPreferenceFixture("codex", "Codex"),
+        providerPreferenceFixture("claude", "Claude"),
+      ],
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "Choose AI providers" })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByRole("heading", { name: "AI providers", exact: true })
+    .waitFor({ timeout: 10_000 });
+  await waitForCondition(
+    () =>
+      requests.filter((request) => request.path === "/v1/providers/retry")
+        .length >= 2,
+    `setup did not start exact checks for every enabled provider: ${JSON.stringify(requests)}`,
+    30_000,
+  );
+  try {
+    await page.getByText("Sign-in needed").waitFor({ timeout: 10_000 });
+  } catch (error) {
+    throw new Error(
+      `failed provider state was not rendered: ${await page.locator("body").innerText()}\n${JSON.stringify(requests)}`,
+      { cause: error },
+    );
+  }
+
+  const finish = page.getByRole("button", { name: "Finish setup" });
+  assert(
+    await finish.isDisabled(),
+    "a broken enabled provider must block setup completion",
+  );
+
+  await page
+    .getByLabel("Include Claude in Automatic")
+    .uncheck({ force: true });
+  await page.getByRole("switch", { name: "Disable Claude" }).click();
+  await page
+    .getByRole("switch", { name: "Enable Claude" })
+    .waitFor({ timeout: 10_000 });
+  await waitForCondition(
+    async () => !(await finish.isDisabled()),
+    "setup did not unlock after the broken provider was removed and disabled",
+  );
+  await finish.click();
+  await page.getByRole("heading", { name: "Overview" }).waitFor({
+    timeout: 10_000,
+  });
+
+  assert(
+    requests.some(
+      (request) =>
+        request.path === "/v1/provider-display" &&
+        request.method === "PATCH" &&
+        request.body.includes('"providerIds":["codex"]'),
+    ),
+    "removing a provider must atomically save the display pool",
+  );
+  assert(
+    requests.some(
+      (request) =>
+        request.path === "/v1/preferences/codexbar.providers.claude.enabled" &&
+        request.body.includes('"value":false'),
+    ),
+    "disabled provider must use the CodexBar preference endpoint",
+  );
+  assert(
+    requests.some(
+      (request) => request.path === "/v1/setup/providers/complete",
+    ),
+    "provider onboarding must use the server completion gate",
+  );
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+function providerPreferenceFixture(providerId, label) {
+  return {
+    id: `codexbar.providers.${providerId}.enabled`,
+    section: "providers",
+    owner: "codexbar",
+    type: "boolean",
+    label,
+    providerId,
+    description: `Usage from ${label}.`,
+    value: true,
+    effectiveValue: true,
+    allowsDefault: false,
+    availability: { state: "available" },
+    writeStrategy: "codexbar_command",
+    writable: true,
+    health: {
+      state: "healthy",
+      service: "operational",
+      message: "Provider is working.",
+    },
+  };
+}
+
+function exactProviderSetup(providerId, status) {
+  const ready = status === "ready";
+  return {
+    status: ready ? "ready" : "setup_required",
+    checkedAt: new Date().toISOString(),
+    providers: [
+      {
+        id: providerId,
+        label: providerId,
+        enabled: true,
+        status,
+      },
+    ],
+  };
 }
 
 async function testRunSetupAgainReturnsToWifiOnboarding(
@@ -6712,6 +6948,16 @@ async function routeCompanionOnline(
     statusFirmwareUpdateJob,
     statusFailuresAfter = 0,
     providerSetup = readyProviderSetup(),
+    providerDisplay = {
+      mode: "automatic",
+      providerIds: ["codex"],
+      configured: true,
+      valid: true,
+    },
+    providerSelectionSetup = {
+      providerSelectionRequired: false,
+      providerSelectionComplete: true,
+    },
     onProviderRetry,
     onOpenCodexBar,
   } = {},
@@ -6732,6 +6978,8 @@ async function routeCompanionOnline(
   let displayFrameRequestCount = 0;
   let settingsRequestCount = 0;
   let currentProviderSetup = providerSetup;
+  let currentProviderDisplay = structuredClone(providerDisplay);
+  let currentProviderSelectionSetup = structuredClone(providerSelectionSetup);
   let currentPreferences = structuredClone(
     preferencesResponse || {
       ok: true,
@@ -6742,6 +6990,8 @@ async function routeCompanionOnline(
           owner: "codexbar",
           type: "boolean",
           label: "Codex",
+          providerId: "codex",
+          description: "Usage from the Codex subscription.",
           value: true,
           effectiveValue: true,
           allowsDefault: false,
@@ -6765,12 +7015,70 @@ async function routeCompanionOnline(
       route.request().postData() || "",
     );
     if (pathname === "/v1/providers/retry") {
+      const providerId = new URL(route.request().url()).searchParams.get(
+        "provider",
+      );
       currentProviderSetup =
-        onProviderRetry?.(currentProviderSetup) || currentProviderSetup;
+        onProviderRetry?.(currentProviderSetup, providerId) ||
+        currentProviderSetup;
+      const readiness = currentProviderSetup?.providers?.find(
+        (provider) => provider.id === providerId,
+      );
+      const item = currentPreferences.items.find(
+        (preference) => preference.providerId === providerId,
+      );
+      if (item && readiness) {
+        const ready = readiness.status === "ready";
+        item.health = {
+          state: ready ? "healthy" : readiness.status,
+          service: "unknown",
+          message: ready
+            ? "Usage data is available."
+            : "This provider needs an active sign-in.",
+          checkedAt: currentProviderSetup.checkedAt,
+          ...(ready ? { verifiedAt: currentProviderSetup.checkedAt } : {}),
+          ...(!ready
+            ? {
+                nextAction:
+                  "Open provider setup, sign in again, then check this provider.",
+                recoveryAction: "open_provider_setup",
+              }
+            : {}),
+        };
+      }
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ ok: true, providerSetup: currentProviderSetup }),
+      });
+      return;
+    }
+    if (pathname === "/v1/provider-display") {
+      if (route.request().method() === "PATCH") {
+        const request = parseJSON(route.request().postData() || "") || {};
+        currentProviderDisplay = {
+          mode: request.mode,
+          providerIds: request.providerIds,
+          configured: true,
+          valid: true,
+        };
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, selection: currentProviderDisplay }),
+      });
+      return;
+    }
+    if (pathname === "/v1/setup/providers/complete") {
+      currentProviderSelectionSetup = {
+        providerSelectionRequired: false,
+        providerSelectionComplete: true,
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, setup: currentProviderSelectionSetup }),
       });
       return;
     }
@@ -7336,6 +7644,10 @@ async function routeCompanionOnline(
           ),
           device: currentDevice,
           providerSetup: currentProviderSetup,
+          setup: {
+            providerSelectionRequired: true,
+            providerSelectionComplete: false,
+          },
         }),
       });
       return;
@@ -7403,6 +7715,7 @@ async function routeCompanionOnline(
             companionRuntime,
           ),
           providerSetup: currentProviderSetup,
+          setup: currentProviderSelectionSetup,
           device: responseDevice,
           ...(statusFirmwareUpdateJob
             ? { firmwareUpdate: statusFirmwareUpdateJob }
@@ -8283,7 +8596,7 @@ async function clickNavigation(page, name) {
 async function waitForCondition(predicate, message, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (predicate()) {
+    if (await predicate()) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 100));

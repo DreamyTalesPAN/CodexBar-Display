@@ -423,3 +423,17 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-app.tsx`, `control-center-types.ts`,
   `provider-setup-card.tsx`, `usage-screen.tsx`, `usage-screen.test.tsx`, and
   the matching customer-flow assertions in `test-customer-flows.mjs`.
+
+## 2026-08-03 — Provider selection in Setup and Settings
+
+- User approval: The user explicitly approved the exact visible
+  provider-selection result in the Codex task on 2026-08-03.
+- Approved customer-visible result: Usage is read-only and no longer contains
+  provider controls. Setup and Settings share the `AI providers` card with
+  provider search, `Automatic` and `Always show one`, Include or Always-show
+  selection, enable switches, `Check again`, focused recovery actions, and
+  setup completion only after every enabled provider is freshly ready and
+  included in the valid display selection.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`,
+  `provider-picker.tsx`, `settings-screen.tsx`, `setup-screen.tsx`,
+  `usage-screen.tsx`, and their unit and customer-flow assertions.

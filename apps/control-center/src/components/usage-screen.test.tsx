@@ -27,27 +27,6 @@ const usage: UsageSnapshot = {
   ],
 };
 
-const codexPreference = {
-  id: "provider.codex.enabled",
-  section: "providers",
-  owner: "codexbar" as const,
-  type: "boolean" as const,
-  label: "Codex",
-  value: true,
-  effectiveValue: true,
-  allowsDefault: false,
-  availability: {
-    state: "available" as const,
-  },
-  writeStrategy: "codexbar_command" as const,
-  writable: true,
-  health: {
-    state: "healthy",
-    service: "operational",
-    message: "Provider is working.",
-  },
-};
-
 function renderUsage(
   busyAction: string | null = null,
   snapshot: UsageSnapshot = usage,
@@ -56,10 +35,7 @@ function renderUsage(
     <UsageScreen
       busyAction={busyAction}
       companionStatus="online"
-      onPreferenceChange={vi.fn()}
       onRefresh={vi.fn()}
-      pendingPreferenceIds={new Set()}
-      preferences={[]}
       usage={snapshot}
     />,
   );
@@ -70,10 +46,7 @@ describe("UsageScreen", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
-        onPreferenceChange={vi.fn()}
         onRefresh={vi.fn()}
-        pendingPreferenceIds={new Set()}
-        preferences={null}
         usage={null}
       />,
     );
@@ -89,10 +62,7 @@ describe("UsageScreen", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
-        onPreferenceChange={vi.fn()}
         onRefresh={vi.fn()}
-        pendingPreferenceIds={new Set()}
-        preferences={[]}
         usage={null}
         usageError={{
           code: "COMPANION_TIMEOUT",
@@ -112,10 +82,7 @@ describe("UsageScreen", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
-        onPreferenceChange={vi.fn()}
         onRefresh={vi.fn()}
-        pendingPreferenceIds={new Set()}
-        preferences={[codexPreference]}
         usage={{
           ...usage,
           tokenUsageReady: false,
@@ -129,8 +96,7 @@ describe("UsageScreen", () => {
     );
 
     expect(html).toContain("Loading usage");
-    expect(html).toContain("AI providers");
-    expect(html).toContain('aria-label="Disable Codex"');
+    expect(html).not.toContain("AI providers");
     expect(html).not.toContain("Total tokens in the last 30 days");
     expect(html).not.toContain("Tokens used over time");
   });
@@ -139,10 +105,7 @@ describe("UsageScreen", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
-        onPreferenceChange={vi.fn()}
         onRefresh={vi.fn()}
-        pendingPreferenceIds={new Set()}
-        preferences={[]}
         usage={{
           ...usage,
           tokenUsageReady: true,

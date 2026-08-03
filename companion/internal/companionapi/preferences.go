@@ -58,6 +58,8 @@ type preferenceDescriptor struct {
 	Owner              string                 `json:"owner"`
 	Type               preferenceType         `json:"type"`
 	Label              string                 `json:"label"`
+	Description        string                 `json:"description,omitempty"`
+	ProviderID         string                 `json:"providerId,omitempty"`
 	Value              any                    `json:"value"`
 	EffectiveValue     any                    `json:"effectiveValue"`
 	AllowsDefault      bool                   `json:"allowsDefault"`
@@ -72,10 +74,14 @@ type preferenceDescriptor struct {
 }
 
 type preferenceHealth struct {
-	State         string `json:"state"`
-	Service       string `json:"service"`
-	Message       string `json:"message"`
-	LastSuccessAt string `json:"lastSuccessAt,omitempty"`
+	State          string `json:"state"`
+	Service        string `json:"service"`
+	Message        string `json:"message"`
+	LastSuccessAt  string `json:"lastSuccessAt,omitempty"`
+	CheckedAt      string `json:"checkedAt,omitempty"`
+	VerifiedAt     string `json:"verifiedAt,omitempty"`
+	NextAction     string `json:"nextAction,omitempty"`
+	RecoveryAction string `json:"recoveryAction,omitempty"`
 }
 
 type preferencesResponse struct {
@@ -160,6 +166,17 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 		a.server.providerPreferences.mu.Unlock()
 		return preferenceDescriptor{}, errors.New("provider preference writer unavailable")
 	}
+	if !enabled {
+		cfg, configErr := a.server.config()
+		if configErr != nil {
+			a.server.providerPreferences.mu.Unlock()
+			return preferenceDescriptor{}, configErr
+		}
+		if providerDisplayContains(cfg, settings, providerID) {
+			a.server.providerPreferences.mu.Unlock()
+			return preferenceDescriptor{}, errProviderDisplaySelected
+		}
+	}
 	if err := a.server.providerPreferences.set(ctx, providerID, enabled); err != nil {
 		a.server.providerPreferences.mu.Unlock()
 		return preferenceDescriptor{}, err
@@ -180,6 +197,9 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 	}
 	a.server.providerPreferences.providerRev[providerID]++
 	providerRevision := a.server.providerPreferences.providerRev[providerID]
+	a.server.providerReadinessMu.Lock()
+	delete(a.server.providerReadiness, providerID)
+	a.server.providerReadinessMu.Unlock()
 	a.server.cacheProviderInventory(settings)
 	a.server.invalidateUsageCache()
 	var descriptor preferenceDescriptor
@@ -211,48 +231,7 @@ func (s *Server) verifyEnabledProvider(providerID string, providerRevision uint6
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 	setup := s.currentExactProviderSetup(ctx, providerID)
-	var exactReadiness *codexbar.ProviderReadiness
-	for i := range setup.Providers {
-		if setup.Providers[i].ID == providerID {
-			exactReadiness = &setup.Providers[i]
-			break
-		}
-	}
-	if exactReadiness == nil {
-		return
-	}
-
-	s.providerPreferences.mu.Lock()
-	if s.providerPreferences.providerRev[providerID] != providerRevision {
-		s.providerPreferences.mu.Unlock()
-		return
-	}
-	enabled := false
-	for i := range s.providerPreferences.cached {
-		if s.providerPreferences.cached[i].ID != providerID {
-			continue
-		}
-		enabled = s.providerPreferences.cached[i].Enabled
-		if enabled {
-			s.providerPreferences.cached[i].Health = providerHealthFromReadiness(exactReadiness.Status)
-			s.providerPreferences.cached[i].Service = codexbar.ProviderServiceUnknown
-			s.providerPreferences.at = s.currentTime().UTC()
-		}
-		break
-	}
-	s.providerPreferences.mu.Unlock()
-	if !enabled {
-		return
-	}
-
-	if exactReadiness.Status == codexbar.ProviderReady {
-		if setup.ExactUsage != nil {
-			s.cacheExactProviderUsage(*setup.ExactUsage)
-		}
-		if s.wakeDisplayStream != nil {
-			s.wakeDisplayStream()
-		}
-	}
+	s.recordExactProviderSetup(providerID, providerRevision, setup)
 }
 
 func providerHealthFromReadiness(status string) codexbar.ProviderHealthState {
@@ -269,6 +248,7 @@ func providerHealthFromReadiness(status string) codexbar.ProviderHealthState {
 }
 
 var errPreferenceNotFound = errors.New("preference not found")
+var errProviderDisplaySelected = errors.New("provider is selected for display")
 
 func (s *Server) preferenceRegistry() []preferenceAdapter {
 	if len(s.preferenceAdapters) > 0 {
@@ -351,6 +331,10 @@ func (s *Server) handlePreference(w http.ResponseWriter, r *http.Request) {
 		updated, err := adapter.Write(r.Context(), settingID, value)
 		if errors.Is(err, errPreferenceNotFound) {
 			writePreferenceNotFound(w)
+			return
+		}
+		if errors.Is(err, errProviderDisplaySelected) {
+			writeError(w, http.StatusConflict, "provider_display_selected", "This provider is selected for VibeTV.", "Choose another displayed provider before turning this one off.")
 			return
 		}
 		if err != nil {
@@ -610,9 +594,22 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 	for _, setting := range settings {
 		state := string(setting.Health)
 		message := providerHealthMessage(setting.Health)
+		checkedAt := ""
+		verifiedAt := ""
+		nextAction := ""
+		recoveryAction := ""
 		if !setting.Enabled {
 			state = "disabled"
 			message = "Provider is off."
+		} else if readiness, ok := s.providerReadinessFor(setting.ID); ok {
+			state = providerReadinessHealthState(readiness.Status)
+			message = providerReadinessMessage(readiness.Status)
+			checkedAt = readiness.CheckedAt.UTC().Format(time.RFC3339)
+			if !readiness.VerifiedAt.IsZero() {
+				verifiedAt = readiness.VerifiedAt.UTC().Format(time.RFC3339)
+			}
+			nextAction = providerReadinessNextAction(readiness.Status)
+			recoveryAction = providerRecoveryAction(readiness.Status)
 		} else if setting.Service == codexbar.ProviderServiceOutage &&
 			(setting.Health == codexbar.ProviderHealthHealthy || setting.Health == codexbar.ProviderHealthChecking) {
 			state = "service_outage"
@@ -627,20 +624,116 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			Owner:          "codexbar",
 			Type:           preferenceTypeBoolean,
 			Label:          setting.Label,
+			Description:    providerDescription(setting.ID, setting.Label),
+			ProviderID:     setting.ID,
 			Value:          setting.Enabled,
 			EffectiveValue: setting.Enabled,
 			Availability:   preferenceAvailability{State: "available"},
 			WriteStrategy:  "codexbar_command",
 			Writable:       true,
 			Health: &preferenceHealth{
-				State:         state,
-				Service:       string(setting.Service),
-				Message:       message,
-				LastSuccessAt: lastSuccess[setting.ID],
+				State:          state,
+				Service:        string(setting.Service),
+				Message:        message,
+				LastSuccessAt:  lastSuccess[setting.ID],
+				CheckedAt:      checkedAt,
+				VerifiedAt:     verifiedAt,
+				NextAction:     nextAction,
+				RecoveryAction: recoveryAction,
 			},
 		})
 	}
 	return items
+}
+
+func providerDescription(providerID, label string) string {
+	switch strings.TrimSpace(strings.ToLower(providerID)) {
+	case "codex":
+		return "Usage from the Codex subscription linked to your OpenAI account."
+	case "openai":
+		return "Usage from an OpenAI API or organization dashboard setup."
+	default:
+		return "Usage from " + strings.TrimSpace(label) + "."
+	}
+}
+
+func providerReadinessHealthState(status string) string {
+	switch status {
+	case codexbar.ProviderReady:
+		return "healthy"
+	case codexbar.ProviderAuthRequired:
+		return "auth_required"
+	case codexbar.ProviderPermissionRequired:
+		return "permission_required"
+	case codexbar.ProviderNoUsageAvailable:
+		return "no_usage_available"
+	case codexbar.ProviderTimeout:
+		return "timeout"
+	case codexbar.ProviderConfigError:
+		return "config_error"
+	case codexbar.ProviderEngineError:
+		return "engine_error"
+	case codexbar.ProviderNotConfigured:
+		return "setup_required"
+	default:
+		return "unavailable"
+	}
+}
+
+func providerReadinessMessage(status string) string {
+	switch status {
+	case codexbar.ProviderReady:
+		return "Usage data is available."
+	case codexbar.ProviderAuthRequired:
+		return "This provider needs an active sign-in."
+	case codexbar.ProviderPermissionRequired:
+		return "macOS blocked access required by this provider."
+	case codexbar.ProviderNoUsageAvailable:
+		return "This account does not expose usage data."
+	case codexbar.ProviderTimeout:
+		return "The provider check timed out."
+	case codexbar.ProviderConfigError:
+		return "Provider settings could not be read or saved."
+	case codexbar.ProviderEngineError:
+		return "The usage service needs attention."
+	default:
+		return "Finish setup for this provider."
+	}
+}
+
+func providerRecoveryAction(status string) string {
+	switch status {
+	case codexbar.ProviderConfigError, codexbar.ProviderEngineError:
+		return "repair_usage_service"
+	case codexbar.ProviderAuthRequired, codexbar.ProviderPermissionRequired, codexbar.ProviderNoUsageAvailable, codexbar.ProviderNotConfigured:
+		return "open_provider_setup"
+	case codexbar.ProviderTimeout:
+		return "check_again"
+	default:
+		if status == codexbar.ProviderReady {
+			return ""
+		}
+		return "open_provider_setup"
+	}
+}
+
+func providerReadinessNextAction(status string) string {
+	switch status {
+	case codexbar.ProviderReady:
+		return ""
+	case codexbar.ProviderAuthRequired:
+		return "Open provider setup, sign in again, then check this provider."
+	case codexbar.ProviderPermissionRequired:
+		return "Allow the required macOS access, then check this provider."
+	case codexbar.ProviderNoUsageAvailable:
+		return "Use this provider once or connect an account with usage, then check again."
+	case codexbar.ProviderTimeout:
+		return "Wait a moment, then check this provider again."
+	case codexbar.ProviderConfigError, codexbar.ProviderEngineError:
+		return "Repair the usage service, then check this provider again."
+	default:
+		return "Finish setup for this provider, then check again."
+	}
 }
 
 func providerPreferenceID(providerID string) string {

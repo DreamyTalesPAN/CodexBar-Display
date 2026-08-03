@@ -21,6 +21,15 @@ type exactProviderProbeFlight struct {
 	setup codexbar.ProviderSetup
 }
 
+type providerReadinessRecord struct {
+	Status     string
+	Detail     string
+	NextAction string
+	CheckedAt  time.Time
+	VerifiedAt time.Time
+	Revision   uint64
+}
+
 // currentProviderSetup caches normal status polling and serializes explicit
 // retries. A second concurrent retry reuses the first result instead of
 // starting another CodexBar/browser probe.
@@ -138,12 +147,110 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	if providerID == "" {
 		setup = s.currentProviderSetup(ctx, true)
 	} else {
+		providerRevision := s.currentProviderRevision(providerID)
 		setup = s.currentExactProviderSetup(ctx, providerID)
+		s.recordExactProviderSetup(providerID, providerRevision, setup)
 	}
 	if setup.Status == codexbar.ProviderReady && s.wakeDisplayStream != nil {
 		s.wakeDisplayStream()
 	}
 	writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
+}
+
+func (s *Server) currentProviderRevision(providerID string) uint64 {
+	s.providerPreferences.mu.Lock()
+	defer s.providerPreferences.mu.Unlock()
+	return s.providerPreferences.providerRev[providerID]
+}
+
+func (s *Server) recordExactProviderSetup(providerID string, providerRevision uint64, setup codexbar.ProviderSetup) {
+	providerID = strings.TrimSpace(strings.ToLower(providerID))
+	var exactReadiness *codexbar.ProviderReadiness
+	for i := range setup.Providers {
+		if strings.EqualFold(setup.Providers[i].ID, providerID) {
+			exactReadiness = &setup.Providers[i]
+			break
+		}
+	}
+	if exactReadiness == nil {
+		return
+	}
+	checkedAt := s.currentTime().UTC()
+	if parsed, err := time.Parse(time.RFC3339Nano, setup.CheckedAt); err == nil {
+		checkedAt = parsed.UTC()
+	} else if parsed, err := time.Parse(time.RFC3339, setup.CheckedAt); err == nil {
+		checkedAt = parsed.UTC()
+	}
+	record := providerReadinessRecord{
+		Status:     exactReadiness.Status,
+		Detail:     exactReadiness.Detail,
+		NextAction: exactReadiness.NextAction,
+		CheckedAt:  checkedAt,
+		Revision:   providerRevision,
+	}
+	if exactReadiness.Status == codexbar.ProviderReady {
+		record.VerifiedAt = checkedAt
+	}
+
+	s.providerPreferences.mu.Lock()
+	if s.providerPreferences.providerRev[providerID] != providerRevision {
+		s.providerPreferences.mu.Unlock()
+		return
+	}
+	enabled := false
+	for i := range s.providerPreferences.cached {
+		if s.providerPreferences.cached[i].ID != providerID {
+			continue
+		}
+		enabled = s.providerPreferences.cached[i].Enabled
+		if enabled {
+			s.providerPreferences.cached[i].Health = providerHealthFromReadiness(exactReadiness.Status)
+			s.providerPreferences.cached[i].Service = codexbar.ProviderServiceUnknown
+			s.providerPreferences.at = s.currentTime().UTC()
+		}
+		break
+	}
+	if enabled {
+		s.providerReadinessMu.Lock()
+		if s.providerReadiness == nil {
+			s.providerReadiness = make(map[string]providerReadinessRecord)
+		}
+		s.providerReadiness[providerID] = record
+		s.providerReadinessMu.Unlock()
+	}
+	s.providerPreferences.mu.Unlock()
+	if !enabled {
+		return
+	}
+	if exactReadiness.Status == codexbar.ProviderReady {
+		if setup.ExactUsage != nil {
+			s.cacheExactProviderUsage(*setup.ExactUsage)
+		}
+		if s.wakeDisplayStream != nil {
+			s.wakeDisplayStream()
+		}
+	}
+}
+
+func (s *Server) providerReadinessFor(providerID string) (providerReadinessRecord, bool) {
+	s.providerReadinessMu.Lock()
+	defer s.providerReadinessMu.Unlock()
+	record, ok := s.providerReadiness[strings.TrimSpace(strings.ToLower(providerID))]
+	return record, ok
+}
+
+func (s *Server) providerHasFreshReadiness(providerID string, now time.Time) bool {
+	s.providerPreferences.mu.Lock()
+	revision := s.providerPreferences.providerRev[providerID]
+	s.providerReadinessMu.Lock()
+	record, ok := s.providerReadiness[providerID]
+	s.providerReadinessMu.Unlock()
+	s.providerPreferences.mu.Unlock()
+	if !ok || record.Revision != revision || record.Status != codexbar.ProviderReady || record.VerifiedAt.IsZero() {
+		return false
+	}
+	age := now.Sub(record.VerifiedAt)
+	return age >= 0 && age <= providerReadinessFreshness
 }
 
 func (s *Server) handleOpenCodexBar(w http.ResponseWriter, r *http.Request) {
