@@ -635,7 +635,9 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			state = "disabled"
 			message = "Provider is off."
 		} else if setting.Service == codexbar.ProviderServiceOutage &&
-			(setting.Health == codexbar.ProviderHealthHealthy || setting.Health == codexbar.ProviderHealthChecking) {
+			(setting.Health == codexbar.ProviderHealthHealthy ||
+				setting.Health == codexbar.ProviderHealthChecking ||
+				setting.Health == codexbar.ProviderHealthUnavailable) {
 			state = "service_outage"
 			message = "This provider is reporting a service outage."
 		} else if _, ready := freshSuccess[setting.ID]; ready && providerHealthCanUseCachedEvidence(setting.Health) {

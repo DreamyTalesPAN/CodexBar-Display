@@ -143,7 +143,7 @@ func TestPreferencesPreserveCurrentServiceOutageOverCachedUsage(t *testing.T) {
 			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
 				return []codexbar.ProviderSetting{{
 					ID: "codex", Label: "Codex", Enabled: true,
-					Health: codexbar.ProviderHealthHealthy, Service: codexbar.ProviderServiceOutage,
+					Health: codexbar.ProviderHealthUnavailable, Service: codexbar.ProviderServiceOutage,
 				}}, nil
 			}
 			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return usage.load(), true }
