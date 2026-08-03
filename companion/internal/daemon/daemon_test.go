@@ -788,37 +788,54 @@ func TestRunCycleWithDepsSkipsThemeWhenDeviceDoesNotSupportIt(t *testing.T) {
 func TestRunCycleWithDepsShowsRemainingWhenUsageBarsShowUsedDisabled(t *testing.T) {
 	prepareFastTestEnv(t)
 
-	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	current := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	collectedAt := current.Add(-time.Minute)
 	state := &runtimeState{
 		selector: codexbar.NewProviderSelector(),
 	}
 
-	var sentLine []byte
-	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
-		now:               func() time.Time { return now },
+	var sentLines [][]byte
+	providers := []codexbar.ParsedFrame{testParsedFrame("codex", 1, 28, 3600)}
+	providers[0].CollectedAt = collectedAt
+	providers[0].Frame.UsageMode = "used"
+	deps := runtimeDeps{
+		now:               func() time.Time { return current },
 		resolvePort:       func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
 		usageBarsShowUsed: func() bool { return false },
 		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
-			return []codexbar.ParsedFrame{
-				testParsedFrame("codex", 1, 28, 3600),
-			}, nil
+			return providers, nil
 		},
 		logf: func(string, ...any) {},
 		sendLine: func(port string, line []byte) error {
-			sentLine = append([]byte(nil), line...)
+			sentLines = append(sentLines, append([]byte(nil), line...))
 			return nil
 		},
-	})
-	if err != nil {
+	}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected cycle success, got %v", err)
 	}
 
-	frame := decodeFrameLine(t, sentLine)
+	frame := decodeFrameLine(t, sentLines[0])
 	if frame.Session != 99 || frame.Weekly != 72 {
 		t.Fatalf("expected remaining view inversion, got session=%d weekly=%d", frame.Session, frame.Weekly)
 	}
 	if frame.UsageMode != "remaining" {
 		t.Fatalf("expected remaining usage mode, got %q", frame.UsageMode)
+	}
+	if state.lastGood.Session != 1 || state.lastGood.Weekly != 28 || state.lastGood.UsageMode != "used" || !state.lastGoodAt.Equal(collectedAt) {
+		t.Fatalf("last-good did not retain collector-space values and collection time: frame=%+v at=%s", state.lastGood, state.lastGoodAt)
+	}
+
+	current = current.Add(time.Minute)
+	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorCommand, Err: errors.New("temporary failure")}
+	}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected last-good fallback, got %v", err)
+	}
+	stale := decodeFrameLine(t, sentLines[1])
+	if stale.Session != 99 || stale.Weekly != 72 || stale.UsageMode != "remaining" {
+		t.Fatalf("last-good fallback applied remaining conversion twice: %+v", stale)
 	}
 }
 

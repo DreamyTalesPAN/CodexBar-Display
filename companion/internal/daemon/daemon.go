@@ -255,6 +255,7 @@ type runtimeState struct {
 
 type cycleResult struct {
 	frame           protocol.Frame
+	collectedAt     time.Time
 	selectionReason string
 	selectionDetail string
 	failureKind     runtimeErrorKind
@@ -1009,6 +1010,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		collectedAt = now
 		decision.Selected.CollectedAt = collectedAt
 	}
+	result.collectedAt = collectedAt
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
 }
@@ -1154,7 +1156,8 @@ func codingMaxAgeExpired(lastCodingAt time.Time, now time.Time) bool {
 
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
-	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
+	authoritativeFrame := result.frame
+	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 	if !result.usageFresh && result.failureErr == nil {
 		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), lastGoodMaxAge())
 		if !frame.UsageUnavailable || !expiredLastGood {
@@ -1234,7 +1237,11 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			deps.logf("runtime event=last-sent-frame-clear-failed reason=usage-unavailable err=%v\n", err)
 		}
 	} else if result.failureErr == nil {
-		updateLastGoodState(state, frame, deps.now(), deps)
+		collectedAt := result.collectedAt
+		if collectedAt.IsZero() {
+			collectedAt = deps.now()
+		}
+		updateLastGoodState(state, authoritativeFrame, collectedAt, deps)
 	}
 
 	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
