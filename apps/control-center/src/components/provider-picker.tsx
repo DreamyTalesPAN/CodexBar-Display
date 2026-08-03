@@ -242,7 +242,8 @@ export function ProviderPicker({
                       <Badge variant={healthBadgeVariant(item.health.state)}>
                         {healthLabel(item.health.state)}
                       </Badge>
-                      {item.health.service === "outage" ? (
+                      {item.health.service === "outage" &&
+                      item.health.state !== "service_outage" ? (
                         <Badge variant="destructive">Service outage</Badge>
                       ) : item.health.service === "degraded" ? (
                         <Badge variant="secondary">Service degraded</Badge>

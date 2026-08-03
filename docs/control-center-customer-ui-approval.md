@@ -479,3 +479,12 @@ issue scope, or release permission never implies UI permission.
   tells the customer to manage providers in Settings and refresh instead of
   referring to controls below the empty state.
 - Approved files: `usage-screen.tsx` and its unit test.
+
+## 2026-08-03 — Provider outage status stays singular
+
+- User approval: The user's explicit approval of the shared provider-selection
+  UI includes one clear readiness or service status per provider.
+- Approved customer-visible result: A provider whose readiness state already
+  says `Service outage` shows that status once instead of rendering a duplicate
+  outage badge beside it.
+- Approved files: `provider-picker.tsx` and its unit test.

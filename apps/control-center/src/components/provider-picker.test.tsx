@@ -73,6 +73,33 @@ describe("ProviderPicker", () => {
     expect(html).not.toContain('aria-label="Saving display choice for Codex"');
   });
 
+  it("renders a service outage only once when it is the provider health state", () => {
+    const outage = provider({
+      id: "codexbar.providers.gemini.enabled",
+      label: "Gemini",
+      providerId: "gemini",
+      health: {
+        state: "service_outage",
+        service: "outage",
+        message: "The provider service is unavailable.",
+      },
+    });
+    const html = renderToStaticMarkup(
+      <ProviderPicker
+        display={{ ...automatic, providerIds: ["gemini"] }}
+        items={[outage]}
+        onCheck={vi.fn()}
+        onDisplayChange={vi.fn()}
+        onPreferenceChange={vi.fn()}
+        onRecovery={vi.fn()}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+      />,
+    );
+
+    expect(html.match(/Service outage/g)).toHaveLength(1);
+  });
+
   it("searches true provider identity instead of the shared descriptor prefix", () => {
     expect(providerMatchesQuery(codex, "codex")).toBe(true);
     expect(providerMatchesQuery(claude, "codex")).toBe(false);
