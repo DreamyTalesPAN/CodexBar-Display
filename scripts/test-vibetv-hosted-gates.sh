@@ -385,6 +385,8 @@ main() {
     'guest test must bind the live Companion port to the installed runtime service'
   assert_contains "$GUEST_TEST" 'installationMode' \
     'guest test must verify the running candidate reports DMG installation mode'
+  assert_contains "$GUEST_TEST" '--max-time 3 http://127.0.0.1:47832/v1/status' \
+    'guest test must bound each installed-runtime status request'
   assert_not_contains "$GUEST_TEST" 'validate-macos-control-center-runtime.sh' \
     'stateful guest checks must not invoke the clean-host runtime validator'
   assert_not_contains "$GUEST_TEST" '--once --api-addr' \

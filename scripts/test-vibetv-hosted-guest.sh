@@ -184,7 +184,7 @@ if [[ "$STATE" == clean_os ]]; then
   open -na "$INSTALL_APP"
 fi
 for _ in $(seq 1 30); do
-  curl --fail --silent http://127.0.0.1:47832/v1/status > "$OUTPUT/companion-port-47832.txt" && break
+  curl --fail --silent --max-time 3 http://127.0.0.1:47832/v1/status > "$OUTPUT/companion-port-47832.txt" && break
   sleep 1
 done
 [[ -s "$OUTPUT/companion-port-47832.txt" ]] || die 'installed candidate runtime did not become healthy on port 47832'
