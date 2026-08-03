@@ -816,3 +816,15 @@ issue scope, or release permission never implies UI permission.
   introduced.
 - Approved files: `live-vibetv-preview.tsx`, its focused unit test, the matching
   display-frame transport fix and tests, and this approval record.
+
+## 2026-08-03 — Screensaver export asset identity
+
+- User approval: The user explicitly requested that every Codex reviewer
+  finding on PR #296 be fixed until the PR is ready to merge and that the
+  screensaver packaging path be ready for the next creative phase.
+- Approved customer-visible result: No copy, control, hierarchy, or state
+  changes. Exporting a screensaver now keeps distinct images distinct when
+  their source folders contain the same file name, so the installed result
+  matches the Theme Studio design.
+- Approved files: `theme-studio.ts`, its focused unit test, and this approval
+  record.
