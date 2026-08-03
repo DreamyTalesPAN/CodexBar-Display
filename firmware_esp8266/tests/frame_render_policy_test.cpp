@@ -194,6 +194,31 @@ bool testStandbyExitLeavesErrorFrameVisible(const std::string& source) {
       "standby exit must not replace a rendered error frame with the saved live theme");
 }
 
+bool testUsageWakeRestoresLiveThemeBeforeDroppingPath(const std::string& source) {
+  const std::size_t standbyStart = source.find("void maintainStandby()");
+  const std::size_t standbyEnd = source.find("\nString updatePageHTML()", standbyStart);
+  if (!expect(
+          standbyStart != std::string::npos && standbyEnd != std::string::npos,
+          "standby state machine must remain discoverable")) {
+    return false;
+  }
+
+  const std::string standby = source.substr(standbyStart, standbyEnd - standbyStart);
+  const std::size_t exitStart = standby.rfind("  } else {");
+  if (!expect(exitStart != std::string::npos, "standby exit branch must remain discoverable")) {
+    return false;
+  }
+
+  const std::size_t restore = standby.find(
+      "renderStoredThemeSpecForStandby(standbyLiveThemePath)", exitStart);
+  const std::size_t clear = standby.find("standbyLiveThemePath = \"\";", restore);
+  return expect(
+      source.find("standbyWakeRenderedByUsageFrame") == std::string::npos &&
+          standby.find("standbyLiveThemePath != activeThemeSpecPath", exitStart) != std::string::npos &&
+          restore != std::string::npos && clear != std::string::npos && restore < clear,
+      "usage wake must restore the saved live theme before clearing its standby path");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -212,7 +237,8 @@ int main(int argc, char** argv) {
       !testHelloAdvertisesEscapedUsageWindowCapacity(source) ||
       !testSharedSerialHelloAdvertisesStandby(source) ||
       !testAssetDeleteProtectsStandbyLiveTheme(source) ||
-      !testStandbyExitLeavesErrorFrameVisible(source)) {
+      !testStandbyExitLeavesErrorFrameVisible(source) ||
+      !testUsageWakeRestoresLiveThemeBeforeDroppingPath(source)) {
     return 1;
   }
 

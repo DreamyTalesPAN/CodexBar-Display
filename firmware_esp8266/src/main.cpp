@@ -201,10 +201,6 @@ standby::State standbyState;
 // really drawn. There is no second resident ThemeSpec slot: both directions
 // reload from LittleFS, which #277 measured at 250-420 ms.
 String standbyLiveThemePath;
-// A real usage frame is rendered before maintainStandby() observes the wake.
-// Remember that proof so the exit path does not restore and redraw the same
-// live theme a second time in the next loop.
-bool standbyWakeRenderedByUsageFrame = false;
 codexbar_display::esp8266::wifi_setup::State setupWifiState;
 WifiCredentials savedWifiCredentials;
 bool savedWifiCredentialsAvailable = false;
@@ -1037,7 +1033,6 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
   // next loop immediately exits standby and restores the live theme again.
   // Real Wi-Fi and USB usage frames still reset the idle timer as before.
   if (event.usageProgressed && strcmp(transport, "theme") != 0) {
-    standbyWakeRenderedByUsageFrame = standbyState.active && event.visualChanged;
     standby::NoteUsageActivity(standbyState, lastFrameAcceptedAtMs);
   }
   // SNTP delivers UTC only. The Companion supplies the current local date/time
@@ -2476,7 +2471,6 @@ void maintainStandby() {
     return;
   }
   if (transition == standby::Transition::Enter) {
-    standbyWakeRenderedByUsageFrame = false;
     const String livePath = activeThemeSpecPath;
     const String screensaverPath(deviceSettings.standby.screensaverPath);
     // Selecting the live theme as the screensaver only changes brightness.
@@ -2494,12 +2488,10 @@ void maintainStandby() {
     // An error frame caused this exit and must remain visible. Restoring the
     // saved live ThemeSpec here would overwrite the error before it is seen.
     if (!codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
-        !standbyWakeRenderedByUsageFrame &&
         standbyLiveThemePath.length() > 0 &&
         standbyLiveThemePath != activeThemeSpecPath) {
       renderStoredThemeSpecForStandby(standbyLiveThemePath);
     }
-    standbyWakeRenderedByUsageFrame = false;
     standbyLiveThemePath = "";
   }
   applyDeviceSettings();
