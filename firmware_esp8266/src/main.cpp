@@ -385,7 +385,7 @@ bool saveDeviceSettings() {
       runtimeCtx.clock, record + kClockTransitionRecordOffset);
   const size_t written = file.write(record, sizeof(record));
   file.close();
-  return written > 0;
+  return written == sizeof(record);
 }
 
 // Reset-deadline handover across a self-initiated restart.

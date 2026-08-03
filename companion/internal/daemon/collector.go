@@ -703,9 +703,9 @@ func carryForwardSnapshotTokenStats(previous providerSnapshot, next *providerSna
 // tokenHistoryFingerprint identifies the finished part of a provider's history.
 // CodexBar warms its cost scan incrementally and reports every intermediate
 // result as a success, so a history that stops changing is the only available
-// completeness signal. Today is excluded because a warming scan fills in older
-// days while ordinary usage only moves today, which would otherwise keep an
-// active provider permanently unsettled.
+// completeness signal. Today's latest session is excluded because ordinary
+// activity moves both values together; earlier sessions discovered today still
+// change the fingerprint and keep a warming scan unsettled.
 func tokenHistoryFingerprint(cost *codexbar.ProviderCostUsage, now time.Time) string {
 	if cost == nil {
 		return ""
@@ -713,12 +713,13 @@ func tokenHistoryFingerprint(cost *codexbar.ProviderCostUsage, now time.Time) st
 	today := now.UTC().Format("2006-01-02")
 	var print strings.Builder
 	for _, day := range cost.Daily {
+		tokens := day.TotalTokens
 		if day.Day == today {
-			continue
+			tokens = max(0, tokens-cost.LatestTokens)
 		}
 		print.WriteString(day.Day)
 		print.WriteByte(':')
-		print.WriteString(strconv.FormatInt(day.TotalTokens, 10))
+		print.WriteString(strconv.FormatInt(tokens, 10))
 		print.WriteByte(';')
 	}
 	return print.String()

@@ -4821,6 +4821,29 @@ func TestProviderCollectorKeepsScanningWhileTokenHistoryStillGrows(t *testing.T)
 	}
 }
 
+func TestTokenHistoryFingerprintSeparatesTodayHistoryFromLiveActivity(t *testing.T) {
+	now := time.Date(2026, 7, 30, 11, 35, 0, 0, time.UTC)
+	fingerprint := func(todayTokens, latestTokens int64) string {
+		return tokenHistoryFingerprint(&codexbar.ProviderCostUsage{
+			LatestTokens: latestTokens,
+			Daily: []codexbar.ProviderCostDay{{
+				Day:         "2026-07-30",
+				TotalTokens: todayTokens,
+			}},
+		}, now)
+	}
+
+	if fingerprint(120, 120) != fingerprint(150, 150) {
+		t.Fatal("ordinary activity in today's latest session must not keep history unsettled")
+	}
+	if fingerprint(150, 150) == fingerprint(320, 150) {
+		t.Fatal("earlier sessions discovered today must keep history unsettled")
+	}
+	if got := fingerprint(120, 120); got == "" {
+		t.Fatal("today's presence must distinguish a populated history from an empty scan")
+	}
+}
+
 func TestProviderCollectorAcceptedTokenStatsPersistForImmediateUsageAPIRead(t *testing.T) {
 	prepareFastTestEnv(t)
 
