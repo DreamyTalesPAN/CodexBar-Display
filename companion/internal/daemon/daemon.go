@@ -1012,6 +1012,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		collectedAt = now
 		decision.Selected.CollectedAt = collectedAt
 	}
+	result.resetBasisAt = collectedAt
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
 }
@@ -1165,7 +1166,9 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = applyDeviceUsageWindowLimit(frame, caps)
-	frame = attachClockFields(frame, deps.now())
+	now := deps.now()
+	frame = attachClockFields(frame, now)
+	frame = frame.ApplyResetTrust(result.resetBasisAt, now, result.usageFresh)
 
 	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
 		var applied bool
