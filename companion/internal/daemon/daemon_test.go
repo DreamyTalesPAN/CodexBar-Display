@@ -2649,6 +2649,9 @@ func TestRunCycleWithDepsUsesLastGoodFrameDuringTransientFetchFailure(t *testing
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected first cycle to succeed, got %v", err)
 	}
+	if _, _, ok := loadPersistedLastGoodAnyAge(); !ok {
+		t.Fatal("expected first cycle to persist the sent display frame")
+	}
 
 	current = current.Add(lastGoodMaxAge() + time.Minute)
 	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
@@ -2670,6 +2673,12 @@ func TestRunCycleWithDepsUsesLastGoodFrameDuringTransientFetchFailure(t *testing
 	}
 	if !second.UsageUnavailable {
 		t.Fatalf("expected expired last-good usage to be unavailable, got %+v", second)
+	}
+	if _, _, ok := loadPersistedLastGoodAnyAge(); ok {
+		t.Fatal("expired usage left the previously sent percentages persisted")
+	}
+	if !state.hasLastGood || state.lastGood.UsageUnavailable {
+		t.Fatalf("clearing the display snapshot also removed the in-memory recovery frame: %+v", state.lastGood)
 	}
 }
 

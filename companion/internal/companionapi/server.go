@@ -1522,7 +1522,6 @@ func (s *Server) cachedExactUsageOverlay(now time.Time, usage daemon.PersistedUs
 		return usageResponse{}, false
 	}
 	cached := cloneCachedUsageResponse(*s.usageCache)
-	cachedAt := s.usageCacheAt
 	s.usageCacheMu.RUnlock()
 
 	cachedProviderID := strings.TrimSpace(cached.CurrentProvider)
@@ -1539,7 +1538,11 @@ func (s *Server) cachedExactUsageOverlay(now time.Time, usage daemon.PersistedUs
 
 	for _, provider := range usage.Providers {
 		id := usageProviderID(provider.Provider, provider.Frame.Provider)
-		if id == cachedProviderID && !provider.Stale && !provider.CollectedAt.Before(cachedAt) {
+		if id != cachedProviderID || provider.Stale {
+			continue
+		}
+		cachedCollectedAt, err := time.Parse(time.RFC3339, cachedProvider.CollectedAt)
+		if err != nil || !provider.CollectedAt.Before(cachedCollectedAt) {
 			return usageResponse{}, false
 		}
 	}

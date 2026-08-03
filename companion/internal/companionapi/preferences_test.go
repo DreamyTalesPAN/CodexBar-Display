@@ -827,6 +827,33 @@ func TestExactUsageCacheNeverOutranksNewerCollectorTokenHistory(t *testing.T) {
 	}
 }
 
+func TestExactUsageCacheNeverOutranksNewerCollectorQuotaSnapshot(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+
+	server.cacheExactProviderUsage(codexbar.ParsedFrame{
+		Provider:    "codex",
+		Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 77},
+		Source:      "exact-probe",
+		CollectedAt: now.Add(-2 * time.Minute),
+	})
+
+	current := daemon.PersistedUsage{
+		CurrentProvider: "codex",
+		Providers: []daemon.ProviderUsageSnapshot{{
+			Provider:    "codex",
+			Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42},
+			Source:      "collector",
+			CollectedAt: now.Add(-time.Minute),
+		}},
+	}
+
+	if got, ok := server.cachedExactUsageOverlay(now, current); ok {
+		t.Fatalf("older exact probe outranked the newer collector snapshot: %#v", got.Providers)
+	}
+}
+
 func TestStaleUsageSnapshotNeverPresentsUnknownPercentagesAsRealZero(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)

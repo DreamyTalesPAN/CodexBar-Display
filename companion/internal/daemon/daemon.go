@@ -1229,7 +1229,11 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		return err
 	}
 	persistActiveWiFiTarget(port, deps)
-	if result.failureErr == nil && !frame.UsageUnavailable {
+	if frame.UsageUnavailable {
+		if err := clearPersistedDisplayFrame(state); err != nil {
+			deps.logf("runtime event=last-sent-frame-clear-failed reason=usage-unavailable err=%v\n", err)
+		}
+	} else if result.failureErr == nil {
 		updateLastGoodState(state, frame, deps.now(), deps)
 	}
 
@@ -1431,17 +1435,23 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 	state.lastGood = protocol.Frame{}
 	state.lastGoodAt = time.Time{}
 	state.hasLastGood = false
-	state.lastPersistedGood = protocol.Frame{}
-	state.lastPersistedAt = time.Time{}
-	state.hasPersistedGood = false
 	if state.selector != nil {
 		state.selector.SetCurrentProvider("")
 	}
-	if err := clearPersistedLastGood(); err != nil {
+	if err := clearPersistedDisplayFrame(state); err != nil {
 		deps.logf("runtime event=last-good-clear-failed provider=%s err=%v\n", provider, err)
 		return
 	}
 	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-disabled\n", provider)
+}
+
+func clearPersistedDisplayFrame(state *runtimeState) error {
+	if state != nil {
+		state.lastPersistedGood = protocol.Frame{}
+		state.lastPersistedAt = time.Time{}
+		state.hasPersistedGood = false
+	}
+	return clearPersistedLastGood()
 }
 
 func updateLastGoodState(state *runtimeState, frame protocol.Frame, now time.Time, deps runtimeDeps) {
