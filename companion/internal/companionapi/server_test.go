@@ -6687,19 +6687,8 @@ func TestWriteRepairErrorMapsPairingAuthorizationStatus(t *testing.T) {
 
 func TestDefaultRepairDeadlineFitsExtendedUIRequestBudget(t *testing.T) {
 	const uiRequestBudget = 120 * time.Second
-	renderBudget := displayRenderWaitTime
-	if deviceTimeout > renderBudget {
-		renderBudget = deviceTimeout
-	}
-	worstCase := time.Duration(repairDiscoveryAttempts)*discoveryProbeTime +
-		time.Duration(repairDiscoveryAttempts-1)*repairDiscoveryRetryGap +
-		time.Duration(defaultPairAttempts)*defaultPairAttemptTimeout +
-		time.Duration(defaultPairAttempts-1)*defaultPairRetryGap +
-		2*deviceHealthProbeTime +
-		2*displayStreamWaitTime +
-		renderBudget
-	if worstCase >= uiRequestBudget {
-		t.Fatalf("backend repair deadline %s must stay below extended UI request budget %s", worstCase, uiRequestBudget)
+	if repairRequestTimeout >= uiRequestBudget {
+		t.Fatalf("backend repair request timeout %s must stay below extended UI request budget %s", repairRequestTimeout, uiRequestBudget)
 	}
 }
 

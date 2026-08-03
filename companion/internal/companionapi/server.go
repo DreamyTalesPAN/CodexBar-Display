@@ -59,6 +59,7 @@ const (
 	deviceConnectionSetup    = "setup_required"
 	deviceTimeout            = 15 * time.Second
 	deviceSearchWindow       = 30 * time.Second
+	repairRequestTimeout     = 110 * time.Second
 	// Device requests are serialized because the ESP8266 serves one request at
 	// a time. A read-only probe can therefore wait behind a frame render before
 	// it reaches the device; keep this below the client timeout, but long enough
@@ -2788,8 +2789,10 @@ func (s *Server) handleDeviceRepair(w http.ResponseWriter, r *http.Request) {
 	if !decodeOptionalJSON(w, r, &req) {
 		return
 	}
+	repairCtx, cancel := context.WithTimeout(r.Context(), repairRequestTimeout)
+	defer cancel()
 	device, err := s.repairDevice(
-		r.Context(),
+		repairCtx,
 		strings.TrimSpace(req.Target),
 		strings.TrimSpace(req.ExpectedDeviceID),
 		req.ForcePair,
