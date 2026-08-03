@@ -770,14 +770,11 @@ func parsedTokenStatsCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time
 }
 
 func snapshotTokenStatsFresh(snapshot providerSnapshot, now time.Time, maxAge time.Duration) bool {
-	if !snapshotHasTokenStats(snapshot) {
-		return false
-	}
 	return isLastGoodFreshAt(snapshot.TokenStatsCollected, now, maxAge)
 }
 
 func snapshotWithFreshTokenStats(snapshot providerSnapshot, now time.Time, maxAge time.Duration) providerSnapshot {
-	if snapshotHasTokenStats(snapshot) && !snapshotTokenStatsFresh(snapshot, now, maxAge) {
+	if !snapshotTokenStatsFresh(snapshot, now, maxAge) {
 		clearSnapshotTokenStats(&snapshot)
 	}
 	return snapshot

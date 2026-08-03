@@ -4602,6 +4602,22 @@ func TestProviderCollectorSuccessfulEmptyTokenStatsClearsLastGood(t *testing.T) 
 	if got.Frame.TotalTokens != 0 || got.Meta.Cost != nil || !got.TokenStatsCollected.Equal(current) {
 		t.Fatalf("successful empty token scan did not clear stats and mark completion: %#v", got)
 	}
+
+	current = current.Add(time.Minute)
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 18, 43, 3500)}, nil
+	}
+	collector.collectOnce(context.Background())
+	got = collector.providers["codex"]
+	if got.Frame.TotalTokens != 0 || got.Meta.Cost != nil || !got.TokenStatsCollected.Equal(current.Add(-time.Minute)) {
+		t.Fatalf("quota refresh dropped successful empty token completion: %#v", got)
+	}
+
+	current = current.Add(10 * time.Minute)
+	collector.collectOnce(context.Background())
+	if got := collector.providers["codex"]; !got.TokenStatsCollected.IsZero() {
+		t.Fatalf("expired empty token completion stayed ready: %#v", got)
+	}
 }
 
 func TestProviderCollectorPartialTokenScanKeepsFailedProviderLastGood(t *testing.T) {

@@ -715,34 +715,35 @@ type persistedDisplayFrame struct {
 }
 
 type usageProviderInfo struct {
-	ID                 string                   `json:"id"`
-	Label              string                   `json:"label"`
-	Source             string                   `json:"source,omitempty"`
-	Session            int                      `json:"session"`
-	Weekly             int                      `json:"weekly"`
-	ResetSec           int64                    `json:"resetSecs,omitempty"`
-	UsageMode          string                   `json:"usageMode"`
-	SessionTokens      int64                    `json:"sessionTokens,omitempty"`
-	WeekTokens         int64                    `json:"weekTokens,omitempty"`
-	TotalTokens        int64                    `json:"totalTokens,omitempty"`
-	Activity           string                   `json:"activity,omitempty"`
-	Stale              bool                     `json:"stale"`
-	UsageUnavailable   bool                     `json:"usageUnavailable,omitempty"`
-	SessionUnavailable bool                     `json:"sessionUnavailable,omitempty"`
-	WeeklyUnavailable  bool                     `json:"weeklyUnavailable,omitempty"`
-	CollectedAt        string                   `json:"collectedAt,omitempty"`
-	ActivityObservedAt string                   `json:"activityObservedAt,omitempty"`
-	RateLimited        bool                     `json:"rateLimited,omitempty"`
-	BlockedUntil       string                   `json:"blockedUntil,omitempty"`
-	Windows            []usageWindowInfo        `json:"windows,omitempty"`
-	Status             *usageStatusInfo         `json:"status,omitempty"`
-	Credits            *usageCreditsInfo        `json:"credits,omitempty"`
-	ResetCredits       *usageResetCreditsInfo   `json:"resetCredits,omitempty"`
-	Cost               *usageCostInfo           `json:"cost,omitempty"`
-	CostSettled        bool                     `json:"costSettled,omitempty"`
-	TokenUsageReady    bool                     `json:"-"`
-	Pace               []usagePaceInfo          `json:"pace,omitempty"`
-	UsageOverTime      []usageOverTimePointInfo `json:"usageOverTime,omitempty"`
+	ID                    string                   `json:"id"`
+	Label                 string                   `json:"label"`
+	Source                string                   `json:"source,omitempty"`
+	Session               int                      `json:"session"`
+	Weekly                int                      `json:"weekly"`
+	ResetSec              int64                    `json:"resetSecs,omitempty"`
+	UsageMode             string                   `json:"usageMode"`
+	SessionTokens         int64                    `json:"sessionTokens,omitempty"`
+	WeekTokens            int64                    `json:"weekTokens,omitempty"`
+	TotalTokens           int64                    `json:"totalTokens,omitempty"`
+	Activity              string                   `json:"activity,omitempty"`
+	Stale                 bool                     `json:"stale"`
+	UsageUnavailable      bool                     `json:"usageUnavailable,omitempty"`
+	SessionUnavailable    bool                     `json:"sessionUnavailable,omitempty"`
+	WeeklyUnavailable     bool                     `json:"weeklyUnavailable,omitempty"`
+	CollectedAt           string                   `json:"collectedAt,omitempty"`
+	ActivityObservedAt    string                   `json:"activityObservedAt,omitempty"`
+	RateLimited           bool                     `json:"rateLimited,omitempty"`
+	BlockedUntil          string                   `json:"blockedUntil,omitempty"`
+	Windows               []usageWindowInfo        `json:"windows,omitempty"`
+	Status                *usageStatusInfo         `json:"status,omitempty"`
+	Credits               *usageCreditsInfo        `json:"credits,omitempty"`
+	ResetCredits          *usageResetCreditsInfo   `json:"resetCredits,omitempty"`
+	Cost                  *usageCostInfo           `json:"cost,omitempty"`
+	CostSettled           bool                     `json:"costSettled,omitempty"`
+	TokenUsageReady       bool                     `json:"-"`
+	TokenStatsCollectedAt time.Time                `json:"-"`
+	Pace                  []usagePaceInfo          `json:"pace,omitempty"`
+	UsageOverTime         []usageOverTimePointInfo `json:"usageOverTime,omitempty"`
 }
 
 type usageWindowInfo struct {
@@ -1610,6 +1611,7 @@ func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
 			continue
 		}
 		fresh.TokenUsageReady = base.Providers[i].TokenUsageReady
+		fresh.TokenStatsCollectedAt = base.Providers[i].TokenStatsCollectedAt
 		base.Providers[i] = fresh
 		replaced = true
 		break
@@ -1671,6 +1673,9 @@ func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
 			provider.CostSettled = cached.CostSettled
 		}
 		provider.TokenUsageReady = provider.TokenUsageReady || cached.TokenUsageReady
+		if provider.TokenStatsCollectedAt.IsZero() {
+			provider.TokenStatsCollectedAt = cached.TokenStatsCollectedAt
+		}
 	}
 	fresh.TokenUsageReady = usageProvidersHaveTokenResult(fresh.Providers)
 	fresh.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(fresh.Providers)
@@ -2199,10 +2204,15 @@ func usageResponseFromPersisted(now time.Time, usage daemon.PersistedUsage) usag
 	}
 	resp := emptyUsageResponse(now, "codexbar-display")
 	resp.CurrentProvider = strings.TrimSpace(usage.CurrentProvider)
-	resp.Providers = providers
 	resp.UsageMode = usageModeForProviders(providers)
 	resp.TokenUsageReady = usageProvidersHaveTokenResult(providers)
 	resp.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(providers)
+	if !resp.TokenUsageReady {
+		for i := range providers {
+			clearUsageProviderTokenHistory(&providers[i])
+		}
+	}
+	resp.Providers = providers
 	if resp.CurrentProvider == "" && len(providers) > 0 {
 		resp.CurrentProvider = providers[0].ID
 	}
@@ -2223,12 +2233,24 @@ func emptyUsageResponse(now time.Time, source string) usageResponse {
 }
 
 func usageProvidersHaveTokenResult(providers []usageProviderInfo) bool {
+	if len(providers) == 0 {
+		return false
+	}
+	var completedAt time.Time
 	for _, provider := range providers {
-		if provider.TokenUsageReady || provider.Cost != nil {
-			return true
+		if !provider.TokenUsageReady && provider.Cost == nil {
+			return false
+		}
+		if provider.TokenStatsCollectedAt.IsZero() {
+			continue
+		}
+		if completedAt.IsZero() {
+			completedAt = provider.TokenStatsCollectedAt
+		} else if !provider.TokenStatsCollectedAt.Equal(completedAt) {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 // usageProvidersHaveUpdatingTokenHistory reports whether any shown token
@@ -2256,34 +2278,35 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		return usageProviderInfo{}, false
 	}
 	return usageProviderInfo{
-		ID:                 id,
-		Label:              usageProviderLabel(id, frame.Label),
-		Source:             strings.TrimSpace(snapshot.Source),
-		Session:            frame.Session,
-		Weekly:             frame.Weekly,
-		ResetSec:           frame.ResetSec,
-		UsageMode:          usageModeOrDefault(frame.UsageMode),
-		SessionTokens:      frame.SessionTokens,
-		WeekTokens:         frame.WeekTokens,
-		TotalTokens:        frame.TotalTokens,
-		Activity:           strings.TrimSpace(frame.Activity),
-		Stale:              snapshot.Stale,
-		UsageUnavailable:   snapshot.Stale || (frame.UsageUnavailable && len(snapshot.Meta.Windows) == 0),
-		SessionUnavailable: snapshot.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
-		WeeklyUnavailable:  snapshot.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
-		CollectedAt:        formatOptionalTime(snapshot.CollectedAt),
-		ActivityObservedAt: formatOptionalTime(snapshot.ActivityObservedAt),
-		RateLimited:        snapshot.RateLimited,
-		BlockedUntil:       formatOptionalTime(snapshot.RateLimitedUntil),
-		Windows:            usageWindowsFromMeta(snapshot.Meta),
-		Status:             usageStatusFromMeta(snapshot.Meta),
-		Credits:            usageCreditsFromMeta(snapshot.Meta),
-		ResetCredits:       usageResetCreditsFromMeta(snapshot.Meta),
-		Cost:               usageCostFromMeta(snapshot.Meta),
-		CostSettled:        snapshot.TokenHistorySettled,
-		TokenUsageReady:    !snapshot.TokenStatsCollectedAt.IsZero(),
-		Pace:               usagePaceFromMeta(snapshot.Meta),
-		UsageOverTime:      usageOverTimeFromMeta(snapshot.Meta),
+		ID:                    id,
+		Label:                 usageProviderLabel(id, frame.Label),
+		Source:                strings.TrimSpace(snapshot.Source),
+		Session:               frame.Session,
+		Weekly:                frame.Weekly,
+		ResetSec:              frame.ResetSec,
+		UsageMode:             usageModeOrDefault(frame.UsageMode),
+		SessionTokens:         frame.SessionTokens,
+		WeekTokens:            frame.WeekTokens,
+		TotalTokens:           frame.TotalTokens,
+		Activity:              strings.TrimSpace(frame.Activity),
+		Stale:                 snapshot.Stale,
+		UsageUnavailable:      snapshot.Stale || (frame.UsageUnavailable && len(snapshot.Meta.Windows) == 0),
+		SessionUnavailable:    snapshot.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
+		WeeklyUnavailable:     snapshot.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
+		CollectedAt:           formatOptionalTime(snapshot.CollectedAt),
+		ActivityObservedAt:    formatOptionalTime(snapshot.ActivityObservedAt),
+		RateLimited:           snapshot.RateLimited,
+		BlockedUntil:          formatOptionalTime(snapshot.RateLimitedUntil),
+		Windows:               usageWindowsFromMeta(snapshot.Meta),
+		Status:                usageStatusFromMeta(snapshot.Meta),
+		Credits:               usageCreditsFromMeta(snapshot.Meta),
+		ResetCredits:          usageResetCreditsFromMeta(snapshot.Meta),
+		Cost:                  usageCostFromMeta(snapshot.Meta),
+		CostSettled:           snapshot.TokenHistorySettled,
+		TokenUsageReady:       !snapshot.TokenStatsCollectedAt.IsZero(),
+		TokenStatsCollectedAt: snapshot.TokenStatsCollectedAt,
+		Pace:                  usagePaceFromMeta(snapshot.Meta),
+		UsageOverTime:         usageOverTimeFromMeta(snapshot.Meta),
 	}, true
 }
 

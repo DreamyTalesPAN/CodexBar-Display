@@ -2311,6 +2311,46 @@ func TestUsageTreatsSuccessfulEmptyTokenScanAsReady(t *testing.T) {
 	}
 }
 
+func TestUsageWaitsForEveryProviderTokenResult(t *testing.T) {
+	now := time.Date(2026, 7, 28, 13, 0, 0, 0, time.UTC)
+	usage := daemon.PersistedUsage{
+		SavedAt: now,
+		Providers: []daemon.ProviderUsageSnapshot{
+			{
+				Provider: "codex",
+				Frame: protocol.Frame{
+					Provider: "codex", Label: "Codex", Weekly: 42, TotalTokens: 120,
+				},
+				Meta:        codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{Last30DaysTokens: 120}},
+				CollectedAt: now, TokenStatsCollectedAt: now,
+			},
+			{
+				Provider: "claude",
+				Frame: protocol.Frame{
+					Provider: "claude", Label: "Claude", Weekly: 31, TotalTokens: 90,
+				},
+				Meta:                  codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{Last30DaysTokens: 90}},
+				CollectedAt:           now,
+				TokenStatsCollectedAt: now.Add(-time.Minute),
+			},
+		},
+	}
+
+	partial := usageResponseFromPersisted(now, usage)
+	if partial.TokenUsageReady {
+		t.Fatalf("partial provider scan published an incomplete aggregate: %+v", partial)
+	}
+	if partial.Providers[0].TotalTokens != 0 || partial.Providers[0].Cost != nil {
+		t.Fatalf("partial provider scan exposed incomplete totals: %+v", partial.Providers)
+	}
+
+	usage.Providers[1].TokenStatsCollectedAt = now
+	complete := usageResponseFromPersisted(now, usage)
+	if !complete.TokenUsageReady || complete.Providers[0].TotalTokens != 120 || complete.Providers[0].Cost == nil {
+		t.Fatalf("complete provider scan did not publish token totals: %+v", complete)
+	}
+}
+
 func TestDisplayFrameLatestReturnsPersistedLastGoodFrame(t *testing.T) {
 	t.Setenv(displayStreamOutLogEnv, filepath.Join(t.TempDir(), "missing.log"))
 	server := newTestServer(t, runtimeconfig.Config{})
