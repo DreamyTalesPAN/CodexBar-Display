@@ -503,7 +503,7 @@ function UsageEmptyState({
     companionStatus === "online"
       ? loading
         ? null
-        : "Enable a provider below to start seeing usage."
+        : "Manage providers in Settings, then refresh usage."
       : "Run setup again, then refresh usage.";
 
   return (

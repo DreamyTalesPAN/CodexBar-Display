@@ -470,3 +470,12 @@ issue scope, or release permission never implies UI permission.
   separate.
 - Approved files: `provider-picker.tsx` and the matching unit and customer-flow
   assertions.
+
+## 2026-08-03 — Empty Usage points to Settings
+
+- User approval: The user's explicit approval makes Usage read-only and moves
+  provider management to Settings.
+- Approved customer-visible result: When no provider usage is available, Usage
+  tells the customer to manage providers in Settings and refresh instead of
+  referring to controls below the empty state.
+- Approved files: `usage-screen.tsx` and its unit test.

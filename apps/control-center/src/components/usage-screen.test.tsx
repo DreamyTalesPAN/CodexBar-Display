@@ -126,6 +126,14 @@ describe("UsageScreen", () => {
     expect(html).not.toContain("Loading usage");
   });
 
+  it("points an empty usage result to provider settings", () => {
+    const html = renderUsage(null, { ...usage, providers: [] });
+
+    expect(html).toContain("No provider usage is available yet.");
+    expect(html).toContain("Manage providers in Settings, then refresh usage.");
+    expect(html).not.toContain("Enable a provider below");
+  });
+
   it("shows a dedicated token usage refresh action", () => {
     const html = renderUsage();
 
