@@ -1862,16 +1862,17 @@ bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String
   return true;
 }
 
-void activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev) {
+bool activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev) {
   codexbar_display::core::SerialConsumeEvent event;
   if (!codexbar_display::core::RestoreStoredThemeSpecFrame(
           runtimeCtx.runtime, themeId, themeRev, raw, millis(), event)) {
-    return;
+    return false;
   }
   renderer.ResetGifStateForAssetUpdate();
   activeThemeSpecPath = path;
   activeThemeSpecHash = hashHex8(raw);
   markFrameAccepted(event, "theme");
+  return true;
 }
 
 bool activateStoredThemePath(const String& path, String& themeId, int& themeRev, String& error) {
@@ -1883,12 +1884,14 @@ bool activateStoredThemePath(const String& path, String& themeId, int& themeRev,
   if (!themeSpecMetadata(raw, themeId, themeRev, error)) {
     return false;
   }
+  if (!activateStoredThemeSpec(path, raw, themeId, themeRev)) {
+    error = "theme spec not renderable";
+    return false;
+  }
   if (!saveActiveThemeSpecPath(path)) {
     error = "save active theme failed";
     return false;
   }
-
-  activateStoredThemeSpec(path, raw, themeId, themeRev);
   return true;
 }
 
@@ -1973,7 +1976,10 @@ bool loadStoredThemeSpecCacheFromPath(const String& path) {
     return false;
   }
 
-  activateStoredThemeSpec(path, raw, themeId, themeRev);
+  if (!activateStoredThemeSpec(path, raw, themeId, themeRev)) {
+    Serial.printf("theme_cache_load_failed path=%s err=theme spec not renderable\n", path.c_str());
+    return false;
+  }
   Serial.printf("theme_cache_loaded path=%s id=%s rev=%d\n", path.c_str(), themeId.c_str(), themeRev);
   return true;
 }

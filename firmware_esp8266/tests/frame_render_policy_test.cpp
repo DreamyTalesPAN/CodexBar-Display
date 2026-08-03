@@ -60,7 +60,7 @@ bool testHttpCallbackDispatchStoresOnePendingEvent(const std::string& source) {
 bool testThemeActivationUsesDeferredRenderTransport(const std::string& source) {
   const std::size_t policyStart = source.find("bool acceptedFrameRenderDeferredForTransport(");
   const std::size_t policyEnd = source.find("\nvoid markFrameAccepted(", policyStart);
-  const std::size_t activateStart = source.find("void activateStoredThemeSpec(");
+  const std::size_t activateStart = source.find("bool activateStoredThemeSpec(");
   const std::size_t activateEnd = source.find("\nbool activateStoredThemePath(", activateStart);
   if (!expect(
           policyStart != std::string::npos && policyEnd != std::string::npos &&
@@ -82,7 +82,7 @@ bool testThemeActivationUsesDeferredRenderTransport(const std::string& source) {
 }
 
 bool testThemeActivationDoesNotCloseFilesystemBeforeResponse(const std::string& source) {
-  const std::size_t activateStart = source.find("void activateStoredThemeSpec(");
+  const std::size_t activateStart = source.find("bool activateStoredThemeSpec(");
   const std::size_t activateEnd = source.find("\nbool activateStoredThemePath(", activateStart);
   if (!expect(
           activateStart != std::string::npos && activateEnd != std::string::npos,
@@ -95,6 +95,23 @@ bool testThemeActivationDoesNotCloseFilesystemBeforeResponse(const std::string& 
       activate.find("close_all_fs()") == std::string::npos &&
           activate.find("LittleFS.end()") == std::string::npos,
       "theme activation must not unmount LittleFS before the HTTP response");
+}
+
+bool testThemeActivationRejectsInvalidSpecsBeforePersisting(const std::string& source) {
+  const std::size_t activateStart = source.find("bool activateStoredThemePath(");
+  const std::size_t activateEnd = source.find("\n\n#endif", activateStart);
+  if (!expect(
+          activateStart != std::string::npos && activateEnd != std::string::npos,
+          "stored theme path activation must remain discoverable")) {
+    return false;
+  }
+
+  const std::string activate = source.substr(activateStart, activateEnd - activateStart);
+  const std::size_t restore = activate.find("if (!activateStoredThemeSpec(");
+  const std::size_t persist = activate.find("if (!saveActiveThemeSpecPath(path))");
+  return expect(
+      restore != std::string::npos && persist != std::string::npos && restore < persist,
+      "stored theme activation must reject unrenderable specs before persisting their path");
 }
 
 bool testSetupAccessPointClearsPendingThemeRender(const std::string& source) {
@@ -153,6 +170,7 @@ int main(int argc, char** argv) {
       !testHttpCallbackDispatchStoresOnePendingEvent(source) ||
       !testThemeActivationUsesDeferredRenderTransport(source) ||
       !testThemeActivationDoesNotCloseFilesystemBeforeResponse(source) ||
+      !testThemeActivationRejectsInvalidSpecsBeforePersisting(source) ||
       !testSetupAccessPointClearsPendingThemeRender(source) ||
       !testPendingHttpRenderRunsBeforeUsb(source) ||
       !testHelloAdvertisesEscapedUsageWindowCapacity(source)) {
