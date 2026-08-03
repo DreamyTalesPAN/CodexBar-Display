@@ -194,6 +194,20 @@ func TestDefaultIntervalForTransport(t *testing.T) {
 	}
 }
 
+func TestProviderSnapshotMaxAgeDoesNotInheritDeviceFrameRetention(t *testing.T) {
+	t.Setenv("CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE", "168h")
+	t.Setenv(providerMaxAgeEnvVar, "")
+
+	if got := providerSnapshotMaxAge(); got != defaultProviderMaxAge {
+		t.Fatalf("provider freshness inherited device-frame retention: got=%s want=%s", got, defaultProviderMaxAge)
+	}
+
+	t.Setenv(providerMaxAgeEnvVar, "20m")
+	if got := providerSnapshotMaxAge(); got != 20*time.Minute {
+		t.Fatalf("provider-specific freshness override was ignored: got=%s want=20m", got)
+	}
+}
+
 func TestRunCycleWithDepsSendsVersionErrorFrameWhenCodexBarTooOld(t *testing.T) {
 	prepareFastTestEnv(t)
 

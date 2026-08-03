@@ -56,6 +56,7 @@ const (
 	collectorTimeoutEnvVar     = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
 	collectorOrderEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
 	providerMaxAgeEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
+	defaultProviderMaxAge      = 10 * time.Minute
 	firmwareManifestEnvVar     = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
 	firmwareManifestURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
 	firmwareUpdateCheckGap     = 6 * time.Hour
@@ -1825,14 +1826,13 @@ func collectorProviderOrder() []string {
 
 func providerSnapshotMaxAge() time.Duration {
 	// Keep per-provider snapshots alive for stale-while-revalidate rendering.
-	d := lastGoodMaxAge()
 	raw := strings.TrimSpace(os.Getenv(providerMaxAgeEnvVar))
 	if raw == "" {
-		return d
+		return defaultProviderMaxAge
 	}
 	parsed, err := time.ParseDuration(raw)
 	if err != nil || parsed <= 0 {
-		return d
+		return defaultProviderMaxAge
 	}
 	return parsed
 }
