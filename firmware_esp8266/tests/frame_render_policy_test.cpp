@@ -187,7 +187,7 @@ bool testStandbyExitLeavesErrorFrameVisible(const std::string& source) {
   }
 
   const std::string standby = source.substr(standbyStart, standbyEnd - standbyStart);
-  const std::size_t errorGuard = standby.find("!codexbar_display::app::CurrentFrame(runtimeCtx).hasError");
+  const std::size_t errorGuard = standby.find("if (!standbyState.active && !hasError &&");
   const std::size_t restore = standby.find("renderStoredThemeSpecForStandby(standbyLiveThemePath)");
   return expect(
       errorGuard != std::string::npos && restore != std::string::npos && errorGuard < restore,
