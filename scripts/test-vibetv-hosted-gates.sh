@@ -375,8 +375,18 @@ main() {
     'guest test must exercise the bundled candidate companion render path'
   assert_contains "$GUEST_TEST" 'if [[ "$STATE" == clean_os ]]; then' \
     'guest test must run a standalone candidate daemon only on a clean OS'
+  assert_contains "$GUEST_TEST" 'if ! "$CANDIDATE_COMPANION" daemon' \
+    'clean OS guest test must inspect an expected no-provider daemon exit'
+  assert_contains "$GUEST_TEST" 'error code=runtime/no-providers' \
+    'clean OS guest test must only tolerate the known no-provider result'
   assert_contains "$GUEST_TEST" '/v1/device/repair' \
     'public guest states must ask the installed runtime to render to the virtual VibeTV'
+  assert_contains "$GUEST_TEST" 'listenerOwner' \
+    'guest test must bind the live Companion port to the installed runtime service'
+  assert_contains "$GUEST_TEST" 'installationMode' \
+    'guest test must verify the running candidate reports DMG installation mode'
+  assert_not_contains "$GUEST_TEST" 'validate-macos-control-center-runtime.sh' \
+    'stateful guest checks must not invoke the clean-host runtime validator'
   assert_not_contains "$GUEST_TEST" '--once --api-addr' \
     'one-shot candidate daemon must not keep a companion API server alive'
 

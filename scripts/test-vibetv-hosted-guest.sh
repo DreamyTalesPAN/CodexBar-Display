@@ -148,7 +148,10 @@ CANDIDATE_COMPANION="$INSTALL_APP/Contents/Helpers/codexbar-display"
 "$CANDIDATE_COMPANION" install-update --target http://127.0.0.1:47834 --manifest-url "$SERVER_URL/firmware-manifest.json" --skip-launchagent-pause > "$OUTPUT/candidate-already-current.txt" 2>&1
 grep -F 'Firmware: already current' "$OUTPUT/candidate-already-current.txt" >/dev/null || die 'candidate companion did not prove already_current'
 if [[ "$STATE" == clean_os ]]; then
-  "$CANDIDATE_COMPANION" daemon --transport wifi --target http://127.0.0.1:47834 --once > "$OUTPUT/candidate-daemon-once.txt" 2>&1
+  if ! "$CANDIDATE_COMPANION" daemon --transport wifi --target http://127.0.0.1:47834 --once > "$OUTPUT/candidate-daemon-once.txt" 2>&1; then
+    grep -F 'error code=runtime/no-providers' "$OUTPUT/candidate-daemon-once.txt" >/dev/null \
+      || die 'candidate daemon failed before rendering to the virtual VibeTV'
+  fi
 else
   # Sparkle relaunches the candidate runtime, so ask that lock-owning process
   # to render instead of starting a competing daemon.
@@ -177,7 +180,33 @@ if not any(event.get("path") == "/update/firmware.raw" for event in state.get("e
     raise SystemExit("candidate companion did not use Raw OTA port 8081")
 PY
 
-CODEX_ALLOW_MACOS_RUNTIME_VALIDATION=1 "$ROOT/scripts/validate-macos-control-center-runtime.sh" --real --installed-app --app "$INSTALL_APP" --expected-version "$VERSION" > "$OUTPUT/companion-port-47832.txt" 2>&1
+if [[ "$STATE" == clean_os ]]; then
+  open -na "$INSTALL_APP"
+fi
+for _ in $(seq 1 30); do
+  curl --fail --silent http://127.0.0.1:47832/v1/status > "$OUTPUT/companion-port-47832.txt" && break
+  sleep 1
+done
+[[ -s "$OUTPUT/companion-port-47832.txt" ]] || die 'installed candidate runtime did not become healthy on port 47832'
+RUNTIME_PID="$(python3 - "$OUTPUT/companion-port-47832.txt" "$VERSION" "$INSTALL_APP" <<'PY'
+import json, sys
+status_path, expected_version, install_app = sys.argv[1:]
+status = json.load(open(status_path, encoding="utf-8"))
+companion = status.get("companion", {})
+runtime = companion.get("runtime", {})
+if (status.get("ok") is not True or companion.get("status") != "ready"
+        or companion.get("version") != expected_version
+        or companion.get("installationMode") != "dmg"
+        or runtime.get("version") != expected_version
+        or runtime.get("executable") != f"{install_app}/Contents/Helpers/codexbar-display"
+        or runtime.get("listenerOwner") != "shop.vibetv.control-center.runtime"
+        or not isinstance(runtime.get("pid"), int) or runtime["pid"] < 1):
+    raise SystemExit("installed candidate runtime status did not match the signed DMG")
+print(runtime["pid"])
+PY
+)"
+LISTENER_PIDS="$(lsof -nP -a -iTCP@127.0.0.1:47832 -sTCP:LISTEN -Fp 2>/dev/null | sed -nE 's/^p([0-9]+)$/\1/p' | sort -u)"
+[[ "$LISTENER_PIDS" == "$RUNTIME_PID" ]] || die 'installed candidate runtime is not the sole port-47832 listener'
 screencapture -x "$OUTPUT/guest-${STATE}.png"
 python3 - "$OUTPUT/result.json" "$STATE" "$VERSION" <<'PY'
 import json, sys
