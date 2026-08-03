@@ -159,6 +159,18 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	if len(sentLines) != 1 {
 		t.Fatalf("expected unavailable usage to preserve the one valid frame, got %d sends", len(sentLines))
 	}
+
+	now = now.Add(lastGoodMaxAge() + time.Second)
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected expired usage to send unavailable state, got %v", err)
+	}
+	if len(sentLines) != 2 {
+		t.Fatalf("expected unavailable state after last-good expiry, got %d sends", len(sentLines))
+	}
+	frame = decodeFrameLine(t, sentLines[1])
+	if frame.Provider != "claude" || !frame.UsageUnavailable {
+		t.Fatalf("expected expired Claude usage to become unavailable, got %+v", frame)
+	}
 }
 
 func TestDefaultIntervalForTransport(t *testing.T) {
