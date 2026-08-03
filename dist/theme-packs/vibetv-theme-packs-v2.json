@@ -5,6 +5,7 @@
     {
       "id": "claude-creature",
       "title": "Claude Creature",
+      "usage": "live",
       "version": "1.1.1",
       "themeRev": 3,
       "themeSpecPath": "/themes/u/claude--3-afab9c.json",
@@ -19,6 +20,7 @@
     {
       "id": "clippy",
       "title": "Clippy",
+      "usage": "live",
       "version": "1.1.1",
       "themeRev": 3,
       "themeSpecPath": "/themes/u/clippy-3-fe3fd4.json",
@@ -33,6 +35,7 @@
     {
       "id": "cozy-meadow",
       "title": "Cozy Meadow",
+      "usage": "live",
       "version": "0.2.1",
       "themeRev": 3,
       "themeSpecPath": "/themes/u/cm-3-1ed79c.json",
@@ -47,6 +50,7 @@
     {
       "id": "mini-classic",
       "title": "Mini Classic",
+      "usage": "live",
       "version": "1.1.2",
       "themeRev": 4,
       "themeSpecPath": "/themes/u/mini-cl-4-656926.json",
@@ -59,8 +63,21 @@
       "bytes": 18499
     },
     {
+      "id": "reset-countdown",
+      "title": "Reset Countdown",
+      "usage": "screensaver",
+      "version": "1.0.0",
+      "themeRev": 1,
+      "themeSpecPath": "/themes/s/reset-1-39352d.json",
+      "requiresFirmware": "1.0.40",
+      "downloadAsset": "vibetv-theme-reset-countdown-v1.0.0.zip",
+      "sha256": "696c0204cc3b950940d1c32fcaae16ae936f8cd278b242591e3f3311b0cdd07c",
+      "bytes": 978
+    },
+    {
       "id": "synthwave",
       "title": "Synthwave",
+      "usage": "live",
       "version": "1.1.1",
       "themeRev": 3,
       "themeSpecPath": "/themes/u/synthwa-3-619665.json",

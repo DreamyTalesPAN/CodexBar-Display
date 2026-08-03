@@ -81,7 +81,17 @@ for (const entry of await readdir(sourceRoot, { withFileTypes: true })) {
     catalogTheme.themeSpecPath === manifest.themeSpec.path,
     `catalog ThemeSpec path mismatch for ${manifest.id}`,
   );
-  assert(spec.rev >= 2, `${manifest.id} must use a post-legacy revision`);
+  assert(
+    catalogTheme.usage === (String(manifest.usage || "live").trim() || "live"),
+    `catalog usage mismatch for ${manifest.id}`,
+  );
+  if (legacyById.has(manifest.id)) {
+    assert(spec.rev >= 2, `${manifest.id} must use a post-legacy revision`);
+    assert(
+      manifest.requiredCapabilities?.includes("usage-slots-v1"),
+      `${manifest.id} does not require usage-slots-v1`,
+    );
+  }
   assert(
     manifest.themeSpec.path.includes(`-${spec.rev}-`),
     `${manifest.id} must use a revisioned ThemeSpec device path`,
@@ -109,14 +119,10 @@ for (const entry of await readdir(sourceRoot, { withFileTypes: true })) {
   );
   assert(
     arraysEqual(
-      catalogTheme.requiredCapabilities,
-      manifest.requiredCapabilities,
+      catalogTheme.requiredCapabilities || [],
+      manifest.requiredCapabilities || [],
     ),
     `capability requirement mismatch for ${manifest.id}`,
-  );
-  assert(
-    manifest.requiredCapabilities?.includes("usage-slots-v1"),
-    `${manifest.id} does not require usage-slots-v1`,
   );
   await assertCatalogAsset(catalogTheme, "current");
   await assertRenderPack(catalogTheme, "current");
