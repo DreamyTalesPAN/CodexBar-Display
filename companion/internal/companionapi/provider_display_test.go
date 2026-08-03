@@ -194,6 +194,35 @@ func TestExactProviderReadinessIsRedactedInPreferences(t *testing.T) {
 	}
 }
 
+func TestProviderDescriptorsDoNotShowStaleOrContradictedExactReadiness(t *testing.T) {
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.providerReadinessMu.Lock()
+	server.providerReadiness = make(map[string]providerReadinessRecord)
+	server.providerReadiness["codex"] = providerReadinessRecord{
+		Status:     codexbar.ProviderReady,
+		CheckedAt:  now,
+		VerifiedAt: now,
+	}
+	server.providerReadiness["claude"] = providerReadinessRecord{
+		Status:    codexbar.ProviderAuthRequired,
+		CheckedAt: now.Add(-providerReadinessFreshness - time.Second),
+	}
+	server.providerReadinessMu.Unlock()
+
+	items := server.providerDescriptors([]codexbar.ProviderSetting{
+		{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthAuthRequired},
+		{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+	})
+	if items[0].Health.State != "auth_required" || items[0].Health.VerifiedAt != "" {
+		t.Fatalf("fresh current auth failure was hidden by old ready record: %+v", items[0].Health)
+	}
+	if items[1].Health.State != "healthy" || items[1].Health.CheckedAt != "" {
+		t.Fatalf("expired exact failure overrode current provider health: %+v", items[1].Health)
+	}
+}
+
 func TestLegacyConfiguredDeviceDoesNotRequireProviderOnboarding(t *testing.T) {
 	progress := setupProgressForConfig(runtimeconfig.Config{DeviceID: "existing-device"})
 	if progress.ProviderSelectionRequired || !progress.ProviderSelectionComplete {

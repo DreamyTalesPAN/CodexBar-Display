@@ -2094,6 +2094,53 @@ func TestRunCycleWithDepsUsesLastGoodFrameDuringTransientFetchFailure(t *testing
 	}
 }
 
+func TestRunCycleWithDepsRejectsLastGoodOutsideFixedSelectionOnFetchFailure(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	lastGood := protocol.Frame{Provider: "claude", Label: "Claude", Session: 61, Weekly: 49}
+	if err := persistLastGood(lastGood, now.Add(-time.Minute)); err != nil {
+		t.Fatalf("persist excluded last good: %v", err)
+	}
+	state := &runtimeState{
+		selector:          codexbar.NewProviderSelector(),
+		lastGood:          lastGood,
+		lastGoodAt:        now.Add(-time.Minute),
+		hasLastGood:       true,
+		lastPersistedGood: lastGood,
+		lastPersistedAt:   now.Add(-time.Minute),
+		hasPersistedGood:  true,
+	}
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	})
+	deps.now = func() time.Time { return now }
+	deps.resolvePort = func(string) (string, error) { return "/dev/cu.usbmodem-test", nil }
+	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorCommand, Err: errors.New("temporary failure")}
+	}
+	var sentLine []byte
+	deps.sendLine = func(_ string, line []byte) error {
+		sentLine = append([]byte(nil), line...)
+		return nil
+	}
+	deps.logf = func(string, ...any) {}
+
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err == nil {
+		t.Fatal("excluded last-good fallback must not hide the fetch failure")
+	}
+	if frame := decodeFrameLine(t, sentLine); frame.Provider == "claude" || frame.Error == "" {
+		t.Fatalf("excluded last-good frame was sent after fixed selection changed: %+v", frame)
+	}
+	if state.hasLastGood || state.hasPersistedGood {
+		t.Fatalf("excluded last-good state survived: %+v", state)
+	}
+	if _, _, ok := loadPersistedLastGoodAnyAge(); ok {
+		t.Fatal("excluded persisted last-good frame survived")
+	}
+}
+
 func TestRunCycleWithDepsUsesLastGoodFrameWhenNoProvidersAfterSelection(t *testing.T) {
 	prepareFastTestEnv(t)
 

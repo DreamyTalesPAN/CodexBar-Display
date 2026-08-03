@@ -575,9 +575,10 @@ func filterDisabledProviders(resp usageResponse, settings []codexbar.ProviderSet
 }
 
 func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []preferenceDescriptor {
+	now := s.currentTime().UTC()
 	lastSuccess := make(map[string]string)
 	if s.loadUsage != nil {
-		if usage, ok := s.loadUsage(s.currentTime().UTC()); ok {
+		if usage, ok := s.loadUsage(now); ok {
 			for _, provider := range usage.Providers {
 				id := strings.TrimSpace(strings.ToLower(provider.Provider))
 				if id == "" {
@@ -601,7 +602,8 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		if !setting.Enabled {
 			state = "disabled"
 			message = "Provider is off."
-		} else if readiness, ok := s.providerReadinessFor(setting.ID); ok {
+		} else if readiness, ok := s.providerReadinessFor(setting.ID); ok &&
+			providerReadinessAppliesToSetting(readiness, setting, now) {
 			state = providerReadinessHealthState(readiness.Status)
 			message = providerReadinessMessage(readiness.Status)
 			checkedAt = readiness.CheckedAt.UTC().Format(time.RFC3339)
@@ -644,6 +646,22 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		})
 	}
 	return items
+}
+
+func providerReadinessAppliesToSetting(readiness providerReadinessRecord, setting codexbar.ProviderSetting, now time.Time) bool {
+	age := now.Sub(readiness.CheckedAt)
+	if readiness.CheckedAt.IsZero() || age < 0 || age > providerReadinessFreshness {
+		return false
+	}
+	if readiness.Status != codexbar.ProviderReady {
+		return true
+	}
+	switch setting.Health {
+	case codexbar.ProviderHealthAuthRequired, codexbar.ProviderHealthSetupRequired, codexbar.ProviderHealthUnavailable:
+		return false
+	default:
+		return true
+	}
 }
 
 func providerDescription(providerID, label string) string {

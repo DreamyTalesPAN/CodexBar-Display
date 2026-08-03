@@ -1307,6 +1307,7 @@ func attachClockFields(frame protocol.Frame, now time.Time) protocol.Frame {
 func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeState, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 	state = ensureCycleState(state, deps)
+	invalidateLastGoodOutsideProviderDisplay(state, deps)
 
 	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
 	if err != nil {
@@ -1356,6 +1357,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 func runCycleFromCollector(ctx context.Context, requestedPort string, state *runtimeState, collector *providerCollector, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 	state = ensureCycleState(state, deps)
+	invalidateLastGoodOutsideProviderDisplay(state, deps)
 	invalidateLastGoodDisabledByInventory(state, collector, deps)
 
 	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
@@ -1406,6 +1408,37 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 		return
 	}
 	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-disabled\n", provider)
+}
+
+func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeDeps) {
+	if state == nil || !state.hasLastGood {
+		return
+	}
+	cfg, ok := loadRuntimeConfig(deps)
+	if !ok || cfg.ProviderDisplay == nil {
+		return
+	}
+	provider := normalizeProviderKey(state.lastGood.Provider)
+	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
+		if normalizeProviderKey(providerID) == provider {
+			return
+		}
+	}
+
+	state.lastGood = protocol.Frame{}
+	state.lastGoodAt = time.Time{}
+	state.hasLastGood = false
+	state.lastPersistedGood = protocol.Frame{}
+	state.lastPersistedAt = time.Time{}
+	state.hasPersistedGood = false
+	if state.selector != nil {
+		state.selector.SetCurrentProvider("")
+	}
+	if err := clearPersistedLastGood(); err != nil {
+		deps.logf("runtime event=last-good-clear-failed provider=%s err=%v\n", provider, err)
+		return
+	}
+	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-display-selection\n", provider)
 }
 
 func probeProvidersDirectly(parent context.Context, order []string, deps runtimeDeps) []codexbar.ParsedFrame {
