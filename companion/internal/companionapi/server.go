@@ -2245,7 +2245,7 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 	if strings.TrimSpace(frame.Error) != "" {
 		return usageProviderInfo{}, false
 	}
-	if frame.UsageUnavailable && !snapshotHasUsableUsage(frame, snapshot.Meta) && !snapshotIsExpiredUsageCarrier(snapshot, frame) {
+	if frame.UsageUnavailable && !snapshotHasUsableUsage(frame, snapshot.Meta) && !snapshotIsUnavailableUsageCarrier(snapshot, frame) {
 		return usageProviderInfo{}, false
 	}
 	id := usageProviderID(snapshot.Provider, frame.Provider)
@@ -2284,12 +2284,11 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 	}, true
 }
 
-func snapshotIsExpiredUsageCarrier(snapshot daemon.ProviderUsageSnapshot, frame protocol.Frame) bool {
-	return snapshot.Stale &&
-		!snapshot.CollectedAt.IsZero() &&
-		frame.UsageUnavailable &&
-		frame.SessionUnavailable &&
-		frame.WeeklyUnavailable
+func snapshotIsUnavailableUsageCarrier(snapshot daemon.ProviderUsageSnapshot, frame protocol.Frame) bool {
+	if snapshot.CollectedAt.IsZero() || !frame.UsageUnavailable {
+		return false
+	}
+	return !snapshot.Stale || (frame.SessionUnavailable && frame.WeeklyUnavailable)
 }
 
 func snapshotHasUsableUsage(frame protocol.Frame, meta codexbar.ProviderUsageMeta) bool {
