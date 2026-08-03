@@ -2106,6 +2106,47 @@ func TestUsageManualRefreshIgnoresDisabledPersistedProviders(t *testing.T) {
 	}
 }
 
+func TestUsageTokenHistoryIgnoresDisabledPersistedProviders(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 45, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true},
+			{ID: "claude", Label: "Claude", Enabled: false},
+		}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: now,
+			Providers: []daemon.ProviderUsageSnapshot{
+				{
+					Provider:    "codex",
+					Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42, TotalTokens: 120},
+					Meta:        codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{Last30DaysTokens: 120}},
+					CollectedAt: now, TokenStatsCollectedAt: now,
+				},
+				{
+					Provider:    "claude",
+					Frame:       protocol.Frame{Provider: "claude", Label: "Claude", Weekly: 24},
+					CollectedAt: now,
+				},
+			},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if rec.Code != http.StatusOK || !got.TokenUsageReady || len(got.Providers) != 1 ||
+		got.Providers[0].ID != "codex" || got.Providers[0].TotalTokens != 120 || got.Providers[0].Cost == nil {
+		t.Fatalf("disabled persisted provider cleared visible token history: status=%d got=%+v", rec.Code, got)
+	}
+}
+
 func TestUsageManualRefreshReportsRateLimitAndBlockedUntil(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)

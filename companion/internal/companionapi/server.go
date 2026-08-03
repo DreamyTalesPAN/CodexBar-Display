@@ -1400,17 +1400,22 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	}()
 	var inventory []codexbar.ProviderSetting
 	inventoryLoaded := false
-	writeUsage := func(resp usageResponse, usage daemon.PersistedUsage) {
+	loadInventory := func() {
 		if !inventoryLoaded {
 			inventory = <-inventoryCh
 			inventoryLoaded = true
 		}
+	}
+	writeUsage := func(resp usageResponse, usage daemon.PersistedUsage) {
+		loadInventory()
 		resp = filterDisabledProviders(resp, inventory)
 		resp.Refresh = s.usageRefreshInfo(now, usageForVisibleProviders(usage, resp.Providers))
 		writeJSON(w, http.StatusOK, usageResponseForDisplayMode(resp, showUsed))
 	}
 	if s.loadUsage != nil {
 		if usage, ok := s.loadUsage(now); ok && len(usage.Providers) > 0 {
+			loadInventory()
+			usage = usageForEnabledProviders(usage, inventory)
 			resp := usageResponseFromPersisted(now, usage)
 			if cached, ok := s.cachedExactUsageOverlay(now, usage); ok {
 				resp = cached
@@ -1451,6 +1456,22 @@ func usageForVisibleProviders(usage daemon.PersistedUsage, visible []usageProvid
 	for _, provider := range usage.Providers {
 		id := usageProviderID(provider.Provider, provider.Frame.Provider)
 		if _, ok := visibleByID[id]; ok {
+			providers = append(providers, provider)
+		}
+	}
+	usage.Providers = providers
+	return usage
+}
+
+func usageForEnabledProviders(usage daemon.PersistedUsage, settings []codexbar.ProviderSetting) daemon.PersistedUsage {
+	if len(settings) == 0 {
+		return usage
+	}
+	enabled := enabledProviderIDs(settings)
+	providers := make([]daemon.ProviderUsageSnapshot, 0, len(usage.Providers))
+	for _, provider := range usage.Providers {
+		id := usageProviderID(provider.Provider, provider.Frame.Provider)
+		if _, ok := enabled[id]; ok {
 			providers = append(providers, provider)
 		}
 	}
