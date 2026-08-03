@@ -1801,12 +1801,35 @@ void testStoredThemeBootActivationRestoresFrameAndFullRenderIntent() {
 }
 
 void testStoredThemeBootActivationRejectsInvalidRaw() {
-  RuntimeState state;
+  RuntimeState emptyState;
   SerialConsumeEvent event;
 
-  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(state, "clippy", 7, "{}", 4000, event));
-  TEST_ASSERT_FALSE(state.hasFrame);
-  TEST_ASSERT_FALSE(state.current.hasThemeSpec);
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(emptyState, "clippy", 7, "{}", 4000, event));
+  TEST_ASSERT_FALSE(emptyState.hasFrame);
+  TEST_ASSERT_FALSE(emptyState.current.hasThemeSpec);
+  TEST_ASSERT_FALSE(event.frameAccepted);
+
+  RuntimeState state;
+  state.hasFrame = true;
+  state.current.session = 42;
+  state.current.hasThemeSpec = true;
+  state.current.themeSpecId = "keep";
+  state.current.themeSpecRev = 3;
+  state.cachedThemeId = "keep";
+  state.cachedThemeRev = 3;
+
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(
+      state, "screensaver", 1, "GIF89a", 5000, event));
+  TEST_ASSERT_EQUAL_INT(42, state.current.session);
+  TEST_ASSERT_EQUAL_STRING("keep", state.current.themeSpecId.c_str());
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+  TEST_ASSERT_FALSE(event.frameAccepted);
+
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(
+      state, "screensaver", 1, "CBA1\n240 240\n", 6000, event));
+  TEST_ASSERT_EQUAL_INT(42, state.current.session);
+  TEST_ASSERT_EQUAL_STRING("keep", state.current.themeSpecId.c_str());
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
   TEST_ASSERT_FALSE(event.frameAccepted);
 }
 

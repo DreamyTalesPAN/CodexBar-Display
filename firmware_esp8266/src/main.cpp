@@ -1765,6 +1765,15 @@ void handleHealth() {
 // Records which stored ThemeSpec the screensaver slot points at. Loading it
 // into the second render slot is the standby state machine's job; this only
 // validates and stores the reference. An empty path clears the selection.
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+bool readValidatedStoredThemeSpec(
+    const String& path,
+    String& raw,
+    String& themeId,
+    int& themeRev,
+    String& error);
+#endif
+
 bool setStandbyScreensaverPath(standby::Settings& target, const String& rawPath, String& error) {
   String path = rawPath;
   path.trim();
@@ -1777,6 +1786,17 @@ bool setStandbyScreensaverPath(standby::Settings& target, const String& rawPath,
     error = "invalid screensaver path";
     return false;
   }
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  String raw;
+  String themeId;
+  int themeRev = 0;
+  if (!readValidatedStoredThemeSpec(path, raw, themeId, themeRev, error)) {
+    if (error == "theme file not found") {
+      error = "screensaver file not found";
+    }
+    return false;
+  }
+#else
   if (!LittleFS.begin()) {
     error = "filesystem mount failed";
     return false;
@@ -1785,6 +1805,7 @@ bool setStandbyScreensaverPath(standby::Settings& target, const String& rawPath,
     error = "screensaver file not found";
     return false;
   }
+#endif
   if (!standby::SetScreensaverPath(target, path.c_str(), path.length())) {
     error = "invalid screensaver path";
     return false;
@@ -2258,6 +2279,18 @@ bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String
   return true;
 }
 
+bool readValidatedStoredThemeSpec(
+    const String& path,
+    String& raw,
+    String& themeId,
+    int& themeRev,
+    String& error) {
+  if (!readStoredThemeSpec(path, raw, error)) {
+    return false;
+  }
+  return themeSpecMetadata(raw, themeId, themeRev, error);
+}
+
 void activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev) {
   codexbar_display::core::SerialConsumeEvent event;
   if (!codexbar_display::core::RestoreStoredThemeSpecFrame(
@@ -2276,11 +2309,7 @@ void activateStoredThemeSpec(const String& path, const String& raw, const String
 bool activateStoredThemePath(
     const String& path, bool persist, String& themeId, int& themeRev, String& error) {
   String raw;
-  if (!readStoredThemeSpec(path, raw, error)) {
-    return false;
-  }
-
-  if (!themeSpecMetadata(raw, themeId, themeRev, error)) {
+  if (!readValidatedStoredThemeSpec(path, raw, themeId, themeRev, error)) {
     return false;
   }
   if (persist && !saveActiveThemeSpecPath(path)) {
