@@ -60,7 +60,7 @@ bool testHttpCallbackDispatchStoresOnePendingEvent(const std::string& source) {
 bool testThemeActivationUsesDeferredRenderTransport(const std::string& source) {
   const std::size_t policyStart = source.find("bool acceptedFrameRenderDeferredForTransport(");
   const std::size_t policyEnd = source.find("\nvoid markFrameAccepted(", policyStart);
-  const std::size_t activateStart = source.find("bool activateStoredThemeSpec(");
+  const std::size_t activateStart = source.find("void commitStoredThemeSpec(");
   const std::size_t activateEnd = source.find("\nbool activateStoredThemePath(", activateStart);
   if (!expect(
           policyStart != std::string::npos && policyEnd != std::string::npos &&
@@ -82,7 +82,7 @@ bool testThemeActivationUsesDeferredRenderTransport(const std::string& source) {
 }
 
 bool testThemeActivationDoesNotCloseFilesystemBeforeResponse(const std::string& source) {
-  const std::size_t activateStart = source.find("bool activateStoredThemeSpec(");
+  const std::size_t activateStart = source.find("void commitStoredThemeSpec(");
   const std::size_t activateEnd = source.find("\nbool activateStoredThemePath(", activateStart);
   if (!expect(
           activateStart != std::string::npos && activateEnd != std::string::npos,
@@ -107,11 +107,13 @@ bool testThemeActivationRejectsInvalidSpecsBeforePersisting(const std::string& s
   }
 
   const std::string activate = source.substr(activateStart, activateEnd - activateStart);
-  const std::size_t restore = activate.find("if (!activateStoredThemeSpec(");
+  const std::size_t prepare = activate.find("if (!prepareStoredThemeSpec(");
   const std::size_t persist = activate.find("if (!saveActiveThemeSpecPath(path))");
+  const std::size_t commit = activate.find("commitStoredThemeSpec(");
   return expect(
-      restore != std::string::npos && persist != std::string::npos && restore < persist,
-      "stored theme activation must reject unrenderable specs before persisting their path");
+      prepare != std::string::npos && persist != std::string::npos && commit != std::string::npos &&
+          prepare < persist && persist < commit,
+      "stored theme activation must validate, persist, and then commit runtime state");
 }
 
 bool testSetupAccessPointClearsPendingThemeRender(const std::string& source) {

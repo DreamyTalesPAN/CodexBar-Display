@@ -267,6 +267,19 @@ inline bool ThemeSpecRawLooksRenderable(const String& raw) {
 #endif
 }
 
+inline bool ThemeSpecRawCompiles(const String& raw) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  JsonDocument doc;
+  themespec::CompiledThemeSpec scene;
+  const bool ok = themespec::CompileThemeSpec(raw.c_str(), doc, scene);
+  themespec::ReleaseCompiledThemeSpec(scene);
+  return ok;
+#else
+  (void)raw;
+  return false;
+#endif
+}
+
 inline const String& EmptyThemeSpecRaw() {
   static const String empty;
   return empty;
@@ -826,7 +839,7 @@ inline bool RestoreStoredThemeSpecFrame(
     unsigned long nowMillis,
     SerialConsumeEvent& outEvent) {
   outEvent = {};
-  if (themeId.length() == 0 || themeRev <= 0 || !ThemeSpecRawLooksRenderable(raw)) {
+  if (themeId.length() == 0 || themeRev <= 0 || !ThemeSpecRawCompiles(raw)) {
     return false;
   }
 

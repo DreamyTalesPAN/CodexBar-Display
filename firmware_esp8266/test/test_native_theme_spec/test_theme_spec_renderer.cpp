@@ -1720,6 +1720,20 @@ void testStoredThemeBootActivationRejectsInvalidRaw() {
   SerialConsumeEvent event;
 
   TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(state, "clippy", 7, "{}", 4000, event));
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(
+      state,
+      "clippy",
+      7,
+      R"JSON({"v":1,"id":"clippy","rev":7,"p":[]})JSON",
+      4000,
+      event));
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(
+      state,
+      "clippy",
+      7,
+      R"JSON({"v":1,"id":"clippy","rev":7,"p":[{"t":"unsupported"}]})JSON",
+      4000,
+      event));
   TEST_ASSERT_FALSE(state.hasFrame);
   TEST_ASSERT_FALSE(state.current.hasThemeSpec);
   TEST_ASSERT_FALSE(event.frameAccepted);
