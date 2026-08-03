@@ -460,6 +460,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testThemeStudioRecoveryStaysUsageSafe(
+        browser,
+        appContext.appUrl,
+      );
       console.log("control-center Theme Studio safety test passed");
       return;
     }
@@ -7501,6 +7505,147 @@ async function testThemeStudioScreensaverInstallUsesScreensaverSlot(
   );
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
+  await page.close();
+}
+
+async function testThemeStudioRecoveryStaysUsageSafe(browser, appUrl) {
+  const localAppUrl = "http://127.0.0.1:47832/control-center";
+  const page = await browser.newPage({ viewport: themeStudioViewport });
+  const installRequests = [];
+
+  await routeLocalCompanionAppThroughLocalNext(page, appUrl);
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.33",
+    device: {
+      ...companionDevice,
+      firmware: "1.0.40",
+      capabilities: {
+        ...companionDevice.capabilities,
+        theme: {
+          supportsThemeSpecV1: true,
+          supportsUsageSlotsV1: true,
+          supportsStoredThemes: true,
+        },
+      },
+    },
+  });
+
+  const readRecovery = () =>
+    page.evaluate(() => {
+      const raw = window.localStorage.getItem(
+        "vibetv.controlCenter.themeStudioDraft",
+      );
+      return raw ? JSON.parse(raw).recovery || null : null;
+    });
+  const waitForRecovery = (packName, usage) =>
+    page.waitForFunction(
+      ({ expectedPackName, expectedUsage }) => {
+        const raw = window.localStorage.getItem(
+          "vibetv.controlCenter.themeStudioDraft",
+        );
+        if (!raw) {
+          return false;
+        }
+        try {
+          const recovery = JSON.parse(raw).recovery;
+          return (
+            recovery?.document?.packName === expectedPackName &&
+            (recovery.document.usage || "live") === expectedUsage
+          );
+        } catch {
+          return false;
+        }
+      },
+      { expectedPackName: packName, expectedUsage: usage },
+    );
+
+  await page.goto(localAppUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Themes");
+  await page.getByRole("button", { name: "Create Theme", exact: true }).click();
+  await page.getByText("Advanced", { exact: true }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Live recovery draft");
+  await waitForRecovery("Live recovery draft", "live");
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Themes");
+  await page
+    .getByText("Continue your unsaved theme", { exact: true })
+    .waitFor();
+  assert(
+    (await readRecovery()).document.packName === "Live recovery draft",
+    "a reloaded live draft must be recoverable before switching appearance modes",
+  );
+
+  await clickNavigation(page, "Screensavers");
+  await page
+    .getByText("Continue your unsaved theme", { exact: true })
+    .waitFor();
+  const createScreensaver = page.getByRole("button", {
+    name: "Create Screensaver",
+    exact: true,
+  });
+  const editScreensaver = page
+    .getByRole("listitem")
+    .filter({ hasText: "Fixture Night Clock Screensaver" })
+    .getByRole("button", { name: "Edit", exact: true });
+  assert(
+    await createScreensaver.isDisabled(),
+    "a live recovery must block screensaver editing until it is discarded",
+  );
+  assert(
+    await editScreensaver.isDisabled(),
+    "a live recovery must block editing an existing screensaver",
+  );
+  assert(
+    (await readRecovery()).document.packName === "Live recovery draft",
+    "switching to Screensavers must not overwrite the live recovery",
+  );
+  await page.getByRole("button", { name: "Discard", exact: true }).click();
+  await page
+    .getByText("Continue your unsaved theme", { exact: true })
+    .waitFor({ state: "detached" });
+  await createScreensaver.click();
+  await page.getByText("Advanced", { exact: true }).click();
+  await page
+    .getByLabel("Name", { exact: true })
+    .fill("Screensaver recovery draft");
+  await waitForRecovery("Screensaver recovery draft", "screensaver");
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Screensavers");
+  await page
+    .getByText("Continue your unsaved theme", { exact: true })
+    .waitFor();
+  await clickNavigation(page, "Themes");
+  await page
+    .getByText("Continue your unsaved theme", { exact: true })
+    .waitFor();
+  const createTheme = page.getByRole("button", {
+    name: "Create Theme",
+    exact: true,
+  });
+  const editTheme = page
+    .getByRole("listitem")
+    .filter({ hasText: "Fixture Synthwave Theme" })
+    .getByRole("button", { name: "Edit", exact: true });
+  assert(
+    await createTheme.isDisabled(),
+    "a screensaver recovery must block live-theme editing until it is discarded",
+  );
+  assert(
+    await editTheme.isDisabled(),
+    "a screensaver recovery must block editing an existing live theme",
+  );
+  assert(
+    (await readRecovery()).document.packName === "Screensaver recovery draft",
+    "switching to Themes must not overwrite the screensaver recovery",
+  );
+  await page.getByRole("button", { name: "Discard", exact: true }).click();
+  await page
+    .getByText("Continue your unsaved theme", { exact: true })
+    .waitFor({ state: "detached" });
+
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 

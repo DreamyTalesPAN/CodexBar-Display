@@ -228,6 +228,7 @@ export function ThemeLibraryScreen({
   const screensavers = usage === "screensaver";
   const [userThemes, setUserThemes] = useState<UserThemeRecord[]>([]);
   const [recovery, setRecovery] = useState<ThemeStudioRecovery | null>(null);
+  const [storageReady, setStorageReady] = useState(false);
   const [editingTheme, setEditingTheme] =
     useState<ThemeStudioEditorTheme | null>(null);
   const [libraryError, setLibraryError] = useState("");
@@ -240,8 +241,16 @@ export function ThemeLibraryScreen({
   const [loadingEditorThemeId, setLoadingEditorThemeId] = useState("");
   const [preparingInstallThemeId, setPreparingInstallThemeId] = useState("");
   const [previewTheme, setPreviewTheme] = useState<ThemeLibraryItem | null>(null);
-  const recoveryMatchesUsage =
-    (recovery ? themeDocumentUsage(recovery.document) : "live") === usage;
+  const recoveryUsage = recovery ? themeDocumentUsage(recovery.document) : null;
+  const recoveryBlocksMode =
+    !setupMode &&
+    (!storageReady || (recoveryUsage !== null && recoveryUsage !== usage));
+  const recoveryBlockMessage =
+    recoveryUsage !== null && recoveryUsage !== usage
+      ? `Discard this draft before creating or editing a ${
+          usage === "screensaver" ? "screensaver" : "theme"
+        }.`
+      : undefined;
   const libraryThemes: ThemeLibraryItem[] = [
     ...(setupMode
       ? []
@@ -328,6 +337,7 @@ export function ThemeLibraryScreen({
             : recoveryResult.error.message,
         );
       }
+      setStorageReady(true);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [setupMode]);
@@ -347,6 +357,9 @@ export function ThemeLibraryScreen({
   }
 
   function openBlankTheme() {
+    if (recoveryBlocksMode) {
+      return;
+    }
     const existingIds = allThemeIds(themes, userThemes);
     const spec = createBlankThemeSpec();
     spec.themeId = uniqueThemeId(
@@ -364,6 +377,9 @@ export function ThemeLibraryScreen({
   }
 
   async function openThemeEditor(item: ThemeLibraryItem) {
+    if (recoveryBlocksMode) {
+      return;
+    }
     setLibraryError("");
     if (item.kind === "custom") {
       setEditingTheme({
@@ -590,7 +606,12 @@ export function ThemeLibraryScreen({
           ) : null}
         </div>
         {!setupMode ? (
-          <Button onClick={openBlankTheme} type="button">
+          <Button
+            disabled={recoveryBlocksMode}
+            onClick={openBlankTheme}
+            title={recoveryBlocksMode ? recoveryBlockMessage : undefined}
+            type="button"
+          >
             <Plus data-icon="inline-start" aria-hidden />
             <span>{screensavers ? "Create Screensaver" : "Create Theme"}</span>
           </Button>
@@ -653,8 +674,11 @@ export function ThemeLibraryScreen({
             <AlertDescription>{libraryError}</AlertDescription>
           </Alert>
         ) : null}
-        {!setupMode && recovery && recoveryMatchesUsage ? (
+        {!setupMode && recovery ? (
           <RecoveryCard
+            blockedUsage={
+              recoveryUsage !== null && recoveryUsage !== usage ? usage : undefined
+            }
             onDiscard={discardRecovery}
             onResume={resumeRecovery}
             recovery={recovery}
@@ -693,6 +717,8 @@ export function ThemeLibraryScreen({
                   preparingInstallThemeId={preparingInstallThemeId}
                   selectedThemeId={selectedThemeId}
                   setupMode={setupMode}
+                  editingBlocked={recoveryBlocksMode}
+                  editingBlockedReason={recoveryBlockMessage}
                   usage={usage}
                   themeInstallBlockedReason={readiness.buttonReason}
                   themeInstallEnabled={themeInstallEnabled}
@@ -755,10 +781,12 @@ function themeStudioCapabilitiesFromDevice(
 }
 
 function RecoveryCard({
+  blockedUsage,
   onDiscard,
   onResume,
   recovery,
 }: {
+  blockedUsage?: ThemeStudioUsage;
   onDiscard: () => void;
   onResume: () => void;
   recovery: ThemeStudioRecovery;
@@ -772,6 +800,11 @@ function RecoveryCard({
         <p className="mt-1 text-sm leading-6 text-[#444933]">
           {recovery.document.packName} was last changed {formatRecoveryTime(recovery.updatedAt)}.
         </p>
+        {blockedUsage ? (
+          <p className="mt-2 text-sm leading-6 text-[#444933]">
+            Discard this draft before creating or editing a {blockedUsage === "screensaver" ? "screensaver" : "theme"}.
+          </p>
+        ) : null}
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <Button onClick={onDiscard} type="button" variant="outline">
@@ -917,6 +950,8 @@ function ThemeListItem({
   installStatus,
   lastInstall,
   loadingEditorThemeId,
+  editingBlocked,
+  editingBlockedReason,
   onDeleteTheme,
   onEditTheme,
   onInstallTheme,
@@ -936,6 +971,8 @@ function ThemeListItem({
   installStatus?: ThemeInstallStatus | null;
   lastInstall?: ThemeInstallResult;
   loadingEditorThemeId: string;
+  editingBlocked: boolean;
+  editingBlockedReason?: string;
   onDeleteTheme: (theme: UserThemeRecord) => void;
   onEditTheme: (item: ThemeLibraryItem) => void;
   onInstallTheme: (item: ThemeLibraryItem) => void;
@@ -1029,10 +1066,11 @@ function ThemeListItem({
       >
         {!setupMode ? (
           <Button
-            disabled={Boolean(loadingEditorThemeId)}
+            disabled={Boolean(loadingEditorThemeId) || editingBlocked}
             onClick={() => void onEditTheme(item)}
             size="sm"
             type="button"
+            title={editingBlocked ? editingBlockedReason : undefined}
             variant="outline"
           >
             {loadingEdit ? (
