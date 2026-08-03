@@ -144,5 +144,5 @@ tools/themespec-slot-budget/build.sh path/to/spec.json
 # writes to a live device, needs an explicit hardware-test approval
 scripts/measure-themespec-standby-latency.sh --approved \
   --device http://<ip> --token "$VIBETV_TOKEN" \
-  --live /themes/u/<live>.json --screensaver /themes/u/<screensaver>.json
+  --live /themes/u/<live>.json --screensaver /themes/s/<screensaver>.json
 ```

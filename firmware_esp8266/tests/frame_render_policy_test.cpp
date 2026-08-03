@@ -140,6 +140,60 @@ bool testHelloAdvertisesEscapedUsageWindowCapacity(const std::string& source) {
       "hello must advertise escaped JSON-safe usage window capacity");
 }
 
+bool testSharedSerialHelloAdvertisesStandby(const std::string& source) {
+  const std::size_t capabilitiesStart = source.find("const char* transportCapabilitiesJSON(");
+  const std::size_t capabilitiesEnd = source.find(
+      "\ncodexbar_display::app::TransportConfig makeTransportConfig", capabilitiesStart);
+  const std::size_t configStart = capabilitiesEnd == std::string::npos ? std::string::npos : capabilitiesEnd + 1;
+  const std::size_t configEnd = source.find("\nString htmlEscape", configStart);
+  if (!expect(
+          capabilitiesStart != std::string::npos && capabilitiesEnd != std::string::npos &&
+              configEnd != std::string::npos,
+          "shared transport hello configuration must remain discoverable")) {
+    return false;
+  }
+
+  const std::string capabilities = source.substr(capabilitiesStart, capabilitiesEnd - capabilitiesStart);
+  const std::string config = source.substr(configStart, configEnd - configStart);
+  return expect(
+      capabilities.find("appendStandbyCapabilityJSON(json)") != std::string::npos &&
+          config.find("config.capabilitiesJSON = transportCapabilitiesJSON(activeTransport)") != std::string::npos &&
+          source.find("codexbar_display::app::EmitDeviceHello(makeTransportConfig(\"usb\"))") != std::string::npos,
+      "shared USB hello must carry the standby capability");
+}
+
+bool testAssetDeleteProtectsStandbyLiveTheme(const std::string& source) {
+  const std::size_t handlerStart = source.find("void handleAssetDelete()");
+  const std::size_t handlerEnd = source.find("\n#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER", handlerStart);
+  if (!expect(
+          handlerStart != std::string::npos && handlerEnd != std::string::npos,
+          "asset delete handler must remain discoverable")) {
+    return false;
+  }
+
+  const std::string handler = source.substr(handlerStart, handlerEnd - handlerStart);
+  return expect(
+      handler.find("path == activeThemeSpecPath || path == standbyLiveThemePath") != std::string::npos,
+      "asset delete must protect the saved live theme during standby");
+}
+
+bool testStandbyExitLeavesErrorFrameVisible(const std::string& source) {
+  const std::size_t standbyStart = source.find("void maintainStandby()");
+  const std::size_t standbyEnd = source.find("\nString updatePageHTML()", standbyStart);
+  if (!expect(
+          standbyStart != std::string::npos && standbyEnd != std::string::npos,
+          "standby state machine must remain discoverable")) {
+    return false;
+  }
+
+  const std::string standby = source.substr(standbyStart, standbyEnd - standbyStart);
+  const std::size_t errorGuard = standby.find("!codexbar_display::app::CurrentFrame(runtimeCtx).hasError");
+  const std::size_t restore = standby.find("renderStoredThemeSpecForStandby(standbyLiveThemePath)");
+  return expect(
+      errorGuard != std::string::npos && restore != std::string::npos && errorGuard < restore,
+      "standby exit must not replace a rendered error frame with the saved live theme");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -155,7 +209,10 @@ int main(int argc, char** argv) {
       !testThemeActivationDoesNotCloseFilesystemBeforeResponse(source) ||
       !testSetupAccessPointClearsPendingThemeRender(source) ||
       !testPendingHttpRenderRunsBeforeUsb(source) ||
-      !testHelloAdvertisesEscapedUsageWindowCapacity(source)) {
+      !testHelloAdvertisesEscapedUsageWindowCapacity(source) ||
+      !testSharedSerialHelloAdvertisesStandby(source) ||
+      !testAssetDeleteProtectsStandbyLiveTheme(source) ||
+      !testStandbyExitLeavesErrorFrameVisible(source)) {
     return 1;
   }
 

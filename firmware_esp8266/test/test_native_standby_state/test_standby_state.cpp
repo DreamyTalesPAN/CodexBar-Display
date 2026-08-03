@@ -17,7 +17,7 @@ constexpr unsigned long kMinute = 60UL * 1000UL;
 Settings armedSettings() {
   Settings settings;
   settings.enabled = true;
-  SetScreensaverPath(settings, "/themes/clock.json", 18);
+  SetScreensaverPath(settings, "/themes/s/clock.json", strlen("/themes/s/clock.json"));
   return settings;
 }
 

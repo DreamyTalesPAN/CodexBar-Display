@@ -22,7 +22,7 @@ constexpr uint8_t kMaxTimeoutMinutes = 240;
 // instead of inheriting the live brightness.
 constexpr uint8_t kDefaultBrightnessPercent = 20;
 
-// Screensaver slot references are stored ThemeSpec paths under /themes/.
+// Screensaver slot references use the dedicated ThemeSpec directory.
 constexpr size_t kMaxScreensaverPathLen = 63;
 constexpr size_t kScreensaverPathSize = kMaxScreensaverPathLen + 1;
 
@@ -30,7 +30,7 @@ constexpr size_t kScreensaverPathSize = kMaxScreensaverPathLen + 1;
 constexpr size_t kRecordBytes = 5 + kMaxScreensaverPathLen;
 constexpr uint8_t kRecordMarker = 1;
 
-constexpr char kScreensaverPathPrefix[] = "/themes/";
+constexpr char kScreensaverPathPrefix[] = "/themes/s/";
 constexpr size_t kScreensaverPathPrefixLen = sizeof(kScreensaverPathPrefix) - 1;
 
 struct Settings {

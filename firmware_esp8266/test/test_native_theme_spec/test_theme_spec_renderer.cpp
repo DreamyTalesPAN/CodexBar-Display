@@ -1666,6 +1666,31 @@ void testUsageProgressEventIgnoresDeclaredActivityAndErrors() {
   TEST_ASSERT_FALSE(event.usageProgressed);
 }
 
+void testUsageProgressEventIgnoresDisplayOnlyUsageChanges() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":7200,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageWindows":[{"id":"five-hour","label":"5-hour","percent":25,"resetSecs":7200}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+
+  const char* displayOnlyChange = R"JSON({"v":2,"provider":"codex","label":"Codex refreshed","session":10,"weekly":20,"resetSecs":7199,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageWindows":[{"id":"five-hour","label":"5-hour refreshed","percent":25,"resetSecs":7199}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, displayOnlyChange, 2000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+
+  const char* unavailable = R"JSON({"v":2,"provider":"codex","label":"Usage unavailable","session":0,"weekly":0,"resetSecs":7198,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageUnavailable":true,"sessionUnavailable":true,"weeklyUnavailable":true})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, unavailable, 3000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* restored = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":7197,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageWindows":[{"id":"five-hour","label":"5-hour","percent":25,"resetSecs":7197}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, restored, 4000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* usageMoved = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":7196,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageWindows":[{"id":"five-hour","label":"5-hour","percent":26,"resetSecs":7196}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, usageMoved, 5000, event));
+  TEST_ASSERT_TRUE(event.usageProgressed);
+}
+
 void testThemeSpecActivityChangeUsesPartialRenderEvent() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -2322,6 +2347,7 @@ int main() {
   RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
   RUN_TEST(testUsageProgressEventIgnoresDeclaredActivityAndErrors);
+  RUN_TEST(testUsageProgressEventIgnoresDisplayOnlyUsageChanges);
   RUN_TEST(testThemeSpecActivityChangeUsesPartialRenderEvent);
   RUN_TEST(testLegacyThemeFieldsAreIgnored);
   RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);

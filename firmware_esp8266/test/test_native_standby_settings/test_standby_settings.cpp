@@ -36,17 +36,20 @@ void test_standby_brightness_uses_the_shared_display_range() {
   TEST_ASSERT_EQUAL_UINT8(20, ClampBrightnessPercent(20));
 }
 
-void test_only_stored_theme_paths_are_accepted() {
-  TEST_ASSERT_TRUE(ScreensaverPathValid("/themes/clock.json", 18));
+void test_only_screensaver_slot_paths_are_accepted() {
+  TEST_ASSERT_TRUE(ScreensaverPathValid("/themes/s/clock.json", strlen("/themes/s/clock.json")));
+  TEST_ASSERT_FALSE(ScreensaverPathValid("/themes/u/clock.json", strlen("/themes/u/clock.json")));
+  TEST_ASSERT_FALSE(ScreensaverPathValid("/themes/clock.json", strlen("/themes/clock.json")));
   TEST_ASSERT_FALSE(ScreensaverPathValid("/assets/clock.json", 18));
-  TEST_ASSERT_FALSE(ScreensaverPathValid("/themes/", 8));
+  TEST_ASSERT_FALSE(ScreensaverPathValid("/themes/s/", strlen("/themes/s/")));
   TEST_ASSERT_FALSE(ScreensaverPathValid("", 0));
   TEST_ASSERT_FALSE(ScreensaverPathValid(nullptr, 0));
 }
 
 void test_traversal_and_unprintable_paths_are_rejected() {
-  TEST_ASSERT_FALSE(ScreensaverPathValid("/themes/../s", 12));
-  const char control[] = "/themes/a\nb.json";
+  const char traversal[] = "/themes/s/../s";
+  TEST_ASSERT_FALSE(ScreensaverPathValid(traversal, sizeof(traversal) - 1));
+  const char control[] = "/themes/s/a\nb.json";
   TEST_ASSERT_FALSE(ScreensaverPathValid(control, sizeof(control) - 1));
 }
 
@@ -59,28 +62,28 @@ void test_overlong_paths_are_rejected() {
 }
 
 void test_setting_a_path_stores_it_and_an_empty_path_clears_it() {
-  Settings settings = withPath("/themes/clock.json");
+  Settings settings = withPath("/themes/s/clock.json");
   TEST_ASSERT_TRUE(HasScreensaver(settings));
-  TEST_ASSERT_EQUAL_STRING("/themes/clock.json", settings.screensaverPath);
+  TEST_ASSERT_EQUAL_STRING("/themes/s/clock.json", settings.screensaverPath);
 
   TEST_ASSERT_TRUE(SetScreensaverPath(settings, "", 0));
   TEST_ASSERT_FALSE(HasScreensaver(settings));
 }
 
 void test_an_invalid_path_leaves_the_previous_selection_untouched() {
-  Settings settings = withPath("/themes/clock.json");
+  Settings settings = withPath("/themes/s/clock.json");
   TEST_ASSERT_FALSE(SetScreensaverPath(settings, "/etc/passwd", 11));
-  TEST_ASSERT_EQUAL_STRING("/themes/clock.json", settings.screensaverPath);
+  TEST_ASSERT_EQUAL_STRING("/themes/s/clock.json", settings.screensaverPath);
 }
 
 void test_a_shorter_path_does_not_keep_bytes_of_the_longer_one() {
-  Settings settings = withPath("/themes/a-very-long-screensaver-name.json");
-  TEST_ASSERT_TRUE(SetScreensaverPath(settings, "/themes/c.json", 14));
-  TEST_ASSERT_EQUAL_STRING("/themes/c.json", settings.screensaverPath);
+  Settings settings = withPath("/themes/s/a-very-long-screensaver-name.json");
+  TEST_ASSERT_TRUE(SetScreensaverPath(settings, "/themes/s/c.json", strlen("/themes/s/c.json")));
+  TEST_ASSERT_EQUAL_STRING("/themes/s/c.json", settings.screensaverPath);
 }
 
 void test_settings_survive_an_encode_decode_round_trip() {
-  Settings settings = withPath("/themes/countdown.json");
+  Settings settings = withPath("/themes/s/countdown.json");
   settings.enabled = true;
   settings.timeoutMinutes = 30;
   settings.brightnessPercent = 45;
@@ -93,7 +96,7 @@ void test_settings_survive_an_encode_decode_round_trip() {
   TEST_ASSERT_TRUE(restored.enabled);
   TEST_ASSERT_EQUAL_UINT8(30, restored.timeoutMinutes);
   TEST_ASSERT_EQUAL_UINT8(45, restored.brightnessPercent);
-  TEST_ASSERT_EQUAL_STRING("/themes/countdown.json", restored.screensaverPath);
+  TEST_ASSERT_EQUAL_STRING("/themes/s/countdown.json", restored.screensaverPath);
 }
 
 void test_an_empty_selection_survives_the_round_trip() {
@@ -103,7 +106,7 @@ void test_an_empty_selection_survives_the_round_trip() {
   uint8_t record[kRecordBytes] = {};
   Encode(settings, record);
 
-  Settings restored = withPath("/themes/stale.json");
+  Settings restored = withPath("/themes/s/stale.json");
   TEST_ASSERT_TRUE(Decode(record, sizeof(record), restored));
   TEST_ASSERT_TRUE(restored.enabled);
   TEST_ASSERT_FALSE(HasScreensaver(restored));
@@ -139,7 +142,7 @@ void test_out_of_range_persisted_values_are_clamped_on_read() {
 }
 
 void test_a_corrupt_stored_path_drops_only_the_selection() {
-  Settings settings = withPath("/themes/clock.json");
+  Settings settings = withPath("/themes/s/clock.json");
   settings.enabled = true;
   settings.timeoutMinutes = 15;
 
@@ -163,7 +166,7 @@ int main(int, char**) {
   RUN_TEST(test_factory_defaults_are_off_ten_minutes_and_twenty_percent);
   RUN_TEST(test_timeout_clamps_to_the_supported_range);
   RUN_TEST(test_standby_brightness_uses_the_shared_display_range);
-  RUN_TEST(test_only_stored_theme_paths_are_accepted);
+  RUN_TEST(test_only_screensaver_slot_paths_are_accepted);
   RUN_TEST(test_traversal_and_unprintable_paths_are_rejected);
   RUN_TEST(test_overlong_paths_are_rejected);
   RUN_TEST(test_setting_a_path_stores_it_and_an_empty_path_clears_it);

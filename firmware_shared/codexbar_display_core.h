@@ -427,11 +427,19 @@ inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& n
 }
 
 inline bool UsageProgressChanged(const Frame& previous, const Frame& next) {
-  if (previous.session != next.session || previous.weekly != next.weekly) {
+  const bool usageAvailable = !previous.usageUnavailable && !next.usageUnavailable;
+  if (usageAvailable &&
+      ((!previous.sessionUnavailable && !next.sessionUnavailable &&
+        previous.session != next.session) ||
+       (!previous.weeklyUnavailable && !next.weeklyUnavailable &&
+        previous.weekly != next.weekly))) {
     return true;
   }
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
-    if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i])) {
+    // Countdown, label and availability changes redraw the theme, but do not
+    // mean that the customer used their provider.
+    if (usageAvailable && previous.usageWindows[i].available && next.usageWindows[i].available &&
+        previous.usageWindows[i].percent != next.usageWindows[i].percent) {
       return true;
     }
   }

@@ -2135,7 +2135,7 @@ void handleAssetDelete() {
     webServer.send(404, "text/plain; charset=utf-8", "asset not found");
     return;
   }
-  if (path == activeThemeSpecPath) {
+  if (path == activeThemeSpecPath || path == standbyLiveThemePath) {
     addCorsHeaders();
     webServer.send(409, "text/plain; charset=utf-8", "asset is active");
     return;
@@ -2500,7 +2500,10 @@ void maintainStandby() {
     }
     standbyLiveThemePath = livePath;
   } else {
-    if (!standbyWakeRenderedByUsageFrame &&
+    // An error frame caused this exit and must remain visible. Restoring the
+    // saved live ThemeSpec here would overwrite the error before it is seen.
+    if (!codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
+        !standbyWakeRenderedByUsageFrame &&
         standbyLiveThemePath.length() > 0 &&
         standbyLiveThemePath != activeThemeSpecPath) {
       renderStoredThemeSpecForStandby(standbyLiveThemePath);

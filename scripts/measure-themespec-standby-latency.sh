@@ -11,7 +11,7 @@
 #   scripts/measure-themespec-standby-latency.sh --approved \
 #     --device http://192.168.178.72 --token "$VIBETV_TOKEN" \
 #     --live /themes/u/claude--3-afab9c.json \
-#     --screensaver /themes/u/screensaver.json \
+#     --screensaver /themes/s/screensaver.json \
 #     --rounds 5
 #
 # The live theme is activated last, so the device is left as it was found.
