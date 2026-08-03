@@ -41,6 +41,13 @@ inline void EnterSetup(State& state, uint32_t nowMs) {
   state.retryDueAtMs = nowMs + kRetryIntervalMs;
 }
 
+inline void RescheduleAfterInterruption(State& state, uint32_t nowMs) {
+  state.attemptInProgress = false;
+  state.retryScheduled = true;
+  state.attemptStartedAtMs = 0;
+  state.retryDueAtMs = nowMs;
+}
+
 inline Action Tick(State& state, const Inputs& inputs) {
   if (!inputs.setupMode) {
     state = {};

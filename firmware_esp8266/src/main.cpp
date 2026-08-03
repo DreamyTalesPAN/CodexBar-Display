@@ -1087,12 +1087,16 @@ bool connectToSdkWifiConfig() {
   return true;
 }
 
-bool scanSetupNetworks() {
+bool scanSetupNetworks(bool automatic) {
   using namespace codexbar_display::esp8266::wifi_setup;
-  if (!BeginScan(setupWifiState)) {
-    Serial.println("wifi_setup_scan_ignored reason=already_running");
+  const bool started = automatic ? BeginAutomaticScan(setupWifiState) : BeginScan(setupWifiState);
+  if (!started) {
+    Serial.printf(
+        "wifi_setup_scan_ignored reason=%s\n",
+        automatic ? "automatic_already_started" : "already_running");
     return false;
   }
+  const bool recoveryAttemptInterrupted = automatic && wifiSetupRecoveryState.attemptInProgress;
 
   Serial.println("wifi_setup_scan_started");
   int networks = -2;
@@ -1117,6 +1121,12 @@ bool scanSetupNetworks() {
   }
   WiFi.scanDelete();
   FinishScan(setupWifiState, networks);
+  if (recoveryAttemptInterrupted) {
+    codexbar_display::esp8266::wifi_recovery::RescheduleAfterInterruption(
+        wifiSetupRecoveryState,
+        static_cast<uint32_t>(millis()));
+    Serial.println("wifi_setup_recovery_rescheduled reason=automatic_scan");
+  }
   if (setupMode) {
     WiFi.mode(WIFI_AP);
   }
@@ -1251,7 +1261,8 @@ void handleSetupWifiScan() {
   }
 
   codexbar_display::esp8266::wifi_setup::ClearConnectionError(setupWifiState);
-  scanSetupNetworks();
+  const bool automatic = webServer.arg("automatic") == "1";
+  scanSetupNetworks(automatic);
   webServer.sendHeader("Location", "/", true);
   webServer.send(303, "text/plain; charset=utf-8", "");
 }
@@ -2599,7 +2610,7 @@ void startSetupAccessPoint() {
   codexbar_display::esp8266::wifi_recovery::EnterSetup(
       wifiSetupRecoveryState,
       static_cast<uint32_t>(millis()));
-  codexbar_display::esp8266::wifi_setup::ClearConnectionError(setupWifiState);
+  codexbar_display::esp8266::wifi_setup::ResetPortalState(setupWifiState);
   WiFi.setAutoReconnect(false);
   WiFi.disconnect(false);
   WiFi.mode(WIFI_AP_STA);
