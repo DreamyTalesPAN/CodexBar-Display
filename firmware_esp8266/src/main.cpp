@@ -2172,7 +2172,9 @@ void handleAssetDelete() {
     webServer.send(404, "text/plain; charset=utf-8", "asset not found");
     return;
   }
-  if (path == activeThemeSpecPath || path == standbyLiveThemePath) {
+  const String configuredScreensaverPath(deviceSettings.standby.screensaverPath);
+  if (path == activeThemeSpecPath || path == standbyLiveThemePath ||
+      path == configuredScreensaverPath) {
     addCorsHeaders();
     webServer.send(409, "text/plain; charset=utf-8", "asset is active");
     return;
@@ -2535,6 +2537,14 @@ bool standbyReady() {
 void maintainStandby() {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   const unsigned long nowMs = millis();
+  const bool hasError = codexbar_display::app::HasFrame(runtimeCtx) &&
+                        codexbar_display::app::CurrentFrame(runtimeCtx).hasError;
+  if (!standbyState.active && !hasError && standbyLiveThemePath.length() > 0) {
+    if (standbyLiveThemePath == activeThemeSpecPath ||
+        renderStoredThemeSpecForStandby(standbyLiveThemePath)) {
+      standbyLiveThemePath = "";
+    }
+  }
   const standby::Transition transition =
       standby::Tick(standbyState, deviceSettings.standby, standbyReady(), nowMs);
   if (transition == standby::Transition::None) {
@@ -2557,12 +2567,13 @@ void maintainStandby() {
   } else {
     // An error frame caused this exit and must remain visible. Restoring the
     // saved live ThemeSpec here would overwrite the error before it is seen.
-    if (!codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
-        standbyLiveThemePath.length() > 0 &&
+    if (!hasError && standbyLiveThemePath.length() > 0 &&
         standbyLiveThemePath != activeThemeSpecPath) {
       renderStoredThemeSpecForStandby(standbyLiveThemePath);
     }
-    standbyLiveThemePath = "";
+    if (!hasError) {
+      standbyLiveThemePath = "";
+    }
   }
   applyDeviceSettings();
   Serial.printf("standby active=%d\n", standbyState.active ? 1 : 0);

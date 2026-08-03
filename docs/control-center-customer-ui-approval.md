@@ -804,3 +804,15 @@ issue scope, or release permission never implies UI permission.
   hierarchy changes.
 - Approved files: `live-vibetv-preview.tsx`, its focused unit test, and this
   approval record.
+
+## 2026-08-03 — Live-preview freshness parity
+
+- User approval: The user explicitly requested that every Codex reviewer
+  finding on PR #296 be fixed until the PR is ready to merge.
+- Approved customer-visible result: The existing Overview preview advances its
+  clock and date between Mac App frames. When the exact frame marks all usage
+  unavailable, Overview returns to its existing non-data preview state instead
+  of showing stale percentages. No new copy, control, or hierarchy is
+  introduced.
+- Approved files: `live-vibetv-preview.tsx`, its focused unit test, the matching
+  display-frame transport fix and tests, and this approval record.

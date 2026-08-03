@@ -66,6 +66,7 @@ type DisplayFrame = {
   label?: string;
   session?: number;
   weekly?: number;
+  usageUnavailable?: boolean;
   sessionUnavailable?: boolean;
   weeklyUnavailable?: boolean;
   resetSecs?: number;
@@ -1050,6 +1051,7 @@ export function hasRenderableUsage(
   if (
     snapshot?.ok !== true ||
     !displayFrame ||
+    displayFrame.usageUnavailable === true ||
     typeof displayFrame.v !== "number" ||
     !Number.isInteger(displayFrame.v) ||
     displayFrame.v < 1
@@ -1080,10 +1082,10 @@ export function buildFrameData(
   currentTime = new Date(),
 ): FrameData {
   const savedAt = generatedAt ? new Date(generatedAt) : currentTime;
-  const usableDate = Number.isNaN(savedAt.getTime()) ? currentTime : savedAt;
+  const usableSavedAt = Number.isNaN(savedAt.getTime()) ? currentTime : savedAt;
   const elapsedSeconds = Math.max(
     0,
-    Math.floor((currentTime.getTime() - usableDate.getTime()) / 1000),
+    Math.floor((currentTime.getTime() - usableSavedAt.getTime()) / 1000),
   );
   const remainingResetSeconds = (seconds: number | undefined) =>
     Math.max(0, (seconds ?? 0) - elapsedSeconds);
@@ -1125,11 +1127,11 @@ export function buildFrameData(
     time: new Intl.DateTimeFormat("de-DE", {
       hour: "2-digit",
       minute: "2-digit",
-    }).format(usableDate),
+    }).format(currentTime),
     date: new Intl.DateTimeFormat("de-DE", {
       day: "2-digit",
       month: "2-digit",
-    }).format(usableDate),
+    }).format(currentTime),
   };
 }
 

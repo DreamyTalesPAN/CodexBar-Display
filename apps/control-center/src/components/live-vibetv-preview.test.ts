@@ -174,6 +174,18 @@ describe("dynamic usage slot preview", () => {
         },
       }),
     ).toBe(true);
+    expect(
+      hasRenderableUsage({
+        ok: true,
+        frame: {
+          v: 2,
+          provider: "claude",
+          label: "Claude",
+          usageUnavailable: true,
+          usageSlots: [{ id: "session", label: "Session", percent: 25 }],
+        },
+      }),
+    ).toBe(false);
   });
 
   it("advances every reset countdown from the saved frame time", () => {
@@ -198,6 +210,18 @@ describe("dynamic usage slot preview", () => {
     ]);
     expect(frame.usageSlot1ResetSecs).toBe(65);
     expect(frame.usageSlot2ResetSecs).toBe(0);
+    expect(frame.time).toBe(
+      new Intl.DateTimeFormat("de-DE", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date("2026-07-24T10:30:35.900Z")),
+    );
+    expect(frame.date).toBe(
+      new Intl.DateTimeFormat("de-DE", {
+        day: "2-digit",
+        month: "2-digit",
+      }).format(new Date("2026-07-24T10:30:35.900Z")),
+    );
   });
 
   it("uses a legacy render cache only when its path matches the active Custom Theme", async () => {
