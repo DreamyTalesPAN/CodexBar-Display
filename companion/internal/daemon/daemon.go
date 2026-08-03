@@ -1420,7 +1420,7 @@ func probeProvidersDirectly(parent context.Context, order []string, deps runtime
 	}
 	defer cancel()
 
-	providers := order
+	providers := directProviderProbeOrder(order, deps)
 	if len(providers) > directProviderProbeMax {
 		providers = providers[:directProviderProbeMax]
 	}
@@ -1448,6 +1448,14 @@ func probeProvidersDirectly(parent context.Context, order []string, deps runtime
 	}
 
 	return result
+}
+
+func directProviderProbeOrder(order []string, deps runtimeDeps) []string {
+	cfg, ok := loadRuntimeConfig(deps)
+	if !ok || cfg.ProviderDisplay == nil || len(cfg.ProviderDisplay.ProviderIDs) == 0 {
+		return order
+	}
+	return cfg.ProviderDisplay.ProviderIDs
 }
 
 func updateLastGoodState(state *runtimeState, frame protocol.Frame, now time.Time, deps runtimeDeps) {
