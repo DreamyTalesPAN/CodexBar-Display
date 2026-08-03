@@ -140,6 +140,9 @@ func (c *providerCollector) run(ctx context.Context) {
 	}
 	defer c.shutdownTokenStatsScan()
 	c.collectOnce(ctx)
+	c.mu.RLock()
+	retryWhenDashboardReady := c.dashboard != nil && len(c.providers) == 0
+	c.mu.RUnlock()
 	c.requestTokenStatsScan(ctx)
 
 	usageTicker := time.NewTicker(c.interval)
@@ -160,6 +163,13 @@ func (c *providerCollector) run(ctx context.Context) {
 				c.afterWakeCollect()
 			}
 		case <-activityTicker.C:
+			if retryWhenDashboardReady {
+				info := c.dashboard.Info()
+				if info.Running && info.Healthy {
+					c.collectOnce(ctx)
+					retryWhenDashboardReady = false
+				}
+			}
 			c.requestTokenStatsScan(ctx)
 		}
 	}
@@ -303,12 +313,10 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		if frame.UsageUnavailable {
 			lastGood, exists := c.providers[key]
 			if exists && !lastGood.Frame.UsageUnavailable {
-				if parsed.RateLimited || !parsed.RateLimitedUntil.IsZero() {
-					lastGood.RateLimited = parsed.RateLimited
-					lastGood.RateLimitedUntil = parsed.RateLimitedUntil.UTC()
-					c.providers[key] = lastGood
-					updated = true
-				}
+				lastGood.RateLimited = parsed.RateLimited
+				lastGood.RateLimitedUntil = parsed.RateLimitedUntil.UTC()
+				c.providers[key] = lastGood
+				updated = true
 				if isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
 					continue
 				}

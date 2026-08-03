@@ -3496,6 +3496,67 @@ func TestProviderCollectorWakeCollectsBeforeDisplayWake(t *testing.T) {
 	}
 }
 
+func TestProviderCollectorRetriesInitialCollectionWhenDashboardBecomesHealthy(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
+	var dashboardInfo atomic.Value
+	dashboardInfo.Store(codexbar.DashboardServeInfo{})
+	initialFailure := make(chan struct{}, 1)
+	completed := make(chan struct{}, 1)
+	collector := &providerCollector{
+		now: func() time.Time { return now },
+		logf: func(format string, _ ...any) {
+			if strings.Contains(format, "fresh=false") {
+				select {
+				case initialFailure <- struct{}{}:
+				default:
+				}
+			}
+			if strings.Contains(format, "collector complete") {
+				select {
+				case completed <- struct{}{}:
+				default:
+				}
+			}
+		},
+		order:           []string{"codex"},
+		interval:        time.Hour,
+		activityPoll:    5 * time.Millisecond,
+		timeout:         time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		dashboard: dashboardServeFunc(func() codexbar.DashboardServeInfo {
+			return dashboardInfo.Load().(codexbar.DashboardServeInfo)
+		}),
+		fetchDashboard: func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{dashboardParsedFrame("codex", "Weekly", "Codex Spark Weekly", 21, 7)}, nil
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go collector.run(ctx)
+
+	select {
+	case <-initialFailure:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for initial dashboard startup race")
+	}
+	dashboardInfo.Store(testDashboardServeInfo(1001))
+	select {
+	case <-completed:
+	case <-time.After(time.Second):
+		t.Fatal("collector did not retry after the dashboard became healthy")
+	}
+
+	frames := collector.providerFrames(now)
+	if len(frames) != 1 || frames[0].Provider != "codex" || frames[0].Frame.Session != 21 {
+		t.Fatalf("expected dashboard usage after readiness retry, got %#v", frames)
+	}
+}
+
 func TestProviderCollectorDoesNotMakeOldProviderObservationFresh(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -4018,6 +4079,48 @@ func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing
 	}
 }
 
+func TestProviderCollectorReplacesRateLimitMetadataOnLaterUnavailableResponse(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
+	current := testParsedFrame("claude", 64, 32, 3600)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		order:           []string{"claude"},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{current}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+
+	blockedUntil := now.Add(2 * time.Minute)
+	current = codexbar.ParsedFrame{
+		Provider:         "claude",
+		RateLimited:      true,
+		RateLimitedUntil: blockedUntil,
+		Frame: protocol.Frame{
+			Provider:         "claude",
+			UsageUnavailable: true,
+		},
+	}
+	collector.collectOnce(context.Background())
+	if got := collector.providers["claude"]; !got.RateLimited || !got.RateLimitedUntil.Equal(blockedUntil) {
+		t.Fatalf("expected current rate limit metadata, got %#v", got)
+	}
+
+	current.RateLimited = false
+	current.RateLimitedUntil = time.Time{}
+	collector.collectOnce(context.Background())
+	got := collector.providers["claude"]
+	if got.RateLimited || !got.RateLimitedUntil.IsZero() || got.Frame.UsageUnavailable || got.Frame.Session != 64 {
+		t.Fatalf("later unavailable error must clear only obsolete rate limit metadata, got %#v", got)
+	}
+}
+
 func TestProviderCollectorPreservesTokenStatsAcrossTemporaryFailureAndRecovers(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -4194,15 +4297,29 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 		defer collector.tokenStatsMu.Unlock()
 		return !collector.tokenStatsRunning
 	})
+	clockNanos.Add(int64(time.Minute))
+	wake <- struct{}{}
+	<-afterWake
+	waitForCondition(t, time.Second, func() bool {
+		return tokenFetches.Load() == 2
+	})
+	waitForCondition(t, time.Second, func() bool {
+		collector.tokenStatsMu.Lock()
+		defer collector.tokenStatsMu.Unlock()
+		return !collector.tokenStatsRunning
+	})
 	collector.mu.RLock()
-	firstTokenCollection := collector.providers["codex"].TokenStatsCollected
+	afterGrowingHistoryWake := collector.providers["codex"]
 	collector.mu.RUnlock()
+	if !afterGrowingHistoryWake.Collected.Equal(now()) || !afterGrowingHistoryWake.TokenStatsCollected.Equal(now()) {
+		t.Fatalf("manual wake did not refresh growing quota and token history: snapshot=%#v want=%s", afterGrowingHistoryWake, now())
+	}
 
 	clockNanos.Add(int64(time.Minute))
 	wake <- struct{}{}
 	<-afterWake
-	if got := tokenFetches.Load(); got != 1 {
-		t.Fatalf("manual wake bypassed global token scan cooldown: fetches=%d", got)
+	if got := tokenFetches.Load(); got != 2 {
+		t.Fatalf("manual wake bypassed settled token scan cooldown: fetches=%d", got)
 	}
 	collector.mu.RLock()
 	afterCooldownWake := collector.providers["codex"]
@@ -4210,15 +4327,15 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	if !afterCooldownWake.Collected.Equal(now()) {
 		t.Fatalf("manual wake did not refresh quota snapshot: collected=%s want=%s", afterCooldownWake.Collected, now())
 	}
-	if !afterCooldownWake.TokenStatsCollected.Equal(firstTokenCollection) {
-		t.Fatalf("skipped token scan falsely advanced freshness: got=%s want=%s", afterCooldownWake.TokenStatsCollected, firstTokenCollection)
+	if !afterCooldownWake.TokenStatsCollected.Equal(afterGrowingHistoryWake.TokenStatsCollected) {
+		t.Fatalf("skipped token scan falsely advanced freshness: got=%s want=%s", afterCooldownWake.TokenStatsCollected, afterGrowingHistoryWake.TokenStatsCollected)
 	}
 
 	clockNanos.Add(int64(tokenStatsScanCooldown - time.Minute))
 	wake <- struct{}{}
 	<-afterWake
 	waitForCondition(t, time.Second, func() bool {
-		return tokenFetches.Load() == 2
+		return tokenFetches.Load() == 3
 	})
 	cancel()
 	collector.shutdownTokenStatsScan()
@@ -5605,6 +5722,12 @@ type staticDashboardServe struct {
 
 func (s staticDashboardServe) Info() codexbar.DashboardServeInfo {
 	return s.info
+}
+
+type dashboardServeFunc func() codexbar.DashboardServeInfo
+
+func (f dashboardServeFunc) Info() codexbar.DashboardServeInfo {
+	return f()
 }
 
 func testDashboardServeInfo(pid int) codexbar.DashboardServeInfo {
