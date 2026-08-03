@@ -4541,10 +4541,15 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     .getByText(`${committedBrightness}%`, { exact: true })
     .waitFor({ timeout: 10_000 });
   assert(settingsWrites.length === 0, "dragging must wait until release");
+  const settingsResponsesBeforeBrightness = settingsCalls;
   await page.mouse.up();
   await waitForCondition(
     () => settingsWrites.length === 1,
     "releasing brightness should write once",
+  );
+  await waitForCondition(
+    () => settingsCalls > settingsResponsesBeforeBrightness,
+    "releasing brightness should finish before checking screensaver controls",
   );
   assert(
     settingsWrites[0]?.brightnessPercent === committedBrightness,
