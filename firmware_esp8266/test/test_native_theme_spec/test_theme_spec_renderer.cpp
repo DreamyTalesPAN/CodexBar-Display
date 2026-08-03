@@ -1646,9 +1646,33 @@ void testFrameActivityDefaultsToCodingWhenUsageChanges() {
   TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
   TEST_ASSERT_FALSE(event.usageProgressed);
 
-  const char* codingFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":120,"weekTokens":220,"totalTokens":340})JSON";
+  const char* codingFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, codingFrame, 3000, event));
   TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+  TEST_ASSERT_TRUE(event.usageProgressed);
+}
+
+void testUsageProgressIgnoresTokenHistoryExpiryAndRestore() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame =
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+
+  const char* expiredFrame =
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":0,"weekTokens":0,"totalTokens":0})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, expiredFrame, 2000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* restoredFrame =
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, restoredFrame, 3000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* usageMoved =
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, usageMoved, 4000, event));
   TEST_ASSERT_TRUE(event.usageProgressed);
 }
 
@@ -2396,6 +2420,7 @@ int main() {
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
   RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
+  RUN_TEST(testUsageProgressIgnoresTokenHistoryExpiryAndRestore);
   RUN_TEST(testUsageProgressEventIgnoresDeclaredActivityAndErrors);
   RUN_TEST(testUsageProgressEventIgnoresDisplayOnlyUsageChanges);
   RUN_TEST(testThemeSpecActivityChangeUsesPartialRenderEvent);

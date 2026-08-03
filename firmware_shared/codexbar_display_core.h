@@ -453,9 +453,9 @@ inline bool UsageProgressChanged(const Frame& previous, const Frame& next) {
       return true;
     }
   }
-  return previous.sessionTokens != next.sessionTokens ||
-         previous.weekTokens != next.weekTokens ||
-         previous.totalTokens != next.totalTokens;
+  // Token totals come from history scans. Expiry and recovery can change them
+  // without any provider consumption, so they must not drive standby activity.
+  return false;
 }
 
 inline bool ThemeSpecUsesBinding(const String& raw, const char* fullName, const char* compactName) {
