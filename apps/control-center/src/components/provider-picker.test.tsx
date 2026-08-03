@@ -53,6 +53,26 @@ describe("ProviderPicker", () => {
     expect(html).toContain("min-h-11");
   });
 
+  it("announces pending display saves on only the changed provider row", () => {
+    const html = renderToStaticMarkup(
+      <ProviderPicker
+        display={automatic}
+        displayPendingProviderId="claude"
+        items={[codex, claude]}
+        onCheck={vi.fn()}
+        onDisplayChange={vi.fn()}
+        onPreferenceChange={vi.fn()}
+        onRecovery={vi.fn()}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+      />,
+    );
+
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-label="Saving display choice for Claude"');
+    expect(html).not.toContain('aria-label="Saving display choice for Codex"');
+  });
+
   it("searches true provider identity instead of the shared descriptor prefix", () => {
     expect(providerMatchesQuery(codex, "codex")).toBe(true);
     expect(providerMatchesQuery(claude, "codex")).toBe(false);

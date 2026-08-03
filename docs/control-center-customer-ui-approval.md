@@ -459,3 +459,14 @@ issue scope, or release permission never implies UI permission.
   saved Automatic provider pool remains unchanged.
 - Approved files: `provider-picker.tsx` and the matching customer-flow
   assertion.
+
+## 2026-08-03 — Provider display saves stay ordered
+
+- User approval: The user's explicit approval requires line-local Pending and
+  atomic provider display writes.
+- Approved customer-visible result: While one display choice is being saved,
+  its provider row alone shows Pending and the remaining display choices wait
+  until that save finishes. Provider enablement and readiness controls remain
+  separate.
+- Approved files: `provider-picker.tsx` and the matching unit and customer-flow
+  assertions.

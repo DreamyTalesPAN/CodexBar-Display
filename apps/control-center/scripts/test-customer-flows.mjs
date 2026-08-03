@@ -4123,6 +4123,7 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
       configured: true,
       valid: true,
     },
+    providerDisplayPatchDelayMs: 1_500,
     providerSelectionSetup: {
       providerSelectionRequired: true,
       providerSelectionComplete: false,
@@ -4188,9 +4189,33 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
     "cancelling a fixed-mode draft must preserve the saved automatic pool",
   );
 
-  await page
+  const displaySave = page
     .getByLabel("Include Claude in Automatic")
     .uncheck({ force: true });
+  const fixedMode = page.getByRole("button", { name: "Always show one" });
+  await waitForCondition(
+    () => fixedMode.isDisabled(),
+    "display mode was not disabled while a display save was pending",
+  );
+  assert(
+    await page.getByLabel("Include Codex in Automatic").isDisabled(),
+    "another display choice must stay disabled while a display save is pending",
+  );
+  assert(
+    await fixedMode.isDisabled(),
+    "display mode changes must stay disabled while a display save is pending",
+  );
+  assert(
+    (await page
+      .getByRole("status", { name: /Saving display choice for/ })
+      .count()) === 1,
+    "only the changed provider row should show display pending",
+  );
+  await waitForCondition(
+    async () => !(await fixedMode.isDisabled()),
+    "display mode did not unlock after the display save",
+  );
+  await displaySave;
   await page.getByRole("switch", { name: "Disable Claude" }).click();
   await page
     .getByRole("switch", { name: "Enable Claude" })
@@ -6972,6 +6997,7 @@ async function routeCompanionOnline(
       configured: true,
       valid: true,
     },
+    providerDisplayPatchDelayMs = 0,
     providerSelectionSetup = {
       providerSelectionRequired: false,
       providerSelectionComplete: true,
@@ -7073,6 +7099,11 @@ async function routeCompanionOnline(
     }
     if (pathname === "/v1/provider-display") {
       if (route.request().method() === "PATCH") {
+        if (providerDisplayPatchDelayMs > 0) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, providerDisplayPatchDelayMs),
+          );
+        }
         const request = parseJSON(route.request().postData() || "") || {};
         currentProviderDisplay = {
           mode: request.mode,

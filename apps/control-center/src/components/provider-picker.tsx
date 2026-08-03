@@ -163,7 +163,9 @@ export function ProviderPicker({
             <Button
               aria-pressed={mode === "automatic"}
               className="min-h-12 justify-start"
-              disabled={enabledProviders.length === 0}
+              disabled={
+                enabledProviders.length === 0 || Boolean(displayPendingProviderId)
+              }
               onClick={() => chooseMode("automatic")}
               type="button"
               variant={mode === "automatic" ? "default" : "outline"}
@@ -173,7 +175,9 @@ export function ProviderPicker({
             <Button
               aria-pressed={mode === "fixed"}
               className="min-h-12 justify-start"
-              disabled={enabledProviders.length === 0}
+              disabled={
+                enabledProviders.length === 0 || Boolean(displayPendingProviderId)
+              }
               onClick={() => chooseMode("fixed")}
               type="button"
               variant={mode === "fixed" ? "default" : "outline"}
@@ -283,13 +287,20 @@ export function ProviderPicker({
                     <label className="flex min-h-11 items-center justify-between gap-3 text-sm sm:justify-end">
                       <span>{mode === "fixed" ? "Always show" : "Include"}</span>
                       {pendingDisplay ? (
-                        <Spinner aria-label={`Saving display choice for ${item.label}`} />
+                        <span
+                          aria-label={`Saving display choice for ${item.label}`}
+                          role="status"
+                        >
+                          <Spinner />
+                        </span>
                       ) : mode === "fixed" ? (
                         <input
                           aria-label={`Always show ${item.label}`}
                           checked={isSelected && display?.mode === "fixed"}
                           className="size-5 accent-primary"
-                          disabled={!item.value || pendingDisplay}
+                          disabled={
+                            !item.value || Boolean(displayPendingProviderId)
+                          }
                           name="fixed-provider"
                           onChange={() => chooseProvider(item, true)}
                           type="radio"
@@ -301,7 +312,7 @@ export function ProviderPicker({
                           checked={isSelected}
                           disabled={
                             !item.value ||
-                            pendingDisplay ||
+                            Boolean(displayPendingProviderId) ||
                             (isSelected && selected.size === 1)
                           }
                           onCheckedChange={(checked) =>
