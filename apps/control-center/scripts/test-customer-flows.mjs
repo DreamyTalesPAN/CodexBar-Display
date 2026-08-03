@@ -251,6 +251,7 @@ const companionDevice = {
       supportsThemeSpecV1: true,
       supportsUsageSlotsV1: true,
     },
+    standby: { supported: true },
   },
   stream: {
     healthy: true,
