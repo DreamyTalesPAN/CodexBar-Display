@@ -36,6 +36,7 @@ const themeStudioSafetyOnly = process.argv.includes("--theme-studio-safety");
 const themeReleaseOnly = process.argv.includes("--theme-release");
 const themePreviewsOnly = process.argv.includes("--theme-previews");
 const themeSetupFirmwareOnly = process.argv.includes("--theme-setup-firmware");
+const themeMissingOnly = process.argv.includes("--theme-missing");
 const updateThemePreviewVectorGoldens =
   process.env.CONTROL_CENTER_UPDATE_THEME_PREVIEW_GOLDENS === "1";
 const wifiRescanOnly = process.argv.includes("--wifi-rescan");
@@ -390,6 +391,14 @@ async function main() {
       releaseUrl: smokeOnly ? missingAssetReleaseUrl : completeReleaseUrl,
     });
     app = appContext.app;
+    if (themeMissingOnly) {
+      await testThemeMissingDeviceChoosesThemeAndCompletesSetup(
+        browser,
+        appContext.appUrl,
+      );
+      console.log("control-center theme-missing flow test passed");
+      return;
+    }
     if (themeReleaseOnly) {
       await testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
         browser,
@@ -3300,10 +3309,6 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
     name: "Install",
     exact: true,
   });
-  const otherInstallButton = page
-    .getByRole("listitem")
-    .filter({ hasText: "Fixture Clippy Theme" })
-    .getByRole("button", { name: "Install", exact: true });
   await installButton.waitFor({ timeout: 10_000 });
   const installStyle = await installButton.evaluate((button) => {
     const style = window.getComputedStyle(button);
@@ -3328,15 +3333,9 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
     .getByText("Install failed", { exact: true })
     .waitFor({ timeout: 10_000 });
   await page.getByRole("button", { name: "Try again" }).click();
-  await synthwaveRow
-    .getByRole("status")
-    .getByText("Installed", { exact: true })
-    .waitFor({ timeout: 10_000 });
-  await waitForEnabled(
-    page,
-    otherInstallButton,
-    "Theme setup should finish processing the rendered theme readback before the assertion",
-  );
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
   assert(
     (await page
       .getByRole("heading", { name: "Choose your VibeTV theme" })
