@@ -1366,6 +1366,7 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	}
 	now := deps.now()
 	allProviders := collector.providerFrames(now)
+	allProviders = applyProviderDisplaySelection(state, allProviders, deps)
 	if len(allProviders) == 0 {
 		allProviders = probeProvidersDirectly(ctx, collector.order, deps)
 	}

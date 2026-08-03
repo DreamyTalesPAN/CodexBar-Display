@@ -3686,6 +3686,52 @@ func TestRunCycleFromCollectorProbesFixedProviderBeforeDirectProbeLimit(t *testi
 	}
 }
 
+func TestRunCycleFromCollectorProbesSelectedProviderWhenSnapshotsAreOutsideDisplaySelection(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:            func() time.Time { return now },
+		logf:           func(string, ...any) {},
+		order:          []string{"codex", "gemini"},
+		snapshotMaxAge: 2 * time.Hour,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:  "codex",
+				Frame:     testParsedFrame("codex", 10, 20, 3600).Frame,
+				Collected: now,
+			},
+		},
+	}
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"gemini"},
+	})
+	deps.now = func() time.Time { return now }
+	deps.resolvePort = func(string) (string, error) { return "/dev/cu.usbmodem-test", nil }
+	var probed []string
+	deps.fetchProvider = func(_ context.Context, provider string) (codexbar.ParsedFrame, error) {
+		probed = append(probed, provider)
+		return testParsedFrame(provider, 21, 43, 3600), nil
+	}
+	var sentLine []byte
+	deps.sendLine = func(_ string, line []byte) error {
+		sentLine = append([]byte(nil), line...)
+		return nil
+	}
+	deps.logf = func(string, ...any) {}
+
+	if err := runCycleFromCollector(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, collector, deps); err != nil {
+		t.Fatalf("selected provider fallback failed: %v", err)
+	}
+	if !reflect.DeepEqual(probed, []string{"gemini"}) {
+		t.Fatalf("direct probes=%v want newly selected provider", probed)
+	}
+	if frame := decodeFrameLine(t, sentLine); frame.Provider != "gemini" {
+		t.Fatalf("sent provider=%q want gemini", frame.Provider)
+	}
+}
+
 func TestDirectProviderProbeOrderExcludesDisplayProviderOutsideEnabledInventory(t *testing.T) {
 	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
 		Mode:        "automatic",
