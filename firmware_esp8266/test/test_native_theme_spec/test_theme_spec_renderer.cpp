@@ -631,6 +631,27 @@ void testConsumeFrameLineComparesCurrentBeforeAssignment() {
   TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindows) != 0);
 }
 
+void testQuotaReplenishmentDoesNotCountAsUsageProgress() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* usedBeforeReset = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":80,"weekly":90,"usageWindows":[{"id":"weekly","label":"Weekly","percent":90}]})JSON";
+  const char* usedAfterReset = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":0,"weekly":0,"usageWindows":[{"id":"weekly","label":"Weekly","percent":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, usedBeforeReset, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, usedAfterReset, 2000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* remainingBeforeReset = R"JSON({"v":2,"provider":"codex","usageMode":"remaining","session":20,"weekly":10,"usageWindows":[{"id":"weekly","label":"Weekly","percent":10}]})JSON";
+  const char* remainingAfterReset = R"JSON({"v":2,"provider":"codex","usageMode":"remaining","session":100,"weekly":100,"usageWindows":[{"id":"weekly","label":"Weekly","percent":100}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, remainingBeforeReset, 3000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, remainingAfterReset, 4000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* remainingAfterUsage = R"JSON({"v":2,"provider":"codex","usageMode":"remaining","session":99,"weekly":100,"usageWindows":[{"id":"weekly","label":"Weekly","percent":99}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, remainingAfterUsage, 5000, event));
+  TEST_ASSERT_TRUE(event.usageProgressed);
+}
+
 void testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw() {
   RuntimeState ownershipState;
   SerialConsumeEvent event;
@@ -2415,6 +2436,7 @@ int main() {
   RUN_TEST(testHighestAdvertisedUsageWindowBindingCompiles);
   RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
   RUN_TEST(testConsumeFrameLineComparesCurrentBeforeAssignment);
+  RUN_TEST(testQuotaReplenishmentDoesNotCountAsUsageProgress);
   RUN_TEST(testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw);
   RUN_TEST(testWhitespaceUsageWindowOwnersTriggerLiveRedraw);
   RUN_TEST(testPartialUsageProtocolRendersOnlyUnknownLane);

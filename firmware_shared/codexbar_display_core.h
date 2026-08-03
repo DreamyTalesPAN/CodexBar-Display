@@ -438,20 +438,38 @@ inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& n
          previous.available != next.available;
 }
 
+inline bool UsagePercentProgressed(
+    const Frame& previous,
+    const Frame& next,
+    int previousPercent,
+    int nextPercent) {
+  if (previous.hasUsageMode != next.hasUsageMode ||
+      previous.usageMode != next.usageMode) {
+    return false;
+  }
+  return next.usageMode == "remaining"
+             ? nextPercent < previousPercent
+             : nextPercent > previousPercent;
+}
+
 inline bool UsageProgressChanged(const Frame& previous, const Frame& next) {
   const bool usageAvailable = !previous.usageUnavailable && !next.usageUnavailable;
   if (usageAvailable &&
       ((!previous.sessionUnavailable && !next.sessionUnavailable &&
-        previous.session != next.session) ||
+        UsagePercentProgressed(previous, next, previous.session, next.session)) ||
        (!previous.weeklyUnavailable && !next.weeklyUnavailable &&
-        previous.weekly != next.weekly))) {
+        UsagePercentProgressed(previous, next, previous.weekly, next.weekly)))) {
     return true;
   }
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
     // Countdown, label and availability changes redraw the theme, but do not
     // mean that the customer used their provider.
     if (usageAvailable && previous.usageWindows[i].available && next.usageWindows[i].available &&
-        previous.usageWindows[i].percent != next.usageWindows[i].percent) {
+        UsagePercentProgressed(
+            previous,
+            next,
+            previous.usageWindows[i].percent,
+            next.usageWindows[i].percent)) {
       return true;
     }
   }
