@@ -5,7 +5,7 @@ Goal: keep firmware transport/theme evolution modular and prevent monolith regre
 ## Module Boundaries
 - `firmware_shared/codexbar_display_core.h`: protocol frame parsing, runtime state, countdown math.
 - `firmware_shared/app_transport.h`: transport hello emission + serial consume bridge.
-- `firmware_shared/device_clock.h`: device wall clock state math (SNTP epoch, learned UTC offset, resolved `time`/`date` text). Pure state, no board calls, natively tested.
+- `firmware_shared/device_clock.h`: device wall clock state math (SNTP epoch, Companion offset/transition, resolved `time`/`date` text). Pure state, no board calls, natively tested.
 - `firmware_esp8266/src/standby_settings.h`: standby configuration state — clamping, screensaver slot reference, and the persisted record encoding. Pure state, no board calls, natively tested. Deciding when the device is idle and what it renders does not belong here.
 - `firmware_esp8266/src/standby_state.h`: when the device is idle and when it wakes. Pure state math, no board calls, natively tested. It reports transitions; loading a spec, repainting, and brightness stay with the caller.
 - `firmware_shared/app_runtime.h`: runtime context wrapper.
@@ -22,6 +22,9 @@ Rules:
 - `{time}`/`{date}` must resolve through the device clock first and fall back to
   the Companion string only while that string is still current. A stale clock
   value must never be rendered as the current time.
+- Device clock code must not add a timezone database, POSIX TZ string, `setTZ`,
+  `localtime_r`, or a string rule parser; Companion sends only the current
+  offset and the next transition needed by the device.
 
 ## Protocol/Theme Rules
 - Companion->device frame `v` is negotiated (prefer v2, fallback v1).

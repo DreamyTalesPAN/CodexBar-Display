@@ -6,17 +6,24 @@ namespace {
 
 using codexbar_display::deviceclock::DeviceClock;
 using codexbar_display::deviceclock::EncodeUtcOffset;
+using codexbar_display::deviceclock::EncodeUtcOffsetTransition;
 using codexbar_display::deviceclock::DecodeUtcOffset;
+using codexbar_display::deviceclock::DecodeUtcOffsetTransition;
+using codexbar_display::deviceclock::ClearUtcOffsetTransition;
 using codexbar_display::deviceclock::LocalClockUsable;
+using codexbar_display::deviceclock::ApplyDueUtcOffsetTransition;
 using codexbar_display::deviceclock::ObserveCompanionClock;
+using codexbar_display::deviceclock::ObserveUtcOffsetTransition;
 using codexbar_display::deviceclock::ObserveSystemEpoch;
 using codexbar_display::deviceclock::ResolveDateText;
 using codexbar_display::deviceclock::ResolveTimeText;
 using codexbar_display::deviceclock::RestoreUtcOffset;
+using codexbar_display::deviceclock::RestoreUtcOffsetTransition;
 using codexbar_display::deviceclock::Source;
 using codexbar_display::deviceclock::kDateTextSize;
 using codexbar_display::deviceclock::kTimeTextSize;
 using codexbar_display::deviceclock::kUtcOffsetRecordBytes;
+using codexbar_display::deviceclock::kUtcOffsetTransitionRecordBytes;
 
 // 2026-07-28T12:34:00Z
 constexpr int64_t kNtpEpoch = 1785242040;
@@ -47,7 +54,7 @@ void testFreshBootWithNtpEstablishesLocalClock() {
   // UTC alone is not a wall clock: without the offset the device stays honest.
   TEST_ASSERT_FALSE(LocalClockUsable(clock));
 
-  TEST_ASSERT_TRUE(ObserveCompanionClock(clock, "14:34", 4200));
+  TEST_ASSERT_TRUE(ObserveCompanionClock(clock, "14:34", true, 120, 4200));
   TEST_ASSERT_EQUAL_INT(120, clock.utcOffsetMinutes);
 
   const ClockText texts = resolve(clock, 4200, "14:34", "28.07.2026");
@@ -61,7 +68,7 @@ void testFreshBootWithNtpEstablishesLocalClock() {
 void testDeviceClockAdvancesWithoutFrames() {
   DeviceClock clock;
   ObserveSystemEpoch(clock, kNtpEpoch, 10000);
-  ObserveCompanionClock(clock, "14:34", 10000);
+  ObserveCompanionClock(clock, "14:34", true, 120, 10000);
 
   const unsigned long threeHoursLater = 10000UL + 3UL * 3600UL * 1000UL;
   const ClockText texts = resolve(clock, threeHoursLater, "14:34", "28.07.2026");
@@ -73,7 +80,7 @@ void testDeviceClockAdvancesWithoutFrames() {
 // presented as the current time.
 void testBootWithoutNtpFallsBackAndThenGoesUnknown() {
   DeviceClock clock;
-  ObserveCompanionClock(clock, "14:34", 5000);
+  ObserveCompanionClock(clock, "14:34", true, 120, 5000);
   TEST_ASSERT_FALSE(clock.synced);
 
   ClockText fresh = resolve(clock, 5000, "14:34", "28.07.2026");
@@ -100,12 +107,12 @@ void testNoSourceAtAllRendersUnknown() {
 // and a corrected epoch counts as a new sync.
 void testClockRecoversWhenNetworkReturns() {
   DeviceClock clock;
-  ObserveCompanionClock(clock, "14:34", 1000);
+  ObserveCompanionClock(clock, "14:34", true, 120, 1000);
   TEST_ASSERT_EQUAL_INT(static_cast<int>(Source::Unknown),
                         static_cast<int>(resolve(clock, 200000, "14:34", "28.07.2026").timeSource));
 
   TEST_ASSERT_TRUE(ObserveSystemEpoch(clock, kNtpEpoch, 200000));
-  ObserveCompanionClock(clock, "14:34", 200000);
+  ObserveCompanionClock(clock, "14:34", true, 120, 200000);
   TEST_ASSERT_EQUAL_STRING("14:34", resolve(clock, 200000, "", "").time);
   TEST_ASSERT_EQUAL_INT(1, static_cast<int>(clock.syncCount));
 
@@ -124,7 +131,7 @@ void testPersistedOffsetSurvivesRebootWithoutCompanion() {
   uint8_t record[kUtcOffsetRecordBytes] = {};
   DeviceClock before;
   ObserveSystemEpoch(before, kNtpEpoch, 1000);
-  ObserveCompanionClock(before, "13:34", 1000);
+  ObserveCompanionClock(before, "13:34", true, 60, 1000);
   TEST_ASSERT_EQUAL_INT(60, before.utcOffsetMinutes);
   EncodeUtcOffset(before, record);
 
@@ -154,39 +161,100 @@ void testUtcOffsetRecordRejectsUnsetAndImplausibleValues() {
   TEST_ASSERT_EQUAL_INT(42, restored);
 }
 
-void testOffsetLearningAbsorbsLatencyAndFollowsDstAndNegativeZones() {
+void testCompanionOffsetFollowsDstAndNegativeZones() {
   DeviceClock clock;
   ObserveSystemEpoch(clock, kNtpEpoch, 1000);
 
-  // Companion truncates to the minute and the frame arrives late.
-  TEST_ASSERT_TRUE(ObserveCompanionClock(clock, "14:33", 1000));
+  // The Companion sends the validated quarter-hour offset directly.
+  TEST_ASSERT_TRUE(ObserveCompanionClock(clock, "14:33", true, 120, 1000));
   TEST_ASSERT_EQUAL_INT(120, clock.utcOffsetMinutes);
   // A repeated sample is not a new value to persist.
-  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "14:34", 1000));
+  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "14:34", true, 120, 1000));
 
   // DST ends.
-  TEST_ASSERT_TRUE(ObserveCompanionClock(clock, "13:34", 1000));
+  TEST_ASSERT_TRUE(ObserveCompanionClock(clock, "13:34", true, 60, 1000));
   TEST_ASSERT_EQUAL_INT(60, clock.utcOffsetMinutes);
 
   // Negative offset across the date line.
-  TEST_ASSERT_TRUE(ObserveCompanionClock(clock, "07:34", 1000));
+  TEST_ASSERT_TRUE(ObserveCompanionClock(clock, "07:34", true, -300, 1000));
   TEST_ASSERT_EQUAL_INT(-300, clock.utcOffsetMinutes);
   TEST_ASSERT_EQUAL_STRING("07:34", resolve(clock, 1000, "", "").time);
   TEST_ASSERT_EQUAL_STRING("28.07.2026", resolve(clock, 1000, "", "").date);
 
   // Quarter-hour zone.
-  TEST_ASSERT_TRUE(ObserveCompanionClock(clock, "18:19", 1000));
+  TEST_ASSERT_TRUE(ObserveCompanionClock(clock, "18:19", true, 345, 1000));
   TEST_ASSERT_EQUAL_INT(345, clock.utcOffsetMinutes);
+}
+
+void testCompanionOffsetKeepsUtcPlus13AndPlus14Date() {
+  DeviceClock clock;
+  ObserveSystemEpoch(clock, kNtpEpoch, 1000);
+
+  // 2026-07-28T12:34Z is already 2026-07-29 in UTC+13/UTC+14.
+  TEST_ASSERT_TRUE(ObserveCompanionClock(clock, "01:34", true, 780, 1000));
+  TEST_ASSERT_EQUAL_INT(780, clock.utcOffsetMinutes);
+  TEST_ASSERT_TRUE(ObserveCompanionClock(clock, "02:34", true, 840, 1000));
+  TEST_ASSERT_EQUAL_INT(840, clock.utcOffsetMinutes);
+
+  const ClockText texts = resolve(clock, 1000, "", "");
+  TEST_ASSERT_EQUAL_STRING("02:34", texts.time);
+  TEST_ASSERT_EQUAL_STRING("29.07.2026", texts.date);
+}
+
+void testMissingCurrentOffsetPreservesFreshCompanionFallback() {
+  DeviceClock clock;
+  ObserveSystemEpoch(clock, kNtpEpoch, 1000);
+  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "14:34", false, 0, 1000));
+  TEST_ASSERT_FALSE(clock.hasUtcOffset);
+
+  const ClockText texts = resolve(clock, 1000, "14:34", "28.07.2026");
+  TEST_ASSERT_EQUAL_STRING("14:34", texts.time);
+  TEST_ASSERT_EQUAL_STRING("28.07.2026", texts.date);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Source::Companion),
+                        static_cast<int>(texts.timeSource));
+}
+
+void testOffsetTransitionPersistsAndAppliesAtItsUtcEpoch() {
+  constexpr int64_t kTransitionEpoch = kNtpEpoch + 3600;
+  DeviceClock before;
+  TEST_ASSERT_TRUE(RestoreUtcOffset(before, 120));
+  TEST_ASSERT_TRUE(ObserveUtcOffsetTransition(before, kTransitionEpoch, 60));
+
+  DeviceClock cleared;
+  TEST_ASSERT_TRUE(ObserveUtcOffsetTransition(cleared, kTransitionEpoch, 60));
+  TEST_ASSERT_TRUE(ClearUtcOffsetTransition(cleared));
+  TEST_ASSERT_FALSE(cleared.hasUtcOffsetTransition);
+
+  uint8_t record[kUtcOffsetTransitionRecordBytes] = {};
+  EncodeUtcOffsetTransition(before, record);
+
+  int64_t restoredEpoch = 0;
+  int restoredOffsetMinutes = 0;
+  TEST_ASSERT_TRUE(DecodeUtcOffsetTransition(
+      record, sizeof(record), restoredEpoch, restoredOffsetMinutes));
+  TEST_ASSERT_EQUAL_INT64(kTransitionEpoch, restoredEpoch);
+  TEST_ASSERT_EQUAL_INT(60, restoredOffsetMinutes);
+
+  DeviceClock after;
+  TEST_ASSERT_TRUE(RestoreUtcOffset(after, 120));
+  TEST_ASSERT_TRUE(RestoreUtcOffsetTransition(
+      after, restoredEpoch, restoredOffsetMinutes));
+  TEST_ASSERT_FALSE(ApplyDueUtcOffsetTransition(after, kTransitionEpoch - 1));
+  TEST_ASSERT_EQUAL_INT(120, after.utcOffsetMinutes);
+  TEST_ASSERT_TRUE(ApplyDueUtcOffsetTransition(after, kTransitionEpoch));
+  TEST_ASSERT_EQUAL_INT(60, after.utcOffsetMinutes);
+  TEST_ASSERT_FALSE(after.hasUtcOffsetTransition);
+  TEST_ASSERT_FALSE(ApplyDueUtcOffsetTransition(after, kTransitionEpoch + 1));
 }
 
 void testGarbageCompanionClockIsIgnoredForOffsetLearning() {
   DeviceClock clock;
   ObserveSystemEpoch(clock, kNtpEpoch, 1000);
-  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "", 1000));
-  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "25:00", 1000));
-  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "14:3", 1000));
-  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "14:345", 1000));
-  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, nullptr, 1000));
+  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "", true, 120, 1000));
+  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "25:00", true, 120, 1000));
+  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "14:3", true, 120, 1000));
+  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "14:345", true, 120, 1000));
+  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, nullptr, true, 120, 1000));
   TEST_ASSERT_FALSE(clock.hasUtcOffset);
   TEST_ASSERT_FALSE(clock.hasCompanionClock);
 }
@@ -217,7 +285,10 @@ void RunDeviceClockTests() {
   RUN_TEST(testClockRecoversWhenNetworkReturns);
   RUN_TEST(testPersistedOffsetSurvivesRebootWithoutCompanion);
   RUN_TEST(testUtcOffsetRecordRejectsUnsetAndImplausibleValues);
-  RUN_TEST(testOffsetLearningAbsorbsLatencyAndFollowsDstAndNegativeZones);
+  RUN_TEST(testCompanionOffsetFollowsDstAndNegativeZones);
+  RUN_TEST(testCompanionOffsetKeepsUtcPlus13AndPlus14Date);
+  RUN_TEST(testMissingCurrentOffsetPreservesFreshCompanionFallback);
+  RUN_TEST(testOffsetTransitionPersistsAndAppliesAtItsUtcEpoch);
   RUN_TEST(testGarbageCompanionClockIsIgnoredForOffsetLearning);
   RUN_TEST(testLocalDateRollsOverIncludingLeapDay);
 }

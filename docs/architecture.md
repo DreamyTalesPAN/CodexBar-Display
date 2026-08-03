@@ -147,9 +147,12 @@ Mac is off.
   (**UDP port 123, outbound**) and reads UTC from the system clock. This is the
   only traffic the firmware initiates on its own. It is not an HTTPS fetch, so
   the rule that the firmware must not fetch public HTTPS manifests is untouched.
-- SNTP delivers UTC only. The local UTC offset is learned from the Companion
-  clock string while the Mac is reachable, rounded to a quarter hour, and stored
-  in the device settings file, so it survives a reboot with the Mac switched off.
+- SNTP delivers UTC only. The Companion sends its validated current UTC offset
+  and may send the next offset transition as a UTC epoch plus follow-on offset
+  (computed with Go `time.Location`/`ZoneBounds`). Firmware stores the current
+  offset and one 10-byte transition record append-only, then applies the
+  transition when its own SNTP epoch reaches it. The device has no timezone
+  database, POSIX TZ string, libc timezone function, or rule parser.
 - Rendering order: device clock first; the Companion string second, and only
   while it is still current (two minutes); otherwise `--:--` / `--.--.----`.
   A frozen value is never presented as the current time.

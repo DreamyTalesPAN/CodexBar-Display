@@ -730,6 +730,11 @@ func TestRunCycleWithDepsAttachesClockFields(t *testing.T) {
 	if frame.Time != "12:34" || frame.Date != "23.02.2026" {
 		t.Fatalf("expected clock fields from daemon time, got time=%q date=%q", frame.Time, frame.Date)
 	}
+	if frame.NextClockTransition == nil ||
+		frame.NextClockTransition.CurrentOffsetMinutes != 0 ||
+		frame.NextClockTransition.TransitionEpoch != 0 {
+		t.Fatalf("expected UTC clock schedule, got %+v", frame.NextClockTransition)
+	}
 }
 
 func TestRunCycleWithDepsSkipsThemeWhenDeviceDoesNotSupportIt(t *testing.T) {

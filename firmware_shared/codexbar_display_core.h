@@ -13,6 +13,8 @@
 #include "theme_spec_renderer_core.h"
 #endif
 
+#include "device_clock.h"
+
 namespace codexbar_display {
 namespace core {
 
@@ -142,6 +144,12 @@ struct Frame {
   // the clock is driven by the resolved text, not by these fields changing.
   String timeText;
   String dateText;
+  // True when the frame carries a validated current offset. A non-zero
+  // transition epoch then carries the optional next transition.
+  bool hasClockSchedule = false;
+  int16_t clockOffsetMinutes = 0;
+  int64_t clockTransitionEpoch = 0;
+  int16_t clockTransitionOffsetMinutes = 0;
   bool clearThemeSpec = false;
   bool hasThemeSpec = false;
   String themeSpecId;
@@ -893,6 +901,27 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
     }
   }
 
+  bool hasClockSchedule = false;
+  int clockOffsetMinutes = 0;
+  int64_t clockTransitionEpoch = 0;
+  int clockTransitionOffsetMinutes = 0;
+  if (doc["clockSchedule"].is<JsonObjectConst>()) {
+    JsonObjectConst schedule = doc["clockSchedule"].as<JsonObjectConst>();
+    if (schedule["currentOffsetMinutes"].is<int>()) {
+      clockOffsetMinutes = schedule["currentOffsetMinutes"].as<int>();
+      hasClockSchedule = deviceclock::UtcOffsetValid(clockOffsetMinutes);
+    }
+    clockTransitionEpoch = static_cast<int64_t>(
+        schedule["transitionEpoch"] | static_cast<int64_t>(0));
+    clockTransitionOffsetMinutes = schedule["offsetMinutes"] | 0;
+    if (!hasClockSchedule ||
+        clockTransitionEpoch < deviceclock::kMinPlausibleEpoch ||
+        !deviceclock::UtcOffsetValid(clockTransitionOffsetMinutes)) {
+      clockTransitionEpoch = 0;
+      clockTransitionOffsetMinutes = 0;
+    }
+  }
+
   bool hasUpdateAvailable = false;
   bool updateAvailable = false;
   String updateLatestVersion;
@@ -919,6 +948,11 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
     out.activity = activity;
     out.timeText = String(doc["time"] | "");
     out.dateText = String(doc["date"] | "");
+    out.hasClockSchedule = hasClockSchedule;
+    out.clockOffsetMinutes = static_cast<int16_t>(clockOffsetMinutes);
+    out.clockTransitionEpoch = clockTransitionEpoch;
+    out.clockTransitionOffsetMinutes =
+        static_cast<int16_t>(clockTransitionOffsetMinutes);
     out.clearThemeSpec = clearThemeSpec;
     out.hasThemeSpec = hasThemeSpec;
     out.themeSpecId = themeSpecId;
@@ -974,6 +1008,11 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   out.weeklyUnavailable = doc["weeklyUnavailable"] | false;
   out.timeText = String(doc["time"] | "");
   out.dateText = String(doc["date"] | "");
+  out.hasClockSchedule = hasClockSchedule;
+  out.clockOffsetMinutes = static_cast<int16_t>(clockOffsetMinutes);
+  out.clockTransitionEpoch = clockTransitionEpoch;
+  out.clockTransitionOffsetMinutes =
+      static_cast<int16_t>(clockTransitionOffsetMinutes);
   out.sessionTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["sessionTokens"] | static_cast<int64_t>(0)));
   out.weekTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["weekTokens"] | static_cast<int64_t>(0)));
   out.totalTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["totalTokens"] | static_cast<int64_t>(0)));

@@ -38,8 +38,9 @@ Fields:
 - `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
 - `weekTokens` (number, optional): rolling 7-day token total when available.
 - `totalTokens` (number, optional): lifetime token total when available.
-- `time` (string, optional): pre-formatted local time `HH:MM`. **Fallback only.** The device runs its own SNTP clock and uses it for the `time`/`tm` binding; this string is used only while the device clock is not established, and only while it is still current (max age 2 minutes). Firmware also uses it to learn the local UTC offset, which SNTP does not provide.
+- `time` (string, optional): pre-formatted local time `HH:MM`. **Fallback only.** The device runs its own SNTP clock and uses it for the `time`/`tm` binding; this string is used only while the device clock is not established, and only while it is still current (max age 2 minutes).
 - `date` (string, optional): pre-formatted local date `DD.MM.YYYY`. Same fallback rules as `time`.
+- `clockSchedule` (object, optional): the Companion's validated current UTC offset and, when one exists, the next offset transition. `currentOffsetMinutes` is the current quarter-hour offset; `transitionEpoch` is the next transition as a UTC Unix epoch; `offsetMinutes` is the offset after it. The firmware stores one 10-byte transition suffix and applies it against its own SNTP epoch. The device has no timezone database, POSIX TZ string, libc timezone function, or rule parser.
 - `theme` (string, optional): requested built-in UI theme (`classic`, `crt`, `mini`).
 - `themeSpec` (object, optional): inline ThemeSpec v1 payload (see schema below). Once a ThemeSpec is cached or activated from storage, later live frames may omit this field and only send usage data.
 - `confirmClearThemeSpec` (boolean, optional): must be `true` when intentionally sending `themeSpec:null` to clear the active cached ThemeSpec.
@@ -65,8 +66,8 @@ Golden frame fixtures:
 {"v":2,"provider":"claude","label":"Claude","session":73,"weekly":45,"resetSecs":8028,"resetAgeSecs":12,"resetTrustSecs":17988,"resetSource":"claude:primary","resetTrust":"live"}
 ```
 
-The device has no wall clock, so the frame never carries an absolute time. Every
-reset value is a seconds count that is valid at the instant the frame arrives.
+Reset values are not absolute timestamps: every reset value is a seconds count
+that is valid at the instant the frame arrives.
 The device only has to tick those counters down with its own monotonic clock:
 
 - `resetSecs` is the deadline, re-anchored to the send instant. Reaching `0`
@@ -340,7 +341,7 @@ Result:
 - Unknown `theme` values should be ignored by firmware.
 - Host should send at least every 60 seconds.
 - Firmware ticks down `resetSecs` locally between host updates, bounded by `resetTrustSecs` (see Reset Freshness and Trust).
-- Firmware owns `time`/`date` rendering. It runs its own SNTP client (outbound UDP/123 to `pool.ntp.org`) and never fetches public HTTPS manifests. Host-sent clock strings are a fallback and must not be relied on for correctness on the device.
+- Firmware owns `time`/`date` rendering. It runs its own SNTP client (outbound UDP/123 to `pool.ntp.org`) and never fetches public HTTPS manifests. Host-sent clock strings are a fallback; `clockSchedule` carries only the current offset and next transition needed for correctness without device-side timezone rules.
 - Companion may resend the last known good frame normally during short CodexBar outages (current default max age: 10 minutes). After that, it keeps provider identity and numeric progress carriers but sets `usageUnavailable:true`.
 - If frame payload exceeds `maxFrameBytes`, companion drops `theme` first, then token stats, before falling back to an error frame.
 

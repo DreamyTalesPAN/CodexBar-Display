@@ -87,13 +87,16 @@ const char kSetupAddress[] = "192.168.4.1";
 const char kCustomerAppHost[] = "app.vibetv.shop";
 const char kCustomerAppUrl[] = "https://app.vibetv.shop";
 const char kDeviceSettingsPath[] = "/s";
-// The device settings record grew twice and stays append-only: brightness byte,
-// then the learned UTC offset, then standby. A shorter file is an older record,
-// so every reader must length-check its own section instead of assuming the
-// full size.
+// The device settings record stays append-only: brightness byte, learned UTC
+// offset, standby, then one optional next UTC-offset transition. A shorter file
+// is an older record, so every reader must length-check its own section instead
+// of assuming the full size.
 constexpr size_t kStandbyRecordOffset = 1 + codexbar_display::deviceclock::kUtcOffsetRecordBytes;
-constexpr size_t kDeviceSettingsRecordBytes =
+constexpr size_t kClockTransitionRecordOffset =
     kStandbyRecordOffset + codexbar_display::esp8266::standby::kRecordBytes;
+constexpr size_t kDeviceSettingsRecordBytes =
+    kClockTransitionRecordOffset +
+    codexbar_display::deviceclock::kUtcOffsetTransitionRecordBytes;
 const char kResetTrustHandoverPath[] = "/rt";
 const char kDeviceAuthTokenPath[] = "/auth";
 const char kActiveThemeSpecPathFile[] = "/theme-active";
@@ -346,6 +349,18 @@ bool loadDeviceSettings() {
                     static_cast<size_t>(readBytes) - kStandbyRecordOffset,
                     deviceSettings.standby);
   }
+  if (readBytes > static_cast<int>(kClockTransitionRecordOffset)) {
+    int64_t transitionEpoch = 0;
+    int transitionOffsetMinutes = 0;
+    if (deviceclock::DecodeUtcOffsetTransition(
+            record + kClockTransitionRecordOffset,
+            static_cast<size_t>(readBytes) - kClockTransitionRecordOffset,
+            transitionEpoch,
+            transitionOffsetMinutes)) {
+      deviceclock::RestoreUtcOffsetTransition(
+          runtimeCtx.clock, transitionEpoch, transitionOffsetMinutes);
+    }
+  }
   applyDeviceSettings();
   return brightness > 0;
 }
@@ -362,6 +377,8 @@ bool saveDeviceSettings() {
   record[0] = deviceSettings.brightnessPercent;
   deviceclock::EncodeUtcOffset(runtimeCtx.clock, record + 1);
   standby::Encode(deviceSettings.standby, record + kStandbyRecordOffset);
+  deviceclock::EncodeUtcOffsetTransition(
+      runtimeCtx.clock, record + kClockTransitionRecordOffset);
   const size_t written = file.write(record, sizeof(record));
   file.close();
   return written > 0;
@@ -960,6 +977,13 @@ void maintainDeviceClock() {
                   runtimeCtx.clock.hasUtcOffset ? 1 : 0);
   }
 
+  if (deviceclock::ApplyDueUtcOffsetTransition(
+          runtimeCtx.clock, deviceclock::UtcNow(runtimeCtx.clock, nowMs))) {
+    Serial.printf("clock_utc_offset_transition_applied minutes=%d\n",
+                  static_cast<int>(runtimeCtx.clock.utcOffsetMinutes));
+    saveDeviceSettings();
+  }
+
   char timeText[deviceclock::kTimeTextSize];
   char dateText[deviceclock::kDateTextSize];
   codexbar_display::app::ClockTimeText(runtimeCtx, nowMs, timeText, sizeof(timeText));
@@ -1016,14 +1040,39 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
     standbyWakeRenderedByUsageFrame = standbyState.active && event.visualChanged;
     standby::NoteUsageActivity(standbyState, lastFrameAcceptedAtMs);
   }
-  // SNTP delivers UTC only. The Mac is the only local-offset source the device
-  // has, so learn it while the Mac is here and persist it for the next boot.
-  if (deviceclock::ObserveCompanionClock(
-          runtimeCtx.clock,
-          codexbar_display::app::CurrentFrame(runtimeCtx).timeText.c_str(),
-          lastFrameAcceptedAtMs)) {
+  // SNTP delivers UTC only. The Companion supplies the current local date/time
+  // for fallback display, its current offset, and at most the next transition;
+  // the device stores the latter and consumes it against its own SNTP epoch.
+  const codexbar_display::core::Frame& currentFrame =
+      codexbar_display::app::CurrentFrame(runtimeCtx);
+  const bool clockOffsetChanged = deviceclock::ObserveCompanionClock(
+      runtimeCtx.clock,
+      currentFrame.timeText.c_str(),
+      currentFrame.hasClockSchedule,
+      static_cast<int>(currentFrame.clockOffsetMinutes),
+      lastFrameAcceptedAtMs);
+  bool clockScheduleChanged = false;
+  if (currentFrame.hasClockSchedule && currentFrame.clockTransitionEpoch > 0) {
+    clockScheduleChanged = deviceclock::ObserveUtcOffsetTransition(
+        runtimeCtx.clock,
+        currentFrame.clockTransitionEpoch,
+        currentFrame.clockTransitionOffsetMinutes);
+  } else if (currentFrame.hasClockSchedule) {
+    // A valid current offset without a next transition explicitly retires a
+    // previously persisted schedule (for example after leaving DST).
+    clockScheduleChanged = deviceclock::ClearUtcOffsetTransition(runtimeCtx.clock);
+  }
+  const bool clockTransitionApplied = deviceclock::ApplyDueUtcOffsetTransition(
+      runtimeCtx.clock, deviceclock::UtcNow(runtimeCtx.clock, lastFrameAcceptedAtMs));
+  if (clockTransitionApplied) {
+    Serial.printf("clock_utc_offset_transition_applied minutes=%d\n",
+                  static_cast<int>(runtimeCtx.clock.utcOffsetMinutes));
+  }
+  if (clockOffsetChanged) {
     Serial.printf("clock_utc_offset_learned minutes=%d\n",
                   static_cast<int>(runtimeCtx.clock.utcOffsetMinutes));
+  }
+  if (clockOffsetChanged || clockScheduleChanged || clockTransitionApplied) {
     saveDeviceSettings();
   }
   applyFrameUpdateState();

@@ -25,6 +25,40 @@ func TestFrameNormalizeDropsUnsupportedTheme(t *testing.T) {
 	}
 }
 
+func TestFrameNormalizeKeepsValidClockSchedule(t *testing.T) {
+	frame := Frame{
+		NextClockTransition: &ClockSchedule{
+			CurrentOffsetMinutes: 60,
+			TransitionEpoch:      1792886400,
+			OffsetMinutes:        120,
+		},
+	}
+
+	normalized := frame.Normalize()
+	if normalized.NextClockTransition == nil ||
+		normalized.NextClockTransition.CurrentOffsetMinutes != 60 {
+		t.Fatalf("expected valid clock schedule to stay, got %+v", normalized.NextClockTransition)
+	}
+
+	line, err := normalized.MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal clock schedule: %v", err)
+	}
+	if !strings.Contains(string(line), `"currentOffsetMinutes":60`) ||
+		!strings.Contains(string(line), `"offsetMinutes":120`) {
+		t.Fatalf("clock schedule missing from wire frame: %s", line)
+	}
+}
+
+func TestFrameNormalizeDropsInvalidClockSchedule(t *testing.T) {
+	frame := Frame{
+		NextClockTransition: &ClockSchedule{CurrentOffsetMinutes: 7},
+	}
+	if normalized := frame.Normalize(); normalized.NextClockTransition != nil {
+		t.Fatalf("expected invalid clock schedule to be dropped, got %+v", normalized.NextClockTransition)
+	}
+}
+
 func TestUsageSlotsFixtureRemainsReadableByLegacyFrame(t *testing.T) {
 	type legacyFrame struct {
 		V         int    `json:"v"`

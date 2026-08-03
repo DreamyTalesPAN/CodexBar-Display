@@ -3,9 +3,9 @@
 // Device wall clock.
 //
 // The device gets its own UTC time over SNTP (UDP/123). SNTP delivers UTC only,
-// so the local UTC offset is learned from the Companion clock string while the
-// Mac is reachable and persisted; that keeps the wall clock correct across a
-// reboot with the Mac switched off.
+// so the local UTC offset is learned from the Companion clock while the Mac is
+// reachable and persisted; the Companion also supplies the next offset
+// transition. No timezone database or libc timezone functions are needed.
 //
 // Everything here is pure state math so it can be tested natively. The board
 // only feeds it `time(nullptr)` and `millis()`.
@@ -52,6 +52,9 @@ struct DeviceClock {
   int16_t utcOffsetMinutes = 0;
   bool hasCompanionClock = false;
   unsigned long companionSeenAtMs = 0;
+  bool hasUtcOffsetTransition = false;
+  int64_t utcOffsetTransitionEpoch = 0;
+  int16_t utcOffsetTransitionMinutes = 0;
 };
 
 inline int64_t UtcNow(const DeviceClock& clock, unsigned long nowMillis) {
@@ -107,25 +110,15 @@ inline bool ParseCompanionTime(const char* text, int& outMinutesOfDay) {
   return true;
 }
 
-// Derives the local UTC offset from one Companion clock sample. Frame transport
-// latency and the Companion's minute truncation are absorbed by rounding to the
-// nearest quarter hour.
-inline int16_t UtcOffsetMinutesFor(int64_t utcEpoch, int localMinutesOfDay) {
-  const int utcMinutesOfDay = static_cast<int>((utcEpoch / 60) % 1440);
-  int diff = localMinutesOfDay - utcMinutesOfDay;
-  while (diff <= kMinUtcOffsetMinutes) {
-    diff += 1440;
-  }
-  while (diff > kMaxUtcOffsetMinutes) {
-    diff -= 1440;
-  }
-  const int rounded = ((diff + (diff >= 0 ? 7 : -7)) / 15) * 15;
-  return static_cast<int16_t>(rounded);
-}
-
-// Feeds the Companion clock string of an accepted frame. Returns true when the
-// learned UTC offset changed and should be persisted.
-inline bool ObserveCompanionClock(DeviceClock& clock, const char* timeText, unsigned long nowMillis) {
+// Feeds the Companion clock and its validated current UTC offset from an
+// accepted frame. The date remains a separate Companion fallback for display;
+// no calendar math is needed on the device.
+inline bool ObserveCompanionClock(
+    DeviceClock& clock,
+    const char* timeText,
+    bool hasCurrentOffset,
+    int currentOffsetMinutes,
+    unsigned long nowMillis) {
   int localMinutesOfDay = 0;
   if (!ParseCompanionTime(timeText, localMinutesOfDay)) {
     return false;
@@ -135,12 +128,14 @@ inline bool ObserveCompanionClock(DeviceClock& clock, const char* timeText, unsi
   if (!clock.synced) {
     return false;
   }
-  const int16_t offset = UtcOffsetMinutesFor(UtcNow(clock, nowMillis), localMinutesOfDay);
-  if (clock.hasUtcOffset && clock.utcOffsetMinutes == offset) {
+  if (!hasCurrentOffset || !UtcOffsetValid(currentOffsetMinutes)) {
+    return false;
+  }
+  if (clock.hasUtcOffset && clock.utcOffsetMinutes == currentOffsetMinutes) {
     return false;
   }
   clock.hasUtcOffset = true;
-  clock.utcOffsetMinutes = offset;
+  clock.utcOffsetMinutes = static_cast<int16_t>(currentOffsetMinutes);
   return true;
 }
 
@@ -151,6 +146,53 @@ inline bool RestoreUtcOffset(DeviceClock& clock, int offsetMinutes) {
   clock.hasUtcOffset = true;
   clock.utcOffsetMinutes = static_cast<int16_t>(offsetMinutes);
   return true;
+}
+
+// The Companion provides only the next transition. The device stores it until
+// its own SNTP epoch reaches the UTC instant, then consumes it exactly once.
+inline bool ObserveUtcOffsetTransition(
+    DeviceClock& clock,
+    int64_t transitionEpoch,
+    int offsetMinutes) {
+  if (transitionEpoch < kMinPlausibleEpoch || !UtcOffsetValid(offsetMinutes)) {
+    return false;
+  }
+  if (clock.hasUtcOffsetTransition &&
+      clock.utcOffsetTransitionEpoch == transitionEpoch &&
+      clock.utcOffsetTransitionMinutes == offsetMinutes) {
+    return false;
+  }
+  clock.hasUtcOffsetTransition = true;
+  clock.utcOffsetTransitionEpoch = transitionEpoch;
+  clock.utcOffsetTransitionMinutes = static_cast<int16_t>(offsetMinutes);
+  return true;
+}
+
+inline bool ClearUtcOffsetTransition(DeviceClock& clock) {
+  if (!clock.hasUtcOffsetTransition) {
+    return false;
+  }
+  clock.hasUtcOffsetTransition = false;
+  clock.utcOffsetTransitionEpoch = 0;
+  clock.utcOffsetTransitionMinutes = 0;
+  return true;
+}
+
+inline bool ApplyDueUtcOffsetTransition(DeviceClock& clock, int64_t utcEpoch) {
+  if (!clock.hasUtcOffsetTransition || utcEpoch < clock.utcOffsetTransitionEpoch) {
+    return false;
+  }
+  clock.hasUtcOffset = true;
+  clock.utcOffsetMinutes = clock.utcOffsetTransitionMinutes;
+  ClearUtcOffsetTransition(clock);
+  return true;
+}
+
+inline bool RestoreUtcOffsetTransition(
+    DeviceClock& clock,
+    int64_t transitionEpoch,
+    int offsetMinutes) {
+  return ObserveUtcOffsetTransition(clock, transitionEpoch, offsetMinutes);
 }
 
 // True when the device can name the local wall clock on its own.
@@ -277,6 +319,47 @@ inline bool DecodeUtcOffset(const uint8_t* data, size_t len, int& outOffsetMinut
   if (!UtcOffsetValid(offset)) {
     return false;
   }
+  outOffsetMinutes = offset;
+  return true;
+}
+
+// Appended after the existing settings record: epoch (little-endian uint64)
+// followed by the offset that becomes active at that epoch (little-endian int16).
+constexpr size_t kUtcOffsetTransitionRecordBytes = 10;
+
+inline void EncodeUtcOffsetTransition(const DeviceClock& clock, uint8_t* out) {
+  const uint64_t epoch = clock.hasUtcOffsetTransition
+                             ? static_cast<uint64_t>(clock.utcOffsetTransitionEpoch)
+                             : 0;
+  for (size_t i = 0; i < 8; ++i) {
+    out[i] = static_cast<uint8_t>((epoch >> (i * 8)) & 0xFF);
+  }
+  const uint16_t offset = static_cast<uint16_t>(
+      clock.hasUtcOffsetTransition ? clock.utcOffsetTransitionMinutes : 0);
+  out[8] = static_cast<uint8_t>(offset & 0xFF);
+  out[9] = static_cast<uint8_t>((offset >> 8) & 0xFF);
+}
+
+inline bool DecodeUtcOffsetTransition(
+    const uint8_t* data,
+    size_t len,
+    int64_t& outEpoch,
+    int& outOffsetMinutes) {
+  if (data == nullptr || len < kUtcOffsetTransitionRecordBytes) {
+    return false;
+  }
+  uint64_t rawEpoch = 0;
+  for (size_t i = 0; i < 8; ++i) {
+    rawEpoch |= static_cast<uint64_t>(data[i]) << (i * 8);
+  }
+  const int16_t offset = static_cast<int16_t>(
+      static_cast<uint16_t>(data[8]) | (static_cast<uint16_t>(data[9]) << 8));
+  if (rawEpoch == 0 || rawEpoch > static_cast<uint64_t>(INT64_MAX) ||
+      rawEpoch < static_cast<uint64_t>(kMinPlausibleEpoch) ||
+      !UtcOffsetValid(offset)) {
+    return false;
+  }
+  outEpoch = static_cast<int64_t>(rawEpoch);
   outOffsetMinutes = offset;
   return true;
 }

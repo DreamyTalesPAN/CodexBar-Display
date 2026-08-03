@@ -50,6 +50,18 @@ func (w *UsageWindow) UnmarshalJSON(data []byte) error {
 
 type UsageSlot = UsageWindow
 
+const minClockTransitionEpoch int64 = 1735689600
+
+// ClockSchedule carries the already validated current offset and, when one
+// exists, the next local UTC-offset change. The device keeps UTC from SNTP and
+// applies OffsetMinutes when TransitionEpoch arrives; it does not need a
+// timezone database.
+type ClockSchedule struct {
+	CurrentOffsetMinutes int   `json:"currentOffsetMinutes"`
+	TransitionEpoch      int64 `json:"transitionEpoch,omitempty"`
+	OffsetMinutes        int   `json:"offsetMinutes"`
+}
+
 type Frame struct {
 	V                     int             `json:"v"`
 	Provider              string          `json:"provider,omitempty"`
@@ -69,6 +81,7 @@ type Frame struct {
 	UsageSlots            []UsageSlot     `json:"usageSlots,omitempty"`
 	Time                  string          `json:"time,omitempty"`
 	Date                  string          `json:"date,omitempty"`
+	NextClockTransition   *ClockSchedule  `json:"clockSchedule,omitempty"`
 	SessionTokens         int64           `json:"sessionTokens,omitempty"`
 	WeekTokens            int64           `json:"weekTokens,omitempty"`
 	TotalTokens           int64           `json:"totalTokens,omitempty"`
@@ -137,6 +150,9 @@ func (f Frame) Normalize() Frame {
 	}
 	f.Time = strings.TrimSpace(f.Time)
 	f.Date = strings.TrimSpace(f.Date)
+	if f.NextClockTransition != nil && !validClockSchedule(*f.NextClockTransition) {
+		f.NextClockTransition = nil
+	}
 	f.Activity = normalizeActivity(f.Activity)
 	f.Theme = theme.Normalize(f.Theme)
 	if len(f.ThemeSpec) > 0 && !json.Valid(f.ThemeSpec) {
@@ -159,6 +175,21 @@ func (f Frame) Normalize() Frame {
 		f.Update.SHA256 = strings.TrimSpace(f.Update.SHA256)
 	}
 	return f
+}
+
+func validClockSchedule(schedule ClockSchedule) bool {
+	if !validClockOffset(schedule.CurrentOffsetMinutes) {
+		return false
+	}
+	if schedule.TransitionEpoch == 0 {
+		return schedule.OffsetMinutes == 0
+	}
+	return schedule.TransitionEpoch >= minClockTransitionEpoch &&
+		validClockOffset(schedule.OffsetMinutes)
+}
+
+func validClockOffset(offsetMinutes int) bool {
+	return offsetMinutes >= -720 && offsetMinutes <= 840 && offsetMinutes%15 == 0
 }
 
 func firstNonEmptyUsageWindows(windows []UsageWindow, slots []UsageSlot) []UsageWindow {

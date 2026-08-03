@@ -1344,7 +1344,33 @@ func attachClockFields(frame protocol.Frame, now time.Time) protocol.Frame {
 	}
 	frame.Time = now.Format("15:04")
 	frame.Date = now.Format("02.01.2006")
+	frame.NextClockTransition = nextClockTransition(now)
 	return frame
+}
+
+func nextClockTransition(now time.Time) *protocol.ClockSchedule {
+	if now.IsZero() {
+		return nil
+	}
+	location := now.Location()
+	if location == nil {
+		location = time.Local
+	}
+	localNow := now.In(location)
+	_, currentOffset := localNow.Zone()
+	schedule := &protocol.ClockSchedule{CurrentOffsetMinutes: currentOffset / 60}
+	_, end := localNow.ZoneBounds()
+	if end.IsZero() {
+		return schedule
+	}
+	_, nextOffset := end.In(location).Zone()
+	transitionEpoch := end.UTC().Unix()
+	if nextOffset == currentOffset || transitionEpoch <= now.UTC().Unix() {
+		return schedule
+	}
+	schedule.TransitionEpoch = transitionEpoch
+	schedule.OffsetMinutes = nextOffset / 60
+	return schedule
 }
 
 func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeState, deps runtimeDeps) error {
