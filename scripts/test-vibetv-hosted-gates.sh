@@ -375,6 +375,8 @@ main() {
     'guest test must exercise the bundled candidate companion render path'
   assert_contains "$GUEST_TEST" 'if [[ "$STATE" == clean_os ]]; then' \
     'guest test must run a standalone candidate daemon only on a clean OS'
+  assert_contains "$GUEST_TEST" '/v1/device/repair' \
+    'public guest states must ask the installed runtime to render to the virtual VibeTV'
   assert_not_contains "$GUEST_TEST" '--once --api-addr' \
     'one-shot candidate daemon must not keep a companion API server alive'
 

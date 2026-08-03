@@ -147,11 +147,26 @@ CANDIDATE_COMPANION="$INSTALL_APP/Contents/Helpers/codexbar-display"
 "$CANDIDATE_COMPANION" install-update --target http://127.0.0.1:47834 --manifest-url "$SERVER_URL/firmware-manifest.json" --skip-launchagent-pause > "$OUTPUT/candidate-install-update.txt" 2>&1
 "$CANDIDATE_COMPANION" install-update --target http://127.0.0.1:47834 --manifest-url "$SERVER_URL/firmware-manifest.json" --skip-launchagent-pause > "$OUTPUT/candidate-already-current.txt" 2>&1
 grep -F 'Firmware: already current' "$OUTPUT/candidate-already-current.txt" >/dev/null || die 'candidate companion did not prove already_current'
-# Sparkle relaunches the candidate runtime in public states, so it already owns
-# the display writer lock and proves rendering through the virtual state below.
 if [[ "$STATE" == clean_os ]]; then
   "$CANDIDATE_COMPANION" daemon --transport wifi --target http://127.0.0.1:47834 --once > "$OUTPUT/candidate-daemon-once.txt" 2>&1
+else
+  # Sparkle relaunches the candidate runtime, so ask that lock-owning process
+  # to render instead of starting a competing daemon.
+  for _ in $(seq 1 30); do
+    curl --fail --silent http://127.0.0.1:47832/v1/status > "$OUTPUT/candidate-runtime-status.json" && break
+    sleep 1
+  done
+  [[ -s "$OUTPUT/candidate-runtime-status.json" ]] || die 'candidate runtime API did not become healthy after Sparkle relaunch'
+  curl --fail --silent --show-error --max-time 30 \
+    -H 'Content-Type: application/json' \
+    --data '{"target":"http://127.0.0.1:47834","forcePair":true}' \
+    http://127.0.0.1:47832/v1/device/repair > "$OUTPUT/candidate-runtime-repair.json"
 fi
+for _ in $(seq 1 30); do
+  curl --fail --silent http://127.0.0.1:47834/__virtual/state > "$OUTPUT/virtual-state.json"
+  python3 -c 'import json,sys; raise SystemExit(json.load(open(sys.argv[1])).get("framesAccepted", 0) < 1)' "$OUTPUT/virtual-state.json" && break
+  sleep 1
+done
 curl --fail --silent http://127.0.0.1:47834/__virtual/state > "$OUTPUT/virtual-state.json"
 python3 - "$OUTPUT/virtual-state.json" "$expected_uploads" <<'PY'
 import json, sys
