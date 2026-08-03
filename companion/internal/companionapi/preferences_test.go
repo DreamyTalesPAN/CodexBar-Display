@@ -502,7 +502,7 @@ func TestDisablingProviderRemovesItsPersistedUsageCard(t *testing.T) {
 	}
 }
 
-func TestEnabledProviderExactUsageReplacesStaleSnapshotWithoutWaitingForAnotherCycle(t *testing.T) {
+func TestEnabledProviderExactUsageDoesNotReplaceUnavailableCollectorSnapshot(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	enabled := false
 	now := time.Now().UTC()
@@ -598,19 +598,19 @@ func TestEnabledProviderExactUsageReplacesStaleSnapshotWithoutWaitingForAnotherC
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode usage: %v", err)
 	}
-	if response.CurrentProvider != "future-provider" {
-		t.Fatalf("fresh exact provider did not displace stale current provider: %#v", response)
+	if response.CurrentProvider != "codex" {
+		t.Fatalf("exact cache displaced the collector current provider: %#v", response)
 	}
 	for _, provider := range response.Providers {
 		if provider.ID != "future-provider" {
 			continue
 		}
-		if provider.Weekly != 43 || len(provider.Windows) != 1 || provider.Stale || provider.UsageUnavailable {
-			t.Fatalf("exact provider usage did not replace stale snapshot: %#v", provider)
+		if provider.Weekly != 0 || len(provider.Windows) != 0 || !provider.Stale || !provider.UsageUnavailable {
+			t.Fatalf("exact provider usage replaced unavailable collector state: %#v", provider)
 		}
 		return
 	}
-	t.Fatalf("freshly enabled provider missing from usage: %#v", response)
+	t.Fatalf("enabled unavailable provider missing from usage: %#v", response)
 }
 
 func TestFreshExactZeroUsageDisplacesStaleGeminiSnapshot(t *testing.T) {
@@ -704,12 +704,12 @@ func TestCachedExactUsageOverlayOwnsMutableWindows(t *testing.T) {
 	server.usageCache = &usageResponse{
 		CurrentProvider: "codex",
 		Providers: []usageProviderInfo{{
-			ID:        "codex",
-			UsageMode: "used",
-			Windows:   []usageWindowInfo{{ID: "weekly", UsedPercent: 10}},
+			ID:          "codex",
+			UsageMode:   "used",
+			CollectedAt: now.Format(time.RFC3339),
+			Windows:     []usageWindowInfo{{ID: "weekly", UsedPercent: 10}},
 		}},
 	}
-	server.usageCacheAt = now
 
 	snapshot, ok := server.cachedExactUsageOverlay(now, daemon.PersistedUsage{})
 	if !ok {
@@ -741,6 +741,45 @@ func TestExactUsageCacheRejectsOldOrUndatedSnapshots(t *testing.T) {
 	defer server.usageCacheMu.RUnlock()
 	if server.usageCache != nil {
 		t.Fatalf("untrusted exact usage was cached as fresh: %#v", server.usageCache)
+	}
+}
+
+func TestExactUsageCacheExpiresFromCollectionTime(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.cacheExactProviderUsage(codexbar.ParsedFrame{
+		Provider:    "codex",
+		Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42},
+		CollectedAt: now.Add(-14 * time.Minute),
+	})
+
+	if _, ok := server.cachedExactUsageOverlay(now, daemon.PersistedUsage{}); !ok {
+		t.Fatal("fresh exact usage was not cached")
+	}
+	if got, ok := server.cachedExactUsageOverlay(now.Add(2*time.Minute), daemon.PersistedUsage{}); ok {
+		t.Fatalf("exact usage outlived its collection timestamp: %#v", got)
+	}
+}
+
+func TestExactUsageCacheDoesNotReplaceUnavailableCollectorSnapshot(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.cacheExactProviderUsage(codexbar.ParsedFrame{
+		Provider:    "codex",
+		Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42},
+		CollectedAt: now,
+	})
+
+	for _, snapshot := range []daemon.ProviderUsageSnapshot{
+		{Provider: "codex", Frame: protocol.Frame{Provider: "codex"}, CollectedAt: now.Add(-time.Minute), Stale: true},
+		{Provider: "codex", Frame: protocol.Frame{Provider: "codex", UsageUnavailable: true}, CollectedAt: now.Add(-time.Minute)},
+	} {
+		usage := daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{snapshot}}
+		if got, ok := server.cachedExactUsageOverlay(now, usage); ok {
+			t.Fatalf("exact usage replaced unavailable collector state: %#v", got)
+		}
 	}
 }
 
@@ -800,7 +839,7 @@ func TestExactUsageCacheOnlyOverlaysItsProviderOntoCurrentSnapshots(t *testing.T
 			{
 				Provider: "codex",
 				Frame:    protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 10},
-				Source:   "stale-codex", CollectedAt: now.Add(-time.Minute), Stale: true,
+				Source:   "older-codex", CollectedAt: now.Add(-time.Minute),
 			},
 			{
 				Provider: "gemini",
@@ -812,7 +851,7 @@ func TestExactUsageCacheOnlyOverlaysItsProviderOntoCurrentSnapshots(t *testing.T
 
 	got, ok := server.cachedExactUsageOverlay(now, current)
 	if !ok {
-		t.Fatal("expected exact Codex cache to overlay the stale Codex snapshot")
+		t.Fatal("expected exact Codex cache to overlay the older Codex snapshot")
 	}
 	if got.Source != "codexbar-display" || got.CurrentProvider != "codex" {
 		t.Fatalf("expected current response metadata with exact current provider, got %#v", got)
@@ -861,7 +900,6 @@ func TestExactUsageCacheNeverOutranksNewerCollectorTokenHistory(t *testing.T) {
 			Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 10, TotalTokens: 1617381357},
 			Source:      "collector",
 			CollectedAt: now.Add(-10 * time.Minute),
-			Stale:       true,
 			Meta: codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{
 				Last30DaysTokens: 1617381357,
 				Daily: []codexbar.ProviderCostDay{
@@ -975,7 +1013,6 @@ func TestEnablingProviderInvalidatesWarmUsageCache(t *testing.T) {
 		CurrentProvider: "codex",
 		Providers:       []usageProviderInfo{{ID: "codex", Label: "Codex", Session: 12, Weekly: 34}},
 	}
-	server.usageCacheAt = time.Now().UTC()
 
 	recorder := httptest.NewRecorder()
 	server.Handler().ServeHTTP(
@@ -992,7 +1029,7 @@ func TestEnablingProviderInvalidatesWarmUsageCache(t *testing.T) {
 
 	server.usageCacheMu.RLock()
 	defer server.usageCacheMu.RUnlock()
-	if server.usageCache != nil || !server.usageCacheAt.IsZero() {
+	if server.usageCache != nil {
 		t.Fatalf("warm exact-usage overlay survived enable: %#v", server.usageCache)
 	}
 }

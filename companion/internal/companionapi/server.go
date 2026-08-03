@@ -207,7 +207,6 @@ type Server struct {
 	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
 	usageCacheMu           sync.RWMutex
 	usageCache             *usageResponse
-	usageCacheAt           time.Time
 	probeProviderSetup     func(context.Context, string) codexbar.ProviderSetup
 	probeExactProvider     func(context.Context, string, string) codexbar.ProviderSetup
 	openCodexBar           func(context.Context) error
@@ -1548,12 +1547,11 @@ func (s *Server) invalidateUsageCache() {
 	s.usageCacheMu.Lock()
 	defer s.usageCacheMu.Unlock()
 	s.usageCache = nil
-	s.usageCacheAt = time.Time{}
 }
 
 func (s *Server) cachedExactUsageOverlay(now time.Time, usage daemon.PersistedUsage) (usageResponse, bool) {
 	s.usageCacheMu.RLock()
-	if s.usageCache == nil || s.usageCacheAt.IsZero() || now.Sub(s.usageCacheAt) > exactUsageCacheMaxAge {
+	if s.usageCache == nil {
 		s.usageCacheMu.RUnlock()
 		return usageResponse{}, false
 	}
@@ -1569,16 +1567,19 @@ func (s *Server) cachedExactUsageOverlay(now time.Time, usage daemon.PersistedUs
 		}
 	}
 	if cachedProvider.ID == "" {
-		return cached, true
+		return usageResponse{}, false
+	}
+	cachedCollectedAt, err := time.Parse(time.RFC3339, cachedProvider.CollectedAt)
+	if err != nil || cachedCollectedAt.After(now.Add(5*time.Minute)) || now.Sub(cachedCollectedAt) > exactUsageCacheMaxAge {
+		return usageResponse{}, false
 	}
 
 	for _, provider := range usage.Providers {
 		id := usageProviderID(provider.Provider, provider.Frame.Provider)
-		if id != cachedProviderID || provider.Stale {
+		if id != cachedProviderID {
 			continue
 		}
-		cachedCollectedAt, err := time.Parse(time.RFC3339, cachedProvider.CollectedAt)
-		if err != nil || !provider.CollectedAt.Before(cachedCollectedAt) {
+		if provider.Stale || provider.Frame.Normalize().UsageUnavailable || !provider.CollectedAt.Before(cachedCollectedAt) {
 			return usageResponse{}, false
 		}
 	}
@@ -1668,7 +1669,6 @@ func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
 	base.UsageMode = usageModeForProviders(base.Providers)
 	base.CurrentProvider = fresh.ID
 	s.usageCache = &base
-	s.usageCacheAt = now
 	s.usageCacheMu.Unlock()
 }
 
