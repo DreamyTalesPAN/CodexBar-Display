@@ -627,3 +627,19 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-app.tsx`, the matching setup and firmware
   regression assertions in `test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-08-03 — Restarted stream clears its rejected preview frame
+
+- User approval: In the PR #260 Codex task, the user explicitly instructed that
+  every new bug reported by the Codex bug reviewer be fixed according to the PR
+  documentation until the reviewer reports no more bugs. The reviewer then
+  identified the stale live-preview frame retained across a display-stream
+  restart as the next bug to fix.
+- Approved customer-visible result: When the Mac App authoritatively reports
+  that no frame from the restarted display stream is available yet, Overview
+  stops showing percentages from the previous stream and uses its existing
+  loading preview until a current frame arrives. Temporary network and server
+  failures keep the last verified preview visible. No copy, control, layout, or
+  customer decision changes.
+- Approved files: `live-vibetv-preview.tsx`, its response regression tests, and
+  this approval record.
