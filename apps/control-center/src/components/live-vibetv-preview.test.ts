@@ -9,6 +9,7 @@ import {
   hasRenderableUsage,
   LiveVibeTVPreview,
   livePreviewDisplayFrame,
+  parseLatestDisplayFrameResponse,
   primitiveUsageSlotVisible,
   progressPercent,
   THEME_CATALOG_PREVIEW_FRAME,
@@ -24,6 +25,30 @@ import {
 
 const lane1: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 1 };
 const lane2: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 2 };
+
+describe("latest display frame response", () => {
+  it("clears the prior frame only for the authoritative unavailable response", async () => {
+    await expect(
+      parseLatestDisplayFrameResponse(
+        Response.json(
+          {
+            ok: false,
+            error: { code: "display_frame_unavailable" },
+          },
+          { status: 404 },
+        ),
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it("preserves the prior frame for transient failures", async () => {
+    await expect(
+      parseLatestDisplayFrameResponse(
+        Response.json({ ok: false }, { status: 503 }),
+      ),
+    ).rejects.toThrow("display frame unavailable");
+  });
+});
 
 describe("dynamic usage slot preview", () => {
   it("keeps a prior valid frame for a selected reachable VibeTV while readiness waits", () => {

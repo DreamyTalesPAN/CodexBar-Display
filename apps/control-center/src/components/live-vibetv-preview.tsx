@@ -262,10 +262,11 @@ export function useLatestDisplayFrame(
           requestInit.targetAddressSpace = "loopback";
         }
         const response = await fetch(url, requestInit);
-        if (!response.ok) {
-          throw new Error("display frame unavailable");
+        const nextFrame = await parseLatestDisplayFrameResponse(response);
+        if (!nextFrame) {
+          setDisplayFrame(null);
+          return;
         }
-        const nextFrame = (await response.json()) as DisplayFrameSnapshot;
         setDisplayFrame(nextFrame);
         onFrame?.(nextFrame);
       } catch (error) {
@@ -285,6 +286,23 @@ export function useLatestDisplayFrame(
   }, [connected, onFrame]);
 
   return displayFrame;
+}
+
+export async function parseLatestDisplayFrameResponse(
+  response: Response,
+): Promise<DisplayFrameSnapshot | null> {
+  if (response.ok) {
+    return (await response.json()) as DisplayFrameSnapshot;
+  }
+  if (response.status === 404) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: { code?: unknown };
+    } | null;
+    if (payload?.error?.code === "display_frame_unavailable") {
+      return null;
+    }
+  }
+  throw new Error("display frame unavailable");
 }
 
 export function LiveVibeTVPreview({
