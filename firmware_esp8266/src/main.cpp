@@ -2288,7 +2288,14 @@ bool readValidatedStoredThemeSpec(
   if (!readStoredThemeSpec(path, raw, error)) {
     return false;
   }
-  return themeSpecMetadata(raw, themeId, themeRev, error);
+  if (!themeSpecMetadata(raw, themeId, themeRev, error)) {
+    return false;
+  }
+  if (!codexbar_display::core::ThemeSpecRawLooksRenderable(raw)) {
+    error = "theme spec has no renderable content";
+    return false;
+  }
+  return true;
 }
 
 void activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev) {

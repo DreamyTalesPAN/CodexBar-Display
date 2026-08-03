@@ -229,10 +229,14 @@ bool testScreensaverSelectionValidatesBeforePersisting(const std::string& source
   const std::size_t handlerGuardEnd = source.find("\n#endif", handlerStart);
   const std::size_t handlerEnd = source.find(
       "\n#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER", handlerGuardEnd);
+  const std::size_t activationStart = source.find("bool activateStoredThemePath(");
+  const std::size_t activationEnd = source.find(
+      "\nbool renderStoredThemeSpecForStandby(", activationStart);
   if (!expect(
           selectionStart != std::string::npos && selectionEnd != std::string::npos &&
               helperStart != std::string::npos && helperEnd != std::string::npos &&
-              handlerStart != std::string::npos && handlerEnd != std::string::npos,
+              handlerStart != std::string::npos && handlerEnd != std::string::npos &&
+              activationStart != std::string::npos && activationEnd != std::string::npos,
           "screensaver selection validation must remain discoverable")) {
     return false;
   }
@@ -240,19 +244,25 @@ bool testScreensaverSelectionValidatesBeforePersisting(const std::string& source
   const std::string selection = source.substr(selectionStart, selectionEnd - selectionStart);
   const std::string helper = source.substr(helperStart, helperEnd - helperStart);
   const std::string handler = source.substr(handlerStart, handlerEnd - handlerStart);
+  const std::string activation = source.substr(activationStart, activationEnd - activationStart);
   const std::size_t validation = selection.find("readValidatedStoredThemeSpec(");
   const std::size_t store = selection.find("standby::SetScreensaverPath(", validation);
   const std::size_t validationFailure = selection.find("return false;", validation);
   const std::size_t read = helper.find("readStoredThemeSpec(");
   const std::size_t metadata = helper.find("themeSpecMetadata(");
+  const std::size_t renderable = helper.find("ThemeSpecRawLooksRenderable(raw)");
   const std::size_t set = handler.find("setStandbyScreensaverPath(");
   const std::size_t persist = handler.find("persistDeviceSettings(next)", set);
+  const std::size_t activationValidation = activation.find("readValidatedStoredThemeSpec(");
+  const std::size_t save = activation.find("saveActiveThemeSpecPath(", activationValidation);
   return expect(
       validation != std::string::npos && store != std::string::npos &&
           validationFailure != std::string::npos && validation < validationFailure &&
           validationFailure < store && read != std::string::npos &&
-          metadata != std::string::npos && set != std::string::npos &&
-          persist != std::string::npos && set < persist,
+          metadata != std::string::npos && renderable != std::string::npos &&
+          set != std::string::npos && persist != std::string::npos && set < persist &&
+          activationValidation != std::string::npos && save != std::string::npos &&
+          activationValidation < save,
       "screensaver selection must validate stored ThemeSpec content before changing or persisting the slot");
 }
 

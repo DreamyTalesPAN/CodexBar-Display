@@ -1831,6 +1831,14 @@ void testStoredThemeBootActivationRejectsInvalidRaw() {
   TEST_ASSERT_EQUAL_STRING("keep", state.current.themeSpecId.c_str());
   TEST_ASSERT_TRUE(state.current.hasThemeSpec);
   TEST_ASSERT_FALSE(event.frameAccepted);
+
+  const char* metadataOnly = R"JSON({"id":"x","rev":1})JSON";
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(
+      state, "screensaver", 1, metadataOnly, 7000, event));
+  TEST_ASSERT_EQUAL_INT(42, state.current.session);
+  TEST_ASSERT_EQUAL_STRING("keep", state.current.themeSpecId.c_str());
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+  TEST_ASSERT_FALSE(event.frameAccepted);
 }
 
 void testThemeSpecErrorFrameUsesFullRender() {
