@@ -25,6 +25,7 @@ const (
 	dashboardServeDefaultBackoffBase     = time.Second
 	dashboardServeDefaultBackoffMax      = 30 * time.Second
 	dashboardServeDefaultHealthInterval  = 2 * time.Second
+	dashboardServeDefaultStartupTimeout  = 30 * time.Second
 	dashboardServeHealthTimeout          = 2 * time.Second
 	dashboardServeMaxHealthFailures      = 3
 )
@@ -62,6 +63,7 @@ type DashboardServeSupervisor struct {
 	token           string
 	refreshInterval time.Duration
 	healthInterval  time.Duration
+	startupTimeout  time.Duration
 	backoffBase     time.Duration
 	backoffMax      time.Duration
 	client          *http.Client
@@ -131,6 +133,7 @@ func NewDashboardServeSupervisor(cfg DashboardServeConfig) (*DashboardServeSuper
 		token:           token,
 		refreshInterval: refreshInterval,
 		healthInterval:  healthInterval,
+		startupTimeout:  dashboardServeDefaultStartupTimeout,
 		backoffBase:     backoffBase,
 		backoffMax:      backoffMax,
 		client:          client,
@@ -228,11 +231,17 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 
 	ticker := time.NewTicker(s.healthInterval)
 	defer ticker.Stop()
+	startedAt := time.Now()
+	ready := false
 	healthFailures := 0
 	checkHealth := func() bool {
 		if s.checkHealth(ctx, endpoint) {
+			ready = true
 			healthFailures = 0
 			return false
+		}
+		if !ready {
+			return time.Since(startedAt) >= s.startupTimeout
 		}
 		healthFailures++
 		return healthFailures >= dashboardServeMaxHealthFailures
