@@ -7,6 +7,8 @@
 #include <cstring>
 #include <new>
 
+#include "usage_window_contract.h"
+
 namespace codexbar_display {
 namespace themespec {
 
@@ -22,7 +24,7 @@ constexpr uint32_t kThemeSpecFieldDate = 1UL << 8;
 constexpr uint32_t kThemeSpecFieldSessionTokens = 1UL << 9;
 constexpr uint32_t kThemeSpecFieldWeekTokens = 1UL << 10;
 constexpr uint32_t kThemeSpecFieldTotalTokens = 1UL << 11;
-constexpr size_t kMaxThemeSpecUsageWindows = 2048 / 96;
+constexpr size_t kMaxThemeSpecUsageWindows = usage_window_contract::kMaxWindows;
 constexpr uint32_t kThemeSpecFieldUsageWindows = 1UL << 12;
 constexpr uint32_t kThemeSpecFieldUsageSlot1 = kThemeSpecFieldUsageWindows;
 constexpr uint32_t kThemeSpecFieldUsageSlot2 = kThemeSpecFieldUsageWindows;

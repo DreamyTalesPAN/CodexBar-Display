@@ -548,8 +548,13 @@ void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
   frameLine += "]}";
 
   TEST_ASSERT_EQUAL_UINT32(3, codexbar_display::core::kAdvertisedMaxUsageWindows);
+  TEST_ASSERT_EQUAL_UINT32(
+      codexbar_display::core::kAdvertisedMaxUsageWindows,
+      codexbar_display::core::kMaxUsageWindows);
+  TEST_ASSERT_EQUAL_UINT32(
+      codexbar_display::core::kMaxUsageWindows,
+      codexbar_display::themespec::kMaxThemeSpecUsageWindows);
   TEST_ASSERT_TRUE(codexbar_display::core::kAdvertisedMaxUsageWindows > 0);
-  TEST_ASSERT_TRUE(codexbar_display::core::kAdvertisedMaxUsageWindows <= codexbar_display::core::kMaxUsageWindows);
   TEST_ASSERT_TRUE(frameLine.size() + 1 <= codexbar_display::core::kFrameLineBufferBytes);
 
   codexbar_display::core::Frame frame;
@@ -562,28 +567,6 @@ void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
     TEST_ASSERT_EQUAL_INT64(9223372036854775807LL, frame.usageWindows[i].resetSecs);
   }
   TEST_ASSERT_TRUE(frame.usageWindows[codexbar_display::core::kAdvertisedMaxUsageWindows - 1].available);
-}
-
-void testRawUsageWindowParserCapacityStillAcceptsNormalLabels() {
-  std::string frameLine =
-      "{\"v\":2,\"provider\":\"p\",\"label\":\"Provider\",\"session\":100,\"weekly\":100,\"resetSecs\":9223372036854775807,\"usageMode\":\"remaining\",\"usageWindows\":[";
-  for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
-    if (i > 0) {
-      frameLine += ",";
-    }
-    frameLine += "{\"id\":\"";
-    frameLine += std::string(codexbar_display::core::kUsageWindowIDWireBytes, 'i');
-    frameLine += "\",\"label\":\"";
-    frameLine += std::string(codexbar_display::core::kUsageWindowLabelWireBytes, 'L');
-    frameLine += "\",\"percent\":100,\"resetSecs\":9223372036854775807}";
-  }
-  frameLine += "]}";
-
-  TEST_ASSERT_TRUE(frameLine.size() + 1 <= codexbar_display::core::kFrameLineBufferBytes);
-
-  codexbar_display::core::Frame frame;
-  TEST_ASSERT_TRUE(codexbar_display::core::ParseFrameLine(frameLine.c_str(), frame));
-  TEST_ASSERT_TRUE(frame.usageWindows[codexbar_display::core::kMaxUsageWindows - 1].available);
 }
 
 void testHighestAdvertisedUsageWindowBindingCompiles() {
@@ -2083,7 +2066,6 @@ int main() {
   RUN_TEST(testIndexedProgressHidesMissingWindow);
   RUN_TEST(testUsageWindowResetCountdownsTickIndependently);
   RUN_TEST(testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses);
-  RUN_TEST(testRawUsageWindowParserCapacityStillAcceptsNormalLabels);
   RUN_TEST(testHighestAdvertisedUsageWindowBindingCompiles);
   RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
   RUN_TEST(testConsumeFrameLineComparesCurrentBeforeAssignment);
