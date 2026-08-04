@@ -32,6 +32,17 @@ assert_not_contains() {
   ! grep -Fq -- "$needle" "$file" || die "$message"
 }
 
+assert_before() {
+  local file="$1"
+  local first="$2"
+  local second="$3"
+  local message="$4"
+  local first_line second_line
+  first_line="$(grep -nF -- "$first" "$file" | head -n 1 | cut -d: -f1 || true)"
+  second_line="$(grep -nF -- "$second" "$file" | head -n 1 | cut -d: -f1 || true)"
+  [[ -n "$first_line" && -n "$second_line" && "$first_line" -lt "$second_line" ]] || die "$message"
+}
+
 job_block() {
   local workflow="$1"
   local job="$2"
@@ -381,6 +392,8 @@ main() {
     'clean OS guest test must only tolerate the known no-provider result'
   assert_contains "$GUEST_TEST" '/v1/device/repair' \
     'public guest states must ask the installed runtime to render to the virtual VibeTV'
+  assert_before "$GUEST_TEST" 'validate_installed_runtime "$OUTPUT/candidate-runtime-status.json"' '/v1/device/repair' \
+    'public guest states must verify the installed candidate runtime before requesting a render'
   assert_contains "$GUEST_TEST" 'listenerOwner' \
     'guest test must bind the live Companion port to the installed runtime service'
   assert_contains "$GUEST_TEST" 'installationMode' \

@@ -44,6 +44,36 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+validate_installed_runtime() {
+  local status_output="$1"
+  local runtime_pid listener_pids
+  rm -f "$status_output"
+  for _ in $(seq 1 30); do
+    curl --fail --silent --max-time 3 http://127.0.0.1:47832/v1/status > "$status_output" && break
+    sleep 1
+  done
+  [[ -s "$status_output" ]] || die 'installed candidate runtime did not become healthy on port 47832'
+  runtime_pid="$(python3 - "$status_output" "$VERSION" "$INSTALL_APP" <<'PY'
+import json, sys
+status_path, expected_version, install_app = sys.argv[1:]
+status = json.load(open(status_path, encoding="utf-8"))
+companion = status.get("companion", {})
+runtime = companion.get("runtime", {})
+if (status.get("ok") is not True or companion.get("status") != "ready"
+        or companion.get("version") != expected_version
+        or companion.get("installationMode") != "dmg"
+        or runtime.get("version") != expected_version
+        or runtime.get("executable") != f"{install_app}/Contents/Helpers/codexbar-display"
+        or runtime.get("listenerOwner") != "shop.vibetv.control-center.runtime"
+        or not isinstance(runtime.get("pid"), int) or runtime["pid"] < 1):
+    raise SystemExit("installed candidate runtime status did not match the signed DMG")
+print(runtime["pid"])
+PY
+)"
+  listener_pids="$(lsof -nP -a -iTCP@127.0.0.1:47832 -sTCP:LISTEN -Fp 2>/dev/null | sed -nE 's/^p([0-9]+)$/\1/p' | sort -u)"
+  [[ "$listener_pids" == "$runtime_pid" ]] || die 'installed candidate runtime is not the sole port-47832 listener'
+}
+
 sw_vers > "$OUTPUT/macos-version.txt"
 ps -axo pid=,ppid=,comm= > "$OUTPUT/processes-before.txt"
 "$ROOT/scripts/verify-macos-control-center-dmg.sh" --dmg "$DMG" > "$OUTPUT/candidate-dmg-verification.txt" 2>&1
@@ -155,11 +185,7 @@ if [[ "$STATE" == clean_os ]]; then
 else
   # Sparkle relaunches the candidate runtime, so ask that lock-owning process
   # to render instead of starting a competing daemon.
-  for _ in $(seq 1 30); do
-    curl --fail --silent http://127.0.0.1:47832/v1/status > "$OUTPUT/candidate-runtime-status.json" && break
-    sleep 1
-  done
-  [[ -s "$OUTPUT/candidate-runtime-status.json" ]] || die 'candidate runtime API did not become healthy after Sparkle relaunch'
+  validate_installed_runtime "$OUTPUT/candidate-runtime-status.json"
   curl --fail --silent --show-error --max-time 30 \
     -H 'Content-Type: application/json' \
     --data '{"target":"http://127.0.0.1:47834","forcePair":true}' \
@@ -182,31 +208,8 @@ PY
 
 if [[ "$STATE" == clean_os ]]; then
   open -na "$INSTALL_APP"
+  validate_installed_runtime "$OUTPUT/companion-port-47832.txt"
 fi
-for _ in $(seq 1 30); do
-  curl --fail --silent --max-time 3 http://127.0.0.1:47832/v1/status > "$OUTPUT/companion-port-47832.txt" && break
-  sleep 1
-done
-[[ -s "$OUTPUT/companion-port-47832.txt" ]] || die 'installed candidate runtime did not become healthy on port 47832'
-RUNTIME_PID="$(python3 - "$OUTPUT/companion-port-47832.txt" "$VERSION" "$INSTALL_APP" <<'PY'
-import json, sys
-status_path, expected_version, install_app = sys.argv[1:]
-status = json.load(open(status_path, encoding="utf-8"))
-companion = status.get("companion", {})
-runtime = companion.get("runtime", {})
-if (status.get("ok") is not True or companion.get("status") != "ready"
-        or companion.get("version") != expected_version
-        or companion.get("installationMode") != "dmg"
-        or runtime.get("version") != expected_version
-        or runtime.get("executable") != f"{install_app}/Contents/Helpers/codexbar-display"
-        or runtime.get("listenerOwner") != "shop.vibetv.control-center.runtime"
-        or not isinstance(runtime.get("pid"), int) or runtime["pid"] < 1):
-    raise SystemExit("installed candidate runtime status did not match the signed DMG")
-print(runtime["pid"])
-PY
-)"
-LISTENER_PIDS="$(lsof -nP -a -iTCP@127.0.0.1:47832 -sTCP:LISTEN -Fp 2>/dev/null | sed -nE 's/^p([0-9]+)$/\1/p' | sort -u)"
-[[ "$LISTENER_PIDS" == "$RUNTIME_PID" ]] || die 'installed candidate runtime is not the sole port-47832 listener'
 screencapture -x "$OUTPUT/guest-${STATE}.png"
 python3 - "$OUTPUT/result.json" "$STATE" "$VERSION" <<'PY'
 import json, sys
