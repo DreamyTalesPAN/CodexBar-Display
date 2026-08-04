@@ -214,8 +214,10 @@ func TestInstallScreensaverTakesTheShowingOneOffScreenBeforeOverwritingIt(t *tes
 	}
 }
 
-func TestInstallScreensaverLeavesAnIdleDeviceAlone(t *testing.T) {
+func TestInstallScreensaverClearsAwakeSelectionBeforeOverwritingIt(t *testing.T) {
 	device := newScreensaverDeviceServer(t, true)
+	device.screensaverPath = screensaverSpecPath
+	device.assets[screensaverSpecPath] = 60
 	defer device.server.Close()
 
 	if _, err := Install(context.Background(), Options{
@@ -230,9 +232,12 @@ func TestInstallScreensaverLeavesAnIdleDeviceAlone(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Install returned error: %v", err)
 	}
+	if len(device.ops) < 2 || device.ops[0] != "clear" || !strings.HasPrefix(device.ops[1], "upload ") {
+		t.Fatalf("the awake screensaver selection must be cleared before its files are written, got: %v", device.ops)
+	}
 	for _, op := range device.ops {
-		if op == "clear" {
-			t.Fatalf("nothing is on screen to clear when standby is idle, got: %v", device.ops)
+		if strings.HasPrefix(op, "restore ") {
+			t.Fatalf("an awake device must not restore its already showing live theme, got: %v", device.ops)
 		}
 	}
 }

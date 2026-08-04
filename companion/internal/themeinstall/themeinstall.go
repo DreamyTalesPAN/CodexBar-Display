@@ -283,7 +283,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 			installScreenShown = true
 			fmt.Fprintln(out, "Install screen: showing on VibeTV")
 		}
-	} else if err := clearShowingScreensaver(wifi, &resolvedTarget, opts.PairTokenStore, out); err != nil {
+	} else if err := clearScreensaverBeforeUpload(wifi, &resolvedTarget, opts.PairTokenStore, out); err != nil {
 		return Result{}, &InstallError{
 			Op:   "theme-pack/screensaver-slot",
 			Code: errcode.UpgradeFlashFirmware,
@@ -739,31 +739,27 @@ func sendClearThemeSpecFrameWithPairRetry(
 	return sendClearThemeSpecFrame(ctx, wifi, *target, caps, fetchFrame)
 }
 
-// clearShowingScreensaver takes a screensaver off the screen before its files
-// are overwritten. A pack keeps its device paths across versions, so
-// reinstalling one that is on screen would write into the files the running
-// render is reading. Selecting or clearing the screensaver only records that
-// slot; activating the saved live theme is the firmware's synchronous standby
-// exit, so it must happen before the slot is cleared and its files are changed.
+// clearScreensaverBeforeUpload clears the selected screensaver before its files
+// are overwritten. If it is showing, the saved live theme must be restored
+// first: changing the screensaver selection alone does not redraw the display.
 //
 // A screensaver install that fails after this leaves the slot empty. That is
 // reported as an empty slot and fixed by retrying; putting the selection back
 // would point it at a half-overwritten pack, which is the worse failure.
-func clearShowingScreensaver(wifi transportlayer.WiFiTransport, target *string, store PairTokenStore, out io.Writer) error {
+func clearScreensaverBeforeUpload(wifi transportlayer.WiFiTransport, target *string, store PairTokenStore, out io.Writer) error {
 	health, err := wifi.DeviceHealthSnapshot(*target)
 	if err != nil {
 		return fmt.Errorf("read standby state: %w", err)
 	}
-	if !health.Standby.Active {
-		return nil
-	}
-	liveThemePath := strings.TrimSpace(health.Standby.LiveThemePath)
-	if liveThemePath == "" {
-		return errors.New("live theme path unavailable while screensaver is showing")
-	}
-	fmt.Fprintln(out, "Taking the current screensaver off screen...")
-	if err := activateThemeWithPairRetry(wifi, target, liveThemePath, store); err != nil {
-		return fmt.Errorf("restore live theme: %w", err)
+	if health.Standby.Active {
+		liveThemePath := strings.TrimSpace(health.Standby.LiveThemePath)
+		if liveThemePath == "" {
+			return errors.New("live theme path unavailable while screensaver is showing")
+		}
+		fmt.Fprintln(out, "Taking the current screensaver off screen...")
+		if err := activateThemeWithPairRetry(wifi, target, liveThemePath, store); err != nil {
+			return fmt.Errorf("restore live theme: %w", err)
+		}
 	}
 	if err := activateScreensaverWithPairRetry(wifi, target, "", store); err != nil {
 		return fmt.Errorf("clear screensaver slot: %w", err)
