@@ -128,9 +128,6 @@ inline bool ObserveCompanionClock(
   }
   clock.hasCompanionClock = true;
   clock.companionSeenAtMs = nowMillis;
-  if (!clock.synced) {
-    return false;
-  }
   if (!hasCurrentOffset || !UtcOffsetValid(currentOffsetMinutes)) {
     return false;
   }

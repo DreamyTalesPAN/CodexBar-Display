@@ -10,6 +10,7 @@ using codexbar_display::deviceclock::EncodeUtcOffsetTransition;
 using codexbar_display::deviceclock::DecodeUtcOffset;
 using codexbar_display::deviceclock::DecodeUtcOffsetTransition;
 using codexbar_display::deviceclock::ClearUtcOffsetTransition;
+using codexbar_display::deviceclock::CompanionClockFresh;
 using codexbar_display::deviceclock::LocalClockUsable;
 using codexbar_display::deviceclock::ApplyDueUtcOffsetTransition;
 using codexbar_display::deviceclock::ObserveCompanionClock;
@@ -20,6 +21,7 @@ using codexbar_display::deviceclock::ResolveTimeText;
 using codexbar_display::deviceclock::RestoreUtcOffset;
 using codexbar_display::deviceclock::RestoreUtcOffsetTransition;
 using codexbar_display::deviceclock::Source;
+using codexbar_display::deviceclock::kCompanionClockMaxAgeMs;
 using codexbar_display::deviceclock::kDateTextSize;
 using codexbar_display::deviceclock::kTimeTextSize;
 using codexbar_display::deviceclock::kUtcOffsetRecordBytes;
@@ -58,6 +60,25 @@ void testFreshBootWithNtpEstablishesLocalClock() {
   TEST_ASSERT_EQUAL_INT(120, clock.utcOffsetMinutes);
 
   const ClockText texts = resolve(clock, 4200, "14:34", "28.07.2026");
+  TEST_ASSERT_EQUAL_STRING("14:34", texts.time);
+  TEST_ASSERT_EQUAL_STRING("28.07.2026", texts.date);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Source::Device), static_cast<int>(texts.timeSource));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Source::Device), static_cast<int>(texts.dateSource));
+}
+
+void testCompanionOffsetArrivesBeforeNtpAndSurvivesFallbackExpiry() {
+  DeviceClock clock;
+  constexpr unsigned long kFrameAtMs = 1000;
+  TEST_ASSERT_TRUE(ObserveCompanionClock(clock, "14:34", true, 120, kFrameAtMs));
+  TEST_ASSERT_TRUE(clock.hasUtcOffset);
+  TEST_ASSERT_FALSE(LocalClockUsable(clock));
+
+  const unsigned long sntpAtMs = kFrameAtMs + kCompanionClockMaxAgeMs + 1000;
+  TEST_ASSERT_FALSE(CompanionClockFresh(clock, sntpAtMs));
+  TEST_ASSERT_TRUE(ObserveSystemEpoch(clock, kNtpEpoch, sntpAtMs));
+  TEST_ASSERT_TRUE(LocalClockUsable(clock));
+
+  const ClockText texts = resolve(clock, sntpAtMs, "14:34", "28.07.2026");
   TEST_ASSERT_EQUAL_STRING("14:34", texts.time);
   TEST_ASSERT_EQUAL_STRING("28.07.2026", texts.date);
   TEST_ASSERT_EQUAL_INT(static_cast<int>(Source::Device), static_cast<int>(texts.timeSource));
@@ -326,6 +347,7 @@ void testLocalDateRollsOverIncludingLeapDay() {
 
 void RunDeviceClockTests() {
   RUN_TEST(testFreshBootWithNtpEstablishesLocalClock);
+  RUN_TEST(testCompanionOffsetArrivesBeforeNtpAndSurvivesFallbackExpiry);
   RUN_TEST(testDeviceClockAdvancesWithoutFrames);
   RUN_TEST(testBootWithoutNtpFallsBackAndThenGoesUnknown);
   RUN_TEST(testNoSourceAtAllRendersUnknown);
