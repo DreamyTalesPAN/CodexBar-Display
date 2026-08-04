@@ -5,6 +5,23 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-04 — Automatically refresh the installed catalog theme
+
+- User approval: After the connected VibeTV showed the old Clippy labels even
+  though the new Mac App and firmware supplied dynamic Codex usage-window
+  labels, the user explicitly required that all installed catalog themes be
+  updated automatically by the new Mac App and ordered this behavior to be
+  implemented in the new PR.
+- Approved customer-visible result: When a ready VibeTV uses an older revision
+  of its active bundled catalog theme, the Mac App updates that theme once in
+  the background. If the theme requires newer firmware capabilities, it waits
+  for the existing VibeTV Update flow and then refreshes the theme. Customers
+  do not need to open Updates or press a separate theme-update button, and no
+  new copy, control, layout, or technical choice appears. A failed automatic
+  attempt does not loop; the existing manual retry remains available.
+- Approved files: `control-center-app.tsx`, the matching customer-flow
+  assertions in `test-customer-flows.mjs`, and this approval record.
+
 ## 2026-07-31 — Token total counts up while its history is still growing
 
 - User approval: After the local preview proved that CodexBar warms its cost
