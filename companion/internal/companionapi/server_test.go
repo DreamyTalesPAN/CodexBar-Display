@@ -2030,6 +2030,70 @@ func TestUsageManualRefreshReportsRefreshingForOldCollectorSnapshot(t *testing.T
 	}
 }
 
+func TestUsageManualRefreshExpiresWithoutNewCollectorSnapshot(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	requestedAt := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	now := requestedAt
+	collectedAt := requestedAt.Add(-time.Minute)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         collectedAt,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used"},
+				CollectedAt: collectedAt,
+			}},
+		}, true
+	}
+
+	initial := httptest.NewRecorder()
+	server.Handler().ServeHTTP(initial, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+	var got usageResponse
+	if err := json.Unmarshal(initial.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode initial response: %v", err)
+	}
+	if initial.Code != http.StatusOK || got.Refresh.State != "refreshing" {
+		t.Fatalf("expected refresh to start, status=%d got=%+v", initial.Code, got.Refresh)
+	}
+
+	now = requestedAt.Add(usageRefreshRequestMaxAge)
+	expired := httptest.NewRecorder()
+	server.Handler().ServeHTTP(expired, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+
+	got = usageResponse{}
+	if err := json.Unmarshal(expired.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode expired response: %v", err)
+	}
+	if expired.Code != http.StatusOK || got.Refresh.State != "unavailable" {
+		t.Fatalf("failed collector refresh must stop refreshing, status=%d got=%+v", expired.Code, got.Refresh)
+	}
+	if got.Refresh.RequestedAt != requestedAt.Format(time.RFC3339) || len(got.Providers) != 1 || got.Providers[0].Weekly != 36 {
+		t.Fatalf("expired refresh must retain its request and last-good values, got %+v", got)
+	}
+
+	stillUnavailable := httptest.NewRecorder()
+	server.Handler().ServeHTTP(stillUnavailable, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if err := json.Unmarshal(stillUnavailable.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode repeated unavailable response: %v", err)
+	}
+	if got.Refresh.State != "unavailable" {
+		t.Fatalf("expired request returned to refreshing or claimed success: %+v", got.Refresh)
+	}
+
+	collectedAt = now
+	recovered := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recovered, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if err := json.Unmarshal(recovered.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode recovered response: %v", err)
+	}
+	if got.Refresh.State != "fresh" {
+		t.Fatalf("new collector snapshot did not clear the failed refresh: %+v", got.Refresh)
+	}
+}
+
 func TestUsageManualRefreshDoesNotCompleteForCachedDashboardSnapshotReread(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)

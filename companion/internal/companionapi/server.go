@@ -730,6 +730,10 @@ type usageRefreshInfo struct {
 	Message      string `json:"message,omitempty"`
 }
 
+// The collector caps one provider collection at 15 minutes. After that bound,
+// a manual request cannot still describe a normal in-flight collection.
+const usageRefreshRequestMaxAge = 15 * time.Minute
+
 type displayFrameResponse struct {
 	OK      bool           `json:"ok"`
 	SavedAt string         `json:"savedAt,omitempty"`
@@ -1543,6 +1547,14 @@ func (s *Server) usageRefreshInfo(now time.Time, usage daemon.PersistedUsage) us
 			s.usageRefresh.RequestedAt = time.Time{}
 			s.usageRefreshMu.Unlock()
 			return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh", time.Time{})}
+		}
+		if !now.Before(requestedAt.Add(usageRefreshRequestMaxAge)) {
+			s.usageRefreshMu.Unlock()
+			return usageRefreshInfo{
+				State:       "unavailable",
+				RequestedAt: formatOptionalTime(requestedAt),
+				Message:     "Usage refresh did not produce new data. Current values may be out of date.",
+			}
 		}
 		s.usageRefreshMu.Unlock()
 		return usageRefreshInfo{
