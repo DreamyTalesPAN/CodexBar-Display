@@ -203,8 +203,8 @@ func TestInstallScreensaverTakesTheShowingOneOffScreenBeforeOverwritingIt(t *tes
 	}); err != nil {
 		t.Fatalf("Install returned error: %v\nlogs:\n%s", err, out.String())
 	}
-	if len(device.ops) == 0 || device.ops[0] != "clear" {
-		t.Fatalf("the showing screensaver must be cleared before anything is written, got: %v", device.ops)
+	if len(device.ops) < 3 || device.ops[0] != "restore /themes/u/claude.json" || device.ops[1] != "clear" || !strings.HasPrefix(device.ops[2], "upload ") {
+		t.Fatalf("the live theme must be restored before the slot is cleared or files are written, got: %v", device.ops)
 	}
 	if device.screensaverPath != screensaverSpecPath {
 		t.Fatalf("screensaver slot=%q, want %q", device.screensaverPath, screensaverSpecPath)
@@ -1407,9 +1407,10 @@ var screensaverPackFiles = map[string]string{
 	"theme.json": `{"v":1,"id":"night-clock","rev":1,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"v":"OK","s":1}]}`,
 }
 
-// screensaverDevice is a device that serves the screensaver slot. It fails the
-// test on any write that belongs to the live slot, which is what "installing a
-// screensaver never disturbs the live theme" means at the wire level.
+// screensaverDevice is a device that serves the independent live and
+// screensaver slots. Its activation handlers model the firmware contract:
+// selecting a live theme exits standby, while clearing the screensaver does not
+// redraw on its own.
 type screensaverDevice struct {
 	server          *httptest.Server
 	assets          map[string]int
@@ -1434,13 +1435,22 @@ func newScreensaverDeviceServer(t *testing.T, supportsStandby bool) *screensaver
 			if device.standbyActive {
 				standby = "true"
 			}
-			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"claude-creature","themeSpec":{"active":true,"path":"/themes/u/claude.json","renderOk":true}},"standby":{"active":` + standby + `,"idleSecs":5,"liveThemePath":null}}`))
+			liveThemePath := "null"
+			displayPath := "/themes/u/claude.json"
+			if device.standbyActive {
+				liveThemePath = `"/themes/u/claude.json"`
+				displayPath = screensaverSpecPath
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"claude-creature","themeSpec":{"active":true,"path":"` + displayPath + `","renderOk":true}},"standby":{"active":` + standby + `,"idleSecs":5,"liveThemePath":` + liveThemePath + `}}`))
 		case "/assets":
 			switch r.Method {
 			case http.MethodGet:
 				writeAssetList(t, w, device.assets)
 			case http.MethodPost:
 				path := r.URL.Query().Get("path")
+				if device.standbyActive {
+					t.Fatalf("asset %q was overwritten while the screensaver was still showing", path)
+				}
 				device.ops = append(device.ops, "upload "+path)
 				device.assets[path] = readUploadedAssetSize(t, r)
 				w.WriteHeader(http.StatusOK)
@@ -1461,10 +1471,10 @@ func newScreensaverDeviceServer(t *testing.T, supportsStandby bool) *screensaver
 				t.Fatalf("decode screensaver activation: %v", err)
 			}
 			if body.Path == "" {
-				// Clearing the slot makes the firmware leave standby.
+				// The firmware only stores this selection; it does not redraw or
+				// leave standby here.
 				device.ops = append(device.ops, "clear")
 				device.screensaverPath = ""
-				device.standbyActive = false
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{"ok":true,"path":null}`))
 				return
@@ -1474,6 +1484,20 @@ func newScreensaverDeviceServer(t *testing.T, supportsStandby bool) *screensaver
 			}
 			device.ops = append(device.ops, "select "+body.Path)
 			device.screensaverPath = body.Path
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"path":"` + body.Path + `"}`))
+		case "/theme/active":
+			var body struct {
+				Path string `json:"path"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode live theme activation: %v", err)
+			}
+			if body.Path != "/themes/u/claude.json" {
+				t.Fatalf("restored live path=%q", body.Path)
+			}
+			device.ops = append(device.ops, "restore "+body.Path)
+			device.standbyActive = false
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"path":"` + body.Path + `"}`))
 		default:

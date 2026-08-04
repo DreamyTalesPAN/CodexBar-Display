@@ -742,10 +742,9 @@ func sendClearThemeSpecFrameWithPairRetry(
 // clearShowingScreensaver takes a screensaver off the screen before its files
 // are overwritten. A pack keeps its device paths across versions, so
 // reinstalling one that is on screen would write into the files the running
-// render is reading, and selecting the new pack does not redraw. Clearing the
-// slot is the exit the firmware offers: it leaves standby and puts the live
-// theme back, so the upload lands on files nothing is drawing and the next
-// standby transition compiles the new pack from scratch.
+// render is reading. Selecting or clearing the screensaver only records that
+// slot; activating the saved live theme is the firmware's synchronous standby
+// exit, so it must happen before the slot is cleared and its files are changed.
 //
 // A screensaver install that fails after this leaves the slot empty. That is
 // reported as an empty slot and fixed by retrying; putting the selection back
@@ -758,7 +757,14 @@ func clearShowingScreensaver(wifi transportlayer.WiFiTransport, target *string, 
 	if !health.Standby.Active {
 		return nil
 	}
+	liveThemePath := strings.TrimSpace(health.Standby.LiveThemePath)
+	if liveThemePath == "" {
+		return errors.New("live theme path unavailable while screensaver is showing")
+	}
 	fmt.Fprintln(out, "Taking the current screensaver off screen...")
+	if err := activateThemeWithPairRetry(wifi, target, liveThemePath, store); err != nil {
+		return fmt.Errorf("restore live theme: %w", err)
+	}
 	if err := activateScreensaverWithPairRetry(wifi, target, "", store); err != nil {
 		return fmt.Errorf("clear screensaver slot: %w", err)
 	}
