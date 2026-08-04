@@ -255,7 +255,13 @@ func applyLegacyUsageProjection(f Frame) Frame {
 		return f
 	}
 	f.Session = f.UsageWindows[0].Percent
-	f.ResetSec = f.UsageWindows[0].ResetSec
+	f.ResetSec = 0
+	for _, window := range f.UsageWindows {
+		if window.ResetSec > 0 {
+			f.ResetSec = window.ResetSec
+			break
+		}
+	}
 	if len(f.UsageWindows) > 1 {
 		f.Weekly = f.UsageWindows[1].Percent
 	} else {

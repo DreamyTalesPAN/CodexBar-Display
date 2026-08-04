@@ -536,6 +536,19 @@ func TestApplyResetTrustReanchorsAllResetCountdowns(t *testing.T) {
 		t.Fatalf("expected root and usage window countdowns re-anchored to 90, got root=%d windows=%+v", windows.ResetSec, windows.UsageWindows)
 	}
 
+	laterWindow := (Frame{
+		V:        ProtocolVersionV2,
+		Provider: "codex",
+		UsageWindows: []UsageWindow{
+			{ID: "primary", Label: "Primary"},
+			{ID: "secondary", Label: "Secondary", ResetSec: 120},
+		},
+	}).ApplyResetTrust(collectedAt, sendAt, true)
+	if laterWindow.ResetTrust != ResetTrustLive || laterWindow.ResetSec != 90 ||
+		laterWindow.UsageWindows[0].ResetSec != 0 || laterWindow.UsageWindows[1].ResetSec != 90 {
+		t.Fatalf("expected later reset to anchor shared trust, got %+v", laterWindow)
+	}
+
 	slots := (Frame{
 		V:           ProtocolVersionV1,
 		Provider:    "codex",

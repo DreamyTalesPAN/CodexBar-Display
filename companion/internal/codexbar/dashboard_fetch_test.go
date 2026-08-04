@@ -77,7 +77,7 @@ func TestFetchDashboardProvidersKeepsLaterWindowResetTrusted(t *testing.T) {
 		t.Fatalf("dashboard fetch failed: %v", err)
 	}
 	trusted := providers[0].Frame.ApplyResetTrust(providers[0].CollectedAt, now, true)
-	if trusted.ResetTrust != "live" || trusted.ResetSec != 0 ||
+	if trusted.ResetTrust != "live" || trusted.ResetSec != 600 ||
 		len(trusted.UsageWindows) != 2 || trusted.UsageWindows[1].ResetSec != 600 {
 		t.Fatalf("later reset must remain trusted when the first window has none: %+v", trusted)
 	}
