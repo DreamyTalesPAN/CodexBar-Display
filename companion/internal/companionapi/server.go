@@ -379,6 +379,7 @@ type deviceInfo struct {
 	Capabilities    *protocol.CapabilityBlock `json:"capabilities,omitempty"`
 	Stream          *displayStreamInfo        `json:"stream,omitempty"`
 	Display         *deviceDisplayInfo        `json:"display,omitempty"`
+	Standby         *deviceStandbyInfo        `json:"standby,omitempty"`
 	Health          *deviceHealthInfo         `json:"health,omitempty"`
 }
 
@@ -401,6 +402,11 @@ type displayVerification struct {
 
 type deviceDisplayInfo struct {
 	ThemeSpec *themeSpecHealth `json:"themeSpec,omitempty"`
+}
+
+type deviceStandbyInfo struct {
+	Active        bool   `json:"active"`
+	LiveThemePath string `json:"liveThemePath,omitempty"`
 }
 
 type deviceHealthInfo struct {
@@ -6078,8 +6084,9 @@ func deviceAuthorizationRejected(err error) bool {
 }
 
 type deviceHealth struct {
-	OK       bool           `json:"ok"`
-	Settings deviceSettings `json:"settings"`
+	OK       bool               `json:"ok"`
+	Settings deviceSettings     `json:"settings"`
+	Standby  *deviceStandbyInfo `json:"standby"`
 	// correlatedFrameProof is set only by the companion after it correlates a
 	// fresh, target-matching stream acknowledgement with device render counters.
 	// It is intentionally not populated from device JSON.
@@ -6937,6 +6944,13 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 		RenderKind:  strings.TrimSpace(health.Render.LastKind),
 	}
 	device.ActiveTheme = strings.TrimSpace(health.Display.ActiveTheme)
+	device.Standby = nil
+	if health.Standby != nil {
+		device.Standby = &deviceStandbyInfo{
+			Active:        health.Standby.Active,
+			LiveThemePath: strings.TrimSpace(health.Standby.LiveThemePath),
+		}
+	}
 	if health.Display.ThemeSpec.Active || health.Display.ThemeSpec.RenderOK != nil {
 		device.Display = &deviceDisplayInfo{
 			ThemeSpec: &themeSpecHealth{

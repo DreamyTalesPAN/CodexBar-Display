@@ -266,6 +266,25 @@ bool testScreensaverSelectionValidatesBeforePersisting(const std::string& source
       "screensaver selection must validate stored ThemeSpec content before changing or persisting the slot");
 }
 
+bool testLiveThemeSlotUsesItsOwnedPathPolicy(const std::string& source) {
+  const std::size_t readStart = source.find("bool readActiveThemeSpecPath(");
+  const std::size_t saveStart = source.find("bool saveActiveThemeSpecPath(", readStart);
+  const std::size_t storedReadStart = source.find("bool readStoredThemeSpec(", saveStart);
+  if (!expect(
+          readStart != std::string::npos && saveStart != std::string::npos &&
+              storedReadStart != std::string::npos,
+          "live ThemeSpec path persistence must remain discoverable")) {
+    return false;
+  }
+
+  const std::string read = source.substr(readStart, saveStart - readStart);
+  const std::string save = source.substr(saveStart, storedReadStart - saveStart);
+  return expect(
+      read.find("isLiveThemeSpecPath(path)") != std::string::npos &&
+          save.find("isLiveThemeSpecPath(path)") != std::string::npos,
+      "the live slot must reject screensaver-owned ThemeSpec paths when reading and persisting");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -286,7 +305,8 @@ int main(int argc, char** argv) {
       !testAssetDeleteProtectsStandbyLiveTheme(source) ||
       !testStandbyExitLeavesErrorFrameVisible(source) ||
       !testUsageWakeRestoresLiveThemeBeforeDroppingPath(source) ||
-      !testScreensaverSelectionValidatesBeforePersisting(source)) {
+      !testScreensaverSelectionValidatesBeforePersisting(source) ||
+      !testLiveThemeSlotUsesItsOwnedPathPolicy(source)) {
     return 1;
   }
 

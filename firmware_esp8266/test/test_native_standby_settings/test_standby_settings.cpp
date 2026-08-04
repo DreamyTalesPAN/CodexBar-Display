@@ -2,11 +2,13 @@
 
 #include <string.h>
 
+#include "../../src/asset_path_policy.h"
 #include "../../src/standby_settings.h"
 
 namespace {
 
 using namespace codexbar_display::esp8266::standby;
+using codexbar_display::esp8266::AssetPathPolicy;
 
 Settings withPath(const char* path) {
   Settings settings;
@@ -44,6 +46,17 @@ void test_only_screensaver_slot_paths_are_accepted() {
   TEST_ASSERT_FALSE(ScreensaverPathValid("/themes/s/", strlen("/themes/s/")));
   TEST_ASSERT_FALSE(ScreensaverPathValid("", 0));
   TEST_ASSERT_FALSE(ScreensaverPathValid(nullptr, 0));
+}
+
+void test_live_slot_paths_exclude_the_screensaver_directory() {
+  TEST_ASSERT_TRUE(AssetPathPolicy::IsLiveThemeSpecPath(
+      "/themes/u/clock.json", strlen("/themes/u/clock.json")));
+  TEST_ASSERT_TRUE(AssetPathPolicy::IsLiveThemeSpecPath(
+      "/themes/legacy.json", strlen("/themes/legacy.json")));
+  TEST_ASSERT_FALSE(AssetPathPolicy::IsLiveThemeSpecPath(
+      "/themes/s/clock.json", strlen("/themes/s/clock.json")));
+  TEST_ASSERT_FALSE(AssetPathPolicy::IsLiveThemeSpecPath(
+      "/themes/u/../s/clock.json", strlen("/themes/u/../s/clock.json")));
 }
 
 void test_traversal_and_unprintable_paths_are_rejected() {
@@ -167,6 +180,7 @@ int main(int, char**) {
   RUN_TEST(test_timeout_clamps_to_the_supported_range);
   RUN_TEST(test_standby_brightness_uses_the_shared_display_range);
   RUN_TEST(test_only_screensaver_slot_paths_are_accepted);
+  RUN_TEST(test_live_slot_paths_exclude_the_screensaver_directory);
   RUN_TEST(test_traversal_and_unprintable_paths_are_rejected);
   RUN_TEST(test_overlong_paths_are_rejected);
   RUN_TEST(test_setting_a_path_stores_it_and_an_empty_path_clears_it);

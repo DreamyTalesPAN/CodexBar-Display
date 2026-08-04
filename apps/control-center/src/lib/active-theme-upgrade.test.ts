@@ -70,6 +70,25 @@ describe("resolveActiveThemeUpgrade", () => {
     });
   });
 
+  it("resolves the saved live theme while a screensaver is on screen", () => {
+    const inStandby: DeviceInfo = {
+      ...device(true, "/themes/s/night-clock.json"),
+      activeTheme: "night-clock",
+      standby: {
+        active: true,
+        liveThemePath: "/themes/u/synthwa-1-6b39a3.json",
+      },
+    };
+
+    expect(resolveActiveThemeUpgrade([slotTheme], inStandby)).toEqual({
+      needed: true,
+      needsFirmwareCapability: false,
+      needsThemeSpec: true,
+      theme: slotTheme,
+      unresolved: false,
+    });
+  });
+
   it("reinstalls a cataloged ThemeSpec missing from the device status", () => {
     const themeWithoutCapabilities = {
       ...slotTheme,

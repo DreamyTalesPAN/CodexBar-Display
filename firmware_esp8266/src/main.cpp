@@ -1604,6 +1604,10 @@ bool isMutableThemeAssetPath(const String& path) {
   return codexbar_display::esp8266::AssetPathPolicy::IsMutableThemeAsset(path.c_str(), path.length());
 }
 
+bool isLiveThemeSpecPath(const String& path) {
+  return codexbar_display::esp8266::AssetPathPolicy::IsLiveThemeSpecPath(path.c_str(), path.length());
+}
+
 bool ensureAssetParentDirs(const String& path) {
   int slash = path.indexOf('/', 1);
   while (slash > 0) {
@@ -2203,11 +2207,11 @@ bool readActiveThemeSpecPath(String& path) {
   path = file.readString();
   file.close();
   path.trim();
-  return isSafeAssetPath(path) && path.startsWith("/themes/");
+  return isLiveThemeSpecPath(path);
 }
 
 bool saveActiveThemeSpecPath(const String& path) {
-  if (!isSafeAssetPath(path) || !path.startsWith("/themes/")) {
+  if (!isLiveThemeSpecPath(path)) {
     return false;
   }
   if (!LittleFS.begin()) {

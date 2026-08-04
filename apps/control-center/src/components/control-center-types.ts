@@ -232,6 +232,10 @@ export type DeviceInfo = {
       renderFailures?: number;
     };
   };
+  standby?: {
+    active?: boolean;
+    liveThemePath?: string;
+  };
   capabilities?: {
     auth?: {
       paired?: boolean;

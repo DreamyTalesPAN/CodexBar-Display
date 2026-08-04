@@ -79,6 +79,40 @@ func TestStatusSerializesFalseDeviceBooleans(t *testing.T) {
 	}
 }
 
+func TestStatusIncludesStandbyLiveThemePath(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"saved-device","capabilities":{"standby":{"supported":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"night-clock","themeSpec":{"active":true,"path":"/themes/s/night.json","renderOk":true}},"standby":{"active":true,"idleSecs":900,"liveThemePath":"/themes/u/synthwave.json"}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "saved-device",
+	})
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Device.Standby == nil || !got.Device.Standby.Active ||
+		got.Device.Standby.LiveThemePath != "/themes/u/synthwave.json" {
+		t.Fatalf("expected saved live slot in status, got %+v", got.Device.Standby)
+	}
+}
+
 func TestStatusIncludesLatestFirmwareUpdateJob(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	startedAt := time.Now().UTC().Add(-time.Minute)
