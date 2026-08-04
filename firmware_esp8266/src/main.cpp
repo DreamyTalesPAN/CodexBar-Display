@@ -2155,6 +2155,8 @@ void handleAssetUploadResult() {
   webServer.send(200, "application/json", out);
 }
 
+bool storedThemeSpecReferencesAsset(const String& themeSpecPath, const String& assetPath);
+
 void handleAssetDelete() {
   if (!requireWriteAuth()) {
     return;
@@ -2178,7 +2180,8 @@ void handleAssetDelete() {
   }
   const String configuredScreensaverPath(deviceSettings.standby.screensaverPath);
   if (path == activeThemeSpecPath || path == standbyLiveThemePath ||
-      path == configuredScreensaverPath) {
+      path == configuredScreensaverPath ||
+      storedThemeSpecReferencesAsset(configuredScreensaverPath, path)) {
     addCorsHeaders();
     webServer.send(409, "text/plain; charset=utf-8", "asset is active");
     return;
@@ -2370,6 +2373,30 @@ bool renderStoredThemeSpecForStandby(const String& path) {
 }
 
 #endif
+
+bool storedThemeSpecReferencesAsset(const String& themeSpecPath, const String& assetPath) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  if (themeSpecPath.length() == 0 || assetPath.length() == 0) {
+    return false;
+  }
+  String raw;
+  String error;
+  if (!readStoredThemeSpec(themeSpecPath, raw, error)) {
+    return false;
+  }
+  JsonDocument doc;
+  codexbar_display::themespec::CompiledThemeSpec scene;
+  const bool compiled = codexbar_display::themespec::CompileThemeSpec(raw.c_str(), doc, scene);
+  const bool referenced = compiled &&
+      codexbar_display::themespec::CompiledThemeSpecReferencesAsset(scene, assetPath.c_str());
+  codexbar_display::themespec::ReleaseCompiledThemeSpec(scene);
+  return referenced;
+#else
+  (void)themeSpecPath;
+  (void)assetPath;
+  return false;
+#endif
+}
 
 void handleThemeActive() {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER

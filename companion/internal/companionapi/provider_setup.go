@@ -231,7 +231,7 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 		if _, replaced := readyByID[id]; replaced {
 			continue
 		}
-		if id == "codexbar" {
+		if id == "codexbar" && provider.Status != codexbar.ProviderConfigError {
 			continue
 		}
 		provider.ID = id
@@ -244,6 +244,7 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 func providerSetupFailureMustWin(status string) bool {
 	return status == codexbar.ProviderAuthRequired ||
 		status == codexbar.ProviderPermissionRequired ||
+		status == codexbar.ProviderConfigError ||
 		status == codexbar.ProviderNotConfigured
 }
 
@@ -279,11 +280,13 @@ func reconcileProviderSetupWithTokenEvidence(setup codexbar.ProviderSetup, ready
 	if len(providers) == 0 {
 		return original
 	}
-	setup.Status = codexbar.ProviderReady
-	setup.Engine.Status = codexbar.ProviderReady
+	if setup.Engine.Status != codexbar.ProviderConfigError {
+		setup.Status = codexbar.ProviderReady
+		setup.Engine.Status = codexbar.ProviderReady
+	}
 	for _, provider := range setup.Providers {
 		id := strings.TrimSpace(strings.ToLower(provider.ID))
-		if id == "" || id == "codexbar" {
+		if id == "" || (id == "codexbar" && provider.Status != codexbar.ProviderConfigError) {
 			continue
 		}
 		provider.ID = id

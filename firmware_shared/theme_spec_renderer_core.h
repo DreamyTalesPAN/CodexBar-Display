@@ -214,6 +214,25 @@ inline bool CompiledThemeSpecHasGifAssets(const CompiledThemeSpec& scene) {
   return false;
 }
 
+inline bool CompiledThemeSpecReferencesAsset(
+    const CompiledThemeSpec& scene,
+    const char* assetPath) {
+  if (assetPath == nullptr || assetPath[0] == '\0') {
+    return false;
+  }
+  for (size_t i = 0; i < scene.primitiveCount; ++i) {
+    const CompiledPrimitive& primitive = scene.primitives[i];
+    if (std::strcmp(primitive.assetPath, assetPath) == 0 ||
+        (primitive.idleAssetPath != nullptr &&
+         std::strcmp(primitive.idleAssetPath, assetPath) == 0) ||
+        (primitive.codingAssetPath != nullptr &&
+         std::strcmp(primitive.codingAssetPath, assetPath) == 0)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 struct CompiledThemeSpecStoragePlan {
   size_t primitiveCapacity = 0;
   size_t stringPoolCapacity = 0;

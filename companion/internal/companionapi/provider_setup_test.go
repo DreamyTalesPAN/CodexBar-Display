@@ -339,24 +339,48 @@ func TestProviderSetupTokenEvidencePreservesSpecificProviderFailures(t *testing.
 	}
 }
 
-func TestProviderSetupUsagePreservesSpecificProviderFailures(t *testing.T) {
+func TestProviderSetupEvidencePreservesSpecificProviderFailures(t *testing.T) {
 	now := time.Date(2026, 7, 29, 12, 22, 0, 0, time.UTC)
 	tests := []struct {
 		name       string
+		providerID string
+		engine     string
 		status     string
 		detail     string
 		nextAction string
+		tokenOnly  bool
 	}{
 		{
-			name:   "auth required",
-			status: codexbar.ProviderAuthRequired,
-			detail: "This provider needs an active sign-in.",
+			name:       "auth required",
+			providerID: "codex",
+			engine:     codexbar.ProviderReady,
+			status:     codexbar.ProviderAuthRequired,
+			detail:     "This provider needs an active sign-in.",
 		},
 		{
 			name:       "permission required",
+			providerID: "codex",
+			engine:     codexbar.ProviderReady,
 			status:     codexbar.ProviderPermissionRequired,
 			detail:     "macOS blocked access required by this provider.",
 			nextAction: "Allow the requested macOS permission, then check again.",
+		},
+		{
+			name:       "configuration error with usage",
+			providerID: "codexbar",
+			engine:     codexbar.ProviderConfigError,
+			status:     codexbar.ProviderConfigError,
+			detail:     "The usage service could not save or read its provider settings.",
+			nextAction: "Repair the usage service, then check again.",
+		},
+		{
+			name:       "configuration error with token history",
+			providerID: "codexbar",
+			engine:     codexbar.ProviderConfigError,
+			status:     codexbar.ProviderConfigError,
+			detail:     "The usage service could not save or read its provider settings.",
+			nextAction: "Repair the usage service, then check again.",
+			tokenOnly:  true,
 		},
 	}
 
@@ -368,14 +392,17 @@ func TestProviderSetupUsagePreservesSpecificProviderFailures(t *testing.T) {
 				return codexbar.ProviderSetup{
 					Status:    "setup_required",
 					CheckedAt: now.Format(time.RFC3339Nano),
-					Engine:    codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+					Engine:    codexbar.EngineReadiness{Status: tc.engine},
 					Providers: []codexbar.ProviderReadiness{{
-						ID: "codex", Label: "Codex", Enabled: true, Status: tc.status,
+						ID: tc.providerID, Label: "Codex", Enabled: true, Status: tc.status,
 						Detail: tc.detail, NextAction: tc.nextAction,
 					}},
 				}
 			}
 			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+				if tc.tokenOnly {
+					return tokenRichQuotaUnavailableUsage("codex", "Codex", now), true
+				}
 				return freshProviderUsage("codex", "Codex", now.Add(-time.Minute)), true
 			}
 			server.currentProviderSetup(context.Background(), true)
@@ -386,9 +413,10 @@ func TestProviderSetupUsagePreservesSpecificProviderFailures(t *testing.T) {
 			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 				t.Fatal(err)
 			}
-			codex := providerByID(got.ProviderSetup.Providers, "codex")
-			if got.ProviderSetup.Status == codexbar.ProviderReady || codex == nil ||
-				codex.Status != tc.status || codex.Detail != tc.detail || codex.NextAction != tc.nextAction {
+			provider := providerByID(got.ProviderSetup.Providers, tc.providerID)
+			if got.ProviderSetup.Status == codexbar.ProviderReady ||
+				got.ProviderSetup.Engine.Status != tc.engine || provider == nil ||
+				provider.Status != tc.status || provider.Detail != tc.detail || provider.NextAction != tc.nextAction {
 				t.Fatalf("cached usage overwrote the current provider failure: %+v", got.ProviderSetup)
 			}
 		})

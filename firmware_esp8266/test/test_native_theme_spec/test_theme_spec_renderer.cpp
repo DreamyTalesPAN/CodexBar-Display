@@ -18,6 +18,7 @@ using codexbar_display::themespec::RectCommand;
 using codexbar_display::themespec::CompileThemeSpec;
 using codexbar_display::themespec::CompiledThemeSpec;
 using codexbar_display::themespec::CompiledThemeSpecHasGifAssets;
+using codexbar_display::themespec::CompiledThemeSpecReferencesAsset;
 using codexbar_display::themespec::AnyAnimatedCompiledPrimitiveOverlaps;
 using codexbar_display::themespec::Bounds;
 using codexbar_display::themespec::RenderCompiledThemeSpec;
@@ -314,6 +315,21 @@ void testGifLimitsRejectOversizedOrMultipleGifs() {
 
   const char* miniSized = R"JSON({"v":1,"id":"mini-transport","rev":1,"p":[{"t":"g","x":80,"y":115,"w":80,"h":80,"a":"/themes/mini/mini.gif"}]})JSON";
   TEST_ASSERT_TRUE(renderSpec(miniSized, testFrame(), sink));
+}
+
+void testCompiledThemeSpecFindsEveryReferencedAsset() {
+  const char* spec = R"JSON({"v":1,"id":"asset-references","rev":1,"p":[{"t":"g","x":0,"y":0,"w":40,"h":40,"a":"/themes/s/clock.gif"},{"t":"sp","x":0,"y":40,"w":40,"h":40,"a":"/themes/s/base.cba","sa":{"idle":"/themes/s/idle.cba","coding":"/themes/s/rc-orbit.cba"}}]})JSON";
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+  TEST_ASSERT_TRUE(CompiledThemeSpecReferencesAsset(scene, "/themes/s/clock.gif"));
+  TEST_ASSERT_TRUE(CompiledThemeSpecReferencesAsset(scene, "/themes/s/base.cba"));
+  TEST_ASSERT_TRUE(CompiledThemeSpecReferencesAsset(scene, "/themes/s/idle.cba"));
+  TEST_ASSERT_TRUE(CompiledThemeSpecReferencesAsset(scene, "/themes/s/rc-orbit.cba"));
+  TEST_ASSERT_FALSE(CompiledThemeSpecReferencesAsset(scene, "/themes/s/orphan.cba"));
+  TEST_ASSERT_FALSE(CompiledThemeSpecReferencesAsset(scene, ""));
+  TEST_ASSERT_FALSE(CompiledThemeSpecReferencesAsset(scene, nullptr));
+  ReleaseCompiledThemeSpec(scene);
 }
 
 void testRendersCommandsAndBindings() {
@@ -2447,6 +2463,7 @@ int main() {
   RunDeviceClockTests();
   RUN_TEST(testInvalidSpecsReturnFalse);
   RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);
+  RUN_TEST(testCompiledThemeSpecFindsEveryReferencedAsset);
   RUN_TEST(testRendersCommandsAndBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testUsageWindowOwnershipHidesCompleteMissingLane);

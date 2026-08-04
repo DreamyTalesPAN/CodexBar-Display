@@ -172,9 +172,15 @@ bool testAssetDeleteProtectsStandbyLiveTheme(const std::string& source) {
   }
 
   const std::string handler = source.substr(handlerStart, handlerEnd - handlerStart);
+  const std::size_t slotProtection = handler.find(
+      "path == activeThemeSpecPath || path == standbyLiveThemePath");
+  const std::size_t referenceProtection = handler.find(
+      "storedThemeSpecReferencesAsset(configuredScreensaverPath, path)", slotProtection);
+  const std::size_t remove = handler.find("LittleFS.remove(path)", referenceProtection);
   return expect(
-      handler.find("path == activeThemeSpecPath || path == standbyLiveThemePath") != std::string::npos,
-      "asset delete must protect the saved live theme during standby");
+      slotProtection != std::string::npos && referenceProtection != std::string::npos &&
+          remove != std::string::npos && slotProtection < referenceProtection && referenceProtection < remove,
+      "asset delete must protect live-slot state and assets referenced by the configured screensaver");
 }
 
 bool testStandbyExitLeavesErrorFrameVisible(const std::string& source) {
