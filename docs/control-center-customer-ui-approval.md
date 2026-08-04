@@ -5,6 +5,12 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-04 — Updates keep the live theme identity during standby
+
+- User approval: The user instructed Codex to continue making PR #296 ready to merge and to fix the findings from the Codex reviewer loop.
+- Approved customer-visible result: No copy or layout changes. While a screensaver is visible, Updates evaluates the saved live theme instead of the screensaver, so an available live-theme refresh is not hidden.
+- Approved files: Device status typing, active-theme upgrade resolution and tests, Companion standby-health pass-through, and this approval record.
+
 ## 2026-08-04 — Shopify themes are not a Mac App install path
 
 - User approval: The user explicitly stated that Shopify theme handling is outdated, that Shopify themes currently have no connection to the Mac App, and instructed Codex to remove the obsolete test.
