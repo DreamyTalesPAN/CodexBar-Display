@@ -90,6 +90,18 @@ export type ProviderSetupInfo = {
   providers?: ProviderReadinessInfo[];
 };
 
+export type ProviderSelectionSetup = {
+  providerSelectionRequired: boolean;
+  providerSelectionComplete: boolean;
+};
+
+export type ProviderDisplaySelection = {
+  mode: "automatic" | "fixed";
+  providerIds: string[];
+  configured: boolean;
+  valid: boolean;
+};
+
 export type SupportDiagnostics = {
   ok?: boolean;
   schemaVersion?: number;
@@ -425,6 +437,8 @@ export type PreferenceDescriptor = {
   owner: "codexbar" | "vibetv" | "device";
   type: PreferenceType;
   label: string;
+  description?: string;
+  providerId?: string;
   value: PreferenceValue;
   effectiveValue: PreferenceValue;
   allowsDefault: boolean;
@@ -452,6 +466,14 @@ export type PreferenceDescriptor = {
     service: "operational" | "degraded" | "outage" | "unknown" | string;
     message: string;
     lastSuccessAt?: string;
+    checkedAt?: string;
+    verifiedAt?: string;
+    nextAction?: string;
+    recoveryAction?:
+      | "open_provider_setup"
+      | "repair_usage_service"
+      | "check_again"
+      | string;
   };
 };
 

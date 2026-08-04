@@ -2094,6 +2094,53 @@ func TestRunCycleWithDepsUsesLastGoodFrameDuringTransientFetchFailure(t *testing
 	}
 }
 
+func TestRunCycleWithDepsRejectsLastGoodOutsideFixedSelectionOnFetchFailure(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	lastGood := protocol.Frame{Provider: "claude", Label: "Claude", Session: 61, Weekly: 49}
+	if err := persistLastGood(lastGood, now.Add(-time.Minute)); err != nil {
+		t.Fatalf("persist excluded last good: %v", err)
+	}
+	state := &runtimeState{
+		selector:          codexbar.NewProviderSelector(),
+		lastGood:          lastGood,
+		lastGoodAt:        now.Add(-time.Minute),
+		hasLastGood:       true,
+		lastPersistedGood: lastGood,
+		lastPersistedAt:   now.Add(-time.Minute),
+		hasPersistedGood:  true,
+	}
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	})
+	deps.now = func() time.Time { return now }
+	deps.resolvePort = func(string) (string, error) { return "/dev/cu.usbmodem-test", nil }
+	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorCommand, Err: errors.New("temporary failure")}
+	}
+	var sentLine []byte
+	deps.sendLine = func(_ string, line []byte) error {
+		sentLine = append([]byte(nil), line...)
+		return nil
+	}
+	deps.logf = func(string, ...any) {}
+
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err == nil {
+		t.Fatal("excluded last-good fallback must not hide the fetch failure")
+	}
+	if frame := decodeFrameLine(t, sentLine); frame.Provider == "claude" || frame.Error == "" {
+		t.Fatalf("excluded last-good frame was sent after fixed selection changed: %+v", frame)
+	}
+	if state.hasLastGood || state.hasPersistedGood {
+		t.Fatalf("excluded last-good state survived: %+v", state)
+	}
+	if _, _, ok := loadPersistedLastGoodAnyAge(); ok {
+		t.Fatal("excluded persisted last-good frame survived")
+	}
+}
+
 func TestRunCycleWithDepsUsesLastGoodFrameWhenNoProvidersAfterSelection(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -3596,6 +3643,119 @@ func TestCycleRunTimeoutDefault(t *testing.T) {
 	}
 }
 
+func TestRunCycleFromCollectorProbesFixedProviderBeforeDirectProbeLimit(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:            func() time.Time { return now },
+		logf:           func(string, ...any) {},
+		order:          []string{"codex", "claude", "cursor", "gemini"},
+		snapshotMaxAge: 2 * time.Hour,
+		providers:      map[string]providerSnapshot{},
+	}
+	probed := []string{}
+	var sentLine []byte
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"gemini"},
+	})
+	deps.now = func() time.Time { return now }
+	deps.resolvePort = func(string) (string, error) { return "/dev/cu.usbmodem-test", nil }
+	deps.fetchProvider = func(_ context.Context, provider string) (codexbar.ParsedFrame, error) {
+		probed = append(probed, provider)
+		if provider == "gemini" {
+			return testParsedFrame("gemini", 21, 43, 3600), nil
+		}
+		return codexbar.ParsedFrame{}, codexbar.ErrNoProviders
+	}
+	deps.sendLine = func(_ string, line []byte) error {
+		sentLine = append([]byte(nil), line...)
+		return nil
+	}
+	deps.logf = func(string, ...any) {}
+
+	if err := runCycleFromCollector(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, collector, deps); err != nil {
+		t.Fatalf("fixed provider fallback failed: %v", err)
+	}
+	if !reflect.DeepEqual(probed, []string{"gemini"}) {
+		t.Fatalf("direct probes=%v want selected fixed provider only", probed)
+	}
+	if frame := decodeFrameLine(t, sentLine); frame.Provider != "gemini" {
+		t.Fatalf("sent provider=%q want gemini", frame.Provider)
+	}
+}
+
+func TestRunCycleFromCollectorProbesSelectedProviderWhenSnapshotsAreOutsideDisplaySelection(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:            func() time.Time { return now },
+		logf:           func(string, ...any) {},
+		order:          []string{"codex", "gemini"},
+		snapshotMaxAge: 2 * time.Hour,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:  "codex",
+				Frame:     testParsedFrame("codex", 10, 20, 3600).Frame,
+				Collected: now,
+			},
+		},
+	}
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"gemini"},
+	})
+	deps.now = func() time.Time { return now }
+	deps.resolvePort = func(string) (string, error) { return "/dev/cu.usbmodem-test", nil }
+	var probed []string
+	deps.fetchProvider = func(_ context.Context, provider string) (codexbar.ParsedFrame, error) {
+		probed = append(probed, provider)
+		return testParsedFrame(provider, 21, 43, 3600), nil
+	}
+	var sentLine []byte
+	deps.sendLine = func(_ string, line []byte) error {
+		sentLine = append([]byte(nil), line...)
+		return nil
+	}
+	deps.logf = func(string, ...any) {}
+
+	if err := runCycleFromCollector(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, collector, deps); err != nil {
+		t.Fatalf("selected provider fallback failed: %v", err)
+	}
+	if !reflect.DeepEqual(probed, []string{"gemini"}) {
+		t.Fatalf("direct probes=%v want newly selected provider", probed)
+	}
+	if frame := decodeFrameLine(t, sentLine); frame.Provider != "gemini" {
+		t.Fatalf("sent provider=%q want gemini", frame.Provider)
+	}
+}
+
+func TestDirectProviderProbeOrderExcludesDisplayProviderOutsideEnabledInventory(t *testing.T) {
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "automatic",
+		ProviderIDs: []string{"gemini", "claude"},
+	})
+
+	got := directProviderProbeOrder([]string{"codex", "claude"}, deps)
+	if !reflect.DeepEqual(got, []string{"claude"}) {
+		t.Fatalf("direct probe order=%v want enabled selected providers only", got)
+	}
+}
+
+func TestDirectProviderProbeOrderUsesDisplayProvidersWhenInventoryIsUnknown(t *testing.T) {
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"gemini"},
+	})
+
+	got := directProviderProbeOrder(nil, deps)
+	if !reflect.DeepEqual(got, []string{"gemini"}) {
+		t.Fatalf("direct probe order=%v want configured provider when inventory is unknown", got)
+	}
+}
+
 func decodeFrameLine(t *testing.T, line []byte) protocol.Frame {
 	t.Helper()
 
@@ -3630,6 +3790,55 @@ func testParsedFrame(provider string, session, weekly int, reset int64) codexbar
 			Session:  session,
 			Weekly:   weekly,
 			ResetSec: reset,
+		},
+	}
+}
+
+func TestApplyProviderDisplaySelectionRestrictsAutomaticPoolAndSkipsUnavailable(t *testing.T) {
+	state := &runtimeState{
+		selector:    codexbar.NewProviderSelector(),
+		lastGood:    protocol.Frame{Provider: "cursor", Session: 88},
+		lastGoodAt:  time.Now(),
+		hasLastGood: true,
+	}
+	codex := testParsedFrame("codex", 10, 20, 3600)
+	codex.Frame.UsageUnavailable = true
+	claude := testParsedFrame("claude", 30, 40, 3600)
+	cursor := testParsedFrame("cursor", 50, 60, 3600)
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "automatic",
+		ProviderIDs: []string{"codex", "claude"},
+	})
+
+	got := applyProviderDisplaySelection(state, []codexbar.ParsedFrame{codex, claude, cursor}, deps)
+	if len(got) != 1 || got[0].Frame.Provider != "claude" {
+		t.Fatalf("automatic pool selection=%+v want ready claude only", got)
+	}
+	if state.hasLastGood {
+		t.Fatalf("last-good outside pool survived: %+v", state.lastGood)
+	}
+}
+
+func TestApplyProviderDisplaySelectionKeepsFixedProviderWithoutFallback(t *testing.T) {
+	codex := testParsedFrame("codex", 10, 20, 3600)
+	codex.Frame.UsageUnavailable = true
+	claude := testParsedFrame("claude", 30, 40, 3600)
+	deps := providerDisplayTestDeps(runtimeconfig.ProviderDisplayConfig{
+		Mode:        "fixed",
+		ProviderIDs: []string{"codex"},
+	})
+
+	got := applyProviderDisplaySelection(&runtimeState{selector: codexbar.NewProviderSelector()}, []codexbar.ParsedFrame{codex, claude}, deps)
+	if len(got) != 1 || got[0].Frame.Provider != "codex" || !got[0].Frame.UsageUnavailable {
+		t.Fatalf("fixed selection silently fell back: %+v", got)
+	}
+}
+
+func providerDisplayTestDeps(display runtimeconfig.ProviderDisplayConfig) runtimeDeps {
+	return runtimeDeps{
+		homeDir: func() (string, error) { return "/tmp/provider-display-test", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{ProviderDisplay: &display}, nil
 		},
 	}
 }

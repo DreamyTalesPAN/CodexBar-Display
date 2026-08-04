@@ -316,7 +316,10 @@ func TestEnablingAnotherProviderDoesNotCancelFirstExactProbe(t *testing.T) {
 }
 
 func TestDisablingProviderRemovesItsPersistedUsageCard(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
+	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        providerDisplayModeAutomatic,
+		ProviderIDs: []string{"codex"},
+	}})
 	cursorEnabled := true
 	loads := 0
 	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {

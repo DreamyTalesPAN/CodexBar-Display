@@ -935,6 +935,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		selectionDetail: emptyDetail,
 		errorSource:     errorSource,
 	}
+	allProviders = applyProviderDisplaySelection(state, allProviders, deps)
 
 	if len(allProviders) == 0 {
 		result.failureKind = runtimeErrorNoProviders
@@ -965,6 +966,56 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	}
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
+}
+
+func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps) []codexbar.ParsedFrame {
+	cfg, ok := loadRuntimeConfig(deps)
+	if !ok || cfg.ProviderDisplay == nil {
+		return preferAvailableProviders(providers)
+	}
+	allowed := make(map[string]struct{}, len(cfg.ProviderDisplay.ProviderIDs))
+	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
+		providerID = normalizeProviderKey(providerID)
+		if providerID != "" {
+			allowed[providerID] = struct{}{}
+		}
+	}
+	if state != nil && state.hasLastGood {
+		if _, permitted := allowed[normalizeProviderKey(state.lastGood.Provider)]; !permitted {
+			state.lastGood = protocol.Frame{}
+			state.lastGoodAt = time.Time{}
+			state.hasLastGood = false
+			state.lastPersistedGood = protocol.Frame{}
+			state.lastPersistedAt = time.Time{}
+			state.hasPersistedGood = false
+			if state.selector != nil {
+				state.selector.SetCurrentProvider("")
+			}
+		}
+	}
+	filtered := make([]codexbar.ParsedFrame, 0, len(providers))
+	for _, provider := range providers {
+		if _, permitted := allowed[normalizeProviderKey(provider.Frame.Provider)]; permitted {
+			filtered = append(filtered, provider)
+		}
+	}
+	if cfg.ProviderDisplay.Mode == "fixed" {
+		return filtered
+	}
+	return preferAvailableProviders(filtered)
+}
+
+func preferAvailableProviders(providers []codexbar.ParsedFrame) []codexbar.ParsedFrame {
+	available := make([]codexbar.ParsedFrame, 0, len(providers))
+	for _, provider := range providers {
+		if !provider.Stale && !provider.Frame.UsageUnavailable {
+			available = append(available, provider)
+		}
+	}
+	if len(available) > 0 {
+		return available
+	}
+	return providers
 }
 
 func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time) cycleResult {
@@ -1256,6 +1307,7 @@ func attachClockFields(frame protocol.Frame, now time.Time) protocol.Frame {
 func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeState, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 	state = ensureCycleState(state, deps)
+	invalidateLastGoodOutsideProviderDisplay(state, deps)
 
 	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
 	if err != nil {
@@ -1305,6 +1357,7 @@ func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeS
 func runCycleFromCollector(ctx context.Context, requestedPort string, state *runtimeState, collector *providerCollector, deps runtimeDeps) error {
 	deps = deps.withDefaults()
 	state = ensureCycleState(state, deps)
+	invalidateLastGoodOutsideProviderDisplay(state, deps)
 	invalidateLastGoodDisabledByInventory(state, collector, deps)
 
 	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
@@ -1313,6 +1366,7 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	}
 	now := deps.now()
 	allProviders := collector.providerFrames(now)
+	allProviders = applyProviderDisplaySelection(state, allProviders, deps)
 	if len(allProviders) == 0 {
 		allProviders = probeProvidersDirectly(ctx, collector.order, deps)
 	}
@@ -1357,6 +1411,37 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-disabled\n", provider)
 }
 
+func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeDeps) {
+	if state == nil || !state.hasLastGood {
+		return
+	}
+	cfg, ok := loadRuntimeConfig(deps)
+	if !ok || cfg.ProviderDisplay == nil {
+		return
+	}
+	provider := normalizeProviderKey(state.lastGood.Provider)
+	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
+		if normalizeProviderKey(providerID) == provider {
+			return
+		}
+	}
+
+	state.lastGood = protocol.Frame{}
+	state.lastGoodAt = time.Time{}
+	state.hasLastGood = false
+	state.lastPersistedGood = protocol.Frame{}
+	state.lastPersistedAt = time.Time{}
+	state.hasPersistedGood = false
+	if state.selector != nil {
+		state.selector.SetCurrentProvider("")
+	}
+	if err := clearPersistedLastGood(); err != nil {
+		deps.logf("runtime event=last-good-clear-failed provider=%s err=%v\n", provider, err)
+		return
+	}
+	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-display-selection\n", provider)
+}
+
 func probeProvidersDirectly(parent context.Context, order []string, deps runtimeDeps) []codexbar.ParsedFrame {
 	if deps.fetchProvider == nil {
 		return nil
@@ -1369,7 +1454,7 @@ func probeProvidersDirectly(parent context.Context, order []string, deps runtime
 	}
 	defer cancel()
 
-	providers := order
+	providers := directProviderProbeOrder(order, deps)
 	if len(providers) > directProviderProbeMax {
 		providers = providers[:directProviderProbeMax]
 	}
@@ -1397,6 +1482,30 @@ func probeProvidersDirectly(parent context.Context, order []string, deps runtime
 	}
 
 	return result
+}
+
+func directProviderProbeOrder(order []string, deps runtimeDeps) []string {
+	cfg, ok := loadRuntimeConfig(deps)
+	if !ok || cfg.ProviderDisplay == nil || len(cfg.ProviderDisplay.ProviderIDs) == 0 {
+		return order
+	}
+	if len(order) == 0 {
+		return cfg.ProviderDisplay.ProviderIDs
+	}
+	enabled := make(map[string]struct{}, len(order))
+	for _, providerID := range order {
+		if providerID = normalizeProviderKey(providerID); providerID != "" {
+			enabled[providerID] = struct{}{}
+		}
+	}
+	providers := make([]string, 0, len(cfg.ProviderDisplay.ProviderIDs))
+	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
+		providerID = normalizeProviderKey(providerID)
+		if _, ok := enabled[providerID]; ok {
+			providers = append(providers, providerID)
+		}
+	}
+	return providers
 }
 
 func updateLastGoodState(state *runtimeState, frame protocol.Frame, now time.Time, deps runtimeDeps) {

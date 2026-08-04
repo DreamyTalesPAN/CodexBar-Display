@@ -423,3 +423,90 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-app.tsx`, `control-center-types.ts`,
   `provider-setup-card.tsx`, `usage-screen.tsx`, `usage-screen.test.tsx`, and
   the matching customer-flow assertions in `test-customer-flows.mjs`.
+
+## 2026-08-03 — Provider selection in Setup and Settings
+
+- User approval: The user explicitly approved the exact visible
+  provider-selection result in the Codex task on 2026-08-03.
+- Approved customer-visible result: Usage is read-only and no longer contains
+  provider controls. Setup and Settings share the `AI providers` card with
+  provider search, `Automatic` and `Always show one`, Include or Always-show
+  selection, enable switches, `Check again`, focused recovery actions, and
+  setup completion only after every enabled provider is freshly ready and
+  included in the valid display selection.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`,
+  `provider-picker.tsx`, `settings-screen.tsx`, `setup-screen.tsx`,
+  `usage-screen.tsx`, and their unit and customer-flow assertions.
+
+## 2026-08-03 — Unsaved fixed selection blocks setup completion
+
+- User approval: The user's explicit approval of the provider-selection UI
+  includes setup completion only after the display selection is valid.
+- Approved customer-visible result: Choosing `Always show one` keeps `Finish
+  setup` disabled until the customer selects and saves the provider that VibeTV
+  should always show. Returning to `Automatic` restores the saved automatic
+  selection.
+- Approved files: `provider-picker.tsx`, `setup-screen.tsx`, and their unit and
+  customer-flow assertions.
+
+## 2026-08-03 — Cancelling fixed mode preserves Automatic
+
+- User approval: The user's explicit approval of the provider-selection UI
+  includes a separate Automatic pool that stays selected until the customer
+  changes it.
+- Approved customer-visible result: If the customer opens `Always show one`
+  but returns to `Automatic` without choosing a fixed provider, the complete
+  saved Automatic provider pool remains unchanged.
+- Approved files: `provider-picker.tsx` and the matching customer-flow
+  assertion.
+
+## 2026-08-03 — Provider display saves stay ordered
+
+- User approval: The user's explicit approval requires line-local Pending and
+  atomic provider display writes.
+- Approved customer-visible result: While one display choice is being saved,
+  its provider row alone shows Pending and the remaining display choices wait
+  until that save finishes. Provider enablement and readiness controls remain
+  separate.
+- Approved files: `provider-picker.tsx` and the matching unit and customer-flow
+  assertions.
+
+## 2026-08-03 — Empty Usage points to Settings
+
+- User approval: The user's explicit approval makes Usage read-only and moves
+  provider management to Settings.
+- Approved customer-visible result: When no provider usage is available, Usage
+  tells the customer to manage providers in Settings and refresh instead of
+  referring to controls below the empty state.
+- Approved files: `usage-screen.tsx` and its unit test.
+
+## 2026-08-03 — Provider outage status stays singular
+
+- User approval: The user's explicit approval of the shared provider-selection
+  UI includes one clear readiness or service status per provider.
+- Approved customer-visible result: A provider whose readiness state already
+  says `Service outage` shows that status once instead of rendering a duplicate
+  outage badge beside it.
+- Approved files: `provider-picker.tsx` and its unit test.
+
+## 2026-08-03 — Display choices wait for saved selection
+
+- User approval: The user's explicit approval requires the provider display
+  selection to be stored and changed atomically without losing prior choices.
+- Approved customer-visible result: Provider enablement and readiness remain
+  available while display selection loads, but display mode and Include or
+  Always-show choices unlock only after the saved selection is available.
+- Approved files: `provider-picker.tsx`, its unit test, and the matching
+  customer-flow assertion.
+
+## 2026-08-04 — Short common-provider list
+
+- User approval: The user explicitly requested a short provider list in Setup
+  and Settings with search, four common providers, and a Show More action.
+- Approved customer-visible result: Codex, Claude, Cursor, and GitHub Copilot
+  appear first. Other providers stay collapsed behind `Show all providers`,
+  while search still finds every provider and enabled, selected, or pending
+  providers remain visible. Setup explains why `Finish setup` may still be
+  disabled while provider checks are running.
+- Approved files: `provider-picker.tsx`, `setup-screen.tsx`, their unit and
+  customer-flow assertions, and this approval record.

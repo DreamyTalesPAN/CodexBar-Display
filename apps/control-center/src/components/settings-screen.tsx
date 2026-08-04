@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/field";
 import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
+import type { ProviderPickerProps } from "./provider-picker";
+import { ProviderPicker } from "./provider-picker";
 import { deviceIsReady, type DeviceInfo } from "./control-center-types";
 
 export type SettingsScreenProps = {
@@ -28,6 +30,7 @@ export type SettingsScreenProps = {
   onBrightnessChange: (value: number) => void;
   onResetSetup: () => void;
   onSaveBrightness: (value: number) => void;
+  providerPicker: ProviderPickerProps;
 };
 
 export function SettingsScreen({
@@ -37,6 +40,7 @@ export function SettingsScreen({
   onBrightnessChange,
   onResetSetup,
   onSaveBrightness,
+  providerPicker,
 }: SettingsScreenProps) {
   const brightnessSupport =
     device?.capabilities?.display?.brightness?.supported ?? true;
@@ -102,6 +106,8 @@ export function SettingsScreen({
           </FieldGroup>
         </CardContent>
       </Card>
+
+      <ProviderPicker {...providerPicker} />
 
       <Card className="border-0">
         <CardHeader>

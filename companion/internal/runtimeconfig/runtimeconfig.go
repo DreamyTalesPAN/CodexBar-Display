@@ -40,11 +40,18 @@ type permissionMigrationCache struct {
 var processPermissionMigrations permissionMigrationCache
 
 type Config struct {
-	Theme        string        `json:"theme,omitempty"`
-	DeviceTarget string        `json:"deviceTarget,omitempty"`
-	DeviceToken  string        `json:"deviceToken,omitempty"`
-	DeviceID     string        `json:"deviceId,omitempty"`
-	KnownDevices []KnownDevice `json:"knownDevices,omitempty"`
+	Theme                          string                 `json:"theme,omitempty"`
+	DeviceTarget                   string                 `json:"deviceTarget,omitempty"`
+	DeviceToken                    string                 `json:"deviceToken,omitempty"`
+	DeviceID                       string                 `json:"deviceId,omitempty"`
+	KnownDevices                   []KnownDevice          `json:"knownDevices,omitempty"`
+	ProviderDisplay                *ProviderDisplayConfig `json:"providerDisplay,omitempty"`
+	ProviderSelectionSetupComplete *bool                  `json:"providerSelectionSetupComplete,omitempty"`
+}
+
+type ProviderDisplayConfig struct {
+	Mode        string   `json:"mode"`
+	ProviderIDs []string `json:"providerIds"`
 }
 
 type KnownDevice struct {
@@ -315,11 +322,55 @@ func (cfg *Config) Normalize() {
 	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
 	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
 	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)
+	if cfg.ProviderDisplay != nil {
+		cfg.ProviderDisplay.Normalize()
+	}
 	cfg.normalizeKnownDevices()
+}
+
+func (cfg *ProviderDisplayConfig) Normalize() {
+	if cfg == nil {
+		return
+	}
+	cfg.Mode = strings.TrimSpace(strings.ToLower(cfg.Mode))
+	seen := make(map[string]struct{}, len(cfg.ProviderIDs))
+	providerIDs := make([]string, 0, len(cfg.ProviderIDs))
+	for _, raw := range cfg.ProviderIDs {
+		providerID := strings.TrimSpace(strings.ToLower(raw))
+		if providerID == "" {
+			continue
+		}
+		if _, ok := seen[providerID]; ok {
+			continue
+		}
+		seen[providerID] = struct{}{}
+		providerIDs = append(providerIDs, providerID)
+	}
+	cfg.ProviderIDs = providerIDs
+}
+
+// ProviderSelectionSetupIsComplete preserves completed legacy installations
+// while requiring the provider step for a new or explicitly restarted setup.
+func (cfg Config) ProviderSelectionSetupIsComplete() bool {
+	if cfg.ProviderSelectionSetupComplete != nil {
+		return *cfg.ProviderSelectionSetupComplete
+	}
+	return strings.TrimSpace(cfg.DeviceID) != ""
+}
+
+func (cfg *Config) SetProviderSelectionSetupComplete(complete bool) {
+	if cfg == nil {
+		return
+	}
+	cfg.ProviderSelectionSetupComplete = new(bool)
+	*cfg.ProviderSelectionSetupComplete = complete
 }
 
 func (cfg *Config) SetActiveDevice(device KnownDevice) {
 	device = normalizeKnownDevice(device)
+	if cfg.ProviderSelectionSetupComplete == nil && strings.TrimSpace(cfg.DeviceID) == "" {
+		cfg.SetProviderSelectionSetupComplete(false)
+	}
 	cfg.DeviceID = device.DeviceID
 	cfg.DeviceTarget = device.Target
 	cfg.DeviceToken = device.DeviceToken

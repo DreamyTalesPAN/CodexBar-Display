@@ -8,6 +8,7 @@ import {
   Loader2,
   Monitor,
   RefreshCw,
+  Settings2,
   Wifi,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,11 @@ import { deviceIsReady } from "./control-center-types";
 import { DeviceTargetForm } from "./device-target-form";
 import { ControlCenterStatusIcon } from "./control-center-status-icon";
 import { SupportReportActions } from "./support-report-actions";
+import {
+  ProviderPicker,
+  providerSetupCanFinish,
+  type ProviderPickerProps,
+} from "./provider-picker";
 import {
   DeviceCandidateList,
   WifiSetupInstructions,
@@ -62,9 +68,11 @@ type SetupScreenProps = {
   showIntro?: boolean;
   setupComplete: boolean;
   supportReportBusy?: boolean;
+  providerPicker?: ProviderPickerProps;
+  onCompleteProviderSetup?: () => void | Promise<void>;
 };
 
-type StepId = "wifi" | "mac-app" | "finish";
+type StepId = "wifi" | "mac-app" | "connection" | "providers";
 type StepState = "active" | "blocked" | "complete" | "pending";
 
 export function SetupScreen({
@@ -92,9 +100,12 @@ export function SetupScreen({
   showIntro = true,
   setupComplete,
   supportReportBusy = false,
+  providerPicker,
+  onCompleteProviderSetup,
 }: SetupScreenProps) {
   const [wifiConfirmedState, setWifiConfirmedState] = useState(false);
   const [dmgDownloadStarted, setDmgDownloadStarted] = useState(false);
+  const [providerDisplayDraft, setProviderDisplayDraft] = useState(false);
   const [macAppConfirmedState, setMacAppConfirmedState] = useState(false);
   const macAppMissing = isCompanionMissingError(lastError);
   const macAppReady = companionStatus === "online";
@@ -109,6 +120,7 @@ export function SetupScreen({
   const wifiConfirmed =
     wifiConfirmedState ||
     deviceSelectionInProgress ||
+    deviceConnectionComplete ||
     setupComplete ||
     previewStep === "mac-app" ||
     hostedMode;
@@ -126,6 +138,16 @@ export function SetupScreen({
       : "Update not ready";
   const showControlCenterLauncher =
     !hostedMode && showIntro && !previewStep && !lastError && setupComplete;
+  const providerCanFinish = providerPicker
+    ? providerSetupCanFinish(
+        providerPicker.items,
+        providerPicker.display,
+        providerPicker.pendingPreferenceIds,
+        providerPicker.pendingCheckIds,
+        providerPicker.displayPendingProviderId,
+        providerDisplayDraft,
+      )
+    : false;
   const migrationNotice = requiresMacAppMigration ? (
     <LegacyMacAppMigrationNotice
       checkFailed={macAppReleaseCheckFailed}
@@ -142,10 +164,13 @@ export function SetupScreen({
         : previewStep ||
           (!wifiConfirmed
             ? "wifi"
-            : "finish"),
+            : !deviceConnectionComplete
+              ? "connection"
+              : "providers"),
     [
       hostedMode,
       previewStep,
+      deviceConnectionComplete,
       wifiConfirmed,
     ],
   );
@@ -323,10 +348,10 @@ export function SetupScreen({
             <SetupStep
               icon={<Monitor size={22} aria-hidden />}
               index={2}
-              state={stepStates.finish}
+              state={stepStates.connection}
               title="Verify VibeTV connection"
             >
-              {activeStep === "finish" ? (
+              {activeStep === "connection" ? (
                 <FinishSetupContent
                   busyAction={busyAction}
                   deviceCandidates={deviceCandidates}
@@ -340,6 +365,51 @@ export function SetupScreen({
                   onRepairConnection={retryConnect}
                   setupComplete={setupComplete}
                 />
+              ) : null}
+            </SetupStep>
+          ) : null}
+
+          {!hostedMode && !forceMacAppStep && providerPicker ? (
+            <SetupStep
+              icon={<Settings2 size={22} aria-hidden />}
+              index={3}
+              state={stepStates.providers}
+              title="Choose AI providers"
+            >
+              {activeStep === "providers" ? (
+                <div className="grid gap-4">
+                  <ProviderPicker
+                    {...providerPicker}
+                    onDisplayDraftChange={setProviderDisplayDraft}
+                    setupMode
+                  />
+                  <Button
+                    className="min-h-12 w-full"
+                    disabled={
+                      busyAction === "provider-setup-complete" ||
+                      !providerCanFinish
+                    }
+                    onClick={() => void onCompleteProviderSetup?.()}
+                    size="lg"
+                    type="button"
+                  >
+                    {busyAction === "provider-setup-complete" ? (
+                      <Spinner data-icon="inline-start" />
+                    ) : (
+                      <Check data-icon="inline-start" aria-hidden />
+                    )}
+                    {busyAction === "provider-setup-complete"
+                      ? "Finishing setup"
+                      : "Finish setup"}
+                  </Button>
+                  {!providerCanFinish &&
+                  busyAction !== "provider-setup-complete" ? (
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      Provider checks can take up to 25 seconds. Finish setup
+                      unlocks when every enabled provider is Ready and included.
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
             </SetupStep>
           ) : null}
@@ -802,13 +872,22 @@ function buildStepStates({
           : wifiConfirmed
             ? "pending"
             : "blocked",
-    finish: forceMacAppStep
+    connection: forceMacAppStep
       ? "blocked"
-      : setupComplete || deviceConnectionComplete
+      : deviceConnectionComplete
         ? "complete"
-        : activeStep === "finish"
+        : activeStep === "connection"
           ? "active"
           : "blocked",
+    providers: forceMacAppStep
+      ? "blocked"
+      : setupComplete
+        ? "complete"
+        : activeStep === "providers"
+          ? "active"
+          : deviceConnectionComplete
+            ? "pending"
+            : "blocked",
   };
 }
 
