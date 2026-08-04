@@ -286,7 +286,7 @@ export function ThemeLibraryScreen({
     ? {
         title: "Choose an available theme",
         detail:
-          "The requested Shopify theme is not available in this app catalog. Select another listed theme before starting install.",
+          "The requested theme is not available in this app catalog. Select another listed theme before starting install.",
         buttonReason: "Choose an available theme first.",
         icon: <Library size={22} aria-hidden />,
       }
@@ -902,7 +902,7 @@ function MissingRequestedThemeNotice({
           Theme is not available
         </div>
         <div className="mt-1 break-words">
-          Choose another theme below, or open the theme shop.
+          Choose another theme below.
         </div>
       </div>
     </div>
@@ -1432,24 +1432,7 @@ function buildThemeInstallBlocker({
 }
 
 function themeMetadataBlocker(theme: ThemeProduct): ThemeInstallBlocker | null {
-  if (!theme.isFree) {
-    return {
-      reason: "Get this theme first.",
-      readinessTitle: "Checkout needed",
-      readinessDetail:
-        "Open the theme shop to get this theme before installing it.",
-      readinessIcon: <Lock size={22} aria-hidden />,
-    };
-  }
-  if (!theme.packUrl) {
-    return {
-      reason: "Theme is not available right now.",
-      readinessTitle: "Theme unavailable",
-      readinessDetail: "Choose another theme or try again later.",
-      readinessIcon: <Library size={22} aria-hidden />,
-    };
-  }
-  if (!isRemoteThemePackUrl(theme.packUrl)) {
+  if (!theme.isFree || !isRemoteThemePackUrl(theme.packUrl)) {
     return {
       reason: "Theme is not available right now.",
       readinessTitle: "Theme unavailable",

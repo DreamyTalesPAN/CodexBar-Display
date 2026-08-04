@@ -4141,7 +4141,7 @@ async function testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
   await assertNoSetupJargon(page);
   await assertNoDmgDownloadActions(page);
   assert(
-    (await page.getByText("Shopify theme link was not found").count()) === 0,
+    (await page.getByText("The requested theme is not available").count()) === 0,
     "locked Theme Library should not show missing-theme notices",
   );
   assert(

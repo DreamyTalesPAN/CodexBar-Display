@@ -48,7 +48,7 @@ display frames.
 | CodexBar | Provider integrations, provider usage fetching, local token scans, provider status. |
 | VibeTV Mac App | Local API, device discovery, pairing, provider-neutral usage transport, one bounded last-good state, theme install, firmware update, support diagnostics. |
 | Control Center | Customer setup, next action UI, Theme Library, Usage view, Settings, Updates, Support logs. |
-| Shopify | Hardware product pages and theme catalog source for Control Center. |
+| Shopify | Hardware storefront. Theme products are not connected to Mac App installs. |
 | GitHub releases | Mac App binaries, checksums, firmware binaries, installer script, theme-pack catalog artifacts. |
 
 ## Why CodexBar Exists In The Stack
@@ -107,7 +107,7 @@ daemon. API language belongs in developer and operator docs.
 
 ## Theme Flow
 
-1. Control Center reads the public theme catalog from Shopify.
+1. The Mac App serves the repository theme catalog bundled with its local Control Center.
 2. Each theme maps to a VibeTV theme-pack ID.
 3. Published themes use catalog artifacts; Theme Studio sends its generated ZIP
    directly to the loopback Mac App without a hosted API or temporary URL.
@@ -164,8 +164,8 @@ Mac is off.
 
 - Provider usage is read on the customer's Mac through CodexBar and the Mac App.
 - The Mac App sends display frames to VibeTV over local WiFi.
-- The hosted setup page, release metadata, and Shopify theme catalog data come
-  from the web.
+- The hosted setup page and release metadata come from the web. The Mac App
+  theme catalog ships with the app.
 - The full Control Center app is served from the local Mac App after setup.
 - In the normal product flow, provider usage is displayed in the browser and on
   VibeTV; it is not stored as a VibeTV cloud account dataset.

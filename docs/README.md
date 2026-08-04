@@ -33,7 +33,7 @@ Center on the customer's Mac.
 - [Themes](themes.md): public theme overview.
 - [Theme packs](theme-packs.md): installable theme-pack format and CLI.
 - [Theme development guide](theme-dev-guide.md): hardware-safe ThemeSpec and asset rules.
-- [Theme shop notes](vibetv-shopify-theme-shop.md): Shopify catalog and Control Center integration.
+- [Shopify theme boundary](vibetv-shopify-theme-shop.md): separation between Shopify products and Mac App theme packaging.
 
 ## Product Wording
 
