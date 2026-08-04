@@ -15,12 +15,17 @@ Center on the customer's Mac.
 
 - [Control Center readiness](control-center-customer-readiness.md): launch-readiness checks and support flow.
 - [Control Center UI principles](control-center-ui-principles.md): customer-facing UI rules.
+- [Control Center UI approvals](control-center-customer-ui-approval.md): append-only approval log for visible UI changes.
 
 ## Device And Release Docs
 
 - [Hardware contract](hardware-contract.md): firmware, WiFi, display, and endpoint contract.
 - [Firmware provisioning](firmware-provisioning.md): provisioning and OTA packaging.
+- [Firmware OTA contract](firmware-ota-contract.md): supported ESP8266 update path for Control Center, CLI, and firmware.
 - [Firmware guardrails](firmware-guardrails.md): firmware safety rules.
+- [Firmware migrations](firmware-migrations/1.0.36-to-1.0.37.md): per-version migration notes and their compatibility modes.
+- [macOS DMG distribution](macos-dmg-distribution.md): signed and notarized customer distribution path.
+- [Hosted VibeTV gates](vibetv-hosted-gates.md): owner-dispatched merge and release-candidate gates in GitHub Actions.
 - [Operator runbook](operator-runbook.md): support, recovery, and smoke-test procedures.
 - [Usage polling architecture](usage-polling-architecture.md): usage collection and latency behavior.
 - [Preferences registry](preferences.md): typed local settings descriptors and the provider adapter.
