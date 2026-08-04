@@ -400,6 +400,8 @@ main() {
     'guest test must verify the running candidate reports DMG installation mode'
   assert_contains "$GUEST_TEST" '--max-time 3 http://127.0.0.1:47832/v1/status' \
     'guest test must bound each installed-runtime status request'
+  assert_contains "$GUEST_TEST" 'if runtime_pid="$(python3 - "$status_output"' \
+    'guest test must keep polling until the candidate runtime status itself validates'
   assert_not_contains "$GUEST_TEST" 'validate-macos-control-center-runtime.sh' \
     'stateful guest checks must not invoke the clean-host runtime validator'
   assert_not_contains "$GUEST_TEST" '--once --api-addr' \

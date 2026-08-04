@@ -46,14 +46,11 @@ trap cleanup EXIT HUP INT TERM
 
 validate_installed_runtime() {
   local status_output="$1"
-  local runtime_pid listener_pids
+  local runtime_pid="" listener_pids
   rm -f "$status_output"
   for _ in $(seq 1 30); do
-    curl --fail --silent --max-time 3 http://127.0.0.1:47832/v1/status > "$status_output" && break
-    sleep 1
-  done
-  [[ -s "$status_output" ]] || die 'installed candidate runtime did not become healthy on port 47832'
-  runtime_pid="$(python3 - "$status_output" "$VERSION" "$INSTALL_APP" <<'PY'
+    if curl --fail --silent --max-time 3 http://127.0.0.1:47832/v1/status > "$status_output"; then
+      if runtime_pid="$(python3 - "$status_output" "$VERSION" "$INSTALL_APP" <<'PY'
 import json, sys
 status_path, expected_version, install_app = sys.argv[1:]
 status = json.load(open(status_path, encoding="utf-8"))
@@ -69,7 +66,14 @@ if (status.get("ok") is not True or companion.get("status") != "ready"
     raise SystemExit("installed candidate runtime status did not match the signed DMG")
 print(runtime["pid"])
 PY
-)"
+)"; then
+        break
+      fi
+    fi
+    runtime_pid=""
+    sleep 1
+  done
+  [[ -n "$runtime_pid" ]] || die 'installed candidate runtime did not become healthy on port 47832'
   listener_pids="$(lsof -nP -a -iTCP@127.0.0.1:47832 -sTCP:LISTEN -Fp 2>/dev/null | sed -nE 's/^p([0-9]+)$/\1/p' | sort -u)"
   [[ "$listener_pids" == "$runtime_pid" ]] || die 'installed candidate runtime is not the sole port-47832 listener'
 }
