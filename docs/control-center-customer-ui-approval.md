@@ -498,3 +498,15 @@ issue scope, or release permission never implies UI permission.
   Always-show choices unlock only after the saved selection is available.
 - Approved files: `provider-picker.tsx`, its unit test, and the matching
   customer-flow assertion.
+
+## 2026-08-04 — Short common-provider list
+
+- User approval: The user explicitly requested a short provider list in Setup
+  and Settings with search, four common providers, and a Show More action.
+- Approved customer-visible result: Codex, Claude, Cursor, and GitHub Copilot
+  appear first. Other providers stay collapsed behind `Show all providers`,
+  while search still finds every provider and enabled, selected, or pending
+  providers remain visible. Setup explains why `Finish setup` may still be
+  disabled while provider checks are running.
+- Approved files: `provider-picker.tsx`, `setup-screen.tsx`, their unit and
+  customer-flow assertions, and this approval record.

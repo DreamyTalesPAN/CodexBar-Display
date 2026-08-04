@@ -23,6 +23,9 @@ import type {
   ProviderDisplaySelection,
 } from "./control-center-types";
 
+const commonProviderIds = ["codex", "claude", "cursor", "copilot"];
+const collapsedProviderCount = 4;
+
 export type ProviderPickerProps = {
   display: ProviderDisplaySelection | null;
   displayError?: ApiError | null;
@@ -68,22 +71,46 @@ export function ProviderPicker({
   setupMode = false,
 }: ProviderPickerProps) {
   const [query, setQuery] = useState("");
+  const [showAll, setShowAll] = useState(false);
   const [draftMode, setDraftMode] = useState<"automatic" | "fixed" | null>(
     null,
   );
-  const providers = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    return (items || [])
-      .filter(isProviderItem)
-      .filter((item) => providerMatchesQuery(item, normalizedQuery))
-      .sort((a, b) => {
-        const priority = providerHealthPriority(a) - providerHealthPriority(b);
-        return priority || a.label.localeCompare(b.label);
-      });
-  }, [items, query]);
+  const allProviders = useMemo(
+    () =>
+      (items || [])
+        .filter(isProviderItem)
+        .sort((a, b) => {
+          const priority =
+            providerPopularityPriority(a) - providerPopularityPriority(b);
+          return priority || a.label.localeCompare(b.label);
+        }),
+    [items],
+  );
   const mode = draftMode || display?.mode || "automatic";
   const selected = new Set(display?.providerIds || []);
-  const enabledProviders = providers.filter((item) => item.value);
+  const normalizedQuery = query.trim().toLowerCase();
+  const matchingProviders = allProviders.filter((item) =>
+    providerMatchesQuery(item, normalizedQuery),
+  );
+  const collapsedIds = new Set(
+    allProviders
+      .slice(0, collapsedProviderCount)
+      .map((item) => item.providerId),
+  );
+  const providers =
+    normalizedQuery || showAll
+      ? matchingProviders
+      : matchingProviders.filter(
+          (item) =>
+            collapsedIds.has(item.providerId) ||
+            item.value ||
+            selected.has(item.providerId) ||
+            pendingCheckIds.has(item.providerId) ||
+            pendingPreferenceIds.has(item.id) ||
+            displayPendingProviderId === item.providerId,
+        );
+  const hiddenProviderCount = matchingProviders.length - providers.length;
+  const enabledProviders = allProviders.filter((item) => item.value);
   const displayControlsDisabled =
     display === null || Boolean(displayPendingProviderId);
   function chooseMode(nextMode: "automatic" | "fixed") {
@@ -360,6 +387,19 @@ export function ProviderPicker({
                 </div>
               );
             })}
+            {!normalizedQuery && (hiddenProviderCount > 0 || showAll) ? (
+              <Button
+                aria-expanded={showAll}
+                className="min-h-11 w-full"
+                onClick={() => setShowAll((current) => !current)}
+                type="button"
+                variant="outline"
+              >
+                {showAll
+                  ? "Show fewer providers"
+                  : `Show all providers (${hiddenProviderCount} more)`}
+              </Button>
+            ) : null}
           </fieldset>
         )}
       </CardContent>
@@ -431,11 +471,9 @@ function isProviderItem(item: PreferenceDescriptor): item is ProviderItem {
   );
 }
 
-function providerHealthPriority(item: ProviderItem): number {
-  if (item.value && item.health.state !== "healthy") {
-    return 0;
-  }
-  return item.value ? 1 : 2;
+function providerPopularityPriority(item: ProviderItem): number {
+  const index = commonProviderIds.indexOf(item.providerId);
+  return index === -1 ? commonProviderIds.length : index;
 }
 
 function healthLabel(state: string): string {

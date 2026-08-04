@@ -22,6 +22,18 @@ const claude = provider({
   providerId: "claude",
   description: "Usage from Claude.",
 });
+const cursor = provider({
+  id: "codexbar.providers.cursor.enabled",
+  label: "Cursor",
+  providerId: "cursor",
+  value: false,
+});
+const copilot = provider({
+  id: "codexbar.providers.copilot.enabled",
+  label: "GitHub Copilot",
+  providerId: "copilot",
+  value: false,
+});
 const automatic: ProviderDisplaySelection = {
   mode: "automatic",
   providerIds: ["codex", "claude"],
@@ -128,6 +140,74 @@ describe("ProviderPicker", () => {
     expect(providerMatchesQuery(codex, "codex")).toBe(true);
     expect(providerMatchesQuery(claude, "codex")).toBe(false);
     expect(providerMatchesQuery(claude, "usage from claude")).toBe(true);
+  });
+
+  it("shows the four common providers first and collapses the rest", () => {
+    const html = renderToStaticMarkup(
+      <ProviderPicker
+        display={automatic}
+        items={[
+          provider({
+            id: "codexbar.providers.gemini.enabled",
+            label: "Gemini",
+            providerId: "gemini",
+            value: false,
+          }),
+          cursor,
+          claude,
+          provider({
+            id: "codexbar.providers.opencode.enabled",
+            label: "OpenCode",
+            providerId: "opencode",
+            value: false,
+          }),
+          copilot,
+          codex,
+        ]}
+        onCheck={vi.fn()}
+        onDisplayChange={vi.fn()}
+        onPreferenceChange={vi.fn()}
+        onRecovery={vi.fn()}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+      />,
+    );
+
+    expect(html.indexOf(">Codex</h3>")).toBeLessThan(
+      html.indexOf(">Claude</h3>"),
+    );
+    expect(html.indexOf(">Claude</h3>")).toBeLessThan(
+      html.indexOf(">Cursor</h3>"),
+    );
+    expect(html.indexOf(">Cursor</h3>")).toBeLessThan(
+      html.indexOf(">GitHub Copilot</h3>"),
+    );
+    expect(html).not.toContain(">Gemini</h3>");
+    expect(html).not.toContain(">OpenCode</h3>");
+    expect(html).toContain("Show all providers (2 more)");
+  });
+
+  it("keeps enabled providers visible outside the common four", () => {
+    const enabledGemini = provider({
+      id: "codexbar.providers.gemini.enabled",
+      label: "Gemini",
+      providerId: "gemini",
+    });
+    const html = renderToStaticMarkup(
+      <ProviderPicker
+        display={{ ...automatic, providerIds: ["codex", "claude", "gemini"] }}
+        items={[codex, claude, cursor, copilot, enabledGemini]}
+        onCheck={vi.fn()}
+        onDisplayChange={vi.fn()}
+        onPreferenceChange={vi.fn()}
+        onRecovery={vi.fn()}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+      />,
+    );
+
+    expect(html).toContain(">Gemini</h3>");
+    expect(html).not.toContain("Show all providers");
   });
 
   it("blocks setup until every enabled provider is selected and freshly ready", () => {

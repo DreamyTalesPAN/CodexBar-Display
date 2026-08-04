@@ -138,6 +138,16 @@ export function SetupScreen({
       : "Update not ready";
   const showControlCenterLauncher =
     !hostedMode && showIntro && !previewStep && !lastError && setupComplete;
+  const providerCanFinish = providerPicker
+    ? providerSetupCanFinish(
+        providerPicker.items,
+        providerPicker.display,
+        providerPicker.pendingPreferenceIds,
+        providerPicker.pendingCheckIds,
+        providerPicker.displayPendingProviderId,
+        providerDisplayDraft,
+      )
+    : false;
   const migrationNotice = requiresMacAppMigration ? (
     <LegacyMacAppMigrationNotice
       checkFailed={macAppReleaseCheckFailed}
@@ -377,14 +387,7 @@ export function SetupScreen({
                     className="min-h-12 w-full"
                     disabled={
                       busyAction === "provider-setup-complete" ||
-                      !providerSetupCanFinish(
-                        providerPicker.items,
-                        providerPicker.display,
-                        providerPicker.pendingPreferenceIds,
-                        providerPicker.pendingCheckIds,
-                        providerPicker.displayPendingProviderId,
-                        providerDisplayDraft,
-                      )
+                      !providerCanFinish
                     }
                     onClick={() => void onCompleteProviderSetup?.()}
                     size="lg"
@@ -399,6 +402,13 @@ export function SetupScreen({
                       ? "Finishing setup"
                       : "Finish setup"}
                   </Button>
+                  {!providerCanFinish &&
+                  busyAction !== "provider-setup-complete" ? (
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      Provider checks can take up to 25 seconds. Finish setup
+                      unlocks when every enabled provider is Ready and included.
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
             </SetupStep>

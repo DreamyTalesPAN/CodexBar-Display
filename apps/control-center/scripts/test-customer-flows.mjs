@@ -4025,6 +4025,9 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
             message: "Provider is off.",
           },
         },
+        disabledProviderPreferenceFixture("cursor", "Cursor"),
+        disabledProviderPreferenceFixture("gemini", "Gemini"),
+        disabledProviderPreferenceFixture("opencode", "OpenCode"),
         {
           id: "codexbar.providers.claude.enabled",
           section: "providers",
@@ -4068,9 +4071,19 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   const itemLabels = (await panel.locator("h3").allTextContents()).filter(
     (label) => label !== "AI providers",
   );
-  assert(itemLabels[0] === "Claude", "providers needing attention should sort first");
+  assert(itemLabels[0] === "Codex", "common providers should use the expected order");
+  assert(
+    (await panel.getByText("Gemini", { exact: true }).count()) === 0 &&
+      (await panel.getByText("OpenCode", { exact: true }).count()) === 0,
+    "providers outside the common four should start collapsed",
+  );
+  await panel.getByRole("button", { name: "Show all providers (2 more)" }).click();
+  await panel.getByText("OpenCode", { exact: true }).waitFor();
+  await panel.getByRole("button", { name: "Show fewer providers" }).click();
 
   const search = panel.getByLabel("Search AI providers");
+  await search.fill("opencode");
+  await panel.getByText("OpenCode", { exact: true }).waitFor();
   await search.fill("codex");
   assert(
     (await panel.getByText("Codex", { exact: true }).count()) === 1 &&
@@ -4291,6 +4304,18 @@ function providerPreferenceFixture(providerId, label) {
       message: "Provider is working.",
     },
   };
+}
+
+function disabledProviderPreferenceFixture(providerId, label) {
+  const preference = providerPreferenceFixture(providerId, label);
+  preference.value = false;
+  preference.effectiveValue = false;
+  preference.health = {
+    state: "disabled",
+    service: "unknown",
+    message: "Provider is off.",
+  };
+  return preference;
 }
 
 function exactProviderSetup(providerId, status) {
