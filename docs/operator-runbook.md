@@ -357,9 +357,11 @@ cd companion
 - last successful `sent frame` timestamp + port
 - last runtime error (if any)
 
-`doctor` runtime checks additionally validate:
-- board/protocol/theme capability contract from device hello
-- LaunchAgent port affinity safety (fails when multiple serial ports are present and daemon is unpinned)
+`doctor` runtime checks are transport-aware:
+- active runtime service and configured transport
+- WiFi: configured target, local Companion health, and read-only device reachability; USB/serial affinity is not applicable
+- USB: board/protocol/theme capability contract, serial probe, and LaunchAgent port affinity safety (fails when multiple serial ports are present and daemon is unpinned)
+- no active runtime: clear setup-required result without treating unrelated serial inventory as fatal
 
 Runtime error logs use:
 - stable `code=<category/item>` (`transport/*`, `protocol/*`, `runtime/*`, `setup/*`)
