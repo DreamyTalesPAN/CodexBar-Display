@@ -4160,7 +4160,7 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
         providerId,
         providerId === "claude"
           ? "auth_required"
-          : codexProviderRetries === 1
+          : codexProviderRetries <= 2
             ? "no_usage_available"
             : "ready",
       );
@@ -4197,7 +4197,7 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
   await waitForCondition(
     () =>
       requests.filter((request) => request.path === "/v1/providers/retry")
-        .length >= 3,
+        .length >= 4,
     `setup did not start exact checks for every enabled provider: ${JSON.stringify(requests)}`,
     30_000,
   );
@@ -4206,8 +4206,8 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
     `setup must check enabled providers one at a time, saw ${maxConcurrentProviderRetries} concurrent checks`,
   );
   assert(
-    codexProviderRetries === 2,
-    `setup must automatically retry a cold no-usage result once, saw ${codexProviderRetries} Codex checks`,
+    codexProviderRetries === 3,
+    `setup must automatically retry a cold no-usage result twice, saw ${codexProviderRetries} Codex checks`,
   );
   try {
     await page.getByText("Sign-in needed").waitFor({ timeout: 10_000 });

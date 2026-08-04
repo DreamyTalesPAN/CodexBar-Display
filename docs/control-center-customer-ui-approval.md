@@ -538,3 +538,16 @@ issue scope, or release permission never implies UI permission.
   stale ID and saves the remaining current providers normally.
 - Approved files: `provider-picker.tsx`, the stale-inventory customer-flow
   assertion in `test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-04 — Cold provider checks retry before blocking setup
+
+- User approval: After reproducing the restart path where Codex showed `No
+  usage available` until the customer pressed `Check again`, the user
+  explicitly asked to fix it in the Codex task on 2026-08-04.
+- Approved customer-visible result: Startup retries transient cold provider
+  checks twice with a short delay while the provider remains pending. The
+  setup hint names any enabled provider that is outside the saved display pool,
+  so a disabled `Finish setup` button has a concrete next action.
+- Approved files: `control-center-app.tsx`, `provider-picker.tsx`,
+  `setup-screen.tsx`, their unit and customer-flow assertions, and this
+  approval record.

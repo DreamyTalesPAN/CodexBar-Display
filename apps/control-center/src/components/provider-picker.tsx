@@ -445,6 +445,20 @@ export function providerSetupCanFinish(
   );
 }
 
+export function providerSetupMissingEnabledProviders(
+  items: PreferenceDescriptor[] | null,
+  display: ProviderDisplaySelection | null,
+): string[] {
+  if (!display) {
+    return [];
+  }
+  const selected = new Set(display.providerIds);
+  return (items || [])
+    .filter(isProviderItem)
+    .filter((item) => item.value && !selected.has(item.providerId))
+    .map((item) => item.label);
+}
+
 function providerVerificationIsFresh(
   verifiedAt: string | undefined,
   now: number,

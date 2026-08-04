@@ -36,6 +36,7 @@ import { SupportReportActions } from "./support-report-actions";
 import {
   ProviderPicker,
   providerSetupCanFinish,
+  providerSetupMissingEnabledProviders,
   type ProviderPickerProps,
 } from "./provider-picker";
 import {
@@ -148,6 +149,18 @@ export function SetupScreen({
         providerDisplayDraft,
       )
     : false;
+  const missingDisplayProviders = providerPicker
+    ? providerSetupMissingEnabledProviders(
+        providerPicker.items,
+        providerPicker.display,
+      )
+    : [];
+  const missingDisplayProviderHint =
+    missingDisplayProviders.length > 0
+      ? providerPicker?.display?.mode === "fixed"
+        ? `Turn ${missingDisplayProviders.length === 1 ? "this provider" : "these providers"} off before finishing setup: ${missingDisplayProviders.join(", ")}.`
+        : `Include ${missingDisplayProviders.join(", ")} in Automatic mode, or turn ${missingDisplayProviders.length === 1 ? "it" : "them"} off.`
+      : null;
   const migrationNotice = requiresMacAppMigration ? (
     <LegacyMacAppMigrationNotice
       checkFailed={macAppReleaseCheckFailed}
@@ -405,8 +418,9 @@ export function SetupScreen({
                   {!providerCanFinish &&
                   busyAction !== "provider-setup-complete" ? (
                     <p className="text-sm leading-6 text-muted-foreground">
-                      Provider checks can take up to 25 seconds. Finish setup
-                      unlocks when every enabled provider is Ready and included.
+                      {missingDisplayProviderHint
+                        ? missingDisplayProviderHint
+                        : "Provider checks can take up to 25 seconds. Finish setup unlocks when every enabled provider is Ready and included."}
                     </p>
                   ) : null}
                 </div>

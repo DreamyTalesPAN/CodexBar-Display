@@ -79,6 +79,8 @@ const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
 const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
+const PROVIDER_COLD_RETRY_COUNT = 2;
+const PROVIDER_COLD_RETRY_DELAY_MS = 1_500;
 const LAUNCHD_RECOVERY_GRACE_MS = 12_000;
 const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 55_000;
 const NATIVE_RUNTIME_REPAIR_RESULT_EVENT = "vibetv:runtime-repair-result";
@@ -2524,18 +2526,29 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 providers?: Array<{ id: string; status: string }>;
               };
             }>(
-            `/v1/providers/retry?provider=${encodeURIComponent(providerId)}`,
-            { method: "POST" },
-          );
-          const result = await check();
-          const readiness = result.providerSetup?.providers?.find(
-            (provider) => provider.id === providerId,
-          );
-          if (
+              `/v1/providers/retry?provider=${encodeURIComponent(providerId)}`,
+              { method: "POST" },
+            );
+          let result = await check();
+          for (
+            let retry = 0;
             options?.retryColdNoUsage &&
-            readiness?.status === "no_usage_available"
+            retry < PROVIDER_COLD_RETRY_COUNT;
+            retry += 1
           ) {
-            await check();
+            const readiness = result.providerSetup?.providers?.find(
+              (provider) => provider.id === providerId,
+            );
+            if (readiness?.status !== "no_usage_available") {
+              break;
+            }
+            await new Promise((resolve) =>
+              window.setTimeout(
+                resolve,
+                PROVIDER_COLD_RETRY_DELAY_MS * (retry + 1),
+              ),
+            );
+            result = await check();
           }
           await refreshProviderPreferences({ quiet: true });
           setProviderPreferencesError(null);

@@ -8,6 +8,7 @@ import {
   ProviderPicker,
   providerMatchesQuery,
   providerSetupCanFinish,
+  providerSetupMissingEnabledProviders,
 } from "./provider-picker";
 
 const codex = provider({
@@ -245,6 +246,35 @@ describe("ProviderPicker", () => {
         new Set(),
       ),
     ).toBe(true);
+  });
+
+  it("does not block setup for a degraded external service when usage is ready", () => {
+    const degradedCodex = provider({
+      ...codex,
+      health: {
+        state: "healthy",
+        service: "degraded",
+        message: "Provider is working.",
+        verifiedAt: new Date().toISOString(),
+      },
+    });
+    expect(
+      providerSetupCanFinish(
+        [degradedCodex],
+        { ...automatic, providerIds: ["codex"] },
+        new Set(),
+        new Set(),
+      ),
+    ).toBe(true);
+  });
+
+  it("names enabled providers that are outside the display pool", () => {
+    expect(
+      providerSetupMissingEnabledProviders(
+        [codex, claude],
+        { ...automatic, providerIds: ["codex"] },
+      ),
+    ).toEqual(["Claude"]);
   });
 });
 
