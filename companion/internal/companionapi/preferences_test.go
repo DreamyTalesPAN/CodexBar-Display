@@ -128,6 +128,42 @@ func TestPreferencesFreshCollectorUsagePreservesHardHealthFailures(t *testing.T)
 	}
 }
 
+func TestPreferencesFreshUsagePreservesServiceOutage(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		usage func(string, string, time.Time) daemon.PersistedUsage
+	}{
+		{name: "collector", usage: freshProviderUsage},
+		{name: "tokens", usage: tokenRichQuotaUnavailableUsage},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			now := time.Date(2026, 8, 4, 10, 0, 0, 0, time.UTC)
+			server.now = func() time.Time { return now }
+			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				return []codexbar.ProviderSetting{{
+					ID: "codex", Label: "Codex", Enabled: true,
+					Health: codexbar.ProviderHealthHealthy, Service: codexbar.ProviderServiceOutage,
+				}}, nil
+			}
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+				return test.usage("codex", "Codex", now), true
+			}
+
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+			var response preferencesResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if len(response.Items) != 1 || response.Items[0].Health.State != "service_outage" ||
+				response.Items[0].Health.Message != "This provider is reporting a service outage." {
+				t.Fatalf("fresh %s usage overwrote current service outage: %#v", test.name, response.Items)
+			}
+		})
+	}
+}
+
 func TestPreferencesMarkFreshTokenProviderHealthyWithoutClaimingQuotaReady(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 29, 12, 30, 0, 0, time.UTC)
