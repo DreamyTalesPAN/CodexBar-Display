@@ -1681,6 +1681,8 @@ func clearUsageProviderTokenHistory(provider *usageProviderInfo) {
 	provider.TotalTokens = 0
 	provider.Cost = nil
 	provider.CostSettled = false
+	provider.TokenUsageReady = false
+	provider.TokenStatsCollectedAt = time.Time{}
 }
 
 func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {

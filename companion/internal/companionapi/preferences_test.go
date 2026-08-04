@@ -875,10 +875,11 @@ func TestExactUsageCacheNeverOutranksNewerCollectorTokenHistory(t *testing.T) {
 	partial := daemon.PersistedUsage{
 		CurrentProvider: "codex",
 		Providers: []daemon.ProviderUsageSnapshot{{
-			Provider:    "codex",
-			Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 10, TotalTokens: 120},
-			Source:      "collector",
-			CollectedAt: now.Add(-10 * time.Minute),
+			Provider:              "codex",
+			Frame:                 protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 10, TotalTokens: 120},
+			Source:                "collector",
+			CollectedAt:           now.Add(-10 * time.Minute),
+			TokenStatsCollectedAt: now.Add(-10 * time.Minute),
 			Meta: codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{
 				Last30DaysTokens: 120,
 				Daily:            []codexbar.ProviderCostDay{{Day: "2026-07-30", TotalTokens: 120}},
@@ -892,6 +893,21 @@ func TestExactUsageCacheNeverOutranksNewerCollectorTokenHistory(t *testing.T) {
 		Source:      "exact-probe",
 		CollectedAt: now.Add(-9 * time.Minute),
 	})
+
+	cleared := daemon.PersistedUsage{
+		CurrentProvider: "codex",
+		Providers: []daemon.ProviderUsageSnapshot{{
+			Provider:    "codex",
+			Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 10},
+			Source:      "collector",
+			CollectedAt: now.Add(-10 * time.Minute),
+		}},
+	}
+	clearedOverlay, ok := server.cachedExactUsageOverlay(now, cleared)
+	if !ok || clearedOverlay.TokenUsageReady || len(clearedOverlay.Providers) != 1 ||
+		clearedOverlay.Providers[0].TokenUsageReady || !clearedOverlay.Providers[0].TokenStatsCollectedAt.IsZero() {
+		t.Fatalf("exact cache restored cleared token readiness: ok=%t %#v", ok, clearedOverlay)
+	}
 
 	complete := daemon.PersistedUsage{
 		CurrentProvider: "codex",
