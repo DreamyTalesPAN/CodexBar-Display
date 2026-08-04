@@ -320,6 +320,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
   const providerReconcileDeadlineRef = useRef(0);
   const providerAutoCheckIdsRef = useRef(new Set<string>());
+  const providerCheckQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
   );
@@ -2504,32 +2505,58 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const checkProvider = useCallback(
-    async (item: PreferenceDescriptor) => {
+    (
+      item: PreferenceDescriptor,
+      options?: { retryColdNoUsage?: boolean },
+    ) => {
       const providerId = item.providerId?.trim().toLowerCase();
       if (!providerId) {
-        return;
+        return Promise.resolve();
       }
       setPendingProviderCheckIds((current) =>
         new Set(current).add(providerId),
       );
-      try {
-        await runCompanion(
-          `/v1/providers/retry?provider=${encodeURIComponent(providerId)}`,
-          { method: "POST" },
-        );
-        await refreshProviderPreferences({ quiet: true });
-        setProviderPreferencesError(null);
-      } catch (error) {
-        setProviderPreferencesError(
-          normalizeCaughtError(error, `${item.label} could not be checked.`),
-        );
-      } finally {
-        setPendingProviderCheckIds((current) => {
-          const next = new Set(current);
-          next.delete(providerId);
-          return next;
-        });
-      }
+      const runCheck = async () => {
+        try {
+          const check = () =>
+            runCompanion<{
+              providerSetup?: {
+                providers?: Array<{ id: string; status: string }>;
+              };
+            }>(
+            `/v1/providers/retry?provider=${encodeURIComponent(providerId)}`,
+            { method: "POST" },
+          );
+          const result = await check();
+          const readiness = result.providerSetup?.providers?.find(
+            (provider) => provider.id === providerId,
+          );
+          if (
+            options?.retryColdNoUsage &&
+            readiness?.status === "no_usage_available"
+          ) {
+            await check();
+          }
+          await refreshProviderPreferences({ quiet: true });
+          setProviderPreferencesError(null);
+        } catch (error) {
+          setProviderPreferencesError(
+            normalizeCaughtError(error, `${item.label} could not be checked.`),
+          );
+        } finally {
+          setPendingProviderCheckIds((current) => {
+            const next = new Set(current);
+            next.delete(providerId);
+            return next;
+          });
+        }
+      };
+      const queuedCheck = providerCheckQueueRef.current.then(
+        runCheck,
+        runCheck,
+      );
+      providerCheckQueueRef.current = queuedCheck;
+      return queuedCheck;
     },
     [refreshProviderPreferences, runCompanion],
   );
@@ -2624,7 +2651,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         continue;
       }
       providerAutoCheckIdsRef.current.add(providerId);
-      void checkProvider(item);
+      void checkProvider(item, { retryColdNoUsage: true });
     }
   }, [checkProvider, providerPreferences, providerSelectionSetup]);
 

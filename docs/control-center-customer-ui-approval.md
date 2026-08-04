@@ -510,3 +510,16 @@ issue scope, or release permission never implies UI permission.
   disabled while provider checks are running.
 - Approved files: `provider-picker.tsx`, `setup-screen.tsx`, their unit and
   customer-flow assertions, and this approval record.
+
+## 2026-08-04 — Provider startup checks stay truthful
+
+- User approval: After reproducing that startup showed `No usage available`
+  for Codex until `Check again` returned `Ready`, the user explicitly approved
+  fixing that behavior in the Codex task on 2026-08-04.
+- Approved customer-visible result: During Setup startup, enabled AI providers
+  remain in `Checking` while their fresh exact checks run one at a time. A
+  provider shows `Ready` or `No usage available` only after its own fresh check
+  completes; the customer does not need to press `Check again` to correct the
+  initial state.
+- Approved files: `control-center-app.tsx`, the provider onboarding assertion
+  in `test-customer-flows.mjs`, and this approval record.

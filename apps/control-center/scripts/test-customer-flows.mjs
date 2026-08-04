@@ -4128,6 +4128,9 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const requests = [];
+  let activeProviderRetries = 0;
+  let maxConcurrentProviderRetries = 0;
+  let codexProviderRetries = 0;
   await routeCompanionOnline(page, [], () => {}, {
     onRequest: (path, method, body) => requests.push({ path, method, body }),
     providerDisplay: {
@@ -4142,11 +4145,26 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
       providerSelectionRequired: true,
       providerSelectionComplete: false,
     },
-    onProviderRetry: (_setup, providerId) =>
-      exactProviderSetup(
+    onProviderRetry: async (_setup, providerId) => {
+      activeProviderRetries += 1;
+      maxConcurrentProviderRetries = Math.max(
+        maxConcurrentProviderRetries,
+        activeProviderRetries,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      activeProviderRetries -= 1;
+      if (providerId === "codex") {
+        codexProviderRetries += 1;
+      }
+      return exactProviderSetup(
         providerId,
-        providerId === "claude" ? "auth_required" : "ready",
-      ),
+        providerId === "claude"
+          ? "auth_required"
+          : codexProviderRetries === 1
+            ? "no_usage_available"
+            : "ready",
+      );
+    },
     preferencesResponse: {
       ok: true,
       items: [
@@ -4179,9 +4197,17 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
   await waitForCondition(
     () =>
       requests.filter((request) => request.path === "/v1/providers/retry")
-        .length >= 2,
+        .length >= 3,
     `setup did not start exact checks for every enabled provider: ${JSON.stringify(requests)}`,
     30_000,
+  );
+  assert(
+    maxConcurrentProviderRetries === 1,
+    `setup must check enabled providers one at a time, saw ${maxConcurrentProviderRetries} concurrent checks`,
+  );
+  assert(
+    codexProviderRetries === 2,
+    `setup must automatically retry a cold no-usage result once, saw ${codexProviderRetries} Codex checks`,
   );
   try {
     await page.getByText("Sign-in needed").waitFor({ timeout: 10_000 });
@@ -7103,7 +7129,7 @@ async function routeCompanionOnline(
         "provider",
       );
       currentProviderSetup =
-        onProviderRetry?.(currentProviderSetup, providerId) ||
+        (await onProviderRetry?.(currentProviderSetup, providerId)) ||
         currentProviderSetup;
       const readiness = currentProviderSetup?.providers?.find(
         (provider) => provider.id === providerId,
