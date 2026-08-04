@@ -4135,9 +4135,9 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
     onRequest: (path, method, body) => requests.push({ path, method, body }),
     providerDisplay: {
       mode: "automatic",
-      providerIds: ["codex", "claude"],
+      providerIds: ["codex", "claude", "removed-provider"],
       configured: true,
-      valid: true,
+      valid: false,
     },
     providerDisplayGetDelayMs: 1_500,
     providerDisplayPatchDelayMs: 1_500,
@@ -4269,6 +4269,18 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
     "display mode did not unlock after the display save",
   );
   await displaySave;
+  const latestDisplayWrite = requests
+    .filter(
+      (request) =>
+        request.path === "/v1/provider-display" && request.method === "PATCH",
+    )
+    .at(-1);
+  assert(
+    !JSON.parse(latestDisplayWrite?.body || "{}").providerIds?.includes(
+      "removed-provider",
+    ),
+    "an Automatic save must remove provider IDs that are no longer in the inventory",
+  );
   await page.getByRole("switch", { name: "Disable Claude" }).click();
   await page
     .getByRole("switch", { name: "Enable Claude" })

@@ -87,7 +87,14 @@ export function ProviderPicker({
     [items],
   );
   const mode = draftMode || display?.mode || "automatic";
-  const selected = new Set(display?.providerIds || []);
+  const availableProviderIds = new Set(
+    allProviders.map((item) => item.providerId),
+  );
+  const selected = new Set(
+    (display?.providerIds || []).filter((providerId) =>
+      availableProviderIds.has(providerId),
+    ),
+  );
   const normalizedQuery = query.trim().toLowerCase();
   const matchingProviders = allProviders.filter((item) =>
     providerMatchesQuery(item, normalizedQuery),

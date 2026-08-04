@@ -129,6 +129,33 @@ func TestProviderSetupCompletionRejectsExpiredExactCheck(t *testing.T) {
 	}
 }
 
+func TestProviderSetupCompletionRejectsCurrentHealthContradictingExactReady(t *testing.T) {
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        providerDisplayModeFixed,
+		ProviderIDs: []string{"codex"},
+	}})
+	server.now = func() time.Time { return now }
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{
+			ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthAuthRequired,
+		}}, nil
+	}
+	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	server.recordExactProviderSetup("codex", 0, exactSetupFixture(now, "codex", codexbar.ProviderReady))
+	server.providerPreferences.mu.Lock()
+	server.providerPreferences.cached[0].Health = codexbar.ProviderHealthAuthRequired
+	server.providerPreferences.mu.Unlock()
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
+	if recorder.Code != http.StatusConflict || !bytes.Contains(recorder.Body.Bytes(), []byte(`"provider_check_required"`)) {
+		t.Fatalf("contradicted readiness passed setup: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestProviderSetupCompletionRejectsEnabledProviderOutsideDisplayPool(t *testing.T) {
 	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
 	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{

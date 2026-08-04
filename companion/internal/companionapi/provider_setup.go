@@ -239,14 +239,15 @@ func (s *Server) providerReadinessFor(providerID string) (providerReadinessRecor
 	return record, ok
 }
 
-func (s *Server) providerHasFreshReadiness(providerID string, now time.Time) bool {
+func (s *Server) providerHasFreshReadiness(setting codexbar.ProviderSetting, now time.Time) bool {
+	providerID := setting.ID
 	s.providerPreferences.mu.Lock()
 	revision := s.providerPreferences.providerRev[providerID]
 	s.providerReadinessMu.Lock()
 	record, ok := s.providerReadiness[providerID]
 	s.providerReadinessMu.Unlock()
 	s.providerPreferences.mu.Unlock()
-	if !ok || record.Revision != revision || record.Status != codexbar.ProviderReady || record.VerifiedAt.IsZero() {
+	if !ok || record.Revision != revision || record.Status != codexbar.ProviderReady || record.VerifiedAt.IsZero() || !providerReadinessAppliesToSetting(record, setting, now) {
 		return false
 	}
 	age := now.Sub(record.VerifiedAt)

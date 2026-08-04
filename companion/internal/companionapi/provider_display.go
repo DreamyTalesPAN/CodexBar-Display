@@ -151,7 +151,7 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 			writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Add this provider to Automatic mode, select it in Always show, or turn it off.")
 			return
 		}
-		if !s.providerHasFreshReadiness(setting.ID, now) {
+		if !s.providerHasFreshReadiness(setting, now) {
 			writeError(w, http.StatusConflict, "provider_check_required", "Every enabled provider must be ready.", "Check each enabled provider and fix or turn off any provider that needs attention.")
 			return
 		}

@@ -521,5 +521,20 @@ issue scope, or release permission never implies UI permission.
   provider shows `Ready` or `No usage available` only after its own fresh check
   completes; the customer does not need to press `Check again` to correct the
   initial state.
-- Approved files: `control-center-app.tsx`, the provider onboarding assertion
-  in `test-customer-flows.mjs`, and this approval record.
+- The approved issue plan also requires display selection to validate against
+  the current provider inventory. When a removed provider remains in an older
+  Automatic selection, the next customer change drops that stale ID instead of
+  sending it back and trapping the picker in a rejected state.
+- Approved files: `control-center-app.tsx`, `provider-picker.tsx`, the provider
+  onboarding assertions in `test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-04 — Removed providers no longer trap Automatic
+
+- User approval: The user approved the Issue #245 implementation plan, which
+  explicitly requires the complete display selection to be validated against
+  the current CodexBar inventory.
+- Approved customer-visible result: If an older Automatic selection contains a
+  provider that no longer exists, the next customer selection removes that
+  stale ID and saves the remaining current providers normally.
+- Approved files: `provider-picker.tsx`, the stale-inventory customer-flow
+  assertion in `test-customer-flows.mjs`, and this approval record.
