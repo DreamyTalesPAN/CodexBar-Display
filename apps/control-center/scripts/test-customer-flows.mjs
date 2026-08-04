@@ -381,7 +381,7 @@ async function main() {
     });
     app = appContext.app;
     if (themeReleaseOnly) {
-      await testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
+      await testCurrentFirmwareAutomaticallyRefreshesOldActiveTheme(
         browser,
         appContext.appUrl,
       );
@@ -731,7 +731,7 @@ async function main() {
     await testReloadRestoresRunningFirmwareUpdate(browser, appContext.appUrl);
     await testReloadRestoresRunningThemeInstall(browser, appContext.appUrl);
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
-    await testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
+    await testCurrentFirmwareAutomaticallyRefreshesOldActiveTheme(
       browser,
       appContext.appUrl,
     );
@@ -3124,8 +3124,8 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
             themeId: "synthwave",
             packId: "synthwave",
             name: "Synthwave",
-            activePath: "/themes/u/synthwave.json",
-            themeRev: 1,
+            activePath: "/themes/u/synthwa-3-619665.json",
+            themeRev: 3,
           },
         },
       ],
@@ -5204,8 +5204,8 @@ async function testReloadRestoresRunningThemeInstall(browser, appUrl) {
           themeId: "synthwave",
           packId: "synthwave",
           name: "Fixture Synthwave Theme",
-          activePath: "/themes/u/synthwave.json",
-          themeRev: 1,
+          activePath: "/themes/u/synthwa-3-619665.json",
+          themeRev: 3,
         },
       },
     ],
@@ -5452,7 +5452,7 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   await page.close();
 }
 
-async function testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
+async function testCurrentFirmwareAutomaticallyRefreshesOldActiveTheme(
   browser,
   appUrl,
 ) {
@@ -5493,13 +5493,9 @@ async function testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await clickNavigation(page, "Updates");
-  const update = page.getByRole("button", { name: "Update", exact: true });
-  await update.waitFor({ timeout: 10_000 });
-  await update.click();
   await waitForCondition(
     () => installRequests.length + updateRequests.length > 0,
-    "Theme-only update did not start a theme or firmware request",
+    "The Mac app did not automatically start the stale theme update",
   );
   assert(
     updateRequests.length === 0,
@@ -5507,14 +5503,13 @@ async function testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
   );
   assert(
     installRequests.length === 1,
-    "Current firmware plus an old active ThemeSpec must install one theme",
+    "Current firmware plus an old active ThemeSpec must automatically install one theme",
   );
-  await page
-    .getByText("Update complete", { exact: true })
-    .waitFor({ timeout: 10_000 });
-  await page
-    .getByRole("button", { name: "Check for updates", exact: true })
-    .waitFor({ timeout: 10_000 });
+  await page.waitForTimeout(250);
+  assert(
+    installRequests.length === 1,
+    "The automatic theme update must not repeat during status refreshes",
+  );
 
   const install = JSON.parse(installRequests[0]);
   assert(
@@ -6140,6 +6135,7 @@ async function testOverviewWaitsForRealUsage(browser, appUrl) {
       display: {
         themeSpec: {
           active: true,
+          path: "/themes/u/synthwa-3-619665.json",
           renderOk: true,
         },
       },
@@ -6272,6 +6268,9 @@ async function testOverviewRendersThemeSpecAssetTypes(browser, appUrl) {
         display: {
           themeSpec: {
             active: true,
+            path: catalogFixture.themes.find(
+              (candidate) => candidate.id === theme.id,
+            )?.themeSpecPath,
             renderOk: true,
           },
         },
@@ -7098,8 +7097,8 @@ async function testThemeInstallShowsIntermediateProgress(browser, appUrl) {
             themeId: "synthwave",
             packId: "synthwave",
             name: "Synthwave",
-            activePath: "/themes/u/synthwave.json",
-            themeRev: 1,
+            activePath: "/themes/u/synthwa-3-619665.json",
+            themeRev: 3,
           },
         },
       ],

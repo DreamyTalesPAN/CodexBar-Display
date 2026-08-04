@@ -1375,6 +1375,7 @@ func fetchDeviceHelloHTTPWithToken(ctx context.Context, base, token string) (pro
 		return protocol.DeviceHello{}, err
 	}
 	req.Header.Set("User-Agent", "codexbar-display-update")
+	req.Close = true
 	if token = strings.TrimSpace(token); token != "" {
 		applyFirmwareUpdateToken(req, token)
 		query := req.URL.Query()
@@ -1663,9 +1664,11 @@ func firmwareRawWritePause(currentFirmware string) time.Duration {
 		// Unknown or legacy firmware keeps the proven conservative sender.
 		return otaRawWritePause
 	}
-	// The receiver fix is present in every 1.0.37 development build as well as
-	// the final release, so only the numeric firmware core matters here.
-	current.PreRelease = ""
+	// Development firmware keeps the proven conservative sender. Its exact OTA
+	// receiver behavior is not a released compatibility guarantee yet.
+	if current.PreRelease != "" {
+		return otaRawWritePause
+	}
 	receiverFix := versioning.SemVer{Major: 1, Minor: 0, Patch: 37}
 	if current.Compare(receiverFix) >= 0 {
 		return 0

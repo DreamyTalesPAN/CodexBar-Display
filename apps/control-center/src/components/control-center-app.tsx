@@ -134,7 +134,12 @@ type InstallResponse = {
 
 type InstallableTheme = Pick<
   ThemeProduct,
-  "packUrl" | "packSha256" | "packSizeBytes" | "themeId" | "title"
+  | "packUrl"
+  | "packSha256"
+  | "packSizeBytes"
+  | "themeId"
+  | "themeSpecPath"
+  | "title"
 > & {
   packBytes?: Uint8Array;
 };
@@ -359,6 +364,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const runtimeRepairAttempted = useRef(false);
   const runtimeRepairTimeout = useRef<number | null>(null);
   const themeInstallPollJobRef = useRef("");
+  const activeThemeUpgradeAttemptRef = useRef("");
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
     {
       id: "session-start",
@@ -1838,6 +1844,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (!theme) {
         return false;
       }
+      if (
+        theme.themeId === device?.activeTheme &&
+        theme.themeSpecPath &&
+        theme.themeSpecPath !== device.display?.themeSpec?.path
+      ) {
+        activeThemeUpgradeAttemptRef.current = [
+          device.deviceId,
+          device.display?.themeSpec?.path,
+          theme.themeSpecPath,
+        ].join("|");
+      }
       const requiresThemeSetupVerification =
         deviceNeedsThemeSetup(device) ||
         deviceMatchesThemeSetupIdentity(themeSetupIdentity, device);
@@ -2981,6 +2998,49 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       activeThemeUpgrade.needed &&
       !activeThemeUpgrade.unresolved,
   );
+  useEffect(() => {
+    const theme = activeThemeUpgrade.theme;
+    if (
+      hostedSetup ||
+      setupPreviewStep ||
+      requiresMacAppMigration ||
+      !themeInstallEnabled ||
+      companionStatus !== "online" ||
+      !deviceIsReady(device) ||
+      busyAction ||
+      firmwareUpdateInProgress ||
+      themeInstallStatus?.phase === "installing" ||
+      !theme ||
+      !activeThemeUpgrade.needsThemeSpec ||
+      activeThemeUpgrade.needsFirmwareCapability ||
+      activeThemeUpgrade.unresolved
+    ) {
+      return;
+    }
+
+    const attempt = [
+      device?.deviceId,
+      device?.display?.themeSpec?.path,
+      theme.themeSpecPath,
+    ].join("|");
+    if (activeThemeUpgradeAttemptRef.current === attempt) {
+      return;
+    }
+    activeThemeUpgradeAttemptRef.current = attempt;
+    void installTheme(theme);
+  }, [
+    activeThemeUpgrade,
+    busyAction,
+    companionStatus,
+    device,
+    firmwareUpdateInProgress,
+    hostedSetup,
+    installTheme,
+    requiresMacAppMigration,
+    setupPreviewStep,
+    themeInstallEnabled,
+    themeInstallStatus?.phase,
+  ]);
   const companionRelease =
     hostedCompanionRelease?.status === "check_failed" && companionInfo?.update
       ? {
