@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { DeviceInfo } from "@/components/control-center-types";
 import type { ThemeProduct } from "@/lib/themes";
-import { resolveActiveThemeUpgrade } from "./active-theme-upgrade";
+import {
+  resolveActiveLiveTheme,
+  resolveActiveThemeUpgrade,
+} from "./active-theme-upgrade";
 
 const slotTheme = {
   id: "synthwave",
@@ -13,6 +16,15 @@ const slotTheme = {
   themeRev: 2,
   themeSpecPath: "/themes/u/synthwa-2-5f8ac7.json",
   title: "Synthwave",
+} satisfies ThemeProduct;
+
+const screensaver = {
+  ...slotTheme,
+  id: "night-clock",
+  themeId: "night-clock",
+  themeSpecPath: "/themes/s/night-clock.json",
+  title: "Night Clock",
+  usage: "screensaver",
 } satisfies ThemeProduct;
 
 function device(
@@ -80,13 +92,25 @@ describe("resolveActiveThemeUpgrade", () => {
       },
     };
 
-    expect(resolveActiveThemeUpgrade([slotTheme], inStandby)).toEqual({
+    expect(resolveActiveLiveTheme([screensaver, slotTheme], inStandby)).toBe(
+      slotTheme,
+    );
+    expect(
+      resolveActiveThemeUpgrade([screensaver, slotTheme], inStandby),
+    ).toEqual({
       needed: true,
       needsFirmwareCapability: false,
       needsThemeSpec: true,
       theme: slotTheme,
       unresolved: false,
     });
+
+    expect(
+      resolveActiveLiveTheme([screensaver, slotTheme], {
+        ...inStandby,
+        standby: { active: true },
+      }),
+    ).toBeUndefined();
   });
 
   it("reinstalls a cataloged ThemeSpec missing from the device status", () => {

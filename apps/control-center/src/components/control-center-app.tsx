@@ -9,7 +9,10 @@ import {
   useSyncExternalStore,
 } from "react";
 import { availableMacAppDmgDownloadUrl } from "@/lib/companion-release";
-import { resolveActiveThemeUpgrade } from "@/lib/active-theme-upgrade";
+import {
+  resolveActiveLiveTheme,
+  resolveActiveThemeUpgrade,
+} from "@/lib/active-theme-upgrade";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import { buildThemePack } from "@/lib/theme-studio";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
@@ -780,14 +783,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setStandby(payload.settings?.standby ?? null);
       }
       if (payload.device) {
-        if (
-          !initialThemeId &&
-          payload.device.activeTheme &&
-          catalog.themes.some(
-            (theme) => theme.themeId === payload.device?.activeTheme,
-          )
-        ) {
-          setSelectedThemeId(payload.device.activeTheme);
+        const activeLiveTheme = resolveActiveLiveTheme(
+          catalog.themes,
+          payload.device,
+        );
+        if (!initialThemeId && activeLiveTheme) {
+          setSelectedThemeId(activeLiveTheme.themeId);
         }
       }
       addEvent({

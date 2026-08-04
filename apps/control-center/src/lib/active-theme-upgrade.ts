@@ -9,6 +9,25 @@ export type ActiveThemeUpgrade = {
   unresolved: boolean;
 };
 
+export function resolveActiveLiveTheme(
+  themes: ThemeProduct[],
+  device: DeviceInfo | null | undefined,
+): ThemeProduct | undefined {
+  if (device?.standby?.active === true) {
+    const livePath = device.standby.liveThemePath?.trim();
+    return themes.find(
+      (candidate) =>
+        candidate.usage !== "screensaver" &&
+        sameVersionedThemePath(candidate.themeSpecPath, livePath),
+    );
+  }
+  return themes.find(
+    (candidate) =>
+      candidate.usage !== "screensaver" &&
+      candidate.themeId === device?.activeTheme,
+  );
+}
+
 export function resolveActiveThemeUpgrade(
   themes: ThemeProduct[],
   device: DeviceInfo | null,
@@ -29,11 +48,7 @@ export function resolveActiveThemeUpgrade(
     device.capabilities?.theme?.supportsUsageSlotsV1 !== true;
   const needsUsageWindows =
     device.capabilities?.theme?.supportsUsageWindowsV1 !== true;
-  const theme = standbyActive
-    ? themes.find((candidate) =>
-        sameVersionedThemePath(candidate.themeSpecPath, standbyLivePath),
-      )
-    : themes.find((candidate) => candidate.themeId === device.activeTheme);
+  const theme = resolveActiveLiveTheme(themes, device);
   if (!theme) {
     return {
       needed: false,

@@ -840,3 +840,14 @@ issue scope, or release permission never implies UI permission.
   matches the Theme Studio design.
 - Approved files: `theme-studio.ts`, its focused unit test, and this approval
   record.
+
+## 2026-08-04 — Standby live-theme selection identity
+
+- User approval: The user explicitly requested that every Codex reviewer
+  finding on PR #296 be fixed until the PR is ready to merge.
+- Approved customer-visible result: While a screensaver is visible, the
+  existing `Themes` view keeps the saved live theme selected instead of
+  selecting that screensaver. Screensavers remain in the existing
+  `Screensavers` view. No copy, control, or hierarchy changes.
+- Approved files: `control-center-app.tsx`, `active-theme-upgrade.ts`, its
+  focused unit test, and this approval record.
