@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { chooseCompleteThemePackMetadata } from "./themes";
+import {
+  chooseCompleteThemePackMetadata,
+  mergeThemeProductWithCatalog,
+  requireCurrentThemeCatalog,
+  type ThemeProduct,
+} from "./themes";
 
 const shopifySHA = "a".repeat(64);
 const githubSHA = "b".repeat(64);
@@ -80,5 +85,104 @@ describe("chooseCompleteThemePackMetadata", () => {
       packSha256: shopifySHA,
       packSizeBytes: undefined,
     });
+  });
+});
+
+describe("mergeThemeProductWithCatalog", () => {
+  it("keeps Shopify presentation but uses generation-matched catalog install metadata", () => {
+    const product = {
+      id: "gid://shopify/Product/1",
+      isFree: true,
+      packSha256: shopifySHA,
+      packSizeBytes: 123,
+      packUrl: "https://shop.example/legacy.zip",
+      priceLabel: "Kostenlos",
+      requiresFirmware: "1.0.24",
+      source: "shopify",
+      themeId: "synthwave",
+      themeVersion: "1.0.0",
+      title: "Synthwave Shop",
+    } satisfies ThemeProduct;
+    const catalogTheme = {
+      id: "synthwave",
+      isFree: true,
+      packSha256: githubSHA,
+      packSizeBytes: 456,
+      packUrl: "https://github.example/synthwave-v1.1.0.zip",
+      priceLabel: "Kostenlos",
+      requiredCapabilities: ["usage-slots-v1"],
+      requiresFirmware: "1.0.40",
+      source: "github-catalog",
+      themeId: "synthwave",
+      themeRev: 2,
+      themeSpecPath: "/themes/u/synthwa-2-5f8ac7.json",
+      themeVersion: "1.1.0",
+      title: "Synthwave",
+    } satisfies ThemeProduct;
+
+    expect(mergeThemeProductWithCatalog(product, catalogTheme)).toEqual({
+      ...product,
+      packSha256: githubSHA,
+      packSizeBytes: 456,
+      packUrl: "https://github.example/synthwave-v1.1.0.zip",
+      requiredCapabilities: ["usage-slots-v1"],
+      requiresFirmware: "1.0.40",
+      themeRev: 2,
+      themeSpecPath: "/themes/u/synthwa-2-5f8ac7.json",
+      themeVersion: "1.1.0",
+    });
+  });
+
+  it("keeps Shopify technical metadata atomically when catalog metadata is incomplete", () => {
+    const product = {
+      id: "gid://shopify/Product/1",
+      isFree: true,
+      packSha256: shopifySHA,
+      packSizeBytes: 123,
+      packUrl: "https://shop.example/legacy.zip",
+      priceLabel: "Kostenlos",
+      requiresFirmware: "1.0.24",
+      source: "shopify",
+      themeId: "synthwave",
+      themeVersion: "1.0.0",
+      title: "Synthwave Shop",
+    } satisfies ThemeProduct;
+    const incompleteCatalogTheme = {
+      id: "synthwave",
+      isFree: true,
+      packUrl: "https://github.example/synthwave-v1.1.0.zip",
+      priceLabel: "Kostenlos",
+      requiredCapabilities: ["usage-slots-v1"],
+      requiresFirmware: "1.0.40",
+      source: "github-catalog",
+      themeId: "synthwave",
+      themeVersion: "1.1.0",
+      title: "Synthwave",
+    } satisfies ThemeProduct;
+
+    expect(
+      mergeThemeProductWithCatalog(product, incompleteCatalogTheme),
+    ).toEqual({
+      ...product,
+      compatibleBoards: undefined,
+      manifestUrl: undefined,
+      requiredCapabilities: undefined,
+      themeRev: undefined,
+      themeSpecPath: undefined,
+    });
+  });
+});
+
+describe("requireCurrentThemeCatalog", () => {
+  it("accepts only the current app catalog generation", () => {
+    expect(() =>
+      requireCurrentThemeCatalog({ generation: 2, schemaVersion: 1 }),
+    ).not.toThrow();
+    expect(() =>
+      requireCurrentThemeCatalog({ generation: undefined, schemaVersion: 1 }),
+    ).toThrow("unsupported theme catalog generation");
+    expect(() =>
+      requireCurrentThemeCatalog({ generation: 1, schemaVersion: 1 }),
+    ).toThrow("unsupported theme catalog generation");
   });
 });

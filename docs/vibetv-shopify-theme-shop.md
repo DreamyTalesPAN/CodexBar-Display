@@ -44,7 +44,12 @@ Recommended:
 
 The `vibetv.theme_id` value must match the ID used by the Control Center and the GitHub theme-pack catalog, for example `synthwave`, `clippy`, or `claude-creature`.
 
-Shopify is the catalog and preview surface. The installable ZIPs stay in GitHub release/repo artifacts for now. If a Shopify product does not define a valid `vibetv.pack_url`, the Control Center fills the missing or invalid pack URL from the GitHub catalog by matching `vibetv.theme_id`.
+Shopify is the product, price, and preview surface. The installable ZIPs stay
+in GitHub release/repo artifacts. For a matching `vibetv.theme_id`, the
+Control Center uses the generation-matched GitHub catalog as the technical
+source for version, ZIP URL, checksum, size, firmware, and capability
+requirements. Shopify pack metadata is only used when that theme ID does not
+have complete technical metadata in the current GitHub catalog.
 
 ## Product Button
 
@@ -104,19 +109,22 @@ node scripts/build-theme-packs.mjs
 Committed generated files include:
 
 ```text
-dist/theme-packs/vibetv-theme-packs.json
-dist/theme-packs/vibetv-theme-synthwave.zip
-dist/theme-packs/vibetv-theme-clippy.zip
-dist/theme-packs/vibetv-theme-claude-creature.zip
-dist/theme-packs/vibetv-theme-cozy-meadow.zip
-dist/theme-packs/vibetv-theme-mini-classic.zip
+dist/theme-packs/vibetv-theme-packs-v2.json
+dist/theme-packs/vibetv-theme-synthwave-v1.1.0.zip
+dist/theme-packs/vibetv-theme-clippy-v1.1.0.zip
+dist/theme-packs/vibetv-theme-claude-creature-v1.1.0.zip
+dist/theme-packs/vibetv-theme-cozy-meadow-v0.2.0.zip
+dist/theme-packs/vibetv-theme-mini-classic-v1.1.0.zip
 ```
 
 The fallback catalog URL is:
 
 ```text
-https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json
+https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs-v2.json
 ```
+
+The previous `vibetv-theme-packs.json` catalog and unversioned ZIPs remain
+frozen for already shipped app and Companion generations.
 
 ## Hardware Test Guardrail
 

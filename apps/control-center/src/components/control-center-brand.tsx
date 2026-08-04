@@ -2,11 +2,13 @@ import { cn } from "@/lib/utils";
 
 type Props = {
   className?: string;
+  showTagline?: boolean;
   variant?: "hero" | "sidebar" | "compact";
 };
 
 export function ControlCenterBrand({
   className,
+  showTagline = true,
   variant = "sidebar",
 }: Props) {
   if (variant === "compact") {
@@ -38,9 +40,11 @@ export function ControlCenterBrand({
       <div className="text-2xl font-black uppercase leading-none">
         VIBE<span className="text-sidebar-primary">TV</span>
       </div>
-      <div className="mt-1 text-[0.7rem] font-semibold uppercase tracking-wide text-sidebar-foreground/65">
-        Control Center
-      </div>
+      {showTagline ? (
+        <div className="mt-1 text-[0.7rem] font-semibold uppercase tracking-wide text-sidebar-foreground/65">
+          Control Center
+        </div>
+      ) : null}
     </div>
   );
 }

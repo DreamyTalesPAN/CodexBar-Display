@@ -29,7 +29,7 @@ import {
   type ActiveTab,
   type DeviceInfo,
   type ShellNavItem,
-  deviceIsReady,
+  deviceIsCustomerConnected,
 } from "./control-center-types";
 import { ControlCenterBrand } from "./control-center-brand";
 import { ShellConnectionStatus } from "./shell-connection-status";
@@ -86,7 +86,7 @@ export function ControlCenterShell({
   headerAction,
   updateAvailable = false,
 }: ControlCenterShellProps) {
-  const connected = deviceIsReady(device);
+  const connected = deviceIsCustomerConnected(device);
   const targetLabel = connected ? "VibeTV connected" : "VibeTV not connected";
   const mobileTargetLabel = connected ? "Connected" : "Not connected";
   const disabledTabSet = new Set(disabledTabs);

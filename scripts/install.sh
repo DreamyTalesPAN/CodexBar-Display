@@ -28,14 +28,14 @@ CODEXBAR_WARMUP_TIMEOUT_SECS="${CODEXBAR_DISPLAY_WARMUP_TIMEOUT_SECS:-15}"
 REPO="${CODEXBAR_DISPLAY_REPO:-$DEFAULT_REPO}"
 RELEASE_VERSION="${CODEXBAR_DISPLAY_VERSION:-}"
 FLASH_FIRMWARE="${CODEXBAR_DISPLAY_FLASH_FIRMWARE:-0}"
-DEFAULT_THEME_PACK_ID_EXPLICIT=0
+THEME_PACK_ID_EXPLICIT=0
+THEME_PACK_ID=""
 if [[ -n "${CODEXBAR_DISPLAY_DEFAULT_THEME_PACK_ID+x}" ]]; then
-  DEFAULT_THEME_PACK_ID_EXPLICIT=1
+  THEME_PACK_ID_EXPLICIT=1
+  THEME_PACK_ID="${CODEXBAR_DISPLAY_DEFAULT_THEME_PACK_ID}"
 fi
-DEFAULT_THEME_PACK_ID="${CODEXBAR_DISPLAY_DEFAULT_THEME_PACK_ID:-mini-classic}"
 SKIP_THEME_PACK="${CODEXBAR_DISPLAY_SKIP_THEME_PACK:-0}"
 START_CONTROL_CENTER="${CODEXBAR_DISPLAY_START_CONTROL_CENTER:-1}"
-EXISTING_INSTALL_PRESENT=0
 SETUP_ARGS=()
 FIRMWARE_UPGRADE_ARGS=()
 TMPDIR_INSTALL=""
@@ -57,7 +57,8 @@ What it does:
   - makes `codexbar-display` available in Terminal
   - optionally runs `codexbar-display upgrade` to flash release firmware when --flash-firmware is passed
   - warms up CodexBar on fresh installs so providers are usable
-  - installs the default VibeTV theme pack on fresh installs so firmware 1.0.31+ can render frames
+  - leaves VibeTV in theme-missing state until a theme is installed in the Mac App
+  - optionally installs an explicit theme when --theme-pack is passed
   - enables the local Control Center Mac App service inside the background Mac App
   - uses WiFi for normal customer setup; USB-C only powers VibeTV
   - runs a health check after setup
@@ -197,31 +198,31 @@ setup_transport_from_args() {
   printf '%s\n' "wifi"
 }
 
-install_default_theme_pack() {
+install_requested_theme_pack() {
   local setup_transport="$1"
 
   if [[ "$SKIP_THEME_PACK" == "1" ]]; then
-    log "vibetv: default theme pack skipped"
+    log "vibetv: theme pack installation skipped"
     return 0
   fi
-  if [[ "$EXISTING_INSTALL_PRESENT" == "1" && "$DEFAULT_THEME_PACK_ID_EXPLICIT" != "1" ]]; then
-    log "vibetv: default theme pack skipped for existing install"
+  if [[ "$THEME_PACK_ID_EXPLICIT" != "1" ]]; then
+    log "vibetv: no theme selected; install one in the Mac App"
     return 0
   fi
-  if [[ -z "$DEFAULT_THEME_PACK_ID" ]]; then
-    log "vibetv: default theme pack skipped (empty theme id)"
+  if [[ -z "$THEME_PACK_ID" ]]; then
+    log "vibetv: theme pack installation skipped (empty theme id)"
     return 0
   fi
   case "$setup_transport" in
     [Uu][Ss][Bb])
-      log "vibetv: default theme pack skipped for USB setup"
+      log "vibetv: theme pack installation skipped for USB setup"
       return 0
       ;;
   esac
 
-  log "vibetv: installing default theme pack (${DEFAULT_THEME_PACK_ID})..."
-  if ! "$INSTALL_PATH" theme-pack install --theme "$DEFAULT_THEME_PACK_ID" --skip-firmware-update; then
-    die "default theme pack install failed. Rerun with the IP shown on VibeTV: bash -s -- --target http://<device-ip>"
+  log "vibetv: installing requested theme pack (${THEME_PACK_ID})..."
+  if ! "$INSTALL_PATH" theme-pack install --theme "$THEME_PACK_ID" --skip-firmware-update; then
+    die "theme pack install failed. Rerun with the IP shown on VibeTV: bash -s -- --target http://<device-ip>"
   fi
 }
 
@@ -531,13 +532,13 @@ main() {
         ;;
       --theme-pack)
         [[ $# -ge 2 ]] || die "--theme-pack requires a value"
-        DEFAULT_THEME_PACK_ID="$2"
-        DEFAULT_THEME_PACK_ID_EXPLICIT=1
+        THEME_PACK_ID="$2"
+        THEME_PACK_ID_EXPLICIT=1
         shift 2
         ;;
       --theme-pack=*)
-        DEFAULT_THEME_PACK_ID="${1#*=}"
-        DEFAULT_THEME_PACK_ID_EXPLICIT=1
+        THEME_PACK_ID="${1#*=}"
+        THEME_PACK_ID_EXPLICIT=1
         shift
         ;;
       --)
@@ -582,10 +583,6 @@ main() {
   log "vibetv: verifying checksum..."
   verify_checksum
 
-  if [[ -x "$INSTALL_PATH" ]]; then
-    EXISTING_INSTALL_PRESENT=1
-  fi
-
   log "vibetv: starting setup..."
   log "vibetv: normal setup uses WiFi; USB-C only powers VibeTV and no USB serial port is expected."
   log "vibetv: setup discovers the device IP automatically and verifies its device ID."
@@ -609,7 +606,7 @@ main() {
     "$INSTALL_PATH" upgrade "${FIRMWARE_UPGRADE_ARGS[@]}"
   fi
 
-  install_default_theme_pack "$(setup_transport_from_args "${SETUP_ARGS[@]}")"
+  install_requested_theme_pack "$(setup_transport_from_args "${SETUP_ARGS[@]}")"
 
   log "vibetv: installed binary at ${INSTALL_PATH}"
   log "vibetv: running health check..."

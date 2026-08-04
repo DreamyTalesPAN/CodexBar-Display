@@ -1,6 +1,12 @@
 {
   "version": 1,
   "defaultProtocolName": "classic",
+  "capabilities": {
+    "usage-slots-v1": {
+      "maxSlots": 2,
+      "firmwareMin": "1.0.40"
+    }
+  },
   "themes": [
     {
       "id": 0,

@@ -18,6 +18,17 @@ Before building anything, check once per chat whether the remote branch is ahead
 - Before finishing, review the complete diff against `main` and remove everything that is not strictly required for the desired outcome.
 - Simplicity does not mean omitting required functionality, tests, error handling, or safety mechanisms.
 
+## CodexBar Integration Boundary
+
+- CodexBar owns provider integrations, provider-specific behavior, usage-window meaning, authentication, quota mapping, and provider errors.
+- Before changing usage behavior, inspect the exact bundled CodexBar version and its real output. Do not infer the contract from an older release, upstream `main`, or VibeTV wrappers.
+- The Mac App is a thin, provider-neutral adapter. It may supervise CodexBar, transport generic data, enforce the device wire budget, and keep one bounded last-good state. It must not reimplement provider semantics.
+- Keep one authoritative usage path. Do not add provider-specific probes, alternate CLI fallbacks, duplicate caches, duplicate freshness rules, or browser-owned usage state.
+- Preserve the distinction between collection freshness, provider activity, token-history freshness, manual-refresh state, and the last sent device frame.
+- Missing, unavailable, stale, or synthetic data must stay visibly unavailable. Never invent windows, percentages, reset times, or readiness.
+- Diagnose usage bugs end to end before editing: bundled CodexBar output -> collector -> persisted snapshot -> Companion API -> Control Center -> VibeTV frame.
+- Fix usage bugs in this order: remove the conflicting local rule, remove a duplicate data path, reuse the existing central owner, and only then add code.
+
 ## Merge, Release, and Production Guardrails
 
 - Never run `gh pr merge`, merge into `main` with `git merge`, run `git push origin main`, create a tag with `git tag`, run `git push origin refs/tags/*`, run `gh release ...`, or trigger a release workflow unless the user gives explicit approval in the current conversation for that exact action and target.

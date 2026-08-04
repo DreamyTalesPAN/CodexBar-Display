@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"io/fs"
 	"net"
@@ -19,6 +20,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,55 +48,56 @@ import (
 var embeddedControlCenterStatic embed.FS
 
 const (
-	DefaultAddr               = "127.0.0.1:47832"
-	appOrigin                 = "https://app.vibetv.shop"
-	defaultDevOrigin          = "http://localhost:3000"
-	previewOriginHostPrefix   = "codex-vibetv-control-center-"
-	previewOriginHostSuffix   = "-paul-anduschus-projects.vercel.app"
-	nativeControlCenterUA     = "VibeTVControlCenter/"
-	deviceConnectionReady     = "ready"
-	deviceConnectionRetrying  = "reconnecting"
-	deviceConnectionSetup     = "setup_required"
-	deviceTimeout             = 15 * time.Second
-	deviceSearchWindow        = 30 * time.Second
-	discoveryProbeTime        = 1500 * time.Millisecond
-	deviceProbeCacheTime      = 750 * time.Millisecond
-	repairDiscoveryAttempts   = 3
-	repairDiscoveryRetryGap   = 1200 * time.Millisecond
-	subnetProbeLimit          = 64
-	maxSubnetDiscoveryPrefix  = 23
-	maxSubnetDiscoveryTargets = 510
-	themeInstallDisableEnv    = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
-	macAppUpdateDisableEnv    = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
-	displayStreamLegacyLabel  = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
-	displayStreamLabelEnv     = runtimepaths.DisplayStreamLaunchAgentLabelEnv
-	displayStreamOutLogEnv    = runtimepaths.DisplayStreamOutLogEnv
-	displayStreamReadyAge     = 2 * time.Minute
-	displayVerificationAge    = 2 * time.Minute
-	displayStreamWaitTime     = 30 * time.Second
-	displayRenderWaitTime     = 12 * time.Second
-	defaultPairAttempts       = 3
-	defaultPairAttemptTimeout = 5 * time.Second
-	defaultPairRetryGap       = 500 * time.Millisecond
-	firmwareUpdateJobTime     = 10 * time.Minute
-	macAppUpdateJobTime       = 8 * time.Minute
-	usageFallbackFetchTime    = 15 * time.Second
-	usageDirectCacheTime      = 5 * time.Minute
-	themeRenderPackDir        = "theme-render-packs"
-	macAppInstallerURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
-	macAppReleaseAPIEnvVar    = "CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL"
-	macAppReleaseAPIURL       = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
-	macAppReleaseCheckGap     = 6 * time.Hour
-	macAppReleaseTimeout      = 5 * time.Second
-	macAppVersionEnv          = "VIBETV_MAC_APP_VERSION"
-	macAppBuildEnv            = "VIBETV_MAC_APP_BUILD"
-	firmwareManifestEnvVar    = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
-	firmwareReleaseTimeout    = 5 * time.Second
-	themePackUploadReadTime   = 30 * time.Second
+	DefaultAddr                  = "127.0.0.1:47832"
+	appOrigin                    = "https://app.vibetv.shop"
+	defaultDevOrigin             = "http://localhost:3000"
+	previewOriginHostPrefix      = "codex-vibetv-control-center-"
+	previewOriginHostSuffix      = "-paul-anduschus-projects.vercel.app"
+	nativeControlCenterUA        = "VibeTVControlCenter/"
+	deviceConnectionReady        = "ready"
+	deviceConnectionRetrying     = "reconnecting"
+	deviceConnectionSetup        = "setup_required"
+	deviceTimeout                = 15 * time.Second
+	deviceSearchWindow           = 30 * time.Second
+	discoveryProbeTime           = 1500 * time.Millisecond
+	deviceProbeCacheTime         = 750 * time.Millisecond
+	repairDiscoveryAttempts      = 3
+	repairDiscoveryRetryGap      = 1200 * time.Millisecond
+	subnetProbeLimit             = 64
+	maxSubnetDiscoveryPrefix     = 23
+	maxSubnetDiscoveryTargets    = 510
+	themeInstallDisableEnv       = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
+	macAppUpdateDisableEnv       = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
+	displayStreamLegacyLabel     = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
+	displayStreamLabelEnv        = runtimepaths.DisplayStreamLaunchAgentLabelEnv
+	displayStreamOutLogEnv       = runtimepaths.DisplayStreamOutLogEnv
+	displayStreamReadyAge        = 2 * time.Minute
+	displayVerificationAge       = 2 * time.Minute
+	displayStreamWaitTime        = 30 * time.Second
+	displayRenderWaitTime        = 12 * time.Second
+	defaultPairAttempts          = 3
+	defaultPairAttemptTimeout    = 5 * time.Second
+	defaultPairRetryGap          = 500 * time.Millisecond
+	firmwareUpdateJobTime        = 10 * time.Minute
+	macAppUpdateJobTime          = 8 * time.Minute
+	themeRenderPackDir           = "theme-render-packs"
+	themeRenderPackRevisionLimit = 12
+	macAppInstallerURL           = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
+	macAppReleaseAPIEnvVar       = "CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL"
+	macAppReleaseAPIURL          = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
+	macAppReleaseCheckGap        = 6 * time.Hour
+	macAppReleaseTimeout         = 5 * time.Second
+	macAppVersionEnv             = "VIBETV_MAC_APP_VERSION"
+	macAppBuildEnv               = "VIBETV_MAC_APP_BUILD"
+	firmwareManifestEnvVar       = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
+	firmwareReleaseTimeout       = 5 * time.Second
+	themePackUploadReadTime      = 30 * time.Second
 )
 
 var deviceHealthProbeTime = 2 * time.Second
 var themeRenderPackIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{2,63}$`)
+var themeRenderPackSpecFilePattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+\.json$`)
+var themeRenderPackHashPattern = regexp.MustCompile(`^[a-f0-9]{8}$`)
 var firmwareHealthVerifyTime = 30 * time.Second
 var diagnosticsDiscoveryTime = 5 * time.Second
 
@@ -133,6 +136,8 @@ var displayStreamLogKeys = []string{
 	"sessionUnavailable",
 	"weeklyUnavailable",
 	"reset",
+	"usageWindows",
+	"usageSlots",
 	"activity",
 	"time",
 	"date",
@@ -179,6 +184,8 @@ type Server struct {
 	repairMu               sync.Mutex
 	repairFlightsMu        sync.Mutex
 	repairFlights          map[string]*deviceRepairFlight
+	deviceSelectionMu      sync.Mutex
+	ambiguousDeviceSeen    bool
 	probeMu                sync.Mutex
 	helloProbeCache        map[string]helloProbeSnapshot
 	helloProbeFlights      map[string]*helloProbeFlight
@@ -198,10 +205,8 @@ type Server struct {
 	allowMacAppSelfUpdate  bool
 	installationMode       string
 	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
-	fetchUsage             func(context.Context) ([]codexbar.ParsedFrame, error)
 	usageCacheMu           sync.RWMutex
 	usageCache             *usageResponse
-	usageCacheAt           time.Time
 	probeProviderSetup     func(context.Context, string) codexbar.ProviderSetup
 	probeExactProvider     func(context.Context, string, string) codexbar.ProviderSetup
 	openCodexBar           func(context.Context) error
@@ -211,6 +216,8 @@ type Server struct {
 	providerSetupRefresh   atomic.Bool
 	providerSetupCache     codexbar.ProviderSetup
 	providerSetupCachedAt  time.Time
+	usageRefreshMu         sync.Mutex
+	usageRefresh           usageRefreshTracker
 	providerPreferences    providerPreferencesState
 	preferenceAdapters     []preferenceAdapter
 	updateFirmware         func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
@@ -670,13 +677,28 @@ type displaySettings struct {
 }
 
 type usageResponse struct {
-	OK              bool                `json:"ok"`
-	GeneratedAt     string              `json:"generatedAt"`
-	Source          string              `json:"source"`
-	UsageMode       string              `json:"usageMode"`
-	TokenUsageReady bool                `json:"tokenUsageReady"`
-	CurrentProvider string              `json:"currentProvider,omitempty"`
-	Providers       []usageProviderInfo `json:"providers"`
+	OK              bool             `json:"ok"`
+	GeneratedAt     string           `json:"generatedAt"`
+	Source          string           `json:"source"`
+	UsageMode       string           `json:"usageMode"`
+	Refresh         usageRefreshInfo `json:"refresh"`
+	TokenUsageReady bool             `json:"tokenUsageReady"`
+	// TokenUsageUpdating reports that a shown token history is still growing,
+	// so the totals derived from it are not final yet.
+	TokenUsageUpdating bool                `json:"tokenUsageUpdating"`
+	CurrentProvider    string              `json:"currentProvider,omitempty"`
+	Providers          []usageProviderInfo `json:"providers"`
+}
+
+type usageRefreshTracker struct {
+	RequestedAt time.Time
+}
+
+type usageRefreshInfo struct {
+	State        string `json:"state"`
+	RequestedAt  string `json:"requestedAt,omitempty"`
+	BlockedUntil string `json:"blockedUntil,omitempty"`
+	Message      string `json:"message,omitempty"`
 }
 
 type displayFrameResponse struct {
@@ -692,30 +714,35 @@ type persistedDisplayFrame struct {
 }
 
 type usageProviderInfo struct {
-	ID                 string                   `json:"id"`
-	Label              string                   `json:"label"`
-	Source             string                   `json:"source,omitempty"`
-	Session            int                      `json:"session"`
-	Weekly             int                      `json:"weekly"`
-	ResetSec           int64                    `json:"resetSecs,omitempty"`
-	UsageMode          string                   `json:"usageMode"`
-	SessionTokens      int64                    `json:"sessionTokens,omitempty"`
-	WeekTokens         int64                    `json:"weekTokens,omitempty"`
-	TotalTokens        int64                    `json:"totalTokens,omitempty"`
-	Activity           string                   `json:"activity,omitempty"`
-	Stale              bool                     `json:"stale"`
-	UsageUnavailable   bool                     `json:"usageUnavailable,omitempty"`
-	SessionUnavailable bool                     `json:"sessionUnavailable,omitempty"`
-	WeeklyUnavailable  bool                     `json:"weeklyUnavailable,omitempty"`
-	CollectedAt        string                   `json:"collectedAt,omitempty"`
-	ActivityObservedAt string                   `json:"activityObservedAt,omitempty"`
-	Windows            []usageWindowInfo        `json:"windows,omitempty"`
-	Status             *usageStatusInfo         `json:"status,omitempty"`
-	Credits            *usageCreditsInfo        `json:"credits,omitempty"`
-	ResetCredits       *usageResetCreditsInfo   `json:"resetCredits,omitempty"`
-	Cost               *usageCostInfo           `json:"cost,omitempty"`
-	Pace               []usagePaceInfo          `json:"pace,omitempty"`
-	UsageOverTime      []usageOverTimePointInfo `json:"usageOverTime,omitempty"`
+	ID                    string                   `json:"id"`
+	Label                 string                   `json:"label"`
+	Source                string                   `json:"source,omitempty"`
+	Session               int                      `json:"session"`
+	Weekly                int                      `json:"weekly"`
+	ResetSec              int64                    `json:"resetSecs,omitempty"`
+	UsageMode             string                   `json:"usageMode"`
+	SessionTokens         int64                    `json:"sessionTokens,omitempty"`
+	WeekTokens            int64                    `json:"weekTokens,omitempty"`
+	TotalTokens           int64                    `json:"totalTokens,omitempty"`
+	Activity              string                   `json:"activity,omitempty"`
+	Stale                 bool                     `json:"stale"`
+	UsageUnavailable      bool                     `json:"usageUnavailable,omitempty"`
+	SessionUnavailable    bool                     `json:"sessionUnavailable,omitempty"`
+	WeeklyUnavailable     bool                     `json:"weeklyUnavailable,omitempty"`
+	CollectedAt           string                   `json:"collectedAt,omitempty"`
+	ActivityObservedAt    string                   `json:"activityObservedAt,omitempty"`
+	RateLimited           bool                     `json:"rateLimited,omitempty"`
+	BlockedUntil          string                   `json:"blockedUntil,omitempty"`
+	Windows               []usageWindowInfo        `json:"windows,omitempty"`
+	Status                *usageStatusInfo         `json:"status,omitempty"`
+	Credits               *usageCreditsInfo        `json:"credits,omitempty"`
+	ResetCredits          *usageResetCreditsInfo   `json:"resetCredits,omitempty"`
+	Cost                  *usageCostInfo           `json:"cost,omitempty"`
+	CostSettled           bool                     `json:"costSettled,omitempty"`
+	TokenUsageReady       bool                     `json:"-"`
+	TokenStatsCollectedAt time.Time                `json:"-"`
+	Pace                  []usagePaceInfo          `json:"pace,omitempty"`
+	UsageOverTime         []usageOverTimePointInfo `json:"usageOverTime,omitempty"`
 }
 
 type usageWindowInfo struct {
@@ -872,7 +899,6 @@ func New(opts Options) (*Server, error) {
 		allowMacAppSelfUpdate: false,
 		installationMode:      macAppInstallationMode(),
 		loadUsage:             daemon.LoadPersistedUsage,
-		fetchUsage:            codexbar.FetchAllProviders,
 		probeProviderSetup:    codexbar.ProbeProviderSetup,
 		probeExactProvider:    codexbar.ProbeProviderSetupForProvider,
 		exactProviderProbes:   make(map[string]*exactProviderProbeFlight),
@@ -1018,19 +1044,101 @@ func (s *Server) handleThemeRenderPack(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet, http.MethodHead) {
 		return
 	}
-	themeID := themeRenderPackID(r.URL.Path)
-	if themeID != "" {
-		if data, err := os.ReadFile(s.themeRenderPackPath(themeID)); err == nil {
-			w.Header().Set("Cache-Control", "no-store")
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			if r.Method == http.MethodGet {
-				_, _ = w.Write(data)
-			}
+	themeID, specFile, exactPath := themeRenderPackRequest(r.URL.Path)
+	specHash, selectorOK := themeRenderPackRequestHash(r, exactPath)
+	if themeID == "" || !selectorOK {
+		http.NotFound(w, r)
+		return
+	}
+	if exactPath {
+		if data, ok := s.loadThemeRenderPackBySpecFile(themeID, specFile, specHash); ok {
+			serveThemeRenderPack(w, r, data)
 			return
 		}
+		// The Mac App bundles known historic revisions at this exact path. A
+		// custom cache miss may therefore safely fall through to those assets;
+		// never substitute the latest revision by id.
+		s.handleControlCenterAsset(w, r)
+		return
+	}
+	if data, err := os.ReadFile(s.themeRenderPackPath(themeID)); err == nil {
+		serveThemeRenderPack(w, r, data)
+		return
 	}
 	s.handleControlCenterAsset(w, r)
+}
+
+func serveThemeRenderPack(w http.ResponseWriter, r *http.Request, data []byte) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if r.Method == http.MethodGet {
+		_, _ = w.Write(data)
+	}
+}
+
+func themeRenderPackRequest(requestPath string) (themeID, specFile string, exactPath bool) {
+	const prefix = "/theme-packs/render/"
+	if !strings.HasPrefix(requestPath, prefix) {
+		return "", "", false
+	}
+	remaining := strings.TrimPrefix(requestPath, prefix)
+	parts := strings.Split(remaining, "/")
+	if len(parts) == 1 {
+		return themeRenderPackID(requestPath), "", false
+	}
+	if len(parts) != 2 || !themeRenderPackIDPattern.MatchString(parts[0]) || !themeRenderPackSpecFilePattern.MatchString(parts[1]) {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+func themeRenderPackRequestHash(r *http.Request, exactPath bool) (string, bool) {
+	query := r.URL.Query()
+	for key := range query {
+		if key != "specHash" {
+			return "", false
+		}
+	}
+	specHash := strings.ToLower(strings.TrimSpace(query.Get("specHash")))
+	if (!exactPath && specHash != "") ||
+		(specHash != "" && !themeRenderPackHashPattern.MatchString(specHash)) {
+		return "", false
+	}
+	return specHash, true
+}
+
+func (s *Server) loadThemeRenderPackBySpecFile(themeID, specFile, specHash string) ([]byte, bool) {
+	revisionPath := filepath.Join(s.themeRenderPackRevisionDir(themeID), specFile)
+	if data, err := os.ReadFile(revisionPath); err == nil && themeRenderPackMatches(data, specFile, specHash) {
+		return data, true
+	}
+	// Older Companions stored only <themeId>.json. It remains a safe fallback
+	// when its embedded path and optional fingerprint match the exact request.
+	if data, err := os.ReadFile(s.themeRenderPackPath(themeID)); err == nil && themeRenderPackMatches(data, specFile, specHash) {
+		return data, true
+	}
+	return nil, false
+}
+
+func themeRenderPackMatches(data []byte, specFile, specHash string) bool {
+	var pack themeRenderPack
+	if err := json.Unmarshal(data, &pack); err != nil || !pack.OK {
+		return false
+	}
+	if path.Base(strings.TrimSpace(pack.SpecPath)) != specFile {
+		return false
+	}
+	if specHash != "" {
+		actual := strings.ToLower(strings.TrimSpace(pack.SpecHash))
+		if actual == "" {
+			actual = themeRenderPackSpecHash(pack.Spec)
+		}
+		if actual != specHash {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) serveControlCenterFile(w http.ResponseWriter, r *http.Request, assetPath string) bool {
@@ -1279,115 +1387,243 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now().UTC()
+	now := s.currentTime()
 	showUsed := codexbar.UsageBarsShowUsed()
+	manualRefresh := usageRefreshRequested(r)
+	if manualRefresh {
+		s.requestUsageRefresh(now)
+	}
 	inventoryCh := make(chan []codexbar.ProviderSetting, 1)
 	go func() {
 		inventoryCh <- s.providerInventoryForUsage(r.Context())
 	}()
 	var inventory []codexbar.ProviderSetting
 	inventoryLoaded := false
-	writeUsage := func(resp usageResponse) {
+	loadInventory := func() {
 		if !inventoryLoaded {
 			inventory = <-inventoryCh
 			inventoryLoaded = true
 		}
+	}
+	writeUsage := func(resp usageResponse, usage daemon.PersistedUsage) {
+		loadInventory()
 		resp = filterDisabledProviders(resp, inventory)
+		resp.Refresh = s.usageRefreshInfo(now, usageForVisibleProviders(usage, resp.Providers))
 		writeJSON(w, http.StatusOK, usageResponseForDisplayMode(resp, showUsed))
 	}
-	forceRefresh := r.URL.Query().Get("refresh") == "1"
-	var persisted usageResponse
-	havePersisted := false
 	if s.loadUsage != nil {
 		if usage, ok := s.loadUsage(now); ok && len(usage.Providers) > 0 {
-			persisted = usageResponseFromPersisted(now, usage)
-			havePersisted = len(persisted.Providers) > 0
-		}
-	}
-	if !forceRefresh {
-		if cached, ok := s.cachedDirectUsage(now); ok {
-			if havePersisted {
-				cached = mergePersistedUsageDetails(cached, persisted)
+			loadInventory()
+			usage = usageForEnabledProviders(usage, inventory)
+			resp := usageResponseFromPersisted(now, usage)
+			if cached, ok := s.cachedExactUsageOverlay(now, usage); ok {
+				resp = cached
 			}
-			writeUsage(cached)
-			return
-		}
-		if havePersisted && usageResponseHasFreshProvider(persisted) {
-			writeUsage(persisted)
-			return
+			if len(resp.Providers) > 0 {
+				writeUsage(resp, usage)
+				return
+			}
 		}
 	}
 
-	if s.fetchUsage == nil {
-		if havePersisted {
-			writeUsage(persisted)
-			return
-		}
-		writeUsage(emptyUsageResponse(now, "codexbar-display"))
+	if cached, ok := s.cachedExactUsageOverlay(now, daemon.PersistedUsage{}); ok {
+		writeUsage(cached, daemon.PersistedUsage{})
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), usageFallbackFetchTime)
-	defer cancel()
-	providers, err := s.fetchUsage(ctx)
-	if err != nil {
-		if havePersisted {
-			writeUsage(persisted)
-			return
+	if manualRefresh {
+		resp := emptyUsageResponse(now, "codexbar-display")
+		writeUsage(resp, daemon.PersistedUsage{})
+		return
+	}
+
+	writeError(
+		w,
+		http.StatusServiceUnavailable,
+		"usage_unavailable",
+		"Usage is still loading.",
+		"Keep this page open. VibeTV will retry automatically.",
+	)
+}
+
+func usageForVisibleProviders(usage daemon.PersistedUsage, visible []usageProviderInfo) daemon.PersistedUsage {
+	visibleByID := make(map[string]struct{}, len(visible))
+	for _, provider := range visible {
+		visibleByID[provider.ID] = struct{}{}
+	}
+	providers := make([]daemon.ProviderUsageSnapshot, 0, len(visibleByID))
+	for _, provider := range usage.Providers {
+		id := usageProviderID(provider.Provider, provider.Frame.Provider)
+		if _, ok := visibleByID[id]; ok {
+			providers = append(providers, provider)
 		}
-		writeError(
-			w,
-			http.StatusServiceUnavailable,
-			"usage_unavailable",
-			"Usage is still loading.",
-			"Keep this page open. VibeTV will retry automatically.",
-		)
-		return
 	}
-	resp := usageResponseFromParsed(now, providers)
-	if havePersisted {
-		resp = mergePersistedUsageDetails(resp, persisted)
-	}
-	if len(resp.Providers) == 0 && havePersisted {
-		writeUsage(persisted)
-		return
-	}
-	s.cacheDirectUsage(resp, now)
-	writeUsage(resp)
+	usage.Providers = providers
+	return usage
 }
 
-func (s *Server) cachedDirectUsage(now time.Time) (usageResponse, bool) {
-	s.usageCacheMu.RLock()
-	defer s.usageCacheMu.RUnlock()
-	if s.usageCache == nil || now.Sub(s.usageCacheAt) > usageDirectCacheTime {
-		return usageResponse{}, false
+func usageForEnabledProviders(usage daemon.PersistedUsage, settings []codexbar.ProviderSetting) daemon.PersistedUsage {
+	if len(settings) == 0 {
+		return usage
 	}
-	return *s.usageCache, true
+	enabled := enabledProviderIDs(settings)
+	providers := make([]daemon.ProviderUsageSnapshot, 0, len(usage.Providers))
+	for _, provider := range usage.Providers {
+		id := usageProviderID(provider.Provider, provider.Frame.Provider)
+		if _, ok := enabled[id]; ok {
+			providers = append(providers, provider)
+		}
+	}
+	usage.Providers = providers
+	return usage
 }
 
-func (s *Server) cacheDirectUsage(resp usageResponse, now time.Time) {
-	s.usageCacheMu.Lock()
-	defer s.usageCacheMu.Unlock()
-	s.usageCache = &resp
-	s.usageCacheAt = now
+func usageRefreshRequested(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	raw := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("refresh")))
+	return raw == "1" || raw == "true" || raw == "yes"
 }
+
+func (s *Server) requestUsageRefresh(now time.Time) {
+	if s == nil {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	s.usageRefreshMu.Lock()
+	s.usageRefresh.RequestedAt = now.UTC()
+	s.usageRefreshMu.Unlock()
+	if s.wakeDisplayStream != nil {
+		s.wakeDisplayStream()
+	}
+}
+
+func (s *Server) usageRefreshInfo(now time.Time, usage daemon.PersistedUsage) usageRefreshInfo {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	now = now.UTC()
+	rateLimited, blockedUntil := usageRateLimitState(usage, now)
+
+	s.usageRefreshMu.Lock()
+	requestedAt := s.usageRefresh.RequestedAt
+	if rateLimited {
+		s.usageRefresh.RequestedAt = time.Time{}
+		s.usageRefreshMu.Unlock()
+		return usageRefreshInfo{
+			State:        "rate_limited",
+			RequestedAt:  formatOptionalTime(requestedAt),
+			BlockedUntil: formatOptionalTime(blockedUntil),
+			Message:      usageRefreshMessage("rate_limited", blockedUntil),
+		}
+	}
+	if !requestedAt.IsZero() {
+		if usageHasFreshSnapshotAfter(usage, requestedAt) {
+			s.usageRefresh.RequestedAt = time.Time{}
+			s.usageRefreshMu.Unlock()
+			return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh", time.Time{})}
+		}
+		s.usageRefreshMu.Unlock()
+		return usageRefreshInfo{
+			State:       "refreshing",
+			RequestedAt: formatOptionalTime(requestedAt),
+			Message:     usageRefreshMessage("refreshing", time.Time{}),
+		}
+	}
+	s.usageRefreshMu.Unlock()
+
+	if usageHasFreshSnapshot(usage) {
+		return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh", time.Time{})}
+	}
+	return usageRefreshInfo{State: "unavailable", Message: usageRefreshMessage("unavailable", time.Time{})}
+}
+
+const exactUsageCacheMaxAge = 15 * time.Minute
 
 func (s *Server) invalidateUsageCache() {
 	s.usageCacheMu.Lock()
 	defer s.usageCacheMu.Unlock()
 	s.usageCache = nil
-	s.usageCacheAt = time.Time{}
+}
+
+func (s *Server) cachedExactUsageOverlay(now time.Time, usage daemon.PersistedUsage) (usageResponse, bool) {
+	s.usageCacheMu.RLock()
+	if s.usageCache == nil {
+		s.usageCacheMu.RUnlock()
+		return usageResponse{}, false
+	}
+	cached := cloneCachedUsageResponse(*s.usageCache)
+	s.usageCacheMu.RUnlock()
+
+	cachedProviderID := strings.TrimSpace(cached.CurrentProvider)
+	var cachedProvider usageProviderInfo
+	for _, provider := range cached.Providers {
+		if provider.ID == cachedProviderID {
+			cachedProvider = provider
+			break
+		}
+	}
+	if cachedProvider.ID == "" {
+		return usageResponse{}, false
+	}
+	cachedCollectedAt, err := time.Parse(time.RFC3339, cachedProvider.CollectedAt)
+	if err != nil || cachedCollectedAt.After(now.Add(5*time.Minute)) || now.Sub(cachedCollectedAt) > exactUsageCacheMaxAge {
+		return usageResponse{}, false
+	}
+
+	for _, provider := range usage.Providers {
+		id := usageProviderID(provider.Provider, provider.Frame.Provider)
+		if id != cachedProviderID {
+			continue
+		}
+		if provider.Stale || provider.Frame.Normalize().UsageUnavailable || !provider.CollectedAt.Before(cachedCollectedAt) {
+			return usageResponse{}, false
+		}
+	}
+	if len(usage.Providers) == 0 {
+		return cached, true
+	}
+
+	current := usageResponseFromPersisted(now, usage)
+	replaced := false
+	for i := range current.Providers {
+		if current.Providers[i].ID != cachedProviderID {
+			continue
+		}
+		current.Providers[i] = mergePersistedUsageDetails(
+			usageResponse{Providers: []usageProviderInfo{cachedProvider}},
+			usageResponse{Providers: []usageProviderInfo{current.Providers[i]}},
+		).Providers[0]
+		replaced = true
+		break
+	}
+	if !replaced {
+		current.Providers = append(current.Providers, cachedProvider)
+	}
+	current.CurrentProvider = cachedProviderID
+	current.UsageMode = usageModeForProviders(current.Providers)
+	current.TokenUsageReady = usageProvidersHaveTokenResult(current.Providers)
+	current.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(current.Providers)
+	return current, true
+}
+
+func cloneCachedUsageResponse(response usageResponse) usageResponse {
+	response.Providers = slices.Clone(response.Providers)
+	for i := range response.Providers {
+		response.Providers[i].Windows = slices.Clone(response.Providers[i].Windows)
+	}
+	return response
 }
 
 func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
 	now := s.currentTime().UTC()
-	const (
-		exactUsageMaxAge     = 15 * time.Minute
-		exactUsageFutureSkew = 5 * time.Minute
-	)
+	const exactUsageFutureSkew = 5 * time.Minute
 	if parsed.CollectedAt.IsZero() ||
 		parsed.CollectedAt.After(now.Add(exactUsageFutureSkew)) ||
-		now.Sub(parsed.CollectedAt) > exactUsageMaxAge {
+		now.Sub(parsed.CollectedAt) > exactUsageCacheMaxAge {
 		return
 	}
 	fresh, ok := usageProviderFromParsed(parsed)
@@ -1410,10 +1646,8 @@ func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
 		if base.Providers[i].ID != fresh.ID {
 			continue
 		}
-		fresh = mergePersistedUsageDetails(
-			usageResponse{Providers: []usageProviderInfo{fresh}},
-			usageResponse{Providers: []usageProviderInfo{base.Providers[i]}},
-		).Providers[0]
+		fresh.TokenUsageReady = base.Providers[i].TokenUsageReady
+		fresh.TokenStatsCollectedAt = base.Providers[i].TokenStatsCollectedAt
 		base.Providers[i] = fresh
 		replaced = true
 		break
@@ -1421,14 +1655,34 @@ func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
 	if !replaced {
 		base.Providers = append(base.Providers, fresh)
 	}
+	// This cache exists to overlay one probed provider's quota windows. Token
+	// history has one owner, so a cached copy must never outrank the newer
+	// collector snapshot merged in by cachedExactUsageOverlay.
+	for i := range base.Providers {
+		clearUsageProviderTokenHistory(&base.Providers[i])
+	}
+	base.TokenUsageReady = usageProvidersHaveTokenResult(base.Providers)
+	base.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(base.Providers)
 	base.OK = true
 	base.GeneratedAt = now.Format(time.RFC3339)
 	base.Source = "codexbar"
 	base.UsageMode = usageModeForProviders(base.Providers)
 	base.CurrentProvider = fresh.ID
 	s.usageCache = &base
-	s.usageCacheAt = now
 	s.usageCacheMu.Unlock()
+}
+
+func clearUsageProviderTokenHistory(provider *usageProviderInfo) {
+	if provider == nil {
+		return
+	}
+	provider.SessionTokens = 0
+	provider.WeekTokens = 0
+	provider.TotalTokens = 0
+	provider.Cost = nil
+	provider.CostSettled = false
+	provider.TokenUsageReady = false
+	provider.TokenStatsCollectedAt = time.Time{}
 }
 
 func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
@@ -1453,10 +1707,72 @@ func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
 				provider.TotalTokens = cached.TotalTokens
 			}
 			provider.Cost = cached.Cost
+			provider.CostSettled = cached.CostSettled
+		}
+		provider.TokenUsageReady = provider.TokenUsageReady || cached.TokenUsageReady
+		if provider.TokenStatsCollectedAt.IsZero() {
+			provider.TokenStatsCollectedAt = cached.TokenStatsCollectedAt
 		}
 	}
 	fresh.TokenUsageReady = usageProvidersHaveTokenResult(fresh.Providers)
+	fresh.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(fresh.Providers)
 	return fresh
+}
+
+func usageRateLimitState(usage daemon.PersistedUsage, now time.Time) (bool, time.Time) {
+	var latest time.Time
+	rateLimited := false
+	for _, provider := range usage.Providers {
+		if provider.RateLimited {
+			rateLimited = true
+		}
+		blockedUntil := provider.RateLimitedUntil.UTC()
+		if blockedUntil.After(now) && blockedUntil.After(latest) {
+			latest = blockedUntil
+			rateLimited = true
+		}
+	}
+	return rateLimited, latest
+}
+
+func usageHasFreshSnapshotAfter(usage daemon.PersistedUsage, requestedAt time.Time) bool {
+	if requestedAt.IsZero() {
+		return usageHasFreshSnapshot(usage)
+	}
+	if len(usage.Providers) == 0 {
+		return false
+	}
+	for _, provider := range usage.Providers {
+		if provider.Stale || provider.CollectedAt.IsZero() || provider.CollectedAt.Before(requestedAt) {
+			return false
+		}
+	}
+	return true
+}
+
+func usageHasFreshSnapshot(usage daemon.PersistedUsage) bool {
+	for _, provider := range usage.Providers {
+		if !provider.Stale && !provider.CollectedAt.IsZero() {
+			return true
+		}
+	}
+	return false
+}
+
+func usageRefreshMessage(state string, blockedUntil time.Time) string {
+	switch state {
+	case "refreshing":
+		return "Refreshing usage. Current values stay visible until new data arrives."
+	case "rate_limited":
+		if !blockedUntil.IsZero() {
+			return "Usage refresh is temporarily limited. Current values stay visible until usage can be collected again."
+		}
+		return "Usage refresh is temporarily limited. Current values stay visible."
+	case "fresh":
+		return "Usage is up to date."
+	default:
+		return "Usage is not available yet."
+	}
 }
 
 func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request) {
@@ -1925,27 +2241,16 @@ func usageResponseFromPersisted(now time.Time, usage daemon.PersistedUsage) usag
 	}
 	resp := emptyUsageResponse(now, "codexbar-display")
 	resp.CurrentProvider = strings.TrimSpace(usage.CurrentProvider)
-	resp.Providers = providers
 	resp.UsageMode = usageModeForProviders(providers)
 	resp.TokenUsageReady = usageProvidersHaveTokenResult(providers)
-	if resp.CurrentProvider == "" && len(providers) > 0 {
-		resp.CurrentProvider = providers[0].ID
-	}
-	return resp
-}
-
-func usageResponseFromParsed(now time.Time, parsed []codexbar.ParsedFrame) usageResponse {
-	providers := make([]usageProviderInfo, 0, len(parsed))
-	for _, provider := range parsed {
-		if info, ok := usageProviderFromParsed(provider); ok {
-			providers = append(providers, info)
+	resp.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(providers)
+	if !resp.TokenUsageReady {
+		for i := range providers {
+			clearUsageProviderTokenHistory(&providers[i])
 		}
 	}
-	resp := emptyUsageResponse(now, "codexbar")
 	resp.Providers = providers
-	resp.UsageMode = usageModeForProviders(providers)
-	resp.TokenUsageReady = usageProvidersHaveTokenResult(providers)
-	if len(providers) > 0 {
+	if resp.CurrentProvider == "" && len(providers) > 0 {
 		resp.CurrentProvider = providers[0].ID
 	}
 	return resp
@@ -1964,18 +2269,33 @@ func emptyUsageResponse(now time.Time, source string) usageResponse {
 	}
 }
 
-func usageResponseHasFreshProvider(resp usageResponse) bool {
-	for _, provider := range resp.Providers {
-		if !provider.Stale {
-			return true
+func usageProvidersHaveTokenResult(providers []usageProviderInfo) bool {
+	if len(providers) == 0 {
+		return false
+	}
+	var completedAt time.Time
+	for _, provider := range providers {
+		if !provider.TokenUsageReady && provider.Cost == nil {
+			return false
+		}
+		if provider.TokenStatsCollectedAt.IsZero() {
+			continue
+		}
+		if completedAt.IsZero() {
+			completedAt = provider.TokenStatsCollectedAt
+		} else if !provider.TokenStatsCollectedAt.Equal(completedAt) {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
-func usageProvidersHaveTokenResult(providers []usageProviderInfo) bool {
+// usageProvidersHaveUpdatingTokenHistory reports whether any shown token
+// history is still growing. One unsettled provider makes every total derived
+// from the shown set provisional.
+func usageProvidersHaveUpdatingTokenHistory(providers []usageProviderInfo) bool {
 	for _, provider := range providers {
-		if provider.Cost != nil {
+		if provider.Cost != nil && !provider.CostSettled {
 			return true
 		}
 	}
@@ -1987,36 +2307,63 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 	if strings.TrimSpace(frame.Error) != "" {
 		return usageProviderInfo{}, false
 	}
+	if frame.UsageUnavailable && !snapshotHasUsableUsage(frame, snapshot.Meta) && !snapshotIsUnavailableUsageCarrier(snapshot, frame) {
+		return usageProviderInfo{}, false
+	}
 	id := usageProviderID(snapshot.Provider, frame.Provider)
 	if id == "" {
 		return usageProviderInfo{}, false
 	}
 	return usageProviderInfo{
-		ID:                 id,
-		Label:              usageProviderLabel(id, frame.Label),
-		Source:             strings.TrimSpace(snapshot.Source),
-		Session:            frame.Session,
-		Weekly:             frame.Weekly,
-		ResetSec:           frame.ResetSec,
-		UsageMode:          usageModeOrDefault(frame.UsageMode),
-		SessionTokens:      frame.SessionTokens,
-		WeekTokens:         frame.WeekTokens,
-		TotalTokens:        frame.TotalTokens,
-		Activity:           strings.TrimSpace(frame.Activity),
-		Stale:              snapshot.Stale,
-		UsageUnavailable:   snapshot.Stale || (frame.UsageUnavailable && len(snapshot.Meta.Windows) == 0),
-		SessionUnavailable: snapshot.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
-		WeeklyUnavailable:  snapshot.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
-		CollectedAt:        formatOptionalTime(snapshot.CollectedAt),
-		ActivityObservedAt: formatOptionalTime(snapshot.ActivityObservedAt),
-		Windows:            usageWindowsFromMeta(snapshot.Meta),
-		Status:             usageStatusFromMeta(snapshot.Meta),
-		Credits:            usageCreditsFromMeta(snapshot.Meta),
-		ResetCredits:       usageResetCreditsFromMeta(snapshot.Meta),
-		Cost:               usageCostFromMeta(snapshot.Meta),
-		Pace:               usagePaceFromMeta(snapshot.Meta),
-		UsageOverTime:      usageOverTimeFromMeta(snapshot.Meta),
+		ID:                    id,
+		Label:                 usageProviderLabel(id, frame.Label),
+		Source:                strings.TrimSpace(snapshot.Source),
+		Session:               frame.Session,
+		Weekly:                frame.Weekly,
+		ResetSec:              frame.ResetSec,
+		UsageMode:             usageModeOrDefault(frame.UsageMode),
+		SessionTokens:         frame.SessionTokens,
+		WeekTokens:            frame.WeekTokens,
+		TotalTokens:           frame.TotalTokens,
+		Activity:              strings.TrimSpace(frame.Activity),
+		Stale:                 snapshot.Stale,
+		UsageUnavailable:      snapshot.Stale || (frame.UsageUnavailable && len(snapshot.Meta.Windows) == 0),
+		SessionUnavailable:    snapshot.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
+		WeeklyUnavailable:     snapshot.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
+		CollectedAt:           formatOptionalTime(snapshot.CollectedAt),
+		ActivityObservedAt:    formatOptionalTime(snapshot.ActivityObservedAt),
+		RateLimited:           snapshot.RateLimited,
+		BlockedUntil:          formatOptionalTime(snapshot.RateLimitedUntil),
+		Windows:               usageWindowsFromMeta(snapshot.Meta),
+		Status:                usageStatusFromMeta(snapshot.Meta),
+		Credits:               usageCreditsFromMeta(snapshot.Meta),
+		ResetCredits:          usageResetCreditsFromMeta(snapshot.Meta),
+		Cost:                  usageCostFromMeta(snapshot.Meta),
+		CostSettled:           snapshot.TokenHistorySettled,
+		TokenUsageReady:       !snapshot.TokenStatsCollectedAt.IsZero(),
+		TokenStatsCollectedAt: snapshot.TokenStatsCollectedAt,
+		Pace:                  usagePaceFromMeta(snapshot.Meta),
+		UsageOverTime:         usageOverTimeFromMeta(snapshot.Meta),
 	}, true
+}
+
+func snapshotIsUnavailableUsageCarrier(snapshot daemon.ProviderUsageSnapshot, frame protocol.Frame) bool {
+	if snapshot.CollectedAt.IsZero() || !frame.UsageUnavailable {
+		return false
+	}
+	return !snapshot.Stale || (frame.SessionUnavailable && frame.WeeklyUnavailable)
+}
+
+func snapshotHasUsableUsage(frame protocol.Frame, meta codexbar.ProviderUsageMeta) bool {
+	if len(meta.Windows) > 0 || meta.Cost != nil {
+		return true
+	}
+	return frame.Session != 0 ||
+		frame.Weekly != 0 ||
+		frame.SessionTokens != 0 ||
+		frame.WeekTokens != 0 ||
+		frame.TotalTokens != 0 ||
+		len(frame.UsageSlots) > 0
 }
 
 func usageProviderFromParsed(parsed codexbar.ParsedFrame) (usageProviderInfo, bool) {
@@ -2144,7 +2491,8 @@ func usageCostFromMeta(meta codexbar.ProviderUsageMeta) *usageCostInfo {
 		cost.Last30DaysTokens <= 0 &&
 		cost.LatestTokens <= 0 &&
 		cost.TopModel == "" &&
-		len(cost.Daily) == 0 {
+		len(cost.Daily) == 0 &&
+		cost.UpdatedAt == "" {
 		return nil
 	}
 	return &cost
@@ -2345,10 +2693,20 @@ func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
+	if strings.TrimSpace(req.Target) == "" &&
+		strings.TrimSpace(cfg.DeviceID) == "" &&
+		s.ambiguousDeviceSelectionPending() {
+		writeDiscoveryError(w, &multipleDevicesError{})
+		return
+	}
 	discoveryCfg := cfg
 	discoveryCfg.DeviceToken = ""
 	target, hello, err := s.discover(r.Context(), discoveryCfg, req.Target)
 	if err != nil {
+		var multiple *multipleDevicesError
+		if errors.As(err, &multiple) {
+			s.markAmbiguousDeviceSelection()
+		}
 		writeDiscoveryError(w, err)
 		return
 	}
@@ -2402,6 +2760,9 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
+	if strings.TrimSpace(req.Target) == "" && distinctDeviceSearchCount(devices) > 1 {
+		s.markAmbiguousDeviceSelection()
+	}
 	writeJSON(w, http.StatusOK, struct {
 		OK      bool                `json:"ok"`
 		Devices []deviceSearchEntry `json:"devices"`
@@ -2428,6 +2789,7 @@ func (s *Server) handleDeviceSelect(w http.ResponseWriter, r *http.Request) {
 		writeRepairError(w, err)
 		return
 	}
+	s.clearAmbiguousDeviceSelection()
 	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
 }
 
@@ -3514,6 +3876,10 @@ func (s *Server) handleMacAppUpdateStatus(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, req themeInstallRequest, out io.Writer) (themeinstall.Result, error) {
+	installStartedAt := time.Now()
+	defer logThemeInstallTiming(out, "total", installStartedAt)
+
+	maintenanceStartedAt := time.Now()
 	s.deviceMaintenanceMu.Lock()
 	defer s.deviceMaintenanceMu.Unlock()
 
@@ -3525,6 +3891,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		s.pauseDisplayStream(true)
 		streamPaused = true
 	}
+	logThemeInstallTiming(out, "device-maintenance", maintenanceStartedAt)
 	resumeStream := func() {
 		if streamPaused && s.pauseDisplayStream != nil {
 			s.pauseDisplayStream(false)
@@ -3533,6 +3900,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	}
 	defer resumeStream()
 
+	preflightStartedAt := time.Now()
 	latestCfg, err := s.config()
 	if err != nil {
 		return themeinstall.Result{}, err
@@ -3560,12 +3928,14 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			},
 		}
 	}
+	logThemeInstallTiming(out, "preflight", preflightStartedAt)
 
 	skipFirmwareUpdate := true
 	if req.SkipFirmwareUpdate != nil {
 		skipFirmwareUpdate = *req.SkipFirmwareUpdate
 	}
 	pairedDuringThemeInstall := false
+	deviceInstallStartedAt := time.Now()
 	result, err := s.installTheme(ctx, themeinstall.Options{
 		ThemeID:            strings.TrimSpace(req.ThemeID),
 		PackURL:            strings.TrimSpace(req.PackURL),
@@ -3593,6 +3963,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			return updateErr
 		},
 	})
+	logThemeInstallTiming(out, "device-install", deviceInstallStartedAt)
 	if err != nil {
 		return themeinstall.Result{}, err
 	}
@@ -3605,8 +3976,10 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	}
 	fmt.Fprintln(out, "Refreshing display stream...")
 	resumeStream()
+	streamRefreshStartedAt := time.Now()
 	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(ctx, cfg.DeviceTarget); err != nil {
+		logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
 		return themeinstall.Result{}, &statusAPIError{
 			status: http.StatusBadGateway,
 			api: apiError{
@@ -3622,7 +3995,10 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	} else {
 		stream = s.waitForFreshDisplayStream(ctx, cfg.DeviceTarget, streamStartedAt)
 	}
+	logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
+	renderVerificationStartedAt := time.Now()
 	health, err := s.waitForVerifiedDisplayRender(ctx, cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
+	logThemeInstallTiming(out, "render-verification", renderVerificationStartedAt)
 	if err != nil {
 		if !stream.Healthy {
 			return themeinstall.Result{}, &statusAPIError{
@@ -3662,6 +4038,18 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	return result, nil
 }
 
+func logThemeInstallTiming(out io.Writer, phase string, startedAt time.Time) {
+	if out == nil || startedAt.IsZero() {
+		return
+	}
+	fmt.Fprintf(
+		out,
+		"Theme install timing: phase=%s duration=%s\n",
+		strings.TrimSpace(phase),
+		time.Since(startedAt).Round(time.Millisecond),
+	)
+}
+
 type themeRenderPackAsset struct {
 	ContentType string `json:"contentType"`
 	Data        string `json:"data"`
@@ -3674,6 +4062,7 @@ type themeRenderPack struct {
 	Name     string                          `json:"name"`
 	Spec     json.RawMessage                 `json:"spec"`
 	SpecPath string                          `json:"specPath"`
+	SpecHash string                          `json:"specHash"`
 	Assets   map[string]themeRenderPackAsset `json:"assets"`
 }
 
@@ -3707,18 +4096,36 @@ func (s *Server) persistThemeRenderPack(packBytes []byte) error {
 			Encoding:    encoding,
 		}
 	}
+	specPath := strings.TrimSpace(pack.ThemeSpecFile.Entry.Path)
+	specHash := themeRenderPackSpecHash(pack.ThemeSpecRaw)
 	payload, err := json.Marshal(themeRenderPack{
 		OK:       true,
 		ThemeID:  themeID,
 		Name:     strings.TrimSpace(pack.Manifest.Name),
 		Spec:     json.RawMessage(pack.ThemeSpecRaw),
-		SpecPath: strings.TrimSpace(pack.ThemeSpecFile.Entry.Path),
+		SpecPath: specPath,
+		SpecHash: specHash,
 		Assets:   assets,
 	})
 	if err != nil {
 		return err
 	}
-	destination := s.themeRenderPackPath(themeID)
+	// Keep a bounded revision history. Custom themes deliberately reuse their
+	// ID while editing, so one id.json file is not enough to render the exact
+	// ThemeSpec that an already-connected VibeTV reports.
+	destination := s.themeRenderPackRevisionPath(themeID, specPath)
+	if err := writeThemeRenderPackFile(destination, payload); err != nil {
+		return err
+	}
+	if err := s.pruneThemeRenderPackRevisions(themeID, destination); err != nil {
+		return err
+	}
+	// Retain the original latest-by-id cache for old Mac Apps that do not send
+	// an exact ThemeSpec selector yet.
+	return writeThemeRenderPackFile(s.themeRenderPackPath(themeID), payload)
+}
+
+func writeThemeRenderPackFile(destination string, payload []byte) error {
 	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
 		return err
 	}
@@ -3751,6 +4158,77 @@ func (s *Server) themeRenderPackPath(themeID string) string {
 		themeRenderPackDir,
 		themeID+".json",
 	)
+}
+
+func (s *Server) themeRenderPackRevisionPath(themeID, specPath string) string {
+	return filepath.Join(s.themeRenderPackRevisionDir(themeID), path.Base(specPath))
+}
+
+func (s *Server) themeRenderPackRevisionDir(themeID string) string {
+	return filepath.Join(
+		s.home,
+		"Library",
+		"Application Support",
+		"codexbar-display",
+		themeRenderPackDir,
+		themeID,
+	)
+}
+
+func (s *Server) pruneThemeRenderPackRevisions(themeID, preservePath string) error {
+	revisionDir := s.themeRenderPackRevisionDir(themeID)
+	entries, err := os.ReadDir(revisionDir)
+	if err != nil {
+		return err
+	}
+	type cachedRevision struct {
+		name       string
+		modTime    time.Time
+		isPreserve bool
+	}
+	revisions := make([]cachedRevision, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return infoErr
+		}
+		entryPath := filepath.Join(revisionDir, entry.Name())
+		revisions = append(revisions, cachedRevision{
+			name:       entry.Name(),
+			modTime:    info.ModTime(),
+			isPreserve: entryPath == preservePath,
+		})
+	}
+	sort.Slice(revisions, func(i, j int) bool {
+		if revisions[i].isPreserve != revisions[j].isPreserve {
+			return revisions[i].isPreserve
+		}
+		if !revisions[i].modTime.Equal(revisions[j].modTime) {
+			return revisions[i].modTime.After(revisions[j].modTime)
+		}
+		return revisions[i].name > revisions[j].name
+	})
+	if len(revisions) <= themeRenderPackRevisionLimit {
+		return nil
+	}
+	for _, revision := range revisions[themeRenderPackRevisionLimit:] {
+		if err := os.Remove(filepath.Join(revisionDir, revision.name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
+}
+
+// themeRenderPackSpecHash matches the FNV-1a hash exposed by the VibeTV
+// /health display.themeSpec.hash field. Firmware trims stored ThemeSpec bytes
+// before hashing, so a pack's harmless final newline must not change it.
+func themeRenderPackSpecHash(spec json.RawMessage) string {
+	hash := fnv.New32a()
+	_, _ = hash.Write(bytes.TrimSpace(spec))
+	return fmt.Sprintf("%08x", hash.Sum32())
 }
 
 func themeRenderPackID(requestPath string) string {
@@ -4997,6 +5475,7 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 }
 
 func (s *Server) clearConfiguredDeviceState() {
+	s.clearAmbiguousDeviceSelection()
 	s.connectionMu.Lock()
 	clear(s.connectionStates)
 	s.connectionMu.Unlock()
@@ -5009,6 +5488,10 @@ func (s *Server) clearConfiguredDeviceState() {
 func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) (string, protocol.DeviceHello, error) {
 	explicitTarget = strings.TrimSpace(explicitTarget)
 	var lastErr error
+	expectedDeviceID := ""
+	if explicitTarget == "" {
+		expectedDeviceID = strings.TrimSpace(cfg.DeviceID)
+	}
 	if explicitTarget != "" {
 		target, targetErr := normalizeExplicitDeviceTarget(explicitTarget)
 		if targetErr != nil {
@@ -5017,6 +5500,8 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 		hello, err := s.getHelloProbe(ctx, target, cfg.DeviceToken, discoveryProbeTime)
 		if err != nil {
 			return "", protocol.DeviceHello{}, err
+		} else if !deviceIDMatchesExpected(hello, expectedDeviceID) {
+			return "", protocol.DeviceHello{}, errDeviceIdentityChanged
 		} else {
 			return target, hello, nil
 		}
@@ -5025,6 +5510,10 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 		for _, candidate := range candidates {
 			hello, err := s.getHelloProbe(ctx, candidate, cfg.DeviceToken, discoveryProbeTime)
 			if err == nil {
+				if !deviceIDMatchesExpected(hello, expectedDeviceID) {
+					lastErr = errDeviceIdentityChanged
+					continue
+				}
 				return normalizeTarget(candidate), hello, nil
 			}
 			lastErr = err
@@ -5102,6 +5591,10 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 	for res := range results {
 		if res.err == nil {
 			res.target = normalizeTarget(res.target)
+			if !deviceIDMatchesExpected(res.hello, cfg.DeviceID) {
+				lastErr = errDeviceIdentityChanged
+				continue
+			}
 			matches = append(matches, res)
 			if len(matches) > 1 {
 				cancel()
@@ -5142,6 +5635,7 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 
 	byIdentity := make(map[string]deviceSearchEntry)
 	hasSavedIdentity := strings.TrimSpace(cfg.DeviceID) != ""
+	freshResultSeen := false
 	for {
 		foundKnown := false
 		entries, err := s.searchDevicesOnce(searchCtx, cfg, explicitTarget)
@@ -5157,13 +5651,15 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 				foundKnown = true
 			}
 		}
-		// A clean customer install has no saved device identity to prefer. Once
-		// that first scan finds a VibeTV, return it immediately instead of
-		// repeating the full /24 subnet scan until the UI request nearly times
-		// out. Recovery with a saved identity still gets the bounded retries so
-		// a briefly busy known device wins over an unknown alternative.
-		if foundKnown || (!hasSavedIdentity && len(byIdentity) > 0) {
+		// A clean customer install has no saved identity to prefer, so settle one
+		// additional full scan after the first result and merge both snapshots.
+		// Recovery with a saved identity keeps returning as soon as that known
+		// device answers.
+		if foundKnown || (!hasSavedIdentity && freshResultSeen) {
 			return sortedDeviceSearchEntries(byIdentity), nil
+		}
+		if !hasSavedIdentity && len(byIdentity) > 0 {
+			freshResultSeen = true
 		}
 		if searchCtx.Err() != nil {
 			break
@@ -5175,6 +5671,36 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 		}
 	}
 	return sortedDeviceSearchEntries(byIdentity), nil
+}
+
+func (s *Server) markAmbiguousDeviceSelection() {
+	s.deviceSelectionMu.Lock()
+	defer s.deviceSelectionMu.Unlock()
+	s.ambiguousDeviceSeen = true
+}
+
+func (s *Server) clearAmbiguousDeviceSelection() {
+	s.deviceSelectionMu.Lock()
+	defer s.deviceSelectionMu.Unlock()
+	s.ambiguousDeviceSeen = false
+}
+
+func (s *Server) ambiguousDeviceSelectionPending() bool {
+	s.deviceSelectionMu.Lock()
+	defer s.deviceSelectionMu.Unlock()
+	return s.ambiguousDeviceSeen
+}
+
+func distinctDeviceSearchCount(devices []deviceSearchEntry) int {
+	seen := make(map[string]struct{}, len(devices))
+	for _, device := range devices {
+		key := deviceSearchIdentityKey(device)
+		if key == "" {
+			continue
+		}
+		seen[key] = struct{}{}
+	}
+	return len(seen)
 }
 
 func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) ([]deviceSearchEntry, error) {
@@ -5367,6 +5893,15 @@ func deviceIdentityMatches(cfg runtimeconfig.Config, hello protocol.DeviceHello)
 	wantID := strings.TrimSpace(cfg.DeviceID)
 	gotID := strings.TrimSpace(hello.DeviceID)
 	return wantID != "" && gotID != "" && strings.EqualFold(wantID, gotID)
+}
+
+func deviceIDMatchesExpected(hello protocol.DeviceHello, expectedDeviceID string) bool {
+	expectedDeviceID = strings.TrimSpace(expectedDeviceID)
+	if expectedDeviceID == "" {
+		return true
+	}
+	gotID := strings.TrimSpace(hello.DeviceID)
+	return gotID != "" && strings.EqualFold(expectedDeviceID, gotID)
 }
 
 func deviceIdentityIsKnown(cfg runtimeconfig.Config, hello protocol.DeviceHello) bool {
@@ -6917,6 +7452,17 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 	}
 	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
 		frame.ResetSec = reset
+	}
+	if encodedWindows := displayStreamLogValue(line, "usageWindows"); encodedWindows != "" && encodedWindows != "-" {
+		if rawWindows, err := url.QueryUnescape(encodedWindows); err == nil {
+			_ = json.Unmarshal([]byte(rawWindows), &frame.UsageWindows)
+			frame.V = protocol.ProtocolVersionV2
+		}
+	} else if encodedSlots := displayStreamLogValue(line, "usageSlots"); encodedSlots != "" {
+		if rawSlots, err := url.QueryUnescape(encodedSlots); err == nil {
+			_ = json.Unmarshal([]byte(rawSlots), &frame.UsageSlots)
+			frame.V = protocol.ProtocolVersionV2
+		}
 	}
 	return frame.Normalize(), true
 }

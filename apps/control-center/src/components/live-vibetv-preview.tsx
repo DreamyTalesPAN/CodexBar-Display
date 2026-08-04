@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import type {
   DeviceInfo,
   UsageSnapshot,
 } from "./control-center-types";
-import { deviceIsReady } from "./control-center-types";
+import {
+  deviceIsCustomerConnected,
+  deviceIsReady,
+  deviceIsWaitingForUsage,
+} from "./control-center-types";
 import {
   companionRequestUrl,
   needsLoopbackTargetAddressSpace,
@@ -17,6 +21,7 @@ import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
 
 type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
+  displayFrame: DisplayFrameSnapshot | null;
   usage: UsageSnapshot | null;
 };
 
@@ -31,22 +36,32 @@ export type ThemeRenderPack = {
   themeId?: string;
   name?: string;
   spec?: ThemeSpec;
+  specHash?: string;
   specPath?: string;
   assets?: Record<string, ThemePackAsset>;
 };
 
 type ThemePackState = {
   themeId: string;
+  themeSpecHash: string;
   themeSpecPath: string;
   pack: ThemeRenderPack | null;
   status: "ready" | "error";
 };
 
-type DisplayFrameSnapshot = {
+export type DisplayFrameSnapshot = {
   ok?: boolean;
   savedAt?: string;
   frame?: DisplayFrame;
 };
+
+type UsageSlotFrame = {
+  id?: string;
+  label?: string;
+  percent?: number;
+  resetSecs?: number;
+};
+type UsageWindowFrame = UsageSlotFrame;
 
 type DisplayFrame = {
   v?: number;
@@ -58,6 +73,8 @@ type DisplayFrame = {
   weeklyUnavailable?: boolean;
   resetSecs?: number;
   usageMode?: string;
+  usageWindows?: UsageWindowFrame[];
+  usageSlots?: UsageSlotFrame[];
   activity?: string;
   sessionTokens?: number;
   weekTokens?: number;
@@ -86,6 +103,10 @@ export type ThemePrimitive = {
   w?: number;
   height?: number;
   h?: number;
+  slot?: number;
+  sl?: number;
+  usageIndex?: number;
+  ui?: number;
   text?: string;
   v?: string;
   binding?: string;
@@ -94,6 +115,8 @@ export type ThemePrimitive = {
   s?: number;
   font?: number;
   f?: number;
+  fit?: string;
+  ft?: string;
   color?: string;
   c?: string;
   bgColor?: string;
@@ -131,6 +154,20 @@ type FrameData = {
   weeklyUnavailable: boolean;
   resetSecs: number;
   usageMode: string;
+  usageWindows: Array<{
+    label: string;
+    percent: number;
+    resetSecs: number;
+    available: boolean;
+  }>;
+  usageSlot1Label: string;
+  usageSlot1Percent: number;
+  usageSlot1ResetSecs: number;
+  usageSlot1Available: boolean;
+  usageSlot2Label: string;
+  usageSlot2Percent: number;
+  usageSlot2ResetSecs: number;
+  usageSlot2Available: boolean;
   activity: string;
   sessionTokens: number;
   weekTokens: number;
@@ -139,15 +176,30 @@ type FrameData = {
   date: string;
 };
 
-const THEME_LIBRARY_PREVIEW_FRAME: FrameData = {
+// Catalog previews deliberately use short, generic usage windows. They are not
+// connected to the current provider or VibeTV frame, so labels must not imply
+// a provider-specific entitlement such as "Codex Spark Weekly".
+export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   provider: "vibetv",
   label: "VibeTV",
-  session: 62,
-  weekly: 62,
+  session: 64,
+  weekly: 64,
   sessionUnavailable: false,
   weeklyUnavailable: false,
   resetSecs: 3600,
-  usageMode: "remaining",
+  usageMode: "used",
+  usageWindows: [
+    { label: "Session", percent: 64, resetSecs: 3600, available: true },
+    { label: "Weekly", percent: 28, resetSecs: 7200, available: true },
+  ],
+  usageSlot1Label: "Session",
+  usageSlot1Percent: 64,
+  usageSlot1ResetSecs: 3600,
+  usageSlot1Available: true,
+  usageSlot2Label: "Weekly",
+  usageSlot2Percent: 28,
+  usageSlot2ResetSecs: 7200,
+  usageSlot2Available: true,
   activity: "preview",
   sessionTokens: 0,
   weekTokens: 0,
@@ -183,92 +235,18 @@ type SpriteRect = {
   color: string;
 };
 
-export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
-  const themeId = activeThemeId(device);
-  const themeSpecPath = device?.display?.themeSpec?.path || "";
-  const deviceConnected = deviceIsReady(device);
+export function useLatestDisplayFrame(
+  connected: boolean,
+  onFrame?: (frame: DisplayFrameSnapshot) => void,
+) {
   const [displayFrame, setDisplayFrame] = useState<DisplayFrameSnapshot | null>(
     null,
   );
-  const effectiveDisplayFrame = deviceConnected ? displayFrame : null;
-  const frame = hasRenderableUsage(effectiveDisplayFrame)
-    ? buildFrameData(
-        effectiveDisplayFrame?.savedAt || usage?.generatedAt,
-        effectiveDisplayFrame.frame,
-      )
-    : null;
-  const [packState, setPackState] = useState<ThemePackState | null>(null);
-  const pack =
-    packState?.themeId === themeId &&
-    packState.themeSpecPath === themeSpecPath
-      ? packState.pack
-      : null;
-  const packStatus: "idle" | "loading" | "ready" | "error" = !themeId
-    ? "idle"
-    : packState?.themeId === themeId &&
-        packState.themeSpecPath === themeSpecPath
-      ? packState.status
-      : "loading";
 
   useEffect(() => {
-    if (!themeId) {
-      return;
-    }
-
-    const localPack = loadLocalThemeRenderPack(themeId, themeSpecPath);
-    if (localPack) {
-      const timer = window.setTimeout(() => {
-        setPackState({
-          themeId,
-          themeSpecPath,
-          pack: localPack,
-          status: "ready",
-        });
-      }, 0);
+    if (!connected) {
+      const timer = window.setTimeout(() => setDisplayFrame(null), 0);
       return () => window.clearTimeout(timer);
-    }
-
-    const controller = new AbortController();
-    fetch(themeRenderPackUrl(themeId), {
-      signal: controller.signal,
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("theme pack unavailable");
-        }
-        return response.json() as Promise<ThemeRenderPack>;
-      })
-      .then((payload) => {
-        const receivedSpecPath = (payload?.specPath || "").trim();
-        const exactThemeRevision =
-          !themeSpecPath ||
-          !receivedSpecPath ||
-          receivedSpecPath === themeSpecPath;
-        setPackState({
-          themeId,
-          themeSpecPath,
-          pack: exactThemeRevision ? payload : null,
-          status: payload?.spec && exactThemeRevision ? "ready" : "error",
-        });
-      })
-      .catch((error) => {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
-        setPackState({
-          themeId,
-          themeSpecPath,
-          pack: null,
-          status: "error",
-        });
-      });
-
-    return () => controller.abort();
-  }, [themeId, themeSpecPath]);
-
-  useEffect(() => {
-    if (!deviceConnected) {
-      return;
     }
 
     const controller = new AbortController();
@@ -284,15 +262,17 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
           requestInit.targetAddressSpace = "loopback";
         }
         const response = await fetch(url, requestInit);
-        if (!response.ok) {
-          throw new Error("display frame unavailable");
+        const nextFrame = await parseLatestDisplayFrameResponse(response);
+        if (!nextFrame) {
+          setDisplayFrame(null);
+          return;
         }
-        setDisplayFrame((await response.json()) as DisplayFrameSnapshot);
+        setDisplayFrame(nextFrame);
+        onFrame?.(nextFrame);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
         }
-        setDisplayFrame(null);
       }
     };
 
@@ -303,20 +283,142 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [deviceConnected]);
+  }, [connected, onFrame]);
+
+  return displayFrame;
+}
+
+export async function parseLatestDisplayFrameResponse(
+  response: Response,
+): Promise<DisplayFrameSnapshot | null> {
+  if (response.ok) {
+    return (await response.json()) as DisplayFrameSnapshot;
+  }
+  if (response.status === 404) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: { code?: unknown };
+    } | null;
+    if (payload?.error?.code === "display_frame_unavailable") {
+      return null;
+    }
+  }
+  throw new Error("display frame unavailable");
+}
+
+export function LiveVibeTVPreview({
+  device,
+  displayFrame,
+  usage,
+}: LiveVibeTVPreviewProps) {
+  const themeId = activeThemeId(device);
+  const themeSpecPath = device?.display?.themeSpec?.path || "";
+  const themeSpecHash = normalizeThemeSpecHash(
+    device?.display?.themeSpec?.hash,
+  );
+  const deviceConnected = deviceIsCustomerConnected(device);
+  const deviceReady = deviceIsReady(device);
+  const waitingForUsage = deviceIsWaitingForUsage(device);
+  const effectiveDisplayFrame = livePreviewDisplayFrame(device, displayFrame);
+  const frame = hasRenderableUsage(effectiveDisplayFrame)
+    ? buildFrameData(
+        effectiveDisplayFrame?.savedAt || usage?.generatedAt,
+        effectiveDisplayFrame.frame,
+      )
+    : null;
+  const [packState, setPackState] = useState<ThemePackState | null>(null);
+  const pack =
+    packState?.themeId === themeId &&
+    packState.themeSpecHash === themeSpecHash &&
+    packState.themeSpecPath === themeSpecPath
+      ? packState.pack
+      : null;
+  const packStatus: "idle" | "loading" | "ready" | "error" = !themeId
+    ? "idle"
+    : packState?.themeId === themeId &&
+        packState.themeSpecHash === themeSpecHash &&
+        packState.themeSpecPath === themeSpecPath
+      ? packState.status
+      : "loading";
+
+  useEffect(() => {
+    if (!themeId) {
+      return;
+    }
+
+    const localPack = loadLocalThemeRenderPack(themeId, themeSpecPath);
+    if (
+      localPack &&
+      (!themeSpecHash || localPack.specHash === themeSpecHash)
+    ) {
+      const timer = window.setTimeout(() => {
+        setPackState({
+          themeId,
+          themeSpecHash,
+          themeSpecPath,
+          pack: localPack,
+          status: "ready",
+        });
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    const controller = new AbortController();
+    fetchThemeRenderPackRevision(
+      themeId,
+      themeSpecPath,
+      themeSpecHash,
+      controller.signal,
+    )
+      .then((payload) => {
+        const matchesActiveRevision = themeRenderPackMatchesActiveRevision(
+          payload,
+          themeSpecPath,
+          themeSpecHash,
+        );
+        setPackState({
+          themeId,
+          themeSpecHash,
+          themeSpecPath,
+          pack: matchesActiveRevision ? payload : null,
+          status: matchesActiveRevision ? "ready" : "error",
+        });
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        setPackState({
+          themeId,
+          themeSpecHash,
+          themeSpecPath,
+          pack: null,
+          status: "error",
+        });
+      });
+
+    return () => controller.abort();
+  }, [themeId, themeSpecHash, themeSpecPath]);
 
   return (
     <figure className="w-full max-w-[520px]">
       <VibeTVCaseShell>
-        {pack?.spec && frame ? (
+        {!deviceConnected || (!deviceReady && !waitingForUsage && !frame) ? (
+          <ThemePreviewOffline />
+        ) : pack?.spec && frame ? (
           <ThemeSpecSVG
             assets={pack.assets || {}}
             frame={frame}
             spec={pack.spec}
             themeId={pack.themeId || themeId}
           />
-        ) : pack?.spec ? (
-          <ThemeUsageLoading />
+        ) : frame ? (
+          <ThemeSpecLoading status={packStatus} themeId={themeId} />
+        ) : waitingForUsage ? (
+          <ThemeSpecLoading
+            message="Waiting for usage…"
+            status="loading"
+            themeId={themeId}
+          />
         ) : (
           <ThemeSpecLoading status={packStatus} themeId={themeId} />
         )}
@@ -325,13 +427,25 @@ export function LiveVibeTVPreview({ device, usage }: LiveVibeTVPreviewProps) {
   );
 }
 
+export function livePreviewDisplayFrame(
+  device: DeviceInfo | null | undefined,
+  displayFrame: DisplayFrameSnapshot | null | undefined,
+) {
+  if (!deviceIsCustomerConnected(device) || !hasRenderableUsage(displayFrame)) {
+    return null;
+  }
+  return displayFrame;
+}
+
 export function ThemeSpecPreview({
   animate = true,
+  frame = THEME_CATALOG_PREVIEW_FRAME,
   pack,
   status,
   themeId,
 }: {
   animate?: boolean;
+  frame?: FrameData;
   pack: ThemeRenderPack | null;
   status: "idle" | "loading" | "ready" | "error";
   themeId: string;
@@ -341,7 +455,7 @@ export function ThemeSpecPreview({
       <ThemeSpecSVG
         animate={animate}
         assets={pack.assets || {}}
-        frame={THEME_LIBRARY_PREVIEW_FRAME}
+        frame={frame}
         spec={pack.spec}
         themeId={pack.themeId || themeId}
       />
@@ -402,7 +516,7 @@ function ThemeSpecSVG({
   const animationTick = useAnimationTick(animationFps);
   return (
     <svg
-      aria-label={`Rendered VibeTV theme ${themeId} showing ${frame.label}, ${usageLaneText(frame.session, frame.sessionUnavailable)}${frame.sessionUnavailable ? "" : "%"} session ${frame.usageMode}, ${usageLaneText(frame.weekly, frame.weeklyUnavailable)}${frame.weeklyUnavailable ? "" : "%"} weekly ${frame.usageMode}`}
+      aria-label={themeSpecAriaLabel(themeId, frame)}
       className="size-full bg-black [image-rendering:pixelated]"
       role="img"
       viewBox="0 0 240 240"
@@ -440,6 +554,9 @@ function ThemePrimitiveNode({
   const y = primitive.y || 0;
   const width = primitive.width || primitive.w || 0;
   const height = primitive.height || primitive.h || 0;
+  if (!primitiveUsageSlotVisible(primitive, frame)) {
+    return null;
+  }
 
   if (type === "rect" || type === "r") {
     const radius = clampRadius(
@@ -463,26 +580,29 @@ function ThemePrimitiveNode({
   if (type === "text" || type === "tx") {
     const text = renderTextPrimitive(primitive, frame);
     const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
-    const fontSize = themeFontSize(primitive.font || primitive.f, primitive.fontSize || primitive.s);
-    // Firmware only applies text alignment inside an explicit width. Without
-    // one, x remains the text's left edge regardless of the selected alignment.
-    const textAnchor =
-      maxWidth > 0 ? svgTextAnchor(primitive.align || primitive.al) : "start";
-    const textX = alignedTextX(x, maxWidth, textAnchor);
+    const font = primitive.font || primitive.f || 1;
+    const maxSize = Math.max(1, primitive.fontSize || primitive.s || 1);
+    const size = themeTextFittedSize(
+      text,
+      font,
+      maxSize,
+      maxWidth,
+      (primitive.fit || primitive.ft) === "shrink",
+    );
+    const fontSize = themeFontSize(font, size);
     return (
-      <text
-        dominantBaseline="hanging"
-        fill={colorFor(primitive.color || primitive.c, "#FFFFFF")}
-        fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+      <ThemeTextPrimitive
+        align={primitive.align || primitive.al}
+        color={colorFor(primitive.color || primitive.c, "#FFFFFF")}
+        font={font}
         fontSize={fontSize}
-        fontWeight={themeFontWeight(primitive.font || primitive.f)}
-        letterSpacing="0"
-        textAnchor={textAnchor}
-        x={textX}
+        fontWeight={themeFontWeight(font)}
+        maxWidth={maxWidth}
+        size={size}
+        text={text}
+        x={x}
         y={y}
-      >
-        {text}
-      </text>
+      />
     );
   }
 
@@ -568,6 +688,126 @@ function ThemePrimitiveNode({
   }
 
   return null;
+}
+
+function ThemeTextPrimitive({
+  align,
+  color,
+  font,
+  fontSize,
+  fontWeight,
+  maxWidth,
+  size,
+  text,
+  x,
+  y,
+}: {
+  align?: string;
+  color: string;
+  font: number;
+  fontSize: number;
+  fontWeight: number;
+  maxWidth: number;
+  size: number;
+  text: string;
+  x: number;
+  y: number;
+}) {
+  const clipPathId = `theme-text-${useId().replaceAll(":", "")}`;
+  const textRef = useRef<SVGTextElement>(null);
+  const measurementKey = `${text}\u0000${fontSize}\u0000${fontWeight}`;
+  const [measurement, setMeasurement] = useState({
+    key: "",
+    width: 0,
+  });
+  const firmwareMetrics = themeFirmwareTextMetrics(text, font, size);
+  const textWidth =
+    firmwareMetrics?.width ??
+    themeTextWidth(
+      text,
+      fontSize,
+      measurement.key === measurementKey ? measurement.width : undefined,
+    );
+  const layout = themeTextLayout(x, maxWidth, align, textWidth);
+
+  useEffect(() => {
+    const node = textRef.current;
+    if (!node) {
+      return;
+    }
+    const width = node.getComputedTextLength();
+    if (!Number.isFinite(width) || (text !== "" && width <= 0)) {
+      return;
+    }
+    setMeasurement((current) =>
+      current.key === measurementKey && current.width === width
+        ? current
+        : { key: measurementKey, width },
+    );
+  }, [measurementKey, text]);
+
+  const commonTextProps = {
+    // WebKit ignores text-before-edge and falls back to an alphabetic
+    // baseline at y, leaving only descenders inside the firmware clip box.
+    // Use the standard alphabetic baseline with an explicit ascent instead.
+    dominantBaseline: "alphabetic" as const,
+    fill: color,
+    fontFamily:
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    fontSize,
+    fontWeight,
+    letterSpacing: "0",
+    y: y + fontSize * 0.8,
+  };
+  const textNode = firmwareMetrics ? (
+    <text
+      {...commonTextProps}
+      style={{ whiteSpace: "pre" }}
+      textAnchor="start"
+      x={themeTextStartX(layout.textX, layout.textAnchor, textWidth)}
+    >
+      {firmwareMetrics.glyphs.map((glyph, index) => (
+        <tspan
+          key={`${index}-${glyph.character}`}
+          lengthAdjust="spacingAndGlyphs"
+          textLength={glyph.width}
+          x={
+            themeTextStartX(layout.textX, layout.textAnchor, textWidth) +
+            glyph.offset
+          }
+        >
+          {glyph.character}
+        </tspan>
+      ))}
+    </text>
+  ) : (
+    <text
+      {...commonTextProps}
+      ref={textRef}
+      textAnchor={layout.textAnchor}
+      x={layout.textX}
+    >
+      {text}
+    </text>
+  );
+  if (layout.clipWidth <= 0) {
+    return textNode;
+  }
+  return (
+    <>
+      <defs>
+        <clipPath id={clipPathId}>
+          <rect
+            height={Math.ceil(fontSize) + 4}
+            width={layout.clipWidth}
+            x={x}
+            y={y}
+          />
+        </clipPath>
+      </defs>
+      <g clipPath={`url(#${clipPathId})`}>{textNode}</g>
+    </>
+  );
 }
 
 function ThemeProgress({
@@ -735,46 +975,47 @@ function PixelRows({
 }
 
 function ThemeSpecLoading({
+  message,
   status,
   themeId,
 }: {
+  message?: string;
   status: "idle" | "loading" | "ready" | "error";
   themeId: string;
 }) {
-  const message =
-    status === "error"
+  const content =
+    message ||
+    (status === "error"
       ? "Preview unavailable"
       : themeId
         ? "Loading preview"
-        : "Waiting for theme";
+        : "Waiting for theme");
   return (
-    <div className="grid aspect-square w-full place-items-center border border-[#747A60] bg-[#111111] p-4 text-center font-mono text-sm font-bold uppercase text-[#CCFF00]">
-      {message}
+    <div
+      className="grid aspect-square w-full place-items-center whitespace-normal break-words border border-[#747A60] bg-[#111111] p-3 text-center font-mono text-[10px] font-bold uppercase leading-tight text-[#CCFF00] sm:text-xs"
+      role={message ? "status" : undefined}
+    >
+      {content}
     </div>
   );
 }
 
-function ThemeUsageLoading() {
+function ThemePreviewOffline() {
   return (
     <div
-      aria-label="Loading VibeTV usage preview"
-      className="grid aspect-square w-full place-items-center bg-[#050505] p-4 text-center font-mono text-[11px] font-bold uppercase tracking-normal text-[#CCFF00]"
+      aria-label="VibeTV live preview is offline"
+      className="grid aspect-square w-full place-items-center bg-[#050505] p-5 text-center font-mono text-[11px] font-bold uppercase text-[#CCFF00]"
       role="img"
     >
       <div>
-        <div className="mb-3 text-[#FF4FC3]">Usage</div>
-        <div className="flex items-center justify-center gap-1.5" aria-hidden>
-          <span className="block h-2 w-2 animate-pulse bg-[#CCFF00]" />
-          <span className="block h-2 w-2 animate-pulse bg-[#32D5FF] [animation-delay:150ms]" />
-          <span className="block h-2 w-2 animate-pulse bg-[#FF4FC3] [animation-delay:300ms]" />
-        </div>
-        <div className="mt-3">Loading usage</div>
+        <div className="mb-3 text-[#FF4FC3]">Live preview paused</div>
+        <div className="text-[#FFFFFF]">Reconnect VibeTV to continue</div>
       </div>
     </div>
   );
 }
 
-function hasRenderableUsage(
+export function hasRenderableUsage(
   snapshot: DisplayFrameSnapshot | null | undefined,
 ): snapshot is DisplayFrameSnapshot & { ok: true; frame: DisplayFrame } {
   const displayFrame = snapshot?.frame;
@@ -790,14 +1031,18 @@ function hasRenderableUsage(
   const hasProvider = [displayFrame.provider, displayFrame.label].some(
     (value) => typeof value === "string" && value.trim().length > 0,
   );
-  const validPercent = (value: unknown) =>
-    value === undefined ||
-    (typeof value === "number" && Number.isFinite(value));
-  return (
-    hasProvider &&
-    validPercent(displayFrame.session) &&
-    validPercent(displayFrame.weekly)
+  const hasLegacyUsage = [displayFrame.session, displayFrame.weekly].some(
+    (value) => typeof value === "number" && Number.isFinite(value),
   );
+  const frameUsageWindows =
+    displayFrame.usageWindows?.length ? displayFrame.usageWindows : displayFrame.usageSlots;
+  const hasSlotUsage = (frameUsageWindows || []).some(
+    (slot) =>
+      Boolean(slot.id?.trim() && slot.label?.trim()) &&
+      typeof slot.percent === "number" &&
+      Number.isFinite(slot.percent),
+  );
+  return hasProvider && (hasLegacyUsage || hasSlotUsage);
 }
 
 export function buildFrameData(
@@ -807,6 +1052,11 @@ export function buildFrameData(
   const now = generatedAt ? new Date(generatedAt) : new Date();
   const usableDate = Number.isNaN(now.getTime()) ? new Date() : now;
   const sourceUsageMode = frameUsageMode(displayFrame);
+  const slots = ((displayFrame.usageWindows?.length ? displayFrame.usageWindows : displayFrame.usageSlots) || []).filter(
+    (slot) => Boolean(slot.id?.trim() && slot.label?.trim()),
+  );
+  const slot1 = slots[0];
+  const slot2 = slots[1];
   return {
     provider: displayFrame.provider || "",
     label: displayFrame.label || displayFrame.provider || "",
@@ -816,6 +1066,20 @@ export function buildFrameData(
     weeklyUnavailable: displayFrame.weeklyUnavailable === true,
     resetSecs: displayFrame.resetSecs ?? 0,
     usageMode: sourceUsageMode,
+    usageWindows: slots.map((slot) => ({
+      label: slot.label || "",
+      percent: clampPercent(slot.percent),
+      resetSecs: slot.resetSecs ?? 0,
+      available: true,
+    })),
+    usageSlot1Label: slot1?.label || "",
+    usageSlot1Percent: clampPercent(slot1?.percent),
+    usageSlot1ResetSecs: slot1?.resetSecs ?? 0,
+    usageSlot1Available: Boolean(slot1),
+    usageSlot2Label: slot2?.label || "",
+    usageSlot2Percent: clampPercent(slot2?.percent),
+    usageSlot2ResetSecs: slot2?.resetSecs ?? 0,
+    usageSlot2Available: Boolean(slot2),
     activity: displayFrame.activity || "idle",
     sessionTokens: displayFrame.sessionTokens ?? 0,
     weekTokens: displayFrame.weekTokens ?? 0,
@@ -829,6 +1093,31 @@ export function buildFrameData(
       month: "2-digit",
     }).format(usableDate),
   };
+}
+
+export function primitiveUsageSlotVisible(
+  primitive: ThemePrimitive,
+  frame: FrameData,
+): boolean {
+  const usageIndex = primitive.usageIndex ?? primitive.ui;
+  if (typeof usageIndex === "number") {
+    return frame.usageWindows[usageIndex]?.available === true;
+  }
+  const slot = primitive.slot ?? primitive.sl;
+  if (slot === 1) {
+    return frame.usageSlot1Available;
+  }
+  if (slot === 2) {
+    return frame.usageSlot2Available;
+  }
+  return true;
+}
+
+export function themeSpecAriaLabel(themeId: string, frame: FrameData): string {
+  const usage = frame.usageWindows
+    .filter((window) => window.available)
+    .map((window) => `${window.label} ${window.percent}% ${frame.usageMode}`);
+  return `Rendered VibeTV theme ${themeId} showing ${frame.label}, ${usage.length > 0 ? usage.join(", ") : "no usage windows available"}`;
 }
 
 function frameUsageMode(
@@ -866,18 +1155,91 @@ function normalizeThemeAlias(theme: string | undefined): string {
   return DEVICE_THEME_ALIASES[normalized] || normalized;
 }
 
+function normalizeThemeSpecHash(value: string | undefined): string {
+  const hash = (value || "").trim().toLowerCase();
+  return /^[a-f0-9]{8}$/.test(hash) ? hash : "";
+}
+
+function renderPackSpecHash(pack: ThemeRenderPack): string {
+  return normalizeThemeSpecHash(pack.specHash);
+}
+
+export async function fetchThemeRenderPackRevision(
+  themeId: string,
+  themeSpecPath: string,
+  themeSpecHash: string,
+  signal?: AbortSignal,
+  fetcher: typeof fetch = fetch,
+): Promise<ThemeRenderPack> {
+  const exactResponse = await fetcher(
+    themeRenderPackUrl(themeId, themeSpecPath, themeSpecHash),
+    { signal },
+  );
+  if (exactResponse.ok) {
+    return exactResponse.json() as Promise<ThemeRenderPack>;
+  }
+  if (!themeSpecPath) {
+    throw new Error("theme pack unavailable");
+  }
+
+  // Old Companions only expose the latest cache by theme ID. Their payload
+  // still includes specPath, which lets the caller reject a wrong revision.
+  const legacyResponse = await fetcher(themeRenderPackUrl(themeId), { signal });
+  if (!legacyResponse.ok) {
+    throw new Error("theme pack unavailable");
+  }
+  return legacyResponse.json() as Promise<ThemeRenderPack>;
+}
+
+export function themeRenderPackMatchesActiveRevision(
+  pack: ThemeRenderPack,
+  themeSpecPath: string,
+  themeSpecHash: string,
+): boolean {
+  if (!pack?.spec) {
+    return false;
+  }
+  const receivedSpecPath = (pack.specPath || "").trim();
+  const receivedSpecHash = renderPackSpecHash(pack);
+  const exactPath = !themeSpecPath || receivedSpecPath === themeSpecPath;
+  return (
+    exactPath &&
+    (!themeSpecHash ||
+      receivedSpecHash === themeSpecHash ||
+      (!receivedSpecHash && Boolean(themeSpecPath)))
+  );
+}
+
 function renderTextPrimitive(primitive: ThemePrimitive, frame: FrameData): string {
   const binding = primitive.binding || primitive.b;
   if (binding) {
     return boundValue(binding, frame);
   }
   const raw = primitive.text || primitive.v || "";
-  return raw.replace(/\{([a-zA-Z0-9_-]+)\}/g, (_match, key: string) =>
+  return raw.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_match, key: string) =>
     boundValue(key, frame),
   );
 }
 
 export function boundValue(key: string, frame: FrameData): string {
+  const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(key);
+  if (usageMatch) {
+    const window = frame.usageWindows[Number(usageMatch[1])];
+    const field = usageMatch[2];
+    if (field === "available") {
+      return String(window?.available === true);
+    }
+    if (!window?.available) {
+      return "";
+    }
+    if (field === "label") {
+      return window.label;
+    }
+    if (field === "reset") {
+      return formatReset(window.resetSecs);
+    }
+    return String(window.percent);
+  }
   switch (key) {
     case "label":
     case "providerLabel":
@@ -898,6 +1260,30 @@ export function boundValue(key: string, frame: FrameData): string {
     case "resetCountdown":
     case "r":
       return formatReset(frame.resetSecs);
+    case "usageSlot1Label":
+    case "us1l":
+      return frame.usageSlot1Available ? frame.usageSlot1Label : "";
+    case "usageSlot1Percent":
+    case "us1p":
+      return frame.usageSlot1Available ? String(frame.usageSlot1Percent) : "";
+    case "usageSlot1Reset":
+    case "us1r":
+      return frame.usageSlot1Available ? formatReset(frame.usageSlot1ResetSecs) : "";
+    case "usageSlot1Available":
+    case "us1a":
+      return String(frame.usageSlot1Available);
+    case "usageSlot2Label":
+    case "us2l":
+      return frame.usageSlot2Available ? frame.usageSlot2Label : "";
+    case "usageSlot2Percent":
+    case "us2p":
+      return frame.usageSlot2Available ? String(frame.usageSlot2Percent) : "";
+    case "usageSlot2Reset":
+    case "us2r":
+      return frame.usageSlot2Available ? formatReset(frame.usageSlot2ResetSecs) : "";
+    case "usageSlot2Available":
+    case "us2a":
+      return String(frame.usageSlot2Available);
     case "usageMode":
     case "u":
       return frame.usageMode;
@@ -926,6 +1312,17 @@ export function boundValue(key: string, frame: FrameData): string {
 
 export function progressPercent(primitive: ThemePrimitive, frame: FrameData): number {
   const binding = primitive.binding || primitive.b || "";
+  const usageMatch = /^usage\.(\d+)\.percent$/.exec(binding);
+  if (usageMatch) {
+    const window = frame.usageWindows[Number(usageMatch[1])];
+    return window?.available ? window.percent : 0;
+  }
+  if (binding === "usageSlot1Percent" || binding === "us1p") {
+    return frame.usageSlot1Available ? frame.usageSlot1Percent : 0;
+  }
+  if (binding === "usageSlot2Percent" || binding === "us2p") {
+    return frame.usageSlot2Available ? frame.usageSlot2Percent : 0;
+  }
   if (binding === "weekly" || binding === "weeklyPercent" || binding === "w") {
     return frame.weeklyUnavailable ? 0 : frame.weekly;
   }
@@ -1045,6 +1442,9 @@ function useAnimationTick(framesPerSecond: number): number {
         scheduleNextFrame();
       } else {
         stopTimer();
+        if (reducedMotion.matches) {
+          setTick(0);
+        }
       }
     };
 
@@ -1052,7 +1452,7 @@ function useAnimationTick(framesPerSecond: number): number {
     window.addEventListener("focus", handlePageActivity);
     window.addEventListener("blur", handlePageActivity);
     reducedMotion.addEventListener("change", handlePageActivity);
-    scheduleNextFrame();
+    handlePageActivity();
 
     return () => {
       stopTimer();
@@ -1063,7 +1463,7 @@ function useAnimationTick(framesPerSecond: number): number {
     };
   }, [framesPerSecond]);
 
-  return tick;
+  return framesPerSecond > 0 ? tick : 0;
 }
 
 function spriteFrameIndex(sprite: DecodedSprite, animationTick: number): number {
@@ -1189,6 +1589,151 @@ function alignedTextX(
     return x + maxWidth;
   }
   return x;
+}
+
+export function themeTextLayout(
+  x: number,
+  maxWidth: number,
+  align: string | undefined,
+  textWidth: number,
+) {
+  const clipWidth = Math.max(0, maxWidth);
+  // TFT_eSPI keeps an overlong centered/right-aligned string at the left edge
+  // of its viewport, then clips it. Match that behavior so every provider
+  // label stays inside the same ThemeSpec lane in hardware and web previews.
+  const textAnchor =
+    clipWidth > 0 && textWidth > clipWidth
+      ? ("start" as const)
+      : clipWidth > 0
+        ? svgTextAnchor(align)
+        : ("start" as const);
+  return {
+    clipWidth,
+    textAnchor,
+    textX: alignedTextX(x, clipWidth, textAnchor),
+  };
+}
+
+export function themeTextWidth(
+  text: string,
+  fontSize: number,
+  measuredWidth?: number,
+): number {
+  if (
+    typeof measuredWidth === "number" &&
+    Number.isFinite(measuredWidth) &&
+    (text === "" || measuredWidth > 0)
+  ) {
+    return measuredWidth;
+  }
+  return text.length * fontSize * 0.6;
+}
+
+export function themeTextFittedSize(
+  text: string,
+  font: number,
+  maxSize: number,
+  maxWidth: number,
+  fitShrink: boolean,
+): number {
+  let size = Math.max(1, maxSize);
+  if (!fitShrink || maxWidth <= 0) {
+    return size;
+  }
+  while (size > 1) {
+    const metrics = themeFirmwareTextMetrics(text, font, size);
+    const width =
+      metrics?.width ?? themeTextWidth(text, themeFontSize(font, size));
+    if (width <= maxWidth) {
+      break;
+    }
+    size -= 1;
+  }
+  return size;
+}
+
+// Mirrors TFT_eSPI 2.5.43 Fonts/Font16.c, pinned in
+// firmware_esp8266/platformio.ini. Update both together when the pin changes.
+const TFT_ESPI_FONT2_WIDTHS = [
+  6, 3, 4, 9, 8, 9, 9, 3, 7, 7, 8, 6, 3, 6, 5, 7, 8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 3, 3, 6, 6, 6, 8, 9, 8, 8, 8, 8, 8, 8, 8, 8, 4, 8, 8, 7, 10, 8, 8,
+  8, 8, 8, 8, 8, 8, 8, 10, 8, 8, 8, 4, 7, 4, 7, 9, 5, 7, 7, 7, 7, 7, 6, 7,
+  7, 4, 5, 6, 4, 8, 7, 8, 7, 8, 6, 6, 5, 7, 8, 8, 6, 7, 7, 5, 3, 5, 8, 6,
+] as const;
+
+// Mirrors the classic GLCD font's CP437 glyph order in TFT_eSPI 2.5.43.
+// TFT_eSPI keeps the historical Adafruit_GFX >175 one-glyph shift unless
+// setCP437(true) is called; the firmware uses that default.
+const TFT_GLCD_CP437_EXTENDED = Array.from(
+  "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ",
+);
+
+export function themeFirmwareTextMetrics(
+  text: string,
+  font: number,
+  size: number,
+): {
+  width: number;
+  glyphs: Array<{ character: string; offset: number; width: number }>;
+} | null {
+  if (font !== 1 && font !== 2) {
+    return null;
+  }
+  const scale = Math.max(1, size);
+  let layoutOffset = 0;
+  let drawOffset = 0;
+  const glyphs: Array<{ character: string; offset: number; width: number }> = [];
+  for (const character of Array.from(text)) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint === undefined) {
+      continue;
+    }
+    const utf8ByteCount = new TextEncoder().encode(character).length;
+    if (font === 1) {
+      layoutOffset += utf8ByteCount * 6 * scale;
+      const width = 6 * scale;
+      const glyphIndex = codePoint > 175 ? codePoint + 1 : codePoint;
+      const visibleCharacter =
+        glyphIndex < 128
+          ? String.fromCodePoint(glyphIndex)
+          : TFT_GLCD_CP437_EXTENDED[glyphIndex - 128];
+      if (visibleCharacter !== undefined) {
+        glyphs.push({
+          character: visibleCharacter,
+          offset: drawOffset,
+          width,
+        });
+      }
+      drawOffset += width;
+      continue;
+    }
+
+    if (codePoint >= 32 && codePoint <= 127) {
+      const width = TFT_ESPI_FONT2_WIDTHS[codePoint - 32] * scale;
+      glyphs.push({ character, offset: drawOffset, width });
+      layoutOffset += width;
+      drawOffset += width;
+    } else {
+      // Font 2 measures every unsupported UTF-8 byte as a space but drops the
+      // decoded glyph without advancing the draw cursor.
+      layoutOffset += utf8ByteCount * TFT_ESPI_FONT2_WIDTHS[0] * scale;
+    }
+  }
+  return { width: layoutOffset, glyphs };
+}
+
+function themeTextStartX(
+  textX: number,
+  textAnchor: "start" | "middle" | "end",
+  textWidth: number,
+): number {
+  if (textAnchor === "middle") {
+    return textX - textWidth / 2;
+  }
+  if (textAnchor === "end") {
+    return textX - textWidth;
+  }
+  return textX;
 }
 
 function themeFontSize(font?: number, size?: number): number {

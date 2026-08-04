@@ -59,7 +59,7 @@ cd companion
 ../codexbar-display setup --yes
 ```
 
-This installs the companion runtime, persists the Mini theme on fresh installs, and writes a WiFi LaunchAgent.
+This installs the companion runtime and writes a WiFi LaunchAgent. Fresh devices intentionally start in the `theme-missing` state until a theme is installed through the Mac App.
 It does not require USB serial.
 
 ### WiFi firmware update path
@@ -335,6 +335,11 @@ If hello negotiation is temporarily unavailable, you can opt into local USB fall
 ../codexbar-display theme-apply --allow-unknown-capabilities --spec ../protocol/fixtures/v2/theme_spec_mini_transport.json
 ```
 
+For WiFi, `theme-apply` uses the saved pairing token only when the requested
+target exactly matches that saved device. It authenticates `/hello` before
+sending `/frame`, never reuses a token for a different target, and does not
+print the token in command output.
+
 Validation checks:
 - ThemeSpec schema/field rules (`protocol/theme_spec_v1.schema.json`)
 - capability compatibility (`maxThemeSpecBytes`, `maxThemePrimitives`, `builtinThemes`)
@@ -506,10 +511,20 @@ tail -n 100 /tmp/codexbar-display-daemon.err.log
 
 ### `runtime/codexbar-command`
 
+First verify the bundled CodexBar version and inspect the Mac App's dashboard
+supervisor and collector logs. The normal Mac App runtime uses its single
+private CodexBar serve path; the direct command below is an upstream diagnostic,
+not a runtime fallback:
+
 ```bash
-codexbar usage --json --provider codex --source cli
+codexbar --version
 codexbar usage --json --web-timeout 8
 ```
+
+Do not add a provider-specific probe or alternate CLI path because this
+diagnostic succeeds while the runtime path fails. Trace the first disagreement
+through CodexBar serve, the collector, persisted usage, `/v1/usage`, and the
+last sent frame.
 
 ## Error Code Recovery Map
 

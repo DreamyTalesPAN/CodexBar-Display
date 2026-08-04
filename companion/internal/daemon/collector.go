@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -10,15 +12,28 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
-const tokenStatsCollectorTimeout = 60 * time.Second
+const (
+	// Give codexbar cost --json its full source budget plus a small collector
+	// margin, so the parent scan does not cancel at the same instant as the command.
+	tokenStatsCollectorTimeout = 125 * time.Second
+	// Cost history scans can take over a minute. Keep their post-completion
+	// cadence below the ten-minute last-good window without running continuously.
+	// This cadence applies only once a provider's history stopped growing;
+	// see tokenStatsHistorySettled.
+	tokenStatsScanCooldown = 5 * time.Minute
+)
 
 type providerSnapshot struct {
-	Provider           string                     `json:"provider"`
-	Frame              protocol.Frame             `json:"frame"`
-	Source             string                     `json:"source,omitempty"`
-	Meta               codexbar.ProviderUsageMeta `json:"meta,omitempty"`
-	Collected          time.Time                  `json:"collectedAt"`
-	ActivityObservedAt time.Time                  `json:"activityObservedAt,omitempty"`
+	Provider            string                     `json:"provider"`
+	Frame               protocol.Frame             `json:"frame"`
+	Source              string                     `json:"source,omitempty"`
+	Meta                codexbar.ProviderUsageMeta `json:"meta,omitempty"`
+	Collected           time.Time                  `json:"collectedAt"`
+	TokenStatsCollected time.Time                  `json:"tokenStatsCollectedAt,omitempty"`
+	TokenHistorySettled bool                       `json:"tokenHistorySettled,omitempty"`
+	ActivityObservedAt  time.Time                  `json:"activityObservedAt,omitempty"`
+	RateLimited         bool                       `json:"rateLimited,omitempty"`
+	RateLimitedUntil    time.Time                  `json:"rateLimitedUntil,omitempty"`
 }
 
 type persistedProviderSnapshots struct {
@@ -26,35 +41,43 @@ type persistedProviderSnapshots struct {
 	Providers []providerSnapshot `json:"providers"`
 }
 
-type retryBackoff struct {
-	base    time.Duration
-	max     time.Duration
-	current time.Duration
-}
-
 type providerCollector struct {
-	now             func() time.Time
-	logf            func(string, ...any)
-	fetchProviders  func(context.Context) ([]codexbar.ParsedFrame, error)
-	fetchInventory  func(context.Context) ([]codexbar.ProviderSetting, error)
-	fetchTokenStats func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
-	resolvePort     func(string) (string, error)
-	requestedPort   string
-	requestedPortFn func() string
-	transportName   string
-	order           []string
-	interval        time.Duration
-	activityPoll    time.Duration
-	timeout         time.Duration
-	snapshotMaxAge  time.Duration
-	persistInterval time.Duration
+	now                   func() time.Time
+	logf                  func(string, ...any)
+	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
+	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error)
+	fetchInventory        func(context.Context) ([]codexbar.ProviderSetting, error)
+	fetchTokenStats       func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
+	fetchTokenStatsReport func(context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport)
+	dashboard             codexbar.DashboardServe
+	resolvePort           func(string) (string, error)
+	requestedPort         string
+	requestedPortFn       func() string
+	transportName         string
+	order                 []string
+	interval              time.Duration
+	activityPoll          time.Duration
+	timeout               time.Duration
+	snapshotMaxAge        time.Duration
+	persistInterval       time.Duration
+	wake                  <-chan struct{}
+	afterWakeCollect      func()
 
-	mu               sync.RWMutex
-	providers        map[string]providerSnapshot
-	lastPersistedRaw string
-	lastPersistedAt  time.Time
-	inventoryKnown   bool
-	inventoryEnabled map[string]struct{}
+	mu                      sync.RWMutex
+	providers               map[string]providerSnapshot
+	lastPersistedRaw        string
+	lastPersistedAt         time.Time
+	inventoryKnown          bool
+	inventoryEnabled        map[string]struct{}
+	tokenStatsMu            sync.Mutex
+	tokenStatsRunning       bool
+	tokenStatsCancel        context.CancelFunc
+	tokenStatsWG            sync.WaitGroup
+	tokenStatsCooldown      time.Duration
+	tokenStatsLastCompleted time.Time
+	tokenStatsSettled       bool
+	tokenStatsFailed        bool
+	tokenHistoryPrints      map[string]string
 }
 
 func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
@@ -68,21 +91,25 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 	}
 
 	collector := &providerCollector{
-		now:             nowFn,
-		logf:            logFn,
-		fetchProviders:  deps.fetchProviders,
-		fetchInventory:  deps.fetchInventory,
-		fetchTokenStats: deps.fetchTokenStats,
-		resolvePort:     deps.resolvePort,
-		requestedPort:   requestedDeviceTarget(opts),
-		transportName:   usageSourceOrDefault(deps.transportName, "usb"),
-		order:           collectorProviderOrder(),
-		interval:        collectorInterval(opts.Interval),
-		activityPoll:    activityPollInterval(),
-		timeout:         collectorProviderTimeout(),
-		snapshotMaxAge:  providerSnapshotMaxAge(),
-		persistInterval: 1 * time.Minute,
-		providers:       make(map[string]providerSnapshot),
+		now:                   nowFn,
+		logf:                  logFn,
+		fetchProviders:        deps.fetchProviders,
+		fetchDashboard:        deps.fetchDashboard,
+		fetchInventory:        deps.fetchInventory,
+		fetchTokenStats:       deps.fetchTokenStats,
+		fetchTokenStatsReport: deps.fetchTokenStatsReport,
+		dashboard:             deps.dashboard,
+		resolvePort:           deps.resolvePort,
+		requestedPort:         requestedDeviceTarget(opts),
+		transportName:         usageSourceOrDefault(deps.transportName, "usb"),
+		order:                 collectorProviderOrder(),
+		interval:              collectorInterval(opts.Interval),
+		activityPoll:          activityPollInterval(),
+		timeout:               collectorProviderTimeout(),
+		snapshotMaxAge:        providerSnapshotMaxAge(),
+		persistInterval:       1 * time.Minute,
+		tokenStatsCooldown:    tokenStatsScanCooldown,
+		providers:             make(map[string]providerSnapshot),
 	}
 	if normalizeTransportName(opts.Transport) == "wifi" || deps.transportName == "wifi" {
 		collector.requestedPortFn = func() string {
@@ -111,7 +138,16 @@ func (c *providerCollector) run(ctx context.Context) {
 	if c == nil {
 		return
 	}
+	defer c.shutdownTokenStatsScan()
 	c.collectOnce(ctx)
+	retryWhenDashboardReady := c.dashboard != nil
+	for _, frame := range c.providerFrames(c.now().UTC()) {
+		if !frame.Stale {
+			retryWhenDashboardReady = false
+			break
+		}
+	}
+	c.requestTokenStatsScan(ctx)
 
 	usageTicker := time.NewTicker(c.interval)
 	defer usageTicker.Stop()
@@ -123,14 +159,85 @@ func (c *providerCollector) run(ctx context.Context) {
 			return
 		case <-usageTicker.C:
 			c.collectOnce(ctx)
+			c.requestTokenStatsScan(ctx)
+		case <-c.wake:
+			c.collectOnce(ctx)
+			c.requestTokenStatsScan(ctx)
+			if c.afterWakeCollect != nil {
+				c.afterWakeCollect()
+			}
 		case <-activityTicker.C:
-			c.collectTokenStatsOnce(ctx)
+			if retryWhenDashboardReady {
+				info := c.dashboard.Info()
+				if info.Running && info.Healthy {
+					c.collectOnce(ctx)
+					retryWhenDashboardReady = false
+				}
+			}
+			c.requestTokenStatsScan(ctx)
 		}
 	}
 }
 
+func (c *providerCollector) requestTokenStatsScan(parent context.Context) bool {
+	if c == nil || c.fetchTokenStats == nil {
+		return false
+	}
+	if parent == nil {
+		parent = context.Background()
+	}
+
+	ctx, cancel := context.WithCancel(parent)
+	c.tokenStatsMu.Lock()
+	now := c.now().UTC()
+	// A still-growing history must be corrected by the next scan instead of
+	// waiting out the completed-scan cadence. Single-flight still prevents
+	// overlapping scans.
+	cooling := (c.tokenStatsSettled || c.tokenStatsFailed) &&
+		c.tokenStatsCooldown > 0 &&
+		!c.tokenStatsLastCompleted.IsZero() &&
+		now.Before(c.tokenStatsLastCompleted.Add(c.tokenStatsCooldown))
+	if c.tokenStatsRunning || cooling {
+		c.tokenStatsMu.Unlock()
+		cancel()
+		return false
+	}
+	c.tokenStatsRunning = true
+	c.tokenStatsCancel = cancel
+	c.tokenStatsWG.Add(1)
+	c.tokenStatsMu.Unlock()
+
+	go func() {
+		defer c.finishTokenStatsScan()
+		c.collectTokenStatsOnce(ctx)
+	}()
+	return true
+}
+
+func (c *providerCollector) finishTokenStatsScan() {
+	c.tokenStatsMu.Lock()
+	c.tokenStatsLastCompleted = c.now().UTC()
+	c.tokenStatsRunning = false
+	c.tokenStatsCancel = nil
+	c.tokenStatsMu.Unlock()
+	c.tokenStatsWG.Done()
+}
+
+func (c *providerCollector) shutdownTokenStatsScan() {
+	if c == nil {
+		return
+	}
+	c.tokenStatsMu.Lock()
+	cancel := c.tokenStatsCancel
+	c.tokenStatsMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	c.tokenStatsWG.Wait()
+}
+
 func (c *providerCollector) collectOnce(parent context.Context) {
-	if c == nil || c.fetchProviders == nil {
+	if c == nil {
 		return
 	}
 	if c.resolvePort != nil {
@@ -151,7 +258,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	}
 	defer cancel()
 
-	allProviders, fetchErr := c.fetchProviders(ctx)
+	allProviders, sourceMode, err := c.fetchProvidersForCollect(ctx, now)
 	var inventory []codexbar.ProviderSetting
 	inventoryAuthoritative := false
 	if c.fetchInventory != nil {
@@ -160,7 +267,8 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			inventoryAuthoritative = true
 		}
 	}
-	if fetchErr != nil {
+	collectedAt := c.now().UTC()
+	if err != nil {
 		updated := false
 		if inventoryAuthoritative {
 			c.mu.Lock()
@@ -168,9 +276,9 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			c.mu.Unlock()
 		}
 		if updated {
-			c.persistIfNeeded(now)
+			c.persistIfNeeded(collectedAt)
 		}
-		c.logf("collector fetch-all transport=%s source=codexbar fresh=false err=%v timeout=%s\n", usageSourceOrDefault(c.transportName, "usb"), fetchErr, c.timeout)
+		c.logf("collector fetch-all transport=%s source=%s fresh=false err=%v timeout=%s\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, err, c.timeout)
 		return
 	}
 
@@ -205,32 +313,48 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		}
 
 		frame.Provider = key
+		parsedCollectedAt := parsedProviderCollectedAt(parsed, collectedAt)
 		if frame.UsageUnavailable {
 			lastGood, exists := c.providers[key]
-			if exists && !lastGood.Frame.UsageUnavailable {
-				if isLastGoodFreshAt(lastGood.Collected, now, c.snapshotMaxAge) {
+			if exists {
+				lastGood.RateLimited = parsed.RateLimited
+				lastGood.RateLimitedUntil = parsed.RateLimitedUntil.UTC()
+				c.providers[key] = lastGood
+				updated = true
+				if !lastGood.Frame.UsageUnavailable && isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
 					continue
 				}
 				lastGood.Frame.UsageUnavailable = true
 				c.providers[key] = lastGood
-			} else if !exists {
+			} else {
 				c.providers[key] = providerSnapshot{
-					Provider:  key,
-					Frame:     frame,
-					Source:    strings.TrimSpace(parsed.Source),
-					Collected: parsed.CollectedAt.UTC(),
+					Provider:         key,
+					Frame:            frame,
+					Source:           strings.TrimSpace(parsed.Source),
+					Collected:        parsedCollectedAt,
+					RateLimited:      parsed.RateLimited,
+					RateLimitedUntil: parsed.RateLimitedUntil.UTC(),
 				}
 			}
 			updated = true
 			continue
 		}
 		snapshot := providerSnapshot{
-			Provider:           key,
-			Frame:              frame,
-			Source:             strings.TrimSpace(parsed.Source),
-			Meta:               parsed.Meta,
-			Collected:          now.UTC(),
-			ActivityObservedAt: parsed.ActivityObservedAt,
+			Provider:            key,
+			Frame:               frame,
+			Source:              strings.TrimSpace(parsed.Source),
+			Meta:                parsed.Meta,
+			Collected:           parsedCollectedAt,
+			TokenStatsCollected: parsedTokenStatsCollectedAt(parsed, now),
+			ActivityObservedAt:  parsed.ActivityObservedAt,
+			RateLimited:         false,
+			RateLimitedUntil:    time.Time{},
+		}
+		if previous, exists := c.providers[key]; exists {
+			// Only a token scan can change the history, so a quota collection
+			// must never reset how settled that history already is.
+			snapshot.TokenHistorySettled = previous.TokenHistorySettled
+			carryForwardSnapshotTokenStats(previous, &snapshot, now, c.snapshotMaxAge)
 		}
 		c.providers[key] = snapshot
 		successes++
@@ -239,9 +363,36 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	c.mu.Unlock()
 
 	if updated {
-		c.persistIfNeeded(now)
+		c.persistIfNeeded(collectedAt)
 	}
-	c.logf("collector complete transport=%s source=codexbar fresh=true providers=%d succeeded=%d timeout=%s mode=fetch-all\n", usageSourceOrDefault(c.transportName, "usb"), len(allProviders), successes, c.timeout)
+	c.logf("collector complete transport=%s source=%s fresh=true providers=%d succeeded=%d timeout=%s mode=fetch-all\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, len(allProviders), successes, c.timeout)
+}
+
+func parsedProviderCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time) time.Time {
+	if !parsed.CollectedAt.IsZero() {
+		return parsed.CollectedAt.UTC()
+	}
+	return fallback.UTC()
+}
+
+func (c *providerCollector) fetchProvidersForCollect(ctx context.Context, now time.Time) ([]codexbar.ParsedFrame, string, error) {
+	if c.dashboard != nil && c.fetchDashboard != nil {
+		info := c.dashboard.Info()
+		if strings.TrimSpace(info.Endpoint) != "" && info.Running {
+			providers, err := c.fetchDashboard(ctx, info, now)
+			if err == nil {
+				return providers, "codexbar-dashboard", nil
+			}
+			c.logf("collector dashboard-unavailable source=codexbar-dashboard err=%v\n", err)
+			return nil, "codexbar-dashboard", err
+		}
+		return nil, "codexbar-dashboard", errors.New("dashboard serve unavailable")
+	}
+	if c.fetchProviders == nil {
+		return nil, "codexbar-usage-json", errors.New("usage provider fetcher unavailable")
+	}
+	providers, err := c.fetchProviders(ctx)
+	return providers, "codexbar-usage-json", err
 }
 
 func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.ProviderSetting) bool {
@@ -359,13 +510,8 @@ func mergeProviderOrder(current, previous []string) []string {
 }
 
 func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
-	if c == nil || c.fetchTokenStats == nil {
+	if c == nil || (c.fetchTokenStats == nil && c.fetchTokenStatsReport == nil) {
 		return
-	}
-	if c.resolvePort != nil {
-		if _, err := c.resolvePort(c.resolveRequestedPort()); err != nil {
-			return
-		}
 	}
 
 	ctx := parent
@@ -377,20 +523,34 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 	}
 	defer cancel()
 
-	statsByProvider, ok := c.fetchTokenStats(ctx)
-	if !ok || len(statsByProvider) == 0 {
+	statsByProvider, report := c.fetchTokenStatsWithReport(ctx)
+	if !report.OK {
+		c.tokenStatsMu.Lock()
+		c.tokenStatsSettled = false
+		c.tokenStatsFailed = true
+		c.tokenStatsMu.Unlock()
+		c.logTokenStatsReport(report, 0)
 		return
 	}
 
 	now := c.now().UTC()
 	updated := 0
+	settled := true
 
 	c.mu.Lock()
+	prints := make(map[string]string, len(statsByProvider))
+	seen := make(map[string]struct{}, len(statsByProvider)+len(report.FailedProviders))
+	for _, provider := range report.FailedProviders {
+		if key := normalizeProviderKey(provider); key != "" {
+			seen[key] = struct{}{}
+		}
+	}
 	for rawKey, stats := range statsByProvider {
 		key := normalizeProviderKey(rawKey)
 		if key == "" || !stats.HasAny() {
 			continue
 		}
+		seen[key] = struct{}{}
 
 		snapshot, exists := c.providers[key]
 		if !exists {
@@ -411,19 +571,11 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		if strings.TrimSpace(frame.Label) == "" {
 			frame.Label = key
 		}
-		if stats.SessionTokens > 0 {
-			frame.SessionTokens = stats.SessionTokens
-		}
-		if stats.WeekTokens > 0 {
-			frame.WeekTokens = stats.WeekTokens
-		}
-		if stats.TotalTokens > 0 {
-			frame.TotalTokens = stats.TotalTokens
-		}
+		frame.SessionTokens = stats.SessionTokens
+		frame.WeekTokens = stats.WeekTokens
+		frame.TotalTokens = stats.TotalTokens
 		meta := snapshot.Meta
-		if stats.Cost != nil {
-			meta.Cost = stats.Cost
-		}
+		meta.Cost = stats.Cost
 
 		source := strings.TrimSpace(snapshot.Source)
 		if source == "" {
@@ -438,21 +590,222 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			activityObservedAt = stats.UpdatedAt.UTC()
 		}
 
+		print := tokenHistoryFingerprint(stats.Cost, now)
+		prints[key] = print
+		previousPrint, hadPrevious := c.tokenHistoryPrints[key]
+		// Without a cost history there is nothing that can still grow, so such
+		// a provider must not keep the collector scanning.
+		providerSettled := stats.Cost == nil || (hadPrevious && previousPrint == print)
+		settled = settled && providerSettled
+
 		c.providers[key] = providerSnapshot{
-			Provider:           key,
-			Frame:              frame,
-			Source:             source,
-			Meta:               meta,
-			Collected:          snapshot.Collected,
-			ActivityObservedAt: activityObservedAt,
+			Provider:  key,
+			Frame:     frame,
+			Source:    source,
+			Meta:      meta,
+			Collected: snapshot.Collected,
+			// A successful scan makes these totals current even when CodexBar
+			// reports that no new activity occurred. UpdatedAt remains the
+			// activity timestamp above, not the token-stat freshness timestamp.
+			TokenStatsCollected: now,
+			TokenHistorySettled: providerSettled,
+			ActivityObservedAt:  activityObservedAt,
+			RateLimited:         snapshot.RateLimited,
+			RateLimitedUntil:    snapshot.RateLimitedUntil,
 		}
+		updated++
+	}
+	c.tokenHistoryPrints = prints
+	for key, snapshot := range c.providers {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		hadTokenStats := snapshotHasTokenStats(snapshot)
+		if !hadTokenStats && snapshot.TokenStatsCollected.Equal(now) {
+			continue
+		}
+		if hadTokenStats {
+			clearSnapshotTokenStats(&snapshot)
+		}
+		// TokenStatsCollected is also the completion marker for a successful
+		// empty result. A failed provider remains in seen and keeps its
+		// previous marker instead.
+		snapshot.TokenStatsCollected = now
+		c.providers[key] = snapshot
 		updated++
 	}
 	c.mu.Unlock()
 
+	c.tokenStatsMu.Lock()
+	c.tokenStatsSettled = settled
+	c.tokenStatsFailed = false
+	c.tokenStatsMu.Unlock()
+
 	if updated > 0 {
 		c.persistIfNeeded(now)
 	}
+	c.logTokenStatsReport(report, updated)
+}
+
+func (c *providerCollector) fetchTokenStatsWithReport(ctx context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport) {
+	if c.fetchTokenStatsReport != nil {
+		return c.fetchTokenStatsReport(ctx)
+	}
+	statsByProvider, ok := c.fetchTokenStats(ctx)
+	report := codexbar.ProviderTokenStatsReport{
+		OK:            ok,
+		ProviderCount: len(statsByProvider),
+	}
+	if ok {
+		report.Reason = "success"
+	} else {
+		report.Reason = "unavailable"
+	}
+	return statsByProvider, report
+}
+
+func (c *providerCollector) logTokenStatsReport(report codexbar.ProviderTokenStatsReport, accepted int) {
+	if c == nil || c.logf == nil {
+		return
+	}
+	reason := strings.TrimSpace(report.Reason)
+	if reason == "" {
+		if report.OK {
+			reason = "success"
+		} else {
+			reason = "unavailable"
+		}
+	}
+	c.logf(
+		"collector token-stats fresh=%t providers=%d accepted=%d reason=%s binary=%s version=%s cost=%s parse=%s timeout=%s\n",
+		report.OK,
+		report.ProviderCount,
+		accepted,
+		reason,
+		report.BinaryDuration.Round(time.Millisecond),
+		report.VersionDuration.Round(time.Millisecond),
+		report.CostDuration.Round(time.Millisecond),
+		report.ParseDuration.Round(time.Millisecond),
+		tokenStatsCollectorTimeout,
+	)
+}
+
+func carryForwardSnapshotTokenStats(previous providerSnapshot, next *providerSnapshot, now time.Time, maxAge time.Duration) {
+	if next == nil {
+		return
+	}
+	if frameHasTokenStats(next.Frame) || next.Meta.Cost != nil {
+		return
+	}
+	if !snapshotTokenStatsFresh(previous, now, maxAge) {
+		return
+	}
+	prevFrame := previous.Frame.Normalize()
+	next.Frame.SessionTokens = prevFrame.SessionTokens
+	next.Frame.WeekTokens = prevFrame.WeekTokens
+	next.Frame.TotalTokens = prevFrame.TotalTokens
+	next.Meta.Cost = previous.Meta.Cost
+	next.TokenStatsCollected = previous.TokenStatsCollected
+	next.TokenHistorySettled = previous.TokenHistorySettled
+	if next.ActivityObservedAt.IsZero() {
+		next.ActivityObservedAt = previous.ActivityObservedAt
+	}
+}
+
+// tokenHistoryFingerprint identifies the finished part of a provider's history.
+// CodexBar warms its cost scan incrementally and reports every intermediate
+// result as a success, so a history that stops changing is the only available
+// completeness signal. Today is excluded because a warming scan fills in older
+// days while ordinary usage only moves today, which would otherwise keep an
+// active provider permanently unsettled.
+func tokenHistoryFingerprint(cost *codexbar.ProviderCostUsage, now time.Time) string {
+	if cost == nil {
+		return ""
+	}
+	today := now.UTC().Format("2006-01-02")
+	var print strings.Builder
+	for _, day := range cost.Daily {
+		if day.Day == today {
+			continue
+		}
+		print.WriteString(day.Day)
+		print.WriteByte(':')
+		print.WriteString(strconv.FormatInt(day.TotalTokens, 10))
+		print.WriteByte(';')
+	}
+	return print.String()
+}
+
+func frameHasTokenStats(frame protocol.Frame) bool {
+	return frame.SessionTokens > 0 || frame.WeekTokens > 0 || frame.TotalTokens > 0
+}
+
+func snapshotHasTokenStats(snapshot providerSnapshot) bool {
+	return frameHasTokenStats(snapshot.Frame.Normalize()) || snapshot.Meta.Cost != nil
+}
+
+func clearSnapshotTokenStats(snapshot *providerSnapshot) {
+	if snapshot == nil {
+		return
+	}
+	snapshot.Frame.SessionTokens = 0
+	snapshot.Frame.WeekTokens = 0
+	snapshot.Frame.TotalTokens = 0
+	snapshot.Meta.Cost = nil
+	snapshot.TokenStatsCollected = time.Time{}
+	snapshot.TokenHistorySettled = false
+}
+
+func parsedTokenStatsCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time) time.Time {
+	if frameHasTokenStats(parsed.Frame.Normalize()) || parsed.Meta.Cost != nil {
+		if !parsed.ActivityObservedAt.IsZero() {
+			return parsed.ActivityObservedAt.UTC()
+		}
+		if parsed.Meta.Cost != nil && !parsed.Meta.Cost.UpdatedAt.IsZero() {
+			return parsed.Meta.Cost.UpdatedAt.UTC()
+		}
+		return fallback.UTC()
+	}
+	return time.Time{}
+}
+
+func snapshotTokenStatsFresh(snapshot providerSnapshot, now time.Time, maxAge time.Duration) bool {
+	return isLastGoodFreshAt(snapshot.TokenStatsCollected, now, maxAge)
+}
+
+func snapshotWithFreshTokenStats(snapshot providerSnapshot, now time.Time, maxAge time.Duration) providerSnapshot {
+	if !snapshotTokenStatsFresh(snapshot, now, maxAge) {
+		clearSnapshotTokenStats(&snapshot)
+	}
+	return snapshot
+}
+
+func snapshotWithExpiredUsageCleared(snapshot providerSnapshot, now time.Time, maxAge time.Duration) providerSnapshot {
+	if isLastGoodFreshAt(snapshot.Collected, now, maxAge) {
+		return snapshot
+	}
+	if !snapshotTokenStatsFresh(snapshot, now, maxAge) {
+		clearSnapshotTokenStats(&snapshot)
+	}
+
+	frame := snapshot.Frame.Normalize()
+	frame.UsageUnavailable = true
+	frame.SessionUnavailable = true
+	frame.WeeklyUnavailable = true
+	frame.Session = 0
+	frame.Weekly = 0
+	frame.ResetSec = 0
+	frame.UsageWindows = nil
+	frame.UsageSlots = nil
+	snapshot.Frame = frame
+	meta := snapshot.Meta
+	meta.Windows = nil
+	meta.Credits = nil
+	meta.ResetCredits = nil
+	meta.Pace = nil
+	meta.OverTime = nil
+	snapshot.Meta = meta
+	return snapshot
 }
 
 func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame {
@@ -473,13 +826,12 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 		if !ok {
 			continue
 		}
+		snapshot = snapshotWithFreshTokenStats(snapshot, now, c.snapshotMaxAge)
+		snapshot = snapshotWithExpiredUsageCleared(snapshot, now, c.snapshotMaxAge)
 		frame := snapshot.Frame.Normalize()
 		frame.Provider = normalizeProviderKey(frame.Provider)
 		if frame.Provider == "" {
 			frame.Provider = key
-		}
-		if snapshot.Collected.IsZero() || !isLastGoodFreshAt(snapshot.Collected, now, c.snapshotMaxAge) {
-			frame.UsageUnavailable = true
 		}
 		frames = append(frames, codexbar.ParsedFrame{
 			Frame:              frame,
@@ -488,6 +840,8 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			Meta:               snapshot.Meta,
 			CollectedAt:        snapshot.Collected,
 			ActivityObservedAt: snapshot.ActivityObservedAt,
+			RateLimited:        snapshot.RateLimited,
+			RateLimitedUntil:   snapshot.RateLimitedUntil,
 			Stale:              frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
 		})
 	}
@@ -505,18 +859,11 @@ func (c *providerCollector) resolveRequestedPort() string {
 }
 
 func (c *providerCollector) snapshotIsFresh(snapshot providerSnapshot, now time.Time) bool {
-	if snapshot.Collected.IsZero() || now.IsZero() {
-		return false
-	}
-	age := now.Sub(snapshot.Collected)
-	if age < 0 {
-		return true
-	}
-	freshFor := c.interval + 5*time.Second
-	if freshFor <= 5*time.Second {
-		freshFor = 35 * time.Second
-	}
-	return age <= freshFor
+	return providerSnapshotIsFresh(snapshot, now, c.snapshotMaxAge)
+}
+
+func providerSnapshotIsFresh(snapshot providerSnapshot, now time.Time, maxAge time.Duration) bool {
+	return isLastGoodFreshAt(snapshot.Collected, now, maxAge)
 }
 
 func (c *providerCollector) orderedKeysLocked() []string {
@@ -561,45 +908,4 @@ func (c *providerCollector) persistIfNeeded(now time.Time) {
 	}
 	c.lastPersistedRaw = encoded
 	c.lastPersistedAt = now
-}
-
-func newRetryBackoff(interval time.Duration) *retryBackoff {
-	max := 30 * time.Second
-	if interval > 0 && interval < max {
-		max = interval
-	}
-	if max <= 0 {
-		max = time.Second
-	}
-	base := time.Second
-	if max < base {
-		base = max
-	}
-	return &retryBackoff{
-		base: base,
-		max:  max,
-	}
-}
-
-func (b *retryBackoff) Next() time.Duration {
-	if b == nil {
-		return time.Second
-	}
-	if b.current <= 0 {
-		b.current = b.base
-		return b.current
-	}
-	next := b.current * 2
-	if next > b.max {
-		next = b.max
-	}
-	b.current = next
-	return b.current
-}
-
-func (b *retryBackoff) Reset() {
-	if b == nil {
-		return
-	}
-	b.current = 0
 }

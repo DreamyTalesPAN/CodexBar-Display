@@ -59,6 +59,7 @@ type SetupScreenProps = {
   diagnostics?: SupportDiagnostics | null;
   onCreateSupportReport?: () => void;
   requiresMacAppMigration?: boolean;
+  selectingDeviceTarget?: string;
   showIntro?: boolean;
   setupComplete: boolean;
   supportReportBusy?: boolean;
@@ -89,6 +90,7 @@ export function SetupScreen({
   diagnostics,
   onCreateSupportReport,
   requiresMacAppMigration = false,
+  selectingDeviceTarget,
   showIntro = true,
   setupComplete,
   supportReportBusy = false,
@@ -338,6 +340,7 @@ export function SetupScreen({
                   onSearchDevices={onSearchDevices}
                   onSelectDevice={onSelectDevice}
                   onRepairConnection={retryConnect}
+                  selectingDeviceTarget={selectingDeviceTarget}
                   setupComplete={setupComplete}
                 />
               ) : null}
@@ -478,6 +481,7 @@ function FinishSetupContent({
   onSearchDevices,
   onSelectDevice,
   onRepairConnection,
+  selectingDeviceTarget,
   setupComplete,
 }: {
   busyAction?: string | null;
@@ -490,6 +494,7 @@ function FinishSetupContent({
   onSearchDevices?: () => void;
   onSelectDevice?: (candidate: DeviceCandidate) => void;
   onRepairConnection?: (targetOverride?: string) => void;
+  selectingDeviceTarget?: string;
   setupComplete: boolean;
 }) {
   if (setupComplete) {
@@ -529,7 +534,7 @@ function FinishSetupContent({
           buttonVariant="outline"
           candidates={deviceCandidates}
           onSelect={(candidate) => onSelectDevice?.(candidate)}
-          selecting={busyAction === "select"}
+          selectingTarget={selectingDeviceTarget}
         />
         <div className="grid gap-3">
           <Button

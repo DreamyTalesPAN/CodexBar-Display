@@ -15,6 +15,18 @@ const DEFAULT_FRAME = {
   session: 62,
   weekly: 62,
   resetSecs: 3600,
+  usageWindows: [
+    { label: "Weekly", percent: 62, reset: "1h", available: true },
+    { label: "Codex Spark Weekly", percent: 38, reset: "2h", available: true },
+    { label: "Daily", percent: 14, reset: "45m", available: true },
+    { label: "Monthly", percent: 80, reset: "6d", available: true },
+  ],
+  usageSlot1Label: "Weekly",
+  usageSlot1Percent: 62,
+  usageSlot1Reset: "1h",
+  usageSlot2Label: "Codex Spark Weekly",
+  usageSlot2Percent: 38,
+  usageSlot2Reset: "2h",
   usageMode: "remaining",
   activity: "preview",
   sessionTokens: 12000,
@@ -336,10 +348,10 @@ export function textPrimitiveFontSizeFromVisualHeight(
 
 export function primitiveTitle(primitive: ThemeStudioPrimitive): string {
   if (primitive.type === "text") {
-    return primitive.text || primitive.binding || "Text";
+    return primitive.text || bindingDisplayLabel(primitive.binding) || "Text";
   }
   if (primitive.type === "progress") {
-    return primitive.binding || "session";
+    return bindingDisplayLabel(primitive.binding) || "session";
   }
   if (primitive.type === "gif" || primitive.type === "sprite") {
     return primitive.assetPath?.split("/").pop() || "Asset";
@@ -350,7 +362,47 @@ export function primitiveTitle(primitive: ThemeStudioPrimitive): string {
   return primitive.color || "Rect";
 }
 
+const USAGE_BINDING_LABELS: Record<string, string> = {
+  usageSlot1Label: "Usage window 1 label",
+  usageSlot1Percent: "Usage window 1 %",
+  usageSlot1Reset: "Usage window 1 reset",
+  usageSlot2Label: "Usage window 2 label",
+  usageSlot2Percent: "Usage window 2 %",
+  usageSlot2Reset: "Usage window 2 reset",
+};
+
+export function bindingDisplayLabel(binding: string | undefined): string {
+  if (!binding) {
+    return "";
+  }
+  const usageMatch = /^usage\.(\d+)\.(label|percent|reset)$/.exec(binding);
+  if (usageMatch) {
+    const windowIndex = Number(usageMatch[1]) + 1;
+    const field = usageMatch[2];
+    return `Usage window ${windowIndex} ${field === "percent" ? "%" : field}`;
+  }
+  return USAGE_BINDING_LABELS[binding] || binding;
+}
+
 function boundText(binding: string): string {
+  const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(binding);
+  if (usageMatch) {
+    const window = DEFAULT_FRAME.usageWindows[Number(usageMatch[1])];
+    const field = usageMatch[2];
+    if (field === "available") {
+      return String(window?.available === true);
+    }
+    if (!window?.available) {
+      return "";
+    }
+    if (field === "label") {
+      return window.label;
+    }
+    if (field === "reset") {
+      return window.reset;
+    }
+    return String(window.percent);
+  }
   switch (binding) {
     case "label":
       return DEFAULT_FRAME.label;
@@ -365,6 +417,22 @@ function boundText(binding: string): string {
     case "reset":
     case "resetCountdown":
       return "1h";
+    case "usageSlot1Label":
+      return DEFAULT_FRAME.usageSlot1Label;
+    case "usageSlot1Percent":
+      return String(DEFAULT_FRAME.usageSlot1Percent);
+    case "usageSlot1Reset":
+      return DEFAULT_FRAME.usageSlot1Reset;
+    case "usageSlot1Available":
+      return "true";
+    case "usageSlot2Label":
+      return DEFAULT_FRAME.usageSlot2Label;
+    case "usageSlot2Percent":
+      return String(DEFAULT_FRAME.usageSlot2Percent);
+    case "usageSlot2Reset":
+      return DEFAULT_FRAME.usageSlot2Reset;
+    case "usageSlot2Available":
+      return "true";
     case "usageMode":
       return DEFAULT_FRAME.usageMode;
     case "activity":
@@ -385,7 +453,7 @@ function boundText(binding: string): string {
 }
 
 function substituteText(value: string): string {
-  return value.replace(/\{([a-zA-Z0-9_-]+)\}/g, (_match, key: string) =>
+  return value.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_match, key: string) =>
     boundText(key),
   );
 }

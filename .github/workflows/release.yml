@@ -163,7 +163,8 @@ jobs:
   build-and-release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    needs: build-macos-dmg
+    needs:
+      - build-macos-dmg
     permissions:
       contents: write
     steps:

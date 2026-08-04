@@ -27,8 +27,10 @@ Fields:
 - `weekly` (number, optional): weekly usage percent `0..100`.
 - `resetSecs` (number, optional): seconds remaining until reset.
 - `usageUnavailable` (boolean, optional): both current quota values are not trustworthy; missing/false remains backward compatible. ThemeSpec text bindings show unknown values while progress keeps the numeric carrier values.
-- `sessionUnavailable` / `weeklyUnavailable` (boolean, optional): only that existing usage lane is unknown. Missing/false remains backward compatible. Its text binding shows `??` and its progress primitive is omitted. `usageUnavailable:true` still overrides both lanes, including stale frames.
-- `usageMode` (string, optional): semantic of `session`/`weekly` (`used` or `remaining`).
+- `sessionUnavailable` / `weeklyUnavailable` (boolean, optional): only that legacy usage lane is unknown. Missing/false remains backward compatible. Its text binding shows `??` and its progress primitive is omitted. `usageUnavailable:true` still overrides both lanes, including stale frames.
+- `usageMode` (string, optional): semantic of `session`/`weekly` and `usageWindows[].percent` (`used` or `remaining`).
+- `usageWindows` (array, optional, v2): generic ordered provider usage windows. Each emitted window carries `id` (max 32 UTF-8 bytes), `label` (max 24 UTF-8 bytes), `percent`, and its own `resetSecs`. Presence means availability; missing or unavailable source windows are omitted rather than coerced to `0`/`100`. Legacy `session`, `weekly`, and shared `resetSecs` remain compatibility aliases for windows 1, 2, and window 1's reset.
+- `usageSlots` (array, optional, legacy): compatibility input/output for v1-era two-slot readers. The Companion normalizes slots into `usageWindows` when no windows are present; normalized v2 frames omit `usageSlots`.
 - `sessionTokens` (number, optional): absolute token total for the current provider session/window when available.
 - `weekTokens` (number, optional): rolling 7-day token total when available.
 - `totalTokens` (number, optional): lifetime token total when available.
@@ -40,7 +42,7 @@ Fields:
 Example with additive token stats + theme:
 
 ```json
-{"v":2,"provider":"codex","label":"Codex","session":17,"weekly":42,"resetSecs":15480,"sessionTokens":1437166,"weekTokens":384312010,"totalTokens":1078397605,"theme":"mini"}
+{"v":2,"provider":"codex","label":"Codex","session":42,"weekly":7,"resetSecs":15480,"usageWindows":[{"id":"secondary","label":"Weekly","percent":42,"resetSecs":15480},{"id":"codex-spark-weekly","label":"Codex Spark Weekly","percent":7,"resetSecs":604800}],"sessionTokens":1437166,"weekTokens":384312010,"totalTokens":1078397605,"theme":"mini"}
 ```
 
 Theme registry source of truth:
@@ -61,9 +63,10 @@ Example:
 Design constraints:
 - No user code execution on device.
 - Primitives are declarative (`text`, `rect`, `progress`, `gif`, `sprite`, `pixels`) and validated by companion before send.
-- Devices accept the readable ThemeSpec keys and a compact device form. Theme Studio keeps the readable editor model, but sends compact keys such as `v/id/rev/p`, primitive `t/w/h/v/b/s/c/bg/bc/br/a/d`, and type aliases `tx/r/p/g/sp/px`. `br` is the optional 0-120 pixel border radius for rectangle and progress primitives.
+- Devices accept the readable ThemeSpec keys and a compact device form. Theme Studio keeps the readable editor model, but sends compact keys such as `v/id/rev/p`, primitive `t/w/h/v/b/s/ft/c/bg/bc/br/a/d`, and type aliases `tx/r/p/g/sp/px`. `br` is the optional 0-120 pixel border radius for rectangle and progress primitives.
+- A primitive may declare usage-lane ownership with `slot: 1|2` (compact `sl`). The renderer skips the entire primitive when that slot is absent, including static decoration and progress tracks. Themes that use slot bindings or ownership require the advertised `usage-slots-v1` capability.
 - Optional top-level `bgColor` fills the whole 240x240 screen before primitives are drawn.
-- Text primitives use the single firmware-loaded TFT GLCD font; scale with `fontSize`.
+- Text primitives scale with `fontSize`. When `fit` is `shrink` (compact `ft`), the renderer treats that size as the maximum and chooses the largest supported integer size that fits `maxWidth`/`width`.
 - Text primitive `bgColor` is optional; when omitted, text is drawn transparent over the theme background.
 - `gif` and `sprite` primitives reference uploaded display assets with `assetPath` under `/themes/...`; ESP8266 LittleFS paths are capped at 31 characters.
 - Animated state assets use `stateAssets` (compact key `sa`) with `idle` and `coding` states. The renderer selects `coding` for coding activity and otherwise falls back to `idle`, then `assetPath`.
@@ -149,6 +152,7 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
     },
     "theme": {
       "supportsThemeSpecV1": true,
+      "supportsUsageSlotsV1": true,
       "maxThemeSpecBytes": 2048,
       "maxThemePrimitives": 32,
       "supportedPrimitiveTypes": ["text", "rect", "progress", "gif", "sprite", "pixels"],
@@ -179,6 +183,7 @@ Fields:
   - `display.brightness.supported` describes browser-adjustable backlight support when the board exposes it. `display.brightness.minPercent` and `maxPercent` report the supported range; the current ESP8266 implementation uses 1-100 percent. Hosts that see no range fall back to 10-100 percent.
   - A VibeTV without saved display settings starts at 20 percent brightness.
   - `theme.maxThemeSpecBytes` is the inline `themeSpec` frame byte limit.
+  - `theme.supportsUsageSlotsV1` gates dynamic slot bindings and primitive lane ownership.
   - `theme.maxStoredThemeSpecBytes` is the uploaded/stored ThemeSpec JSON byte limit for WiFi themes.
   - `theme.maxThemePrimitives` is the maximum primitive count accepted by the renderer.
   - `theme.supportedPrimitiveTypes` lists the ThemeSpec primitive types this firmware can render.

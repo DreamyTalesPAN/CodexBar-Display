@@ -653,15 +653,17 @@ bool testEsp8266CbaCooperativeAnimationPolicy() {
     return false;
   }
   return expect(
-      ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(0) &&
-          !ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(1) &&
-          !ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(2),
-      "yield boundaries must require display transaction depth zero");
+      ThemeSpecRuntimePolicy::CanCooperativelyYield(0, true) &&
+          !ThemeSpecRuntimePolicy::CanCooperativelyYield(0, false) &&
+          !ThemeSpecRuntimePolicy::CanCooperativelyYield(1, true) &&
+          !ThemeSpecRuntimePolicy::CanCooperativelyYield(1, false),
+      "yield boundaries must require transaction depth zero and a suspendable continuation");
 }
 
 bool testRendererUsesResumableCbaAnimation(
     const char* themeSpecRendererPath,
-    const char* displayRendererPath) {
+    const char* displayRendererPath,
+    const char* sharedRendererPath) {
   const std::string renderer = readFile(themeSpecRendererPath);
   const std::size_t loadStart = renderer.find("bool loadAnimatedSpriteCache(");
   const std::size_t drawStart = renderer.find("bool drawAnimatedSpriteAsset(", loadStart);
@@ -714,8 +716,16 @@ bool testRendererUsesResumableCbaAnimation(
     return false;
   }
   if (!expect(
-          renderer.find("CanYieldAtDisplayTransactionDepth") != std::string::npos,
-          "all explicit theme-renderer yields must be guarded by transaction depth")) {
+          renderer.find("CanCooperativelyYield") != std::string::npos &&
+              renderer.find("can_yield()") != std::string::npos,
+          "explicit theme-renderer yields must require a suspendable continuation")) {
+    return false;
+  }
+  const std::string sharedRenderer = readFile(sharedRendererPath);
+  if (!expect(
+          sharedRenderer.find("inline void RenderYield()") != std::string::npos &&
+              sharedRenderer.find("if (can_yield())") != std::string::npos,
+          "shared ESP8266 render yields must require a suspendable continuation")) {
     return false;
   }
   const std::size_t pushImage = renderer.find("Tft().pushImage(");
@@ -834,34 +844,33 @@ bool testGifLoopResetStaysAtomic(const char* gifCorePath) {
       "GIF loop clear must be conditional while reset and first frame stay in one transaction");
 }
 
-bool testLegacyMiniThemeUsesLiveUsageMode(const char* mainPath) {
+bool testFirmwareLoadsOnlyExplicitActiveTheme(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   if (!expect(
-      mainSource.find("kLegacyDefaultThemeSpecPath = \"/themes/u/mini-cl-1-410a37.json\"") !=
+      mainSource.find("kLegacyMiniThemeSpecPath = \"/themes/u/mini-cl-1-410a37.json\"") !=
               std::string::npos &&
           mainSource.find("raw.replace(\"\\\"v\\\":\\\"left\\\"\", \"\\\"v\\\":\\\"{usageMode}\\\"\")") !=
               std::string::npos,
-      "legacy factory Mini specs must render the live usage mode after OTA")) {
+      "explicitly active legacy Mini specs must render the live usage mode after OTA")) {
     return false;
   }
 
-  const std::size_t loadStart = mainSource.find("void loadDefaultStoredThemeSpecCache()");
+  const std::size_t loadStart = mainSource.find("void loadActiveStoredThemeSpecCache()");
   const std::size_t loadEnd = mainSource.find("#endif", loadStart);
   if (!expect(
           loadStart != std::string::npos && loadEnd != std::string::npos,
-          "default ThemeSpec cache loader must remain discoverable")) {
+          "active ThemeSpec cache loader must remain discoverable")) {
     return false;
   }
   const std::string loader = mainSource.substr(loadStart, loadEnd - loadStart);
   const std::size_t active = loader.find("readActiveThemeSpecPath(activePath)");
-  const std::size_t currentDefault = loader.find("loadStoredThemeSpecCacheFromPath(kDefaultThemeSpecPath)");
-  const std::size_t previousDefault = loader.find("loadStoredThemeSpecCacheFromPath(kPreviousDefaultThemeSpecPath)");
-  const std::size_t legacyDefault = loader.find("loadStoredThemeSpecCacheFromPath(kLegacyDefaultThemeSpecPath)");
   return expect(
-      active != std::string::npos && currentDefault != std::string::npos &&
-          previousDefault != std::string::npos && legacyDefault != std::string::npos &&
-          active < currentDefault && currentDefault < previousDefault && previousDefault < legacyDefault,
-      "OTA filesystems must fall back through current, 1.0.37, then 1.0.36 Mini specs");
+      active != std::string::npos &&
+          loader.find("loadStoredThemeSpecCacheFromPath(activePath)") != std::string::npos &&
+          loader.find("kDefaultThemeSpecPath") == std::string::npos &&
+          loader.find("kPreviousDefaultThemeSpecPath") == std::string::npos &&
+          loader.find("kLegacyDefaultThemeSpecPath") == std::string::npos,
+      "firmware must load only the explicitly active ThemeSpec and otherwise show theme-missing");
 }
 
 bool testAssetHandlersUseThemeNamespacePolicy(const char* mainPath) {
@@ -950,10 +959,10 @@ int main(int argc, char** argv) {
   if (!testEsp8266CbaCooperativeAnimationPolicy()) {
     return 1;
   }
-  if (!expect(argc == 6, "source paths are required for firmware policy tests")) {
+  if (!expect(argc == 7, "source paths are required for firmware policy tests")) {
     return 1;
   }
-  if (!testRendererUsesResumableCbaAnimation(argv[1], argv[4])) {
+  if (!testRendererUsesResumableCbaAnimation(argv[1], argv[4], argv[6])) {
     return 1;
   }
   if (!testDecoderAllocationStaysInsideRealPlayback(argv[1], argv[2])) {
@@ -962,7 +971,7 @@ int main(int argc, char** argv) {
   if (!testGifLoopResetStaysAtomic(argv[2])) {
     return 1;
   }
-  if (!testLegacyMiniThemeUsesLiveUsageMode(argv[3])) {
+  if (!testFirmwareLoadsOnlyExplicitActiveTheme(argv[3])) {
     return 1;
   }
   if (!testAssetHandlersUseThemeNamespacePolicy(argv[3])) {

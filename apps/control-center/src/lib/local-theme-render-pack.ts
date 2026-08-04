@@ -5,12 +5,15 @@ import {
   type ThemeStudioStorage,
 } from "./theme-studio-storage";
 import { validateThemeSpec } from "./theme-studio";
+import { deviceThemeSpecJson } from "./theme-studio";
+import { themeSpecHash } from "./theme-spec-hash";
 
 export type LocalThemeRenderPack = {
   assets: ThemeStudioDocument["assets"];
   name: string;
   ok: true;
   spec: ThemeStudioDocument["spec"];
+  specHash: string;
   specPath: string;
   themeId: string;
 };
@@ -58,6 +61,7 @@ export function loadLocalThemeRenderPack(
       name: document.packName,
       ok: true,
       spec: document.spec,
+      specHash: themeSpecHash(deviceThemeSpecJson(document.spec)),
       specPath: validation.themeSpecPath,
       themeId: document.spec.themeId,
     };

@@ -12,6 +12,15 @@ PARITY_SRC="${ROOT_DIR}/firmware_esp8266/tests/animated_gif_parity_test.cpp"
 PARITY_OUT="${ROOT_DIR}/tmp/animated_gif_parity_test"
 CXX_BIN="${CXX:-c++}"
 
+bundled_theme=""
+if [[ -d "${ROOT_DIR}/firmware_esp8266/data/themes" ]]; then
+  bundled_theme="$(find "${ROOT_DIR}/firmware_esp8266/data/themes" -type f -print -quit)"
+fi
+if [[ -n "${bundled_theme}" ]]; then
+  printf 'error: firmware must start without a bundled fallback theme: %s\n' "${bundled_theme}" >&2
+  exit 1
+fi
+
 mkdir -p "${ROOT_DIR}/tmp"
 "${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic "${SRC}" -o "${OUT}"
 "${OUT}" \
@@ -19,7 +28,8 @@ mkdir -p "${ROOT_DIR}/tmp"
   "${ROOT_DIR}/firmware_esp8266/src/gif_core_esp8266.cpp" \
   "${ROOT_DIR}/firmware_esp8266/src/main.cpp" \
   "${ROOT_DIR}/firmware_esp8266/src/renderer_esp8266.cpp" \
-  "${ROOT_DIR}/firmware_esp8266/platformio.ini"
+  "${ROOT_DIR}/firmware_esp8266/platformio.ini" \
+  "${ROOT_DIR}/firmware_shared/theme_spec_renderer_core.h"
 
 "${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic \
   "${VALIDATOR_SRC}" \

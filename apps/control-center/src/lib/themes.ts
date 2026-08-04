@@ -16,12 +16,15 @@ export type ThemeProduct = {
   isFree: boolean;
   themeId: string;
   themeVersion?: string;
+  themeRev?: number;
+  themeSpecPath?: string;
   manifestUrl?: string;
   packUrl?: string;
   packSha256?: string;
   packSizeBytes?: number;
   compatibleBoards?: string[];
   requiresFirmware?: string;
+  requiredCapabilities?: string[];
   source: ThemeSource;
 };
 
@@ -40,7 +43,7 @@ const SHOPIFY_COLLECTION_HANDLE =
   process.env.SHOPIFY_THEME_COLLECTION_HANDLE?.trim() || "themes-2";
 const GITHUB_CATALOG_URL =
   process.env.THEME_PACK_CATALOG_URL?.trim() ||
-  "https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json";
+  "https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs-v2.json";
 const ALLOW_CATALOG_FALLBACK =
   process.env.CONTROL_CENTER_ALLOW_CATALOG_FALLBACK === "1";
 const LOCAL_STATIC_EXPORT =
@@ -89,6 +92,8 @@ type ShopifyCollectionResponse = {
 };
 
 type ThemePackCatalog = {
+  generation?: number;
+  schemaVersion?: number;
   themes?: Array<{
     id?: string;
     title?: string;
@@ -99,9 +104,11 @@ type ThemePackCatalog = {
     packUrl?: string;
     manifestUrl?: string;
     themeRev?: number;
+    themeSpecPath?: string;
     version?: string;
     compatibleBoards?: string[];
     requiresFirmware?: string;
+    requiredCapabilities?: string[];
     sha256?: string;
     bytes?: number;
   }>;
@@ -321,6 +328,7 @@ async function fetchGitHubCatalogThemes(): Promise<ThemeProduct[]> {
   }
 
   const catalog = (await response.json()) as ThemePackCatalog;
+  requireCurrentThemeCatalog(catalog);
   return (catalog.themes || [])
     .map(mapThemePackCatalogEntry)
     .filter((theme): theme is ThemeProduct => Boolean(theme));
@@ -351,32 +359,41 @@ function mapThemePackCatalogEntry(
     themeId,
     themeVersion:
       theme.version || (theme.themeRev ? `rev ${theme.themeRev}` : undefined),
+    themeRev: theme.themeRev,
+    themeSpecPath: theme.themeSpecPath,
     manifestUrl: theme.manifestUrl,
     packUrl,
     packSha256: theme.sha256?.trim().toLowerCase(),
     packSizeBytes: theme.bytes,
     compatibleBoards: theme.compatibleBoards,
     requiresFirmware: theme.requiresFirmware,
+    requiredCapabilities: theme.requiredCapabilities,
     source: "github-catalog",
   };
 }
 
 async function readLocalThemePackCatalog(): Promise<ThemePackCatalog> {
+  let catalog: ThemePackCatalog;
   if (LOCAL_STATIC_EXPORT) {
-    return JSON.parse(
+    catalog = JSON.parse(
       await readFile(path.join(process.cwd(), "local-theme-packs.json"), "utf8"),
     ) as ThemePackCatalog;
+  } else {
+    const repoRoot = process.env.VIBETV_REPO_ROOT
+      ? path.resolve(process.env.VIBETV_REPO_ROOT)
+      : path.resolve(process.cwd(), "../..");
+    const catalogPath = path.join(
+      repoRoot,
+      "dist",
+      "theme-packs",
+      "vibetv-theme-packs-v2.json",
+    );
+    catalog = JSON.parse(
+      await readFile(catalogPath, "utf8"),
+    ) as ThemePackCatalog;
   }
-  const repoRoot = process.env.VIBETV_REPO_ROOT
-    ? path.resolve(process.env.VIBETV_REPO_ROOT)
-    : path.resolve(process.cwd(), "../..");
-  const catalogPath = path.join(
-    repoRoot,
-    "dist",
-    "theme-packs",
-    "vibetv-theme-packs.json",
-  );
-  return JSON.parse(await readFile(catalogPath, "utf8")) as ThemePackCatalog;
+  requireCurrentThemeCatalog(catalog);
+  return catalog;
 }
 
 async function enrichThemesWithGitHubCatalog(
@@ -392,24 +409,45 @@ async function enrichThemesWithGitHubCatalog(
       githubThemes.map((theme) => [theme.themeId, theme]),
     );
     return shopifyThemes.map((theme) => {
-      const fallback = githubByThemeId.get(theme.themeId);
-      if (!fallback) {
+      const catalogTheme = githubByThemeId.get(theme.themeId);
+      if (!catalogTheme) {
         return theme;
       }
-      const packMetadata = chooseCompleteThemePackMetadata(theme, fallback);
-      return {
-        ...theme,
-        compatibleBoards:
-          theme.compatibleBoards || fallback.compatibleBoards,
-        manifestUrl: theme.manifestUrl || fallback.manifestUrl,
-        ...packMetadata,
-        requiresFirmware:
-          theme.requiresFirmware || fallback.requiresFirmware,
-        themeVersion: theme.themeVersion || fallback.themeVersion,
-      };
+      return mergeThemeProductWithCatalog(theme, catalogTheme);
     });
   } catch {
     return shopifyThemes;
+  }
+}
+
+export function mergeThemeProductWithCatalog(
+  product: ThemeProduct,
+  catalogTheme: ThemeProduct,
+): ThemeProduct {
+  const technicalTheme = hasCompleteThemePackMetadata(catalogTheme)
+    ? catalogTheme
+    : product;
+  return {
+    ...product,
+    compatibleBoards:
+      technicalTheme.compatibleBoards || product.compatibleBoards,
+    manifestUrl: technicalTheme.manifestUrl || product.manifestUrl,
+    ...normalizeThemePackMetadata(technicalTheme),
+    requiresFirmware:
+      technicalTheme.requiresFirmware || product.requiresFirmware,
+    requiredCapabilities:
+      technicalTheme.requiredCapabilities || product.requiredCapabilities,
+    themeVersion: technicalTheme.themeVersion || product.themeVersion,
+    themeRev: technicalTheme.themeRev || product.themeRev,
+    themeSpecPath: technicalTheme.themeSpecPath || product.themeSpecPath,
+  };
+}
+
+export function requireCurrentThemeCatalog(
+  catalog: Pick<ThemePackCatalog, "generation" | "schemaVersion">,
+): void {
+  if (catalog.schemaVersion !== 1 || catalog.generation !== 2) {
+    throw new Error("unsupported theme catalog generation");
   }
 }
 

@@ -83,10 +83,12 @@ export type UpdatesScreenProps = {
   onCheckUpdates?: () => Promise<void> | void;
   onCreateReport?: () => void;
   onInstallUpdate?: () => Promise<boolean> | boolean | void;
+  onRetryThemeUpdate?: () => Promise<boolean> | boolean | void;
   requiresMacAppMigration?: boolean;
   busyAction?: string | null;
   updateStatus?: FirmwareUpdateStatus | null;
   supportReportBusy?: boolean;
+  themeUpdateAvailable?: boolean;
 };
 
 export function UpdatesScreen({
@@ -99,10 +101,12 @@ export function UpdatesScreen({
   onCheckUpdates,
   onCreateReport,
   onInstallUpdate,
+  onRetryThemeUpdate,
   requiresMacAppMigration = false,
   busyAction,
   updateStatus,
   supportReportBusy = false,
+  themeUpdateAvailable = false,
 }: UpdatesScreenProps) {
   const firmwareUpdateCompleted = updateStatus?.phase === "complete";
   const installedFirmware =
@@ -121,6 +125,7 @@ export function UpdatesScreen({
     (checking ? "Checking" : "Not available");
   const updateAvailable =
     !firmwareUpdateCompleted && hasFirmwareUpdate(firmwareUpdate);
+  const vibetvUpdateAvailable = updateAvailable || themeUpdateAvailable;
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const nativeMacUpdateReady = Boolean(
     macAppUpdateAvailable && companionInfo?.app?.installedInApplications,
@@ -139,9 +144,10 @@ export function UpdatesScreen({
   const macAppNativeAction = nativeMacUpdateReady;
   const macAppMustUpdateFirst =
     macAppDownloadAction || macAppNativeAction;
-  const firmwareUpdateBlocked = updateAvailable && macAppMustUpdateFirst;
+  const firmwareUpdateBlocked =
+    vibetvUpdateAvailable && macAppMustUpdateFirst;
   const anyUpdateAvailable =
-    updateAvailable || macAppDownloadAction || macAppNativeAction;
+    vibetvUpdateAvailable || macAppDownloadAction || macAppNativeAction;
   const refreshing = busyAction === "firmware-check";
   const installingUpdate = updateStatus
     ? updateStatus.phase === "installing"
@@ -182,7 +188,7 @@ export function UpdatesScreen({
       return;
     }
 
-    if (updateAvailable) {
+    if (vibetvUpdateAvailable) {
       await onInstallUpdate?.();
       return;
     }
@@ -213,8 +219,8 @@ export function UpdatesScreen({
           installedValue={installedFirmware}
           latestLabel="Available firmware"
           latestValue={latestFirmware}
-          title="Firmware update"
-          updateAvailable={updateAvailable}
+          title="VibeTV update"
+          updateAvailable={vibetvUpdateAvailable}
         >
           {firmwareUpdateBlocked ? (
             <Alert>
@@ -229,7 +235,13 @@ export function UpdatesScreen({
             <InlineUpdateProgress
               creatingReport={creatingReport}
               onCreateReport={onCreateReport}
-              onRetry={firmwareUpdateBlocked ? undefined : onInstallUpdate}
+              onRetry={
+                firmwareUpdateBlocked
+                  ? undefined
+                  : updateStatus.phase === "attention"
+                    ? onRetryThemeUpdate
+                    : onInstallUpdate
+              }
               status={updateStatus}
             />
           ) : null}
@@ -247,7 +259,9 @@ export function UpdatesScreen({
           macAppNativeAction ? "vibetv://check-for-updates" : undefined
         }
         installingFirmware={installingUpdate}
-        firmwareUpdateAvailable={updateAvailable && !firmwareUpdateBlocked}
+        firmwareUpdateAvailable={
+          vibetvUpdateAvailable && !firmwareUpdateBlocked
+        }
         macAppCheckFailed={macAppCheckFailed}
         macAppMigrationRequired={requiresMacAppMigration}
         macAppMigrationReady={macAppMigrationReady}
@@ -258,7 +272,7 @@ export function UpdatesScreen({
             ? onCheckUpdates
             : macAppMustUpdateFirst
               ? macAppNativeAction || macAppDownloadReady
-              : updateAvailable
+              : vibetvUpdateAvailable
                 ? onInstallUpdate
                 : anyUpdateAvailable || onCheckUpdates,
         )}
@@ -426,7 +440,9 @@ function InlineUpdateProgress({
         <AlertDescription>{detail}</AlertDescription>
         {failed || attention ? (
           <AlertAction className="flex gap-2">
-            {failed && status.retryAllowed !== false ? (
+            {(failed && status.retryAllowed !== false) ||
+            (attention &&
+              status.outcome === "firmware_current_theme_attention") ? (
               <Button
                 disabled={!onRetry}
                 onClick={onRetry}

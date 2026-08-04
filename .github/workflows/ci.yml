@@ -160,6 +160,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -210,6 +212,9 @@ jobs:
         working-directory: firmware_esp8266
         run: pio test -e native_device_settings
 
+      - name: Test firmware-only provisioning contract
+        run: ./scripts/test-vibetv-provision.sh
+
       - name: Test firmware size budget checker
         run: ./scripts/test-firmware-size-budget.sh
 
@@ -229,6 +234,10 @@ jobs:
             "${{ matrix.max_ram_pct }}" \
             "${{ matrix.max_bin_bytes }}" \
             "${{ matrix.max_gzip_bytes }}"
+
+      - name: Build empty filesystem image
+        working-directory: ${{ matrix.firmware_dir }}
+        run: pio run -e "${{ matrix.env_name }}" -t buildfs
 
   firmware-build-experimental:
     runs-on: ubuntu-latest
