@@ -97,6 +97,37 @@ func TestPreferencesMarkFreshCollectorProviderHealthy(t *testing.T) {
 	}
 }
 
+func TestPreferencesFreshCollectorUsagePreservesHardHealthFailures(t *testing.T) {
+	for _, health := range []codexbar.ProviderHealthState{
+		codexbar.ProviderHealthAuthRequired,
+		codexbar.ProviderHealthSetupRequired,
+	} {
+		t.Run(string(health), func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			collectedAt := time.Date(2026, 8, 4, 9, 0, 0, 0, time.UTC)
+			server.now = func() time.Time { return collectedAt }
+			server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+				return []codexbar.ProviderSetting{{
+					ID: "codex", Label: "Codex", Enabled: true, Health: health,
+				}}, nil
+			}
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+				return freshProviderUsage("codex", "Codex", collectedAt), true
+			}
+
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+			var response preferencesResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if len(response.Items) != 1 || response.Items[0].Health.State != string(health) {
+				t.Fatalf("fresh collector usage overwrote current %s health: %#v", health, response.Items)
+			}
+		})
+	}
+}
+
 func TestPreferencesMarkFreshTokenProviderHealthyWithoutClaimingQuotaReady(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 29, 12, 30, 0, 0, time.UTC)

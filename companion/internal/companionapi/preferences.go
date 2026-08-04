@@ -622,10 +622,10 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		if !setting.Enabled {
 			state = "disabled"
 			message = "Provider is off."
-		} else if _, ready := freshSuccess[setting.ID]; ready {
+		} else if _, ready := freshSuccess[setting.ID]; ready && providerHealthCanUseUsageEvidence(setting.Health) {
 			state = string(codexbar.ProviderHealthHealthy)
 			message = providerHealthMessage(codexbar.ProviderHealthHealthy)
-		} else if _, ready := freshTokenSuccess[setting.ID]; ready && providerHealthCanUseTokenEvidence(setting.Health) {
+		} else if _, ready := freshTokenSuccess[setting.ID]; ready && providerHealthCanUseUsageEvidence(setting.Health) {
 			state = string(codexbar.ProviderHealthHealthy)
 			message = "Token history is available; usage limits are temporarily unavailable."
 		} else if setting.Service == codexbar.ProviderServiceOutage &&
@@ -658,7 +658,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 	return items
 }
 
-func providerHealthCanUseTokenEvidence(state codexbar.ProviderHealthState) bool {
+func providerHealthCanUseUsageEvidence(state codexbar.ProviderHealthState) bool {
 	return state == "" ||
 		state == codexbar.ProviderHealthHealthy ||
 		state == codexbar.ProviderHealthChecking ||
