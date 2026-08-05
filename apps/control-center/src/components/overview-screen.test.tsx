@@ -115,7 +115,7 @@ describe("OverviewScreen", () => {
 
     expect(html).toContain("VibeTV is connected");
     expect(html).toContain("Waiting for usage");
-    expect(html).toContain("This can take up to 30 seconds.");
+    expect(html).toContain("This can take up to 60 seconds.");
     expect(html).not.toContain("Reconnect VibeTV to continue");
     expect(html).not.toContain("Reconnecting to VibeTV");
   });

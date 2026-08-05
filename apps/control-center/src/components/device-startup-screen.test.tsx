@@ -78,7 +78,7 @@ describe("DeviceStartupScreen", () => {
     );
 
     expect(html).toContain(
-      "Waiting for the first usage data. This can take up to 30 seconds.",
+      "Waiting for the first usage data. This can take up to 60 seconds.",
     );
   });
 

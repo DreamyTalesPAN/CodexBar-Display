@@ -97,7 +97,7 @@ export function DeviceStartupScreen({
   } else if (waiting) {
     title = "Connecting to VibeTV";
     detail =
-      "VibeTV was found. Waiting for the first usage data. This can take up to 30 seconds.";
+      "VibeTV was found. Waiting for the first usage data. This can take up to 60 seconds.";
   } else if (legacyRecovery) {
     title = "Reconnect this VibeTV";
     detail = "Follow these steps, then connect VibeTV again.";

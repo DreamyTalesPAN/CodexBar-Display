@@ -93,7 +93,7 @@ export function OverviewScreen({
                 displayReady
                   ? undefined
                   : waitingForUsage
-                    ? "This can take up to 30 seconds."
+                    ? "This can take up to 60 seconds."
                     : "Waiting for a fresh image from VibeTV."
               }
               icon={<Monitor aria-hidden />}

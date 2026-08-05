@@ -5,6 +5,18 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-05 — Give first usage up to 60 seconds
+
+- User approval: The user explicitly instructed Codex to increase the first
+  usage wait from 30 seconds to 60 seconds before entering the unavailable
+  state.
+- Approved customer-visible result: A connected VibeTV waiting for its first
+  usage frame keeps the existing startup state for up to 60 seconds. The
+  existing startup and Overview helper text says `up to 60 seconds`. If no
+  usage arrives by then, Control Center opens the existing unavailable state.
+- Approved files: `control-center-app.tsx`, `device-startup-screen.tsx`,
+  `overview-screen.tsx`, their regression assertions, and this approval record.
+
 ## 2026-08-05 — Close the remaining update and recovery gaps
 
 - User approval: After receiving the concrete list of all remaining P1/P2

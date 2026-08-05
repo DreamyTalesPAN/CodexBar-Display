@@ -3142,11 +3142,11 @@ async function testLocalReachableWithoutFrameEntersAfterTimeout(browser, appUrl)
   await page.getByText("Waiting for usage…", { exact: true }).waitFor({
     timeout: 10_000,
   });
-  await page.clock.runFor(25_000);
+  await page.clock.runFor(55_000);
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
       0,
-    "Startup must remain visible before its stated 30-second limit",
+    "Startup must remain visible before its stated 60-second limit",
   );
 
   await page.clock.runFor(5_000);
