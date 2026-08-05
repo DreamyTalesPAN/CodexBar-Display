@@ -420,14 +420,33 @@ private func runRuntimeValidationUnregister() async -> Int32 {
     let service = SMAppService.agent(plistName: runtimeLaunchAgentPlistName)
     switch service.status {
     case .notRegistered, .notFound:
-        FileHandle.standardOutput.write(
-            Data(
-                "CODEX_RUNTIME_UNREGISTER_OK label=\(runtimeLaunchAgentLabel) status=already-unregistered\n".utf8
-            )
-        )
-        return 0
-    case .enabled, .requiresApproval:
         break
+    case .enabled, .requiresApproval:
+        let errorDescription: String? = await withCheckedContinuation { continuation in
+            service.unregister(completionHandler: { error in
+                continuation.resume(
+                    returning: error.map { ($0 as NSError).localizedDescription }
+                )
+            })
+        }
+        if let errorDescription {
+            FileHandle.standardError.write(
+                Data(
+                    "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=unregister-failed detail=\(errorDescription)\n".utf8
+                )
+            )
+            return 70
+        }
+
+        try? await Task<Never, Never>.sleep(for: runtimeUnregistrationSettleDelay)
+        guard service.status == .notRegistered || service.status == .notFound else {
+            FileHandle.standardError.write(
+                Data(
+                    "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=service-remained-registered\n".utf8
+                )
+            )
+            return 70
+        }
     @unknown default:
         FileHandle.standardError.write(
             Data(
@@ -437,46 +456,20 @@ private func runRuntimeValidationUnregister() async -> Int32 {
         return 70
     }
 
-    let errorDescription: String? = await withCheckedContinuation { continuation in
-        service.unregister(completionHandler: { error in
-            continuation.resume(
-                returning: error.map { ($0 as NSError).localizedDescription }
-            )
-        })
-    }
-    if let errorDescription {
+    guard stopLoadedLaunchAgent(label: runtimeLaunchAgentLabel) else {
         FileHandle.standardError.write(
             Data(
-                "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=unregister-failed detail=\(errorDescription)\n".utf8
+                "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=service-remained-loaded\n".utf8
             )
         )
         return 70
     }
-
-    try? await Task<Never, Never>.sleep(for: runtimeUnregistrationSettleDelay)
-    switch service.status {
-    case .notRegistered, .notFound:
-        FileHandle.standardOutput.write(
-            Data(
-                "CODEX_RUNTIME_UNREGISTER_OK label=\(runtimeLaunchAgentLabel) status=unregistered\n".utf8
-            )
+    FileHandle.standardOutput.write(
+        Data(
+            "CODEX_RUNTIME_UNREGISTER_OK label=\(runtimeLaunchAgentLabel) status=unregistered\n".utf8
         )
-        return 0
-    case .enabled, .requiresApproval:
-        FileHandle.standardError.write(
-            Data(
-                "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=service-remained-registered\n".utf8
-            )
-        )
-        return 70
-    @unknown default:
-        FileHandle.standardError.write(
-            Data(
-                "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=unknown-status-after-unregister\n".utf8
-            )
-        )
-        return 70
-    }
+    )
+    return 0
 }
 
 private struct RuntimeStatusPayload: Decodable {
@@ -836,6 +829,24 @@ func parseLaunchctlDisabledServiceStates(_ output: String) -> [String: Bool] {
 
 func launchctlServiceTarget(uid: uid_t, label: String) -> String {
     "gui/\(uid)/\(label)"
+}
+
+private func stopLoadedLaunchAgent(label: String) -> Bool {
+    let target = launchctlServiceTarget(uid: getuid(), label: label)
+    guard captureProcessOutput(
+        executable: "/bin/launchctl",
+        arguments: ["print", target]
+    ).exitStatus == 0 else {
+        return true
+    }
+    _ = captureProcessOutput(
+        executable: "/bin/launchctl",
+        arguments: ["bootout", target]
+    )
+    return captureProcessOutput(
+        executable: "/bin/launchctl",
+        arguments: ["print", target]
+    ).exitStatus != 0
 }
 
 func canSafelyStopLegacyLaunchAgent(
@@ -2902,48 +2913,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
         switch runtimeService.status {
         case .notRegistered, .notFound:
-            if legacyServiceIsLoaded(label: runtimeLaunchAgentLabel) {
-                _ = launchctlExitStatus([
-                    "bootout",
-                    launchctlServiceTarget(
-                        uid: getuid(),
-                        label: runtimeLaunchAgentLabel
-                    ),
-                ])
-                guard !legacyServiceIsLoaded(label: runtimeLaunchAgentLabel) else {
-                    NSLog("VibeTV Control Center could not stop its update runtime")
-                    return false
-                }
-                try? await Task<Never, Never>.sleep(for: .milliseconds(250))
+            break
+        case .enabled, .requiresApproval:
+            fallthrough
+        @unknown default:
+            let errorDescription: String? = await withCheckedContinuation { continuation in
+                runtimeService.unregister(completionHandler: { error in
+                    continuation.resume(returning: error.map { ($0 as NSError).localizedDescription })
+                })
             }
-            return true
-        case .enabled, .requiresApproval:
-            break
-        @unknown default:
-            break
+
+            switch runtimeService.status {
+            case .notRegistered, .notFound:
+                try? await Task<Never, Never>.sleep(for: runtimeUnregistrationSettleDelay)
+            case .enabled, .requiresApproval:
+                NSLog(
+                    "VibeTV Control Center could not unregister its runtime: \(errorDescription ?? "service remained registered")"
+                )
+                return false
+            @unknown default:
+                NSLog(
+                    "VibeTV Control Center runtime has an unknown status after unregister: \(errorDescription ?? "unknown error")"
+                )
+                return false
+            }
         }
 
-        let errorDescription: String? = await withCheckedContinuation { continuation in
-            runtimeService.unregister(completionHandler: { error in
-                continuation.resume(returning: error.map { ($0 as NSError).localizedDescription })
-            })
+        if legacyServiceIsLoaded(label: runtimeLaunchAgentLabel) {
+            guard stopLoadedLaunchAgent(label: runtimeLaunchAgentLabel) else {
+                NSLog("VibeTV Control Center could not stop its update runtime")
+                return false
+            }
+            try? await Task<Never, Never>.sleep(for: .milliseconds(250))
         }
-
-        switch runtimeService.status {
-        case .notRegistered, .notFound:
-            try? await Task<Never, Never>.sleep(for: runtimeUnregistrationSettleDelay)
-            return true
-        case .enabled, .requiresApproval:
-            NSLog(
-                "VibeTV Control Center could not unregister its runtime: \(errorDescription ?? "service remained registered")"
-            )
-            return false
-        @unknown default:
-            NSLog(
-                "VibeTV Control Center runtime has an unknown status after unregister: \(errorDescription ?? "unknown error")"
-            )
-            return false
-        }
+        return true
     }
 
     private func bundledRuntimeServiceIsEnabled() -> Bool {

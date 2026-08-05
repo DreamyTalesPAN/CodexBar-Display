@@ -1007,12 +1007,45 @@ unregister_method = source[
     source.find("private func unregisterBundledRuntimeService()"):
     source.find("private func bundledRuntimeServiceIsEnabled()")
 ]
-if (
-    "legacyServiceIsLoaded(label: runtimeLaunchAgentLabel)" not in unregister_method
-    or '"bootout"' not in unregister_method
+sm_unregister = unregister_method.find("runtimeService.unregister")
+stop_loaded_runtime = unregister_method.find(
+    "stopLoadedLaunchAgent(label: runtimeLaunchAgentLabel)",
+    sm_unregister,
+)
+successful_unregister = unregister_method.rfind("return true")
+if not (
+    0 <= sm_unregister
+    < stop_loaded_runtime
+    < successful_unregister
 ):
     raise SystemExit(
-        "runtime unregister must also stop an exact-label validation LaunchAgent"
+        "runtime unregister must stop and verify the exact-label LaunchAgent after SMAppService unregister"
+    )
+
+validation_unregister = source[
+    source.find("private func runRuntimeValidationUnregister()"):
+    source.find("private struct RuntimeStatusPayload")
+]
+validation_stop_loaded = validation_unregister.find(
+    "stopLoadedLaunchAgent(label: runtimeLaunchAgentLabel)"
+)
+validation_success = validation_unregister.rfind("return 0")
+if not (0 <= validation_stop_loaded < validation_success):
+    raise SystemExit(
+        "runtime validation unregister must stop the exact-label LaunchAgent before reporting success"
+    )
+
+stop_loaded_helper = source[
+    source.find("private func stopLoadedLaunchAgent(label: String)"):
+    source.find("func canSafelyStopLegacyLaunchAgent(")
+]
+if (
+    '["bootout", target]' not in stop_loaded_helper
+    or '["print", target]' not in stop_loaded_helper
+    or ".exitStatus != 0" not in stop_loaded_helper
+):
+    raise SystemExit(
+        "exact-label LaunchAgent stop must boot out and verify the loaded job"
     )
 
 update_handoff = source[
