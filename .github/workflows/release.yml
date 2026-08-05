@@ -1,426 +1,276 @@
-name: Release
+name: CODEX Publish VibeTV Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Public release SemVer without a leading v
+        required: true
+        type: string
+      candidate_run_id:
+        description: Successful CODEX VibeTV release-candidate run id
+        required: true
+        type: string
+      hardware_canary_run_id:
+        description: Successful CODEX hardware-canary record run id
+        required: true
+        type: string
 
 permissions:
   contents: read
+  actions: read
+
+concurrency:
+  group: codex-publish-vibetv-release-${{ inputs.version }}
+  cancel-in-progress: false
 
 jobs:
-  build-macos-dmg:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    runs-on: macos-15
-    timeout-minutes: 90
-    env:
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APPLE_SIGNING_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_SIGNING_CERTIFICATE_P12_BASE64 }}
-      APPLE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_SIGNING_CERTIFICATE_PASSWORD }}
-      APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
-      APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
-      APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
-      SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: companion/go.mod
-          cache-dependency-path: companion/go.sum
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: apps/control-center/package-lock.json
-
-      - name: Validate Apple release secrets
-        run: |
-          set -euo pipefail
-
-          missing=0
-          for name in \
-            APPLE_TEAM_ID \
-            APPLE_SIGNING_CERTIFICATE_P12_BASE64 \
-            APPLE_SIGNING_CERTIFICATE_PASSWORD \
-            APPLE_NOTARY_KEY_ID \
-            APPLE_NOTARY_ISSUER_ID \
-            APPLE_NOTARY_KEY_P8_BASE64 \
-            SPARKLE_ED25519_PRIVATE_KEY
-          do
-            if [[ -z "${!name:-}" ]]; then
-              echo "::error::Missing required GitHub Actions secret: ${name}"
-              missing=1
-            fi
-          done
-          (( missing == 0 ))
-
-      - name: Build signed and notarized Mac DMG
-        env:
-          VERSION: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-
-          VERSION="${VERSION#v}"
-          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "error: macOS DMG version must be SemVer x.y.z, got ${VERSION}" >&2
-            exit 1
-          fi
-          mkdir -p dist/macos tmp/macos-release
-
-          (
-            cd apps/control-center
-            npm ci
-            npm run build:local
-          )
-          rm -rf companion/internal/companionapi/controlcenter_static
-          mkdir -p companion/internal/companionapi/controlcenter_static
-          cp -R apps/control-center/out-local/. companion/internal/companionapi/controlcenter_static/
-
-          cd companion
-          for ARCH in amd64 arm64; do
-            GOOS=darwin GOARCH="${ARCH}" CGO_ENABLED=0 \
-              go build \
-              -ldflags "-s -w -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=${VERSION} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=${GITHUB_SHA} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-              -o "../tmp/macos-release/codexbar-display-${ARCH}" ./cmd/codexbar-display
-          done
-          cd ..
-          lipo -create \
-            -output "tmp/macos-release/codexbar-display" \
-            "tmp/macos-release/codexbar-display-amd64" \
-            "tmp/macos-release/codexbar-display-arm64"
-
-          ./scripts/build-macos-control-center-app.sh \
-            --version "${VERSION}" \
-            --build "${GITHUB_RUN_NUMBER:-0}" \
-            --universal \
-            --companion-binary "tmp/macos-release/codexbar-display" \
-            --output "dist/macos/VibeTV Control Center.app"
-
-          ./scripts/verify-bundled-codexbar.sh \
-            --app "dist/macos/VibeTV Control Center.app"
-
-          ./scripts/sign-notarize-macos-control-center.sh \
-            --app "dist/macos/VibeTV Control Center.app" \
-            --sign-app-only \
-            --allow-internal-xprotect-preflight-error
-
-          ./scripts/build-macos-control-center-dmg.sh \
-            --app "dist/macos/VibeTV Control Center.app" \
-            --output "dist/macos/VibeTV-Control-Center.dmg" \
-            --staging-dir "tmp/macos-release/dmg-stage"
-
-          ./scripts/sign-notarize-macos-control-center.sh \
-            --app "dist/macos/VibeTV Control Center.app" \
-            --dmg "dist/macos/VibeTV-Control-Center.dmg" \
-            --skip-app-sign \
-            --notary-log "tmp/macos-release/notarization-log.json"
-
-      - name: Verify notarized Mac DMG for distribution
-        run: |
-          ./scripts/verify-macos-control-center-dmg.sh \
-            --dmg "dist/macos/VibeTV-Control-Center.dmg"
-
-      - name: Build signed Sparkle appcast
-        run: |
-          set -euo pipefail
-
-          sparkle_dir="$(./scripts/fetch-sparkle.sh)"
-          printf '%s' "$SPARKLE_ED25519_PRIVATE_KEY" | \
-            "${sparkle_dir}/bin/generate_appcast" \
-              --ed-key-file - \
-              --maximum-deltas 0 \
-              --download-url-prefix "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/" \
-              --link "https://app.vibetv.shop" \
-              -o dist/macos/appcast.xml \
-              dist/macos
-          test -s dist/macos/appcast.xml
-          grep -F 'sparkle:edSignature=' dist/macos/appcast.xml >/dev/null
-
-      - name: Upload notarization evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: vibetv-control-center-notarization
-          path: tmp/macos-release/notarization-log.json
-          if-no-files-found: warn
-          retention-days: 30
-
-      - name: Upload notarized Mac DMG
-        uses: actions/upload-artifact@v4
-        with:
-          name: vibetv-control-center-dmg
-          path: |
-            dist/macos/VibeTV-Control-Center.dmg
-            dist/macos/appcast.xml
-          if-no-files-found: error
-          retention-days: 7
-
-  build-and-release:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+  preflight:
+    if: >-
+      github.repository == 'DreamyTalesPAN/CodexBar-Display' &&
+      github.ref == 'refs/heads/main' &&
+      (github.actor == github.repository_owner || github.actor == 'marcus7989')
     runs-on: ubuntu-latest
-    needs:
-      - build-macos-dmg
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ inputs.version }}
+      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      HARDWARE_CANARY_RUN_ID: ${{ inputs.hardware_canary_run_id }}
+      SOURCE_SHA: ${{ github.sha }}
+      CANDIDATE_WORKFLOW: .github/workflows/vibetv-release-candidate.yml
+      HARDWARE_WORKFLOW: .github/workflows/record-hardware-canary.yml
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout trusted publish gate from current main
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate run inputs and unpublished version
+        run: |
+          set -euo pipefail
+          [[ "${VERSION}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] \
+            || { echo "error: version must be SemVer x.y.z without a leading v" >&2; exit 1; }
+          [[ "${CANDIDATE_RUN_ID}" =~ ^[0-9]+$ ]] \
+            || { echo "error: candidate_run_id must contain digits only" >&2; exit 1; }
+          [[ "${HARDWARE_CANARY_RUN_ID}" =~ ^[0-9]+$ ]] \
+            || { echo "error: hardware_canary_run_id must contain digits only" >&2; exit 1; }
+
+          ensure_absent() {
+            local endpoint="$1"
+            local label="$2"
+            local error_file
+            error_file="$(mktemp)"
+            if gh api "${endpoint}" >/dev/null 2>"${error_file}"; then
+              echo "error: ${label} already exists" >&2
+              exit 1
+            fi
+            if ! grep -F "HTTP 404" "${error_file}" >/dev/null; then
+              cat "${error_file}" >&2
+              echo "error: could not prove ${label} is absent" >&2
+              exit 1
+            fi
+          }
+          ensure_absent \
+            "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}" \
+            "tag v${VERSION}"
+          ensure_absent \
+            "repos/${GITHUB_REPOSITORY}/releases/tags/v${VERSION}" \
+            "release v${VERSION}"
+
+      - name: Read authoritative workflow-run metadata
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${CANDIDATE_RUN_ID}" \
+            > evidence/candidate-run.json
+          candidate_workflow_id="$(
+            python3 -c 'import json; print(json.load(open("evidence/candidate-run.json"))["workflow_id"])'
+          )"
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/${candidate_workflow_id}" \
+            > evidence/candidate-workflow.json
+
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${HARDWARE_CANARY_RUN_ID}" \
+            > evidence/hardware-run.json
+          hardware_workflow_id="$(
+            python3 -c 'import json; print(json.load(open("evidence/hardware-run.json"))["workflow_id"])'
+          )"
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/${hardware_workflow_id}" \
+            > evidence/hardware-workflow.json
+
+      - name: Download immutable candidate, result, and hardware evidence
+        run: |
+          set -euo pipefail
+          gh run download "${CANDIDATE_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name vibetv-release-candidate \
+            --dir candidate
+          gh run download "${CANDIDATE_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name vibetv-release-candidate-result \
+            --dir candidate-result
+          gh run download "${HARDWARE_CANARY_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name vibetv-hardware-canary \
+            --dir hardware
+
+      - name: Validate exact publish evidence and freeze assets
+        run: |
+          set -euo pipefail
+          python3 scripts/validate-release-publish-gate.py preflight \
+            --repository "${GITHUB_REPOSITORY}" \
+            --source-sha "${SOURCE_SHA}" \
+            --version "${VERSION}" \
+            --candidate-run-id "${CANDIDATE_RUN_ID}" \
+            --candidate-run evidence/candidate-run.json \
+            --candidate-workflow evidence/candidate-workflow.json \
+            --candidate-dir candidate \
+            --candidate-result candidate-result/candidate-result.json \
+            --hardware-canary-run-id "${HARDWARE_CANARY_RUN_ID}" \
+            --hardware-run evidence/hardware-run.json \
+            --hardware-workflow evidence/hardware-workflow.json \
+            --hardware-evidence hardware/hardware-canary.json \
+            --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --output validated/publish-payload.json \
+            --copy-dir validated/assets
+
+      - name: Upload validated internal publish payload
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibetv-validated-publish
+          path: |
+            validated/publish-payload.json
+            validated/assets
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-release:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: Production
     permissions:
       contents: write
+      actions: read
+    env:
+      VERSION: ${{ inputs.version }}
+      SOURCE_SHA: ${{ github.sha }}
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: companion/go.mod
-          cache-dependency-path: companion/go.sum
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: apps/control-center/package-lock.json
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install PlatformIO
-        run: pip install platformio intelhex
-
-      - name: Build Release Artifacts
-        env:
-          VERSION: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-
-          VERSION="${VERSION#v}"
-          mkdir -p dist/companion dist/firmware
-
-          if [[ ! -f scripts/install.sh ]]; then
-            echo "error: scripts/install.sh is missing" >&2
-            exit 1
-          fi
-          cp scripts/install.sh dist/install.sh
-          chmod +x dist/install.sh
-          cp scripts/install-control-center-companion-release.sh dist/install-control-center-companion.sh
-          chmod +x dist/install-control-center-companion.sh
-
-          (
-            cd apps/control-center
-            npm ci
-            npx playwright install --with-deps chromium
-            npm run build:local
-            npm run test:customer-smoke
-          )
-          rm -rf companion/internal/companionapi/controlcenter_static
-          mkdir -p companion/internal/companionapi/controlcenter_static
-          cp -R apps/control-center/out-local/. companion/internal/companionapi/controlcenter_static/
-
-          cd companion
-          for ARCH in amd64 arm64; do
-            OUT="../dist/companion/codexbar-display-darwin-${ARCH}-v${VERSION}"
-            GOOS=darwin GOARCH="${ARCH}" CGO_ENABLED=0 \
-              go build \
-              -ldflags "-s -w -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=${VERSION} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Commit=${GITHUB_SHA} -X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-              -o "${OUT}" ./cmd/codexbar-display
-          done
-          cd ..
-
-          ./scripts/build-macos-control-center-app.sh \
-            --dry-run \
-            --version "${VERSION}" \
-            --build "${GITHUB_RUN_NUMBER:-0}" \
-            --output "tmp/macos-release-dry-run/VibeTV Control Center.app"
-          ./scripts/build-macos-control-center-dmg.sh \
-            --dry-run \
-            --app "tmp/macos-release-dry-run/VibeTV Control Center.app" \
-            --output "tmp/macos-release-dry-run/VibeTV-Control-Center-v${VERSION}.dmg" \
-            --staging-dir "tmp/macos-release-dry-run/dmg-stage"
-          ./scripts/sign-notarize-macos-control-center.sh \
-            --dry-run \
-            --app "tmp/macos-release-dry-run/VibeTV Control Center.app" \
-            --dmg "tmp/macos-release-dry-run/VibeTV-Control-Center-v${VERSION}.dmg"
-
-          if [[ ! -f release/firmware-versions.json ]]; then
-            echo "error: release/firmware-versions.json is missing" >&2
-            exit 1
-          fi
-
-          python3 - "$VERSION" release/firmware-versions.json > dist/firmware/targets.tsv <<'PY'
-          import json
-          import sys
-
-          release_version = sys.argv[1].strip().lstrip("v")
-          config_path = sys.argv[2]
-
-          with open(config_path, encoding="utf-8") as f:
-              config = json.load(f)
-
-          seen = set()
-          for artifact in config.get("artifacts", []):
-              env_name = str(artifact.get("firmwareEnv", "")).strip()
-              board = str(artifact.get("board", "")).strip()
-              firmware_version = str(artifact.get("firmwareVersion", "")).strip().lstrip("v")
-              if not env_name or not board or not firmware_version:
-                  raise SystemExit("firmware artifacts need firmwareEnv, board, and firmwareVersion")
-              if env_name in seen:
-                  raise SystemExit(f"duplicate firmware env: {env_name}")
-              seen.add(env_name)
-              if firmware_version == release_version:
-                  print(f"notice: firmware {env_name} is intentionally bumped to app release {release_version}", file=sys.stderr)
-              if env_name == "esp8266_smalltv_st7789":
-                  directory = "firmware_esp8266"
-                  asset = f"codexbar-display-firmware-{env_name}-v{firmware_version}.bin.gz"
-              elif env_name == "lilygo_t_display_s3":
-                  directory = "firmware_esp32"
-                  asset = f"codexbar-display-firmware-{env_name}-v{firmware_version}.bin"
-              else:
-                  raise SystemExit(f"unsupported firmware env: {env_name}")
-              print("\t".join([directory, env_name, board, firmware_version, asset]))
-          PY
-
-          while IFS=$'\t' read -r DIR ENV_NAME BOARD FW_VERSION ASSET; do
-            MAX_FLASH_PCT="46"
-            MAX_RAM_PCT="82"
-            MAX_BIN_BYTES="0"
-            MAX_GZIP_BYTES="0"
-            if [[ "${ENV_NAME}" == "esp8266_smalltv_st7789" ]]; then
-              MAX_BIN_BYTES="482000"
-              MAX_GZIP_BYTES="350000"
-            fi
-
-            BUILD_LOG="$(mktemp)"
-            (
-              cd "${DIR}"
-              CODEXBAR_DISPLAY_FW_VERSION="${FW_VERSION}" pio run -e "${ENV_NAME}"
-            ) 2>&1 | tee "${BUILD_LOG}"
-
-            SRC="${DIR}/.pio/build/${ENV_NAME}/firmware.bin"
-            ./scripts/check-firmware-size-budget.sh \
-              "${BUILD_LOG}" \
-              "${SRC}" \
-              "${ENV_NAME}" \
-              "${MAX_FLASH_PCT}" \
-              "${MAX_RAM_PCT}" \
-              "${MAX_BIN_BYTES}" \
-              "${MAX_GZIP_BYTES}"
-            DEST="dist/firmware/${ASSET}"
-            if [[ "${ENV_NAME}" == esp8266_* ]]; then
-              gzip -c -9 "${SRC}" > "${DEST}"
-            else
-              cp "${SRC}" "${DEST}"
-            fi
-          done < dist/firmware/targets.tsv
-
-          VERSION="${VERSION}" python3 - release/firmware-versions.json <<'PY'
-          import hashlib
-          import json
-          import os
-          import sys
-
-          version = os.environ["VERSION"]
-          repo = os.environ.get("GITHUB_REPOSITORY", "DreamyTalesPAN/CodexBar-Display")
-          config_path = sys.argv[1]
-
-          with open(config_path, encoding="utf-8") as f:
-              config = json.load(f)
-
-          manifest = {
-              "schemaVersion": 1,
-              "release": f"v{version}",
-              "protocolVersion": config.get("protocolVersion", 1),
-              "artifacts": [],
-          }
-
-          for artifact in config.get("artifacts", []):
-              env_name = str(artifact.get("firmwareEnv", "")).strip()
-              board = str(artifact.get("board", "")).strip()
-              firmware_version = str(artifact.get("firmwareVersion", "")).strip().lstrip("v")
-              if not env_name or not board or not firmware_version:
-                  raise SystemExit("firmware artifacts need firmwareEnv, board, and firmwareVersion")
-              asset = f"codexbar-display-firmware-{env_name}-v{firmware_version}.bin"
-              if env_name.startswith("esp8266_"):
-                  asset += ".gz"
-              path = f"dist/firmware/{asset}"
-              with open(path, "rb") as f:
-                  sha = hashlib.sha256(f.read()).hexdigest()
-
-              manifest["artifacts"].append(
-                  {
-                      "firmwareEnv": env_name,
-                      "board": board,
-                      "firmwareVersion": firmware_version,
-                      "asset": asset,
-                      "sha256": sha,
-                      "severity": str(artifact.get("severity") or "recommended"),
-                      "message": str(artifact.get("message") or "Firmware update available. Open the VibeTV Mac App."),
-                      "firmwareUrl": f"https://github.com/{repo}/releases/download/v{version}/{asset}",
-                  }
-              )
-
-          for out_path in (
-              f"dist/firmware/firmware-manifest-v{version}.json",
-              "dist/firmware/firmware-manifest.json",
-          ):
-              with open(out_path, "w", encoding="utf-8") as f:
-                  json.dump(manifest, f, indent=2)
-                  f.write("\n")
-          PY
-
-      - name: Download notarized Mac DMG
+      - name: Download validated publish payload and candidate assets
         uses: actions/download-artifact@v4
         with:
-          name: vibetv-control-center-dmg
-          path: dist/macos
+          name: vibetv-validated-publish
+          path: validated
 
-      - name: Require verified Mac DMG
-        run: |
-          test -f dist/macos/VibeTV-Control-Center.dmg
-          test -s dist/macos/appcast.xml
-
-      - name: Build release checksums
-        env:
-          VERSION: ${{ github.ref_name }}
+      - name: Recheck current main after Production approval
         run: |
           set -euo pipefail
+          CURRENT_MAIN_SHA="$(
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+              --jq .object.sha
+          )"
+          [[ "${CURRENT_MAIN_SHA}" == "${SOURCE_SHA}" ]] || {
+            echo "error: main moved from validated ${SOURCE_SHA} to ${CURRENT_MAIN_SHA}; dispatch a new release candidate" >&2
+            exit 1
+          }
 
-          VERSION="${VERSION#v}"
-          (
-            cd dist
-            find . -type f ! -name "checksums-*" -print0 | sort -z | xargs -0 sha256sum > "checksums-v${VERSION}.txt"
+      - name: Recheck unpublished version after Production approval
+        run: |
+          set -euo pipefail
+          ensure_absent() {
+            local endpoint="$1"
+            local label="$2"
+            local error_file
+            error_file="$(mktemp)"
+            if gh api "${endpoint}" >/dev/null 2>"${error_file}"; then
+              echo "error: ${label} already exists" >&2
+              exit 1
+            fi
+            if ! grep -F "HTTP 404" "${error_file}" >/dev/null; then
+              cat "${error_file}" >&2
+              echo "error: could not prove ${label} is absent" >&2
+              exit 1
+            fi
+          }
+          ensure_absent \
+            "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}" \
+            "tag v${VERSION}"
+          ensure_absent \
+            "repos/${GITHUB_REPOSITORY}/releases/tags/v${VERSION}" \
+            "release v${VERSION}"
+
+      - name: Create exact GitHub tag and release without rebuild
+        run: |
+          set -euo pipefail
+          test -s validated/publish-payload.json
+          mapfile -d '' release_files < <(
+            find validated/assets -type f -print0 | sort -z
           )
+          (( ${#release_files[@]} > 0 )) \
+            || { echo "error: validated candidate assets are missing" >&2; exit 1; }
+          gh release create "v${VERSION}" "${release_files[@]}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${SOURCE_SHA}" \
+            --title "v${VERSION}" \
+            --generate-notes
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: |
-            dist/install.sh
-            dist/install-control-center-companion.sh
-            dist/companion/*
-            dist/firmware/*.bin
-            dist/firmware/*.bin.gz
-            dist/firmware/firmware-manifest.json
-            dist/firmware/firmware-manifest-*.json
-            dist/macos/*.dmg
-            dist/macos/appcast.xml
-            dist/checksums-*.txt
-
-  verify-release-canary:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+  verify-public-release:
+    needs: publish-release
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: build-and-release
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout
+      - name: Checkout exact published source for canary script
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
-      - name: Verify prerelease installs are offered the final release
-        env:
-          VERSION: ${{ github.ref_name }}
-        run: ./scripts/verify-release-canary.sh --version "${VERSION#v}"
+      - name: Download validated candidate payload
+        uses: actions/download-artifact@v4
+        with:
+          name: vibetv-validated-publish
+          path: validated
+
+      - name: Download published release assets
+        run: gh release download "v${{ inputs.version }}" --repo "${GITHUB_REPOSITORY}" --dir published
+
+      - name: Verify release assets are byte-identical to the candidate
+        run: |
+          python3 - "validated/publish-payload.json" published <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import sys
+
+          payload_path, published_root = sys.argv[1:]
+          payload = json.loads(pathlib.Path(payload_path).read_text(encoding="utf-8"))
+          expected = {
+              item["name"]: item["sha256"]
+              for item in payload["artifacts"]
+          }
+          actual = {}
+          for path in pathlib.Path(published_root).iterdir():
+              if path.is_file():
+                  actual[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+          if actual != expected:
+              raise SystemExit(
+                  "published release assets do not exactly match the validated candidate"
+              )
+          print(f"verified {len(actual)} release assets against candidate SHA-256 hashes")
+          PY
+
+      - name: Verify published release endpoints
+        run: ./scripts/verify-release-canary.sh --version "${{ inputs.version }}"
