@@ -3,22 +3,29 @@
   "schemaVersion": 1,
   "id": "reset-countdown",
   "name": "Reset Countdown",
-  "version": "1.0.0",
+  "version": "1.1.6",
   "minFirmware": "1.0.40",
   "usage": "screensaver",
   "themeSpec": {
-    "path": "/themes/s/reset-1-39352d.json",
+    "path": "/themes/s/rcf-5-1a2fc7f5.json",
     "file": "theme.json",
-    "bytes": 424,
-    "sha256": "39352d37f677b82ed6718de3e3788747486812919babe0fd28234b4423a38eda",
+    "bytes": 511,
+    "sha256": "6c7d8f054be51e6a353100d3e095a752999ebf002d19f66143b27e3ed93fc1c5",
     "contentType": "application/json"
   },
   "assets": [
     {
-      "path": "/themes/s/rc-orbit.cba",
-      "file": "assets/rc-orbit.cba",
-      "bytes": 597,
-      "sha256": "ffcf66a6a53e17d11b750ce010ea5f7fd15c9073d22bbbf1848072de07b48648",
+      "path": "/themes/s/rcf-top.cbi",
+      "file": "assets/rcf-top.cbi",
+      "bytes": 3236,
+      "sha256": "256089d98954e3e834e68f12b29993f746cc3be2dcc2b7bb42d76edd5b4a2f95",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/s/rcf-bottom.cbi",
+      "file": "assets/rcf-bottom.cbi",
+      "bytes": 4218,
+      "sha256": "9d0a7261f20b1d460d2dc565ff8d05e07a96d488d25617c7cdaa5b85c813a150",
       "contentType": "text/plain"
     }
   ]

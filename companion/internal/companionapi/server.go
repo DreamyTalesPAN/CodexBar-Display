@@ -3554,12 +3554,26 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		)
 		return
 	}
-	cfg, hello, ok := s.requireDevice(w, r)
-	if !ok {
-		return
-	}
-	if !s.requireThemeInstallPreflight(w, r, cfg, hello) {
-		return
+	var cfg runtimeconfig.Config
+	if req.Async {
+		// The async job pauses the display stream before it probes the device.
+		// Probing here would race the active ESP8266 render loop and can consume
+		// the receive/heap budget before maintenance has started.
+		cfg, err = s.config()
+		if err != nil {
+			writeInternalError(w, err)
+			return
+		}
+	} else {
+		var hello protocol.DeviceHello
+		var ok bool
+		cfg, hello, ok = s.requireDevice(w, r)
+		if !ok {
+			return
+		}
+		if !s.requireThemeInstallPreflight(w, r, cfg, hello) {
+			return
+		}
 	}
 	if req.Async {
 		job := s.createThemeInstallJob(req)

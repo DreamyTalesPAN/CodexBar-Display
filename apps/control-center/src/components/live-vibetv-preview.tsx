@@ -178,8 +178,8 @@ type FrameData = {
 // connected to the current provider or VibeTV frame, so labels must not imply
 // a provider-specific entitlement such as "Codex Spark Weekly".
 export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
-  provider: "vibetv",
-  label: "VibeTV",
+  provider: "codex",
+  label: "Codex",
   session: 64,
   weekly: 64,
   sessionUnavailable: false,

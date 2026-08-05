@@ -6,88 +6,88 @@
       "id": "claude-creature",
       "title": "Claude Creature",
       "usage": "live",
-      "version": "1.1.1",
-      "themeRev": 3,
-      "themeSpecPath": "/themes/u/claude--3-afab9c.json",
+      "version": "1.1.2",
+      "themeRev": 4,
+      "themeSpecPath": "/themes/u/claude--4-30a74f.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-claude-creature-v1.1.1.zip",
-      "sha256": "2c4c52f1520a713ecaab8613e2e7064d02e609ebe878f72922f1bbf0e71476d9",
-      "bytes": 3343
+      "downloadAsset": "vibetv-theme-claude-creature-v1.1.2.zip",
+      "sha256": "ad87a78e17b7b23861b5af1f90641287cff21b972414309cc432c275dd68794a",
+      "bytes": 3351
     },
     {
       "id": "clippy",
       "title": "Clippy",
       "usage": "live",
-      "version": "1.1.1",
-      "themeRev": 3,
-      "themeSpecPath": "/themes/u/clippy-3-fe3fd4.json",
+      "version": "1.1.2",
+      "themeRev": 4,
+      "themeSpecPath": "/themes/u/clippy-4-7eb2b0.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-clippy-v1.1.1.zip",
-      "sha256": "04f719de8afa4f7bfd0a320c56f11a37ba885a745de2a66933d964d436f9bcb1",
-      "bytes": 18640
+      "downloadAsset": "vibetv-theme-clippy-v1.1.2.zip",
+      "sha256": "fbce61452ae633a8f9b8d5f76a31518741699d021feb871a9aee20835a91ed15",
+      "bytes": 18642
     },
     {
       "id": "cozy-meadow",
       "title": "Cozy Meadow",
       "usage": "live",
-      "version": "0.2.1",
-      "themeRev": 3,
-      "themeSpecPath": "/themes/u/cm-3-1ed79c.json",
+      "version": "0.2.2",
+      "themeRev": 4,
+      "themeSpecPath": "/themes/u/cm-4-5e14e6.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-cozy-meadow-v0.2.1.zip",
-      "sha256": "839c0efb5347414e55134b33b05c4957e2eed99239db8780e394088b86d28e61",
-      "bytes": 1016
+      "downloadAsset": "vibetv-theme-cozy-meadow-v0.2.2.zip",
+      "sha256": "b2cb9d9174b894b45c2a4e866dac02049a7158649e011968066c14af56e1660d",
+      "bytes": 1075
     },
     {
       "id": "mini-classic",
       "title": "Mini Classic",
       "usage": "live",
-      "version": "1.1.2",
-      "themeRev": 4,
-      "themeSpecPath": "/themes/u/mini-cl-4-656926.json",
+      "version": "1.1.3",
+      "themeRev": 5,
+      "themeSpecPath": "/themes/u/mini-cl-5-14d68f.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-mini-classic-v1.1.2.zip",
-      "sha256": "adf13daa1d2b0452757dba1fd523e7839a05a38dd0ad31730a3819bf9dc9768d",
-      "bytes": 18499
+      "downloadAsset": "vibetv-theme-mini-classic-v1.1.3.zip",
+      "sha256": "1d89c5d8a09ec560e61ee0a24c9b9da64f8d70b04e99ab13819900f8d7d784ae",
+      "bytes": 18502
     },
     {
       "id": "reset-countdown",
       "title": "Reset Countdown",
       "usage": "screensaver",
-      "version": "1.0.0",
-      "themeRev": 1,
-      "themeSpecPath": "/themes/s/reset-1-39352d.json",
+      "version": "1.1.6",
+      "themeRev": 5,
+      "themeSpecPath": "/themes/s/rcf-5-1a2fc7f5.json",
       "requiresFirmware": "1.0.40",
-      "downloadAsset": "vibetv-theme-reset-countdown-v1.0.0.zip",
-      "sha256": "696c0204cc3b950940d1c32fcaae16ae936f8cd278b242591e3f3311b0cdd07c",
-      "bytes": 978
+      "downloadAsset": "vibetv-theme-reset-countdown-v1.1.6.zip",
+      "sha256": "8ca0238e88aac07b2a5150a07eb39254c049a6c94b3bab1c198a682d8ed1ee4c",
+      "bytes": 2554
     },
     {
       "id": "synthwave",
       "title": "Synthwave",
       "usage": "live",
-      "version": "1.1.1",
-      "themeRev": 3,
-      "themeSpecPath": "/themes/u/synthwa-3-619665.json",
+      "version": "1.1.2",
+      "themeRev": 4,
+      "themeSpecPath": "/themes/u/synthwa-4-d3ff8f.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-synthwave-v1.1.1.zip",
-      "sha256": "9e1848b5a499545ded284798eedd4de0d8018193451ab2b4e1fd1097664c5a80",
-      "bytes": 1583
+      "downloadAsset": "vibetv-theme-synthwave-v1.1.2.zip",
+      "sha256": "088632f0de6cc588b49061a4c020580b94290db27dced6eae703486ee10d275c",
+      "bytes": 1587
     }
   ]
 }

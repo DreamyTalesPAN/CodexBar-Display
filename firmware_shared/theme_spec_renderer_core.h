@@ -472,8 +472,14 @@ inline void FormatDuration(int64_t secs, char* out, size_t outSize) {
   if (secs < 0) {
     secs = 0;
   }
-  const int64_t hours = secs / 3600;
-  const int64_t minutes = (secs % 3600) / 60;
+  const int64_t totalMinutes = secs / 60;
+  const int64_t days = totalMinutes / (24 * 60);
+  const int64_t hours = (totalMinutes % (24 * 60)) / 60;
+  const int64_t minutes = totalMinutes % 60;
+  if (days > 0) {
+    std::snprintf(out, outSize, "%lldd %lldh", static_cast<long long>(days), static_cast<long long>(hours));
+    return;
+  }
   if (hours > 0) {
     std::snprintf(out, outSize, "%lldh %lldm", static_cast<long long>(hours), static_cast<long long>(minutes));
     return;

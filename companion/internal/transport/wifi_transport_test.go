@@ -418,12 +418,15 @@ func TestWiFiTransportUploadAssetRetriesTimeout(t *testing.T) {
 		assetUploadRetryDelay = oldDelay
 	}()
 
-	var attempts int
+	var uploadAttempts int
 	var retries int
 	transport := NewWiFiTransportWithClient(&http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			attempts++
-			if attempts == 1 {
+			if req.Method != http.MethodPost {
+				return nil, errors.New("asset readback unavailable")
+			}
+			uploadAttempts++
+			if uploadAttempts == 1 {
 				return nil, context.DeadlineExceeded
 			}
 			return &http.Response{
@@ -441,8 +444,8 @@ func TestWiFiTransportUploadAssetRetriesTimeout(t *testing.T) {
 	if err := transport.UploadAsset("http://192.0.2.10", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
 		t.Fatalf("UploadAsset returned error: %v", err)
 	}
-	if attempts != 2 {
-		t.Fatalf("expected retry after timeout, got attempts=%d", attempts)
+	if uploadAttempts != 2 {
+		t.Fatalf("expected retry after timeout, got attempts=%d", uploadAttempts)
 	}
 	if retries != 1 {
 		t.Fatalf("expected one retry event, got %d", retries)
@@ -481,11 +484,14 @@ func TestWiFiTransportUploadAssetRetriesEOF(t *testing.T) {
 		assetUploadRetryDelay = oldDelay
 	}()
 
-	var attempts int
+	var uploadAttempts int
 	transport := NewWiFiTransportWithClient(&http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			attempts++
-			if attempts == 1 {
+			if req.Method != http.MethodPost {
+				return nil, errors.New("asset readback unavailable")
+			}
+			uploadAttempts++
+			if uploadAttempts == 1 {
 				return nil, io.EOF
 			}
 			return &http.Response{
@@ -498,8 +504,34 @@ func TestWiFiTransportUploadAssetRetriesEOF(t *testing.T) {
 	if err := transport.UploadAsset("http://192.0.2.10", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
 		t.Fatalf("UploadAsset returned error: %v", err)
 	}
-	if attempts != 2 {
-		t.Fatalf("expected retry after EOF, got attempts=%d", attempts)
+	if uploadAttempts != 2 {
+		t.Fatalf("expected retry after EOF, got attempts=%d", uploadAttempts)
+	}
+}
+
+func TestWiFiTransportUploadAssetAcceptsCommittedAssetWhenResponseCloses(t *testing.T) {
+	var uploadAttempts int
+	transport := NewWiFiTransportWithClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/assets" && req.Method == http.MethodPost {
+				uploadAttempts++
+				return nil, io.EOF
+			}
+			if req.URL.Path == "/assets" && req.Method == http.MethodGet {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"assets":[{"path":"/themes/u/cm.cbi","sizeBytes":5}]}`)),
+				}, nil
+			}
+			return nil, errors.New("unexpected request")
+		}),
+	})
+
+	if err := transport.UploadAsset("http://192.0.2.10", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
+		t.Fatalf("UploadAsset returned error: %v", err)
+	}
+	if uploadAttempts != 1 {
+		t.Fatalf("expected no duplicate upload after committed readback, got attempts=%d", uploadAttempts)
 	}
 }
 
@@ -510,11 +542,14 @@ func TestWiFiTransportUploadAssetRetriesConnectionReset(t *testing.T) {
 		assetUploadRetryDelay = oldDelay
 	}()
 
-	var attempts int
+	var uploadAttempts int
 	transport := NewWiFiTransportWithClient(&http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			attempts++
-			if attempts == 1 {
+			if req.Method != http.MethodPost {
+				return nil, errors.New("asset readback unavailable")
+			}
+			uploadAttempts++
+			if uploadAttempts == 1 {
 				return nil, errors.New("read tcp 192.168.178.172:55149->192.168.178.163:80: read: connection reset by peer")
 			}
 			return &http.Response{
@@ -527,8 +562,8 @@ func TestWiFiTransportUploadAssetRetriesConnectionReset(t *testing.T) {
 	if err := transport.UploadAsset("http://192.0.2.10", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
 		t.Fatalf("UploadAsset returned error: %v", err)
 	}
-	if attempts != 2 {
-		t.Fatalf("expected retry after connection reset, got attempts=%d", attempts)
+	if uploadAttempts != 2 {
+		t.Fatalf("expected retry after connection reset, got attempts=%d", uploadAttempts)
 	}
 }
 

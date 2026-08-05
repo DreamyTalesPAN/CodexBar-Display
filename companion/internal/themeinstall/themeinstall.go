@@ -739,13 +739,11 @@ func sendClearThemeSpecFrameWithPairRetry(
 	return sendClearThemeSpecFrame(ctx, wifi, *target, caps, fetchFrame)
 }
 
-// clearScreensaverBeforeUpload clears the selected screensaver before its files
-// are overwritten. If it is showing, the saved live theme must be restored
-// first: changing the screensaver selection alone does not redraw the display.
-//
-// A screensaver install that fails after this leaves the slot empty. That is
-// reported as an empty slot and fixed by retrying; putting the selection back
-// would point it at a half-overwritten pack, which is the worse failure.
+// clearScreensaverBeforeUpload keeps the current screensaver selection until
+// the new files and ThemeSpec are fully staged. If it is showing, restore the
+// live theme first. Firmware uploads assets through a temporary file and
+// promotes them atomically, so the old selection remains the rollback until
+// final activation succeeds.
 func clearScreensaverBeforeUpload(wifi transportlayer.WiFiTransport, target *string, store PairTokenStore, out io.Writer) error {
 	health, err := wifi.DeviceHealthSnapshot(*target)
 	if err != nil {
@@ -760,9 +758,6 @@ func clearScreensaverBeforeUpload(wifi transportlayer.WiFiTransport, target *str
 		if err := activateThemeWithPairRetry(wifi, target, liveThemePath, store); err != nil {
 			return fmt.Errorf("restore live theme: %w", err)
 		}
-	}
-	if err := activateScreensaverWithPairRetry(wifi, target, "", store); err != nil {
-		return fmt.Errorf("clear screensaver slot: %w", err)
 	}
 	return nil
 }

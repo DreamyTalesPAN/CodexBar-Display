@@ -765,6 +765,16 @@ void testPartialUsageProtocolRendersOnlyUnknownLane() {
   TEST_ASSERT_EQUAL_INT(57, sink.commands[1].percent);
 }
 
+void testResetCountdownFormatsDaysAndHours() {
+  FrameData frame;
+  frame.resetSecs = (6 * 24 * 60 * 60) + (20 * 60 * 60) + (53 * 60);
+
+  char reset[32] = {0};
+  codexbar_display::themespec::BoundValue("reset", frame, reset, sizeof(reset));
+
+  TEST_ASSERT_EQUAL_STRING("6d 20h", reset);
+}
+
 void testLabelBindingUsesProviderLabelWithoutUpdateNotice() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -2478,6 +2488,7 @@ int main() {
   RUN_TEST(testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw);
   RUN_TEST(testWhitespaceUsageWindowOwnersTriggerLiveRedraw);
   RUN_TEST(testPartialUsageProtocolRendersOnlyUnknownLane);
+  RUN_TEST(testResetCountdownFormatsDaysAndHours);
   RUN_TEST(testLabelBindingUsesProviderLabelWithoutUpdateNotice);
   RUN_TEST(testChangedLabelPassUsesSynchronizedUpdateNoticeText);
   RUN_TEST(testChangedLabelPassCanRestoreProviderText);

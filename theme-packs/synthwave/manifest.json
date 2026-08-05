@@ -3,14 +3,16 @@
   "schemaVersion": 1,
   "id": "synthwave",
   "name": "Synthwave",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "minFirmware": "1.0.40",
-  "requiredCapabilities": ["usage-slots-v1"],
+  "requiredCapabilities": [
+    "usage-slots-v1"
+  ],
   "themeSpec": {
-    "path": "/themes/u/synthwa-3-619665.json",
+    "path": "/themes/u/synthwa-4-d3ff8f.json",
     "file": "theme.json",
-    "bytes": 891,
-    "sha256": "61966566cc3f13ff8a2237ced886e6bdb3bc0983b026249806ba73236808d477",
+    "bytes": 892,
+    "sha256": "53e3b364ed8d2fa4d19811d092735ba2e87f890edf18967fbcdb7809ae99b224",
     "contentType": "application/json"
   },
   "assets": [

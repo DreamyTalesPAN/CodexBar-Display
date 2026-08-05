@@ -10,8 +10,8 @@ const TEXT_SELECTION_HEIGHT_SCALE = 1.2;
 
 const DEFAULT_FRAME = {
   v: 2,
-  provider: "vibetv",
-  label: "VibeTV",
+  provider: "codex",
+  label: "Codex",
   session: 62,
   weekly: 62,
   resetSecs: 3600,

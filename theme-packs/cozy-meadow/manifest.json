@@ -3,21 +3,25 @@
   "schemaVersion": 1,
   "id": "cozy-meadow",
   "name": "Cozy Meadow",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "minFirmware": "1.0.40",
-  "requiredCapabilities": ["usage-slots-v1"],
+  "requiredCapabilities": [
+    "usage-slots-v1"
+  ],
   "themeSpec": {
-    "path": "/themes/u/cm-3-1ed79c.json",
+    "path": "/themes/u/cm-4-5e14e6.json",
     "file": "theme.json",
-    "bytes": 874,
-    "sha256": "1ed79c210b3ec85f819db972ae1b7dfa6f50aeeb545b6bbd247a60c949f6b67c",
+    "bytes": 878,
+    "sha256": "b079e86a22008d1eba3d076f7adc29f9497a5358805667b90c01cf0296aacd2f",
     "contentType": "application/json"
   },
   "assets": [
     {
       "path": "/themes/u/cm.cbi",
       "file": "assets/cm.cbi",
-      "contentType": "text/plain"
+      "contentType": "text/plain",
+      "bytes": 156,
+      "sha256": "dfbdba0bc18798aca727a4b3a218823d91feaa5c9f87bf8a2f892299db829c39"
     }
   ]
 }

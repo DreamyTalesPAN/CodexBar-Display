@@ -845,8 +845,13 @@ inline bool ExtractJsonObjectRaw(const char* json, const char* key, String& out)
 #endif
 
 inline String FormatDuration(int64_t secs) {
-  const int64_t hours = secs / 3600;
-  const int64_t minutes = (secs % 3600) / 60;
+  const int64_t totalMinutes = secs < 0 ? 0 : secs / 60;
+  const int64_t days = totalMinutes / (24 * 60);
+  const int64_t hours = (totalMinutes % (24 * 60)) / 60;
+  const int64_t minutes = totalMinutes % 60;
+  if (days > 0) {
+    return String(days) + "d " + String(hours) + "h";
+  }
   if (hours > 0) {
     return String(hours) + "h " + String(minutes) + "m";
   }

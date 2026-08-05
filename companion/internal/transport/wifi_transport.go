@@ -424,6 +424,12 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 		applyDeviceAuth(req, target)
 		resp, err := uploadClient.Do(req)
 		if err != nil {
+			// ESP8266WebServer can close the socket after committing the file
+			// without delivering the final HTTP response. Confirm the durable
+			// asset before retrying, otherwise the same upload is sent again.
+			if retryableAssetError(err) && t.assetUploadWasCommitted(target, devicePath, len(data)) {
+				return nil
+			}
 			lastErr = fmt.Errorf("post asset %s: %w", devicePath, err)
 			if !retryableAssetError(err) || attempt >= assetUploadAttempts {
 				return lastErr
@@ -456,6 +462,15 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 		time.Sleep(assetUploadRetryDelay)
 	}
 	return lastErr
+}
+
+func (t WiFiTransport) assetUploadWasCommitted(target, devicePath string, expectedBytes int) bool {
+	assets, err := t.DeviceAssets(target)
+	if err != nil {
+		return false
+	}
+	actualBytes, ok := assets.AssetSize(devicePath)
+	return ok && actualBytes == int64(expectedBytes)
 }
 
 func (t WiFiTransport) assetUploadClient(bodyBytes int) *http.Client {
