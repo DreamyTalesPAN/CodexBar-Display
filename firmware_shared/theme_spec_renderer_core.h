@@ -1709,6 +1709,53 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
     return false;
   }
 
+  bool dirtyBridgesUnchangedAnimation = false;
+  for (size_t i = 0; i < scene.primitiveCount; ++i) {
+    const CompiledPrimitive& primitive = scene.primitives[i];
+    if (!CompiledPrimitiveIsAnimated(primitive, frame) ||
+        (primitive.liveFields & changedFields) != 0) {
+      continue;
+    }
+    Bounds primitiveBounds;
+    if (CompiledPrimitiveBounds(primitive, frame, false, primitiveBounds) &&
+        BoundsOverlap(dirty, primitiveBounds)) {
+      dirtyBridgesUnchangedAnimation = true;
+      break;
+    }
+  }
+
+  if (dirtyBridgesUnchangedAnimation) {
+    bool skippedAnimated = false;
+    for (size_t i = 0; i < scene.primitiveCount; ++i) {
+      const CompiledPrimitive& primitive = scene.primitives[i];
+      if ((primitive.liveFields & changedFields) == 0) {
+        continue;
+      }
+      Bounds primitiveBounds;
+      if (!CompiledPrimitiveBounds(primitive, frame, true, primitiveBounds)) {
+        if (error != nullptr) {
+          *error = "unstable_dirty_bounds";
+        }
+        return false;
+      }
+      bool regionSkippedAnimated = false;
+      if (!RenderCompiledThemeSpecRegionPrimitives(
+              scene,
+              frame,
+              primitiveBounds,
+              sink,
+              error,
+              &regionSkippedAnimated)) {
+        return false;
+      }
+      skippedAnimated = skippedAnimated || regionSkippedAnimated;
+    }
+    if (skippedAnimatedOverlap != nullptr) {
+      *skippedAnimatedOverlap = skippedAnimated;
+    }
+    return true;
+  }
+
   return RenderCompiledThemeSpecRegionPrimitives(scene, frame, dirty, sink, error, skippedAnimatedOverlap);
 }
 
