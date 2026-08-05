@@ -46,6 +46,36 @@ describe("OverviewScreen", () => {
     expect(html).not.toContain("VibeTV is connected");
   });
 
+  it("does not treat a cached frame as a live connection or display", () => {
+    const html = renderToStaticMarkup(
+      <OverviewScreen
+        companionStatus="online"
+        device={{
+          active: true,
+          connected: false,
+          paired: true,
+          ready: false,
+          connectionState: "reconnecting",
+        }}
+        displayFrame={{
+          ok: true,
+          savedAt: "2026-08-05T08:00:00Z",
+          frame: {
+            v: 1,
+            provider: "codex",
+            label: "Codex",
+            session: 12,
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Not connected");
+    expect(html).toContain("Waiting for first image");
+    expect(html).not.toContain("VibeTV is connected");
+    expect(html).not.toContain(">Live<");
+  });
+
   it("does not show reconnect instructions inside an available Overview", () => {
     const html = renderToStaticMarkup(
       <OverviewScreen

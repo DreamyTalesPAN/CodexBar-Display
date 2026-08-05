@@ -1057,7 +1057,7 @@ func TestEnsureFirmwareUpdateDeviceTokenStoresValidatedIdentityTuple(t *testing.
 	}
 }
 
-func TestFetchDeviceHelloHTTPWithTokenRedactsTokenFromTransportError(t *testing.T) {
+func TestFetchDeviceHelloHTTPWithTokenKeepsTokenOutOfURLAndErrors(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {
 		releaseHTTPClient = previousHTTPClient
@@ -1066,6 +1066,12 @@ func TestFetchDeviceHelloHTTPWithTokenRedactsTokenFromTransportError(t *testing.
 	token := "pair token/with+symbols"
 	transportErr := errors.New("connection refused")
 	releaseHTTPClient = releaseHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+		if got := req.Header.Get("X-VibeTV-Token"); got != token {
+			t.Fatalf("expected pairing token header, got %q", got)
+		}
+		if req.URL.RawQuery != "" {
+			t.Fatalf("expected pairing token to stay out of URL, got %q", req.URL.RawQuery)
+		}
 		return nil, &url.Error{
 			Op:  "Get",
 			URL: req.URL.String(),
@@ -1080,9 +1086,6 @@ func TestFetchDeviceHelloHTTPWithTokenRedactsTokenFromTransportError(t *testing.
 	if strings.Contains(err.Error(), token) || strings.Contains(err.Error(), url.QueryEscape(token)) {
 		t.Fatalf("authenticated hello error leaked pairing token: %v", err)
 	}
-	if !strings.Contains(err.Error(), "[REDACTED]") {
-		t.Fatalf("expected pairing token placeholder, got: %v", err)
-	}
 	if !errors.Is(err, transportErr) {
 		t.Fatalf("expected original transport error to remain unwrap-compatible, got: %v", err)
 	}
@@ -1094,27 +1097,40 @@ func TestFetchDeviceHelloHTTPWithTokenUsesFreshConnection(t *testing.T) {
 		releaseHTTPClient = previousHTTPClient
 	})
 
-	releaseHTTPClient = releaseHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
-		if !req.Close {
-			t.Fatal("expected device hello request to close its connection")
-		}
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Status:     "200 OK",
-			Header:     make(http.Header),
-			Body: io.NopCloser(strings.NewReader(
+	connections := make(chan string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		connections <- req.RemoteAddr
+		if req.URL.Path == "/hello" {
+			_, _ = w.Write([]byte(
 				`{"kind":"hello","deviceId":"device-new","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.1"}`,
-			)),
-			Request: req,
-		}, nil
-	})
+			))
+		}
+	}))
+	defer server.Close()
+	client := server.Client()
+	releaseHTTPClient = client
 
-	hello, err := fetchDeviceHelloHTTPWithToken(context.Background(), "http://192.0.2.10", "pair-token")
+	resp, err := client.Get(server.URL + "/warmup")
+	if err != nil {
+		t.Fatalf("warm shared HTTP connection: %v", err)
+	}
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		t.Fatalf("read warmup response: %v", err)
+	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatalf("close warmup response: %v", err)
+	}
+	warmConnection := <-connections
+
+	hello, err := fetchDeviceHelloHTTPWithToken(context.Background(), server.URL, "pair-token")
 	if err != nil {
 		t.Fatalf("fetch authenticated hello: %v", err)
 	}
 	if hello.DeviceID != "device-new" {
 		t.Fatalf("unexpected device hello: %+v", hello)
+	}
+	if helloConnection := <-connections; helloConnection == warmConnection {
+		t.Fatalf("authenticated hello reused existing connection %s", helloConnection)
 	}
 }
 

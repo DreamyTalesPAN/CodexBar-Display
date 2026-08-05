@@ -70,7 +70,10 @@ import { SetupStatusScreen } from "./setup-status-screen";
 import { SettingsScreen } from "./settings-screen";
 import { SupportReportActions } from "./support-report-actions";
 import { collectSupportReport } from "./support-report";
-import { ThemeLibraryScreen } from "./theme-library-screen";
+import {
+  ThemeLibraryScreen,
+  themeNeedsUpgradeableFirmware,
+} from "./theme-library-screen";
 import {
   clearRetiredAiThemeStorage,
   type ThemeStudioInstallPayload,
@@ -83,6 +86,7 @@ const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
 const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
+const FIRST_USAGE_ENTRY_TIMEOUT_MS = 30_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
 const LAUNCHD_RECOVERY_GRACE_MS = 12_000;
 const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 55_000;
@@ -452,6 +456,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setCompanionStatus("missing");
     setCompanionInfo(null);
     setThemeInstallEnabled(false);
+    setUsage(null);
     setUsageError(null);
   }, []);
 
@@ -459,6 +464,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setCompanionStatus("unknown");
     setCompanionInfo(null);
     setThemeInstallEnabled(false);
+    setUsage(null);
     setUsageError(null);
   }, []);
 
@@ -1956,12 +1962,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return () => window.clearTimeout(timer);
   }, [checkCompanion, hostedSetup, setupPreviewStep]);
 
+  const connectionRecoveryRequired =
+    isConnectionRecoveryError(lastError) || deviceNeedsExplicitConnect(device);
+
   useEffect(() => {
     if (
       hostedSetup ||
       setupPreviewStep ||
       requiresMacAppMigration ||
       firmwareUpdateInProgress ||
+      connectionRecoveryRequired ||
       !initialCompanionCheckComplete ||
       companionStatus !== "online" ||
       deviceIsCustomerConnected(device) ||
@@ -1976,6 +1986,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [
     busyAction,
     companionStatus,
+    connectionRecoveryRequired,
     device,
     deviceSearchState,
     firmwareUpdateInProgress,
@@ -2856,6 +2867,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : null;
   const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
   const activeThemeUpgrade = resolveActiveThemeUpgrade(catalog.themes, device);
+  const companionRelease =
+    hostedCompanionRelease?.status === "check_failed" && companionInfo?.update
+      ? {
+          ...companionInfo.update,
+          ...hostedCompanionRelease,
+        }
+      : hostedCompanionRelease || companionInfo?.update || null;
+  const macAppUpdateAvailable = Boolean(
+    companionInfo?.update?.updateAvailable || companionRelease?.updateAvailable,
+  );
   const activeThemeUpdateAvailable = Boolean(
     activeThemeUpgrade.theme &&
       activeThemeUpgrade.needed &&
@@ -2872,10 +2893,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       !deviceIsReady(device) ||
       busyAction ||
       firmwareUpdateInProgress ||
-      themeInstallStatus?.phase === "installing" ||
       !theme ||
+      themeInstallStatus?.phase === "installing" ||
+      (themeInstallStatus?.phase === "error" &&
+        themeInstallStatus.themeId === theme.themeId) ||
       !activeThemeUpgrade.needsThemeSpec ||
-      activeThemeUpgrade.needsFirmwareCapability ||
+      themeNeedsUpgradeableFirmware(theme, device, themeInstallEnabled) ||
+      macAppUpdateAvailable ||
+      initialThemeId ||
       activeThemeUpgrade.unresolved
     ) {
       return;
@@ -2898,23 +2923,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     device,
     firmwareUpdateInProgress,
     hostedSetup,
+    initialThemeId,
     installTheme,
+    macAppUpdateAvailable,
     requiresMacAppMigration,
     setupPreviewStep,
     themeInstallEnabled,
     themeInstallStatus?.phase,
+    themeInstallStatus?.themeId,
   ]);
-  const companionRelease =
-    hostedCompanionRelease?.status === "check_failed" && companionInfo?.update
-      ? {
-          ...companionInfo.update,
-          ...hostedCompanionRelease,
-        }
-      : hostedCompanionRelease || companionInfo?.update || null;
   const macAppMigrationAvailable = Boolean(
     requiresMacAppMigration && availableMacAppDmgDownloadUrl(companionRelease),
   );
-  const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const anyUpdateAvailable =
     firmwareUpdateAvailable ||
     activeThemeUpdateAvailable ||
@@ -2936,8 +2956,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     displaySessionActive,
     handleDisplayFrame,
   );
-  const connectionRecoveryRequired =
-    isConnectionRecoveryError(lastError) || deviceNeedsExplicitConnect(device);
   const themeSetupEntryRequired =
     companionStatus === "online" && deviceNeedsThemeSetup(device);
   const themeSetupSessionMatches =
@@ -2971,6 +2989,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     device.paired !== false &&
     !connectionRecoveryRequired &&
     !hasEnteredControlCenter;
+  useEffect(() => {
+    if (!waitingForFirstUsage || themeSetupRequired) {
+      return;
+    }
+
+    const timer = window.setTimeout(
+      () => setHasEnteredControlCenter(true),
+      FIRST_USAGE_ENTRY_TIMEOUT_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [
+    device?.deviceId,
+    device?.target,
+    themeSetupRequired,
+    waitingForFirstUsage,
+  ]);
   const startupDeviceSearchState: DeviceSearchState =
     waitingForFirstUsage
       ? "waiting"
@@ -3222,13 +3256,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }
 
   if (
-    !hasEnteredControlCenter &&
     companionStatus === "online" &&
     !requiresMacAppMigration &&
-    (!hasActiveDevice ||
-      !deviceConnected ||
-      connectionRecoveryRequired ||
-      (waitingForFirstUsage && !themeSetupRequired))
+    !firmwareUpdateInProgress &&
+    (connectionRecoveryRequired ||
+      (!hasEnteredControlCenter &&
+        (!hasActiveDevice ||
+          !deviceConnected ||
+          (waitingForFirstUsage && !themeSetupRequired))))
   ) {
     return (
       <DeviceStartupScreen
@@ -3331,7 +3366,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       {activeShellTab === "settings" ? (
         <SettingsScreen
           brightness={brightness}
-          busyAction={busyAction}
+          busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
           device={device}
           onBrightnessChange={changeBrightness}
           onResetSetup={resetSetup}
@@ -3341,7 +3376,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
       {activeShellTab === "theme-library" ? (
         <ThemeLibraryScreen
-          busyAction={busyAction}
+          busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
           companionStatus={companionStatus}
           device={device}
           installStatus={themeInstallStatus}
