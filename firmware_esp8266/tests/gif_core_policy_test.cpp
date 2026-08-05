@@ -855,13 +855,15 @@ bool testFirmwareLoadsOnlyExplicitActiveTheme(const char* mainPath) {
     return false;
   }
 
-  const std::size_t loadStart = mainSource.find("void loadActiveStoredThemeSpecCache()");
+  const std::size_t cacheStart = mainSource.find("bool loadStoredThemeSpecCacheFromPath(");
+  const std::size_t loadStart = mainSource.find("void loadActiveStoredThemeSpecCache()", cacheStart);
   const std::size_t loadEnd = mainSource.find("#endif", loadStart);
   if (!expect(
-          loadStart != std::string::npos && loadEnd != std::string::npos,
+          cacheStart != std::string::npos && loadStart != std::string::npos && loadEnd != std::string::npos,
           "active ThemeSpec cache loader must remain discoverable")) {
     return false;
   }
+  const std::string cache = mainSource.substr(cacheStart, loadStart - cacheStart);
   const std::string loader = mainSource.substr(loadStart, loadEnd - loadStart);
   const std::size_t active = loader.find("readActiveThemeSpecPath(activePath)");
   return expect(
@@ -869,8 +871,12 @@ bool testFirmwareLoadsOnlyExplicitActiveTheme(const char* mainPath) {
           loader.find("loadStoredThemeSpecCacheFromPath(activePath)") != std::string::npos &&
           loader.find("kDefaultThemeSpecPath") == std::string::npos &&
           loader.find("kPreviousDefaultThemeSpecPath") == std::string::npos &&
-          loader.find("kLegacyDefaultThemeSpecPath") == std::string::npos,
-      "firmware must load only the explicitly active ThemeSpec and otherwise show theme-missing");
+          loader.find("kLegacyDefaultThemeSpecPath") == std::string::npos &&
+          cache.find("runtimeCtx.runtime.cachedThemeSpecRaw = raw;") != std::string::npos &&
+          cache.find("activeThemeSpecPath = path;") != std::string::npos &&
+          cache.find("prepareStoredThemeSpec(") == std::string::npos &&
+          cache.find("commitStoredThemeSpec(") == std::string::npos,
+      "boot must cache the active ThemeSpec without inventing a usage frame before HTTP is ready");
 }
 
 bool testAssetHandlersUseThemeNamespacePolicy(const char* mainPath) {
