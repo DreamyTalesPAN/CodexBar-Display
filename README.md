@@ -203,4 +203,12 @@ that exact hardware test.
 
 ## License
 
-Released under the MIT License. See [LICENSE](LICENSE).
+Source available under the Functional Source License 1.1 with the MIT future
+license (FSL-1.1-MIT). The source may be inspected, used, modified, and
+redistributed for permitted purposes, but not used in a competing commercial
+product or service. Each version becomes available under the MIT License two
+years after it is published.
+
+Versions published previously under the MIT License remain available under
+the license terms distributed with those versions. See [LICENSE](LICENSE) for
+the current terms.
