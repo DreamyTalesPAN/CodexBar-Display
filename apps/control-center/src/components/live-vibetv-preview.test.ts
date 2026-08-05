@@ -142,7 +142,7 @@ describe("dynamic usage slot preview", () => {
     expect(markup).not.toContain("Reconnect VibeTV to continue");
   });
 
-  it("ignores a prior frame when the selected VibeTV is disconnected", () => {
+  it("keeps the verified frame while the selected VibeTV reconnects", () => {
     const displayFrame = {
       ok: true,
       frame: {
@@ -154,12 +154,13 @@ describe("dynamic usage slot preview", () => {
     };
     const device = {
       active: true,
+      activeTheme: "synthwave",
       connected: false,
       paired: true,
       ready: false,
     };
 
-    expect(livePreviewDisplayFrame(device, displayFrame)).toBeNull();
+    expect(livePreviewDisplayFrame(device, displayFrame)).toBe(displayFrame);
 
     const markup = renderToStaticMarkup(
       createElement(LiveVibeTVPreview, {
@@ -169,7 +170,8 @@ describe("dynamic usage slot preview", () => {
       }),
     );
 
-    expect(markup).toContain("Reconnect VibeTV to continue");
+    expect(markup).toContain("Loading preview");
+    expect(markup).not.toContain("Reconnect VibeTV to continue");
     expect(markup).not.toContain("Waiting for usage");
   });
 

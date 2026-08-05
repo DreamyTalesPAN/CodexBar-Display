@@ -8,6 +8,7 @@ import type {
   UsageSnapshot,
 } from "./control-center-types";
 import {
+  deviceIsActive,
   deviceIsCustomerConnected,
   deviceIsReady,
   deviceIsWaitingForUsage,
@@ -315,7 +316,12 @@ export function LiveVibeTVPreview({
   const themeSpecHash = normalizeThemeSpecHash(
     device?.display?.themeSpec?.hash,
   );
-  const deviceConnected = deviceIsCustomerConnected(device);
+  const deviceConnected = Boolean(
+    deviceIsCustomerConnected(device) ||
+      (deviceIsActive(device) &&
+        device?.paired !== false &&
+        hasRenderableUsage(displayFrame)),
+  );
   const deviceReady = deviceIsReady(device);
   const waitingForUsage = deviceIsWaitingForUsage(device);
   const effectiveDisplayFrame = livePreviewDisplayFrame(device, displayFrame);
@@ -431,7 +437,11 @@ export function livePreviewDisplayFrame(
   device: DeviceInfo | null | undefined,
   displayFrame: DisplayFrameSnapshot | null | undefined,
 ) {
-  if (!deviceIsCustomerConnected(device) || !hasRenderableUsage(displayFrame)) {
+  if (
+    (!deviceIsCustomerConnected(device) &&
+      (!deviceIsActive(device) || device?.paired === false)) ||
+    !hasRenderableUsage(displayFrame)
+  ) {
     return null;
   }
   return displayFrame;

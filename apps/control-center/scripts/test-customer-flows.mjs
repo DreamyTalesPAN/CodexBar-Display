@@ -29,7 +29,6 @@ const desktopViewport = { width: 1280, height: 900 };
 const themeStudioViewport = { width: 1180, height: 820 };
 const smokeOnly = process.argv.includes("--smoke");
 const providerSettingsOnly = process.argv.includes("--provider-settings");
-const startupTimeoutOnly = process.argv.includes("--startup-timeout");
 const migrationScreenshotDir =
   process.env.CONTROL_CENTER_CAPTURE_MIGRATION_SCREENSHOTS?.trim() || "";
 const themeStudioSafetyOnly = process.argv.includes("--theme-studio-safety");
@@ -417,14 +416,6 @@ async function main() {
       console.log("control-center provider settings test passed");
       return;
     }
-    if (startupTimeoutOnly) {
-      await testLocalReachableWithoutFrameEntersAfterTimeout(
-        browser,
-        appContext.appUrl,
-      );
-      console.log("control-center startup timeout test passed");
-      return;
-    }
     await testStartupStateMachine(browser, appContext.appUrl);
     if (wifiRescanOnly) {
       await testLocalWifiSetupRescansAfterNoResults(browser, appContext.appUrl);
@@ -501,7 +492,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testRunningCompanionOutageBlocksControlCenter(
+      await testRunningCompanionOutageKeepsControlCenterOpen(
         browser,
         appContext.appUrl,
       );
@@ -623,10 +614,6 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testLocalReachableWithoutFrameEntersAfterTimeout(
-      browser,
-      appContext.appUrl,
-    );
     await testThemeMissingDeviceChoosesThemeAndCompletesSetup(
       browser,
       appContext.appUrl,
@@ -655,7 +642,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testRunningCompanionOutageBlocksControlCenter(
+    await testRunningCompanionOutageKeepsControlCenterOpen(
       browser,
       appContext.appUrl,
     );
@@ -2245,7 +2232,7 @@ async function testLegacyTargetDoesNotAutoconnectDiscoveredIdentity(
   await page.close();
 }
 
-async function testRunningCompanionOutageBlocksControlCenter(
+async function testRunningCompanionOutageKeepsControlCenterOpen(
   browser,
   appUrl,
 ) {
@@ -2272,27 +2259,50 @@ async function testRunningCompanionOutageBlocksControlCenter(
     timeout: 10_000,
   });
   await page
-    .getByRole("heading", { name: "VibeTV Control Center needs attention" })
-    .waitFor({
-      timeout: 12_000,
-    });
+    .getByRole("img", { name: /Rendered VibeTV theme/ })
+    .waitFor({ timeout: 10_000 });
+  await page.getByText("Not reachable", { exact: true }).waitFor({
+    timeout: 12_000,
+  });
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
-      0,
-    "A running session must block Control Center navigation when the background service stops answering",
+      1,
+    "A running session must keep Control Center navigation when the background service stops answering",
   );
   assert(
     (await page.getByTestId("device-startup-screen").count()) === 0,
     "A background service outage must not return a running session to VibeTV startup",
   );
+  assert(
+    (await page.getByTestId("mac-app-recovery-screen").count()) === 0,
+    "A background service outage must not replace an entered Control Center",
+  );
+  await page
+    .getByRole("img", { name: /Rendered VibeTV theme/ })
+    .waitFor({ timeout: 10_000 });
+  for (const tab of [
+    "Overview",
+    "Usage",
+    "Settings",
+    "Theme Library",
+    "Updates",
+    "Support",
+  ]) {
+    const tabButton = await getNavigationButton(page, tab);
+    assert(
+      await tabButton.isEnabled(),
+      `${tab} must stay enabled during a background service outage`,
+    );
+  }
   await waitForCondition(
     () => settingsResponses > 0,
     "The delayed settings response should arrive after the outage",
   );
   await page.waitForTimeout(250);
   assert(
-    (await page.getByTestId("mac-app-recovery-screen").count()) === 1,
-    "A stale settings response must not dismiss background service recovery",
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      1,
+    "A stale settings response must not replace the entered Control Center",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -2992,83 +3002,6 @@ async function testLocalReachableWithoutFrameWaitsForUsage(browser, appUrl) {
   );
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
-  await page.close();
-}
-
-async function testLocalReachableWithoutFrameEntersAfterTimeout(browser, appUrl) {
-  const page = await newCustomerPage(browser, appUrl, {
-    viewport: desktopViewport,
-  });
-  const noProviderUsage = {
-    ok: true,
-    generatedAt: "2026-07-29T08:00:00Z",
-    providers: [],
-  };
-  let recovered = false;
-  let recoveredFrameRequests = 0;
-  await page.clock.install({ time: new Date("2026-07-29T08:00:00Z") });
-  await routeCompanionOnline(page, [], () => {}, {
-    device: companionDevice,
-    displayFrameResponse: () => {
-      if (!recovered) {
-        return undefined;
-      }
-      recoveredFrameRequests += 1;
-      return {
-        ok: true,
-        savedAt: "2026-07-29T08:01:00Z",
-        frame: {
-          v: 1,
-          provider: "codex",
-          label: "Codex",
-          session: 12,
-        },
-      };
-    },
-    preferencesResponse: { ok: true, items: [] },
-    providerSetup: {
-      status: "not_configured",
-      engine: { status: "not_configured" },
-      providers: [],
-    },
-    usageResponse: noProviderUsage,
-  });
-
-  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.clock.runFor(0);
-  await page.getByText("Waiting for usage…", { exact: true }).waitFor({
-    timeout: 10_000,
-  });
-  await page.clock.runFor(25_000);
-  assert(
-    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
-      0,
-    "Startup must remain visible before its stated 30-second limit",
-  );
-
-  await page.clock.runFor(5_000);
-  await page
-    .getByRole("navigation", { name: "Control Center" })
-    .waitFor({ timeout: 10_000 });
-  await page
-    .getByRole("navigation", { name: "Control Center", exact: true })
-    .getByRole("button", { name: "Usage" })
-    .click();
-  await page.getByRole("heading", { name: "AI providers" }).waitFor({
-    timeout: 10_000,
-  });
-  assert(
-    (await page.getByText("No provider usage is available yet.").count()) ===
-      1,
-    "Timed startup entry must not invent provider usage",
-  );
-
-  recovered = true;
-  await page.clock.runFor(1_000);
-  await waitForCondition(
-    () => recoveredFrameRequests > 0,
-    "Display-frame recovery must keep polling after startup entry",
-  );
   await page.close();
 }
 
@@ -3808,6 +3741,9 @@ async function testRunningDeviceOutageKeepsControlCenterOpen(browser, appUrl) {
       { connected: false, paired: false },
       { ...reconnectingDevice, deviceId: "known-device-1" },
       { ...reconnectingDevice, deviceId: "known-device-1" },
+      { ...reconnectingDevice, deviceId: "known-device-1" },
+      { ...reconnectingDevice, deviceId: "known-device-1" },
+      { ...reconnectingDevice, deviceId: "known-device-1" },
       configuredReadyDevice,
     ],
   });
@@ -3831,13 +3767,17 @@ async function testRunningDeviceOutageKeepsControlCenterOpen(browser, appUrl) {
     "A running session must not return to the startup screen",
   );
   await waitForCondition(
-    () => statusRequests.length >= 5,
-    `Running recovery should poll status at least five times, got ${statusRequests.length}`,
+    () => statusRequests.length >= 7,
+    `Running recovery should poll status at least seven times, got ${statusRequests.length}`,
     20_000,
   );
   await page.waitForTimeout(250);
+  assert(
+    (await page.getByTestId("device-startup-screen").count()) === 0,
+    "Repeated reconnecting status must not reopen the startup screen",
+  );
   await page.getByText("VibeTV connected", { exact: true }).waitFor({
-    timeout: 5_000,
+    timeout: 10_000,
   });
   await page.getByRole("heading", { name: "Usage", exact: true }).waitFor();
   assert(

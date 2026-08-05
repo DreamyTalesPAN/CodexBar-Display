@@ -5,6 +5,21 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-05 — Stable connected Control Center
+
+- User approval: The user explicitly required the Mac App and VibeTV connection
+  to stay stable, with no automatic return to Connect, no locked tabs, and no
+  incomplete Overview preview after Connect.
+- Approved customer-visible result: Before the first real display frame, the
+  existing startup screen remains visible. The first Overview already has that
+  verified frame and every Control Center tab is available. Afterward, temporary
+  VibeTV or Mac App status failures keep the current tab, navigation, and last
+  verified preview visible. Only the existing explicit setup reset starts device
+  selection again. No new screen, copy, control, or recovery state is added.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`,
+  `overview-screen.tsx`, `live-vibetv-preview.tsx`, their regression assertions,
+  and this approval record.
+
 ## 2026-08-04 — Automatically refresh the installed catalog theme
 
 - User approval: After the connected VibeTV showed the old Clippy labels even

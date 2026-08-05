@@ -31,6 +31,7 @@ import {
   deviceIsWaitingForUsage,
 } from "./control-center-types";
 import {
+  hasRenderableUsage,
   LiveVibeTVPreview,
   type DisplayFrameSnapshot,
 } from "./live-vibetv-preview";
@@ -51,8 +52,12 @@ export function OverviewScreen({
   usage,
 }: OverviewScreenProps) {
   const pairingRejected = device?.paired === false;
-  const connected = deviceIsCustomerConnected(device);
-  const displayReady = deviceIsReady(device);
+  const hasVerifiedDisplay = hasRenderableUsage(displayFrame);
+  const connected = Boolean(
+    deviceIsCustomerConnected(device) ||
+      (deviceIsActive(device) && !pairingRejected && hasVerifiedDisplay),
+  );
+  const displayReady = deviceIsReady(device) || hasVerifiedDisplay;
   const waitingForUsage = deviceIsWaitingForUsage(device);
   const reconnecting =
     deviceIsActive(device) &&
