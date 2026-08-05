@@ -93,21 +93,27 @@ async function copyLocalThemePackDownloads(exportRoot) {
   const catalog = JSON.parse(
     await readFile(path.join(source, "vibetv-theme-packs-v2.json"), "utf8"),
   );
-  const offeredThemeIds = new Set((catalog.themes || []).map((theme) => theme.id));
+  const offeredThemeIds = (catalog.themes || []).map((theme) => theme.id);
   await mkdir(target, { recursive: true });
   await cp(source, target, {
-    filter: (entry) => {
-      const themeId = archiveThemeId(path.basename(entry));
-      return themeId === null || offeredThemeIds.has(themeId);
-    },
+    filter: (entry) => !isWithdrawnThemeArchive(path.basename(entry), offeredThemeIds),
     force: true,
     recursive: true,
   });
 }
 
-function archiveThemeId(fileName) {
-  const match = /^vibetv-theme-(.+?)(?:-v\d+\.\d+\.\d+)?\.zip$/.exec(fileName);
-  return match ? match[1] : null;
+// Matching the theme id by prefix keeps this independent of the version format,
+// which may carry a SemVer prerelease suffix. The `-v` guards against one theme
+// id being the prefix of another.
+function isWithdrawnThemeArchive(fileName, offeredThemeIds) {
+  if (!fileName.startsWith("vibetv-theme-") || !fileName.endsWith(".zip")) {
+    return false;
+  }
+  return !offeredThemeIds.some(
+    (themeId) =>
+      fileName === `vibetv-theme-${themeId}.zip` ||
+      fileName.startsWith(`vibetv-theme-${themeId}-v`),
+  );
 }
 
 async function runCommand(command, args, options) {
