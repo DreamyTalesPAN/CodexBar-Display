@@ -31,20 +31,6 @@
       "bytes": 18640
     },
     {
-      "id": "cozy-meadow",
-      "title": "Cozy Meadow",
-      "version": "0.2.1",
-      "themeRev": 3,
-      "themeSpecPath": "/themes/u/cm-3-1ed79c.json",
-      "requiresFirmware": "1.0.40",
-      "requiredCapabilities": [
-        "usage-slots-v1"
-      ],
-      "downloadAsset": "vibetv-theme-cozy-meadow-v0.2.1.zip",
-      "sha256": "839c0efb5347414e55134b33b05c4957e2eed99239db8780e394088b86d28e61",
-      "bytes": 1016
-    },
-    {
       "id": "mini-classic",
       "title": "Mini Classic",
       "version": "1.1.2",

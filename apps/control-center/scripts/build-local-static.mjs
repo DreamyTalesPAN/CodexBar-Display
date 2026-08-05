@@ -3,6 +3,7 @@ import { once } from "node:events";
 import {
   cp,
   mkdir,
+  readFile,
   rm,
   stat,
   symlink,
@@ -86,8 +87,27 @@ async function ensureNodeModules() {
 async function copyLocalThemePackDownloads(exportRoot) {
   const source = path.join(repoRoot, "dist", "theme-packs");
   const target = path.join(exportRoot, "theme-packs");
+  // dist keeps every archive it ever published, because published bytes are
+  // immutable. The app only ships the ones whose theme the catalog still
+  // offers, so a withdrawn theme cannot be installed from the packaged app.
+  const catalog = JSON.parse(
+    await readFile(path.join(source, "vibetv-theme-packs-v2.json"), "utf8"),
+  );
+  const offeredThemeIds = new Set((catalog.themes || []).map((theme) => theme.id));
   await mkdir(target, { recursive: true });
-  await cp(source, target, { force: true, recursive: true });
+  await cp(source, target, {
+    filter: (entry) => {
+      const themeId = archiveThemeId(path.basename(entry));
+      return themeId === null || offeredThemeIds.has(themeId);
+    },
+    force: true,
+    recursive: true,
+  });
+}
+
+function archiveThemeId(fileName) {
+  const match = /^vibetv-theme-(.+?)(?:-v\d+\.\d+\.\d+)?\.zip$/.exec(fileName);
+  return match ? match[1] : null;
 }
 
 async function runCommand(command, args, options) {

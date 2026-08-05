@@ -108,9 +108,28 @@ main() {
       exit 1
     }
   curl -fsS "${base_url}/theme-packs/vibetv-theme-packs-v2.json" \
-    | grep -F '"vibetv-theme-mini-classic-v1.1.0.zip"' >/dev/null \
+    | grep -E '"vibetv-theme-mini-classic-v[0-9]+\.[0-9]+\.[0-9]+\.zip"' >/dev/null \
     || {
       printf 'error: current versioned theme catalog is unavailable\n' >&2
+      exit 1
+    }
+  # Cozy Meadow was withdrawn: no archive in the packaged app and no catalog
+  # entry, so it cannot be installed. Its render pack stays served, because a
+  # device that still runs the theme previews it in Overview.
+  if [[ -n "$(find "${APP_DIR}/out-local/theme-packs" -name 'vibetv-theme-cozy-meadow*.zip' -print -quit)" ]]; then
+    printf 'error: the packaged Control Center still ships a Cozy Meadow theme archive\n' >&2
+    exit 1
+  fi
+  if curl -fsS "${base_url}/theme-packs/vibetv-theme-packs-v2.json" \
+    | grep -F '"cozy-meadow"' >/dev/null; then
+    printf 'error: withdrawn Cozy Meadow theme is offered by the packaged catalog\n' >&2
+    exit 1
+  fi
+  expect_http_status 404 GET "${base_url}/theme-packs/vibetv-theme-cozy-meadow-v0.2.1.zip"
+  curl -fsS "${base_url}/theme-packs/render/cozy-meadow/cm-3-1ed79c.json" \
+    | grep -F '"specPath":"/themes/u/cm-3-1ed79c.json"' >/dev/null \
+    || {
+      printf 'error: a device still running Cozy Meadow lost its Overview preview\n' >&2
       exit 1
     }
   curl -fsS "${base_url}/theme-packs/render/mini-classic.json" \
