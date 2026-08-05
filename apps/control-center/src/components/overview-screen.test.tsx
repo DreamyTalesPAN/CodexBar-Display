@@ -46,7 +46,7 @@ describe("OverviewScreen", () => {
     expect(html).not.toContain("VibeTV is connected");
   });
 
-  it("keeps an active VibeTV in Overview while it reconnects", () => {
+  it("does not show reconnect instructions inside an available Overview", () => {
     const html = renderToStaticMarkup(
       <OverviewScreen
         companionStatus="online"
@@ -61,9 +61,8 @@ describe("OverviewScreen", () => {
       />,
     );
 
-    expect(html).toContain("Reconnecting to VibeTV");
-    expect(html).toContain("VibeTV-Setup");
-    expect(html).toContain("Your pairing and settings stay saved.");
+    expect(html).not.toContain("Reconnecting to VibeTV");
+    expect(html).not.toContain("VibeTV-Setup");
     expect(html).not.toContain("Pair VibeTV again");
   });
 

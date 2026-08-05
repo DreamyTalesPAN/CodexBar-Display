@@ -5,6 +5,20 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-05 — One stable connection truth after an update
+
+- User approval: During the exact customer update test, the user explicitly
+  required that the updated Mac App never show reconnect UI, redirect to the
+  Connect screen, hide tabs, or show a missing preview. The user also required
+  the smallest KISS fix, deleting code wherever possible.
+- Approved customer-visible result: After the Mac App update relaunches, the
+  ready Control Center shows the existing Overview connection state, real
+  preview, status cards, and available tabs without a second transient header
+  connection label or a reconnect banner. Genuine first-time and recovery
+  gates remain unchanged. No new copy, control, state, or fallback is added.
+- Approved files: `control-center-shell.tsx`, `overview-screen.tsx`, their
+  regression assertions, and this approval record.
+
 ## 2026-08-05 — Stable connected Control Center
 
 - User approval: The user explicitly required the Mac App and VibeTV connection
