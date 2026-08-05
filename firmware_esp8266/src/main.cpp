@@ -2065,11 +2065,13 @@ bool loadStoredThemeSpecCacheFromPath(const String& path) {
     return false;
   }
 
-  runtimeCtx.runtime.cachedThemeId = themeId;
-  runtimeCtx.runtime.cachedThemeRev = themeRev;
-  runtimeCtx.runtime.cachedThemeSpecRaw = raw;
-  activeThemeSpecPath = path;
-  activeThemeSpecHash = hashHex8(raw);
+  codexbar_display::core::RuntimeState nextRuntime;
+  codexbar_display::core::SerialConsumeEvent event;
+  if (!prepareStoredThemeSpec(raw, themeId, themeRev, nextRuntime, event)) {
+    Serial.printf("theme_cache_load_failed path=%s err=theme spec not renderable\n", path.c_str());
+    return false;
+  }
+  commitStoredThemeSpec(path, raw, nextRuntime, event);
   Serial.printf("theme_cache_loaded path=%s id=%s rev=%d\n", path.c_str(), themeId.c_str(), themeRev);
   return true;
 }
