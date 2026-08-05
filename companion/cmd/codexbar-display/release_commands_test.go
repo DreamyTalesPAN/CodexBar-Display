@@ -1057,7 +1057,7 @@ func TestEnsureFirmwareUpdateDeviceTokenStoresValidatedIdentityTuple(t *testing.
 	}
 }
 
-func TestFetchDeviceHelloHTTPWithTokenKeepsTokenOutOfURLAndErrors(t *testing.T) {
+func TestFetchDeviceHelloHTTPWithTokenSendsQueryFallbackAndRedactsErrors(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {
 		releaseHTTPClient = previousHTTPClient
@@ -1069,8 +1069,8 @@ func TestFetchDeviceHelloHTTPWithTokenKeepsTokenOutOfURLAndErrors(t *testing.T) 
 		if got := req.Header.Get("X-VibeTV-Token"); got != token {
 			t.Fatalf("expected pairing token header, got %q", got)
 		}
-		if req.URL.RawQuery != "" {
-			t.Fatalf("expected pairing token to stay out of URL, got %q", req.URL.RawQuery)
+		if got := req.URL.Query().Get("token"); got != token {
+			t.Fatalf("expected pairing token query fallback, got %q", got)
 		}
 		return nil, &url.Error{
 			Op:  "Get",
@@ -1101,6 +1101,10 @@ func TestFetchDeviceHelloHTTPWithTokenUsesFreshConnection(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		connections <- req.RemoteAddr
 		if req.URL.Path == "/hello" {
+			if got := req.URL.Query().Get("token"); got != "pair-token" {
+				http.Error(w, "pairing token required", http.StatusUnauthorized)
+				return
+			}
 			_, _ = w.Write([]byte(
 				`{"kind":"hello","deviceId":"device-new","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.1"}`,
 			))

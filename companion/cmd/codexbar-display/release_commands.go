@@ -1378,6 +1378,9 @@ func fetchDeviceHelloHTTPWithToken(ctx context.Context, base, token string) (pro
 	req.Close = true
 	if token = strings.TrimSpace(token); token != "" {
 		applyFirmwareUpdateToken(req, token)
+		query := req.URL.Query()
+		query.Set("token", token)
+		req.URL.RawQuery = query.Encode()
 		if client, ok := releaseHTTPClient.(interface{ CloseIdleConnections() }); ok {
 			client.CloseIdleConnections()
 		}
