@@ -985,6 +985,24 @@ if "recordCurrentRuntimeBundleVersion" in register_method:
         "SMAppService enabled status must not persist a version before the HTTP health gate"
     )
 
+ensure_method = source[
+    source.find("private func ensureBundledRuntimeServiceRegistered()"):
+    source.find("private func registerBundledRuntimeService()")
+]
+missing_registration = ensure_method.find("case .notRegistered, .notFound:")
+stop_stale_runtime = ensure_method.find(
+    "await unregisterBundledRuntimeService()",
+    missing_registration,
+)
+register_replacement = ensure_method.find(
+    "return registerBundledRuntimeService()",
+    missing_registration,
+)
+if not (0 <= missing_registration < stop_stale_runtime < register_replacement):
+    raise SystemExit(
+        "a new app must stop an exact-label old runtime before registering its replacement"
+    )
+
 unregister_method = source[
     source.find("private func unregisterBundledRuntimeService()"):
     source.find("private func bundledRuntimeServiceIsEnabled()")

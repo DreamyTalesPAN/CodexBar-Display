@@ -2858,6 +2858,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             )
             return .requiresApproval
         case .notRegistered, .notFound:
+            guard await unregisterBundledRuntimeService() else {
+                return .failed
+            }
             return registerBundledRuntimeService()
         @unknown default:
             NSLog("VibeTV Control Center runtime has an unknown Service Management status")
