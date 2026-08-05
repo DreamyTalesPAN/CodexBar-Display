@@ -5,6 +5,24 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-05 — Close the remaining update and recovery gaps
+
+- User approval: After receiving the concrete list of all remaining P1/P2
+  update, theme-refresh, outage, and recovery findings on PR #348, the user
+  explicitly instructed Codex to fix all of them with the smallest possible
+  code changes or by removing code.
+- Approved customer-visible result: No new copy, control, or layout is added.
+  Automatic theme refresh waits for the existing Mac App and firmware gates,
+  respects install links, and does not repeat a failed job. A disconnected
+  VibeTV or unavailable Mac App no longer presents cached data as live; missing
+  first usage enters the existing unavailable state after 30 seconds. An
+  explicit pairing rejection reopens the existing Connect recovery, while
+  ordinary running outages keep the current tab. During firmware installation,
+  the existing Settings and Theme Library device actions remain disabled.
+- Approved files: `control-center-app.tsx`, `overview-screen.tsx`,
+  `settings-screen.tsx`, their regression assertions in
+  `test-customer-flows.mjs` and component tests, and this approval record.
+
 ## 2026-08-05 — One stable connection truth after an update
 
 - User approval: During the exact customer update test, the user explicitly
