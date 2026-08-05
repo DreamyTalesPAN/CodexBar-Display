@@ -575,6 +575,9 @@ required_source = [
     "SMAppService.agent(plistName: runtimeLaunchAgentPlistName)",
     "try runtimeService.register()",
     "runtimeService.unregister(completionHandler:",
+    "shouldPostponeRelaunchForUpdate item: SUAppcastItem",
+    "await unregisterBundledRuntimeService()",
+    "installHandler()",
     "runtimeServiceNeedsRefresh(",
     'previewRuntimeLaunchAgentLabel =',
     'localPreviewRuntimeInfoKey = "VibeTVLocalPreviewRuntime"',
@@ -980,6 +983,29 @@ register_method = source[
 if "recordCurrentRuntimeBundleVersion" in register_method:
     raise SystemExit(
         "SMAppService enabled status must not persist a version before the HTTP health gate"
+    )
+
+unregister_method = source[
+    source.find("private func unregisterBundledRuntimeService()"):
+    source.find("private func bundledRuntimeServiceIsEnabled()")
+]
+if (
+    "legacyServiceIsLoaded(label: runtimeLaunchAgentLabel)" not in unregister_method
+    or '"bootout"' not in unregister_method
+):
+    raise SystemExit(
+        "runtime unregister must also stop an exact-label validation LaunchAgent"
+    )
+
+update_handoff = source[
+    source.find("shouldPostponeRelaunchForUpdate item: SUAppcastItem"):
+    source.find("#endif", source.find("shouldPostponeRelaunchForUpdate item: SUAppcastItem"))
+]
+stop_runtime = update_handoff.find("await unregisterBundledRuntimeService()")
+continue_install = update_handoff.find("installHandler()")
+if not (0 <= stop_runtime < continue_install):
+    raise SystemExit(
+        "Sparkle must stop the runtime before continuing update installation"
     )
 
 for forbidden in [

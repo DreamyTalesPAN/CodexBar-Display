@@ -2899,6 +2899,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
         switch runtimeService.status {
         case .notRegistered, .notFound:
+            if legacyServiceIsLoaded(label: runtimeLaunchAgentLabel) {
+                _ = launchctlExitStatus([
+                    "bootout",
+                    launchctlServiceTarget(
+                        uid: getuid(),
+                        label: runtimeLaunchAgentLabel
+                    ),
+                ])
+                guard !legacyServiceIsLoaded(label: runtimeLaunchAgentLabel) else {
+                    NSLog("VibeTV Control Center could not stop its update runtime")
+                    return false
+                }
+                try? await Task<Never, Never>.sleep(for: .milliseconds(250))
+            }
             return true
         case .enabled, .requiresApproval:
             break
@@ -3668,6 +3682,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             version: item.displayVersionString,
             build: item.versionString
         )
+    }
+
+    func updater(
+        _ updater: SPUUpdater,
+        shouldPostponeRelaunchForUpdate item: SUAppcastItem,
+        untilInvokingBlock installHandler: @escaping () -> Void
+    ) -> Bool {
+        Task { @MainActor in
+            if !(await unregisterBundledRuntimeService()) {
+                NSLog("VibeTV Control Center could not stop its runtime before update")
+            }
+            installHandler()
+        }
+        return true
     }
 #endif
 
