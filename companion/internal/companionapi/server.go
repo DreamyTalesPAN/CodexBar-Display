@@ -3119,7 +3119,28 @@ func (s *Server) repairDeviceOnceLocked(
 	if forcePair {
 		discoveryCfg.DeviceToken = ""
 	}
-	target, hello, err := s.discoverRepairTarget(ctx, discoveryCfg, requestedTarget)
+	// An already-paired known device proves its saved token with an
+	// authenticated /hello first. Pairing only runs when the device really
+	// rejects the token (401/403); a closed pairing window must not break
+	// Connect for a device whose saved token still works.
+	provenToken := ""
+	var target string
+	var hello protocol.DeviceHello
+	if forcePair {
+		if known, ok := cfg.KnownDevice(expectedDeviceID); ok {
+			if saved := strings.TrimSpace(known.DeviceToken); saved != "" {
+				authCfg := cfg
+				authCfg.DeviceToken = saved
+				if authTarget, authHello, authErr := s.discoverRepairTarget(ctx, authCfg, requestedTarget); authErr == nil {
+					target, hello = authTarget, authHello
+					provenToken = saved
+				}
+			}
+		}
+	}
+	if provenToken == "" {
+		target, hello, err = s.discoverRepairTarget(ctx, discoveryCfg, requestedTarget)
+	}
 	tokenRejected := false
 	if err != nil && !forcePair && strings.TrimSpace(cfg.DeviceToken) != "" && deviceAuthorizationRejected(err) {
 		discoveryCfg = cfg
@@ -3153,12 +3174,16 @@ func (s *Server) repairDeviceOnceLocked(
 		}
 	}
 	if forcePair {
-		token, err = s.pair(ctx, target, token)
-		if err != nil {
-			return deviceInfo{}, &repairStageError{
-				stage:    "pair",
-				firmware: strings.TrimSpace(hello.Firmware),
-				err:      err,
+		if provenToken != "" {
+			token = provenToken
+		} else {
+			token, err = s.pair(ctx, target, token)
+			if err != nil {
+				return deviceInfo{}, &repairStageError{
+					stage:    "pair",
+					firmware: strings.TrimSpace(hello.Firmware),
+					err:      err,
+				}
 			}
 		}
 		if _, err = s.updateConfig(func(current *runtimeconfig.Config) {

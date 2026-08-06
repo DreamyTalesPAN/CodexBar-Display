@@ -1142,7 +1142,14 @@ func TestDeviceSelectMapsLockedFirmware1038ToLegacyRecovery(t *testing.T) {
 	}
 }
 
-func TestDeviceSelectRotatesKnownTokenAndKeepsProfiles(t *testing.T) {
+// Adjusted 2026-08-06: this test used to require that an explicit Connect
+// ALWAYS rotates the token via POST /api/pair ("explicit Connect must rotate
+// the token once"). That cemented exactly the field bug where a healthy,
+// already-paired device with a closed pairing window could not be selected.
+// Since the honest-token fix, Connect proves the saved token via
+// authenticated /hello and reuses it without pairing; pairing only runs when
+// the device rejects the token (see TestDeviceSelectRenewsStaleKnownToken).
+func TestDeviceSelectReusesKnownTokenAndKeepsProfiles(t *testing.T) {
 	const deviceID = "device-b"
 	const savedToken = "token-b"
 	var pairCalls atomic.Int32
@@ -1187,8 +1194,8 @@ func TestDeviceSelectRotatesKnownTokenAndKeepsProfiles(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected successful selection, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if pairCalls.Load() != 1 {
-		t.Fatalf("explicit Connect must rotate the token once, got %d pair calls", pairCalls.Load())
+	if pairCalls.Load() != 0 {
+		t.Fatalf("explicit Connect with a working saved token must not pair, got %d pair calls", pairCalls.Load())
 	}
 	if strings.Contains(rec.Body.String(), savedToken) {
 		t.Fatalf("selection response leaked token: %s", rec.Body.String())
@@ -1209,7 +1216,7 @@ func TestDeviceSelectRotatesKnownTokenAndKeepsProfiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.DeviceID != deviceID || cfg.DeviceTarget != device.URL || cfg.DeviceToken != "rotated-token" {
+	if cfg.DeviceID != deviceID || cfg.DeviceTarget != device.URL || cfg.DeviceToken != savedToken {
 		t.Fatalf("unexpected active selection: %+v", cfg)
 	}
 	if len(cfg.KnownDevices) != 2 {
@@ -1282,12 +1289,97 @@ func TestDeviceSelectRenewsStaleKnownToken(t *testing.T) {
 	}
 }
 
+func TestDeviceSelectReusesSavedTokenWhenPairingWindowClosed(t *testing.T) {
+	// DO NOT weaken this test.
+	// Regression for the 2026-08-06 field bug: after a runtime restart,
+	// Connect for an ALREADY PAIRED known device (valid saved token) always
+	// forced POST /api/pair. Firmware with pairingWindowOpen=false answered
+	// 403 "pairing window closed" and the selection failed, although the
+	// saved token still worked seconds later. Select must first prove the
+	// saved token via authenticated /hello and only pair when the token is
+	// really rejected (401/403).
+	const deviceID = "14799300"
+	const savedToken = "saved-token"
+	var pairCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimSpace(r.Header.Get("X-VibeTV-Token"))
+		switch r.URL.Path {
+		case "/hello":
+			if token != "" && token != savedToken {
+				http.Error(w, "invalid token", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.39","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi"},"auth":{"pairingWindowOpen":false}}}`, deviceID)
+		case "/api/pair":
+			pairCalls.Add(1)
+			http.Error(w, "pairing window closed", http.StatusForbidden)
+		case "/health":
+			if token != savedToken {
+				http.Error(w, "pairing required", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini"},"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	initial := runtimeconfig.Config{
+		DeviceID:     deviceID,
+		DeviceTarget: device.URL,
+		DeviceToken:  savedToken,
+		KnownDevices: []runtimeconfig.KnownDevice{{DeviceID: deviceID, Target: device.URL, DeviceToken: savedToken}},
+	}
+	initial.Normalize()
+	server := newTestServer(t, initial)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/device/select",
+		strings.NewReader(`{"target":"`+device.URL+`","expectedDeviceId":"`+deviceID+`"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("select with valid saved token must succeed, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	// The success payload legitimately contains capability fields such as
+	// "pairingWindowOpen"; only pairing *errors* are forbidden here.
+	if strings.Contains(rec.Body.String(), "pairing window closed") ||
+		strings.Contains(rec.Body.String(), "pairing_window") ||
+		strings.Contains(rec.Body.String(), `"ok":false`) {
+		t.Fatalf("select with valid saved token must not surface a pairing error: %s", rec.Body.String())
+	}
+	if pairCalls.Load() != 0 {
+		t.Fatalf("select with valid saved token must not attempt pairing, got %d pair calls", pairCalls.Load())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceID != deviceID || cfg.DeviceTarget != device.URL || cfg.DeviceToken != savedToken {
+		t.Fatalf("saved token selection was not persisted: %+v", cfg)
+	}
+}
+
 func TestDeviceSelectPairFailureKeepsKnownToken(t *testing.T) {
 	const deviceID = "device-b"
 	var pairCalls atomic.Int32
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
+			// Adjusted 2026-08-06: the device rejects the saved token so that
+			// pairing is genuinely required. Since the honest-token fix,
+			// Connect only pairs when the saved token is rejected (401/403);
+			// a device that still accepts the token never reaches /api/pair.
+			if strings.TrimSpace(r.Header.Get("X-VibeTV-Token")) == "saved-token" {
+				http.Error(w, "expired token", http.StatusUnauthorized)
+				return
+			}
 			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`, deviceID)
 		case "/api/pair":
 			pairCalls.Add(1)

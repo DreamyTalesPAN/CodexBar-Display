@@ -109,23 +109,25 @@ export function UpdatesScreen({
   themeUpdateAvailable = false,
 }: UpdatesScreenProps) {
   const firmwareUpdateCompleted = updateStatus?.phase === "complete";
+  // Installed firmware always comes from device truth (live hello or the
+  // firmware update check), never from an update job result: a failed job
+  // must not claim its target version is installed.
   const installedFirmware =
-    updateStatus?.result?.firmware ||
-    firmwareUpdate?.installedFirmware ||
-    device?.firmware ||
-    "Unknown";
+    device?.firmware || firmwareUpdate?.installedFirmware || "Unknown";
   const canCheckFirmware = Boolean(device?.board && device?.firmware);
   const checking = Boolean(canCheckFirmware && !firmwareUpdate);
   const macAppRunning = companionStatus === "online";
   const checkingMacApp = Boolean(macAppRunning && !companionRelease);
   const checkingUpdates = checking || checkingMacApp;
   const latestFirmware =
-    updateStatus?.result?.firmware ||
     firmwareUpdate?.latestFirmware ||
     (checking ? "Checking" : "Not available");
   const updateAvailable =
     !firmwareUpdateCompleted && hasFirmwareUpdate(firmwareUpdate);
-  const vibetvUpdateAvailable = updateAvailable || themeUpdateAvailable;
+  // A completed update never advertises "Update available" alongside
+  // "Update complete"; the badge only returns after a fresh update check.
+  const vibetvUpdateAvailable =
+    !firmwareUpdateCompleted && (updateAvailable || themeUpdateAvailable);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const nativeMacUpdateReady = Boolean(
     macAppUpdateAvailable && companionInfo?.app?.installedInApplications,
