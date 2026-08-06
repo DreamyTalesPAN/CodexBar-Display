@@ -308,6 +308,10 @@ main() {
     assert_contains "$RC_WORKFLOW" "$required" \
       "release candidate must build the full publish asset set including ${required}"
   done
+  assert_contains "$RC_WORKFLOW" '--notary-log tmp/vibetv-rc/test/notarization-log.json' \
+    'release candidate must retain structured Apple notarization evidence'
+  assert_contains "$RC_WORKFLOW" 'notarization-evidence' \
+    'candidate manifest must classify notarization evidence as test-only'
   for field in repository sourceSha version candidateRunId createdAt virtualGate; do
     assert_contains "$RC_WORKFLOW" "\"${field}\"" \
       "candidate manifest must include ${field}"
