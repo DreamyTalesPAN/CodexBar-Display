@@ -362,7 +362,7 @@ func TestStatusDoesNotAdoptDifferentDeviceAtConfiguredAddress(t *testing.T) {
 	}
 }
 
-func TestApplyDeviceTokenAddsHeaderAndQueryFallback(t *testing.T) {
+func TestApplyDeviceTokenAddsHeaderWithoutDuplicatingQuery(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://192.0.2.10/hello?keep=1", nil)
 
 	applyDeviceToken(req, "pair-token")
@@ -370,8 +370,8 @@ func TestApplyDeviceTokenAddsHeaderAndQueryFallback(t *testing.T) {
 	if got := req.Header.Get("X-VibeTV-Token"); got != "pair-token" {
 		t.Fatalf("expected pairing header, got %q", got)
 	}
-	if got := req.URL.Query().Get("token"); got != "pair-token" {
-		t.Fatalf("expected pairing query fallback, got %q", got)
+	if got := req.URL.Query().Get("token"); got != "" {
+		t.Fatalf("expected no duplicate pairing query token, got %q", got)
 	}
 	if got := req.URL.Query().Get("keep"); got != "1" {
 		t.Fatalf("expected existing query to survive, got %q", got)
@@ -8317,14 +8317,20 @@ func TestSettingsValidatesAndForwardsBrightness(t *testing.T) {
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"display":{"brightness":{"supported":true,"minPercent":10,"maxPercent":80}},"transport":{"active":"wifi"}}}`))
 		case "/api/settings":
 			settingsCalls++
-			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
-				t.Fatalf("expected pairing token header, got %q", got)
+			if got := r.Header.Get("X-VibeTV-Token"); got != "" {
+				t.Fatalf("expected no pairing token header, got %q", got)
 			}
-			if err := r.ParseForm(); err != nil {
-				t.Fatalf("parse form: %v", err)
+			if got := r.URL.Query().Get("token"); got != "pair-token" {
+				t.Fatalf("expected pairing query token, got %q", got)
 			}
-			if got := r.Form.Get("b"); got != "40" {
+			if got := r.URL.Query().Get("b"); got != "40" {
 				t.Fatalf("expected brightness b=40, got %q", got)
+			}
+			if got := r.URL.Query().Get("api"); got != "1" {
+				t.Fatalf("expected API response query, got %q", got)
+			}
+			if r.ContentLength != 0 {
+				t.Fatalf("expected bodyless settings request, got content length %d", r.ContentLength)
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40}}}`))

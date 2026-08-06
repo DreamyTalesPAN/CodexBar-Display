@@ -477,7 +477,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testLocalReachableWithoutFrameEntersAfterTimeout(
+      await testLocalReachableWithoutFrameWaitsUntilPreview(
         browser,
         appContext.appUrl,
       );
@@ -635,7 +635,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testLocalReachableWithoutFrameEntersAfterTimeout(
+    await testLocalReachableWithoutFrameWaitsUntilPreview(
       browser,
       appContext.appUrl,
     );
@@ -1184,7 +1184,9 @@ async function testLocalWifiVerificationWithoutFrameWaitsForUsage(
   await page.getByRole("heading", { name: "Connecting to VibeTV" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("Waiting for usage…", { exact: true }).waitFor();
+  await page
+    .getByText("Waiting for live preview…", { exact: true })
+    .waitFor();
   assert(
     (await page
       .getByRole("heading", { name: "We couldn't find your VibeTV" })
@@ -1749,7 +1751,7 @@ async function testTransientFirstFrameStaysCustomerFriendly(
     .getByRole("heading", { name: "Connecting to VibeTV" })
     .waitFor({ timeout: 10_000 });
   await page
-    .getByText("Waiting for usage…", { exact: true })
+    .getByText("Waiting for live preview…", { exact: true })
     .waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
@@ -3079,7 +3081,9 @@ async function testLocalReachableWithoutFrameWaitsForUsage(browser, appUrl) {
   await page.getByRole("heading", { name: "Connecting to VibeTV" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("Waiting for usage…", { exact: true }).waitFor();
+  await page
+    .getByText("Waiting for live preview…", { exact: true })
+    .waitFor();
   assert(
     (await page.getByTestId("device-startup-screen").count()) === 1,
     "A reachable and paired VibeTV should stay in startup while first usage is pending",
@@ -3098,7 +3102,7 @@ async function testLocalReachableWithoutFrameWaitsForUsage(browser, appUrl) {
   await page.close();
 }
 
-async function testLocalReachableWithoutFrameEntersAfterTimeout(browser, appUrl) {
+async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
@@ -3139,27 +3143,14 @@ async function testLocalReachableWithoutFrameEntersAfterTimeout(browser, appUrl)
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.clock.runFor(0);
-  await page.getByText("Waiting for usage…", { exact: true }).waitFor({
-    timeout: 10_000,
-  });
-  await page.clock.runFor(55_000);
+  await page
+    .getByText("Waiting for live preview…", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  await page.clock.runFor(60_000);
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
       0,
-    "Startup must remain visible before its stated 60-second limit",
-  );
-
-  await page.clock.runFor(5_000);
-  await page
-    .getByRole("navigation", { name: "Control Center" })
-    .waitFor({ timeout: 10_000 });
-  await clickNavigation(page, "Usage");
-  await page.getByRole("heading", { name: "AI providers" }).waitFor({
-    timeout: 10_000,
-  });
-  assert(
-    (await page.getByText("No provider usage is available yet.").count()) === 1,
-    "Timed startup entry must not invent provider usage",
+    "Startup must remain visible until a live preview exists",
   );
 
   recovered = true;
@@ -3168,6 +3159,9 @@ async function testLocalReachableWithoutFrameEntersAfterTimeout(browser, appUrl)
     () => recoveredFrameRequests > 0,
     "Display-frame recovery must keep polling after startup entry",
   );
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 10_000 });
   await page.close();
 }
 
@@ -6414,7 +6408,9 @@ async function testOverviewWaitsForRealUsage(browser, appUrl) {
   await page.getByRole("heading", { name: "Connecting to VibeTV" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("Waiting for usage…", { exact: true }).waitFor();
+  await page
+    .getByText("Waiting for live preview…", { exact: true })
+    .waitFor();
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
       0,
@@ -6474,7 +6470,9 @@ async function testOverviewRejectsInvalidDisplayFrame(browser, appUrl) {
   await page.getByRole("heading", { name: "Connecting to VibeTV" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("Waiting for usage…", { exact: true }).waitFor();
+  await page
+    .getByText("Waiting for live preview…", { exact: true })
+    .waitFor();
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
       0,

@@ -5470,7 +5470,7 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 		writeDeviceNotFound(w)
 		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
 	}
-	hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
+	hello, err := s.getHello(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
 	if err != nil {
 		// A read-only status poll must never fan out into a subnet scan. The
 		// Control Center polls this endpoint frequently; when VibeTV is offline,
@@ -6352,13 +6352,14 @@ func (s *Server) reactivateCurrentThemeAndWaitForFullRender(
 }
 
 func (s *Server) updateBrightness(ctx context.Context, target, token string, brightness int) (deviceSettings, error) {
-	form := url.Values{}
-	form.Set("api", "1")
-	form.Set("b", fmt.Sprintf("%d", brightness))
+	query := url.Values{}
+	query.Set("api", "1")
+	query.Set("b", fmt.Sprintf("%d", brightness))
+	query.Set("token", strings.TrimSpace(token))
 	var response struct {
 		Settings deviceSettings `json:"settings"`
 	}
-	if err := s.doForm(ctx, target, "/api/settings", token, form, &response); err != nil {
+	if err := s.doJSON(ctx, http.MethodPost, target, "/api/settings?"+query.Encode(), "", nil, &response); err != nil {
 		return deviceSettings{}, err
 	}
 	return response.Settings, nil
@@ -6495,19 +6496,6 @@ func (s *Server) doJSON(ctx context.Context, method, target, path, token string,
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	applyDeviceToken(req, token)
-	return s.do(req, out)
-}
-
-func (s *Server) doForm(ctx context.Context, target, path, token string, form url.Values, out any) error {
-	if s.firmwareUpdateActive.Load() {
-		return errors.New("VibeTV firmware update is in progress")
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint(target, path), strings.NewReader(form.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	applyDeviceToken(req, token)
 	return s.do(req, out)
 }
@@ -7646,13 +7634,6 @@ func targetWithToken(target, token string) string {
 func applyDeviceToken(req *http.Request, token string) {
 	if token = strings.TrimSpace(token); token != "" {
 		req.Header.Set("X-VibeTV-Token", token)
-		// ESP8266WebServer 3.1.2 does not reliably retain custom headers on every
-		// route. Keep the header for compatible firmware, and also send the token
-		// through the firmware's existing query fallback used by the display
-		// stream. This makes /hello token verification reliable on real hardware.
-		query := req.URL.Query()
-		query.Set("token", token)
-		req.URL.RawQuery = query.Encode()
 	}
 }
 
