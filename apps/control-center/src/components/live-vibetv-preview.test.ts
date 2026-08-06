@@ -224,6 +224,15 @@ describe("dynamic usage slot preview", () => {
     );
   });
 
+  it("formats multi-day reset countdowns like the VibeTV firmware", () => {
+    expect(
+      boundValue("reset", {
+        ...THEME_CATALOG_PREVIEW_FRAME,
+        resetSecs: (141 * 60 + 4) * 60,
+      }),
+    ).toBe("5d 21h");
+  });
+
   it("uses a legacy render cache only when its path matches the active Custom Theme", async () => {
     const oldCompanionPack = {
       themeId: "my-custom",

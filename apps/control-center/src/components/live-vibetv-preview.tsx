@@ -199,9 +199,9 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   usageSlot2ResetSecs: 7200,
   usageSlot2Available: true,
   activity: "preview",
-  sessionTokens: 0,
-  weekTokens: 0,
-  totalTokens: 0,
+  sessionTokens: 1_400_000,
+  weekTokens: 384_000_000,
+  totalTokens: 1_070_000_000,
   time: "12:00",
   date: "03.07",
 };
@@ -1843,8 +1843,12 @@ function formatReset(seconds?: number): string {
     return "0m";
   }
   const totalMinutes = Math.floor(seconds / 60);
-  const hours = Math.floor(totalMinutes / 60);
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
   const minutes = totalMinutes % 60;
+  if (days > 0) {
+    return `${days}d ${hours}h`;
+  }
   if (hours > 0) {
     return `${hours}h ${minutes}m`;
   }
