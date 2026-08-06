@@ -4008,9 +4008,16 @@ func TestStatusKeepsConfiguredDeviceReadyDuringTransientProbeFailureWithHealthyS
 	}
 }
 
-func TestStatusKeepsFreshDeviceConnectedWhileFirstUsageIsPending(t *testing.T) {
+func TestStatusKeepsReachableDeviceConnectedWhileFirstUsageIsPending(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.44","deviceId":"vibetv-canary","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"system":{"bootId":"boot-1","uptimeMs":1200,"resetCount":1,"resetReason":"Power On"},"render":{"fullCount":0,"partialCount":0,"lastKind":""}}`))
+		default:
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		}
 	}))
 	defer device.Close()
 
@@ -4042,6 +4049,49 @@ func TestStatusKeepsFreshDeviceConnectedWhileFirstUsageIsPending(t *testing.T) {
 	}
 	if got.Device.Ready || got.Device.ConnectionState != deviceConnectionRetrying {
 		t.Fatalf("usage-pending device must stay connected but not ready: %+v", got.Device)
+	}
+}
+
+func TestStatusDoesNotReportUnreachableDeviceConnectedFromProviderSetupStream(t *testing.T) {
+	// A powered-off VibeTV must never look connected just because the display
+	// stream logged provider_setup_required minutes ago. Connectivity requires
+	// live evidence: a fresh /hello or a healthy (frame-acknowledged) stream.
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "vibetv-canary",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    device.URL,
+			ErrorCode: "provider_setup_required",
+			Detail:    "No provider is ready.",
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if !got.Device.Active {
+		t.Fatalf("configured VibeTV lost its active identity: %+v", got.Device)
+	}
+	if got.Device.Connected || got.Device.Ready {
+		t.Fatalf("unreachable device must not report connected/ready from a stale provider-setup stream: %+v", got.Device)
+	}
+	if got.Device.ConnectionState != deviceConnectionRetrying {
+		t.Fatalf("unreachable configured device must report reconnecting: %+v", got.Device)
 	}
 }
 

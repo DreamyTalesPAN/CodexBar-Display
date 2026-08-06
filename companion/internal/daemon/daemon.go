@@ -43,7 +43,8 @@ const (
 	defaultWiFiInterval        = 30 * time.Second
 	defaultCycleTimeout        = 180 * time.Second
 	startupFastPollWindow      = 2 * time.Minute
-	startupFastPollInterval    = 30 * time.Second
+	startupFastPollInterval    = 5 * time.Second
+	failureRetryInterval       = 5 * time.Second
 	lastGoodPersistInterval    = 1 * time.Minute
 	themeEnvVar                = "CODEXBAR_DISPLAY_THEME"
 	coldStartTimeoutEnvVar     = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
@@ -510,6 +511,16 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		waitFor := opts.Interval
 		if err != nil {
 			runtimeErr := asRuntimeError(err)
+			// A device-unreachable cycle must not wait a full WiFi interval
+			// before the next attempt: after a device cold start or Mac wake
+			// this turns into 30-90s of "reconnecting" although everything is
+			// healthy again. While the device is down these quick probes are
+			// cheap; the first successful cycle returns to the normal cadence.
+			// Non-device errors (provider fetch, frame encoding, timeouts)
+			// keep the normal interval - retrying those faster fixes nothing.
+			if deviceUnreachableError(runtimeErr) && failureRetryInterval < waitFor {
+				waitFor = failureRetryInterval
+			}
 			if runtimeErr.Kind == runtimeErrorCycleTimeout {
 				deps.logf("cycle timeout: code=%s op=%s retry=%s recovery=%q err=%v\n",
 					runtimeErr.ErrorCode(),
@@ -2080,6 +2091,20 @@ func asRuntimeError(err error) *RuntimeError {
 		Op:   "unknown",
 		Err:  err,
 	}
+}
+
+// deviceUnreachableError reports whether the cycle failed because the VibeTV
+// itself was not reachable over its transport. Only these failures earn the
+// short reconnect retry; everything else keeps the normal interval.
+func deviceUnreachableError(runtimeErr *RuntimeError) bool {
+	if runtimeErr == nil {
+		return false
+	}
+	switch runtimeErr.Kind {
+	case runtimeErrorDeviceHello, runtimeErrorSerialResolve, runtimeErrorSerialWrite:
+		return true
+	}
+	return false
 }
 
 func runtimeErrorKindFromFetchErr(err error) runtimeErrorKind {

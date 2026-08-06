@@ -691,13 +691,13 @@ func ensureFirmwareUpdateDeviceToken(ctx context.Context, home, base, expectedDe
 		paired = true
 	}
 
-	authenticatedHello, err := fetchDeviceHelloHTTPWithToken(ctx, base, token)
+	authenticatedHello, err := fetchDeviceHelloHTTPWithTokenRetry(ctx, base, token)
 	if err != nil && firmwareOTAAuthError(err) && !paired {
 		token, err = pairFirmwareUpdateDevice(ctx, base)
 		if err != nil {
 			return "", fmt.Errorf("repair VibeTV pairing: %w", err)
 		}
-		authenticatedHello, err = fetchDeviceHelloHTTPWithToken(ctx, base, token)
+		authenticatedHello, err = fetchDeviceHelloHTTPWithTokenRetry(ctx, base, token)
 	}
 	if err != nil {
 		return "", fmt.Errorf("authenticate VibeTV /hello: %w", err)
@@ -807,6 +807,9 @@ func pairFirmwareUpdateDevice(ctx context.Context, base string) (string, error) 
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", "codexbar-display-update")
+	// Do not leave a pooled keep-alive socket on the device between pairing
+	// and the authenticated preflight.
+	req.Close = true
 	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {
 		return "", err
@@ -1369,6 +1372,38 @@ func (e *firmwareDeviceHTTPError) Error() string {
 	return fmt.Sprintf("%s returned %s body=%q", e.Operation, e.Status, e.Body)
 }
 
+const (
+	firmwarePreflightAttempts   = 3
+	firmwarePreflightRetryDelay = 500 * time.Millisecond
+)
+
+// fetchDeviceHelloHTTPWithTokenRetry retries the authenticated preflight only
+// for transient transport failures (EOF, reset, timeout). It runs strictly
+// before the first firmware byte is sent, so the OTA contract's no-retry rule
+// for the write itself is untouched. Real auth errors (401/403) are never
+// retried here; the caller owns the single re-pair path for those.
+func fetchDeviceHelloHTTPWithTokenRetry(ctx context.Context, base, token string) (protocol.DeviceHello, error) {
+	var hello protocol.DeviceHello
+	var err error
+	for attempt := 1; attempt <= firmwarePreflightAttempts; attempt++ {
+		hello, err = fetchDeviceHelloHTTPWithToken(ctx, base, token)
+		if err == nil || firmwareOTAAuthError(err) || ctx.Err() != nil {
+			return hello, err
+		}
+		if attempt == firmwarePreflightAttempts {
+			break
+		}
+		fmt.Printf("Transient preflight error (attempt %d/%d), retrying: %v\n",
+			attempt, firmwarePreflightAttempts, err)
+		select {
+		case <-ctx.Done():
+			return protocol.DeviceHello{}, ctx.Err()
+		case <-time.After(firmwarePreflightRetryDelay):
+		}
+	}
+	return hello, err
+}
+
 func fetchDeviceHelloHTTPWithToken(ctx context.Context, base, token string) (protocol.DeviceHello, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/hello", nil)
 	if err != nil {
@@ -1448,6 +1483,9 @@ func uploadFirmwareOTAMultipart(ctx context.Context, base, imagePath, token stri
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("User-Agent", "codexbar-display-update")
 	applyFirmwareUpdateToken(req, token)
+	// Never reuse a pooled connection for the upload, and never leave one open
+	// on the single-threaded device across its post-upload reboot.
+	req.Close = true
 	req.ContentLength = int64(body.Len())
 	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {

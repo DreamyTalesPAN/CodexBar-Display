@@ -3261,8 +3261,8 @@ func TestRunWithDepsRetriesAndRecoversAfterReconnect(t *testing.T) {
 	if len(delays) < 5 {
 		t.Fatalf("expected retry delay samples, got %v", delays)
 	}
-	if delays[0] != time.Minute || delays[1] != time.Minute || delays[2] != time.Minute {
-		t.Fatalf("unexpected retry delay start after backoff removal: %v", delays[:3])
+	if delays[0] != failureRetryInterval || delays[1] != failureRetryInterval || delays[2] != failureRetryInterval {
+		t.Fatalf("device-unreachable cycles must use the short reconnect retry: %v", delays[:3])
 	}
 
 	foundIntervalDelay := false
@@ -3286,8 +3286,63 @@ func TestStartupIntervalSwitchesAfterWarmupWindow(t *testing.T) {
 	if got := startupInterval(60*time.Second, startupFastPollWindow); got != 60*time.Second {
 		t.Fatalf("expected normal interval after warmup window, got %s", got)
 	}
-	if got := startupInterval(20*time.Second, 10*time.Second); got != 20*time.Second {
+	if got := startupInterval(2*time.Second, 10*time.Second); got != 2*time.Second {
 		t.Fatalf("expected normal interval when already shorter than startup interval, got %s", got)
+	}
+	// The fast-poll interval must actually be faster than the WiFi default;
+	// otherwise the whole startup fast-poll mechanism is dead code.
+	if startupFastPollInterval >= defaultWiFiInterval {
+		t.Fatalf("startup fast poll (%s) must be shorter than the WiFi interval (%s)",
+			startupFastPollInterval, defaultWiFiInterval)
+	}
+}
+
+func TestRunDaemonLoopRetriesQuicklyAfterCycleError(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var waits []time.Duration
+	cycleCalls := 0
+	err := runDaemonLoop(ctx, Options{Interval: 30 * time.Second, DisableStartupFastPoll: true}, runtimeDeps{
+		now: func() time.Time {
+			return time.Date(2026, 2, 23, 12, 0, cycleCalls, 0, time.UTC)
+		},
+		after: func(wait time.Duration) <-chan time.Time {
+			waits = append(waits, wait)
+			if len(waits) >= 2 {
+				cancel()
+				return make(chan time.Time)
+			}
+			ch := make(chan time.Time, 1)
+			ch <- time.Date(2026, 2, 23, 12, 0, cycleCalls, 0, time.UTC)
+			return ch
+		},
+		logf: func(string, ...any) {},
+	}, func(context.Context) error {
+		cycleCalls++
+		if cycleCalls == 1 {
+			return &RuntimeError{
+				Kind: runtimeErrorDeviceHello,
+				Op:   "read-device-hello",
+				Err:  errors.New("device offline"),
+			}
+		}
+		return nil
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected loop to stay alive until context cancel, got %v", err)
+	}
+	if len(waits) != 2 {
+		t.Fatalf("expected two waits, got %d", len(waits))
+	}
+	if waits[0] != failureRetryInterval {
+		t.Fatalf("failed cycle must retry after %s, waited %s", failureRetryInterval, waits[0])
+	}
+	if waits[1] != 30*time.Second {
+		t.Fatalf("successful cycle must return to the normal interval, waited %s", waits[1])
 	}
 }
 
@@ -3350,7 +3405,10 @@ func TestRunWithDepsUsesConfiguredIntervalAfterSleepWakeGap(t *testing.T) {
 	if len(delays) < 4 {
 		t.Fatalf("expected 4 delay samples, got %v", delays)
 	}
-	want := []time.Duration{time.Minute, time.Minute, time.Minute, time.Minute}
+	// Every cycle here fails at the serial write, so the loop uses the short
+	// device-reconnect retry instead of the configured interval - including
+	// directly after the sleep-wake gap.
+	want := []time.Duration{failureRetryInterval, failureRetryInterval, failureRetryInterval, failureRetryInterval}
 	for i, expected := range want {
 		if delays[i] != expected {
 			t.Fatalf("delay[%d]=%s, expected %s (delays=%v)", i, delays[i], expected, delays)

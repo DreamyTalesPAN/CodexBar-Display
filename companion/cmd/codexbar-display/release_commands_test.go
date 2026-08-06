@@ -1176,6 +1176,81 @@ func TestEnsureFirmwareUpdateDeviceTokenPairsOnlyOnceWhenFreshTokenIsRejected(t 
 	}
 }
 
+func TestEnsureFirmwareUpdateDeviceTokenRetriesTransientPreflightError(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+	})
+
+	home := t.TempDir()
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceToken: "pair-token"}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+
+	helloCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			helloCalls++
+			if helloCalls == 1 {
+				// Simulate the transient EOF the single-threaded ESP8266
+				// produces under connection pressure: close without response.
+				hj, ok := w.(http.Hijacker)
+				if !ok {
+					t.Fatal("test server does not support hijacking")
+				}
+				conn, _, err := hj.Hijack()
+				if err != nil {
+					t.Fatalf("hijack: %v", err)
+				}
+				_ = conn.Close()
+				return
+			}
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-a","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.39"}`))
+		case "/api/pair":
+			t.Fatal("transient transport error must not trigger re-pairing")
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	releaseHTTPClient = server.Client()
+
+	token, err := ensureFirmwareUpdateDeviceToken(context.Background(), home, server.URL, "device-a")
+	if err != nil {
+		t.Fatalf("transient preflight error must be retried before the flash, got %v", err)
+	}
+	if token != "pair-token" {
+		t.Fatalf("expected stored token, got %q", token)
+	}
+	if helloCalls != 2 {
+		t.Fatalf("expected one retry after the transient error, got %d hello calls", helloCalls)
+	}
+}
+
+func TestFetchDeviceHelloRetryStopsOnAuthError(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+	})
+
+	helloCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		helloCalls++
+		http.Error(w, "pairing token required", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	releaseHTTPClient = server.Client()
+
+	_, err := fetchDeviceHelloHTTPWithTokenRetry(context.Background(), server.URL, "stale-token")
+	if err == nil || !firmwareOTAAuthError(err) {
+		t.Fatalf("expected auth error, got %v", err)
+	}
+	if helloCalls != 1 {
+		t.Fatalf("auth errors must never be retried, got %d hello calls", helloCalls)
+	}
+}
+
 func TestRunInstallUpdateUsesStoredDeviceTokenForOTA(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {

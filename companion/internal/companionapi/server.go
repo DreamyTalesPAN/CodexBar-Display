@@ -1329,8 +1329,13 @@ func (s *Server) withConfiguredConnectionState(
 		s.connectionStates[key] = state
 	}
 
+	// Connectivity must stay evidence based. A healthy display stream is real
+	// evidence (the device acknowledged a frame inside the bounded ready-age
+	// window). A provider-setup stream entry alone is not: it only proves the
+	// device was reachable when the log line was written, which can be minutes
+	// ago on a powered-off device. Require a live /hello probe for that case.
 	healthyStream := !identityMismatch && device.Paired && displayStreamHealthyForTarget(device.Stream, device.Target)
-	streamConnected := healthyStream || (!identityMismatch && device.Paired && providerSetupStreamForTarget(device.Stream, device.Target))
+	streamConnected := healthyStream || (reachable && !identityMismatch && device.Paired && providerSetupStreamForTarget(device.Stream, device.Target))
 	if streamConnected {
 		device.Connected = true
 	}
@@ -4533,6 +4538,13 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		defer s.deviceMaintenanceMu.Unlock()
 
 		s.firmwareUpdateActive.Store(true)
+		// The OTA runs in a child process. Close this process's idle keep-alive
+		// sockets to the device first, so no half-open connection occupies the
+		// single-threaded ESP8266 server while the updater runs its
+		// authenticated preflight and upload.
+		if s.client != nil {
+			s.client.CloseIdleConnections()
+		}
 		streamPaused := false
 		if s.pauseDisplayStream != nil {
 			s.pauseDisplayStream(true)
@@ -5470,7 +5482,10 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 		writeDeviceNotFound(w)
 		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
 	}
-	hello, err := s.getHello(r.Context(), cfg.DeviceTarget, cfg.DeviceToken)
+	// Reuse the central single-flight probe: a dead device must not occupy the
+	// serialized per-host gate for the full 15s device timeout and starve the
+	// 5s status poll (head-of-line blocking during cold start).
+	hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
 	if err != nil {
 		// A read-only status poll must never fan out into a subnet scan. The
 		// Control Center polls this endpoint frequently; when VibeTV is offline,

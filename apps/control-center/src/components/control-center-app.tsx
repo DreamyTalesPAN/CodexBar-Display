@@ -88,6 +88,12 @@ const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
 const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
 const LAUNCHD_RECOVERY_GRACE_MS = 12_000;
+// Bounded fallback out of the first-usage startup gate. Entering after this
+// timeout never fakes readiness: the Overview renders its honest
+// waiting-for-usage state until a real frame arrives. Without this bound a
+// device that never produces a renderable frame (for example no provider
+// configured yet) locks the customer out of every tab forever.
+const FIRST_USAGE_ENTRY_TIMEOUT_MS = 30_000;
 const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 55_000;
 const NATIVE_RUNTIME_REPAIR_RESULT_EVENT = "vibetv:runtime-repair-result";
 
@@ -457,7 +463,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setThemeInstallEnabled(false);
     setUsage(null);
     setUsageError(null);
-  }, []);
+    // Without the companion there is no live device evidence. Keep the device
+    // configured but stop presenting stale state as a live connection.
+    setDevice((current) => markDeviceDisconnected(current));
+    setDeviceState("offline");
+  }, [setDevice]);
 
   const markCompanionAccessBlocked = useCallback(() => {
     setCompanionStatus("unknown");
@@ -465,7 +475,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setThemeInstallEnabled(false);
     setUsage(null);
     setUsageError(null);
-  }, []);
+    setDevice((current) => markDeviceDisconnected(current));
+    setDeviceState("offline");
+  }, [setDevice]);
 
   const handleCompanionUnavailableForRepair = useCallback(
     (quiet: boolean) => {
@@ -2111,6 +2123,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   useEffect(() => {
     const shouldPollIncompleteSetup =
       companionStatus === "missing" ||
+      // "unknown" (for example a local-network privacy block) must keep
+      // polling too; otherwise no timer runs anymore and the app freezes on
+      // stale state without any retry path.
+      companionStatus === "unknown" ||
       (companionStatus === "online" && !deviceIsReady(device));
     if (hostedSetup || !shouldPollIncompleteSetup) {
       return;
@@ -2988,6 +3004,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     device.paired !== false &&
     !connectionRecoveryRequired &&
     !hasEnteredControlCenter;
+  useEffect(() => {
+    if (!waitingForFirstUsage) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setHasEnteredControlCenter(true);
+    }, FIRST_USAGE_ENTRY_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [waitingForFirstUsage]);
   const startupDeviceSearchState: DeviceSearchState =
     waitingForFirstUsage
       ? "waiting"

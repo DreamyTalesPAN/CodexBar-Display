@@ -735,3 +735,20 @@ issue scope, or release permission never implies UI permission.
   customer decision changes.
 - Approved files: `live-vibetv-preview.tsx`, its response regression tests, and
   this approval record.
+
+## 2026-08-06 — Bounded startup gate and honest disconnect states
+
+- User approval: The user explicitly instructed a one-shot rebuild ("Lösung 1")
+  making cold and warm starts robust and flake-free, after the analysis showed
+  the unbounded first-usage gate locks customers out permanently when no
+  renderable frame ever arrives (for example, no provider configured yet).
+- Approved customer-visible result: The full-screen startup gate exits at the
+  latest 30 seconds after the VibeTV is found. Entering never fakes readiness:
+  Overview renders its existing waiting-for-usage state until a real frame
+  arrives. When the Mac App runtime becomes unreachable or blocked, the device
+  is shown as disconnected instead of replaying stale "connected"/live-preview
+  state, and the app keeps polling for recovery in the blocked state. The live
+  preview goes offline once the device is reported disconnected instead of
+  presenting the last cached frame as live. No layout or control changes.
+- Approved files: `control-center-app.tsx`, `live-vibetv-preview.tsx`, their
+  regression tests, and this approval record.

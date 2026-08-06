@@ -320,6 +320,14 @@ export function LiveVibeTVPreview({
     deviceIsCustomerConnected(device) ||
       (deviceIsActive(device) &&
         device?.paired !== false &&
+        // Approved behavior (2026-08-03): temporary failures keep the last
+        // verified preview visible while the device reconnects. But a cached
+        // frame is not a live connection forever: once the companion reports
+        // the device disconnected AND the frame has aged past the reconnect
+        // grace window, the preview goes offline instead of replaying stale
+        // usage as if it were live.
+        (device?.connected !== false ||
+          frameFreshForReconnect(displayFrame)) &&
         hasRenderableUsage(displayFrame)),
   );
   const deviceReady = deviceIsReady(device);
@@ -433,10 +441,32 @@ export function LiveVibeTVPreview({
   );
 }
 
+// Matches the companion's displayStreamReadyAge window: a frame older than
+// this is no longer evidence of a live device.
+const RECONNECT_FRAME_GRACE_MS = 120_000;
+
+export function frameFreshForReconnect(
+  displayFrame: DisplayFrameSnapshot | null | undefined,
+): boolean {
+  const savedAt = displayFrame?.savedAt;
+  if (!savedAt) {
+    return true;
+  }
+  const savedAtMs = Date.parse(savedAt);
+  if (!Number.isFinite(savedAtMs)) {
+    return true;
+  }
+  return Date.now() - savedAtMs <= RECONNECT_FRAME_GRACE_MS;
+}
+
 export function livePreviewDisplayFrame(
   device: DeviceInfo | null | undefined,
   displayFrame: DisplayFrameSnapshot | null | undefined,
 ) {
+  // Approved behavior (2026-08-03): temporary failures keep the last verified
+  // preview frame visible while the device reconnects. The frame is only shown
+  // as a LIVE connection when the device is not reported disconnected (see
+  // deviceConnected above).
   if (
     (!deviceIsCustomerConnected(device) &&
       (!deviceIsActive(device) || device?.paired === false)) ||

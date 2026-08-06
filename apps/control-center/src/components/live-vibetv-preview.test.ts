@@ -175,6 +175,36 @@ describe("dynamic usage slot preview", () => {
     expect(markup).not.toContain("Waiting for usage");
   });
 
+  it("stops presenting a stale cached frame as live once the device stays disconnected", () => {
+    const staleFrame = {
+      ok: true,
+      savedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      frame: {
+        v: 2,
+        provider: "codex",
+        label: "Codex",
+        usageSlots: [{ id: "weekly", label: "Weekly", percent: 29 }],
+      },
+    };
+    const device = {
+      active: true,
+      activeTheme: "synthwave",
+      connected: false,
+      paired: true,
+      ready: false,
+    };
+
+    const markup = renderToStaticMarkup(
+      createElement(LiveVibeTVPreview, {
+        device,
+        displayFrame: staleFrame,
+        usage: null,
+      }),
+    );
+
+    expect(markup).toContain("Reconnect VibeTV to continue");
+  });
+
   it("waits for actual usage instead of accepting a provider label alone", () => {
     expect(
       hasRenderableUsage({
