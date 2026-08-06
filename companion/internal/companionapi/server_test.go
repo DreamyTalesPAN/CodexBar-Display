@@ -4052,6 +4052,202 @@ func TestStatusKeepsReachableDeviceConnectedWhileFirstUsageIsPending(t *testing.
 	}
 }
 
+// Regression test for the live-observed customer failure (2026-08-06): the
+// Control Center bounced between the Overview and the "Choose a VibeTV"
+// setup screen because a single missed /hello probe flipped Connected to
+// false. A device that was just seen must stay Connected (state
+// "reconnecting") through transient probe misses for a bounded grace window,
+// and only then drop to disconnected.
+//
+// DO NOT weaken this test to make it pass. Fix the connection-state code.
+func TestStatusKeepsRecentlySeenDeviceConnectedThroughTransientProbeMiss(t *testing.T) {
+	var available atomic.Bool
+	available.Store(true)
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !available.Load() {
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.44","deviceId":"vibetv-canary","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"system":{"bootId":"boot-1","uptimeMs":1200,"resetCount":1,"resetReason":"Power On"},"render":{"fullCount":0,"partialCount":0,"lastKind":""}}`))
+		default:
+			http.Error(w, "unexpected", http.StatusNotFound)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "vibetv-canary",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    device.URL,
+			ErrorCode: "provider_setup_required",
+			Detail:    "No provider is ready.",
+		}
+	}
+	clock := time.Date(2026, 8, 6, 21, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return clock }
+
+	readStatus := func() statusResponse {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status: %v", err)
+		}
+		return got
+	}
+
+	if got := readStatus(); !got.Device.Connected {
+		t.Fatalf("reachable device must be connected: %+v", got.Device)
+	}
+
+	// One transient probe miss 10 seconds later must NOT flip the customer
+	// back to a disconnected/setup experience.
+	available.Store(false)
+	clock = clock.Add(10 * time.Second)
+	afterMiss := readStatus()
+	if !afterMiss.Device.Connected {
+		t.Fatalf("single probe miss flipped a just-seen device to disconnected: %+v", afterMiss.Device)
+	}
+	if afterMiss.Device.ConnectionState != deviceConnectionRetrying {
+		t.Fatalf("degraded device must report reconnecting, got %+v", afterMiss.Device)
+	}
+
+	// Still inside the grace window a minute later: keep Connected.
+	clock = clock.Add(50 * time.Second)
+	if got := readStatus(); !got.Device.Connected {
+		t.Fatalf("device inside the reconnect grace window must stay connected: %+v", got.Device)
+	}
+
+	// Well past the grace window the truth wins: disconnected.
+	clock = clock.Add(10 * time.Minute)
+	if got := readStatus(); got.Device.Connected {
+		t.Fatalf("device unseen for minutes must not stay connected: %+v", got.Device)
+	}
+
+	// The device comes back: connected again on the next poll.
+	available.Store(true)
+	clock = clock.Add(5 * time.Second)
+	if got := readStatus(); !got.Device.Connected {
+		t.Fatalf("recovered device must reconnect on the next poll: %+v", got.Device)
+	}
+}
+
+// Soak variant of the anti-flap regression: the customer-observed flakiness
+// only shows after 10-30+ seconds of real polling. This simulates 15 minutes
+// of 5s status polls against a device with a realistic miss pattern (every
+// 4th probe drops, plus one 30s outage). The customer-visible Connected state
+// must not flip even once. A real outage longer than the grace window must
+// then produce exactly one honest transition to disconnected.
+//
+// DO NOT weaken this test to make it pass.
+func TestStatusConnectedStateStaysStableThroughMinutesOfIntermittentProbes(t *testing.T) {
+	var available atomic.Bool
+	available.Store(true)
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !available.Load() {
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.44","deviceId":"vibetv-canary","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"system":{"bootId":"boot-1","uptimeMs":1200,"resetCount":1,"resetReason":"Power On"},"render":{"fullCount":0,"partialCount":0,"lastKind":""}}`))
+		default:
+			http.Error(w, "unexpected", http.StatusNotFound)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "vibetv-canary",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    device.URL,
+			ErrorCode: "provider_setup_required",
+			Detail:    "No provider is ready.",
+		}
+	}
+	clock := time.Date(2026, 8, 6, 21, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return clock }
+
+	readConnected := func() bool {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status: %v", err)
+		}
+		return got.Device.Connected
+	}
+
+	const pollEvery = 5 * time.Second
+	transitions := 0
+	last := readConnected()
+	if !last {
+		t.Fatalf("device must start connected")
+	}
+
+	poll := func() {
+		clock = clock.Add(pollEvery)
+		connected := readConnected()
+		if connected != last {
+			transitions++
+			last = connected
+		}
+	}
+
+	// 15 minutes of polling: every 4th probe misses transiently.
+	outageStart := 60 // poll index where a 30s outage begins
+	for i := 1; i <= 180; i++ {
+		transientMiss := i%4 == 0
+		inOutage := i >= outageStart && i < outageStart+6 // 6 polls = 30s
+		available.Store(!(transientMiss || inOutage))
+		poll()
+	}
+	if transitions != 0 {
+		t.Fatalf("customer-visible Connected flipped %d times during transient misses - this is the observed flakiness", transitions)
+	}
+
+	// A real outage longer than the grace window: exactly one honest drop.
+	available.Store(false)
+	for i := 0; i < 30; i++ { // 150s > grace window
+		poll()
+	}
+	if last {
+		t.Fatalf("device dead for 150s must read disconnected")
+	}
+	if transitions != 1 {
+		t.Fatalf("expected exactly one honest transition to disconnected, got %d", transitions)
+	}
+
+	// And exactly one transition back once it recovers.
+	available.Store(true)
+	poll()
+	if !last || transitions != 2 {
+		t.Fatalf("expected clean single transition back to connected, got connected=%v transitions=%d", last, transitions)
+	}
+}
+
 func TestStatusDoesNotReportUnreachableDeviceConnectedFromProviderSetupStream(t *testing.T) {
 	// A powered-off VibeTV must never look connected just because the display
 	// stream logged provider_setup_required minutes ago. Connectivity requires

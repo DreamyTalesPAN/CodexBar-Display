@@ -72,6 +72,11 @@ const (
 	displayStreamLabelEnv        = runtimepaths.DisplayStreamLaunchAgentLabelEnv
 	displayStreamOutLogEnv       = runtimepaths.DisplayStreamOutLogEnv
 	displayStreamReadyAge        = 2 * time.Minute
+	// deviceConnectedGraceWindow keeps a just-seen device Connected (state
+	// "reconnecting") through transient probe misses: 2.5x the 30s WiFi
+	// interval. Long enough to absorb single misses, short enough that a
+	// powered-off device reads disconnected well under two minutes.
+	deviceConnectedGraceWindow = 75 * time.Second
 	displayVerificationAge       = 2 * time.Minute
 	displayStreamWaitTime        = 30 * time.Second
 	displayRenderWaitTime        = 12 * time.Second
@@ -1344,6 +1349,15 @@ func (s *Server) withConfiguredConnectionState(
 	}
 	if reachable || streamConnected {
 		state.lastSeenAt = now
+	}
+	// Anti-flap grace: a device that was just seen must not flip the customer
+	// to a disconnected/setup experience because one probe missed (the
+	// single-threaded ESP8266 drops connections while rendering). Within the
+	// bounded grace window the device stays Connected in state "reconnecting";
+	// past the window the honest truth wins and Connected drops.
+	if !device.Connected && !identityMismatch && device.Paired &&
+		!state.lastSeenAt.IsZero() && now.Sub(state.lastSeenAt) <= deviceConnectedGraceWindow {
+		device.Connected = true
 	}
 	if device.Ready {
 		device.ConnectionState = deviceConnectionReady

@@ -340,6 +340,7 @@ export function LiveVibeTVPreview({
       )
     : null;
   const [packState, setPackState] = useState<ThemePackState | null>(null);
+  const [packRetryNonce, setPackRetryNonce] = useState(0);
   const pack =
     packState?.themeId === themeId &&
     packState.themeSpecHash === themeSpecHash &&
@@ -377,6 +378,17 @@ export function LiveVibeTVPreview({
     }
 
     const controller = new AbortController();
+    let retryTimer: number | undefined;
+    // The pack fetch must never park in a terminal error state: the Companion
+    // may still be starting, the pack cache may still be building, or the
+    // device may be mid theme-update. A connected Overview showing a permanent
+    // "PREVIEW UNAVAILABLE" is the customer bug from 2026-08-06 - keep
+    // retrying until the pack matches the active revision.
+    const scheduleRetry = () => {
+      retryTimer = window.setTimeout(() => {
+        setPackRetryNonce((nonce) => nonce + 1);
+      }, THEME_PACK_RETRY_MS);
+    };
     fetchThemeRenderPackRevision(
       themeId,
       themeSpecPath,
@@ -396,6 +408,9 @@ export function LiveVibeTVPreview({
           pack: matchesActiveRevision ? payload : null,
           status: matchesActiveRevision ? "ready" : "error",
         });
+        if (!matchesActiveRevision) {
+          scheduleRetry();
+        }
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") {
@@ -408,10 +423,16 @@ export function LiveVibeTVPreview({
           pack: null,
           status: "error",
         });
+        scheduleRetry();
       });
 
-    return () => controller.abort();
-  }, [themeId, themeSpecHash, themeSpecPath]);
+    return () => {
+      controller.abort();
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+      }
+    };
+  }, [themeId, themeSpecHash, themeSpecPath, packRetryNonce]);
 
   return (
     <figure className="w-full max-w-[520px]">
@@ -444,6 +465,10 @@ export function LiveVibeTVPreview({
 // Matches the companion's displayStreamReadyAge window: a frame older than
 // this is no longer evidence of a live device.
 const RECONNECT_FRAME_GRACE_MS = 120_000;
+
+// Retry cadence for the theme render pack while it is unavailable or does not
+// match the device's active revision yet.
+const THEME_PACK_RETRY_MS = 5_000;
 
 export function frameFreshForReconnect(
   displayFrame: DisplayFrameSnapshot | null | undefined,
