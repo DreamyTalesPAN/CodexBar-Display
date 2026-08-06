@@ -742,13 +742,16 @@ issue scope, or release permission never implies UI permission.
   making cold and warm starts robust and flake-free, after the analysis showed
   the unbounded first-usage gate locks customers out permanently when no
   renderable frame ever arrives (for example, no provider configured yet).
-- Approved customer-visible result: The full-screen startup gate exits at the
-  latest 30 seconds after the VibeTV is found. Entering never fakes readiness:
-  Overview renders its existing waiting-for-usage state until a real frame
-  arrives. When the Mac App runtime becomes unreachable or blocked, the device
-  is shown as disconnected instead of replaying stale "connected"/live-preview
-  state, and the app keeps polling for recovery in the blocked state. The live
-  preview goes offline once the device is reported disconnected instead of
-  presenting the last cached frame as live. No layout or control changes.
+- Approved customer-visible result: The startup gate still opens Overview only
+  on the first real preview frame (the "Never open Overview before the first
+  live preview" rule stays). A just-seen VibeTV no longer flips to a
+  disconnected/setup experience because of a single missed probe (bounded 75s
+  reconnect grace, honest disconnect afterwards). The theme render pack
+  retries every 5 seconds instead of parking on a permanent "Preview
+  unavailable". When the Mac App runtime becomes unreachable or blocked, the
+  device is shown as disconnected instead of replaying stale "connected"
+  state, and the app keeps polling for recovery in the blocked state. A cached
+  preview frame stops counting as live once the device stays disconnected past
+  the reconnect grace. No layout or control changes.
 - Approved files: `control-center-app.tsx`, `live-vibetv-preview.tsx`, their
   regression tests, and this approval record.
