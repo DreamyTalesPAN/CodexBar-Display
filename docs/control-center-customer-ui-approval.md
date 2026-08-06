@@ -5,6 +5,22 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-06 — Never open Overview before the first live preview
+
+- User approval: During the cold-start test, the user explicitly required that
+  the state with an unavailable preview must never appear in Overview and that
+  customers may enter Overview only after the preview is available. The user
+  then explicitly instructed Codex to build this fix together with the preview
+  and test it on the connected VibeTV.
+- Approved customer-visible result: A connected and paired VibeTV without a
+  real display frame remains on the existing full-screen `Connecting to VibeTV`
+  startup gate for as long as necessary. It shows `Waiting for live preview…`
+  and does not expose Overview or the Control Center navigation. Overview opens
+  only after the first valid live preview frame exists.
+- Approved files: `control-center-app.tsx`, `device-startup-screen.tsx`, their
+  regression assertions in `device-startup-screen.test.tsx` and
+  `test-customer-flows.mjs`, and this approval record.
+
 ## 2026-08-05 — Give first usage up to 60 seconds
 
 - User approval: The user explicitly instructed Codex to increase the first
