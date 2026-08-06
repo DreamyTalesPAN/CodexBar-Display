@@ -273,6 +273,49 @@ func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 	}
 }
 
+func TestStatusKeepsSavedPairingWhenAuthenticatedProbeTimesOut(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			if r.Header.Get("X-VibeTV-Token") != "" {
+				<-r.Context().Done()
+				return
+			}
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.44","deviceId":"vibetv-canary","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"system":{"bootId":"boot-1","uptimeMs":1200},"render":{"fullCount":3,"partialCount":1,"lastKind":"usage"}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "vibetv-canary",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Running: true, Target: device.URL}
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if !got.Device.Active || !got.Device.Connected || !got.Device.Paired {
+		t.Fatalf("transient authenticated probe failure lost saved pairing: %+v", got.Device)
+	}
+	if got.Device.Ready {
+		t.Fatalf("tokenless fallback must not claim full readiness: %+v", got.Device)
+	}
+}
+
 func TestStatusDoesNotAdoptDifferentDeviceAtConfiguredAddress(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -3891,7 +3934,7 @@ func TestDeviceGetDoesNotScanSubnetWhenSavedTargetIsStale(t *testing.T) {
 	}
 }
 
-func TestStatusKeepsConfiguredDeviceReconnectingDuringTransientProbeFailure(t *testing.T) {
+func TestStatusKeepsConfiguredDeviceReadyDuringTransientProbeFailureWithHealthyStream(t *testing.T) {
 	var available atomic.Bool
 	var boot atomic.Int32
 	available.Store(true)
@@ -3942,10 +3985,10 @@ func TestStatusKeepsConfiguredDeviceReconnectingDuringTransientProbeFailure(t *t
 	}
 	available.Store(false)
 	reconnecting := readStatus()
-	if reconnecting.Device.ConnectionState != deviceConnectionRetrying || reconnecting.Device.Ready {
-		t.Fatalf("transient timeout restarted setup instead of reconnecting: %+v", reconnecting.Device)
+	if reconnecting.Device.ConnectionState != deviceConnectionReady || !reconnecting.Device.Ready {
+		t.Fatalf("transient probe failure discarded healthy stream proof: %+v", reconnecting.Device)
 	}
-	if !reconnecting.Device.Active || !reconnecting.Device.Paired || reconnecting.Device.DeviceID != "vibetv-canary" {
+	if !reconnecting.Device.Active || !reconnecting.Device.Connected || !reconnecting.Device.Paired || reconnecting.Device.DeviceID != "vibetv-canary" {
 		t.Fatalf("saved active identity was not preserved: %+v", reconnecting.Device)
 	}
 	if reconnecting.Device.LastSeenAt == "" {
@@ -3965,6 +4008,43 @@ func TestStatusKeepsConfiguredDeviceReconnectingDuringTransientProbeFailure(t *t
 	}
 }
 
+func TestStatusKeepsFreshDeviceConnectedWhileFirstUsageIsPending(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "vibetv-canary",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    device.URL,
+			ErrorCode: "provider_setup_required",
+			Detail:    "No provider is ready.",
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if !got.Device.Active || !got.Device.Connected || !got.Device.Paired {
+		t.Fatalf("first-usage wait lost the configured VibeTV: %+v", got.Device)
+	}
+	if got.Device.Ready || got.Device.ConnectionState != deviceConnectionRetrying {
+		t.Fatalf("usage-pending device must stay connected but not ready: %+v", got.Device)
+	}
+}
+
 func TestStatusIsReadOnlyAndKeepsOfflineActiveDevice(t *testing.T) {
 	var postCalls atomic.Int32
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3980,6 +4060,9 @@ func TestStatusIsReadOnlyAndKeepsOfflineActiveDevice(t *testing.T) {
 		DeviceToken:  "pair-token",
 		DeviceID:     "vibetv-canary",
 	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Running: true, Target: device.URL}
+	}
 	server.subnetTargets = func() []string {
 		t.Fatal("status must not scan the subnet")
 		return nil

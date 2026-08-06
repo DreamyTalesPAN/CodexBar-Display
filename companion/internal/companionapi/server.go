@@ -1255,18 +1255,18 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Stream:          streamPointer(stream),
 	}
 	reachable := false
+	identityMismatch := false
 	if strings.TrimSpace(cfg.DeviceTarget) != "" {
 		if hello, probeToken, tokenRejected, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
 			configuredID := strings.TrimSpace(cfg.DeviceID)
 			observedID := strings.TrimSpace(hello.DeviceID)
-			identityMismatch := configuredID != "" && observedID != "" &&
+			identityMismatch = configuredID != "" && observedID != "" &&
 				!strings.EqualFold(configuredID, observedID)
 			if !identityMismatch {
 				reachable = true
 				device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
 				device.Active = configuredID != "" && strings.EqualFold(configuredID, observedID)
 				device.Paired = strings.TrimSpace(cfg.DeviceToken) != "" &&
-					probeToken == cfg.DeviceToken &&
 					stream.ErrorCode != "device_pairing_required"
 				if tokenRejected {
 					device.Paired = false
@@ -1285,7 +1285,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	device = s.withConfiguredConnectionState(cfg, device, reachable)
+	device = s.withConfiguredConnectionState(cfg, device, reachable, identityMismatch)
 	var firmwareUpdate *firmwareUpdateJob
 	if latest, ok := s.latestFirmwareUpdateJob(); ok {
 		firmwareUpdate = &latest
@@ -1308,6 +1308,7 @@ func (s *Server) withConfiguredConnectionState(
 	cfg runtimeconfig.Config,
 	device deviceInfo,
 	reachable bool,
+	identityMismatch bool,
 ) deviceInfo {
 	device.Active = strings.TrimSpace(cfg.DeviceID) != ""
 	if !device.Active {
@@ -1328,7 +1329,15 @@ func (s *Server) withConfiguredConnectionState(
 		s.connectionStates[key] = state
 	}
 
-	if reachable {
+	healthyStream := !identityMismatch && device.Paired && displayStreamHealthyForTarget(device.Stream, device.Target)
+	streamConnected := healthyStream || (!identityMismatch && device.Paired && providerSetupStreamForTarget(device.Stream, device.Target))
+	if streamConnected {
+		device.Connected = true
+	}
+	if healthyStream {
+		device.Ready = true
+	}
+	if reachable || streamConnected {
 		state.lastSeenAt = now
 	}
 	if device.Ready {
