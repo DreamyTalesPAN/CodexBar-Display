@@ -1,94 +1,70 @@
 # VibeTV rehearsal — hardware test findings
 
-Testing on real hardware against PR #348 (`codex/auto-theme-updates-ota-fix`,
-candidate `9999.0.24` from commit `06e6b5a`).
+Testing on real hardware against PR #348 (`codex/auto-theme-updates-ota-fix`).
 
 Device under test: `14799300`, `esp8266-smalltv-st7789`, firmware `1.0.39`,
 `http://192.168.178.72`.
 
-These are **findings only**. Nothing in this report has been fixed.
+BUG-1 is **root-caused and fixed**. Everything else is reported, not fixed.
 
 ---
 
-## BUG-1 — Firmware update never reaches the upload; it dies in the auth preflight
+## BUG-1 — Firmware updates die in the auth preflight — FIXED
 
-**Severity: blocker.** This is the failure behind the "Update failed" card.
+**Severity: blocker.** This was the failure behind every "Update failed" card.
 
-Running the exact command the Update button runs:
+The update path authenticated `/hello` with the pairing token in the
+`X-VibeTV-Token` header **and** duplicated into the `?token=` query string. On
+real hardware that combination makes the device close the connection without a
+response, so the preflight failed before a single byte was uploaded.
 
-```
-codexbar-display install-update --target http://192.168.178.72 \
-  --confirm-live-update --skip-launchagent-pause \
-  --manifest-url <manifest> --verbose
-```
+Measured from one Go `http.Client`, 30 attempts per variant, interleaved to
+cancel out drift, valid token, no other traffic to the device:
 
-produces:
-
-```
-Transient preflight error (attempt 1/3), retrying: Get "http://.../hello?token=[REDACTED]": EOF
-Transient preflight error (attempt 2/3), retrying: Get "http://.../hello?token=[REDACTED]": EOF
-error code=upgrade/flash-firmware
-error: device-auth-preflight: authenticate VibeTV /hello: Get "http://.../hello?token=[REDACTED]": EOF
-```
-
-The upload never starts, which is why the job reports `uploadAccepted: false`.
-
-### What the evidence rules out
-
-Measured directly against the device, all with the daemon stopped:
-
-| Probe | Result |
+| Token carrier | Failures |
 |---|---|
-| `curl` unauthenticated `/hello` | 6/6 OK |
-| `curl` token in query only | 6/6 OK |
-| `curl` token in header only | 6/6 OK |
-| `curl` header **and** query (what the code sends) | 6/6 OK |
-| `curl` shaped exactly like Go incl. `Accept-Encoding: gzip` | 5/6 OK |
-| Raw socket, byte-exact Go request | 5/6 OK |
-| Raw socket, byte-exact curl request | 6/6 OK |
-| **Go `http.Client`, authenticated `/hello`** | **1/8 OK** |
-| Go `http.Client`, unauthenticated `/hello` | ~8/8 OK |
+| Header **and** query — what the update path sent | **24/30** (`EOF`) |
+| Header only — what the streaming daemon sends | **0/30** |
+| Query only | **0/30** |
 
-So it is **not** the request bytes, **not** the token encoding (the token is
-plain hex), **not** connection reuse (`DisableKeepAlives` behaves identically),
-and **not** contention with the display stream — the failure reproduces with the
-runtime fully stopped.
+Either carrier alone is stable. The **duplication** is the trigger. That
+settles the contradiction in the tree: the cold-start work removed the query
+fallback arguing it "blocks /hello", while `6821299` reinstated it with the
+opposite rationale. Neither was right — query-only is fine, both together is not.
 
-What remains: the authenticated `/hello` fails specifically through Go's
-`http.Client` while the identical bytes over a raw socket succeed. The device
-side closes the connection without a response.
+Re-measured through the real `fetchDeviceHelloHTTPWithToken` helper after
+removing the duplication: **0/30**.
 
-**Not root-caused.** The next step is a packet capture on the device side, or
-firmware-side logging in the `/hello` auth path.
+The duplication reached `main` through `9f79246` and was reinstated on the
+cold-start branch by `6821299`. Both carried it.
 
-### Why the retry advice is wrong
+Locked by `TestDeviceHelloPreflightSendsTokenOnlyInHeader` (verified red against
+the old code, green after) and written up as a device-proven rule in
+`docs/hardware-contract.md`.
 
-The card tells the customer *"Keep VibeTV powered on, then try again."* The
-device was powered on and reachable the whole time. Retrying does not help,
-because the failure is deterministic per attempt (~85%), not transient.
+### Why the retry advice was wrong
+
+The card told the customer *"Keep VibeTV powered on, then try again."* The
+device was powered and reachable throughout, and the failure was ~80 %
+deterministic, so retrying could not help. The 3×500 ms preflight retry on the
+cold-start branch is useful hardening but never addressed the cause.
 
 ---
 
-## BUG-2 — An interrupted upload reboots the device and drops its theme
+## BUG-2 — An invalid token surfaces as a transport error, not as 401
 
-In one attempt the preflight passed and the upload started, then:
+Found while measuring BUG-1, and it compounds it.
 
-```
-error: ota-upload: VibeTV must restart before another firmware upload:
-interrupted upload left firmware 1.0.39 installed on device 14799300:
-firmware upload may have written data:
-timed out waiting for VibeTV to acknowledge firmware data (192 bytes pending)
-```
+With an **expired** token: header-only and query-only both return a clean
+`401 Unauthorized`. The duplicated form instead closes the connection (`EOF`).
 
-Device state before: `resetCount 374`, `activeTheme "clippy"`, themeSpec active.
-Device state after: `resetCount 375`, `uptimeMs 32416`, `resetReason
-"Software/System restart"`, **`activeTheme "theme-missing"`, `themeSpec.active:
-false`**.
+So a stale token cannot be told apart from a network fault. The updater sees a
+transport error, reports "keep the device powered on", and never says
+"re-pair" — which is the actual remedy.
 
-So a failed firmware upload silently costs the customer their installed theme
-and forces an unannounced reboot. The firmware version correctly stayed at
-`1.0.39`, so the rollback protection itself worked — but the theme did not
-survive, and nothing in the UI says so.
+Observed live: the device rotated its pairing token when the freshly installed
+app paired, and the previously valid token then produced exactly this
+misleading `EOF`.
 
 ---
 
@@ -98,68 +74,90 @@ The Updates card shows only:
 
 > Update failed — Keep VibeTV powered on, then try again.
 
-The real error (`device-auth-preflight: ... EOF`) is not surfaced anywhere the
-customer or a supporter can see it. It only appears on the helper's stdout. The
-support report (`reportType: control_center`) carries `errorCode:
-firmware_update_failed` and the same generic `nextAction`, so a report from a
-real customer would not have let anyone diagnose BUG-1 either.
+The real error (`device-auth-preflight: ... EOF`) appears nowhere a customer or
+supporter can see it — only on the helper's stdout. The support report carries
+the same generic `errorCode: firmware_update_failed` and `nextAction`, so a
+report from a real customer would not have allowed anyone to diagnose BUG-1.
 
 ---
 
 ## BUG-4 — The Updates tab cannot offer a Mac App update from the appcast alone
 
-Not a customer-facing defect, but it invalidates any rehearsal that only
-overrides Sparkle.
+Not customer-facing, but it invalidates any rehearsal that only overrides
+Sparkle.
 
 The "Mac App / Available" value does **not** come from the Sparkle appcast. It
 comes from the companion's own GitHub releases check
-(`CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL`, default
-`api.github.com/repos/.../releases/latest`, parsed as `{"tag_name": ...}`).
+(`CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL`, parsed as `{"tag_name": ...}`).
 
-Consequence: pointing only `SUFeedURL` at a candidate leaves the card claiming
-*"Mac App is up to date"* while Sparkle would install the candidate. The
-rehearsal scripts therefore override both seams.
+Overriding only `SUFeedURL` leaves the card claiming *"Mac App is up to date"*
+while Sparkle would install the candidate. The rehearsal scripts override both.
 
 ---
 
 ## BUG-5 — A `99.x` preview build makes the warm start untestable
 
-Observed in the state the previous session left behind: the installed app was
-`99.0.779` while the public release is `1.0.52`. Because `99 > 1`, the companion
-reported *"Mac App is up to date"* and Sparkle had nothing to offer, so the
-Mac-App-update half of the warm start could never run.
+The previous session left the Mac on app version `99.0.779` while the public
+release is `1.0.52`. Because `99 > 1`, the companion reported *"Mac App is up to
+date"* and Sparkle had nothing to offer, so the Mac-App half of the warm start
+could never run.
 
-Any build meant to act as the **baseline** must carry a version *below* the
-candidate. The merge-gate candidate scheme (`9999.0.24`) is only correct for the
-**target** side.
+A build acting as the **baseline** must be versioned *below* the candidate. The
+merge-gate scheme (`9999.0.24`) is correct only for the **target** side.
+
+---
+
+## BUG-6 — The cold-start branch cannot build from a clean checkout
+
+`codex/coldstart-honest-reachability` deleted
+`companion/internal/companionapi/controlcenter_static/.gitkeep` — the one file
+`.gitignore` explicitly preserves in that directory. Without it,
+`go:embed all:controlcenter_static` finds no files and **every** `go build` and
+`go test` in `companion/` fails before running.
+
+Local runs on that branch only worked because the build pipeline copies the
+built UI into that directory first. Restored on the integration branch.
+
+---
+
+## Corrected: no permanent theme loss
+
+An earlier version of this report claimed a failed upload costs the customer
+their installed theme. That was over-stated.
+
+What is confirmed: an interrupted upload does reboot the device
+(`resetCount` 374 → 375, `resetReason "Software/System restart"`), and shortly
+after that reboot the device reported `activeTheme: "theme-missing"` with
+`themeSpec.active: false`. Later, on the **same boot**, it reported
+`activeTheme: "clippy"` with the spec active and rendering.
+
+Whether the device restored the spec itself or the freshly paired app re-pushed
+it is **not established** — a newly paired Mac App was running in between. The
+unannounced reboot after a failed upload stands as a finding; permanent theme
+loss does not.
 
 ---
 
 ## Verified working
 
-- The merge-gate candidate for PR #348 matches the PR head exactly
-  (`06e6b5ae30ae`) and all six artifact checksums verify against the signed
-  manifest.
-- Warm start reaches the intended customer state: Mac App `1.0.52` installed,
-  device on `1.0.39`, and the Updates tab offers `9999.0.24` for **both** the Mac
-  App (`updateAvailable: true`) and the firmware
-  (`status: update_available`).
-- The device's own HTTP surface (`/hello`, `/health`) is healthy and responsive
-  throughout.
+- The merge-gate candidate for PR #348 matches the PR head exactly and all six
+  artifact checksums verify against the signed manifest.
+- Warm start reaches the intended customer state: Mac App `1.0.52`, device on
+  `1.0.39`, and the Updates tab offers the candidate for **both** the Mac App
+  (`updateAvailable: true`) and the firmware (`status: update_available`).
 - The candidate DMG served on loopback carries a valid Ed25519 signature for the
-  `SUPublicEDKey` of the installed public app, confirmed with `openssl pkeyutl
-  -verify`. Rewriting the appcast enclosure URL does not invalidate it, so
-  Sparkle will accept this update.
+  installed app's `SUPublicEDKey` (`openssl pkeyutl -verify`). Rewriting the
+  appcast enclosure URL does not invalidate it.
 
 ## Not yet verified
 
-- That Sparkle prefers the `SUFeedURL` user default over the `Info.plist` feed in
-  this build. The signature and the feed contents are proven; only the
-  precedence is open, and clicking the update in the Updates tab settles it.
-- The firmware update completing successfully — blocked by BUG-1. This also
-  leaves the cold start's flash step unproven: it uses the same
-  `install-update` path and fails the same way.
-- The Sparkle CLI check the merge gate runs could not be reproduced here:
+- That Sparkle prefers the `SUFeedURL` user default over the `Info.plist` feed.
+  Signature and feed contents are proven; only the precedence is open, and the
+  first real click settles it.
+- A firmware update completing end to end on hardware with the BUG-1 fix in
+  place. The preflight is fixed and measured; the upload stage beyond it has not
+  been exercised since.
+- The merge gate's Sparkle CLI check could not be reproduced locally:
   `scripts/build-sparkle-cli.sh` needs `xcodebuild`, and this Mac's active
   developer directory is `/Library/Developer/CommandLineTools`. Switching it
   (`sudo xcode-select -s /Applications/Xcode.app`) needs your password.
