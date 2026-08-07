@@ -481,6 +481,28 @@ if count != 1:
 open(path, "w", encoding="utf-8").write(patched)
 PY
 
+  # The candidate ships a manifest template whose firmwareUrl is the bare asset
+  # name. The companion does not resolve it against the manifest URL, so it has
+  # to be made absolute here or the download fails with "unsupported protocol
+  # scheme".
+  python3 - "$REHEARSAL_SERVE_DIR/firmware-manifest.json" "$REHEARSAL_SERVER_URL" <<'PY'
+import json, sys, urllib.parse
+
+path, base = sys.argv[1:]
+manifest = json.loads(open(path, encoding="utf-8").read())
+patched = 0
+for artifact in manifest.get("artifacts", []):
+    url = str(artifact.get("firmwareUrl") or "")
+    if not urllib.parse.urlparse(url).scheme:
+        artifact["firmwareUrl"] = f"{base}/{url.lstrip('/')}"
+        patched += 1
+if patched == 0:
+    raise SystemExit("expected at least one relative firmwareUrl to rewrite")
+with open(path, "w", encoding="utf-8") as destination:
+    json.dump(manifest, destination, indent=2)
+    destination.write("\n")
+PY
+
   curl -fsS -m 5 "$REHEARSAL_SERVER_URL/appcast.xml" >/dev/null \
     || rehearsal::die 'local artifact server is not answering'
   rehearsal::info "serving candidate at $REHEARSAL_SERVER_URL (pid $server_pid)"
@@ -609,7 +631,9 @@ rehearsal::resolve_current_public_release() {
 # Runs the same install-update path the Updates tab uses.
 rehearsal::flash_firmware() {
   local manifest_url="$1" expected_version="$2" force="${3:-0}"
-  local helper="$REHEARSAL_APP_PATH/Contents/Helpers/codexbar-display"
+  # An override is the companion under test, so it also drives the flashes that
+  # happen before the app is installed.
+  local helper="${REHEARSAL_COMPANION_OVERRIDE:-$REHEARSAL_APP_PATH/Contents/Helpers/codexbar-display}"
   [[ -x "$helper" ]] || rehearsal::die "companion helper missing at $helper"
 
   local args=(install-update --target "$REHEARSAL_DEVICE_TARGET" --confirm-live-update
