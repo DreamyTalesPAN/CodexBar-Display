@@ -1057,7 +1057,13 @@ func TestEnsureFirmwareUpdateDeviceTokenStoresValidatedIdentityTuple(t *testing.
 	}
 }
 
-func TestFetchDeviceHelloHTTPWithTokenSendsQueryFallbackAndRedactsErrors(t *testing.T) {
+// Renamed from TestFetchDeviceHelloHTTPWithTokenSendsQueryFallbackAndRedactsErrors.
+// That test required the token in the header AND the query string. Measured on
+// real hardware, exactly that combination makes the device close the connection
+// (24/30 EOF) and was the reason every firmware update failed. The query
+// fallback assertion is therefore gone; the header-only rule replaces it.
+// See docs/hardware-contract.md.
+func TestFetchDeviceHelloHTTPWithTokenSendsHeaderOnlyAndRedactsErrors(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {
 		releaseHTTPClient = previousHTTPClient
@@ -1069,8 +1075,8 @@ func TestFetchDeviceHelloHTTPWithTokenSendsQueryFallbackAndRedactsErrors(t *test
 		if got := req.Header.Get("X-VibeTV-Token"); got != token {
 			t.Fatalf("expected pairing token header, got %q", got)
 		}
-		if got := req.URL.Query().Get("token"); got != token {
-			t.Fatalf("expected pairing token query fallback, got %q", got)
+		if got := req.URL.Query().Get("token"); got != "" {
+			t.Fatalf("pairing token must not be duplicated into the query string, got %q", got)
 		}
 		return nil, &url.Error{
 			Op:  "Get",
