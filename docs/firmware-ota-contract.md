@@ -66,6 +66,21 @@ Firmware `1.0.36` has a fragile ESP8266 receive path. The supported bridge to
 These values are a compatibility requirement, not a performance preference.
 Do not increase them without repeating the `1.0.36 -> 1.0.37` hardware gate.
 
+The `10 ms` body-write pacing applies to every firmware version, not only to
+`1.0.36`. The sender briefly had an unpaced fast path for released firmware
+`>= 1.0.37`; it was removed after hardware measurement (2026-08-07,
+esp8266-smalltv-st7789, firmware 1.0.39):
+
+| RAW upload mode | Concurrent device traffic | Installed |
+| --- | --- | --- |
+| unpaced | none | 0/3 |
+| paced (10 ms) | none | 2/2 |
+| paced (10 ms) | Mac App runtime polling port 80 | 0/1 |
+
+Rule: `10 ms` pacing for all firmware versions, fast path removed. Pacing is
+necessary but only sufficient when no other client is talking to the device,
+which is why every writer must be quiesced before the upload starts.
+
 Multipart is allowed only when the RAW endpoint is provably unavailable before
 an upload starts, for example `connection refused`, `no route to host`, or an
 HTTP `404`. A timeout is not proof that no firmware bytes reached the device.

@@ -103,6 +103,20 @@ func TestFirmwareRawWritePauseIsConservativeForEveryFirmware(t *testing.T) {
 	}
 }
 
+// DO NOT weaken this test. It pins the removal of the unpaced fast path for
+// released firmware >= 1.0.37. Hardware measurement on esp8266-smalltv-st7789
+// running released 1.0.39 (2026-08-07): unpaced RAW uploads installed 0/3,
+// paced uploads with the device otherwise idle installed 2/2. Pacing is
+// mandatory for every firmware version, including unparseable and empty
+// version strings. See docs/firmware-ota-contract.md.
+func TestFirmwareRawWritePauseIsPositiveForEveryFirmwareVersion(t *testing.T) {
+	for _, firmware := range []string{"1.0.37", "1.0.39", "9999.0.24", ""} {
+		if got := firmwareRawWritePause(firmware); got <= 0 {
+			t.Fatalf("firmware %q write pause = %s, want > 0 (unpaced RAW uploads fail on real hardware)", firmware, got)
+		}
+	}
+}
+
 func TestWaitForHTTPFirmwareVersionBoundsHungProbe(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	previousPoll := firmwareHTTPVerifyPollInterval
