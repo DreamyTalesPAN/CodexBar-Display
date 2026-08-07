@@ -5,7 +5,8 @@ Testing on real hardware against PR #348 (`codex/auto-theme-updates-ota-fix`).
 Device under test: `14799300`, `esp8266-smalltv-st7789`, firmware `1.0.39`,
 `http://192.168.178.72`.
 
-BUG-1 is **root-caused and fixed**. Everything else is reported, not fixed.
+BUG-1 is **root-caused and fixed, proven on hardware**. BUG-7's pacing half is
+committed but explicitly not a fix. Everything else is reported, not fixed.
 
 ---
 
@@ -120,23 +121,67 @@ built UI into that directory first. Restored on the integration branch.
 
 ---
 
-## Corrected: no permanent theme loss
+## BUG-7 — RAW OTA uploads stall at the TCP level
 
-An earlier version of this report claimed a failed upload costs the customer
-their installed theme. That was over-stated.
+**Severity: blocker.** Exposed once BUG-1 stopped hiding it.
 
-What is confirmed: an interrupted upload does reboot the device
-(`resetCount` 374 → 375, `resetReason "Software/System restart"`), and shortly
-after that reboot the device reported `activeTheme: "theme-missing"` with
-`themeSpec.active: false`. Later, on the **same boot**, it reported
-`activeTheme: "clippy"` with the spec active and rendering.
+With the preflight fixed, the upload starts and then stops being acknowledged:
 
-Whether the device restored the spec itself or the freshly paired app re-pushed
-it is **not established** — a newly paired Mac App was running in between. The
-unannounced reboot after a failed upload stands as a finding; permanent theme
-loss does not.
+```
+ota-upload: VibeTV must restart before another firmware upload:
+interrupted upload left firmware 1.0.39 installed on device 14799300:
+timed out waiting for VibeTV to acknowledge firmware data (512 bytes pending)
+```
+
+"N bytes pending" is the macOS socket's `Snd_sbbytes`. `waitForFirmwareRawAck`
+gives up after 30 s if the kernel send buffer never drains, so the device
+stopped acknowledging at the **TCP** level — its receive window closed and
+stayed closed, most likely while the ESP8266 was erasing or writing flash.
+
+Measured:
+
+| Sender | Upload | Result |
+|---|---|---|
+| Unpaced (`writePause = 0`, the released-firmware fast path) | 1.0.39 → 9999.0.24 | stalled, 2/2 |
+| Paced (`writePause = 10ms`) | 1.0.39 → 9999.0.24 | **completed and installed** |
+| Paced | 9999.0.24 → 1.0.39 | stalled |
+
+Restoring the pause is committed, because every unpaced attempt failed and the
+only upload that ever completed was paced. **It is not a fix**: a paced upload
+stalled too. Open leads are the 30 s `otaRawAckTimeout` being too tight for a
+flash-sector erase, and the interaction of block size and chunk size with the
+receiver's buffer.
 
 ---
+
+## BUG-8 — An interrupted OTA leaves the device without a theme — CONFIRMED
+
+An earlier draft of this report claimed this, then withdrew it as inconclusive
+because a freshly paired app had been running. The clean measurement settles it:
+the original claim was right.
+
+With the device fully isolated — no Mac App, no daemon, nothing paired — probed
+every 15 s for 7 minutes after a stalled upload:
+
+```
+uptime_s=70    theme=theme-missing  specActive=False renderOk=True
+...
+uptime_s=421   theme=theme-missing  specActive=False renderOk=True
+```
+
+24 of 24 probes. The device never reactivates the stored spec on its own, even
+though `themeSpec.path` still points at it. What restored the theme the first
+time was the freshly paired app pushing it back.
+
+A **successful** update does not have this problem: the device came back on
+`9999.0.24` with `activeTheme: "clippy"` and the spec active.
+
+So recovery is the updater's job — after a failed upload it should reactivate
+the stored spec instead of leaving the customer on a blank screen. Not
+implemented.
+
+Note: a stalled upload does not always reboot the device. Two stalls rebooted it
+(`resetCount` 374→375, 375→376); a third left it up on the same boot.
 
 ## Verified working
 
