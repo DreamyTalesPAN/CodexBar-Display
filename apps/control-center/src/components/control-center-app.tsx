@@ -21,7 +21,6 @@ import {
   localControlCenterUrl,
   needsLoopbackTargetAddressSpace,
   repairLocalControlCenterRuntime,
-  launchCodexBarRepair,
   restartLocalControlCenterApp,
   shouldRedirectToLocalControlCenter,
   shouldUseHostedSetupShell,
@@ -2604,27 +2603,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [providerDisplay, refreshUsage, runCompanion],
   );
 
-  const recoverProvider = useCallback(
-    async (item: PreferenceDescriptor) => {
-      if (item.health?.recoveryAction === "check_again") {
-        await checkProvider(item);
-        return;
-      }
-      if (item.health?.recoveryAction === "repair_usage_service") {
-        launchCodexBarRepair();
-        return;
-      }
-      try {
-        await runCompanion("/v1/providers/open-codexbar", { method: "POST" });
-      } catch (error) {
-        setProviderPreferencesError(
-          normalizeCaughtError(error, "Provider setup could not be opened."),
-        );
-      }
-    },
-    [checkProvider, runCompanion],
-  );
-
   const completeProviderSetup = useCallback(async () => {
     setBusyAction("provider-setup-complete");
     try {
@@ -2983,7 +2961,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     onCheck: checkProvider,
     onDisplayChange: updateProviderDisplay,
     onPreferenceChange: updateProviderPreference,
-    onRecovery: recoverProvider,
   };
   const needsRuntimeRecovery = companionStatus === "missing";
   const controlCenterAvailable =

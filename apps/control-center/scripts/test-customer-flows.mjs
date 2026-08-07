@@ -4187,7 +4187,7 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
     "display mode must stay disabled until the saved selection loads",
   );
   assert(
-    await page.getByLabel("Include Codex in Automatic").isDisabled(),
+    await page.getByLabel("Stop using Codex").isDisabled(),
     "provider display choices must stay disabled until the saved selection loads",
   );
   await waitForCondition(
@@ -4224,34 +4224,37 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
     "a broken enabled provider must block setup completion",
   );
 
-  const displayWritesBeforeDraft = requests.filter(
-    (request) =>
-      request.path === "/v1/provider-display" && request.method === "PATCH",
-  ).length;
+  // Setup has no separate draft step: clicking Always show one must
+  // immediately leave exactly one provider selected, so the customer can
+  // never land on a two-selected state that silently blocks Finish setup.
   await page.getByRole("button", { name: "Always show one" }).click();
+  await waitForCondition(
+    async () =>
+      (await page.getByLabel(/^Stop using /).count()) === 1,
+    "Always show one did not immediately collapse to a single selected provider",
+  );
   assert(
-    await finish.isDisabled(),
-    "an unsaved fixed-mode draft must block setup completion",
+    (await page.getByLabel(/^Use /).count()) >= 1,
+    "the provider that was replaced by Always show one must show as off, not disappear",
   );
   await page.getByRole("button", { name: "Automatic" }).click();
-  assert(
-    requests.filter(
-      (request) =>
-        request.path === "/v1/provider-display" && request.method === "PATCH",
-    ).length === displayWritesBeforeDraft,
-    "cancelling a fixed-mode draft must preserve the saved automatic pool",
+  await waitForCondition(
+    async () => (await page.getByLabel(/^Stop using /).count()) >= 1,
+    "switching back to Automatic did not restore the saved pool",
+  );
+  await waitForCondition(
+    async () => !(await automaticMode.isDisabled()),
+    "switching back to Automatic left display controls pending",
   );
 
-  const displaySave = page
-    .getByLabel("Include Claude in Automatic")
-    .uncheck({ force: true });
+  const displaySave = page.getByLabel("Stop using Claude").click();
   const fixedMode = page.getByRole("button", { name: "Always show one" });
   await waitForCondition(
     () => fixedMode.isDisabled(),
     "display mode was not disabled while a display save was pending",
   );
   assert(
-    await page.getByLabel("Include Codex in Automatic").isDisabled(),
+    await page.getByLabel("Stop using Codex").isDisabled(),
     "another display choice must stay disabled while a display save is pending",
   );
   assert(
@@ -4259,9 +4262,7 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
     "display mode changes must stay disabled while a display save is pending",
   );
   assert(
-    (await page
-      .getByRole("status", { name: /Saving display choice for/ })
-      .count()) === 1,
+    (await page.getByLabel("Updating Claude").count()) === 1,
     "only the changed provider row should show display pending",
   );
   await waitForCondition(
@@ -4281,10 +4282,6 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
     ),
     "an Automatic save must remove provider IDs that are no longer in the inventory",
   );
-  await page.getByRole("switch", { name: "Disable Claude" }).click();
-  await page
-    .getByRole("switch", { name: "Enable Claude" })
-    .waitFor({ timeout: 10_000 });
   await waitForCondition(
     async () => !(await finish.isDisabled()),
     "setup did not unlock after the broken provider was removed and disabled",

@@ -37,6 +37,7 @@ import {
   ProviderPicker,
   providerSetupCanFinish,
   providerSetupMissingEnabledProviders,
+  providerSetupBlockingProviders,
   type ProviderPickerProps,
 } from "./provider-picker";
 import {
@@ -161,6 +162,25 @@ export function SetupScreen({
         ? `Turn ${missingDisplayProviders.length === 1 ? "this provider" : "these providers"} off before finishing setup: ${missingDisplayProviders.join(", ")}.`
         : `Include ${missingDisplayProviders.join(", ")} in Automatic mode, or turn ${missingDisplayProviders.length === 1 ? "it" : "them"} off.`
       : null;
+  // When the only thing blocking Finish setup is a provider whose last
+  // check failed or timed out (not a selection problem, and nothing is
+  // already in flight), the customer has a concrete self-serve action:
+  // re-run the check. Surfacing that as an enabled "Check again" button
+  // (instead of a greyed-out "Finish setup" with a generic hint) is the
+  // honest state for what's actually blocking them.
+  const providerChecksPending = providerPicker
+    ? providerPicker.pendingPreferenceIds.size > 0 ||
+      providerPicker.pendingCheckIds.size > 0 ||
+      Boolean(providerPicker.displayPendingProviderId)
+    : false;
+  const blockingProviders =
+    providerPicker && missingDisplayProviders.length === 0 && !providerChecksPending
+      ? providerSetupBlockingProviders(
+          providerPicker.items,
+          providerPicker.display,
+        )
+      : [];
+  const canRecheckBlockingProviders = blockingProviders.length > 0;
   const migrationNotice = requiresMacAppMigration ? (
     <LegacyMacAppMigrationNotice
       checkFailed={macAppReleaseCheckFailed}
@@ -400,25 +420,39 @@ export function SetupScreen({
                     className="min-h-12 w-full"
                     disabled={
                       busyAction === "provider-setup-complete" ||
-                      !providerCanFinish
+                      (!providerCanFinish && !canRecheckBlockingProviders)
                     }
-                    onClick={() => void onCompleteProviderSetup?.()}
+                    onClick={() => {
+                      if (!providerCanFinish && canRecheckBlockingProviders) {
+                        blockingProviders.forEach((item) => {
+                          void providerPicker.onCheck(item);
+                        });
+                        return;
+                      }
+                      void onCompleteProviderSetup?.();
+                    }}
                     size="lg"
                     type="button"
                   >
                     {busyAction === "provider-setup-complete" ? (
                       <Spinner data-icon="inline-start" />
+                    ) : !providerCanFinish && canRecheckBlockingProviders ? (
+                      <RefreshCw data-icon="inline-start" aria-hidden />
                     ) : (
                       <Check data-icon="inline-start" aria-hidden />
                     )}
                     {busyAction === "provider-setup-complete"
                       ? "Finishing setup"
-                      : "Finish setup"}
+                      : !providerCanFinish && canRecheckBlockingProviders
+                        ? "Check again"
+                        : "Finish setup"}
                   </Button>
                   {!providerCanFinish &&
                   busyAction !== "provider-setup-complete" ? (
                     <p className="text-sm leading-6 text-muted-foreground">
-                      {missingDisplayProviderHint
+                      {canRecheckBlockingProviders
+                        ? `${blockingProviders.length === 1 ? "This provider needs" : "These providers need"} a fresh check before you can finish setup. Tap Check again.`
+                        : missingDisplayProviderHint
                         ? missingDisplayProviderHint
                         : "Provider checks can take up to 25 seconds. Finish setup unlocks when every enabled provider is Ready and included."}
                     </p>

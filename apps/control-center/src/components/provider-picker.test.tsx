@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type {
   PreferenceDescriptor,
+  PreferenceHealthState,
   ProviderDisplaySelection,
 } from "./control-center-types";
 import {
@@ -9,6 +10,10 @@ import {
   providerMatchesQuery,
   providerSetupCanFinish,
   providerSetupMissingEnabledProviders,
+  providerEnableIsRedundant,
+  setupFixedReplacedProviderId,
+  setupToggleOffDisplay,
+  setupToggleOnDisplay,
 } from "./provider-picker";
 
 const codex = provider({
@@ -43,6 +48,115 @@ const automatic: ProviderDisplaySelection = {
 };
 
 describe("ProviderPicker", () => {
+  it("renders a single combined switch in setup mode instead of Include and Enabled", () => {
+    const html = renderToStaticMarkup(
+      <ProviderPicker
+        display={automatic}
+        items={[codex, claude]}
+        onCheck={vi.fn()}
+        onDisplayChange={vi.fn()}
+        onPreferenceChange={vi.fn()}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+        setupMode
+      />,
+    );
+
+    expect(html).toContain('aria-label="Stop using Codex"');
+    expect(html).not.toContain('aria-label="Include Codex in Automatic"');
+    expect(html).not.toContain('aria-label="Disable Codex"');
+    expect(html).not.toContain("Enabled</span>");
+    expect(html).toContain("Using this</span>");
+  });
+
+  it("keeps the separate Include and Enabled controls outside setup mode", () => {
+    const html = renderToStaticMarkup(
+      <ProviderPicker
+        display={automatic}
+        items={[codex, claude]}
+        onCheck={vi.fn()}
+        onDisplayChange={vi.fn()}
+        onPreferenceChange={vi.fn()}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Include Codex in Automatic"');
+    expect(html).toContain('aria-label="Disable Codex"');
+    expect(html).not.toContain('aria-label="Stop using Codex"');
+  });
+
+  it("disables the setup-mode switch for the last remaining enabled provider", () => {
+    const html = renderToStaticMarkup(
+      <ProviderPicker
+        display={{ ...automatic, providerIds: ["codex"] }}
+        items={[codex, cursor, copilot]}
+        onCheck={vi.fn()}
+        onDisplayChange={vi.fn()}
+        onPreferenceChange={vi.fn()}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+        setupMode
+      />,
+    );
+
+    expect(html).toMatch(
+      /aria-label="Stop using Codex"[^>]*disabled=""|disabled=""[^>]*aria-label="Stop using Codex"/,
+    );
+  });
+
+  it("shows only the displayed provider as on in Always show one, even when another stayed enabled", () => {
+    const html = renderToStaticMarkup(
+      <ProviderPicker
+        display={{
+          mode: "fixed",
+          providerIds: ["codex"],
+          configured: true,
+          valid: true,
+        }}
+        items={[codex, claude]}
+        onCheck={vi.fn()}
+        onDisplayChange={vi.fn()}
+        onPreferenceChange={vi.fn()}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+        setupMode
+      />,
+    );
+
+    // codex is the shown provider and must read as on; claude stayed
+    // enabled in the background but is not displayed, so it must read as
+    // off. Exactly one "Stop using" control may exist.
+    expect(html).toContain('aria-label="Stop using Codex"');
+    expect(html).toContain('aria-label="Use Claude"');
+    expect(html.match(/aria-label="Stop using [^"]+"/g)).toHaveLength(1);
+  });
+
+  it("cannot turn the currently shown provider off directly in Always show one", () => {
+    const html = renderToStaticMarkup(
+      <ProviderPicker
+        display={{
+          mode: "fixed",
+          providerIds: ["codex"],
+          configured: true,
+          valid: true,
+        }}
+        items={[codex, claude]}
+        onCheck={vi.fn()}
+        onDisplayChange={vi.fn()}
+        onPreferenceChange={vi.fn()}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+        setupMode
+      />,
+    );
+
+    expect(html).toMatch(
+      /aria-label="Stop using Codex"[^>]*disabled=""|disabled=""[^>]*aria-label="Stop using Codex"/,
+    );
+  });
+
   it("renders semantic provider controls and separate display choices", () => {
     const html = renderToStaticMarkup(
       <ProviderPicker
@@ -51,7 +165,6 @@ describe("ProviderPicker", () => {
         onCheck={vi.fn()}
         onDisplayChange={vi.fn()}
         onPreferenceChange={vi.fn()}
-        onRecovery={vi.fn()}
         pendingCheckIds={new Set()}
         pendingPreferenceIds={new Set()}
       />,
@@ -75,7 +188,6 @@ describe("ProviderPicker", () => {
         onCheck={vi.fn()}
         onDisplayChange={vi.fn()}
         onPreferenceChange={vi.fn()}
-        onRecovery={vi.fn()}
         pendingCheckIds={new Set()}
         pendingPreferenceIds={new Set()}
       />,
@@ -94,7 +206,6 @@ describe("ProviderPicker", () => {
         onCheck={vi.fn()}
         onDisplayChange={vi.fn()}
         onPreferenceChange={vi.fn()}
-        onRecovery={vi.fn()}
         pendingCheckIds={new Set()}
         pendingPreferenceIds={new Set()}
       />,
@@ -108,6 +219,25 @@ describe("ProviderPicker", () => {
       /role="checkbox"[^>]*disabled=""[^>]*aria-label="Include Codex in Automatic"/,
     );
     expect(html).not.toMatch(/role="switch"[^>]*disabled=""/);
+  });
+
+  it("disables the setup-mode combined switch until the saved selection loads", () => {
+    const html = renderToStaticMarkup(
+      <ProviderPicker
+        display={null}
+        items={[codex]}
+        onCheck={vi.fn()}
+        onDisplayChange={vi.fn()}
+        onPreferenceChange={vi.fn()}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+        setupMode
+      />,
+    );
+
+    expect(html).toMatch(
+      /aria-label="Stop using Codex"[^>]*disabled=""|disabled=""[^>]*aria-label="Stop using Codex"/,
+    );
   });
 
   it("renders a service outage only once when it is the provider health state", () => {
@@ -128,7 +258,6 @@ describe("ProviderPicker", () => {
         onCheck={vi.fn()}
         onDisplayChange={vi.fn()}
         onPreferenceChange={vi.fn()}
-        onRecovery={vi.fn()}
         pendingCheckIds={new Set()}
         pendingPreferenceIds={new Set()}
       />,
@@ -168,7 +297,6 @@ describe("ProviderPicker", () => {
         onCheck={vi.fn()}
         onDisplayChange={vi.fn()}
         onPreferenceChange={vi.fn()}
-        onRecovery={vi.fn()}
         pendingCheckIds={new Set()}
         pendingPreferenceIds={new Set()}
       />,
@@ -201,7 +329,6 @@ describe("ProviderPicker", () => {
         onCheck={vi.fn()}
         onDisplayChange={vi.fn()}
         onPreferenceChange={vi.fn()}
-        onRecovery={vi.fn()}
         pendingCheckIds={new Set()}
         pendingPreferenceIds={new Set()}
       />,
@@ -239,12 +366,7 @@ describe("ProviderPicker", () => {
       ),
     ).toBe(false);
     expect(
-      providerSetupCanFinish(
-        [codex, claude],
-        automatic,
-        new Set(),
-        new Set(),
-      ),
+      providerSetupCanFinish([codex, claude], automatic, new Set(), new Set()),
     ).toBe(true);
   });
 
@@ -268,13 +390,150 @@ describe("ProviderPicker", () => {
     ).toBe(true);
   });
 
+  it("does not block setup on a momentary stale live check when usage already succeeded once", () => {
+    const staleClaude = provider({
+      ...claude,
+      health: {
+        state: "stale",
+        service: "unknown",
+        message:
+          "Live usage is unavailable; the last successful reading is still saved.",
+        lastSuccessAt: new Date().toISOString(),
+      },
+    });
+    expect(
+      providerSetupCanFinish(
+        [codex, staleClaude],
+        automatic,
+        new Set(),
+        new Set(),
+      ),
+    ).toBe(true);
+  });
+
+  it("still blocks setup for providers that genuinely need customer action", () => {
+    const blockedStates: PreferenceHealthState[] = [
+      "auth_required",
+      "setup_required",
+      "no_usage_available",
+      "timeout",
+      "config_error",
+      "unavailable",
+    ];
+    for (const state of blockedStates) {
+      const blockedCodex = provider({
+        ...codex,
+        health: {
+          state,
+          service: "unknown",
+          message: "Needs attention.",
+        },
+      });
+      expect(
+        providerSetupCanFinish(
+          [blockedCodex],
+          { ...automatic, providerIds: ["codex"] },
+          new Set(),
+          new Set(),
+        ),
+      ).toBe(false);
+    }
+  });
+
   it("names enabled providers that are outside the display pool", () => {
     expect(
-      providerSetupMissingEnabledProviders(
-        [codex, claude],
-        { ...automatic, providerIds: ["codex"] },
-      ),
+      providerSetupMissingEnabledProviders([codex, claude], {
+        ...automatic,
+        providerIds: ["codex"],
+      }),
     ).toEqual(["Claude"]);
+  });
+
+  it("turning the setup switch on adds the provider to Automatic", () => {
+    expect(
+      setupToggleOnDisplay("automatic", new Set(["codex"]), "claude"),
+    ).toEqual({ mode: "automatic", providerIds: ["codex", "claude"] });
+    expect(
+      setupToggleOnDisplay("automatic", new Set(["codex"]), "codex"),
+    ).toBeNull();
+  });
+
+  it("turning the setup switch on in fixed mode makes it the always-shown provider", () => {
+    expect(setupToggleOnDisplay("fixed", new Set(["codex"]), "claude")).toEqual(
+      { mode: "fixed", providerIds: ["claude"] },
+    );
+  });
+
+  it("turning the setup switch off removes the provider from the display selection", () => {
+    expect(
+      setupToggleOffDisplay(
+        "automatic",
+        new Set(["codex", "claude"]),
+        "claude",
+      ),
+    ).toEqual({ mode: "automatic", providerIds: ["codex"] });
+    expect(
+      setupToggleOffDisplay("automatic", new Set(["codex"]), "claude"),
+    ).toBeNull();
+  });
+
+  it("turning off the last selected provider never empties the display selection", () => {
+    expect(
+      setupToggleOffDisplay("automatic", new Set(["codex"]), "codex"),
+    ).toBeNull();
+  });
+
+  it("identifies the previously shown provider that Always show one must replace", () => {
+    expect(setupFixedReplacedProviderId(new Set(["codex"]), "claude")).toBe(
+      "codex",
+    );
+    expect(
+      setupFixedReplacedProviderId(new Set(["codex", "claude"]), "codex"),
+    ).toBe("claude");
+    expect(setupFixedReplacedProviderId(new Set(), "codex")).toBeNull();
+    expect(
+      setupFixedReplacedProviderId(new Set(["codex"]), "codex"),
+    ).toBeNull();
+  });
+
+  it("skips re-enabling a provider that is already healthy and freshly verified", () => {
+    const now = Date.now();
+    const freshHealthy = provider({
+      ...codex,
+      health: {
+        state: "healthy",
+        service: "operational",
+        message: "Provider is working.",
+        verifiedAt: new Date(now - 60_000).toISOString(),
+      },
+    });
+    expect(providerEnableIsRedundant(freshHealthy, now)).toBe(true);
+  });
+
+  it("still enables a provider that is disabled, stale, or unverified", () => {
+    const now = Date.now();
+    const disabled = provider({ ...codex, value: false });
+    const stale = provider({
+      ...codex,
+      health: {
+        state: "stale",
+        service: "unknown",
+        message:
+          "Live usage is unavailable; the last successful reading is still saved.",
+      },
+    });
+    const expiredVerification = provider({
+      ...codex,
+      health: {
+        state: "healthy",
+        service: "operational",
+        message: "Provider is working.",
+        verifiedAt: new Date(now - 10 * 60_000).toISOString(),
+      },
+    });
+    expect(providerEnableIsRedundant(disabled, now)).toBe(false);
+    expect(providerEnableIsRedundant(stale, now)).toBe(false);
+    expect(providerEnableIsRedundant(expiredVerification, now)).toBe(false);
   });
 });
 
