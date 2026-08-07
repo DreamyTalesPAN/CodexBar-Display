@@ -30,6 +30,7 @@ REHEARSAL_ASSUME_YES=0
 REHEARSAL_RESTORE=0
 REHEARSAL_KEEP_CODEXBAR=0
 REHEARSAL_SKIP_FIRMWARE_BASELINE=0
+REHEARSAL_COMPANION_OVERRIDE=""
 
 REHEARSAL_STATE_DIR="$HOME/.vibetv-rehearsal"
 REHEARSAL_RUN_DIR=""
@@ -91,6 +92,11 @@ Usage: $(basename "$0") [options]
   --pr <number>          Pull request whose merge-gate candidate to install (default: $REHEARSAL_PR)
   --run-id <id>          Use an explicit CODEX Test VibeTV Merge run instead of the newest for --pr
   --device-target <url>  VibeTV base URL, e.g. http://192.168.178.72 (default: autodetect)
+  --companion-override <path>
+                         Swap the installed app's companion helper for a locally
+                         built one. Use to rehearse a fix that has no signed CI
+                         candidate yet. Breaks notarisation, so the app is
+                         re-signed ad-hoc and the report records it.
   --keep-codexbar        Do not purge ~/.codexbar (keeps your CodexBar provider config)
   --skip-firmware-baseline
                          Warm start only: trust the firmware already on the device
@@ -106,6 +112,9 @@ rehearsal::parse_args() {
       --pr) [[ -n "${2:-}" ]] || rehearsal::die '--pr needs a value'; REHEARSAL_PR="$2"; shift 2 ;;
       --run-id) [[ -n "${2:-}" ]] || rehearsal::die '--run-id needs a value'; REHEARSAL_RUN_ID="$2"; shift 2 ;;
       --device-target) [[ -n "${2:-}" ]] || rehearsal::die '--device-target needs a value'; REHEARSAL_DEVICE_TARGET="$2"; shift 2 ;;
+      --companion-override)
+        [[ -n "${2:-}" ]] || rehearsal::die '--companion-override needs a path'
+        REHEARSAL_COMPANION_OVERRIDE="$2"; shift 2 ;;
       --keep-codexbar) REHEARSAL_KEEP_CODEXBAR=1; shift ;;
       --skip-firmware-baseline) REHEARSAL_SKIP_FIRMWARE_BASELINE=1; shift ;;
       --restore) REHEARSAL_RESTORE=1; shift ;;
@@ -533,6 +542,43 @@ for entity in entities:
   rehearsal::info "installed $label VibeTV Control Center $version"
   rehearsal::record "${label}AppVersion" "$version"
   REHEARSAL_INSTALLED_VERSION="$version"
+}
+
+# Replaces the installed app's companion helper with a locally built one. This
+# is how a fix that has no signed CI candidate yet gets rehearsed on hardware.
+rehearsal::apply_companion_override() {
+  [[ -n "$REHEARSAL_COMPANION_OVERRIDE" ]] || return 0
+  local source="$REHEARSAL_COMPANION_OVERRIDE"
+  [[ -x "$source" ]] || rehearsal::die "companion override is not executable: $source"
+
+  local helper="$REHEARSAL_APP_PATH/Contents/Helpers/codexbar-display"
+  [[ -f "$helper" ]] || rehearsal::die "no companion helper to replace at $helper"
+
+  rehearsal::step 'Swapping in the locally built companion'
+  rehearsal::warn 'this replaces a notarised binary; the app is re-signed ad-hoc'
+  cp -f "$source" "$helper"
+  codesign --force --deep --sign - "$REHEARSAL_APP_PATH" >/dev/null 2>&1 \
+    || rehearsal::die 'could not re-sign the app after the override'
+
+  local version commit
+  version="$("$helper" version --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin).get("version") or "unknown")
+except Exception:
+    print("unknown")
+')"
+  commit="$("$helper" version --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin).get("commit") or "unknown")
+except Exception:
+    print("unknown")
+')"
+  rehearsal::info "companion is now $version from commit ${commit:0:12}"
+  rehearsal::record companionOverride "$source"
+  rehearsal::record companionOverrideCommit "$commit"
+  rehearsal::record notarisationIntact false
 }
 
 rehearsal::download_release_dmg() {

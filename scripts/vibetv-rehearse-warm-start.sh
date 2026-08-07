@@ -96,6 +96,10 @@ rehearsal::step "Installing the public customer Mac App $PUBLIC_TAG"
 PUBLIC_DMG="$(rehearsal::download_release_dmg "$PUBLIC_TAG")"
 rehearsal::install_dmg "$PUBLIC_DMG" baseline
 BASELINE_VERSION="$REHEARSAL_INSTALLED_VERSION"
+# Note: overriding the companion here rehearses a companion-side fix against the
+# public app. It does not survive the Sparkle update, which replaces the whole
+# bundle with the candidate.
+rehearsal::apply_companion_override
 
 # --- 4. publish the candidate behind the installed app ----------------------
 rehearsal::start_artifact_server
