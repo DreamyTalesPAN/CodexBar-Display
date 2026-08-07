@@ -4736,7 +4736,7 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	// repairDevice already reactivates the stored theme in exactly this state,
 	// so the update does the same rather than handing the customer a working
 	// device with a setup screen on it.
-	if err := s.repairParkedDisplayAfterFirmwareUpdate(ctx, target, token, baseline, stream); err != nil {
+	if err := s.repairParkedDisplayAfterFirmwareUpdate(ctx, jobID, target, token, baseline, stream); err != nil {
 		return firmwareAttentionOutcome("render"), "Firmware is current, but the picture could not be verified.", nil
 	}
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
@@ -4754,24 +4754,62 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 // repairDevice does for the manual "Reload image" action.
 func (s *Server) repairParkedDisplayAfterFirmwareUpdate(
 	ctx context.Context,
+	jobID string,
 	target string,
 	token string,
 	baseline deviceHealth,
 	stream displayStreamInfo,
 ) error {
+	s.appendFirmwareUpdateDiagnostic(jobID, "render-repair: baseline "+describeRepairRenderState(baseline))
 	if activeThemeNeedsFullRepairRender(baseline) {
 		_, err := s.reactivateCurrentThemeAndWaitForFullRender(ctx, target, token, baseline, stream)
+		s.appendFirmwareUpdateDiagnostic(jobID, fmt.Sprintf("render-repair: reactivated from baseline err=%v", err))
 		return err
 	}
 	health, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream)
 	if err == nil {
 		return nil
 	}
-	if !activeThemeNeedsFullRepairRender(health) {
+	s.appendFirmwareUpdateDiagnostic(jobID, fmt.Sprintf("render-repair: verify failed err=%v, health %s", err, describeRepairRenderState(health)))
+	// The wait returns a zero health when every probe failed, and a device that
+	// is still busy right after its reboot does exactly that, so decide on a
+	// fresh reading rather than on whatever the failed wait left behind.
+	fresh, freshErr := s.getHealth(ctx, target, token)
+	s.appendFirmwareUpdateDiagnostic(jobID, fmt.Sprintf("render-repair: refetched health err=%v, %s", freshErr, describeRepairRenderState(fresh)))
+	if freshErr != nil {
 		return err
 	}
+	// Reactivate whenever a stored theme exists. The narrower "is it parked on a
+	// non-live screen" test races the stream cadence: the render kind reported
+	// right after a reboot depends on which frame happened to land last, and we
+	// have already failed to observe a live render at this point. Reactivation
+	// is idempotent and repairs the picture immediately on hardware.
+	if !storedThemeAvailableForRepair(fresh) {
+		return err
+	}
+	health = fresh
 	_, err = s.reactivateCurrentThemeAndWaitForFullRender(ctx, target, token, health, stream)
+	s.appendFirmwareUpdateDiagnostic(jobID, fmt.Sprintf("render-repair: reactivated after verify err=%v", err))
 	return err
+}
+
+// storedThemeAvailableForRepair reports whether the device has a stored theme
+// that can be reactivated to force a full render.
+func storedThemeAvailableForRepair(health deviceHealth) bool {
+	spec := health.Display.ThemeSpec
+	return spec.Active && strings.TrimSpace(spec.Path) != ""
+}
+
+func describeRepairRenderState(health deviceHealth) string {
+	spec := health.Display.ThemeSpec
+	full, partial, countersOK := displayRenderCounters(health)
+	return fmt.Sprintf(
+		"ok=%t specActive=%t specPath=%q lastKind=%q counters=%t/%d/%d needsRepair=%t",
+		health.OK, spec.Active, strings.TrimSpace(spec.Path),
+		strings.TrimSpace(health.Render.LastKind),
+		countersOK, full, partial,
+		activeThemeNeedsFullRepairRender(health),
+	)
 }
 
 func firmwareAttentionOutcome(kind string) string {
