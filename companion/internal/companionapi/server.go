@@ -5322,9 +5322,13 @@ func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfi
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Stdout = out
 	cmd.Stderr = out
+	// This job pauses the display stream for the whole update, so the child
+	// updater's writer-quiesce gate must not refuse its own parent runtime.
+	env := append(os.Environ(), "VIBETV_UPDATE_PARENT_PAUSED=1")
 	if strings.TrimSpace(home) != "" {
-		cmd.Env = append(os.Environ(), "HOME="+home)
+		env = append(env, "HOME="+home)
 	}
+	cmd.Env = env
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("firmware update command failed: %w", err)
 	}

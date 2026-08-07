@@ -77,7 +77,33 @@ var (
 	firmwareUpdateRediscoveryAfter                     = 10 * time.Second
 	firmwareUpdateRediscoveryInterval                  = 5 * time.Second
 	firmwareInterruptedVerifyTimeout                   = 20 * time.Second
+	firmwareUpdateRuntimeHealthOrigin                  = "http://127.0.0.1:47832"
+	firmwareUpdateRuntimeHealthTimeout                 = time.Second
 )
+
+// The Companion API job pauses the display stream itself before spawning the
+// CLI updater and marks the child with this environment variable so the
+// writer-quiesce gate does not refuse its own parent.
+const firmwareUpdateParentPausedEnvVar = "VIBETV_UPDATE_PARENT_PAUSED"
+
+// otherRuntimeWriterAlive reports whether a local VibeTV runtime answers on
+// its Companion API port. A reachable /v1/runtime-health means a runtime is
+// running and polling the device; an unreachable endpoint means no runtime and
+// the update proceeds silently.
+//
+// Measured on esp8266-smalltv-st7789 firmware 1.0.39 (2026-08-07): a correctly
+// paced RAW OTA upload still failed 0/1 while the Mac App runtime kept polling
+// port 80. Concurrent device traffic during the upload is fatal, so the direct
+// CLI path must quiesce every writer before the first firmware byte.
+func otherRuntimeWriterAlive() bool {
+	client := &http.Client{Timeout: firmwareUpdateRuntimeHealthTimeout}
+	resp, err := client.Get(strings.TrimRight(firmwareUpdateRuntimeHealthOrigin, "/") + "/v1/runtime-health")
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	return true
+}
 
 type firmwareUpdateEvent = firmwareupdate.Event
 
@@ -463,6 +489,7 @@ func runInstallUpdate(args []string) (retErr error) {
 	force := fs.Bool("force", false, "install even when the device already reports the latest firmware")
 	confirmLiveUpdate := fs.Bool("confirm-live-update", false, "allow installing from the default live Shopify firmware manifest")
 	skipLaunchAgentPause := fs.Bool("skip-launchagent-pause", false, "internal: keep the Mac App running while updating firmware")
+	stoppedAllWriters := fs.Bool("i-stopped-all-writers", false, "update even though another VibeTV runtime is running (you stopped every device writer yourself)")
 	verbose := fs.Bool("verbose", false, "show manifest, asset, and local firmware file details")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -485,6 +512,18 @@ func runInstallUpdate(args []string) (retErr error) {
 	base, err := normalizeHTTPBaseURL(*target)
 	if err != nil {
 		return &commandError{Op: "resolve-target", Code: errcode.UpgradeFlashFirmware, Err: err}
+	}
+	// Quiesce gate: concurrent device traffic during an OTA upload is fatal
+	// (see otherRuntimeWriterAlive). Runs before the first device request. The
+	// API job pauses the stream itself and marks the child via
+	// VIBETV_UPDATE_PARENT_PAUSED=1.
+	if !*stoppedAllWriters && os.Getenv(firmwareUpdateParentPausedEnvVar) != "1" && otherRuntimeWriterAlive() {
+		return &commandError{
+			Op:   "quiesce-device-writers",
+			Code: errcode.UpgradeFlashFirmware,
+			Err:  errors.New("another VibeTV runtime is running and polling the device; stop it first or pass --i-stopped-all-writers"),
+			Hint: "quit the VibeTV Mac App (or stop the companion daemon), then retry; pass --i-stopped-all-writers only after every device writer is stopped",
+		}
 	}
 
 	hello, err := fetchDeviceHelloHTTP(ctx, base)

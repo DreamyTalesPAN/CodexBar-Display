@@ -1892,6 +1892,196 @@ func TestRunInstallUpdateCanSkipLaunchAgentPauseForLocalAPI(t *testing.T) {
 	}
 }
 
+// quiesceTestDeviceServer serves the minimal already-current device so a
+// runInstallUpdate call that passes the writer-quiesce gate finishes without
+// uploading anything. Every request is counted.
+func quiesceTestDeviceServer(t *testing.T, requests *int) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*requests++
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-a","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.1","features":["theme"],"maxFrameBytes":1024}`))
+		case "/manifest.json":
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"release":"v1.0.1","artifacts":[{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware.bin","firmwareUrl":"https://example.invalid/firmware.bin","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// DO NOT weaken this test. Measured on esp8266-smalltv-st7789 firmware 1.0.39
+// (2026-08-07): a correctly paced RAW OTA upload still failed 0/1 while the
+// Mac App runtime kept polling the device. The direct CLI updater must
+// therefore refuse to send any device request while another local runtime is
+// alive, unless the operator explicitly claims every writer is stopped.
+func TestRunInstallUpdateAbortsBeforeAnyDeviceRequestWhenAnotherRuntimeIsAlive(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousOrigin := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareUpdateRuntimeHealthOrigin = previousOrigin
+	})
+	t.Setenv("HOME", t.TempDir())
+
+	runtimeHealthCalls := 0
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/runtime-health" {
+			runtimeHealthCalls++
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer runtime.Close()
+	firmwareUpdateRuntimeHealthOrigin = runtime.URL
+
+	deviceRequests := 0
+	device := quiesceTestDeviceServer(t, &deviceRequests)
+	releaseHTTPClient = device.Client()
+
+	_, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.URL,
+			"--manifest-url", device.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err == nil {
+		t.Fatal("expected abort while another runtime is alive")
+	}
+	if !strings.Contains(err.Error(), "another VibeTV runtime is running and polling the device; stop it first or pass --i-stopped-all-writers") {
+		t.Fatalf("expected quiesce abort message, got: %v", err)
+	}
+	if deviceRequests != 0 {
+		t.Fatalf("abort must happen before any device request, got %d device requests", deviceRequests)
+	}
+	if runtimeHealthCalls == 0 {
+		t.Fatal("expected the updater to probe the runtime-health endpoint")
+	}
+}
+
+// DO NOT weaken this test. --i-stopped-all-writers is the operator's explicit
+// claim that every device writer is stopped; the update must proceed then.
+func TestRunInstallUpdateProceedsWithWriterFlagDespiteAliveRuntime(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousOrigin := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareUpdateRuntimeHealthOrigin = previousOrigin
+	})
+	t.Setenv("HOME", t.TempDir())
+
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer runtime.Close()
+	firmwareUpdateRuntimeHealthOrigin = runtime.URL
+
+	deviceRequests := 0
+	device := quiesceTestDeviceServer(t, &deviceRequests)
+	releaseHTTPClient = device.Client()
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.URL,
+			"--manifest-url", device.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+			"--i-stopped-all-writers",
+		})
+	})
+	if err != nil {
+		t.Fatalf("update with --i-stopped-all-writers must proceed, got: %v", err)
+	}
+	if deviceRequests == 0 {
+		t.Fatal("expected the update to talk to the device")
+	}
+	if !strings.Contains(output, `"outcome":"already_current"`) {
+		t.Fatalf("expected already-current outcome, got:\n%s", output)
+	}
+}
+
+// DO NOT weaken this test. The API job pauses the display stream itself and
+// marks its child updater via VIBETV_UPDATE_PARENT_PAUSED=1; the customer path
+// must keep working without the CLI flag.
+func TestRunInstallUpdateProceedsWhenParentPausedEnvIsSet(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousOrigin := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareUpdateRuntimeHealthOrigin = previousOrigin
+	})
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("VIBETV_UPDATE_PARENT_PAUSED", "1")
+
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer runtime.Close()
+	firmwareUpdateRuntimeHealthOrigin = runtime.URL
+
+	deviceRequests := 0
+	device := quiesceTestDeviceServer(t, &deviceRequests)
+	releaseHTTPClient = device.Client()
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.URL,
+			"--manifest-url", device.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err != nil {
+		t.Fatalf("update from the paused API parent must proceed, got: %v", err)
+	}
+	if deviceRequests == 0 {
+		t.Fatal("expected the update to talk to the device")
+	}
+	if !strings.Contains(output, `"outcome":"already_current"`) {
+		t.Fatalf("expected already-current outcome, got:\n%s", output)
+	}
+}
+
+// DO NOT weaken this test. No runtime listening means no other writer; the
+// check must stay silent and never block the update.
+func TestRunInstallUpdateProceedsWhenRuntimeHealthEndpointIsDead(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousOrigin := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareUpdateRuntimeHealthOrigin = previousOrigin
+	})
+	t.Setenv("HOME", t.TempDir())
+
+	deadRuntime := httptest.NewServer(http.NotFoundHandler())
+	deadOrigin := deadRuntime.URL
+	deadRuntime.Close()
+	firmwareUpdateRuntimeHealthOrigin = deadOrigin
+
+	deviceRequests := 0
+	device := quiesceTestDeviceServer(t, &deviceRequests)
+	releaseHTTPClient = device.Client()
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.URL,
+			"--manifest-url", device.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err != nil {
+		t.Fatalf("update without a running runtime must proceed, got: %v", err)
+	}
+	if deviceRequests == 0 {
+		t.Fatal("expected the update to talk to the device")
+	}
+	if !strings.Contains(output, `"outcome":"already_current"`) {
+		t.Fatalf("expected already-current outcome, got:\n%s", output)
+	}
+}
+
 func TestRunInstallUpdateRequiresLiveManifestConfirmation(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {
