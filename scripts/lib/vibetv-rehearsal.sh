@@ -597,9 +597,8 @@ try:
 except Exception:
     print("unknown")
 ')"
-  # launchd refuses to load a LaunchAgent out of an ad-hoc signed bundle, so the
-  # app's own runtime agent never starts after an override. Registering an
-  # identical agent from a user-owned path keeps the runtime running.
+  # The app's own agent lives inside the bundle and never starts after an
+  # override, so the same agent is registered from a user-owned path.
   local agent_plist="$REHEARSAL_APP_PATH/Contents/Library/LaunchAgents/${REHEARSAL_BUNDLE_ID}.runtime.plist"
   if [[ -f "$agent_plist" ]]; then
     local user_plist="$HOME/Library/LaunchAgents/${REHEARSAL_BUNDLE_ID}.runtime.plist"
@@ -611,7 +610,10 @@ source, destination, helper = sys.argv[1:]
 with open(source, "rb") as handle:
     agent = plistlib.load(handle)
 # The bundled agent relies on the app resolving a bare program name; a
-# standalone agent needs the absolute path.
+# standalone agent needs the absolute path. BundleProgram is only valid for an
+# agent hosted by an app bundle -- leaving it beside Program makes launchd
+# reject the whole plist with "Bootstrap failed: 5: Input/output error".
+agent.pop("BundleProgram", None)
 agent["Program"] = helper
 arguments = list(agent.get("ProgramArguments") or [])
 if arguments:
@@ -621,18 +623,15 @@ with open(destination, "wb") as handle:
     plistlib.dump(agent, handle)
 PY
     launchctl bootout "gui/$(id -u)/${REHEARSAL_BUNDLE_ID}.runtime" >/dev/null 2>&1 || true
-    if launchctl bootstrap "gui/$(id -u)" "$user_plist" >/dev/null 2>&1; then
+    local bootstrap_error
+    if bootstrap_error="$(launchctl bootstrap "gui/$(id -u)" "$user_plist" 2>&1)"; then
       rehearsal::info 'registered the runtime agent from a user-owned path'
       rehearsal::record runtimeAgentSource "$user_plist"
     else
       # Do not fall back to running the runtime detached: it would take port
       # 47832 and the app itself then refuses to start with "VibeTV couldn't
-      # start". There is no honest way around this -- an ad-hoc re-signed bundle
-      # cannot host its own LaunchAgent.
-      rehearsal::die "launchd rejected the ad-hoc signed runtime agent.
-   --companion-override cannot drive the app-hosted runtime on a notarised
-   baseline app. Use it only for direct CLI flashes, or rehearse with a signed
-   merge-gate candidate instead (no override)."
+      # start".
+      rehearsal::die "launchd rejected the runtime agent at $user_plist: ${bootstrap_error:-unknown error}"
     fi
   fi
 
