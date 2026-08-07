@@ -196,13 +196,157 @@ Note: a stalled upload does not always reboot the device. Two stalls rebooted it
 
 ## Not yet verified
 
-- That Sparkle prefers the `SUFeedURL` user default over the `Info.plist` feed.
-  Signature and feed contents are proven; only the precedence is open, and the
-  first real click settles it.
-- A firmware update completing end to end on hardware with the BUG-1 fix in
-  place. The preflight is fixed and measured; the upload stage beyond it has not
-  been exercised since.
 - The merge gate's Sparkle CLI check could not be reproduced locally:
   `scripts/build-sparkle-cli.sh` needs `xcodebuild`, and this Mac's active
   developer directory is `/Library/Developer/CommandLineTools`. Switching it
   (`sudo xcode-select -s /Applications/Xcode.app`) needs your password.
+- Cold start on the current candidate. The warm-start run below consumed the
+  session; nothing about `vibetv-rehearse-cold-start.sh` has been exercised
+  against `9999.0.26`.
+
+---
+
+# Warm-start run on real hardware, 2026-08-07 11:00-11:15
+
+Candidate `9999.0.26` from merge-gate run `31161390646`, built from PR #348 head
+`eab8fb9` and checksum-verified against the signed manifest. Device `14799300`,
+`http://192.168.178.72`. Both open questions above about Sparkle and the upload
+stage are settled here.
+
+## Proven — the Mac App half of the warm start
+
+Sparkle offered `9999.0.26` against the installed public `1.0.52`, the operator
+clicked **Install Update**, and Sparkle downloaded the DMG from the loopback
+server, replaced the bundle and relaunched it. So Sparkle **does** prefer the
+`SUFeedURL` user default over the `Info.plist` feed — that was the last open
+question about the appcast, and it is now closed by a real click.
+
+Afterwards: app and runtime both `9999.0.26`, `installationMode: dmg`, one
+process owning port 47832, and the device reached `connected: true, ready: true`
+— a state the `1.0.52` baseline never held in this session.
+
+## BUG-7 — still live, and it is the release blocker
+
+Three consecutive update cycles through the customer path
+(`POST /v1/updates/install` on the running runtime):
+
+| # | Direction | Upload | Result |
+|---|---|---|---|
+| 1 | 1.0.39 -> 9999.0.26 | **completed** | device on 9999.0.26 |
+| 2 | 9999.0.26 -> 1.0.39 (forced) | **completed** | device on 1.0.39 |
+| 3 | 1.0.39 -> 9999.0.26 | **stalled** | device stayed on 1.0.39 |
+
+Cycle 3 ended `firmware_update_restart_required` with `uploadAccepted: false`
+("Disconnect VibeTV from power for 10 seconds"). Two of three uploads finished;
+the third did not. The paced upload is better than the unpaced one but it is
+still not reliable, exactly as the pacing commit said.
+
+Cycle 2 is worth noting on its own: the earlier report measured
+`9999.0.24 -> 1.0.39` as stalling even when paced. That direction completed
+here.
+
+## BUG-9 — a successful update never brings the picture back
+
+New, and it fired on **both** successful cycles.
+
+After the device reboots onto the new firmware it comes up with the theme spec
+active (`activeTheme: clippy`, `renderOk: true`) but stuck on the setup screen:
+
+```
+render: {fullCount: 3, partialCount: 0, lastKind: "connected_setup"}
+display.themeSpec.cbaCompletedFrames: 0
+```
+
+Meanwhile the Mac keeps logging `sent frame -> http://192.168.178.72 ...
+usageMode=used` every ~30 s with `error=""`. Those frames never become a themed
+render: `fullCount` sat at 3 and `lastKind` at `connected_setup` across four
+minutes of polling.
+
+So the job's `"Firmware is current, but the picture could not be verified"` is
+**honest** — the customer really is left on the setup screen after a successful
+update. `renderVerified: false` on both cycles.
+
+One `POST /v1/device/reload-display` repaired it instantly
+(`lastKind: theme_spec_frame`, `cbaCompletedFrames: 22`). The repair path
+already does the right thing: `repairDevice` calls
+`reactivateCurrentThemeAndWaitForFullRender` when
+`activeThemeNeedsFullRepairRender` holds. `verifyFirmwareUpdateResult` does not
+— it only waits for render counters to advance and then reports `attention`.
+Post-reboot state satisfies that predicate exactly (spec active, path set,
+`lastKind` not a live kind), so the same recovery would apply unchanged.
+
+## BUG-8 — confirmed again, and the shipped recovery did not take effect
+
+After the cycle-3 stall the device came back on `1.0.39` with:
+
+```
+activeTheme: "theme-missing"   themeSpec.active: false
+themeSpec.path: "/themes/u/clippy-3-fe3fd4.json"   (intact)
+```
+
+That is precisely the state `restoreStoredThemeAfterAbortedUpload` (d91a008)
+was written to repair, and the candidate carries that commit. The theme was
+still missing.
+
+The mechanism itself works on hardware. One hand-issued authenticated
+`POST /theme/active` with the token in the header only — the same single call
+the fix makes — restored the picture immediately:
+
+```
+{"ok":true,"path":"/themes/u/clippy-3-fe3fd4.json","id":"clippy","rev":3}
+-> activeTheme: clippy, specActive: true, cbaCompletedFrames: 14,
+   lastKind: theme_spec_usage
+```
+
+So the fix's *approach* is proven and its *delivery* is not. Whether the
+recovery never ran or ran and silently failed cannot be told from outside,
+which is the next bug.
+
+Note also that `POST /v1/device/reload-display` returned **502
+`display_reload_failed`** against `1.0.39` in this state, while the raw
+`/theme/active` call succeeded on the same device seconds later. The runtime's
+repair is doing more than the one call that actually works.
+
+## BUG-3 — worse than reported: the updater's diagnostics are discarded
+
+`firmwareUpdateProgressWriter.noteLine` passes every child line through
+`customerFirmwareUpdateProgress` and drops whatever it does not recognise. The
+theme-restore warnings the fix prints (`warning: could not restore stored theme
+after aborted upload: ...`) match nothing, so they reach neither the job log nor
+any file on disk. After a failed update there is no record anywhere of why.
+
+## BUG-10 — a fresh update request right after one completes can be refused
+
+Firing `POST /v1/updates/install` immediately after cycle 2 finished returned
+`device_not_found` ("No VibeTV device was found"), while `/v1/status` reported
+the device `connected: true, ready: true` and `/hello` answered directly.
+Retrying seconds later worked. Transient, but it is the customer clicking twice.
+
+## Not a product bug — this Mac's state
+
+Two environment faults cost most of the session and are worth recording so the
+next run does not chase them:
+
+- **68 stale app bundles were registered with LaunchServices** (install
+  backups, Trash copies, mounted DMGs). `vibetv://check-for-updates` therefore
+  opened a *backup* copy of the app, which then ran as a **second instance**
+  next to the installed one and fought over the device — the flapping between
+  "Choose a VibeTV" and Overview. Unregistering all of them and detaching three
+  leftover `/Volumes/VibeTV Control Center*` images fixed the deep link.
+- **A wedged TCP connection** from the previous `1.0.52` runtime held the
+  single-connection ESP8266 busy, so nothing else could reach it. Restarting
+  the runtime released it.
+
+## Release recommendation
+
+**Do not release this candidate.** Three findings block it, in order:
+
+1. BUG-7: one upload in three does not complete (blocker, pre-existing).
+2. BUG-9: every *successful* update leaves the customer on the setup screen
+   until something forces a display reload (blocker, new).
+3. BUG-8: a stalled upload still strips the theme, and the shipped recovery did
+   not restore it on hardware (blocker, the fix does not work as delivered).
+
+BUG-9 and BUG-8 both have a known-good mechanism already in the tree
+(`reactivateCurrentThemeAndWaitForFullRender`, the single `/theme/active` POST);
+neither is reached by the firmware-update path.
