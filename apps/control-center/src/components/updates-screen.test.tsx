@@ -83,4 +83,84 @@ describe("UpdatesScreen VibeTV update card", () => {
     expect(html).toContain("Update complete");
     expect(html).not.toContain("Update available");
   });
+
+  // Regression test for the 2026-08-07 hardware observation: after a stalled
+  // upload the card kept showing "Update failed - Disconnect VibeTV from power
+  // for 10 seconds" while the same card reported Installed firmware 1.0.39 and
+  // Available firmware 1.0.39. Nothing was pending any more, so the customer
+  // was told to power-cycle for an update that no longer existed.
+  it("drops a finished update failure once the firmware check says nothing is pending", () => {
+    // DO NOT weaken this test.
+    const html = renderToStaticMarkup(
+      <UpdatesScreen
+        companionStatus="online"
+        device={{
+          connected: true,
+          board: "esp8266-smalltv-st7789",
+          firmware: "1.0.39",
+        }}
+        firmwareUpdate={{
+          checkedAt: "2026-08-07T09:20:00Z",
+          installedFirmware: "1.0.39",
+          latestFirmware: "1.0.39",
+          updateAvailable: false,
+          status: "current",
+        }}
+        updateStatus={{
+          phase: "error",
+          stage: "uploading",
+          startedAt: "2026-08-07T09:13:00Z",
+          finishedAt: "2026-08-07T09:15:00Z",
+          error:
+            "Disconnect VibeTV from power for 10 seconds, reconnect it, and wait until the picture returns before trying again.",
+          logs: [],
+          result: {
+            firmware: "9999.0.26",
+            uploadAccepted: false,
+          },
+        }}
+      />,
+    );
+
+    expect(html).not.toContain("Update failed");
+    expect(html).not.toContain("Disconnect VibeTV from power");
+  });
+
+  // The same failure must survive while the update really is still pending,
+  // because there the power-cycle advice is the customer's next step.
+  it("keeps a finished update failure while the firmware update is still pending", () => {
+    // DO NOT weaken this test.
+    const html = renderToStaticMarkup(
+      <UpdatesScreen
+        companionStatus="online"
+        device={{
+          connected: true,
+          board: "esp8266-smalltv-st7789",
+          firmware: "1.0.39",
+        }}
+        firmwareUpdate={{
+          checkedAt: "2026-08-07T09:20:00Z",
+          installedFirmware: "1.0.39",
+          latestFirmware: "9999.0.26",
+          updateAvailable: true,
+          status: "update_available",
+        }}
+        updateStatus={{
+          phase: "error",
+          stage: "uploading",
+          startedAt: "2026-08-07T09:13:00Z",
+          finishedAt: "2026-08-07T09:15:00Z",
+          error:
+            "Disconnect VibeTV from power for 10 seconds, reconnect it, and wait until the picture returns before trying again.",
+          logs: [],
+          result: {
+            firmware: "9999.0.26",
+            uploadAccepted: false,
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Update failed");
+  });
 });

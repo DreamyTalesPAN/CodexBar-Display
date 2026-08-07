@@ -128,6 +128,14 @@ export function UpdatesScreen({
   // "Update complete"; the badge only returns after a fresh update check.
   const vibetvUpdateAvailable =
     !firmwareUpdateCompleted && (updateAvailable || themeUpdateAvailable);
+  // A finished failure describes an update that is no longer pending once a
+  // fresh check reports nothing to install. Keeping it would tell the customer
+  // to power-cycle for an update that does not exist; while the update really
+  // is still pending, the failure and its advice stay.
+  const staleFirmwareFailure = Boolean(
+    updateStatus?.phase === "error" && firmwareUpdate && !updateAvailable,
+  );
+  const visibleUpdateStatus = staleFirmwareFailure ? undefined : updateStatus;
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const nativeMacUpdateReady = Boolean(
     macAppUpdateAvailable && companionInfo?.app?.installedInApplications,
@@ -233,18 +241,18 @@ export function UpdatesScreen({
               </AlertDescription>
             </Alert>
           ) : null}
-          {updateStatus ? (
+          {visibleUpdateStatus ? (
             <InlineUpdateProgress
               creatingReport={creatingReport}
               onCreateReport={onCreateReport}
               onRetry={
                 firmwareUpdateBlocked
                   ? undefined
-                  : updateStatus.phase === "attention"
+                  : visibleUpdateStatus.phase === "attention"
                     ? onRetryThemeUpdate
                     : onInstallUpdate
               }
-              status={updateStatus}
+              status={visibleUpdateStatus}
             />
           ) : null}
         </UpdateCard>

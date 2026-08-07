@@ -755,3 +755,19 @@ issue scope, or release permission never implies UI permission.
   the reconnect grace. No layout or control changes.
 - Approved files: `control-center-app.tsx`, `live-vibetv-preview.tsx`, their
   regression tests, and this approval record.
+
+## 2026-08-07 — A finished update failure stops outliving the update
+
+- User approval: The user reported the exact state from their own screen during
+  the hardware rehearsal — "hier steht update failed" while the same card showed
+  Installed firmware `1.0.39` and Available firmware `1.0.39` — and instructed
+  that the remaining findings be fixed and proven on cold and warm start.
+- Approved customer-visible result: When an update job has finished with a
+  failure and a fresh firmware check reports that nothing is pending, the
+  Updates card no longer shows `Update failed` with the power-cycle advice, its
+  `Try again` and `Create report` actions, or the progress bar; the card falls
+  back to the plain up-to-date state. While the firmware update really is still
+  pending, the failure, its advice, and both actions stay exactly as they were.
+  No copy, layout, control, or customer decision changes anywhere else.
+- Approved files: `updates-screen.tsx`, its regression tests, and this approval
+  record.
