@@ -1701,21 +1701,19 @@ func (w *rawFirmwareBodyWriter) Write(p []byte) (int, error) {
 	return originalLength, nil
 }
 
-func firmwareRawWritePause(currentFirmware string) time.Duration {
-	current, err := versioning.ParseSemVer(currentFirmware)
-	if err != nil {
-		// Unknown or legacy firmware keeps the proven conservative sender.
-		return otaRawWritePause
-	}
-	// Development firmware keeps the proven conservative sender. Its exact OTA
-	// receiver behavior is not a released compatibility guarantee yet.
-	if current.PreRelease != "" {
-		return otaRawWritePause
-	}
-	receiverFix := versioning.SemVer{Major: 1, Minor: 0, Patch: 37}
-	if current.Compare(receiverFix) >= 0 {
-		return 0
-	}
+// Every firmware gets the conservative inter-chunk pause.
+//
+// This used to return 0 for released firmware >= 1.0.37, assuming the receiver
+// fix made pacing unnecessary. Real hardware disagrees: on
+// esp8266-smalltv-st7789 running released 1.0.39, the unpaced sender stalled
+// waiting for the block acknowledgement in 2 of 2 attempts ("192 bytes
+// pending", "512 bytes pending"), each time leaving the firmware unchanged and
+// rebooting the device. The very same upload with the pause restored completed
+// and installed 9999.0.24. See docs/hardware-contract.md.
+//
+// The parameter stays so callers keep documenting which firmware they are
+// talking to, and so a future measured exception has somewhere to live.
+func firmwareRawWritePause(string) time.Duration {
 	return otaRawWritePause
 }
 

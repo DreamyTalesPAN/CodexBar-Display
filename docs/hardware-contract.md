@@ -36,6 +36,63 @@ Companion negotiation:
 - prefers v2 when available.
 - falls back to v1 when negotiation data is missing/legacy.
 
+### RAW OTA sender pacing: always paced, and never concurrent
+
+The RAW OTA sender keeps a 10 ms pause between 64-byte chunks for **every**
+firmware version, and waits for a block acknowledgement every 1024 bytes.
+
+The pause used to be skipped for released firmware >= 1.0.37, on the assumption
+that the receiver fix in that version made it unnecessary. Measured on
+`esp8266-smalltv-st7789`, with socket-level proof of what else was talking to
+the device during each run:
+
+| Sender | Other traffic to device | Device firmware | Direction | Result |
+|---|---|---|---|---|
+| Unpaced | none | 1.0.39 | -> 9999.0.24 | stalled |
+| Unpaced | none | 1.0.39 | -> 9999.0.24 | stalled |
+| Paced | none | 1.0.39 | -> 9999.0.24 | **installed** |
+| Paced | Mac App runtime polling | 9999.0.24 | -> 1.0.39 | stalled |
+| Unpaced | none (proven by `lsof`) | 9999.0.24 | -> 1.0.39 | stalled |
+| Paced | none (proven by `lsof`) | 9999.0.24 | -> 1.0.39 | **installed** |
+
+Unpaced: 0/3. Paced with the device to itself: 2/2. Paced while the Mac App
+runtime was still polling: 0/1.
+
+Two independent requirements follow, and both are needed:
+
+1. **Pace every upload.** No firmware version is exempt. Locked by
+   `TestFirmwareRawWritePauseIsConservativeForEveryFirmware`, `DO NOT weaken`.
+2. **Quiesce every other writer first.** A paced upload still stalls if anything
+   else is holding a connection to the device. Nothing may talk to port 80 while
+   firmware bytes are on port 8081 -- not health polls, not display frames.
+
+The stall itself is a TCP-level stop: `waitForFirmwareRawAck` polls the macOS
+socket's `Snd_sbbytes` and gives up after 30 s when the send buffer never
+drains, so the device's receive window closed and stayed closed. The "N bytes
+pending" figure is send-buffer occupancy, not protocol state, which is why it is
+not a multiple of the chunk size. A healthy paced upload takes about 100 s; a
+stalling one dies after the 30 s ack timeout.
+
+Contention was ruled out as the sole cause and pacing was ruled in by sampling
+`lsof -nP -i @<device>` twice a second through each run: in the isolated runs
+exactly one socket existed during the upload window, on port 8081, owned by the
+updater, with zero overlap between port 80 and port 8081 samples.
+
+### An interrupted OTA deactivates the stored theme
+
+After a stalled upload the device reboots and comes back with
+`display.activeTheme: "theme-missing"` and `display.themeSpec.active: false`,
+while `themeSpec.path` still points at the stored spec. Measured over 7 minutes
+and 24 probes with **no** Mac App or daemon running: the device never
+reactivates the spec on its own.
+
+A **successful** update does not have this problem — the device came back on
+`9999.0.24` with `activeTheme: "clippy"` and the spec active.
+
+So recovery is the updater's job: after a failed upload it must reactivate the
+stored spec rather than leave the customer on a blank theme. Not yet
+implemented.
+
 ### Token transport: exactly one carrier per request
 
 An authenticated request carries the pairing token in the `X-VibeTV-Token`

@@ -76,16 +76,24 @@ func TestRawFirmwareBodyWriterWaitsForBodyBlockAcks(t *testing.T) {
 	}
 }
 
-func TestFirmwareRawWritePauseKeepsLegacyReceiverPacing(t *testing.T) {
+// DO NOT weaken: renamed from TestFirmwareRawWritePauseKeepsLegacyReceiverPacing,
+// which expected released firmware >= 1.0.37 to be sent unpaced. On real
+// esp8266-smalltv-st7789 hardware running 1.0.39 the unpaced sender stalled
+// waiting for the block ack in 2 of 2 attempts and the update failed; the same
+// upload with the pause restored installed successfully. Every firmware is
+// paced now. See docs/hardware-contract.md.
+func TestFirmwareRawWritePauseIsConservativeForEveryFirmware(t *testing.T) {
 	tests := []struct {
 		firmware string
 		want     time.Duration
 	}{
 		{firmware: "1.0.36", want: otaRawWritePause},
-		{firmware: "1.0.37", want: 0},
+		{firmware: "1.0.37", want: otaRawWritePause},
 		{firmware: "1.0.37-dev.90d0575", want: otaRawWritePause},
+		{firmware: "1.0.39", want: otaRawWritePause},
 		{firmware: "1.0.40-dev.ddc9332", want: otaRawWritePause},
-		{firmware: "1.0.38", want: 0},
+		{firmware: "1.0.38", want: otaRawWritePause},
+		{firmware: "9999.0.24", want: otaRawWritePause},
 		{firmware: "invalid", want: otaRawWritePause},
 	}
 	for _, test := range tests {
