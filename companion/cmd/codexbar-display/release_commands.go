@@ -1376,10 +1376,12 @@ func fetchDeviceHelloHTTPWithToken(ctx context.Context, base, token string) (pro
 	}
 	req.Header.Set("User-Agent", "codexbar-display-update")
 	if token = strings.TrimSpace(token); token != "" {
+		// Header only. Sending the token in the header AND the query string at
+		// the same time makes the device close the connection without a
+		// response: measured on esp8266-smalltv-st7789 firmware 1.0.39, 24/30
+		// requests failed with EOF, while header-only and query-only were both
+		// 0/30. See docs/hardware-contract.md.
 		applyFirmwareUpdateToken(req, token)
-		query := req.URL.Query()
-		query.Set("token", token)
-		req.URL.RawQuery = query.Encode()
 	}
 	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {

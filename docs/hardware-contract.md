@@ -36,6 +36,40 @@ Companion negotiation:
 - prefers v2 when available.
 - falls back to v1 when negotiation data is missing/legacy.
 
+### Token transport: exactly one carrier per request
+
+An authenticated request carries the pairing token in the `X-VibeTV-Token`
+header **or** in the `?token=` query parameter — never in both at once.
+
+This is a device-proven rule, not a style preference. Measured against
+`esp8266-smalltv-st7789` on firmware `1.0.39`, 30 attempts per variant from one
+Go `http.Client`, no other traffic to the device:
+
+| Token carrier | Failures |
+|---|---|
+| Header **and** query together | **24/30** — connection closed, `EOF`, no response |
+| Header only | 0/30 |
+| Query only | 0/30 |
+
+The same bytes replayed over a raw socket succeed, and `curl` succeeds, so the
+trigger is timing-dependent on the device side rather than a malformed request.
+Until the firmware-side cause is understood, clients must not duplicate the
+token.
+
+Why this matters: duplicating the token broke **every** firmware update. The
+update path authenticated `/hello` with both carriers, so the preflight failed
+before a single byte was uploaded, and the customer saw only *"Update failed —
+Keep VibeTV powered on, then try again."* Retrying could not help. Removing the
+duplication took the same preflight to 0/30 failures on the same device.
+
+Regression tests that lock this rule are marked `DO NOT weaken`:
+`TestDeviceHelloPreflightSendsTokenOnlyInHeader`.
+
+A second device-side defect is visible in the same measurement: when the token
+is **invalid**, a header-only or query-only request returns a clean `401`, but a
+duplicated one closes the connection. An expired token therefore surfaces as an
+unexplained transport error instead of an authentication failure.
+
 ## WiFi Setup Contract
 - Devices ship with firmware installed.
 - Fresh or failed WiFi devices start an open `VibeTV-Setup` access point.
