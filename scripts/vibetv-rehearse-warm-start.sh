@@ -96,10 +96,6 @@ rehearsal::step "Installing the public customer Mac App $PUBLIC_TAG"
 PUBLIC_DMG="$(rehearsal::download_release_dmg "$PUBLIC_TAG")"
 rehearsal::install_dmg "$PUBLIC_DMG" baseline
 BASELINE_VERSION="$REHEARSAL_INSTALLED_VERSION"
-# Note: overriding the companion here rehearses a companion-side fix against the
-# public app. It does not survive the Sparkle update, which replaces the whole
-# bundle with the candidate.
-rehearsal::apply_companion_override
 
 # --- 4. publish the candidate behind the installed app ----------------------
 rehearsal::start_artifact_server
@@ -122,6 +118,10 @@ rehearsal::record firmwareManifestUrl "$REHEARSAL_SERVER_URL/firmware-manifest.j
 launchctl setenv "$REHEARSAL_MAC_RELEASE_ENV_VAR" "$REHEARSAL_SERVER_URL/mac-app-release.json"
 rehearsal::info "Mac App release feed -> $REHEARSAL_SERVER_URL/mac-app-release.json"
 rehearsal::record macAppReleaseUrl "$REHEARSAL_SERVER_URL/mac-app-release.json"
+
+# Overriding the companion rehearses a companion-side fix against the public app.
+# It does not survive the Sparkle update, which replaces the whole bundle.
+rehearsal::apply_companion_override
 
 # The runtime reads these overrides from its environment at launch, so it has to
 # come up after they are set.
