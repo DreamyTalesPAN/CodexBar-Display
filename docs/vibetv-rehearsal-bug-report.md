@@ -350,3 +350,81 @@ next run does not chase them:
 BUG-9 and BUG-8 both have a known-good mechanism already in the tree
 (`reactivateCurrentThemeAndWaitForFullRender`, the single `/theme/active` POST);
 neither is reached by the firmware-update path.
+
+---
+
+# Cold-start run on real hardware, 2026-08-07 12:26-12:57
+
+Candidate `9999.0.27` from merge-gate run `31170318522`, built from PR #348 head
+`b6f4d39` and checksum-verified against the signed manifest. Device `14799300`,
+`http://192.168.178.72`. The signed, notarised candidate DMG was installed as a
+customer installs it; no companion override was involved.
+
+## The device state a cold start actually needs
+
+The earlier reading of "cold start" was too narrow: it treated a device that is
+already paired, themed and streaming as a valid starting point because it
+already carried the candidate firmware. It is not. A customer unboxes a VibeTV
+that ships with the release firmware, joins it to home WiFi, and is then parked
+on the `WiFi connected! app.vibetv.shop` screen with nothing on the device.
+
+Reaching that state without touching the saved WiFi credentials:
+
+1. `POST /frame` with `themeSpec:null` and `confirmClearThemeSpec:true` — the
+   only supported way to drop the live ThemeSpec.
+2. `DELETE /assets?path=...` for all eight `/themes/u/` files. The active spec
+   has to go first: the firmware answers `409 asset is active` otherwise.
+3. Power-cycle. Verified reached: `resetReason: External System`,
+   `activeTheme: theme-missing`, `themeSpec.active: false`,
+   `render.lastKind: connected_setup`.
+
+`/theme-active` survives as a pointer to a now-deleted file, which the boot
+cache load simply fails on. The end state is the same as a device that never had
+a spec, so this is a faithful stand-in and not an artefact.
+
+## Proven
+
+| Step | Result |
+|---|---|
+| Mac purged (app, support dir, prefs, caches, LaunchAgents, `~/.codexbar`) | empty: no app, no agent, nothing on 47832 |
+| Signed candidate DMG installed | app and runtime both `9999.0.27`, commit `b6f4d39`, `installationMode: dmg` |
+| Firmware `9999.0.26 -> 9999.0.27` over the customer OTA path | **completed**, no stall |
+| App finds and pairs the device unattended | `connected/paired/ready`, `connectionState: ready` |
+| Display stream | healthy, a frame every ~30 s |
+| Stability | 4.5 minutes of polling, no flap between setup screen and Overview |
+| Updates tab | firmware `status: current`, Mac App `updateAvailable: false` — nothing offered, both read `9999.0.27` |
+
+`theme-missing` right after pairing is **not** a defect. The firmware carries no
+built-in theme — `/hello` advertises no `builtinThemes` and the renderer reports
+`theme-missing` whenever the current frame has no ThemeSpec — and the app answers
+that state with its `Choose your VibeTV theme` step. Installing Claude Creature
+through `POST /v1/themes/install` (the same server path the Install button uses)
+took the device to `activeTheme: claude-creature`, `themeSpec.active: true`,
+`renderOk: true`, `renderFailures: 0`, `render.lastKind: theme_spec_usage`.
+Overview then showed the live preview with `Display: Live`. That is
+`docs/customer-setup.md`'s "Usage appears on the display".
+
+## BUG-11 — the rehearsal companion override never started the runtime — FIXED
+
+`--companion-override` copies the app's bundled runtime agent to
+`~/Library/LaunchAgents` and rewrites `Program`. The bundled plist also carries
+`BundleProgram`, which is only valid for an agent hosted by an app bundle, so
+launchd rejected the whole plist with `Bootstrap failed: 5: Input/output error`.
+The script read that as proof that an ad-hoc signed bundle can never host its
+own LaunchAgent and told the operator to give up.
+
+Dropping `BundleProgram` bootstraps the same agent cleanly; verified on this Mac
+with a locally built companion serving 47832. Fixed in `b6f4d39`; the failure
+path now reports launchd's own message instead of that conclusion.
+
+## Not a product bug — this Mac's state, part two
+
+The 68 stale LaunchServices registrations from the warm-start run were back: 39
+bundles claimed `shop.vibetv.control-center`, 17 of them still on disk (backup
+copies under `~/CodexBackups` and `~/.codex`, three preview builds in
+`/private/tmp`, three in the Trash). `lsregister -u` does not hold, because
+LaunchServices rescans and re-registers; `lsregister -kill` no longer exists on
+macOS 26. What holds is renaming the copies so they are no longer `.app`
+bundles. After that plus `lsregister -u` on the two Trash copies that macOS
+refuses to rename, zero launchable bundles claim the identifier. No flapping was
+observed in this run.
