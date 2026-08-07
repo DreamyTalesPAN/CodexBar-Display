@@ -1275,7 +1275,7 @@ export function themeRenderPackMatchesActiveRevision(
   );
 }
 
-function renderTextPrimitive(primitive: ThemePrimitive, frame: FrameData): string {
+export function renderTextPrimitive(primitive: ThemePrimitive, frame: FrameData): string {
   const binding = primitive.binding || primitive.b;
   if (binding) {
     return boundValue(binding, frame);
