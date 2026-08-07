@@ -398,6 +398,14 @@ main() {
     'public guest states must ask the installed runtime to render to the virtual VibeTV'
   assert_before "$GUEST_TEST" 'validate_installed_runtime "$OUTPUT/candidate-runtime-status.json"' '/v1/device/repair' \
     'public guest states must verify the installed candidate runtime before requesting a render'
+  assert_contains "$GUEST_TEST" 'http://127.0.0.1:47832/v1/updates/install' \
+    'public guest states must drive the firmware update through the installed runtime API, not a direct CLI flash'
+  assert_contains "$GUEST_TEST" '/v1/updates/install/status?jobId=' \
+    'guest test must wait for the runtime firmware update job to finish'
+  assert_before "$GUEST_TEST" '/v1/device/repair' 'api_firmware_update "$OUTPUT/candidate-install-update.json"' \
+    'the runtime must own the paired device before the API firmware update starts'
+  assert_contains "$GUEST_TEST" 'api_firmware_update "$OUTPUT/candidate-already-current.json" already_current' \
+    'public guest states must prove already_current through the runtime API as well'
   assert_contains "$GUEST_TEST" 'listenerOwner' \
     'guest test must bind the live Companion port to the installed runtime service'
   assert_contains "$GUEST_TEST" 'installationMode' \
