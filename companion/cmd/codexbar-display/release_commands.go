@@ -80,7 +80,14 @@ var (
 	firmwareUpdateRuntimeHealthOrigin                  = "http://127.0.0.1:47832"
 	firmwareUpdateRuntimeHealthTimeout                 = time.Second
 	themeRestoreHelloTimeout                           = 60 * time.Second
-	themeRestorePollInterval                           = 2 * time.Second
+)
+
+// An aborted upload does not always reboot the device straight away, so the
+// stored theme can still look active for a while and only go missing on the
+// reboot that follows. These are vars so tests can shrink the watch.
+var (
+	themeRestorePollInterval = 2 * time.Second
+	themeRestoreRebootWatch  = 30 * time.Second
 )
 
 // The Companion API job pauses the display stream itself before spawning the
@@ -1618,7 +1625,13 @@ func restoreStoredThemeAfterAbortedUpload(ctx context.Context, base, token strin
 		return
 	}
 
-	path, active, err := fetchDeviceThemeSpecHealth(ctx, base)
+	// The device may still be on the pre-abort boot here, with the stored theme
+	// looking perfectly active; it only goes missing on the reboot the aborted
+	// upload triggers. Measured on hardware 2026-08-07: a single check right
+	// after the failure sees active=true, returns, and the customer is left on
+	// "theme-missing" for good. So watch until the theme is seen missing, or
+	// until the device has come back from a reboot with the theme intact.
+	path, active, err := watchStoredThemeAfterAbortedUpload(ctx, base)
 	if err != nil {
 		fmt.Printf("warning: could not read VibeTV health after aborted upload: %v\n", err)
 		return
@@ -1636,6 +1649,71 @@ func restoreStoredThemeAfterAbortedUpload(ctx context.Context, base, token strin
 		return
 	}
 	fmt.Printf("warning: stored theme activation did not take effect after aborted upload (path=%s, err=%v)\n", path, err)
+}
+
+// watchStoredThemeAfterAbortedUpload samples device health until the stored
+// theme is seen inactive, until the device has rebooted and still reports it
+// active, or until the watch window expires. It returns the last reading.
+func watchStoredThemeAfterAbortedUpload(ctx context.Context, base string) (string, bool, error) {
+	deadline := time.Now().Add(themeRestoreRebootWatch)
+	firstBootID, _, _, err := fetchDeviceThemeSpecHealthWithBoot(ctx, base)
+	if err != nil {
+		return "", false, err
+	}
+	for {
+		bootID, path, active, err := fetchDeviceThemeSpecHealthWithBoot(ctx, base)
+		if err == nil {
+			if path != "" && !active {
+				return path, active, nil
+			}
+			// A completed reboot that still shows the theme active means the
+			// device survived the abort; there is nothing to restore.
+			if bootID != "" && firstBootID != "" && bootID != firstBootID {
+				return path, active, nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return path, active, err
+		}
+		select {
+		case <-ctx.Done():
+			return path, active, ctx.Err()
+		case <-time.After(themeRestorePollInterval):
+		}
+	}
+}
+
+func fetchDeviceThemeSpecHealthWithBoot(ctx context.Context, base string) (bootID, path string, active bool, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/health", nil)
+	if err != nil {
+		return "", "", false, err
+	}
+	resp, err := releaseHTTPClient.Do(req)
+	if err != nil {
+		return "", "", false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", "", false, fmt.Errorf("GET /health returned %d", resp.StatusCode)
+	}
+	var payload struct {
+		System struct {
+			BootID string `json:"bootId"`
+		} `json:"system"`
+		Display struct {
+			ThemeSpec struct {
+				Active bool   `json:"active"`
+				Path   string `json:"path"`
+			} `json:"themeSpec"`
+		} `json:"display"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&payload); err != nil {
+		return "", "", false, err
+	}
+	return strings.TrimSpace(payload.System.BootID),
+		strings.TrimSpace(payload.Display.ThemeSpec.Path),
+		payload.Display.ThemeSpec.Active,
+		nil
 }
 
 func fetchDeviceThemeSpecHealth(ctx context.Context, base string) (path string, active bool, err error) {

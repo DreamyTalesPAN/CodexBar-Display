@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2209,6 +2211,14 @@ func TestRunInstallUpdateRestoresStoredThemeAfterAbortedUpload(t *testing.T) {
 // aborted upload there is nothing to repair: no /theme/active write may be
 // sent, and the upload error is still returned.
 func TestRunInstallUpdateDoesNotTouchActiveThemeAfterAbortedUpload(t *testing.T) {
+	previousWatch := themeRestoreRebootWatch
+	previousPoll := themeRestorePollInterval
+	t.Cleanup(func() {
+		themeRestoreRebootWatch = previousWatch
+		themeRestorePollInterval = previousPoll
+	})
+	themeRestoreRebootWatch = 200 * time.Millisecond
+	themeRestorePollInterval = 10 * time.Millisecond
 	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn
@@ -2736,4 +2746,73 @@ func pinNoOtherRuntimeWriter(t *testing.T) {
 	previous := firmwareUpdateRuntimeHealthOrigin
 	t.Cleanup(func() { firmwareUpdateRuntimeHealthOrigin = previous })
 	firmwareUpdateRuntimeHealthOrigin = origin
+}
+
+// Hardware, esp8266-smalltv-st7789, 2026-08-07: after a stalled upload the
+// device was left on activeTheme "theme-missing" with themeSpec.path intact and
+// active=false, and the shipped recovery did not restore it -- although one
+// hand-issued header-token POST /theme/active fixed it instantly seconds later.
+// The reason is timing: the stall does not always reboot the device
+// immediately, so a single check right after the failure still sees the theme
+// active, returns, and the theme only goes missing on the reboot that follows.
+// The recovery has to keep watching across that reboot.
+func TestRunInstallUpdateRestoresStoredThemeLostOnTheRebootAfterAnAbortedUpload(t *testing.T) {
+	previousWatch := themeRestoreRebootWatch
+	previousPoll := themeRestorePollInterval
+	t.Cleanup(func() {
+		themeRestoreRebootWatch = previousWatch
+		themeRestorePollInterval = previousPoll
+	})
+	themeRestoreRebootWatch = 2 * time.Second
+	themeRestorePollInterval = 10 * time.Millisecond
+
+	var healthCalls atomic.Int32
+	var activations atomic.Int32
+	var activatedPath atomic.Value
+	activatedPath.Store("")
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-late-reboot","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.39"}`))
+		case "/health":
+			// The first samples still show the pre-reboot device with its theme
+			// active. Only the later boot reports the theme gone.
+			if healthCalls.Add(1) <= 2 && activations.Load() == 0 {
+				_, _ = w.Write([]byte(`{"ok":true,"system":{"bootId":"boot-a","resetCount":381},"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy-3-fe3fd4.json"}}}`))
+				return
+			}
+			if activations.Load() > 0 {
+				_, _ = w.Write([]byte(`{"ok":true,"system":{"bootId":"boot-b","resetCount":382},"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy-3-fe3fd4.json"}}}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"system":{"bootId":"boot-b","resetCount":382},"display":{"activeTheme":"theme-missing","themeSpec":{"active":false,"path":"/themes/u/clippy-3-fe3fd4.json"}}}`))
+		case "/theme/active":
+			if r.URL.RawQuery != "" {
+				t.Errorf("stored-theme activation must not put anything in the query: %q", r.URL.RawQuery)
+			}
+			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+				t.Errorf("stored-theme activation must send the pairing token in the header, got %q", got)
+			}
+			var body struct {
+				Path string `json:"path"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			activatedPath.Store(body.Path)
+			activations.Add(1)
+			_, _ = w.Write([]byte(`{"ok":true,"path":"` + body.Path + `"}`))
+		default:
+			t.Errorf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	restoreStoredThemeAfterAbortedUpload(context.Background(), device.URL, "pair-token")
+
+	if got := activations.Load(); got != 1 {
+		t.Fatalf("expected exactly one stored-theme activation across the reboot, got %d", got)
+	}
+	if got := activatedPath.Load().(string); got != "/themes/u/clippy-3-fe3fd4.json" {
+		t.Fatalf("activated the wrong theme path: %q", got)
+	}
 }
