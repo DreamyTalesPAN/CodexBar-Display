@@ -18,6 +18,7 @@ import (
 )
 
 func TestRunInstallUpdateUsesDedicatedRawOTAAndDoesNotFlashAlreadyCurrentDevice(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousClient, previousPoll, previousPort := releaseHTTPClient, firmwareHTTPVerifyPollInterval, firmwareRawOTAPort
 	t.Cleanup(func() {
 		releaseHTTPClient, firmwareHTTPVerifyPollInterval, firmwareRawOTAPort = previousClient, previousPoll, previousPort
@@ -65,6 +66,7 @@ func TestRunInstallUpdateUsesDedicatedRawOTAAndDoesNotFlashAlreadyCurrentDevice(
 }
 
 func TestRunInstallUpdateAcceptsDroppedRawOTAResponseWithoutSecondFlash(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousClient, previousPoll, previousPort, previousTimeout := releaseHTTPClient, firmwareHTTPVerifyPollInterval, firmwareRawOTAPort, firmwareInterruptedVerifyTimeout
 	t.Cleanup(func() {
 		releaseHTTPClient, firmwareHTTPVerifyPollInterval, firmwareRawOTAPort, firmwareInterruptedVerifyTimeout = previousClient, previousPoll, previousPort, previousTimeout

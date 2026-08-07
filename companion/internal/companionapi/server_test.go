@@ -9155,3 +9155,149 @@ func TestFirmwareLatestRejectsMalformedInstalledVersion(t *testing.T) {
 		t.Fatalf("expected message to name the malformed version, got %q", got.Message)
 	}
 }
+
+// Hardware, esp8266-smalltv-st7789, 2026-08-07: after a successful OTA the
+// device reboots and comes back with the stored theme spec active but parked on
+// the setup screen (lastKind "connected_setup", cbaCompletedFrames 0). The Mac
+// keeps reporting sent usage frames while the customer stares at the setup
+// screen, and render counters never advance on their own. repairDevice already
+// reactivates the stored theme in exactly this state; the update path must do
+// the same instead of finishing with a render attention.
+func TestFirmwareUpdateReactivatesStoredThemeParkedOnSetupScreen(t *testing.T) {
+	const healthBody = `{"ok":true,` +
+		`"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy-3-fe3fd4.json","renderOk":true}},` +
+		`"render":{"fullCount":3,"partialCount":0,"lastKind":"connected_setup"}}`
+	const renderedBody = `{"ok":true,` +
+		`"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy-3-fe3fd4.json","renderOk":true}},` +
+		`"render":{"fullCount":4,"partialCount":0,"lastKind":"theme_spec_usage"}}`
+
+	var activations atomic.Int32
+	var activatedPath atomic.Value
+	activatedPath.Store("")
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-parked","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			if activations.Load() > 0 {
+				_, _ = w.Write([]byte(renderedBody))
+				return
+			}
+			_, _ = w.Write([]byte(healthBody))
+		case "/theme/active":
+			if r.URL.RawQuery != "" {
+				t.Errorf("stored-theme activation must not put anything in the query: %q", r.URL.RawQuery)
+			}
+			var body struct {
+				Path string `json:"path"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			activatedPath.Store(body.Path)
+			activations.Add(1)
+			_, _ = w.Write([]byte(`{"ok":true,"path":"` + body.Path + `"}`))
+		default:
+			t.Errorf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-parked", DeviceToken: "pair-token"})
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","outcome":"updated","firmware":"1.0.40","target":"`+device.URL+`","deviceId":"device-parked","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 300; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if activations.Load() != 1 {
+		t.Fatalf("expected exactly one stored-theme activation, got %d", activations.Load())
+	}
+	if got := activatedPath.Load().(string); got != "/themes/u/clippy-3-fe3fd4.json" {
+		t.Fatalf("activated the wrong theme path: %q", got)
+	}
+	if job.Phase != "complete" || job.Outcome != "updated" {
+		t.Fatalf("a repaired picture must complete the update, got phase=%q outcome=%q message=%q", job.Phase, job.Outcome, job.Message)
+	}
+	if job.Result == nil || !job.Result.RenderVerified {
+		t.Fatalf("expected a verified render after reactivation, got %+v", job.Result)
+	}
+}
+
+// Hardware, 2026-08-07: after a stalled upload the updater's own diagnosis of
+// why the stored theme was not restored existed only on the child process's
+// stdout. noteLine dropped every line customerFirmwareUpdateProgress did not
+// recognise, so nothing reached the job log or any file, and a support report
+// from a real customer could not explain the failure. The curated customer
+// messages must stay curated, but the raw child output has to survive.
+func TestFirmwareUpdateKeepsChildDiagnosticsOnDisk(t *testing.T) {
+	home := t.TempDir()
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-diag","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.39"}`))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-diag", DeviceToken: "pair-token-secret"})
+	server.home = home
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, "warning: could not restore stored theme after aborted upload: timed out\n")
+		_, _ = io.WriteString(out, "ota-upload: timed out waiting for VibeTV to acknowledge firmware data (512 bytes pending)\n")
+		_, _ = io.WriteString(out, "token check used http://device.local/hello?token=pair-token-secret\n")
+		return errors.New("interrupted upload")
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 0; attempt < 300; attempt++ {
+		job, _ := server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase == "error" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	path := runtimepaths.FirmwareUpdateLog(home)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("firmware update diagnostics were not written to %s: %v", path, err)
+	}
+	text := string(raw)
+	for _, want := range []string{
+		"could not restore stored theme after aborted upload",
+		"512 bytes pending",
+		started.Job.ID,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected %q in the diagnostics log, got %q", want, text)
+		}
+	}
+	if strings.Contains(text, "pair-token-secret") {
+		t.Fatalf("diagnostics log leaked the pairing token: %q", text)
+	}
+}

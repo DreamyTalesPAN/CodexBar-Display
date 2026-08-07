@@ -699,6 +699,7 @@ func TestDownloadReleaseFirmwareUsesLatestManifestWhenTargetVersionEmpty(t *test
 }
 
 func TestRunInstallUpdateDownloadsVerifiesAndUploadsOTA(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {
 		releaseHTTPClient = previousHTTPClient
@@ -850,6 +851,7 @@ func TestRunInstallUpdateDoesNotFallBackFromExplicitTarget(t *testing.T) {
 }
 
 func TestRunInstallUpdateAlreadyCurrentSkipsOTAUpload(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn
 	t.Cleanup(func() {
@@ -895,6 +897,7 @@ func TestRunInstallUpdateAlreadyCurrentSkipsOTAUpload(t *testing.T) {
 }
 
 func TestRunInstallUpdateRediscoverAfterFirmwareRebootIPChange(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn
 	previousDiscover := discoverWiFiDeviceFn
@@ -1311,6 +1314,7 @@ func TestFetchDeviceHelloRetryStopsOnAuthError(t *testing.T) {
 }
 
 func TestRunInstallUpdateUsesStoredDeviceTokenForOTA(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {
 		releaseHTTPClient = previousHTTPClient
@@ -1535,6 +1539,7 @@ func TestFirmwareUploadConnectionInterruptedRequiresRecoveryForUnsafeErrors(t *t
 }
 
 func TestRunInstallUpdateRepairsStaleDeviceTokenBeforeOTA(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn
 	t.Cleanup(func() {
@@ -1633,6 +1638,7 @@ func TestRunInstallUpdateRepairsStaleDeviceTokenBeforeOTA(t *testing.T) {
 }
 
 func TestRunInstallUpdateStopsBeforeOTAOnNonAuthPreflightError(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn
 	t.Cleanup(func() {
@@ -1718,6 +1724,7 @@ func TestRunInstallUpdateStopsBeforeOTAOnNonAuthPreflightError(t *testing.T) {
 }
 
 func TestRunInstallUpdatePausesLaunchAgentDuringOTAAndRestarts(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn
 	previousStop := upgradeStopLaunchAgentFn
@@ -1802,6 +1809,7 @@ func TestRunInstallUpdatePausesLaunchAgentDuringOTAAndRestarts(t *testing.T) {
 }
 
 func TestRunInstallUpdateCanSkipLaunchAgentPauseForLocalAPI(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn
 	previousStop := upgradeStopLaunchAgentFn
@@ -2147,6 +2155,7 @@ func withFastInterruptedVerify(t *testing.T) {
 // therefore re-activate the stored spec exactly once via an authenticated
 // header-token-only POST /theme/active, and still return the upload error.
 func TestRunInstallUpdateRestoresStoredThemeAfterAbortedUpload(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn
 	t.Cleanup(func() {
@@ -2200,6 +2209,7 @@ func TestRunInstallUpdateRestoresStoredThemeAfterAbortedUpload(t *testing.T) {
 // aborted upload there is nothing to repair: no /theme/active write may be
 // sent, and the upload error is still returned.
 func TestRunInstallUpdateDoesNotTouchActiveThemeAfterAbortedUpload(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn
 	t.Cleanup(func() {
@@ -2706,4 +2716,24 @@ func TestDeviceHelloPreflightSendsTokenOnlyInHeader(t *testing.T) {
 	if sawQuery {
 		t.Fatal("preflight must not duplicate the token into the query string; the device drops those connections")
 	}
+}
+
+// pinNoOtherRuntimeWriter points the writer-quiesce probe at a closed port so
+// the test never sees whatever runtime happens to run on the machine executing
+// it. Without this, every runInstallUpdate test fails on a developer Mac with
+// VibeTV Control Center installed and passes on CI, which is exactly backwards
+// from where the hardware work happens.
+func pinNoOtherRuntimeWriter(t *testing.T) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve closed port: %v", err)
+	}
+	origin := "http://" + listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatalf("close reserved port: %v", err)
+	}
+	previous := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() { firmwareUpdateRuntimeHealthOrigin = previous })
+	firmwareUpdateRuntimeHealthOrigin = origin
 }

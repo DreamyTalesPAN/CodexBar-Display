@@ -48,35 +48,35 @@ import (
 var embeddedControlCenterStatic embed.FS
 
 const (
-	DefaultAddr                  = "127.0.0.1:47832"
-	appOrigin                    = "https://app.vibetv.shop"
-	defaultDevOrigin             = "http://localhost:3000"
-	previewOriginHostPrefix      = "codex-vibetv-control-center-"
-	previewOriginHostSuffix      = "-paul-anduschus-projects.vercel.app"
-	nativeControlCenterUA        = "VibeTVControlCenter/"
-	deviceConnectionReady        = "ready"
-	deviceConnectionRetrying     = "reconnecting"
-	deviceConnectionSetup        = "setup_required"
-	deviceTimeout                = 15 * time.Second
-	deviceSearchWindow           = 30 * time.Second
-	discoveryProbeTime           = 1500 * time.Millisecond
-	deviceProbeCacheTime         = 750 * time.Millisecond
-	repairDiscoveryAttempts      = 3
-	repairDiscoveryRetryGap      = 1200 * time.Millisecond
-	subnetProbeLimit             = 64
-	maxSubnetDiscoveryPrefix     = 23
-	maxSubnetDiscoveryTargets    = 510
-	themeInstallDisableEnv       = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
-	macAppUpdateDisableEnv       = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
-	displayStreamLegacyLabel     = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
-	displayStreamLabelEnv        = runtimepaths.DisplayStreamLaunchAgentLabelEnv
-	displayStreamOutLogEnv       = runtimepaths.DisplayStreamOutLogEnv
-	displayStreamReadyAge        = 2 * time.Minute
+	DefaultAddr               = "127.0.0.1:47832"
+	appOrigin                 = "https://app.vibetv.shop"
+	defaultDevOrigin          = "http://localhost:3000"
+	previewOriginHostPrefix   = "codex-vibetv-control-center-"
+	previewOriginHostSuffix   = "-paul-anduschus-projects.vercel.app"
+	nativeControlCenterUA     = "VibeTVControlCenter/"
+	deviceConnectionReady     = "ready"
+	deviceConnectionRetrying  = "reconnecting"
+	deviceConnectionSetup     = "setup_required"
+	deviceTimeout             = 15 * time.Second
+	deviceSearchWindow        = 30 * time.Second
+	discoveryProbeTime        = 1500 * time.Millisecond
+	deviceProbeCacheTime      = 750 * time.Millisecond
+	repairDiscoveryAttempts   = 3
+	repairDiscoveryRetryGap   = 1200 * time.Millisecond
+	subnetProbeLimit          = 64
+	maxSubnetDiscoveryPrefix  = 23
+	maxSubnetDiscoveryTargets = 510
+	themeInstallDisableEnv    = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
+	macAppUpdateDisableEnv    = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
+	displayStreamLegacyLabel  = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
+	displayStreamLabelEnv     = runtimepaths.DisplayStreamLaunchAgentLabelEnv
+	displayStreamOutLogEnv    = runtimepaths.DisplayStreamOutLogEnv
+	displayStreamReadyAge     = 2 * time.Minute
 	// deviceConnectedGraceWindow keeps a just-seen device Connected (state
 	// "reconnecting") through transient probe misses: 2.5x the 30s WiFi
 	// interval. Long enough to absorb single misses, short enough that a
 	// powered-off device reads disconnected well under two minutes.
-	deviceConnectedGraceWindow = 75 * time.Second
+	deviceConnectedGraceWindow   = 75 * time.Second
 	displayVerificationAge       = 2 * time.Minute
 	displayStreamWaitTime        = 30 * time.Second
 	displayRenderWaitTime        = 12 * time.Second
@@ -4730,7 +4730,13 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	})
 
 	s.setFirmwareUpdateStage(jobID, "verifying_render")
-	if _, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream); err != nil {
+	// The device reboots into the new firmware parked on the setup screen with
+	// the stored theme spec active but nothing drawn from it, and it does not
+	// leave that screen on its own however many usage frames the Mac sends.
+	// repairDevice already reactivates the stored theme in exactly this state,
+	// so the update does the same rather than handing the customer a working
+	// device with a setup screen on it.
+	if err := s.repairParkedDisplayAfterFirmwareUpdate(ctx, target, token, baseline, stream); err != nil {
 		return firmwareAttentionOutcome("render"), "Firmware is current, but the picture could not be verified.", nil
 	}
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
@@ -4740,6 +4746,32 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 		return "already_current", "", nil
 	}
 	return "updated", "", nil
+}
+
+// repairParkedDisplayAfterFirmwareUpdate verifies the picture after an update
+// and, when the device is parked on a non-live screen with a stored theme,
+// reactivates that theme and waits for a full render. It mirrors what
+// repairDevice does for the manual "Reload image" action.
+func (s *Server) repairParkedDisplayAfterFirmwareUpdate(
+	ctx context.Context,
+	target string,
+	token string,
+	baseline deviceHealth,
+	stream displayStreamInfo,
+) error {
+	if activeThemeNeedsFullRepairRender(baseline) {
+		_, err := s.reactivateCurrentThemeAndWaitForFullRender(ctx, target, token, baseline, stream)
+		return err
+	}
+	health, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream)
+	if err == nil {
+		return nil
+	}
+	if !activeThemeNeedsFullRepairRender(health) {
+		return err
+	}
+	_, err = s.reactivateCurrentThemeAndWaitForFullRender(ctx, target, token, health, stream)
+	return err
 }
 
 func firmwareAttentionOutcome(kind string) string {
@@ -4828,6 +4860,48 @@ type firmwareUpdateProgressWriter struct {
 	pending string
 }
 
+// appendFirmwareUpdateDiagnostic records one raw updater line. The pairing
+// token never reaches the file, and the log is truncated once it grows past its
+// budget so an unattended Mac cannot fill its disk with update attempts.
+func (s *Server) appendFirmwareUpdateDiagnostic(jobID, line string) {
+	path := runtimepaths.FirmwareUpdateLog(s.home)
+	if path == "" {
+		return
+	}
+	if token := strings.TrimSpace(s.currentDeviceToken()); token != "" {
+		for _, secret := range []string{token, url.QueryEscape(token), url.PathEscape(token)} {
+			if secret != "" {
+				line = strings.ReplaceAll(line, secret, "[REDACTED]")
+			}
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return
+	}
+	if info, err := os.Stat(path); err == nil && info.Size() > runtimepaths.FirmwareUpdateLogMaxBytes {
+		_ = os.Truncate(path, 0)
+	}
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	record := fmt.Sprintf("%s %s %s\n",
+		time.Now().UTC().Format(time.RFC3339),
+		jobID,
+		sanitizeLogLine(line),
+	)
+	_, _ = file.WriteString(record)
+}
+
+func (s *Server) currentDeviceToken() string {
+	cfg, err := s.loadConfig(s.home)
+	if err != nil {
+		return ""
+	}
+	return cfg.DeviceToken
+}
+
 func (w *firmwareUpdateProgressWriter) Write(p []byte) (int, error) {
 	text := w.pending + string(p)
 	lines := strings.Split(text, "\n")
@@ -4848,6 +4922,10 @@ func (w *firmwareUpdateProgressWriter) noteLine(line string) {
 	if line == "" || w.server == nil {
 		return
 	}
+	// Everything the child prints is kept here before the customer-facing
+	// curation below throws most of it away, so a failed update can still be
+	// diagnosed afterwards.
+	w.server.appendFirmwareUpdateDiagnostic(w.jobID, line)
 	if strings.HasPrefix(line, firmwareupdate.EventPrefix) {
 		var event firmwareUpdateEvent
 		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, firmwareupdate.EventPrefix)), &event); err == nil {
