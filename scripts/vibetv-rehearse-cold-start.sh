@@ -57,6 +57,7 @@ rehearsal::purge_mac
 # --- 2. install the candidate app -------------------------------------------
 rehearsal::step "Installing candidate Mac App $CANDIDATE_VERSION"
 rehearsal::install_dmg "$CANDIDATE_DMG" candidate
+rehearsal::apply_companion_override
 
 # --- 3. flash the candidate firmware ----------------------------------------
 rehearsal::start_artifact_server
