@@ -1086,6 +1086,13 @@ func TestFetchDeviceHelloHTTPWithTokenSendsQueryFallbackAndRedactsErrors(t *test
 	if strings.Contains(err.Error(), token) || strings.Contains(err.Error(), url.QueryEscape(token)) {
 		t.Fatalf("authenticated hello error leaked pairing token: %v", err)
 	}
+	// The token now travels in the header only, so it can never reach the URL
+	// that transport errors quote. That is a stronger guarantee than redacting
+	// it afterwards -- see docs/hardware-contract.md for why the query carrier
+	// was removed. The redaction wrapper is still covered on its own below.
+	if strings.Contains(err.Error(), "token=") {
+		t.Fatalf("authenticated hello URL must not carry a token at all: %v", err)
+	}
 	if !errors.Is(err, transportErr) {
 		t.Fatalf("expected original transport error to remain unwrap-compatible, got: %v", err)
 	}
@@ -1101,7 +1108,7 @@ func TestFetchDeviceHelloHTTPWithTokenUsesFreshConnection(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		connections <- req.RemoteAddr
 		if req.URL.Path == "/hello" {
-			if got := req.URL.Query().Get("token"); got != "pair-token" {
+			if got := req.Header.Get("X-VibeTV-Token"); got != "pair-token" {
 				http.Error(w, "pairing token required", http.StatusUnauthorized)
 				return
 			}
@@ -1135,6 +1142,30 @@ func TestFetchDeviceHelloHTTPWithTokenUsesFreshConnection(t *testing.T) {
 	}
 	if helloConnection := <-connections; helloConnection == warmConnection {
 		t.Fatalf("authenticated hello reused existing connection %s", helloConnection)
+	}
+}
+
+// Keeps the redaction wrapper itself under test now that the authenticated
+// hello no longer puts the token where it could be quoted back.
+func TestRedactedFirmwareDeviceTokenErrorReplacesToken(t *testing.T) {
+	token := "pair token/with+symbols"
+	wrapped := errors.New("boom")
+	err := &redactedFirmwareDeviceTokenError{
+		err: &url.Error{
+			Op:  "Get",
+			URL: "http://192.0.2.10/hello?token=" + url.QueryEscape(token),
+			Err: wrapped,
+		},
+		token: token,
+	}
+	if strings.Contains(err.Error(), token) || strings.Contains(err.Error(), url.QueryEscape(token)) {
+		t.Fatalf("redaction leaked the pairing token: %v", err)
+	}
+	if !strings.Contains(err.Error(), "[REDACTED]") {
+		t.Fatalf("expected pairing token placeholder, got: %v", err)
+	}
+	if !errors.Is(err, wrapped) {
+		t.Fatalf("redaction broke unwrapping: %v", err)
 	}
 }
 
@@ -2272,4 +2303,37 @@ func gzipString(t *testing.T, text string) string {
 		t.Fatalf("gzip close: %v", err)
 	}
 	return buf.String()
+}
+
+// DO NOT weaken: this locks a device-proven transport rule. Sending the pairing
+// token in the header AND the query string at once makes the real
+// esp8266-smalltv-st7789 close the connection without a response (24/30 requests
+// failed with EOF on firmware 1.0.39; header-only and query-only were 0/30).
+// That is what made every firmware update die in the auth preflight before the
+// upload ever started. See docs/hardware-contract.md.
+func TestDeviceHelloPreflightSendsTokenOnlyInHeader(t *testing.T) {
+	const token = "preflight-token"
+
+	var sawHeader, sawQuery bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			http.NotFound(w, r)
+			return
+		}
+		sawHeader = r.Header.Get("X-VibeTV-Token") == token
+		sawQuery = r.URL.Query().Get("token") != ""
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","deviceId":"14799300","firmware":"1.0.39"}`))
+	}))
+	defer server.Close()
+
+	if _, err := fetchDeviceHelloHTTPWithToken(context.Background(), server.URL, token); err != nil {
+		t.Fatalf("authenticated hello: %v", err)
+	}
+	if !sawHeader {
+		t.Fatal("preflight must send the token in the X-VibeTV-Token header")
+	}
+	if sawQuery {
+		t.Fatal("preflight must not duplicate the token into the query string; the device drops those connections")
+	}
 }
