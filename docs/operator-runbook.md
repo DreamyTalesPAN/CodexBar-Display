@@ -478,13 +478,15 @@ Run this list before every v0 release decision.
 - [ ] GO: all checklist items done, no open P0/P1 blockers.
 - [ ] NO-GO: at least one blocker open (record blocker, owner, next check time).
 
-## RC -> Soak -> Final Flow
+## Candidate -> Canary -> Promotion Flow
 
-1. Cut RC tag (for example `v1.0.0-rc.1`) and publish artifacts.
-2. Run checklist above + soak gate + setup/upgrade/rollback validation.
-3. Soak in realistic operator mode; monitor daemon logs and fix regressions via new RC tags.
-4. Promote to final tag (for example `v1.0.0`) only after soak passes with no blockers.
-5. Keep prior known-good artifact set available for rollback/hotfix RC.
+1. Run the exact-version candidate workflow from the intended `main` SHA.
+2. Run the virtual matrix once, then perform the guided physical canary with
+   the unchanged candidate bundle.
+3. Record both successful evidence runs and promote only through the manual
+   Production-gated publish workflow.
+4. Keep the previous known-good release available. A correction requires a
+   new candidate and version; never replace an immutable tag or release.
 
 ## Quick Troubleshooting
 
@@ -556,12 +558,47 @@ Firmware bench envs:
 - ESP8266: `esp8266_smalltv_st7789_bench`
 - ESP32 fallback: `lilygo_t_display_s3_bench`
 
+## Immutable Candidate Promotion (Issue #353)
+
+The release candidate is the only publishable input. Run `CODEX Test VibeTV
+Release Candidate` from the exact `main` SHA and record its run ID. That run
+builds, signs, notarizes, hashes, and exercises the candidate once; its
+`candidate-manifest.json` binds `sourceSha`, version, candidate run ID, every
+publishable artifact, and every SHA-256. Candidate and virtual-test evidence is
+retained for 7 days, so promotion must use the same run before that retention
+window expires.
+
+Use the unchanged candidate bundle for the guided physical canary. Record its
+device identity, operator, timestamps, required checks, candidate manifest
+SHA-256, and the complete artifact-hash map with
+`CODEX Record VibeTV Hardware Canary`. The recorder only validates and stores
+evidence; it does not flash or otherwise operate hardware automatically.
+Successful evidence is retained for 90 days and must match the candidate
+source SHA, version, run ID, manifest hash, and artifact hashes.
+
+After both gates pass, manually dispatch `CODEX Publish VibeTV Release` from
+the same `main` SHA with `version`, `candidate_run_id`, and
+`hardware_canary_run_id`. The `Production` environment is the explicit release
+approval. Preflight downloads the candidate and evidence, rejects missing or
+mismatched identity, hashes, signing/notarization evidence, tag, or release,
+and copies only `publish=true` candidate files into the internal promotion
+payload. The publish job then rechecks `main`, creates the tag and GitHub
+Release from those copied bytes, and performs no app, Companion, firmware,
+Sparkle, signing, or notarization build.
+
+Post-publish verification downloads every public release asset and compares its
+SHA-256 with the validated candidate payload before running the existing
+release canary. If any gate fails, do not overwrite or rerun the same tag or
+release. Keep the previous known-good release for rollback and create a new
+candidate/version for a correction; an uncertain hardware write remains an
+unknown device state and requires a separate approved recovery decision.
+
 ## Versioning and Release Notes
 
 - Companion and firmware releases use SemVer `1.x`.
 - Release go/no-go for MVP is gated by `esp8266_smalltv_st7789`.
 - `codexbar-display upgrade` enforces companion/firmware compatibility with a version guard.
-- Release firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the release tag version.
+- Candidate firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the candidate version.
 - GitHub release artifacts include companion binaries, firmware binaries, checksums, manifests, and `install-control-center-companion.sh`.
 - The customer Mac App target is a signed/notarized DMG containing `VibeTV Control Center.app`. Keep its hosted download feature flag disabled until the latest release contains the verified DMG asset; the setup prompt remains the support fallback.
 - Current customer releases must not publish Mac App `.pkg` assets.
