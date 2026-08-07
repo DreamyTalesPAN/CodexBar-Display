@@ -597,6 +597,45 @@ try:
 except Exception:
     print("unknown")
 ')"
+  # launchd refuses to load a LaunchAgent out of an ad-hoc signed bundle, so the
+  # app's own runtime agent never starts after an override. Registering an
+  # identical agent from a user-owned path keeps the runtime running.
+  local agent_plist="$REHEARSAL_APP_PATH/Contents/Library/LaunchAgents/${REHEARSAL_BUNDLE_ID}.runtime.plist"
+  if [[ -f "$agent_plist" ]]; then
+    local user_plist="$HOME/Library/LaunchAgents/${REHEARSAL_BUNDLE_ID}.runtime.plist"
+    mkdir -p "$HOME/Library/LaunchAgents"
+    python3 - "$agent_plist" "$user_plist" "$helper" <<'PY'
+import plistlib, sys
+
+source, destination, helper = sys.argv[1:]
+with open(source, "rb") as handle:
+    agent = plistlib.load(handle)
+# The bundled agent relies on the app resolving a bare program name; a
+# standalone agent needs the absolute path.
+agent["Program"] = helper
+arguments = list(agent.get("ProgramArguments") or [])
+if arguments:
+    arguments[0] = helper
+agent["ProgramArguments"] = arguments
+with open(destination, "wb") as handle:
+    plistlib.dump(agent, handle)
+PY
+    launchctl bootout "gui/$(id -u)/${REHEARSAL_BUNDLE_ID}.runtime" >/dev/null 2>&1 || true
+    if launchctl bootstrap "gui/$(id -u)" "$user_plist" >/dev/null 2>&1; then
+      rehearsal::info 'registered the runtime agent from a user-owned path'
+      rehearsal::record runtimeAgentSource "$user_plist"
+    else
+      # Do not fall back to running the runtime detached: it would take port
+      # 47832 and the app itself then refuses to start with "VibeTV couldn't
+      # start". There is no honest way around this -- an ad-hoc re-signed bundle
+      # cannot host its own LaunchAgent.
+      rehearsal::die "launchd rejected the ad-hoc signed runtime agent.
+   --companion-override cannot drive the app-hosted runtime on a notarised
+   baseline app. Use it only for direct CLI flashes, or rehearse with a signed
+   merge-gate candidate instead (no override)."
+    fi
+  fi
+
   rehearsal::info "companion is now $version from commit ${commit:0:12}"
   rehearsal::record companionOverride "$source"
   rehearsal::record companionOverrideCommit "$commit"
@@ -691,7 +730,21 @@ PY
   rehearsal::info "report written to $REHEARSAL_RUN_DIR/report.json"
 }
 
+# Single writer: exactly one app instance and one runtime may ever be live.
+# Never use `open -n` here -- it forces a second instance, and two instances
+# fight over port 47832 and over the device.
 rehearsal::open_app() {
-  open -na "$REHEARSAL_APP_PATH" >/dev/null 2>&1 || true
+  local running
+  running="$(pgrep -f "$REHEARSAL_APP_PATH/Contents/MacOS/VibeTVControlCenter" | wc -l | tr -d ' ')"
+  if [[ "$running" != 0 ]]; then
+    rehearsal::warn "$running VibeTV Control Center instance(s) already running; not starting another"
+    return 0
+  fi
+  open -a "$REHEARSAL_APP_PATH" >/dev/null 2>&1 || true
   sleep 3
+
+  running="$(pgrep -f "$REHEARSAL_APP_PATH/Contents/MacOS/VibeTVControlCenter" | wc -l | tr -d ' ')"
+  rehearsal::record appInstances "$running"
+  [[ "$running" -le 1 ]] \
+    || rehearsal::die "single-writer violation: $running app instances are running"
 }
