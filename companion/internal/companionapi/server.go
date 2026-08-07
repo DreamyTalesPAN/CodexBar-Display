@@ -513,6 +513,10 @@ type firmwareUpdateResult struct {
 	HealthVerified    bool   `json:"healthVerified"`
 	StreamVerified    bool   `json:"streamVerified"`
 	RenderVerified    bool   `json:"renderVerified"`
+	// RenderSkipped names the reason the picture could not be proven because
+	// there is no picture to prove, not because the update went wrong. It stays
+	// empty whenever RenderVerified is true.
+	RenderSkipped string `json:"renderSkipped,omitempty"`
 }
 
 type firmwareUpdateJob struct {
@@ -4722,12 +4726,27 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream could not restart.", nil
 	}
 	stream := s.waitForFreshDisplayStream(ctx, target, streamStartedAt)
-	if !displayStreamHealthyForTarget(&stream, target) {
+	streamHealthy := displayStreamHealthyForTarget(&stream, target)
+	// A stream that restarted, owns this exact VibeTV, and is only held back by
+	// provider setup has nothing left to prove about the firmware update. It
+	// draws no usage picture because no provider is ready, so demanding one here
+	// would report "needs attention" for a Mac that is simply not set up yet.
+	streamAwaitingProvider := !streamHealthy && providerSetupStreamForTarget(&stream, target)
+	if !streamHealthy && !streamAwaitingProvider {
 		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream still needs attention.", nil
 	}
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 		result.StreamVerified = true
 	})
+	if streamAwaitingProvider {
+		s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
+			result.RenderSkipped = "provider_setup_required"
+		})
+		if snapshot.Outcome == "already_current" {
+			return "already_current", "", nil
+		}
+		return "updated", "", nil
+	}
 
 	s.setFirmwareUpdateStage(jobID, "verifying_render")
 	// The device reboots into the new firmware parked on the setup screen with

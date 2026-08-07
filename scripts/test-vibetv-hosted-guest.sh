@@ -34,7 +34,28 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-hosted-guest.XXXXXX")"
 CANDIDATE_MOUNT="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-candidate-mount.XXXXXX")"
 BASELINE_MOUNT="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-baseline-mount.XXXXXX")"
 VIRTUAL_PID="" HTTP_PID=""
+# Everything the runtime knows about why a display stream is or is not healthy
+# lives outside this script, so a failure here used to be undebuggable from the
+# uploaded artifacts alone. Collect it unconditionally, before cleanup deletes
+# the installed app.
+collect_diagnostics() {
+  local dir="$OUTPUT/diagnostics"
+  mkdir -p "$dir" || return 0
+  curl --fail --silent --max-time 10 http://127.0.0.1:47832/v1/status > "$dir/runtime-status.json" 2>/dev/null || true
+  curl --fail --silent --max-time 10 http://127.0.0.1:47832/v1/device > "$dir/device.json" 2>/dev/null || true
+  curl --fail --silent --max-time 10 http://127.0.0.1:47832/v1/diagnostics > "$dir/diagnostics.json" 2>/dev/null || true
+  curl --fail --silent --max-time 10 http://127.0.0.1:47834/__virtual/state > "$dir/virtual-state-final.json" 2>/dev/null || true
+  local support="$HOME/Library/Application Support/codexbar-display"
+  # daemon.out.log is the file the runtime parses to decide stream health, so
+  # it is the only place that explains a stream_attention outcome.
+  for log in daemon.out.log daemon.out.log.1 firmware-update.log; do
+    [[ -f "$support/logs/$log" ]] && tail -c 200000 "$support/logs/$log" > "$dir/$log" 2>/dev/null || true
+  done
+  launchctl print "gui/$(id -u)/shop.vibetv.control-center.runtime" > "$dir/launchctl-runtime.txt" 2>&1 || true
+  launchctl list > "$dir/launchctl-list.txt" 2>&1 || true
+}
 cleanup() {
+  collect_diagnostics || true
   [[ -z "$VIRTUAL_PID" ]] || kill "$VIRTUAL_PID" >/dev/null 2>&1 || true
   [[ -z "$HTTP_PID" ]] || kill "$HTTP_PID" >/dev/null 2>&1 || true
   launchctl unsetenv CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL >/dev/null 2>&1 || true

@@ -8150,6 +8150,68 @@ func TestFirmwareUpdateCurrentFirmwareWithStreamFailureNeedsAttention(t *testing
 	}
 }
 
+// A Mac without a ready AI provider has no usage picture to draw. The restarted
+// stream reports provider_setup_required forever, so demanding a verified render
+// there would report "needs attention" for an update that fully succeeded. This
+// is the exact state of the hosted guest matrix, which configures no provider.
+func TestFirmwareUpdateWithoutProviderCompletesWithoutRenderProof(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-no-provider","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-no-provider", DeviceToken: "pair-token"})
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		// No frame was ever sent, so LastTarget stays empty and the only signal
+		// is the daemon's runtime/no-providers cycle error.
+		return displayStreamInfo{
+			Running:   true,
+			Target:    target,
+			ErrorCode: "provider_setup_required",
+			Detail:    "VibeTV is connected, but no AI provider is ready yet.",
+		}
+	}
+	server.waitRender = func(_ context.Context, _ string, _ string, _ deviceHealth) (deviceHealth, error) {
+		t.Fatal("render proof must not be demanded while no provider can produce usage")
+		return deviceHealth{}, nil
+	}
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","firmware":"1.0.40","target":"`+device.URL+`","deviceId":"device-no-provider","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 100; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Phase != "complete" || job.Outcome != "updated" {
+		t.Fatalf("update without a provider must complete: %+v", job)
+	}
+	if job.Result == nil || !job.Result.StreamVerified {
+		t.Fatalf("restarted provider-setup stream must count as verified: %+v", job.Result)
+	}
+	if job.Result.RenderVerified || job.Result.RenderSkipped != "provider_setup_required" {
+		t.Fatalf("skipped render must be reported honestly, not claimed: %+v", job.Result)
+	}
+}
+
 func TestFirmwareUpdateAsyncReportsCustomerError(t *testing.T) {
 	device := newThemeInstallReadyDeviceServer(t)
 	defer device.Close()
