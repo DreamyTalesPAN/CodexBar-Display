@@ -735,7 +735,7 @@ PY
 # fight over port 47832 and over the device.
 rehearsal::open_app() {
   local running
-  running="$(pgrep -f "$REHEARSAL_APP_PATH/Contents/MacOS/VibeTVControlCenter" | wc -l | tr -d ' ')"
+  running="$({ pgrep -f "$REHEARSAL_APP_PATH/Contents/MacOS/VibeTVControlCenter" || true; } | grep -c . || true)"
   if [[ "$running" != 0 ]]; then
     rehearsal::warn "$running VibeTV Control Center instance(s) already running; not starting another"
     return 0
@@ -743,7 +743,7 @@ rehearsal::open_app() {
   open -a "$REHEARSAL_APP_PATH" >/dev/null 2>&1 || true
   sleep 3
 
-  running="$(pgrep -f "$REHEARSAL_APP_PATH/Contents/MacOS/VibeTVControlCenter" | wc -l | tr -d ' ')"
+  running="$({ pgrep -f "$REHEARSAL_APP_PATH/Contents/MacOS/VibeTVControlCenter" || true; } | grep -c . || true)"
   rehearsal::record appInstances "$running"
   [[ "$running" -le 1 ]] \
     || rehearsal::die "single-writer violation: $running app instances are running"
