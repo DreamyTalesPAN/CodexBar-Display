@@ -79,6 +79,8 @@ var (
 	firmwareInterruptedVerifyTimeout                   = 20 * time.Second
 	firmwareUpdateRuntimeHealthOrigin                  = "http://127.0.0.1:47832"
 	firmwareUpdateRuntimeHealthTimeout                 = time.Second
+	themeRestoreHelloTimeout                           = 60 * time.Second
+	themeRestorePollInterval                           = 2 * time.Second
 )
 
 // The Companion API job pauses the display stream itself before spawning the
@@ -626,6 +628,7 @@ func runInstallUpdate(args []string) (retErr error) {
 
 	fmt.Println("Uploading firmware...")
 	uploadErr := uploadFirmwareOTAFn(ctx, base, imagePath, deviceToken, caps.Firmware)
+	uploadInterrupted := firmwareUploadConnectionInterrupted(uploadErr)
 	uploadErr = recoverInterruptedFirmwareUpload(
 		ctx,
 		base,
@@ -634,6 +637,9 @@ func runInstallUpdate(args []string) (retErr error) {
 		uploadErr,
 	)
 	if uploadErr != nil {
+		if uploadInterrupted {
+			restoreStoredThemeAfterAbortedUpload(ctx, base, deviceToken)
+		}
 		hint := "keep VibeTV powered and on the same WiFi, then retry"
 		if errors.Is(uploadErr, errFirmwareUploadRestartRequired) {
 			hint = "disconnect VibeTV from power for 10 seconds, reconnect it, wait until the picture returns, then retry once"
@@ -1580,6 +1586,116 @@ func recoverInterruptedFirmwareUpload(
 		strings.TrimSpace(hello.DeviceID),
 		uploadErr,
 	)
+}
+
+// restoreStoredThemeAfterAbortedUpload repairs the theme state an aborted OTA
+// upload leaves behind. Measured on esp8266-smalltv-st7789 firmware 1.0.39
+// (2026-08-07): the device reboots after an aborted upload and comes back with
+// the stored theme spec path intact but themeSpec.active=false
+// ("theme-missing"), and does not heal itself (seven-minute isolated
+// observation). The repair is best-effort: one authenticated
+// header-token-only POST /theme/active, no retry, and never a second firmware
+// upload. The caller still returns the original update error.
+func restoreStoredThemeAfterAbortedUpload(ctx context.Context, base, token string) {
+	deadline := time.Now().Add(themeRestoreHelloTimeout)
+	reachable := false
+	for time.Now().Before(deadline) {
+		probeCtx, cancelProbe := context.WithTimeout(ctx, firmwareHTTPVerifyProbeTimeout)
+		_, err := fetchDeviceHelloHTTP(probeCtx, base)
+		cancelProbe()
+		if err == nil {
+			reachable = true
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(themeRestorePollInterval):
+		}
+	}
+	if !reachable {
+		fmt.Printf("warning: could not check stored theme after aborted upload: VibeTV did not return within %s\n", themeRestoreHelloTimeout)
+		return
+	}
+
+	path, active, err := fetchDeviceThemeSpecHealth(ctx, base)
+	if err != nil {
+		fmt.Printf("warning: could not read VibeTV health after aborted upload: %v\n", err)
+		return
+	}
+	if path == "" || active {
+		return
+	}
+	if err := activateStoredThemeHTTP(ctx, base, token, path); err != nil {
+		fmt.Printf("warning: could not restore stored theme after aborted upload: %v\n", err)
+		return
+	}
+	_, active, err = fetchDeviceThemeSpecHealth(ctx, base)
+	if err == nil && active {
+		fmt.Println("restored stored theme after aborted upload")
+		return
+	}
+	fmt.Printf("warning: stored theme activation did not take effect after aborted upload (path=%s, err=%v)\n", path, err)
+}
+
+func fetchDeviceThemeSpecHealth(ctx context.Context, base string) (path string, active bool, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/health", nil)
+	if err != nil {
+		return "", false, err
+	}
+	req.Header.Set("User-Agent", "codexbar-display-update")
+	req.Close = true
+	resp, err := releaseHTTPClient.Do(req)
+	if err != nil {
+		return "", false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", false, fmt.Errorf("GET /health returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var payload struct {
+		Display struct {
+			ThemeSpec struct {
+				Active bool   `json:"active"`
+				Path   string `json:"path"`
+			} `json:"themeSpec"`
+		} `json:"display"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&payload); err != nil {
+		return "", false, err
+	}
+	return strings.TrimSpace(payload.Display.ThemeSpec.Path), payload.Display.ThemeSpec.Active, nil
+}
+
+// activateStoredThemeHTTP sends the token in the header only. Header plus
+// query at the same time makes the device close the connection without a
+// response; see docs/hardware-contract.md.
+func activateStoredThemeHTTP(ctx context.Context, base, token, path string) error {
+	payload, err := json.Marshal(struct {
+		Path string `json:"path"`
+	}{Path: path})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(base, "/")+"/theme/active", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "codexbar-display-update")
+	applyFirmwareUpdateToken(req, token)
+	req.Close = true
+	resp, err := releaseHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("POST /theme/active returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 func firmwareUploadConnectionInterrupted(err error) bool {

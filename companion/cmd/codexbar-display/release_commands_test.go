@@ -2082,6 +2082,158 @@ func TestRunInstallUpdateProceedsWhenRuntimeHealthEndpointIsDead(t *testing.T) {
 	}
 }
 
+// themeRestoreTestDevice is a fake device whose upload was aborted: it stays
+// on the old firmware and reports the stored theme spec path with
+// active=false until POST /theme/active flips it.
+type themeRestoreTestDevice struct {
+	server           *httptest.Server
+	themeActive      bool
+	themeActiveCalls int
+	themeActiveBody  string
+	themeActiveToken string
+	themeActiveQuery string
+}
+
+func newThemeRestoreTestDevice(t *testing.T, initiallyActive bool) *themeRestoreTestDevice {
+	t.Helper()
+	device := &themeRestoreTestDevice{themeActive: initiallyActive}
+	imageBody := "firmware image"
+	device.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-a","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.0","features":["theme"],"maxFrameBytes":1024}`))
+		case "/manifest.json":
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"release":"v1.0.1","artifacts":[{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware.bin","firmwareUrl":"` + device.server.URL + `/firmware.bin","sha256":"` + sha256String(imageBody) + `"}]}`))
+		case "/firmware.bin":
+			_, _ = w.Write([]byte(imageBody))
+		case "/health":
+			active := "false"
+			if device.themeActive {
+				active = "true"
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"theme-missing","themeSpec":{"active":` + active + `,"path":"/themes/u/x.json","hash":null,"renderOk":true,"renderError":null,"renderFailures":0}}}`))
+		case "/theme/active":
+			body, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+			device.themeActiveCalls++
+			device.themeActiveBody = strings.TrimSpace(string(body))
+			device.themeActiveToken = r.Header.Get("X-VibeTV-Token")
+			device.themeActiveQuery = r.URL.RawQuery
+			device.themeActive = true
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(device.server.Close)
+	return device
+}
+
+func withFastInterruptedVerify(t *testing.T) {
+	t.Helper()
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousVerify := firmwareInterruptedVerifyTimeout
+	t.Cleanup(func() {
+		firmwareHTTPVerifyPollInterval = previousPoll
+		firmwareInterruptedVerifyTimeout = previousVerify
+	})
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+	firmwareInterruptedVerifyTimeout = 50 * time.Millisecond
+}
+
+// DO NOT weaken this test. Measured on esp8266-smalltv-st7789 firmware 1.0.39
+// (2026-08-07): an aborted OTA upload reboots the device and leaves the stored
+// theme spec with active=false ("theme-missing") while its path survives; a
+// seven-minute isolated observation showed no self-healing. The updater must
+// therefore re-activate the stored spec exactly once via an authenticated
+// header-token-only POST /theme/active, and still return the upload error.
+func TestRunInstallUpdateRestoresStoredThemeAfterAbortedUpload(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousUpload := uploadFirmwareOTAFn
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		uploadFirmwareOTAFn = previousUpload
+	})
+	withFastInterruptedVerify(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceToken: "pair-token"}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+
+	device := newThemeRestoreTestDevice(t, false)
+	releaseHTTPClient = device.server.Client()
+	uploadFirmwareOTAFn = func(context.Context, string, string, string, string) error {
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, errors.New("broken pipe"))
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.server.URL,
+			"--manifest-url", device.server.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err == nil || !errors.Is(err, errFirmwareUploadRestartRequired) {
+		t.Fatalf("the original upload error must still be returned, got: %v", err)
+	}
+	if device.themeActiveCalls != 1 {
+		t.Fatalf("expected exactly one stored-theme activation, got %d", device.themeActiveCalls)
+	}
+	if device.themeActiveToken != "pair-token" {
+		t.Fatalf("expected header pairing token on /theme/active, got %q", device.themeActiveToken)
+	}
+	if strings.Contains(device.themeActiveQuery, "token") {
+		t.Fatalf("theme activation must not carry the token in the query, got %q", device.themeActiveQuery)
+	}
+	if device.themeActiveBody != `{"path":"/themes/u/x.json"}` {
+		t.Fatalf("unexpected theme activation body %q", device.themeActiveBody)
+	}
+	if !device.themeActive {
+		t.Fatal("expected device to report the stored theme as active again")
+	}
+	if !strings.Contains(output, "restored stored theme after aborted upload") {
+		t.Fatalf("expected restore log line, got:\n%s", output)
+	}
+}
+
+// DO NOT weaken this test. When the stored theme is still active after an
+// aborted upload there is nothing to repair: no /theme/active write may be
+// sent, and the upload error is still returned.
+func TestRunInstallUpdateDoesNotTouchActiveThemeAfterAbortedUpload(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousUpload := uploadFirmwareOTAFn
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		uploadFirmwareOTAFn = previousUpload
+	})
+	withFastInterruptedVerify(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceToken: "pair-token"}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+
+	device := newThemeRestoreTestDevice(t, true)
+	releaseHTTPClient = device.server.Client()
+	uploadFirmwareOTAFn = func(context.Context, string, string, string, string) error {
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, errors.New("broken pipe"))
+	}
+
+	_, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.server.URL,
+			"--manifest-url", device.server.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err == nil || !errors.Is(err, errFirmwareUploadRestartRequired) {
+		t.Fatalf("the original upload error must still be returned, got: %v", err)
+	}
+	if device.themeActiveCalls != 0 {
+		t.Fatalf("an active stored theme must not be re-activated, got %d calls", device.themeActiveCalls)
+	}
+}
+
 func TestRunInstallUpdateRequiresLiveManifestConfirmation(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {
