@@ -525,3 +525,59 @@ while `curl` on the same Mac reached the device, and the bundle's own signed
 companion connected immediately. `--companion-override` therefore has to stay
 inside the bundle, which App Management now blocks for a Sparkle-installed app.
 A companion-side fix is best proven through a signed merge-gate candidate.
+
+---
+
+# BUG-9 fix confirmed on hardware, 2026-08-07 14:10-14:13
+
+Candidate `9999.0.28` from merge-gate run `31174929610`, built from PR #348 head
+`54a3b66` (the pause fix), installed from the signed DMG. Device `14799300`
+brought to `1.0.39`, then updated through `POST /v1/updates/install`.
+
+Same device, same baseline state, same code path as the failing run. Only the
+display-stream pause differs:
+
+| | `firmware-update.log` | Job |
+|---|---|---|
+| `9999.0.27`, no pause | `reactivated from baseline err=reactivate current VibeTV theme: Post ".../theme/active": EOF` | `attention`, `renderVerified: false` |
+| `9999.0.28`, paused | `reactivated from baseline err=<nil>` | `complete`, `outcome: updated`, `renderVerified: true` |
+
+Both runs entered the repair from `specActive=true`,
+`specPath="/themes/u/claude--3-afab9c.json"`, `lastKind="connected_setup"`,
+`counters=true/3/0`, `needsRepair=true`. Afterwards the device reported
+`activeTheme: claude-creature`, `themeSpec.active: true`,
+`render.lastKind: theme_spec_usage`, `cbaCompletedFrames` advancing.
+
+BUG-9 is fixed and proven. The mechanism the previous session identified was
+right; the delivery failed on one missing pause.
+
+## BUG-7 — one stall in seven, and a measurable correlate
+
+Seven RAW OTA uploads in this session, six completed. The stall:
+
+```
+ota-upload: VibeTV must restart before another firmware upload:
+interrupted upload left firmware 1.0.39 installed on device 14799300:
+timed out waiting for VibeTV to acknowledge firmware data (235 bytes pending)
+```
+
+It stopped being acknowledged 81 s in, after roughly 50 s of body writes. The
+device did **not** restart (same `bootId`, uptime kept running) and kept its
+theme, so BUG-8 did not fire this time.
+
+Two things this session can rule out as the cause on this Mac: no second app
+instance (one process, verified) and no other local process holding a connection
+to the device (`lsof -i @192.168.178.72` empty during and after).
+
+What does correlate is free heap on the device:
+
+| Upload | freeHeap before | Fragmentation | Result |
+|---|---|---|---|
+| after ~14 min uptime | 14 616 B | 27 % | **stalled** |
+| after a power cycle | 29 064 B | 4 % | completed |
+
+`docs/firmware-guardrails.md` already says RAM pressure is the first suspect for
+ESP8266 upload failures. Two points are not proof, but they are the first
+measurable correlate this bug has had, and the next run should record
+`/health` `system.freeHeap` and `heapFragmentationPercent` immediately before
+every upload rather than guessing.
