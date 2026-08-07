@@ -78,6 +78,10 @@ rehearsal::confirm 'Proceed?'
 # --- 1. device onto the public customer firmware -----------------------------
 rehearsal::step "Bringing VibeTV to the customer firmware $PUBLIC_FIRMWARE_VERSION"
 rehearsal::capture_device_token
+# The Mac is only purged in step 2, so the installed runtime is still polling the
+# device here and a direct CLI flash refuses to start beside another device
+# writer. Stop it before the baseline flash; purge_mac stops it again anyway.
+rehearsal::stop_runtime
 if [[ "$REHEARSAL_SKIP_FIRMWARE_BASELINE" == 1 ]]; then
   rehearsal::info 'skipping firmware baseline (--skip-firmware-baseline)'
 elif [[ "$DEVICE_FIRMWARE" == "$PUBLIC_FIRMWARE_VERSION" ]]; then

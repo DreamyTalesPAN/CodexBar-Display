@@ -428,3 +428,100 @@ macOS 26. What holds is renaming the copies so they are no longer `.app`
 bundles. After that plus `lsregister -u` on the two Trash copies that macOS
 refuses to rename, zero launchable bundles claim the identifier. No flapping was
 observed in this run.
+
+---
+
+# Warm-start run on real hardware, 2026-08-07 12:58-13:20
+
+Same candidate `9999.0.27` (`b6f4d39`). Device `14799300`. Public baseline
+`v1.0.52` + firmware `1.0.39`, candidate published on loopback.
+
+## Proven
+
+- Firmware downgrade `9999.0.27 -> 1.0.39` completed, no stall.
+- The app discovered, paired and streamed on the public baseline; the device
+  showed the update notice.
+- Sparkle offered `9999.0.27` against installed `1.0.52` and installed it after
+  the operator clicked **Install Update**. Afterwards app and runtime were both
+  `9999.0.27`, `installationMode: dmg`, one instance.
+- `vibetv://check-for-updates` opened exactly one app, the installed one. The
+  second-instance flapping is gone once no launchable backup copy claims
+  `shop.vibetv.control-center`.
+- The candidate fixes `PREVIEW UNAVAILABLE`: the public `1.0.52` showed it with
+  the device connected, `Display: Live` and a healthy stream; the candidate shows
+  the live picture.
+- Firmware upload `1.0.39 -> 9999.0.27` completed, no stall. Four uploads in this
+  session, four completions.
+
+## BUG-9 — root-caused on hardware — FIXED
+
+The update still ended `firmware_current_render_attention`,
+`renderVerified: false`, with the customer parked on the setup screen. The BUG-3
+fix earned its keep: `logs/firmware-update.log` named the cause outright.
+
+```
+render-repair: baseline ok=true specActive=true
+  specPath="/themes/u/claude--1-623de0.json" lastKind="connected_setup"
+  counters=true/3/0 needsRepair=true
+render-repair: reactivated from baseline
+  err=reactivate current VibeTV theme: Post ".../theme/active": EOF
+```
+
+So the predicate was right and the branch was right. The single `/theme/active`
+call failed. `verifyFirmwareUpdateResult` restarts the display stream and waits
+for a fresh frame immediately before calling the repair, and a VibeTV serves one
+connection at a time, so the running stream took the connection and the device
+answered EOF.
+
+`repairDevice` wraps every `reactivateCurrentThemeAndWaitForFullRender` call in
+`pauseStream()`/`resumeStream()`, and the theme install pauses too. The firmware
+update path was the only caller that did not. That is the whole reason
+`POST /v1/device/reload-display` repaired the picture instantly in the previous
+session while the update itself could not: same helper, one missing pause.
+
+Fixed by pausing the stream around both reactivation attempts. The passive
+render wait stays outside the pause because it needs frames to arrive. Locked by
+`TestFirmwareUpdatePausesDisplayStreamWhileReactivatingTheme`, whose fake device
+drops `/theme/active` whenever the stream is running — verified red against the
+old code, green after. **Not yet re-run on hardware.**
+
+## BUG-12 — a stored ThemeSpec outlives the capability that chose it
+
+Firmware `1.0.39` advertises no `supportsUsageSlotsV1` and no
+`supportsUsageWindowsV1`; `9999.0.27` does. The theme install picks the matching
+revision: on `9999.0.27` it installed and activated `claude--3-afab9c.json`
+(usage windows), on `1.0.39` it installed `claude--1-623de0.json`.
+
+Nothing re-selects that revision when device capabilities change. After the
+rehearsal's downgrade the device kept rev 3 active and `1.0.39` rendered the
+theme with empty percentages and an empty reset time -- silently:
+`renderOk: true`, `renderFailures: 0`. Re-installing the same pack on `1.0.39`
+picked rev 1 and the picture came back complete (`Session 27% used`,
+`Weekly 5% used`, `Resets in 1h 56m`).
+
+Not a customer-facing regression: a downgrade is not a customer path, and the
+update direction keeps a rev-1 spec that newer firmware still renders. It does
+break the warm-start rehearsal's own baseline, which is how it was found, and it
+makes the Mac-App-updated / firmware-pending state look broken when it is not.
+
+## BUG-13 — the warm start could not flash its own baseline — FIXED
+
+`vibetv-rehearse-warm-start.sh` flashed the public firmware in step 1 and purged
+the Mac in step 2, so the installed runtime was still polling the device and the
+direct CLI flash refused to start beside another device writer -- correctly, per
+`651b726`. The baseline flash now stops the runtime first.
+
+## Not a product bug — my own damage to this Mac
+
+`cp -f` onto the installed app's companion helper unlinked the file and was then
+denied by macOS App Management, leaving `Contents/Helpers` empty and no runtime
+at all. Restored by writing the candidate's own companion back (SHA-256 verified
+against the signed manifest; `codesign --verify --deep --strict` passes).
+
+Also worth recording for the next override attempt: a companion running from a
+user-owned path outside the app bundle gets no local network access. The runtime
+reported `dial tcp 192.168.178.72:80: connect: no route to host` for every cycle
+while `curl` on the same Mac reached the device, and the bundle's own signed
+companion connected immediately. `--companion-override` therefore has to stay
+inside the bundle, which App Management now blocks for a Sparkle-installed app.
+A companion-side fix is best proven through a signed merge-gate candidate.

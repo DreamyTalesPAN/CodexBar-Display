@@ -9240,6 +9240,92 @@ func TestFirmwareUpdateReactivatesStoredThemeParkedOnSetupScreen(t *testing.T) {
 	}
 }
 
+// Hardware, esp8266-smalltv-st7789, 2026-08-07: the reactivation above ran
+// while the display stream that verifyFirmwareUpdateResult had just restarted
+// was sending frames. A VibeTV serves one connection at a time, so the device
+// answered EOF and the customer stayed on the setup screen. The firmware update
+// log recorded it in one line:
+//
+//	render-repair: reactivated from baseline err=reactivate current VibeTV
+//	theme: Post "http://192.168.178.72/theme/active": EOF
+//
+// repairDevice and the theme install both pause the stream around the same
+// call. This device drops the connection whenever they do not.
+func TestFirmwareUpdatePausesDisplayStreamWhileReactivatingTheme(t *testing.T) {
+	const parkedBody = `{"ok":true,` +
+		`"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy-3-fe3fd4.json","renderOk":true}},` +
+		`"render":{"fullCount":3,"partialCount":0,"lastKind":"connected_setup"}}`
+	const renderedBody = `{"ok":true,` +
+		`"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy-3-fe3fd4.json","renderOk":true}},` +
+		`"render":{"fullCount":4,"partialCount":0,"lastKind":"theme_spec_usage"}}`
+
+	var streamPaused atomic.Bool
+	var activations, refusedWhileStreaming atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-busy","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			if activations.Load() > 0 {
+				_, _ = w.Write([]byte(renderedBody))
+				return
+			}
+			_, _ = w.Write([]byte(parkedBody))
+		case "/theme/active":
+			if !streamPaused.Load() {
+				// The single connection still belongs to the display stream:
+				// drop this one without a response, exactly as the device does.
+				refusedWhileStreaming.Add(1)
+				panic(http.ErrAbortHandler)
+			}
+			activations.Add(1)
+			_, _ = w.Write([]byte(`{"ok":true,"path":"/themes/u/clippy-3-fe3fd4.json"}`))
+		default:
+			t.Errorf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-busy", DeviceToken: "pair-token"})
+	server.pauseDisplayStream = func(paused bool) { streamPaused.Store(paused) }
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","outcome":"updated","firmware":"1.0.40","target":"`+device.URL+`","deviceId":"device-busy","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 300; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if refusedWhileStreaming.Load() != 0 {
+		t.Fatalf("theme reactivation reached the device %d times with the stream still running", refusedWhileStreaming.Load())
+	}
+	if activations.Load() == 0 {
+		t.Fatal("expected the stored theme to be reactivated with the stream paused")
+	}
+	if streamPaused.Load() {
+		t.Fatal("the display stream must be running again once the update finishes")
+	}
+	if job.Phase != "complete" || job.Result == nil || !job.Result.RenderVerified {
+		t.Fatalf("expected a verified render, got phase=%q result=%+v", job.Phase, job.Result)
+	}
+}
+
 // Hardware, 2026-08-07: after a stalled upload the updater's own diagnosis of
 // why the stored theme was not restored existed only on the child process's
 // stdout. noteLine dropped every line customerFirmwareUpdateProgress did not

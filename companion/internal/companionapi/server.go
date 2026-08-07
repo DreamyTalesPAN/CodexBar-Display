@@ -4760,9 +4760,25 @@ func (s *Server) repairParkedDisplayAfterFirmwareUpdate(
 	baseline deviceHealth,
 	stream displayStreamInfo,
 ) error {
+	// The VibeTV serves one connection at a time, so the display stream this
+	// function just restarted takes /theme/active away from the reactivation and
+	// the device answers EOF. repairDevice and the theme install both pause the
+	// stream around the same call for the same reason; measured on hardware,
+	// where the unpaused call failed with
+	// `reactivate current VibeTV theme: Post ".../theme/active": EOF`.
+	// The passive wait below needs the stream running and must stay outside.
+	reactivate := func(from deviceHealth) error {
+		if s.pauseDisplayStream != nil {
+			s.pauseDisplayStream(true)
+			defer s.pauseDisplayStream(false)
+		}
+		_, err := s.reactivateCurrentThemeAndWaitForFullRender(ctx, target, token, from, stream)
+		return err
+	}
+
 	s.appendFirmwareUpdateDiagnostic(jobID, "render-repair: baseline "+describeRepairRenderState(baseline))
 	if activeThemeNeedsFullRepairRender(baseline) {
-		_, err := s.reactivateCurrentThemeAndWaitForFullRender(ctx, target, token, baseline, stream)
+		err := reactivate(baseline)
 		s.appendFirmwareUpdateDiagnostic(jobID, fmt.Sprintf("render-repair: reactivated from baseline err=%v", err))
 		return err
 	}
@@ -4787,8 +4803,7 @@ func (s *Server) repairParkedDisplayAfterFirmwareUpdate(
 	if !storedThemeAvailableForRepair(fresh) {
 		return err
 	}
-	health = fresh
-	_, err = s.reactivateCurrentThemeAndWaitForFullRender(ctx, target, token, health, stream)
+	err = reactivate(fresh)
 	s.appendFirmwareUpdateDiagnostic(jobID, fmt.Sprintf("render-repair: reactivated after verify err=%v", err))
 	return err
 }
