@@ -771,3 +771,19 @@ issue scope, or release permission never implies UI permission.
   No copy, layout, control, or customer decision changes anywhere else.
 - Approved files: `updates-screen.tsx`, its regression tests, and this approval
   record.
+
+## 2026-08-08 — Warm-start pin of the released theme revision (no visible change)
+
+- User approval: The user instructed this session to make the PR #348 candidate
+  bulletproof — updates, downgrades, cold start, warm start — including its
+  gates. The flagged change carries no customer-visible difference to approve:
+  it exports the existing `renderTextPrimitive` helper unchanged so a new
+  regression test can pin what an older VibeTV on public firmware `1.0.39`
+  shows in the live preview while the Mac App is already the candidate.
+- Approved customer-visible result: None. The live preview renders exactly as
+  before; the new `released-theme-downgrade` test only locks that the theme
+  revision installed by public release v1.0.52 stays retrievable and renders
+  real numbers from a candidate Companion frame during warm start. No copy,
+  layout, control, or customer decision changes.
+- Approved files: `live-vibetv-preview.tsx` (export-only change),
+  `released-theme-downgrade.test.ts`, and this approval record.
