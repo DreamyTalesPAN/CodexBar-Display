@@ -6,6 +6,13 @@ handlers.
 
 ## Safety invariants
 
+- The radio must run 802.11g (`docs/hardware-contract.md`, "WiFi PHY mode").
+  Under 802.11n the AP can aggregate frames the ESP8266 silently drops, which
+  stalls the RAW OTA at the TCP level while `/hello` still answers. Devices on
+  firmware `< 1.0.40` still run 11n, so their first update can hit this; a
+  power cycle immediately before the update starts a fresh, unaggregated
+  association. Run `codexbar-display net-probe --target http://<ip>` when an
+  OTA stalls.
 - Firmware `1.0.39` and newer can always establish a new current token through
   an explicit local-WiFi Connect before authenticated OTA.
 - Firmware upload always requires the current pairing token. The firmware does

@@ -1,12 +1,29 @@
 # VibeTV rehearsal — hardware test findings
 
 Testing on real hardware against PR #348 (`codex/auto-theme-updates-ota-fix`).
+Device under test: `14799300`, `esp8266-smalltv-st7789`, `http://192.168.178.72`.
 
-Device under test: `14799300`, `esp8266-smalltv-st7789`, firmware `1.0.39`,
-`http://192.168.178.72`.
+This document is a chronological investigation log. Read the status summary
+below first; the dated sections underneath are the evidence trail, kept as-is
+including hypotheses that were later withdrawn (each is marked where it was
+disproven).
 
-BUG-1 is **root-caused and fixed, proven on hardware**. BUG-7's pacing half is
-committed but explicitly not a fix. Everything else is reported, not fixed.
+## Status summary (current)
+
+| ID | What | Status |
+| --- | --- | --- |
+| BUG-1 | Update dies in auth preflight (token in header **and** query) | **Fixed**, hardware-proven. Header-only rule pinned. |
+| BUG-7 | RAW OTA stalls at TCP level | **Dominant cause found & fixed**: 802.11n A-MSDU black hole; firmware forces 11g, which cleared the frame-selective loss and the impossible asset uploads. A rarer RAW-OTA ack stall still occurs intermittently on 11g with healthy heap (~1 leg in 5–10, likely flash-sector-erase timing); the documented recovery is power-cycle + retry once, and `vibetv-hw-selftest.sh` performs it automatically. See `docs/hardware-contract.md`. |
+| BUG-8 | Aborted upload strips the stored theme | **Fixed & hardware-proven** (2026-08-08): `restoreStoredThemeAfterAbortedUpload` recovers it. |
+| BUG-9 | Successful update leaves the setup screen | **Fixed & hardware-proven**: display-stream pause around theme reactivation. |
+| BUG-12 | Stored ThemeSpec outlives the capability that chose it | Downgrade-only; converges on the next update. Migration to usage-slots verified on hardware. |
+| Asset upload impossible / 1 KB/s brake | Same A-MSDU root cause | **Fixed**: 11g + pace raised to 8 KB/s; 6.3 KB asset uploads in 0.41 s. |
+| Notarization `403 This provider does not exist` | Apple-account side (agreement/key), not our code | **Open**, blocks signed candidate. Secrets unchanged since 2026-07-09. |
+
+New tooling from this investigation: `codexbar-display net-probe` and the
+`/health` `wifi` block for field diagnosis; `scripts/vibetv-hw-selftest.sh` for
+the one-command bench matrix. Regression pins: `check-wifi-phy-policy-tests.sh`,
+`TestAssetUploadPaceStaysInsideFirmwareReadWait`.
 
 ---
 

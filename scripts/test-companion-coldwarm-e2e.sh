@@ -23,8 +23,9 @@ cleanup() {
 trap cleanup EXIT
 
 echo "== build =="
-go build -o "$WORK/codexbar-display" "$ROOT/cmd/codexbar-display"
-go build -o "$WORK/virtual-vibetv" "$ROOT/cmd/virtual-vibetv"
+COMPANION="$(cd "$ROOT/../companion" && pwd)"
+(cd "$COMPANION" && go build -o "$WORK/codexbar-display" ./cmd/codexbar-display)
+(cd "$COMPANION" && go build -o "$WORK/virtual-vibetv" ./cmd/virtual-vibetv)
 
 cat > "$WORK/codexbar-stub" <<'STUB'
 #!/usr/bin/env bash

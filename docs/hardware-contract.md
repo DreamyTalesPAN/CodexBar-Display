@@ -67,6 +67,14 @@ black hole. Support guidance for a stalling first update: power-cycle the
 VibeTV immediately before retrying (a fresh association starts without
 aggregation state).
 
+Forcing 11g removes the A-MSDU black hole, but it is not the only OTA stall
+mechanism. A rarer RAW-OTA acknowledgement stall still occurs intermittently
+even on 11g with healthy heap (roughly one leg in 5–10; the receive window
+closes at a 1024-byte block boundary, most likely while the ESP8266 erases a
+flash sector). This is the case the paced RAW upload and the "restart before
+another firmware upload" recovery below exist for: power-cycle and retry once.
+`scripts/vibetv-hw-selftest.sh` performs that recovery automatically.
+
 ### RAW OTA sender pacing: always paced, and never concurrent
 
 The RAW OTA sender keeps a 10 ms pause between 64-byte chunks for **every**

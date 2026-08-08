@@ -549,6 +549,35 @@ codexbar-display net-probe --target http://<device-ip>
 `channel`, `phyMode`, `sleepMode`). `phyMode` must read `11g`; support
 reports should always quote this block for connectivity complaints.
 
+## Fast Hardware Self-Test (bench device)
+
+One command exercises the firmware + Companion OTA/recovery matrix against a
+connected VibeTV, over WiFi, using a local firmware build as the candidate and
+the current public release as the baseline. No signed DMG or Apple
+notarization is involved, so it runs in minutes whenever a device is on the
+bench. It does not purge the Mac or touch the installed app; it stops the
+streaming runtime only for the duration of each OTA and restarts it at the end.
+
+```bash
+./scripts/vibetv-hw-selftest.sh                  # all phases, 2 cycles
+./scripts/vibetv-hw-selftest.sh --cycles 5
+./scripts/vibetv-hw-selftest.sh --phases link,coldstart
+./scripts/vibetv-hw-selftest.sh --target http://<ip> --port /dev/cu.usbserial-10
+```
+
+Phases: `link` (net-probe large-frame delivery), `update` (OTA public →
+candidate + themed render), `downgrade`, `cycles` (N update/downgrade round
+trips with heap logging), `coldstart` (serial reset → boot markers + link +
+render), `abort` (reset mid-upload → theme recovery + retry). `coldstart` and
+`abort` need the USB serial cable; the rest run over WiFi only. Per-run
+artifacts and logs land in `~/.vibetv-selftest/runs/<timestamp>/`.
+
+This is the firmware/Companion tool. For the full **customer** rehearsal that
+also drives the Mac App update through Sparkle, use
+`scripts/vibetv-rehearse-warm-start.sh` / `vibetv-rehearse-cold-start.sh`;
+those need a signed merge-gate candidate and one manual Sparkle "Install
+Update" click (a native macOS dialog that cannot be scripted headlessly).
+
 ## Error Code Recovery Map
 
 Use this taxonomy for incident triage:
