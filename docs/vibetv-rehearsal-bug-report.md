@@ -581,3 +581,74 @@ ESP8266 upload failures. Two points are not proof, but they are the first
 measurable correlate this bug has had, and the next run should record
 `/health` `system.freeHeap` and `heapFragmentationPercent` immediately before
 every upload rather than guessing.
+
+---
+
+# BUG-7 root-caused and fixed on hardware, 2026-08-08
+
+Device `14799300`, `http://192.168.178.72`, FRITZ!Box 7530 2.4 GHz, RSSI −60…−69.
+
+## The mechanism
+
+The ESP8266 NONOS WiFi stack cannot receive 802.11n A-MSDU aggregates. When
+the AP decides to aggregate — intermittently, for TCP/UDP frames above ~190
+bytes L4 payload — the device drops every affected frame below lwIP, with no
+SDK diagnostic. Small frames and ICMP keep flowing, which is why `/hello`,
+`/health`, tiny theme specs, and pings always worked while asset uploads,
+multi-segment HTTP bodies, and RAW OTA acknowledgements stalled.
+
+Measured from this Mac without root using `TCP_CONNECTION_INFO` on the upload
+socket, UDP probes against a closed port (delivery proven by the ICMP
+unreachable coming back), and ping payload sweeps:
+
+| Probe | 802.11n | 802.11g |
+|---|---|---|
+| UDP 300 B / 1200 B to lwIP | 0/8 delivered | 8/8 |
+| 2 KB HTTP POST, full-speed segments | stalls ~50 % of rounds | 6/6 |
+| ICMP 1400 B | 10/10 (never affected) | 10/10 |
+| 6.3 KB asset upload (`.cba`) | impossible (5 s timeout) | HTTP 200 in 0.41 s |
+
+A/B/A/B toggling the PHY mode at runtime flipped the black hole on and off
+deterministically, twice in each direction. This is the mechanism behind
+BUG-7's stalls, the 2026-08-07 session's ">1460-byte body loss", and the
+1 KB/s asset pacing dead end: slower pacing pushed uploads past the
+firmware's 5 s per-read HTTP wait instead of avoiding the loss.
+
+## The fix
+
+`applyWifiInteropPhyMode()` forces `WIFI_PHY_MODE_11G` at every radio
+bring-up (station connect, SDK-config connect, WiFi recovery retry, setup
+AP). 802.11g has no aggregation. Proven from a persisted-11n field state:
+the fix firmware flips the device to 11g on its own and every probe above
+passes. The Companion's asset pace rises 1 KB/s -> 8 KB/s in the same
+candidate.
+
+Field caveat: devices still on `1.0.39` run 11n until their first successful
+update to a fixed firmware, so that one update can still hit the black hole.
+A power cycle immediately before updating correlates with success (fresh
+association, no aggregation state), matching this report's earlier heap
+observation being a proxy for "recently rebooted".
+
+## Hardware matrix on the fix (local CLI path, `install-update --manifest-url`)
+
+- 7/7 OTA legs `1.0.39 <-> 1.0.40-dev` completed, no stalls, ~2 min each,
+  heap 28–30 KB and fragmentation 1–4 % before every leg.
+- Interrupted-upload exercise: device hard-reset 15 s into the OTA body. The
+  updater classified it, refused a second write in the same boot, and
+  `restoreStoredThemeAfterAbortedUpload` reactivated the stored theme on
+  hardware — **BUG-8's recovery is now device-proven**
+  ("restored stored theme after aborted upload", device back on `1.0.39`
+  with `claude-creature` active). The single retry after the device restart
+  installed cleanly.
+- 2/2 cold starts on the fix build: 6.2 s boot-to-HTTP, theme cache loaded,
+  large-frame RX clean immediately after boot, all assets intact.
+
+## Downgrade observation (BUG-12 sharpened)
+
+A device that took the candidate's rev-3 theme spec and is then downgraded
+boots `1.0.39` with `activeTheme: theme-missing` — the rev-3 spec does not
+load there at boot, it does not render silently-empty as previously
+described. The stored spec file itself survives, and one authenticated
+`POST /theme/active` (or the aborted-upload recovery, which does exactly
+that) brings the picture back. With the candidate Mac App running, the theme
+setup step covers the remaining gap; verify in the signed rehearsal.
