@@ -36,6 +36,37 @@ Companion negotiation:
 - prefers v2 when available.
 - falls back to v1 when negotiation data is missing/legacy.
 
+### WiFi PHY mode: always 802.11g, on every radio bring-up
+
+The ESP8266 NONOS WiFi stack cannot receive 802.11n A-MSDU aggregates. When an
+AP decides to aggregate — measured 2026-08-08 on device `14799300` against a
+FRITZ!Box 7530, intermittently, for TCP/UDP frames above ~190 bytes L4
+payload — the device drops every affected frame below lwIP with no SDK
+diagnostic. Small frames and ICMP keep flowing, so `/hello`, `/health`, and
+sub-segment theme specs keep working while asset uploads, multi-segment HTTP
+bodies, and RAW OTA acknowledgements stall. This was the mechanism behind the
+intermittent OTA stalls (BUG-7) and the "impossible" theme-asset uploads.
+
+Rule: `applyWifiInteropPhyMode()` forces `WIFI_PHY_MODE_11G` immediately
+before **every** `WiFi.begin()` and `WiFi.softAP()` call, and no code path may
+select `WIFI_PHY_MODE_11N` or `WIFI_PHY_MODE_11B`. 802.11g has no frame
+aggregation; its ~20 Mbit/s real-world ceiling is far above anything this
+device transfers. A/B/A/B-proven on hardware: under 11n, UDP probes above
+200 bytes deliver 0/8 and 2 KB HTTP POSTs stall about half the time; under
+11g the same probes pass 8/8 and 6/6, and a 6.3 KB asset upload completes in
+0.41 s at full speed.
+
+Pinned by `scripts/check-wifi-phy-policy-tests.sh`
+(`firmware_esp8266/tests/wifi_phy_policy_test.cpp`), which runs inside
+`scripts/check-esp8266-soak-gate.sh`. The Companion-side pace floor is pinned
+by `TestAssetUploadPaceStaysInsideFirmwareReadWait`.
+
+Field caveat: devices still on firmware `1.0.39` run 11n until their first
+successful update to a fixed firmware, so that one update can still hit the
+black hole. Support guidance for a stalling first update: power-cycle the
+VibeTV immediately before retrying (a fresh association starts without
+aggregation state).
+
 ### RAW OTA sender pacing: always paced, and never concurrent
 
 The RAW OTA sender keeps a 10 ms pause between 64-byte chunks for **every**

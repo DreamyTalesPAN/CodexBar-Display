@@ -733,6 +733,7 @@ void maintainWifiSetupRecovery() {
     case codexbar_display::esp8266::wifi_recovery::Action::Timeout:
       WiFi.disconnect(false);
       WiFi.mode(WIFI_AP_STA);
+      applyWifiInteropPhyMode();
       WiFi.softAP(kSetupApSsid);
       Serial.printf("wifi_setup_retry_failed status=%d next_retry_ms=%lu\n",
                     static_cast<int>(WiFi.status()),
