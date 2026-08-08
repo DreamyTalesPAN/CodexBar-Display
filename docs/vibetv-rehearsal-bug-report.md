@@ -652,3 +652,57 @@ described. The stored spec file itself survives, and one authenticated
 `POST /theme/active` (or the aborted-upload recovery, which does exactly
 that) brings the picture back. With the candidate Mac App running, the theme
 setup step covers the remaining gap; verify in the signed rehearsal.
+
+---
+
+# Warm-start UI verification on real hardware, 2026-08-08 (released stack)
+
+Released Mac App `1.0.52` + firmware `1.0.39`, candidate published on loopback,
+driven through the actual Control Center UI in a browser against the runtime.
+Device `14799300`.
+
+## Proven through real UI clicks
+
+- Pairing: clicked **Connect** on the "Choose a VibeTV" card; the app reached
+  `VibeTV is connected`.
+- Theme install over WiFi (same server action as the Theme Library Install
+  button): `claude-creature` installed in ~30 s, all assets uploaded and
+  verified (`cld-i.cba` 6287 B, `cld-c.cba` 6363 B, spec 1067 B), no stall.
+  This is the upload path that was impossible before the 11g fix.
+- Updates tab offered **both** updates at once, the warm-start state we wanted
+  to see: Mac App `1.0.52 → 9999.0.28` and firmware `1.0.39 → 9999.0.28`.
+
+## Theme migration to usage-slots — works
+
+The customer's real question: an existing VibeTV on `1.0.39` with a theme, does
+updating give them the new usage-slots theme, working? Traced on hardware:
+
+- On `1.0.39` (`supportsUsageSlotsV1: false`) the install picked the **rev-3**
+  usage-slots spec (`claude--3-afab9c.json`) and activated it. The sprite
+  rendered but the usage-slots numbers cannot render on `1.0.39` — this is the
+  documented BUG-12 intermediate state.
+- Firmware update `1.0.39 → 9999.0.28` completed in ~30 s, no stall. The
+  candidate advertises `supportsUsageSlotsV1: true`, and the **same rev-3 spec
+  then renders as a live `theme_spec_frame`** with the sprite animating — no
+  re-install, no manual step. The migration converges purely on the firmware
+  update.
+
+## Blocked in this automation environment (not product faults)
+
+- **Sparkle Mac App update needs a native macOS dialog.** Driving it needs
+  Accessibility/Apple-Events permission, which this session does not have
+  (`Not authorized to send Apple events to System Events`). The UI also gates
+  the firmware Update behind the Mac App update (`macAppMustUpdateFirst`), so
+  the firmware half was driven through the same runtime endpoint the button
+  calls (`POST /v1/updates/install`) rather than the gated button.
+- **No signed candidate carrying the 11g fix exists.** The merge-gate
+  `sign-and-package` job fails at notarization with `403 This provider does not
+  exist`; the only signed candidate on hand (`9999.0.28`, `54a3b66`) predates
+  the fix. A true Sparkle-driven warm start to the fixed candidate, and the
+  hardware canary, are blocked on that.
+- **`PREVIEW UNAVAILABLE` persists** because the app stayed on released
+  `1.0.52`; the candidate app fixes it. The physical VibeTV rendered the theme
+  correctly throughout.
+- This device's radio is now persistently `11g` (`WiFi.setPhyMode` survives in
+  SDK flash), so it can no longer reproduce the field `11n` black hole on
+  `1.0.39` — a fresh/never-fixed unit is needed to re-demonstrate the failure.
