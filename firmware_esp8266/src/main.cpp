@@ -1462,7 +1462,23 @@ void handleHealth() {
   out += String(bootResetCounter);
   out += ",\"resetReason\":";
   out += bootResetReasonJSON;
-  out += "},";
+  out += "},\"wifi\":{\"rssi\":";
+  out += String(WiFi.RSSI());
+  out += ",\"channel\":";
+  out += String(WiFi.channel());
+  out += ",\"phyMode\":\"";
+  switch (WiFi.getPhyMode()) {
+    case WIFI_PHY_MODE_11B: out += "11b"; break;
+    case WIFI_PHY_MODE_11G: out += "11g"; break;
+    default: out += "11n"; break;
+  }
+  out += "\",\"sleepMode\":\"";
+  switch (WiFi.getSleepMode()) {
+    case WIFI_NONE_SLEEP: out += "none"; break;
+    case WIFI_LIGHT_SLEEP: out += "light"; break;
+    default: out += "modem"; break;
+  }
+  out += "\"},";
   const bool filesystemMounted = filesystemInfoJSON(out);
   out += ",\"display\":{\"activeTheme\":\"";
   out += jsonEscape(snapshot.activeTheme);

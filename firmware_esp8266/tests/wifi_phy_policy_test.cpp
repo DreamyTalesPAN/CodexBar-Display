@@ -63,10 +63,19 @@ bool testEveryRadioBringUpAppliesInteropMode(const std::string& source) {
 }
 
 bool testNoOtherPhyModeSneaksIn(const std::string& source) {
-  return expect(
-      source.find("WIFI_PHY_MODE_11N") == std::string::npos &&
-          source.find("WIFI_PHY_MODE_11B") == std::string::npos,
-      "no code path may switch the radio back to 802.11n or 802.11b");
+  // Reading the mode (e.g. /health reporting) is fine; setting anything but
+  // 11g is not.
+  std::size_t pos = source.find("WiFi.setPhyMode(");
+  bool ok = expect(pos != std::string::npos, "setPhyMode call must exist");
+  while (pos != std::string::npos) {
+    const std::string args = source.substr(pos, 64);
+    if (!expect(args.find("WIFI_PHY_MODE_11G") != std::string::npos,
+                "no code path may set a PHY mode other than 802.11g")) {
+      ok = false;
+    }
+    pos = source.find("WiFi.setPhyMode(", pos + 1);
+  }
+  return ok;
 }
 
 }  // namespace

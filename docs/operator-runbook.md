@@ -528,6 +528,27 @@ diagnostic succeeds while the runtime path fails. Trace the first disagreement
 through CodexBar serve, the collector, persisted usage, `/v1/usage`, and the
 last sent frame.
 
+## Network Diagnosis (WiFi-only field devices)
+
+When a device answers `/hello` and `/health` but uploads, theme installs, or
+OTA stall, run the link probe first — it detects the frame-size-selective
+receive failure class (docs/hardware-contract.md, "WiFi PHY mode") in
+seconds, over pure WiFi, against every firmware version:
+
+```bash
+codexbar-display net-probe --target http://<device-ip>
+```
+
+- `LARGE-FRAME BLACK HOLE` verdict: small requests answer while larger bodies
+  vanish. Power-cycle the VibeTV and retry; update to firmware >= 1.0.40,
+  which forces 802.11g and removes the failure class.
+- A clean pass does not rule the failure out for later — it is intermittent
+  by nature (the AP decides when to aggregate).
+
+`GET /health` on firmware >= 1.0.40 carries a `wifi` block (`rssi`,
+`channel`, `phyMode`, `sleepMode`). `phyMode` must read `11g`; support
+reports should always quote this block for connectivity complaints.
+
 ## Error Code Recovery Map
 
 Use this taxonomy for incident triage:
