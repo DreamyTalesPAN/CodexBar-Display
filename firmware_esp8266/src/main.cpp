@@ -199,6 +199,7 @@ WifiCredentials savedWifiCredentials;
 bool savedWifiCredentialsAvailable = false;
 codexbar_display::esp8266::wifi_recovery::State wifiSetupRecoveryState;
 bool rebootPending = false;
+void applyWifiInteropPhyMode();
 unsigned long rebootAtMs = 0;
 unsigned long lastFrameAcceptedAtMs = 0;
 bool pendingHttpRender = false;
@@ -725,6 +726,7 @@ void maintainWifiSetupRecovery() {
   switch (action) {
     case codexbar_display::esp8266::wifi_recovery::Action::StartAttempt:
       WiFi.mode(WIFI_AP_STA);
+      applyWifiInteropPhyMode();
       WiFi.begin(savedWifiCredentials.ssid, savedWifiCredentials.password);
       Serial.printf("wifi_setup_retry_started ssid=%s\n", savedWifiCredentials.ssid);
       break;
@@ -1036,10 +1038,23 @@ uint32_t incrementBootResetCounter() {
   return counter;
 }
 
+// The ESP8266 NONOS WiFi stack cannot receive 802.11n A-MSDU aggregates.
+// APs (hardware-proven: FRITZ!Box 7530) intermittently aggregate TCP/UDP
+// frames above ~200 bytes payload, which the device then drops wholesale:
+// HTTP bodies over one segment, asset uploads, and RAW OTA acks all stall
+// while small frames and ICMP keep working. Forcing 802.11g disables
+// aggregation entirely; verified A/B/A/B on hardware device 14799300.
+void applyWifiInteropPhyMode() {
+  if (!WiFi.setPhyMode(WIFI_PHY_MODE_11G)) {
+    Serial.println("wifi_phy_mode_11g_failed");
+  }
+}
+
 bool connectToSavedWifi(const WifiCredentials& creds) {
   Serial.printf("wifi_connect ssid=%s\n", creds.ssid);
   drawWifiConnectingStatus(creds.ssid);
   WiFi.mode(WIFI_STA);
+  applyWifiInteropPhyMode();
   WiFi.begin(creds.ssid, creds.password);
 
   const unsigned long startedAt = millis();
@@ -1060,6 +1075,7 @@ bool connectToSavedWifi(const WifiCredentials& creds) {
 
 bool connectToSdkWifiConfig() {
   WiFi.mode(WIFI_STA);
+  applyWifiInteropPhyMode();
   const String ssid = WiFi.SSID();
   if (ssid.length() == 0) {
     Serial.println("wifi_sdk_config_missing");
@@ -2602,6 +2618,7 @@ void startSetupAccessPoint() {
   WiFi.setAutoReconnect(false);
   WiFi.disconnect(false);
   WiFi.mode(WIFI_AP_STA);
+  applyWifiInteropPhyMode();
   WiFi.softAP(kSetupApSsid);
   Serial.printf("wifi_setup_ap ssid=VibeTV-Setup ip=%s\n", WiFi.softAPIP().toString().c_str());
   dnsServer.start(kDnsPort, "*", WiFi.softAPIP());
