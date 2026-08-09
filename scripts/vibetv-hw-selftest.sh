@@ -412,13 +412,25 @@ phase_abort() {
   if ((theme_back && retry_ok)); then pass "abort: theme survived the abort and the retry installed"; else fail "abort: theme_back=$theme_back retry_ok=$retry_ok"; fi
 }
 
+# Only these phases write firmware; a selection without them (for example
+# --phases link) is documented non-destructive and must stay that way.
+writing_phase_selected() {
+  local p
+  for p in update downgrade cycles coldstart abort; do
+    has_phase "$p" && return 0
+  done
+  return 1
+}
+
 restore_device() {
   step "restore — device on $CANDIDATE_VERSION, runtime up, verify streamed render"
   if [[ "$(device_fw)" != "$CANDIDATE_VERSION" ]]; then
+    if ((KEEP_FIRMWARE)) || ! writing_phase_selected; then
+      info "leaving firmware at $(device_fw) (read-only phase selection or --keep-firmware)"
     # After a failed hardware write even the cleanup upload needs fresh
     # approval (AGENTS.md); with no earlier failure the restore is part of
     # the phase plan the operator already started.
-    if ((OTA_FAILED)) && ! approve_hardware_retry "A firmware write failed earlier; restoring the candidate needs one more upload."; then
+    elif ((OTA_FAILED)) && ! approve_hardware_retry "A firmware write failed earlier; restoring the candidate needs one more upload."; then
       warn "restore: not approved after a failed write; device stays on $(device_fw)"
     else
       ota manifest-candidate.json "$CANDIDATE_VERSION" || warn "could not put device back on $CANDIDATE_VERSION"
@@ -461,7 +473,6 @@ for p in ${PHASES//,/ }; do
 done
 
 restore_device
-((KEEP_FIRMWARE)) || true
 
 step "summary"
 fails=0
