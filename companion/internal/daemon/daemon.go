@@ -1013,14 +1013,18 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	}
 
 	result.frame = decision.Selected.Frame
-	if result.frame.UsageUnavailable && (state == nil || !state.hasLastGood) {
+	if result.frame.UsageUnavailable && (state == nil || !state.hasLastGood) &&
+		!decision.Selected.RateLimited {
 		// Providers are enumerated but none has ever delivered usage: for the
 		// runtime that is the same customer state as having no providers at
 		// all. Reusing the genuine no-providers failure sends the device the
 		// honest error frame and gives the stream parser its
 		// provider_setup_required classification, instead of the silent
 		// unexplained wait behind the guest-matrix
-		// firmware_current_stream_attention flake.
+		// firmware_current_stream_attention flake. A rate-limited selection is
+		// the one explicit signal of a configured, live provider in a
+		// temporary condition — that state keeps its own unavailable
+		// semantics and simply waits.
 		result.failureKind = runtimeErrorNoProviders
 		result.failureOp = "collect-usage"
 		result.failureErr = codexbar.ErrNoProviders
