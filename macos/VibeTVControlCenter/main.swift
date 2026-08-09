@@ -3696,8 +3696,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         untilInvokingBlock installHandler: @escaping () -> Void
     ) -> Bool {
         Task { @MainActor in
-            if !(await unregisterBundledRuntimeService()) {
-                NSLog("VibeTV Control Center could not stop its runtime before update")
+            // The replaced app must never leave its old runtime alive and
+            // polling the device: that is the stale/duplicate-writer state
+            // the whole update handoff exists to prevent. Retry the shutdown
+            // briefly; without a confirmed stop the install does not run.
+            var stopped = await unregisterBundledRuntimeService()
+            var attempt = 0
+            while !stopped && attempt < 2 {
+                attempt += 1
+                try? await Task<Never, Never>.sleep(for: .seconds(2))
+                stopped = await unregisterBundledRuntimeService()
+            }
+            guard stopped else {
+                NSLog(
+                    "VibeTV Control Center refused to install the update: runtime shutdown failed"
+                )
+                let alert = NSAlert()
+                alert.messageText = "Update paused"
+                alert.informativeText =
+                    "VibeTV Control Center could not stop its background runtime. Quit and reopen the app, then run the update again."
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+                return
             }
             installHandler()
         }

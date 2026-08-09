@@ -56,6 +56,7 @@ PUBLIC_VERSION=""
 PYTHON=""
 CLI=""
 RUNTIME_WAS_RUNNING=0
+OTA_FAILED=0
 
 # ----------------------------------------------------------------- logging
 c_reset=$'\033[0m'; c_bold=$'\033[1m'; c_green=$'\033[32m'; c_red=$'\033[31m'; c_yellow=$'\033[33m'
@@ -156,6 +157,7 @@ approve_hardware_retry() {  # approve_hardware_retry <what happened>
 ota() {  # ota <manifest-file> <expected-version>
   local manifest="$1" want="$2"
   if ota_once "$manifest" "$want" "$RUN_DIR/ota-$want.log"; then return 0; fi
+  OTA_FAILED=1
   if grep -q "restart before another firmware upload\|bytes pending" "$RUN_DIR/ota-$want.log" 2>/dev/null; then
     if [[ -z "$SERIAL_PORT" ]]; then
       warn "OTA stalled and no --port to power-cycle for the runbook retry"
@@ -382,6 +384,7 @@ phase_abort() {
   sleep 12
   serial_reset
   wait $upd 2>/dev/null
+  OTA_FAILED=1
   sleep 8
   local n2=0; while ! health >/dev/null 2>&1 && ((n2<30)); do sleep 2; ((n2++)); done
   local theme_back=0; [[ "$(theme_active)" == "true" ]] && theme_back=1
@@ -399,7 +402,16 @@ phase_abort() {
 
 restore_device() {
   step "restore — device on $CANDIDATE_VERSION, runtime up, verify streamed render"
-  [[ "$(device_fw)" == "$CANDIDATE_VERSION" ]] || ota manifest-candidate.json "$CANDIDATE_VERSION" || warn "could not put device back on $CANDIDATE_VERSION"
+  if [[ "$(device_fw)" != "$CANDIDATE_VERSION" ]]; then
+    # After a failed hardware write even the cleanup upload needs fresh
+    # approval (AGENTS.md); with no earlier failure the restore is part of
+    # the phase plan the operator already started.
+    if ((OTA_FAILED)) && ! approve_hardware_retry "A firmware write failed earlier; restoring the candidate needs one more upload."; then
+      warn "restore: not approved after a failed write; device stays on $(device_fw)"
+    else
+      ota manifest-candidate.json "$CANDIDATE_VERSION" || warn "could not put device back on $CANDIDATE_VERSION"
+    fi
+  fi
   if ((RUNTIME_WAS_RUNNING)); then
     start_runtime
     # With the runtime streaming again, the device must reach a themed usage
