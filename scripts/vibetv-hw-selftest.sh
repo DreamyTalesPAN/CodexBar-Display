@@ -376,8 +376,12 @@ phase_coldstart() {
 phase_abort() {
   step "abort — reset mid-upload, verify recovery"
   [[ -n "$SERIAL_PORT" ]] || { fail "abort: no serial port available"; return; }
-  # make sure we are on public so the abort is an upgrade attempt
-  [[ "$(device_fw)" == "$PUBLIC_VERSION" ]] || ota manifest-public.json "$PUBLIC_VERSION" || true
+  # Make sure we are on public so the abort is an upgrade attempt. A failed
+  # baseline write stops the phase: no further write without fresh approval.
+  if [[ "$(device_fw)" != "$PUBLIC_VERSION" ]] && ! ota manifest-public.json "$PUBLIC_VERSION"; then
+    fail "abort: could not establish the public baseline"
+    return
+  fi
   ( "$CLI" install-update --target "$TARGET" --manifest-url "$SERVER_URL/manifest-candidate.json" --force > "$RUN_DIR/abort-upload.log" 2>&1 ) &
   local upd=$!
   local n=0; while ! grep -q "Uploading firmware" "$RUN_DIR/abort-upload.log" 2>/dev/null && kill -0 $upd 2>/dev/null && ((n<120)); do sleep 1; ((n++)); done
