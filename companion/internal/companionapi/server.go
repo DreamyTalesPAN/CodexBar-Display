@@ -3866,16 +3866,29 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 	// check runs fresh (cache bypassed) and synchronously here, so neither a
 	// UI race nor a stale pre-release cache entry can start the job. Only
 	// customer installs (dmg) are gated; dev and bench builds write devices
-	// deliberately. A hard check failure does not block: without network the
-	// live firmware manifest is unreachable in exactly those environments too.
+	// deliberately. A failed check blocks too: the release feed and the
+	// firmware manifest are different services, so an unknown answer is not
+	// proof the app is current. The explicit env-var opt-out ("disabled")
+	// stays open for local setups.
 	if s.installationMode == "dmg" {
-		if release := s.macAppReleaseInfoCached(r.Context(), false); release.UpdateAvailable {
+		release := s.macAppReleaseInfoCached(r.Context(), false)
+		if release.UpdateAvailable {
 			writeError(
 				w,
 				http.StatusConflict,
 				"mac_app_update_required",
 				"Update the Mac App first.",
 				"Install the Mac App update, then update VibeTV firmware.",
+			)
+			return
+		}
+		if release.Status == "check_failed" {
+			writeError(
+				w,
+				http.StatusBadGateway,
+				"mac_app_release_check_failed",
+				"Could not verify that the Mac App is current.",
+				"Check the internet connection, then retry the update.",
 			)
 			return
 		}

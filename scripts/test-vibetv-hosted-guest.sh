@@ -59,6 +59,7 @@ cleanup() {
   [[ -z "$VIRTUAL_PID" ]] || kill "$VIRTUAL_PID" >/dev/null 2>&1 || true
   [[ -z "$HTTP_PID" ]] || kill "$HTTP_PID" >/dev/null 2>&1 || true
   launchctl unsetenv CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL >/dev/null 2>&1 || true
+  launchctl unsetenv CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL >/dev/null 2>&1 || true
   hdiutil detach "$CANDIDATE_MOUNT" -quiet >/dev/null 2>&1 || true
   hdiutil detach "$BASELINE_MOUNT" -quiet >/dev/null 2>&1 || true
   [[ ! -e "$INSTALL_APP" ]] || rm -rf "$INSTALL_APP" || true
@@ -197,6 +198,12 @@ else
   # environment at spawn, so it must be set before launchd starts any app or
   # runtime process on this guest.
   launchctl setenv CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL "$SERVER_URL/firmware-manifest.json"
+  # The firmware-install gate fails closed when the Mac App release check does
+  # not answer, so the guest must provide a deterministic release feed: the
+  # public GitHub API would rate-limit shared CI runners. The feed announces
+  # exactly the candidate version, proving "app is current" honestly.
+  printf '{"tag_name": "v%s"}\n' "$VERSION" > "$WORK/serve/mac-app-release.json"
+  launchctl setenv CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL "$SERVER_URL/mac-app-release.json"
   open -na "$INSTALL_APP"
   sleep 2
   BASELINE_PID="$(pgrep -f "$INSTALL_APP/Contents/MacOS/VibeTVControlCenter" | head -n1)"

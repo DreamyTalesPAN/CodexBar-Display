@@ -8196,16 +8196,15 @@ func TestFirmwareUpdateInstallGateBypassesStaleReleaseCache(t *testing.T) {
 	}
 }
 
-// A failed release check must not block the update: without network the live
-// firmware manifest is unreachable in exactly those environments too, and the
-// bench workflows run without a reachable release feed.
-func TestFirmwareUpdateInstallProceedsWhenMacAppReleaseCheckFails(t *testing.T) {
+// DO NOT weaken this test. An unknown release answer is not proof the Mac App
+// is current: the release feed and the firmware manifest are different
+// services, so the firmware can be reachable while the release check is down
+// or rate-limited. Customer installs fail closed.
+func TestFirmwareUpdateInstallRefusesWhenMacAppReleaseCheckFails(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
 			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-offline","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
-		case "/health":
-			_, _ = w.Write([]byte(`{"ok":true}`))
 		default:
 			_, _ = w.Write([]byte(`{"ok":true}`))
 		}
@@ -8216,6 +8215,44 @@ func TestFirmwareUpdateInstallProceedsWhenMacAppReleaseCheckFails(t *testing.T) 
 	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
 		return githubRelease{}, errors.New("release feed unreachable")
 	}
+	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
+		t.Fatal("firmware update must not start on an unknown release answer")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	req.Header.Set("User-Agent", nativeControlCenterUA+"/9999.0.32")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 while the release check fails, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "mac_app_release_check_failed") {
+		t.Fatalf("expected mac_app_release_check_failed, got: %s", rec.Body.String())
+	}
+}
+
+// The env-var opt-out ("disabled") is the deliberate local escape for bench
+// and dev setups without a reachable release feed; it must keep working.
+func TestFirmwareUpdateInstallProceedsWhenReleaseCheckExplicitlyDisabled(t *testing.T) {
+	t.Setenv("CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL", "off")
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-optout","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-optout", DeviceToken: "pair-token"})
+	server.installationMode = "dmg"
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		t.Fatal("disabled check must not contact the release feed")
+		return githubRelease{}, nil
+	}
 	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
 		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
 	}
@@ -8223,7 +8260,7 @@ func TestFirmwareUpdateInstallProceedsWhenMacAppReleaseCheckFails(t *testing.T) 
 		return deviceHealth{OK: true}, nil
 	}
 	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
-		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","firmware":"1.0.40","target":"`+device.URL+`","deviceId":"device-offline","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","firmware":"1.0.40","target":"`+device.URL+`","deviceId":"device-optout","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
 		return nil
 	}
 
@@ -8232,7 +8269,7 @@ func TestFirmwareUpdateInstallProceedsWhenMacAppReleaseCheckFails(t *testing.T) 
 	req.Header.Set("User-Agent", nativeControlCenterUA+"/9999.0.32")
 	server.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected the update to start despite the failed release check, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("expected the update to start with the check disabled, got %d: %s", rec.Code, rec.Body.String())
 	}
 	var started firmwareUpdateJobResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
