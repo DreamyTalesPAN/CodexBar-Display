@@ -1172,6 +1172,17 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 	if !result.usageFresh && result.failureErr == nil {
 		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
+		if state != nil && !state.hasLastGood && frame.UsageUnavailable {
+			// No provider has delivered usage since the runtime started: that
+			// is the provider-setup state, not a transient staleness wait.
+			// Logging it in the cycle-error shape with runtime/no-providers
+			// lets the display-stream parser report provider_setup_required,
+			// so Control Center and the firmware-update verification see the
+			// honest state instead of an unexplained silent wait (the
+			// guest-matrix firmware_current_stream_attention flake).
+			deps.logf("cycle error: code=runtime/no-providers op=collect-usage recovery=\"Open provider setup and connect an AI provider.\" err=no provider has delivered usage since the runtime started\n")
+			return nil
+		}
 		if !frame.UsageUnavailable || !expiredLastGood {
 			deps.logf("runtime event=usage-waiting port=%s provider=%s reason=usage-not-fresh\n", publicPort, frame.Provider)
 			return nil

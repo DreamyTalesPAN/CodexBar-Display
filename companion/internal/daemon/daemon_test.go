@@ -137,8 +137,12 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	if len(sentLines) != 0 {
 		t.Fatalf("expected no incomplete frame before first usage, got %d", len(sentLines))
 	}
-	if !strings.Contains(logged.String(), "event=usage-waiting") {
-		t.Fatalf("expected an explicit usage-waiting log, got %q", logged.String())
+	// Before the first usage ever arrives, the wait is the provider-setup
+	// state and must be logged in the classified cycle-error shape so the
+	// display-stream parser reports provider_setup_required instead of an
+	// unexplained silent wait.
+	if !strings.Contains(logged.String(), "runtime/no-providers") {
+		t.Fatalf("expected the never-had-usage wait to classify as runtime/no-providers, got %q", logged.String())
 	}
 
 	providers = []codexbar.ParsedFrame{testParsedFrame("claude", 0, 11, 3600)}
