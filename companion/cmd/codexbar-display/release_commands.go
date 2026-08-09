@@ -125,7 +125,22 @@ func otherRuntimeWriterAlive() bool {
 		if err != nil {
 			continue
 		}
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		_ = resp.Body.Close()
+		if readErr != nil {
+			return true
+		}
+		// The gate cares about device writers, not runtimes. A standalone
+		// `codexbar-display api` server answers runtime-health without owning
+		// a display stream and declares displayWriter=false; only an explicit
+		// false is a non-writer — anything unparseable or older stays a
+		// writer, conservatively.
+		var health struct {
+			DisplayWriter *bool `json:"displayWriter"`
+		}
+		if json.Unmarshal(body, &health) == nil && health.DisplayWriter != nil && !*health.DisplayWriter {
+			continue
+		}
 		return true
 	}
 	return false

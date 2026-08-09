@@ -1973,6 +1973,84 @@ func TestRunInstallUpdateAbortsBeforeAnyDeviceRequestWhenAnotherRuntimeIsAlive(t
 	}
 }
 
+// DO NOT weaken this test. The quiesce gate cares about device writers, not
+// runtimes: a standalone `codexbar-display api` parent answers runtime-health
+// with displayWriter=false and must not block its own child updater, while a
+// writer-owning runtime (displayWriter=true or an older response without the
+// field) keeps blocking.
+func TestRunInstallUpdateIgnoresNonWriterRuntimeHealthResponder(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousOrigin := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareUpdateRuntimeHealthOrigin = previousOrigin
+	})
+	t.Setenv("HOME", t.TempDir())
+
+	nonWriter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/runtime-health" {
+			_, _ = w.Write([]byte(`{"ok":true,"displayWriter":false}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer nonWriter.Close()
+	firmwareUpdateRuntimeHealthOrigin = nonWriter.URL
+
+	deviceRequests := 0
+	device := quiesceTestDeviceServer(t, &deviceRequests)
+	releaseHTTPClient = device.Client()
+
+	_, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.URL,
+			"--manifest-url", device.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err != nil {
+		t.Fatalf("a declared non-writer must not block the update, got: %v", err)
+	}
+	if deviceRequests == 0 {
+		t.Fatal("expected the update to reach the device")
+	}
+}
+
+// An older runtime that omits the displayWriter field must stay a writer.
+func TestRunInstallUpdateTreatsLegacyRuntimeHealthAsWriter(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousOrigin := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareUpdateRuntimeHealthOrigin = previousOrigin
+	})
+	t.Setenv("HOME", t.TempDir())
+
+	legacy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer legacy.Close()
+	firmwareUpdateRuntimeHealthOrigin = legacy.URL
+
+	deviceRequests := 0
+	device := quiesceTestDeviceServer(t, &deviceRequests)
+	releaseHTTPClient = device.Client()
+
+	_, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.URL,
+			"--manifest-url", device.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err == nil || !strings.Contains(err.Error(), "another VibeTV runtime is running") {
+		t.Fatalf("a legacy runtime-health response must stay a writer, got: %v", err)
+	}
+	if deviceRequests != 0 {
+		t.Fatalf("abort must happen before any device request, got %d", deviceRequests)
+	}
+}
+
 // DO NOT weaken this test. The native app starts the daemon with
 // --api-fallback: when the default port is occupied the daemon serves from a
 // fallback port and publishes it in runtime-endpoint.json. The quiesce gate

@@ -1394,14 +1394,20 @@ func (s *Server) handleRuntimeHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
-		OK        bool `json:"ok"`
-		Companion struct {
+		OK bool `json:"ok"`
+		// The writer-quiesce gate cares about device writers, not runtimes: a
+		// standalone `codexbar-display api` server answers here without
+		// owning a display stream, and its own child updater must not
+		// mistake it for one. Absent field (older runtimes) means writer.
+		DisplayWriter bool `json:"displayWriter"`
+		Companion     struct {
 			Version string               `json:"version"`
 			App     companionAppInfo     `json:"app"`
 			Runtime companionRuntimeInfo `json:"runtime"`
 		} `json:"companion"`
 	}{
-		OK: true,
+		OK:            true,
+		DisplayWriter: s.pauseDisplayStream != nil,
 		Companion: struct {
 			Version string               `json:"version"`
 			App     companionAppInfo     `json:"app"`
