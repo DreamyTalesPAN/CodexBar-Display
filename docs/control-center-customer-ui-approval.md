@@ -787,3 +787,28 @@ issue scope, or release permission never implies UI permission.
   layout, control, or customer decision changes.
 - Approved files: `live-vibetv-preview.tsx` (export-only change),
   `released-theme-downgrade.test.ts`, and this approval record.
+
+## 2026-08-09 — Mac-App-first gate closes the firmware-ahead mixed state
+
+- User approval: During the warm-start rehearsal the user hit the mixed state
+  on real hardware (candidate firmware, released app): the device rendered
+  only unslotted theme elements, the app preview was unavailable, and the
+  Updates card claimed "Available 1.0.52" although the runtime knew the
+  candidate update. The user rejected a firmware-side legacy fallback and
+  instructed: the state must never be enterable, and if it exists the Mac App
+  must update immediately — "es muss bulletproof sein, dass dieser zustand
+  niemals eintritt, und falls doch, dass dann entsprechend sofort geupdated
+  wird. fix das!".
+- Approved customer-visible result: While the Mac App release check is still
+  unresolved and a VibeTV update is offered, the VibeTV card shows the new
+  notice "Checking Mac App — Waiting for the Mac App update check. The VibeTV
+  update unlocks when it finishes." and the primary action stays a disabled
+  "Checking updates" button. In the installed native app the Mac App card
+  announces the update the runtime's own release check reports even when the
+  hosted browser check still claims up to date, and a pending Mac App update
+  opens the native Sparkle dialog automatically once per offered version.
+  Outside the native app an update without a verified DMG stays unannounced,
+  exactly as before. A firmware install attempted through any other path is
+  refused with "Update the Mac App first." and the existing error surface.
+- Approved files: `updates-screen.tsx`, `updates-screen.test.tsx`,
+  `control-center-app.tsx`, and this approval record.

@@ -8152,6 +8152,50 @@ func TestFirmwareUpdateInstallRefusesWhileMacAppUpdateAvailableOnDmg(t *testing.
 	}
 }
 
+// DO NOT weaken this test. A cached "no update" release answer from just
+// before a release publishes must not let the older app push the newer
+// firmware: the install-time gate has to bypass the release cache and
+// contact the feed.
+func TestFirmwareUpdateInstallGateBypassesStaleReleaseCache(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-cached","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.39"}`))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-cached", DeviceToken: "pair-token"})
+	server.installationMode = "dmg"
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		return githubRelease{TagName: "v0.0.1"}, nil
+	}
+	// Prime the cache with the pre-release "no update" answer.
+	if primed := server.macAppReleaseInfo(context.Background()); primed.UpdateAvailable {
+		t.Fatalf("priming check must not report an update, got %+v", primed)
+	}
+	// The release publishes inside the cache window.
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		return githubRelease{TagName: "v9999999.0.0"}, nil
+	}
+	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
+		t.Fatal("firmware update must not start on a stale cached release answer")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	req.Header.Set("User-Agent", nativeControlCenterUA+"/9999.0.32")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 from the fresh release check, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "mac_app_update_required") {
+		t.Fatalf("expected mac_app_update_required, got: %s", rec.Body.String())
+	}
+}
+
 // A failed release check must not block the update: without network the live
 // firmware manifest is unreachable in exactly those environments too, and the
 // bench workflows run without a reachable release feed.

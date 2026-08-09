@@ -2130,6 +2130,15 @@ func (s *Server) companionInfo(ctx context.Context) companion {
 }
 
 func (s *Server) macAppReleaseInfo(ctx context.Context) companionReleaseInfo {
+	return s.macAppReleaseInfoCached(ctx, true)
+}
+
+// macAppReleaseInfoCached with useCache=false always contacts the release
+// feed. The firmware-install gate needs that: a cached "no update" answer
+// from just before a release publishes would otherwise let the older app
+// push the newer firmware — the exact mixed state the gate exists to
+// prevent.
+func (s *Server) macAppReleaseInfoCached(ctx context.Context, useCache bool) companionReleaseInfo {
 	app := currentCompanionAppInfo(s.installationMode)
 	installedVersion := normalizeMacAppReleaseVersion(app.Version)
 	if installedVersion == "" {
@@ -2137,16 +2146,18 @@ func (s *Server) macAppReleaseInfo(ctx context.Context) companionReleaseInfo {
 	}
 	now := time.Now().UTC()
 
-	s.macAppReleaseMu.Lock()
-	if s.macAppReleaseChecked &&
-		s.macAppReleaseCache.InstalledVersion == installedVersion &&
-		now.Sub(s.macAppReleaseCheckedAt) >= 0 &&
-		now.Sub(s.macAppReleaseCheckedAt) < macAppReleaseCheckGap {
-		cached := s.macAppReleaseCache
+	if useCache {
+		s.macAppReleaseMu.Lock()
+		if s.macAppReleaseChecked &&
+			s.macAppReleaseCache.InstalledVersion == installedVersion &&
+			now.Sub(s.macAppReleaseCheckedAt) >= 0 &&
+			now.Sub(s.macAppReleaseCheckedAt) < macAppReleaseCheckGap {
+			cached := s.macAppReleaseCache
+			s.macAppReleaseMu.Unlock()
+			return cached
+		}
 		s.macAppReleaseMu.Unlock()
-		return cached
 	}
-	s.macAppReleaseMu.Unlock()
 
 	checkedAt := now.Format(time.RFC3339)
 	info := companionReleaseInfo{
@@ -3852,13 +3863,13 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 	// The firmware a release ships pairs with that release's Mac App. An older
 	// app must never push newer firmware onto the device: the mixed state
 	// renders degraded and the old app cannot even preview it. The release
-	// check is synchronous here so a UI race (install clicked before the
-	// check resolved) cannot start the job. Only customer installs (dmg) are
-	// gated; dev and bench builds write devices deliberately. A hard check
-	// failure does not block: without network the live firmware manifest is
-	// unreachable in exactly those environments too.
+	// check runs fresh (cache bypassed) and synchronously here, so neither a
+	// UI race nor a stale pre-release cache entry can start the job. Only
+	// customer installs (dmg) are gated; dev and bench builds write devices
+	// deliberately. A hard check failure does not block: without network the
+	// live firmware manifest is unreachable in exactly those environments too.
 	if s.installationMode == "dmg" {
-		if release := s.macAppReleaseInfo(r.Context()); release.UpdateAvailable {
+		if release := s.macAppReleaseInfoCached(r.Context(), false); release.UpdateAvailable {
 			writeError(
 				w,
 				http.StatusConflict,
