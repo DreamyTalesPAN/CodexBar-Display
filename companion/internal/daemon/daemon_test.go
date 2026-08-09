@@ -131,28 +131,29 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 		},
 	}
 
-	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
-		t.Fatalf("expected unavailable cold-start usage to keep waiting, got %v", err)
+	// Before the first usage ever arrives, providers-without-usage is the
+	// provider-setup state: the cycle must fail as runtime/no-providers so the
+	// device receives the honest error frame and the display-stream parser
+	// reports provider_setup_required instead of an unexplained silent wait.
+	err := runCycleWithDeps(context.Background(), "", state, deps)
+	if err == nil || !strings.Contains(err.Error(), "no-providers") {
+		t.Fatalf("expected the never-had-usage cycle to fail as no-providers, got %v", err)
 	}
-	if len(sentLines) != 0 {
-		t.Fatalf("expected no incomplete frame before first usage, got %d", len(sentLines))
+	if len(sentLines) != 1 {
+		t.Fatalf("expected the honest error frame before first usage, got %d frames", len(sentLines))
 	}
-	// Before the first usage ever arrives, the wait is the provider-setup
-	// state and must be logged in the classified cycle-error shape so the
-	// display-stream parser reports provider_setup_required instead of an
-	// unexplained silent wait.
-	if !strings.Contains(logged.String(), "runtime/no-providers") {
-		t.Fatalf("expected the never-had-usage wait to classify as runtime/no-providers, got %q", logged.String())
+	if errorFrame := decodeFrameLine(t, sentLines[0]); errorFrame.Error == "" {
+		t.Fatalf("expected an error frame before first usage, got %+v", errorFrame)
 	}
 
 	providers = []codexbar.ParsedFrame{testParsedFrame("claude", 0, 11, 3600)}
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected first available usage frame to send, got %v", err)
 	}
-	if len(sentLines) != 1 {
-		t.Fatalf("expected exactly one complete frame, got %d", len(sentLines))
+	if len(sentLines) != 2 {
+		t.Fatalf("expected the complete frame after the error frame, got %d", len(sentLines))
 	}
-	frame := decodeFrameLine(t, sentLines[0])
+	frame := decodeFrameLine(t, sentLines[1])
 	if frame.Provider != "claude" || frame.Weekly != 11 || frame.UsageUnavailable {
 		t.Fatalf("expected complete Claude usage frame, got %+v", frame)
 	}
@@ -161,8 +162,8 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected later unavailable usage to keep the valid frame, got %v", err)
 	}
-	if len(sentLines) != 1 {
-		t.Fatalf("expected unavailable usage to preserve the one valid frame, got %d sends", len(sentLines))
+	if len(sentLines) != 2 {
+		t.Fatalf("expected unavailable usage to preserve the valid frame, got %d sends", len(sentLines))
 	}
 
 	now = now.Add(providerSnapshotMaxAge() + time.Second)
@@ -170,10 +171,10 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected expired usage to send unavailable state, got %v", err)
 	}
-	if len(sentLines) != 2 {
+	if len(sentLines) != 3 {
 		t.Fatalf("expected unavailable state after last-good expiry, got %d sends", len(sentLines))
 	}
-	frame = decodeFrameLine(t, sentLines[1])
+	frame = decodeFrameLine(t, sentLines[2])
 	if frame.Provider != "claude" || !frame.UsageUnavailable || frame.Session != 0 || frame.Weekly != 0 || frame.UsageMode != "remaining" {
 		t.Fatalf("expected expired Claude usage to become unavailable, got %+v", frame)
 	}
