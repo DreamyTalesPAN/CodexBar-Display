@@ -26,7 +26,9 @@
 #              Streamed pixel render is checked by the restore phase.
 #   abort      reset mid-upload; assert the updater recovers the stored theme
 #              and a retry then installs. On the intermittent RAW-OTA ack stall
-#              every OTA does the runbook power-cycle+retry-once automatically.
+#              the runbook power-cycle+retry-once runs only after the operator
+#              approves it on the terminal (no unattended retry of a failed
+#              hardware write).
 #
 # Requirements: pio, go, curl, jq, and a USB serial cable for coldstart/abort.
 set -uo pipefail
@@ -134,32 +136,36 @@ PY
 
 ota_once() {  # ota_once <manifest-file> <expected-version> <logfile>
   local manifest="$1" want="$2" log="$3"
-  local extra=()
-  # The harness is the sole device writer here (it stopped the app+agent). If a
-  # stray responder still answers 47832, tell the guard we own the device.
-  runtime_alive && extra+=(--i-stopped-all-writers)
   "$CLI" install-update --target "$TARGET" \
-    --manifest-url "$SERVER_URL/$manifest" --force "${extra[@]+"${extra[@]}"}" \
+    --manifest-url "$SERVER_URL/$manifest" --force \
     > "$log" 2>&1
   local rc=$?
   ((rc == 0)) && wait_for_fw "$want"
 }
 
-# ota drives one OTA and, on the intermittent RAW-OTA ack stall (the documented
-# "restart before another firmware upload" case), performs exactly the runbook
-# recovery: power-cycle the device (serial reset) and retry once. Without a
-# serial port it cannot recover and reports the stall.
+# A failed hardware write must not be retried without new explicit approval
+# (AGENTS.md). The runbook recovery for the intermittent RAW-OTA ack stall
+# (power-cycle + one retry) therefore asks the operator on the terminal first;
+# without a terminal or approval the stall is reported and the phase fails.
+approve_stall_retry() {
+  local reply
+  read -r -p "   OTA stalled (intermittent RAW-OTA ack). Approve the runbook power-cycle + one retry now? [y/N] " reply </dev/tty 2>/dev/null || return 1
+  [[ "$reply" == [yY]* ]]
+}
+
 ota() {  # ota <manifest-file> <expected-version>
   local manifest="$1" want="$2"
   if ota_once "$manifest" "$want" "$RUN_DIR/ota-$want.log"; then return 0; fi
   if grep -q "restart before another firmware upload\|bytes pending" "$RUN_DIR/ota-$want.log" 2>/dev/null; then
-    if [[ -n "$SERIAL_PORT" ]]; then
-      warn "OTA stalled (intermittent RAW-OTA ack); power-cycling and retrying once per runbook"
+    if [[ -z "$SERIAL_PORT" ]]; then
+      warn "OTA stalled and no --port to power-cycle for the runbook retry"
+    elif approve_stall_retry; then
+      warn "power-cycling and retrying once per runbook (operator approved)"
       serial_reset; sleep 12
       local n=0; while ! health >/dev/null 2>&1 && ((n<30)); do sleep 2; ((n++)); done
       ota_once "$manifest" "$want" "$RUN_DIR/ota-$want-retry.log" && { info "recovered after power-cycle retry"; return 0; }
     else
-      warn "OTA stalled and no --port to power-cycle for the runbook retry"
+      warn "OTA stalled; no retry without fresh approval — rerun after approving the runbook recovery"
     fi
   fi
   warn "OTA to $want did not complete (see $RUN_DIR/ota-$want*.log)"
@@ -186,7 +192,10 @@ stop_runtime() {
   pkill -f "VibeTV Control Center.app/Contents/MacOS/VibeTVControlCenter" >/dev/null 2>&1 || true
   pkill -f 'codexbar-display daemon' >/dev/null 2>&1 || true
   local n=0; while runtime_alive && ((n<15)); do sleep 1; ((n++)); done
-  if runtime_alive; then warn "runtime still answering on 47832 after stop; OTA phases will pass --i-stopped-all-writers"; fi
+  # Anything still answering runtime-health is a live device writer; running an
+  # OTA next to it is the exact failure the updater's quiesce gate calls fatal.
+  # Never bypass the gate with --i-stopped-all-writers here — abort instead.
+  runtime_alive && die "runtime still answering on 47832 after stop; refusing OTA phases with a live device writer"
 }
 start_runtime() {
   ((RUNTIME_WAS_RUNNING)) || return 0

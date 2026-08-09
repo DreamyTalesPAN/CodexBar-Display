@@ -105,13 +105,30 @@ const firmwareUpdateParentPausedEnvVar = "VIBETV_UPDATE_PARENT_PAUSED"
 // port 80. Concurrent device traffic during the upload is fatal, so the direct
 // CLI path must quiesce every writer before the first firmware byte.
 func otherRuntimeWriterAlive() bool {
-	client := &http.Client{Timeout: firmwareUpdateRuntimeHealthTimeout}
-	resp, err := client.Get(strings.TrimRight(firmwareUpdateRuntimeHealthOrigin, "/") + "/v1/runtime-health")
-	if err != nil {
-		return false
+	origins := []string{firmwareUpdateRuntimeHealthOrigin}
+	// A daemon started with --api-fallback (the native app does) can serve from
+	// a fallback port when the default one is occupied; it publishes that origin
+	// in the runtime endpoint file, so a writer there must block the OTA too.
+	if home, err := os.UserHomeDir(); err == nil {
+		if data, err := os.ReadFile(runtimeEndpointPath(home)); err == nil {
+			var endpoint runtimeEndpoint
+			if json.Unmarshal(data, &endpoint) == nil {
+				if origin := strings.TrimSpace(endpoint.Origin); origin != "" && origin != firmwareUpdateRuntimeHealthOrigin {
+					origins = append(origins, origin)
+				}
+			}
+		}
 	}
-	_ = resp.Body.Close()
-	return true
+	client := &http.Client{Timeout: firmwareUpdateRuntimeHealthTimeout}
+	for _, origin := range origins {
+		resp, err := client.Get(strings.TrimRight(origin, "/") + "/v1/runtime-health")
+		if err != nil {
+			continue
+		}
+		_ = resp.Body.Close()
+		return true
+	}
+	return false
 }
 
 type firmwareUpdateEvent = firmwareupdate.Event

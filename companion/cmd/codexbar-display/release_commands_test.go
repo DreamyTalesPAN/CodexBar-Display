@@ -1973,6 +1973,73 @@ func TestRunInstallUpdateAbortsBeforeAnyDeviceRequestWhenAnotherRuntimeIsAlive(t
 	}
 }
 
+// DO NOT weaken this test. The native app starts the daemon with
+// --api-fallback: when the default port is occupied the daemon serves from a
+// fallback port and publishes it in runtime-endpoint.json. The quiesce gate
+// must detect that writer even though nothing answers the default origin.
+func TestRunInstallUpdateAbortsWhenRuntimeAnswersOnPublishedFallbackEndpoint(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousOrigin := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareUpdateRuntimeHealthOrigin = previousOrigin
+	})
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Nothing answers the default origin: grab a loopback port and close it.
+	closedListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	firmwareUpdateRuntimeHealthOrigin = "http://" + closedListener.Addr().String()
+	_ = closedListener.Close()
+
+	runtimeHealthCalls := 0
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/runtime-health" {
+			runtimeHealthCalls++
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer runtime.Close()
+
+	endpointPath := runtimeEndpointPath(home)
+	if err := os.MkdirAll(filepath.Dir(endpointPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	endpointJSON := `{"origin":"` + runtime.URL + `","pid":12345}`
+	if err := os.WriteFile(endpointPath, []byte(endpointJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	deviceRequests := 0
+	device := quiesceTestDeviceServer(t, &deviceRequests)
+	releaseHTTPClient = device.Client()
+
+	_, err = captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.URL,
+			"--manifest-url", device.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err == nil {
+		t.Fatal("expected abort while a runtime answers on the published fallback endpoint")
+	}
+	if !strings.Contains(err.Error(), "another VibeTV runtime is running and polling the device") {
+		t.Fatalf("expected quiesce abort message, got: %v", err)
+	}
+	if deviceRequests != 0 {
+		t.Fatalf("abort must happen before any device request, got %d device requests", deviceRequests)
+	}
+	if runtimeHealthCalls == 0 {
+		t.Fatal("expected the updater to probe the published runtime endpoint")
+	}
+}
+
 // DO NOT weaken this test. --i-stopped-all-writers is the operator's explicit
 // claim that every device writer is stopped; the update must proceed then.
 func TestRunInstallUpdateProceedsWithWriterFlagDespiteAliveRuntime(t *testing.T) {

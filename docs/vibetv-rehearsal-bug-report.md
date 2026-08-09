@@ -13,7 +13,7 @@ disproven).
 | ID | What | Status |
 | --- | --- | --- |
 | BUG-1 | Update dies in auth preflight (token in header **and** query) | **Fixed**, hardware-proven. Header-only rule pinned. |
-| BUG-7 | RAW OTA stalls at TCP level | **Dominant cause found & fixed**: 802.11n A-MSDU black hole; firmware forces 11g, which cleared the frame-selective loss and the impossible asset uploads. A rarer RAW-OTA ack stall still occurs intermittently on 11g with healthy heap (~1 leg in 5–10, likely flash-sector-erase timing); the documented recovery is power-cycle + retry once, and `vibetv-hw-selftest.sh` performs it automatically. See `docs/hardware-contract.md`. |
+| BUG-7 | RAW OTA stalls at TCP level | **Dominant cause found & fixed**: 802.11n A-MSDU black hole; firmware forces 11g, which cleared the frame-selective loss and the impossible asset uploads. A rarer RAW-OTA ack stall still occurs intermittently on 11g with healthy heap (~1 leg in 5–10, likely flash-sector-erase timing); the documented recovery is power-cycle + retry once, and `vibetv-hw-selftest.sh` runs it after operator approval on the terminal. See `docs/hardware-contract.md`. |
 | BUG-8 | Aborted upload strips the stored theme | **Fixed & hardware-proven** (2026-08-08): `restoreStoredThemeAfterAbortedUpload` recovers it. |
 | BUG-9 | Successful update leaves the setup screen | **Fixed & hardware-proven**: display-stream pause around theme reactivation. |
 | BUG-12 | Stored ThemeSpec outlives the capability that chose it | Downgrade-only; converges on the next update. Migration to usage-slots verified on hardware. |
