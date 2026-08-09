@@ -25,10 +25,10 @@
 #              large-frame delivery, and the stored theme spec loads active.
 #              Streamed pixel render is checked by the restore phase.
 #   abort      reset mid-upload; assert the updater recovers the stored theme
-#              and a retry then installs. On the intermittent RAW-OTA ack stall
-#              the runbook power-cycle+retry-once runs only after the operator
-#              approves it on the terminal (no unattended retry of a failed
-#              hardware write).
+#              and a retry then installs. Every retry after a failed hardware
+#              write — the induced abort as well as the intermittent RAW-OTA
+#              ack stall — runs only after the operator approves it on the
+#              terminal, so this phase needs a TTY.
 #
 # Requirements: pio, go, curl, jq, and a USB serial cable for coldstart/abort.
 set -uo pipefail
@@ -147,9 +147,9 @@ ota_once() {  # ota_once <manifest-file> <expected-version> <logfile>
 # (AGENTS.md). The runbook recovery for the intermittent RAW-OTA ack stall
 # (power-cycle + one retry) therefore asks the operator on the terminal first;
 # without a terminal or approval the stall is reported and the phase fails.
-approve_stall_retry() {
+approve_hardware_retry() {  # approve_hardware_retry <what happened>
   local reply
-  read -r -p "   OTA stalled (intermittent RAW-OTA ack). Approve the runbook power-cycle + one retry now? [y/N] " reply </dev/tty 2>/dev/null || return 1
+  read -r -p "   $1 Approve one firmware retry now? [y/N] " reply </dev/tty 2>/dev/null || return 1
   [[ "$reply" == [yY]* ]]
 }
 
@@ -159,7 +159,7 @@ ota() {  # ota <manifest-file> <expected-version>
   if grep -q "restart before another firmware upload\|bytes pending" "$RUN_DIR/ota-$want.log" 2>/dev/null; then
     if [[ -z "$SERIAL_PORT" ]]; then
       warn "OTA stalled and no --port to power-cycle for the runbook retry"
-    elif approve_stall_retry; then
+    elif approve_hardware_retry "OTA stalled (intermittent RAW-OTA ack); the runbook recovery is power-cycle + one retry."; then
       warn "power-cycling and retrying once per runbook (operator approved)"
       serial_reset; sleep 12
       local n=0; while ! health >/dev/null 2>&1 && ((n<30)); do sleep 2; ((n++)); done
@@ -385,9 +385,15 @@ phase_abort() {
   sleep 8
   local n2=0; while ! health >/dev/null 2>&1 && ((n2<30)); do sleep 2; ((n2++)); done
   local theme_back=0; [[ "$(theme_active)" == "true" ]] && theme_back=1
-  # the runbook path: one retry after the device restarts
+  # The induced abort is a failed hardware write, so the recovery retry needs
+  # fresh operator approval on the terminal (AGENTS.md) — the phase cannot
+  # verify recovery unattended.
   local retry_ok=0
-  if ota manifest-candidate.json "$CANDIDATE_VERSION"; then retry_ok=1; fi
+  if approve_hardware_retry "Aborted-upload test done (theme_back=$theme_back); verifying recovery needs one retry install."; then
+    if ota manifest-candidate.json "$CANDIDATE_VERSION"; then retry_ok=1; fi
+  else
+    warn "abort: retry not approved; recovery assertion skipped"
+  fi
   if ((theme_back && retry_ok)); then pass "abort: theme survived the abort and the retry installed"; else fail "abort: theme_back=$theme_back retry_ok=$retry_ok"; fi
 }
 
