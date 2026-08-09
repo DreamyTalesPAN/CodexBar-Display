@@ -122,12 +122,22 @@ export function UpdatesScreen({
   const latestFirmware =
     firmwareUpdate?.latestFirmware ||
     (checking ? "Checking" : "Not available");
+  // A completed job suppresses only its own stale aftermath: as long as the
+  // fresh check still reports the version the job installed (or has not
+  // resolved yet), "Update complete" stands alone and never advertises
+  // "Update available" next to it. A later check that discovers a different
+  // release is a new update and must show — status polling restores the
+  // completed job indefinitely, so completion alone can never gate future
+  // updates.
+  const staleCompletedCheck = Boolean(
+    firmwareUpdateCompleted &&
+      (!firmwareUpdate?.latestFirmware ||
+        firmwareUpdate.latestFirmware === updateStatus?.result?.firmware),
+  );
   const updateAvailable =
-    !firmwareUpdateCompleted && hasFirmwareUpdate(firmwareUpdate);
-  // A completed update never advertises "Update available" alongside
-  // "Update complete"; the badge only returns after a fresh update check.
+    !staleCompletedCheck && hasFirmwareUpdate(firmwareUpdate);
   const vibetvUpdateAvailable =
-    !firmwareUpdateCompleted && (updateAvailable || themeUpdateAvailable);
+    !staleCompletedCheck && (updateAvailable || themeUpdateAvailable);
   // A finished failure describes an update that is no longer pending once a
   // fresh check reports nothing to install. Keeping it would tell the customer
   // to power-cycle for an update that does not exist; while the update really

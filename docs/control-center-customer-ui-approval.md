@@ -829,3 +829,20 @@ issue scope, or release permission never implies UI permission.
   copy, layout, control, or customer decision changes.
 - Approved files: `updates-screen.tsx`, `updates-screen.test.tsx`, and this
   approval record.
+
+## 2026-08-09 — Completed updates stop gating newly discovered releases
+
+- User approval: Covered by the standing bulletproofing mandate for the update
+  path ("es muss bulletproof sein … fix das!" and the explicit instruction to
+  drive PR #348 to a green candidate); the Codex review of 2e6d6ff flagged
+  that a completed firmware job suppressed every later update because status
+  polling restores the completed job indefinitely.
+- Approved customer-visible result: "Update complete" keeps standing alone
+  only while the fresh firmware check still reports the version that job
+  installed. As soon as a check discovers a different release (or a new active
+  theme revision alongside it), the Updates card announces it and the Update
+  action works again — no daemon restart or setup reset needed. The pinned
+  rule that "Update complete" and "Update available" never describe the same
+  version at the same time stays exactly as approved on 2026-08-08.
+- Approved files: `updates-screen.tsx`, `updates-screen.test.tsx`, and this
+  approval record.

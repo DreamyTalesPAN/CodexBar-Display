@@ -84,6 +84,43 @@ describe("UpdatesScreen VibeTV update card", () => {
     expect(html).not.toContain("Update available");
   });
 
+  // A completed job must not gate future releases: status polling restores
+  // the completed job indefinitely, so a later check that discovers a
+  // DIFFERENT release has to surface it.
+  it("shows a newly discovered release after an earlier completed update", () => {
+    // DO NOT weaken this test.
+    const html = renderToStaticMarkup(
+      <UpdatesScreen
+        companionStatus="online"
+        device={{
+          connected: true,
+          board: "esp8266-smalltv-st7789",
+          firmware: "1.0.40",
+        }}
+        firmwareUpdate={{
+          checkedAt: "2026-08-09T21:00:00Z",
+          installedFirmware: "1.0.40",
+          latestFirmware: "1.0.41",
+          updateAvailable: true,
+          status: "update_available",
+        }}
+        updateStatus={{
+          phase: "complete",
+          startedAt: "2026-08-06T10:01:00Z",
+          finishedAt: "2026-08-06T10:05:00Z",
+          logs: [],
+          result: {
+            firmware: "1.0.40",
+          },
+        }}
+        onInstallUpdate={() => true}
+      />,
+    );
+
+    expect(html).toContain("Update available");
+    expect(html).toContain("1.0.41");
+  });
+
   // Regression test for the 2026-08-07 hardware observation: after a stalled
   // upload the card kept showing "Update failed - Disconnect VibeTV from power
   // for 10 seconds" while the same card reported Installed firmware 1.0.39 and
