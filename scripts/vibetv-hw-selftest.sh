@@ -179,7 +179,15 @@ heap_line() {
 }
 
 # ----------------------------------------------------------------- runtime control
-runtime_alive() { curl -fsS --max-time 2 http://127.0.0.1:47832/v1/runtime-health >/dev/null 2>&1; }
+runtime_alive() {
+  curl -fsS --max-time 2 http://127.0.0.1:47832/v1/runtime-health >/dev/null 2>&1 && return 0
+  # A daemon started with --api-fallback serves from a different port and
+  # publishes its real origin; probe it too (mirrors the CLI's quiesce gate),
+  # so a fallback runtime is stopped, restored, and verified like any other.
+  local ep="$HOME/Library/Application Support/codexbar-display/run/runtime-endpoint.json"
+  local origin; origin="$(jq -r '.origin // empty' "$ep" 2>/dev/null)"
+  [[ -n "$origin" ]] && curl -fsS --max-time 2 "$origin/v1/runtime-health" >/dev/null 2>&1
+}
 
 # The OTA guard (otherRuntimeWriterAlive) fails if anything answers
 # /v1/runtime-health on 47832. The GUI app owns the runtime agent and respawns
@@ -197,7 +205,7 @@ stop_runtime() {
   # Anything still answering runtime-health is a live device writer; running an
   # OTA next to it is the exact failure the updater's quiesce gate calls fatal.
   # Never bypass the gate with --i-stopped-all-writers here — abort instead.
-  runtime_alive && die "runtime still answering on 47832 after stop; refusing OTA phases with a live device writer"
+  runtime_alive && die "runtime still answering (47832 or published endpoint) after stop; refusing OTA phases with a live device writer"
 }
 start_runtime() {
   ((RUNTIME_WAS_RUNNING)) || return 0
