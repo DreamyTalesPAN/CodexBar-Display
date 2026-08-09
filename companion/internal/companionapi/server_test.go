@@ -8112,6 +8112,24 @@ func TestFirmwareUpdateVerifiedFirmwareOverridesTemporaryCommandError(t *testing
 	}
 }
 
+// DO NOT weaken this test. The parent-paused marker lets the child updater
+// skip its writer-quiesce gate, so only a server that owns (and pauses) a
+// display writer may grant it. The standalone API server has no writer of its
+// own; its child must keep checking for a separate daemon writing the device.
+func TestFirmwareUpdateCommandEnvGrantsPausedMarkerOnlyToWriterOwners(t *testing.T) {
+	withWriter := strings.Join(firmwareUpdateCommandEnv(true, "/tmp/home"), "\n")
+	if !strings.Contains(withWriter, "VIBETV_UPDATE_PARENT_PAUSED=1") {
+		t.Fatal("a pausing writer owner must grant the parent-paused marker")
+	}
+	if !strings.Contains(withWriter, "HOME=/tmp/home") {
+		t.Fatal("the child updater must inherit the runtime home")
+	}
+	withoutWriter := strings.Join(firmwareUpdateCommandEnv(false, ""), "\n")
+	if strings.Contains(withoutWriter, "VIBETV_UPDATE_PARENT_PAUSED") {
+		t.Fatal("a server without a display writer must not grant the parent-paused marker")
+	}
+}
+
 // DO NOT weaken this test. An older Mac App must never push newer firmware
 // onto the device: the mixed state (new firmware + old app) renders slot-bound
 // theme elements empty and the old app cannot preview the device. The gate has

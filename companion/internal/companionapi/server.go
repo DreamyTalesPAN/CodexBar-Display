@@ -917,7 +917,7 @@ func New(opts Options) (*Server, error) {
 			set:           codexbar.SetProviderEnabled,
 			loadInventory: codexbar.FetchProviderInventory,
 		},
-		updateFirmware:     runFirmwareUpdateCommand,
+		updateFirmware:     firmwareUpdateCommandRunner(opts.PauseDisplayStream != nil),
 		updateMacApp:       runMacAppUpdateCommand,
 		fetchMacAppRelease: fetchLatestMacAppRelease,
 		installJobs:        make(map[string]*themeInstallJob),
@@ -5503,7 +5503,32 @@ func firmwareUpdateDiagnosticNextAction(job firmwareUpdateJob) string {
 	return strings.TrimSpace(job.Error.NextAction)
 }
 
-func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfig.Config, req firmwareUpdateRequest, out io.Writer) error {
+// firmwareUpdateCommandRunner binds the update command to whether this server
+// owns (and therefore pauses) a display writer. Only then may the child
+// updater be told its parent already quiesced the device.
+func firmwareUpdateCommandRunner(ownsDisplayWriter bool) func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
+	return func(ctx context.Context, home string, cfg runtimeconfig.Config, req firmwareUpdateRequest, out io.Writer) error {
+		return runFirmwareUpdateCommand(ctx, home, cfg, req, out, ownsDisplayWriter)
+	}
+}
+
+// firmwareUpdateCommandEnv grants the child updater the parent-paused marker
+// only when this server really owns and paused the display stream. The
+// standalone API server (codexbar-display api) has no writer of its own, so
+// its child must still run the writer-quiesce check and detect a separate
+// daemon writing the device.
+func firmwareUpdateCommandEnv(parentPaused bool, home string) []string {
+	env := os.Environ()
+	if parentPaused {
+		env = append(env, "VIBETV_UPDATE_PARENT_PAUSED=1")
+	}
+	if strings.TrimSpace(home) != "" {
+		env = append(env, "HOME="+home)
+	}
+	return env
+}
+
+func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfig.Config, req firmwareUpdateRequest, out io.Writer, parentPaused bool) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -5516,13 +5541,7 @@ func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfi
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Stdout = out
 	cmd.Stderr = out
-	// This job pauses the display stream for the whole update, so the child
-	// updater's writer-quiesce gate must not refuse its own parent runtime.
-	env := append(os.Environ(), "VIBETV_UPDATE_PARENT_PAUSED=1")
-	if strings.TrimSpace(home) != "" {
-		env = append(env, "HOME="+home)
-	}
-	cmd.Env = env
+	cmd.Env = firmwareUpdateCommandEnv(parentPaused, home)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("firmware update command failed: %w", err)
 	}
