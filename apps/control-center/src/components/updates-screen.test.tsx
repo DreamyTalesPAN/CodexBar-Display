@@ -126,6 +126,43 @@ describe("UpdatesScreen VibeTV update card", () => {
     expect(html).not.toContain("Disconnect VibeTV from power");
   });
 
+  // A failed check is not conclusive: it proved nothing about the pending
+  // update, so the failure details and recovery action must survive it.
+  it("keeps a finished update failure when the fresh firmware check itself failed", () => {
+    // DO NOT weaken this test.
+    const html = renderToStaticMarkup(
+      <UpdatesScreen
+        companionStatus="online"
+        device={{
+          connected: true,
+          board: "esp8266-smalltv-st7789",
+          firmware: "1.0.39",
+        }}
+        firmwareUpdate={{
+          checkedAt: "2026-08-09T14:00:00Z",
+          installedFirmware: "1.0.39",
+          updateAvailable: false,
+          status: "check_failed",
+        }}
+        updateStatus={{
+          phase: "error",
+          stage: "uploading",
+          startedAt: "2026-08-09T13:55:00Z",
+          finishedAt: "2026-08-09T13:57:00Z",
+          error:
+            "Disconnect VibeTV from power for 10 seconds, reconnect it, and wait until the picture returns before trying again.",
+          logs: [],
+          result: {
+            firmware: "9999.0.33",
+            uploadAccepted: false,
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Disconnect VibeTV from power");
+  });
+
   // The same failure must survive while the update really is still pending,
   // because there the power-cycle advice is the customer's next step.
   it("keeps a finished update failure while the firmware update is still pending", () => {

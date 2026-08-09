@@ -812,3 +812,20 @@ issue scope, or release permission never implies UI permission.
   refused with "Update the Mac App first." and the existing error surface.
 - Approved files: `updates-screen.tsx`, `updates-screen.test.tsx`,
   `control-center-app.tsx`, and this approval record.
+
+## 2026-08-09 — Update failures survive an inconclusive firmware check
+
+- User approval: Part of the same bulletproofing instruction for the update
+  path ("es muss bulletproof sein … fix das!"); the Codex review of 0cdafcf
+  flagged that a failed `/v1/updates/latest` check silently discarded a
+  finished update failure. Hiding failure details on an inconclusive check
+  contradicts the approved rule that only a conclusive no-update result may
+  clear them.
+- Approved customer-visible result: When a firmware update job has failed and
+  the next firmware check itself fails (`check_failed`), the Updates card keeps
+  showing the failure, its power-cycle advice, and the `Try again` /
+  `Create report` actions. Only a conclusive check that reports nothing
+  pending clears them, exactly as already approved on 2026-08-08. No other
+  copy, layout, control, or customer decision changes.
+- Approved files: `updates-screen.tsx`, `updates-screen.test.tsx`, and this
+  approval record.

@@ -131,9 +131,14 @@ export function UpdatesScreen({
   // A finished failure describes an update that is no longer pending once a
   // fresh check reports nothing to install. Keeping it would tell the customer
   // to power-cycle for an update that does not exist; while the update really
-  // is still pending, the failure and its advice stay.
+  // is still pending, the failure and its advice stay. A failed check is not
+  // conclusive: it proved nothing about the pending update, so the failure
+  // details and their recovery action must survive it.
   const staleFirmwareFailure = Boolean(
-    updateStatus?.phase === "error" && firmwareUpdate && !updateAvailable,
+    updateStatus?.phase === "error" &&
+      firmwareUpdate &&
+      firmwareUpdate.status !== "check_failed" &&
+      !updateAvailable,
   );
   const visibleUpdateStatus = staleFirmwareFailure ? undefined : updateStatus;
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
