@@ -164,3 +164,63 @@ describe("UpdatesScreen VibeTV update card", () => {
     expect(html).toContain("Update failed");
   });
 });
+
+// The mixed state (new firmware + old Mac App) renders slot-bound theme
+// elements empty and the old app cannot preview the device, so it must never
+// be enterable from this screen. The firmware update therefore stays locked
+// not only while a Mac App update is known to be pending, but already while
+// the Mac App release check is unresolved — the race window in which the
+// 2026-08-09 rehearsal entered the mixed state on real hardware.
+describe("UpdatesScreen Mac-App-first gate", () => {
+  const firmwareUpdateAvailableProps = {
+    companionStatus: "online" as const,
+    device: {
+      connected: true,
+      board: "esp8266-smalltv-st7789",
+      firmware: "1.0.39",
+    },
+    firmwareUpdate: {
+      checkedAt: "2026-08-09T13:00:00Z",
+      installedFirmware: "1.0.39",
+      latestFirmware: "9999.0.32",
+      updateAvailable: true,
+      status: "update_available",
+    },
+  };
+
+  it("keeps the firmware update locked while the Mac App release check is unresolved", () => {
+    // DO NOT weaken this test.
+    const html = renderToStaticMarkup(
+      <UpdatesScreen
+        {...firmwareUpdateAvailableProps}
+        companionRelease={null}
+        onInstallUpdate={() => true}
+      />,
+    );
+    expect(html).toContain("Checking Mac App");
+    expect(html).toContain("unlocks when it finishes");
+    expect(html).toContain("Checking updates");
+    expect(html).toContain('disabled=""');
+  });
+
+  it("offers the firmware update once the resolved check reports the Mac App as current", () => {
+    const html = renderToStaticMarkup(
+      <UpdatesScreen
+        {...firmwareUpdateAvailableProps}
+        companionRelease={{
+          checkedAt: "2026-08-09T13:00:00Z",
+          status: "available",
+          latestVersion: "1.0.52",
+          installedVersion: "1.0.52",
+          updateAvailable: false,
+          message: "Mac App is up to date.",
+        }}
+        onInstallUpdate={() => true}
+      />,
+    );
+    expect(html).not.toContain("Checking Mac App");
+    expect(html).not.toContain("Update Mac App first");
+    expect(html).toContain("Update");
+    expect(html).not.toContain('disabled=""');
+  });
+});

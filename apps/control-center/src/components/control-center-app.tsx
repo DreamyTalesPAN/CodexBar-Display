@@ -2876,16 +2876,54 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : null;
   const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
   const activeThemeUpgrade = resolveActiveThemeUpgrade(catalog.themes, device);
+  // In the installed native app the runtime's release check is authoritative:
+  // it honors the release-feed override and Sparkle is always an actionable
+  // update path — the 2026-08-09 rehearsal entered the firmware-ahead mixed
+  // state because the hosted browser check shadowed the runtime's pending
+  // update. Outside the native app the hosted check keeps priority: it owns
+  // DMG asset verification, and an update without a verified DMG must stay
+  // unannounced.
+  const runtimeRelease = companionInfo?.update;
   const companionRelease =
-    hostedCompanionRelease?.status === "check_failed" && companionInfo?.update
-      ? {
-          ...companionInfo.update,
-          ...hostedCompanionRelease,
-        }
-      : hostedCompanionRelease || companionInfo?.update || null;
+    runtimeRelease &&
+    runtimeRelease.status !== "check_failed" &&
+    companionInfo?.app?.installedInApplications
+      ? { ...(hostedCompanionRelease ?? {}), ...runtimeRelease }
+      : hostedCompanionRelease?.status === "check_failed" && runtimeRelease
+        ? { ...runtimeRelease, ...hostedCompanionRelease }
+        : hostedCompanionRelease || runtimeRelease || null;
   const macAppUpdateAvailable = Boolean(
     companionInfo?.update?.updateAvailable || companionRelease?.updateAvailable,
   );
+  // A pending Mac App update must resolve immediately once the customer is in
+  // the app — most urgently in the mixed state where the device firmware is
+  // already ahead of this app and renders degraded. Surface the native Sparkle
+  // dialog once per offered version; the Updates tab stays the manual path if
+  // the dialog is dismissed.
+  const macAppUpdateOfferedVersion =
+    companionRelease?.latestVersion || companionRelease?.release || "";
+  const macAppUpdatePromptedFor = useRef("");
+  useEffect(() => {
+    if (
+      hostedSetup ||
+      !hasEnteredControlCenter ||
+      !macAppUpdateAvailable ||
+      !macAppUpdateOfferedVersion ||
+      firmwareUpdateInProgress ||
+      !isNativeControlCenterApp() ||
+      macAppUpdatePromptedFor.current === macAppUpdateOfferedVersion
+    ) {
+      return;
+    }
+    macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
+    window.location.href = "vibetv://check-for-updates";
+  }, [
+    firmwareUpdateInProgress,
+    hasEnteredControlCenter,
+    hostedSetup,
+    macAppUpdateAvailable,
+    macAppUpdateOfferedVersion,
+  ]);
   const activeThemeUpdateAvailable = Boolean(
     activeThemeUpgrade.theme &&
       activeThemeUpgrade.needed &&

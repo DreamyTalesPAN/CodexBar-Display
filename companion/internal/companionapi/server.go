@@ -3849,6 +3849,26 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 		)
 		return
 	}
+	// The firmware a release ships pairs with that release's Mac App. An older
+	// app must never push newer firmware onto the device: the mixed state
+	// renders degraded and the old app cannot even preview it. The release
+	// check is synchronous here so a UI race (install clicked before the
+	// check resolved) cannot start the job. Only customer installs (dmg) are
+	// gated; dev and bench builds write devices deliberately. A hard check
+	// failure does not block: without network the live firmware manifest is
+	// unreachable in exactly those environments too.
+	if s.installationMode == "dmg" {
+		if release := s.macAppReleaseInfo(r.Context()); release.UpdateAvailable {
+			writeError(
+				w,
+				http.StatusConflict,
+				"mac_app_update_required",
+				"Update the Mac App first.",
+				"Install the Mac App update, then update VibeTV firmware.",
+			)
+			return
+		}
+	}
 	caps := protocol.CapabilitiesFromHello(hello)
 	if strings.TrimSpace(caps.Board) == "" || strings.TrimSpace(caps.Firmware) == "" {
 		writeError(

@@ -8112,6 +8112,101 @@ func TestFirmwareUpdateVerifiedFirmwareOverridesTemporaryCommandError(t *testing
 	}
 }
 
+// DO NOT weaken this test. An older Mac App must never push newer firmware
+// onto the device: the mixed state (new firmware + old app) renders slot-bound
+// theme elements empty and the old app cannot preview the device. The gate has
+// to hold at the API, not only in the UI, so races and alternative UI entry
+// points cannot start the job.
+func TestFirmwareUpdateInstallRefusesWhileMacAppUpdateAvailableOnDmg(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-gated","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.39"}`))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-gated", DeviceToken: "pair-token"})
+	server.installationMode = "dmg"
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		return githubRelease{TagName: "v9999999.0.0"}, nil
+	}
+	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
+		t.Fatal("firmware update must not start while a Mac App update is available")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	req.Header.Set("User-Agent", nativeControlCenterUA+"/9999.0.32")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 while the Mac App update is pending, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "mac_app_update_required") {
+		t.Fatalf("expected mac_app_update_required, got: %s", rec.Body.String())
+	}
+	if _, active := server.activeFirmwareUpdateJob(); active {
+		t.Fatal("no firmware update job may exist after the refusal")
+	}
+}
+
+// A failed release check must not block the update: without network the live
+// firmware manifest is unreachable in exactly those environments too, and the
+// bench workflows run without a reachable release feed.
+func TestFirmwareUpdateInstallProceedsWhenMacAppReleaseCheckFails(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-offline","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-offline", DeviceToken: "pair-token"})
+	server.installationMode = "dmg"
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		return githubRelease{}, errors.New("release feed unreachable")
+	}
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(_ context.Context, _ string, _ string, _ deviceHealth) (deviceHealth, error) {
+		return deviceHealth{OK: true}, nil
+	}
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","firmware":"1.0.40","target":"`+device.URL+`","deviceId":"device-offline","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	req.Header.Set("User-Agent", nativeControlCenterUA+"/9999.0.32")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected the update to start despite the failed release check, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 200; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" && job.Phase != "" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Phase == "installing" || job.Phase == "" {
+		t.Fatalf("update job did not finish, last phase %q", job.Phase)
+	}
+}
+
 func TestFirmwareUpdateCurrentFirmwareWithStreamFailureNeedsAttention(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

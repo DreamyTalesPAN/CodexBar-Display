@@ -154,8 +154,13 @@ export function UpdatesScreen({
   const macAppNativeAction = nativeMacUpdateReady;
   const macAppMustUpdateFirst =
     macAppDownloadAction || macAppNativeAction;
+  // The firmware stays locked while the Mac App release check is still
+  // unresolved, not only when it already reported an update: otherwise a
+  // click in that window starts the firmware job before the Mac-App-first
+  // rule can engage (the mixed state new-firmware/old-app must never be
+  // enterable from here).
   const firmwareUpdateBlocked =
-    vibetvUpdateAvailable && macAppMustUpdateFirst;
+    vibetvUpdateAvailable && (macAppMustUpdateFirst || checkingMacApp);
   const anyUpdateAvailable =
     vibetvUpdateAvailable || macAppDownloadAction || macAppNativeAction;
   const refreshing = busyAction === "firmware-check";
@@ -194,7 +199,7 @@ export function UpdatesScreen({
       return;
     }
 
-    if (macAppMustUpdateFirst) {
+    if (macAppMustUpdateFirst || checkingMacApp) {
       return;
     }
 
@@ -235,9 +240,15 @@ export function UpdatesScreen({
           {firmwareUpdateBlocked ? (
             <Alert>
               <ShieldCheck aria-hidden />
-              <AlertTitle>Update Mac App first</AlertTitle>
+              <AlertTitle>
+                {macAppMustUpdateFirst
+                  ? "Update Mac App first"
+                  : "Checking Mac App"}
+              </AlertTitle>
               <AlertDescription>
-                Update the Mac App first. The VibeTV firmware update comes next.
+                {macAppMustUpdateFirst
+                  ? "Update the Mac App first. The VibeTV firmware update comes next."
+                  : "Waiting for the Mac App update check. The VibeTV update unlocks when it finishes."}
               </AlertDescription>
             </Alert>
           ) : null}
