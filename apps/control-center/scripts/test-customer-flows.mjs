@@ -402,10 +402,19 @@ async function main() {
       return;
     }
     if (themeReleaseOnly) {
-      await testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
+      await testCurrentFirmwareAutomaticallyRefreshesOldActiveTheme(
         browser,
         appContext.appUrl,
       );
+      await testAutomaticThemeRefreshRespectsUpdateGates(
+        browser,
+        appContext.appUrl,
+      );
+      await testFailedAutomaticThemeRefreshStaysPaused(
+        browser,
+        appContext.appUrl,
+      );
+      await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
       console.log("control-center theme release flow test passed");
       return;
     }
@@ -782,7 +791,15 @@ async function main() {
     await testReloadRestoresRunningFirmwareUpdate(browser, appContext.appUrl);
     await testReloadRestoresRunningThemeInstall(browser, appContext.appUrl);
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
-    await testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
+    await testCurrentFirmwareAutomaticallyRefreshesOldActiveTheme(
+      browser,
+      appContext.appUrl,
+    );
+    await testAutomaticThemeRefreshRespectsUpdateGates(
+      browser,
+      appContext.appUrl,
+    );
+    await testFailedAutomaticThemeRefreshStaysPaused(
       browser,
       appContext.appUrl,
     );
@@ -5993,7 +6010,7 @@ async function testFirmwareUpdateShowsCustomerProgress(browser, appUrl) {
   await page.close();
 }
 
-async function testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
+async function testCurrentFirmwareAutomaticallyRefreshesOldActiveTheme(
   browser,
   appUrl,
 ) {
@@ -6034,13 +6051,9 @@ async function testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await clickNavigation(page, "Updates");
-  const update = page.getByRole("button", { name: "Update", exact: true });
-  await update.waitFor({ timeout: 10_000 });
-  await update.click();
   await waitForCondition(
     () => installRequests.length + updateRequests.length > 0,
-    "Theme-only update did not start a theme or firmware request",
+    "The Mac app did not automatically start the stale theme update",
   );
   assert(
     updateRequests.length === 0,
@@ -6048,14 +6061,13 @@ async function testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
   );
   assert(
     installRequests.length === 1,
-    "Current firmware plus an old active ThemeSpec must install one theme",
+    "Current firmware plus an old active ThemeSpec must automatically install one theme",
   );
-  await page
-    .getByText("Update complete", { exact: true })
-    .waitFor({ timeout: 10_000 });
-  await page
-    .getByRole("button", { name: "Check for updates", exact: true })
-    .waitFor({ timeout: 10_000 });
+  await page.waitForTimeout(250);
+  assert(
+    installRequests.length === 1,
+    "The automatic theme update must not repeat during status refreshes",
+  );
 
   const install = JSON.parse(installRequests[0]);
   assert(
@@ -6066,6 +6078,144 @@ async function testCurrentFirmwareRefreshesOldActiveThemeWithoutFirmwareFlash(
   await page.close();
 }
 
+async function testAutomaticThemeRefreshRespectsUpdateGates(browser, appUrl) {
+  const oldFirmwarePage = await newCustomerPage(browser, appUrl, { viewport });
+  const oldFirmwareInstalls = [];
+  let oldFirmwareSettings = 0;
+  await routeCompanionOnline(
+    oldFirmwarePage,
+    oldFirmwareInstalls,
+    () => {
+      oldFirmwareSettings += 1;
+    },
+    {
+      companionVersion: "1.0.99",
+      device: {
+        ...synthwaveDevice,
+        activeTheme: "cozy-meadow",
+        firmware: "1.0.39",
+        display: {
+          themeSpec: {
+            active: true,
+            path: "/themes/u/cm-2-old.json",
+            renderOk: true,
+          },
+        },
+      },
+    },
+  );
+  await oldFirmwarePage.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await waitForCondition(
+    () => oldFirmwareSettings > 0,
+    "Expected settings refresh before checking theme firmware eligibility",
+  );
+  await oldFirmwarePage.waitForTimeout(250);
+  assertNoInstallRequests(oldFirmwareInstalls);
+  await oldFirmwarePage.close();
+
+  const macUpdatePage = await newCustomerPage(browser, appUrl, { viewport });
+  const macUpdateInstalls = [];
+  let macUpdateSettings = 0;
+  await routeCompanionOnline(
+    macUpdatePage,
+    macUpdateInstalls,
+    () => {
+      macUpdateSettings += 1;
+    },
+    {
+      companionVersion: "1.0.32",
+      device: {
+        ...synthwaveDevice,
+        display: {
+          themeSpec: {
+            active: true,
+            path: "/themes/u/synthwa-1-6b39a3.json",
+            renderOk: true,
+          },
+        },
+      },
+    },
+  );
+  await macUpdatePage.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await waitForCondition(
+    () => macUpdateSettings > 0,
+    "Expected settings refresh before checking the Mac App update gate",
+  );
+  await macUpdatePage.waitForTimeout(250);
+  assertNoInstallRequests(macUpdateInstalls);
+  await macUpdatePage.close();
+}
+
+async function testFailedAutomaticThemeRefreshStaysPaused(browser, appUrl) {
+  const context = await browser.newContext({ viewport });
+  await context.grantPermissions(["local-network-access"], { origin: appUrl });
+  const page = await context.newPage();
+  const installRequests = [];
+  const staleThemeDevice = {
+    ...synthwaveDevice,
+    display: {
+      themeSpec: {
+        active: true,
+        path: "/themes/u/synthwa-1-6b39a3.json",
+        renderOk: true,
+      },
+    },
+  };
+  const failedInstallStatus = {
+    phase: "error",
+    message: "Theme install failed.",
+    progress: 100,
+    logs: ["Preparing theme files.", "Theme install failed."],
+    error: {
+      code: "theme_install_failed",
+      message: "Theme install failed.",
+      nextAction: "Keep VibeTV powered on and retry the install.",
+    },
+  };
+  const routeOptions = {
+    companionVersion: "1.0.99",
+    device: staleThemeDevice,
+    installStatusSequence: [failedInstallStatus],
+  };
+  await routeCompanionOnline(page, installRequests, () => {}, routeOptions);
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await waitForCondition(
+    () => installRequests.length === 1,
+    "The stale active theme did not start its first automatic refresh",
+  );
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(250);
+  assert(
+    installRequests.length === 1,
+    `Reloading after a failed automatic theme refresh must not retry it, got ${installRequests.length} installs`,
+  );
+
+  const secondPage = await context.newPage();
+  await routeCompanionOnline(
+    secondPage,
+    installRequests,
+    () => {},
+    {
+      ...routeOptions,
+      statusThemeInstallJob: {
+        id: "install-job-1",
+        startedAt: "2026-06-23T12:00:00.000Z",
+        themeId: "synthwave",
+        themeName: "Fixture Synthwave Theme",
+        ...failedInstallStatus,
+      },
+    },
+  );
+  await secondPage.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await secondPage.waitForTimeout(250);
+  assert(
+    installRequests.length === 1,
+    `A second window after a failed automatic theme refresh must not retry it, got ${installRequests.length} installs`,
+  );
+  await secondPage.close();
+  await context.close();
+}
 async function testFirmwareAttentionDoesNotOfferSecondFlash(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];

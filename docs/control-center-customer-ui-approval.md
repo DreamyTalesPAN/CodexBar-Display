@@ -5,6 +5,17 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-11 — Theme refresh regressions assert the automatic flow
+
+- User approval: Same instruction: fix CI and the Codex review loop until
+  both pass. The approved 2026-08-04 automatic catalog-theme refresh stays
+  authoritative.
+- Approved customer-visible result: None. The theme-release regressions
+  return to main's automatic-refresh assertions (no manual Update button
+  for a theme-only refresh), matching the behavior the merged app already
+  ships.
+- Approved files: `test-customer-flows.mjs` and this approval record.
+
 ## 2026-08-11 — No locked tabs after entering the Control Center
 
 - User approval: Same instruction: fix CI and the Codex review loop until
