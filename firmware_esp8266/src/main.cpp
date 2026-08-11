@@ -207,6 +207,7 @@ WifiCredentials savedWifiCredentials;
 bool savedWifiCredentialsAvailable = false;
 codexbar_display::esp8266::wifi_recovery::State wifiSetupRecoveryState;
 bool rebootPending = false;
+void applyWifiInteropPhyMode();
 unsigned long rebootAtMs = 0;
 unsigned long lastFrameAcceptedAtMs = 0;
 bool pendingHttpRender = false;
@@ -912,12 +913,14 @@ void maintainWifiSetupRecovery() {
   switch (action) {
     case codexbar_display::esp8266::wifi_recovery::Action::StartAttempt:
       WiFi.mode(WIFI_AP_STA);
+      applyWifiInteropPhyMode();
       WiFi.begin(savedWifiCredentials.ssid, savedWifiCredentials.password);
       Serial.printf("wifi_setup_retry_started ssid=%s\n", savedWifiCredentials.ssid);
       break;
     case codexbar_display::esp8266::wifi_recovery::Action::Timeout:
       WiFi.disconnect(false);
       WiFi.mode(WIFI_AP_STA);
+      applyWifiInteropPhyMode();
       WiFi.softAP(kSetupApSsid);
       Serial.printf("wifi_setup_retry_failed status=%d next_retry_ms=%lu\n",
                     static_cast<int>(WiFi.status()),
@@ -1292,10 +1295,23 @@ uint32_t incrementBootResetCounter() {
   return counter;
 }
 
+// The ESP8266 NONOS WiFi stack cannot receive 802.11n A-MSDU aggregates.
+// APs (hardware-proven: FRITZ!Box 7530) intermittently aggregate TCP/UDP
+// frames above ~200 bytes payload, which the device then drops wholesale:
+// HTTP bodies over one segment, asset uploads, and RAW OTA acks all stall
+// while small frames and ICMP keep working. Forcing 802.11g disables
+// aggregation entirely; verified A/B/A/B on hardware device 14799300.
+void applyWifiInteropPhyMode() {
+  if (!WiFi.setPhyMode(WIFI_PHY_MODE_11G)) {
+    Serial.println("wifi_phy_mode_11g_failed");
+  }
+}
+
 bool connectToSavedWifi(const WifiCredentials& creds) {
   Serial.printf("wifi_connect ssid=%s\n", creds.ssid);
   drawWifiConnectingStatus(creds.ssid);
   WiFi.mode(WIFI_STA);
+  applyWifiInteropPhyMode();
   WiFi.begin(creds.ssid, creds.password);
 
   const unsigned long startedAt = millis();
@@ -1316,6 +1332,7 @@ bool connectToSavedWifi(const WifiCredentials& creds) {
 
 bool connectToSdkWifiConfig() {
   WiFi.mode(WIFI_STA);
+  applyWifiInteropPhyMode();
   const String ssid = WiFi.SSID();
   if (ssid.length() == 0) {
     Serial.println("wifi_sdk_config_missing");
@@ -1731,7 +1748,23 @@ void handleHealth() {
   out += String(bootResetCounter);
   out += ",\"resetReason\":";
   out += bootResetReasonJSON;
-  out += "},";
+  out += "},\"wifi\":{\"rssi\":";
+  out += String(WiFi.RSSI());
+  out += ",\"channel\":";
+  out += String(WiFi.channel());
+  out += ",\"phyMode\":\"";
+  switch (WiFi.getPhyMode()) {
+    case WIFI_PHY_MODE_11B: out += "11b"; break;
+    case WIFI_PHY_MODE_11G: out += "11g"; break;
+    default: out += "11n"; break;
+  }
+  out += "\",\"sleepMode\":\"";
+  switch (WiFi.getSleepMode()) {
+    case WIFI_NONE_SLEEP: out += "none"; break;
+    case WIFI_LIGHT_SLEEP: out += "light"; break;
+    default: out += "modem"; break;
+  }
+  out += "\"},";
   const bool filesystemMounted = filesystemInfoJSON(out);
   out += ",\"display\":{\"activeTheme\":\"";
   out += jsonEscape(snapshot.activeTheme);
@@ -2308,6 +2341,29 @@ bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String
   return true;
 }
 
+bool prepareStoredThemeSpec(
+    const String& raw,
+    const String& themeId,
+    int themeRev,
+    codexbar_display::core::RuntimeState& nextRuntime,
+    codexbar_display::core::SerialConsumeEvent& event) {
+  nextRuntime = runtimeCtx.runtime;
+  return codexbar_display::core::RestoreStoredThemeSpecFrame(
+      nextRuntime, themeId, themeRev, raw, millis(), event);
+}
+
+void commitStoredThemeSpec(
+    const String& path,
+    const String& raw,
+    const codexbar_display::core::RuntimeState& nextRuntime,
+    const codexbar_display::core::SerialConsumeEvent& event) {
+  runtimeCtx.runtime = nextRuntime;
+  renderer.ResetGifStateForAssetUpdate();
+  activeThemeSpecPath = path;
+  activeThemeSpecHash = hashHex8(raw);
+  markFrameAccepted(event, "theme");
+}
+
 bool readValidatedStoredThemeSpec(
     const String& path,
     String& raw,
@@ -2352,12 +2408,17 @@ bool activateStoredThemePath(
   if (!readValidatedStoredThemeSpec(path, raw, themeId, themeRev, error)) {
     return false;
   }
+  codexbar_display::core::RuntimeState nextRuntime;
+  codexbar_display::core::SerialConsumeEvent event;
+  if (!prepareStoredThemeSpec(raw, themeId, themeRev, nextRuntime, event)) {
+    error = "theme spec not renderable";
+    return false;
+  }
   if (persist && !saveActiveThemeSpecPath(path)) {
     error = "save active theme failed";
     return false;
   }
-
-  activateStoredThemeSpec(path, raw, themeId, themeRev);
+  commitStoredThemeSpec(path, raw, nextRuntime, event);
   return true;
 }
 
@@ -3072,6 +3133,7 @@ void startSetupAccessPoint() {
   WiFi.setAutoReconnect(false);
   WiFi.disconnect(false);
   WiFi.mode(WIFI_AP_STA);
+  applyWifiInteropPhyMode();
   WiFi.softAP(kSetupApSsid);
   Serial.printf("wifi_setup_ap ssid=VibeTV-Setup ip=%s\n", WiFi.softAPIP().toString().c_str());
   dnsServer.start(kDnsPort, "*", WiFi.softAPIP());

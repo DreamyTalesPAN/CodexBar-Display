@@ -57,6 +57,15 @@ func (t *serializedDeviceRoundTripper) RoundTrip(req *http.Request) (*http.Respo
 	return response, nil
 }
 
+// CloseIdleConnections delegates to the wrapped transport so
+// http.Client.CloseIdleConnections keeps working through the serializer.
+// Without this, idle keep-alive sockets to the device survive an OTA start.
+func (t *serializedDeviceRoundTripper) CloseIdleConnections() {
+	if closer, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
+}
+
 type serializedDeviceResponseBody struct {
 	io.ReadCloser
 	once    sync.Once

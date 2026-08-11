@@ -199,6 +199,10 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 		setup.CheckedAt = now.UTC().Format(time.RFC3339Nano)
 	}
 	protectedByID := make(map[string]struct{}, len(setup.Providers))
+	engineFailed := setup.Engine.Status == codexbar.ProviderEngineError
+	if engineFailed {
+		protectedByID["codexbar"] = struct{}{}
+	}
 	for _, provider := range setup.Providers {
 		id := strings.TrimSpace(strings.ToLower(provider.ID))
 		if id != "" && providerSetupFailureMustWin(provider.Status) {
@@ -231,7 +235,7 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 		if _, replaced := readyByID[id]; replaced {
 			continue
 		}
-		if id == "codexbar" && provider.Status != codexbar.ProviderConfigError {
+		if id == "codexbar" && !engineFailed {
 			continue
 		}
 		provider.ID = id
@@ -243,9 +247,9 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 
 func providerSetupFailureMustWin(status string) bool {
 	return status == codexbar.ProviderAuthRequired ||
+		status == codexbar.ProviderNotConfigured ||
 		status == codexbar.ProviderPermissionRequired ||
-		status == codexbar.ProviderConfigError ||
-		status == codexbar.ProviderNotConfigured
+		status == codexbar.ProviderConfigError
 }
 
 func reconcileProviderSetupWithTokenEvidence(setup codexbar.ProviderSetup, ready []codexbar.ProviderReadiness, now time.Time) codexbar.ProviderSetup {
@@ -280,13 +284,14 @@ func reconcileProviderSetupWithTokenEvidence(setup codexbar.ProviderSetup, ready
 	if len(providers) == 0 {
 		return original
 	}
-	if setup.Engine.Status != codexbar.ProviderConfigError {
+	engineFailed := setup.Engine.Status == codexbar.ProviderEngineError
+	if !engineFailed {
 		setup.Status = codexbar.ProviderReady
 		setup.Engine.Status = codexbar.ProviderReady
 	}
 	for _, provider := range setup.Providers {
 		id := strings.TrimSpace(strings.ToLower(provider.ID))
-		if id == "" || (id == "codexbar" && provider.Status != codexbar.ProviderConfigError) {
+		if id == "" || (id == "codexbar" && !engineFailed) {
 			continue
 		}
 		provider.ID = id

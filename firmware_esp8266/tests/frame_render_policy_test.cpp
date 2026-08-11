@@ -97,6 +97,25 @@ bool testThemeActivationDoesNotCloseFilesystemBeforeResponse(const std::string& 
       "theme activation must not unmount LittleFS before the HTTP response");
 }
 
+bool testThemeActivationRejectsInvalidSpecsBeforePersisting(const std::string& source) {
+  const std::size_t activateStart = source.find("bool activateStoredThemePath(");
+  const std::size_t activateEnd = source.find("\n\n#endif", activateStart);
+  if (!expect(
+          activateStart != std::string::npos && activateEnd != std::string::npos,
+          "stored theme path activation must remain discoverable")) {
+    return false;
+  }
+
+  const std::string activate = source.substr(activateStart, activateEnd - activateStart);
+  const std::size_t prepare = activate.find("if (!prepareStoredThemeSpec(");
+  const std::size_t persist = activate.find("if (!saveActiveThemeSpecPath(path))");
+  const std::size_t commit = activate.find("commitStoredThemeSpec(");
+  return expect(
+      prepare != std::string::npos && persist != std::string::npos && commit != std::string::npos &&
+          prepare < persist && persist < commit,
+      "stored theme activation must validate, persist, and then commit runtime state");
+}
+
 bool testSetupAccessPointClearsPendingThemeRender(const std::string& source) {
   const std::size_t setupStart = source.find("void startSetupAccessPoint()");
   const std::size_t setupEnd = source.find("\nvoid maintainWifiConnection()", setupStart);
@@ -304,6 +323,7 @@ int main(int argc, char** argv) {
       !testHttpCallbackDispatchStoresOnePendingEvent(source) ||
       !testThemeActivationUsesDeferredRenderTransport(source) ||
       !testThemeActivationDoesNotCloseFilesystemBeforeResponse(source) ||
+      !testThemeActivationRejectsInvalidSpecsBeforePersisting(source) ||
       !testSetupAccessPointClearsPendingThemeRender(source) ||
       !testPendingHttpRenderRunsBeforeUsb(source) ||
       !testHelloAdvertisesEscapedUsageWindowCapacity(source) ||

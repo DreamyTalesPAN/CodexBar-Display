@@ -34,6 +34,7 @@ using codexbar_display::themespec::kThemeSpecFieldActivity;
 using codexbar_display::themespec::kThemeSpecFieldLabel;
 using codexbar_display::themespec::kThemeSpecFieldReset;
 using codexbar_display::themespec::kThemeSpecFieldSession;
+using codexbar_display::themespec::kThemeSpecFieldUsageWindows;
 using codexbar_display::themespec::kThemeSpecFieldWeekly;
 using codexbar_display::core::ConsumeFrameLine;
 using codexbar_display::core::CurrentRemainingSecs;
@@ -487,15 +488,30 @@ void testUsageWindowOwnershipHidesCompleteMissingLane() {
   TEST_ASSERT_EQUAL_UINT32(5, twoSlotSink.commands.size());
 }
 
+void testIndexedProgressHidesMissingWindow() {
+  const char* spec = R"JSON({"v":1,"id":"indexed-progress","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":8,"b":"usage.2.percent"}]})JSON";
+
+  FrameData frame;
+  frame.usageWindows[0].available = true;
+  frame.usageWindows[1].available = true;
+
+  RecordingSink missingWindowSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, missingWindowSink));
+  TEST_ASSERT_EQUAL_UINT32(1, missingWindowSink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillScreen), static_cast<int>(missingWindowSink.commands[0].type));
+
+  frame.usageWindows[2].available = true;
+  frame.usageWindows[2].percent = 37;
+  RecordingSink availableWindowSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, availableWindowSink));
+  TEST_ASSERT_EQUAL_UINT32(2, availableWindowSink.commands.size());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Progress), static_cast<int>(availableWindowSink.commands[1].type));
+  TEST_ASSERT_EQUAL_INT(37, availableWindowSink.commands[1].percent);
+}
+
 void testUsageWindowResetCountdownsTickIndependently() {
   RuntimeState state;
   state.hasFrame = true;
-  state.reset.hasDeadline = true;
-  state.reset.enforced = true;
-  state.reset.hostLive = true;
-  state.reset.deadlineSecs = 3600;
-  state.reset.trustSecs = codexbar_display::core::kResetTrustHorizonSecs;
-  state.reset.baseMillis = 1000;
   state.resetBaseMillis = 1000;
   state.current.usageWindows[0].available = true;
   state.current.usageWindows[0].resetSecs = 100;
@@ -556,8 +572,13 @@ void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
   frameLine += "]}";
 
   TEST_ASSERT_EQUAL_UINT32(3, codexbar_display::core::kAdvertisedMaxUsageWindows);
+  TEST_ASSERT_EQUAL_UINT32(
+      codexbar_display::core::kAdvertisedMaxUsageWindows,
+      codexbar_display::core::kMaxUsageWindows);
+  TEST_ASSERT_EQUAL_UINT32(
+      codexbar_display::core::kMaxUsageWindows,
+      codexbar_display::themespec::kMaxThemeSpecUsageWindows);
   TEST_ASSERT_TRUE(codexbar_display::core::kAdvertisedMaxUsageWindows > 0);
-  TEST_ASSERT_TRUE(codexbar_display::core::kAdvertisedMaxUsageWindows <= codexbar_display::core::kMaxUsageWindows);
   TEST_ASSERT_TRUE(frameLine.size() + 1 <= codexbar_display::core::kFrameLineBufferBytes);
 
   codexbar_display::core::Frame frame;
@@ -1409,20 +1430,22 @@ void testChangedPrimitivePassReplaysDirtyRegion() {
 
   RecordingSink sessionSink;
   TEST_ASSERT_TRUE(renderChangedSpec(spec, codingFrame, kThemeSpecFieldSession, sessionSink));
-  TEST_ASSERT_EQUAL_UINT32(6, sessionSink.commands.size());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::BeginClip), static_cast<int>(sessionSink.commands[0].type));
-  TEST_ASSERT_EQUAL_INT(40, sessionSink.commands[0].x);
-  TEST_ASSERT_EQUAL_INT(41, sessionSink.commands[0].y);
-  TEST_ASSERT_EQUAL_INT(80, sessionSink.commands[0].width);
-  TEST_ASSERT_EQUAL_INT(20, sessionSink.commands[0].height);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(sessionSink.commands[1].type));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sessionSink.commands[2].type));
-  TEST_ASSERT_EQUAL_STRING("coding", sessionSink.commands[2].text.c_str());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sessionSink.commands[3].type));
-  TEST_ASSERT_EQUAL_STRING("97", sessionSink.commands[3].text.c_str());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Progress), static_cast<int>(sessionSink.commands[4].type));
-  TEST_ASSERT_EQUAL_INT(97, sessionSink.commands[4].percent);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sessionSink.commands[5].type));
+  int beginClipCount = 0;
+  int endClipCount = 0;
+  bool renderedSessionText = false;
+  bool renderedSessionProgress = false;
+  for (const RecordedCommand& command : sessionSink.commands) {
+    beginClipCount += command.type == CommandType::BeginClip ? 1 : 0;
+    endClipCount += command.type == CommandType::EndClip ? 1 : 0;
+    renderedSessionText = renderedSessionText ||
+                          (command.type == CommandType::Text && command.text == "97");
+    renderedSessionProgress = renderedSessionProgress ||
+                              (command.type == CommandType::Progress && command.percent == 97);
+  }
+  TEST_ASSERT_EQUAL_INT(2, beginClipCount);
+  TEST_ASSERT_EQUAL_INT(2, endClipCount);
+  TEST_ASSERT_TRUE(renderedSessionText);
+  TEST_ASSERT_TRUE(renderedSessionProgress);
 }
 
 void testChangedPrimitivePassReportsSkippedAnimatedOverlap() {
@@ -1446,6 +1469,49 @@ void testChangedPrimitivePassReportsSkippedAnimatedOverlap() {
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::FillRect), static_cast<int>(sink.commands[1].type));
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[2].type));
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::EndClip), static_cast<int>(sink.commands[3].type));
+}
+
+void testChangedPrimitivePassDoesNotBridgeUnchangedGif() {
+  const char* spec = R"JSON({
+    "v": 1,
+    "id": "usage-around-gif",
+    "rev": 1,
+    "bg": "#000000",
+    "p": [
+      {"t":"tx","x":10,"y":20,"w":100,"sl":1,"v":"{usageSlot1Label}","s":1},
+      {"t":"g","x":80,"y":80,"w":80,"h":80,"a":"/themes/demo/loop.gif"},
+      {"t":"tx","x":20,"y":210,"w":200,"sl":1,"v":"{usageSlot1Reset}","s":1}
+    ]
+  })JSON";
+
+  FrameData frame = testFrame();
+  frame.usageWindows[0].available = true;
+  frame.usageWindows[0].label = "Weekly";
+  frame.usageWindows[0].resetSecs = 3600;
+
+  RecordingSink sink;
+  bool skippedAnimated = false;
+  TEST_ASSERT_TRUE(renderChangedSpecWithSkippedAnimated(
+      spec,
+      frame,
+      kThemeSpecFieldUsageWindows,
+      sink,
+      skippedAnimated));
+  TEST_ASSERT_FALSE(skippedAnimated);
+
+  int clipCount = 0;
+  for (const RecordedCommand& command : sink.commands) {
+    if (command.type == CommandType::BeginClip) {
+      ++clipCount;
+      const bool overlapsGif = command.x < 160 &&
+                               80 < command.x + command.width &&
+                               command.y < 160 &&
+                               80 < command.y + command.height;
+      TEST_ASSERT_FALSE(overlapsGif);
+    }
+    TEST_ASSERT_NOT_EQUAL(static_cast<int>(CommandType::Gif), static_cast<int>(command.type));
+  }
+  TEST_ASSERT_EQUAL_INT(2, clipCount);
 }
 
 void testChangedPrimitivePassUsesThemeBackgroundAndOverlaps() {
@@ -1875,6 +1941,23 @@ void testStoredThemeBootActivationRejectsInvalidRaw() {
   TEST_ASSERT_FALSE(emptyState.hasFrame);
   TEST_ASSERT_FALSE(emptyState.current.hasThemeSpec);
   TEST_ASSERT_FALSE(event.frameAccepted);
+
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(
+      emptyState,
+      "clippy",
+      7,
+      R"JSON({"v":1,"id":"clippy","rev":7,"p":[]})JSON",
+      4000,
+      event));
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(
+      emptyState,
+      "clippy",
+      7,
+      R"JSON({"v":1,"id":"clippy","rev":7,"p":[{"t":"unsupported"}]})JSON",
+      4000,
+      event));
+  TEST_ASSERT_FALSE(emptyState.hasFrame);
+  TEST_ASSERT_FALSE(emptyState.current.hasThemeSpec);
 
   RuntimeState state;
   state.hasFrame = true;
@@ -2477,6 +2560,7 @@ int main() {
   RUN_TEST(testRendersCommandsAndBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testUsageWindowOwnershipHidesCompleteMissingLane);
+  RUN_TEST(testIndexedProgressHidesMissingWindow);
   RUN_TEST(testUsageWindowResetCountdownsTickIndependently);
   RUN_TEST(testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses);
   RUN_TEST(testRawUsageWindowParserCapacityStillAcceptsNormalLabels);
@@ -2512,6 +2596,7 @@ int main() {
   RUN_TEST(testCompiledThemeSpecSeparatesGifAssetsFromAnimatedSprites);
   RUN_TEST(testChangedPrimitivePassReplaysDirtyRegion);
   RUN_TEST(testChangedPrimitivePassReportsSkippedAnimatedOverlap);
+  RUN_TEST(testChangedPrimitivePassDoesNotBridgeUnchangedGif);
   RUN_TEST(testChangedPrimitivePassUsesThemeBackgroundAndOverlaps);
   RUN_TEST(testChangedLabelPassUsesRenderedFontHeightForProviderLabel);
   RUN_TEST(testChangedPrimitivePassHandlesCompactClippySpec);

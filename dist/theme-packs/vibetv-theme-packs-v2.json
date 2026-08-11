@@ -33,21 +33,6 @@
       "bytes": 18642
     },
     {
-      "id": "cozy-meadow",
-      "title": "Cozy Meadow",
-      "usage": "live",
-      "version": "0.2.2",
-      "themeRev": 4,
-      "themeSpecPath": "/themes/u/cm-4-5e14e6.json",
-      "requiresFirmware": "1.0.40",
-      "requiredCapabilities": [
-        "usage-slots-v1"
-      ],
-      "downloadAsset": "vibetv-theme-cozy-meadow-v0.2.2.zip",
-      "sha256": "b2cb9d9174b894b45c2a4e866dac02049a7158649e011968066c14af56e1660d",
-      "bytes": 1075
-    },
-    {
       "id": "mini-classic",
       "title": "Mini Classic",
       "usage": "live",

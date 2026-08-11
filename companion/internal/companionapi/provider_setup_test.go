@@ -194,6 +194,38 @@ func TestProviderSetupDoesNotPromoteGloballyWithHealthyAndFailingProviders(t *te
 	}
 }
 
+func TestProviderSetupPreservesCurrentEngineErrorOverCachedUsage(t *testing.T) {
+	now := time.Date(2026, 7, 28, 13, 30, 0, 0, time.UTC)
+	setup := codexbar.ProviderSetup{
+		Status: "setup_required",
+		Engine: codexbar.EngineReadiness{Status: codexbar.ProviderEngineError},
+		Providers: []codexbar.ProviderReadiness{{
+			ID: "codexbar", Label: "Usage service", Enabled: true, Status: codexbar.ProviderEngineError,
+		}},
+	}
+	ready := []codexbar.ProviderReadiness{{
+		ID: "codex", Label: "Codex", Enabled: true, Status: codexbar.ProviderReady,
+	}}
+
+	for _, reconcile := range []struct {
+		name string
+		fn   func(codexbar.ProviderSetup, []codexbar.ProviderReadiness, time.Time) codexbar.ProviderSetup
+	}{
+		{name: "quota", fn: reconcileProviderSetupWithUsage},
+		{name: "tokens", fn: reconcileProviderSetupWithTokenEvidence},
+	} {
+		t.Run(reconcile.name, func(t *testing.T) {
+			got := reconcile.fn(setup, ready, now)
+			if got.Status == codexbar.ProviderReady || got.Engine.Status != codexbar.ProviderEngineError {
+				t.Fatalf("cached usage hid the current engine error: %+v", got)
+			}
+			if providerByID(got.Providers, "codexbar") == nil {
+				t.Fatalf("cached usage removed the current engine error: %+v", got)
+			}
+		})
+	}
+}
+
 func TestProviderSetupDoesNotReconcileFromStaleOrUnavailableUsage(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -339,87 +371,34 @@ func TestProviderSetupTokenEvidencePreservesSpecificProviderFailures(t *testing.
 	}
 }
 
-func TestProviderSetupEvidencePreservesSpecificProviderFailures(t *testing.T) {
+func TestProviderSetupUsagePreservesSpecificProviderFailures(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 29, 12, 22, 0, 0, time.UTC)
-	tests := []struct {
-		name       string
-		providerID string
-		engine     string
-		status     string
-		detail     string
-		nextAction string
-		tokenOnly  bool
-	}{
-		{
-			name:       "auth required",
-			providerID: "codex",
-			engine:     codexbar.ProviderReady,
-			status:     codexbar.ProviderAuthRequired,
-			detail:     "This provider needs an active sign-in.",
-		},
-		{
-			name:       "permission required",
-			providerID: "codex",
-			engine:     codexbar.ProviderReady,
-			status:     codexbar.ProviderPermissionRequired,
-			detail:     "macOS blocked access required by this provider.",
-			nextAction: "Allow the requested macOS permission, then check again.",
-		},
-		{
-			name:       "configuration error with usage",
-			providerID: "codexbar",
-			engine:     codexbar.ProviderConfigError,
-			status:     codexbar.ProviderConfigError,
-			detail:     "The usage service could not save or read its provider settings.",
-			nextAction: "Repair the usage service, then check again.",
-		},
-		{
-			name:       "configuration error with token history",
-			providerID: "codexbar",
-			engine:     codexbar.ProviderConfigError,
-			status:     codexbar.ProviderConfigError,
-			detail:     "The usage service could not save or read its provider settings.",
-			nextAction: "Repair the usage service, then check again.",
-			tokenOnly:  true,
-		},
+	server.now = func() time.Time { return now }
+	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
+		return codexbar.ProviderSetup{
+			Status: "setup_required",
+			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+			Providers: []codexbar.ProviderReadiness{{
+				ID: "codex", Label: "Codex", Enabled: true, Status: codexbar.ProviderAuthRequired,
+				Detail: "This provider needs an active sign-in.",
+			}},
+		}
 	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return freshProviderUsage("codex", "Codex", now), true
+	}
+	server.currentProviderSetup(context.Background(), true)
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			server := newTestServer(t, runtimeconfig.Config{})
-			server.now = func() time.Time { return now }
-			server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
-				return codexbar.ProviderSetup{
-					Status:    "setup_required",
-					CheckedAt: now.Format(time.RFC3339Nano),
-					Engine:    codexbar.EngineReadiness{Status: tc.engine},
-					Providers: []codexbar.ProviderReadiness{{
-						ID: tc.providerID, Label: "Codex", Enabled: true, Status: tc.status,
-						Detail: tc.detail, NextAction: tc.nextAction,
-					}},
-				}
-			}
-			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
-				if tc.tokenOnly {
-					return tokenRichQuotaUnavailableUsage("codex", "Codex", now), true
-				}
-				return freshProviderUsage("codex", "Codex", now.Add(-time.Minute)), true
-			}
-			server.currentProviderSetup(context.Background(), true)
-
-			rec := httptest.NewRecorder()
-			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
-			var got statusResponse
-			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-				t.Fatal(err)
-			}
-			provider := providerByID(got.ProviderSetup.Providers, tc.providerID)
-			if got.ProviderSetup.Status == codexbar.ProviderReady ||
-				got.ProviderSetup.Engine.Status != tc.engine || provider == nil ||
-				provider.Status != tc.status || provider.Detail != tc.detail || provider.NextAction != tc.nextAction {
-				t.Fatalf("cached usage overwrote the current provider failure: %+v", got.ProviderSetup)
-			}
-		})
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	codex := providerByID(got.ProviderSetup.Providers, "codex")
+	if got.ProviderSetup.Status == codexbar.ProviderReady || codex == nil || codex.Status != codexbar.ProviderAuthRequired {
+		t.Fatalf("usage overwrote a specific provider failure: %+v", got.ProviderSetup)
 	}
 }
 
@@ -580,42 +559,50 @@ func TestProviderRetryCanTargetExactProvider(t *testing.T) {
 	}
 }
 
-func TestExactProviderRetryPreservesFreshAuthFailureOverLastGoodUsage(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 30, 14, 30, 0, 0, time.UTC)
-	server.now = func() time.Time { return now }
-	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
-		return freshProviderUsage("codex", "Codex", now.Add(-time.Minute)), true
-	}
-	server.probeExactProvider = func(_ context.Context, _ string, providerID string) codexbar.ProviderSetup {
-		return codexbar.ProviderSetup{
-			Status:    "setup_required",
-			CheckedAt: now.Format(time.RFC3339Nano),
-			Engine:    codexbar.EngineReadiness{Status: codexbar.ProviderReady},
-			Providers: []codexbar.ProviderReadiness{{
-				ID: providerID, Label: "Codex", Enabled: true, Status: codexbar.ProviderAuthRequired,
-			}},
-		}
-	}
-	woke := false
-	server.wakeDisplayStream = func() { woke = true }
+func TestExactProviderRetryPreservesFreshFailureOverLastGoodUsage(t *testing.T) {
+	for _, status := range []string{
+		codexbar.ProviderAuthRequired,
+		codexbar.ProviderPermissionRequired,
+		codexbar.ProviderConfigError,
+	} {
+		t.Run(status, func(t *testing.T) {
+			server := newTestServer(t, runtimeconfig.Config{})
+			now := time.Date(2026, 7, 30, 14, 30, 0, 0, time.UTC)
+			server.now = func() time.Time { return now }
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+				return freshProviderUsage("codex", "Codex", now.Add(-time.Minute)), true
+			}
+			server.probeExactProvider = func(_ context.Context, _ string, providerID string) codexbar.ProviderSetup {
+				return codexbar.ProviderSetup{
+					Status:    "setup_required",
+					CheckedAt: now.Format(time.RFC3339Nano),
+					Engine:    codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+					Providers: []codexbar.ProviderReadiness{{
+						ID: providerID, Label: "Codex", Enabled: true, Status: status,
+					}},
+				}
+			}
+			woke := false
+			server.wakeDisplayStream = func() { woke = true }
 
-	rec := httptest.NewRecorder()
-	server.Handler().ServeHTTP(
-		rec,
-		httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=codex", nil),
-	)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	var got providerSetupResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	provider := providerByID(got.ProviderSetup.Providers, "codex")
-	if got.ProviderSetup.Status != "setup_required" || provider == nil ||
-		provider.Status != codexbar.ProviderAuthRequired || woke {
-		t.Fatalf("fresh exact auth failure was overwritten: woke=%t setup=%+v", woke, got.ProviderSetup)
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(
+				rec,
+				httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=codex", nil),
+			)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			var got providerSetupResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			provider := providerByID(got.ProviderSetup.Providers, "codex")
+			if got.ProviderSetup.Status != "setup_required" || provider == nil ||
+				provider.Status != status || woke {
+				t.Fatalf("fresh exact failure was overwritten: woke=%t setup=%+v", woke, got.ProviderSetup)
+			}
+		})
 	}
 }
 

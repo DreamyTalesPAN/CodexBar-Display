@@ -5,6 +5,7 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 import type { DeviceInfo, UsageSnapshot } from "./control-center-types";
 import {
+  deviceIsActive,
   deviceIsCustomerConnected,
   deviceIsReady,
   deviceIsWaitingForUsage,
@@ -178,8 +179,8 @@ type FrameData = {
 // connected to the current provider or VibeTV frame, so labels must not imply
 // a provider-specific entitlement such as "Codex Spark Weekly".
 export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
-  provider: "codex",
-  label: "Codex",
+  provider: "vibetv",
+  label: "VibeTV",
   session: 64,
   weekly: 64,
   sessionUnavailable: false,
@@ -260,11 +261,11 @@ export function useLatestDisplayFrame(
           requestInit.targetAddressSpace = "loopback";
         }
         const response = await fetch(url, requestInit);
-        if (!response.ok) {
+        const nextFrame = await parseLatestDisplayFrameResponse(response);
+        if (!nextFrame) {
           setDisplayFrame(null);
-          throw new Error("display frame unavailable");
+          return;
         }
-        const nextFrame = (await response.json()) as DisplayFrameSnapshot;
         setDisplayFrame(nextFrame);
         onFrame?.(nextFrame);
       } catch (error) {
@@ -286,6 +287,23 @@ export function useLatestDisplayFrame(
   return displayFrame;
 }
 
+export async function parseLatestDisplayFrameResponse(
+  response: Response,
+): Promise<DisplayFrameSnapshot | null> {
+  if (response.ok) {
+    return (await response.json()) as DisplayFrameSnapshot;
+  }
+  if (response.status === 404) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: { code?: unknown };
+    } | null;
+    if (payload?.error?.code === "display_frame_unavailable") {
+      return null;
+    }
+  }
+  throw new Error("display frame unavailable");
+}
+
 export function LiveVibeTVPreview({
   device,
   displayFrame,
@@ -296,7 +314,20 @@ export function LiveVibeTVPreview({
   const themeSpecHash = normalizeThemeSpecHash(
     device?.display?.themeSpec?.hash,
   );
-  const deviceConnected = deviceIsCustomerConnected(device);
+  const deviceConnected = Boolean(
+    deviceIsCustomerConnected(device) ||
+      (deviceIsActive(device) &&
+        device?.paired !== false &&
+        // Approved behavior (2026-08-03): temporary failures keep the last
+        // verified preview visible while the device reconnects. But a cached
+        // frame is not a live connection forever: once the companion reports
+        // the device disconnected AND the frame has aged past the reconnect
+        // grace window, the preview goes offline instead of replaying stale
+        // usage as if it were live.
+        (device?.connected !== false ||
+          frameFreshForReconnect(displayFrame)) &&
+        hasRenderableUsage(displayFrame)),
+  );
   const deviceReady = deviceIsReady(device);
   const waitingForUsage = deviceIsWaitingForUsage(device);
   const effectiveDisplayFrame = livePreviewDisplayFrame(device, displayFrame);
@@ -308,6 +339,7 @@ export function LiveVibeTVPreview({
       )
     : null;
   const [packState, setPackState] = useState<ThemePackState | null>(null);
+  const [packRetryNonce, setPackRetryNonce] = useState(0);
   const pack =
     packState?.themeId === themeId &&
     packState.themeSpecHash === themeSpecHash &&
@@ -328,7 +360,10 @@ export function LiveVibeTVPreview({
     }
 
     const localPack = loadLocalThemeRenderPack(themeId, themeSpecPath);
-    if (localPack && (!themeSpecHash || localPack.specHash === themeSpecHash)) {
+    if (
+      localPack &&
+      (!themeSpecHash || localPack.specHash === themeSpecHash)
+    ) {
       const timer = window.setTimeout(() => {
         setPackState({
           themeId,
@@ -342,6 +377,17 @@ export function LiveVibeTVPreview({
     }
 
     const controller = new AbortController();
+    let retryTimer: number | undefined;
+    // The pack fetch must never park in a terminal error state: the Companion
+    // may still be starting, the pack cache may still be building, or the
+    // device may be mid theme-update. A connected Overview showing a permanent
+    // "PREVIEW UNAVAILABLE" is the customer bug from 2026-08-06 - keep
+    // retrying until the pack matches the active revision.
+    const scheduleRetry = () => {
+      retryTimer = window.setTimeout(() => {
+        setPackRetryNonce((nonce) => nonce + 1);
+      }, THEME_PACK_RETRY_MS);
+    };
     fetchThemeRenderPackRevision(
       themeId,
       themeSpecPath,
@@ -361,6 +407,9 @@ export function LiveVibeTVPreview({
           pack: matchesActiveRevision ? payload : null,
           status: matchesActiveRevision ? "ready" : "error",
         });
+        if (!matchesActiveRevision) {
+          scheduleRetry();
+        }
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") {
@@ -373,10 +422,16 @@ export function LiveVibeTVPreview({
           pack: null,
           status: "error",
         });
+        scheduleRetry();
       });
 
-    return () => controller.abort();
-  }, [themeId, themeSpecHash, themeSpecPath]);
+    return () => {
+      controller.abort();
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+      }
+    };
+  }, [themeId, themeSpecHash, themeSpecPath, packRetryNonce]);
 
   return (
     <figure className="w-full max-w-[520px]">
@@ -391,11 +446,7 @@ export function LiveVibeTVPreview({
             themeId={pack.themeId || themeId}
           />
         ) : frame ? (
-          <ThemeSpecLoading
-            message={liveThemePreviewMessage(packStatus)}
-            status={packStatus}
-            themeId={themeId}
-          />
+          <ThemeSpecLoading status={packStatus} themeId={themeId} />
         ) : waitingForUsage ? (
           <ThemeSpecLoading
             message="Waiting for usage…"
@@ -410,19 +461,41 @@ export function LiveVibeTVPreview({
   );
 }
 
-export function liveThemePreviewMessage(
-  packStatus: "idle" | "loading" | "ready" | "error",
-): string | undefined {
-  return packStatus === "error"
-    ? "Theme active on VibeTV. Preview not stored on this Mac."
-    : undefined;
+// Matches the companion's displayStreamReadyAge window: a frame older than
+// this is no longer evidence of a live device.
+const RECONNECT_FRAME_GRACE_MS = 120_000;
+
+// Retry cadence for the theme render pack while it is unavailable or does not
+// match the device's active revision yet.
+const THEME_PACK_RETRY_MS = 5_000;
+
+export function frameFreshForReconnect(
+  displayFrame: DisplayFrameSnapshot | null | undefined,
+): boolean {
+  const savedAt = displayFrame?.savedAt;
+  if (!savedAt) {
+    return true;
+  }
+  const savedAtMs = Date.parse(savedAt);
+  if (!Number.isFinite(savedAtMs)) {
+    return true;
+  }
+  return Date.now() - savedAtMs <= RECONNECT_FRAME_GRACE_MS;
 }
 
 export function livePreviewDisplayFrame(
   device: DeviceInfo | null | undefined,
   displayFrame: DisplayFrameSnapshot | null | undefined,
 ) {
-  if (!deviceIsCustomerConnected(device) || !hasRenderableUsage(displayFrame)) {
+  // Approved behavior (2026-08-03): temporary failures keep the last verified
+  // preview frame visible while the device reconnects. The frame is only shown
+  // as a LIVE connection when the device is not reported disconnected (see
+  // deviceConnected above).
+  if (
+    (!deviceIsCustomerConnected(device) &&
+      (!deviceIsActive(device) || device?.paired === false)) ||
+    !hasRenderableUsage(displayFrame)
+  ) {
     return null;
   }
   return displayFrame;
@@ -1251,7 +1324,7 @@ export function themeRenderPackMatchesActiveRevision(
   );
 }
 
-function renderTextPrimitive(
+export function renderTextPrimitive(
   primitive: ThemePrimitive,
   frame: FrameData,
 ): string {

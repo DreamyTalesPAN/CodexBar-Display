@@ -69,7 +69,8 @@ export function SettingsScreen({
   const localActionBusy =
     busyAction === "brightness" ||
     busyAction === "standby" ||
-    busyAction === "reset-setup";
+    busyAction === "reset-setup" ||
+    busyAction === "firmware-update";
   // Firmware that does not advertise standby has no screensaver at all, so the
   // whole block stays hidden instead of showing controls that cannot work.
   const standbySupport = device?.capabilities?.standby?.supported === true;

@@ -428,7 +428,7 @@ func TestCleanupSlotAssetsDeletesLiveUserFiles(t *testing.T) {
 	var out bytes.Buffer
 	cleanupSlotAssets(wifi, &target, nil, &out, themepack.LivePathPrefix, nil)
 
-	if strings.Join(deleted, ",") != "/themes/u/old.cba,/themes/u/old.json" {
+	if strings.Join(deleted, ",") != "/themes/mini/mini.gif,/themes/u/old.cba,/themes/u/old.json" {
 		t.Fatalf("unexpected deleted paths: %v", deleted)
 	}
 	if !strings.Contains(out.String(), "Cleaning old theme files") {
@@ -1272,13 +1272,13 @@ func writeMinimalThemePack(t *testing.T) string {
 func writeUsageSlotsThemePack(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	spec := `{"v":1,"id":"slot-theme","rev":1,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"sl":1,"b":"us1l","s":1}]}`
+	spec := `{"v":1,"id":"slot-theme","rev":1,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"sl":1,"b":"us1l","s":1},{"t":"tx","x":0,"y":10,"ui":1,"b":"usage.label","s":1}]}`
 	manifest := `{
 		"kind":"vibetv-theme-pack",
 		"schemaVersion":1,
 		"id":"slot-theme",
 		"name":"Slot Theme",
-		"requiredCapabilities":["usage-slots-v1"],
+		"requiredCapabilities":["usage-slots-v1","usage-windows-v1"],
 		"themeSpec":{"path":"/themes/u/slot.json","file":"theme.json"}
 	}`
 	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644); err != nil {
@@ -1683,9 +1683,11 @@ func writeUsageSlotsThemeHelloWithGIFLimit(t *testing.T, w http.ResponseWriter, 
 		"builtinThemes":           []string{"mini"},
 		"supportedPrimitiveTypes": []string{"text", "progress", "rect", "gif", "sprite"},
 		"supportsUsageSlotsV1":    supportsUsageSlots,
+		"supportsUsageWindowsV1":  supportsUsageSlots,
+		"maxUsageWindows":         3,
 	}
 	if supportsUsageSlots {
-		features = append(features, "usage-slots-v1")
+		features = append(features, "usage-slots-v1", "usage-windows-v1")
 	}
 	payload := map[string]any{
 		"kind":            "hello",

@@ -565,12 +565,7 @@ func filterDisabledProviders(resp usageResponse, settings []codexbar.ProviderSet
 		return resp
 	}
 
-	enabled := make(map[string]struct{})
-	for _, setting := range settings {
-		if setting.Enabled {
-			enabled[setting.ID] = struct{}{}
-		}
-	}
+	enabled := enabledProviderIDs(settings)
 
 	providers := make([]usageProviderInfo, 0, len(resp.Providers))
 	for _, provider := range resp.Providers {
@@ -587,7 +582,24 @@ func filterDisabledProviders(resp usageResponse, settings []codexbar.ProviderSet
 		resp.CurrentProvider = providers[0].ID
 	}
 	resp.UsageMode = usageModeForProviders(providers)
+	resp.TokenUsageReady = usageProvidersHaveTokenResult(providers)
+	resp.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(providers)
+	if !resp.TokenUsageReady {
+		for i := range providers {
+			clearUsageProviderTokenHistory(&providers[i])
+		}
+	}
 	return resp
+}
+
+func enabledProviderIDs(settings []codexbar.ProviderSetting) map[string]struct{} {
+	enabled := make(map[string]struct{})
+	for _, setting := range settings {
+		if setting.Enabled {
+			enabled[setting.ID] = struct{}{}
+		}
+	}
+	return enabled
 }
 
 func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []preferenceDescriptor {
@@ -629,7 +641,9 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			state = string(codexbar.ProviderHealthHealthy)
 			message = "Token history is available; usage limits are temporarily unavailable."
 		} else if setting.Service == codexbar.ProviderServiceOutage &&
-			(setting.Health == codexbar.ProviderHealthHealthy || setting.Health == codexbar.ProviderHealthChecking) {
+			(setting.Health == codexbar.ProviderHealthHealthy ||
+				setting.Health == codexbar.ProviderHealthChecking ||
+				setting.Health == codexbar.ProviderHealthUnavailable) {
 			state = "service_outage"
 			message = "This provider is reporting a service outage."
 		} else if setting.Health == codexbar.ProviderHealthUnavailable && lastSuccess[setting.ID] != "" {

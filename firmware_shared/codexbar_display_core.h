@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include "usage_window_contract.h"
+
 #ifndef CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 #define CODEXBAR_DISPLAY_THEME_SPEC_RENDERER 0
 #endif
@@ -72,11 +74,9 @@ constexpr size_t kAdvertisedUsageWindowFrameOverheadBytes =
     kUsageWindowFrameOverheadBytes +
     kProviderEscapedWireBytes +
     kProviderLabelEscapedWireBytes;
-constexpr size_t kAdvertisedMaxUsageWindows =
-    (kFrameLineBufferBytes - kAdvertisedUsageWindowFrameOverheadBytes + 1) /
-    kAdvertisedUsageWindowWireBudgetWithCommaBytes;
+constexpr size_t kAdvertisedMaxUsageWindows = usage_window_contract::kMaxWindows;
+constexpr size_t kMaxUsageWindows = usage_window_contract::kMaxWindows;
 static_assert(kAdvertisedMaxUsageWindows > 0, "advertised usage window capability must be positive");
-static_assert(kAdvertisedMaxUsageWindows <= kMaxUsageWindows, "advertised usage window capability must not exceed parser capacity");
 static_assert(
     kAdvertisedUsageWindowFrameOverheadBytes + (kAdvertisedMaxUsageWindows * kAdvertisedUsageWindowWireBudgetWithCommaBytes) - 1 <= kFrameLineBufferBytes,
     "advertised usage window capability must fit escaped max frame bytes");
@@ -523,6 +523,19 @@ inline bool ThemeSpecUsesTokenFields(const String& raw) {
 inline bool ThemeSpecRawLooksRenderable(const String& raw) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   return raw.indexOf("primitives") >= 0 || raw.indexOf("\"p\"") >= 0;
+#else
+  (void)raw;
+  return false;
+#endif
+}
+
+inline bool ThemeSpecRawCompiles(const String& raw) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  JsonDocument doc;
+  themespec::CompiledThemeSpec scene;
+  const bool ok = themespec::CompileThemeSpec(raw.c_str(), doc, scene);
+  themespec::ReleaseCompiledThemeSpec(scene);
+  return ok;
 #else
   (void)raw;
   return false;
@@ -1159,7 +1172,7 @@ inline bool RestoreStoredThemeSpecFrame(
     unsigned long nowMillis,
     SerialConsumeEvent& outEvent) {
   outEvent = {};
-  if (themeId.length() == 0 || themeRev <= 0 || !ThemeSpecRawLooksRenderable(raw)) {
+  if (themeId.length() == 0 || themeRev <= 0 || !ThemeSpecRawCompiles(raw)) {
     return false;
   }
 
@@ -1177,6 +1190,8 @@ inline bool RestoreStoredThemeSpecFrame(
   runtimeState.cachedThemeSpecRaw = raw;
   runtimeState.current = next;
   runtimeState.hasFrame = true;
+  runtimeState.resetBaseSecs = next.resetSecs;
+  runtimeState.resetBaseMillis = nowMillis;
   outEvent.frameAccepted = true;
   outEvent.hadFrame = hadFrame;
   outEvent.themeSpecChanged = true;

@@ -7,6 +7,8 @@
 #include <cstring>
 #include <new>
 
+#include "usage_window_contract.h"
+
 namespace codexbar_display {
 namespace themespec {
 
@@ -22,7 +24,7 @@ constexpr uint32_t kThemeSpecFieldDate = 1UL << 8;
 constexpr uint32_t kThemeSpecFieldSessionTokens = 1UL << 9;
 constexpr uint32_t kThemeSpecFieldWeekTokens = 1UL << 10;
 constexpr uint32_t kThemeSpecFieldTotalTokens = 1UL << 11;
-constexpr size_t kMaxThemeSpecUsageWindows = 2048 / 96;
+constexpr size_t kMaxThemeSpecUsageWindows = usage_window_contract::kMaxWindows;
 constexpr uint32_t kThemeSpecFieldUsageWindows = 1UL << 12;
 constexpr uint32_t kThemeSpecFieldUsageSlot1 = kThemeSpecFieldUsageWindows;
 constexpr uint32_t kThemeSpecFieldUsageSlot2 = kThemeSpecFieldUsageWindows;
@@ -1372,6 +1374,10 @@ inline int CompiledProgressPercentFor(const CompiledPrimitive& primitive, const 
 }
 
 inline bool CompiledProgressLaneUnavailable(const CompiledPrimitive& primitive, const FrameData& frame) {
+  const int slotIndex = UsageWindowBindingIndex(primitive.binding);
+  if (slotIndex >= 0) {
+    return !BoundUsageWindowFor(frame, primitive.binding, slotIndex).available;
+  }
   if (frame.usageUnavailable) {
     return false;
   }
@@ -1726,6 +1732,53 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
       *error = "empty_dirty_bounds";
     }
     return false;
+  }
+
+  bool dirtyBridgesUnchangedAnimation = false;
+  for (size_t i = 0; i < scene.primitiveCount; ++i) {
+    const CompiledPrimitive& primitive = scene.primitives[i];
+    if (!CompiledPrimitiveIsAnimated(primitive, frame) ||
+        (primitive.liveFields & changedFields) != 0) {
+      continue;
+    }
+    Bounds primitiveBounds;
+    if (CompiledPrimitiveBounds(primitive, frame, false, primitiveBounds) &&
+        BoundsOverlap(dirty, primitiveBounds)) {
+      dirtyBridgesUnchangedAnimation = true;
+      break;
+    }
+  }
+
+  if (dirtyBridgesUnchangedAnimation) {
+    bool skippedAnimated = false;
+    for (size_t i = 0; i < scene.primitiveCount; ++i) {
+      const CompiledPrimitive& primitive = scene.primitives[i];
+      if ((primitive.liveFields & changedFields) == 0) {
+        continue;
+      }
+      Bounds primitiveBounds;
+      if (!CompiledPrimitiveBounds(primitive, frame, true, primitiveBounds)) {
+        if (error != nullptr) {
+          *error = "unstable_dirty_bounds";
+        }
+        return false;
+      }
+      bool regionSkippedAnimated = false;
+      if (!RenderCompiledThemeSpecRegionPrimitives(
+              scene,
+              frame,
+              primitiveBounds,
+              sink,
+              error,
+              &regionSkippedAnimated)) {
+        return false;
+      }
+      skippedAnimated = skippedAnimated || regionSkippedAnimated;
+    }
+    if (skippedAnimatedOverlap != nullptr) {
+      *skippedAnimatedOverlap = skippedAnimated;
+    }
+    return true;
   }
 
   return RenderCompiledThemeSpecRegionPrimitives(scene, frame, dirty, sink, error, skippedAnimatedOverlap);

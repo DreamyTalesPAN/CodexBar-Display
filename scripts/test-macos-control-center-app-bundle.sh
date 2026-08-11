@@ -588,6 +588,9 @@ required_source = [
     "SMAppService.agent(plistName: runtimeLaunchAgentPlistName)",
     "try runtimeService.register()",
     "runtimeService.unregister(completionHandler:",
+    "shouldPostponeRelaunchForUpdate item: SUAppcastItem",
+    "await unregisterBundledRuntimeService()",
+    "installHandler()",
     "runtimeServiceNeedsRefresh(",
     'previewRuntimeLaunchAgentLabel =',
     'localPreviewRuntimeInfoKey = "VibeTVLocalPreviewRuntime"',
@@ -995,6 +998,80 @@ if "recordCurrentRuntimeBundleVersion" in register_method:
         "SMAppService enabled status must not persist a version before the HTTP health gate"
     )
 
+ensure_method = source[
+    source.find("private func ensureBundledRuntimeServiceRegistered()"):
+    source.find("private func registerBundledRuntimeService()")
+]
+missing_registration = ensure_method.find("case .notRegistered, .notFound:")
+stop_stale_runtime = ensure_method.find(
+    "await unregisterBundledRuntimeService()",
+    missing_registration,
+)
+register_replacement = ensure_method.find(
+    "return registerBundledRuntimeService()",
+    missing_registration,
+)
+if not (0 <= missing_registration < stop_stale_runtime < register_replacement):
+    raise SystemExit(
+        "a new app must stop an exact-label old runtime before registering its replacement"
+    )
+
+unregister_method = source[
+    source.find("private func unregisterBundledRuntimeService()"):
+    source.find("private func bundledRuntimeServiceIsEnabled()")
+]
+sm_unregister = unregister_method.find("runtimeService.unregister")
+stop_loaded_runtime = unregister_method.find(
+    "stopLoadedLaunchAgent(label: runtimeLaunchAgentLabel)",
+    sm_unregister,
+)
+successful_unregister = unregister_method.rfind("return true")
+if not (
+    0 <= sm_unregister
+    < stop_loaded_runtime
+    < successful_unregister
+):
+    raise SystemExit(
+        "runtime unregister must stop and verify the exact-label LaunchAgent after SMAppService unregister"
+    )
+
+validation_unregister = source[
+    source.find("private func runRuntimeValidationUnregister()"):
+    source.find("private struct RuntimeStatusPayload")
+]
+validation_stop_loaded = validation_unregister.find(
+    "stopLoadedLaunchAgent(label: runtimeLaunchAgentLabel)"
+)
+validation_success = validation_unregister.rfind("return 0")
+if not (0 <= validation_stop_loaded < validation_success):
+    raise SystemExit(
+        "runtime validation unregister must stop the exact-label LaunchAgent before reporting success"
+    )
+
+stop_loaded_helper = source[
+    source.find("private func stopLoadedLaunchAgent(label: String)"):
+    source.find("func canSafelyStopLegacyLaunchAgent(")
+]
+if (
+    '["bootout", target]' not in stop_loaded_helper
+    or '["print", target]' not in stop_loaded_helper
+    or ".exitStatus != 0" not in stop_loaded_helper
+):
+    raise SystemExit(
+        "exact-label LaunchAgent stop must boot out and verify the loaded job"
+    )
+
+update_handoff = source[
+    source.find("shouldPostponeRelaunchForUpdate item: SUAppcastItem"):
+    source.find("#endif", source.find("shouldPostponeRelaunchForUpdate item: SUAppcastItem"))
+]
+stop_runtime = update_handoff.find("await unregisterBundledRuntimeService()")
+continue_install = update_handoff.find("installHandler()")
+if not (0 <= stop_runtime < continue_install):
+    raise SystemExit(
+        "Sparkle must stop the runtime before continuing update installation"
+    )
+
 for forbidden in [
     "companionProcess",
     "Darwin.kill",
@@ -1091,14 +1168,12 @@ PY
     || die "CodexBar distribution version must stay pinned"
   grep -qF 'SHA256="8fe3e93b84151d682c7b80a10e2878c72cbf2e59ff78dd616c26e8cc197a79a0"' "${ROOT}/scripts/fetch-codexbar.sh" \
     || die "CodexBar distribution checksum must stay pinned"
-  grep -qF 'verify-bundled-codexbar.sh' "${ROOT}/.github/workflows/release.yml" \
-    || die "release workflow must verify the bundled CodexBar payload"
-  grep -qF 'generate_appcast' "${ROOT}/.github/workflows/release.yml" \
-    || die "release workflow must generate a Sparkle appcast"
-  grep -qF 'sparkle:edSignature=' "${ROOT}/.github/workflows/release.yml" \
-    || die "release workflow must verify the appcast signature"
-  grep -qF 'SPARKLE_ED25519_PRIVATE_KEY' "${ROOT}/.github/workflows/release.yml" \
-    || die "release workflow must source the Sparkle private key from Actions secrets"
+  grep -qF 'verify-bundled-codexbar.sh' "${ROOT}/.github/workflows/validate-macos-dmg.yml" \
+    || die "the signed DMG workflow must verify the bundled CodexBar payload"
+  ! grep -Eq \
+    'APPLE_SIGNING_CERTIFICATE|APPLE_NOTARY|SPARKLE_ED25519_PRIVATE_KEY|generate_appcast' \
+    "${ROOT}/.github/workflows/release.yml" \
+    || die "publish workflow must consume signed candidate assets without signing or appcast secrets"
 
   grep -qF "com.codexbar-display.daemon" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     || die "native app shell must detect the old LaunchAgent"

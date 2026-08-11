@@ -25,7 +25,11 @@ const (
 	pairDeviceAttempts      = 3
 	assetUploadAttempts     = 3
 	assetUploadRetryMaxBody = 512
-	assetUploadBytesPerSec  = 1024
+	// 8 KB/s in 512-byte chunks keeps ~62 ms between reads, far inside the
+	// firmware's 5 s per-read HTTP wait, while a 24 KB GIF finishes in ~3 s.
+	// The old 1 KB/s pace pushed a 6.3 KB asset past that 5 s wait whenever
+	// the device dropped a chunk, so slower was not safer.
+	assetUploadBytesPerSec  = 8192
 	assetUploadReadChunk    = 512
 	assetUploadMinTimeout   = 30 * time.Second
 	assetUploadTimeoutGrace = 15 * time.Second

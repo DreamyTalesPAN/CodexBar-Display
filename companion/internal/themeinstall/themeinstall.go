@@ -29,6 +29,7 @@ const (
 	DefaultUploadSettleDelay   = 750 * time.Millisecond
 	DefaultFirmwareManifestURL = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
 	uploadVerifyAttempts       = 3
+	legacyMiniGIFPath          = "/themes/mini/mini.gif"
 )
 
 var (
@@ -208,7 +209,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := pack.ValidateAgainstCapabilities(caps); err != nil && !canRetryAfterUsageSlotsFirmwareUpdate(pack, caps, err, opts) {
+	if err := pack.ValidateAgainstCapabilities(caps); err != nil && !canRetryAfterUsageCapabilityFirmwareUpdate(pack, caps, err, opts) {
 		return Result{}, themePackCapabilitiesError(err)
 	}
 	if !opts.SkipFirmwareUpdate && opts.FirmwareUpdater != nil {
@@ -411,7 +412,7 @@ func themePackCapabilitiesError(err error) *InstallError {
 	}
 }
 
-func canRetryAfterUsageSlotsFirmwareUpdate(pack *themepack.Pack, caps protocol.DeviceCapabilities, err error, opts Options) bool {
+func canRetryAfterUsageCapabilityFirmwareUpdate(pack *themepack.Pack, caps protocol.DeviceCapabilities, err error, opts Options) bool {
 	if opts.SkipFirmwareUpdate || opts.FirmwareUpdater == nil || !caps.Known || !caps.SupportsThemeSpecV1 {
 		return false
 	}
@@ -421,12 +422,8 @@ func canRetryAfterUsageSlotsFirmwareUpdate(pack *themepack.Pack, caps protocol.D
 		return false
 	}
 	updatedCaps := caps
-	if missingSlots {
-		updatedCaps.SupportsUsageSlotsV1 = true
-	}
-	if missingWindows {
-		updatedCaps.SupportsUsageWindowsV1 = true
-	}
+	updatedCaps.SupportsUsageSlotsV1 = true
+	updatedCaps.SupportsUsageWindowsV1 = true
 	return pack.ValidateAgainstCapabilities(updatedCaps) == nil
 }
 
@@ -802,6 +799,11 @@ func cleanupSlotAssets(wifi transportlayer.WiFiTransport, target *string, store 
 
 func cleanupSlotAssetPaths(assets transportlayer.DeviceAssetsSnapshot, slotPrefix string, keepPaths map[string]bool) []string {
 	paths := assets.PathsWithPrefix(slotPrefix)
+	if slotPrefix == themepack.LivePathPrefix {
+		if _, exists := assets.AssetSize(legacyMiniGIFPath); exists {
+			paths = append(paths, legacyMiniGIFPath)
+		}
+	}
 	filtered := paths[:0]
 	for _, devicePath := range paths {
 		if keepPaths[strings.TrimSpace(devicePath)] {

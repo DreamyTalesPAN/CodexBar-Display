@@ -39,10 +39,8 @@ import {
   type AppearanceSection,
   type DeviceInfo,
   type ShellNavItem,
-  deviceIsCustomerConnected,
 } from "./control-center-types";
 import { ControlCenterBrand } from "./control-center-brand";
-import { ShellConnectionStatus } from "./shell-connection-status";
 
 type ControlCenterShellProps = {
   activeTab: ActiveTab;
@@ -95,14 +93,10 @@ export function ControlCenterShell({
   onAppearanceSectionChange,
   onTabChange,
   children,
-  device,
   disabledTabs = [],
   headerAction,
   updateAvailable = false,
 }: ControlCenterShellProps) {
-  const connected = deviceIsCustomerConnected(device);
-  const targetLabel = connected ? "VibeTV connected" : "VibeTV not connected";
-  const mobileTargetLabel = connected ? "Connected" : "Not connected";
   const disabledTabSet = new Set(disabledTabs);
   const isTabDisabled = (tab: ActiveTab) => disabledTabSet.has(tab);
   return (
@@ -149,14 +143,7 @@ export function ControlCenterShell({
               </h1>
             </div>
 
-            <div className="flex min-w-0 items-center gap-2">
-              <ShellConnectionStatus
-                compactLabel={mobileTargetLabel}
-                label={targetLabel}
-                ready={connected}
-              />
-              {headerAction}
-            </div>
+            {headerAction}
           </header>
 
           <div className="control-center-shell__content px-5 py-0 sm:px-7 lg:px-10">{children}</div>

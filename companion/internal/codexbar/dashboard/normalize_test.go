@@ -27,13 +27,12 @@ func TestNormalizeClaudeWindowsPreservesEveryValidOrderedWindow(t *testing.T) {
 	}
 }
 
-func TestNormalizeAntigravityWindowsPreservesCodexBarOrder(t *testing.T) {
+func TestNormalizeAntigravityWindowsDeduplicatesStructuralAliases(t *testing.T) {
 	result := normalizeFixture(t, antigravityDashboardFixture, antigravityUsageFixture, "antigravity")
 
-	assertWindowLabels(t, result.Windows, "Gemini Models", "Claude and GPT", "Gemini weekly", "Claude/GPT weekly")
-	if result.Windows[0].UsedPercent != 18.97 || result.Windows[1].UsedPercent != 0 ||
-		result.Windows[2].UsedPercent != 18.97 || result.Windows[3].UsedPercent != 0 {
-		t.Fatalf("expected every CodexBar window in source order, got %+v", result.Windows)
+	assertWindowLabels(t, result.Windows, "Gemini weekly", "Claude/GPT weekly")
+	if result.Windows[0].UsedPercent != 18.97 || result.Windows[1].UsedPercent != 0 {
+		t.Fatalf("expected named extra percentages, got %+v", result.Windows)
 	}
 }
 
@@ -58,10 +57,33 @@ func TestNormalizeKeepsGenuineZeroWindow(t *testing.T) {
 	}
 }
 
-func TestNormalizePreservesDistinctIDsWithMatchingValues(t *testing.T) {
+func TestNormalizeMarksProviderWithOnlyFilteredWindowsUnavailable(t *testing.T) {
+	zero := 0.0
+	unknown := false
+	result := NormalizeProvider(
+		DashboardProvider{
+			ID: "codex",
+			Windows: []DashboardWindow{
+				{Kind: "session", Label: "Session", UsedPercent: &zero},
+			},
+		},
+		UsageProvider{
+			Provider: "codex",
+			Usage: UsageMetadata{
+				Primary: &RateWindow{UsageKnown: &unknown},
+			},
+		},
+	)
+
+	if !result.Unavailable || len(result.Windows) != 0 {
+		t.Fatalf("expected filtered provider windows to remain unavailable, got %+v", result)
+	}
+}
+
+func TestNormalizeDeduplicatesWhenOnlyOneWindowHasWindowMinutes(t *testing.T) {
 	result := normalizeFixture(t, missingWindowMinutesDashboardFixture, missingWindowMinutesUsageFixture, "missing-minutes")
 
-	assertWindowLabels(t, result.Windows, "Weekly", "Named weekly")
+	assertWindowLabels(t, result.Windows, "Named weekly")
 }
 
 func TestNormalizeDoesNotDeduplicateWhenBothWindowMinutesDisagree(t *testing.T) {

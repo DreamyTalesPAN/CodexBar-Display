@@ -132,38 +132,45 @@ func NormalizeProvider(provider DashboardProvider, usage UsageProvider) Provider
 	}
 
 	metadata := indexUsageMetadata(usage.Usage)
-	windows := make([]UsageWindow, 0, len(provider.Windows))
+	candidates := make([]windowCandidate, 0, len(provider.Windows))
 	for _, source := range provider.Windows {
 		window, ok := normalizeDashboardWindow(source, metadata)
 		if !ok {
 			continue
 		}
-		windows = append(windows, window)
+		candidates = append(candidates, window)
 	}
-	out.Windows = windows
+	out.Windows = dedupeStructuralAliases(candidates)
 	if len(out.Windows) == 0 {
+		out.Unavailable = true
 		out.Windows = nil
 	}
 	return out
 }
 
 type usageWindowMetadata struct {
-	usageKnown    bool
-	synthetic     bool
-	windowMinutes *int
-	metadataReset *time.Time
+	usageKnown      bool
+	synthetic       bool
+	windowMinutes   *int
+	metadataReset   *time.Time
+	structuralAlias bool
 }
 
-func normalizeDashboardWindow(source DashboardWindow, metadata map[string]usageWindowMetadata) (UsageWindow, bool) {
+type windowCandidate struct {
+	window     UsageWindow
+	structural bool
+}
+
+func normalizeDashboardWindow(source DashboardWindow, metadata map[string]usageWindowMetadata) (windowCandidate, bool) {
 	id := normalizeKey(source.Kind)
 	label := strings.TrimSpace(source.Label)
 	if id == "" || label == "" || source.UsedPercent == nil {
-		return UsageWindow{}, false
+		return windowCandidate{}, false
 	}
 
 	meta, ok := metadata[id]
 	if !ok || !meta.usageKnown || meta.synthetic {
-		return UsageWindow{}, false
+		return windowCandidate{}, false
 	}
 
 	resetAt := source.ResetAt
@@ -171,12 +178,15 @@ func normalizeDashboardWindow(source DashboardWindow, metadata map[string]usageW
 		resetAt = meta.metadataReset
 	}
 
-	return UsageWindow{
-		ID:            id,
-		Label:         label,
-		UsedPercent:   clampPercent(*source.UsedPercent),
-		ResetAt:       resetAt,
-		WindowMinutes: meta.windowMinutes,
+	return windowCandidate{
+		window: UsageWindow{
+			ID:            id,
+			Label:         label,
+			UsedPercent:   clampPercent(*source.UsedPercent),
+			ResetAt:       resetAt,
+			WindowMinutes: meta.windowMinutes,
+		},
+		structural: meta.structuralAlias,
 	}, true
 }
 
@@ -196,10 +206,11 @@ func addStructuralWindow(index map[string]usageWindowMetadata, dashboardKind str
 		return
 	}
 	index[dashboardKind] = usageWindowMetadata{
-		usageKnown:    knownUsage(window.UsageKnown),
-		synthetic:     window.IsSyntheticPlaceholder,
-		windowMinutes: window.WindowMinutes,
-		metadataReset: window.resetAt(),
+		usageKnown:      knownUsage(window.UsageKnown),
+		synthetic:       window.IsSyntheticPlaceholder,
+		windowMinutes:   window.WindowMinutes,
+		metadataReset:   window.resetAt(),
+		structuralAlias: true,
 	}
 }
 
@@ -231,6 +242,46 @@ func (window RateWindow) resetAt() *time.Time {
 		return window.ResetsAt
 	}
 	return window.ResetAt
+}
+
+func dedupeStructuralAliases(candidates []windowCandidate) []UsageWindow {
+	out := make([]UsageWindow, 0, len(candidates))
+	for i, candidate := range candidates {
+		if candidate.structural && hasMatchingNamedWindow(candidate, candidates, i) {
+			continue
+		}
+		out = append(out, candidate.window)
+	}
+	return out
+}
+
+func hasMatchingNamedWindow(structural windowCandidate, candidates []windowCandidate, structuralIndex int) bool {
+	for i, candidate := range candidates {
+		if i == structuralIndex || candidate.structural {
+			continue
+		}
+		if sameWindowIdentity(structural.window, candidate.window) {
+			return true
+		}
+	}
+	return false
+}
+
+func sameWindowIdentity(a, b UsageWindow) bool {
+	if !samePercent(a.UsedPercent, b.UsedPercent) {
+		return false
+	}
+	if a.ResetAt == nil || b.ResetAt == nil || !a.ResetAt.Equal(*b.ResetAt) {
+		return false
+	}
+	if a.WindowMinutes != nil && b.WindowMinutes != nil {
+		return *a.WindowMinutes == *b.WindowMinutes
+	}
+	return true
+}
+
+func samePercent(a, b float64) bool {
+	return math.Abs(a-b) <= 1e-9
 }
 
 func knownUsage(raw *bool) bool {

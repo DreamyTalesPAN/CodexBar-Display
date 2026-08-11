@@ -139,4 +139,22 @@ describe("SettingsScreen standby controls", () => {
       /<h3>Setup<\/h3>.*Connect this Mac to another VibeTV\.<\/p><\/div><div data-slot="item-actions"/,
     );
   });
+  it("keeps VibeTV mutations disabled during a firmware update", () => {
+    const html = renderToStaticMarkup(
+      <SettingsScreen
+        brightness={50}
+        busyAction="firmware-update"
+        device={standbyDevice}
+        standby={savedStandby}
+        onBrightnessChange={vi.fn()}
+        onChooseScreensaver={vi.fn()}
+        onResetSetup={vi.fn()}
+        onSaveBrightness={vi.fn()}
+        onSaveStandby={vi.fn()}
+        onStandbyBrightnessChange={vi.fn()}
+      />,
+    );
+
+    expect(html.match(/<button[^>]*disabled=""/g)?.length).toBeGreaterThanOrEqual(2);
+  });
 });

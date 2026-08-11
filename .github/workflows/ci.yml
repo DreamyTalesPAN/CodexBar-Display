@@ -66,6 +66,9 @@ jobs:
       - name: Check ESP8266 soak gate
         run: ./scripts/check-esp8266-soak-gate.sh
 
+      - name: Test cold/warm start honesty (virtual VibeTV)
+        run: ./scripts/test-companion-coldwarm-e2e.sh
+
       - name: Test customer-readiness checker
         run: ./scripts/test-control-center-companion-customer-readiness.sh
 

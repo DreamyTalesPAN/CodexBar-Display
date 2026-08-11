@@ -105,6 +105,7 @@ func TestRunCycleCoordinatesOnlyTheDeviceWrite(t *testing.T) {
 
 func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	prepareFastTestEnv(t)
+	t.Setenv("CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE", "168h")
 
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	state := &runtimeState{
@@ -130,24 +131,45 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 		},
 	}
 
-	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
-		t.Fatalf("expected unavailable cold-start usage to keep waiting, got %v", err)
+	// Before the first usage ever arrives, providers-without-usage is the
+	// provider-setup state: the cycle must fail as runtime/no-providers so the
+	// device receives the honest error frame and the display-stream parser
+	// reports provider_setup_required instead of an unexplained silent wait.
+	err := runCycleWithDeps(context.Background(), "", state, deps)
+	if err == nil || !strings.Contains(err.Error(), "no-providers") {
+		t.Fatalf("expected the never-had-usage cycle to fail as no-providers, got %v", err)
 	}
-	if len(sentLines) != 0 {
-		t.Fatalf("expected no incomplete frame before first usage, got %d", len(sentLines))
+	if len(sentLines) != 1 {
+		t.Fatalf("expected the honest error frame before first usage, got %d frames", len(sentLines))
+	}
+	if errorFrame := decodeFrameLine(t, sentLines[0]); errorFrame.Error == "" {
+		t.Fatalf("expected an error frame before first usage, got %+v", errorFrame)
+	}
+
+	// A rate-limited selection is a configured, live provider in a temporary
+	// condition: it must keep its unavailable semantics and wait silently
+	// instead of being reclassified as no-providers.
+	rateLimited := unavailable
+	rateLimited.RateLimited = true
+	providers = []codexbar.ParsedFrame{rateLimited}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected the rate-limited cold start to keep waiting, got %v", err)
+	}
+	if len(sentLines) != 1 {
+		t.Fatalf("expected no extra frame for the rate-limited wait, got %d", len(sentLines))
 	}
 	if !strings.Contains(logged.String(), "event=usage-waiting") {
-		t.Fatalf("expected an explicit usage-waiting log, got %q", logged.String())
+		t.Fatalf("expected the rate-limited wait to log usage-waiting, got %q", logged.String())
 	}
 
 	providers = []codexbar.ParsedFrame{testParsedFrame("claude", 0, 11, 3600)}
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected first available usage frame to send, got %v", err)
 	}
-	if len(sentLines) != 1 {
-		t.Fatalf("expected exactly one complete frame, got %d", len(sentLines))
+	if len(sentLines) != 2 {
+		t.Fatalf("expected the complete frame after the error frame, got %d", len(sentLines))
 	}
-	frame := decodeFrameLine(t, sentLines[0])
+	frame := decodeFrameLine(t, sentLines[1])
 	if frame.Provider != "claude" || frame.Weekly != 11 || frame.UsageUnavailable {
 		t.Fatalf("expected complete Claude usage frame, got %+v", frame)
 	}
@@ -156,19 +178,20 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected later unavailable usage to keep the valid frame, got %v", err)
 	}
-	if len(sentLines) != 1 {
-		t.Fatalf("expected unavailable usage to preserve the one valid frame, got %d sends", len(sentLines))
+	if len(sentLines) != 2 {
+		t.Fatalf("expected unavailable usage to preserve the valid frame, got %d sends", len(sentLines))
 	}
 
-	now = now.Add(lastGoodMaxAge() + time.Second)
+	now = now.Add(providerSnapshotMaxAge() + time.Second)
+	deps.usageBarsShowUsed = func() bool { return false }
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected expired usage to send unavailable state, got %v", err)
 	}
-	if len(sentLines) != 2 {
+	if len(sentLines) != 3 {
 		t.Fatalf("expected unavailable state after last-good expiry, got %d sends", len(sentLines))
 	}
-	frame = decodeFrameLine(t, sentLines[1])
-	if frame.Provider != "claude" || !frame.UsageUnavailable {
+	frame = decodeFrameLine(t, sentLines[2])
+	if frame.Provider != "claude" || !frame.UsageUnavailable || frame.Session != 0 || frame.Weekly != 0 || frame.UsageMode != "remaining" {
 		t.Fatalf("expected expired Claude usage to become unavailable, got %+v", frame)
 	}
 }
@@ -191,6 +214,20 @@ func TestDefaultIntervalForTransport(t *testing.T) {
 				t.Fatalf("defaultIntervalForTransport(%q)=%s, expected %s", tt.transport, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestProviderSnapshotMaxAgeDoesNotInheritDeviceFrameRetention(t *testing.T) {
+	t.Setenv("CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE", "168h")
+	t.Setenv(providerMaxAgeEnvVar, "")
+
+	if got := providerSnapshotMaxAge(); got != defaultProviderMaxAge {
+		t.Fatalf("provider freshness inherited device-frame retention: got=%s want=%s", got, defaultProviderMaxAge)
+	}
+
+	t.Setenv(providerMaxAgeEnvVar, "20m")
+	if got := providerSnapshotMaxAge(); got != 20*time.Minute {
+		t.Fatalf("provider-specific freshness override was ignored: got=%s want=20m", got)
 	}
 }
 
@@ -793,37 +830,54 @@ func TestRunCycleWithDepsSkipsThemeWhenDeviceDoesNotSupportIt(t *testing.T) {
 func TestRunCycleWithDepsShowsRemainingWhenUsageBarsShowUsedDisabled(t *testing.T) {
 	prepareFastTestEnv(t)
 
-	now := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	current := time.Date(2026, 2, 23, 12, 0, 0, 0, time.UTC)
+	collectedAt := current.Add(-time.Minute)
 	state := &runtimeState{
 		selector: codexbar.NewProviderSelector(),
 	}
 
-	var sentLine []byte
-	err := runCycleWithDeps(context.Background(), "", state, runtimeDeps{
-		now:               func() time.Time { return now },
+	var sentLines [][]byte
+	providers := []codexbar.ParsedFrame{testParsedFrame("codex", 1, 28, 3600)}
+	providers[0].CollectedAt = collectedAt
+	providers[0].Frame.UsageMode = "used"
+	deps := runtimeDeps{
+		now:               func() time.Time { return current },
 		resolvePort:       func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
 		usageBarsShowUsed: func() bool { return false },
 		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
-			return []codexbar.ParsedFrame{
-				testParsedFrame("codex", 1, 28, 3600),
-			}, nil
+			return providers, nil
 		},
 		logf: func(string, ...any) {},
 		sendLine: func(port string, line []byte) error {
-			sentLine = append([]byte(nil), line...)
+			sentLines = append(sentLines, append([]byte(nil), line...))
 			return nil
 		},
-	})
-	if err != nil {
+	}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected cycle success, got %v", err)
 	}
 
-	frame := decodeFrameLine(t, sentLine)
+	frame := decodeFrameLine(t, sentLines[0])
 	if frame.Session != 99 || frame.Weekly != 72 {
 		t.Fatalf("expected remaining view inversion, got session=%d weekly=%d", frame.Session, frame.Weekly)
 	}
 	if frame.UsageMode != "remaining" {
 		t.Fatalf("expected remaining usage mode, got %q", frame.UsageMode)
+	}
+	if state.lastGood.Session != 1 || state.lastGood.Weekly != 28 || state.lastGood.UsageMode != "used" || !state.lastGoodAt.Equal(collectedAt) {
+		t.Fatalf("last-good did not retain collector-space values and collection time: frame=%+v at=%s", state.lastGood, state.lastGoodAt)
+	}
+
+	current = current.Add(time.Minute)
+	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return nil, &codexbar.FetchError{Kind: codexbar.FetchErrorCommand, Err: errors.New("temporary failure")}
+	}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected last-good fallback, got %v", err)
+	}
+	stale := decodeFrameLine(t, sentLines[1])
+	if stale.Session != 99 || stale.Weekly != 72 || stale.UsageMode != "remaining" {
+		t.Fatalf("last-good fallback applied remaining conversion twice: %+v", stale)
 	}
 }
 
@@ -2655,6 +2709,9 @@ func TestRunCycleWithDepsUsesLastGoodFrameDuringTransientFetchFailure(t *testing
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected first cycle to succeed, got %v", err)
 	}
+	if _, _, ok := loadPersistedLastGoodAnyAge(); !ok {
+		t.Fatal("expected first cycle to persist the sent display frame")
+	}
 
 	current = current.Add(lastGoodMaxAge() + time.Minute)
 	deps.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
@@ -2676,6 +2733,12 @@ func TestRunCycleWithDepsUsesLastGoodFrameDuringTransientFetchFailure(t *testing
 	}
 	if !second.UsageUnavailable {
 		t.Fatalf("expected expired last-good usage to be unavailable, got %+v", second)
+	}
+	if _, _, ok := loadPersistedLastGoodAnyAge(); ok {
+		t.Fatal("expired usage left the previously sent percentages persisted")
+	}
+	if !state.hasLastGood || state.lastGood.UsageUnavailable {
+		t.Fatalf("clearing the display snapshot also removed the in-memory recovery frame: %+v", state.lastGood)
 	}
 }
 
@@ -3225,8 +3288,8 @@ func TestRunWithDepsRetriesAndRecoversAfterReconnect(t *testing.T) {
 	if len(delays) < 5 {
 		t.Fatalf("expected retry delay samples, got %v", delays)
 	}
-	if delays[0] != time.Minute || delays[1] != time.Minute || delays[2] != time.Minute {
-		t.Fatalf("unexpected retry delay start after backoff removal: %v", delays[:3])
+	if delays[0] != failureRetryInterval || delays[1] != failureRetryInterval || delays[2] != failureRetryInterval {
+		t.Fatalf("device-unreachable cycles must use the short reconnect retry: %v", delays[:3])
 	}
 
 	foundIntervalDelay := false
@@ -3250,8 +3313,63 @@ func TestStartupIntervalSwitchesAfterWarmupWindow(t *testing.T) {
 	if got := startupInterval(60*time.Second, startupFastPollWindow); got != 60*time.Second {
 		t.Fatalf("expected normal interval after warmup window, got %s", got)
 	}
-	if got := startupInterval(20*time.Second, 10*time.Second); got != 20*time.Second {
+	if got := startupInterval(2*time.Second, 10*time.Second); got != 2*time.Second {
 		t.Fatalf("expected normal interval when already shorter than startup interval, got %s", got)
+	}
+	// The fast-poll interval must actually be faster than the WiFi default;
+	// otherwise the whole startup fast-poll mechanism is dead code.
+	if startupFastPollInterval >= defaultWiFiInterval {
+		t.Fatalf("startup fast poll (%s) must be shorter than the WiFi interval (%s)",
+			startupFastPollInterval, defaultWiFiInterval)
+	}
+}
+
+func TestRunDaemonLoopRetriesQuicklyAfterCycleError(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var waits []time.Duration
+	cycleCalls := 0
+	err := runDaemonLoop(ctx, Options{Interval: 30 * time.Second, DisableStartupFastPoll: true}, runtimeDeps{
+		now: func() time.Time {
+			return time.Date(2026, 2, 23, 12, 0, cycleCalls, 0, time.UTC)
+		},
+		after: func(wait time.Duration) <-chan time.Time {
+			waits = append(waits, wait)
+			if len(waits) >= 2 {
+				cancel()
+				return make(chan time.Time)
+			}
+			ch := make(chan time.Time, 1)
+			ch <- time.Date(2026, 2, 23, 12, 0, cycleCalls, 0, time.UTC)
+			return ch
+		},
+		logf: func(string, ...any) {},
+	}, func(context.Context) error {
+		cycleCalls++
+		if cycleCalls == 1 {
+			return &RuntimeError{
+				Kind: runtimeErrorDeviceHello,
+				Op:   "read-device-hello",
+				Err:  errors.New("device offline"),
+			}
+		}
+		return nil
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected loop to stay alive until context cancel, got %v", err)
+	}
+	if len(waits) != 2 {
+		t.Fatalf("expected two waits, got %d", len(waits))
+	}
+	if waits[0] != failureRetryInterval {
+		t.Fatalf("failed cycle must retry after %s, waited %s", failureRetryInterval, waits[0])
+	}
+	if waits[1] != 30*time.Second {
+		t.Fatalf("successful cycle must return to the normal interval, waited %s", waits[1])
 	}
 }
 
@@ -3314,7 +3432,10 @@ func TestRunWithDepsUsesConfiguredIntervalAfterSleepWakeGap(t *testing.T) {
 	if len(delays) < 4 {
 		t.Fatalf("expected 4 delay samples, got %v", delays)
 	}
-	want := []time.Duration{time.Minute, time.Minute, time.Minute, time.Minute}
+	// Every cycle here fails at the serial write, so the loop uses the short
+	// device-reconnect retry instead of the configured interval - including
+	// directly after the sleep-wake gap.
+	want := []time.Duration{failureRetryInterval, failureRetryInterval, failureRetryInterval, failureRetryInterval}
 	for i, expected := range want {
 		if delays[i] != expected {
 			t.Fatalf("delay[%d]=%s, expected %s (delays=%v)", i, delays[i], expected, delays)
@@ -3511,6 +3632,73 @@ func TestProviderCollectorWakeCollectsBeforeDisplayWake(t *testing.T) {
 	frames := collector.providerFrames(now)
 	if len(frames) != 1 || frames[0].Frame.Weekly != 77 {
 		t.Fatalf("display wake must follow the refreshed collector snapshot, got %#v", frames)
+	}
+}
+
+func TestProviderCollectorRetriesInitialCollectionWhenDashboardBecomesHealthyWithOnlyExpiredSnapshots(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
+	var dashboardInfo atomic.Value
+	dashboardInfo.Store(codexbar.DashboardServeInfo{})
+	initialFailure := make(chan struct{}, 1)
+	completed := make(chan struct{}, 1)
+	collector := &providerCollector{
+		now: func() time.Time { return now },
+		logf: func(format string, _ ...any) {
+			if strings.Contains(format, "fresh=false") {
+				select {
+				case initialFailure <- struct{}{}:
+				default:
+				}
+			}
+			if strings.Contains(format, "collector complete") {
+				select {
+				case completed <- struct{}{}:
+				default:
+				}
+			}
+		},
+		order:           []string{"codex"},
+		interval:        time.Hour,
+		activityPoll:    5 * time.Millisecond,
+		timeout:         time.Second,
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:  "codex",
+				Frame:     protocol.Frame{Provider: "codex", Session: 9},
+				Collected: now.Add(-11 * time.Minute),
+			},
+		},
+		dashboard: dashboardServeFunc(func() codexbar.DashboardServeInfo {
+			return dashboardInfo.Load().(codexbar.DashboardServeInfo)
+		}),
+		fetchDashboard: func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{dashboardParsedFrame("codex", "Weekly", "Codex Spark Weekly", 21, 7)}, nil
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go collector.run(ctx)
+
+	select {
+	case <-initialFailure:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for initial dashboard startup race")
+	}
+	dashboardInfo.Store(testDashboardServeInfo(1001))
+	select {
+	case <-completed:
+	case <-time.After(time.Second):
+		t.Fatal("collector did not retry after the dashboard became healthy")
+	}
+
+	frames := collector.providerFrames(now)
+	if len(frames) != 1 || frames[0].Provider != "codex" || frames[0].Frame.Session != 21 {
+		t.Fatalf("expected dashboard usage after readiness retry, got %#v", frames)
 	}
 }
 
@@ -4036,6 +4224,66 @@ func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing
 	}
 }
 
+func TestProviderCollectorReplacesRateLimitMetadataOnLaterUnavailableResponse(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
+	current := testParsedFrame("claude", 64, 32, 3600)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		order:           []string{"claude"},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers:       make(map[string]providerSnapshot),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{current}, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+
+	blockedUntil := now.Add(2 * time.Minute)
+	current = codexbar.ParsedFrame{
+		Provider:         "claude",
+		RateLimited:      true,
+		RateLimitedUntil: blockedUntil,
+		Frame: protocol.Frame{
+			Provider:         "claude",
+			UsageUnavailable: true,
+		},
+	}
+	collector.collectOnce(context.Background())
+	if got := collector.providers["claude"]; !got.RateLimited || !got.RateLimitedUntil.Equal(blockedUntil) {
+		t.Fatalf("expected current rate limit metadata, got %#v", got)
+	}
+
+	current.RateLimited = false
+	current.RateLimitedUntil = time.Time{}
+	collector.collectOnce(context.Background())
+	got := collector.providers["claude"]
+	if got.RateLimited || !got.RateLimitedUntil.IsZero() || got.Frame.UsageUnavailable || got.Frame.Session != 64 {
+		t.Fatalf("later unavailable error must clear only obsolete rate limit metadata, got %#v", got)
+	}
+
+	now = now.Add(11 * time.Minute)
+	blockedUntil = now.Add(2 * time.Minute)
+	current.RateLimited = true
+	current.RateLimitedUntil = blockedUntil
+	collector.collectOnce(context.Background())
+	got = collector.providers["claude"]
+	if !got.Frame.UsageUnavailable || !got.RateLimited || !got.RateLimitedUntil.Equal(blockedUntil) {
+		t.Fatalf("already unavailable provider did not receive current rate limit metadata: %#v", got)
+	}
+
+	current.RateLimited = false
+	current.RateLimitedUntil = time.Time{}
+	collector.collectOnce(context.Background())
+	got = collector.providers["claude"]
+	if !got.Frame.UsageUnavailable || got.RateLimited || !got.RateLimitedUntil.IsZero() {
+		t.Fatalf("already unavailable provider kept obsolete rate limit metadata: %#v", got)
+	}
+}
+
 func TestProviderCollectorPreservesTokenStatsAcrossTemporaryFailureAndRecovers(t *testing.T) {
 	prepareFastTestEnv(t)
 
@@ -4212,15 +4460,29 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 		defer collector.tokenStatsMu.Unlock()
 		return !collector.tokenStatsRunning
 	})
+	clockNanos.Add(int64(time.Minute))
+	wake <- struct{}{}
+	<-afterWake
+	waitForCondition(t, time.Second, func() bool {
+		return tokenFetches.Load() == 2
+	})
+	waitForCondition(t, time.Second, func() bool {
+		collector.tokenStatsMu.Lock()
+		defer collector.tokenStatsMu.Unlock()
+		return !collector.tokenStatsRunning
+	})
 	collector.mu.RLock()
-	firstTokenCollection := collector.providers["codex"].TokenStatsCollected
+	afterGrowingHistoryWake := collector.providers["codex"]
 	collector.mu.RUnlock()
+	if !afterGrowingHistoryWake.Collected.Equal(now()) || !afterGrowingHistoryWake.TokenStatsCollected.Equal(now()) {
+		t.Fatalf("manual wake did not refresh growing quota and token history: snapshot=%#v want=%s", afterGrowingHistoryWake, now())
+	}
 
 	clockNanos.Add(int64(time.Minute))
 	wake <- struct{}{}
 	<-afterWake
-	if got := tokenFetches.Load(); got != 1 {
-		t.Fatalf("manual wake bypassed global token scan cooldown: fetches=%d", got)
+	if got := tokenFetches.Load(); got != 2 {
+		t.Fatalf("manual wake bypassed settled token scan cooldown: fetches=%d", got)
 	}
 	collector.mu.RLock()
 	afterCooldownWake := collector.providers["codex"]
@@ -4228,15 +4490,15 @@ func TestProviderCollectorTokenStatsStartAndWakeTriggers(t *testing.T) {
 	if !afterCooldownWake.Collected.Equal(now()) {
 		t.Fatalf("manual wake did not refresh quota snapshot: collected=%s want=%s", afterCooldownWake.Collected, now())
 	}
-	if !afterCooldownWake.TokenStatsCollected.Equal(firstTokenCollection) {
-		t.Fatalf("skipped token scan falsely advanced freshness: got=%s want=%s", afterCooldownWake.TokenStatsCollected, firstTokenCollection)
+	if !afterCooldownWake.TokenStatsCollected.Equal(afterGrowingHistoryWake.TokenStatsCollected) {
+		t.Fatalf("skipped token scan falsely advanced freshness: got=%s want=%s", afterCooldownWake.TokenStatsCollected, afterGrowingHistoryWake.TokenStatsCollected)
 	}
 
 	clockNanos.Add(int64(tokenStatsScanCooldown - time.Minute))
 	wake <- struct{}{}
 	<-afterWake
 	waitForCondition(t, time.Second, func() bool {
-		return tokenFetches.Load() == 2
+		return tokenFetches.Load() == 3
 	})
 	cancel()
 	collector.shutdownTokenStatsScan()
@@ -4475,6 +4737,22 @@ func TestProviderCollectorSuccessfulEmptyTokenStatsClearsLastGood(t *testing.T) 
 	got := collector.providers["codex"]
 	if got.Frame.TotalTokens != 0 || got.Meta.Cost != nil || !got.TokenStatsCollected.Equal(current) {
 		t.Fatalf("successful empty token scan did not clear stats and mark completion: %#v", got)
+	}
+
+	current = current.Add(time.Minute)
+	collector.fetchProviders = func(context.Context) ([]codexbar.ParsedFrame, error) {
+		return []codexbar.ParsedFrame{testParsedFrame("codex", 18, 43, 3500)}, nil
+	}
+	collector.collectOnce(context.Background())
+	got = collector.providers["codex"]
+	if got.Frame.TotalTokens != 0 || got.Meta.Cost != nil || !got.TokenStatsCollected.Equal(current.Add(-time.Minute)) {
+		t.Fatalf("quota refresh dropped successful empty token completion: %#v", got)
+	}
+
+	current = current.Add(10 * time.Minute)
+	collector.collectOnce(context.Background())
+	if got := collector.providers["codex"]; !got.TokenStatsCollected.IsZero() {
+		t.Fatalf("expired empty token completion stayed ready: %#v", got)
 	}
 }
 
@@ -5646,6 +5924,12 @@ type staticDashboardServe struct {
 
 func (s staticDashboardServe) Info() codexbar.DashboardServeInfo {
 	return s.info
+}
+
+type dashboardServeFunc func() codexbar.DashboardServeInfo
+
+func (f dashboardServeFunc) Info() codexbar.DashboardServeInfo {
+	return f()
 }
 
 func testDashboardServeInfo(pid int) codexbar.DashboardServeInfo {

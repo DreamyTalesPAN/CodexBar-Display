@@ -137,9 +137,10 @@ func TestDashboardServeSupervisorRestartsCrashedChildWithBackoff(t *testing.T) {
 	}
 }
 
-func TestDashboardServeSupervisorRestartsChildAfterConsecutiveHealthFailures(t *testing.T) {
+func TestDashboardServeSupervisorRestartsChildAfterStartupTimeout(t *testing.T) {
 	recordPath := t.TempDir() + "/dashboard-helper.jsonl"
 	supervisor := newTestDashboardServeSupervisor(t, "serve", recordPath, 60*time.Second)
+	supervisor.startupTimeout = 30 * time.Millisecond
 	supervisor.client = &http.Client{Transport: dashboardServeRoundTripper(func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("health unavailable")
 	})}
@@ -157,6 +158,77 @@ func TestDashboardServeSupervisorRestartsChildAfterConsecutiveHealthFailures(t *
 	records := waitForDashboardServeRecords(t, recordPath, 2)
 	if records[0].PID == records[1].PID {
 		t.Fatalf("expected a new child after repeated failed health checks, got %#v", records)
+	}
+}
+
+func TestDashboardServeSupervisorAllowsStartupFailuresBeforeReady(t *testing.T) {
+	recordPath := t.TempDir() + "/dashboard-helper.jsonl"
+	supervisor := newTestDashboardServeSupervisor(t, "serve", recordPath, 60*time.Second)
+	responses := []bool{false, false, false, false, true}
+	checks := 0
+	var checksMu sync.Mutex
+	supervisor.client = &http.Client{Transport: dashboardServeRoundTripper(func(req *http.Request) (*http.Response, error) {
+		checksMu.Lock()
+		defer checksMu.Unlock()
+		checks++
+		if checks <= len(responses) && !responses[checks-1] {
+			return nil, errors.New("health unavailable")
+		}
+		return &http.Response{
+			StatusCode: http.StatusNoContent,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Request:    req,
+		}, nil
+	})}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		supervisor.Run(ctx)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		waitForDashboardSupervisorDone(t, done)
+	}()
+
+	waitForDashboardServeHealthy(t, supervisor)
+	if records := readDashboardServeRecords(t, recordPath); len(records) != 1 {
+		t.Fatalf("startup health failures must not restart the child before the grace period, got %#v", records)
+	}
+}
+
+func TestDashboardServeSupervisorRestartsReadyChildAfterConsecutiveHealthFailures(t *testing.T) {
+	recordPath := t.TempDir() + "/dashboard-helper.jsonl"
+	supervisor := newTestDashboardServeSupervisor(t, "serve", recordPath, 60*time.Second)
+	checks := 0
+	var checksMu sync.Mutex
+	supervisor.client = &http.Client{Transport: dashboardServeRoundTripper(func(req *http.Request) (*http.Response, error) {
+		checksMu.Lock()
+		defer checksMu.Unlock()
+		checks++
+		if checks > 1 {
+			return nil, errors.New("health unavailable")
+		}
+		return &http.Response{
+			StatusCode: http.StatusNoContent,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Request:    req,
+		}, nil
+	})}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		supervisor.Run(ctx)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		waitForDashboardSupervisorDone(t, done)
+	}()
+
+	records := waitForDashboardServeRecords(t, recordPath, 2)
+	if records[0].PID == records[1].PID {
+		t.Fatalf("expected a new child after a ready child became unhealthy, got %#v", records)
 	}
 }
 

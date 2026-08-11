@@ -43,9 +43,20 @@ Rules:
 ## ESP8266 WiFi Upload Guardrails
 - The protocol, compatibility pacing, retry rules, and release gate in
   `docs/firmware-ota-contract.md` are mandatory for firmware OTA changes.
-- Asset upload crashes are usually RAM pressure first. Do not start by adding retries or longer timeouts.
-- `/assets` uploads must remain rate-limited from the Companion. Fast multipart writes can reset the ESP8266 even for small files.
-- If an upload returns `connection reset by peer`, EOF, or timeout, stop the upload attempt and check `/health`. Do not immediately resend the same asset.
+- **First suspect for any "upload/OTA stalls but small requests answer" report
+  is the 802.11n A-MSDU black hole, not RAM.** The device must run 802.11g
+  (`docs/hardware-contract.md`, "WiFi PHY mode"); confirm with
+  `codexbar-display net-probe --target http://<ip>` and the `phyMode` field in
+  `/health`. RAM pressure is a real but secondary cause — check `freeHeap`/
+  `heapFragmentationPercent` from `/health` before every upload when
+  diagnosing.
+- `/assets` uploads are paced from the Companion (8 KB/s). The pace exists to
+  stay inside the firmware's ~5 s per-read HTTP wait, not because faster writes
+  crash the device; do not lower it below that safety margin (pinned by
+  `TestAssetUploadPaceStaysInsideFirmwareReadWait`).
+- If an upload returns `connection reset by peer`, EOF, or timeout, stop the
+  upload attempt and check `/health`. Do not immediately resend the same asset;
+  run `net-probe` first to tell a link black hole apart from a device fault.
 - Firmware must mark firmware/filesystem/theme asset uploads so upload-related restarts do not count toward the WiFi setup reset counter.
 - Firmware must release GIF decoder, sprite caches, and open filesystem handles before asset upload, OTA, and stored ThemeSpec activation.
 - A firmware upload that may have written bytes must never fall back to another

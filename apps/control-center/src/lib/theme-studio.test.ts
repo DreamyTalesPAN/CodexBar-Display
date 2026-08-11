@@ -162,6 +162,11 @@ describe("validateThemeSpec", () => {
     expect(deviceThemeSpecJson(starter)).not.toContain("/themes/mini/");
   });
 
+  it("keeps the starter theme independent from firmware-owned assets", () => {
+    const starter = createStarterThemeSpec();
+    expect(deviceThemeSpecJson(starter)).not.toContain("/themes/mini/");
+  });
+
   it("accepts legacy fallback metadata but omits it from normalized exports", () => {
     const imported = importThemeSpec({
       bg: "#000000",

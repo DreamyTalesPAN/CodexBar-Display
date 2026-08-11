@@ -76,6 +76,9 @@ func TestUsageWindowAcceptanceAPIRetainsControlCenterWindows(t *testing.T) {
 			if len(got.Providers) != 1 {
 				t.Fatalf("expected one provider, got %+v", got.Providers)
 			}
+			if got.Providers[0].UsageUnavailable != tc.ExpectedDeviceFrame.UsageUnavailable {
+				t.Fatalf("usageUnavailable mismatch: got=%t want=%t", got.Providers[0].UsageUnavailable, tc.ExpectedDeviceFrame.UsageUnavailable)
+			}
 			wantWindows := tc.ExpectedAPIWindows
 			if len(wantWindows) == 0 {
 				wantWindows = tc.ExpectedControlCenterWindows

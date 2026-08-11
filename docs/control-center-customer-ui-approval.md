@@ -16,6 +16,97 @@ issue scope, or release permission never implies UI permission.
 - User approval: The user explicitly stated that Shopify theme handling is outdated, that Shopify themes currently have no connection to the Mac App, and instructed Codex to remove the obsolete test.
 - Approved customer-visible result: Missing or unavailable catalog themes use neutral app-catalog wording. The Theme Library no longer tells customers to open a theme shop, and Shopify product pages are not presented as a Mac App theme-install path.
 - Approved files: Theme Library availability wording, its customer-flow assertion, Shopify boundary documentation, customer-readiness checks, and this approval record.
+## 2026-08-06 — Never open Overview before the first live preview
+
+- User approval: During the cold-start test, the user explicitly required that
+  the state with an unavailable preview must never appear in Overview and that
+  customers may enter Overview only after the preview is available. The user
+  then explicitly instructed Codex to build this fix together with the preview
+  and test it on the connected VibeTV.
+- Approved customer-visible result: A connected and paired VibeTV without a
+  real display frame remains on the existing full-screen `Connecting to VibeTV`
+  startup gate for as long as necessary. It shows `Waiting for live preview…`
+  and does not expose Overview or the Control Center navigation. Overview opens
+  only after the first valid live preview frame exists.
+- Approved files: `control-center-app.tsx`, `device-startup-screen.tsx`, their
+  regression assertions in `device-startup-screen.test.tsx` and
+  `test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-05 — Give first usage up to 60 seconds
+
+- User approval: The user explicitly instructed Codex to increase the first
+  usage wait from 30 seconds to 60 seconds before entering the unavailable
+  state.
+- Approved customer-visible result: A connected VibeTV waiting for its first
+  usage frame keeps the existing startup state for up to 60 seconds. The
+  existing startup and Overview helper text says `up to 60 seconds`. If no
+  usage arrives by then, Control Center opens the existing unavailable state.
+- Approved files: `control-center-app.tsx`, `device-startup-screen.tsx`,
+  `overview-screen.tsx`, their regression assertions, and this approval record.
+
+## 2026-08-05 — Close the remaining update and recovery gaps
+
+- User approval: After receiving the concrete list of all remaining P1/P2
+  update, theme-refresh, outage, and recovery findings on PR #348, the user
+  explicitly instructed Codex to fix all of them with the smallest possible
+  code changes or by removing code.
+- Approved customer-visible result: No new copy, control, or layout is added.
+  Automatic theme refresh waits for the existing Mac App and firmware gates,
+  respects install links, and does not repeat a failed job. A disconnected
+  VibeTV or unavailable Mac App no longer presents cached data as live; missing
+  first usage enters the existing unavailable state after 30 seconds. An
+  explicit pairing rejection reopens the existing Connect recovery, while
+  ordinary running outages keep the current tab. During firmware installation,
+  the existing Settings and Theme Library device actions remain disabled.
+- Approved files: `control-center-app.tsx`, `overview-screen.tsx`,
+  `settings-screen.tsx`, their regression assertions in
+  `test-customer-flows.mjs` and component tests, and this approval record.
+
+## 2026-08-05 — One stable connection truth after an update
+
+- User approval: During the exact customer update test, the user explicitly
+  required that the updated Mac App never show reconnect UI, redirect to the
+  Connect screen, hide tabs, or show a missing preview. The user also required
+  the smallest KISS fix, deleting code wherever possible.
+- Approved customer-visible result: After the Mac App update relaunches, the
+  ready Control Center shows the existing Overview connection state, real
+  preview, status cards, and available tabs without a second transient header
+  connection label or a reconnect banner. Genuine first-time and recovery
+  gates remain unchanged. No new copy, control, state, or fallback is added.
+- Approved files: `control-center-shell.tsx`, `overview-screen.tsx`, their
+  regression assertions, and this approval record.
+
+## 2026-08-05 — Stable connected Control Center
+
+- User approval: The user explicitly required the Mac App and VibeTV connection
+  to stay stable, with no automatic return to Connect, no locked tabs, and no
+  incomplete Overview preview after Connect.
+- Approved customer-visible result: Before the first real display frame, the
+  existing startup screen remains visible. The first Overview already has that
+  verified frame and every Control Center tab is available. Afterward, temporary
+  VibeTV or Mac App status failures keep the current tab, navigation, and last
+  verified preview visible. Only the existing explicit setup reset starts device
+  selection again. No new screen, copy, control, or recovery state is added.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`,
+  `overview-screen.tsx`, `live-vibetv-preview.tsx`, their regression assertions,
+  and this approval record.
+
+## 2026-08-04 — Automatically refresh the installed catalog theme
+
+- User approval: After the connected VibeTV showed the old Clippy labels even
+  though the new Mac App and firmware supplied dynamic Codex usage-window
+  labels, the user explicitly required that all installed catalog themes be
+  updated automatically by the new Mac App and ordered this behavior to be
+  implemented in the new PR.
+- Approved customer-visible result: When a ready VibeTV uses an older revision
+  of its active bundled catalog theme, the Mac App updates that theme once in
+  the background. If the theme requires newer firmware capabilities, it waits
+  for the existing VibeTV Update flow and then refreshes the theme. Customers
+  do not need to open Updates or press a separate theme-update button, and no
+  new copy, control, layout, or technical choice appears. A failed automatic
+  attempt does not loop; the existing manual retry remains available.
+- Approved files: `control-center-app.tsx`, the matching customer-flow
+  assertions in `test-customer-flows.mjs`, and this approval record.
 
 ## 2026-07-31 — Token total counts up while its history is still growing
 
@@ -851,3 +942,129 @@ issue scope, or release permission never implies UI permission.
   `Screensavers` view. No copy, control, or hierarchy changes.
 - Approved files: `control-center-app.tsx`, `active-theme-upgrade.ts`, its
   focused unit test, and this approval record.
+## 2026-08-03 — Restarted stream clears its rejected preview frame
+
+- User approval: In the PR #260 Codex task, the user explicitly instructed that
+  every new bug reported by the Codex bug reviewer be fixed according to the PR
+  documentation until the reviewer reports no more bugs. The reviewer then
+  identified the stale live-preview frame retained across a display-stream
+  restart as the next bug to fix.
+- Approved customer-visible result: When the Mac App authoritatively reports
+  that no frame from the restarted display stream is available yet, Overview
+  stops showing percentages from the previous stream and uses its existing
+  loading preview until a current frame arrives. Temporary network and server
+  failures keep the last verified preview visible. No copy, control, layout, or
+  customer decision changes.
+- Approved files: `live-vibetv-preview.tsx`, its response regression tests, and
+  this approval record.
+
+## 2026-08-06 — Bounded startup gate and honest disconnect states
+
+- User approval: The user explicitly instructed a one-shot rebuild ("Lösung 1")
+  making cold and warm starts robust and flake-free, after the analysis showed
+  the unbounded first-usage gate locks customers out permanently when no
+  renderable frame ever arrives (for example, no provider configured yet).
+- Approved customer-visible result: The startup gate still opens Overview only
+  on the first real preview frame (the "Never open Overview before the first
+  live preview" rule stays). A just-seen VibeTV no longer flips to a
+  disconnected/setup experience because of a single missed probe (bounded 75s
+  reconnect grace, honest disconnect afterwards). The theme render pack
+  retries every 5 seconds instead of parking on a permanent "Preview
+  unavailable". When the Mac App runtime becomes unreachable or blocked, the
+  device is shown as disconnected instead of replaying stale "connected"
+  state, and the app keeps polling for recovery in the blocked state. A cached
+  preview frame stops counting as live once the device stays disconnected past
+  the reconnect grace. No layout or control changes.
+- Approved files: `control-center-app.tsx`, `live-vibetv-preview.tsx`, their
+  regression tests, and this approval record.
+
+## 2026-08-07 — A finished update failure stops outliving the update
+
+- User approval: The user reported the exact state from their own screen during
+  the hardware rehearsal — "hier steht update failed" while the same card showed
+  Installed firmware `1.0.39` and Available firmware `1.0.39` — and instructed
+  that the remaining findings be fixed and proven on cold and warm start.
+- Approved customer-visible result: When an update job has finished with a
+  failure and a fresh firmware check reports that nothing is pending, the
+  Updates card no longer shows `Update failed` with the power-cycle advice, its
+  `Try again` and `Create report` actions, or the progress bar; the card falls
+  back to the plain up-to-date state. While the firmware update really is still
+  pending, the failure, its advice, and both actions stay exactly as they were.
+  No copy, layout, control, or customer decision changes anywhere else.
+- Approved files: `updates-screen.tsx`, its regression tests, and this approval
+  record.
+
+## 2026-08-08 — Warm-start pin of the released theme revision (no visible change)
+
+- User approval: The user instructed this session to make the PR #348 candidate
+  bulletproof — updates, downgrades, cold start, warm start — including its
+  gates. The flagged change carries no customer-visible difference to approve:
+  it exports the existing `renderTextPrimitive` helper unchanged so a new
+  regression test can pin what an older VibeTV on public firmware `1.0.39`
+  shows in the live preview while the Mac App is already the candidate.
+- Approved customer-visible result: None. The live preview renders exactly as
+  before; the new `released-theme-downgrade` test only locks that the theme
+  revision installed by public release v1.0.52 stays retrievable and renders
+  real numbers from a candidate Companion frame during warm start. No copy,
+  layout, control, or customer decision changes.
+- Approved files: `live-vibetv-preview.tsx` (export-only change),
+  `released-theme-downgrade.test.ts`, and this approval record.
+
+## 2026-08-09 — Mac-App-first gate closes the firmware-ahead mixed state
+
+- User approval: During the warm-start rehearsal the user hit the mixed state
+  on real hardware (candidate firmware, released app): the device rendered
+  only unslotted theme elements, the app preview was unavailable, and the
+  Updates card claimed "Available 1.0.52" although the runtime knew the
+  candidate update. The user rejected a firmware-side legacy fallback and
+  instructed: the state must never be enterable, and if it exists the Mac App
+  must update immediately — "es muss bulletproof sein, dass dieser zustand
+  niemals eintritt, und falls doch, dass dann entsprechend sofort geupdated
+  wird. fix das!".
+- Approved customer-visible result: While the Mac App release check is still
+  unresolved and a VibeTV update is offered, the VibeTV card shows the new
+  notice "Checking Mac App — Waiting for the Mac App update check. The VibeTV
+  update unlocks when it finishes." and the primary action stays a disabled
+  "Checking updates" button. In the installed native app the Mac App card
+  announces the update the runtime's own release check reports even when the
+  hosted browser check still claims up to date, and a pending Mac App update
+  opens the native Sparkle dialog automatically once per offered version.
+  Outside the native app an update without a verified DMG stays unannounced,
+  exactly as before. A firmware install attempted through any other path is
+  refused with "Update the Mac App first." and the existing error surface.
+- Approved files: `updates-screen.tsx`, `updates-screen.test.tsx`,
+  `control-center-app.tsx`, and this approval record.
+
+## 2026-08-09 — Update failures survive an inconclusive firmware check
+
+- User approval: Part of the same bulletproofing instruction for the update
+  path ("es muss bulletproof sein … fix das!"); the Codex review of 0cdafcf
+  flagged that a failed `/v1/updates/latest` check silently discarded a
+  finished update failure. Hiding failure details on an inconclusive check
+  contradicts the approved rule that only a conclusive no-update result may
+  clear them.
+- Approved customer-visible result: When a firmware update job has failed and
+  the next firmware check itself fails (`check_failed`), the Updates card keeps
+  showing the failure, its power-cycle advice, and the `Try again` /
+  `Create report` actions. Only a conclusive check that reports nothing
+  pending clears them, exactly as already approved on 2026-08-08. No other
+  copy, layout, control, or customer decision changes.
+- Approved files: `updates-screen.tsx`, `updates-screen.test.tsx`, and this
+  approval record.
+
+## 2026-08-09 — Completed updates stop gating newly discovered releases
+
+- User approval: Covered by the standing bulletproofing mandate for the update
+  path ("es muss bulletproof sein … fix das!" and the explicit instruction to
+  drive PR #348 to a green candidate); the Codex review of 2e6d6ff flagged
+  that a completed firmware job suppressed every later update because status
+  polling restores the completed job indefinitely.
+- Approved customer-visible result: "Update complete" keeps standing alone
+  only while the fresh firmware check still reports the version that job
+  installed. As soon as a check discovers a different release (or a new active
+  theme revision alongside it), the Updates card announces it and the Update
+  action works again — no daemon restart or setup reset needed. The pinned
+  rule that "Update complete" and "Update available" never describe the same
+  version at the same time stays exactly as approved on 2026-08-08.
+- Approved files: `updates-screen.tsx`, `updates-screen.test.tsx`, and this
+  approval record.

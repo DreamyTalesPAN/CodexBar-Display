@@ -32,6 +32,17 @@ assert_not_contains() {
   ! grep -Fq -- "$needle" "$file" || die "$message"
 }
 
+assert_before() {
+  local file="$1"
+  local first="$2"
+  local second="$3"
+  local message="$4"
+  local first_line second_line
+  first_line="$(grep -nF -- "$first" "$file" | head -n 1 | cut -d: -f1 || true)"
+  second_line="$(grep -nF -- "$second" "$file" | head -n 1 | cut -d: -f1 || true)"
+  [[ -n "$first_line" && -n "$second_line" && "$first_line" -lt "$second_line" ]] || die "$message"
+}
+
 job_block() {
   local workflow="$1"
   local job="$2"
@@ -297,6 +308,10 @@ main() {
     assert_contains "$RC_WORKFLOW" "$required" \
       "release candidate must build the full publish asset set including ${required}"
   done
+  assert_contains "$RC_WORKFLOW" '--notary-log tmp/vibetv-rc/test/notarization-log.json' \
+    'release candidate must retain structured Apple notarization evidence'
+  assert_contains "$RC_WORKFLOW" 'notarization-evidence' \
+    'candidate manifest must classify notarization evidence as test-only'
   for field in repository sourceSha version candidateRunId createdAt virtualGate; do
     assert_contains "$RC_WORKFLOW" "\"${field}\"" \
       "candidate manifest must include ${field}"
@@ -375,8 +390,32 @@ main() {
     'guest test must exercise the bundled candidate companion render path'
   assert_contains "$GUEST_TEST" 'if [[ "$STATE" == clean_os ]]; then' \
     'guest test must run a standalone candidate daemon only on a clean OS'
+  assert_contains "$GUEST_TEST" 'if ! "$CANDIDATE_COMPANION" daemon' \
+    'clean OS guest test must inspect an expected no-provider daemon exit'
+  assert_contains "$GUEST_TEST" 'error code=runtime/no-providers' \
+    'clean OS guest test must only tolerate the known no-provider result'
   assert_contains "$GUEST_TEST" '/v1/device/repair' \
     'public guest states must ask the installed runtime to render to the virtual VibeTV'
+  assert_before "$GUEST_TEST" 'validate_installed_runtime "$OUTPUT/candidate-runtime-status.json"' '/v1/device/repair' \
+    'public guest states must verify the installed candidate runtime before requesting a render'
+  assert_contains "$GUEST_TEST" 'http://127.0.0.1:47832/v1/updates/install' \
+    'public guest states must drive the firmware update through the installed runtime API, not a direct CLI flash'
+  assert_contains "$GUEST_TEST" '/v1/updates/install/status?jobId=' \
+    'guest test must wait for the runtime firmware update job to finish'
+  assert_before "$GUEST_TEST" '/v1/device/repair' 'api_firmware_update "$OUTPUT/candidate-install-update.json"' \
+    'the runtime must own the paired device before the API firmware update starts'
+  assert_contains "$GUEST_TEST" 'api_firmware_update "$OUTPUT/candidate-already-current.json" already_current' \
+    'public guest states must prove already_current through the runtime API as well'
+  assert_contains "$GUEST_TEST" 'listenerOwner' \
+    'guest test must bind the live Companion port to the installed runtime service'
+  assert_contains "$GUEST_TEST" 'installationMode' \
+    'guest test must verify the running candidate reports DMG installation mode'
+  assert_contains "$GUEST_TEST" '--max-time 3 http://127.0.0.1:47832/v1/status' \
+    'guest test must bound each installed-runtime status request'
+  assert_contains "$GUEST_TEST" 'if runtime_pid="$(python3 - "$status_output"' \
+    'guest test must keep polling until the candidate runtime status itself validates'
+  assert_not_contains "$GUEST_TEST" 'validate-macos-control-center-runtime.sh' \
+    'stateful guest checks must not invoke the clean-host runtime validator'
   assert_not_contains "$GUEST_TEST" '--once --api-addr' \
     'one-shot candidate daemon must not keep a companion API server alive'
 

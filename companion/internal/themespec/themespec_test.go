@@ -622,6 +622,29 @@ func TestValidateCompactUsageSlotTemplateRequiresCapability(t *testing.T) {
 	}
 }
 
+func TestValidateCompactUsageSlotBindingRequiresCapability(t *testing.T) {
+	spec, raw, err := Parse([]byte(`{
+		"v":1,
+		"id":"usage-slots",
+		"rev":1,
+		"p":[{"t":"p","x":0,"y":0,"binding":"us1p"}]
+	}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := spec.Primitives[0].Binding; got != "usageSlot1Percent" {
+		t.Fatalf("compact long-form binding did not normalize: %q", got)
+	}
+	legacyCaps := protocol.DeviceCapabilities{
+		Known:               true,
+		SupportsThemeSpecV1: true,
+	}
+	if err := ValidateAgainstCapabilities(spec, raw, legacyCaps); err == nil ||
+		!strings.Contains(err.Error(), "usage-slots-v1") {
+		t.Fatalf("expected compact binding capability rejection, got %v", err)
+	}
+}
+
 func TestValidateRejectsInvalidUsageSlotOwnership(t *testing.T) {
 	spec, _, err := Parse([]byte(`{
 		"v":1,

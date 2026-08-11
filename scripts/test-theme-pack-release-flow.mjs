@@ -45,7 +45,17 @@ assert(
 );
 
 for (const legacyTheme of legacyCatalog.themes) {
-  assert(currentById.has(legacyTheme.id), `current catalog dropped ${legacyTheme.id}`);
+  // Deleting a theme's source withdraws it from the current generation. Its
+  // frozen legacy artifacts below stay published either way, because older
+  // apps still resolve them.
+  if (await isDirectory(path.join(sourceRoot, legacyTheme.id))) {
+    assert(currentById.has(legacyTheme.id), `current catalog dropped ${legacyTheme.id}`);
+  } else {
+    assert(
+      !currentById.has(legacyTheme.id),
+      `withdrawn theme ${legacyTheme.id} is still published in the current catalog`,
+    );
+  }
   assert(
     legacyTheme.downloadAsset === `vibetv-theme-${legacyTheme.id}.zip`,
     `legacy asset name changed for ${legacyTheme.id}`,
@@ -92,6 +102,7 @@ for (const entry of await readdir(sourceRoot, { withFileTypes: true })) {
       `${manifest.id} does not require usage-slots-v1`,
     );
   }
+  assert(spec.rev >= 2, `${manifest.id} must use a post-legacy revision`);
   assert(
     manifest.themeSpec.path.includes(`-${spec.rev}-`),
     `${manifest.id} must use a revisioned ThemeSpec device path`,
@@ -119,10 +130,14 @@ for (const entry of await readdir(sourceRoot, { withFileTypes: true })) {
   );
   assert(
     arraysEqual(
-      catalogTheme.requiredCapabilities || [],
-      manifest.requiredCapabilities || [],
+      catalogTheme.requiredCapabilities,
+      manifest.requiredCapabilities,
     ),
     `capability requirement mismatch for ${manifest.id}`,
+  );
+  assert(
+    manifest.requiredCapabilities?.includes("usage-slots-v1"),
+    `${manifest.id} does not require usage-slots-v1`,
   );
   await assertCatalogAsset(catalogTheme, "current");
   await assertRenderPack(catalogTheme, "current");

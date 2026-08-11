@@ -313,8 +313,9 @@ func normalizePrimitive(p Primitive) Primitive {
 		p.Text = p.ShortText
 	}
 	if p.Binding == "" {
-		p.Binding = expandBinding(p.ShortBinding)
+		p.Binding = p.ShortBinding
 	}
+	p.Binding = expandBinding(p.Binding)
 	if p.FontSize == 0 {
 		p.FontSize = p.ShortSize
 	}

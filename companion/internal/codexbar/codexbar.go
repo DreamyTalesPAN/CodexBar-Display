@@ -2565,12 +2565,27 @@ func newerTime(a, b time.Time) time.Time {
 	return a
 }
 
+// maxPlausibleTokenDeltaPerCycle bounds what one collector cycle can count as
+// real usage. Observed live (2026-08-06): the dashboard reported codex
+// totalTokens jumps of +0.6 to +1.7 billion tokens between two 30s cycles -
+// counter noise that must never be scored as activity, because the selector
+// would then park on that provider forever while another provider has real,
+// fresh activity.
+const maxPlausibleTokenDeltaPerCycle = 100_000_000
+
+func plausibleTokenDelta(delta int64) int64 {
+	if delta > maxPlausibleTokenDeltaPerCycle {
+		return 0
+	}
+	return delta
+}
+
 func computeActivityScore(prev providerSnapshot, cur protocol.Frame) activityScore {
 	score := activityScore{}
 	tokenScore := activityScore{
-		sessionTokensDelta: positiveInt64Delta(prev.sessionTokens, cur.SessionTokens),
-		weekTokensDelta:    positiveInt64Delta(prev.weekTokens, cur.WeekTokens),
-		totalTokensDelta:   positiveInt64Delta(prev.totalTokens, cur.TotalTokens),
+		sessionTokensDelta: plausibleTokenDelta(positiveInt64Delta(prev.sessionTokens, cur.SessionTokens)),
+		weekTokensDelta:    plausibleTokenDelta(positiveInt64Delta(prev.weekTokens, cur.WeekTokens)),
+		totalTokensDelta:   plausibleTokenDelta(positiveInt64Delta(prev.totalTokens, cur.TotalTokens)),
 	}
 	if tokenScore.hasSignal() {
 		return tokenScore

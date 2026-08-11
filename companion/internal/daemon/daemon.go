@@ -43,7 +43,8 @@ const (
 	defaultWiFiInterval        = 30 * time.Second
 	defaultCycleTimeout        = 180 * time.Second
 	startupFastPollWindow      = 2 * time.Minute
-	startupFastPollInterval    = 30 * time.Second
+	startupFastPollInterval    = 5 * time.Second
+	failureRetryInterval       = 5 * time.Second
 	lastGoodPersistInterval    = 1 * time.Minute
 	themeEnvVar                = "CODEXBAR_DISPLAY_THEME"
 	coldStartTimeoutEnvVar     = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
@@ -56,6 +57,7 @@ const (
 	collectorTimeoutEnvVar     = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
 	collectorOrderEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
 	providerMaxAgeEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
+	defaultProviderMaxAge      = 10 * time.Minute
 	firmwareManifestEnvVar     = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
 	firmwareManifestURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
 	firmwareUpdateCheckGap     = 6 * time.Hour
@@ -255,6 +257,7 @@ type runtimeState struct {
 
 type cycleResult struct {
 	frame           protocol.Frame
+	collectedAt     time.Time
 	selectionReason string
 	selectionDetail string
 	failureKind     runtimeErrorKind
@@ -511,6 +514,16 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		waitFor := opts.Interval
 		if err != nil {
 			runtimeErr := asRuntimeError(err)
+			// A device-unreachable cycle must not wait a full WiFi interval
+			// before the next attempt: after a device cold start or Mac wake
+			// this turns into 30-90s of "reconnecting" although everything is
+			// healthy again. While the device is down these quick probes are
+			// cheap; the first successful cycle returns to the normal cadence.
+			// Non-device errors (provider fetch, frame encoding, timeouts)
+			// keep the normal interval - retrying those faster fixes nothing.
+			if deviceUnreachableError(runtimeErr) && failureRetryInterval < waitFor {
+				waitFor = failureRetryInterval
+			}
 			if runtimeErr.Kind == runtimeErrorCycleTimeout {
 				deps.logf("cycle timeout: code=%s op=%s retry=%s recovery=%q err=%v\n",
 					runtimeErr.ErrorCode(),
@@ -1003,6 +1016,23 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	}
 
 	result.frame = decision.Selected.Frame
+	if result.frame.UsageUnavailable && (state == nil || !state.hasLastGood) &&
+		!decision.Selected.RateLimited {
+		// Providers are enumerated but none has ever delivered usage: for the
+		// runtime that is the same customer state as having no providers at
+		// all. Reusing the genuine no-providers failure sends the device the
+		// honest error frame and gives the stream parser its
+		// provider_setup_required classification, instead of the silent
+		// unexplained wait behind the guest-matrix
+		// firmware_current_stream_attention flake. A rate-limited selection is
+		// the one explicit signal of a configured, live provider in a
+		// temporary condition — that state keeps its own unavailable
+		// semantics and simply waits.
+		result.failureKind = runtimeErrorNoProviders
+		result.failureOp = "collect-usage"
+		result.failureErr = codexbar.ErrNoProviders
+		return finalizeCycleResult(state, result, now)
+	}
 	result.selectionReason = string(decision.Reason)
 	result.selectionDetail = decision.Detail
 	result.usageSource = usageSourceOrDefault(decision.Selected.Source, "codexbar")
@@ -1012,6 +1042,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		collectedAt = now
 		decision.Selected.CollectedAt = collectedAt
 	}
+	result.collectedAt = collectedAt
 	result.resetBasisAt = collectedAt
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
@@ -1159,9 +1190,10 @@ func codingMaxAgeExpired(lastCodingAt time.Time, now time.Time) bool {
 
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
-	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
+	authoritativeFrame := result.frame
+	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 	if !result.usageFresh && result.failureErr == nil {
-		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), lastGoodMaxAge())
+		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
 		if !frame.UsageUnavailable || !expiredLastGood {
 			deps.logf("runtime event=usage-waiting port=%s provider=%s reason=usage-not-fresh\n", publicPort, frame.Provider)
 			return nil
@@ -1236,12 +1268,20 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		return err
 	}
 	persistActiveWiFiTarget(port, deps)
-	if result.failureErr == nil && !frame.UsageUnavailable {
-		updateLastGoodState(state, frame, deps.now(), deps)
+	if frame.UsageUnavailable {
+		if err := clearPersistedDisplayFrame(state); err != nil {
+			deps.logf("runtime event=last-sent-frame-clear-failed reason=usage-unavailable err=%v\n", err)
+		}
+	} else if result.failureErr == nil {
+		collectedAt := result.collectedAt
+		if collectedAt.IsZero() {
+			collectedAt = deps.now()
+		}
+		updateLastGoodState(state, authoritativeFrame, collectedAt, deps)
 	}
 
-	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d usageUnavailable=%t sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
-		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.UsageUnavailable, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
+	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
+		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -1482,17 +1522,23 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 	state.lastGood = protocol.Frame{}
 	state.lastGoodAt = time.Time{}
 	state.hasLastGood = false
-	state.lastPersistedGood = protocol.Frame{}
-	state.lastPersistedAt = time.Time{}
-	state.hasPersistedGood = false
 	if state.selector != nil {
 		state.selector.SetCurrentProvider("")
 	}
-	if err := clearPersistedLastGood(); err != nil {
+	if err := clearPersistedDisplayFrame(state); err != nil {
 		deps.logf("runtime event=last-good-clear-failed provider=%s err=%v\n", provider, err)
 		return
 	}
 	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-disabled\n", provider)
+}
+
+func clearPersistedDisplayFrame(state *runtimeState) error {
+	if state != nil {
+		state.lastPersistedGood = protocol.Frame{}
+		state.lastPersistedAt = time.Time{}
+		state.hasPersistedGood = false
+	}
+	return clearPersistedLastGood()
 }
 
 func updateLastGoodState(state *runtimeState, frame protocol.Frame, now time.Time, deps runtimeDeps) {
@@ -1580,6 +1626,10 @@ func applyUsageBarsPreference(frame protocol.Frame, showUsed bool) protocol.Fram
 
 	if showUsed {
 		frame.UsageMode = "used"
+		return frame
+	}
+	if frame.UsageUnavailable {
+		frame.UsageMode = "remaining"
 		return frame
 	}
 
@@ -1859,14 +1909,13 @@ func collectorProviderOrder() []string {
 
 func providerSnapshotMaxAge() time.Duration {
 	// Keep per-provider snapshots alive for stale-while-revalidate rendering.
-	d := lastGoodMaxAge()
 	raw := strings.TrimSpace(os.Getenv(providerMaxAgeEnvVar))
 	if raw == "" {
-		return d
+		return defaultProviderMaxAge
 	}
 	parsed, err := time.ParseDuration(raw)
 	if err != nil || parsed <= 0 {
-		return d
+		return defaultProviderMaxAge
 	}
 	return parsed
 }
@@ -2110,6 +2159,20 @@ func asRuntimeError(err error) *RuntimeError {
 		Op:   "unknown",
 		Err:  err,
 	}
+}
+
+// deviceUnreachableError reports whether the cycle failed because the VibeTV
+// itself was not reachable over its transport. Only these failures earn the
+// short reconnect retry; everything else keeps the normal interval.
+func deviceUnreachableError(runtimeErr *RuntimeError) bool {
+	if runtimeErr == nil {
+		return false
+	}
+	switch runtimeErr.Kind {
+	case runtimeErrorDeviceHello, runtimeErrorSerialResolve, runtimeErrorSerialWrite:
+		return true
+	}
+	return false
 }
 
 func runtimeErrorKindFromFetchErr(err error) runtimeErrorKind {

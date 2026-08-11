@@ -86,7 +86,10 @@ import { SetupStatusScreen } from "./setup-status-screen";
 import { SettingsScreen } from "./settings-screen";
 import { SupportReportActions } from "./support-report-actions";
 import { collectSupportReport } from "./support-report";
-import { ThemeLibraryScreen } from "./theme-library-screen";
+import {
+  ThemeLibraryScreen,
+  themeNeedsUpgradeableFirmware,
+} from "./theme-library-screen";
 import {
   clearRetiredAiThemeStorage,
   type ThemeStudioInstallPayload,
@@ -140,7 +143,13 @@ type InstallResponse = {
 
 type InstallableTheme = Pick<
   ThemeProduct,
-  "packUrl" | "packSha256" | "packSizeBytes" | "themeId" | "title" | "usage"
+  | "packUrl"
+  | "packSha256"
+  | "packSizeBytes"
+  | "themeId"
+  | "themeSpecPath"
+  | "title"
+  | "usage"
 > & {
   packBytes?: Uint8Array;
 };
@@ -370,6 +379,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const runtimeRepairAttempted = useRef(false);
   const runtimeRepairTimeout = useRef<number | null>(null);
   const themeInstallPollJobRef = useRef("");
+  const activeThemeUpgradeAttemptRef = useRef("");
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
     {
       id: "session-start",
@@ -534,22 +544,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setCompanionStatus("missing");
     setCompanionInfo(null);
     setThemeInstallEnabled(false);
-    setDevice((current) => markDeviceDisconnected(current));
-    setDeviceState("offline");
     setUsage(null);
     setUsageError(null);
-    setProviderSetup(null);
+    // Without the companion there is no live device evidence. Keep the device
+    // configured but stop presenting stale state as a live connection.
+    setDevice((current) => markDeviceDisconnected(current));
+    setDeviceState("offline");
   }, [setDevice]);
 
   const markCompanionAccessBlocked = useCallback(() => {
     setCompanionStatus("unknown");
     setCompanionInfo(null);
     setThemeInstallEnabled(false);
-    setDevice((current) => markDeviceDisconnected(current));
-    setDeviceState("offline");
     setUsage(null);
     setUsageError(null);
-    setProviderSetup(null);
+    setDevice((current) => markDeviceDisconnected(current));
+    setDeviceState("offline");
   }, [setDevice]);
 
   const handleCompanionUnavailableForRepair = useCallback(
@@ -1955,6 +1965,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (!theme) {
         return false;
       }
+      if (
+        theme.themeId === device?.activeTheme &&
+        theme.themeSpecPath &&
+        theme.themeSpecPath !== device.display?.themeSpec?.path
+      ) {
+        activeThemeUpgradeAttemptRef.current = [
+          device.deviceId,
+          device.display?.themeSpec?.path,
+          theme.themeSpecPath,
+        ].join("|");
+      }
       const requiresThemeSetupVerification =
         theme.usage !== "screensaver" &&
         (deviceNeedsThemeSetup(device) ||
@@ -2197,16 +2218,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return () => window.clearTimeout(timer);
   }, [checkCompanion, hostedSetup, setupPreviewStep]);
 
+  const connectionRecoveryRequired =
+    isConnectionRecoveryError(lastError) || deviceNeedsExplicitConnect(device);
+
   useEffect(() => {
     if (
       hostedSetup ||
       setupPreviewStep ||
       requiresMacAppMigration ||
       firmwareUpdateInProgress ||
+      connectionRecoveryRequired ||
       !initialCompanionCheckComplete ||
       companionStatus !== "online" ||
-      deviceIsActive(device) ||
-      deviceIsReady(device) ||
+      deviceIsCustomerConnected(device) ||
       busyAction ||
       deviceSearchState !== "idle" ||
       didRunAutomaticDeviceSearch.current
@@ -2218,6 +2242,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [
     busyAction,
     companionStatus,
+    connectionRecoveryRequired,
     device,
     deviceSearchState,
     firmwareUpdateInProgress,
@@ -2341,6 +2366,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   useEffect(() => {
     const shouldPollIncompleteSetup =
       companionStatus === "missing" ||
+      // "unknown" (for example a local-network privacy block) must keep
+      // polling too; otherwise no timer runs anymore and the app freezes on
+      // stale state without any retry path.
+      companionStatus === "unknown" ||
       (companionStatus === "online" && !deviceIsReady(device));
     if (hostedSetup || !shouldPollIncompleteSetup) {
       return;
@@ -3106,22 +3135,112 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : null;
   const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
   const activeThemeUpgrade = resolveActiveThemeUpgrade(catalog.themes, device);
+  // In the installed native app the runtime's release check is authoritative:
+  // it honors the release-feed override and Sparkle is always an actionable
+  // update path — the 2026-08-09 rehearsal entered the firmware-ahead mixed
+  // state because the hosted browser check shadowed the runtime's pending
+  // update. Outside the native app the hosted check keeps priority: it owns
+  // DMG asset verification, and an update without a verified DMG must stay
+  // unannounced.
+  const runtimeRelease = companionInfo?.update;
+  const companionRelease =
+    runtimeRelease &&
+    runtimeRelease.status !== "check_failed" &&
+    companionInfo?.app?.installedInApplications
+      ? { ...(hostedCompanionRelease ?? {}), ...runtimeRelease }
+      : hostedCompanionRelease?.status === "check_failed" && runtimeRelease
+        ? { ...runtimeRelease, ...hostedCompanionRelease }
+        : hostedCompanionRelease || runtimeRelease || null;
+  const macAppUpdateAvailable = Boolean(
+    companionInfo?.update?.updateAvailable || companionRelease?.updateAvailable,
+  );
+  // A pending Mac App update must resolve immediately once the customer is in
+  // the app — most urgently in the mixed state where the device firmware is
+  // already ahead of this app and renders degraded. Surface the native Sparkle
+  // dialog once per offered version; the Updates tab stays the manual path if
+  // the dialog is dismissed.
+  const macAppUpdateOfferedVersion =
+    companionRelease?.latestVersion || companionRelease?.release || "";
+  const macAppUpdatePromptedFor = useRef("");
+  useEffect(() => {
+    if (
+      hostedSetup ||
+      !hasEnteredControlCenter ||
+      !macAppUpdateAvailable ||
+      !macAppUpdateOfferedVersion ||
+      firmwareUpdateInProgress ||
+      !isNativeControlCenterApp() ||
+      macAppUpdatePromptedFor.current === macAppUpdateOfferedVersion
+    ) {
+      return;
+    }
+    macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
+    window.location.href = "vibetv://check-for-updates";
+  }, [
+    firmwareUpdateInProgress,
+    hasEnteredControlCenter,
+    hostedSetup,
+    macAppUpdateAvailable,
+    macAppUpdateOfferedVersion,
+  ]);
   const activeThemeUpdateAvailable = Boolean(
     activeThemeUpgrade.theme &&
-    activeThemeUpgrade.needed &&
-    !activeThemeUpgrade.unresolved,
+      activeThemeUpgrade.needed &&
+      !activeThemeUpgrade.unresolved,
   );
-  const companionRelease =
-    hostedCompanionRelease?.status === "check_failed" && companionInfo?.update
-      ? {
-          ...companionInfo.update,
-          ...hostedCompanionRelease,
-        }
-      : hostedCompanionRelease || companionInfo?.update || null;
+  useEffect(() => {
+    const theme = activeThemeUpgrade.theme;
+    if (
+      hostedSetup ||
+      setupPreviewStep ||
+      requiresMacAppMigration ||
+      !themeInstallEnabled ||
+      companionStatus !== "online" ||
+      !deviceIsReady(device) ||
+      busyAction ||
+      firmwareUpdateInProgress ||
+      !theme ||
+      themeInstallStatus?.phase === "installing" ||
+      (themeInstallStatus?.phase === "error" &&
+        themeInstallStatus.themeId === theme.themeId) ||
+      !activeThemeUpgrade.needsThemeSpec ||
+      themeNeedsUpgradeableFirmware(theme, device, themeInstallEnabled) ||
+      macAppUpdateAvailable ||
+      initialThemeId ||
+      activeThemeUpgrade.unresolved
+    ) {
+      return;
+    }
+
+    const attempt = [
+      device?.deviceId,
+      device?.display?.themeSpec?.path,
+      theme.themeSpecPath,
+    ].join("|");
+    if (activeThemeUpgradeAttemptRef.current === attempt) {
+      return;
+    }
+    activeThemeUpgradeAttemptRef.current = attempt;
+    void installTheme(theme);
+  }, [
+    activeThemeUpgrade,
+    busyAction,
+    companionStatus,
+    device,
+    firmwareUpdateInProgress,
+    hostedSetup,
+    initialThemeId,
+    installTheme,
+    macAppUpdateAvailable,
+    requiresMacAppMigration,
+    setupPreviewStep,
+    themeInstallEnabled,
+    themeInstallStatus?.phase,
+    themeInstallStatus?.themeId,
+  ]);
   const macAppMigrationAvailable = Boolean(
     requiresMacAppMigration && availableMacAppDmgDownloadUrl(companionRelease),
   );
-  const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const anyUpdateAvailable =
     firmwareUpdateAvailable ||
     activeThemeUpdateAvailable ||
@@ -3137,13 +3256,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setHasEnteredControlCenter(true);
     }
   }, []);
+  const hasActiveDevice = deviceIsActive(device);
+  const displaySessionActive = Boolean(
+    deviceConnected ||
+      (hasEnteredControlCenter && hasActiveDevice && device?.paired !== false),
+  );
   const displayFrame = useLatestDisplayFrame(
-    deviceConnected,
+    displaySessionActive,
     handleDisplayFrame,
   );
-  const hasActiveDevice = deviceIsActive(device);
-  const connectionRecoveryRequired =
-    isConnectionRecoveryError(lastError) || deviceNeedsExplicitConnect(device);
   const themeSetupEntryRequired =
     companionStatus === "online" && deviceNeedsThemeSetup(device);
   const themeSetupSessionMatches =
@@ -3341,7 +3462,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
     return startUsageSurfacePolling({
       refreshUsage: () => refreshUsage({ quiet: true }),
-      refreshProviderHealth: () => refreshProviderPreferences({ quiet: true }),
+      refreshProviderHealth: () =>
+        refreshProviderPreferences({ quiet: true }),
     });
   }, [
     activeShellTab,
@@ -3426,7 +3548,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     );
   }
 
-  if (needsRuntimeRecovery) {
+  if (!hasEnteredControlCenter && needsRuntimeRecovery) {
     return (
       <MacAppRecoveryScreen
         checking={busyAction === "status"}
@@ -3438,9 +3560,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }
 
   if (
-    companionStatus !== "online" ||
-    (requiresMacAppMigration && !deviceReady) ||
-    Boolean(setupPreviewStep)
+    !hasEnteredControlCenter &&
+    (companionStatus !== "online" ||
+      (requiresMacAppMigration && !deviceReady) ||
+      Boolean(setupPreviewStep))
   ) {
     return renderSetupScreen(true);
   }
@@ -3448,6 +3571,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   if (
     companionStatus === "online" &&
     !requiresMacAppMigration &&
+    !firmwareUpdateInProgress &&
     (!hasActiveDevice ||
       recoveryPickerOpen ||
       connectionRecoveryRequired ||
@@ -3563,7 +3687,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       {activeShellTab === "settings" ? (
         <SettingsScreen
           brightness={brightness}
-          busyAction={busyAction}
+          busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
           device={device}
           standby={standby}
           onBrightnessChange={changeBrightness}
@@ -3580,7 +3704,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
       {activeShellTab === "theme-library" ? (
         <ThemeLibraryScreen
-          busyAction={busyAction}
+          busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
           companionStatus={companionStatus}
           device={device}
           installStatus={themeInstallStatus}

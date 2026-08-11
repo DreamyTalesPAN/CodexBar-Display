@@ -8,8 +8,8 @@ import {
   fetchThemeRenderPackRevision,
   hasRenderableUsage,
   LiveVibeTVPreview,
-  liveThemePreviewMessage,
   livePreviewDisplayFrame,
+  parseLatestDisplayFrameResponse,
   primitiveUsageSlotVisible,
   progressPercent,
   THEME_CATALOG_PREVIEW_FRAME,
@@ -26,14 +26,31 @@ import {
 const lane1: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 1 };
 const lane2: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 2 };
 
-describe("dynamic usage slot preview", () => {
-  it("explains an external active theme without treating the VibeTV as disconnected", () => {
-    expect(liveThemePreviewMessage("error")).toBe(
-      "Theme active on VibeTV. Preview not stored on this Mac.",
-    );
-    expect(liveThemePreviewMessage("loading")).toBeUndefined();
+describe("latest display frame response", () => {
+  it("clears the prior frame only for the authoritative unavailable response", async () => {
+    await expect(
+      parseLatestDisplayFrameResponse(
+        Response.json(
+          {
+            ok: false,
+            error: { code: "display_frame_unavailable" },
+          },
+          { status: 404 },
+        ),
+      ),
+    ).resolves.toBeNull();
   });
 
+  it("preserves the prior frame for transient failures", async () => {
+    await expect(
+      parseLatestDisplayFrameResponse(
+        Response.json({ ok: false }, { status: 503 }),
+      ),
+    ).rejects.toThrow("display frame unavailable");
+  });
+});
+
+describe("dynamic usage slot preview", () => {
   it("keeps a prior valid frame for a selected reachable VibeTV while readiness waits", () => {
     const device = {
       active: true,
@@ -125,7 +142,7 @@ describe("dynamic usage slot preview", () => {
     expect(markup).not.toContain("Reconnect VibeTV to continue");
   });
 
-  it("ignores a prior frame when the selected VibeTV is disconnected", () => {
+  it("keeps the verified frame while the selected VibeTV reconnects", () => {
     const displayFrame = {
       ok: true,
       frame: {
@@ -137,12 +154,13 @@ describe("dynamic usage slot preview", () => {
     };
     const device = {
       active: true,
+      activeTheme: "synthwave",
       connected: false,
       paired: true,
       ready: false,
     };
 
-    expect(livePreviewDisplayFrame(device, displayFrame)).toBeNull();
+    expect(livePreviewDisplayFrame(device, displayFrame)).toBe(displayFrame);
 
     const markup = renderToStaticMarkup(
       createElement(LiveVibeTVPreview, {
@@ -152,8 +170,39 @@ describe("dynamic usage slot preview", () => {
       }),
     );
 
-    expect(markup).toContain("Reconnect VibeTV to continue");
+    expect(markup).toContain("Loading preview");
+    expect(markup).not.toContain("Reconnect VibeTV to continue");
     expect(markup).not.toContain("Waiting for usage");
+  });
+
+  it("stops presenting a stale cached frame as live once the device stays disconnected", () => {
+    const staleFrame = {
+      ok: true,
+      savedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      frame: {
+        v: 2,
+        provider: "codex",
+        label: "Codex",
+        usageSlots: [{ id: "weekly", label: "Weekly", percent: 29 }],
+      },
+    };
+    const device = {
+      active: true,
+      activeTheme: "synthwave",
+      connected: false,
+      paired: true,
+      ready: false,
+    };
+
+    const markup = renderToStaticMarkup(
+      createElement(LiveVibeTVPreview, {
+        device,
+        displayFrame: staleFrame,
+        usage: null,
+      }),
+    );
+
+    expect(markup).toContain("Reconnect VibeTV to continue");
   });
 
   it("waits for actual usage instead of accepting a provider label alone", () => {
@@ -242,7 +291,9 @@ describe("dynamic usage slot preview", () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(null, { status: 404 }))
-      .mockResolvedValueOnce(Response.json(oldCompanionPack, { status: 200 }));
+      .mockResolvedValueOnce(
+        Response.json(oldCompanionPack, { status: 200 }),
+      );
 
     const pack = await fetchThemeRenderPackRevision(
       "my-custom",
@@ -288,7 +339,7 @@ describe("dynamic usage slot preview", () => {
     );
 
     expect(markup).toContain(
-      "Rendered VibeTV theme catalog-preview showing Codex, Session 64% used, Weekly 28% used",
+      "Rendered VibeTV theme catalog-preview showing VibeTV, Session 64% used, Weekly 28% used",
     );
     expect(markup).not.toContain("Codex Spark Weekly");
   });
@@ -303,40 +354,32 @@ describe("dynamic usage slot preview", () => {
       count: 2,
       slots: [
         { id: "weekly", label: "Weekly", percent: 42, resetSecs: 100 },
-        {
-          id: "spark",
-          label: "Codex Spark Weekly",
-          percent: 7,
-          resetSecs: 200,
-        },
+        { id: "spark", label: "Codex Spark Weekly", percent: 7, resetSecs: 200 },
       ],
     },
-  ])(
-    "matches complete lane visibility for $count slots",
-    ({ count, slots }) => {
-      const frame = buildFrameData("2026-07-24T12:00:00Z", {
-        v: 2,
-        provider: "codex",
-        label: "Codex",
-        session: 42,
-        weekly: 7,
-        usageMode: "used",
-        usageSlots: slots,
-      });
+  ])("matches complete lane visibility for $count slots", ({ count, slots }) => {
+    const frame = buildFrameData("2026-07-24T12:00:00Z", {
+      v: 2,
+      provider: "codex",
+      label: "Codex",
+      session: 42,
+      weekly: 7,
+      usageMode: "used",
+      usageSlots: slots,
+    });
 
-      expect(primitiveUsageSlotVisible(lane1, frame)).toBe(count >= 1);
-      expect(primitiveUsageSlotVisible(lane2, frame)).toBe(count >= 2);
-      const ariaLabel = themeSpecAriaLabel("mini-classic", frame);
-      expect(ariaLabel).toContain(
-        count > 0
-          ? `${slots[0]?.label} ${slots[0]?.percent}% used`
-          : "no usage windows available",
-      );
-      if (count < 2) {
-        expect(ariaLabel).not.toContain("Codex Spark Weekly");
-      }
-    },
-  );
+    expect(primitiveUsageSlotVisible(lane1, frame)).toBe(count >= 1);
+    expect(primitiveUsageSlotVisible(lane2, frame)).toBe(count >= 2);
+    const ariaLabel = themeSpecAriaLabel("mini-classic", frame);
+    expect(ariaLabel).toContain(
+      count > 0
+        ? `${slots[0]?.label} ${slots[0]?.percent}% used`
+        : "no usage windows available",
+    );
+    if (count < 2) {
+      expect(ariaLabel).not.toContain("Codex Spark Weekly");
+    }
+  });
 });
 
 describe("firmware-compatible ThemeSpec text layout", () => {

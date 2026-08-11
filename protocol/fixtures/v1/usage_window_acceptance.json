@@ -47,7 +47,7 @@
       "id": "237-04-antigravity-overflow-control-center",
       "source": "#237",
       "text": "Antigravity four-window input produces deterministic two-slot display output while all valid Control Center windows remain available.",
-      "cases": ["antigravity-distinct-windows", "four-unique-overflow"],
+      "cases": ["antigravity-generic-dedupe", "four-unique-overflow"],
       "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go", "companion/internal/companionapi/usage_window_acceptance_test.go"]
     },
     {
@@ -103,7 +103,7 @@
       "id": "237-12-no-provider-specific-mapping",
       "source": "#237",
       "text": "No provider-specific mapping logic is introduced outside CodexBar.",
-      "cases": ["antigravity-distinct-windows", "four-unique-overflow"],
+      "cases": ["antigravity-generic-dedupe", "four-unique-overflow"],
       "testFiles": ["companion/internal/daemon/usage_window_acceptance_test.go", "companion/internal/codexbar/dashboard_fetch_test.go"]
     },
     {
@@ -210,7 +210,8 @@
         "v": 1,
         "provider": "empty",
         "label": "Empty",
-        "usageMode": "used"
+        "usageMode": "used",
+        "usageUnavailable": true
       },
       "expectedRender": {
         "slot1Visible": false,
@@ -366,7 +367,7 @@
       }
     },
     {
-      "name": "antigravity-distinct-windows",
+      "name": "antigravity-generic-dedupe",
       "criteria": ["237-04-antigravity-overflow-control-center", "237-12-no-provider-specific-mapping"],
       "now": "2026-07-28T08:30:00Z",
       "showUsed": true,
@@ -394,8 +395,6 @@
         }
       },
       "expectedControlCenterWindows": [
-        {"id": "session", "label": "Gemini Models", "usedPercent": 19, "resetSecs": 518400, "windowMinutes": 10080},
-        {"id": "weekly", "label": "Claude and GPT", "usedPercent": 0, "resetSecs": 518400, "windowMinutes": 10080},
         {"id": "gemini-weekly", "label": "Gemini weekly", "usedPercent": 19, "resetSecs": 518400, "windowMinutes": 10080},
         {"id": "claude-gpt-weekly", "label": "Claude/GPT weekly", "usedPercent": 0, "resetSecs": 518400, "windowMinutes": 10080}
       ],
@@ -408,15 +407,15 @@
         "resetSecs": 518400,
         "usageMode": "used",
         "usageSlots": [
-          {"id": "session", "label": "Gemini Models", "percent": 19, "resetSecs": 518400},
-          {"id": "weekly", "label": "Claude and GPT", "percent": 0, "resetSecs": 518400}
+          {"id": "gemini-weekly", "label": "Gemini weekly", "percent": 19, "resetSecs": 518400},
+          {"id": "claude-gpt-weekly", "label": "Claude/GPT weekly", "percent": 0, "resetSecs": 518400}
         ]
       },
       "expectedRender": {
         "slot1Visible": true,
         "slot2Visible": true,
-        "ariaContains": ["Gemini Models 19% used", "Claude and GPT 0% used"],
-        "ariaNotContains": ["Gemini weekly", "Claude/GPT weekly"]
+        "ariaContains": ["Gemini weekly 19% used", "Claude/GPT weekly 0% used"],
+        "ariaNotContains": ["Gemini Models", "Claude and GPT"]
       }
     },
     {

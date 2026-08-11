@@ -118,13 +118,53 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 	}
 
 	if loaded, savedAt, ok := loadPersistedProviderSnapshotsAnyAge(); ok {
-		collector.providers = loaded
+		collector.providers = migrateLegacySnapshotUsageWindows(loaded)
 		collector.lastPersistedAt = savedAt
-		if raw := encodeProviderSnapshotsForCompare(loaded); raw != "" {
+		if raw := encodeProviderSnapshotsForCompare(collector.providers); raw != "" {
 			collector.lastPersistedRaw = raw
 		}
 	}
 	return collector
+}
+
+// migrateLegacySnapshotUsageWindows upgrades provider snapshots persisted by a
+// pre-usage-windows companion (for example release 1.0.52) to the current
+// schema. Their frames carry real usage only in the legacy session/weekly
+// fields; served unchanged, a slot-bound theme renders an empty skeleton until
+// the first fresh collection replaces them (seen on device 14799300 right
+// after the 2026-08-09 Sparkle update). The migration is the exact inverse of
+// applyLegacyUsageProjection and invents nothing: only known values become
+// windows, and frames without usable usage stay untouched.
+func migrateLegacySnapshotUsageWindows(snapshots map[string]providerSnapshot) map[string]providerSnapshot {
+	for key, snapshot := range snapshots {
+		frame := snapshot.Frame
+		if len(frame.UsageWindows) > 0 || len(frame.UsageSlots) > 0 || frame.UsageUnavailable {
+			continue
+		}
+		var windows []protocol.UsageWindow
+		if !frame.SessionUnavailable {
+			windows = append(windows, protocol.UsageWindow{
+				ID:       "session",
+				Label:    "Session",
+				Percent:  frame.Session,
+				ResetSec: frame.ResetSec,
+			})
+		}
+		if !frame.WeeklyUnavailable {
+			windows = append(windows, protocol.UsageWindow{
+				ID:      "weekly",
+				Label:   "Weekly",
+				Percent: frame.Weekly,
+			})
+		}
+		if len(windows) == 0 {
+			continue
+		}
+		frame.UsageWindows = windows
+		snapshot.Frame = frame.Normalize()
+		snapshots[key] = snapshot
+	}
+	return snapshots
 }
 
 func (c *providerCollector) start(ctx context.Context) {
@@ -140,6 +180,13 @@ func (c *providerCollector) run(ctx context.Context) {
 	}
 	defer c.shutdownTokenStatsScan()
 	c.collectOnce(ctx)
+	retryWhenDashboardReady := c.dashboard != nil
+	for _, frame := range c.providerFrames(c.now().UTC()) {
+		if !frame.Stale {
+			retryWhenDashboardReady = false
+			break
+		}
+	}
 	c.requestTokenStatsScan(ctx)
 
 	usageTicker := time.NewTicker(c.interval)
@@ -160,6 +207,13 @@ func (c *providerCollector) run(ctx context.Context) {
 				c.afterWakeCollect()
 			}
 		case <-activityTicker.C:
+			if retryWhenDashboardReady {
+				info := c.dashboard.Info()
+				if info.Running && info.Healthy {
+					c.collectOnce(ctx)
+					retryWhenDashboardReady = false
+				}
+			}
 			c.requestTokenStatsScan(ctx)
 		}
 	}
@@ -302,19 +356,17 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		parsedCollectedAt := parsedProviderCollectedAt(parsed, collectedAt)
 		if frame.UsageUnavailable {
 			lastGood, exists := c.providers[key]
-			if exists && !lastGood.Frame.UsageUnavailable {
-				if parsed.RateLimited || !parsed.RateLimitedUntil.IsZero() {
-					lastGood.RateLimited = parsed.RateLimited
-					lastGood.RateLimitedUntil = parsed.RateLimitedUntil.UTC()
-					c.providers[key] = lastGood
-					updated = true
-				}
-				if isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
+			if exists {
+				lastGood.RateLimited = parsed.RateLimited
+				lastGood.RateLimitedUntil = parsed.RateLimitedUntil.UTC()
+				c.providers[key] = lastGood
+				updated = true
+				if !lastGood.Frame.UsageUnavailable && isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
 					continue
 				}
 				lastGood.Frame.UsageUnavailable = true
 				c.providers[key] = lastGood
-			} else if !exists {
+			} else {
 				c.providers[key] = providerSnapshot{
 					Provider:         key,
 					Frame:            frame,
@@ -759,14 +811,11 @@ func parsedTokenStatsCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time
 }
 
 func snapshotTokenStatsFresh(snapshot providerSnapshot, now time.Time, maxAge time.Duration) bool {
-	if !snapshotHasTokenStats(snapshot) {
-		return false
-	}
 	return isLastGoodFreshAt(snapshot.TokenStatsCollected, now, maxAge)
 }
 
 func snapshotWithFreshTokenStats(snapshot providerSnapshot, now time.Time, maxAge time.Duration) providerSnapshot {
-	if snapshotHasTokenStats(snapshot) && !snapshotTokenStatsFresh(snapshot, now, maxAge) {
+	if !snapshotTokenStatsFresh(snapshot, now, maxAge) {
 		clearSnapshotTokenStats(&snapshot)
 	}
 	return snapshot

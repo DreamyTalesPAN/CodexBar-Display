@@ -502,18 +502,20 @@ export function deviceIsCustomerConnected(
 ): device is DeviceInfo & { active: true; connected: true } {
   return Boolean(
     device?.active === true &&
-    device.connected === true &&
-    device.paired !== false,
+      device.connected === true &&
+      device.paired !== false,
   );
 }
 
-export function deviceIsWaitingForUsage(device: DeviceInfo | null | undefined) {
+export function deviceIsWaitingForUsage(
+  device: DeviceInfo | null | undefined,
+) {
   return Boolean(
     deviceIsCustomerConnected(device) &&
-    device.ready !== true &&
-    device.stream?.running === true &&
-    device.stream.healthy !== true &&
-    !device.stream.errorCode,
+      device.ready !== true &&
+      device.stream?.running === true &&
+      device.stream.healthy !== true &&
+      !device.stream.errorCode,
   );
 }
 
