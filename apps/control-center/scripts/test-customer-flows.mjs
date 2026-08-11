@@ -2467,7 +2467,7 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
     "Overview",
     "Usage",
     "Settings",
-    "Theme Library",
+    "Appearance",
     "Updates",
     "Support",
   ]) {

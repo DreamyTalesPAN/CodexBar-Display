@@ -5,6 +5,15 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-11 — Outage tab sweep names the Appearance tab
+
+- User approval: Same instruction as below: fix CI and the Codex review loop
+  until both pass.
+- Approved customer-visible result: None. The companion-outage regression
+  checks the existing `Appearance` tab instead of the pre-merge
+  `Theme Library` label; no UI changes.
+- Approved files: `test-customer-flows.mjs` and this approval record.
+
 ## 2026-08-11 — Codex review fixes for the merged PR #296 candidate
 
 - User approval: The user explicitly instructed Codex to push PR #296, watch
