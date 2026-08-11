@@ -156,6 +156,10 @@ jobs:
           source_sha="$(cat tmp/vibetv-rc/source-sha.txt)"
           sparkle_dir="$(./scripts/fetch-sparkle.sh)"
           mkdir -p tmp/vibetv-rc/publish/macos
+          # Signing rewrote the embedded helper, and the guest matrix proves the
+          # DMG ships the exact tested companion byte for byte — stage the
+          # signed helper as the test companion (same step as the merge gate).
+          cp 'dist/macos/VibeTV Control Center.app/Contents/Helpers/codexbar-display' tmp/vibetv-rc/test/codexbar-display
           cp dist/macos/VibeTV-Control-Center.dmg tmp/vibetv-rc/publish/macos/VibeTV-Control-Center.dmg
           printf '%s' "$SPARKLE_ED25519_PRIVATE_KEY" | "$sparkle_dir/bin/generate_appcast" --ed-key-file - --maximum-deltas 0 --link https://app.vibetv.shop --download-url-prefix "https://github.com/${REPOSITORY}/releases/download/v${version}/" -o tmp/vibetv-rc/publish/macos/appcast.xml tmp/vibetv-rc/publish/macos
           (cd tmp/vibetv-rc/publish && find . -type f ! -name "checksums-*" -print0 | sort -z | xargs -0 shasum -a 256 > "checksums-v${version}.txt")
