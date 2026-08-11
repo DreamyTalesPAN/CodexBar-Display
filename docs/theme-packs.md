@@ -109,7 +109,7 @@ go run ./cmd/codexbar-display theme-pack catalog
 Validate a downloaded pack:
 
 ```bash
-go run ./cmd/codexbar-display theme-pack validate --pack ../theme-packs/cozy-meadow
+go run ./cmd/codexbar-display theme-pack validate --pack ../theme-packs/clippy
 ```
 
 Local directories and ZIP files do not need catalog metadata. To validate a
@@ -129,7 +129,7 @@ Install it on a connected VibeTV only during an explicit hardware test window. T
 For theme-only tests, skip firmware update explicitly:
 
 ```bash
-go run ./cmd/codexbar-display theme-pack install --pack ../theme-packs/cozy-meadow --target http://<device-ip> --skip-firmware-update
+go run ./cmd/codexbar-display theme-pack install --pack ../theme-packs/clippy --target http://<device-ip> --skip-firmware-update
 ```
 
 Install by catalog theme ID:
