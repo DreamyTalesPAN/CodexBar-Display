@@ -131,24 +131,45 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 		},
 	}
 
-	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
-		t.Fatalf("expected unavailable cold-start usage to keep waiting, got %v", err)
+	// Before the first usage ever arrives, providers-without-usage is the
+	// provider-setup state: the cycle must fail as runtime/no-providers so the
+	// device receives the honest error frame and the display-stream parser
+	// reports provider_setup_required instead of an unexplained silent wait.
+	err := runCycleWithDeps(context.Background(), "", state, deps)
+	if err == nil || !strings.Contains(err.Error(), "no-providers") {
+		t.Fatalf("expected the never-had-usage cycle to fail as no-providers, got %v", err)
 	}
-	if len(sentLines) != 0 {
-		t.Fatalf("expected no incomplete frame before first usage, got %d", len(sentLines))
+	if len(sentLines) != 1 {
+		t.Fatalf("expected the honest error frame before first usage, got %d frames", len(sentLines))
+	}
+	if errorFrame := decodeFrameLine(t, sentLines[0]); errorFrame.Error == "" {
+		t.Fatalf("expected an error frame before first usage, got %+v", errorFrame)
+	}
+
+	// A rate-limited selection is a configured, live provider in a temporary
+	// condition: it must keep its unavailable semantics and wait silently
+	// instead of being reclassified as no-providers.
+	rateLimited := unavailable
+	rateLimited.RateLimited = true
+	providers = []codexbar.ParsedFrame{rateLimited}
+	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
+		t.Fatalf("expected the rate-limited cold start to keep waiting, got %v", err)
+	}
+	if len(sentLines) != 1 {
+		t.Fatalf("expected no extra frame for the rate-limited wait, got %d", len(sentLines))
 	}
 	if !strings.Contains(logged.String(), "event=usage-waiting") {
-		t.Fatalf("expected an explicit usage-waiting log, got %q", logged.String())
+		t.Fatalf("expected the rate-limited wait to log usage-waiting, got %q", logged.String())
 	}
 
 	providers = []codexbar.ParsedFrame{testParsedFrame("claude", 0, 11, 3600)}
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected first available usage frame to send, got %v", err)
 	}
-	if len(sentLines) != 1 {
-		t.Fatalf("expected exactly one complete frame, got %d", len(sentLines))
+	if len(sentLines) != 2 {
+		t.Fatalf("expected the complete frame after the error frame, got %d", len(sentLines))
 	}
-	frame := decodeFrameLine(t, sentLines[0])
+	frame := decodeFrameLine(t, sentLines[1])
 	if frame.Provider != "claude" || frame.Weekly != 11 || frame.UsageUnavailable {
 		t.Fatalf("expected complete Claude usage frame, got %+v", frame)
 	}
@@ -157,8 +178,8 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected later unavailable usage to keep the valid frame, got %v", err)
 	}
-	if len(sentLines) != 1 {
-		t.Fatalf("expected unavailable usage to preserve the one valid frame, got %d sends", len(sentLines))
+	if len(sentLines) != 2 {
+		t.Fatalf("expected unavailable usage to preserve the valid frame, got %d sends", len(sentLines))
 	}
 
 	now = now.Add(providerSnapshotMaxAge() + time.Second)
@@ -166,10 +187,10 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected expired usage to send unavailable state, got %v", err)
 	}
-	if len(sentLines) != 2 {
+	if len(sentLines) != 3 {
 		t.Fatalf("expected unavailable state after last-good expiry, got %d sends", len(sentLines))
 	}
-	frame = decodeFrameLine(t, sentLines[1])
+	frame = decodeFrameLine(t, sentLines[2])
 	if frame.Provider != "claude" || !frame.UsageUnavailable || frame.Session != 0 || frame.Weekly != 0 || frame.UsageMode != "remaining" {
 		t.Fatalf("expected expired Claude usage to become unavailable, got %+v", frame)
 	}
@@ -3261,8 +3282,8 @@ func TestRunWithDepsRetriesAndRecoversAfterReconnect(t *testing.T) {
 	if len(delays) < 5 {
 		t.Fatalf("expected retry delay samples, got %v", delays)
 	}
-	if delays[0] != time.Minute || delays[1] != time.Minute || delays[2] != time.Minute {
-		t.Fatalf("unexpected retry delay start after backoff removal: %v", delays[:3])
+	if delays[0] != failureRetryInterval || delays[1] != failureRetryInterval || delays[2] != failureRetryInterval {
+		t.Fatalf("device-unreachable cycles must use the short reconnect retry: %v", delays[:3])
 	}
 
 	foundIntervalDelay := false
@@ -3286,8 +3307,63 @@ func TestStartupIntervalSwitchesAfterWarmupWindow(t *testing.T) {
 	if got := startupInterval(60*time.Second, startupFastPollWindow); got != 60*time.Second {
 		t.Fatalf("expected normal interval after warmup window, got %s", got)
 	}
-	if got := startupInterval(20*time.Second, 10*time.Second); got != 20*time.Second {
+	if got := startupInterval(2*time.Second, 10*time.Second); got != 2*time.Second {
 		t.Fatalf("expected normal interval when already shorter than startup interval, got %s", got)
+	}
+	// The fast-poll interval must actually be faster than the WiFi default;
+	// otherwise the whole startup fast-poll mechanism is dead code.
+	if startupFastPollInterval >= defaultWiFiInterval {
+		t.Fatalf("startup fast poll (%s) must be shorter than the WiFi interval (%s)",
+			startupFastPollInterval, defaultWiFiInterval)
+	}
+}
+
+func TestRunDaemonLoopRetriesQuicklyAfterCycleError(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var waits []time.Duration
+	cycleCalls := 0
+	err := runDaemonLoop(ctx, Options{Interval: 30 * time.Second, DisableStartupFastPoll: true}, runtimeDeps{
+		now: func() time.Time {
+			return time.Date(2026, 2, 23, 12, 0, cycleCalls, 0, time.UTC)
+		},
+		after: func(wait time.Duration) <-chan time.Time {
+			waits = append(waits, wait)
+			if len(waits) >= 2 {
+				cancel()
+				return make(chan time.Time)
+			}
+			ch := make(chan time.Time, 1)
+			ch <- time.Date(2026, 2, 23, 12, 0, cycleCalls, 0, time.UTC)
+			return ch
+		},
+		logf: func(string, ...any) {},
+	}, func(context.Context) error {
+		cycleCalls++
+		if cycleCalls == 1 {
+			return &RuntimeError{
+				Kind: runtimeErrorDeviceHello,
+				Op:   "read-device-hello",
+				Err:  errors.New("device offline"),
+			}
+		}
+		return nil
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected loop to stay alive until context cancel, got %v", err)
+	}
+	if len(waits) != 2 {
+		t.Fatalf("expected two waits, got %d", len(waits))
+	}
+	if waits[0] != failureRetryInterval {
+		t.Fatalf("failed cycle must retry after %s, waited %s", failureRetryInterval, waits[0])
+	}
+	if waits[1] != 30*time.Second {
+		t.Fatalf("successful cycle must return to the normal interval, waited %s", waits[1])
 	}
 }
 
@@ -3350,7 +3426,10 @@ func TestRunWithDepsUsesConfiguredIntervalAfterSleepWakeGap(t *testing.T) {
 	if len(delays) < 4 {
 		t.Fatalf("expected 4 delay samples, got %v", delays)
 	}
-	want := []time.Duration{time.Minute, time.Minute, time.Minute, time.Minute}
+	// Every cycle here fails at the serial write, so the loop uses the short
+	// device-reconnect retry instead of the configured interval - including
+	// directly after the sleep-wake gap.
+	want := []time.Duration{failureRetryInterval, failureRetryInterval, failureRetryInterval, failureRetryInterval}
 	for i, expected := range want {
 		if delays[i] != expected {
 			t.Fatalf("delay[%d]=%s, expected %s (delays=%v)", i, delays[i], expected, delays)

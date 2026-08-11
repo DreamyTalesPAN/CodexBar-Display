@@ -508,3 +508,84 @@ func TestUsageSlotZeroValuesRemainExplicitOnWire(t *testing.T) {
 		t.Fatalf("required zero values disappeared from wire frame: %s", line)
 	}
 }
+
+// Public firmware 1.0.39 is the baseline every existing customer runs, and its
+// frame parser reads exactly three usage fields:
+//
+//	out.session   = ClampPct(doc["session"] | 0);
+//	out.weekly    = ClampPct(doc["weekly"] | 0);
+//	out.resetSecs = ClampNonNegativeInt64(doc["resetSecs"] | 0);
+//
+// (git show v1.0.39:firmware_shared/codexbar_display_core.h). It knows neither
+// usageWindows nor usageSlots nor usageMode. Warm-start customers update the
+// Mac App before the firmware, so the candidate Companion talks to that parser
+// for as long as the customer waits before flashing. If the legacy projection
+// ever stops riding along on a v2 frame, every one of those VibeTVs drops to
+// 0% on both lanes with a frozen countdown.
+func TestV2WireFrameStaysReadableByPublicFirmware1039(t *testing.T) {
+	legacyFirmwareReader := func(t *testing.T, line []byte) (session, weekly int, reset int64) {
+		t.Helper()
+		var read struct {
+			Session   int   `json:"session"`
+			Weekly    int   `json:"weekly"`
+			ResetSecs int64 `json:"resetSecs"`
+		}
+		if err := json.Unmarshal(line, &read); err != nil {
+			t.Fatalf("firmware 1.0.39 parser rejected the v2 frame: %v", err)
+		}
+		return read.Session, read.Weekly, read.ResetSecs
+	}
+
+	frame := Frame{
+		V:        ProtocolVersionV2,
+		Provider: "codex",
+		Label:    "Codex",
+		UsageWindows: []UsageWindow{
+			{ID: "secondary", Label: "Weekly", Percent: 42, ResetSec: 15480},
+			{ID: "codex-spark-weekly", Label: "Codex Spark Weekly", Percent: 7, ResetSec: 604800},
+		},
+	}
+	line, err := frame.Normalize().MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal v2 frame: %v", err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(line, &raw); err != nil {
+		t.Fatalf("parse v2 wire frame: %v", err)
+	}
+	if _, ok := raw["usageWindows"]; !ok {
+		t.Fatalf("v2 frame must carry usageWindows: %s", line)
+	}
+	session, weekly, reset := legacyFirmwareReader(t, line)
+	if session != 42 || weekly != 7 || reset != 15480 {
+		t.Fatalf("firmware 1.0.39 would render session=%d weekly=%d reset=%d from %s", session, weekly, reset, line)
+	}
+}
+
+// The same projection has to survive the remaining-bars preference, because it
+// is applied to usageWindows and the legacy lanes must agree with them. A
+// firmware 1.0.39 device has no usageMode field, so whatever lands in session
+// and weekly is what the customer reads off the screen.
+func TestV2WireFrameLegacyLanesAgreeWithUsageWindows(t *testing.T) {
+	frame := Frame{
+		V:        ProtocolVersionV2,
+		Provider: "claude",
+		Label:    "Claude",
+		Session:  99,
+		Weekly:   98,
+		ResetSec: 1,
+		UsageWindows: []UsageWindow{
+			{ID: "session", Label: "Session", Percent: 12, ResetSec: 3600},
+			{ID: "weekly", Label: "Weekly", Percent: 34, ResetSec: 604800},
+		},
+	}
+	normalized := frame.Normalize()
+	if normalized.Session != normalized.UsageWindows[0].Percent ||
+		normalized.ResetSec != normalized.UsageWindows[0].ResetSec ||
+		normalized.Weekly != normalized.UsageWindows[1].Percent {
+		t.Fatalf("legacy lanes drifted from usageWindows: %+v", normalized)
+	}
+	if normalized.SessionUnavailable || normalized.WeeklyUnavailable {
+		t.Fatalf("two present windows must mark both legacy lanes available: %+v", normalized)
+	}
+}

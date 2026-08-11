@@ -118,13 +118,53 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 	}
 
 	if loaded, savedAt, ok := loadPersistedProviderSnapshotsAnyAge(); ok {
-		collector.providers = loaded
+		collector.providers = migrateLegacySnapshotUsageWindows(loaded)
 		collector.lastPersistedAt = savedAt
-		if raw := encodeProviderSnapshotsForCompare(loaded); raw != "" {
+		if raw := encodeProviderSnapshotsForCompare(collector.providers); raw != "" {
 			collector.lastPersistedRaw = raw
 		}
 	}
 	return collector
+}
+
+// migrateLegacySnapshotUsageWindows upgrades provider snapshots persisted by a
+// pre-usage-windows companion (for example release 1.0.52) to the current
+// schema. Their frames carry real usage only in the legacy session/weekly
+// fields; served unchanged, a slot-bound theme renders an empty skeleton until
+// the first fresh collection replaces them (seen on device 14799300 right
+// after the 2026-08-09 Sparkle update). The migration is the exact inverse of
+// applyLegacyUsageProjection and invents nothing: only known values become
+// windows, and frames without usable usage stay untouched.
+func migrateLegacySnapshotUsageWindows(snapshots map[string]providerSnapshot) map[string]providerSnapshot {
+	for key, snapshot := range snapshots {
+		frame := snapshot.Frame
+		if len(frame.UsageWindows) > 0 || len(frame.UsageSlots) > 0 || frame.UsageUnavailable {
+			continue
+		}
+		var windows []protocol.UsageWindow
+		if !frame.SessionUnavailable {
+			windows = append(windows, protocol.UsageWindow{
+				ID:       "session",
+				Label:    "Session",
+				Percent:  frame.Session,
+				ResetSec: frame.ResetSec,
+			})
+		}
+		if !frame.WeeklyUnavailable {
+			windows = append(windows, protocol.UsageWindow{
+				ID:      "weekly",
+				Label:   "Weekly",
+				Percent: frame.Weekly,
+			})
+		}
+		if len(windows) == 0 {
+			continue
+		}
+		frame.UsageWindows = windows
+		snapshot.Frame = frame.Normalize()
+		snapshots[key] = snapshot
+	}
+	return snapshots
 }
 
 func (c *providerCollector) start(ctx context.Context) {
