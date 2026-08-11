@@ -66,13 +66,16 @@
       "id": "reset-countdown",
       "title": "Reset Countdown",
       "usage": "screensaver",
-      "version": "1.1.6",
-      "themeRev": 5,
-      "themeSpecPath": "/themes/s/rcf-5-1a2fc7f5.json",
+      "version": "1.1.7",
+      "themeRev": 6,
+      "themeSpecPath": "/themes/s/rcf-6-03e818f0.json",
       "requiresFirmware": "1.0.40",
-      "downloadAsset": "vibetv-theme-reset-countdown-v1.1.6.zip",
-      "sha256": "8ca0238e88aac07b2a5150a07eb39254c049a6c94b3bab1c198a682d8ed1ee4c",
-      "bytes": 2554
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
+      "downloadAsset": "vibetv-theme-reset-countdown-v1.1.7.zip",
+      "sha256": "3b2b51f3903a4747aff4656d66c59800018a4fe3c3f241ec00ecf769c97cc2e2",
+      "bytes": 2596
     },
     {
       "id": "synthwave",
@@ -97,9 +100,12 @@
       "themeRev": 2,
       "themeSpecPath": "/themes/s/tf-2-94d69490.json",
       "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
       "downloadAsset": "vibetv-theme-token-fire-v0.2.0.zip",
-      "sha256": "1d6eaaeb955356292b98e29ad0c0c5501d69e451daf1aa0a4dcbef1d99e47cf3",
-      "bytes": 5023
+      "sha256": "1ec0120c397312be14a7725ac895b3be376a67cb886a610a5c0ba23deec53403",
+      "bytes": 5049
     }
   ]
 }

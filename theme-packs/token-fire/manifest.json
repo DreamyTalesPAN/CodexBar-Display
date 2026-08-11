@@ -6,6 +6,9 @@
   "version": "0.2.0",
   "minFirmware": "1.0.40",
   "usage": "screensaver",
+  "requiredCapabilities": [
+    "usage-slots-v1"
+  ],
   "themeSpec": {
     "path": "/themes/s/tf-2-94d69490.json",
     "file": "theme.json",

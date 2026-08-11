@@ -3,14 +3,17 @@
   "schemaVersion": 1,
   "id": "reset-countdown",
   "name": "Reset Countdown",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "minFirmware": "1.0.40",
   "usage": "screensaver",
+  "requiredCapabilities": [
+    "usage-slots-v1"
+  ],
   "themeSpec": {
-    "path": "/themes/s/rcf-5-1a2fc7f5.json",
+    "path": "/themes/s/rcf-6-03e818f0.json",
     "file": "theme.json",
-    "bytes": 511,
-    "sha256": "6c7d8f054be51e6a353100d3e095a752999ebf002d19f66143b27e3ed93fc1c5",
+    "bytes": 535,
+    "sha256": "03e818f00dcc95587cb1fbd83f33f79d4fd9fa0654f88daeca49a99b1b110982",
     "contentType": "application/json"
   },
   "assets": [
