@@ -254,6 +254,43 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).not.toContain("Live Theme");
   });
 
+  it("locks installs while the screensaver is off but keeps the toggle usable", () => {
+    const html = renderToStaticMarkup(
+      <ThemeLibraryScreen
+        busyAction={null}
+        companionStatus="online"
+        device={{
+          connected: true,
+          paired: true,
+          ready: true,
+          activeTheme: "live-theme",
+        }}
+        onInstallCustomTheme={async () => false}
+        onInstallTheme={vi.fn()}
+        onSaveStandby={vi.fn()}
+        onSelectTheme={vi.fn()}
+        selectedThemeId=""
+        storefrontConfigured={false}
+        standby={{
+          enabled: false,
+          timeoutMinutes: 10,
+          brightnessPercent: 20,
+          screensaverPath: null,
+        }}
+        themeInstallEnabled
+        themes={themes}
+        usage="screensaver"
+      />,
+    );
+
+    const standbySwitch = html.match(
+      /<button[^>]*id="vibetv-library-standby"[^>]*>/,
+    )?.[0];
+    expect(standbySwitch).not.toContain('disabled=""');
+    expect(html).toContain("Turn On First");
+    expect(html).toContain("Turn on Show screensaver to install");
+  });
+
   it("removes the warning without hiding the library when enabled", () => {
     const html = renderLibrary("screensaver", themes, {
       enabled: true,

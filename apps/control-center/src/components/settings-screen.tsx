@@ -80,9 +80,7 @@ export function SettingsScreen({
     brightnessPercent: 20,
   };
   const standbyToggleDisabled =
-    !deviceIsCustomerConnected(device) ||
-    !standbyValues.screensaverPath ||
-    localActionBusy;
+    !deviceIsCustomerConnected(device) || localActionBusy;
   const standbyDetailsDisabled =
     standbyToggleDisabled || !standbyValues.enabled;
 
@@ -139,7 +137,7 @@ export function SettingsScreen({
                     Show screensaver
                   </FieldLabel>
                 </Field>
-                <Field orientation="horizontal">
+                <Field data-disabled={standbyDetailsDisabled} orientation="horizontal">
                   <FieldLabel htmlFor="vibetv-standby-timeout">
                     Show after
                   </FieldLabel>
@@ -183,12 +181,20 @@ export function SettingsScreen({
                 />
                 <div className="pt-1">
                   <a
-                    className="inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    aria-disabled={standbyDetailsDisabled}
+                    className={
+                      standbyDetailsDisabled
+                        ? "pointer-events-none inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 opacity-50"
+                        : "inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    }
                     href="#screensavers"
                     onClick={(event) => {
                       event.preventDefault();
-                      onChooseScreensaver();
+                      if (!standbyDetailsDisabled) {
+                        onChooseScreensaver();
+                      }
                     }}
+                    tabIndex={standbyDetailsDisabled ? -1 : undefined}
                   >
                     Choose screensaver
                   </a>
@@ -256,9 +262,9 @@ function BrightnessControl({
       : Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100));
 
   return (
-    <Field>
+    <Field data-disabled={disabled}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <div className="relative pb-6">
+      <div className={disabled ? "relative pb-6 opacity-50" : "relative pb-6"}>
         <Slider
           aria-label={label}
           disabled={disabled}

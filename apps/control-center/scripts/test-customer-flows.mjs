@@ -4426,7 +4426,7 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
     await page.getByText("Fixture Synthwave Theme").waitFor();
 
     companion.setStandby({
-      enabled: false,
+      enabled: true,
       timeoutMinutes: 10,
       brightnessPercent: 20,
       screensaverPath: null,
@@ -4450,6 +4450,13 @@ async function testPublishedAppearanceInstallsUseTheirSlots(browser, appUrl) {
   });
   const installRequests = [];
   await routeCompanionOnline(page, installRequests, () => {}, {
+    // Screensaver installs require the screensaver to be turned on.
+    standbySettings: {
+      enabled: true,
+      timeoutMinutes: 10,
+      brightnessPercent: 20,
+      screensaverPath: null,
+    },
     installStatusSequence: [
       {
         phase: "complete",

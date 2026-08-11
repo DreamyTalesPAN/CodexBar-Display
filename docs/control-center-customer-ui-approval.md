@@ -5,6 +5,26 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-11 — Screensaver toggle first, everything else follows it
+
+- User approval: During the candidate test on the connected VibeTV the user
+  explicitly required: with the screensaver off, every standby detail must
+  read as deactivated ("hier muss alles deactivated sein, wenn der
+  screensaver off ist"), the toggle must be usable ("toggle funktioniert
+  nicht, in settings auch nicht"), and installing a screensaver must not be
+  possible while the toggle is off ("wenn hier toggle off, dann darf ich
+  screensaver auch nicht installieren können").
+- Approved customer-visible result: The Show screensaver toggle works for a
+  connected VibeTV even before any screensaver is installed, in Settings and
+  in the Screensavers view. While it is off, the Settings rows Show after,
+  Brightness in screensaver, and Choose screensaver grey out completely,
+  including their labels, and the link is inert. In the Screensavers view,
+  Install buttons read `Turn On First` and stay disabled until the toggle is
+  on; Create, Edit, and Preview stay available, and the off-banner explains
+  the order.
+- Approved files: `settings-screen.tsx`, `theme-library-screen.tsx`, their
+  component tests, the realigned customer flows, and this approval record.
+
 ## 2026-08-11 — Genuine all-zero token totals render as 0
 
 - User approval: Same instruction: fix CI and the Codex review loop until

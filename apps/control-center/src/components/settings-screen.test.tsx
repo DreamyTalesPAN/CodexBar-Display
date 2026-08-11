@@ -66,7 +66,7 @@ describe("SettingsScreen standby controls", () => {
     expect(html).not.toContain("Save screensaver brightness");
   });
 
-  it("keeps the settings available before a screensaver is chosen", () => {
+  it("keeps the toggle usable and greys out details before a screensaver is chosen", () => {
     const html = render(standbyDevice, {
       enabled: false,
       timeoutMinutes: 10,
@@ -80,12 +80,18 @@ describe("SettingsScreen standby controls", () => {
     const standbySwitch = html.match(
       /<button[^>]*id="vibetv-standby"[^>]*>/,
     )?.[0];
-    expect(standbySwitch).toContain('disabled=""');
+    // The toggle is the entry point: it must stay usable even before any
+    // screensaver is installed.
+    expect(standbySwitch).not.toContain('disabled=""');
     expect(html).toContain('id="vibetv-standby-timeout"');
     expect(html).toContain('id="vibetv-standby-brightness"');
-    expect(html).not.toContain("Choose a screensaver before turning it on.");
-    expect(html).not.toContain('data-variant="link"');
-    expect(html).toContain('<a class="inline-block');
+    // While the screensaver is off, every detail row reads as disabled:
+    // labels grey out with their fields and the link is inert.
+    expect(html.match(/data-disabled="true"/g)?.length).toBeGreaterThanOrEqual(
+      2,
+    );
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).toContain("pointer-events-none");
     expect(html).toContain('href="#screensavers"');
   });
 

@@ -597,6 +597,8 @@ export function ThemeLibraryScreen({
         ) : null}
       </section>
 
+      {/* Installing a screensaver only makes sense while the screensaver is
+          turned on; management (create, edit, preview) stays available. */}
       {screensavers && !setupMode && standby ? (
         <section className="space-y-3 pb-5">
           <Field className="border-y py-4" orientation="horizontal">
@@ -606,11 +608,7 @@ export function ThemeLibraryScreen({
             <Switch
               aria-label="Show screensaver"
               checked={standby.enabled}
-              disabled={
-                !standby.screensaverPath ||
-                busyAction === "standby" ||
-                device?.ready !== true
-              }
+              disabled={busyAction === "standby" || device?.ready !== true}
               id="vibetv-library-standby"
               onCheckedChange={(enabled) =>
                 onSaveStandby?.({ ...standby, enabled })
@@ -622,9 +620,8 @@ export function ThemeLibraryScreen({
               <CircleAlert aria-hidden />
               <AlertTitle>Screensaver is turned off</AlertTitle>
               <AlertDescription>
-                {standby.screensaverPath
-                  ? "You can still manage screensavers here. Turn on Show screensaver to use the selected screensaver."
-                  : "You can still manage screensavers here. Install one before turning it on."}
+                Turn on Show screensaver to install and use a screensaver. You
+                can still create, edit, and preview screensavers here.
               </AlertDescription>
             </Alert>
           ) : null}
@@ -679,6 +676,9 @@ export function ThemeLibraryScreen({
               {libraryThemes.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}
+                  screensaverInstallLocked={
+                    screensavers && !setupMode && Boolean(standby) && !standby?.enabled
+                  }
                   device={device}
                   displayThemeId={setupMode ? undefined : displayTheme?.themeId}
                   item={theme}
@@ -922,6 +922,7 @@ function ThemeListItem({
   onInstallTheme,
   onPreviewTheme,
   preparingInstallThemeId,
+  screensaverInstallLocked = false,
   selectedThemeId,
   setupMode,
   usage,
@@ -941,6 +942,7 @@ function ThemeListItem({
   onInstallTheme: (item: ThemeLibraryItem) => void;
   onPreviewTheme: (theme: ThemeLibraryItem) => void;
   preparingInstallThemeId: string;
+  screensaverInstallLocked?: boolean;
   selectedThemeId: string;
   setupMode: boolean;
   usage: ThemeStudioUsage;
@@ -962,19 +964,25 @@ function ThemeListItem({
   const visibleInstallStatus = Boolean(
     installStatus?.themeId === item.themeId,
   );
-  const blocker = theme
-    ? buildThemeInstallBlocker({
-        device,
-        theme,
-        allowUnreadyInstall: setupMode,
-        themeInstallBlockedReason,
-        themeInstallEnabled,
-      })
-    : buildCustomThemeInstallBlocker({
-        device,
-        themeInstallBlockedReason,
-        themeInstallEnabled,
-      });
+  const screensaverLockBlocker: ThemeInstallBlocker | null =
+    screensaverInstallLocked
+      ? { reason: "Turn on Show screensaver first." }
+      : null;
+  const blocker =
+    screensaverLockBlocker ??
+    (theme
+      ? buildThemeInstallBlocker({
+          device,
+          theme,
+          allowUnreadyInstall: setupMode,
+          themeInstallBlockedReason,
+          themeInstallEnabled,
+        })
+      : buildCustomThemeInstallBlocker({
+          device,
+          themeInstallBlockedReason,
+          themeInstallEnabled,
+        }));
   const blockedLabel = labelForInstallBlocker(blocker);
   const disabled = actionInFlight || installed || Boolean(blocker);
   const title = disabled
@@ -1254,6 +1262,9 @@ function labelForInstallBlocker(blocker: ThemeInstallBlocker | null): string {
   }
   if (/protected/i.test(text)) {
     return "Unavailable";
+  }
+  if (/show screensaver/i.test(text)) {
+    return "Turn On First";
   }
   if (/paid|checkout/i.test(text)) {
     return "Checkout Needed";
