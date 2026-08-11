@@ -45,7 +45,17 @@ assert(
 );
 
 for (const legacyTheme of legacyCatalog.themes) {
-  assert(currentById.has(legacyTheme.id), `current catalog dropped ${legacyTheme.id}`);
+  // Deleting a theme's source withdraws it from the current generation. Its
+  // frozen legacy artifacts below stay published either way, because older
+  // apps still resolve them.
+  if (await isDirectory(path.join(sourceRoot, legacyTheme.id))) {
+    assert(currentById.has(legacyTheme.id), `current catalog dropped ${legacyTheme.id}`);
+  } else {
+    assert(
+      !currentById.has(legacyTheme.id),
+      `withdrawn theme ${legacyTheme.id} is still published in the current catalog`,
+    );
+  }
   assert(
     legacyTheme.downloadAsset === `vibetv-theme-${legacyTheme.id}.zip`,
     `legacy asset name changed for ${legacyTheme.id}`,

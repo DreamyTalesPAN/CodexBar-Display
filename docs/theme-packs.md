@@ -84,6 +84,22 @@ https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/them
 When a renderer contract changes incompatibly again, create a new catalog
 generation instead of repointing an old Companion at incompatible packs.
 
+## Withdrawing A Theme
+
+Delete `theme-packs/<theme-id>/` and rebuild. The catalog is generated from the
+source directories, so the theme disappears from it, and every install and
+update flow resolves through the catalog. The Mac App packages only archives
+whose theme the catalog still offers, so a withdrawn theme cannot be installed
+from the packaged app either.
+
+Already published artifacts stay in `dist/theme-packs/`: the frozen legacy
+catalog, the versioned ZIPs and the render revisions. They are immutable
+published bytes that older apps still resolve, and `check-theme-pack-history.sh`
+fails on any deletion. They are simply no longer referenced or shipped.
+
+A device that already runs the theme keeps rendering it, because the ThemeSpec
+lives on the device.
+
 List the published VibeTV theme catalog:
 
 ```bash
@@ -93,7 +109,7 @@ go run ./cmd/codexbar-display theme-pack catalog
 Validate a downloaded pack:
 
 ```bash
-go run ./cmd/codexbar-display theme-pack validate --pack ../theme-packs/cozy-meadow
+go run ./cmd/codexbar-display theme-pack validate --pack ../theme-packs/clippy
 ```
 
 Local directories and ZIP files do not need catalog metadata. To validate a
@@ -113,7 +129,7 @@ Install it on a connected VibeTV only during an explicit hardware test window. T
 For theme-only tests, skip firmware update explicitly:
 
 ```bash
-go run ./cmd/codexbar-display theme-pack install --pack ../theme-packs/cozy-meadow --target http://<device-ip> --skip-firmware-update
+go run ./cmd/codexbar-display theme-pack install --pack ../theme-packs/clippy --target http://<device-ip> --skip-firmware-update
 ```
 
 Install by catalog theme ID:
