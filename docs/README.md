@@ -19,14 +19,15 @@ Center on the customer's Mac.
 
 ## Device And Release Docs
 
-- [Hardware contract](hardware-contract.md): firmware, WiFi, display, and endpoint contract.
+- [Hardware contract](hardware-contract.md): firmware, WiFi (incl. the 802.11g interop rule), display, and endpoint contract.
 - [Firmware provisioning](firmware-provisioning.md): provisioning and OTA packaging.
-- [Firmware OTA contract](firmware-ota-contract.md): supported ESP8266 update path for Control Center, CLI, and firmware.
 - [Firmware guardrails](firmware-guardrails.md): firmware safety rules.
 - [Firmware migrations](firmware-migrations/1.0.36-to-1.0.37.md): per-version migration notes and their compatibility modes.
 - [macOS DMG distribution](macos-dmg-distribution.md): signed and notarized customer distribution path.
 - [Hosted VibeTV gates](vibetv-hosted-gates.md): owner-dispatched merge and release-candidate gates in GitHub Actions.
-- [Operator runbook](operator-runbook.md): support, recovery, and smoke-test procedures.
+- [Operator runbook](operator-runbook.md): support, recovery, network diagnosis (`net-probe`), the one-command hardware self-test, and smoke tests.
+- [Firmware OTA contract](firmware-ota-contract.md): the supported customer update path and its safety invariants.
+- [Rehearsal bug report](vibetv-rehearsal-bug-report.md): the hardware investigation log (802.11n A-MSDU black hole, BUG-1/7/8/9/12) with a status summary up top.
 - [Usage polling architecture](usage-polling-architecture.md): usage collection and latency behavior.
 - [Preferences registry](preferences.md): typed local settings descriptors and the provider adapter.
 - [Token usage support matrix](token-usage-support-matrix.md): token stats by provider shape.

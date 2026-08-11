@@ -96,8 +96,7 @@ export function DeviceStartupScreen({
     detail = "Connecting to your saved VibeTV.";
   } else if (waiting) {
     title = "Connecting to VibeTV";
-    detail =
-      "VibeTV was found. Waiting for the first usage data. This can take up to 30 seconds.";
+    detail = "VibeTV was found. Waiting for the first live preview.";
   } else if (legacyRecovery) {
     title = "Reconnect this VibeTV";
     detail = "Follow these steps, then connect VibeTV again.";
@@ -122,7 +121,7 @@ export function DeviceStartupScreen({
   const statusLabel = reconnecting
     ? "Reconnecting…"
       : waiting
-        ? "Waiting for usage…"
+        ? "Waiting for live preview…"
         : searching
           ? "Searching…"
           : undefined;

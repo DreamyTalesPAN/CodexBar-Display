@@ -478,13 +478,15 @@ Run this list before every v0 release decision.
 - [ ] GO: all checklist items done, no open P0/P1 blockers.
 - [ ] NO-GO: at least one blocker open (record blocker, owner, next check time).
 
-## RC -> Soak -> Final Flow
+## Candidate -> Canary -> Promotion Flow
 
-1. Cut RC tag (for example `v1.0.0-rc.1`) and publish artifacts.
-2. Run checklist above + soak gate + setup/upgrade/rollback validation.
-3. Soak in realistic operator mode; monitor daemon logs and fix regressions via new RC tags.
-4. Promote to final tag (for example `v1.0.0`) only after soak passes with no blockers.
-5. Keep prior known-good artifact set available for rollback/hotfix RC.
+1. Run the exact-version candidate workflow from the intended `main` SHA.
+2. Run the virtual matrix once, then perform the guided physical canary with
+   the unchanged candidate bundle.
+3. Record both successful evidence runs and promote only through the manual
+   Production-gated publish workflow.
+4. Keep the previous known-good release available. A correction requires a
+   new candidate and version; never replace an immutable tag or release.
 
 ## Quick Troubleshooting
 
@@ -526,6 +528,56 @@ diagnostic succeeds while the runtime path fails. Trace the first disagreement
 through CodexBar serve, the collector, persisted usage, `/v1/usage`, and the
 last sent frame.
 
+## Network Diagnosis (WiFi-only field devices)
+
+When a device answers `/hello` and `/health` but uploads, theme installs, or
+OTA stall, run the link probe first — it detects the frame-size-selective
+receive failure class (docs/hardware-contract.md, "WiFi PHY mode") in
+seconds, over pure WiFi, against every firmware version:
+
+```bash
+codexbar-display net-probe --target http://<device-ip>
+```
+
+- `LARGE-FRAME BLACK HOLE` verdict: small requests answer while larger bodies
+  vanish. Power-cycle the VibeTV and retry; update to firmware >= 1.0.40,
+  which forces 802.11g and removes the failure class.
+- A clean pass does not rule the failure out for later — it is intermittent
+  by nature (the AP decides when to aggregate).
+
+`GET /health` on firmware >= 1.0.40 carries a `wifi` block (`rssi`,
+`channel`, `phyMode`, `sleepMode`). `phyMode` must read `11g`; support
+reports should always quote this block for connectivity complaints.
+
+## Fast Hardware Self-Test (bench device)
+
+One command exercises the firmware + Companion OTA/recovery matrix against a
+connected VibeTV, over WiFi, using a local firmware build as the candidate and
+the current public release as the baseline. No signed DMG or Apple
+notarization is involved, so it runs in minutes whenever a device is on the
+bench. It does not purge the Mac or touch the installed app; it stops the
+streaming runtime only for the duration of each OTA and restarts it at the end.
+
+```bash
+./scripts/vibetv-hw-selftest.sh                  # all phases, 2 cycles
+./scripts/vibetv-hw-selftest.sh --cycles 5
+./scripts/vibetv-hw-selftest.sh --phases link,coldstart
+./scripts/vibetv-hw-selftest.sh --target http://<ip> --port /dev/cu.usbserial-10
+```
+
+Phases: `link` (net-probe large-frame delivery), `update` (OTA public →
+candidate + themed render), `downgrade`, `cycles` (N update/downgrade round
+trips with heap logging), `coldstart` (serial reset → boot markers + link +
+render), `abort` (reset mid-upload → theme recovery + retry). `coldstart` and
+`abort` need the USB serial cable; the rest run over WiFi only. Per-run
+artifacts and logs land in `~/.vibetv-selftest/runs/<timestamp>/`.
+
+This is the firmware/Companion tool. For the full **customer** rehearsal that
+also drives the Mac App update through Sparkle, use
+`scripts/vibetv-rehearse-warm-start.sh` / `vibetv-rehearse-cold-start.sh`;
+those need a signed merge-gate candidate and one manual Sparkle "Install
+Update" click (a native macOS dialog that cannot be scripted headlessly).
+
 ## Error Code Recovery Map
 
 Use this taxonomy for incident triage:
@@ -556,12 +608,47 @@ Firmware bench envs:
 - ESP8266: `esp8266_smalltv_st7789_bench`
 - ESP32 fallback: `lilygo_t_display_s3_bench`
 
+## Immutable Candidate Promotion (Issue #353)
+
+The release candidate is the only publishable input. Run `CODEX Test VibeTV
+Release Candidate` from the exact `main` SHA and record its run ID. That run
+builds, signs, notarizes, hashes, and exercises the candidate once; its
+`candidate-manifest.json` binds `sourceSha`, version, candidate run ID, every
+publishable artifact, and every SHA-256. Candidate and virtual-test evidence is
+retained for 7 days, so promotion must use the same run before that retention
+window expires.
+
+Use the unchanged candidate bundle for the guided physical canary. Record its
+device identity, operator, timestamps, required checks, candidate manifest
+SHA-256, and the complete artifact-hash map with
+`CODEX Record VibeTV Hardware Canary`. The recorder only validates and stores
+evidence; it does not flash or otherwise operate hardware automatically.
+Successful evidence is retained for 90 days and must match the candidate
+source SHA, version, run ID, manifest hash, and artifact hashes.
+
+After both gates pass, manually dispatch `CODEX Publish VibeTV Release` from
+the same `main` SHA with `version`, `candidate_run_id`, and
+`hardware_canary_run_id`. The `Production` environment is the explicit release
+approval. Preflight downloads the candidate and evidence, rejects missing or
+mismatched identity, hashes, signing/notarization evidence, tag, or release,
+and copies only `publish=true` candidate files into the internal promotion
+payload. The publish job then rechecks `main`, creates the tag and GitHub
+Release from those copied bytes, and performs no app, Companion, firmware,
+Sparkle, signing, or notarization build.
+
+Post-publish verification downloads every public release asset and compares its
+SHA-256 with the validated candidate payload before running the existing
+release canary. If any gate fails, do not overwrite or rerun the same tag or
+release. Keep the previous known-good release for rollback and create a new
+candidate/version for a correction; an uncertain hardware write remains an
+unknown device state and requires a separate approved recovery decision.
+
 ## Versioning and Release Notes
 
 - Companion and firmware releases use SemVer `1.x`.
 - Release go/no-go for MVP is gated by `esp8266_smalltv_st7789`.
 - `codexbar-display upgrade` enforces companion/firmware compatibility with a version guard.
-- Release firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the release tag version.
+- Candidate firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the candidate version.
 - GitHub release artifacts include companion binaries, firmware binaries, checksums, manifests, and `install-control-center-companion.sh`.
 - The customer Mac App target is a signed/notarized DMG containing `VibeTV Control Center.app`. Keep its hosted download feature flag disabled until the latest release contains the verified DMG asset; the setup prompt remains the support fallback.
 - Current customer releases must not publish Mac App `.pkg` assets.

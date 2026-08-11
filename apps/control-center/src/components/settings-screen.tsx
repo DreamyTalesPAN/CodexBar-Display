@@ -46,7 +46,9 @@ export function SettingsScreen({
     device?.capabilities?.display?.brightness?.maxPercent ?? 100;
   const currentBrightness = brightness ?? minBrightness;
   const localActionBusy =
-    busyAction === "brightness" || busyAction === "reset-setup";
+    busyAction === "brightness" ||
+    busyAction === "reset-setup" ||
+    busyAction === "firmware-update";
 
   return (
     <div className="mx-auto flex max-w-[1040px] flex-col gap-4 py-4">
