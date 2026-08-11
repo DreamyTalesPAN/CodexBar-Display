@@ -11,6 +11,7 @@ import {
   livePreviewDisplayFrame,
   parseLatestDisplayFrameResponse,
   primitiveUsageSlotVisible,
+  renderTextPrimitive,
   progressPercent,
   THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
@@ -51,6 +52,36 @@ describe("latest display frame response", () => {
 });
 
 describe("dynamic usage slot preview", () => {
+  it("renders absent token totals as unavailable instead of zero", () => {
+    const withoutTokens = buildFrameData("2026-08-11T09:00:00Z", {
+      v: 2,
+      provider: "codex",
+      label: "Codex",
+      session: 12,
+      weekly: 34,
+    });
+    expect(withoutTokens.hasTokenTotals).toBe(false);
+    expect(
+      renderTextPrimitive({ t: "tx", b: "st" }, withoutTokens),
+    ).toBe("--");
+    expect(
+      renderTextPrimitive({ t: "tx", v: "{totalTokens}" }, withoutTokens),
+    ).toBe("--");
+
+    const withTokens = buildFrameData("2026-08-11T09:00:00Z", {
+      v: 2,
+      provider: "codex",
+      label: "Codex",
+      session: 12,
+      weekly: 34,
+      sessionTokens: 1400000,
+    });
+    expect(withTokens.hasTokenTotals).toBe(true);
+    expect(renderTextPrimitive({ t: "tx", b: "st" }, withTokens)).toBe(
+      "1400000",
+    );
+  });
+
   it("keeps a prior valid frame for a selected reachable VibeTV while readiness waits", () => {
     const device = {
       active: true,

@@ -5,6 +5,27 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-11 — Codex review fixes for the merged PR #296 candidate
+
+- User approval: The user explicitly instructed Codex to push PR #296, watch
+  CI and the Codex review, and fix everything until both pass ("push und
+  überwache CI / codex review. fix until pass").
+- Approved customer-visible result: The startup gate follows the already
+  approved rule again and opens Overview only on the first real preview frame;
+  the merge had briefly reintroduced a 30-second auto-entry, which is removed.
+  Screensaver token totals that are absent from the device frame render as
+  `--` instead of a fabricated `0` on the device and in every preview. A
+  failed screensaver-settings save restores the last device-confirmed values
+  instead of leaving the unsaved slider value visible. During a screensaver
+  install the selection is cleared until the complete pack is staged, with one
+  new install log line; a failed install leaves standby without a screensaver
+  until the install is retried. No other copy, control, or layout changes.
+- Approved files: `control-center-app.tsx`, `live-vibetv-preview.tsx` and its
+  tests, the firmware token-total rendering and its native tests, the
+  Companion screensaver-install and upload-verification hardening and their
+  tests, realigned assertions in `test-customer-flows.mjs`, and this approval
+  record.
+
 ## 2026-08-04 — Updates keep the live theme identity during standby
 
 - User approval: The user instructed Codex to continue making PR #296 ready to merge and to fix the findings from the Codex reviewer loop.

@@ -736,11 +736,13 @@ func sendClearThemeSpecFrameWithPairRetry(
 	return sendClearThemeSpecFrame(ctx, wifi, *target, caps, fetchFrame)
 }
 
-// clearScreensaverBeforeUpload keeps the current screensaver selection until
-// the new files and ThemeSpec are fully staged. If it is showing, restore the
-// live theme first. Firmware uploads assets through a temporary file and
-// promotes them atomically, so the old selection remains the rollback until
-// final activation succeeds.
+// clearScreensaverBeforeUpload takes a showing screensaver off screen and then
+// clears the screensaver selection for the whole staging window. Each file is
+// promoted atomically, but a pack install is a multi-file operation: while it
+// runs, the old selection could point at a mixture of old and new files, and
+// standby could activate that mixture between uploads. An empty selection
+// (standby without a screensaver) is the honest state until the complete pack
+// is staged and the new selection is recorded.
 func clearScreensaverBeforeUpload(wifi transportlayer.WiFiTransport, target *string, store PairTokenStore, out io.Writer) error {
 	health, err := wifi.DeviceHealthSnapshot(*target)
 	if err != nil {
@@ -755,6 +757,10 @@ func clearScreensaverBeforeUpload(wifi transportlayer.WiFiTransport, target *str
 		if err := activateThemeWithPairRetry(wifi, target, liveThemePath, store); err != nil {
 			return fmt.Errorf("restore live theme: %w", err)
 		}
+	}
+	fmt.Fprintln(out, "Clearing the screensaver selection during the install...")
+	if err := activateScreensaverWithPairRetry(wifi, target, "", store); err != nil {
+		return fmt.Errorf("clear screensaver selection: %w", err)
 	}
 	return nil
 }

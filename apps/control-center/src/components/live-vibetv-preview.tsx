@@ -171,6 +171,8 @@ type FrameData = {
   sessionTokens: number;
   weekTokens: number;
   totalTokens: number;
+  // Mirrors the firmware: token totals absent from the frame render as "--".
+  hasTokenTotals: boolean;
   time: string;
   date: string;
 };
@@ -203,6 +205,7 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   sessionTokens: 1_400_000,
   weekTokens: 384_000_000,
   totalTokens: 1_070_000_000,
+  hasTokenTotals: true,
   time: "12:00",
   date: "03.07",
 };
@@ -1195,6 +1198,10 @@ export function buildFrameData(
     usageSlot2Available: Boolean(slot2),
     activity: displayFrame.activity || "idle",
     sessionTokens: displayFrame.sessionTokens ?? 0,
+    hasTokenTotals:
+      displayFrame.sessionTokens !== undefined ||
+      displayFrame.weekTokens !== undefined ||
+      displayFrame.totalTokens !== undefined,
     weekTokens: displayFrame.weekTokens ?? 0,
     totalTokens: displayFrame.totalTokens ?? 0,
     time: new Intl.DateTimeFormat("de-DE", {
@@ -1421,13 +1428,13 @@ export function boundValue(key: string, frame: FrameData): string {
       return frame.date;
     case "sessionTokens":
     case "st":
-      return String(frame.sessionTokens);
+      return frame.hasTokenTotals ? String(frame.sessionTokens) : "--";
     case "weekTokens":
     case "wt":
-      return String(frame.weekTokens);
+      return frame.hasTokenTotals ? String(frame.weekTokens) : "--";
     case "totalTokens":
     case "tt":
-      return String(frame.totalTokens);
+      return frame.hasTokenTotals ? String(frame.totalTokens) : "--";
     default:
       return "";
   }

@@ -439,7 +439,7 @@ async function main() {
       return;
     }
     if (startupTimeoutOnly) {
-      await testLocalReachableWithoutFrameEntersAfterTimeout(
+      await testLocalReachableWithoutFrameWaitsUntilPreview(
         browser,
         appContext.appUrl,
       );
@@ -669,7 +669,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testLocalReachableWithoutFrameEntersAfterTimeout(
+    await testLocalReachableWithoutFrameWaitsUntilPreview(
       browser,
       appContext.appUrl,
     );
@@ -3249,10 +3249,7 @@ async function testLocalReachableWithoutFrameWaitsForUsage(browser, appUrl) {
   await page.close();
 }
 
-async function testLocalReachableWithoutFrameEntersAfterTimeout(
-  browser,
-  appUrl,
-) {
+async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
@@ -3293,30 +3290,14 @@ async function testLocalReachableWithoutFrameEntersAfterTimeout(
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.clock.runFor(0);
-  await page.getByText("Waiting for usage…", { exact: true }).waitFor({
-    timeout: 10_000,
-  });
-  await page.clock.runFor(25_000);
+  await page
+    .getByText("Waiting for live preview…", { exact: true })
+    .waitFor({ timeout: 10_000 });
+  await page.clock.runFor(60_000);
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
       0,
-    "Startup must remain visible before its stated 30-second limit",
-  );
-
-  await page.clock.runFor(5_000);
-  await page
-    .getByRole("navigation", { name: "Control Center" })
-    .waitFor({ timeout: 10_000 });
-  await page
-    .getByRole("navigation", { name: "Control Center", exact: true })
-    .getByRole("button", { name: "Usage" })
-    .click();
-  await page.getByRole("heading", { name: "AI providers" }).waitFor({
-    timeout: 10_000,
-  });
-  assert(
-    (await page.getByText("No provider usage is available yet.").count()) === 1,
-    "Timed startup entry must not invent provider usage",
+    "Startup must remain visible until a live preview exists",
   );
 
   recovered = true;
@@ -3325,9 +3306,11 @@ async function testLocalReachableWithoutFrameEntersAfterTimeout(
     () => recoveredFrameRequests > 0,
     "Display-frame recovery must keep polling after startup entry",
   );
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 10_000 });
   await page.close();
 }
-
 async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
   browser,
   appUrl,
@@ -7141,9 +7124,11 @@ async function testThemeStudioUsesLocalRenderAndCompanionInstall(
   await routeLocalCompanionAppThroughLocalNext(page, appUrl);
   for (const themeId of ["synthwave", "clippy"]) {
     const renderPack = await readTrackedThemeRenderPackFixture(themeId);
-    const specFile = renderPack.specPath.split("/").pop();
+    // The editor requests the spec file named by the catalog fixture, which
+    // intentionally lags behind the tracked pack revision; serve the tracked
+    // render pack for any requested revision of this theme.
     await page.route(
-      `http://127.0.0.1:47832/theme-packs/render/${themeId}/${specFile}`,
+      new RegExp(`/theme-packs/render/${themeId}/`),
       async (route) => {
         await route.fulfill({
           status: 200,

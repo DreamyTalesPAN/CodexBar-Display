@@ -416,6 +416,15 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 	contentType := writer.FormDataContentType()
 	bodyBytes := body.Bytes()
 	uploadClient := t.assetUploadClient(len(bodyBytes))
+	// A lost upload response is only provable through the /assets readback when
+	// the pre-upload state cannot be mistaken for the committed upload. If the
+	// path already holds a same-sized file (or the pre-upload state is unknown),
+	// a size match proves nothing and the upload must be retried instead.
+	sizeMatchProvesCommit := false
+	if preAssets, preErr := t.DeviceAssets(target); preErr == nil {
+		preBytes, existed := preAssets.AssetSize(devicePath)
+		sizeMatchProvesCommit = !existed || preBytes != int64(len(data))
+	}
 	var lastErr error
 	for attempt := 1; attempt <= assetUploadAttempts; attempt++ {
 		req, err := http.NewRequest(http.MethodPost, endpoint, newRateLimitedAssetReader(bodyBytes))
@@ -431,7 +440,8 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 			// ESP8266WebServer can close the socket after committing the file
 			// without delivering the final HTTP response. Confirm the durable
 			// asset before retrying, otherwise the same upload is sent again.
-			if retryableAssetError(err) && t.assetUploadWasCommitted(target, devicePath, len(data)) {
+			if retryableAssetError(err) && sizeMatchProvesCommit &&
+				t.assetUploadWasCommitted(target, devicePath, len(data)) {
 				return nil
 			}
 			lastErr = fmt.Errorf("post asset %s: %w", devicePath, err)

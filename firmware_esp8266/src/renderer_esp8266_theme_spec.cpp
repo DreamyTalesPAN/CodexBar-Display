@@ -1106,6 +1106,7 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   frame.sessionTokens = CurrentFrame().sessionTokens;
   frame.weekTokens = CurrentFrame().weekTokens;
   frame.totalTokens = CurrentFrame().totalTokens;
+  frame.hasTokenTotals = CurrentFrame().hasTokenTotals;
   return frame;
 }
 

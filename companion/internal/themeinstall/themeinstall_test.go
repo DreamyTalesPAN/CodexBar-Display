@@ -182,7 +182,7 @@ func TestCurrentStoredThemePathReadsTheLiveSlotDuringStandby(t *testing.T) {
 	}
 }
 
-func TestInstallScreensaverStagesOverTheShowingOneWithoutClearingTheRollback(t *testing.T) {
+func TestInstallScreensaverRestoresLiveThemeAndClearsSelectionBeforeStaging(t *testing.T) {
 	device := newScreensaverDeviceServer(t, true)
 	device.standbyActive = true
 	// The same pack keeps its device paths across versions, so reinstalling it
@@ -203,8 +203,9 @@ func TestInstallScreensaverStagesOverTheShowingOneWithoutClearingTheRollback(t *
 	}); err != nil {
 		t.Fatalf("Install returned error: %v\nlogs:\n%s", err, out.String())
 	}
-	if len(device.ops) < 2 || device.ops[0] != "restore /themes/u/claude.json" || !strings.HasPrefix(device.ops[1], "upload ") {
-		t.Fatalf("the live theme must be restored before files are written, got: %v", device.ops)
+	if len(device.ops) < 3 || device.ops[0] != "restore /themes/u/claude.json" ||
+		device.ops[1] != "clear" || !strings.HasPrefix(device.ops[2], "upload ") {
+		t.Fatalf("the live theme must be restored and the selection cleared before files are written, got: %v", device.ops)
 	}
 	if device.screensaverPath != screensaverSpecPath {
 		t.Fatalf("screensaver slot=%q, want %q", device.screensaverPath, screensaverSpecPath)
@@ -214,7 +215,7 @@ func TestInstallScreensaverStagesOverTheShowingOneWithoutClearingTheRollback(t *
 	}
 }
 
-func TestInstallScreensaverKeepsAwakeSelectionUntilActivation(t *testing.T) {
+func TestInstallScreensaverClearsAwakeSelectionBeforeStaging(t *testing.T) {
 	device := newScreensaverDeviceServer(t, true)
 	device.screensaverPath = screensaverSpecPath
 	device.assets[screensaverSpecPath] = 60
@@ -232,8 +233,14 @@ func TestInstallScreensaverKeepsAwakeSelectionUntilActivation(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Install returned error: %v", err)
 	}
-	if len(device.ops) < 1 || !strings.HasPrefix(device.ops[0], "upload ") {
-		t.Fatalf("the awake screensaver selection must remain until activation, got: %v", device.ops)
+	// A pack install is a multi-file operation: standby must never be able to
+	// activate a half-replaced pack, so the selection is cleared before the
+	// first file is written and only re-recorded after complete staging.
+	if len(device.ops) < 2 || device.ops[0] != "clear" || !strings.HasPrefix(device.ops[1], "upload ") {
+		t.Fatalf("the screensaver selection must be cleared before files are written, got: %v", device.ops)
+	}
+	if device.screensaverPath != screensaverSpecPath {
+		t.Fatalf("screensaver slot=%q, want the new selection after staging, got %q", device.screensaverPath, screensaverSpecPath)
 	}
 	for _, op := range device.ops {
 		if strings.HasPrefix(op, "restore ") {

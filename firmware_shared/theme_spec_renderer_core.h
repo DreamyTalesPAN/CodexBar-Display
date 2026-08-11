@@ -80,6 +80,8 @@ struct FrameData {
   int64_t sessionTokens = 0;
   int64_t weekTokens = 0;
   int64_t totalTokens = 0;
+  // Token totals absent from the frame render as "--", never as a made-up 0.
+  bool hasTokenTotals = false;
 };
 
 struct RectCommand {
@@ -694,15 +696,27 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     return;
   }
   if (std::strcmp(key, "sessionTokens") == 0 || std::strcmp(key, "st") == 0) {
-    std::snprintf(out, outSize, "%lld", static_cast<long long>(frame.sessionTokens));
+    if (!frame.hasTokenTotals) {
+      std::snprintf(out, outSize, "--");
+    } else {
+      std::snprintf(out, outSize, "%lld", static_cast<long long>(frame.sessionTokens));
+    }
     return;
   }
   if (std::strcmp(key, "weekTokens") == 0 || std::strcmp(key, "wt") == 0) {
-    std::snprintf(out, outSize, "%lld", static_cast<long long>(frame.weekTokens));
+    if (!frame.hasTokenTotals) {
+      std::snprintf(out, outSize, "--");
+    } else {
+      std::snprintf(out, outSize, "%lld", static_cast<long long>(frame.weekTokens));
+    }
     return;
   }
   if (std::strcmp(key, "totalTokens") == 0 || std::strcmp(key, "tt") == 0) {
-    std::snprintf(out, outSize, "%lld", static_cast<long long>(frame.totalTokens));
+    if (!frame.hasTokenTotals) {
+      std::snprintf(out, outSize, "--");
+    } else {
+      std::snprintf(out, outSize, "%lld", static_cast<long long>(frame.totalTokens));
+    }
     return;
   }
 }

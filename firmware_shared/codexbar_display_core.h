@@ -132,6 +132,9 @@ struct Frame {
   int64_t sessionTokens = 0;
   int64_t weekTokens = 0;
   int64_t totalTokens = 0;
+  // True only when the frame carried token totals on the wire. Absent totals
+  // must never render as a fabricated 0.
+  bool hasTokenTotals = false;
   bool hasUsageMode = false;
   String usageMode;
   String activity;
@@ -1090,6 +1093,9 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   out.sessionTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["sessionTokens"] | static_cast<int64_t>(0)));
   out.weekTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["weekTokens"] | static_cast<int64_t>(0)));
   out.totalTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["totalTokens"] | static_cast<int64_t>(0)));
+  out.hasTokenTotals = !doc["sessionTokens"].isNull() ||
+                       !doc["weekTokens"].isNull() ||
+                       !doc["totalTokens"].isNull();
   out.hasUsageMode = hasUsageMode;
   out.usageMode = usageMode;
   out.activity = activity;

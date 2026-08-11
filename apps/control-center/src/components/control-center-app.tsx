@@ -102,7 +102,6 @@ const DEVICE_TARGET_STORAGE_KEY = "vibetv.controlCenter.deviceTarget";
 const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
 const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
-const FIRST_USAGE_ENTRY_TIMEOUT_MS = 30_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
 const LAUNCHD_RECOVERY_GRACE_MS = 12_000;
 const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 55_000;
@@ -361,6 +360,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<SupportDiagnostics | null>(null);
   const brightnessDirtyRef = useRef(false);
   const standbyDirtyRef = useRef(false);
+  // Last standby settings the device confirmed (loaded or saved). A failed
+  // save rolls back to this, never to the in-flight slider value.
+  const lastSavedStandbyRef = useRef<StandbySettings | null>(null);
   const setupGenerationRef = useRef(0);
   const deviceSearchAttemptRef = useRef(0);
   const didRunInitialConnectionCheck = useRef(false);
@@ -790,6 +792,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setBrightness(loadedBrightness);
       }
       if (!standbyDirtyRef.current) {
+        lastSavedStandbyRef.current = payload.settings?.standby ?? null;
         setStandby(payload.settings?.standby ?? null);
       }
       if (payload.device) {
@@ -1769,6 +1772,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       brightnessDirtyRef.current = false;
       setBrightness(null);
       standbyDirtyRef.current = false;
+      lastSavedStandbyRef.current = null;
       setStandby(null);
       setLastInstall(undefined);
       setThemeInstallStatus(null);
@@ -1893,7 +1897,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const saveStandby = useCallback(
     async (value: StandbySettings) => {
       const setupGeneration = setupGenerationRef.current;
-      const previous = standby;
       standbyDirtyRef.current = true;
       setStandby(value);
       setBusyAction("standby");
@@ -1907,6 +1910,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         const saved = payload.settings?.standby ?? value;
         standbyDirtyRef.current = false;
+        lastSavedStandbyRef.current = saved;
         setStandby(saved);
         addEvent({
           label: "Screensaver saved",
@@ -1920,7 +1924,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           return;
         }
         standbyDirtyRef.current = false;
-        setStandby(previous);
+        setStandby(lastSavedStandbyRef.current);
         const normalized = normalizeCaughtError(
           error,
           "Screensaver needs attention.",
@@ -1947,7 +1951,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       markCompanionAccessBlocked,
       markCompanionUnavailable,
       runCompanion,
-      standby,
     ],
   );
 
@@ -3298,22 +3301,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     device.paired !== false &&
     !connectionRecoveryRequired &&
     !hasEnteredControlCenter;
-  useEffect(() => {
-    if (!waitingForFirstUsage || themeSetupRequired) {
-      return;
-    }
-
-    const timer = window.setTimeout(
-      () => setHasEnteredControlCenter(true),
-      FIRST_USAGE_ENTRY_TIMEOUT_MS,
-    );
-    return () => window.clearTimeout(timer);
-  }, [
-    device?.deviceId,
-    device?.target,
-    themeSetupRequired,
-    waitingForFirstUsage,
-  ]);
   const startupDeviceSearchState: DeviceSearchState = waitingForFirstUsage
     ? "waiting"
     : connectionRecoveryRequired && startupDeviceCandidates.length > 0

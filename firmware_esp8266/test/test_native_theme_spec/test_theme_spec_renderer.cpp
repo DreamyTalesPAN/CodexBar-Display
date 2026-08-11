@@ -208,6 +208,7 @@ FrameData testFrame() {
   frame.sessionTokens = 1234;
   frame.weekTokens = 5678;
   frame.totalTokens = 9012;
+  frame.hasTokenTotals = true;
   return frame;
 }
 
@@ -421,6 +422,41 @@ void testRendersCommandsAndBindings() {
   TEST_ASSERT_EQUAL_INT(2, pixels.height);
   TEST_ASSERT_EQUAL_HEX16(0xFFFF, pixels.color);
   TEST_ASSERT_EQUAL_STRING("A5", pixels.data.c_str());
+}
+
+void testAbsentTokenTotalsRenderUnavailable() {
+  const char* spec = R"JSON({"v":1,"id":"tokens","rev":1,"p":[
+    {"t":"tx","x":0,"y":0,"b":"st","s":1},
+    {"t":"tx","x":0,"y":10,"b":"wt","s":1},
+    {"t":"tx","x":0,"y":20,"v":"{totalTokens}","s":1}
+  ]})JSON";
+
+  FrameData frame = testFrame();
+  frame.hasTokenTotals = false;
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("--", sink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("--", sink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("--", sink.commands[3].text.c_str());
+}
+
+void testConsumeFrameLineTracksTokenTotalPresence() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  TEST_ASSERT_TRUE(codexbar_display::core::ConsumeFrameLine(
+      state,
+      "{\"v\":2,\"provider\":\"codex\",\"label\":\"Codex\",\"session\":10,\"weekly\":20,\"resetSecs\":60,\"sessionTokens\":5}",
+      1000,
+      event));
+  TEST_ASSERT_TRUE(state.current.hasTokenTotals);
+
+  TEST_ASSERT_TRUE(codexbar_display::core::ConsumeFrameLine(
+      state,
+      "{\"v\":2,\"provider\":\"codex\",\"label\":\"Codex\",\"session\":11,\"weekly\":21,\"resetSecs\":59}",
+      2000,
+      event));
+  TEST_ASSERT_FALSE(state.current.hasTokenTotals);
 }
 
 void testUsageUnavailableKeepsThemeAndProgress() {
@@ -2564,6 +2600,8 @@ int main() {
   RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);
   RUN_TEST(testCompiledThemeSpecFindsEveryReferencedAsset);
   RUN_TEST(testRendersCommandsAndBindings);
+  RUN_TEST(testAbsentTokenTotalsRenderUnavailable);
+  RUN_TEST(testConsumeFrameLineTracksTokenTotalPresence);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testUsageWindowOwnershipHidesCompleteMissingLane);
   RUN_TEST(testIndexedProgressHidesMissingWindow);
