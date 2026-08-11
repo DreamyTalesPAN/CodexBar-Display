@@ -78,13 +78,13 @@
       "id": "token-fire",
       "title": "Token Fire",
       "usage": "screensaver",
-      "version": "0.1.3",
-      "themeRev": 1,
-      "themeSpecPath": "/themes/s/tf-1-874fd8e2.json",
+      "version": "0.2.0",
+      "themeRev": 2,
+      "themeSpecPath": "/themes/s/tf-2-94d69490.json",
       "requiresFirmware": "1.0.40",
-      "downloadAsset": "vibetv-theme-token-fire-v0.1.3.zip",
-      "sha256": "8a50c0ee64df956df366bfa7a05a12dca3dddc193d9bad020549adeb0f8d471a",
-      "bytes": 6351
+      "downloadAsset": "vibetv-theme-token-fire-v0.2.0.zip",
+      "sha256": "1d6eaaeb955356292b98e29ad0c0c5501d69e451daf1aa0a4dcbef1d99e47cf3",
+      "bytes": 5023
     }
   ]
 }
