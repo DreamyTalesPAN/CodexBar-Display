@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 "${ROOT_DIR}/scripts/check-gif-core-policy-tests.sh"
 "${ROOT_DIR}/scripts/check-frame-render-policy-tests.sh"
+"${ROOT_DIR}/scripts/check-wifi-phy-policy-tests.sh"
 
 cd "${ROOT_DIR}/companion"
 

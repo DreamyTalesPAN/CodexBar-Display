@@ -77,7 +77,74 @@ var (
 	firmwareUpdateRediscoveryAfter                     = 10 * time.Second
 	firmwareUpdateRediscoveryInterval                  = 5 * time.Second
 	firmwareInterruptedVerifyTimeout                   = 20 * time.Second
+	firmwareUpdateRuntimeHealthOrigin                  = "http://127.0.0.1:47832"
+	firmwareUpdateRuntimeHealthTimeout                 = time.Second
+	themeRestoreHelloTimeout                           = 60 * time.Second
 )
+
+// An aborted upload does not always reboot the device straight away, so the
+// stored theme can still look active for a while and only go missing on the
+// reboot that follows. These are vars so tests can shrink the watch.
+var (
+	themeRestorePollInterval = 2 * time.Second
+	themeRestoreRebootWatch  = 30 * time.Second
+)
+
+// The Companion API job pauses the display stream itself before spawning the
+// CLI updater and marks the child with this environment variable so the
+// writer-quiesce gate does not refuse its own parent.
+const firmwareUpdateParentPausedEnvVar = "VIBETV_UPDATE_PARENT_PAUSED"
+
+// otherRuntimeWriterAlive reports whether a local VibeTV runtime answers on
+// its Companion API port. A reachable /v1/runtime-health means a runtime is
+// running and polling the device; an unreachable endpoint means no runtime and
+// the update proceeds silently.
+//
+// Measured on esp8266-smalltv-st7789 firmware 1.0.39 (2026-08-07): a correctly
+// paced RAW OTA upload still failed 0/1 while the Mac App runtime kept polling
+// port 80. Concurrent device traffic during the upload is fatal, so the direct
+// CLI path must quiesce every writer before the first firmware byte.
+func otherRuntimeWriterAlive() bool {
+	origins := []string{firmwareUpdateRuntimeHealthOrigin}
+	// A daemon started with --api-fallback (the native app does) can serve from
+	// a fallback port when the default one is occupied; it publishes that origin
+	// in the runtime endpoint file, so a writer there must block the OTA too.
+	if home, err := os.UserHomeDir(); err == nil {
+		if data, err := os.ReadFile(runtimeEndpointPath(home)); err == nil {
+			var endpoint runtimeEndpoint
+			if json.Unmarshal(data, &endpoint) == nil {
+				if origin := strings.TrimSpace(endpoint.Origin); origin != "" && origin != firmwareUpdateRuntimeHealthOrigin {
+					origins = append(origins, origin)
+				}
+			}
+		}
+	}
+	client := &http.Client{Timeout: firmwareUpdateRuntimeHealthTimeout}
+	for _, origin := range origins {
+		resp, err := client.Get(strings.TrimRight(origin, "/") + "/v1/runtime-health")
+		if err != nil {
+			continue
+		}
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+		_ = resp.Body.Close()
+		if readErr != nil {
+			return true
+		}
+		// The gate cares about device writers, not runtimes. A standalone
+		// `codexbar-display api` server answers runtime-health without owning
+		// a display stream and declares displayWriter=false; only an explicit
+		// false is a non-writer — anything unparseable or older stays a
+		// writer, conservatively.
+		var health struct {
+			DisplayWriter *bool `json:"displayWriter"`
+		}
+		if json.Unmarshal(body, &health) == nil && health.DisplayWriter != nil && !*health.DisplayWriter {
+			continue
+		}
+		return true
+	}
+	return false
+}
 
 type firmwareUpdateEvent = firmwareupdate.Event
 
@@ -463,6 +530,7 @@ func runInstallUpdate(args []string) (retErr error) {
 	force := fs.Bool("force", false, "install even when the device already reports the latest firmware")
 	confirmLiveUpdate := fs.Bool("confirm-live-update", false, "allow installing from the default live Shopify firmware manifest")
 	skipLaunchAgentPause := fs.Bool("skip-launchagent-pause", false, "internal: keep the Mac App running while updating firmware")
+	stoppedAllWriters := fs.Bool("i-stopped-all-writers", false, "update even though another VibeTV runtime is running (you stopped every device writer yourself)")
 	verbose := fs.Bool("verbose", false, "show manifest, asset, and local firmware file details")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -485,6 +553,18 @@ func runInstallUpdate(args []string) (retErr error) {
 	base, err := normalizeHTTPBaseURL(*target)
 	if err != nil {
 		return &commandError{Op: "resolve-target", Code: errcode.UpgradeFlashFirmware, Err: err}
+	}
+	// Quiesce gate: concurrent device traffic during an OTA upload is fatal
+	// (see otherRuntimeWriterAlive). Runs before the first device request. The
+	// API job pauses the stream itself and marks the child via
+	// VIBETV_UPDATE_PARENT_PAUSED=1.
+	if !*stoppedAllWriters && os.Getenv(firmwareUpdateParentPausedEnvVar) != "1" && otherRuntimeWriterAlive() {
+		return &commandError{
+			Op:   "quiesce-device-writers",
+			Code: errcode.UpgradeFlashFirmware,
+			Err:  errors.New("another VibeTV runtime is running and polling the device; stop it first or pass --i-stopped-all-writers"),
+			Hint: "quit the VibeTV Mac App (or stop the companion daemon), then retry; pass --i-stopped-all-writers only after every device writer is stopped",
+		}
 	}
 
 	hello, err := fetchDeviceHelloHTTP(ctx, base)
@@ -587,6 +667,7 @@ func runInstallUpdate(args []string) (retErr error) {
 
 	fmt.Println("Uploading firmware...")
 	uploadErr := uploadFirmwareOTAFn(ctx, base, imagePath, deviceToken, caps.Firmware)
+	uploadInterrupted := firmwareUploadConnectionInterrupted(uploadErr)
 	uploadErr = recoverInterruptedFirmwareUpload(
 		ctx,
 		base,
@@ -595,6 +676,9 @@ func runInstallUpdate(args []string) (retErr error) {
 		uploadErr,
 	)
 	if uploadErr != nil {
+		if uploadInterrupted {
+			restoreStoredThemeAfterAbortedUpload(ctx, base, deviceToken)
+		}
 		hint := "keep VibeTV powered and on the same WiFi, then retry"
 		if errors.Is(uploadErr, errFirmwareUploadRestartRequired) {
 			hint = "disconnect VibeTV from power for 10 seconds, reconnect it, wait until the picture returns, then retry once"
@@ -691,13 +775,13 @@ func ensureFirmwareUpdateDeviceToken(ctx context.Context, home, base, expectedDe
 		paired = true
 	}
 
-	authenticatedHello, err := fetchDeviceHelloHTTPWithToken(ctx, base, token)
+	authenticatedHello, err := fetchDeviceHelloHTTPWithTokenRetry(ctx, base, token)
 	if err != nil && firmwareOTAAuthError(err) && !paired {
 		token, err = pairFirmwareUpdateDevice(ctx, base)
 		if err != nil {
 			return "", fmt.Errorf("repair VibeTV pairing: %w", err)
 		}
-		authenticatedHello, err = fetchDeviceHelloHTTPWithToken(ctx, base, token)
+		authenticatedHello, err = fetchDeviceHelloHTTPWithTokenRetry(ctx, base, token)
 	}
 	if err != nil {
 		return "", fmt.Errorf("authenticate VibeTV /hello: %w", err)
@@ -807,6 +891,9 @@ func pairFirmwareUpdateDevice(ctx context.Context, base string) (string, error) 
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", "codexbar-display-update")
+	// Do not leave a pooled keep-alive socket on the device between pairing
+	// and the authenticated preflight.
+	req.Close = true
 	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {
 		return "", err
@@ -1369,17 +1456,55 @@ func (e *firmwareDeviceHTTPError) Error() string {
 	return fmt.Sprintf("%s returned %s body=%q", e.Operation, e.Status, e.Body)
 }
 
+const (
+	firmwarePreflightAttempts   = 3
+	firmwarePreflightRetryDelay = 500 * time.Millisecond
+)
+
+// fetchDeviceHelloHTTPWithTokenRetry retries the authenticated preflight only
+// for transient transport failures (EOF, reset, timeout). It runs strictly
+// before the first firmware byte is sent, so the OTA contract's no-retry rule
+// for the write itself is untouched. Real auth errors (401/403) are never
+// retried here; the caller owns the single re-pair path for those.
+func fetchDeviceHelloHTTPWithTokenRetry(ctx context.Context, base, token string) (protocol.DeviceHello, error) {
+	var hello protocol.DeviceHello
+	var err error
+	for attempt := 1; attempt <= firmwarePreflightAttempts; attempt++ {
+		hello, err = fetchDeviceHelloHTTPWithToken(ctx, base, token)
+		if err == nil || firmwareOTAAuthError(err) || ctx.Err() != nil {
+			return hello, err
+		}
+		if attempt == firmwarePreflightAttempts {
+			break
+		}
+		fmt.Printf("Transient preflight error (attempt %d/%d), retrying: %v\n",
+			attempt, firmwarePreflightAttempts, err)
+		select {
+		case <-ctx.Done():
+			return protocol.DeviceHello{}, ctx.Err()
+		case <-time.After(firmwarePreflightRetryDelay):
+		}
+	}
+	return hello, err
+}
+
 func fetchDeviceHelloHTTPWithToken(ctx context.Context, base, token string) (protocol.DeviceHello, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/hello", nil)
 	if err != nil {
 		return protocol.DeviceHello{}, err
 	}
 	req.Header.Set("User-Agent", "codexbar-display-update")
+	req.Close = true
 	if token = strings.TrimSpace(token); token != "" {
+		// Header only. Sending the token in the header AND the query string at
+		// the same time makes the device close the connection without a
+		// response: measured on esp8266-smalltv-st7789 firmware 1.0.39, 24/30
+		// requests failed with EOF, while header-only and query-only were both
+		// 0/30. See docs/hardware-contract.md.
 		applyFirmwareUpdateToken(req, token)
-		query := req.URL.Query()
-		query.Set("token", token)
-		req.URL.RawQuery = query.Encode()
+		if client, ok := releaseHTTPClient.(interface{ CloseIdleConnections() }); ok {
+			client.CloseIdleConnections()
+		}
 	}
 	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {
@@ -1444,6 +1569,9 @@ func uploadFirmwareOTAMultipart(ctx context.Context, base, imagePath, token stri
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("User-Agent", "codexbar-display-update")
 	applyFirmwareUpdateToken(req, token)
+	// Never reuse a pooled connection for the upload, and never leave one open
+	// on the single-threaded device across its post-upload reboot.
+	req.Close = true
 	req.ContentLength = int64(body.Len())
 	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {
@@ -1497,6 +1625,187 @@ func recoverInterruptedFirmwareUpload(
 		strings.TrimSpace(hello.DeviceID),
 		uploadErr,
 	)
+}
+
+// restoreStoredThemeAfterAbortedUpload repairs the theme state an aborted OTA
+// upload leaves behind. Measured on esp8266-smalltv-st7789 firmware 1.0.39
+// (2026-08-07): the device reboots after an aborted upload and comes back with
+// the stored theme spec path intact but themeSpec.active=false
+// ("theme-missing"), and does not heal itself (seven-minute isolated
+// observation). The repair is best-effort: one authenticated
+// header-token-only POST /theme/active, no retry, and never a second firmware
+// upload. The caller still returns the original update error.
+func restoreStoredThemeAfterAbortedUpload(ctx context.Context, base, token string) {
+	deadline := time.Now().Add(themeRestoreHelloTimeout)
+	reachable := false
+	for time.Now().Before(deadline) {
+		probeCtx, cancelProbe := context.WithTimeout(ctx, firmwareHTTPVerifyProbeTimeout)
+		_, err := fetchDeviceHelloHTTP(probeCtx, base)
+		cancelProbe()
+		if err == nil {
+			reachable = true
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(themeRestorePollInterval):
+		}
+	}
+	if !reachable {
+		fmt.Printf("warning: could not check stored theme after aborted upload: VibeTV did not return within %s\n", themeRestoreHelloTimeout)
+		return
+	}
+
+	// The device may still be on the pre-abort boot here, with the stored theme
+	// looking perfectly active; it only goes missing on the reboot the aborted
+	// upload triggers. Measured on hardware 2026-08-07: a single check right
+	// after the failure sees active=true, returns, and the customer is left on
+	// "theme-missing" for good. So watch until the theme is seen missing, or
+	// until the device has come back from a reboot with the theme intact.
+	path, active, err := watchStoredThemeAfterAbortedUpload(ctx, base)
+	if err != nil {
+		fmt.Printf("warning: could not read VibeTV health after aborted upload: %v\n", err)
+		return
+	}
+	if path == "" || active {
+		return
+	}
+	if err := activateStoredThemeHTTP(ctx, base, token, path); err != nil {
+		fmt.Printf("warning: could not restore stored theme after aborted upload: %v\n", err)
+		return
+	}
+	_, active, err = fetchDeviceThemeSpecHealth(ctx, base)
+	if err == nil && active {
+		fmt.Println("restored stored theme after aborted upload")
+		return
+	}
+	fmt.Printf("warning: stored theme activation did not take effect after aborted upload (path=%s, err=%v)\n", path, err)
+}
+
+// watchStoredThemeAfterAbortedUpload samples device health until the stored
+// theme is seen inactive, until the device has rebooted and still reports it
+// active, or until the watch window expires. It returns the last reading.
+func watchStoredThemeAfterAbortedUpload(ctx context.Context, base string) (string, bool, error) {
+	deadline := time.Now().Add(themeRestoreRebootWatch)
+	firstBootID, _, _, err := fetchDeviceThemeSpecHealthWithBoot(ctx, base)
+	if err != nil {
+		return "", false, err
+	}
+	for {
+		bootID, path, active, err := fetchDeviceThemeSpecHealthWithBoot(ctx, base)
+		if err == nil {
+			if path != "" && !active {
+				return path, active, nil
+			}
+			// A completed reboot that still shows the theme active means the
+			// device survived the abort; there is nothing to restore.
+			if bootID != "" && firstBootID != "" && bootID != firstBootID {
+				return path, active, nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return path, active, err
+		}
+		select {
+		case <-ctx.Done():
+			return path, active, ctx.Err()
+		case <-time.After(themeRestorePollInterval):
+		}
+	}
+}
+
+func fetchDeviceThemeSpecHealthWithBoot(ctx context.Context, base string) (bootID, path string, active bool, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/health", nil)
+	if err != nil {
+		return "", "", false, err
+	}
+	resp, err := releaseHTTPClient.Do(req)
+	if err != nil {
+		return "", "", false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", "", false, fmt.Errorf("GET /health returned %d", resp.StatusCode)
+	}
+	var payload struct {
+		System struct {
+			BootID string `json:"bootId"`
+		} `json:"system"`
+		Display struct {
+			ThemeSpec struct {
+				Active bool   `json:"active"`
+				Path   string `json:"path"`
+			} `json:"themeSpec"`
+		} `json:"display"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&payload); err != nil {
+		return "", "", false, err
+	}
+	return strings.TrimSpace(payload.System.BootID),
+		strings.TrimSpace(payload.Display.ThemeSpec.Path),
+		payload.Display.ThemeSpec.Active,
+		nil
+}
+
+func fetchDeviceThemeSpecHealth(ctx context.Context, base string) (path string, active bool, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/health", nil)
+	if err != nil {
+		return "", false, err
+	}
+	req.Header.Set("User-Agent", "codexbar-display-update")
+	req.Close = true
+	resp, err := releaseHTTPClient.Do(req)
+	if err != nil {
+		return "", false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", false, fmt.Errorf("GET /health returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var payload struct {
+		Display struct {
+			ThemeSpec struct {
+				Active bool   `json:"active"`
+				Path   string `json:"path"`
+			} `json:"themeSpec"`
+		} `json:"display"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&payload); err != nil {
+		return "", false, err
+	}
+	return strings.TrimSpace(payload.Display.ThemeSpec.Path), payload.Display.ThemeSpec.Active, nil
+}
+
+// activateStoredThemeHTTP sends the token in the header only. Header plus
+// query at the same time makes the device close the connection without a
+// response; see docs/hardware-contract.md.
+func activateStoredThemeHTTP(ctx context.Context, base, token, path string) error {
+	payload, err := json.Marshal(struct {
+		Path string `json:"path"`
+	}{Path: path})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(base, "/")+"/theme/active", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "codexbar-display-update")
+	applyFirmwareUpdateToken(req, token)
+	req.Close = true
+	resp, err := releaseHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("POST /theme/active returned %s body=%q", resp.Status, strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 func firmwareUploadConnectionInterrupted(err error) bool {
@@ -1657,19 +1966,19 @@ func (w *rawFirmwareBodyWriter) Write(p []byte) (int, error) {
 	return originalLength, nil
 }
 
-func firmwareRawWritePause(currentFirmware string) time.Duration {
-	current, err := versioning.ParseSemVer(currentFirmware)
-	if err != nil {
-		// Unknown or legacy firmware keeps the proven conservative sender.
-		return otaRawWritePause
-	}
-	// The receiver fix is present in every 1.0.37 development build as well as
-	// the final release, so only the numeric firmware core matters here.
-	current.PreRelease = ""
-	receiverFix := versioning.SemVer{Major: 1, Minor: 0, Patch: 37}
-	if current.Compare(receiverFix) >= 0 {
-		return 0
-	}
+// Every firmware gets the conservative inter-chunk pause.
+//
+// This used to return 0 for released firmware >= 1.0.37, assuming the receiver
+// fix made pacing unnecessary. Real hardware disagrees: on
+// esp8266-smalltv-st7789 running released 1.0.39, the unpaced sender stalled
+// waiting for the block acknowledgement in 2 of 2 attempts ("192 bytes
+// pending", "512 bytes pending"), each time leaving the firmware unchanged and
+// rebooting the device. The very same upload with the pause restored completed
+// and installed 9999.0.24. See docs/hardware-contract.md.
+//
+// The parameter stays so callers keep documenting which firmware they are
+// talking to, and so a future measured exception has somewhere to live.
+func firmwareRawWritePause(string) time.Duration {
 	return otaRawWritePause
 }
 

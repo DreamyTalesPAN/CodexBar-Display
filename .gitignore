@@ -24,7 +24,11 @@ bin/
 *.test
 *.out
 companion/vibeblock
+# Built binary named codexbar-display in any location, but never the source
+# package directory (a bare pattern otherwise ignores every new file under
+# companion/cmd/codexbar-display/).
 codexbar-display
+!companion/cmd/codexbar-display/
 companion/internal/companionapi/controlcenter_static/*
 !companion/internal/companionapi/controlcenter_static/.gitkeep
 

@@ -109,23 +109,48 @@ export function UpdatesScreen({
   themeUpdateAvailable = false,
 }: UpdatesScreenProps) {
   const firmwareUpdateCompleted = updateStatus?.phase === "complete";
+  // Installed firmware always comes from device truth (live hello or the
+  // firmware update check), never from an update job result: a failed job
+  // must not claim its target version is installed.
   const installedFirmware =
-    updateStatus?.result?.firmware ||
-    firmwareUpdate?.installedFirmware ||
-    device?.firmware ||
-    "Unknown";
+    device?.firmware || firmwareUpdate?.installedFirmware || "Unknown";
   const canCheckFirmware = Boolean(device?.board && device?.firmware);
   const checking = Boolean(canCheckFirmware && !firmwareUpdate);
   const macAppRunning = companionStatus === "online";
   const checkingMacApp = Boolean(macAppRunning && !companionRelease);
   const checkingUpdates = checking || checkingMacApp;
   const latestFirmware =
-    updateStatus?.result?.firmware ||
     firmwareUpdate?.latestFirmware ||
     (checking ? "Checking" : "Not available");
+  // A completed job suppresses only its own stale aftermath: as long as the
+  // fresh check still reports the version the job installed (or has not
+  // resolved yet), "Update complete" stands alone and never advertises
+  // "Update available" next to it. A later check that discovers a different
+  // release is a new update and must show — status polling restores the
+  // completed job indefinitely, so completion alone can never gate future
+  // updates.
+  const staleCompletedCheck = Boolean(
+    firmwareUpdateCompleted &&
+      (!firmwareUpdate?.latestFirmware ||
+        firmwareUpdate.latestFirmware === updateStatus?.result?.firmware),
+  );
   const updateAvailable =
-    !firmwareUpdateCompleted && hasFirmwareUpdate(firmwareUpdate);
-  const vibetvUpdateAvailable = updateAvailable || themeUpdateAvailable;
+    !staleCompletedCheck && hasFirmwareUpdate(firmwareUpdate);
+  const vibetvUpdateAvailable =
+    !staleCompletedCheck && (updateAvailable || themeUpdateAvailable);
+  // A finished failure describes an update that is no longer pending once a
+  // fresh check reports nothing to install. Keeping it would tell the customer
+  // to power-cycle for an update that does not exist; while the update really
+  // is still pending, the failure and its advice stay. A failed check is not
+  // conclusive: it proved nothing about the pending update, so the failure
+  // details and their recovery action must survive it.
+  const staleFirmwareFailure = Boolean(
+    updateStatus?.phase === "error" &&
+      firmwareUpdate &&
+      firmwareUpdate.status !== "check_failed" &&
+      !updateAvailable,
+  );
+  const visibleUpdateStatus = staleFirmwareFailure ? undefined : updateStatus;
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const nativeMacUpdateReady = Boolean(
     macAppUpdateAvailable && companionInfo?.app?.installedInApplications,
@@ -144,8 +169,13 @@ export function UpdatesScreen({
   const macAppNativeAction = nativeMacUpdateReady;
   const macAppMustUpdateFirst =
     macAppDownloadAction || macAppNativeAction;
+  // The firmware stays locked while the Mac App release check is still
+  // unresolved, not only when it already reported an update: otherwise a
+  // click in that window starts the firmware job before the Mac-App-first
+  // rule can engage (the mixed state new-firmware/old-app must never be
+  // enterable from here).
   const firmwareUpdateBlocked =
-    vibetvUpdateAvailable && macAppMustUpdateFirst;
+    vibetvUpdateAvailable && (macAppMustUpdateFirst || checkingMacApp);
   const anyUpdateAvailable =
     vibetvUpdateAvailable || macAppDownloadAction || macAppNativeAction;
   const refreshing = busyAction === "firmware-check";
@@ -184,7 +214,7 @@ export function UpdatesScreen({
       return;
     }
 
-    if (macAppMustUpdateFirst) {
+    if (macAppMustUpdateFirst || checkingMacApp) {
       return;
     }
 
@@ -225,24 +255,30 @@ export function UpdatesScreen({
           {firmwareUpdateBlocked ? (
             <Alert>
               <ShieldCheck aria-hidden />
-              <AlertTitle>Update Mac App first</AlertTitle>
+              <AlertTitle>
+                {macAppMustUpdateFirst
+                  ? "Update Mac App first"
+                  : "Checking Mac App"}
+              </AlertTitle>
               <AlertDescription>
-                Update the Mac App first. The VibeTV firmware update comes next.
+                {macAppMustUpdateFirst
+                  ? "Update the Mac App first. The VibeTV firmware update comes next."
+                  : "Waiting for the Mac App update check. The VibeTV update unlocks when it finishes."}
               </AlertDescription>
             </Alert>
           ) : null}
-          {updateStatus ? (
+          {visibleUpdateStatus ? (
             <InlineUpdateProgress
               creatingReport={creatingReport}
               onCreateReport={onCreateReport}
               onRetry={
                 firmwareUpdateBlocked
                   ? undefined
-                  : updateStatus.phase === "attention"
+                  : visibleUpdateStatus.phase === "attention"
                     ? onRetryThemeUpdate
                     : onInstallUpdate
               }
-              status={updateStatus}
+              status={visibleUpdateStatus}
             />
           ) : null}
         </UpdateCard>

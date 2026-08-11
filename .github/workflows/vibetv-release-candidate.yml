@@ -75,7 +75,7 @@ jobs:
           cp scripts/install.sh tmp/vibetv-rc/publish/install.sh
           cp scripts/install-control-center-companion-release.sh tmp/vibetv-rc/publish/install-control-center-companion.sh
           chmod +x tmp/vibetv-rc/publish/install*.sh
-          ./scripts/build-macos-control-center-app.sh --version "$version" --build "$GITHUB_RUN_NUMBER" --universal --companion-binary tmp/vibetv-rc/codexbar-display --output 'dist/macos/VibeTV Control Center.app'
+          ./scripts/build-macos-control-center-app.sh --version "$version" --build "$GITHUB_RUN_ID" --universal --companion-binary tmp/vibetv-rc/codexbar-display --output 'dist/macos/VibeTV Control Center.app'
           COPYFILE_DISABLE=1 tar -czf tmp/vibetv-rc/app.tar.gz -C dist/macos 'VibeTV Control Center.app'
           python3 - release/firmware-versions.json > tmp/vibetv-rc/firmware-targets.tsv <<'PY'
           import json, sys
@@ -143,7 +143,7 @@ jobs:
         run: |
           ./scripts/sign-notarize-macos-control-center.sh --app 'dist/macos/VibeTV Control Center.app' --sign-app-only --allow-internal-xprotect-preflight-error
           ./scripts/build-macos-control-center-dmg.sh --app 'dist/macos/VibeTV Control Center.app' --output dist/macos/VibeTV-Control-Center.dmg --staging-dir tmp/vibetv-rc/dmg-stage
-          ./scripts/sign-notarize-macos-control-center.sh --app 'dist/macos/VibeTV Control Center.app' --dmg dist/macos/VibeTV-Control-Center.dmg --skip-app-sign
+          ./scripts/sign-notarize-macos-control-center.sh --app 'dist/macos/VibeTV Control Center.app' --dmg dist/macos/VibeTV-Control-Center.dmg --skip-app-sign --notary-log tmp/vibetv-rc/test/notarization-log.json
           ./scripts/verify-macos-control-center-dmg.sh --dmg dist/macos/VibeTV-Control-Center.dmg
       - name: Create immutable production publish set and candidate manifest
         env:
@@ -156,6 +156,10 @@ jobs:
           source_sha="$(cat tmp/vibetv-rc/source-sha.txt)"
           sparkle_dir="$(./scripts/fetch-sparkle.sh)"
           mkdir -p tmp/vibetv-rc/publish/macos
+          # Signing rewrote the embedded helper, and the guest matrix proves the
+          # DMG ships the exact tested companion byte for byte — stage the
+          # signed helper as the test companion (same step as the merge gate).
+          cp 'dist/macos/VibeTV Control Center.app/Contents/Helpers/codexbar-display' tmp/vibetv-rc/test/codexbar-display
           cp dist/macos/VibeTV-Control-Center.dmg tmp/vibetv-rc/publish/macos/VibeTV-Control-Center.dmg
           printf '%s' "$SPARKLE_ED25519_PRIVATE_KEY" | "$sparkle_dir/bin/generate_appcast" --ed-key-file - --maximum-deltas 0 --link https://app.vibetv.shop --download-url-prefix "https://github.com/${REPOSITORY}/releases/download/v${version}/" -o tmp/vibetv-rc/publish/macos/appcast.xml tmp/vibetv-rc/publish/macos
           (cd tmp/vibetv-rc/publish && find . -type f ! -name "checksums-*" -print0 | sort -z | xargs -0 shasum -a 256 > "checksums-v${version}.txt")
@@ -169,7 +173,7 @@ jobs:
           for path in files:
               if not path.is_file(): continue
               relative = path.relative_to(root).as_posix()
-              role = "firmware" if "/firmware/" in relative and relative.endswith((".bin", ".gz")) else "firmware-manifest" if "firmware-manifest" in relative else "signed-dmg" if relative.endswith(".dmg") else "sparkle-appcast" if relative.endswith("appcast.xml") else "installer" if relative.endswith(".sh") else "companion-arch" if "/companion/" in relative else "checksums" if "checksums-" in relative else "virtual-vibetv" if relative.endswith("virtual-vibetv") else "companion"
+              role = "firmware" if "/firmware/" in relative and relative.endswith((".bin", ".gz")) else "firmware-manifest" if "firmware-manifest" in relative else "signed-dmg" if relative.endswith(".dmg") else "sparkle-appcast" if relative.endswith("appcast.xml") else "notarization-evidence" if relative.endswith("notarization-log.json") else "installer" if relative.endswith(".sh") else "companion-arch" if "/companion/" in relative else "checksums" if "checksums-" in relative else "virtual-vibetv" if relative.endswith("virtual-vibetv") else "companion"
               artifacts.append({"name": path.name, "path": relative, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "role": role, "publish": relative.startswith("publish/")})
           with open(output, "w", encoding="utf-8") as destination:
               json.dump({
@@ -264,6 +268,9 @@ jobs:
       - name: Run full direct hosted macOS guest matrix
         run: |
           set -euo pipefail
+          # actions/download-artifact strips the executable bit; the harness
+          # refuses non-executable helper binaries (same chmod as the merge gate).
+          chmod +x candidate/test/virtual-vibetv candidate/test/codexbar-display
           version="$(python3 -c 'import json; print(json.load(open("candidate/candidate-manifest.json"))["version"])')"
           baseline_args=()
           current_firmware=0.0.0

@@ -10,8 +10,11 @@ const (
 	DisplayStreamOutLogEnv                    = "CODEXBAR_DISPLAY_STREAM_OUT_LOG"
 	DisplayWriterLockEnv                      = "CODEXBAR_DISPLAY_WRITER_LOCK"
 	DisplayStreamLaunchAgentLabelEnv          = "CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL"
+	FirmwareUpdateLogEnv                      = "CODEXBAR_DISPLAY_FIRMWARE_UPDATE_LOG"
 	LegacyDisplayStreamLaunchAgentLabel       = "com.codexbar-display.daemon"
 	displayStreamOutLog                       = "daemon.out.log"
+	firmwareUpdateLog                         = "firmware-update.log"
+	FirmwareUpdateLogMaxBytes           int64 = 512 * 1024
 	DisplayStreamLogMaxBytes            int64 = 1024 * 1024
 	DisplayStreamLogTailBytes           int64 = 64 * 1024
 	DisplayStreamMarkerRepeatBytes      int64 = 32 * 1024
@@ -61,6 +64,29 @@ func DisplayStreamOutLog(home string) string {
 	}
 
 	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs", displayStreamOutLog)
+}
+
+// FirmwareUpdateLog returns the file that keeps the firmware updater's raw
+// output. The job log only carries curated customer messages, so without this
+// a failed update leaves no record of why it failed.
+func FirmwareUpdateLog(home string) string {
+	if path := strings.TrimSpace(os.Getenv(FirmwareUpdateLogEnv)); path != "" {
+		return path
+	}
+
+	home = strings.TrimSpace(home)
+	if home == "" {
+		resolved, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		home = strings.TrimSpace(resolved)
+	}
+	if home == "" {
+		return ""
+	}
+
+	return filepath.Join(home, "Library", "Application Support", "codexbar-display", "logs", firmwareUpdateLog)
 }
 
 // DisplayStreamOutLogArchive is the single bounded archive retained when the

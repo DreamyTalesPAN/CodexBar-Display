@@ -3,6 +3,7 @@ import { once } from "node:events";
 import {
   cp,
   mkdir,
+  readFile,
   rm,
   stat,
   symlink,
@@ -86,8 +87,33 @@ async function ensureNodeModules() {
 async function copyLocalThemePackDownloads(exportRoot) {
   const source = path.join(repoRoot, "dist", "theme-packs");
   const target = path.join(exportRoot, "theme-packs");
+  // dist keeps every archive it ever published, because published bytes are
+  // immutable. The app only ships the ones whose theme the catalog still
+  // offers, so a withdrawn theme cannot be installed from the packaged app.
+  const catalog = JSON.parse(
+    await readFile(path.join(source, "vibetv-theme-packs-v2.json"), "utf8"),
+  );
+  const offeredThemeIds = (catalog.themes || []).map((theme) => theme.id);
   await mkdir(target, { recursive: true });
-  await cp(source, target, { force: true, recursive: true });
+  await cp(source, target, {
+    filter: (entry) => !isWithdrawnThemeArchive(path.basename(entry), offeredThemeIds),
+    force: true,
+    recursive: true,
+  });
+}
+
+// Matching the theme id by prefix keeps this independent of the version format,
+// which may carry a SemVer prerelease suffix. The `-v` guards against one theme
+// id being the prefix of another.
+function isWithdrawnThemeArchive(fileName, offeredThemeIds) {
+  if (!fileName.startsWith("vibetv-theme-") || !fileName.endsWith(".zip")) {
+    return false;
+  }
+  return !offeredThemeIds.some(
+    (themeId) =>
+      fileName === `vibetv-theme-${themeId}.zip` ||
+      fileName.startsWith(`vibetv-theme-${themeId}-v`),
+  );
 }
 
 async function runCommand(command, args, options) {
