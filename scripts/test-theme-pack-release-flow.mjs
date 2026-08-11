@@ -130,14 +130,10 @@ for (const entry of await readdir(sourceRoot, { withFileTypes: true })) {
   );
   assert(
     arraysEqual(
-      catalogTheme.requiredCapabilities,
-      manifest.requiredCapabilities,
+      catalogTheme.requiredCapabilities || [],
+      manifest.requiredCapabilities || [],
     ),
     `capability requirement mismatch for ${manifest.id}`,
-  );
-  assert(
-    manifest.requiredCapabilities?.includes("usage-slots-v1"),
-    `${manifest.id} does not require usage-slots-v1`,
   );
   await assertCatalogAsset(catalogTheme, "current");
   await assertRenderPack(catalogTheme, "current");

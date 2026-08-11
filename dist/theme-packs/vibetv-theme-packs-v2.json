@@ -48,6 +48,21 @@
       "bytes": 18502
     },
     {
+      "id": "night-clock",
+      "title": "Night Clock",
+      "usage": "screensaver",
+      "version": "0.1.0",
+      "themeRev": 2,
+      "themeSpecPath": "/themes/s/nc-2-cb6d64ba.json",
+      "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
+      "downloadAsset": "vibetv-theme-night-clock-v0.1.0.zip",
+      "sha256": "2118c4d0a8473e5c69cd71b09776408e2d86ad07bd64a06fd47cfdc4538c8bfe",
+      "bytes": 796
+    },
+    {
       "id": "reset-countdown",
       "title": "Reset Countdown",
       "usage": "screensaver",
