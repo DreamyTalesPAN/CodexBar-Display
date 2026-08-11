@@ -48,30 +48,35 @@ import (
 var embeddedControlCenterStatic embed.FS
 
 const (
-	DefaultAddr                  = "127.0.0.1:47832"
-	appOrigin                    = "https://app.vibetv.shop"
-	defaultDevOrigin             = "http://localhost:3000"
-	previewOriginHostPrefix      = "codex-vibetv-control-center-"
-	previewOriginHostSuffix      = "-paul-anduschus-projects.vercel.app"
-	nativeControlCenterUA        = "VibeTVControlCenter/"
-	deviceConnectionReady        = "ready"
-	deviceConnectionRetrying     = "reconnecting"
-	deviceConnectionSetup        = "setup_required"
-	deviceTimeout                = 15 * time.Second
-	deviceSearchWindow           = 30 * time.Second
-	discoveryProbeTime           = 1500 * time.Millisecond
-	deviceProbeCacheTime         = 750 * time.Millisecond
-	repairDiscoveryAttempts      = 3
-	repairDiscoveryRetryGap      = 1200 * time.Millisecond
-	subnetProbeLimit             = 64
-	maxSubnetDiscoveryPrefix     = 23
-	maxSubnetDiscoveryTargets    = 510
-	themeInstallDisableEnv       = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
-	macAppUpdateDisableEnv       = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
-	displayStreamLegacyLabel     = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
-	displayStreamLabelEnv        = runtimepaths.DisplayStreamLaunchAgentLabelEnv
-	displayStreamOutLogEnv       = runtimepaths.DisplayStreamOutLogEnv
-	displayStreamReadyAge        = 2 * time.Minute
+	DefaultAddr               = "127.0.0.1:47832"
+	appOrigin                 = "https://app.vibetv.shop"
+	defaultDevOrigin          = "http://localhost:3000"
+	previewOriginHostPrefix   = "codex-vibetv-control-center-"
+	previewOriginHostSuffix   = "-paul-anduschus-projects.vercel.app"
+	nativeControlCenterUA     = "VibeTVControlCenter/"
+	deviceConnectionReady     = "ready"
+	deviceConnectionRetrying  = "reconnecting"
+	deviceConnectionSetup     = "setup_required"
+	deviceTimeout             = 15 * time.Second
+	deviceSearchWindow        = 30 * time.Second
+	discoveryProbeTime        = 1500 * time.Millisecond
+	deviceProbeCacheTime      = 750 * time.Millisecond
+	repairDiscoveryAttempts   = 3
+	repairDiscoveryRetryGap   = 1200 * time.Millisecond
+	subnetProbeLimit          = 64
+	maxSubnetDiscoveryPrefix  = 23
+	maxSubnetDiscoveryTargets = 510
+	themeInstallDisableEnv    = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
+	macAppUpdateDisableEnv    = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
+	displayStreamLegacyLabel  = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
+	displayStreamLabelEnv     = runtimepaths.DisplayStreamLaunchAgentLabelEnv
+	displayStreamOutLogEnv    = runtimepaths.DisplayStreamOutLogEnv
+	displayStreamReadyAge     = 2 * time.Minute
+	// deviceConnectedGraceWindow keeps a just-seen device Connected (state
+	// "reconnecting") through transient probe misses: 2.5x the 30s WiFi
+	// interval. Long enough to absorb single misses, short enough that a
+	// powered-off device reads disconnected well under two minutes.
+	deviceConnectedGraceWindow   = 75 * time.Second
 	displayVerificationAge       = 2 * time.Minute
 	displayStreamWaitTime        = 30 * time.Second
 	displayRenderWaitTime        = 12 * time.Second
@@ -508,6 +513,10 @@ type firmwareUpdateResult struct {
 	HealthVerified    bool   `json:"healthVerified"`
 	StreamVerified    bool   `json:"streamVerified"`
 	RenderVerified    bool   `json:"renderVerified"`
+	// RenderSkipped names the reason the picture could not be proven because
+	// there is no picture to prove, not because the update went wrong. It stays
+	// empty whenever RenderVerified is true.
+	RenderSkipped string `json:"renderSkipped,omitempty"`
 }
 
 type firmwareUpdateJob struct {
@@ -908,7 +917,7 @@ func New(opts Options) (*Server, error) {
 			set:           codexbar.SetProviderEnabled,
 			loadInventory: codexbar.FetchProviderInventory,
 		},
-		updateFirmware:     runFirmwareUpdateCommand,
+		updateFirmware:     firmwareUpdateCommandRunner(opts.PauseDisplayStream != nil),
 		updateMacApp:       runMacAppUpdateCommand,
 		fetchMacAppRelease: fetchLatestMacAppRelease,
 		installJobs:        make(map[string]*themeInstallJob),
@@ -1255,18 +1264,18 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Stream:          streamPointer(stream),
 	}
 	reachable := false
+	identityMismatch := false
 	if strings.TrimSpace(cfg.DeviceTarget) != "" {
 		if hello, probeToken, tokenRejected, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
 			configuredID := strings.TrimSpace(cfg.DeviceID)
 			observedID := strings.TrimSpace(hello.DeviceID)
-			identityMismatch := configuredID != "" && observedID != "" &&
+			identityMismatch = configuredID != "" && observedID != "" &&
 				!strings.EqualFold(configuredID, observedID)
 			if !identityMismatch {
 				reachable = true
 				device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
 				device.Active = configuredID != "" && strings.EqualFold(configuredID, observedID)
 				device.Paired = strings.TrimSpace(cfg.DeviceToken) != "" &&
-					probeToken == cfg.DeviceToken &&
 					stream.ErrorCode != "device_pairing_required"
 				if tokenRejected {
 					device.Paired = false
@@ -1285,7 +1294,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	device = s.withConfiguredConnectionState(cfg, device, reachable)
+	device = s.withConfiguredConnectionState(cfg, device, reachable, identityMismatch)
 	var firmwareUpdate *firmwareUpdateJob
 	if latest, ok := s.latestFirmwareUpdateJob(); ok {
 		firmwareUpdate = &latest
@@ -1308,6 +1317,7 @@ func (s *Server) withConfiguredConnectionState(
 	cfg runtimeconfig.Config,
 	device deviceInfo,
 	reachable bool,
+	identityMismatch bool,
 ) deviceInfo {
 	device.Active = strings.TrimSpace(cfg.DeviceID) != ""
 	if !device.Active {
@@ -1328,8 +1338,30 @@ func (s *Server) withConfiguredConnectionState(
 		s.connectionStates[key] = state
 	}
 
-	if reachable {
+	// Connectivity must stay evidence based. A healthy display stream is real
+	// evidence (the device acknowledged a frame inside the bounded ready-age
+	// window). A provider-setup stream entry alone is not: it only proves the
+	// device was reachable when the log line was written, which can be minutes
+	// ago on a powered-off device. Require a live /hello probe for that case.
+	healthyStream := !identityMismatch && device.Paired && displayStreamHealthyForTarget(device.Stream, device.Target)
+	streamConnected := healthyStream || (reachable && !identityMismatch && device.Paired && providerSetupStreamForTarget(device.Stream, device.Target))
+	if streamConnected {
+		device.Connected = true
+	}
+	if healthyStream {
+		device.Ready = true
+	}
+	if reachable || streamConnected {
 		state.lastSeenAt = now
+	}
+	// Anti-flap grace: a device that was just seen must not flip the customer
+	// to a disconnected/setup experience because one probe missed (the
+	// single-threaded ESP8266 drops connections while rendering). Within the
+	// bounded grace window the device stays Connected in state "reconnecting";
+	// past the window the honest truth wins and Connected drops.
+	if !device.Connected && !identityMismatch && device.Paired &&
+		!state.lastSeenAt.IsZero() && now.Sub(state.lastSeenAt) <= deviceConnectedGraceWindow {
+		device.Connected = true
 	}
 	if device.Ready {
 		device.ConnectionState = deviceConnectionReady
@@ -1362,14 +1394,20 @@ func (s *Server) handleRuntimeHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
-		OK        bool `json:"ok"`
-		Companion struct {
+		OK bool `json:"ok"`
+		// The writer-quiesce gate cares about device writers, not runtimes: a
+		// standalone `codexbar-display api` server answers here without
+		// owning a display stream, and its own child updater must not
+		// mistake it for one. Absent field (older runtimes) means writer.
+		DisplayWriter bool `json:"displayWriter"`
+		Companion     struct {
 			Version string               `json:"version"`
 			App     companionAppInfo     `json:"app"`
 			Runtime companionRuntimeInfo `json:"runtime"`
 		} `json:"companion"`
 	}{
-		OK: true,
+		OK:            true,
+		DisplayWriter: s.pauseDisplayStream != nil,
 		Companion: struct {
 			Version string               `json:"version"`
 			App     companionAppInfo     `json:"app"`
@@ -2098,6 +2136,15 @@ func (s *Server) companionInfo(ctx context.Context) companion {
 }
 
 func (s *Server) macAppReleaseInfo(ctx context.Context) companionReleaseInfo {
+	return s.macAppReleaseInfoCached(ctx, true)
+}
+
+// macAppReleaseInfoCached with useCache=false always contacts the release
+// feed. The firmware-install gate needs that: a cached "no update" answer
+// from just before a release publishes would otherwise let the older app
+// push the newer firmware — the exact mixed state the gate exists to
+// prevent.
+func (s *Server) macAppReleaseInfoCached(ctx context.Context, useCache bool) companionReleaseInfo {
 	app := currentCompanionAppInfo(s.installationMode)
 	installedVersion := normalizeMacAppReleaseVersion(app.Version)
 	if installedVersion == "" {
@@ -2105,16 +2152,18 @@ func (s *Server) macAppReleaseInfo(ctx context.Context) companionReleaseInfo {
 	}
 	now := time.Now().UTC()
 
-	s.macAppReleaseMu.Lock()
-	if s.macAppReleaseChecked &&
-		s.macAppReleaseCache.InstalledVersion == installedVersion &&
-		now.Sub(s.macAppReleaseCheckedAt) >= 0 &&
-		now.Sub(s.macAppReleaseCheckedAt) < macAppReleaseCheckGap {
-		cached := s.macAppReleaseCache
+	if useCache {
+		s.macAppReleaseMu.Lock()
+		if s.macAppReleaseChecked &&
+			s.macAppReleaseCache.InstalledVersion == installedVersion &&
+			now.Sub(s.macAppReleaseCheckedAt) >= 0 &&
+			now.Sub(s.macAppReleaseCheckedAt) < macAppReleaseCheckGap {
+			cached := s.macAppReleaseCache
+			s.macAppReleaseMu.Unlock()
+			return cached
+		}
 		s.macAppReleaseMu.Unlock()
-		return cached
 	}
-	s.macAppReleaseMu.Unlock()
 
 	checkedAt := now.Format(time.RFC3339)
 	info := companionReleaseInfo{
@@ -3091,7 +3140,28 @@ func (s *Server) repairDeviceOnceLocked(
 	if forcePair {
 		discoveryCfg.DeviceToken = ""
 	}
-	target, hello, err := s.discoverRepairTarget(ctx, discoveryCfg, requestedTarget)
+	// An already-paired known device proves its saved token with an
+	// authenticated /hello first. Pairing only runs when the device really
+	// rejects the token (401/403); a closed pairing window must not break
+	// Connect for a device whose saved token still works.
+	provenToken := ""
+	var target string
+	var hello protocol.DeviceHello
+	if forcePair {
+		if known, ok := cfg.KnownDevice(expectedDeviceID); ok {
+			if saved := strings.TrimSpace(known.DeviceToken); saved != "" {
+				authCfg := cfg
+				authCfg.DeviceToken = saved
+				if authTarget, authHello, authErr := s.discoverRepairTarget(ctx, authCfg, requestedTarget); authErr == nil {
+					target, hello = authTarget, authHello
+					provenToken = saved
+				}
+			}
+		}
+	}
+	if provenToken == "" {
+		target, hello, err = s.discoverRepairTarget(ctx, discoveryCfg, requestedTarget)
+	}
 	tokenRejected := false
 	if err != nil && !forcePair && strings.TrimSpace(cfg.DeviceToken) != "" && deviceAuthorizationRejected(err) {
 		discoveryCfg = cfg
@@ -3125,12 +3195,16 @@ func (s *Server) repairDeviceOnceLocked(
 		}
 	}
 	if forcePair {
-		token, err = s.pair(ctx, target, token)
-		if err != nil {
-			return deviceInfo{}, &repairStageError{
-				stage:    "pair",
-				firmware: strings.TrimSpace(hello.Firmware),
-				err:      err,
+		if provenToken != "" {
+			token = provenToken
+		} else {
+			token, err = s.pair(ctx, target, token)
+			if err != nil {
+				return deviceInfo{}, &repairStageError{
+					stage:    "pair",
+					firmware: strings.TrimSpace(hello.Firmware),
+					err:      err,
+				}
 			}
 		}
 		if _, err = s.updateConfig(func(current *runtimeconfig.Config) {
@@ -3791,6 +3865,39 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 			"Pair VibeTV, then retry.",
 		)
 		return
+	}
+	// The firmware a release ships pairs with that release's Mac App. An older
+	// app must never push newer firmware onto the device: the mixed state
+	// renders degraded and the old app cannot even preview it. The release
+	// check runs fresh (cache bypassed) and synchronously here, so neither a
+	// UI race nor a stale pre-release cache entry can start the job. Only
+	// customer installs (dmg) are gated; dev and bench builds write devices
+	// deliberately. A failed check blocks too: the release feed and the
+	// firmware manifest are different services, so an unknown answer is not
+	// proof the app is current. The explicit env-var opt-out ("disabled")
+	// stays open for local setups.
+	if s.installationMode == "dmg" {
+		release := s.macAppReleaseInfoCached(r.Context(), false)
+		if release.UpdateAvailable {
+			writeError(
+				w,
+				http.StatusConflict,
+				"mac_app_update_required",
+				"Update the Mac App first.",
+				"Install the Mac App update, then update VibeTV firmware.",
+			)
+			return
+		}
+		if release.Status == "check_failed" {
+			writeError(
+				w,
+				http.StatusBadGateway,
+				"mac_app_release_check_failed",
+				"Could not verify that the Mac App is current.",
+				"Check the internet connection, then retry the update.",
+			)
+			return
+		}
 	}
 	caps := protocol.CapabilitiesFromHello(hello)
 	if strings.TrimSpace(caps.Board) == "" || strings.TrimSpace(caps.Firmware) == "" {
@@ -4524,6 +4631,13 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		defer s.deviceMaintenanceMu.Unlock()
 
 		s.firmwareUpdateActive.Store(true)
+		// The OTA runs in a child process. Close this process's idle keep-alive
+		// sockets to the device first, so no half-open connection occupies the
+		// single-threaded ESP8266 server while the updater runs its
+		// authenticated preflight and upload.
+		if s.client != nil {
+			s.client.CloseIdleConnections()
+		}
 		streamPaused := false
 		if s.pauseDisplayStream != nil {
 			s.pauseDisplayStream(true)
@@ -4662,15 +4776,36 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream could not restart.", nil
 	}
 	stream := s.waitForFreshDisplayStream(ctx, target, streamStartedAt)
-	if !displayStreamHealthyForTarget(&stream, target) {
+	streamHealthy := displayStreamHealthyForTarget(&stream, target)
+	// A stream that restarted, owns this exact VibeTV, and is only held back by
+	// provider setup has nothing left to prove about the firmware update. It
+	// draws no usage picture because no provider is ready, so demanding one here
+	// would report "needs attention" for a Mac that is simply not set up yet.
+	streamAwaitingProvider := !streamHealthy && providerSetupStreamForTarget(&stream, target)
+	if !streamHealthy && !streamAwaitingProvider {
 		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream still needs attention.", nil
 	}
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 		result.StreamVerified = true
 	})
+	if streamAwaitingProvider {
+		s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
+			result.RenderSkipped = "provider_setup_required"
+		})
+		if snapshot.Outcome == "already_current" {
+			return "already_current", "", nil
+		}
+		return "updated", "", nil
+	}
 
 	s.setFirmwareUpdateStage(jobID, "verifying_render")
-	if _, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream); err != nil {
+	// The device reboots into the new firmware parked on the setup screen with
+	// the stored theme spec active but nothing drawn from it, and it does not
+	// leave that screen on its own however many usage frames the Mac sends.
+	// repairDevice already reactivates the stored theme in exactly this state,
+	// so the update does the same rather than handing the customer a working
+	// device with a setup screen on it.
+	if err := s.repairParkedDisplayAfterFirmwareUpdate(ctx, jobID, target, token, baseline, stream); err != nil {
 		return firmwareAttentionOutcome("render"), "Firmware is current, but the picture could not be verified.", nil
 	}
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
@@ -4680,6 +4815,85 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 		return "already_current", "", nil
 	}
 	return "updated", "", nil
+}
+
+// repairParkedDisplayAfterFirmwareUpdate verifies the picture after an update
+// and, when the device is parked on a non-live screen with a stored theme,
+// reactivates that theme and waits for a full render. It mirrors what
+// repairDevice does for the manual "Reload image" action.
+func (s *Server) repairParkedDisplayAfterFirmwareUpdate(
+	ctx context.Context,
+	jobID string,
+	target string,
+	token string,
+	baseline deviceHealth,
+	stream displayStreamInfo,
+) error {
+	// The VibeTV serves one connection at a time, so the display stream this
+	// function just restarted takes /theme/active away from the reactivation and
+	// the device answers EOF. repairDevice and the theme install both pause the
+	// stream around the same call for the same reason; measured on hardware,
+	// where the unpaused call failed with
+	// `reactivate current VibeTV theme: Post ".../theme/active": EOF`.
+	// The passive wait below needs the stream running and must stay outside.
+	reactivate := func(from deviceHealth) error {
+		if s.pauseDisplayStream != nil {
+			s.pauseDisplayStream(true)
+			defer s.pauseDisplayStream(false)
+		}
+		_, err := s.reactivateCurrentThemeAndWaitForFullRender(ctx, target, token, from, stream)
+		return err
+	}
+
+	s.appendFirmwareUpdateDiagnostic(jobID, "render-repair: baseline "+describeRepairRenderState(baseline))
+	if activeThemeNeedsFullRepairRender(baseline) {
+		err := reactivate(baseline)
+		s.appendFirmwareUpdateDiagnostic(jobID, fmt.Sprintf("render-repair: reactivated from baseline err=%v", err))
+		return err
+	}
+	health, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream)
+	if err == nil {
+		return nil
+	}
+	s.appendFirmwareUpdateDiagnostic(jobID, fmt.Sprintf("render-repair: verify failed err=%v, health %s", err, describeRepairRenderState(health)))
+	// The wait returns a zero health when every probe failed, and a device that
+	// is still busy right after its reboot does exactly that, so decide on a
+	// fresh reading rather than on whatever the failed wait left behind.
+	fresh, freshErr := s.getHealth(ctx, target, token)
+	s.appendFirmwareUpdateDiagnostic(jobID, fmt.Sprintf("render-repair: refetched health err=%v, %s", freshErr, describeRepairRenderState(fresh)))
+	if freshErr != nil {
+		return err
+	}
+	// Reactivate whenever a stored theme exists. The narrower "is it parked on a
+	// non-live screen" test races the stream cadence: the render kind reported
+	// right after a reboot depends on which frame happened to land last, and we
+	// have already failed to observe a live render at this point. Reactivation
+	// is idempotent and repairs the picture immediately on hardware.
+	if !storedThemeAvailableForRepair(fresh) {
+		return err
+	}
+	err = reactivate(fresh)
+	s.appendFirmwareUpdateDiagnostic(jobID, fmt.Sprintf("render-repair: reactivated after verify err=%v", err))
+	return err
+}
+
+// storedThemeAvailableForRepair reports whether the device has a stored theme
+// that can be reactivated to force a full render.
+func storedThemeAvailableForRepair(health deviceHealth) bool {
+	spec := health.Display.ThemeSpec
+	return spec.Active && strings.TrimSpace(spec.Path) != ""
+}
+
+func describeRepairRenderState(health deviceHealth) string {
+	spec := health.Display.ThemeSpec
+	full, partial, countersOK := displayRenderCounters(health)
+	return fmt.Sprintf(
+		"ok=%t specActive=%t specPath=%q lastKind=%q counters=%t/%d/%d needsRepair=%t",
+		health.OK, spec.Active, strings.TrimSpace(spec.Path),
+		strings.TrimSpace(health.Render.LastKind),
+		countersOK, full, partial,
+		activeThemeNeedsFullRepairRender(health),
+	)
 }
 
 func firmwareAttentionOutcome(kind string) string {
@@ -4768,6 +4982,48 @@ type firmwareUpdateProgressWriter struct {
 	pending string
 }
 
+// appendFirmwareUpdateDiagnostic records one raw updater line. The pairing
+// token never reaches the file, and the log is truncated once it grows past its
+// budget so an unattended Mac cannot fill its disk with update attempts.
+func (s *Server) appendFirmwareUpdateDiagnostic(jobID, line string) {
+	path := runtimepaths.FirmwareUpdateLog(s.home)
+	if path == "" {
+		return
+	}
+	if token := strings.TrimSpace(s.currentDeviceToken()); token != "" {
+		for _, secret := range []string{token, url.QueryEscape(token), url.PathEscape(token)} {
+			if secret != "" {
+				line = strings.ReplaceAll(line, secret, "[REDACTED]")
+			}
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return
+	}
+	if info, err := os.Stat(path); err == nil && info.Size() > runtimepaths.FirmwareUpdateLogMaxBytes {
+		_ = os.Truncate(path, 0)
+	}
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	record := fmt.Sprintf("%s %s %s\n",
+		time.Now().UTC().Format(time.RFC3339),
+		jobID,
+		sanitizeLogLine(line),
+	)
+	_, _ = file.WriteString(record)
+}
+
+func (s *Server) currentDeviceToken() string {
+	cfg, err := s.loadConfig(s.home)
+	if err != nil {
+		return ""
+	}
+	return cfg.DeviceToken
+}
+
 func (w *firmwareUpdateProgressWriter) Write(p []byte) (int, error) {
 	text := w.pending + string(p)
 	lines := strings.Split(text, "\n")
@@ -4788,6 +5044,10 @@ func (w *firmwareUpdateProgressWriter) noteLine(line string) {
 	if line == "" || w.server == nil {
 		return
 	}
+	// Everything the child prints is kept here before the customer-facing
+	// curation below throws most of it away, so a failed update can still be
+	// diagnosed afterwards.
+	w.server.appendFirmwareUpdateDiagnostic(w.jobID, line)
 	if strings.HasPrefix(line, firmwareupdate.EventPrefix) {
 		var event firmwareUpdateEvent
 		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, firmwareupdate.EventPrefix)), &event); err == nil {
@@ -5249,7 +5509,32 @@ func firmwareUpdateDiagnosticNextAction(job firmwareUpdateJob) string {
 	return strings.TrimSpace(job.Error.NextAction)
 }
 
-func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfig.Config, req firmwareUpdateRequest, out io.Writer) error {
+// firmwareUpdateCommandRunner binds the update command to whether this server
+// owns (and therefore pauses) a display writer. Only then may the child
+// updater be told its parent already quiesced the device.
+func firmwareUpdateCommandRunner(ownsDisplayWriter bool) func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
+	return func(ctx context.Context, home string, cfg runtimeconfig.Config, req firmwareUpdateRequest, out io.Writer) error {
+		return runFirmwareUpdateCommand(ctx, home, cfg, req, out, ownsDisplayWriter)
+	}
+}
+
+// firmwareUpdateCommandEnv grants the child updater the parent-paused marker
+// only when this server really owns and paused the display stream. The
+// standalone API server (codexbar-display api) has no writer of its own, so
+// its child must still run the writer-quiesce check and detect a separate
+// daemon writing the device.
+func firmwareUpdateCommandEnv(parentPaused bool, home string) []string {
+	env := os.Environ()
+	if parentPaused {
+		env = append(env, "VIBETV_UPDATE_PARENT_PAUSED=1")
+	}
+	if strings.TrimSpace(home) != "" {
+		env = append(env, "HOME="+home)
+	}
+	return env
+}
+
+func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfig.Config, req firmwareUpdateRequest, out io.Writer, parentPaused bool) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -5262,9 +5547,7 @@ func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfi
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Stdout = out
 	cmd.Stderr = out
-	if strings.TrimSpace(home) != "" {
-		cmd.Env = append(os.Environ(), "HOME="+home)
-	}
+	cmd.Env = firmwareUpdateCommandEnv(parentPaused, home)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("firmware update command failed: %w", err)
 	}
@@ -5461,6 +5744,9 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 		writeDeviceNotFound(w)
 		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
 	}
+	// Reuse the central single-flight probe: a dead device must not occupy the
+	// serialized per-host gate for the full 15s device timeout and starve the
+	// 5s status poll (head-of-line blocking during cold start).
 	hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
 	if err != nil {
 		// A read-only status poll must never fan out into a subnet scan. The
@@ -6343,13 +6629,14 @@ func (s *Server) reactivateCurrentThemeAndWaitForFullRender(
 }
 
 func (s *Server) updateBrightness(ctx context.Context, target, token string, brightness int) (deviceSettings, error) {
-	form := url.Values{}
-	form.Set("api", "1")
-	form.Set("b", fmt.Sprintf("%d", brightness))
+	query := url.Values{}
+	query.Set("api", "1")
+	query.Set("b", fmt.Sprintf("%d", brightness))
+	query.Set("token", strings.TrimSpace(token))
 	var response struct {
 		Settings deviceSettings `json:"settings"`
 	}
-	if err := s.doForm(ctx, target, "/api/settings", token, form, &response); err != nil {
+	if err := s.doJSON(ctx, http.MethodPost, target, "/api/settings?"+query.Encode(), "", nil, &response); err != nil {
 		return deviceSettings{}, err
 	}
 	return response.Settings, nil
@@ -6486,19 +6773,6 @@ func (s *Server) doJSON(ctx context.Context, method, target, path, token string,
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	applyDeviceToken(req, token)
-	return s.do(req, out)
-}
-
-func (s *Server) doForm(ctx context.Context, target, path, token string, form url.Values, out any) error {
-	if s.firmwareUpdateActive.Load() {
-		return errors.New("VibeTV firmware update is in progress")
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint(target, path), strings.NewReader(form.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	applyDeviceToken(req, token)
 	return s.do(req, out)
 }
@@ -7637,13 +7911,6 @@ func targetWithToken(target, token string) string {
 func applyDeviceToken(req *http.Request, token string) {
 	if token = strings.TrimSpace(token); token != "" {
 		req.Header.Set("X-VibeTV-Token", token)
-		// ESP8266WebServer 3.1.2 does not reliably retain custom headers on every
-		// route. Keep the header for compatible firmware, and also send the token
-		// through the firmware's existing query fallback used by the display
-		// stream. This makes /hello token verification reliable on real hardware.
-		query := req.URL.Query()
-		query.Set("token", token)
-		req.URL.RawQuery = query.Encode()
 	}
 }
 

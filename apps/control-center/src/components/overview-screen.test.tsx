@@ -46,7 +46,37 @@ describe("OverviewScreen", () => {
     expect(html).not.toContain("VibeTV is connected");
   });
 
-  it("keeps an active VibeTV in Overview while it reconnects", () => {
+  it("does not treat a cached frame as a live connection or display", () => {
+    const html = renderToStaticMarkup(
+      <OverviewScreen
+        companionStatus="online"
+        device={{
+          active: true,
+          connected: false,
+          paired: true,
+          ready: false,
+          connectionState: "reconnecting",
+        }}
+        displayFrame={{
+          ok: true,
+          savedAt: "2026-08-05T08:00:00Z",
+          frame: {
+            v: 1,
+            provider: "codex",
+            label: "Codex",
+            session: 12,
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Not connected");
+    expect(html).toContain("Waiting for first image");
+    expect(html).not.toContain("VibeTV is connected");
+    expect(html).not.toContain(">Live<");
+  });
+
+  it("does not show reconnect instructions inside an available Overview", () => {
     const html = renderToStaticMarkup(
       <OverviewScreen
         companionStatus="online"
@@ -61,9 +91,8 @@ describe("OverviewScreen", () => {
       />,
     );
 
-    expect(html).toContain("Reconnecting to VibeTV");
-    expect(html).toContain("VibeTV-Setup");
-    expect(html).toContain("Your pairing and settings stay saved.");
+    expect(html).not.toContain("Reconnecting to VibeTV");
+    expect(html).not.toContain("VibeTV-Setup");
     expect(html).not.toContain("Pair VibeTV again");
   });
 
@@ -86,7 +115,7 @@ describe("OverviewScreen", () => {
 
     expect(html).toContain("VibeTV is connected");
     expect(html).toContain("Waiting for usage");
-    expect(html).toContain("This can take up to 30 seconds.");
+    expect(html).toContain("This can take up to 60 seconds.");
     expect(html).not.toContain("Reconnect VibeTV to continue");
     expect(html).not.toContain("Reconnecting to VibeTV");
   });

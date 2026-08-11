@@ -566,3 +566,19 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
 }
+
+// Pins the device-proven pacing rule from docs/hardware-contract.md: the
+// firmware waits at most ~5 s for each read of an upload body, so the gap
+// between paced chunks must stay far inside that window, and the overall pace
+// must finish the largest theme asset (24 KB GIF) in a few seconds. The old
+// 1 KB/s pace pushed a 6.3 KB asset past that per-read wait whenever a chunk
+// was dropped, which is why slower was never safer.
+func TestAssetUploadPaceStaysInsideFirmwareReadWait(t *testing.T) {
+	chunkGap := time.Duration(assetUploadReadChunk) * time.Second / time.Duration(assetUploadBytesPerSec)
+	if chunkGap > time.Second {
+		t.Fatalf("chunk gap %v leaves no margin against the firmware's 5s per-read wait", chunkGap)
+	}
+	if assetUploadBytesPerSec < 8192 {
+		t.Fatalf("asset pace %d B/s would stretch a 24 KB GIF past a few seconds", assetUploadBytesPerSec)
+	}
+}
