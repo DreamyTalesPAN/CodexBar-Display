@@ -512,6 +512,12 @@ void testIndexedProgressHidesMissingWindow() {
 void testUsageWindowResetCountdownsTickIndependently() {
   RuntimeState state;
   state.hasFrame = true;
+  state.reset.hasDeadline = true;
+  state.reset.enforced = true;
+  state.reset.hostLive = true;
+  state.reset.deadlineSecs = 3600;
+  state.reset.trustSecs = codexbar_display::core::kResetTrustHorizonSecs;
+  state.reset.baseMillis = 1000;
   state.resetBaseMillis = 1000;
   state.current.usageWindows[0].available = true;
   state.current.usageWindows[0].resetSecs = 100;

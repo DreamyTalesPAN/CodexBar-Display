@@ -108,7 +108,7 @@ bool testThemeActivationRejectsInvalidSpecsBeforePersisting(const std::string& s
 
   const std::string activate = source.substr(activateStart, activateEnd - activateStart);
   const std::size_t prepare = activate.find("if (!prepareStoredThemeSpec(");
-  const std::size_t persist = activate.find("if (!saveActiveThemeSpecPath(path))");
+  const std::size_t persist = activate.find("if (persist && !saveActiveThemeSpecPath(path))");
   const std::size_t commit = activate.find("commitStoredThemeSpec(");
   return expect(
       prepare != std::string::npos && persist != std::string::npos && commit != std::string::npos &&

@@ -64,9 +64,7 @@ constexpr size_t kUsageWindowFrameOverheadWithProviderBytes =
     kProviderWireBytes +
     kProviderLabelWireBytes;
 static_assert(kFrameLineBufferBytes > kUsageWindowFrameOverheadWithProviderBytes, "usage window frame overhead with provider text must fit");
-constexpr size_t kMaxUsageWindows =
-    (kFrameLineBufferBytes - kUsageWindowFrameOverheadWithProviderBytes + 1) /
-    kUsageWindowWireBudgetWithCommaBytes;
+constexpr size_t kMaxUsageWindows = usage_window_contract::kMaxWindows;
 static_assert(
     kUsageWindowFrameOverheadWithProviderBytes + (kMaxUsageWindows * kUsageWindowWireBudgetWithCommaBytes) - 1 <= kFrameLineBufferBytes,
     "normal usage window parser capacity must fit max frame bytes");
@@ -75,7 +73,6 @@ constexpr size_t kAdvertisedUsageWindowFrameOverheadBytes =
     kProviderEscapedWireBytes +
     kProviderLabelEscapedWireBytes;
 constexpr size_t kAdvertisedMaxUsageWindows = usage_window_contract::kMaxWindows;
-constexpr size_t kMaxUsageWindows = usage_window_contract::kMaxWindows;
 static_assert(kAdvertisedMaxUsageWindows > 0, "advertised usage window capability must be positive");
 static_assert(
     kAdvertisedUsageWindowFrameOverheadBytes + (kAdvertisedMaxUsageWindows * kAdvertisedUsageWindowWireBudgetWithCommaBytes) - 1 <= kFrameLineBufferBytes,
