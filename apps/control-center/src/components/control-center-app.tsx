@@ -3249,9 +3249,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     activeThemeUpdateAvailable ||
     macAppUpdateAvailable ||
     macAppMigrationAvailable;
-  const imageNeedsReload = Boolean(
-    deviceIsReady(device) && deviceImageIsStuck(device),
-  );
   const deviceConnected = deviceIsCustomerConnected(device);
   const deviceReady = deviceIsReady(device);
   const handleDisplayFrame = useCallback((frame: DisplayFrameSnapshot) => {
@@ -3317,14 +3314,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const needsRuntimeRecovery = companionStatus === "missing";
   const controlCenterAvailable =
     hasActiveDevice && !connectionRecoveryRequired && !recoveryPickerOpen;
-  const disabledTabs: ActiveTab[] = controlCenterAvailable
-    ? imageNeedsReload
-      ? ["theme-library", "updates"]
-      : !deviceReady
-        ? firmwareUpdateInProgress
-          ? ["theme-library"]
-          : ["theme-library", "updates"]
-        : []
+  const disabledTabs: ActiveTab[] = hasEnteredControlCenter
+    ? []
     : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
   const activeShellTab = disabledTabs.includes(activeTab)
     ? "overview"

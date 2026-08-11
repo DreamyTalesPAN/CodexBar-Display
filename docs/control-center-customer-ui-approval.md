@@ -5,6 +5,18 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-11 — No locked tabs after entering the Control Center
+
+- User approval: Same instruction: fix CI and the Codex review loop until
+  both pass. The approved 2026-08-05 rule ("no locked tabs" after entry)
+  stays authoritative.
+- Approved customer-visible result: After the Control Center is entered,
+  every tab stays enabled through device unreadiness, outages, and image
+  reloads, exactly as approved on 2026-08-05; the merge had reintroduced
+  PR-side tab locking, which is removed. Before entry, the startup gate
+  keeps all tabs disabled as today.
+- Approved files: `control-center-app.tsx` and this approval record.
+
 ## 2026-08-11 — Outage tab sweep names the Appearance tab
 
 - User approval: Same instruction as below: fix CI and the Codex review loop
