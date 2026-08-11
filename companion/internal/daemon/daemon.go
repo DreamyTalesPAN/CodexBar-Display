@@ -2336,6 +2336,7 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		noTokens.SessionTokens = 0
 		noTokens.WeekTokens = 0
 		noTokens.TotalTokens = 0
+		noTokens.TokenTotalsKnown = false
 		line, err = noTokens.MarshalNormalizedLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err

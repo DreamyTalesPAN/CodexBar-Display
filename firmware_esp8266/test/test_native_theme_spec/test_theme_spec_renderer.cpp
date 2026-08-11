@@ -457,6 +457,15 @@ void testConsumeFrameLineTracksTokenTotalPresence() {
       2000,
       event));
   TEST_ASSERT_FALSE(state.current.hasTokenTotals);
+
+  // A finished all-zero token history omits every total on the wire, so the
+  // Companion marks it explicitly and the device renders 0 instead of "--".
+  TEST_ASSERT_TRUE(codexbar_display::core::ConsumeFrameLine(
+      state,
+      "{\"v\":2,\"provider\":\"codex\",\"label\":\"Codex\",\"session\":12,\"weekly\":22,\"resetSecs\":58,\"tokenTotalsKnown\":true}",
+      3000,
+      event));
+  TEST_ASSERT_TRUE(state.current.hasTokenTotals);
 }
 
 void testUsageUnavailableKeepsThemeAndProgress() {

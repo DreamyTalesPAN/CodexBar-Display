@@ -5,6 +5,18 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-11 — Genuine all-zero token totals render as 0
+
+- User approval: Same instruction: fix CI and the Codex review loop until
+  both pass.
+- Approved customer-visible result: A completed token-history scan whose
+  totals are genuinely zero shows `0` on the device and in every preview;
+  only totals the frame does not carry render as `--`. The Companion marks
+  completed totals explicitly on the wire (`tokenTotalsKnown`).
+- Approved files: `live-vibetv-preview.tsx` and its test, the protocol
+  frame marker, collector and firmware handling with their tests, and this
+  approval record.
+
 ## 2026-08-11 — Theme refresh regressions assert the automatic flow
 
 - User approval: Same instruction: fix CI and the Codex review loop until

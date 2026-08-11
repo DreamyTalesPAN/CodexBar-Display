@@ -614,6 +614,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		frame.SessionTokens = stats.SessionTokens
 		frame.WeekTokens = stats.WeekTokens
 		frame.TotalTokens = stats.TotalTokens
+		frame.TokenTotalsKnown = true
 		meta := snapshot.Meta
 		meta.Cost = stats.Cost
 
@@ -744,6 +745,7 @@ func carryForwardSnapshotTokenStats(previous providerSnapshot, next *providerSna
 	next.Frame.SessionTokens = prevFrame.SessionTokens
 	next.Frame.WeekTokens = prevFrame.WeekTokens
 	next.Frame.TotalTokens = prevFrame.TotalTokens
+	next.Frame.TokenTotalsKnown = prevFrame.TokenTotalsKnown
 	next.Meta.Cost = previous.Meta.Cost
 	next.TokenStatsCollected = previous.TokenStatsCollected
 	next.TokenHistorySettled = previous.TokenHistorySettled
@@ -778,7 +780,8 @@ func tokenHistoryFingerprint(cost *codexbar.ProviderCostUsage, now time.Time) st
 }
 
 func frameHasTokenStats(frame protocol.Frame) bool {
-	return frame.SessionTokens > 0 || frame.WeekTokens > 0 || frame.TotalTokens > 0
+	return frame.TokenTotalsKnown ||
+		frame.SessionTokens > 0 || frame.WeekTokens > 0 || frame.TotalTokens > 0
 }
 
 func snapshotHasTokenStats(snapshot providerSnapshot) bool {
@@ -792,6 +795,7 @@ func clearSnapshotTokenStats(snapshot *providerSnapshot) {
 	snapshot.Frame.SessionTokens = 0
 	snapshot.Frame.WeekTokens = 0
 	snapshot.Frame.TotalTokens = 0
+	snapshot.Frame.TokenTotalsKnown = false
 	snapshot.Meta.Cost = nil
 	snapshot.TokenStatsCollected = time.Time{}
 	snapshot.TokenHistorySettled = false

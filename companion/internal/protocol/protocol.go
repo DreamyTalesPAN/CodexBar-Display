@@ -87,6 +87,10 @@ type Frame struct {
 	SessionTokens         int64           `json:"sessionTokens,omitempty"`
 	WeekTokens            int64           `json:"weekTokens,omitempty"`
 	TotalTokens           int64           `json:"totalTokens,omitempty"`
+	// TokenTotalsKnown marks a completed token-history result on the wire.
+	// Zero totals are omitted by omitempty, so without this marker a device
+	// cannot tell a genuine all-zero history from an unavailable one.
+	TokenTotalsKnown bool `json:"tokenTotalsKnown,omitempty"`
 	Activity              string          `json:"activity,omitempty"`
 	Theme                 string          `json:"theme,omitempty"`
 	ThemeSpec             json.RawMessage `json:"themeSpec,omitempty"`

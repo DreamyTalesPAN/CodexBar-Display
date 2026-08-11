@@ -80,6 +80,19 @@ describe("dynamic usage slot preview", () => {
     expect(renderTextPrimitive({ t: "tx", b: "st" }, withTokens)).toBe(
       "1400000",
     );
+
+    const zeroTotalsKnown = buildFrameData("2026-08-11T09:00:00Z", {
+      v: 2,
+      provider: "codex",
+      label: "Codex",
+      session: 12,
+      weekly: 34,
+      tokenTotalsKnown: true,
+    });
+    expect(zeroTotalsKnown.hasTokenTotals).toBe(true);
+    expect(renderTextPrimitive({ t: "tx", b: "st" }, zeroTotalsKnown)).toBe(
+      "0",
+    );
   });
 
   it("keeps a prior valid frame for a selected reachable VibeTV while readiness waits", () => {

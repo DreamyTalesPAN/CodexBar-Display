@@ -78,6 +78,7 @@ type DisplayFrame = {
   sessionTokens?: number;
   weekTokens?: number;
   totalTokens?: number;
+  tokenTotalsKnown?: boolean;
 };
 
 type LocalDisplayFrameRequestInit = RequestInit & {
@@ -1199,6 +1200,7 @@ export function buildFrameData(
     activity: displayFrame.activity || "idle",
     sessionTokens: displayFrame.sessionTokens ?? 0,
     hasTokenTotals:
+      displayFrame.tokenTotalsKnown === true ||
       displayFrame.sessionTokens !== undefined ||
       displayFrame.weekTokens !== undefined ||
       displayFrame.totalTokens !== undefined,
