@@ -264,6 +264,9 @@ jobs:
       - name: Run full direct hosted macOS guest matrix
         run: |
           set -euo pipefail
+          # actions/download-artifact strips the executable bit; the harness
+          # refuses non-executable helper binaries (same chmod as the merge gate).
+          chmod +x candidate/test/virtual-vibetv candidate/test/codexbar-display
           version="$(python3 -c 'import json; print(json.load(open("candidate/candidate-manifest.json"))["version"])')"
           baseline_args=()
           current_firmware=0.0.0
