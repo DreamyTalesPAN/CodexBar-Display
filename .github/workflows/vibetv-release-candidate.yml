@@ -75,7 +75,7 @@ jobs:
           cp scripts/install.sh tmp/vibetv-rc/publish/install.sh
           cp scripts/install-control-center-companion-release.sh tmp/vibetv-rc/publish/install-control-center-companion.sh
           chmod +x tmp/vibetv-rc/publish/install*.sh
-          ./scripts/build-macos-control-center-app.sh --version "$version" --build "$GITHUB_RUN_NUMBER" --universal --companion-binary tmp/vibetv-rc/codexbar-display --output 'dist/macos/VibeTV Control Center.app'
+          ./scripts/build-macos-control-center-app.sh --version "$version" --build "$GITHUB_RUN_ID" --universal --companion-binary tmp/vibetv-rc/codexbar-display --output 'dist/macos/VibeTV Control Center.app'
           COPYFILE_DISABLE=1 tar -czf tmp/vibetv-rc/app.tar.gz -C dist/macos 'VibeTV Control Center.app'
           python3 - release/firmware-versions.json > tmp/vibetv-rc/firmware-targets.tsv <<'PY'
           import json, sys
