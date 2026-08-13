@@ -61,25 +61,28 @@ func TestDoctorWiFiProbeTargetUsesTokenOnlyForMatchingDevice(t *testing.T) {
 		DeviceTarget: "http://192.0.2.10",
 		DeviceToken:  "saved-token",
 	}
-	if got := doctorWiFiProbeTarget("http://192.0.2.10", cfg); !strings.Contains(got, "token=saved-token") {
+	if got := doctorWiFiProbeTarget("http://192.0.2.10", cfg, false); !strings.Contains(got, "token=saved-token") {
 		t.Fatalf("expected matching target token, got %q", got)
 	}
-	if got := doctorWiFiProbeTarget("http://192.0.2.11", cfg); strings.Contains(got, "token=") {
+	if got := doctorWiFiProbeTarget("http://192.0.2.11", cfg, false); strings.Contains(got, "token=") {
 		t.Fatalf("must not send token to another target, got %q", got)
 	}
 	legacyTarget := "http://192.0.2.12?token=legacy-token"
-	if got := doctorWiFiProbeTarget(legacyTarget, runtimeconfig.Config{}); got != legacyTarget {
+	if got := doctorWiFiProbeTarget(legacyTarget, runtimeconfig.Config{}, true); got != legacyTarget {
 		t.Fatalf("expected legacy inline token to remain private probe credential, got %q", got)
 	}
+	if got := doctorWiFiProbeTarget(legacyTarget, runtimeconfig.Config{}, false); strings.Contains(got, "token=") {
+		t.Fatalf("app-managed probe must not use inline-only token, got %q", got)
+	}
 	cfg = runtimeconfig.Config{DeviceToken: "saved-token"}
-	if got := doctorWiFiProbeTarget(legacyTarget, cfg); !strings.Contains(got, "token=saved-token") || strings.Contains(got, "legacy-token") {
+	if got := doctorWiFiProbeTarget(legacyTarget, cfg, true); !strings.Contains(got, "token=saved-token") || strings.Contains(got, "legacy-token") {
 		t.Fatalf("expected saved token to authenticate legacy fallback target, got %q", got)
 	}
 	if got := targetWithQueryToken(legacyTarget, "other-token"); got != legacyTarget {
 		t.Fatalf("shared target helper must preserve explicit token, got %q", got)
 	}
 	cfg = runtimeconfig.Config{KnownDevices: []runtimeconfig.KnownDevice{{Target: "http://192.0.2.13", DeviceToken: "historical-token"}}}
-	if got := doctorWiFiProbeTarget("http://192.0.2.13", cfg); strings.Contains(got, "token=") {
+	if got := doctorWiFiProbeTarget("http://192.0.2.13", cfg, false); strings.Contains(got, "token=") {
 		t.Fatalf("doctor must not use historical known-device token, got %q", got)
 	}
 }

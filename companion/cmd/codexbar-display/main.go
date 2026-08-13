@@ -927,7 +927,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 				label:       label,
 				transport:   "wifi",
 				target:      cfg.DeviceTarget,
-				probeTarget: doctorWiFiProbeTarget(cfg.DeviceTarget, cfg),
+				probeTarget: doctorWiFiProbeTarget(cfg.DeviceTarget, cfg, false),
 			}, nil
 		}
 	}
@@ -957,7 +957,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 			return doctorRuntimeConfig{}, err
 		}
 		target = doctorWiFiTarget(cfg.DeviceTarget, parseLaunchAgentArgument(plist, "--target"))
-		probeTarget = doctorWiFiProbeTarget(target, cfg)
+		probeTarget = doctorWiFiProbeTarget(target, cfg, true)
 	}
 	return doctorRuntimeConfig{
 		configured:  true,
@@ -1014,7 +1014,7 @@ func doctorWiFiTarget(configTarget, plistTarget string) string {
 	return strings.TrimSpace(plistTarget)
 }
 
-func doctorWiFiProbeTarget(target string, cfg runtimeconfig.Config) string {
+func doctorWiFiProbeTarget(target string, cfg runtimeconfig.Config, allowInlineToken bool) string {
 	publicTarget := publicDeviceTargetForConfig(target)
 	if publicTarget == "" {
 		return strings.TrimSpace(target)
@@ -1023,7 +1023,10 @@ func doctorWiFiProbeTarget(target string, cfg runtimeconfig.Config) string {
 		(strings.TrimSpace(cfg.DeviceTarget) == "" || sameCommandDeviceTarget(publicTarget, cfg.DeviceTarget)) {
 		return targetWithRequiredQueryToken(publicTarget, cfg.DeviceToken)
 	}
-	return strings.TrimSpace(target)
+	if allowInlineToken {
+		return strings.TrimSpace(target)
+	}
+	return publicTarget
 }
 
 func runDoctorTransportChecks(config doctorRuntimeConfig) error {
