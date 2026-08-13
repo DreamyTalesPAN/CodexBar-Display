@@ -69,6 +69,13 @@ func TestDoctorWiFiProbeTargetUsesTokenOnlyForMatchingDevice(t *testing.T) {
 	}
 }
 
+func TestDoctorPublicWiFiTargetRedactsSavedToken(t *testing.T) {
+	got := doctorPublicWiFiTarget("http://192.0.2.10?token=secret-token")
+	if got != "http://192.0.2.10" {
+		t.Fatalf("expected redacted target, got %q", got)
+	}
+}
+
 func TestReadDoctorLegacyLaunchAgentPlistFallsBackToSystemPath(t *testing.T) {
 	home := "/Users/test"
 	systemPath := filepath.Join("/Library", "LaunchAgents", "com.codexbar-display.daemon.plist")

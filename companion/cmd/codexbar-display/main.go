@@ -1101,7 +1101,7 @@ func runDoctorWiFiRuntimeChecks(config doctorRuntimeConfig) error {
 		fmt.Println("  WiFi device target: unavailable (connect VibeTV in Control Center)")
 		return errors.New("runtime WiFi target unavailable: connect VibeTV in Control Center")
 	}
-	fmt.Printf("  WiFi device target: %s\n", target)
+	fmt.Printf("  WiFi device target: %s\n", doctorPublicWiFiTarget(target))
 	if err := doctorCheckCompanionHealthFn(); err != nil {
 		fmt.Printf("  Companion health: failed (%v)\n", err)
 		return fmt.Errorf("runtime Companion health failed: %w", err)
@@ -1117,6 +1117,10 @@ func runDoctorWiFiRuntimeChecks(config doctorRuntimeConfig) error {
 		return fmt.Errorf("runtime WiFi device reachability failed: %w", err)
 	}
 	return reportDoctorCapabilities("WiFi device reachability", caps)
+}
+
+func doctorPublicWiFiTarget(target string) string {
+	return publicDeviceTargetForConfig(target)
 }
 
 func reportDoctorCapabilities(label string, caps protocol.DeviceCapabilities) error {
