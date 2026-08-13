@@ -924,6 +924,7 @@ type doctorRuntimeConfig struct {
 	transport   string
 	target      string
 	probeTarget string
+	authReady   bool
 	port        string
 }
 
@@ -945,6 +946,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 				transport:   "wifi",
 				target:      cfg.DeviceTarget,
 				probeTarget: doctorWiFiProbeTarget(cfg.DeviceTarget, cfg, false),
+				authReady:   strings.TrimSpace(cfg.DeviceToken) != "",
 			}, nil
 		}
 	}
@@ -982,6 +984,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		transport:   transportName,
 		target:      target,
 		probeTarget: probeTarget,
+		authReady:   true,
 		port:        parseLaunchAgentArgument(plist, "--port"),
 	}, nil
 }
@@ -1142,6 +1145,10 @@ func runDoctorWiFiRuntimeChecks(config doctorRuntimeConfig) error {
 		return errors.New("runtime WiFi target unavailable: connect VibeTV in Control Center")
 	}
 	fmt.Printf("  WiFi device target: %s\n", doctorPublicWiFiTarget(target))
+	if !config.authReady {
+		fmt.Println("  WiFi device credential: unavailable (reconnect VibeTV in Control Center)")
+		return errors.New("runtime WiFi credential unavailable: reconnect VibeTV in Control Center")
+	}
 	if err := doctorCheckCompanionHealthFn(config.label); err != nil {
 		fmt.Printf("  Companion health: failed (%v)\n", err)
 		return fmt.Errorf("runtime Companion health failed: %w", err)
@@ -1259,6 +1266,10 @@ func checkDoctorCompanionHealthOrigins(origins []string, expectedOwner string) e
 			continue
 		}
 		owner := strings.TrimSpace(result.Companion.Runtime.ListenerOwner)
+		if owner == "" && expectedOwner != "" && expectedOwner != runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
+			lastErr = errors.New("runtime health did not identify its listener owner")
+			continue
+		}
 		if owner != "" && expectedOwner != "" && owner != expectedOwner {
 			lastErr = fmt.Errorf("runtime health belongs to %q, expected %q", owner, expectedOwner)
 			continue

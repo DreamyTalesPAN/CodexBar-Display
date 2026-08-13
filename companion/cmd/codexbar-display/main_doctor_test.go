@@ -160,6 +160,7 @@ func TestDoctorWiFiRejectsStaleSavedToken(t *testing.T) {
 		transport:   "wifi",
 		target:      device.URL,
 		probeTarget: targetWithQueryToken(device.URL, "stale-token"),
+		authReady:   true,
 	})
 	if err == nil || !strings.Contains(err.Error(), "status=401") {
 		t.Fatalf("expected rejected saved token, got %v", err)
@@ -241,6 +242,19 @@ func TestDoctorCompanionHealthRejectsDifferentRuntimeOwner(t *testing.T) {
 	}
 }
 
+func TestDoctorCompanionHealthRequiresAppRuntimeOwner(t *testing.T) {
+	legacyResponse := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"displayWriter":true}`))
+	}))
+	defer legacyResponse.Close()
+
+	err := checkDoctorCompanionHealthOrigins([]string{legacyResponse.URL}, "shop.vibetv.control-center.runtime")
+	if err == nil || !strings.Contains(err.Error(), "listener owner") {
+		t.Fatalf("expected missing app runtime owner to fail, got %v", err)
+	}
+}
+
 func TestContainsPort(t *testing.T) {
 	ports := []string{"/dev/cu.usbmodem101", "/dev/cu.usbserial-10"}
 	if !containsPort(ports, "/dev/cu.usbserial-10") {
@@ -278,6 +292,7 @@ func TestDoctorWiFiSkipsSerialChecks(t *testing.T) {
 				configured: true,
 				transport:  "wifi",
 				target:     "http://192.0.2.10",
+				authReady:  true,
 			})
 			if err != nil {
 				t.Fatalf("WiFi doctor failed: %v", err)
@@ -286,6 +301,24 @@ func TestDoctorWiFiSkipsSerialChecks(t *testing.T) {
 				t.Fatal("WiFi doctor must not list serial ports")
 			}
 		})
+	}
+}
+
+func TestDoctorAppWiFiRejectsMissingActiveCredential(t *testing.T) {
+	restoreDoctorTestDeps(t)
+	doctorCheckCompanionHealthFn = func(string) error {
+		t.Fatal("missing credential must fail before health probe")
+		return nil
+	}
+
+	err := runDoctorWiFiRuntimeChecks(doctorRuntimeConfig{
+		configured: true,
+		label:      "shop.vibetv.control-center.runtime",
+		transport:  "wifi",
+		target:     "http://192.0.2.10",
+	})
+	if err == nil || !strings.Contains(err.Error(), "credential unavailable") {
+		t.Fatalf("expected missing active credential to fail, got %v", err)
 	}
 }
 
@@ -300,6 +333,7 @@ func TestDoctorWiFiRejectsUnknownCapabilities(t *testing.T) {
 		configured: true,
 		transport:  "wifi",
 		target:     "http://192.0.2.10",
+		authReady:  true,
 	})
 	if err == nil || !strings.Contains(err.Error(), "capabilities unknown") {
 		t.Fatalf("expected unknown WiFi capabilities to fail, got %v", err)
