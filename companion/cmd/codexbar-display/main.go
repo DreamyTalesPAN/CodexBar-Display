@@ -48,6 +48,14 @@ var displayWorkerRestartDelay = 5 * time.Second
 var openControlCenterStartLaunchAgentFn = startLaunchAgent
 var openControlCenterOpenURLFn = openURLWithMacOpen
 var openControlCenterHTTPClient = &http.Client{}
+var doctorListPortsFn = usb.ListPorts
+var doctorResolvePortFn = usb.ResolvePort
+var doctorProbePortFn = usb.ProbePort
+var doctorReadDeviceHelloFn = usb.ReadDeviceHello
+var doctorReadWiFiCapabilitiesFn = func(target string) (protocol.DeviceCapabilities, error) {
+	return transportlayer.NewWiFiTransportWithClient(nil).DeviceCapabilities(target)
+}
+var doctorCheckCompanionHealthFn = checkDoctorCompanionHealth
 
 var displayStreamSensitiveQueryPattern = regexp.MustCompile(`(?i)([?&](?:token|auth|key|secret)=)[^&\s"]+`)
 var displayStreamSensitiveUserInfoPattern = regexp.MustCompile(`(?i)(https?://)[^/@\s]+@`)
@@ -860,21 +868,11 @@ func runDoctor() error {
 		}
 	}
 
-	ports, err := usb.ListPorts()
-	if err != nil {
-		return fmt.Errorf("list serial ports: %w", err)
-	}
-
-	fmt.Println("Serial ports:")
-	if len(ports) == 0 {
-		fmt.Println("  (none)")
-	} else {
-		for _, p := range ports {
-			fmt.Printf("  %s\n", p)
-		}
-	}
-
-	if runtimeErr := runDoctorRuntimeChecks(ports); runtimeErr != nil {
+	runtimeConfig, configErr := readDoctorRuntimeConfig()
+	if configErr != nil {
+		fmt.Printf("Active runtime: unavailable (%v)\n", configErr)
+		doctorErrs = append(doctorErrs, fmt.Errorf("read active runtime configuration failed: %w", configErr))
+	} else if runtimeErr := runDoctorTransportChecks(runtimeConfig); runtimeErr != nil {
 		doctorErrs = append(doctorErrs, runtimeErr)
 	}
 
@@ -898,20 +896,115 @@ func runDoctor() error {
 	return nil
 }
 
-func runDoctorRuntimeChecks(ports []string) error {
+type doctorRuntimeConfig struct {
+	configured bool
+	transport  string
+	target     string
+	port       string
+}
+
+func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return doctorRuntimeConfig{}, err
+	}
+
+	for _, label := range []string{"shop.vibetv.control-center.runtime", "shop.vibetv.control-center.preview-runtime"} {
+		if doctorLaunchAgentLoaded(label) {
+			cfg, err := runtimeconfig.Load(home)
+			if err != nil {
+				return doctorRuntimeConfig{}, err
+			}
+			return doctorRuntimeConfig{configured: true, transport: "wifi", target: cfg.DeviceTarget}, nil
+		}
+	}
+
+	if !doctorLaunchAgentLoaded("com.codexbar-display.daemon") {
+		return doctorRuntimeConfig{}, nil
+	}
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", "com.codexbar-display.daemon.plist")
+	data, err := os.ReadFile(plistPath)
+	if err != nil {
+		return doctorRuntimeConfig{}, err
+	}
+	plist := string(data)
+	transportName := strings.ToLower(parseLaunchAgentArgument(plist, "--transport"))
+	if transportName == "" {
+		if parseLaunchAgentArgument(plist, "--target") != "" {
+			transportName = "wifi"
+		} else {
+			transportName = "usb"
+		}
+	}
+	target := ""
+	if transportName == "wifi" {
+		cfg, err := runtimeconfig.Load(home)
+		if err != nil {
+			return doctorRuntimeConfig{}, err
+		}
+		target = cfg.DeviceTarget
+	}
+	return doctorRuntimeConfig{
+		configured: true,
+		transport:  transportName,
+		target:     target,
+		port:       parseLaunchAgentArgument(plist, "--port"),
+	}, nil
+}
+
+func doctorLaunchAgentLoaded(label string) bool {
+	service := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
+	return exec.Command("launchctl", "print", service).Run() == nil
+}
+
+func runDoctorTransportChecks(config doctorRuntimeConfig) error {
+	if !config.configured {
+		fmt.Println("Active runtime: not configured (run `codexbar-display setup`)")
+		fmt.Println("  available transports: wifi, usb")
+		return errors.New("runtime setup required: no active runtime configuration")
+	}
+
+	fmt.Printf("Active runtime: transport=%s\n", config.transport)
+	switch config.transport {
+	case "wifi":
+		fmt.Println("Serial ports: not applicable (active transport is WiFi)")
+		return runDoctorWiFiRuntimeChecks(config)
+	case "usb":
+		ports, err := doctorListPortsFn()
+		if err != nil {
+			return fmt.Errorf("list serial ports: %w", err)
+		}
+		fmt.Println("Serial ports:")
+		if len(ports) == 0 {
+			fmt.Println("  (none)")
+		} else {
+			for _, port := range ports {
+				fmt.Printf("  %s\n", port)
+			}
+		}
+		return runDoctorUSBRuntimeChecks(config, ports)
+	default:
+		return fmt.Errorf("runtime setup required: unsupported active transport %q", config.transport)
+	}
+}
+
+func printDoctorRuntimeDefaults() {
 	fmt.Println("Runtime checks:")
 	fmt.Printf("  codexbar timeout: %s\n", codexbar.CommandTimeout())
 	fmt.Printf("  last-good max age: %s\n", daemon.LastGoodMaxAge())
 	fmt.Printf("  sleep/wake threshold (@60s interval): %s\n", daemon.SleepWakeGapThreshold(60*time.Second))
+}
 
-	port, err := usb.ResolvePort("")
+func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, ports []string) error {
+	printDoctorRuntimeDefaults()
+	port, err := doctorResolvePortFn("")
 	if err != nil {
 		fmt.Printf("  serial resolve: failed (%v)\n", err)
 		return fmt.Errorf("runtime serial resolve failed: %w", err)
 	}
 	fmt.Printf("  serial resolve: ok (%s)\n", port)
 
-	if err := usb.ProbePort(port); err != nil {
+	if err := doctorProbePortFn(port); err != nil {
 		if errcode.Of(err) == errcode.TransportSerialCloseTimeout {
 			fmt.Printf("  serial probe: warning (%v)\n", err)
 		} else {
@@ -922,11 +1015,7 @@ func runDoctorRuntimeChecks(ports []string) error {
 		fmt.Printf("  serial probe: ok (%s)\n", port)
 	}
 
-	pinnedPort, err := doctorPinnedLaunchAgentPort()
-	if err != nil {
-		fmt.Printf("  launchagent port affinity: failed (%v)\n", err)
-		return fmt.Errorf("runtime launchagent affinity check failed: %w", err)
-	}
+	pinnedPort := config.port
 	if pinnedPort == "" {
 		fmt.Println("  launchagent port affinity: auto-detect")
 		if len(ports) > 1 {
@@ -945,24 +1034,50 @@ func runDoctorRuntimeChecks(ports []string) error {
 		}
 	}
 
-	hello, err := usb.ReadDeviceHello(port)
+	hello, err := doctorReadDeviceHelloFn(port)
 	if err != nil {
 		fmt.Printf("  device hello: warning (%v)\n", err)
 		fmt.Println("  warning: capability handshake unavailable; runtime will use optimistic theme send fallback")
 		return nil
 	}
 
-	caps := protocol.CapabilitiesFromHello(hello)
-	fmt.Printf("  device hello: ok board=%s protocol=%d negotiated=%d firmware=%s theme=%t themeSpecV1=%t maxFrameBytes=%d\n",
+	return reportDoctorCapabilities("device hello", protocol.CapabilitiesFromHello(hello))
+}
+
+func runDoctorWiFiRuntimeChecks(config doctorRuntimeConfig) error {
+	printDoctorRuntimeDefaults()
+	target := strings.TrimSpace(config.target)
+	fmt.Println("  launchagent port affinity: not applicable (active transport is WiFi)")
+	if target == "" {
+		fmt.Println("  WiFi device target: unavailable (connect VibeTV in Control Center)")
+		return errors.New("runtime WiFi target unavailable: connect VibeTV in Control Center")
+	}
+	fmt.Printf("  WiFi device target: %s\n", target)
+	if err := doctorCheckCompanionHealthFn(); err != nil {
+		fmt.Printf("  Companion health: failed (%v)\n", err)
+		return fmt.Errorf("runtime Companion health failed: %w", err)
+	}
+	fmt.Println("  Companion health: ok")
+	caps, err := doctorReadWiFiCapabilitiesFn(target)
+	if err != nil {
+		fmt.Printf("  WiFi device reachability: failed (%v)\n", err)
+		return fmt.Errorf("runtime WiFi device reachability failed: %w", err)
+	}
+	return reportDoctorCapabilities("WiFi device reachability", caps)
+}
+
+func reportDoctorCapabilities(label string, caps protocol.DeviceCapabilities) error {
+	fmt.Printf("  %s: ok board=%s protocol=%d negotiated=%d firmware=%s theme=%t themeSpecV1=%t maxFrameBytes=%d\n",
+		label,
 		caps.Board,
 		caps.ProtocolVersion,
 		caps.NegotiatedProtocolVersion,
-		hello.Firmware,
+		caps.Firmware,
 		caps.SupportsTheme,
 		caps.SupportsThemeSpecV1,
 		caps.MaxFrameBytes)
 	if len(caps.SupportedProtocolVersions) > 0 {
-		fmt.Printf("  device hello protocols: %v (preferred=%d)\n", caps.SupportedProtocolVersions, caps.PreferredProtocolVersion)
+		fmt.Printf("  %s protocols: %v (preferred=%d)\n", label, caps.SupportedProtocolVersions, caps.PreferredProtocolVersion)
 	}
 	if !caps.Known {
 		fmt.Println("  warning: device capabilities are unknown; skipping strict hardware/theme contract checks")
@@ -987,6 +1102,40 @@ func runDoctorRuntimeChecks(ports []string) error {
 		)
 	}
 
+	return nil
+}
+
+func checkDoctorCompanionHealth() error {
+	origin := "http://" + companionapi.DefaultAddr
+	if home, err := os.UserHomeDir(); err == nil {
+		if data, err := os.ReadFile(runtimeEndpointPath(home)); err == nil {
+			var endpoint runtimeEndpoint
+			if json.Unmarshal(data, &endpoint) == nil {
+				if published := strings.TrimSpace(endpoint.Origin); published != "" {
+					origin = published
+				}
+			}
+		}
+	}
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	response, err := client.Get(strings.TrimRight(origin, "/") + "/v1/runtime-health")
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", response.StatusCode)
+	}
+	var result struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&result); err != nil {
+		return err
+	}
+	if !result.OK {
+		return errors.New("runtime health reported not ok")
+	}
 	return nil
 }
 
@@ -1873,24 +2022,12 @@ func containsPort(ports []string, target string) bool {
 	return false
 }
 
-func doctorPinnedLaunchAgentPort() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	plistPath := filepath.Join(home, "Library", "LaunchAgents", "com.codexbar-display.daemon.plist")
-	data, err := os.ReadFile(plistPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil
-		}
-		return "", err
-	}
-	return parsePinnedPortFromLaunchAgentPlist(string(data)), nil
+func parsePinnedPortFromLaunchAgentPlist(plist string) string {
+	return parseLaunchAgentArgument(plist, "--port")
 }
 
-func parsePinnedPortFromLaunchAgentPlist(plist string) string {
-	const marker = "<string>--port</string>"
+func parseLaunchAgentArgument(plist, name string) string {
+	marker := "<string>" + name + "</string>"
 	idx := strings.Index(plist, marker)
 	if idx < 0 {
 		return ""
