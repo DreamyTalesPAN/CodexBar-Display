@@ -221,7 +221,7 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   totalTokens: 1_070_000_000,
   hasTokenTotals: true,
   time: "12:00",
-  date: "03.07",
+  date: "03.07.2026",
 };
 
 const DEVICE_THEME_ALIASES: Record<string, string> = {
@@ -1231,9 +1231,12 @@ export function buildFrameData(
       hour: "2-digit",
       minute: "2-digit",
     }).format(currentTime),
+    // DD.MM.YYYY, matching attachClockFields and the device clock. A shorter
+    // date here would hide the width and shrink behaviour of the hardware.
     date: new Intl.DateTimeFormat("de-DE", {
       day: "2-digit",
       month: "2-digit",
+      year: "numeric",
     }).format(currentTime),
   };
 }

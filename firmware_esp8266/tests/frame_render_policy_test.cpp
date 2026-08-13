@@ -248,6 +248,31 @@ bool testUsageWakeRestoresLiveThemeBeforeDroppingPath(const std::string& source)
       "usage wake must restore the saved live theme before clearing its standby path");
 }
 
+bool testScreensaverPreviewLeavesBlockerScreensAlone(const std::string& source) {
+  const std::size_t previewStart = source.find("void maintainScreensaverPreview()");
+  const std::size_t previewEnd = source.find("\nvoid maintainStandby()", previewStart);
+  if (!expect(
+          previewStart != std::string::npos && previewEnd != std::string::npos,
+          "screensaver preview state machine must remain discoverable")) {
+    return false;
+  }
+
+  const std::string preview = source.substr(previewStart, previewEnd - previewStart);
+  // A running preview owns activeThemeSpecPath, so the "already on screen"
+  // veto must only apply before it does — otherwise a reselection strands the
+  // screensaver as the live screen.
+  const std::size_t selfVetoGuard = preview.find("!screensaverPreviewState.showing &&");
+  const std::size_t blockerOwnsDisplay = preview.find(
+      "standbyState.active || hasError || statusSurfaceVisible");
+  const std::size_t restore = preview.find("Action::Restore", blockerOwnsDisplay);
+  const std::size_t handover = preview.find(
+      "standbyLiveThemePath = screensaverPreviewLivePath;", restore);
+  return expect(
+      selfVetoGuard != std::string::npos && blockerOwnsDisplay != std::string::npos &&
+          restore != std::string::npos && handover != std::string::npos,
+      "the screensaver preview must survive a reselection and hand its restore to the blocker owning the screen");
+}
+
 bool testScreensaverSelectionValidatesBeforePersisting(const std::string& source) {
   const std::size_t selectionStart = source.find("bool setStandbyScreensaverPath(");
   const std::size_t selectionEnd = source.find("\nbool persistDeviceSettings(", selectionStart);
@@ -335,6 +360,7 @@ int main(int argc, char** argv) {
       !testAssetDeleteProtectsStandbyLiveTheme(source) ||
       !testStandbyExitLeavesErrorFrameVisible(source) ||
       !testUsageWakeRestoresLiveThemeBeforeDroppingPath(source) ||
+      !testScreensaverPreviewLeavesBlockerScreensAlone(source) ||
       !testScreensaverSelectionValidatesBeforePersisting(source) ||
       !testLiveThemeSlotUsesItsOwnedPathPolicy(source)) {
     return 1;

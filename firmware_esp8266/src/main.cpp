@@ -2636,6 +2636,16 @@ bool standbyReady() {
          !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
          activeThemeSpecPath.length() > 0;
 }
+
+// Hands the screen back to the theme a screensaver preview replaced and drops
+// the captured path. Rendering is skipped when that theme is already up.
+void restoreScreensaverPreviewLiveTheme() {
+  if (screensaverPreviewLivePath.length() > 0 &&
+      screensaverPreviewLivePath != activeThemeSpecPath) {
+    renderStoredThemeSpecForStandby(screensaverPreviewLivePath);
+  }
+  screensaverPreviewLivePath = "";
+}
 #endif
 
 // Shows a freshly selected screensaver once, for a bounded moment, then hands
@@ -2648,45 +2658,49 @@ void maintainScreensaverPreview() {
                         codexbar_display::app::CurrentFrame(runtimeCtx).hasError;
   const bool statusSurfaceVisible = setupMode || waitStatusRendered;
   const String screensaverPath(deviceSettings.standby.screensaverPath);
-  const bool showing = screensaverPreviewState.showing;
-  // Only meaningful BEFORE the preview owns the screen: once it does,
-  // activeThemeSpecPath points at the screensaver itself and must not
-  // retrigger the veto.
+  // "Already on screen" only means "nothing to preview" BEFORE the preview
+  // owns the display: once it does, activeThemeSpecPath points at the
+  // screensaver itself and must not veto its own preview.
   const bool selectionUnpreviewable =
-      !showing && (screensaverPath.length() == 0 ||
-                   activeThemeSpecPath.length() == 0 ||
-                   screensaverPath == activeThemeSpecPath);
+      screensaverPath.length() == 0 || activeThemeSpecPath.length() == 0 ||
+      (!screensaverPreviewState.showing &&
+       screensaverPath == activeThemeSpecPath);
+  // Standby, error frames, and setup/status surfaces own the display and share
+  // one deferred way back: standbyLiveThemePath, which maintainStandby paints
+  // as soon as the blocker clears. Repainting the live theme here instead
+  // would erase the screen they just took.
+  const bool blockerOwnsDisplay =
+      standbyState.active || hasError || statusSurfaceVisible;
   // A disabled screensaver toggle is a customer promise: nothing screensaver-
   // shaped appears, so it also vetoes (and, while showing, immediately ends)
   // the post-install preview.
-  const bool blocked = !deviceSettings.standby.enabled ||
-                       standbyState.active || hasError || statusSurfaceVisible ||
+  const bool blocked = !deviceSettings.standby.enabled || blockerOwnsDisplay ||
                        selectionUnpreviewable;
   const screensaver_preview::Action action = screensaver_preview::Tick(
-      screensaverPreviewState, blocked, standbyState.active, millis());
+      screensaverPreviewState, blocked, millis());
   if (action == screensaver_preview::Action::Show) {
-    const String livePath = activeThemeSpecPath;
+    // A reselection mid-preview keeps the first captured path: by now
+    // activeThemeSpecPath is the screensaver that is being previewed.
+    const String livePath = screensaverPreviewLivePath.length() > 0
+                                ? screensaverPreviewLivePath
+                                : activeThemeSpecPath;
     if (renderStoredThemeSpecForStandby(screensaverPath)) {
       screensaverPreviewLivePath = livePath;
       Serial.printf("screensaver_preview shown path=%s\n", screensaverPath.c_str());
     } else {
-      // The live theme is still on screen when the load fails; just disarm.
+      // Nothing new is on screen, but a preview replacing another one still
+      // holds a live theme that has to come back.
       screensaver_preview::Cancel(screensaverPreviewState);
-      screensaverPreviewLivePath = "";
+      restoreScreensaverPreviewLiveTheme();
     }
   } else if (action == screensaver_preview::Action::Restore) {
-    if (screensaverPreviewLivePath.length() > 0 &&
-        screensaverPreviewLivePath != activeThemeSpecPath) {
-      renderStoredThemeSpecForStandby(screensaverPreviewLivePath);
-    }
     Serial.printf("screensaver_preview restored path=%s\n", screensaverPreviewLivePath.c_str());
-    screensaverPreviewLivePath = "";
-  }
-  // Standby that takes over mid-preview captured the preview spec as its way
-  // back (its enter ran before this function); hand it the really live theme.
-  if (standbyState.active && screensaverPreviewLivePath.length() > 0) {
-    standbyLiveThemePath = screensaverPreviewLivePath;
-    screensaverPreviewLivePath = "";
+    if (blockerOwnsDisplay) {
+      standbyLiveThemePath = screensaverPreviewLivePath;
+      screensaverPreviewLivePath = "";
+    } else {
+      restoreScreensaverPreviewLiveTheme();
+    }
   }
 #endif
 }

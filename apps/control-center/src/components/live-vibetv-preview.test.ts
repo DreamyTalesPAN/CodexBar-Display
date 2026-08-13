@@ -309,12 +309,10 @@ describe("dynamic usage slot preview", () => {
         minute: "2-digit",
       }).format(new Date("2026-07-24T10:30:35.900Z")),
     );
-    expect(frame.date).toBe(
-      new Intl.DateTimeFormat("de-DE", {
-        day: "2-digit",
-        month: "2-digit",
-      }).format(new Date("2026-07-24T10:30:35.900Z")),
-    );
+    // The literal device contract: attachClockFields sends "02.01.2006" and
+    // the device clock renders "%02d.%02d.%04d". A preview that drops the year
+    // would hide width and shrink problems that happen on the hardware.
+    expect(frame.date).toBe("24.07.2026");
   });
 
   it("formats multi-day reset countdowns like the VibeTV firmware", () => {

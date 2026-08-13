@@ -11,7 +11,8 @@ namespace screensaver_preview {
 // calls, so it stays natively testable per docs/firmware-guardrails.md. What a
 // transition renders is the caller's job; the caller also owns every veto
 // (standby active, setup/status surface, error frame, no live theme to hand
-// back) and reports it as `blocked`.
+// back), reports it as `blocked`, and decides how to act on `Restore` — paint
+// the live theme now, or hand the way back to whoever owns the screen.
 
 constexpr unsigned long kPreviewDurationMs = 10000UL;
 
@@ -24,10 +25,11 @@ struct State {
 enum class Action : uint8_t { None, Show, Restore };
 
 // A (re)selection arms exactly one preview. Selecting again while a preview
-// is on screen restarts the window with the new choice.
+// is on screen restarts the window with the new choice, so `showing` stays
+// set: that screensaver still owns the display, and the caller still holds the
+// one live path it has to hand back.
 inline void NoteSelection(State& state) {
   state.pending = true;
-  state.showing = false;
   state.showUntilMs = 0;
 }
 
@@ -35,14 +37,12 @@ inline void Cancel(State& state) {
   state = State{};
 }
 
-// `blockerOwnsRestore` is true only when the blocker has its own way back to
-// the live theme (standby saves and restores the live path itself). Every
-// other blocker just vetoes the preview — a preview already on screen must
-// then hand the screen back immediately, or the loaded spec would silently
-// stay the screensaver with nobody left to restore the live theme.
-inline Action Tick(State& state, bool blocked, bool blockerOwnsRestore, unsigned long nowMs) {
+inline Action Tick(State& state, bool blocked, unsigned long nowMs) {
   if (blocked) {
-    const bool restore = state.showing && !blockerOwnsRestore;
+    // A preview that owns the display always reports the way back, whatever
+    // the veto was: the loaded spec would otherwise silently stay the live
+    // screen with nobody left to restore the customer's theme.
+    const bool restore = state.showing;
     if (state.pending || state.showing) {
       state = State{};
     }

@@ -33,7 +33,7 @@ const DEFAULT_FRAME = {
   weekTokens: 82000,
   totalTokens: 248000,
   time: "12:00",
-  date: "03.07",
+  date: "03.07.2026",
 };
 
 export type ResizeSize = {

@@ -1223,3 +1223,18 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `theme-studio/primitive-inspector.tsx`,
   `theme-studio/editor-geometry.ts`, the `claude-creature` theme pack, and
   this approval record.
+
+## 2026-08-13 — The preview date matches the VibeTV clock
+
+- User approval: Given live in the 2026-08-13 session on the Codex finding
+  about the `date` binding: "Fixen + Freigabe", after the reachability check
+  showed the Theme Studio offers Date as an insertable variable, so a custom
+  theme can hit the mismatch even though no shipped theme pack uses it.
+- Approved customer-visible result: Wherever a ThemeSpec uses the Date
+  variable, the Live VibeTV preview and the Theme Studio sample values render
+  the full `03.07.2026` instead of `03.07` — the same `DD.MM.YYYY` the
+  Companion frame and the device clock produce. A date box that fits in the
+  Studio therefore fits on the hardware; the previous short date hid width and
+  shrink problems until the theme was installed. Nothing else changes.
+- Approved files: `live-vibetv-preview.tsx`, `live-vibetv-preview.test.ts`,
+  `theme-studio/editor-geometry.ts`, and this approval record.
