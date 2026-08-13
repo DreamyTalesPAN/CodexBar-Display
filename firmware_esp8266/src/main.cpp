@@ -2631,7 +2631,13 @@ void maintainStandby() {
   const unsigned long nowMs = millis();
   const bool hasError = codexbar_display::app::HasFrame(runtimeCtx) &&
                         codexbar_display::app::CurrentFrame(runtimeCtx).hasError;
-  if (!standbyState.active && !hasError && standbyLiveThemePath.length() > 0) {
+  // Setup instructions and status screens behave like error frames here: a
+  // customer looking at WiFi setup must never have it replaced by the saved
+  // live theme. The path is kept, so the deferred restore below runs as soon
+  // as the surface clears.
+  const bool statusSurfaceVisible = setupMode || waitStatusRendered;
+  if (!standbyState.active && !hasError && !statusSurfaceVisible &&
+      standbyLiveThemePath.length() > 0) {
     if (standbyLiveThemePath == activeThemeSpecPath ||
         renderStoredThemeSpecForStandby(standbyLiveThemePath)) {
       standbyLiveThemePath = "";
@@ -2657,13 +2663,14 @@ void maintainStandby() {
     }
     standbyLiveThemePath = livePath;
   } else {
-    // An error frame caused this exit and must remain visible. Restoring the
-    // saved live ThemeSpec here would overwrite the error before it is seen.
-    if (!hasError && standbyLiveThemePath.length() > 0 &&
+    // An error frame or a setup/status surface caused this exit and must
+    // remain visible. Restoring the saved live ThemeSpec here would overwrite
+    // it before the customer has seen it.
+    if (!hasError && !statusSurfaceVisible && standbyLiveThemePath.length() > 0 &&
         standbyLiveThemePath != activeThemeSpecPath) {
       renderStoredThemeSpecForStandby(standbyLiveThemePath);
     }
-    if (!hasError) {
+    if (!hasError && !statusSurfaceVisible) {
       standbyLiveThemePath = "";
     }
   }

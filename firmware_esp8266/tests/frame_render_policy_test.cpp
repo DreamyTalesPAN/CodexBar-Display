@@ -212,11 +212,15 @@ bool testStandbyExitLeavesErrorFrameVisible(const std::string& source) {
   }
 
   const std::string standby = source.substr(standbyStart, standbyEnd - standbyStart);
-  const std::size_t errorGuard = standby.find("if (!standbyState.active && !hasError &&");
+  const std::size_t errorGuard =
+      standby.find("if (!standbyState.active && !hasError && !statusSurfaceVisible &&");
+  const std::size_t statusGuard =
+      standby.find("const bool statusSurfaceVisible = setupMode || waitStatusRendered;");
   const std::size_t restore = standby.find("renderStoredThemeSpecForStandby(standbyLiveThemePath)");
   return expect(
-      errorGuard != std::string::npos && restore != std::string::npos && errorGuard < restore,
-      "standby exit must not replace a rendered error frame with the saved live theme");
+      errorGuard != std::string::npos && statusGuard != std::string::npos &&
+          restore != std::string::npos && statusGuard < errorGuard && errorGuard < restore,
+      "standby exit must not replace a rendered error frame or setup/status surface with the saved live theme");
 }
 
 bool testUsageWakeRestoresLiveThemeBeforeDroppingPath(const std::string& source) {
