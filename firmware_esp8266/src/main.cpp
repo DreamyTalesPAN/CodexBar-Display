@@ -2638,6 +2638,59 @@ bool standbyReady() {
 }
 #endif
 
+// Shows a freshly selected screensaver once, for a bounded moment, then hands
+// the screen back to the live theme. Decided in the loop, never in an HTTP
+// handler, mirroring maintainStandby. The loaded spec keeps receiving live
+// field updates while it is up — same contract as standby rendering.
+void maintainScreensaverPreview() {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  const bool hasError = codexbar_display::app::HasFrame(runtimeCtx) &&
+                        codexbar_display::app::CurrentFrame(runtimeCtx).hasError;
+  const bool statusSurfaceVisible = setupMode || waitStatusRendered;
+  const String screensaverPath(deviceSettings.standby.screensaverPath);
+  const bool showing = screensaverPreviewState.showing;
+  // Only meaningful BEFORE the preview owns the screen: once it does,
+  // activeThemeSpecPath points at the screensaver itself and must not
+  // retrigger the veto.
+  const bool selectionUnpreviewable =
+      !showing && (screensaverPath.length() == 0 ||
+                   activeThemeSpecPath.length() == 0 ||
+                   screensaverPath == activeThemeSpecPath);
+  // A disabled screensaver toggle is a customer promise: nothing screensaver-
+  // shaped appears, so it also vetoes (and, while showing, immediately ends)
+  // the post-install preview.
+  const bool blocked = !deviceSettings.standby.enabled ||
+                       standbyState.active || hasError || statusSurfaceVisible ||
+                       selectionUnpreviewable;
+  const screensaver_preview::Action action = screensaver_preview::Tick(
+      screensaverPreviewState, blocked, standbyState.active, millis());
+  if (action == screensaver_preview::Action::Show) {
+    const String livePath = activeThemeSpecPath;
+    if (renderStoredThemeSpecForStandby(screensaverPath)) {
+      screensaverPreviewLivePath = livePath;
+      Serial.printf("screensaver_preview shown path=%s\n", screensaverPath.c_str());
+    } else {
+      // The live theme is still on screen when the load fails; just disarm.
+      screensaver_preview::Cancel(screensaverPreviewState);
+      screensaverPreviewLivePath = "";
+    }
+  } else if (action == screensaver_preview::Action::Restore) {
+    if (screensaverPreviewLivePath.length() > 0 &&
+        screensaverPreviewLivePath != activeThemeSpecPath) {
+      renderStoredThemeSpecForStandby(screensaverPreviewLivePath);
+    }
+    Serial.printf("screensaver_preview restored path=%s\n", screensaverPreviewLivePath.c_str());
+    screensaverPreviewLivePath = "";
+  }
+  // Standby that takes over mid-preview captured the preview spec as its way
+  // back (its enter ran before this function); hand it the really live theme.
+  if (standbyState.active && screensaverPreviewLivePath.length() > 0) {
+    standbyLiveThemePath = screensaverPreviewLivePath;
+    screensaverPreviewLivePath = "";
+  }
+#endif
+}
+
 // Decided in the loop, never in an HTTP handler: ESP8266WebServer runs those
 // inside handleClient(), where display work does not belong.
 void maintainStandby() {
@@ -2693,58 +2746,6 @@ void maintainStandby() {
 #endif
 }
 
-// Shows a freshly selected screensaver once, for a bounded moment, then hands
-// the screen back to the live theme. Decided in the loop, never in an HTTP
-// handler, mirroring maintainStandby. The loaded spec keeps receiving live
-// field updates while it is up — same contract as standby rendering.
-void maintainScreensaverPreview() {
-#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  const bool hasError = codexbar_display::app::HasFrame(runtimeCtx) &&
-                        codexbar_display::app::CurrentFrame(runtimeCtx).hasError;
-  const bool statusSurfaceVisible = setupMode || waitStatusRendered;
-  const String screensaverPath(deviceSettings.standby.screensaverPath);
-  const bool showing = screensaverPreviewState.showing;
-  // Only meaningful BEFORE the preview owns the screen: once it does,
-  // activeThemeSpecPath points at the screensaver itself and must not
-  // retrigger the veto.
-  const bool selectionUnpreviewable =
-      !showing && (screensaverPath.length() == 0 ||
-                   activeThemeSpecPath.length() == 0 ||
-                   screensaverPath == activeThemeSpecPath);
-  // A disabled screensaver toggle is a customer promise: nothing screensaver-
-  // shaped appears, so it also vetoes (and, while showing, immediately ends)
-  // the post-install preview.
-  const bool blocked = !deviceSettings.standby.enabled ||
-                       standbyState.active || hasError || statusSurfaceVisible ||
-                       selectionUnpreviewable;
-  const screensaver_preview::Action action = screensaver_preview::Tick(
-      screensaverPreviewState, blocked, standbyState.active, millis());
-  if (action == screensaver_preview::Action::Show) {
-    const String livePath = activeThemeSpecPath;
-    if (renderStoredThemeSpecForStandby(screensaverPath)) {
-      screensaverPreviewLivePath = livePath;
-      Serial.printf("screensaver_preview shown path=%s\n", screensaverPath.c_str());
-    } else {
-      // The live theme is still on screen when the load fails; just disarm.
-      screensaver_preview::Cancel(screensaverPreviewState);
-      screensaverPreviewLivePath = "";
-    }
-  } else if (action == screensaver_preview::Action::Restore) {
-    if (screensaverPreviewLivePath.length() > 0 &&
-        screensaverPreviewLivePath != activeThemeSpecPath) {
-      renderStoredThemeSpecForStandby(screensaverPreviewLivePath);
-    }
-    Serial.printf("screensaver_preview restored path=%s\n", screensaverPreviewLivePath.c_str());
-    screensaverPreviewLivePath = "";
-  }
-  // Standby that takes over mid-preview captured the preview spec as its way
-  // back (its enter ran before this function); hand it the really live theme.
-  if (standbyState.active && screensaverPreviewLivePath.length() > 0) {
-    standbyLiveThemePath = screensaverPreviewLivePath;
-    screensaverPreviewLivePath = "";
-  }
-#endif
-}
 
 String updatePageHTML() {
   const String installCommand = updateInstallCommand();

@@ -4,7 +4,11 @@ import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ThemeStudioPrimitive } from "@/lib/theme-studio";
 import { ColorField, NumberField, SelectField, TextField } from "./editor-fields";
-import { primitiveBounds, type FieldKey } from "./editor-geometry";
+import {
+  primitiveBounds,
+  textPrimitiveNaturalWidth,
+  type FieldKey,
+} from "./editor-geometry";
 
 const DEFAULT_SPRITE_FPS = 8;
 
@@ -83,7 +87,10 @@ export function PrimitiveInspector({
         <div className="grid grid-cols-2 gap-2">
           <NumberField
             label="Width"
-            value={primitive.type === "text" ? bounds.width : primitive.width ?? bounds.width}
+            // The stored width is the device's clip/fit box. Showing the
+            // rendered bounds instead hides a narrower stored box and makes
+            // align/shrink look broken while the field claims a wider value.
+            value={primitive.width ?? bounds.width}
             onChange={(value) => onChange("width", value)}
           />
           <NumberField
@@ -153,6 +160,25 @@ export function PrimitiveInspector({
               ]}
             />
           </div>
+          {primitive.fit === "shrink" &&
+          primitive.width !== undefined &&
+          textPrimitiveNaturalWidth(primitive) > primitive.width ? (
+            <div className="flex items-center justify-between gap-2 rounded-[var(--radius-control)] border bg-muted px-2 py-1.5">
+              <span className="text-xs text-muted-foreground">
+                Text is shrunk to fit the {primitive.width}px box.
+              </span>
+              <Button
+                onClick={() =>
+                  onChange("width", textPrimitiveNaturalWidth(primitive))
+                }
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Fit box to text
+              </Button>
+            </div>
+          ) : null}
           <ColorField
             label="Text color"
             value={primitive.color || "#FFFFFF"}

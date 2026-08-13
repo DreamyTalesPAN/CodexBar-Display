@@ -1199,3 +1199,27 @@ issue scope, or release permission never implies UI permission.
   `theme-library-screen.tsx`, `theme-studio/primitive-inspector.tsx`,
   `lib/theme-studio.ts`, `lib/theme-studio-capabilities.ts`, and this
   approval record.
+
+## 2026-08-13 — Honest text boxes in the Theme Studio and the bigger Claude reset line
+
+- User approval: Given live in the 2026-08-13 session: "das ist doch scheiße.
+  wie können wir das intuitiver machen" after the stored text box silently
+  shrank an enlarged font ("ich hab im editor auf font size 2 gestellt und es
+  ist immer noch so klein"), and "ich will dass wir das aktuelle claude
+  creature theme, das wir auch mit der mac app ausliefern, durch dieses
+  ersetzen. ich hab da die resettime größer gemacht, das haben sich viele
+  kunden gewünscht."
+- Approved customer-visible result: In the Theme Studio the Width field and
+  the canvas selection outline always show the stored clip/fit box of a text
+  element instead of the wider rendered text run, and when fit-shrink renders
+  a text below its configured size the inspector says "Text is shrunk to fit
+  the …px box." next to a "Fit box to text" button that widens the box in one
+  click. The shipped Claude Creature theme becomes rev 5 with the
+  customer-requested bigger reset line: "Resets in …" renders at font size 2,
+  centered across the full display width, with the divider and creature
+  nudged up to make room. Nothing else about the theme changes; existing
+  customers receive the new revision through the already-approved automatic
+  active-theme refresh and the Updates card.
+- Approved files: `theme-studio/primitive-inspector.tsx`,
+  `theme-studio/editor-geometry.ts`, the `claude-creature` theme pack, and
+  this approval record.

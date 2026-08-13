@@ -132,10 +132,11 @@ export function primitiveBounds(primitive: ThemeStudioPrimitive) {
     };
   }
   const fontSize = primitive.fontSize || 1;
-  const visibleWidth = Math.max(
-    primitive.width || 0,
-    textPrimitiveNaturalWidth(primitive, fontSize),
-  );
+  // A stored width IS the device's clip/fit box — the selection has to show
+  // that box, not the wider natural text run, or a too-narrow box (shrunk,
+  // oddly centered text) stays invisible in the editor.
+  const visibleWidth =
+    primitive.width || textPrimitiveNaturalWidth(primitive, fontSize);
   const visibleHeight = textPrimitiveSelectionHeight(primitive, fontSize);
   return {
     height: Math.min(
