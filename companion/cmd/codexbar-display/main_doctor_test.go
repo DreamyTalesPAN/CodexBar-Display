@@ -129,7 +129,7 @@ func TestDoctorWiFiRejectsStaleSavedToken(t *testing.T) {
 	defer device.Close()
 
 	restoreDoctorTestDeps(t)
-	doctorCheckCompanionHealthFn = func() error { return nil }
+	doctorCheckCompanionHealthFn = func(string) error { return nil }
 	err := runDoctorWiFiRuntimeChecks(doctorRuntimeConfig{
 		configured:  true,
 		transport:   "wifi",
@@ -158,7 +158,7 @@ func TestDoctorCompanionHealthFallsBackFromStalePublishedEndpoint(t *testing.T) 
 	}))
 	defer healthy.Close()
 
-	if err := checkDoctorCompanionHealthOrigins([]string{deadOrigin, healthy.URL}); err != nil {
+	if err := checkDoctorCompanionHealthOrigins([]string{deadOrigin, healthy.URL}, ""); err != nil {
 		t.Fatalf("expected default endpoint fallback to pass: %v", err)
 	}
 }
@@ -170,7 +170,7 @@ func TestDoctorCompanionHealthRejectsNonWriter(t *testing.T) {
 	}))
 	defer nonWriter.Close()
 
-	err := checkDoctorCompanionHealthOrigins([]string{nonWriter.URL})
+	err := checkDoctorCompanionHealthOrigins([]string{nonWriter.URL}, "")
 	if err == nil || !strings.Contains(err.Error(), "no display writer") {
 		t.Fatalf("expected non-writer runtime to fail, got %v", err)
 	}
@@ -183,8 +183,21 @@ func TestDoctorCompanionHealthAcceptsLegacyWriterResponse(t *testing.T) {
 	}))
 	defer legacy.Close()
 
-	if err := checkDoctorCompanionHealthOrigins([]string{legacy.URL}); err != nil {
+	if err := checkDoctorCompanionHealthOrigins([]string{legacy.URL}, "com.codexbar-display.daemon"); err != nil {
 		t.Fatalf("expected legacy runtime response to pass: %v", err)
+	}
+}
+
+func TestDoctorCompanionHealthRejectsDifferentRuntimeOwner(t *testing.T) {
+	legacy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"displayWriter":true,"companion":{"runtime":{"listenerOwner":"com.codexbar-display.daemon"}}}`))
+	}))
+	defer legacy.Close()
+
+	err := checkDoctorCompanionHealthOrigins([]string{legacy.URL}, "shop.vibetv.control-center.runtime")
+	if err == nil || !strings.Contains(err.Error(), "belongs to") {
+		t.Fatalf("expected mismatched runtime owner to fail, got %v", err)
 	}
 }
 
@@ -211,7 +224,7 @@ func TestDoctorWiFiSkipsSerialChecks(t *testing.T) {
 				serialCalled = true
 				return ports, nil
 			}
-			doctorCheckCompanionHealthFn = func() error { return nil }
+			doctorCheckCompanionHealthFn = func(string) error { return nil }
 			doctorReadWiFiCapabilitiesFn = func(string) (protocol.DeviceCapabilities, error) {
 				return protocol.DeviceCapabilities{
 					Known:                     true,
@@ -238,7 +251,7 @@ func TestDoctorWiFiSkipsSerialChecks(t *testing.T) {
 
 func TestDoctorWiFiRejectsUnknownCapabilities(t *testing.T) {
 	restoreDoctorTestDeps(t)
-	doctorCheckCompanionHealthFn = func() error { return nil }
+	doctorCheckCompanionHealthFn = func(string) error { return nil }
 	doctorReadWiFiCapabilitiesFn = func(string) (protocol.DeviceCapabilities, error) {
 		return protocol.UnknownDeviceCapabilities(), nil
 	}

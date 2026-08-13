@@ -902,6 +902,7 @@ func runDoctor() error {
 
 type doctorRuntimeConfig struct {
 	configured  bool
+	label       string
 	transport   string
 	target      string
 	probeTarget string
@@ -922,6 +923,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 			}
 			return doctorRuntimeConfig{
 				configured:  true,
+				label:       label,
 				transport:   "wifi",
 				target:      cfg.DeviceTarget,
 				probeTarget: doctorWiFiProbeTarget(cfg.DeviceTarget, cfg),
@@ -958,6 +960,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 	}
 	return doctorRuntimeConfig{
 		configured:  true,
+		label:       "com.codexbar-display.daemon",
 		transport:   transportName,
 		target:      target,
 		probeTarget: probeTarget,
@@ -1116,7 +1119,7 @@ func runDoctorWiFiRuntimeChecks(config doctorRuntimeConfig) error {
 		return errors.New("runtime WiFi target unavailable: connect VibeTV in Control Center")
 	}
 	fmt.Printf("  WiFi device target: %s\n", doctorPublicWiFiTarget(target))
-	if err := doctorCheckCompanionHealthFn(); err != nil {
+	if err := doctorCheckCompanionHealthFn(config.label); err != nil {
 		fmt.Printf("  Companion health: failed (%v)\n", err)
 		return fmt.Errorf("runtime Companion health failed: %w", err)
 	}
@@ -1180,7 +1183,7 @@ func reportDoctorCapabilities(label string, caps protocol.DeviceCapabilities) er
 	return nil
 }
 
-func checkDoctorCompanionHealth() error {
+func checkDoctorCompanionHealth(expectedOwner string) error {
 	defaultOrigin := "http://" + companionapi.DefaultAddr
 	origins := []string{defaultOrigin}
 	if home, err := os.UserHomeDir(); err == nil {
@@ -1193,10 +1196,10 @@ func checkDoctorCompanionHealth() error {
 			}
 		}
 	}
-	return checkDoctorCompanionHealthOrigins(origins)
+	return checkDoctorCompanionHealthOrigins(origins, expectedOwner)
 }
 
-func checkDoctorCompanionHealthOrigins(origins []string) error {
+func checkDoctorCompanionHealthOrigins(origins []string, expectedOwner string) error {
 	client := &http.Client{Timeout: 3 * time.Second}
 	var lastErr error
 	for _, origin := range origins {
@@ -1208,6 +1211,11 @@ func checkDoctorCompanionHealthOrigins(origins []string) error {
 		var result struct {
 			OK            bool  `json:"ok"`
 			DisplayWriter *bool `json:"displayWriter"`
+			Companion     struct {
+				Runtime struct {
+					ListenerOwner string `json:"listenerOwner"`
+				} `json:"runtime"`
+			} `json:"companion"`
 		}
 		decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&result)
 		_ = response.Body.Close()
@@ -1225,6 +1233,11 @@ func checkDoctorCompanionHealthOrigins(origins []string) error {
 		}
 		if result.DisplayWriter != nil && !*result.DisplayWriter {
 			lastErr = errors.New("runtime health reported no display writer")
+			continue
+		}
+		owner := strings.TrimSpace(result.Companion.Runtime.ListenerOwner)
+		if owner != "" && expectedOwner != "" && owner != expectedOwner {
+			lastErr = fmt.Errorf("runtime health belongs to %q, expected %q", owner, expectedOwner)
 			continue
 		}
 		return nil
