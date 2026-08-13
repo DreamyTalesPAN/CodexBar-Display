@@ -942,7 +942,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		if err != nil {
 			return doctorRuntimeConfig{}, err
 		}
-		target = cfg.DeviceTarget
+		target = doctorWiFiTarget(cfg.DeviceTarget, parseLaunchAgentArgument(plist, "--target"))
 	}
 	return doctorRuntimeConfig{
 		configured: true,
@@ -950,6 +950,13 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		target:     target,
 		port:       parseLaunchAgentArgument(plist, "--port"),
 	}, nil
+}
+
+func doctorWiFiTarget(configTarget, plistTarget string) string {
+	if target := strings.TrimSpace(configTarget); target != "" {
+		return target
+	}
+	return strings.TrimSpace(plistTarget)
 }
 
 func doctorLaunchAgentLoaded(label string) bool {
@@ -1106,37 +1113,50 @@ func reportDoctorCapabilities(label string, caps protocol.DeviceCapabilities) er
 }
 
 func checkDoctorCompanionHealth() error {
-	origin := "http://" + companionapi.DefaultAddr
+	defaultOrigin := "http://" + companionapi.DefaultAddr
+	origins := []string{defaultOrigin}
 	if home, err := os.UserHomeDir(); err == nil {
 		if data, err := os.ReadFile(runtimeEndpointPath(home)); err == nil {
 			var endpoint runtimeEndpoint
 			if json.Unmarshal(data, &endpoint) == nil {
-				if published := strings.TrimSpace(endpoint.Origin); published != "" {
-					origin = published
+				if published := strings.TrimSpace(endpoint.Origin); published != "" && published != defaultOrigin {
+					origins = append([]string{published}, origins...)
 				}
 			}
 		}
 	}
+	return checkDoctorCompanionHealthOrigins(origins)
+}
 
+func checkDoctorCompanionHealthOrigins(origins []string) error {
 	client := &http.Client{Timeout: 3 * time.Second}
-	response, err := client.Get(strings.TrimRight(origin, "/") + "/v1/runtime-health")
-	if err != nil {
-		return err
+	var lastErr error
+	for _, origin := range origins {
+		response, err := client.Get(strings.TrimRight(origin, "/") + "/v1/runtime-health")
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		var result struct {
+			OK bool `json:"ok"`
+		}
+		decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&result)
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("HTTP %d", response.StatusCode)
+			continue
+		}
+		if decodeErr != nil {
+			lastErr = decodeErr
+			continue
+		}
+		if !result.OK {
+			lastErr = errors.New("runtime health reported not ok")
+			continue
+		}
+		return nil
 	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d", response.StatusCode)
-	}
-	var result struct {
-		OK bool `json:"ok"`
-	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&result); err != nil {
-		return err
-	}
-	if !result.OK {
-		return errors.New("runtime health reported not ok")
-	}
-	return nil
+	return lastErr
 }
 
 func runSetup(args []string) error {

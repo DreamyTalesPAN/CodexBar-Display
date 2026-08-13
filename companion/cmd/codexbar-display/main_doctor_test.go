@@ -2,6 +2,9 @@ package main
 
 import (
 	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -38,6 +41,37 @@ func TestParseLaunchAgentArgument(t *testing.T) {
 	}
 	if got := parseLaunchAgentArgument(plist, "--target"); got != "http://192.0.2.10" {
 		t.Fatalf("expected WiFi target, got %q", got)
+	}
+}
+
+func TestDoctorWiFiTargetFallsBackToLegacyPlist(t *testing.T) {
+	if got := doctorWiFiTarget("", "http://192.0.2.10"); got != "http://192.0.2.10" {
+		t.Fatalf("expected legacy plist target, got %q", got)
+	}
+	if got := doctorWiFiTarget("http://192.0.2.20", "http://192.0.2.10"); got != "http://192.0.2.20" {
+		t.Fatalf("expected runtime config target to win, got %q", got)
+	}
+}
+
+func TestDoctorCompanionHealthFallsBackFromStalePublishedEndpoint(t *testing.T) {
+	deadListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadOrigin := "http://" + deadListener.Addr().String()
+	_ = deadListener.Close()
+
+	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/runtime-health" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer healthy.Close()
+
+	if err := checkDoctorCompanionHealthOrigins([]string{deadOrigin, healthy.URL}); err != nil {
+		t.Fatalf("expected default endpoint fallback to pass: %v", err)
 	}
 }
 
