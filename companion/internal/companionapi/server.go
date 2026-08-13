@@ -143,6 +143,10 @@ var displayStreamLogKeys = []string{
 	"label",
 	"session",
 	"weekly",
+	"sessionTokens",
+	"weekTokens",
+	"totalTokens",
+	"tokenTotalsKnown",
 	"usageUnavailable",
 	"sessionUnavailable",
 	"weeklyUnavailable",
@@ -7896,6 +7900,16 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
 		frame.ResetSec = reset
 	}
+	if sessionTokens, ok := int64FieldFromDisplayStreamLog(line, "sessionTokens"); ok {
+		frame.SessionTokens = sessionTokens
+	}
+	if weekTokens, ok := int64FieldFromDisplayStreamLog(line, "weekTokens"); ok {
+		frame.WeekTokens = weekTokens
+	}
+	if totalTokens, ok := int64FieldFromDisplayStreamLog(line, "totalTokens"); ok {
+		frame.TotalTokens = totalTokens
+	}
+	frame.TokenTotalsKnown = boolFieldFromDisplayStreamLog(line, "tokenTotalsKnown")
 	if encodedWindows := displayStreamLogValue(line, "usageWindows"); encodedWindows != "" && encodedWindows != "-" {
 		if rawWindows, err := url.QueryUnescape(encodedWindows); err == nil {
 			_ = json.Unmarshal([]byte(rawWindows), &frame.UsageWindows)

@@ -571,7 +571,8 @@ inline bool FrameTokenStatsVisualChanged(const Frame& previous, const Frame& nex
   if (!next.hasThemeSpec || !ThemeSpecUsesTokenFields(raw)) {
     return false;
   }
-  return previous.sessionTokens != next.sessionTokens ||
+  return previous.hasTokenTotals != next.hasTokenTotals ||
+         previous.sessionTokens != next.sessionTokens ||
          previous.weekTokens != next.weekTokens ||
          previous.totalTokens != next.totalTokens;
 #else
@@ -744,13 +745,14 @@ inline uint32_t ThemeSpecLiveChangedFields(const Frame& previous, const Frame& n
   if (previous.activity != next.activity) {
     fields |= themespec::kThemeSpecFieldActivity;
   }
-  if (previous.sessionTokens != next.sessionTokens) {
+  const bool tokenAvailabilityChanged = previous.hasTokenTotals != next.hasTokenTotals;
+  if (tokenAvailabilityChanged || previous.sessionTokens != next.sessionTokens) {
     fields |= themespec::kThemeSpecFieldSessionTokens;
   }
-  if (previous.weekTokens != next.weekTokens) {
+  if (tokenAvailabilityChanged || previous.weekTokens != next.weekTokens) {
     fields |= themespec::kThemeSpecFieldWeekTokens;
   }
-  if (previous.totalTokens != next.totalTokens) {
+  if (tokenAvailabilityChanged || previous.totalTokens != next.totalTokens) {
     fields |= themespec::kThemeSpecFieldTotalTokens;
   }
   return fields;
@@ -1133,6 +1135,7 @@ inline bool FrameVisualChangedWithThemeSpecRaw(const Frame& previous, const Fram
                                      previous.usageUnavailable != next.usageUnavailable ||
                                      previous.sessionUnavailable != next.sessionUnavailable ||
                                      previous.weeklyUnavailable != next.weeklyUnavailable ||
+                                     previous.hasTokenTotals != next.hasTokenTotals ||
                                      previous.sessionTokens != next.sessionTokens ||
                                      previous.weekTokens != next.weekTokens ||
                                      previous.totalTokens != next.totalTokens ||

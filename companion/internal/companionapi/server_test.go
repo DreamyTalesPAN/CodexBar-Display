@@ -2760,7 +2760,7 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	usageSlots := url.QueryEscape(`[{"id":"secondary","label":"Weekly","percent":75,"resetSecs":490812},{"id":"codex-spark-weekly","label":"Codex Spark Weekly","percent":0,"resetSecs":604794}]`)
 	if err := os.WriteFile(
 		logPath,
-		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=0 weekly=58 sessionUnavailable=true weeklyUnavailable=false reset=2733s usageSlots=`+usageSlots+` activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
+		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=0 weekly=58 sessionTokens=1400000 weekTokens=384000000 totalTokens=1070000000 tokenTotalsKnown=true sessionUnavailable=true weeklyUnavailable=false reset=2733s usageSlots=`+usageSlots+` activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
 		0o644,
 	); err != nil {
 		t.Fatalf("write display stream log: %v", err)
@@ -2805,6 +2805,10 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	}
 	if got.Frame.UsageMode != "remaining" || got.Frame.Activity != "coding" {
 		t.Fatalf("unexpected sent frame state: %+v", got.Frame)
+	}
+	if got.Frame.SessionTokens != 1400000 || got.Frame.WeekTokens != 384000000 ||
+		got.Frame.TotalTokens != 1070000000 || !got.Frame.TokenTotalsKnown {
+		t.Fatalf("expected token totals from the sent-frame log, got %+v", got.Frame)
 	}
 	if len(got.Frame.UsageWindows) != 2 ||
 		got.Frame.UsageWindows[0].Label != "Weekly" ||

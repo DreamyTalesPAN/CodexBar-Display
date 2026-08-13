@@ -5,6 +5,21 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-13 — Collapsed sidebar click opens Appearance directly
+
+- User approval: Continuation of the standing instruction to fix CI and the
+  Codex review loop until both pass.
+- Approved customer-visible result: In the icon-collapsed desktop sidebar,
+  clicking the Appearance icon opens the Appearance tab in its current
+  section instead of toggling an invisible submenu. The expanded sidebar
+  keeps its existing collapsible Themes/Screensavers submenu. Token totals
+  now also reach the Overview preview through the sent-frame snapshot, and
+  an availability change repaints token bindings on the device; visible
+  values stay the same otherwise.
+- Approved files: `control-center-shell.tsx`, the Companion sent-frame log
+  and snapshot parser with their tests, the firmware repaint detection with
+  its native test, and this approval record.
+
 ## 2026-08-11 — Screensaver toggle first, everything else follows it
 
 - User approval: During the candidate test on the connected VibeTV the user

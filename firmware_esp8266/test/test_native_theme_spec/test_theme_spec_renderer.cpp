@@ -468,6 +468,19 @@ void testConsumeFrameLineTracksTokenTotalPresence() {
   TEST_ASSERT_TRUE(state.current.hasTokenTotals);
 }
 
+void testTokenAvailabilityFlipRepaintsTokenBindings() {
+  // Only hasTokenTotals changes between these frames: the totals stay zero.
+  codexbar_display::core::Frame previous;
+  codexbar_display::core::Frame next;
+  next.hasThemeSpec = true;
+  next.hasTokenTotals = true;
+  const String raw(R"JSON({"p":[{"t":"tx","b":"st"}]})JSON");
+  TEST_ASSERT_TRUE(
+      codexbar_display::core::FrameTokenStatsVisualChanged(previous, next, raw));
+  TEST_ASSERT_FALSE(codexbar_display::core::FrameTokenStatsVisualChanged(
+      previous, previous, raw));
+}
+
 void testUsageUnavailableKeepsThemeAndProgress() {
   const char* spec = R"JSON({"v":1,"id":"usage-unavailable","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"l"},{"t":"tx","x":0,"y":20,"b":"s"},{"t":"tx","x":0,"y":40,"v":"{weekly}% left"},{"t":"tx","x":0,"y":60,"v":"Reset in {reset}"},{"t":"p","x":0,"y":80,"w":100,"h":8,"b":"s"}]})JSON";
 
@@ -2611,6 +2624,7 @@ int main() {
   RUN_TEST(testRendersCommandsAndBindings);
   RUN_TEST(testAbsentTokenTotalsRenderUnavailable);
   RUN_TEST(testConsumeFrameLineTracksTokenTotalPresence);
+  RUN_TEST(testTokenAvailabilityFlipRepaintsTokenBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testUsageWindowOwnershipHidesCompleteMissingLane);
   RUN_TEST(testIndexedProgressHidesMissingWindow);

@@ -282,7 +282,11 @@ function ShellNavButton({
   notify?: boolean;
   onClick: () => void;
 }) {
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setOpenMobile, state } = useSidebar();
+  // In the icon-collapsed sidebar the Appearance submenu is hidden, so the
+  // collapsed click must navigate directly instead of toggling an invisible
+  // Collapsible.
+  const collapsedToIcons = !isMobile && state === "collapsed";
 
   const button = (
     <SidebarMenuButton
@@ -291,7 +295,7 @@ function ShellNavButton({
       disabled={disabled}
       isActive={active}
       onClick={() => {
-        if (!collapsible) {
+        if (!collapsible || collapsedToIcons) {
           onClick();
         }
         if (isMobile && !collapsible) {
