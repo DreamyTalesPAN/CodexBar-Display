@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "../../src/screensaver_preview.h"
 #include "../../src/standby_state.h"
 
 namespace {
@@ -156,6 +157,71 @@ void test_the_timer_survives_the_millis_wraparound() {
   ASSERT_TRANSITION(Transition::Enter, tickReady(state, settings, 8 * kMinute));
 }
 
+namespace preview = codexbar_display::esp8266::screensaver_preview;
+
+#define ASSERT_PREVIEW_ACTION(expected, actual) \
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(expected), static_cast<int>(actual))
+
+void test_a_selection_shows_once_and_restores_after_the_window() {
+  preview::State state;
+  preview::NoteSelection(state);
+  ASSERT_PREVIEW_ACTION(preview::Action::Show, preview::Tick(state, false, false, 1000));
+  ASSERT_PREVIEW_ACTION(preview::Action::None,
+                        preview::Tick(state, false, false, 1000 + preview::kPreviewDurationMs - 1));
+  ASSERT_PREVIEW_ACTION(preview::Action::Restore,
+                        preview::Tick(state, false, false, 1000 + preview::kPreviewDurationMs));
+  ASSERT_PREVIEW_ACTION(preview::Action::None,
+                        preview::Tick(state, false, false, 1000 + 2 * preview::kPreviewDurationMs));
+}
+
+void test_a_blocked_screen_ends_the_preview() {
+  // A pending preview that never showed just disarms.
+  preview::State pendingState;
+  preview::NoteSelection(pendingState);
+  ASSERT_PREVIEW_ACTION(preview::Action::None, preview::Tick(pendingState, true, false, 1000));
+  ASSERT_PREVIEW_ACTION(preview::Action::None, preview::Tick(pendingState, false, false, 2000));
+
+  // Standby taking over mid-preview owns the screen and its own restore.
+  preview::State standbyState;
+  preview::NoteSelection(standbyState);
+  ASSERT_PREVIEW_ACTION(preview::Action::Show, preview::Tick(standbyState, false, false, 1000));
+  ASSERT_PREVIEW_ACTION(preview::Action::None, preview::Tick(standbyState, true, true, 2000));
+  ASSERT_PREVIEW_ACTION(preview::Action::None,
+                        preview::Tick(standbyState, false, false, 1000 + preview::kPreviewDurationMs));
+
+  // Any other blocker (error frame, status surface) has no way back to the
+  // live theme, so a showing preview must hand the screen back immediately.
+  preview::State errorState;
+  preview::NoteSelection(errorState);
+  ASSERT_PREVIEW_ACTION(preview::Action::Show, preview::Tick(errorState, false, false, 1000));
+  ASSERT_PREVIEW_ACTION(preview::Action::Restore, preview::Tick(errorState, true, false, 2000));
+  ASSERT_PREVIEW_ACTION(preview::Action::None,
+                        preview::Tick(errorState, false, false, 1000 + preview::kPreviewDurationMs));
+}
+
+void test_reselecting_during_a_preview_restarts_the_window() {
+  preview::State state;
+  preview::NoteSelection(state);
+  ASSERT_PREVIEW_ACTION(preview::Action::Show, preview::Tick(state, false, false, 1000));
+  preview::NoteSelection(state);
+  ASSERT_PREVIEW_ACTION(preview::Action::Show, preview::Tick(state, false, false, 5000));
+  ASSERT_PREVIEW_ACTION(preview::Action::None,
+                        preview::Tick(state, false, false, 1000 + preview::kPreviewDurationMs));
+  ASSERT_PREVIEW_ACTION(preview::Action::Restore,
+                        preview::Tick(state, false, false, 5000 + preview::kPreviewDurationMs));
+}
+
+void test_the_preview_window_survives_the_millis_wraparound() {
+  preview::State state;
+  preview::NoteSelection(state);
+  const unsigned long beforeWrap = 0UL - (preview::kPreviewDurationMs / 2);
+  ASSERT_PREVIEW_ACTION(preview::Action::Show, preview::Tick(state, false, false, beforeWrap));
+  ASSERT_PREVIEW_ACTION(preview::Action::None,
+                        preview::Tick(state, false, false, beforeWrap + preview::kPreviewDurationMs - 1));
+  ASSERT_PREVIEW_ACTION(preview::Action::Restore,
+                        preview::Tick(state, false, false, beforeWrap + preview::kPreviewDurationMs));
+}
+
 }  // namespace
 
 int main(int, char**) {
@@ -171,5 +237,9 @@ int main(int, char**) {
   RUN_TEST(test_a_device_that_is_not_ready_stays_out_of_standby);
   RUN_TEST(test_repeated_cycles_report_one_transition_each);
   RUN_TEST(test_the_timer_survives_the_millis_wraparound);
+  RUN_TEST(test_a_selection_shows_once_and_restores_after_the_window);
+  RUN_TEST(test_a_blocked_screen_ends_the_preview);
+  RUN_TEST(test_reselecting_during_a_preview_restarts_the_window);
+  RUN_TEST(test_the_preview_window_survives_the_millis_wraparound);
   return UNITY_END();
 }

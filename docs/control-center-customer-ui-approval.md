@@ -1168,3 +1168,34 @@ issue scope, or release permission never implies UI permission.
   version at the same time stays exactly as approved on 2026-08-08.
 - Approved files: `updates-screen.tsx`, `updates-screen.test.tsx`, and this
   approval record.
+
+## 2026-08-13 — Provider resets, install preview, and theme list polish
+
+- User approval: Given live in the 2026-08-13 bench session while driving the
+  PR #296 candidate on real hardware: "hier sollen nicht die usage windows
+  stehen sondern die provider und ihr jeweiliger nächster reset across all
+  usage windows" (Night Clock), "jo bau das hier noch direkt" (the ten-second
+  post-install screensaver preview), "das löschen." (screensaver-off hint),
+  "den kleinen previews hier border radius geben", "entferne das hier
+  überall … soll es stattdessen irgendwo ne pille bekommen" (PUBLISHED
+  label), "oben vibetv weg … session, 7d und all time größer" and "nein, das
+  muss natürlich alles gleich groß sein" (Token Fire totals), plus the
+  request that the Appearance sub-entries hover across the full row.
+- Approved customer-visible result: Night Clock lists each provider with its
+  soonest usage reset and hides rows for providers without live data; themes
+  that require the new provider-slots capability show the existing firmware
+  update and not-supported blockers on older VibeTVs. After every screensaver
+  install the VibeTV shows the chosen screensaver once for ten seconds and
+  then returns to the live theme — never while the screensaver toggle is off.
+  Token totals render compactly (1.4M, 384M, 1.07B) at one shared size on the
+  device and in every preview. Theme lists drop the "PUBLISHED" status line
+  and custom themes carry a "Custom" badge instead; the screensaver-off hint
+  loses its second sentence; small theme previews gain rounded corners; the
+  Appearance sub-entries hover and click across the full sidebar row. The
+  Theme Studio offers the provider variables, bindings, and "Provider N has
+  data" visibility for custom themes.
+- Approved files: `control-center-shell.tsx`, `control-center-types.ts`,
+  `live-vibetv-preview.tsx`, `live-vibetv-preview.test.ts`,
+  `theme-library-screen.tsx`, `theme-studio/primitive-inspector.tsx`,
+  `lib/theme-studio.ts`, `lib/theme-studio-capabilities.ts`, and this
+  approval record.

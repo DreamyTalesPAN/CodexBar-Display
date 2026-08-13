@@ -78,7 +78,7 @@ describe("dynamic usage slot preview", () => {
     });
     expect(withTokens.hasTokenTotals).toBe(true);
     expect(renderTextPrimitive({ t: "tx", b: "st" }, withTokens)).toBe(
-      "1400000",
+      "1.4M",
     );
 
     const zeroTotalsKnown = buildFrameData("2026-08-11T09:00:00Z", {
@@ -620,5 +620,34 @@ describe("live VibeTV partial usage", () => {
     expect(boundValue("weekly", frame)).toBe("60");
     expect(progressPercent({ binding: "session" }, frame)).toBe(0);
     expect(progressPercent({ binding: "weekly" }, frame)).toBe(60);
+  });
+
+  it("renders cross-provider slots with per-provider resets and gates their rows", () => {
+    const frame = buildFrameData("2026-07-24T12:00:00Z", {
+      v: 2,
+      provider: "claude",
+      label: "Claude",
+      providerSlots: [
+        { id: "claude", label: "Claude", percent: 40, resetSecs: 3600 },
+        { id: "codex", label: "Codex", percent: 4, resetSecs: 12000 },
+      ],
+    }, new Date("2026-07-24T12:00:00Z"));
+
+    expect(boundValue("providerSlot1Label", frame)).toBe("Claude");
+    expect(boundValue("pv1r", frame)).toBe(boundValue("providerSlot1Reset", frame));
+    expect(boundValue("providerSlot2Label", frame)).toBe("Codex");
+    expect(primitiveUsageSlotVisible({ providerSlot: 1 }, frame)).toBe(true);
+    expect(primitiveUsageSlotVisible({ pl: 2 }, frame)).toBe(true);
+
+    const singleProvider = buildFrameData("2026-07-24T12:00:00Z", {
+      v: 2,
+      provider: "claude",
+      label: "Claude",
+      providerSlots: [
+        { id: "claude", label: "Claude", percent: 40, resetSecs: 3600 },
+      ],
+    });
+    expect(primitiveUsageSlotVisible({ providerSlot: 2 }, singleProvider)).toBe(false);
+    expect(boundValue("providerSlot2Label", singleProvider)).toBe("");
   });
 });

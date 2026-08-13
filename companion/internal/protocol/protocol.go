@@ -15,6 +15,9 @@ const (
 	DefaultUsageWindowIDBytes    = 32
 	DefaultProviderBytes         = DefaultUsageWindowIDBytes
 	DefaultProviderLabelBytes    = DefaultUsageWindowLabelBytes
+	// MaxProviderSlots caps the cross-provider reset rows on the wire; the
+	// firmware parser sizes its array and frame-budget asserts against it.
+	MaxProviderSlots = 2
 )
 
 const (
@@ -81,6 +84,11 @@ type Frame struct {
 	UsageMode             string          `json:"usageMode,omitempty"`
 	UsageWindows          []UsageWindow   `json:"usageWindows,omitempty"`
 	UsageSlots            []UsageSlot     `json:"usageSlots,omitempty"`
+	// ProviderSlots lists every configured provider with its soonest usage
+	// reset across that provider's windows. Unlike UsageWindows, which carry
+	// the currently displayed provider, these rows span all providers so a
+	// theme can render "Claude 1h / Codex 3h" style overviews.
+	ProviderSlots         []UsageSlot     `json:"providerSlots,omitempty"`
 	Time                  string          `json:"time,omitempty"`
 	Date                  string          `json:"date,omitempty"`
 	NextClockTransition   *ClockSchedule  `json:"clockSchedule,omitempty"`
@@ -138,6 +146,15 @@ func (f Frame) Normalize() Frame {
 	} else {
 		f.UsageSlots = legacyUsageSlots(f.UsageWindows)
 		f.UsageWindows = nil
+	}
+	f.ProviderSlots = normalizeUsageWindows(f.ProviderSlots)
+	if len(f.ProviderSlots) > MaxProviderSlots {
+		f.ProviderSlots = f.ProviderSlots[:MaxProviderSlots]
+	}
+	if protocolVersion < ProtocolVersionV2 {
+		// v1 firmware predates provider slots and would treat the extra array
+		// as frame noise; the projection above already owns that wire shape.
+		f.ProviderSlots = nil
 	}
 	if f.SessionTokens < 0 {
 		f.SessionTokens = 0
@@ -291,6 +308,9 @@ func clearResetCountdowns(f *Frame) {
 	for i := range f.UsageSlots {
 		f.UsageSlots[i].ResetSec = 0
 	}
+	for i := range f.ProviderSlots {
+		f.ProviderSlots[i].ResetSec = 0
+	}
 }
 
 func hasResetCountdown(f Frame) bool {
@@ -303,6 +323,11 @@ func hasResetCountdown(f Frame) bool {
 		}
 	}
 	for _, slot := range f.UsageSlots {
+		if slot.ResetSec > 0 {
+			return true
+		}
+	}
+	for _, slot := range f.ProviderSlots {
 		if slot.ResetSec > 0 {
 			return true
 		}
@@ -395,6 +420,9 @@ func (f Frame) ApplyResetTrust(collectedAt time.Time, sendAt time.Time, sourceLi
 	}
 	for i := range f.UsageSlots {
 		f.UsageSlots[i].ResetSec = reanchorResetSec(f.UsageSlots[i].ResetSec, age)
+	}
+	for i := range f.ProviderSlots {
+		f.ProviderSlots[i].ResetSec = reanchorResetSec(f.ProviderSlots[i].ResetSec, age)
 	}
 	if f.ResetSource == "" {
 		f.ResetSource = ResetSourceKey(f.Provider, "")

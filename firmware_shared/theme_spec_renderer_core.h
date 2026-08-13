@@ -28,6 +28,8 @@ constexpr size_t kMaxThemeSpecUsageWindows = usage_window_contract::kMaxWindows;
 constexpr uint32_t kThemeSpecFieldUsageWindows = 1UL << 12;
 constexpr uint32_t kThemeSpecFieldUsageSlot1 = kThemeSpecFieldUsageWindows;
 constexpr uint32_t kThemeSpecFieldUsageSlot2 = kThemeSpecFieldUsageWindows;
+constexpr uint32_t kThemeSpecFieldProviderSlots = 1UL << 13;
+constexpr size_t kMaxThemeSpecProviderSlots = 2;
 constexpr int kThemeSpecCanvasSize = 240;
 constexpr size_t kMaxThemeSpecGifAssets = 1;
 constexpr size_t kMaxThemeSpecGifAssetBytes = 24 * 1024;
@@ -71,6 +73,9 @@ struct FrameData {
   int usageSlot2Percent = 0;
   int64_t usageSlot2ResetSecs = 0;
   bool usageSlot2Available = false;
+  // Cross-provider reset rows: every configured provider with its soonest
+  // window reset, independent of which provider owns this frame.
+  UsageWindowData providerSlots[kMaxThemeSpecProviderSlots];
   bool sessionUnavailable = false;
   bool weeklyUnavailable = false;
   const char* usageMode = "";
@@ -169,6 +174,7 @@ struct CompiledPrimitive {
   PrimitiveKind kind = PrimitiveKind::Unknown;
   uint32_t liveFields = 0;
   uint8_t usageSlot = 0;
+  uint8_t providerSlot = 0;
   int x = 0;
   int y = 0;
   int width = 0;
@@ -536,6 +542,17 @@ inline int UsageWindowBindingIndex(const char* key) {
   return -1;
 }
 
+inline int ProviderSlotBindingIndex(const char* key) {
+  key = SafeText(key);
+  if (std::strncmp(key, "providerSlot", 12) == 0 && key[12] >= '1' && key[12] <= '2') {
+    return key[12] - '1';
+  }
+  if (std::strncmp(key, "pv", 2) == 0 && key[2] >= '1' && key[2] <= '2') {
+    return key[2] - '1';
+  }
+  return -1;
+}
+
 inline const char* UsageWindowField(const char* key) {
   key = SafeText(key);
   if (std::strncmp(key, "usage.", 6) == 0) {
@@ -613,6 +630,49 @@ inline bool UsageWindowOwnerAvailableFor(const FrameData& frame, int index) {
   return LegacyUsageSlotAvailableFor(frame, index);
 }
 
+// Token totals render compactly (1.4M, 384M, 1.07B) so every row of a token
+// theme fits its lane at the same font size. Pure integer math: the Mac
+// preview mirrors this digit for digit, so both sides must truncate — never
+// round — the hundredths.
+inline void FormatTokenCount(int64_t value, char* out, size_t outSize) {
+  if (out == nullptr || outSize == 0) {
+    return;
+  }
+  if (value < 0) {
+    value = 0;
+  }
+  if (value < 1000) {
+    std::snprintf(out, outSize, "%lld", static_cast<long long>(value));
+    return;
+  }
+  const char* unit = "K";
+  int64_t divisor = 1000;
+  if (value >= 1000000000) {
+    unit = "B";
+    divisor = 1000000000;
+  } else if (value >= 1000000) {
+    unit = "M";
+    divisor = 1000000;
+  }
+  const int64_t hundredths = value * 100 / divisor;
+  const long long whole = static_cast<long long>(hundredths / 100);
+  // Three significant digits keep every value at most five glyphs wide, so
+  // stacked token rows share one font size instead of shrinking per row.
+  int frac = static_cast<int>(hundredths % 100);
+  if (whole >= 100) {
+    frac = 0;
+  } else if (whole >= 10) {
+    frac -= frac % 10;
+  }
+  if (frac == 0) {
+    std::snprintf(out, outSize, "%lld%s", whole, unit);
+  } else if (frac % 10 == 0) {
+    std::snprintf(out, outSize, "%lld.%d%s", whole, frac / 10, unit);
+  } else {
+    std::snprintf(out, outSize, "%lld.%02d%s", whole, frac, unit);
+  }
+}
+
 inline void BoundValue(const char* key, const FrameData& frame, char* out, size_t outSize) {
   if (out == nullptr || outSize == 0) {
     return;
@@ -649,6 +709,32 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
       std::snprintf(out, outSize, "Reset unavailable");
     } else {
       FormatDuration(frame.resetSecs, out, outSize);
+    }
+    return;
+  }
+
+  const int providerSlotIndex = ProviderSlotBindingIndex(key);
+  if (providerSlotIndex >= 0) {
+    const UsageWindowData& slot = frame.providerSlots[providerSlotIndex];
+    const bool available = slot.available;
+    const char* availableShort = providerSlotIndex == 0 ? "pv1a" : "pv2a";
+    const char* labelShort = providerSlotIndex == 0 ? "pv1l" : "pv2l";
+    const char* resetShort = providerSlotIndex == 0 ? "pv1r" : "pv2r";
+    const char* field = UsageWindowField(key);
+    if (std::strcmp(field, "available") == 0 || std::strcmp(key, availableShort) == 0) {
+      std::snprintf(out, outSize, "%s", available ? "true" : "false");
+    } else if (!available) {
+      out[0] = '\0';
+    } else if (std::strcmp(field, "label") == 0 || std::strcmp(key, labelShort) == 0) {
+      std::snprintf(out, outSize, "%s", SafeText(slot.label));
+    } else if (std::strcmp(field, "reset") == 0 || std::strcmp(key, resetShort) == 0) {
+      if (slot.resetSecs <= 0) {
+        std::snprintf(out, outSize, "Reset unavailable");
+      } else {
+        FormatDuration(slot.resetSecs, out, outSize);
+      }
+    } else {
+      std::snprintf(out, outSize, "%d", ClampPct(slot.percent));
     }
     return;
   }
@@ -699,7 +785,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     if (!frame.hasTokenTotals) {
       std::snprintf(out, outSize, "--");
     } else {
-      std::snprintf(out, outSize, "%lld", static_cast<long long>(frame.sessionTokens));
+      FormatTokenCount(frame.sessionTokens, out, outSize);
     }
     return;
   }
@@ -707,7 +793,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     if (!frame.hasTokenTotals) {
       std::snprintf(out, outSize, "--");
     } else {
-      std::snprintf(out, outSize, "%lld", static_cast<long long>(frame.weekTokens));
+      FormatTokenCount(frame.weekTokens, out, outSize);
     }
     return;
   }
@@ -715,7 +801,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     if (!frame.hasTokenTotals) {
       std::snprintf(out, outSize, "--");
     } else {
-      std::snprintf(out, outSize, "%lld", static_cast<long long>(frame.totalTokens));
+      FormatTokenCount(frame.totalTokens, out, outSize);
     }
     return;
   }
@@ -816,6 +902,9 @@ inline bool BindingUsesField(const char* binding, uint32_t fields) {
   if ((fields & kThemeSpecFieldReset) != 0 && StringEqualsAny(binding, "reset", "resetCountdown", "r")) {
     return true;
   }
+  if (ProviderSlotBindingIndex(binding) >= 0) {
+    return (fields & kThemeSpecFieldProviderSlots) != 0;
+  }
   const int slotIndex = UsageWindowBindingIndex(binding);
   if (slotIndex >= 0) {
     return (fields & kThemeSpecFieldUsageWindows) != 0;
@@ -848,6 +937,8 @@ inline bool TextTemplateUsesField(const char* raw, uint32_t fields) {
   return ((fields & kThemeSpecFieldUsageWindows) != 0 && std::strstr(SafeText(raw), "{usage.") != nullptr) ||
          ((fields & kThemeSpecFieldUsageWindows) != 0 && (TemplateUsesField(raw, "usageSlot1Label", "us1l") || TemplateUsesField(raw, "usageSlot1Percent", "us1p") || TemplateUsesField(raw, "usageSlot1Reset", "us1r") || TemplateUsesField(raw, "usageSlot1Available", "us1a"))) ||
          ((fields & kThemeSpecFieldUsageWindows) != 0 && (TemplateUsesField(raw, "usageSlot2Label", "us2l") || TemplateUsesField(raw, "usageSlot2Percent", "us2p") || TemplateUsesField(raw, "usageSlot2Reset", "us2r") || TemplateUsesField(raw, "usageSlot2Available", "us2a"))) ||
+         ((fields & kThemeSpecFieldProviderSlots) != 0 && (TemplateUsesField(raw, "providerSlot1Label", "pv1l") || TemplateUsesField(raw, "providerSlot1Percent", "pv1p") || TemplateUsesField(raw, "providerSlot1Reset", "pv1r") || TemplateUsesField(raw, "providerSlot1Available", "pv1a"))) ||
+         ((fields & kThemeSpecFieldProviderSlots) != 0 && (TemplateUsesField(raw, "providerSlot2Label", "pv2l") || TemplateUsesField(raw, "providerSlot2Percent", "pv2p") || TemplateUsesField(raw, "providerSlot2Reset", "pv2r") || TemplateUsesField(raw, "providerSlot2Available", "pv2a"))) ||
          ((fields & kThemeSpecFieldProvider) != 0 && TemplateUsesField(raw, "provider", "pr")) ||
          ((fields & kThemeSpecFieldLabel) != 0 && TemplateUsesField(raw, "label", "providerLabel", "l")) ||
          ((fields & kThemeSpecFieldSession) != 0 && TemplateUsesField(raw, "session", "sessionPercent", "s")) ||
@@ -878,6 +969,9 @@ inline uint32_t BindingFieldMask(const char* binding) {
   }
   if (StringEqualsAny(binding, "reset", "resetCountdown", "r")) {
     return kThemeSpecFieldReset;
+  }
+  if (ProviderSlotBindingIndex(binding) >= 0) {
+    return kThemeSpecFieldProviderSlots;
   }
   if (UsageWindowBindingIndex(binding) >= 0) {
     return kThemeSpecFieldUsageWindows;
@@ -1123,6 +1217,13 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
   }
   if (out.usageSlot > 0) {
     out.liveFields |= kThemeSpecFieldUsageWindows;
+  }
+  out.providerSlot = static_cast<uint8_t>(JsonIntFor(primitive, "providerSlot", "pl", 0));
+  if (out.providerSlot > kMaxThemeSpecProviderSlots) {
+    return false;
+  }
+  if (out.providerSlot > 0) {
+    out.liveFields |= kThemeSpecFieldProviderSlots;
   }
 
   if (PrimitiveTypeIs(primitive, "rect", "r")) {
@@ -1468,6 +1569,10 @@ inline bool CompiledPrimitiveBounds(
 inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const FrameData& frame, Sink& sink) {
   if (primitive.usageSlot > 0 &&
       !UsageWindowOwnerAvailableFor(frame, static_cast<int>(primitive.usageSlot - 1))) {
+    return false;
+  }
+  if (primitive.providerSlot > 0 &&
+      !frame.providerSlots[primitive.providerSlot - 1].available) {
     return false;
   }
   if (primitive.kind == PrimitiveKind::Rect) {

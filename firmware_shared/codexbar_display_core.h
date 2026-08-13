@@ -68,6 +68,13 @@ constexpr size_t kMaxUsageWindows = usage_window_contract::kMaxWindows;
 static_assert(
     kUsageWindowFrameOverheadWithProviderBytes + (kMaxUsageWindows * kUsageWindowWireBudgetWithCommaBytes) - 1 <= kFrameLineBufferBytes,
     "normal usage window parser capacity must fit max frame bytes");
+constexpr size_t kMaxProviderSlots = 2;
+constexpr size_t kProviderSlotsFrameOverheadBytes = sizeof(",\"providerSlots\":[]") - 1;
+static_assert(
+    kUsageWindowFrameOverheadWithProviderBytes + (kMaxUsageWindows * kUsageWindowWireBudgetWithCommaBytes) - 1 +
+            kProviderSlotsFrameOverheadBytes + (kMaxProviderSlots * kUsageWindowWireBudgetWithCommaBytes) - 1 <=
+        kFrameLineBufferBytes,
+    "provider slot parser capacity must fit max frame bytes");
 constexpr size_t kAdvertisedUsageWindowFrameOverheadBytes =
     kUsageWindowFrameOverheadBytes +
     kProviderEscapedWireBytes +
@@ -127,6 +134,7 @@ struct Frame {
   bool hasResetFields = false;
   bool usageUnavailable = false;
   UsageWindow usageWindows[kMaxUsageWindows];
+  UsageWindow providerSlots[kMaxProviderSlots];
   bool sessionUnavailable = false;
   bool weeklyUnavailable = false;
   int64_t sessionTokens = 0;
@@ -304,6 +312,22 @@ inline int64_t CurrentUsageWindowRemainingSecs(
   const unsigned long elapsedMillis = nowMillis - state.resetBaseMillis;
   const int64_t elapsedSecs = static_cast<int64_t>(elapsedMillis / 1000UL);
   const int64_t remain = state.current.usageWindows[slotIndex].resetSecs - elapsedSecs;
+  return remain < 0 ? 0 : remain;
+}
+
+inline int64_t CurrentProviderSlotRemainingSecs(
+    const RuntimeState& state,
+    size_t slotIndex,
+    unsigned long nowMillis) {
+  if (!state.hasFrame ||
+      CurrentResetTrust(state.reset, nowMillis) == ResetTrust::kStale ||
+      slotIndex >= kMaxProviderSlots ||
+      !state.current.providerSlots[slotIndex].available) {
+    return 0;
+  }
+  const unsigned long elapsedMillis = nowMillis - state.resetBaseMillis;
+  const int64_t elapsedSecs = static_cast<int64_t>(elapsedMillis / 1000UL);
+  const int64_t remain = state.current.providerSlots[slotIndex].resetSecs - elapsedSecs;
   return remain < 0 ? 0 : remain;
 }
 
@@ -641,6 +665,20 @@ inline bool ThemeSpecUsesUsageWindowBinding(const String& raw, size_t slotIndex)
          ThemeSpecRawHasJsonNumber(raw, "slot", static_cast<unsigned>(slotIndex + 1));
 }
 
+inline bool ThemeSpecUsesProviderSlotBinding(const String& raw, size_t slotIndex) {
+  char longName[20] = {0};
+  char compactPrefix[8] = {0};
+  char compactTemplate[8] = {0};
+  std::snprintf(longName, sizeof(longName), "providerSlot%u", static_cast<unsigned>(slotIndex + 1));
+  std::snprintf(compactPrefix, sizeof(compactPrefix), "\"pv%u", static_cast<unsigned>(slotIndex + 1));
+  std::snprintf(compactTemplate, sizeof(compactTemplate), "{pv%u", static_cast<unsigned>(slotIndex + 1));
+  return raw.indexOf(longName) >= 0 ||
+         raw.indexOf(compactPrefix) >= 0 ||
+         raw.indexOf(compactTemplate) >= 0 ||
+         ThemeSpecRawHasJsonNumber(raw, "pl", static_cast<unsigned>(slotIndex + 1)) ||
+         ThemeSpecRawHasJsonNumber(raw, "providerSlot", static_cast<unsigned>(slotIndex + 1));
+}
+
 inline bool ThemeSpecUsesUsageWindowResetBinding(const String& raw, size_t slotIndex) {
   char longName[24] = {0};
   char indexedName[24] = {0};
@@ -667,6 +705,16 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
   bool usesUsageWindows = false;
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
     usesUsageWindows = usesUsageWindows || ThemeSpecUsesUsageWindowBinding(raw, i);
+  }
+  bool providerSlotsChanged = false;
+  for (size_t i = 0; i < kMaxProviderSlots; ++i) {
+    if (ThemeSpecUsesProviderSlotBinding(raw, i) &&
+        UsageWindowChanged(previous.providerSlots[i], next.providerSlots[i])) {
+      providerSlotsChanged = true;
+    }
+  }
+  if (providerSlotsChanged) {
+    return true;
   }
   const bool usesUsage = ThemeSpecUsesBinding(raw, "session", "s") ||
                          ThemeSpecUsesBinding(raw, "weekly", "w") ||
@@ -723,6 +771,11 @@ inline uint32_t ThemeSpecLiveChangedFields(const Frame& previous, const Frame& n
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
     if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i])) {
       fields |= ThemeSpecUsageWindowField(i);
+    }
+  }
+  for (size_t i = 0; i < kMaxProviderSlots; ++i) {
+    if (UsageWindowChanged(previous.providerSlots[i], next.providerSlots[i])) {
+      fields |= themespec::kThemeSpecFieldProviderSlots;
     }
   }
   if (previous.usageUnavailable != next.usageUnavailable) {
@@ -1078,6 +1131,25 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
       out.usageWindows[slotIndex].resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(slot["resetSecs"] | static_cast<int64_t>(0)));
       out.usageWindows[slotIndex].available = true;
       ++slotIndex;
+    }
+  }
+  if (doc["providerSlots"].is<JsonArrayConst>()) {
+    int providerSlotIndex = 0;
+    for (JsonObjectConst slot : doc["providerSlots"].as<JsonArrayConst>()) {
+      if (providerSlotIndex >= static_cast<int>(kMaxProviderSlots)) {
+        break;
+      }
+      const char* slotLabel = slot["label"] | "";
+      const char* slotID = slot["id"] | "";
+      if (slotID[0] == '\0' || slotLabel[0] == '\0') {
+        continue;
+      }
+      out.providerSlots[providerSlotIndex].id = String(slotID);
+      out.providerSlots[providerSlotIndex].label = String(slotLabel);
+      out.providerSlots[providerSlotIndex].percent = ClampPct(slot["percent"] | 0);
+      out.providerSlots[providerSlotIndex].resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(slot["resetSecs"] | static_cast<int64_t>(0)));
+      out.providerSlots[providerSlotIndex].available = true;
+      ++providerSlotIndex;
     }
   }
   out.sessionUnavailable = doc["sessionUnavailable"] | false;

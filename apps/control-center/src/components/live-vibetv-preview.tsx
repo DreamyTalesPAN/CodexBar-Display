@@ -74,6 +74,7 @@ type DisplayFrame = {
   usageMode?: string;
   usageWindows?: UsageWindowFrame[];
   usageSlots?: UsageSlotFrame[];
+  providerSlots?: UsageSlotFrame[];
   activity?: string;
   sessionTokens?: number;
   weekTokens?: number;
@@ -105,6 +106,8 @@ export type ThemePrimitive = {
   h?: number;
   slot?: number;
   sl?: number;
+  providerSlot?: number;
+  pl?: number;
   usageIndex?: number;
   ui?: number;
   text?: string;
@@ -168,6 +171,12 @@ type FrameData = {
   usageSlot2Percent: number;
   usageSlot2ResetSecs: number;
   usageSlot2Available: boolean;
+  providerSlots: Array<{
+    label: string;
+    percent: number;
+    resetSecs: number;
+    available: boolean;
+  }>;
   activity: string;
   sessionTokens: number;
   weekTokens: number;
@@ -202,6 +211,10 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   usageSlot2Percent: 28,
   usageSlot2ResetSecs: 7200,
   usageSlot2Available: true,
+  providerSlots: [
+    { label: "Claude", percent: 64, resetSecs: 3600, available: true },
+    { label: "Codex", percent: 28, resetSecs: 12000, available: true },
+  ],
   activity: "preview",
   sessionTokens: 1_400_000,
   weekTokens: 384_000_000,
@@ -1197,6 +1210,14 @@ export function buildFrameData(
     usageSlot2Percent: clampPercent(slot2?.percent),
     usageSlot2ResetSecs: remainingResetSeconds(slot2?.resetSecs),
     usageSlot2Available: Boolean(slot2),
+    providerSlots: (displayFrame.providerSlots || [])
+      .filter((slot) => Boolean(slot.id?.trim() && slot.label?.trim()))
+      .map((slot) => ({
+        label: slot.label || "",
+        percent: clampPercent(slot.percent),
+        resetSecs: remainingResetSeconds(slot.resetSecs),
+        available: true,
+      })),
     activity: displayFrame.activity || "idle",
     sessionTokens: displayFrame.sessionTokens ?? 0,
     hasTokenTotals:
@@ -1231,6 +1252,10 @@ export function primitiveUsageSlotVisible(
   }
   if (slot === 2) {
     return frame.usageSlot2Available;
+  }
+  const providerSlot = primitive.providerSlot ?? primitive.pl;
+  if (providerSlot === 1 || providerSlot === 2) {
+    return frame.providerSlots[providerSlot - 1]?.available === true;
   }
   return true;
 }
@@ -1347,6 +1372,44 @@ export function renderTextPrimitive(
   );
 }
 
+// Mirrors the firmware's FormatTokenCount digit for digit (truncated
+// hundredths, never rounded) so catalog previews and the device agree.
+export function formatTokenCount(value: number): string {
+  if (!Number.isFinite(value) || value < 0) {
+    value = 0;
+  }
+  value = Math.floor(value);
+  if (value < 1000) {
+    return String(value);
+  }
+  let unit = "K";
+  let divisor = 1000;
+  if (value >= 1_000_000_000) {
+    unit = "B";
+    divisor = 1_000_000_000;
+  } else if (value >= 1_000_000) {
+    unit = "M";
+    divisor = 1_000_000;
+  }
+  const hundredths = Math.floor((value * 100) / divisor);
+  const whole = Math.floor(hundredths / 100);
+  // Three significant digits keep every value at most five glyphs wide, so
+  // stacked token rows share one font size instead of shrinking per row.
+  let frac = hundredths % 100;
+  if (whole >= 100) {
+    frac = 0;
+  } else if (whole >= 10) {
+    frac -= frac % 10;
+  }
+  if (frac === 0) {
+    return `${whole}${unit}`;
+  }
+  if (frac % 10 === 0) {
+    return `${whole}.${frac / 10}${unit}`;
+  }
+  return `${whole}.${String(frac).padStart(2, "0")}${unit}`;
+}
+
 export function boundValue(key: string, frame: FrameData): string {
   const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(
     key,
@@ -1416,6 +1479,38 @@ export function boundValue(key: string, frame: FrameData): string {
     case "usageSlot2Available":
     case "us2a":
       return String(frame.usageSlot2Available);
+    case "providerSlot1Label":
+    case "pv1l":
+      return frame.providerSlots[0]?.available ? frame.providerSlots[0].label : "";
+    case "providerSlot1Percent":
+    case "pv1p":
+      return frame.providerSlots[0]?.available
+        ? String(frame.providerSlots[0].percent)
+        : "";
+    case "providerSlot1Reset":
+    case "pv1r":
+      return frame.providerSlots[0]?.available
+        ? formatReset(frame.providerSlots[0].resetSecs)
+        : "";
+    case "providerSlot1Available":
+    case "pv1a":
+      return String(frame.providerSlots[0]?.available === true);
+    case "providerSlot2Label":
+    case "pv2l":
+      return frame.providerSlots[1]?.available ? frame.providerSlots[1].label : "";
+    case "providerSlot2Percent":
+    case "pv2p":
+      return frame.providerSlots[1]?.available
+        ? String(frame.providerSlots[1].percent)
+        : "";
+    case "providerSlot2Reset":
+    case "pv2r":
+      return frame.providerSlots[1]?.available
+        ? formatReset(frame.providerSlots[1].resetSecs)
+        : "";
+    case "providerSlot2Available":
+    case "pv2a":
+      return String(frame.providerSlots[1]?.available === true);
     case "usageMode":
     case "u":
       return frame.usageMode;
@@ -1430,13 +1525,13 @@ export function boundValue(key: string, frame: FrameData): string {
       return frame.date;
     case "sessionTokens":
     case "st":
-      return frame.hasTokenTotals ? String(frame.sessionTokens) : "--";
+      return frame.hasTokenTotals ? formatTokenCount(frame.sessionTokens) : "--";
     case "weekTokens":
     case "wt":
-      return frame.hasTokenTotals ? String(frame.weekTokens) : "--";
+      return frame.hasTokenTotals ? formatTokenCount(frame.weekTokens) : "--";
     case "totalTokens":
     case "tt":
-      return frame.hasTokenTotals ? String(frame.totalTokens) : "--";
+      return frame.hasTokenTotals ? formatTokenCount(frame.totalTokens) : "--";
     default:
       return "";
   }

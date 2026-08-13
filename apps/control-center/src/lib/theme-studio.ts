@@ -20,6 +20,14 @@ export type ThemeStudioBinding =
   | "usageSlot2Percent"
   | "usageSlot2Reset"
   | "usageSlot2Available"
+  | "providerSlot1Label"
+  | "providerSlot1Percent"
+  | "providerSlot1Reset"
+  | "providerSlot1Available"
+  | "providerSlot2Label"
+  | "providerSlot2Percent"
+  | "providerSlot2Reset"
+  | "providerSlot2Available"
   | "usageMode"
   | "activity"
   | "time"
@@ -36,6 +44,7 @@ export type ThemeStudioPrimitive = {
   width?: number;
   height?: number;
   slot?: 1 | 2;
+  providerSlot?: 1 | 2;
   usageIndex?: number;
   text?: string;
   binding?: ThemeStudioBinding;
@@ -225,6 +234,14 @@ const SHORT_BINDINGS: Record<string, ThemeStudioBinding> = {
   us2p: "usageSlot2Percent",
   us2r: "usageSlot2Reset",
   us2a: "usageSlot2Available",
+  pv1l: "providerSlot1Label",
+  pv1p: "providerSlot1Percent",
+  pv1r: "providerSlot1Reset",
+  pv1a: "providerSlot1Available",
+  pv2l: "providerSlot2Label",
+  pv2p: "providerSlot2Percent",
+  pv2r: "providerSlot2Reset",
+  pv2a: "providerSlot2Available",
   u: "usageMode",
   mode: "usageMode",
   act: "activity",
@@ -259,6 +276,14 @@ const COMPACT_BINDINGS: Record<string, string> = {
   usageSlot2Percent: "us2p",
   usageSlot2Reset: "us2r",
   usageSlot2Available: "us2a",
+  providerSlot1Label: "pv1l",
+  providerSlot1Percent: "pv1p",
+  providerSlot1Reset: "pv1r",
+  providerSlot1Available: "pv1a",
+  providerSlot2Label: "pv2l",
+  providerSlot2Percent: "pv2p",
+  providerSlot2Reset: "pv2r",
+  providerSlot2Available: "pv2a",
   usageMode: "u",
   activity: "act",
   time: "tm",
@@ -434,6 +459,10 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
     slot:
       primitive.slot === 1 || primitive.slot === 2
         ? primitive.slot
+        : undefined,
+    providerSlot:
+      primitive.providerSlot === 1 || primitive.providerSlot === 2
+        ? primitive.providerSlot
         : undefined,
     usageIndex:
       typeof primitive.usageIndex === "number" &&
@@ -659,6 +688,19 @@ export function themeStudioSpecUsesUsageSlots(
   );
 }
 
+export function themeStudioSpecUsesProviderSlots(
+  spec: ThemeStudioSpec,
+): boolean {
+  return spec.primitives.some(
+    (primitive) =>
+      primitive.providerSlot !== undefined ||
+      primitive.binding?.startsWith("providerSlot") ||
+      primitive.text?.includes("{providerSlot") ||
+      primitive.text?.includes("{pv1") ||
+      primitive.text?.includes("{pv2"),
+  );
+}
+
 export function themeStudioSpecUsesUsageWindows(
   spec: ThemeStudioSpec,
 ): boolean {
@@ -749,6 +791,13 @@ function validatePrimitive(
     primitive.slot !== 2
   ) {
     errors.push(`${prefix}: usage slot must be 1 or 2.`);
+  }
+  if (
+    primitive.providerSlot !== undefined &&
+    primitive.providerSlot !== 1 &&
+    primitive.providerSlot !== 2
+  ) {
+    errors.push(`${prefix}: provider slot must be 1 or 2.`);
   }
   if (
     primitive.usageIndex !== undefined &&
@@ -1044,6 +1093,9 @@ function buildDevicePrimitive(
   if (primitive.slot !== undefined) {
     compact.sl = primitive.slot;
   }
+  if (primitive.providerSlot !== undefined) {
+    compact.pl = primitive.providerSlot;
+  }
   if (primitive.usageIndex !== undefined) {
     compact.ui = primitive.usageIndex;
   }
@@ -1140,6 +1192,10 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   const slot = numberValue(value.slot) ?? numberValue(value.sl);
   if (slot === 1 || slot === 2) {
     primitive.slot = slot;
+  }
+  const providerSlot = numberValue(value.providerSlot) ?? numberValue(value.pl);
+  if (providerSlot === 1 || providerSlot === 2) {
+    primitive.providerSlot = providerSlot;
   }
   const usageIndex = numberValue(value.usageIndex) ?? numberValue(value.ui);
   if (usageIndex !== undefined && usageIndex >= 0) {

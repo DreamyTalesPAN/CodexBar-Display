@@ -153,6 +153,7 @@ var displayStreamLogKeys = []string{
 	"reset",
 	"usageWindows",
 	"usageSlots",
+	"providerSlots",
 	"activity",
 	"time",
 	"date",
@@ -7918,6 +7919,12 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 	} else if encodedSlots := displayStreamLogValue(line, "usageSlots"); encodedSlots != "" {
 		if rawSlots, err := url.QueryUnescape(encodedSlots); err == nil {
 			_ = json.Unmarshal([]byte(rawSlots), &frame.UsageSlots)
+			frame.V = protocol.ProtocolVersionV2
+		}
+	}
+	if encodedProviderSlots := displayStreamLogValue(line, "providerSlots"); encodedProviderSlots != "" && encodedProviderSlots != "-" {
+		if rawProviderSlots, err := url.QueryUnescape(encodedProviderSlots); err == nil {
+			_ = json.Unmarshal([]byte(rawProviderSlots), &frame.ProviderSlots)
 			frame.V = protocol.ProtocolVersionV2
 		}
 	}

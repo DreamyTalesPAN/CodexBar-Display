@@ -1044,8 +1044,60 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	}
 	result.collectedAt = collectedAt
 	result.resetBasisAt = collectedAt
+	result.frame.ProviderSlots = providerResetSlots(allProviders, collectedAt)
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
+}
+
+// providerResetSlots turns every provider with a live usage countdown into one
+// cross-provider row: label plus that provider's soonest window reset. Each
+// snapshot was collected at its own time, so every reset is first expressed as
+// of resetBasisAt — the selected frame's basis — because ApplyResetTrust later
+// re-anchors the whole frame from exactly that instant. Stale or unavailable
+// providers stay out: a countdown the collector cannot vouch for must not tick
+// on the customer's screen.
+func providerResetSlots(allProviders []codexbar.ParsedFrame, resetBasisAt time.Time) []protocol.UsageSlot {
+	var slots []protocol.UsageSlot
+	for _, provider := range allProviders {
+		if provider.Stale || provider.Frame.UsageUnavailable {
+			continue
+		}
+		var soonest int64
+		var percent int
+		for _, window := range provider.Frame.UsageWindows {
+			reset := window.ResetSec
+			if reset > 0 && !provider.CollectedAt.IsZero() && !resetBasisAt.IsZero() {
+				reset -= int64(resetBasisAt.Sub(provider.CollectedAt) / time.Second)
+			}
+			if reset > 0 && (soonest == 0 || reset < soonest) {
+				soonest = reset
+			}
+			if window.Percent > percent {
+				percent = window.Percent
+			}
+		}
+		if soonest <= 0 {
+			continue
+		}
+		label := strings.TrimSpace(provider.Frame.Label)
+		if label == "" {
+			label = provider.Provider
+		}
+		id := strings.TrimSpace(provider.Frame.Provider)
+		if id == "" {
+			id = provider.Provider
+		}
+		slots = append(slots, protocol.UsageSlot{
+			ID:       id,
+			Label:    label,
+			Percent:  percent,
+			ResetSec: soonest,
+		})
+		if len(slots) == protocol.MaxProviderSlots {
+			break
+		}
+	}
+	return slots
 }
 
 func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time) cycleResult {
@@ -1201,6 +1253,11 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = applyDeviceUsageWindowLimit(frame, caps)
+	if !caps.SupportsProviderSlotsV1 {
+		// Firmware without provider-slots-v1 would carry these rows as dead
+		// wire bytes against its frame budget.
+		frame.ProviderSlots = nil
+	}
 	now := deps.now()
 	frame = attachClockFields(frame, now)
 	frame = frame.ApplyResetTrust(result.resetBasisAt, now, result.usageFresh)
@@ -1280,8 +1337,8 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		updateLastGoodState(state, authoritativeFrame, collectedAt, deps)
 	}
 
-	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionTokens=%d weekTokens=%d totalTokens=%d tokenTotalsKnown=%t sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
-		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionTokens, frame.WeekTokens, frame.TotalTokens, frame.TokenTotalsKnown, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
+	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionTokens=%d weekTokens=%d totalTokens=%d tokenTotalsKnown=%t sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s providerSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
+		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionTokens, frame.WeekTokens, frame.TotalTokens, frame.TokenTotalsKnown, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), usageSlotsLogValue(frame.ProviderSlots), frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -2359,6 +2416,24 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 			return line, noClock, nil
 		}
 		frame = noClock
+	}
+
+	// Provider rows are an overview extra; the selected provider's own usage
+	// windows are the core customer data and must outlive them in the trim.
+	if len(frame.ProviderSlots) > 0 {
+		for limit := len(frame.ProviderSlots) - 1; limit >= 0; limit-- {
+			trimmed := frame
+			trimmed.ProviderSlots = append([]protocol.UsageSlot(nil), frame.ProviderSlots[:limit]...)
+			normalized := trimmed.Normalize()
+			line, err = normalized.MarshalNormalizedLine()
+			if err != nil {
+				return nil, protocol.Frame{}, err
+			}
+			if len(line) <= maxBytes {
+				return line, normalized, nil
+			}
+		}
+		frame.ProviderSlots = nil
 	}
 
 	usageWindowsActive := len(frame.UsageWindows) > 0

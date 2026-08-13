@@ -371,7 +371,7 @@ void testRendersCommandsAndBindings() {
 
   const RecordedCommand& text = sink.commands[2];
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(text.type));
-  TEST_ASSERT_EQUAL_STRING("Codex codex 97/71 1h 29m remaining 21:25 7/5/2026 1234 5678 9012", text.text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Codex codex 97/71 1h 29m remaining 21:25 7/5/2026 1.23K 5.67K 9.01K", text.text.c_str());
   TEST_ASSERT_EQUAL_INT(5, text.x);
   TEST_ASSERT_EQUAL_INT(6, text.y);
   TEST_ASSERT_EQUAL_INT(2, text.font);
@@ -544,6 +544,90 @@ void testUsageWindowOwnershipHidesCompleteMissingLane() {
   RecordingSink twoSlotSink;
   TEST_ASSERT_TRUE(renderSpec(spec, frame, twoSlotSink));
   TEST_ASSERT_EQUAL_UINT32(5, twoSlotSink.commands.size());
+}
+
+void testTokenTotalsRenderCompactAndTruncated() {
+  char out[16];
+  codexbar_display::themespec::FormatTokenCount(0, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("0", out);
+  codexbar_display::themespec::FormatTokenCount(999, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("999", out);
+  codexbar_display::themespec::FormatTokenCount(1400000, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("1.4M", out);
+  codexbar_display::themespec::FormatTokenCount(384000000, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("384M", out);
+  codexbar_display::themespec::FormatTokenCount(1070000000, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("1.07B", out);
+  // Three significant digits: two decimals below 10 units, one below 100,
+  // none above — every value stays at most five glyphs wide.
+  codexbar_display::themespec::FormatTokenCount(43930900, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("43.9M", out);
+  codexbar_display::themespec::FormatTokenCount(156140000, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("156M", out);
+  codexbar_display::themespec::FormatTokenCount(9970000000, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("9.97B", out);
+  // Truncated, never rounded, so the Mac preview parity holds.
+  codexbar_display::themespec::FormatTokenCount(1999999, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("1.99M", out);
+  codexbar_display::themespec::FormatTokenCount(12345, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("12.3K", out);
+}
+
+void testProviderSlotBindingsRenderLabelAndFormattedReset() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"provider-slots",
+    "rev":1,
+    "p":[
+      {"t":"tx","x":0,"y":0,"pl":1,"v":"{providerSlot1Label}"},
+      {"t":"tx","x":0,"y":20,"pl":1,"b":"pv1r"},
+      {"t":"tx","x":0,"y":40,"pl":2,"v":"{pv2l}"},
+      {"t":"tx","x":0,"y":60,"pl":2,"b":"pv2r"}
+    ]
+  })JSON";
+
+  FrameData frame;
+  frame.providerSlots[0].label = "Claude";
+  frame.providerSlots[0].resetSecs = 3600;
+  frame.providerSlots[0].available = true;
+
+  RecordingSink oneProviderSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, oneProviderSink));
+  TEST_ASSERT_EQUAL_UINT32(3, oneProviderSink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("Claude", oneProviderSink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("1h 0m", oneProviderSink.commands[2].text.c_str());
+
+  frame.providerSlots[1].label = "Codex";
+  frame.providerSlots[1].resetSecs = 12000;
+  frame.providerSlots[1].available = true;
+  RecordingSink twoProviderSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, twoProviderSink));
+  TEST_ASSERT_EQUAL_UINT32(5, twoProviderSink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("Codex", twoProviderSink.commands[3].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("3h 20m", twoProviderSink.commands[4].text.c_str());
+}
+
+void testProviderSlotsParseTickAndTriggerLiveRedraw() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* frameLine =
+      R"JSON({"v":2,"provider":"claude","label":"Claude","resetSecs":3600,"resetAgeSecs":0,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"live","providerSlots":[{"id":"claude","label":"Claude","percent":12,"resetSecs":3600},{"id":"codex","label":"Codex","percent":4,"resetSecs":7200}],"themeSpec":{"v":1,"id":"provider-slot-redraw","rev":1,"p":[{"t":"tx","x":0,"y":0,"pl":1,"b":"pv1r"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, frameLine, 1000, event));
+  TEST_ASSERT_TRUE(state.current.providerSlots[0].available);
+  TEST_ASSERT_EQUAL_STRING("Claude", state.current.providerSlots[0].label.c_str());
+  TEST_ASSERT_EQUAL_STRING("Codex", state.current.providerSlots[1].label.c_str());
+  TEST_ASSERT_EQUAL_INT64(3600, state.current.providerSlots[0].resetSecs);
+
+  // The device ticks the countdown from its own clock between frames.
+  TEST_ASSERT_EQUAL_INT64(
+      3540, codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, 61000));
+
+  const char* resetAdvances =
+      R"JSON({"v":2,"provider":"claude","label":"Claude","resetSecs":1800,"resetAgeSecs":0,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"live","providerSlots":[{"id":"claude","label":"Claude","percent":12,"resetSecs":1800},{"id":"codex","label":"Codex","percent":4,"resetSecs":7200}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, resetAdvances, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldProviderSlots) != 0);
 }
 
 void testIndexedProgressHidesMissingWindow() {
@@ -2627,6 +2711,9 @@ int main() {
   RUN_TEST(testTokenAvailabilityFlipRepaintsTokenBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testUsageWindowOwnershipHidesCompleteMissingLane);
+  RUN_TEST(testTokenTotalsRenderCompactAndTruncated);
+  RUN_TEST(testProviderSlotBindingsRenderLabelAndFormattedReset);
+  RUN_TEST(testProviderSlotsParseTickAndTriggerLiveRedraw);
   RUN_TEST(testIndexedProgressHidesMissingWindow);
   RUN_TEST(testUsageWindowResetCountdownsTickIndependently);
   RUN_TEST(testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses);

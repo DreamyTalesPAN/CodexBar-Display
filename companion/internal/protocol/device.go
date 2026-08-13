@@ -3,10 +3,11 @@ package protocol
 import "strings"
 
 const (
-	FeatureTheme          = "theme"
-	FeatureThemeSpecV1    = "theme-spec-v1"
-	FeatureUsageSlotsV1   = "usage-slots-v1"
-	FeatureUsageWindowsV1 = "usage-windows-v1"
+	FeatureTheme           = "theme"
+	FeatureThemeSpecV1     = "theme-spec-v1"
+	FeatureUsageSlotsV1    = "usage-slots-v1"
+	FeatureUsageWindowsV1  = "usage-windows-v1"
+	FeatureProviderSlotsV1 = "provider-slots-v1"
 	DefaultMaxFrameBytes  = 512
 	DefaultMinBrightness  = 10
 	DefaultMaxBrightness  = 100
@@ -39,6 +40,7 @@ type ThemeCapabilities struct {
 	SupportsThemeSpecV1     bool     `json:"supportsThemeSpecV1,omitempty"`
 	SupportsUsageSlotsV1    bool     `json:"supportsUsageSlotsV1,omitempty"`
 	SupportsUsageWindowsV1  bool     `json:"supportsUsageWindowsV1,omitempty"`
+	SupportsProviderSlotsV1 bool     `json:"supportsProviderSlotsV1,omitempty"`
 	MaxUsageWindows         int      `json:"maxUsageWindows,omitempty"`
 	SupportsStoredThemes    bool     `json:"supportsStoredThemes,omitempty"`
 	MaxThemeSpecBytes       int      `json:"maxThemeSpecBytes,omitempty"`
@@ -154,6 +156,7 @@ type DeviceCapabilities struct {
 	SupportsThemeSpecV1        bool
 	SupportsUsageSlotsV1       bool
 	SupportsUsageWindowsV1     bool
+	SupportsProviderSlotsV1    bool
 	MaxUsageWindows            int
 	SupportsStoredThemes       bool
 	MaxFrameBytes              int
@@ -199,6 +202,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 	supportsThemeSpecV1 := h.HasFeature(FeatureThemeSpecV1) || h.Capabilities.Theme.SupportsThemeSpecV1
 	supportsUsageWindowsV1 := h.HasFeature(FeatureUsageWindowsV1) || h.Capabilities.Theme.SupportsUsageWindowsV1
 	supportsUsageSlotsV1 := h.HasFeature(FeatureUsageSlotsV1) || h.Capabilities.Theme.SupportsUsageSlotsV1 || supportsUsageWindowsV1
+	supportsProviderSlotsV1 := h.HasFeature(FeatureProviderSlotsV1) || h.Capabilities.Theme.SupportsProviderSlotsV1
 	supportsStoredThemes := h.Capabilities.Theme.SupportsStoredThemes || h.Capabilities.Theme.MaxStoredThemeSpecBytes > 0
 	if !supportsTheme {
 		supportsTheme = len(h.Capabilities.Theme.BuiltinThemes) > 0 || supportsThemeSpecV1
@@ -216,6 +220,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		SupportsThemeSpecV1:        supportsThemeSpecV1,
 		SupportsUsageSlotsV1:       supportsUsageSlotsV1,
 		SupportsUsageWindowsV1:     supportsUsageWindowsV1,
+		SupportsProviderSlotsV1:    supportsProviderSlotsV1,
 		MaxUsageWindows:            h.Capabilities.Theme.MaxUsageWindows,
 		SupportsStoredThemes:       supportsStoredThemes,
 		MaxFrameBytes:              h.MaxFrameBytes,

@@ -16,6 +16,10 @@ const VARIABLE_TOKENS = [
   { label: "Usage window 2 label", token: "{usageSlot2Label}" },
   { label: "Usage window 2 %", token: "{usageSlot2Percent}" },
   { label: "Usage window 2 reset", token: "{usageSlot2Reset}" },
+  { label: "Provider 1 name", token: "{providerSlot1Label}" },
+  { label: "Provider 1 next reset", token: "{providerSlot1Reset}" },
+  { label: "Provider 2 name", token: "{providerSlot2Label}" },
+  { label: "Provider 2 next reset", token: "{providerSlot2Reset}" },
   { label: "Mode", token: "{usageMode}" },
   { label: "Time", token: "{time}" },
 ];
@@ -49,12 +53,24 @@ export function PrimitiveInspector({
 
       <SelectField
         label="Show when"
-        value={primitive.slot ? String(primitive.slot) : ""}
-        onChange={(value) => onChange("slot", value ? Number(value) : "")}
+        value={
+          primitive.slot
+            ? String(primitive.slot)
+            : primitive.providerSlot
+              ? `p${primitive.providerSlot}`
+              : ""
+        }
+        onChange={(value) => {
+          const providerMatch = /^p([12])$/.exec(value);
+          onChange("slot", providerMatch || !value ? "" : Number(value));
+          onChange("providerSlot", providerMatch ? Number(providerMatch[1]) : "");
+        }}
         options={[
           ["", "Always"],
           ["1", "Usage window 1 has data"],
           ["2", "Usage window 2 has data"],
+          ["p1", "Provider 1 has data"],
+          ["p2", "Provider 2 has data"],
         ]}
       />
 
@@ -108,6 +124,10 @@ export function PrimitiveInspector({
               ["usageSlot2Label", "Usage window 2 label"],
               ["usageSlot2Percent", "Usage window 2 %"],
               ["usageSlot2Reset", "Usage window 2 reset"],
+              ["providerSlot1Label", "Provider 1 name"],
+              ["providerSlot1Reset", "Provider 1 next reset"],
+              ["providerSlot2Label", "Provider 2 name"],
+              ["providerSlot2Reset", "Provider 2 next reset"],
               ["session", "Session (legacy)"],
               ["weekly", "Weekly (legacy)"],
               ["reset", "Reset (legacy)"],

@@ -31,6 +31,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -51,7 +52,6 @@ import {
   Item,
   ItemActions,
   ItemContent,
-  ItemDescription,
   ItemFooter,
   ItemGroup,
   ItemMedia,
@@ -620,8 +620,7 @@ export function ThemeLibraryScreen({
               <CircleAlert aria-hidden />
               <AlertTitle>Screensaver is turned off</AlertTitle>
               <AlertDescription>
-                Turn on Show screensaver to install and use a screensaver. You
-                can still create, edit, and preview screensavers here.
+                Turn on Show screensaver to install and use a screensaver.
               </AlertDescription>
             </Alert>
           ) : null}
@@ -1019,10 +1018,8 @@ function ThemeListItem({
       </ItemMedia>
       <ItemContent className="min-w-[180px]">
         <ItemTitle className="text-lg font-bold">{item.title}</ItemTitle>
-        {!setupMode ? (
-          <ItemDescription className="font-semibold uppercase text-ring">
-            {isCustom ? "Custom" : "Published"}
-          </ItemDescription>
+        {!setupMode && isCustom ? (
+          <Badge variant="secondary">Custom</Badge>
         ) : null}
       </ItemContent>
       <ItemActions
@@ -1508,7 +1505,8 @@ function themeCapabilityBlocker(
   const unsupported = required.filter(
     (capability) =>
       capability !== "usage-slots-v1" &&
-      capability !== "usage-windows-v1",
+      capability !== "usage-windows-v1" &&
+      capability !== "provider-slots-v1",
   );
   if (unsupported.length > 0) {
     return {
@@ -1524,6 +1522,9 @@ function themeCapabilityBlocker(
     }
     if (capability === "usage-windows-v1") {
       return device.capabilities?.theme?.supportsUsageWindowsV1 !== true;
+    }
+    if (capability === "provider-slots-v1") {
+      return device.capabilities?.theme?.supportsProviderSlotsV1 !== true;
     }
     return true;
   });
@@ -1708,7 +1709,7 @@ function ThemePreview({
   });
   const className = large
     ? "relative block aspect-square w-full overflow-hidden border border-border bg-muted"
-    : "relative block size-28 overflow-hidden border border-border bg-muted sm:size-36";
+    : "relative block size-28 overflow-hidden rounded-lg border border-border bg-muted sm:size-36";
   const themeId = theme.themeId;
   const themeSpecPath =
     theme.kind === "published" ? theme.product.themeSpecPath || "" : "";

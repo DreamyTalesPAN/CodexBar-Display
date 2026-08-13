@@ -1,6 +1,7 @@
 import {
   deviceThemeSpecJson,
   normalizeThemeSpec,
+  themeStudioSpecUsesProviderSlots,
   themeStudioSpecUsesUsageWindows,
   themeStudioSpecUsesUsageSlots,
   type ThemeStudioAsset,
@@ -12,6 +13,7 @@ export type ThemeStudioDeviceCapabilities = {
   supportsThemeSpecV1?: boolean;
   supportsUsageSlotsV1?: boolean;
   supportsUsageWindowsV1?: boolean;
+  supportsProviderSlotsV1?: boolean;
   maxUsageWindows?: number;
   supportsStoredThemes?: boolean;
   maxThemeSpecBytes?: number;
@@ -77,6 +79,14 @@ export function validateThemeAgainstCapabilities(
   if (
     themeStudioSpecUsesUsageWindows(normalized) &&
     caps.supportsUsageWindowsV1 !== true
+  ) {
+    errors.push(
+      "This VibeTV needs a firmware update before it can use this theme.",
+    );
+  }
+  if (
+    themeStudioSpecUsesProviderSlots(normalized) &&
+    caps.supportsProviderSlotsV1 !== true
   ) {
     errors.push(
       "This VibeTV needs a firmware update before it can use this theme.",

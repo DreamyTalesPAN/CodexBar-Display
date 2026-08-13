@@ -1090,6 +1090,14 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   frame.usageSlot2Percent = frame.usageWindows[1].percent;
   frame.usageSlot2ResetSecs = frame.usageWindows[1].resetSecs;
   frame.usageSlot2Available = frame.usageWindows[1].available;
+  for (size_t i = 0; i < codexbar_display::themespec::kMaxThemeSpecProviderSlots &&
+                     i < codexbar_display::core::kMaxProviderSlots; ++i) {
+    frame.providerSlots[i].label = CurrentFrame().providerSlots[i].label.c_str();
+    frame.providerSlots[i].percent = CurrentFrame().providerSlots[i].percent;
+    frame.providerSlots[i].resetSecs =
+        codexbar_display::core::CurrentProviderSlotRemainingSecs(RuntimeState(), i, millis());
+    frame.providerSlots[i].available = CurrentFrame().providerSlots[i].available;
+  }
   frame.sessionUnavailable = CurrentFrame().sessionUnavailable;
   frame.weeklyUnavailable = CurrentFrame().weeklyUnavailable;
   frame.usageMode = usageModeText();

@@ -16,6 +16,7 @@
 #include "device_settings.h"
 #include "standby_settings.h"
 #include "standby_state.h"
+#include "screensaver_preview.h"
 #include "wifi_security_policy.h"
 #include "gif_asset_validator_file.h"
 #include "renderer_esp8266.h"
@@ -31,7 +32,7 @@
 #endif
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-const char kThemeFeatureJSON[] = "[\"theme-spec-v1\"]";
+const char kThemeFeatureJSON[] = "[\"theme-spec-v1\",\"provider-slots-v1\"]";
 #else
 const char kThemeFeatureJSON[] = "[]";
 #endif
@@ -115,9 +116,9 @@ String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   String out;
   out.reserve(compact ? 180 : 260);
   if (!enabled) {
-    return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"supportsUsageWindowsV1\":false,\"maxUsageWindows\":0,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
+    return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"supportsUsageWindowsV1\":false,\"supportsProviderSlotsV1\":false,\"maxUsageWindows\":0,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
   }
-  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"maxUsageWindows\":";
+  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"supportsProviderSlotsV1\":true,\"maxUsageWindows\":";
   out += String(codexbar_display::core::kAdvertisedMaxUsageWindows);
   out += ",\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
   out += String(codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives);
@@ -168,6 +169,7 @@ struct RuntimeRenderDiagnostics {
 };
 
 namespace standby = codexbar_display::esp8266::standby;
+namespace screensaver_preview = codexbar_display::esp8266::screensaver_preview;
 
 struct DeviceSettings {
   uint8_t brightnessPercent = kDefaultBrightnessPercent;
@@ -202,6 +204,11 @@ standby::State standbyState;
 // really drawn. There is no second resident ThemeSpec slot: both directions
 // reload from LittleFS, which #277 measured at 250-420 ms.
 String standbyLiveThemePath;
+screensaver_preview::State screensaverPreviewState;
+// Same contract as standbyLiveThemePath: rendering any stored spec reassigns
+// activeThemeSpecPath (commitStoredThemeSpec), so the preview captures the
+// really-drawn live theme before it takes the screen.
+String screensaverPreviewLivePath;
 codexbar_display::esp8266::wifi_setup::State setupWifiState;
 WifiCredentials savedWifiCredentials;
 bool savedWifiCredentialsAvailable = false;
@@ -2565,6 +2572,13 @@ void handleScreensaverActive() {
     webServer.send(500, "text/plain; charset=utf-8", "save failed");
     return;
   }
+  // Never rendered here: ESP8266WebServer runs handlers inside handleClient(),
+  // where display work does not belong. The loop shows the preview.
+  if (standby::HasScreensaver(deviceSettings.standby)) {
+    screensaver_preview::NoteSelection(screensaverPreviewState);
+  } else {
+    screensaver_preview::Cancel(screensaverPreviewState);
+  }
 
   String out;
   out.reserve(120);
@@ -2676,6 +2690,59 @@ void maintainStandby() {
   }
   applyDeviceSettings();
   Serial.printf("standby active=%d\n", standbyState.active ? 1 : 0);
+#endif
+}
+
+// Shows a freshly selected screensaver once, for a bounded moment, then hands
+// the screen back to the live theme. Decided in the loop, never in an HTTP
+// handler, mirroring maintainStandby. The loaded spec keeps receiving live
+// field updates while it is up — same contract as standby rendering.
+void maintainScreensaverPreview() {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  const bool hasError = codexbar_display::app::HasFrame(runtimeCtx) &&
+                        codexbar_display::app::CurrentFrame(runtimeCtx).hasError;
+  const bool statusSurfaceVisible = setupMode || waitStatusRendered;
+  const String screensaverPath(deviceSettings.standby.screensaverPath);
+  const bool showing = screensaverPreviewState.showing;
+  // Only meaningful BEFORE the preview owns the screen: once it does,
+  // activeThemeSpecPath points at the screensaver itself and must not
+  // retrigger the veto.
+  const bool selectionUnpreviewable =
+      !showing && (screensaverPath.length() == 0 ||
+                   activeThemeSpecPath.length() == 0 ||
+                   screensaverPath == activeThemeSpecPath);
+  // A disabled screensaver toggle is a customer promise: nothing screensaver-
+  // shaped appears, so it also vetoes (and, while showing, immediately ends)
+  // the post-install preview.
+  const bool blocked = !deviceSettings.standby.enabled ||
+                       standbyState.active || hasError || statusSurfaceVisible ||
+                       selectionUnpreviewable;
+  const screensaver_preview::Action action = screensaver_preview::Tick(
+      screensaverPreviewState, blocked, standbyState.active, millis());
+  if (action == screensaver_preview::Action::Show) {
+    const String livePath = activeThemeSpecPath;
+    if (renderStoredThemeSpecForStandby(screensaverPath)) {
+      screensaverPreviewLivePath = livePath;
+      Serial.printf("screensaver_preview shown path=%s\n", screensaverPath.c_str());
+    } else {
+      // The live theme is still on screen when the load fails; just disarm.
+      screensaver_preview::Cancel(screensaverPreviewState);
+      screensaverPreviewLivePath = "";
+    }
+  } else if (action == screensaver_preview::Action::Restore) {
+    if (screensaverPreviewLivePath.length() > 0 &&
+        screensaverPreviewLivePath != activeThemeSpecPath) {
+      renderStoredThemeSpecForStandby(screensaverPreviewLivePath);
+    }
+    Serial.printf("screensaver_preview restored path=%s\n", screensaverPreviewLivePath.c_str());
+    screensaverPreviewLivePath = "";
+  }
+  // Standby that takes over mid-preview captured the preview spec as its way
+  // back (its enter ran before this function); hand it the really live theme.
+  if (standbyState.active && screensaverPreviewLivePath.length() > 0) {
+    standbyLiveThemePath = screensaverPreviewLivePath;
+    screensaverPreviewLivePath = "";
+  }
 #endif
 }
 
@@ -3349,6 +3416,7 @@ void loop() {
   }
 
   maintainStandby();
+  maintainScreensaverPreview();
 
   if (!waitStatusRendered &&
       codexbar_display::app::HasFrame(runtimeCtx) &&

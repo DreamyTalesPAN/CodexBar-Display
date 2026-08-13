@@ -51,16 +51,17 @@
       "id": "night-clock",
       "title": "Night Clock",
       "usage": "screensaver",
-      "version": "0.1.0",
-      "themeRev": 2,
-      "themeSpecPath": "/themes/s/nc-2-cb6d64ba.json",
-      "requiresFirmware": "1.0.40",
+      "version": "0.2.0",
+      "themeRev": 3,
+      "themeSpecPath": "/themes/s/nc-3-e18e4217.json",
+      "requiresFirmware": "1.0.41",
       "requiredCapabilities": [
-        "usage-slots-v1"
+        "usage-slots-v1",
+        "provider-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-night-clock-v0.1.0.zip",
-      "sha256": "2118c4d0a8473e5c69cd71b09776408e2d86ad07bd64a06fd47cfdc4538c8bfe",
-      "bytes": 796
+      "downloadAsset": "vibetv-theme-night-clock-v0.2.0.zip",
+      "sha256": "24eff083f41b2b0ebbc677d83fc7f5b44512a5fc2d74a81b870d67bd307ee977",
+      "bytes": 807
     },
     {
       "id": "reset-countdown",
@@ -96,16 +97,16 @@
       "id": "token-fire",
       "title": "Token Fire",
       "usage": "screensaver",
-      "version": "0.2.0",
-      "themeRev": 2,
-      "themeSpecPath": "/themes/s/tf-2-94d69490.json",
+      "version": "0.2.3",
+      "themeRev": 5,
+      "themeSpecPath": "/themes/s/tf-5-9aeed240.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-token-fire-v0.2.0.zip",
-      "sha256": "1ec0120c397312be14a7725ac895b3be376a67cb886a610a5c0ba23deec53403",
-      "bytes": 5049
+      "downloadAsset": "vibetv-theme-token-fire-v0.2.3.zip",
+      "sha256": "5c8f340a9a18ddd46ffad8983a214c0fd088dbe7c4d13ea72a8c4536bc488bc1",
+      "bytes": 5030
     }
   ]
 }
