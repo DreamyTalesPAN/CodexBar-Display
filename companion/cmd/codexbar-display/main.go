@@ -1090,7 +1090,7 @@ func printDoctorRuntimeDefaults() {
 
 func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, ports []string) error {
 	printDoctorRuntimeDefaults()
-	port, err := doctorResolvePortFn("")
+	port, err := doctorResolvePortFn(config.port)
 	if err != nil {
 		fmt.Printf("  serial resolve: failed (%v)\n", err)
 		return fmt.Errorf("runtime serial resolve failed: %w", err)

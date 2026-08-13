@@ -369,6 +369,34 @@ func TestDoctorUSBStillRejectsAmbiguousUnpinnedPorts(t *testing.T) {
 	}
 }
 
+func TestDoctorUSBResolvesConfiguredPort(t *testing.T) {
+	restoreDoctorTestDeps(t)
+	const configuredPort = "/dev/cu.usbserial-pinned"
+	doctorResolvePortFn = func(requested string) (string, error) {
+		if requested != configuredPort {
+			t.Fatalf("expected configured port %q, got %q", configuredPort, requested)
+		}
+		return requested, nil
+	}
+	doctorProbePortFn = func(port string) error {
+		if port != configuredPort {
+			t.Fatalf("expected probe on %q, got %q", configuredPort, port)
+		}
+		return nil
+	}
+	doctorReadDeviceHelloFn = func(port string) (protocol.DeviceHello, error) {
+		if port != configuredPort {
+			t.Fatalf("expected hello on %q, got %q", configuredPort, port)
+		}
+		return protocol.DeviceHello{}, errors.New("handshake unavailable")
+	}
+
+	err := runDoctorUSBRuntimeChecks(doctorRuntimeConfig{port: configuredPort}, []string{configuredPort})
+	if err != nil {
+		t.Fatalf("expected configured USB port check to pass, got %v", err)
+	}
+}
+
 func TestDoctorWithoutRuntimeRequestsSetupWithoutListingPorts(t *testing.T) {
 	restoreDoctorTestDeps(t)
 	doctorListPortsFn = func() ([]string, error) {
