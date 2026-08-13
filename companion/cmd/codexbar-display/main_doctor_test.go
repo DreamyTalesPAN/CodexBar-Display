@@ -67,6 +67,10 @@ func TestDoctorWiFiProbeTargetUsesTokenOnlyForMatchingDevice(t *testing.T) {
 	if got := doctorWiFiProbeTarget("http://192.0.2.11", cfg); strings.Contains(got, "token=") {
 		t.Fatalf("must not send token to another target, got %q", got)
 	}
+	legacyTarget := "http://192.0.2.12?token=legacy-token"
+	if got := doctorWiFiProbeTarget(legacyTarget, runtimeconfig.Config{}); got != legacyTarget {
+		t.Fatalf("expected legacy inline token to remain private probe credential, got %q", got)
+	}
 }
 
 func TestDoctorPublicWiFiTargetRedactsSavedToken(t *testing.T) {
@@ -187,7 +191,12 @@ func TestDoctorWiFiSkipsSerialChecks(t *testing.T) {
 			}
 			doctorCheckCompanionHealthFn = func() error { return nil }
 			doctorReadWiFiCapabilitiesFn = func(string) (protocol.DeviceCapabilities, error) {
-				return protocol.UnknownDeviceCapabilities(), nil
+				return protocol.DeviceCapabilities{
+					Known:                     true,
+					Board:                     "esp8266-smalltv-st7789",
+					NegotiatedProtocolVersion: protocol.ProtocolVersionV1,
+					SupportsTheme:             true,
+				}, nil
 			}
 
 			err := runDoctorTransportChecks(doctorRuntimeConfig{
@@ -202,6 +211,23 @@ func TestDoctorWiFiSkipsSerialChecks(t *testing.T) {
 				t.Fatal("WiFi doctor must not list serial ports")
 			}
 		})
+	}
+}
+
+func TestDoctorWiFiRejectsUnknownCapabilities(t *testing.T) {
+	restoreDoctorTestDeps(t)
+	doctorCheckCompanionHealthFn = func() error { return nil }
+	doctorReadWiFiCapabilitiesFn = func(string) (protocol.DeviceCapabilities, error) {
+		return protocol.UnknownDeviceCapabilities(), nil
+	}
+
+	err := runDoctorWiFiRuntimeChecks(doctorRuntimeConfig{
+		configured: true,
+		transport:  "wifi",
+		target:     "http://192.0.2.10",
+	})
+	if err == nil || !strings.Contains(err.Error(), "capabilities unknown") {
+		t.Fatalf("expected unknown WiFi capabilities to fail, got %v", err)
 	}
 }
 

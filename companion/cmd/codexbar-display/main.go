@@ -998,7 +998,7 @@ func doctorWiFiProbeTarget(target string, cfg runtimeconfig.Config) string {
 			return targetWithQueryToken(publicTarget, known.DeviceToken)
 		}
 	}
-	return publicTarget
+	return strings.TrimSpace(target)
 }
 
 func doctorLaunchAgentLoaded(label string) bool {
@@ -1115,6 +1115,10 @@ func runDoctorWiFiRuntimeChecks(config doctorRuntimeConfig) error {
 	if err != nil {
 		fmt.Printf("  WiFi device reachability: failed (%v)\n", err)
 		return fmt.Errorf("runtime WiFi device reachability failed: %w", err)
+	}
+	if !caps.Known {
+		fmt.Println("  WiFi device reachability: failed (device capabilities unknown)")
+		return errors.New("runtime WiFi device reachability failed: device capabilities unknown")
 	}
 	return reportDoctorCapabilities("WiFi device reachability", caps)
 }
