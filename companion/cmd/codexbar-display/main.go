@@ -1188,7 +1188,8 @@ func checkDoctorCompanionHealthOrigins(origins []string) error {
 			continue
 		}
 		var result struct {
-			OK bool `json:"ok"`
+			OK            bool  `json:"ok"`
+			DisplayWriter *bool `json:"displayWriter"`
 		}
 		decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&result)
 		_ = response.Body.Close()
@@ -1202,6 +1203,10 @@ func checkDoctorCompanionHealthOrigins(origins []string) error {
 		}
 		if !result.OK {
 			lastErr = errors.New("runtime health reported not ok")
+			continue
+		}
+		if result.DisplayWriter != nil && !*result.DisplayWriter {
+			lastErr = errors.New("runtime health reported no display writer")
 			continue
 		}
 		return nil

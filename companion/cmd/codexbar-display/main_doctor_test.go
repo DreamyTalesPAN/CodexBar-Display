@@ -137,6 +137,31 @@ func TestDoctorCompanionHealthFallsBackFromStalePublishedEndpoint(t *testing.T) 
 	}
 }
 
+func TestDoctorCompanionHealthRejectsNonWriter(t *testing.T) {
+	nonWriter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"displayWriter":false}`))
+	}))
+	defer nonWriter.Close()
+
+	err := checkDoctorCompanionHealthOrigins([]string{nonWriter.URL})
+	if err == nil || !strings.Contains(err.Error(), "no display writer") {
+		t.Fatalf("expected non-writer runtime to fail, got %v", err)
+	}
+}
+
+func TestDoctorCompanionHealthAcceptsLegacyWriterResponse(t *testing.T) {
+	legacy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer legacy.Close()
+
+	if err := checkDoctorCompanionHealthOrigins([]string{legacy.URL}); err != nil {
+		t.Fatalf("expected legacy runtime response to pass: %v", err)
+	}
+}
+
 func TestContainsPort(t *testing.T) {
 	ports := []string{"/dev/cu.usbmodem101", "/dev/cu.usbserial-10"}
 	if !containsPort(ports, "/dev/cu.usbserial-10") {
