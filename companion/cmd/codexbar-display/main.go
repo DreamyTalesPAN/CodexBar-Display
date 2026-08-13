@@ -1023,11 +1023,6 @@ func doctorWiFiProbeTarget(target string, cfg runtimeconfig.Config) string {
 		(strings.TrimSpace(cfg.DeviceTarget) == "" || sameCommandDeviceTarget(publicTarget, cfg.DeviceTarget)) {
 		return targetWithRequiredQueryToken(publicTarget, cfg.DeviceToken)
 	}
-	for _, known := range cfg.KnownDevices {
-		if sameCommandDeviceTarget(publicTarget, known.Target) && strings.TrimSpace(known.DeviceToken) != "" {
-			return targetWithRequiredQueryToken(publicTarget, known.DeviceToken)
-		}
-	}
 	return strings.TrimSpace(target)
 }
 

@@ -78,6 +78,10 @@ func TestDoctorWiFiProbeTargetUsesTokenOnlyForMatchingDevice(t *testing.T) {
 	if got := targetWithQueryToken(legacyTarget, "other-token"); got != legacyTarget {
 		t.Fatalf("shared target helper must preserve explicit token, got %q", got)
 	}
+	cfg = runtimeconfig.Config{KnownDevices: []runtimeconfig.KnownDevice{{Target: "http://192.0.2.13", DeviceToken: "historical-token"}}}
+	if got := doctorWiFiProbeTarget("http://192.0.2.13", cfg); strings.Contains(got, "token=") {
+		t.Fatalf("doctor must not use historical known-device token, got %q", got)
+	}
 }
 
 func TestDoctorPublicWiFiTargetRedactsSavedToken(t *testing.T) {
