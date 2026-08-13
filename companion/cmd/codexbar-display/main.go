@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"flag"
 	"fmt"
@@ -1018,7 +1019,8 @@ func doctorWiFiProbeTarget(target string, cfg runtimeconfig.Config) string {
 	if publicTarget == "" {
 		return strings.TrimSpace(target)
 	}
-	if sameCommandDeviceTarget(publicTarget, cfg.DeviceTarget) && strings.TrimSpace(cfg.DeviceToken) != "" {
+	if strings.TrimSpace(cfg.DeviceToken) != "" &&
+		(strings.TrimSpace(cfg.DeviceTarget) == "" || sameCommandDeviceTarget(publicTarget, cfg.DeviceTarget)) {
 		return targetWithQueryToken(publicTarget, cfg.DeviceToken)
 	}
 	for _, known := range cfg.KnownDevices {
@@ -1660,9 +1662,6 @@ func targetWithQueryToken(target, token string) string {
 		return strings.TrimSpace(target)
 	}
 	query := parsed.Query()
-	if strings.TrimSpace(query.Get("token")) != "" {
-		return parsed.String()
-	}
 	query.Set("token", token)
 	parsed.RawQuery = query.Encode()
 	return parsed.String()
@@ -2154,5 +2153,13 @@ func parseLaunchAgentArgument(plist, name string) string {
 	if end < 0 {
 		return ""
 	}
-	return strings.TrimSpace(rest[:end])
+	return strings.TrimSpace(xmlUnescape(rest[:end]))
+}
+
+func xmlUnescape(value string) string {
+	var decoded string
+	if err := xml.Unmarshal([]byte("<string>"+value+"</string>"), &decoded); err != nil {
+		return value
+	}
+	return decoded
 }

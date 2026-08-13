@@ -38,11 +38,11 @@ func TestParsePinnedPortFromLaunchAgentPlist(t *testing.T) {
 }
 
 func TestParseLaunchAgentArgument(t *testing.T) {
-	plist := `<plist><dict><array><string>daemon</string><string>--transport</string><string>wifi</string><string>--target</string><string>http://192.0.2.10</string></array></dict></plist>`
+	plist := `<plist><dict><array><string>daemon</string><string>--transport</string><string>wifi</string><string>--target</string><string>http://192.0.2.10?mode=x&amp;token=secret</string></array></dict></plist>`
 	if got := parseLaunchAgentArgument(plist, "--transport"); got != "wifi" {
 		t.Fatalf("expected WiFi transport, got %q", got)
 	}
-	if got := parseLaunchAgentArgument(plist, "--target"); got != "http://192.0.2.10" {
+	if got := parseLaunchAgentArgument(plist, "--target"); got != "http://192.0.2.10?mode=x&token=secret" {
 		t.Fatalf("expected WiFi target, got %q", got)
 	}
 }
@@ -70,6 +70,10 @@ func TestDoctorWiFiProbeTargetUsesTokenOnlyForMatchingDevice(t *testing.T) {
 	legacyTarget := "http://192.0.2.12?token=legacy-token"
 	if got := doctorWiFiProbeTarget(legacyTarget, runtimeconfig.Config{}); got != legacyTarget {
 		t.Fatalf("expected legacy inline token to remain private probe credential, got %q", got)
+	}
+	cfg = runtimeconfig.Config{DeviceToken: "saved-token"}
+	if got := doctorWiFiProbeTarget(legacyTarget, cfg); !strings.Contains(got, "token=saved-token") || strings.Contains(got, "legacy-token") {
+		t.Fatalf("expected saved token to authenticate legacy fallback target, got %q", got)
 	}
 }
 
