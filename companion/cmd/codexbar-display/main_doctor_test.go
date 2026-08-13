@@ -74,9 +74,20 @@ func TestDoctorWiFiProbeTargetUsesTokenOnlyForMatchingDevice(t *testing.T) {
 }
 
 func TestDoctorPublicWiFiTargetRedactsSavedToken(t *testing.T) {
-	got := doctorPublicWiFiTarget("http://192.0.2.10?token=secret-token")
-	if got != "http://192.0.2.10" {
+	got := doctorPublicWiFiTarget("http://user:password@192.0.2.10?token=token-value&auth=auth-value&key=key-value&secret=secret-value")
+	if got != "http://<redacted>@192.0.2.10?auth=<redacted>&key=<redacted>&secret=<redacted>" {
 		t.Fatalf("expected redacted target, got %q", got)
+	}
+}
+
+func TestDoctorLaunchAgentStateMustBeActive(t *testing.T) {
+	for _, state := range []string{"running", "waiting", "spawn scheduled"} {
+		if !doctorLaunchAgentStateHealthy("state = " + state) {
+			t.Fatalf("expected %q to be healthy", state)
+		}
+	}
+	if doctorLaunchAgentStateHealthy("state = exited") {
+		t.Fatal("exited LaunchAgent must not be treated as active")
 	}
 }
 

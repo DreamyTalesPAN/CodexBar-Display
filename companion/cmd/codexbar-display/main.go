@@ -916,7 +916,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 	}
 
 	for _, label := range []string{"shop.vibetv.control-center.runtime", "shop.vibetv.control-center.preview-runtime"} {
-		if _, err := doctorLaunchAgentPrintFn(label); err == nil {
+		if output, err := doctorLaunchAgentPrintFn(label); err == nil && doctorLaunchAgentStateHealthy(string(output)) {
 			cfg, err := runtimeconfig.Load(home)
 			if err != nil {
 				return doctorRuntimeConfig{}, err
@@ -932,7 +932,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 	}
 
 	launchctlOutput, err := doctorLaunchAgentPrintFn("com.codexbar-display.daemon")
-	if err != nil {
+	if err != nil || !doctorLaunchAgentStateHealthy(string(launchctlOutput)) {
 		return doctorRuntimeConfig{}, nil
 	}
 	data, err := readDoctorLegacyLaunchAgentPlist(home, string(launchctlOutput), os.ReadFile)
@@ -998,6 +998,12 @@ func parseDoctorLaunchAgentPath(output string) string {
 		}
 	}
 	return ""
+}
+
+func doctorLaunchAgentStateHealthy(output string) bool {
+	return strings.Contains(output, "state = running") ||
+		strings.Contains(output, "state = waiting") ||
+		strings.Contains(output, "state = spawn scheduled")
 }
 
 func doctorWiFiTarget(configTarget, plistTarget string) string {
@@ -1141,7 +1147,7 @@ func runDoctorWiFiRuntimeChecks(config doctorRuntimeConfig) error {
 }
 
 func doctorPublicWiFiTarget(target string) string {
-	return publicDeviceTargetForConfig(target)
+	return sanitizeDisplayStreamLogMessage(publicDeviceTargetForConfig(target))
 }
 
 func reportDoctorCapabilities(label string, caps protocol.DeviceCapabilities) error {
