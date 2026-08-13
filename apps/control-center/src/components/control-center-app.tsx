@@ -20,6 +20,7 @@ import {
   isNativeControlCenterApp,
   localizeCompanionAssetUrl,
   localControlCenterUrl,
+  launchCodexBarRepair,
   needsLoopbackTargetAddressSpace,
   repairLocalControlCenterRuntime,
   restartLocalControlCenterApp,
@@ -90,6 +91,7 @@ const RECENT_COMPANION_REQUEST_MS = 5_000;
 const LAUNCHD_RECOVERY_GRACE_MS = 12_000;
 const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 55_000;
 const NATIVE_RUNTIME_REPAIR_RESULT_EVENT = "vibetv:runtime-repair-result";
+const NATIVE_CODEXBAR_REPAIR_RESULT_EVENT = "vibetv:codexbar-repair-result";
 
 type LocalNetworkRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
@@ -347,6 +349,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const statusPollInFlight = useRef(false);
   const runtimeRepairAttempted = useRef(false);
   const runtimeRepairTimeout = useRef<number | null>(null);
+  const codexBarRepairTimeout = useRef<number | null>(null);
   const themeInstallPollJobRef = useRef("");
   const activeThemeUpgradeAttemptRef = useRef("");
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
@@ -2848,6 +2851,100 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     usage,
   ]);
 
+  const retryFirstUsage = useCallback(async () => {
+    const setupGeneration = setupGenerationRef.current;
+    setBusyAction("providers-retry");
+    setLastError(null);
+    try {
+      const payload = await runCompanion<{
+        providerSetup?: ProviderSetupInfo;
+      }>("/v1/providers/retry", { method: "POST" });
+      if (setupGeneration === setupGenerationRef.current) {
+        setProviderSetup(payload.providerSetup || null);
+      }
+    } catch (error) {
+      if (setupGeneration === setupGenerationRef.current) {
+        setLastError(
+          normalizeCaughtError(error, "Usage check could not finish."),
+        );
+      }
+    } finally {
+      if (setupGeneration === setupGenerationRef.current) {
+        setBusyAction(null);
+      }
+    }
+  }, [runCompanion]);
+
+  const repairCodexBar = useCallback(() => {
+    if (codexBarRepairTimeout.current !== null) {
+      window.clearTimeout(codexBarRepairTimeout.current);
+    }
+    setBusyAction("codexbar-repair");
+    setLastError(null);
+    addEvent({
+      label: "Usage service repair started",
+      detail: "Restarting the managed usage service.",
+      tone: "unknown",
+    });
+    launchCodexBarRepair();
+    codexBarRepairTimeout.current = window.setTimeout(() => {
+      codexBarRepairTimeout.current = null;
+      setBusyAction(null);
+      setLastError({
+        code: "CODEXBAR_REPAIR_TIMEOUT",
+        message: "Repair could not finish.",
+        nextAction: "Try the repair again or create a support report.",
+      });
+      addEvent({
+        label: "Usage service restart timed out",
+        detail: "The managed usage service did not return in time.",
+        tone: "attention",
+      });
+    }, NATIVE_RUNTIME_REPAIR_TIMEOUT_MS);
+  }, [addEvent]);
+
+  useEffect(() => {
+    const handleResult = (event: Event) => {
+      if (codexBarRepairTimeout.current === null) {
+        return;
+      }
+      window.clearTimeout(codexBarRepairTimeout.current);
+      codexBarRepairTimeout.current = null;
+      const detail = (event as CustomEvent<{ success?: boolean }>).detail;
+      if (detail?.success) {
+        addEvent({
+          label: "Usage service restarted",
+          detail: "Checking whether valid usage data is available now.",
+          tone: "unknown",
+        });
+        void retryFirstUsage();
+        return;
+      }
+      setBusyAction(null);
+      setLastError({
+        code: "CODEXBAR_REPAIR_FAILED",
+        message: "Repair could not finish.",
+        nextAction: "Try the repair again or create a support report.",
+      });
+      addEvent({
+        label: "Usage service restart failed",
+        detail: "The managed usage service could not restart.",
+        tone: "attention",
+      });
+    };
+    window.addEventListener(NATIVE_CODEXBAR_REPAIR_RESULT_EVENT, handleResult);
+    return () => {
+      window.removeEventListener(
+        NATIVE_CODEXBAR_REPAIR_RESULT_EVENT,
+        handleResult,
+      );
+      if (codexBarRepairTimeout.current !== null) {
+        window.clearTimeout(codexBarRepairTimeout.current);
+        codexBarRepairTimeout.current = null;
+      }
+    };
+  }, [addEvent, retryFirstUsage]);
+
   useEffect(() => {
     if (!deviceBoard || !deviceFirmware) {
       return;
@@ -3310,6 +3407,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           void connectManualTarget(target);
         }}
         onCreateSupportReport={loadSupportDiagnostics}
+        onRepairCodexBar={repairCodexBar}
+        onRetryCodexBar={() => void retryFirstUsage()}
         onPair={() => {
           const candidate = pendingPairingCandidate.current;
           setLastError(null);
@@ -3326,6 +3425,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         selectingDeviceTarget={
           busyAction === "select" ? selectingDeviceTarget : undefined
         }
+        providerSetup={providerSetup}
         supportReportBusy={supportReportBusy}
       />
     );

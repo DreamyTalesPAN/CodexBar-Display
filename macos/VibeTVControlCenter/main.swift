@@ -1265,6 +1265,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var installationReady = false
     private var installationStatus: InstallationStatus?
     private var codexBarRepairRequired = false
+    private var codexBarRepairRestartRequired = false
     private var installationStatusTitle = "Starting Control Center"
     private var installationStatusDetail = "Preparing the Mac App."
     private var installationStatusFailed = false
@@ -1435,8 +1436,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     private func beginCodexBarRepair() {
+        if webView != nil {
+            beginControlCenterCodexBarRepair()
+            return
+        }
         installationReady = false
         codexBarRepairRequired = true
+        codexBarRepairRestartRequired = true
         activeNavigation = nil
         webView = nil
         presentInstallationStatus(
@@ -1445,6 +1451,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             failed: false
         )
         retryRuntimePreparation()
+    }
+
+    private func beginControlCenterCodexBarRepair() {
+        guard preparationTask == nil else {
+            return
+        }
+        codexBarRepairRequired = true
+        codexBarRepairRestartRequired = true
+        preparationTask = Task { [weak self] in
+            guard let self else {
+                return
+            }
+            let outcome = await self.prepareCompanion()
+            self.preparationTask = nil
+            guard outcome == .nativeRuntimeReady else {
+                self.notifyCodexBarRepairResult(success: false)
+                return
+            }
+            self.codexBarRepairRequired = false
+            self.installationReady = true
+            self.notifyCodexBarRepairResult(success: true)
+        }
     }
 
     @objc private func openSupportLog() {
@@ -1969,6 +1997,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             if let error {
                 NSLog(
                     "VibeTV Control Center could not report runtime repair result: \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
+    private func notifyCodexBarRepairResult(success: Bool) {
+        let value = success ? "true" : "false"
+        let script = "window.dispatchEvent(new CustomEvent('vibetv:codexbar-repair-result', { detail: { success: \(value) } })); true"
+        webView?.evaluateJavaScript(script) { _, error in
+            if let error {
+                NSLog(
+                    "VibeTV Control Center could not report CodexBar repair result: \(error.localizedDescription)"
                 )
             }
         }
@@ -2642,6 +2682,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         guard bundledRuntimeResourcesAreValid() else {
             NSLog("VibeTV Control Center app-managed runtime resources are missing")
             return .failure(.applicationIncomplete)
+        }
+
+        if codexBarRepairRestartRequired {
+            guard await unregisterBundledRuntimeService() else {
+                NSLog("VibeTV Control Center could not stop its runtime before repairing CodexBar")
+                return .failure(.serviceStart)
+            }
+            codexBarRepairRestartRequired = false
         }
 
         guard bootstrapCodexBar() else {

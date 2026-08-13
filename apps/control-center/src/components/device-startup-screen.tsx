@@ -13,6 +13,7 @@ import type {
   ApiError,
   DeviceCandidate,
   DeviceSearchState,
+  ProviderSetupInfo,
   SupportDiagnostics,
 } from "./control-center-types";
 import { DeviceTargetForm } from "./device-target-form";
@@ -31,11 +32,14 @@ type Props = {
   lastError?: ApiError | null;
   diagnostics?: SupportDiagnostics | null;
   onCreateSupportReport?: () => void;
+  onRepairCodexBar?: () => void;
+  onRetryCodexBar?: () => void;
   onDeviceTargetChange?: (target: string) => void;
   onManualTarget?: (target: string) => void;
   onPair: () => void;
   onSearch: () => void;
   onSelect: (candidate: DeviceCandidate) => void;
+  providerSetup?: ProviderSetupInfo | null;
   selectingDeviceTarget?: string;
   supportReportBusy?: boolean;
 };
@@ -48,6 +52,8 @@ export function DeviceStartupScreen({
   lastError,
   diagnostics,
   onCreateSupportReport,
+  onRepairCodexBar,
+  onRetryCodexBar,
   onDeviceTargetChange,
   onManualTarget,
   onPair,
@@ -55,6 +61,7 @@ export function DeviceStartupScreen({
   onSelect,
   selectingDeviceTarget,
   supportReportBusy = false,
+  providerSetup,
 }: Props) {
   const selecting = busyAction === "select";
   const manualConnecting = busyAction === "manual-target";
@@ -62,6 +69,8 @@ export function DeviceStartupScreen({
   const searching =
     deviceSearchState === "searching" || busyAction === "search";
   const waiting = deviceSearchState === "waiting";
+  const codexBarRecoveryNeeded =
+    waiting && firstUsageNeedsCodexBarRecovery(providerSetup);
   const choosing =
     deviceSearchState === "multiple" && deviceCandidates.length > 0;
   const legacyRecovery =
@@ -94,6 +103,9 @@ export function DeviceStartupScreen({
   } else if (reconnecting) {
     title = "Reconnecting to your VibeTV";
     detail = "Connecting to your saved VibeTV.";
+  } else if (codexBarRecoveryNeeded) {
+    title = "CodexBar needs attention";
+    detail = "VibeTV could not load valid usage data from CodexBar.";
   } else if (waiting) {
     title = "Connecting to VibeTV";
     detail = "VibeTV was found. Waiting for the first live preview.";
@@ -120,13 +132,15 @@ export function DeviceStartupScreen({
 
   const statusLabel = reconnecting
     ? "Reconnecting…"
-      : waiting
+      : waiting && !codexBarRecoveryNeeded
         ? "Waiting for live preview…"
         : searching
           ? "Searching…"
           : undefined;
 
-  const visual = choosing ? (
+  const visual = codexBarRecoveryNeeded ? (
+    <CircleAlert aria-hidden />
+  ) : choosing ? (
     <Monitor aria-hidden />
   ) : wifiSetupNeeded ? (
     <Wifi aria-hidden />
@@ -136,7 +150,13 @@ export function DeviceStartupScreen({
     <CircleAlert aria-hidden />
   ) : undefined;
 
-  const actions = legacyRecovery ? null : choosing ? (
+  const actions = codexBarRecoveryNeeded ? (
+    <CodexBarRecoveryActions
+      busy={Boolean(busyAction)}
+      onRepair={onRepairCodexBar}
+      onRetry={onRetryCodexBar}
+    />
+  ) : legacyRecovery ? null : choosing ? (
     <StartupActions
       busy={Boolean(busyAction)}
       onSearch={onSearch}
@@ -181,7 +201,13 @@ export function DeviceStartupScreen({
   return (
     <SetupStatusScreen
       actions={actions}
-      busy={searching || selecting || manualConnecting || reconnecting || waiting}
+      busy={
+        searching ||
+        selecting ||
+        manualConnecting ||
+        reconnecting ||
+        (waiting && !codexBarRecoveryNeeded)
+      }
       description={detail}
       footer={
         <SupportReportActions
@@ -190,6 +216,11 @@ export function DeviceStartupScreen({
           diagnostics={diagnostics}
           emphasis="secondary"
           onCreate={onCreateSupportReport}
+          createLabel={
+            codexBarRecoveryNeeded
+              ? "Create support report"
+              : "Create report"
+          }
         />
       }
       statusLabel={statusLabel}
@@ -251,6 +282,50 @@ export function DeviceStartupScreen({
         {manualTargetForm}
       </div>
     </SetupStatusScreen>
+  );
+}
+
+function CodexBarRecoveryActions({
+  busy,
+  onRepair,
+  onRetry,
+}: {
+  busy: boolean;
+  onRepair?: () => void;
+  onRetry?: () => void;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <Button className="w-full" disabled={busy} onClick={onRepair} size="lg">
+        Repair CodexBar
+      </Button>
+      <Button
+        className="w-full"
+        disabled={busy}
+        onClick={onRetry}
+        size="lg"
+        variant="outline"
+      >
+        <RefreshCw data-icon="inline-start" aria-hidden />
+        <span>Try again</span>
+      </Button>
+    </div>
+  );
+}
+
+export function firstUsageNeedsCodexBarRecovery(
+  providerSetup: ProviderSetupInfo | null | undefined,
+): boolean {
+  const engineStatus = providerSetup?.engine?.status?.toLowerCase();
+  if (engineStatus === "not_configured" || engineStatus === "engine_error") {
+    return true;
+  }
+  return Boolean(
+    providerSetup?.providers?.some(
+      (provider) =>
+        provider.id.toLowerCase() === "codexbar" &&
+        provider.status.toLowerCase() === "timeout",
+    ),
   );
 }
 

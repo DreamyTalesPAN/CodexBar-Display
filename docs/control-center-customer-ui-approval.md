@@ -846,3 +846,20 @@ issue scope, or release permission never implies UI permission.
   version at the same time stays exactly as approved on 2026-08-08.
 - Approved files: `updates-screen.tsx`, `updates-screen.test.tsx`, and this
   approval record.
+
+## 2026-08-13 — First-run CodexBar failure becomes actionable
+
+- User approval: The user narrowed issue #339 to the first Mac App setup only
+  and explicitly selected the three recovery actions: `CodexBar reparieren`,
+  `Erneut versuchen`, and `Support-Bericht erstellen`.
+- Approved customer-visible result: If the first authoritative usage check
+  reports that CodexBar is missing, broken, or timed out, setup stops showing
+  an endless live-preview spinner. It instead says `CodexBar needs attention`
+  and offers exactly `Repair CodexBar`, `Try again`, and
+  `Create support report`. Repair restarts the app-managed usage service and
+  returns to the same three actions if that restart or the following usage
+  check fails. A normal pending first frame still keeps the existing waiting
+  screen. Later background collection is unchanged.
+- Approved files: `device-startup-screen.tsx`, `control-center-app.tsx`,
+  `support-report-actions.tsx`, their tests, the customer-flow test, the copy
+  guard, and this approval record.

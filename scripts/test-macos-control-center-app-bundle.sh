@@ -870,6 +870,25 @@ if (
     raise SystemExit(
         "native CodexBar payload must always stage the bundled ZIP, normalize xattrs, validate, publish, then revalidate"
     )
+repair_start = source.find("private func beginCodexBarRepair()")
+repair_end = source.find("@objc private func openSupportLog()", repair_start)
+repair_method = source[repair_start:repair_end]
+if (
+    "beginControlCenterCodexBarRepair()" not in repair_method
+    or "codexBarRepairRestartRequired = true" not in repair_method
+    or "notifyCodexBarRepairResult(success: true)" not in repair_method
+    or "notifyCodexBarRepairResult(success: false)" not in repair_method
+):
+    raise SystemExit(
+        "native CodexBar repair must restart the runtime and report its result to the existing setup screen"
+    )
+repair_restart = prepare_method.find("if codexBarRepairRestartRequired")
+repair_stop = prepare_method.find("await unregisterBundledRuntimeService()", repair_restart)
+codexbar_publish = prepare_method.find("guard bootstrapCodexBar()")
+if not (0 <= repair_restart < repair_stop < codexbar_publish):
+    raise SystemExit(
+        "native CodexBar repair must stop the managed runtime before replacing its private payload"
+    )
 native_ready = prepare_method.find("return .nativeRuntimeReady")
 if not (0 <= prepare_method.find("var health = await waitForHealthyRuntime") < native_ready):
     raise SystemExit(

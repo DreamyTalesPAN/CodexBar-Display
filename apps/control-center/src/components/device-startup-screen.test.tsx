@@ -82,6 +82,64 @@ describe("DeviceStartupScreen", () => {
     );
   });
 
+  it("stops first-run waiting when CodexBar needs recovery", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onCreateSupportReport={vi.fn()}
+        onPair={vi.fn()}
+        onRepairCodexBar={vi.fn()}
+        onRetryCodexBar={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerSetup={{
+          status: "setup_required",
+          engine: { status: "engine_error" },
+        }}
+      />,
+    );
+
+    expect(html).toContain("CodexBar needs attention</h1>");
+    expect(html).not.toContain("Waiting for live preview…");
+    expect(html).toContain("Repair CodexBar</button>");
+    expect(html).toContain("Try again</span></button>");
+    expect(html).toContain("Create support report</span></button>");
+  });
+
+  it("only treats a CodexBar timeout as first-run recovery", () => {
+    const timeoutMarkup = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onPair={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerSetup={{
+          status: "setup_required",
+          providers: [{ id: "codexbar", status: "timeout" }],
+        }}
+      />,
+    );
+    const providerTimeoutMarkup = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onPair={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerSetup={{
+          status: "setup_required",
+          providers: [{ id: "claude", status: "timeout" }],
+        }}
+      />,
+    );
+
+    expect(timeoutMarkup).toContain("Repair CodexBar");
+    expect(providerTimeoutMarkup).toContain("Waiting for live preview…");
+    expect(providerTimeoutMarkup).not.toContain("Repair CodexBar");
+  });
+
   it("uses shadcn recovery UI and names the action that is actually shown", () => {
     const html = renderToStaticMarkup(
       <DeviceStartupScreen

@@ -477,7 +477,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testLocalReachableWithoutFrameWaitsUntilPreview(
+      await testFirstUsageCodexBarFailureOffersRecovery(
         browser,
         appContext.appUrl,
       );
@@ -635,7 +635,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testLocalReachableWithoutFrameWaitsUntilPreview(
+    await testFirstUsageCodexBarFailureOffersRecovery(
       browser,
       appContext.appUrl,
     );
@@ -3102,7 +3102,7 @@ async function testLocalReachableWithoutFrameWaitsForUsage(browser, appUrl) {
   await page.close();
 }
 
-async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) {
+async function testFirstUsageCodexBarFailureOffersRecovery(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
@@ -3113,6 +3113,7 @@ async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) 
   };
   let recovered = false;
   let recoveredFrameRequests = 0;
+  let providerRetries = 0;
   await page.clock.install({ time: new Date("2026-07-29T08:00:00Z") });
   await routeCompanionOnline(page, [], () => {}, {
     device: companionDevice,
@@ -3134,9 +3135,21 @@ async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) 
     },
     preferencesResponse: { ok: true, items: [] },
     providerSetup: {
-      status: "not_configured",
-      engine: { status: "not_configured" },
-      providers: [],
+      status: "setup_required",
+      engine: { status: "ready" },
+      providers: [{ id: "codexbar", status: "timeout" }],
+    },
+    onProviderRetry: () => {
+      providerRetries += 1;
+      if (providerRetries === 2) {
+        recovered = true;
+        return readyProviderSetup();
+      }
+      return {
+        status: "setup_required",
+        engine: { status: "ready" },
+        providers: [{ id: "codexbar", status: "timeout" }],
+      };
     },
     usageResponse: noProviderUsage,
   });
@@ -3144,17 +3157,53 @@ async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.clock.runFor(0);
   await page
-    .getByText("Waiting for live preview…", { exact: true })
+    .getByRole("heading", { name: "CodexBar needs attention" })
     .waitFor({ timeout: 10_000 });
-  await page.clock.runFor(60_000);
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
       0,
-    "Startup must remain visible until a live preview exists",
+    "A failed first usage check must keep setup visible",
   );
+  await page.getByRole("button", { name: "Repair CodexBar" }).waitFor();
+  await page.getByRole("button", { name: "Create support report" }).waitFor();
+  await page.getByRole("button", { name: "Try again" }).click();
+  await page
+    .getByRole("heading", { name: "CodexBar needs attention" })
+    .waitFor({ timeout: 10_000 });
+  assert(providerRetries === 1, "Try again must start exactly one provider retry");
 
-  recovered = true;
+  await page.getByRole("button", { name: "Repair CodexBar" }).click();
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:codexbar-repair-result", {
+        detail: { success: false },
+      }),
+    );
+  });
+  await page
+    .getByRole("button", { name: "Repair CodexBar" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    providerRetries === 1,
+    "A failed native repair must not start another provider retry",
+  );
+  await page.getByRole("button", { name: "Try again" }).waitFor();
+  await page.getByRole("button", { name: "Create support report" }).waitFor();
+
+  await page.getByRole("button", { name: "Repair CodexBar" }).click();
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:codexbar-repair-result", {
+        detail: { success: true },
+      }),
+    );
+  });
+
   await page.clock.runFor(1_000);
+  assert(
+    providerRetries === 2,
+    "A successful native repair must start exactly one fresh provider retry",
+  );
   await waitForCondition(
     () => recoveredFrameRequests > 0,
     "Display-frame recovery must keep polling after startup entry",

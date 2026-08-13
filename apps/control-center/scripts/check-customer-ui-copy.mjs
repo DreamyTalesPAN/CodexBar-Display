@@ -94,7 +94,11 @@ for (const file of files) {
 
   for (const item of extractCustomerCopy(sourceFile)) {
     const text = normalizeCopy(item.text);
-    if (!text || shouldIgnoreText(text)) {
+    if (
+      !text ||
+      shouldIgnoreText(text) ||
+      isApprovedCodexBarRecoveryCopy(file, text)
+    ) {
       continue;
     }
     for (const forbidden of forbiddenPatterns) {
@@ -112,6 +116,17 @@ for (const file of files) {
       }
     }
   }
+}
+
+function isApprovedCodexBarRecoveryCopy(file, text) {
+  return (
+    file.endsWith("src/components/device-startup-screen.tsx") &&
+    [
+      "CodexBar needs attention",
+      "VibeTV could not load valid usage data from CodexBar.",
+      "Repair CodexBar",
+    ].includes(text)
+  );
 }
 
 if (findings.length > 0) {
