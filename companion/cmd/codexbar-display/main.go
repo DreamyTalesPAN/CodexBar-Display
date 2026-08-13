@@ -1021,11 +1021,11 @@ func doctorWiFiProbeTarget(target string, cfg runtimeconfig.Config) string {
 	}
 	if strings.TrimSpace(cfg.DeviceToken) != "" &&
 		(strings.TrimSpace(cfg.DeviceTarget) == "" || sameCommandDeviceTarget(publicTarget, cfg.DeviceTarget)) {
-		return targetWithQueryToken(publicTarget, cfg.DeviceToken)
+		return targetWithRequiredQueryToken(publicTarget, cfg.DeviceToken)
 	}
 	for _, known := range cfg.KnownDevices {
 		if sameCommandDeviceTarget(publicTarget, known.Target) && strings.TrimSpace(known.DeviceToken) != "" {
-			return targetWithQueryToken(publicTarget, known.DeviceToken)
+			return targetWithRequiredQueryToken(publicTarget, known.DeviceToken)
 		}
 	}
 	return strings.TrimSpace(target)
@@ -1653,6 +1653,24 @@ func sameCommandDeviceTarget(left, right string) bool {
 }
 
 func targetWithQueryToken(target, token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return strings.TrimSpace(target)
+	}
+	parsed, ok := parseCommandDeviceTarget(target)
+	if !ok {
+		return strings.TrimSpace(target)
+	}
+	query := parsed.Query()
+	if strings.TrimSpace(query.Get("token")) != "" {
+		return parsed.String()
+	}
+	query.Set("token", token)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func targetWithRequiredQueryToken(target, token string) string {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return strings.TrimSpace(target)

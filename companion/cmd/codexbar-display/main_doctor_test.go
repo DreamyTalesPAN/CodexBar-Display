@@ -75,6 +75,9 @@ func TestDoctorWiFiProbeTargetUsesTokenOnlyForMatchingDevice(t *testing.T) {
 	if got := doctorWiFiProbeTarget(legacyTarget, cfg); !strings.Contains(got, "token=saved-token") || strings.Contains(got, "legacy-token") {
 		t.Fatalf("expected saved token to authenticate legacy fallback target, got %q", got)
 	}
+	if got := targetWithQueryToken(legacyTarget, "other-token"); got != legacyTarget {
+		t.Fatalf("shared target helper must preserve explicit token, got %q", got)
+	}
 }
 
 func TestDoctorPublicWiFiTargetRedactsSavedToken(t *testing.T) {
