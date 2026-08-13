@@ -54,7 +54,11 @@ var doctorResolvePortFn = usb.ResolvePort
 var doctorProbePortFn = usb.ProbePort
 var doctorReadDeviceHelloFn = usb.ReadDeviceHello
 var doctorReadWiFiCapabilitiesFn = func(target string) (protocol.DeviceCapabilities, error) {
-	return transportlayer.NewWiFiTransportWithClient(nil).DeviceCapabilities(target)
+	client := &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: doctorAuthRoundTripper{token: deviceTokenFromCommandTarget(target)},
+	}
+	return transportlayer.NewWiFiTransportWithClient(client).DeviceCapabilities(target)
 }
 var doctorCheckCompanionHealthFn = checkDoctorCompanionHealth
 var doctorLaunchAgentPrintFn = func(label string) ([]byte, error) {
@@ -64,6 +68,19 @@ var doctorLaunchAgentPrintFn = func(label string) ([]byte, error) {
 
 var displayStreamSensitiveQueryPattern = regexp.MustCompile(`(?i)([?&](?:token|auth|key|secret)=)[^&\s"]+`)
 var displayStreamSensitiveUserInfoPattern = regexp.MustCompile(`(?i)(https?://)[^/@\s]+@`)
+
+type doctorAuthRoundTripper struct {
+	token string
+}
+
+func (t doctorAuthRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	request = request.Clone(request.Context())
+	request.Header.Del("X-VibeTV-Token")
+	if token := strings.TrimSpace(t.token); token != "" {
+		request.Header.Set("X-VibeTV-Token", token)
+	}
+	return http.DefaultTransport.RoundTrip(request)
+}
 
 func main() {
 	args := os.Args[1:]
@@ -1708,6 +1725,14 @@ func parseCommandDeviceTarget(target string) (*url.URL, bool) {
 		return nil, false
 	}
 	return parsed, true
+}
+
+func deviceTokenFromCommandTarget(target string) string {
+	parsed, ok := parseCommandDeviceTarget(target)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(parsed.Query().Get("token"))
 }
 
 var themePackInstallFirmwareUpdateFn = runThemePackInstallFirmwareUpdate

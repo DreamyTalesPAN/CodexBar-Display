@@ -166,6 +166,21 @@ func TestDoctorWiFiRejectsStaleSavedToken(t *testing.T) {
 	}
 }
 
+func TestDoctorWiFiProbeIgnoresAmbientToken(t *testing.T) {
+	t.Setenv("CODEXBAR_DISPLAY_DEVICE_TOKEN", "ambient-token")
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-VibeTV-Token"); got != "" {
+			t.Fatalf("expected no ambient token, got %q", got)
+		}
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":1,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
+	}))
+	defer device.Close()
+
+	if _, err := doctorReadWiFiCapabilitiesFn(device.URL); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDoctorCompanionHealthFallsBackFromStalePublishedEndpoint(t *testing.T) {
 	deadListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
