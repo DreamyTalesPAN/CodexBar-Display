@@ -83,7 +83,7 @@ func TestDoctorPublicWiFiTargetRedactsSavedToken(t *testing.T) {
 func TestReadDoctorLegacyLaunchAgentPlistFallsBackToSystemPath(t *testing.T) {
 	home := "/Users/test"
 	systemPath := filepath.Join("/Library", "LaunchAgents", "com.codexbar-display.daemon.plist")
-	data, err := readDoctorLegacyLaunchAgentPlist(home, func(path string) ([]byte, error) {
+	data, err := readDoctorLegacyLaunchAgentPlist(home, "", func(path string) ([]byte, error) {
 		if path == systemPath {
 			return []byte("system plist"), nil
 		}
@@ -94,6 +94,28 @@ func TestReadDoctorLegacyLaunchAgentPlistFallsBackToSystemPath(t *testing.T) {
 	}
 	if string(data) != "system plist" {
 		t.Fatalf("unexpected plist %q", data)
+	}
+}
+
+func TestReadDoctorLegacyLaunchAgentPlistUsesLoadedServicePath(t *testing.T) {
+	home := "/Users/test"
+	loadedPath := filepath.Join("/Library", "LaunchAgents", "com.codexbar-display.daemon.plist")
+	userPath := filepath.Join(home, "Library", "LaunchAgents", "com.codexbar-display.daemon.plist")
+	data, err := readDoctorLegacyLaunchAgentPlist(home, "path = "+loadedPath, func(path string) ([]byte, error) {
+		switch path {
+		case loadedPath:
+			return []byte("loaded system plist"), nil
+		case userPath:
+			return []byte("stale user plist"), nil
+		default:
+			return nil, os.ErrNotExist
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "loaded system plist" {
+		t.Fatalf("expected loaded service plist, got %q", data)
 	}
 }
 

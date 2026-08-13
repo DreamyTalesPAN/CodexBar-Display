@@ -56,6 +56,10 @@ var doctorReadWiFiCapabilitiesFn = func(target string) (protocol.DeviceCapabilit
 	return transportlayer.NewWiFiTransportWithClient(nil).DeviceCapabilities(target)
 }
 var doctorCheckCompanionHealthFn = checkDoctorCompanionHealth
+var doctorLaunchAgentPrintFn = func(label string) ([]byte, error) {
+	service := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
+	return exec.Command("launchctl", "print", service).CombinedOutput()
+}
 
 var displayStreamSensitiveQueryPattern = regexp.MustCompile(`(?i)([?&](?:token|auth|key|secret)=)[^&\s"]+`)
 var displayStreamSensitiveUserInfoPattern = regexp.MustCompile(`(?i)(https?://)[^/@\s]+@`)
@@ -911,7 +915,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 	}
 
 	for _, label := range []string{"shop.vibetv.control-center.runtime", "shop.vibetv.control-center.preview-runtime"} {
-		if doctorLaunchAgentLoaded(label) {
+		if _, err := doctorLaunchAgentPrintFn(label); err == nil {
 			cfg, err := runtimeconfig.Load(home)
 			if err != nil {
 				return doctorRuntimeConfig{}, err
@@ -925,10 +929,11 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		}
 	}
 
-	if !doctorLaunchAgentLoaded("com.codexbar-display.daemon") {
+	launchctlOutput, err := doctorLaunchAgentPrintFn("com.codexbar-display.daemon")
+	if err != nil {
 		return doctorRuntimeConfig{}, nil
 	}
-	data, err := readDoctorLegacyLaunchAgentPlist(home, os.ReadFile)
+	data, err := readDoctorLegacyLaunchAgentPlist(home, string(launchctlOutput), os.ReadFile)
 	if err != nil {
 		return doctorRuntimeConfig{}, err
 	}
@@ -960,13 +965,17 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 	}, nil
 }
 
-func readDoctorLegacyLaunchAgentPlist(home string, readFile func(string) ([]byte, error)) ([]byte, error) {
+func readDoctorLegacyLaunchAgentPlist(home, launchctlOutput string, readFile func(string) ([]byte, error)) ([]byte, error) {
 	name := "com.codexbar-display.daemon.plist"
-	paths := []string{
+	paths := []string{parseDoctorLaunchAgentPath(launchctlOutput)}
+	paths = append(paths,
 		filepath.Join(home, "Library", "LaunchAgents", name),
 		filepath.Join("/Library", "LaunchAgents", name),
-	}
+	)
 	for _, path := range paths {
+		if path == "" {
+			continue
+		}
 		data, err := readFile(path)
 		if err == nil {
 			return data, nil
@@ -976,6 +985,16 @@ func readDoctorLegacyLaunchAgentPlist(home string, readFile func(string) ([]byte
 		}
 	}
 	return nil, os.ErrNotExist
+}
+
+func parseDoctorLaunchAgentPath(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "path = ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "path = "))
+		}
+	}
+	return ""
 }
 
 func doctorWiFiTarget(configTarget, plistTarget string) string {
@@ -999,11 +1018,6 @@ func doctorWiFiProbeTarget(target string, cfg runtimeconfig.Config) string {
 		}
 	}
 	return strings.TrimSpace(target)
-}
-
-func doctorLaunchAgentLoaded(label string) bool {
-	service := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
-	return exec.Command("launchctl", "print", service).Run() == nil
 }
 
 func runDoctorTransportChecks(config doctorRuntimeConfig) error {
