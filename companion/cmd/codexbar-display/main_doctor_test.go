@@ -5,10 +5,13 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
 func TestParsePinnedPortFromLaunchAgentPlist(t *testing.T) {
@@ -50,6 +53,58 @@ func TestDoctorWiFiTargetFallsBackToLegacyPlist(t *testing.T) {
 	}
 	if got := doctorWiFiTarget("http://192.0.2.20", "http://192.0.2.10"); got != "http://192.0.2.20" {
 		t.Fatalf("expected runtime config target to win, got %q", got)
+	}
+}
+
+func TestDoctorWiFiProbeTargetUsesTokenOnlyForMatchingDevice(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		DeviceTarget: "http://192.0.2.10",
+		DeviceToken:  "saved-token",
+	}
+	if got := doctorWiFiProbeTarget("http://192.0.2.10", cfg); !strings.Contains(got, "token=saved-token") {
+		t.Fatalf("expected matching target token, got %q", got)
+	}
+	if got := doctorWiFiProbeTarget("http://192.0.2.11", cfg); strings.Contains(got, "token=") {
+		t.Fatalf("must not send token to another target, got %q", got)
+	}
+}
+
+func TestReadDoctorLegacyLaunchAgentPlistFallsBackToSystemPath(t *testing.T) {
+	home := "/Users/test"
+	systemPath := filepath.Join("/Library", "LaunchAgents", "com.codexbar-display.daemon.plist")
+	data, err := readDoctorLegacyLaunchAgentPlist(home, func(path string) ([]byte, error) {
+		if path == systemPath {
+			return []byte("system plist"), nil
+		}
+		return nil, os.ErrNotExist
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "system plist" {
+		t.Fatalf("unexpected plist %q", data)
+	}
+}
+
+func TestDoctorWiFiRejectsStaleSavedToken(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-VibeTV-Token") != "stale-token" {
+			t.Fatalf("expected saved token in auth header")
+		}
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer device.Close()
+
+	restoreDoctorTestDeps(t)
+	doctorCheckCompanionHealthFn = func() error { return nil }
+	err := runDoctorWiFiRuntimeChecks(doctorRuntimeConfig{
+		configured:  true,
+		transport:   "wifi",
+		target:      device.URL,
+		probeTarget: targetWithQueryToken(device.URL, "stale-token"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "status=401") {
+		t.Fatalf("expected rejected saved token, got %v", err)
 	}
 }
 

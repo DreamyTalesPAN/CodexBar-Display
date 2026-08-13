@@ -897,10 +897,11 @@ func runDoctor() error {
 }
 
 type doctorRuntimeConfig struct {
-	configured bool
-	transport  string
-	target     string
-	port       string
+	configured  bool
+	transport   string
+	target      string
+	probeTarget string
+	port        string
 }
 
 func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
@@ -915,15 +916,19 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 			if err != nil {
 				return doctorRuntimeConfig{}, err
 			}
-			return doctorRuntimeConfig{configured: true, transport: "wifi", target: cfg.DeviceTarget}, nil
+			return doctorRuntimeConfig{
+				configured:  true,
+				transport:   "wifi",
+				target:      cfg.DeviceTarget,
+				probeTarget: doctorWiFiProbeTarget(cfg.DeviceTarget, cfg),
+			}, nil
 		}
 	}
 
 	if !doctorLaunchAgentLoaded("com.codexbar-display.daemon") {
 		return doctorRuntimeConfig{}, nil
 	}
-	plistPath := filepath.Join(home, "Library", "LaunchAgents", "com.codexbar-display.daemon.plist")
-	data, err := os.ReadFile(plistPath)
+	data, err := readDoctorLegacyLaunchAgentPlist(home, os.ReadFile)
 	if err != nil {
 		return doctorRuntimeConfig{}, err
 	}
@@ -937,19 +942,40 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		}
 	}
 	target := ""
+	probeTarget := ""
 	if transportName == "wifi" {
 		cfg, err := runtimeconfig.Load(home)
 		if err != nil {
 			return doctorRuntimeConfig{}, err
 		}
 		target = doctorWiFiTarget(cfg.DeviceTarget, parseLaunchAgentArgument(plist, "--target"))
+		probeTarget = doctorWiFiProbeTarget(target, cfg)
 	}
 	return doctorRuntimeConfig{
-		configured: true,
-		transport:  transportName,
-		target:     target,
-		port:       parseLaunchAgentArgument(plist, "--port"),
+		configured:  true,
+		transport:   transportName,
+		target:      target,
+		probeTarget: probeTarget,
+		port:        parseLaunchAgentArgument(plist, "--port"),
 	}, nil
+}
+
+func readDoctorLegacyLaunchAgentPlist(home string, readFile func(string) ([]byte, error)) ([]byte, error) {
+	name := "com.codexbar-display.daemon.plist"
+	paths := []string{
+		filepath.Join(home, "Library", "LaunchAgents", name),
+		filepath.Join("/Library", "LaunchAgents", name),
+	}
+	for _, path := range paths {
+		data, err := readFile(path)
+		if err == nil {
+			return data, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
+	return nil, os.ErrNotExist
 }
 
 func doctorWiFiTarget(configTarget, plistTarget string) string {
@@ -957,6 +983,22 @@ func doctorWiFiTarget(configTarget, plistTarget string) string {
 		return target
 	}
 	return strings.TrimSpace(plistTarget)
+}
+
+func doctorWiFiProbeTarget(target string, cfg runtimeconfig.Config) string {
+	publicTarget := publicDeviceTargetForConfig(target)
+	if publicTarget == "" {
+		return strings.TrimSpace(target)
+	}
+	if sameCommandDeviceTarget(publicTarget, cfg.DeviceTarget) && strings.TrimSpace(cfg.DeviceToken) != "" {
+		return targetWithQueryToken(publicTarget, cfg.DeviceToken)
+	}
+	for _, known := range cfg.KnownDevices {
+		if sameCommandDeviceTarget(publicTarget, known.Target) && strings.TrimSpace(known.DeviceToken) != "" {
+			return targetWithQueryToken(publicTarget, known.DeviceToken)
+		}
+	}
+	return publicTarget
 }
 
 func doctorLaunchAgentLoaded(label string) bool {
@@ -1065,7 +1107,11 @@ func runDoctorWiFiRuntimeChecks(config doctorRuntimeConfig) error {
 		return fmt.Errorf("runtime Companion health failed: %w", err)
 	}
 	fmt.Println("  Companion health: ok")
-	caps, err := doctorReadWiFiCapabilitiesFn(target)
+	probeTarget := strings.TrimSpace(config.probeTarget)
+	if probeTarget == "" {
+		probeTarget = target
+	}
+	caps, err := doctorReadWiFiCapabilitiesFn(probeTarget)
 	if err != nil {
 		fmt.Printf("  WiFi device reachability: failed (%v)\n", err)
 		return fmt.Errorf("runtime WiFi device reachability failed: %w", err)
