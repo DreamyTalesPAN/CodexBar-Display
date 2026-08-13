@@ -322,6 +322,18 @@ func TestDoctorAppWiFiRejectsMissingActiveCredential(t *testing.T) {
 	}
 }
 
+func TestDoctorLegacyWiFiAuthReadinessUsesProbeCredential(t *testing.T) {
+	withoutToken := doctorWiFiProbeTarget("http://192.0.2.10", runtimeconfig.Config{}, true)
+	if deviceTokenFromCommandTarget(withoutToken) != "" {
+		t.Fatalf("expected tokenless legacy probe, got %q", withoutToken)
+	}
+
+	withToken := doctorWiFiProbeTarget("http://192.0.2.10?token=legacy-token", runtimeconfig.Config{}, true)
+	if deviceTokenFromCommandTarget(withToken) != "legacy-token" {
+		t.Fatalf("expected legacy inline credential, got %q", withToken)
+	}
+}
+
 func TestDoctorWiFiRejectsUnknownCapabilities(t *testing.T) {
 	restoreDoctorTestDeps(t)
 	doctorCheckCompanionHealthFn = func(string) error { return nil }

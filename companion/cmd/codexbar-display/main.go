@@ -940,13 +940,14 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 			if err != nil {
 				return doctorRuntimeConfig{}, err
 			}
+			probeTarget := doctorWiFiProbeTarget(cfg.DeviceTarget, cfg, false)
 			return doctorRuntimeConfig{
 				configured:  true,
 				label:       label,
 				transport:   "wifi",
 				target:      cfg.DeviceTarget,
-				probeTarget: doctorWiFiProbeTarget(cfg.DeviceTarget, cfg, false),
-				authReady:   strings.TrimSpace(cfg.DeviceToken) != "",
+				probeTarget: probeTarget,
+				authReady:   deviceTokenFromCommandTarget(probeTarget) != "",
 			}, nil
 		}
 	}
@@ -984,7 +985,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		transport:   transportName,
 		target:      target,
 		probeTarget: probeTarget,
-		authReady:   true,
+		authReady:   transportName != "wifi" || deviceTokenFromCommandTarget(probeTarget) != "",
 		port:        parseLaunchAgentArgument(plist, "--port"),
 	}, nil
 }
