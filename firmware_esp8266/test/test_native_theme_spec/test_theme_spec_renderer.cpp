@@ -2549,11 +2549,44 @@ void testResetTrustDeadlineReachedOfflineDoesNotStartNewCycle() {
   TEST_ASSERT_EQUAL_INT64(60, CurrentRemainingSecs(state, 1000));
 
   // Passing the deadline clamps at zero and stays there instead of wrapping
-  // into an invented next window.
+  // into an invented next window. The basis itself is still fresh, so the
+  // trust stays offline rather than stale — an expired countdown says nothing
+  // about the windows that are still running.
   TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, 1000 + 61UL * 1000UL));
   TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, 1000 + 2 * kHourMs));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kOffline),
                         static_cast<int>(CurrentResetTrust(state.reset, 1000 + 2 * kHourMs)));
+}
+
+// The host projects the FIRST window onto the root `resetSecs`. A short
+// session window expiring offline must not blank the long weekly window that
+// is still running well inside the trust budget.
+void testAShortRootDeadlineDoesNotBlankLongerWindows() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* shortRoot =
+      R"JSON({"v":2,"provider":"claude","resetSecs":60,"resetTrustSecs":18000,"resetSource":"claude:session","resetTrust":"live"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, shortRoot, 1000, event));
+  state.current.usageWindows[0].available = true;
+  state.current.usageWindows[0].resetSecs = 60;
+  state.current.usageWindows[1].available = true;
+  state.current.usageWindows[1].resetSecs = 4 * 3600;
+
+  // Two minutes later the 60s window is gone; the four-hour one is not.
+  const unsigned long afterShort = 1000 + 120UL * 1000UL;
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, afterShort));
+  TEST_ASSERT_EQUAL_INT64(
+      0, codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 0, afterShort));
+  TEST_ASSERT_EQUAL_INT64(
+      4 * 3600 - 120,
+      codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 1, afterShort));
+
+  // Once the freshness budget is gone, every window blanks after all.
+  const unsigned long afterBudget = 1000 + 5 * kHourMs + 1000;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, afterBudget)));
+  TEST_ASSERT_EQUAL_INT64(
+      0, codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 1, afterBudget));
 }
 
 void testResetTrustSourceChangeNeverInheritsPreviousDeadline() {
@@ -2792,6 +2825,7 @@ int main() {
   RUN_TEST(testResetTrustExpiredBudgetBlanksAStillRunningDeadline);
   RUN_TEST(testUsageWindowResetCountdownsStopWhenTrustExpires);
   RUN_TEST(testResetTrustDeadlineReachedOfflineDoesNotStartNewCycle);
+  RUN_TEST(testAShortRootDeadlineDoesNotBlankLongerWindows);
   RUN_TEST(testResetTrustSourceChangeNeverInheritsPreviousDeadline);
   RUN_TEST(testResetTrustOfflineResendCannotExtendDeadlineOrBudget);
   RUN_TEST(testResetTrustRecoversFromStaleWithFreshDataWithoutRestart);

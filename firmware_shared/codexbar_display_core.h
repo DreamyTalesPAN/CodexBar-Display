@@ -264,10 +264,14 @@ inline int64_t ResetBasisAgeSecs(const ResetTrustState& state, unsigned long now
   return kResetTrustHorizonSecs - ResetTrustBudgetSecs(state, nowMillis);
 }
 
+// Trust is about the freshness of the basis, not about any single countdown.
+// The root deadline is only the first window the host projected onto
+// `resetSecs`, so letting its expiry mark everything stale would blank a
+// still-running weekly window the moment a short session window runs out
+// offline. Each countdown clamps itself at zero; only a missing basis or an
+// expired freshness budget makes them all untrustworthy.
 inline ResetTrust CurrentResetTrust(const ResetTrustState& state, unsigned long nowMillis) {
-  if (!state.hasDeadline ||
-      ResetDeadlineSecs(state, nowMillis) <= 0 ||
-      ResetTrustBudgetSecs(state, nowMillis) <= 0) {
+  if (!state.hasDeadline || ResetTrustBudgetSecs(state, nowMillis) <= 0) {
     return ResetTrust::kStale;
   }
   if (!state.enforced) {
