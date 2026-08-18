@@ -2487,10 +2487,14 @@ func compactFrameUpdate(update *protocol.UpdateState) *protocol.UpdateState {
 func compactUpdateCandidates(frame protocol.Frame) []protocol.Frame {
 	candidates := []protocol.Frame{frame}
 
+	// Dropping the totals drops the claim with them: leaving the marker set
+	// would let the device read the omitted fields as a completed all-zero
+	// history and render fabricated zeroes.
 	withoutTokens := frame
 	withoutTokens.SessionTokens = 0
 	withoutTokens.WeekTokens = 0
 	withoutTokens.TotalTokens = 0
+	withoutTokens.TokenTotalsKnown = false
 	candidates = append(candidates, withoutTokens)
 
 	withoutClock := withoutTokens

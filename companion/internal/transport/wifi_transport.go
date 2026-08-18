@@ -77,9 +77,9 @@ type DeviceHealthSnapshot struct {
 			LastErrorStage   string `json:"lastErrorStage"`
 		} `json:"gif"`
 	} `json:"display"`
-	// While Standby.Active is true the device draws the screensaver, so
-	// Display.ThemeSpec.Path is the screensaver and LiveThemePath is the live
-	// slot the device will return to.
+	// Whenever something borrows the screen — standby, or the ten-second
+	// post-install screensaver preview — Display.ThemeSpec.Path is that
+	// borrowed spec and LiveThemePath is the slot the device returns to.
 	Standby struct {
 		Active        bool   `json:"active"`
 		LiveThemePath string `json:"liveThemePath"`
@@ -89,8 +89,14 @@ type DeviceHealthSnapshot struct {
 // LiveThemeSpecPath reports the live slot regardless of what is drawn right
 // now, so a caller cannot mistake a screensaver on screen for the live theme.
 func (s DeviceHealthSnapshot) LiveThemeSpecPath() string {
+	// A reported way back means someone is borrowing the screen, so it is the
+	// live slot — not what happens to be drawn. Checking Standby.Active alone
+	// missed the post-install preview, which borrows it without standby.
+	if live := strings.TrimSpace(s.Standby.LiveThemePath); live != "" {
+		return live
+	}
 	if s.Standby.Active {
-		return strings.TrimSpace(s.Standby.LiveThemePath)
+		return ""
 	}
 	if !s.Display.ThemeSpec.Active {
 		return ""

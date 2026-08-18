@@ -371,6 +371,27 @@ inline ResetTrust ParseResetTrustName(const String& value) {
   return ResetTrust::kUnknown;
 }
 
+// Trust says whether the basis is fresh enough to keep counting anything down,
+// so any carried deadline qualifies. Requiring the legacy root would discard a
+// perfectly valid provider-slot countdown just because the selected provider
+// happens to have none.
+inline bool FrameCarriesResetDeadline(const Frame& frame) {
+  if (frame.resetSecs > 0) {
+    return true;
+  }
+  for (size_t i = 0; i < kMaxUsageWindows; ++i) {
+    if (frame.usageWindows[i].available && frame.usageWindows[i].resetSecs > 0) {
+      return true;
+    }
+  }
+  for (size_t i = 0; i < kMaxProviderSlots; ++i) {
+    if (frame.providerSlots[i].available && frame.providerSlots[i].resetSecs > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 inline void ApplyFrameResetTrust(ResetTrustState& state, const Frame& frame, unsigned long nowMillis) {
   if (frame.hasError || !frame.hasResetFields) {
     return;
@@ -391,7 +412,7 @@ inline void ApplyFrameResetTrust(ResetTrustState& state, const Frame& frame, uns
     }
   }
 
-  const bool usable = deadlineSecs > 0 &&
+  const bool usable = FrameCarriesResetDeadline(frame) &&
                       frame.resetTrust != ResetTrust::kStale &&
                       (!enforced || (trustSecs > 0 && frame.resetSource.length() > 0));
   state = ResetTrustState{};

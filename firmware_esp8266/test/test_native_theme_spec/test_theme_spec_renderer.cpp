@@ -2727,6 +2727,48 @@ void testStaleResetRendersUnavailableWhateverTheThemeBinds() {
   TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[2].text.c_str());
 }
 
+// The selected provider can lack a reset while another fresh provider has one.
+// providerResetSlots still ships that countdown, so trust must not hinge on the
+// legacy root projection being positive.
+void testProviderSlotDeadlineAloneKeepsTrust() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* rootless =
+      R"JSON({"v":2,"provider":"claude","resetSecs":0,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"live","providerSlots":[{"id":"codex","label":"Codex","percent":20,"resetSecs":7200}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, rootless, 1000, event));
+
+  // The root itself stays at zero — nothing is invented for it.
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, 1000));
+  // ...but the provider slot keeps its own valid countdown.
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kLive),
+                        static_cast<int>(CurrentResetTrust(state.reset, 1000)));
+  TEST_ASSERT_EQUAL_INT64(
+      7200,
+      codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, 1000));
+  TEST_ASSERT_EQUAL_INT64(
+      7200 - 3600,
+      codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, 1000 + kHourMs));
+
+  // The shared freshness budget still governs everything.
+  const unsigned long afterBudget = 1000 + 5 * kHourMs + 1000;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, afterBudget)));
+  TEST_ASSERT_EQUAL_INT64(
+      0,
+      codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, afterBudget));
+}
+
+// A frame with no deadline anywhere still has nothing to be trusted about.
+void testFrameWithoutAnyDeadlineStaysStale() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* empty =
+      R"JSON({"v":2,"provider":"claude","resetSecs":0,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"live"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, empty, 1000, event));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, 1000)));
+}
+
 }  // namespace
 
 // Defined in test_device_clock.cpp.
@@ -2826,6 +2868,8 @@ int main() {
   RUN_TEST(testUsageWindowResetCountdownsStopWhenTrustExpires);
   RUN_TEST(testResetTrustDeadlineReachedOfflineDoesNotStartNewCycle);
   RUN_TEST(testAShortRootDeadlineDoesNotBlankLongerWindows);
+  RUN_TEST(testProviderSlotDeadlineAloneKeepsTrust);
+  RUN_TEST(testFrameWithoutAnyDeadlineStaysStale);
   RUN_TEST(testResetTrustSourceChangeNeverInheritsPreviousDeadline);
   RUN_TEST(testResetTrustOfflineResendCannotExtendDeadlineOrBudget);
   RUN_TEST(testResetTrustRecoversFromStaleWithFreshDataWithoutRestart);

@@ -630,8 +630,12 @@ void appendStandbyStateJSON(String& out) {
   // While standby draws the screensaver, display.themeSpec.path is the
   // screensaver, not the live slot. A host that restores the live theme has to
   // read this instead, or it would write the screensaver into the live slot.
+  // The post-install preview borrows the screen the same way and holds the same
+  // way back, so whichever of the two owns it reports it here.
   out += ",\"liveThemePath\":";
-  appendJSONNullableString(out, standbyLiveThemePath);
+  appendJSONNullableString(out, standbyLiveThemePath.length() > 0
+                                    ? standbyLiveThemePath
+                                    : screensaverPreviewLivePath);
   out += "}";
 }
 
@@ -3469,6 +3473,22 @@ void loop() {
         countdownMinuteChanged = true;
       } else {
         runtimeCtx.lastRenderedUsageWindowSecs[i] = slotRemain;
+      }
+    }
+    // Provider slots count down locally too. A screensaver bound to them —
+    // Night Clock does exactly that — would otherwise sit at the last received
+    // value for as long as the Mac stays away.
+    for (size_t i = 0; i < codexbar_display::core::kMaxProviderSlots; ++i) {
+      const int64_t slotRemain =
+          codexbar_display::app::CurrentProviderSlotRemainingSecs(runtimeCtx, i, millis());
+      if (slotRemain == runtimeCtx.lastRenderedProviderSlotSecs[i]) {
+        continue;
+      }
+      if (codexbar_display::core::RemainingMinuteBucketChanged(
+              slotRemain, runtimeCtx.lastRenderedProviderSlotMinuteBuckets[i])) {
+        countdownMinuteChanged = true;
+      } else {
+        runtimeCtx.lastRenderedProviderSlotSecs[i] = slotRemain;
       }
     }
     if (countdownMinuteChanged) {

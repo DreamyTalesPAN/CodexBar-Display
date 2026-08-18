@@ -122,12 +122,20 @@ inline bool ObserveCompanionClock(
     bool hasCurrentOffset,
     int currentOffsetMinutes,
     unsigned long nowMillis) {
+  // An ABSENT clock text is normal: wire-budget pressure drops Time/Date while
+  // keeping the separately validated schedule, so losing the offset over it
+  // would leave a device with good SNTP time showing an unknown clock once the
+  // fallback ages out. A text that is PRESENT but malformed is the opposite
+  // signal — nothing from that frame deserves trust.
+  const bool textPresent = timeText != nullptr && timeText[0] != '\0';
   int localMinutesOfDay = 0;
-  if (!ParseCompanionTime(timeText, localMinutesOfDay)) {
-    return false;
+  if (textPresent) {
+    if (!ParseCompanionTime(timeText, localMinutesOfDay)) {
+      return false;
+    }
+    clock.hasCompanionClock = true;
+    clock.companionSeenAtMs = nowMillis;
   }
-  clock.hasCompanionClock = true;
-  clock.companionSeenAtMs = nowMillis;
   if (!hasCurrentOffset || !UtcOffsetValid(currentOffsetMinutes)) {
     return false;
   }

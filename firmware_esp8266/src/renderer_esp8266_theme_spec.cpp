@@ -1131,6 +1131,12 @@ void MarkThemeSpecCountdownsRendered() {
     Context().lastRenderedUsageWindowSecs[i] = slotRemain;
     Context().lastRenderedUsageWindowMinuteBuckets[i] = slotRemain / 60;
   }
+  for (size_t i = 0; i < codexbar_display::core::kMaxProviderSlots; ++i) {
+    const int64_t slotRemain =
+        codexbar_display::core::CurrentProviderSlotRemainingSecs(RuntimeState(), i, now);
+    Context().lastRenderedProviderSlotSecs[i] = slotRemain;
+    Context().lastRenderedProviderSlotMinuteBuckets[i] = slotRemain / 60;
+  }
 }
 
 bool DrawThemeSpecUsage() {

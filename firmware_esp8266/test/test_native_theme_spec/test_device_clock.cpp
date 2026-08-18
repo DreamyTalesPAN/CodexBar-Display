@@ -315,14 +315,16 @@ void testTwoOffsetTransitionsApplyWithoutCompanionFrame() {
   TEST_ASSERT_FALSE(ApplyDueUtcOffsetTransition(after, kSecondTransitionEpoch + 1));
 }
 
+// A malformed clock text means the frame cannot be trusted at all, so its
+// offset is refused too. An absent text is a different case and is covered by
+// testOffsetIsTakenWithoutClockText: the Companion drops Time/Date under wire
+// pressure while keeping the validated schedule.
 void testGarbageCompanionClockIsIgnoredForOffsetLearning() {
   DeviceClock clock;
   ObserveSystemEpoch(clock, kNtpEpoch, 1000);
-  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "", true, 120, 1000));
   TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "25:00", true, 120, 1000));
   TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "14:3", true, 120, 1000));
   TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "14:345", true, 120, 1000));
-  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, nullptr, true, 120, 1000));
   TEST_ASSERT_FALSE(clock.hasUtcOffset);
   TEST_ASSERT_FALSE(clock.hasCompanionClock);
 }
@@ -343,6 +345,30 @@ void testLocalDateRollsOverIncludingLeapDay() {
   TEST_ASSERT_EQUAL_STRING("29.02.2028", resolve(leap, 1000, "", "").date);
 }
 
+// Wire-budget pressure drops Time/Date but keeps the validated clockSchedule.
+// The offset has to be taken from such a frame, or SNTP-backed time stays
+// unusable once the Companion fallback ages out.
+void testOffsetIsTakenWithoutClockText() {
+  DeviceClock clock;
+  TEST_ASSERT_TRUE(ObserveCompanionClock(clock, "", true, 120, 1000));
+  TEST_ASSERT_TRUE(clock.hasUtcOffset);
+  // A null pointer is the same "no text" case.
+  DeviceClock viaNull;
+  TEST_ASSERT_TRUE(ObserveCompanionClock(viaNull, nullptr, true, 120, 1000));
+  TEST_ASSERT_TRUE(viaNull.hasUtcOffset);
+  TEST_ASSERT_EQUAL_INT(120, clock.utcOffsetMinutes);
+  // No clock text means no Companion display fallback was recorded.
+  TEST_ASSERT_FALSE(clock.hasCompanionClock);
+}
+
+// Without a usable offset there is still nothing to store.
+void testMissingOffsetWithoutClockTextChangesNothing() {
+  DeviceClock clock;
+  TEST_ASSERT_FALSE(ObserveCompanionClock(clock, "", false, 0, 1000));
+  TEST_ASSERT_FALSE(clock.hasUtcOffset);
+  TEST_ASSERT_FALSE(clock.hasCompanionClock);
+}
+
 }  // namespace
 
 void RunDeviceClockTests() {
@@ -361,4 +387,6 @@ void RunDeviceClockTests() {
   RUN_TEST(testTwoOffsetTransitionsApplyWithoutCompanionFrame);
   RUN_TEST(testGarbageCompanionClockIsIgnoredForOffsetLearning);
   RUN_TEST(testLocalDateRollsOverIncludingLeapDay);
+  RUN_TEST(testOffsetIsTakenWithoutClockText);
+  RUN_TEST(testMissingOffsetWithoutClockTextChangesNothing);
 }
