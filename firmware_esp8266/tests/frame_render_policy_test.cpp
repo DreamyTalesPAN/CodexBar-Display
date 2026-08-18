@@ -273,6 +273,42 @@ bool testScreensaverPreviewLeavesBlockerScreensAlone(const std::string& source) 
       "the screensaver preview must survive a reselection and hand its restore to the blocker owning the screen");
 }
 
+bool testPreviewYieldsToWhoeverTakesTheDisplay(const std::string& source) {
+  const std::size_t selectStart = source.find("void handleScreensaverActive()");
+  // The handler opens with its own #if, so the body ends at the #if that
+  // follows its #endif.
+  const std::size_t selectGuardEnd = source.find("\n#endif", selectStart);
+  const std::size_t selectEnd =
+      source.find("\n#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER", selectGuardEnd);
+  const std::size_t liveStart = source.find("void handleThemeActive(");
+  const std::size_t liveEnd = source.find("\nvoid handleScreensaverActive()", liveStart);
+  if (!expect(
+          selectStart != std::string::npos && selectGuardEnd != std::string::npos &&
+              selectEnd != std::string::npos && liveStart != std::string::npos &&
+              liveEnd != std::string::npos,
+          "screensaver selection and live activation must remain discoverable")) {
+    return false;
+  }
+
+  const std::string select = source.substr(selectStart, selectEnd - selectStart);
+  const std::string live = source.substr(liveStart, liveEnd - liveStart);
+  // An install clears the slot before overwriting the pack. Cancelling there
+  // would drop `showing` and strand the screensaver on screen, so the handler
+  // must leave the running preview to the loop's veto path.
+  const bool selectionKeepsRestore =
+      select.find("screensaver_preview::NoteSelection(") != std::string::npos &&
+      select.find("screensaver_preview::Cancel(") == std::string::npos;
+  // A live activation owns the display, so the preview has nothing to hand
+  // back and must not repaint over the new choice at its deadline.
+  const std::size_t cancel = live.find("screensaver_preview::Cancel(");
+  const std::size_t dropPath =
+      live.find("screensaverPreviewLivePath = \"\";", cancel);
+  return expect(
+      selectionKeepsRestore && cancel != std::string::npos &&
+          dropPath != std::string::npos,
+      "clearing the slot must leave the restore to the loop, while a live activation cancels the preview and drops its saved path");
+}
+
 bool testScreensaverSelectionValidatesBeforePersisting(const std::string& source) {
   const std::size_t selectionStart = source.find("bool setStandbyScreensaverPath(");
   const std::size_t selectionEnd = source.find("\nbool persistDeviceSettings(", selectionStart);
@@ -361,6 +397,7 @@ int main(int argc, char** argv) {
       !testStandbyExitLeavesErrorFrameVisible(source) ||
       !testUsageWakeRestoresLiveThemeBeforeDroppingPath(source) ||
       !testScreensaverPreviewLeavesBlockerScreensAlone(source) ||
+      !testPreviewYieldsToWhoeverTakesTheDisplay(source) ||
       !testScreensaverSelectionValidatesBeforePersisting(source) ||
       !testLiveThemeSlotUsesItsOwnedPathPolicy(source)) {
     return 1;

@@ -2503,6 +2503,11 @@ void handleThemeActive() {
   }
   // The customer just picked the live theme, so it is now the screen standby
   // has to hand back — and standby ends here rather than dimming that choice.
+  // A running preview loses its claim with it: the newly activated theme is
+  // already on screen, so there is nothing to restore, and its deadline must
+  // not repaint the previously captured theme over this choice.
+  screensaver_preview::Cancel(screensaverPreviewState);
+  screensaverPreviewLivePath = "";
   standbyLiveThemePath = "";
   standbyState.active = false;
   standby::NoteUsageActivity(standbyState, millis());
@@ -2574,10 +2579,14 @@ void handleScreensaverActive() {
   }
   // Never rendered here: ESP8266WebServer runs handlers inside handleClient(),
   // where display work does not belong. The loop shows the preview.
+  //
+  // Clearing the slot is deliberately NOT cancelled here. An install clears the
+  // selection before it overwrites the pack's files, and cancelling would drop
+  // `showing` — the loop could then never hand the screen back, leaving the
+  // screensaver up while its files are rewritten. Left alone, the empty slot
+  // reads as a veto in maintainScreensaverPreview, which restores properly.
   if (standby::HasScreensaver(deviceSettings.standby)) {
     screensaver_preview::NoteSelection(screensaverPreviewState);
-  } else {
-    screensaver_preview::Cancel(screensaverPreviewState);
   }
 
   String out;
