@@ -3139,9 +3139,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : null;
   const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
   const activeThemeUpgrade = resolveActiveThemeUpgrade(catalog.themes, device);
-  const screensaverUpgrade = resolveScreensaverUpgrade(
-    catalog.themes,
-    standby?.screensaverPath,
+  // Only the path matters here. Depending on the whole standby object would
+  // re-run the install effect on every settings poll, because each poll hands
+  // back a fresh object.
+  const screensaverPath = standby?.screensaverPath ?? undefined;
+  const screensaverUpgrade = useMemo(
+    () => resolveScreensaverUpgrade(catalog.themes, screensaverPath),
+    [catalog.themes, screensaverPath],
   );
   // One install per round, live slot first: the screensaver only shows once
   // standby takes over, so the screen the customer is looking at wins.
@@ -3230,7 +3234,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const attempt = [
       device?.deviceId,
       device?.display?.themeSpec?.path,
-      standby?.screensaverPath,
+      screensaverPath,
       theme.themeSpecPath,
     ].join("|");
     if (activeThemeUpgradeAttemptRef.current === attempt) {
@@ -3249,8 +3253,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     macAppUpdateAvailable,
     pendingUpgrade,
     requiresMacAppMigration,
+    screensaverPath,
     setupPreviewStep,
-    standby,
     themeInstallEnabled,
     themeInstallStatus?.phase,
     themeInstallStatus?.themeId,
