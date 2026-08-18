@@ -27,6 +27,7 @@ import {
   shouldUseHostedSetupShell,
 } from "./control-center-runtime";
 import {
+  deviceAwaitsProviderSetup,
   deviceCanContinueThemeSetup,
   deviceCompletedThemeSetup,
   deviceIsActive,
@@ -387,6 +388,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     if (deviceIsReady(next)) {
       didRunAutomaticDeviceSearch.current = false;
       setLastError(null);
+    }
+    // Entry normally waits for the first usable picture. A device that is only
+    // missing an AI provider never produces one, and every gate keyed on entry —
+    // the startup screen, the disabled tabs, the theme chooser — would hold the
+    // customer on a screen that cannot resolve. The action they need is Usage,
+    // so this state opens the Control Center instead of waiting.
+    if (deviceAwaitsProviderSetup(next)) {
+      setHasEnteredControlCenter(true);
     }
     setDeviceSession((current) => {
       const mergedDevice = mergeDeviceInfo(current.device, next);

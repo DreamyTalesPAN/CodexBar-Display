@@ -2912,6 +2912,19 @@ func (s *Server) handleDeviceReloadDisplay(w http.ResponseWriter, r *http.Reques
 	}
 	stream := s.waitForFreshDisplayStream(r.Context(), cfg.DeviceTarget, streamStartedAt)
 	device := withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
+	// There is no image to reload while no provider delivers usage. Name that
+	// instead of reporting an unexplained render failure the customer cannot act
+	// on.
+	if providerSetupStreamForTarget(&stream, cfg.DeviceTarget) {
+		writeError(
+			w,
+			http.StatusConflict,
+			"provider_setup_required",
+			"VibeTV is connected, but no AI provider is ready yet.",
+			"Connect an AI provider, then press Reload image again.",
+		)
+		return
+	}
 	health, err := s.waitForVerifiedDisplayRender(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
 	if err != nil {
 		writeError(
@@ -4103,6 +4116,15 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		stream = s.waitForFreshDisplayStream(ctx, cfg.DeviceTarget, streamStartedAt)
 	}
 	logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
+	// A stream that restarted, owns this exact VibeTV, and is only held back by
+	// provider setup has nothing left to prove about the theme install. It draws
+	// no usage picture because no provider is ready, so waiting for one reports
+	// a failed install to a customer whose theme is already on the device. The
+	// firmware update path makes the same call for the same reason.
+	if providerSetupStreamForTarget(&stream, cfg.DeviceTarget) {
+		fmt.Fprintln(out, "Display stream: waiting for AI provider")
+		return result, nil
+	}
 	renderVerificationStartedAt := time.Now()
 	health, err := s.waitForVerifiedDisplayRender(ctx, cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
 	logThemeInstallTiming(out, "render-verification", renderVerificationStartedAt)
@@ -4553,6 +4575,8 @@ func customerInstallProgress(line string, job *themeInstallJob) (string, int, bo
 		return "Refreshing display stream.", 94, true
 	case strings.HasPrefix(line, "Display stream: refreshed"):
 		return "Display stream refreshed.", 98, true
+	case strings.HasPrefix(line, "Display stream: waiting for AI provider"):
+		return "Theme installed. Connect an AI provider to see it on VibeTV.", 98, true
 	case strings.HasPrefix(line, "Done:"):
 		return "Theme installed.", 88, true
 	default:

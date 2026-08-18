@@ -485,6 +485,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testProviderlessDeviceReachesControlCenterInsteadOfThemeChooser(
+        browser,
+        appContext.appUrl,
+      );
       await testThemeSetupUpdatesFirmwareBeforeThemeInstall(
         browser,
         appContext.appUrl,
@@ -640,6 +644,10 @@ async function main() {
       appContext.appUrl,
     );
     await testThemeMissingDeviceChoosesThemeAndCompletesSetup(
+      browser,
+      appContext.appUrl,
+    );
+    await testProviderlessDeviceReachesControlCenterInsteadOfThemeChooser(
       browser,
       appContext.appUrl,
     );
@@ -3162,6 +3170,62 @@ async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) 
   await page
     .getByRole("navigation", { name: "Control Center" })
     .waitFor({ timeout: 10_000 });
+  await page.close();
+}
+
+// A VibeTV whose Mac has no ready AI provider draws the error frame, so it
+// reports theme-missing forever. The mandatory theme chooser used to claim that
+// state, replace the whole Control Center, and fail every install it offered —
+// leaving the customer with no reachable way to connect a provider. Reproduced
+// from a real support report (Mac App 1.0.53, firmware 1.0.40).
+async function testProviderlessDeviceReachesControlCenterInsteadOfThemeChooser(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...themeMissingDevice,
+      deviceId: "fixture-device-1",
+      stream: {
+        healthy: false,
+        running: true,
+        errorCode: "provider_setup_required",
+        detail: "VibeTV is connected, but no AI provider is ready yet.",
+      },
+    },
+    providerSetup: providerSetupFixture("not_configured"),
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 10_000 });
+
+  assert(
+    (await page
+      .getByRole("heading", { name: "Choose your VibeTV theme" })
+      .count()) === 0,
+    "A VibeTV that only lacks an AI provider must not be sent to the theme chooser",
+  );
+  assert(
+    (await page
+      .getByRole("heading", { name: "Connecting to VibeTV" })
+      .count()) === 0,
+    "A VibeTV that only lacks an AI provider must not wait for a preview that cannot arrive",
+  );
+
+  // Usage is where the customer connects a provider; the trap replaced exactly
+  // this screen, so reaching it is the point of the fix.
+  await clickNavigation(page, "Usage");
+  await page
+    .getByRole("heading", { name: "Usage", exact: true })
+    .waitFor({ timeout: 5_000 });
+
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 

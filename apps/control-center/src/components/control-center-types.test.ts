@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  deviceAwaitsProviderSetup,
   deviceCanContinueThemeSetup,
   deviceCompletedThemeSetup,
   deviceIsActive,
@@ -206,6 +207,74 @@ describe("device connection contract", () => {
         ready: true,
         activeTheme: "theme-missing",
         health: { ok: false },
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps a VibeTV that only lacks an AI provider out of theme setup", () => {
+    const awaitingProvider = {
+      active: true,
+      connected: true,
+      paired: true,
+      ready: false,
+      activeTheme: "theme-missing",
+      health: { ok: true },
+      stream: {
+        healthy: false,
+        running: true,
+        errorCode: "provider_setup_required",
+      },
+      display: { themeSpec: { active: false, renderOk: true } },
+    } as const;
+
+    expect(deviceAwaitsProviderSetup(awaitingProvider)).toBe(true);
+    // Without a provider the device draws the error frame forever, so this
+    // state would re-enter the chooser after every install and replace the
+    // Control Center the customer needs to connect a provider.
+    expect(deviceNeedsThemeSetup(awaitingProvider)).toBe(false);
+    expect(deviceCanContinueThemeSetup(awaitingProvider)).toBe(false);
+  });
+
+  it("still shows theme setup for other stream failures", () => {
+    for (const errorCode of ["display_send_failed", "device_pairing_required"]) {
+      expect(
+        deviceAwaitsProviderSetup({
+          active: true,
+          connected: true,
+          paired: true,
+          ready: false,
+          stream: { healthy: false, running: true, errorCode },
+        }),
+      ).toBe(false);
+    }
+    expect(
+      deviceNeedsThemeSetup({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: false,
+        activeTheme: "theme-missing",
+        health: { ok: true },
+        stream: {
+          healthy: false,
+          running: true,
+          errorCode: "display_send_failed",
+        },
+        display: { themeSpec: { active: false, renderOk: true } },
+      }),
+    ).toBe(true);
+    // A stopped stream is not a provider that is merely missing.
+    expect(
+      deviceAwaitsProviderSetup({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: false,
+        stream: {
+          healthy: false,
+          running: false,
+          errorCode: "provider_setup_required",
+        },
       }),
     ).toBe(false);
   });

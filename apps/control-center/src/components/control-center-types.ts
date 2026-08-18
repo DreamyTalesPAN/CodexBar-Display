@@ -509,6 +509,21 @@ export function deviceIsActive(device: DeviceInfo | null | undefined) {
   return device?.active === true;
 }
 
+// A device whose display stream is running but has no AI provider to draw. The
+// device is connected, paired, and healthy; the only missing piece is usage
+// data, and the surfaces that supply it live inside the Control Center. Setup
+// gates that wait for a picture must let this state through instead of holding
+// the customer on a screen that can never resolve. Mirrors
+// providerSetupStreamForTarget on the Companion side.
+export function deviceAwaitsProviderSetup(
+  device: DeviceInfo | null | undefined,
+) {
+  return (
+    device?.stream?.running === true &&
+    device.stream.errorCode === "provider_setup_required"
+  );
+}
+
 export function deviceNeedsExplicitConnect(
   device: DeviceInfo | null | undefined,
 ) {
@@ -547,7 +562,12 @@ export function deviceCanContinueThemeSetup(
     return false;
   }
 
-  return true;
+  // A device without a ready AI provider draws the error frame, which carries
+  // no ThemeSpec, so it reports theme-missing forever. Theme setup can never
+  // complete in that state, and this screen replaces the whole Control Center —
+  // including the surfaces that connect a provider. Missing usage is not a
+  // missing theme, so it must not claim this state.
+  return !deviceAwaitsProviderSetup(device);
 }
 
 export function deviceCompletedThemeSetup(

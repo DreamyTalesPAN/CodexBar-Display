@@ -846,3 +846,30 @@ issue scope, or release permission never implies UI permission.
   version at the same time stays exactly as approved on 2026-08-08.
 - Approved files: `updates-screen.tsx`, `updates-screen.test.tsx`, and this
   approval record.
+
+## 2026-08-18 — A missing AI provider no longer replaces the Control Center
+
+- User approval: A customer support report (Mac App `1.0.53`, firmware
+  `1.0.40`) plus a screen recording showed the customer stuck on "Choose your
+  VibeTV theme" with every install ending in "Install failed — Theme installed,
+  but Mac App did not send a fresh image to VibeTV." The user confirmed the
+  diagnosis, ruled out sending customers to CodexBar ("die kunden wissen nicht
+  was codexbar ist und sollen auch nie in codexbar kommen"), and instructed to
+  file and implement the fix for a release the customer can download: "leg die
+  an und fang direkt an, die zu bearbeiten."
+- Approved customer-visible result: A VibeTV that is connected, paired, and
+  healthy but whose display stream reports `provider_setup_required` opens the
+  normal Control Center instead of the mandatory theme chooser, and instead of
+  the "Connecting to VibeTV — waiting for the first live preview" startup
+  screen. All shell tabs are reachable, so Usage — where providers are managed
+  — is available. Installing a theme on such a device now finishes with
+  "Theme installed. Connect an AI provider to see it on VibeTV." rather than a
+  failure. Pressing "Reload image" answers "VibeTV is connected, but no AI
+  provider is ready yet." with "Connect an AI provider, then press Reload image
+  again." instead of an unexplained render failure. A `theme-missing` device
+  with a healthy stream still opens the theme chooser exactly as approved on
+  2026-07-30, and every other stream failure keeps its existing handling.
+  CodexBar is not named anywhere in this copy.
+- Approved files: `control-center-types.ts`, `control-center-types.test.ts`,
+  `control-center-app.tsx`, `test-customer-flows.mjs`, `server.go`,
+  `server_test.go`, and this approval record.

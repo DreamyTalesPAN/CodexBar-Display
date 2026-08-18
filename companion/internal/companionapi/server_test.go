@@ -9643,3 +9643,130 @@ func TestFirmwareUpdateKeepsChildDiagnosticsOnDisk(t *testing.T) {
 		t.Fatalf("diagnostics log leaked the pairing token: %q", text)
 	}
 }
+
+// A Mac without a ready AI provider has no usage picture to draw, so the
+// restarted stream reports provider_setup_required forever. Demanding a
+// verified render there told the customer the install failed while the theme
+// was already on the device, and the mandatory theme chooser then offered the
+// same install again — a closed loop with no exit. The firmware update path
+// already makes this exact call for the same reason.
+func TestThemeInstallWithoutProviderCompletesWithoutRenderProof(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"error"},"display":{"activeTheme":"theme-missing","themeSpec":{"active":false,"path":"/themes/u/cm.json","renderOk":true}}}`))
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{ThemeID: "mini"}, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    target,
+			ErrorCode: "provider_setup_required",
+			Detail:    "VibeTV is connected, but no AI provider is ready yet.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		t.Fatal("render proof must not be demanded while no provider can produce usage")
+		return deviceHealth{}, nil
+	}
+
+	var out bytes.Buffer
+	result, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, &out)
+	if err != nil {
+		t.Fatalf("theme install without a provider must succeed: %v", err)
+	}
+	if result.ThemeID != "mini" {
+		t.Fatalf("install result must be returned: %+v", result)
+	}
+	if !strings.Contains(out.String(), "Display stream: waiting for AI provider") {
+		t.Fatalf("install must state why no picture arrived:\n%s", out.String())
+	}
+}
+
+// The provider tolerance is scoped to provider_setup_required on this exact
+// device. A stream that genuinely stopped delivering must still fail the
+// install, or a broken display would be reported as a finished setup.
+func TestThemeInstallStillFailsWhenStreamIsBroken(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"usage"}}`))
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{ThemeID: "mini"}, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    target,
+			ErrorCode: "display_send_failed",
+			Detail:    "VibeTV stopped accepting images.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		return deviceHealth{}, errors.New("display render not ready")
+	}
+
+	var out bytes.Buffer
+	if _, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, &out); err == nil {
+		t.Fatal("a broken display stream must still fail the install")
+	}
+}
+
+// Reload image cannot produce a picture that no provider can supply. Naming the
+// missing provider is the only outcome the customer can act on; the previous
+// generic render failure sent them back to the same dead end.
+func TestReloadDisplayWithoutProviderReportsProviderSetup(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-no-provider","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"error"}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-no-provider", DeviceToken: "pair-token"})
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    target,
+			ErrorCode: "provider_setup_required",
+			Detail:    "VibeTV is connected, but no AI provider is ready yet.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		t.Fatal("render proof must not be demanded while no provider can produce usage")
+		return deviceHealth{}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/reload-display", nil))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("reload without a provider must not report a render failure: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "provider_setup_required") {
+		t.Fatalf("reload must name the missing provider: %s", rec.Body.String())
+	}
+}
