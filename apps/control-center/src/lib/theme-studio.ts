@@ -615,6 +615,20 @@ export function buildThemePack(
   const normalized = prepared.spec;
   const usesUsageWindows = themeStudioSpecUsesUsageWindows(normalized);
   const usesUsageSlots = themeStudioSpecUsesUsageSlots(normalized);
+  const usesProviderSlots = themeStudioSpecUsesProviderSlots(normalized);
+  // What the pack declares is the only thing standing between a design and a
+  // VibeTV that cannot render it: install checks the manifest, not the spec.
+  // Provider slots arrived after usage slots, so they carry the later floor.
+  const requiredCapabilities = [
+    ...(usesUsageWindows ? ["usage-windows-v1"] : []),
+    ...(usesUsageSlots && !usesUsageWindows ? ["usage-slots-v1"] : []),
+    ...(usesProviderSlots ? ["provider-slots-v1"] : []),
+  ];
+  const minFirmware = usesProviderSlots
+    ? "1.0.41"
+    : usesUsageWindows || usesUsageSlots
+      ? "1.0.40"
+      : "1.0.24";
   const validation = validateThemeSpec(normalized, prepared.assets, usage);
   if (validation.errors.length > 0) {
     throw new Error(validation.errors[0]);
@@ -641,11 +655,9 @@ export function buildThemePack(
     id: normalized.themeId,
     name: cleanPackName(packName) || titleFromThemeId(normalized.themeId),
     version: "0.1.0",
-    minFirmware: usesUsageWindows || usesUsageSlots ? "1.0.40" : "1.0.24",
+    minFirmware,
     ...(usage === "screensaver" ? { usage } : {}),
-    ...(usesUsageWindows || usesUsageSlots
-      ? { requiredCapabilities: [usesUsageWindows ? "usage-windows-v1" : "usage-slots-v1"] }
-      : {}),
+    ...(requiredCapabilities.length > 0 ? { requiredCapabilities } : {}),
     themeSpec: {
       path: validation.themeSpecPath,
       file: "theme.json",

@@ -258,3 +258,57 @@ describe("validateThemeSpec", () => {
     expect(pack.manifest.requiredCapabilities).toEqual(["usage-slots-v1"]);
   });
 });
+
+// A pack that renders provider rows on firmware without provider slots leaves
+// them empty, and only the manifest can stop that install.
+describe("buildThemePack capability declaration", () => {
+  function specWithBinding(binding: string, extra = {}): ThemeStudioSpec {
+    const spec = validSpec();
+    spec.primitives = [
+      { binding, color: "#FFFFFF", type: "text", x: 0, y: 0, ...extra },
+    ];
+    return spec;
+  }
+
+  it("declares provider slots and their firmware floor", () => {
+    const pack = buildThemePack(
+      specWithBinding("providerSlot1Label", { providerSlot: 1 }),
+      "Provider Pack",
+    );
+
+    expect(pack.manifest.requiredCapabilities).toContain("provider-slots-v1");
+    expect(pack.manifest.minFirmware).toBe("1.0.41");
+  });
+
+  it("keeps declaring usage slots on their own", () => {
+    const pack = buildThemePack(
+      specWithBinding("usageSlot1Label", { slot: 1 }),
+      "Usage Pack",
+    );
+
+    expect(pack.manifest.requiredCapabilities).toEqual(["usage-slots-v1"]);
+    expect(pack.manifest.minFirmware).toBe("1.0.40");
+  });
+
+  it("declares both when a design mixes them", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      { binding: "usageSlot1Label", color: "#FFFFFF", slot: 1, type: "text", x: 0, y: 0 },
+      { binding: "providerSlot1Label", color: "#FFFFFF", providerSlot: 1, type: "text", x: 0, y: 20 },
+    ];
+    const pack = buildThemePack(spec, "Mixed Pack");
+
+    expect(pack.manifest.requiredCapabilities).toEqual([
+      "usage-slots-v1",
+      "provider-slots-v1",
+    ]);
+    expect(pack.manifest.minFirmware).toBe("1.0.41");
+  });
+
+  it("leaves a plain design without capability requirements", () => {
+    const pack = buildThemePack(validSpec(), "Plain Pack");
+
+    expect(pack.manifest.requiredCapabilities).toBeUndefined();
+    expect(pack.manifest.minFirmware).toBe("1.0.24");
+  });
+});

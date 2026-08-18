@@ -1258,3 +1258,20 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `lib/active-theme-upgrade.ts`,
   `lib/active-theme-upgrade.test.ts`, `control-center-app.tsx`, and this
   approval record.
+
+## 2026-08-18 — Exported packs declare what they need to render
+
+- User approval: Given live in the 2026-08-18 session as part of the standing
+  instruction to fix the Codex findings on PR #296 — this one reported that a
+  Theme Studio design using provider-slot bindings exported a pack claiming
+  firmware 1.0.24 and no provider-slots capability.
+- Approved customer-visible result: A theme built in the Theme Studio that
+  shows provider rows now exports a pack declaring `provider-slots-v1` and
+  firmware 1.0.41, the same way the bundled Night Clock does. Installing such a
+  pack on a VibeTV without provider slots is refused by the existing capability
+  check with the familiar firmware-update hint, instead of installing and
+  leaving those rows silently empty. Designs mixing usage and provider rows
+  declare both. A plain design still requires nothing and keeps 1.0.24. The
+  Theme Studio itself, its editor, and the export button are unchanged.
+- Approved files: `lib/theme-studio.ts`, `lib/theme-studio.test.ts`, and this
+  approval record.
