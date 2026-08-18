@@ -1238,3 +1238,23 @@ issue scope, or release permission never implies UI permission.
   shrink problems until the theme was installed. Nothing else changes.
 - Approved files: `live-vibetv-preview.tsx`, `live-vibetv-preview.test.ts`,
   `theme-studio/editor-geometry.ts`, and this approval record.
+
+## 2026-08-18 — Screensaver updates arrive on their own
+
+- User approval: Given live in the 2026-08-18 session after the customer saw
+  the Night Clock render "Weekly" and "Codex Spark Weekly" instead of the
+  provider names — "und wieso stehen hier jetzt nicht die provider sondern
+  wieder die slots?! hier sollte doch codex und claude stehen." — followed by
+  the decision to fix it inside PR #296 rather than defer it.
+- Approved customer-visible result: When the catalog ships a newer revision of
+  the selected screensaver, VibeTV receives it automatically, exactly as it
+  already does for the live theme. The customer no longer has to notice a stale
+  screensaver and reinstall it by hand from Appearance → Screensavers. The live
+  theme keeps priority: only one theme is installed per round, so the screen
+  currently on display is never interrupted for the screensaver. A screensaver
+  built in the Theme Studio has no catalog entry and is therefore never
+  replaced. Nothing about the screensaver list, its previews, or the manual
+  install button changes.
+- Approved files: `lib/active-theme-upgrade.ts`,
+  `lib/active-theme-upgrade.test.ts`, `control-center-app.tsx`, and this
+  approval record.

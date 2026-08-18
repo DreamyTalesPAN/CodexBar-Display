@@ -12,6 +12,7 @@ import { availableMacAppDmgDownloadUrl } from "@/lib/companion-release";
 import {
   resolveActiveLiveTheme,
   resolveActiveThemeUpgrade,
+  resolveScreensaverUpgrade,
 } from "@/lib/active-theme-upgrade";
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import { buildThemePack } from "@/lib/theme-studio";
@@ -3138,6 +3139,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : null;
   const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
   const activeThemeUpgrade = resolveActiveThemeUpgrade(catalog.themes, device);
+  const screensaverUpgrade = resolveScreensaverUpgrade(
+    catalog.themes,
+    standby?.screensaverPath,
+  );
+  // One install per round, live slot first: the screensaver only shows once
+  // standby takes over, so the screen the customer is looking at wins.
+  const pendingUpgrade = activeThemeUpgrade.needsThemeSpec
+    ? activeThemeUpgrade
+    : screensaverUpgrade;
   // In the installed native app the runtime's release check is authoritative:
   // it honors the release-feed override and Sparkle is always an actionable
   // update path — the 2026-08-09 rehearsal entered the firmware-ahead mixed
@@ -3192,7 +3202,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       !activeThemeUpgrade.unresolved,
   );
   useEffect(() => {
-    const theme = activeThemeUpgrade.theme;
+    const theme = pendingUpgrade.theme;
     if (
       hostedSetup ||
       setupPreviewStep ||
@@ -3206,18 +3216,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       themeInstallStatus?.phase === "installing" ||
       (themeInstallStatus?.phase === "error" &&
         themeInstallStatus.themeId === theme.themeId) ||
-      !activeThemeUpgrade.needsThemeSpec ||
+      !pendingUpgrade.needsThemeSpec ||
       themeNeedsUpgradeableFirmware(theme, device, themeInstallEnabled) ||
       macAppUpdateAvailable ||
       initialThemeId ||
-      activeThemeUpgrade.unresolved
+      pendingUpgrade.unresolved
     ) {
       return;
     }
 
+    // Both slots share the guard, so the key carries both installed paths:
+    // a live install must not mark the screensaver's own attempt as done.
     const attempt = [
       device?.deviceId,
       device?.display?.themeSpec?.path,
+      standby?.screensaverPath,
       theme.themeSpecPath,
     ].join("|");
     if (activeThemeUpgradeAttemptRef.current === attempt) {
@@ -3226,7 +3239,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     activeThemeUpgradeAttemptRef.current = attempt;
     void installTheme(theme);
   }, [
-    activeThemeUpgrade,
     busyAction,
     companionStatus,
     device,
@@ -3235,8 +3247,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     initialThemeId,
     installTheme,
     macAppUpdateAvailable,
+    pendingUpgrade,
     requiresMacAppMigration,
     setupPreviewStep,
+    standby,
     themeInstallEnabled,
     themeInstallStatus?.phase,
     themeInstallStatus?.themeId,

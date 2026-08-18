@@ -4,6 +4,7 @@ import type { ThemeProduct } from "@/lib/themes";
 import {
   resolveActiveLiveTheme,
   resolveActiveThemeUpgrade,
+  resolveScreensaverUpgrade,
 } from "./active-theme-upgrade";
 
 const slotTheme = {
@@ -25,6 +26,12 @@ const screensaver = {
   themeSpecPath: "/themes/s/night-clock.json",
   title: "Night Clock",
   usage: "screensaver",
+} satisfies ThemeProduct;
+
+const versionedScreensaver = {
+  ...screensaver,
+  themeRev: 3,
+  themeSpecPath: "/themes/s/nc-3-e18e42.json",
 } satisfies ThemeProduct;
 
 function device(
@@ -146,5 +153,49 @@ describe("resolveActiveThemeUpgrade", () => {
       needsThemeSpec: false,
       unresolved: true,
     });
+  });
+});
+
+describe("resolveScreensaverUpgrade", () => {
+  const catalog = [slotTheme, versionedScreensaver];
+
+  it("upgrades a screensaver the catalog has moved to a new revision", () => {
+    expect(
+      resolveScreensaverUpgrade(catalog, "/themes/s/nc-2-cb6d64.json"),
+    ).toEqual({
+      needed: true,
+      needsFirmwareCapability: false,
+      needsThemeSpec: true,
+      theme: versionedScreensaver,
+      unresolved: false,
+    });
+  });
+
+  it("leaves the current revision alone", () => {
+    expect(
+      resolveScreensaverUpgrade(catalog, "/themes/s/nc-3-e18e42.json").needed,
+    ).toBe(false);
+  });
+
+  it("stays idle without a selected screensaver", () => {
+    expect(resolveScreensaverUpgrade(catalog, undefined).needed).toBe(false);
+    expect(resolveScreensaverUpgrade(catalog, "  ").needed).toBe(false);
+  });
+
+  // A studio-built screensaver has no catalog entry to upgrade towards, so the
+  // customer's own file must never be replaced by a lookalike.
+  it("ignores a screensaver that is not in the catalog", () => {
+    expect(
+      resolveScreensaverUpgrade(catalog, "/themes/s/mine-1-abc123.json").needed,
+    ).toBe(false);
+  });
+
+  // The live slot is resolved elsewhere; a live path must not match a
+  // screensaver entry just because the revision suffix looks alike.
+  it("never treats a live-slot path as a screensaver", () => {
+    expect(
+      resolveScreensaverUpgrade(catalog, "/themes/u/synthwa-1-6b39a3.json")
+        .needed,
+    ).toBe(false);
   });
 });

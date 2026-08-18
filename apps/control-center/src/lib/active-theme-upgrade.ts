@@ -84,6 +84,42 @@ export function resolveActiveThemeUpgrade(
   };
 }
 
+// The screensaver slot drifts exactly like the live slot when the catalog ships a
+// new revision, but nothing else catches it: the device reports only the path it
+// has, and `activeTheme` describes the live slot alone. Without this the customer
+// keeps an outdated screensaver until they reinstall it by hand.
+export function resolveScreensaverUpgrade(
+  themes: ThemeProduct[],
+  screensaverPath: string | null | undefined,
+): ActiveThemeUpgrade {
+  const idle = {
+    needed: false,
+    needsFirmwareCapability: false,
+    needsThemeSpec: false,
+    unresolved: false,
+  };
+  const installedPath = screensaverPath?.trim();
+  if (!installedPath) {
+    return idle;
+  }
+  const theme = themes.find(
+    (candidate) =>
+      candidate.usage === "screensaver" &&
+      sameVersionedThemePath(candidate.themeSpecPath, installedPath),
+  );
+  const expectedPath = theme?.themeSpecPath?.trim();
+  if (!theme || !expectedPath || expectedPath === installedPath) {
+    return idle;
+  }
+  return {
+    needed: true,
+    needsFirmwareCapability: false,
+    needsThemeSpec: true,
+    theme,
+    unresolved: false,
+  };
+}
+
 function sameVersionedThemePath(
   candidatePath: string | undefined,
   activePath: string | undefined,
@@ -102,5 +138,5 @@ function sameVersionedThemePath(
 }
 
 function versionedThemePathBase(path: string): string | undefined {
-  return path.match(/^(\/themes\/u\/.+)-\d+-[0-9a-f]{6}\.json$/i)?.[1];
+  return path.match(/^(\/themes\/[us]\/.+)-\d+-[0-9a-f]{6}\.json$/i)?.[1];
 }
