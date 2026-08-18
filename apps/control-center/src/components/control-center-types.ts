@@ -235,6 +235,7 @@ export type DeviceInfo = {
   standby?: {
     active?: boolean;
     liveThemePath?: string;
+    screensaverPath?: string;
   };
   capabilities?: {
     auth?: {

@@ -1292,3 +1292,27 @@ issue scope, or release permission never implies UI permission.
   still has priority, and Theme Studio screensavers are still left alone.
 - Approved files: `lib/active-theme-upgrade.ts`,
   `lib/active-theme-upgrade.test.ts`, and this approval record.
+
+## 2026-08-18 — The screensaver update no longer waits for a visit to Settings
+
+- User approval: Given live in the 2026-08-18 session — asked to choose the
+  visible result for the fourteenth Codex finding of the day, the customer
+  answered "Freigeben, mit Standby-Aufschub".
+- Approved customer-visible result: The automatic screensaver update from the
+  two earlier entries now runs for everyone. It read the installed screensaver
+  path out of the settings screen's own state, and nothing filled that state
+  unless the VibeTV happened to be ready on the very first status after launch
+  — otherwise the update never ran until someone opened Settings. On the bench
+  the device sat on Night Clock revision 2 for 20 minutes of five-second polls
+  without a single install attempt. The path now rides the VibeTV snapshot the
+  app already polls, exactly like the live theme's own path. Nothing else
+  changes: the live theme keeps priority, one install per round, Theme Studio
+  screensavers are still left alone, and the Settings screen behaves as before.
+  While the screensaver is on display the update is held back rather than
+  installed, because installing into the slot restores the live theme first and
+  would wake the screen with nobody asking; it resolves on its own with the
+  next frame that moves the usage numbers.
+- Approved files: `components/control-center-app.tsx`,
+  `components/control-center-types.ts`, `lib/active-theme-upgrade.ts`,
+  `components/live-vibetv-preview.tsx`, `components/live-vibetv-preview.test.ts`,
+  `scripts/test-customer-flows.mjs`, and this approval record.

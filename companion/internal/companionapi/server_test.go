@@ -10016,3 +10016,113 @@ func TestFirmwareUpdateKeepsChildDiagnosticsOnDisk(t *testing.T) {
 		t.Fatalf("diagnostics log leaked the pairing token: %q", text)
 	}
 }
+
+// The automatic screensaver update reads the slot off the polled snapshot. It
+// arrives on the tokenless health probe under settings, not under standby, so
+// both are pinned here: the value, and the fact that the probe stays tokenless.
+func TestStatusIncludesScreensaverSlot(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.41","deviceId":"saved-device","capabilities":{"standby":{"supported":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			if token := r.Header.Get("X-VibeTV-Token"); token != "" {
+				t.Fatalf("health probe must stay tokenless, got %q", token)
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"night-clock","themeSpec":{"active":true,"path":"/themes/u/synthwave.json","renderOk":true}},"standby":{"active":false,"idleSecs":5,"liveThemePath":null},"settings":{"display":{"brightnessPercent":40},"standby":{"enabled":true,"timeoutMinutes":10,"brightnessPercent":20,"screensaverPath":"/themes/s/nc-2-cb6d64ba.json"}}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "saved-device",
+	})
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Device.Standby == nil ||
+		got.Device.Standby.ScreensaverPath != "/themes/s/nc-2-cb6d64ba.json" {
+		t.Fatalf("expected screensaver slot in status, got %+v", got.Device.Standby)
+	}
+}
+
+// handleDevice reaches the health probe by a different route than handleStatus,
+// and the Control Center polls both.
+func TestDeviceIncludesScreensaverSlot(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.41","deviceId":"saved-device","capabilities":{"standby":{"supported":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"night-clock","themeSpec":{"active":true,"path":"/themes/u/synthwave.json","renderOk":true}},"standby":{"active":false,"idleSecs":5,"liveThemePath":null},"settings":{"standby":{"enabled":true,"screensaverPath":"  /themes/s/nc-2-cb6d64ba.json  "}}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "saved-device",
+	})
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/device", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Device deviceInfo `json:"device"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Device.Standby == nil ||
+		got.Device.Standby.ScreensaverPath != "/themes/s/nc-2-cb6d64ba.json" {
+		t.Fatalf("expected trimmed screensaver slot, got %+v", got.Device.Standby)
+	}
+}
+
+// An empty slot must not reach the Control Center as an empty string: the
+// automatic update treats "no slot" and "slot unknown" alike, and omitempty is
+// what keeps a cleared slot from looking like a value.
+func TestStatusOmitsClearedScreensaverSlot(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.41","deviceId":"saved-device","capabilities":{"standby":{"supported":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"synthwave","themeSpec":{"active":true,"path":"/themes/u/synthwave.json","renderOk":true}},"standby":{"active":false,"idleSecs":5},"settings":{"standby":{"enabled":true,"screensaverPath":null}}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "saved-device",
+	})
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "screensaverPath") {
+		t.Fatalf("cleared slot must be omitted, got %s", rec.Body.String())
+	}
+}

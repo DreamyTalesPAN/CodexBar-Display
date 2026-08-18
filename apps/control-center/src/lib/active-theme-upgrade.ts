@@ -9,6 +9,15 @@ export type ActiveThemeUpgrade = {
   unresolved: boolean;
 };
 
+// Nothing to install. Shared so a caller that has to hold an upgrade back can
+// say so with the same value the resolvers return when they find nothing.
+export const NO_THEME_UPGRADE: ActiveThemeUpgrade = Object.freeze({
+  needed: false,
+  needsFirmwareCapability: false,
+  needsThemeSpec: false,
+  unresolved: false,
+});
+
 export function resolveActiveLiveTheme(
   themes: ThemeProduct[],
   device: DeviceInfo | null | undefined,
@@ -92,15 +101,9 @@ export function resolveScreensaverUpgrade(
   themes: ThemeProduct[],
   screensaverPath: string | null | undefined,
 ): ActiveThemeUpgrade {
-  const idle = {
-    needed: false,
-    needsFirmwareCapability: false,
-    needsThemeSpec: false,
-    unresolved: false,
-  };
   const installedPath = screensaverPath?.trim();
   if (!installedPath) {
-    return idle;
+    return NO_THEME_UPGRADE;
   }
   const theme = themes.find(
     (candidate) =>
@@ -109,7 +112,7 @@ export function resolveScreensaverUpgrade(
   );
   const expectedPath = theme?.themeSpecPath?.trim();
   if (!theme || !expectedPath || expectedPath === installedPath) {
-    return idle;
+    return NO_THEME_UPGRADE;
   }
   return {
     needed: true,

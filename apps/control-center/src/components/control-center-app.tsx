@@ -10,6 +10,7 @@ import {
 } from "react";
 import { availableMacAppDmgDownloadUrl } from "@/lib/companion-release";
 import {
+  NO_THEME_UPGRADE,
   resolveActiveLiveTheme,
   resolveActiveThemeUpgrade,
   resolveScreensaverUpgrade,
@@ -3139,19 +3140,31 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : null;
   const firmwareUpdateAvailable = hasFirmwareUpdate(effectiveFirmwareUpdate);
   const activeThemeUpgrade = resolveActiveThemeUpgrade(catalog.themes, device);
+  // Read the slot from the polled VibeTV snapshot, the way the live slot reads
+  // its own path. The settings screen carries the same value, but only after
+  // someone opens it, so keying the automatic update off that state left every
+  // customer who stays on Overview with an outdated screensaver.
   // Only the path matters here. Depending on the whole standby object would
-  // re-run the install effect on every settings poll, because each poll hands
-  // back a fresh object.
-  const screensaverPath = standby?.screensaverPath ?? undefined;
+  // re-run the install effect on every poll, because each poll hands back a
+  // fresh object.
+  const screensaverPath =
+    device?.standby?.screensaverPath?.trim() || undefined;
   const screensaverUpgrade = useMemo(
     () => resolveScreensaverUpgrade(catalog.themes, screensaverPath),
     [catalog.themes, screensaverPath],
   );
+  // While standby is up the screensaver IS the screen on display, and
+  // installing into the slot restores the live theme first — the display would
+  // wake with nobody asking. It resolves on its own: standby ends on the first
+  // frame that moves the usage numbers.
+  const screensaverSlotOnScreen = device?.standby?.active === true;
   // One install per round, live slot first: the screensaver only shows once
   // standby takes over, so the screen the customer is looking at wins.
   const pendingUpgrade = activeThemeUpgrade.needsThemeSpec
     ? activeThemeUpgrade
-    : screensaverUpgrade;
+    : screensaverSlotOnScreen
+      ? NO_THEME_UPGRADE
+      : screensaverUpgrade;
   // In the installed native app the runtime's release check is authoritative:
   // it honors the release-feed override and Sparkle is always an actionable
   // update path — the 2026-08-09 rehearsal entered the firmware-ahead mixed

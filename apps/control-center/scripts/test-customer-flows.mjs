@@ -101,6 +101,7 @@ const catalogFixture = {
       downloadUrl: "https://cdn.example.test/night-clock.vibetv-theme",
       sha256: fixturePackSHA256,
       bytes: fixturePackBytes,
+      themeSpecPath: "/themes/s/nc-3-e18e4217.json",
       compatibleBoards: ["esp8266_smalltv_st7789"],
       requiresFirmware: "1.0.0",
       usage: "screensaver",
@@ -403,6 +404,10 @@ async function main() {
     }
     if (themeReleaseOnly) {
       await testCurrentFirmwareAutomaticallyRefreshesOldActiveTheme(
+        browser,
+        appContext.appUrl,
+      );
+      await testOverviewUpdatesTheScreensaverWithoutOpeningSettings(
         browser,
         appContext.appUrl,
       );
@@ -792,6 +797,10 @@ async function main() {
     await testReloadRestoresRunningThemeInstall(browser, appContext.appUrl);
     await testFirmwareUpdateShowsCustomerProgress(browser, appContext.appUrl);
     await testCurrentFirmwareAutomaticallyRefreshesOldActiveTheme(
+      browser,
+      appContext.appUrl,
+    );
+    await testOverviewUpdatesTheScreensaverWithoutOpeningSettings(
       browser,
       appContext.appUrl,
     );
@@ -6083,6 +6092,83 @@ async function testCurrentFirmwareAutomaticallyRefreshesOldActiveTheme(
     `Theme-only update used the wrong generation: ${installRequests[0]}`,
   );
   await page.close();
+}
+
+// The screensaver slot only ever reached the app through the settings screen,
+// so a customer who stayed on Overview kept an outdated screensaver forever.
+// The first status deliberately reports a VibeTV that is not ready yet: that is
+// the real launch ordering, and it is the case the old wiring never recovered
+// from.
+async function testOverviewUpdatesTheScreensaverWithoutOpeningSettings(
+  browser,
+  appUrl,
+) {
+  const staleSlotDevice = {
+    ...synthwaveDevice,
+    standby: { active: false, screensaverPath: "/themes/s/nc-2-cb6d64ba.json" },
+  };
+
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    companionVersion: "1.0.99",
+    device: staleSlotDevice,
+    statusDeviceSequence: [
+      { ...staleSlotDevice, ...reachableUnreadyDevice, standby: staleSlotDevice.standby },
+      staleSlotDevice,
+    ],
+  });
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await waitForCondition(
+    () => installRequests.length > 0,
+    "A stale screensaver slot must update without a visit to Settings",
+  );
+  await page.waitForTimeout(250);
+  assert(
+    installRequests.length === 1,
+    `The automatic screensaver update must run once, got ${installRequests.length}`,
+  );
+  const install = JSON.parse(installRequests[0]);
+  assert(
+    install.themeId === "night-clock",
+    `Automatic screensaver update picked the wrong theme: ${installRequests[0]}`,
+  );
+  await page.close();
+
+  // A slot that already carries the shipped revision must stay untouched.
+  const currentPage = await newCustomerPage(browser, appUrl, { viewport });
+  const currentInstalls = [];
+  await routeCompanionOnline(currentPage, currentInstalls, () => {}, {
+    companionVersion: "1.0.99",
+    device: {
+      ...synthwaveDevice,
+      standby: { active: false, screensaverPath: "/themes/s/nc-3-e18e4217.json" },
+    },
+  });
+  await currentPage.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await currentPage.waitForTimeout(750);
+  assertNoInstallRequests(currentInstalls);
+  await currentPage.close();
+
+  // While standby is up the screensaver is the screen on display, and
+  // installing into the slot would wake it with nobody asking.
+  const standbyPage = await newCustomerPage(browser, appUrl, { viewport });
+  const standbyInstalls = [];
+  await routeCompanionOnline(standbyPage, standbyInstalls, () => {}, {
+    companionVersion: "1.0.99",
+    device: {
+      ...synthwaveDevice,
+      standby: {
+        active: true,
+        liveThemePath: "/themes/u/synthwa-3-619665.json",
+        screensaverPath: "/themes/s/nc-2-cb6d64ba.json",
+      },
+    },
+  });
+  await standbyPage.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await standbyPage.waitForTimeout(750);
+  assertNoInstallRequests(standbyInstalls);
+  await standbyPage.close();
 }
 
 async function testAutomaticThemeRefreshRespectsUpdateGates(browser, appUrl) {

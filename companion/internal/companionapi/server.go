@@ -416,6 +416,11 @@ type deviceDisplayInfo struct {
 type deviceStandbyInfo struct {
 	Active        bool   `json:"active"`
 	LiveThemePath string `json:"liveThemePath,omitempty"`
+	// Mirrored from settings.standby.screensaverPath on the same health probe.
+	// The slot is standby state the Control Center needs on every poll, the way
+	// it already gets the live theme path — reading it from the settings screen
+	// instead left the automatic screensaver update waiting for a visit there.
+	ScreensaverPath string `json:"screensaverPath,omitempty"`
 }
 
 type deviceHealthInfo struct {
@@ -7329,6 +7334,15 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 		device.Standby = &deviceStandbyInfo{
 			Active:        health.Standby.Active,
 			LiveThemePath: strings.TrimSpace(health.Standby.LiveThemePath),
+		}
+		// The device reports the slot under settings, not under standby, but it
+		// arrives on this same probe. Firmware emits both blocks together, so a
+		// health payload without a standby block has no slot worth reporting.
+		if health.Settings.Standby != nil &&
+			health.Settings.Standby.ScreensaverPath != nil {
+			device.Standby.ScreensaverPath = strings.TrimSpace(
+				*health.Settings.Standby.ScreensaverPath,
+			)
 		}
 	}
 	if health.Display.ThemeSpec.Active || health.Display.ThemeSpec.RenderOK != nil {
