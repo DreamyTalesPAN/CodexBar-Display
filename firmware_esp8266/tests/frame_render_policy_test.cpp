@@ -195,11 +195,23 @@ bool testAssetDeleteProtectsStandbyLiveTheme(const std::string& source) {
       "path == activeThemeSpecPath || path == standbyLiveThemePath");
   const std::size_t referenceProtection = handler.find(
       "storedThemeSpecReferencesAsset(configuredScreensaverPath, path)", slotProtection);
+  const std::size_t previewSlot =
+      handler.find("path == screensaverPreviewLivePath", slotProtection);
+  const std::size_t activeAssets = handler.find(
+      "storedThemeSpecReferencesAsset(activeThemeSpecPath, path)", slotProtection);
+  const std::size_t standbyAssets = handler.find(
+      "storedThemeSpecReferencesAsset(standbyLiveThemePath, path)", slotProtection);
+  const std::size_t previewAssets = handler.find(
+      "storedThemeSpecReferencesAsset(screensaverPreviewLivePath, path)", slotProtection);
   const std::size_t remove = handler.find("LittleFS.remove(path)", referenceProtection);
   return expect(
       slotProtection != std::string::npos && referenceProtection != std::string::npos &&
-          remove != std::string::npos && slotProtection < referenceProtection && referenceProtection < remove,
-      "asset delete must protect live-slot state and assets referenced by the configured screensaver");
+          previewSlot != std::string::npos && activeAssets != std::string::npos &&
+          standbyAssets != std::string::npos && previewAssets != std::string::npos &&
+          remove != std::string::npos && slotProtection < referenceProtection &&
+          referenceProtection < remove && previewSlot < remove && activeAssets < remove &&
+          standbyAssets < remove && previewAssets < remove,
+      "asset delete must protect every rendered and held-back slot together with the assets its stored spec references");
 }
 
 bool testStandbyExitLeavesErrorFrameVisible(const std::string& source) {

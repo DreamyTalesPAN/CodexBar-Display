@@ -2222,10 +2222,20 @@ void handleAssetDelete() {
     webServer.send(404, "text/plain; charset=utf-8", "asset not found");
     return;
   }
+  // Every path that owns the screen, or holds the way back to it, protects the
+  // assets its spec references and not just the spec file: a sprite deleted
+  // while standby or the post-install preview is up comes back as a silent
+  // hole on wake. Empty paths short-circuit inside
+  // storedThemeSpecReferencesAsset, so the standby and preview lookups cost
+  // nothing while neither holds the screen.
   const String configuredScreensaverPath(deviceSettings.standby.screensaverPath);
   if (path == activeThemeSpecPath || path == standbyLiveThemePath ||
+      path == screensaverPreviewLivePath ||
       path == configuredScreensaverPath ||
-      storedThemeSpecReferencesAsset(configuredScreensaverPath, path)) {
+      storedThemeSpecReferencesAsset(configuredScreensaverPath, path) ||
+      storedThemeSpecReferencesAsset(activeThemeSpecPath, path) ||
+      storedThemeSpecReferencesAsset(standbyLiveThemePath, path) ||
+      storedThemeSpecReferencesAsset(screensaverPreviewLivePath, path)) {
     addCorsHeaders();
     webServer.send(409, "text/plain; charset=utf-8", "asset is active");
     return;
