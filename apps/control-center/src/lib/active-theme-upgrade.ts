@@ -137,6 +137,9 @@ function sameVersionedThemePath(
   );
 }
 
+// Shipped paths are `<prefix>-<rev>-<hash>.json`, and the hash length differs
+// per slot: live packs carry six hex characters (claude--5-ef8ada), screensavers
+// eight (nc-3-e18e4217). Pinning six silently skipped every screensaver.
 function versionedThemePathBase(path: string): string | undefined {
-  return path.match(/^(\/themes\/[us]\/.+)-\d+-[0-9a-f]{6}\.json$/i)?.[1];
+  return path.match(/^(\/themes\/[us]\/.+)-\d+-[0-9a-f]{6,}\.json$/i)?.[1];
 }

@@ -28,10 +28,12 @@ const screensaver = {
   usage: "screensaver",
 } satisfies ThemeProduct;
 
+// Real shipped path from theme-packs/night-clock/manifest.json — screensaver
+// hashes are eight hex characters, unlike the six of live packs.
 const versionedScreensaver = {
   ...screensaver,
   themeRev: 3,
-  themeSpecPath: "/themes/s/nc-3-e18e42.json",
+  themeSpecPath: "/themes/s/nc-3-e18e4217.json",
 } satisfies ThemeProduct;
 
 function device(
@@ -161,7 +163,7 @@ describe("resolveScreensaverUpgrade", () => {
 
   it("upgrades a screensaver the catalog has moved to a new revision", () => {
     expect(
-      resolveScreensaverUpgrade(catalog, "/themes/s/nc-2-cb6d64.json"),
+      resolveScreensaverUpgrade(catalog, "/themes/s/nc-2-cb6d64ba.json"),
     ).toEqual({
       needed: true,
       needsFirmwareCapability: false,
@@ -173,7 +175,7 @@ describe("resolveScreensaverUpgrade", () => {
 
   it("leaves the current revision alone", () => {
     expect(
-      resolveScreensaverUpgrade(catalog, "/themes/s/nc-3-e18e42.json").needed,
+      resolveScreensaverUpgrade(catalog, "/themes/s/nc-3-e18e4217.json").needed,
     ).toBe(false);
   });
 
@@ -197,5 +199,41 @@ describe("resolveScreensaverUpgrade", () => {
       resolveScreensaverUpgrade(catalog, "/themes/u/synthwa-1-6b39a3.json")
         .needed,
     ).toBe(false);
+  });
+});
+
+// The six-vs-eight hex difference between live and screensaver paths slipped
+// past a hand-written fixture once and let every screensaver upgrade go
+// unnoticed on real hardware. Pin the shape against the shipped paths.
+describe("versioned path matching against shipped paths", () => {
+  const shipped = [
+    "/themes/u/claude--5-ef8ada.json",
+    "/themes/u/clippy-4-7eb2b0.json",
+    "/themes/u/mini-cl-5-14d68f.json",
+    "/themes/u/synthwa-4-d3ff8f.json",
+    "/themes/s/nc-3-e18e4217.json",
+    "/themes/s/rcf-6-03e818f0.json",
+    "/themes/s/tf-5-9aeed240.json",
+  ];
+
+  it("recognises every shipped screensaver path as an upgrade target", () => {
+    for (const path of shipped.filter((p) => p.startsWith("/themes/s/"))) {
+      const theme = { ...screensaver, themeSpecPath: path };
+      // Same pack, older revision: the hash length must not decide this.
+      const older = path.replace(/-(\d+)-/, (_m, rev) => `-${Number(rev) - 1}-`);
+      expect(resolveScreensaverUpgrade([theme], older).needed).toBe(true);
+    }
+  });
+
+  it("recognises every shipped live path through the live resolver", () => {
+    for (const path of shipped.filter((p) => p.startsWith("/themes/u/"))) {
+      const theme = { ...slotTheme, themeSpecPath: path, usage: undefined };
+      const older = path.replace(/-(\d+)-/, (_m, rev) => `-${Number(rev) - 1}-`);
+      const found = resolveActiveLiveTheme([theme], {
+        connected: true,
+        standby: { active: true, liveThemePath: older },
+      } as never);
+      expect(found?.themeSpecPath).toBe(path);
+    }
   });
 });
