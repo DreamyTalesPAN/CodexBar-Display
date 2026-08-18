@@ -1361,6 +1361,11 @@ export function themeRenderPackMatchesActiveRevision(
   );
 }
 
+// The firmware renders this wherever a countdown has expired or its basis went
+// stale. A preview that softens it to "0m" tells the customer something the
+// device never shows.
+const RESET_UNAVAILABLE = "Reset unavailable";
+
 export function renderTextPrimitive(
   primitive: ThemePrimitive,
   frame: FrameData,
@@ -1370,6 +1375,14 @@ export function renderTextPrimitive(
     return boundValue(binding, frame);
   }
   const raw = primitive.text || primitive.v || "";
+  // RenderTextTemplate replaces the whole template for an expired root
+  // countdown instead of substituting in place, so the surrounding literal
+  // text disappears. Only the root tokens do this — {usage.N.reset}, {us1r}
+  // and {pv1r} substitute inline, and the device really does render
+  // "Reset in Reset unavailable" for those.
+  if (frame.resetSecs <= 0 && /\{reset\}|\{resetCountdown\}|\{r\}/.test(raw)) {
+    return RESET_UNAVAILABLE;
+  }
   return raw.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_match, key: string) =>
     boundValue(key, frame),
   );
@@ -2020,7 +2033,7 @@ function clampPercent(value?: number): number {
 
 function formatReset(seconds?: number): string {
   if (!seconds || seconds <= 0) {
-    return "0m";
+    return RESET_UNAVAILABLE;
   }
   const totalMinutes = Math.floor(seconds / 60);
   const days = Math.floor(totalMinutes / (24 * 60));

@@ -324,6 +324,76 @@ describe("dynamic usage slot preview", () => {
     ).toBe("5d 21h");
   });
 
+  // The device renders "Reset unavailable" for an expired countdown
+  // (theme_spec_renderer_core.h). A preview that showed "0m" instead would
+  // contradict the screen it is previewing.
+  it("reports an expired countdown the way the firmware does", () => {
+    const expired = { ...THEME_CATALOG_PREVIEW_FRAME, resetSecs: 0 };
+    expect(boundValue("reset", expired)).toBe("Reset unavailable");
+    expect(boundValue("r", expired)).toBe("Reset unavailable");
+  });
+
+  it("reports expired slot countdowns the way the firmware does", () => {
+    const frame = buildFrameData("2026-07-24T10:30:00Z", {
+      v: 2,
+      provider: "codex",
+      label: "Codex",
+      resetSecs: 0,
+      usageSlots: [
+        { id: "session", label: "Session", percent: 10, resetSecs: 0 },
+        { id: "weekly", label: "Weekly", percent: 20, resetSecs: 0 },
+      ],
+      providerSlots: [{ id: "codex", label: "Codex", percent: 10, resetSecs: 0 }],
+    });
+    expect(boundValue("us1r", frame)).toBe("Reset unavailable");
+    expect(boundValue("us2r", frame)).toBe("Reset unavailable");
+    expect(boundValue("usage.0.reset", frame)).toBe("Reset unavailable");
+    expect(boundValue("pv1r", frame)).toBe("Reset unavailable");
+  });
+
+  it("keeps an unavailable slot empty rather than reporting it unavailable", () => {
+    const frame = buildFrameData("2026-07-24T10:30:00Z", {
+      v: 2,
+      provider: "codex",
+      label: "Codex",
+      resetSecs: 100,
+      usageSlots: [{ id: "session", label: "Session", percent: 10, resetSecs: 0 }],
+    });
+    expect(boundValue("us2r", frame)).toBe("");
+  });
+
+  it("replaces the whole template for an expired root countdown", () => {
+    const expired = { ...THEME_CATALOG_PREVIEW_FRAME, resetSecs: 0 };
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Reset in {reset}" }, expired),
+    ).toBe("Reset unavailable");
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Reset in {resetCountdown}" }, expired),
+    ).toBe("Reset unavailable");
+    expect(renderTextPrimitive({ t: "tx", v: "Reset in {r}" }, expired)).toBe(
+      "Reset unavailable",
+    );
+  });
+
+  // Pins the asymmetry so nobody "tidies" it later: RenderTextTemplate probes
+  // only the root tokens, so slot tokens really do substitute in place on the
+  // device and leave the surrounding text standing.
+  it("substitutes slot countdown tokens in place, like the firmware", () => {
+    const expired = buildFrameData("2026-07-24T10:30:00Z", {
+      v: 2,
+      provider: "codex",
+      label: "Codex",
+      resetSecs: 0,
+      usageSlots: [{ id: "session", label: "Session", percent: 10, resetSecs: 0 }],
+    });
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Reset in {usage.0.reset}" }, expired),
+    ).toBe("Reset in Reset unavailable");
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Reset in {us1r}" }, expired),
+    ).toBe("Reset in Reset unavailable");
+  });
+
   it("uses a legacy render cache only when its path matches the active Custom Theme", async () => {
     const oldCompanionPack = {
       themeId: "my-custom",
