@@ -209,7 +209,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := pack.ValidateAgainstCapabilities(caps); err != nil && !canRetryAfterUsageCapabilityFirmwareUpdate(pack, caps, err, opts) {
+	if err := pack.ValidateAgainstCapabilities(caps); err != nil && !canRetryAfterThemeCapabilityFirmwareUpdate(pack, caps, err, opts) {
 		return Result{}, themePackCapabilitiesError(err)
 	}
 	if !opts.SkipFirmwareUpdate && opts.FirmwareUpdater != nil {
@@ -412,18 +412,26 @@ func themePackCapabilitiesError(err error) *InstallError {
 	}
 }
 
-func canRetryAfterUsageCapabilityFirmwareUpdate(pack *themepack.Pack, caps protocol.DeviceCapabilities, err error, opts Options) bool {
+// Every theme capability a firmware update can supply belongs here: missing one
+// is a reason to offer the update, not to refuse the pack outright. Leaving
+// provider slots out sent owners of Night Clock straight into a rejection on
+// firmware the updater could have fixed.
+func canRetryAfterThemeCapabilityFirmwareUpdate(pack *themepack.Pack, caps protocol.DeviceCapabilities, err error, opts Options) bool {
 	if opts.SkipFirmwareUpdate || opts.FirmwareUpdater == nil || !caps.Known || !caps.SupportsThemeSpecV1 {
 		return false
 	}
 	missingSlots := isMissingUsageCapabilityError(err, protocol.FeatureUsageSlotsV1)
 	missingWindows := isMissingUsageCapabilityError(err, protocol.FeatureUsageWindowsV1)
-	if (!missingSlots || caps.SupportsUsageSlotsV1) && (!missingWindows || caps.SupportsUsageWindowsV1) {
+	missingProviderSlots := isMissingUsageCapabilityError(err, protocol.FeatureProviderSlotsV1)
+	if (!missingSlots || caps.SupportsUsageSlotsV1) &&
+		(!missingWindows || caps.SupportsUsageWindowsV1) &&
+		(!missingProviderSlots || caps.SupportsProviderSlotsV1) {
 		return false
 	}
 	updatedCaps := caps
 	updatedCaps.SupportsUsageSlotsV1 = true
 	updatedCaps.SupportsUsageWindowsV1 = true
+	updatedCaps.SupportsProviderSlotsV1 = true
 	return pack.ValidateAgainstCapabilities(updatedCaps) == nil
 }
 
