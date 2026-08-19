@@ -19,6 +19,7 @@ private let restartControlCenterURLHost = "restart-control-center"
 private let repairRuntimeURLHost = "repair-runtime"
 private let checkForUpdatesURLHost = "check-for-updates"
 private let repairCodexBarURLHost = "repair-codexbar"
+private let finishCodexBarRecoveryURLHost = "finish-codexbar-recovery"
 private let controlCenterBundleIdentifier = "shop.vibetv.control-center"
 private let runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"
 private let previewRuntimeLaunchAgentLabel =
@@ -132,11 +133,27 @@ func isRepairCodexBarURL(_ url: URL) -> Bool {
     return true
 }
 
+func isFinishCodexBarRecoveryURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == finishCodexBarRecoveryURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/" else {
+        return false
+    }
+    return true
+}
+
 enum NativeControlCenterAction: Equatable {
     case restartControlCenter
     case repairRuntime
     case checkForUpdates
     case repairCodexBar
+    case finishCodexBarRecovery
 }
 
 func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
@@ -151,6 +168,9 @@ func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
     }
     if isRepairCodexBarURL(url) {
         return .repairCodexBar
+    }
+    if isFinishCodexBarRecoveryURL(url) {
+        return .finishCodexBarRecovery
     }
     return nil
 }
@@ -188,6 +208,20 @@ func isApprovedDMGDownloadURL(_ url: URL) -> Bool {
         of: #"^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"#,
         options: .regularExpression
     ) != nil
+}
+
+func isApprovedCodexBarDownloadURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == "https",
+          components.host?.lowercased() == "github.com",
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil else {
+        return false
+    }
+    return components.percentEncodedPath == "/steipete/CodexBar/releases/latest"
 }
 
 struct ControlCenterURLRouter {
@@ -1265,6 +1299,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var installationReady = false
     private var installationStatus: InstallationStatus?
     private var codexBarRepairRequired = false
+    private var codexBarRepairRestartRequired = false
+    private var codexBarRecoveryApplication: NSRunningApplication?
     private var installationStatusTitle = "Starting Control Center"
     private var installationStatusDetail = "Preparing the Mac App."
     private var installationStatusFailed = false
@@ -1435,8 +1471,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     private func beginCodexBarRepair() {
+        if webView != nil {
+            beginControlCenterCodexBarRepair()
+            return
+        }
         installationReady = false
         codexBarRepairRequired = true
+        codexBarRepairRestartRequired = true
         activeNavigation = nil
         webView = nil
         presentInstallationStatus(
@@ -1445,6 +1486,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             failed: false
         )
         retryRuntimePreparation()
+    }
+
+    private func beginControlCenterCodexBarRepair() {
+        guard preparationTask == nil else {
+            return
+        }
+        codexBarRepairRequired = true
+        codexBarRepairRestartRequired = true
+        preparationTask = Task { [weak self] in
+            guard let self else {
+                return
+            }
+            let outcome = await self.prepareCompanion()
+            self.preparationTask = nil
+            guard outcome == .nativeRuntimeReady else {
+                self.finishControlCenterCodexBarRecovery()
+                self.notifyCodexBarRepairResult(success: false)
+                return
+            }
+            self.codexBarRepairRequired = false
+            self.installationReady = true
+            self.notifyCodexBarRepairResult(success: true)
+        }
+    }
+
+    private func finishControlCenterCodexBarRecovery() {
+        defer { codexBarRecoveryApplication = nil }
+        guard let application = codexBarRecoveryApplication,
+              application.bundleURL?.standardizedFileURL == appManagedCodexBarAppURL(
+                  applicationSupportURL: applicationSupportURL()
+              ).standardizedFileURL else {
+            return
+        }
+        if !application.terminate() {
+            NSLog("VibeTV Control Center could not stop its temporary CodexBar app")
+        }
     }
 
     @objc private func openSupportLog() {
@@ -1974,6 +2051,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
     }
 
+    private func notifyCodexBarRepairResult(success: Bool) {
+        let value = success ? "true" : "false"
+        let script = "window.dispatchEvent(new CustomEvent('vibetv:codexbar-repair-result', { detail: { success: \(value) } })); true"
+        webView?.evaluateJavaScript(script) { _, error in
+            if let error {
+                NSLog(
+                    "VibeTV Control Center could not report CodexBar repair result: \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
     private func presentControlCenter() {
         guard !installationRequired, installationReady else {
             return
@@ -2335,6 +2424,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         allowPreparedWindowClose = false
         scheduledCloseFallback?.cancel()
         scheduledCloseFallback = nil
+        finishControlCenterCodexBarRecovery()
         activeNavigation = nil
         webView?.stopLoading()
         webView?.navigationDelegate = nil
@@ -2517,6 +2607,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return nil
         }
 
+        if NSRunningApplication.runningApplications(
+            withBundleIdentifier: codexBarBundleIdentifier
+        ).contains(where: {
+            $0.bundleURL?.standardizedFileURL == targetAppURL.standardizedFileURL
+        }), let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL) {
+            return cliURL
+        }
+
         guard let archiveURL = bundledCodexBarArchiveURL() else {
             return nil
         }
@@ -2604,6 +2702,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         return true
     }
 
+    private func launchBundledCodexBarInBackground() async -> Bool {
+        let appURL = appManagedCodexBarAppURL(
+            applicationSupportURL: applicationSupportURL()
+        )
+        let runningApplications = NSRunningApplication.runningApplications(
+            withBundleIdentifier: codexBarBundleIdentifier
+        )
+        if let application = runningApplications.first(where: {
+            $0.bundleURL?.standardizedFileURL == appURL.standardizedFileURL
+        }) {
+            codexBarRecoveryApplication = application
+            NSLog("VibeTV Control Center found its temporary CodexBar app already running")
+            return true
+        }
+        if !runningApplications.isEmpty {
+            NSLog("VibeTV Control Center found the customer's CodexBar app already running")
+            return true
+        }
+
+        guard validatedPinnedCodexBarCLI(at: appURL) != nil else {
+            NSLog("VibeTV Control Center refused to launch an unverified CodexBar app")
+            return false
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        configuration.addsToRecentItems = false
+        let application: NSRunningApplication? = await withCheckedContinuation { continuation in
+            NSWorkspace.shared.openApplication(
+                at: appURL,
+                configuration: configuration
+            ) { application, error in
+                if let error {
+                    NSLog(
+                        "VibeTV Control Center could not start CodexBar in the background: \(error.localizedDescription)"
+                    )
+                }
+                continuation.resume(returning: error == nil ? application : nil)
+            }
+        }
+        if application?.bundleURL?.standardizedFileURL == appURL.standardizedFileURL {
+            codexBarRecoveryApplication = application
+        }
+        return application != nil
+    }
+
     private func prepareCompanion() async -> RuntimePreparationOutcome {
         guard isInstalledApplicationsBundle(Bundle.main.bundleURL) else {
             NSLog(
@@ -2644,7 +2788,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return .failure(.applicationIncomplete)
         }
 
+        if codexBarRepairRestartRequired {
+            guard await unregisterBundledRuntimeService() else {
+                NSLog("VibeTV Control Center could not stop its runtime before repairing CodexBar")
+                return .failure(.serviceStart)
+            }
+            codexBarRepairRestartRequired = false
+        }
+
         guard bootstrapCodexBar() else {
+            return .codexBarRepairRequired
+        }
+
+        if codexBarRepairRequired,
+           !(await launchBundledCodexBarInBackground()) {
             return .codexBarRepairRequired
         }
 
@@ -3754,6 +3911,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 checkForUpdates()
             case .repairCodexBar:
                 beginCodexBarRepair()
+            case .finishCodexBarRecovery:
+                finishControlCenterCodexBarRecovery()
             }
             return
         }
@@ -3771,14 +3930,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
 
-        guard isApprovedDMGDownloadURL(url) else {
+        guard isApprovedDMGDownloadURL(url) || isApprovedCodexBarDownloadURL(url) else {
             decisionHandler(.allow)
             return
         }
 
         decisionHandler(.cancel)
         if !NSWorkspace.shared.open(url) {
-            NSLog("VibeTV Control Center could not open verified DMG URL in the default browser")
+            NSLog("VibeTV Control Center could not open an approved download URL in the default browser")
         }
     }
 

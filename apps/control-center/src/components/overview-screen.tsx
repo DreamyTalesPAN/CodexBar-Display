@@ -20,19 +20,13 @@ import {
 import type {
   CompanionStatus,
   DeviceInfo,
-  ProviderSetupInfo,
   UsageSnapshot,
 } from "./control-center-types";
 import {
-  deviceAwaitsProviderSetup,
   deviceIsCustomerConnected,
   deviceIsReady,
   deviceIsWaitingForUsage,
 } from "./control-center-types";
-import {
-  ProviderSetupCard,
-  providerSetupNeedsAction,
-} from "./provider-setup-card";
 import {
   LiveVibeTVPreview,
   type DisplayFrameSnapshot,
@@ -44,9 +38,6 @@ type OverviewScreenProps = {
   device: DeviceInfo | null;
   displayFrame?: DisplayFrameSnapshot | null;
   usage?: UsageSnapshot | null;
-  providerSetup?: ProviderSetupInfo | null;
-  busyAction?: string | null;
-  onProviderRetry?: () => void;
 };
 
 export function OverviewScreen({
@@ -55,9 +46,6 @@ export function OverviewScreen({
   device,
   displayFrame = null,
   usage,
-  providerSetup,
-  busyAction,
-  onProviderRetry,
 }: OverviewScreenProps) {
   const connected = deviceIsCustomerConnected(device);
   const displayReady = deviceIsReady(device);
@@ -80,18 +68,6 @@ export function OverviewScreen({
               {connected ? "VibeTV is connected" : "VibeTV status"}
             </h2>
           </div>
-
-          {deviceAwaitsProviderSetup(device) &&
-          providerSetup &&
-          providerSetupNeedsAction(providerSetup) ? (
-            <div className="w-full">
-              <ProviderSetupCard
-                busyAction={busyAction}
-                providerSetup={providerSetup}
-                onRetry={onProviderRetry}
-              />
-            </div>
-          ) : null}
 
           <div className="flex w-full justify-center">
             <LiveVibeTVPreview

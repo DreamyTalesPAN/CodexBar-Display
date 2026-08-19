@@ -4,6 +4,8 @@ export const RESTART_CONTROL_CENTER_URL =
 export const REPAIR_CONTROL_CENTER_RUNTIME_URL =
   "vibetv://repair-runtime";
 export const REPAIR_CODEXBAR_URL = "vibetv://repair-codexbar";
+export const FINISH_CODEXBAR_RECOVERY_URL =
+  "vibetv://finish-codexbar-recovery";
 const NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX = "VibeTVControlCenter/";
 
 export function restartLocalControlCenterApp(): void {
@@ -27,6 +29,10 @@ export function isNativeControlCenterApp(): boolean {
 
 export function launchCodexBarRepair(): void {
   launchNativeControlCenterAction(REPAIR_CODEXBAR_URL);
+}
+
+export function finishCodexBarRecovery(): void {
+  launchNativeControlCenterAction(FINISH_CODEXBAR_RECOVERY_URL);
 }
 
 function launchNativeControlCenterAction(url: string): void {

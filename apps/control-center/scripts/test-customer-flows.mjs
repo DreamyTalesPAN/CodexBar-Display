@@ -477,7 +477,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testLocalReachableWithoutFrameWaitsUntilPreview(
+      await testFirstUsageServiceFailureOffersRecovery(
         browser,
         appContext.appUrl,
       );
@@ -485,7 +485,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testProviderlessDeviceReachesControlCenterInsteadOfThemeChooser(
+      await testProviderlessDeviceUsesRecoveryBeforeThemeAndOverview(
         browser,
         appContext.appUrl,
       );
@@ -639,7 +639,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testLocalReachableWithoutFrameWaitsUntilPreview(
+    await testFirstUsageServiceFailureOffersRecovery(
       browser,
       appContext.appUrl,
     );
@@ -647,7 +647,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testProviderlessDeviceReachesControlCenterInsteadOfThemeChooser(
+    await testProviderlessDeviceUsesRecoveryBeforeThemeAndOverview(
       browser,
       appContext.appUrl,
     );
@@ -3110,9 +3110,10 @@ async function testLocalReachableWithoutFrameWaitsForUsage(browser, appUrl) {
   await page.close();
 }
 
-async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) {
+async function testFirstUsageServiceFailureOffersRecovery(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
+    userAgent: "VibeTVControlCenter/1.0.53",
   });
   const noProviderUsage = {
     ok: true,
@@ -3121,6 +3122,7 @@ async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) 
   };
   let recovered = false;
   let recoveredFrameRequests = 0;
+  let providerRetries = 0;
   await page.clock.install({ time: new Date("2026-07-29T08:00:00Z") });
   await routeCompanionOnline(page, [], () => {}, {
     device: companionDevice,
@@ -3142,9 +3144,21 @@ async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) 
     },
     preferencesResponse: { ok: true, items: [] },
     providerSetup: {
-      status: "not_configured",
-      engine: { status: "not_configured" },
-      providers: [],
+      status: "setup_required",
+      engine: { status: "ready" },
+      providers: [{ id: "codexbar", status: "timeout" }],
+    },
+    onProviderRetry: () => {
+      providerRetries += 1;
+      if (providerRetries === 3) {
+        recovered = true;
+        return readyProviderSetup();
+      }
+      return {
+        status: "setup_required",
+        engine: { status: "ready" },
+        providers: [{ id: "codexbar", status: "timeout" }],
+      };
     },
     usageResponse: noProviderUsage,
   });
@@ -3152,17 +3166,67 @@ async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.clock.runFor(0);
   await page
-    .getByText("Waiting for live preview…", { exact: true })
+    .getByRole("heading", { name: "Starting AI usage" })
     .waitFor({ timeout: 10_000 });
-  await page.clock.runFor(60_000);
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
       0,
-    "Startup must remain visible until a live preview exists",
+    "A failed first usage check must keep setup visible",
+  );
+  await page.getByRole("button", { name: "Create support report" }).waitFor();
+  assert(providerRetries === 0, "The automatic repair must run before provider retry");
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:codexbar-repair-result", {
+        detail: { success: true },
+      }),
+    );
+  });
+  await page
+    .getByRole("heading", { name: "AI usage could not start" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    providerRetries === 1,
+    "Automatic CodexBar startup must trigger exactly one provider check",
+  );
+  assert(
+    (await page.getByRole("link", { name: "Download CodexBar" }).count()) === 0,
+    "The CodexBar fallback must stay hidden before the customer retries",
   );
 
-  recovered = true;
+  await page.getByRole("button", { name: "Try again" }).click();
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:codexbar-repair-result", {
+        detail: { success: true },
+      }),
+    );
+  });
+  await page
+    .getByRole("heading", { name: "CodexBar is needed" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    providerRetries === 2,
+    "Manual retry must start exactly one fresh provider check",
+  );
+  await page.getByRole("link", { name: "Download CodexBar" }).waitFor();
+  await page.getByRole("button", { name: "Try again" }).waitFor();
+  await page.getByRole("button", { name: "Create support report" }).waitFor();
+
+  await page.getByRole("button", { name: "Try again" }).click();
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:codexbar-repair-result", {
+        detail: { success: true },
+      }),
+    );
+  });
+
   await page.clock.runFor(1_000);
+  assert(
+    providerRetries === 3,
+    "A later successful retry must run one final provider check",
+  );
   await waitForCondition(
     () => recoveredFrameRequests > 0,
     "Display-frame recovery must keep polling after startup entry",
@@ -3178,7 +3242,7 @@ async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) 
 // state, replace the whole Control Center, and fail every install it offered —
 // leaving the customer with no reachable way to connect a provider. Reproduced
 // from a real support report (Mac App 1.0.53, firmware 1.0.40).
-async function testProviderlessDeviceReachesControlCenterInsteadOfThemeChooser(
+async function testProviderlessDeviceUsesRecoveryBeforeThemeAndOverview(
   browser,
   appUrl,
 ) {
@@ -3193,6 +3257,7 @@ async function testProviderlessDeviceReachesControlCenterInsteadOfThemeChooser(
       stream: {
         healthy: false,
         running: true,
+        target: themeMissingDevice.target,
         errorCode: "provider_setup_required",
         detail: "VibeTV is connected, but no AI provider is ready yet.",
       },
@@ -3202,47 +3267,32 @@ async function testProviderlessDeviceReachesControlCenterInsteadOfThemeChooser(
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page
-    .getByRole("navigation", { name: "Control Center" })
+    .getByRole("heading", { name: "AI usage could not start" })
     .waitFor({ timeout: 10_000 });
 
   assert(
     (await page
       .getByRole("heading", { name: "Choose your VibeTV theme" })
       .count()) === 0,
-    "A VibeTV that only lacks an AI provider must not be sent to the theme chooser",
+    "Provider recovery must run before the theme chooser",
   );
   assert(
     (await page
-      .getByRole("heading", { name: "Connecting to VibeTV" })
+      .getByRole("navigation", { name: "Control Center" })
       .count()) === 0,
-    "A VibeTV that only lacks an AI provider must not wait for a preview that cannot arrive",
+    "Provider recovery must run before Overview",
   );
-
-  // Usage is where the customer connects a provider; the trap replaced exactly
-  // this screen, so reaching it is the point of the fix.
-  // The message the install now shows must point somewhere real: the customer
-  // needs a named provider state and an action, not just an unblocked shell.
-  await page
-    .getByRole("heading", { name: "Connect an AI provider" })
-    .waitFor({ timeout: 5_000 });
+  await page.getByRole("button", { name: "Try again" }).waitFor();
   assert(
-    (await page.getByRole("button", { name: "Check again" }).count()) > 0,
-    "A VibeTV without a provider must offer a Check again action on Overview",
+    (await page.getByText("Reconnect VibeTV to continue").count()) === 0,
+    "A connected VibeTV must never be described as disconnected",
   );
 
-  await clickNavigation(page, "Usage");
-  await page
-    .getByRole("heading", { name: "Usage", exact: true })
-    .waitFor({ timeout: 5_000 });
-  await page
-    .getByRole("heading", { name: "Connect an AI provider" })
-    .waitFor({ timeout: 5_000 });
-
-  // CodexBar is an implementation detail and must never reach the customer.
+  // CodexBar is named only after a customer retry fails.
   const visibleText = await page.evaluate(() => document.body.innerText);
   assert(
     !/codexbar/i.test(visibleText),
-    "Customer-facing provider surfaces must never name CodexBar",
+    "Initial recovery must not name CodexBar before a customer retry fails",
   );
 
   assertNoInstallRequests(installRequests);

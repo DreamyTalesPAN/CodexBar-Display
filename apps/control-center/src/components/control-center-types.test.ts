@@ -213,6 +213,7 @@ describe("device connection contract", () => {
 
   it("keeps a VibeTV that only lacks an AI provider out of theme setup", () => {
     const awaitingProvider = {
+      target: "http://192.168.178.72",
       active: true,
       connected: true,
       paired: true,
@@ -222,17 +223,50 @@ describe("device connection contract", () => {
       stream: {
         healthy: false,
         running: true,
+        target: "http://192.168.178.72/",
         errorCode: "provider_setup_required",
       },
       display: { themeSpec: { active: false, renderOk: true } },
     } as const;
 
     expect(deviceAwaitsProviderSetup(awaitingProvider)).toBe(true);
-    // Without a provider the device draws the error frame forever, so this
-    // state would re-enter the chooser after every install and replace the
-    // Control Center the customer needs to connect a provider.
+    // Without AI usage the device draws the error frame forever, so this state
+    // must route to recovery before theme setup.
     expect(deviceNeedsThemeSetup(awaitingProvider)).toBe(false);
     expect(deviceCanContinueThemeSetup(awaitingProvider)).toBe(false);
+  });
+
+  it("does not trust an old provider error as live device evidence", () => {
+    const awaitingProvider = {
+      target: "http://192.168.178.72",
+      active: true,
+      connected: true,
+      paired: true,
+      ready: false,
+      health: { ok: true },
+      stream: {
+        healthy: false,
+        running: true,
+        target: "http://192.168.178.72",
+        errorCode: "provider_setup_required",
+      },
+    } as const;
+
+    expect(
+      deviceAwaitsProviderSetup({ ...awaitingProvider, connected: false }),
+    ).toBe(false);
+    expect(
+      deviceAwaitsProviderSetup({
+        ...awaitingProvider,
+        health: { ok: false },
+      }),
+    ).toBe(false);
+    expect(
+      deviceAwaitsProviderSetup({
+        ...awaitingProvider,
+        stream: { ...awaitingProvider.stream, target: "http://192.168.178.99" },
+      }),
+    ).toBe(false);
   });
 
   it("still shows theme setup for other stream failures", () => {

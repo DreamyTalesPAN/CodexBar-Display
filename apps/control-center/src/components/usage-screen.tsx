@@ -60,13 +60,8 @@ import type {
   UsageProviderInfo,
   UsageSnapshot,
   UsageWindowInfo,
-  ProviderSetupInfo,
 } from "./control-center-types";
 import { PreferenceControl } from "./preference-control";
-import {
-  ProviderSetupCard,
-  providerSetupNeedsAction,
-} from "./provider-setup-card";
 
 type UsageScreenProps = {
   busyAction?: string | null;
@@ -74,8 +69,6 @@ type UsageScreenProps = {
   usage: UsageSnapshot | null;
   usageError?: ApiError | null;
   onRefresh?: () => void;
-  providerSetup?: ProviderSetupInfo | null;
-  onProviderRetry?: () => void;
   preferences: PreferenceDescriptor[] | null;
   preferencesError?: ApiError | null;
   pendingPreferenceIds: Set<string>;
@@ -97,8 +90,6 @@ export function UsageScreen({
   usage,
   usageError,
   onRefresh,
-  providerSetup,
-  onProviderRetry,
   preferences,
   preferencesError,
   pendingPreferenceIds,
@@ -132,15 +123,6 @@ export function UsageScreen({
   return (
     <div className="mx-auto max-w-[1180px]">
       <section className="py-10">
-        {providerSetup && providerSetupNeedsAction(providerSetup) ? (
-          <div className="mb-6">
-            <ProviderSetupCard
-              busyAction={busyAction}
-              providerSetup={providerSetup}
-              onRetry={onProviderRetry}
-            />
-          </div>
-        ) : null}
         {usageError ? (
           <Alert className="mb-6 bg-muted">
             <AlertTriangle />

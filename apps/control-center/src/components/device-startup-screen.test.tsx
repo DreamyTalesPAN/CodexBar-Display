@@ -82,6 +82,115 @@ describe("DeviceStartupScreen", () => {
     );
   });
 
+  it("shows one simple recovery before Overview and themes", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onCreateSupportReport={vi.fn()}
+        onPair={vi.fn()}
+        onRepairUsageService={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{
+          status: "setup_required",
+          engine: { status: "engine_error" },
+        }}
+      />,
+    );
+
+    expect(html).toContain("AI usage could not start</h1>");
+    expect(html).not.toContain("Waiting for live preview…");
+    expect(html).toContain("Try again</span></button>");
+    expect(html).toContain("Create support report</span></button>");
+    expect(html).not.toMatch(/codexbar/i);
+  });
+
+  it("does not turn internal provider errors into customer instructions", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onPair={vi.fn()}
+        onRepairUsageService={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{
+          status: "setup_required",
+          providers: [
+            { id: "claude", label: "Claude", status: "permission_required" },
+          ],
+        }}
+      />,
+    );
+
+    expect(html).toContain("AI usage could not start</h1>");
+    expect(html).toContain("Try again</span></button>");
+    expect(html).not.toMatch(/permission|macos access|claude|codexbar/i);
+  });
+
+  it("offers the approved CodexBar download only after retry also failed", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onPair={vi.fn()}
+        onRepairUsageService={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{ status: "setup_required" }}
+        showCodexBarFallback
+      />,
+    );
+
+    expect(html).toContain("CodexBar is needed</h1>");
+    expect(html).toContain("Download and open CodexBar, then try again.");
+    expect(html).toContain("Try again</span></button>");
+    expect(html).toContain(
+      'href="https://github.com/steipete/CodexBar/releases/latest"',
+    );
+    expect(html).toContain("Download CodexBar</span></a>");
+  });
+
+  it("shows one calm checking state while provider status loads", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onPair={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{ status: "checking" }}
+      />,
+    );
+
+    expect(html).toContain("Starting AI usage</h1>");
+    expect(html.match(/role="status"/g)).toHaveLength(1);
+    expect(html).not.toContain("Try again</span></button>");
+  });
+
+  it("waits for the first live image after AI usage recovers", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onPair={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{ status: "ready" }}
+      />,
+    );
+
+    expect(html).toContain("Starting your VibeTV display</h1>");
+    expect(html).toContain("loading the first live image");
+    expect(html).not.toContain("Try again</span></button>");
+  });
+
   it("uses shadcn recovery UI and names the action that is actually shown", () => {
     const html = renderToStaticMarkup(
       <DeviceStartupScreen

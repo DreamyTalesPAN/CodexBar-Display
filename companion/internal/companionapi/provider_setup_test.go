@@ -687,7 +687,7 @@ func TestNoProvidersStreamErrorIsProviderSetupRequired(t *testing.T) {
 		t.Fatal(err)
 	}
 	when, detail, code, ok := lastDisplayStreamErrorRecordAfter(logPath, startedAt)
-	if !ok || when.IsZero() || code != "provider_setup_required" || !strings.Contains(detail, "AI provider") {
+	if !ok || when.IsZero() || code != "provider_setup_required" || !strings.Contains(detail, "AI usage") {
 		t.Fatalf("unexpected provider stream error: ok=%t when=%s code=%q detail=%q", ok, when, code, detail)
 	}
 }

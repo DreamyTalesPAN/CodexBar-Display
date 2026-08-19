@@ -9729,9 +9729,9 @@ func TestThemeInstallStillFailsWhenStreamIsBroken(t *testing.T) {
 	}
 }
 
-// Reload image cannot produce a picture that no provider can supply. Naming the
-// missing provider is the only outcome the customer can act on; the previous
-// generic render failure sent them back to the same dead end.
+// Reload image cannot produce a picture while AI usage is unavailable. Route
+// the customer back to the Mac App without guessing whether the engine or an
+// account is the missing part.
 func TestReloadDisplayWithoutProviderReportsProviderSetup(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -9768,5 +9768,8 @@ func TestReloadDisplayWithoutProviderReportsProviderSetup(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "provider_setup_required") {
 		t.Fatalf("reload must name the missing provider: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Finish AI setup in the Mac App") {
+		t.Fatalf("reload must point to the central recovery step: %s", rec.Body.String())
 	}
 }

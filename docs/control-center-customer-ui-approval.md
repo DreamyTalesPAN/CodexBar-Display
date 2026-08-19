@@ -857,44 +857,38 @@ issue scope, or release permission never implies UI permission.
   was codexbar ist und sollen auch nie in codexbar kommen"), and instructed to
   file and implement the fix for a release the customer can download: "leg die
   an und fang direkt an, die zu bearbeiten."
-- Approved customer-visible result: A VibeTV that is connected, paired, and
-  healthy but whose display stream reports `provider_setup_required` opens the
-  normal Control Center instead of the mandatory theme chooser, and instead of
-  the "Connecting to VibeTV — waiting for the first live preview" startup
-  screen. All shell tabs are reachable, so Usage — where providers are managed
-  — is available. Installing a theme on such a device now finishes with
-  "Theme installed. Connect an AI provider to see it on VibeTV." rather than a
-  failure. Pressing "Reload image" answers "VibeTV is connected, but no AI
-  provider is ready yet." with "Connect an AI provider, then press Reload image
-  again." instead of an unexplained render failure. A `theme-missing` device
-  with a healthy stream still opens the theme chooser exactly as approved on
-  2026-07-30, and every other stream failure keeps its existing handling.
-  CodexBar is not named anywhere in this copy.
+- Approved customer-visible result: Installing a theme while AI usage is not
+  ready no longer reports a failed installation after the files reached the
+  device. A `theme-missing` device with a healthy stream still opens the theme
+  chooser exactly as approved on 2026-07-30, and every other stream failure
+  keeps its existing handling.
 - Approved files: `control-center-types.ts`, `control-center-types.test.ts`,
-  `control-center-app.tsx`, `test-customer-flows.mjs`, `server.go`,
-  `server_test.go`, and this approval record.
+  `server.go`, `server_test.go`, and this approval record.
 
-## 2026-08-19 — A missing AI provider is visible and actionable
+## 2026-08-19 — AI usage recovery runs before themes and Overview
 
-- User approval: After the 2026-08-18 change, the user asked what a customer
-  actually does in that state and requested the screen. Investigation showed the
-  install message pointed at an action the product did not offer:
-  `ProviderSetupCard` was imported by nothing but its own test, `providerSetup`
-  was stored in state and passed to no component, and `/v1/providers/open-codexbar`
-  had no caller. Overview said "LIVE PREVIEW PAUSED — RECONNECT VIBETV TO
-  CONTINUE" and Usage stayed on "Checking providers" with no action at all. The
-  user instructed: "ja mach beides" — soften the copy and wire the card.
-- Approved customer-visible result: A connected VibeTV whose stream reports
-  `provider_setup_required` now shows a "Connect an AI provider" panel on both
-  Overview (above the device preview) and Usage (above the usage content). The
-  panel names the affected provider, states why it is not delivering usage, and
-  offers a single **Check again** action. The theme-install success message now
-  reads "Theme installed. VibeTV shows it once an AI provider is ready." instead
-  of naming an action that did not exist. Provider copy that previously said
-  "Open provider setup" now describes the condition instead, since that button is
-  deliberately not offered. CodexBar is not named, shown, or opened anywhere: the
-  card is rendered without its `onOpenCodexBar` action, and the only wired call is
-  `POST /v1/providers/retry`.
-- Approved files: `usage-screen.tsx`, `overview-screen.tsx`,
-  `provider-setup-card.tsx`, `control-center-app.tsx`, `server.go`, and this
-  approval record.
+- User approval: The user rejected the provider panel on Overview and the
+  misleading `LIVE PREVIEW PAUSED — RECONNECT VIBETV TO CONTINUE` state, then
+  instructed: "ok dann bau das so. leg meinetwegen auch issues zusammen, wenns
+  sinn macht" after reviewing the proposed setup-first recovery flow. During
+  implementation the user rejected the provider-specific permission, timeout,
+  and sign-in instructions, requested an automatic background CodexBar start,
+  and approved naming CodexBar only after `Try again` also fails, with a
+  download action.
+- Approved customer-visible result: A connected VibeTV with
+  `provider_setup_required` stays in the existing full-screen setup language.
+  The Mac App automatically repairs and starts the verified bundled CodexBar
+  app without taking focus; CodexBar owns provider detection and enablement,
+  while VibeTV only accepts a provider after a fresh usable usage check. The
+  first failed automatic attempt shows one plain `Try again` action, without
+  exposing internal provider status codes. Only when that customer retry also
+  fails does the screen explain that CodexBar is required and offer
+  `Download CodexBar` from the official release page. `Create support report`
+  remains available. Recovery runs before mandatory theme setup and before
+  Overview, including when the last usable provider disappears later. Overview
+  and Usage contain no duplicate provider panel, and a connected VibeTV is
+  never told to reconnect because only AI usage is missing. Full deliberate
+  provider selection remains in #245.
+- Approved files: `device-startup-screen.tsx`, `control-center-app.tsx`,
+  `control-center-types.ts`, `live-vibetv-preview.tsx`, their tests, the
+  customer-flow test, native runtime repair files, and this approval record.

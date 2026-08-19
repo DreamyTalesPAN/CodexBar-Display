@@ -2038,7 +2038,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			Status:     "attention",
 			Detail:     device.Stream.Detail,
 			ErrorCode:  "provider_setup_required",
-			NextAction: "Open provider setup, connect an AI provider, then click Check again.",
+			NextAction: "Finish AI setup in the Mac App, then click Check again.",
 		})
 	} else {
 		checks = append(checks, diagnosticCheck{
@@ -2920,8 +2920,8 @@ func (s *Server) handleDeviceReloadDisplay(w http.ResponseWriter, r *http.Reques
 			w,
 			http.StatusConflict,
 			"provider_setup_required",
-			"VibeTV is connected, but no AI provider is ready yet.",
-			"Connect an AI provider, then press Reload image again.",
+			"VibeTV is connected, but AI usage is not ready yet.",
+			"Finish AI setup in the Mac App, then press Reload image again.",
 		)
 		return
 	}
@@ -4576,7 +4576,7 @@ func customerInstallProgress(line string, job *themeInstallJob) (string, int, bo
 	case strings.HasPrefix(line, "Display stream: refreshed"):
 		return "Display stream refreshed.", 98, true
 	case strings.HasPrefix(line, "Display stream: waiting for AI provider"):
-		return "Theme installed. VibeTV shows it once an AI provider is ready.", 98, true
+		return "Theme installed. VibeTV shows it once AI usage is ready.", 98, true
 	case strings.HasPrefix(line, "Done:"):
 		return "Theme installed.", 88, true
 	default:
@@ -7625,7 +7625,7 @@ func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Ti
 			detail := "Display stream hit an error after the last frame and is reconnecting."
 			code := "display_stream_failed"
 			if displayStreamLogValue(line, "code") == "runtime/no-providers" || strings.Contains(line, "runtime/no-providers") {
-				detail = "VibeTV is connected, but no AI provider is ready yet."
+				detail = "VibeTV is connected, but AI usage is not ready yet."
 				code = "provider_setup_required"
 			} else if op == "send-line" {
 				detail = "Display stream could not send to VibeTV and is reconnecting."

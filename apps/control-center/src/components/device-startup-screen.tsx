@@ -2,6 +2,7 @@
 
 import {
   CircleAlert,
+  Download,
   Monitor,
   RefreshCw,
   Wifi,
@@ -13,6 +14,7 @@ import type {
   ApiError,
   DeviceCandidate,
   DeviceSearchState,
+  ProviderSetupInfo,
   SupportDiagnostics,
 } from "./control-center-types";
 import { DeviceTargetForm } from "./device-target-form";
@@ -31,11 +33,15 @@ type Props = {
   lastError?: ApiError | null;
   diagnostics?: SupportDiagnostics | null;
   onCreateSupportReport?: () => void;
+  onRepairUsageService?: () => void;
   onDeviceTargetChange?: (target: string) => void;
   onManualTarget?: (target: string) => void;
   onPair: () => void;
   onSearch: () => void;
   onSelect: (candidate: DeviceCandidate) => void;
+  providerRecovery?: boolean;
+  showCodexBarFallback?: boolean;
+  providerSetup?: ProviderSetupInfo | null;
   selectingDeviceTarget?: string;
   supportReportBusy?: boolean;
 };
@@ -48,6 +54,7 @@ export function DeviceStartupScreen({
   lastError,
   diagnostics,
   onCreateSupportReport,
+  onRepairUsageService,
   onDeviceTargetChange,
   onManualTarget,
   onPair,
@@ -55,6 +62,9 @@ export function DeviceStartupScreen({
   onSelect,
   selectingDeviceTarget,
   supportReportBusy = false,
+  providerRecovery = false,
+  showCodexBarFallback = false,
+  providerSetup,
 }: Props) {
   const selecting = busyAction === "select";
   const manualConnecting = busyAction === "manual-target";
@@ -62,6 +72,19 @@ export function DeviceStartupScreen({
   const searching =
     deviceSearchState === "searching" || busyAction === "search";
   const waiting = deviceSearchState === "waiting";
+  const providerRecoveryView = providerRecovery
+    ? describeProviderRecovery(
+        providerSetup,
+        busyAction,
+        lastError,
+        showCodexBarFallback,
+      )
+    : null;
+  const providerRecoveryBusy = Boolean(
+    providerRecoveryView?.checking ||
+      busyAction === "providers-retry" ||
+      busyAction === "usage-service-repair",
+  );
   const choosing =
     deviceSearchState === "multiple" && deviceCandidates.length > 0;
   const legacyRecovery =
@@ -75,17 +98,17 @@ export function DeviceStartupScreen({
   const repairFailed = deviceSearchState === "repair-failed";
   const searchFailed = deviceSearchState === "failed";
   const manualEntryAvailable =
-    (searching ||
-      choosing ||
-      wifiSetupNeeded ||
-      searchFailed ||
-      repairFailed) &&
+    !providerRecoveryView &&
+    (searching || choosing || wifiSetupNeeded || searchFailed || repairFailed) &&
     !legacyRecovery;
 
   let title = "Set up your VibeTV";
   let detail = "Choose a VibeTV on your WiFi.";
 
-  if (searching) {
+  if (providerRecoveryView) {
+    title = providerRecoveryView.title;
+    detail = providerRecoveryView.detail;
+  } else if (searching) {
     title = "Looking for your VibeTV";
     detail = "Searching your WiFi for a VibeTV.";
   } else if (selecting || manualConnecting) {
@@ -118,15 +141,21 @@ export function DeviceStartupScreen({
     detail = "Check the Mac App and your WiFi, then search again.";
   }
 
-  const statusLabel = reconnecting
-    ? "Reconnecting…"
+  const statusLabel = providerRecoveryView?.checking
+    ? "Checking AI setup…"
+    : providerRecoveryView
+      ? undefined
+      : reconnecting
+      ? "Reconnecting…"
       : waiting
         ? "Waiting for live preview…"
         : searching
           ? "Searching…"
           : undefined;
 
-  const visual = choosing ? (
+  const visual = providerRecoveryView && !providerRecoveryView.checking ? (
+    <CircleAlert aria-hidden />
+  ) : choosing ? (
     <Monitor aria-hidden />
   ) : wifiSetupNeeded ? (
     <Wifi aria-hidden />
@@ -136,7 +165,27 @@ export function DeviceStartupScreen({
     <CircleAlert aria-hidden />
   ) : undefined;
 
-  const actions = legacyRecovery ? null : choosing ? (
+  const actions = providerRecoveryView && !providerRecoveryView.checking ? (
+    <div className="grid gap-3">
+      <Button
+        className="w-full"
+        disabled={providerRecoveryBusy}
+        onClick={onRepairUsageService}
+        size="lg"
+      >
+        <RefreshCw data-icon="inline-start" aria-hidden />
+        <span>Try again</span>
+      </Button>
+      {showCodexBarFallback ? (
+        <Button asChild className="w-full" size="lg" variant="outline">
+          <a href="https://github.com/steipete/CodexBar/releases/latest">
+            <Download data-icon="inline-start" aria-hidden />
+            <span>Download CodexBar</span>
+          </a>
+        </Button>
+      ) : null}
+    </div>
+  ) : legacyRecovery ? null : choosing ? (
     <StartupActions
       busy={Boolean(busyAction)}
       onSearch={onSearch}
@@ -181,7 +230,14 @@ export function DeviceStartupScreen({
   return (
     <SetupStatusScreen
       actions={actions}
-      busy={searching || selecting || manualConnecting || reconnecting || waiting}
+      busy={
+        searching ||
+        selecting ||
+        manualConnecting ||
+        reconnecting ||
+        (waiting && !providerRecoveryView) ||
+        providerRecoveryBusy
+      }
       description={detail}
       footer={
         <SupportReportActions
@@ -190,6 +246,11 @@ export function DeviceStartupScreen({
           diagnostics={diagnostics}
           emphasis="secondary"
           onCreate={onCreateSupportReport}
+          createLabel={
+            providerRecoveryView
+              ? "Create support report"
+              : "Create report"
+          }
         />
       }
       statusLabel={statusLabel}
@@ -198,7 +259,7 @@ export function DeviceStartupScreen({
       visual={visual}
     >
       <div className="grid gap-5">
-        {choosing ? (
+        {!providerRecoveryView && choosing ? (
           <DeviceCandidateList
             busy={Boolean(busyAction) && !selecting}
             candidates={deviceCandidates}
@@ -207,7 +268,7 @@ export function DeviceStartupScreen({
           />
         ) : null}
 
-        {wifiSetupNeeded ? (
+        {!providerRecoveryView && wifiSetupNeeded ? (
           <>
             <WifiSetupInstructions />
             <Button className="w-full" onClick={onSearch} size="lg">
@@ -217,7 +278,7 @@ export function DeviceStartupScreen({
           </>
         ) : null}
 
-        {legacyRecovery && !searching ? (
+        {!providerRecoveryView && legacyRecovery && !searching ? (
           <Alert variant="destructive">
             <CircleAlert aria-hidden />
             <AlertTitle>Reconnect this VibeTV</AlertTitle>
@@ -252,6 +313,56 @@ export function DeviceStartupScreen({
       </div>
     </SetupStatusScreen>
   );
+}
+
+function describeProviderRecovery(
+  providerSetup: ProviderSetupInfo | null | undefined,
+  busyAction: string | null | undefined,
+  lastError: ApiError | null | undefined,
+  showCodexBarFallback: boolean,
+) {
+  const setupStatus = normalizedProviderStatus(providerSetup?.status);
+  if (
+    !lastError &&
+    (!providerSetup ||
+      setupStatus === "checking" ||
+      busyAction === "providers-retry" ||
+      busyAction === "usage-service-repair")
+  ) {
+    return {
+      checking: true,
+      detail: "VibeTV is starting its built-in usage service and checking this Mac.",
+      title: "Starting AI usage",
+    };
+  }
+
+  if (showCodexBarFallback) {
+    return {
+      checking: false,
+      detail:
+        "VibeTV needs CodexBar to read AI usage, but could not complete the setup here. Download and open CodexBar, then try again.",
+      title: "CodexBar is needed",
+    };
+  }
+
+  if (setupStatus === "ready") {
+    return {
+      checking: true,
+      detail: "AI usage is ready. VibeTV is loading the first live image.",
+      title: "Starting your VibeTV display",
+    };
+  }
+
+  return {
+    checking: false,
+    detail:
+      "VibeTV could not read AI usage on this Mac. Try again. If it still fails, create a support report.",
+    title: "AI usage could not start",
+  };
+}
+
+function normalizedProviderStatus(value?: string) {
+  return value?.trim().toLowerCase().replace(/^provider_/, "") || "";
 }
 
 function StartupActions({

@@ -509,19 +509,45 @@ export function deviceIsActive(device: DeviceInfo | null | undefined) {
   return device?.active === true;
 }
 
-// A device whose display stream is running but has no AI provider to draw. The
-// device is connected, paired, and healthy; the only missing piece is usage
-// data, and the surfaces that supply it live inside the Control Center. Setup
-// gates that wait for a picture must let this state through instead of holding
-// the customer on a screen that can never resolve. Mirrors
-// providerSetupStreamForTarget on the Companion side.
+// A reachable VibeTV whose display stream is running for this exact device but
+// has no AI usage to draw. Mirrors providerSetupStreamForTarget on the
+// Companion side without letting an old stream error prove connectivity.
 export function deviceAwaitsProviderSetup(
   device: DeviceInfo | null | undefined,
 ) {
+  const deviceTarget = comparableDeviceTarget(device?.target);
+  const streamTarget = comparableDeviceTarget(device?.stream?.target);
   return (
-    device?.stream?.running === true &&
-    device.stream.errorCode === "provider_setup_required"
+    deviceIsCustomerConnected(device) &&
+    device.paired === true &&
+    device.health?.ok === true &&
+    device.stream?.running === true &&
+    device.stream.errorCode === "provider_setup_required" &&
+    deviceTarget !== "" &&
+    deviceTarget === streamTarget
   );
+}
+
+export function providerSetupRequiresRecovery(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  const status = normalizedProviderStatus(providerSetup?.status);
+  if (status && status !== "ready" && status !== "checking") {
+    return true;
+  }
+  return Boolean(
+    providerSetup?.providers?.some(
+      (provider) => normalizedProviderStatus(provider.status) !== "ready",
+    ),
+  );
+}
+
+function normalizedProviderStatus(value?: string) {
+  return value?.trim().toLowerCase().replace(/^provider_/, "") || "";
+}
+
+function comparableDeviceTarget(value: string | undefined) {
+  return value?.trim().replace(/\/+$/, "") || "";
 }
 
 export function deviceNeedsExplicitConnect(

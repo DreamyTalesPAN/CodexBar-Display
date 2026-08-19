@@ -837,7 +837,9 @@ for forbidden_codexbar_bootstrap in [
             f"native CodexBar bootstrap must not use public app candidates or repair paths: {forbidden_codexbar_bootstrap}"
         )
 bootstrap_start = source.find("private func bootstrapCodexBar()")
-bootstrap_end = source.find("private func prepareCompanion() async", bootstrap_start)
+bootstrap_end = source.find(
+    "private func launchBundledCodexBarInBackground() async", bootstrap_start
+)
 bootstrap_method = source[bootstrap_start:bootstrap_end]
 if (
     "prepareBundledCodexBarCLI()" not in bootstrap_method
@@ -847,6 +849,25 @@ if (
     raise SystemExit(
         "native CodexBar bootstrap must prepare only the private pinned CLI"
     )
+launch_start = bootstrap_end
+launch_end = source.find("private func prepareCompanion() async", launch_start)
+launch_method = source[launch_start:launch_end]
+for required_launch_behavior in [
+    "withBundleIdentifier: codexBarBundleIdentifier",
+    "appManagedCodexBarAppURL(",
+    "validatedPinnedCodexBarCLI(at: appURL)",
+    "NSWorkspace.OpenConfiguration()",
+    "configuration.activates = false",
+    "configuration.addsToRecentItems = false",
+    "NSWorkspace.shared.openApplication(",
+    "codexBarRecoveryApplication = application",
+]:
+    if required_launch_behavior not in launch_method:
+        raise SystemExit(
+            f"native CodexBar background launch is missing: {required_launch_behavior}"
+        )
+if "private func finishControlCenterCodexBarRecovery()" not in source or "application.terminate()" not in source:
+    raise SystemExit("native app must stop only its temporary CodexBar app after provider recovery")
 prepare_payload_start = source.find("private func prepareBundledCodexBarCLI()")
 prepare_payload_end = source.find("private func bootstrapCodexBar()", prepare_payload_start)
 prepare_payload = source[prepare_payload_start:prepare_payload_end]
@@ -855,7 +876,9 @@ if (
     or 'let appSupportURL = applicationSupportURL()' not in prepare_payload
     or 'guard privateCodexBarTargetIsSafe(' not in prepare_payload
     or 'if let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL)' in prepare_payload
-    or 'return cliURL' in prepare_payload
+    or 'withBundleIdentifier: codexBarBundleIdentifier' not in prepare_payload
+    or 'let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL)' not in prepare_payload
+    or 'return cliURL' not in prepare_payload
     or 'normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)' not in prepare_payload
     or 'validatedPinnedCodexBarCLI(at: stagedAppURL)' not in prepare_payload
     or 'return validatedPinnedCodexBarCLI(at: targetAppURL)' not in prepare_payload
@@ -868,7 +891,33 @@ if (
         > prepare_payload.find('return validatedPinnedCodexBarCLI(at: targetAppURL)')
 ):
     raise SystemExit(
-        "native CodexBar payload must always stage the bundled ZIP, normalize xattrs, validate, publish, then revalidate"
+        "native CodexBar payload may reuse only its running verified app; otherwise it must stage the bundled ZIP, normalize xattrs, validate, publish, then revalidate"
+    )
+repair_start = source.find("private func beginCodexBarRepair()")
+repair_end = source.find("@objc private func openSupportLog()", repair_start)
+repair_method = source[repair_start:repair_end]
+if (
+    "beginControlCenterCodexBarRepair()" not in repair_method
+    or "codexBarRepairRestartRequired = true" not in repair_method
+    or "notifyCodexBarRepairResult(success: true)" not in repair_method
+    or "notifyCodexBarRepairResult(success: false)" not in repair_method
+):
+    raise SystemExit(
+        "native CodexBar repair must restart the runtime and report its result to the existing setup screen"
+    )
+repair_restart = prepare_method.find("if codexBarRepairRestartRequired")
+repair_stop = prepare_method.find("await unregisterBundledRuntimeService()", repair_restart)
+codexbar_publish = prepare_method.find("guard bootstrapCodexBar()")
+if not (0 <= repair_restart < repair_stop < codexbar_publish):
+    raise SystemExit(
+        "native CodexBar repair must stop the managed runtime before replacing its private payload"
+    )
+codexbar_launch = prepare_method.find(
+    "await launchBundledCodexBarInBackground()", codexbar_publish
+)
+if not (codexbar_publish < codexbar_launch):
+    raise SystemExit(
+        "native CodexBar repair must publish the verified payload before launching it"
     )
 native_ready = prepare_method.find("return .nativeRuntimeReady")
 if not (0 <= prepare_method.find("var health = await waitForHealthyRuntime") < native_ready):

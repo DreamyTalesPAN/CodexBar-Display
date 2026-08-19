@@ -16,10 +16,12 @@ import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
 import {
   companionRequestUrl,
+  finishCodexBarRecovery,
   isLocalCompanionOrigin,
   isNativeControlCenterApp,
   localizeCompanionAssetUrl,
   localControlCenterUrl,
+  launchCodexBarRepair,
   needsLoopbackTargetAddressSpace,
   repairLocalControlCenterRuntime,
   restartLocalControlCenterApp,
@@ -36,6 +38,7 @@ import {
   deviceIsReady,
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
+  providerSetupRequiresRecovery,
   type ActiveTab,
   type ApiError,
   type CompanionInfo,
@@ -91,6 +94,7 @@ const RECENT_COMPANION_REQUEST_MS = 5_000;
 const LAUNCHD_RECOVERY_GRACE_MS = 12_000;
 const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 55_000;
 const NATIVE_RUNTIME_REPAIR_RESULT_EVENT = "vibetv:runtime-repair-result";
+const NATIVE_CODEXBAR_REPAIR_RESULT_EVENT = "vibetv:codexbar-repair-result";
 
 type LocalNetworkRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
@@ -333,6 +337,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   >("repairing");
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
   const [hasEnteredControlCenter, setHasEnteredControlCenter] = useState(false);
+  const [showCodexBarFallback, setShowCodexBarFallback] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
   const brightnessDirtyRef = useRef(false);
@@ -348,6 +353,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const statusPollInFlight = useRef(false);
   const runtimeRepairAttempted = useRef(false);
   const runtimeRepairTimeout = useRef<number | null>(null);
+  const codexBarRepairTimeout = useRef<number | null>(null);
+  const providerRecoveryAttempted = useRef(false);
+  const providerRecoveryManualAttempted = useRef(false);
   const themeInstallPollJobRef = useRef("");
   const activeThemeUpgradeAttemptRef = useRef("");
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
@@ -388,14 +396,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     if (deviceIsReady(next)) {
       didRunAutomaticDeviceSearch.current = false;
       setLastError(null);
-    }
-    // Entry normally waits for the first usable picture. A device that is only
-    // missing an AI provider never produces one, and every gate keyed on entry —
-    // the startup screen, the disabled tabs, the theme chooser — would hold the
-    // customer on a screen that cannot resolve. The action they need is Usage,
-    // so this state opens the Control Center instead of waiting.
-    if (deviceAwaitsProviderSetup(next)) {
-      setHasEnteredControlCenter(true);
     }
     setDeviceSession((current) => {
       const mergedDevice = mergeDeviceInfo(current.device, next);
@@ -2584,26 +2584,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return true;
   }, [catalog.themes, device, firmwareUpdateStatus, installTheme]);
 
-  // The provider surfaces only ever re-check; connecting a provider happens
-  // outside VibeTV, and the customer is never sent into the usage service.
-  const retryProviderSetup = useCallback(async () => {
-    setBusyAction("providers-retry");
-    try {
-      const payload = await runCompanion<{ providerSetup?: ProviderSetupInfo }>(
-        "/v1/providers/retry",
-        { method: "POST" },
-      );
-      setProviderSetup(payload.providerSetup || null);
-      setCompanionStatus("online");
-    } catch (error) {
-      setLastError(
-        normalizeCaughtError(error, "The provider check needs attention."),
-      );
-    } finally {
-      setBusyAction(null);
-    }
-  }, [runCompanion]);
-
   const refreshUsage = useCallback(
     async (options?: { quiet?: boolean }) => {
       const quiet = Boolean(options?.quiet);
@@ -2877,6 +2857,140 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     usage,
   ]);
 
+  const retryProviderSetup = useCallback(async () => {
+    const setupGeneration = setupGenerationRef.current;
+    setBusyAction("providers-retry");
+    setLastError(null);
+    try {
+      const payload = await runCompanion<{
+        providerSetup?: ProviderSetupInfo;
+      }>("/v1/providers/retry", { method: "POST" });
+      if (setupGeneration === setupGenerationRef.current) {
+        const setup = payload.providerSetup || null;
+        setProviderSetup(setup);
+        setCompanionStatus("online");
+        return setup;
+      }
+    } catch (error) {
+      if (setupGeneration === setupGenerationRef.current) {
+        setLastError(
+          normalizeCaughtError(error, "Usage check could not finish."),
+        );
+      }
+    } finally {
+      if (setupGeneration === setupGenerationRef.current) {
+        setBusyAction(null);
+      }
+    }
+    return null;
+  }, [runCompanion]);
+
+  const repairUsageService = useCallback(() => {
+    if (!isNativeControlCenterApp()) {
+      void retryProviderSetup().then((setup) => {
+        if (
+          providerRecoveryManualAttempted.current &&
+          (!setup || providerSetupRequiresRecovery(setup))
+        ) {
+          setShowCodexBarFallback(true);
+        }
+      });
+      return;
+    }
+    if (codexBarRepairTimeout.current !== null) {
+      window.clearTimeout(codexBarRepairTimeout.current);
+    }
+    setBusyAction("usage-service-repair");
+    setLastError(null);
+    addEvent({
+      label: "Usage service repair started",
+      detail: "Restarting the managed usage service.",
+      tone: "unknown",
+    });
+    launchCodexBarRepair();
+    codexBarRepairTimeout.current = window.setTimeout(() => {
+      codexBarRepairTimeout.current = null;
+      setBusyAction(null);
+      setLastError({
+        code: "CODEXBAR_REPAIR_TIMEOUT",
+        message: "Repair could not finish.",
+        nextAction: "Try the repair again or create a support report.",
+      });
+      addEvent({
+        label: "Usage service restart timed out",
+        detail: "The managed usage service did not return in time.",
+        tone: "attention",
+      });
+      if (providerRecoveryManualAttempted.current) {
+        setShowCodexBarFallback(true);
+      }
+      finishCodexBarRecovery();
+    }, NATIVE_RUNTIME_REPAIR_TIMEOUT_MS);
+  }, [addEvent, retryProviderSetup]);
+
+  useEffect(() => {
+    const handleResult = (event: Event) => {
+      if (codexBarRepairTimeout.current === null) {
+        return;
+      }
+      window.clearTimeout(codexBarRepairTimeout.current);
+      codexBarRepairTimeout.current = null;
+      const detail = (event as CustomEvent<{ success?: boolean }>).detail;
+      if (detail?.success) {
+        addEvent({
+          label: "Usage service restarted",
+          detail: "Checking whether valid usage data is available now.",
+          tone: "unknown",
+        });
+        void retryProviderSetup()
+          .then((setup) => {
+            if (!setup || providerSetupRequiresRecovery(setup)) {
+              if (providerRecoveryManualAttempted.current) {
+                setShowCodexBarFallback(true);
+              }
+              return;
+            }
+            providerRecoveryManualAttempted.current = false;
+            setShowCodexBarFallback(false);
+          })
+          .finally(finishCodexBarRecovery);
+        return;
+      }
+      setBusyAction(null);
+      setLastError({
+        code: "CODEXBAR_REPAIR_FAILED",
+        message: "Repair could not finish.",
+        nextAction: "Try the repair again or create a support report.",
+      });
+      addEvent({
+        label: "Usage service restart failed",
+        detail: "The managed usage service could not restart.",
+        tone: "attention",
+      });
+      if (providerRecoveryManualAttempted.current) {
+        setShowCodexBarFallback(true);
+      }
+      finishCodexBarRecovery();
+    };
+    window.addEventListener(NATIVE_CODEXBAR_REPAIR_RESULT_EVENT, handleResult);
+    return () => {
+      window.removeEventListener(
+        NATIVE_CODEXBAR_REPAIR_RESULT_EVENT,
+        handleResult,
+      );
+      if (codexBarRepairTimeout.current !== null) {
+        window.clearTimeout(codexBarRepairTimeout.current);
+        codexBarRepairTimeout.current = null;
+      }
+    };
+  }, [addEvent, retryProviderSetup]);
+
+  const retryUsageService = useCallback(() => {
+    providerRecoveryManualAttempted.current = true;
+    setShowCodexBarFallback(false);
+    repairUsageService();
+  }, [repairUsageService]);
+
   useEffect(() => {
     if (!deviceBoard || !deviceFirmware) {
       return;
@@ -3042,7 +3156,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" &&
     !themeSetupComplete &&
     (themeSetupEntryRequired || themeSetupSessionMatches);
-
   const startupDeviceCandidates =
     deviceCandidates.length > 0
       ? deviceCandidates
@@ -3065,6 +3178,31 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     device.paired !== false &&
     !connectionRecoveryRequired &&
     !hasEnteredControlCenter;
+  const providerRecoveryRequired =
+    companionStatus === "online" &&
+    (deviceAwaitsProviderSetup(device) ||
+      (waitingForFirstUsage && providerSetupRequiresRecovery(providerSetup)));
+
+  useEffect(() => {
+    if (!providerRecoveryRequired) {
+      providerRecoveryAttempted.current = false;
+      providerRecoveryManualAttempted.current = false;
+      return;
+    }
+    if (
+      providerRecoveryAttempted.current ||
+      !isNativeControlCenterApp()
+    ) {
+      return;
+    }
+    providerRecoveryAttempted.current = true;
+    const timer = window.setTimeout(() => {
+      setShowCodexBarFallback(false);
+      repairUsageService();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [providerRecoveryRequired, repairUsageService]);
+
   const startupDeviceSearchState: DeviceSearchState =
     waitingForFirstUsage
       ? "waiting"
@@ -3319,7 +3457,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" &&
     !requiresMacAppMigration &&
     !firmwareUpdateInProgress &&
-    (connectionRecoveryRequired ||
+    (providerRecoveryRequired ||
+      connectionRecoveryRequired ||
       (!hasEnteredControlCenter &&
         (!hasActiveDevice ||
           !deviceConnected ||
@@ -3339,6 +3478,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           void connectManualTarget(target);
         }}
         onCreateSupportReport={loadSupportDiagnostics}
+        onRepairUsageService={retryUsageService}
         onPair={() => {
           const candidate = pendingPairingCandidate.current;
           setLastError(null);
@@ -3355,6 +3495,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         selectingDeviceTarget={
           busyAction === "select" ? selectingDeviceTarget : undefined
         }
+        providerRecovery={providerRecoveryRequired}
+        providerSetup={providerSetup}
+        showCodexBarFallback={showCodexBarFallback}
         supportReportBusy={supportReportBusy}
       />
     );
@@ -3401,13 +3544,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     >
       {activeShellTab === "overview" ? (
         <OverviewScreen
-          busyAction={busyAction}
           companionVersion={companionInfo?.version}
           companionStatus={companionStatus}
           device={device}
           displayFrame={displayFrame}
-          providerSetup={providerSetup}
-          onProviderRetry={() => void retryProviderSetup()}
           usage={usage}
         />
       ) : null}
@@ -3417,13 +3557,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           busyAction={busyAction}
           companionStatus={companionStatus}
           onRefresh={() => refreshUsage()}
-          // #262-era decision (2026-07-21): no provider box next to real usage
-          // data, it contradicts what the screen already shows. It only appears
-          // when the device is genuinely starved of a provider.
-          providerSetup={
-            deviceAwaitsProviderSetup(device) ? providerSetup : null
-          }
-          onProviderRetry={() => void retryProviderSetup()}
           pendingPreferenceIds={pendingPreferenceIds}
           preferences={providerPreferences}
           preferencesError={providerPreferencesError}
