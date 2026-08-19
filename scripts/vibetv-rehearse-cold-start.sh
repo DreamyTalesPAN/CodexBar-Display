@@ -24,14 +24,18 @@ if [[ "$REHEARSAL_RESTORE" == 1 ]]; then
 fi
 
 rehearsal::require_tools curl python3 gh hdiutil ditto codesign
-rehearsal::open_run_dir
 
-rehearsal::step 'Checking the connected VibeTV'
-rehearsal::discover_device
+if [[ "$REHEARSAL_PREFLIGHT_ONLY" == 1 ]]; then
+  rehearsal::preflight
+  exit 0
+fi
+
+rehearsal::open_run_dir
+rehearsal::preflight
+
 DEVICE_ID="$(rehearsal::device_field "$REHEARSAL_DEVICE_TARGET" deviceId)"
 DEVICE_FIRMWARE="$(rehearsal::device_field "$REHEARSAL_DEVICE_TARGET" firmware)"
 DEVICE_BOARD="$(rehearsal::device_field "$REHEARSAL_DEVICE_TARGET" board)"
-rehearsal::info "VibeTV $DEVICE_ID ($DEVICE_BOARD) on firmware $DEVICE_FIRMWARE at $REHEARSAL_DEVICE_TARGET"
 rehearsal::record deviceId "$DEVICE_ID"
 rehearsal::record deviceTarget "$REHEARSAL_DEVICE_TARGET"
 rehearsal::record deviceFirmwareBefore "$DEVICE_FIRMWARE"

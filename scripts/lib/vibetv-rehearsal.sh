@@ -28,6 +28,7 @@ REHEARSAL_RUN_ID=""
 REHEARSAL_DEVICE_TARGET=""
 REHEARSAL_ASSUME_YES=0
 REHEARSAL_RESTORE=0
+REHEARSAL_PREFLIGHT_ONLY=0
 REHEARSAL_KEEP_CODEXBAR=0
 REHEARSAL_SKIP_FIRMWARE_BASELINE=0
 REHEARSAL_COMPANION_OVERRIDE=""
@@ -101,6 +102,7 @@ Usage: $(basename "$0") [options]
   --skip-firmware-baseline
                          Warm start only: trust the firmware already on the device
   --restore              Undo the last rehearsal: restore the backup and clear overrides
+  --preflight            Only run the preflight checks and exit; changes nothing
   --yes                  Do not ask for confirmation
   -h, --help             Show this help
 USAGE
@@ -118,6 +120,7 @@ rehearsal::parse_args() {
       --keep-codexbar) REHEARSAL_KEEP_CODEXBAR=1; shift ;;
       --skip-firmware-baseline) REHEARSAL_SKIP_FIRMWARE_BASELINE=1; shift ;;
       --restore) REHEARSAL_RESTORE=1; shift ;;
+      --preflight) REHEARSAL_PREFLIGHT_ONLY=1; shift ;;
       --yes|-y) REHEARSAL_ASSUME_YES=1; shift ;;
       -h|--help) rehearsal::usage; exit 0 ;;
       *) rehearsal::usage >&2; rehearsal::die "unknown argument: $1" ;;
@@ -224,6 +227,112 @@ except Exception:
     print("")
 ' "$REHEARSAL_SUPPORT_DIR/config.json" 2>/dev/null > "$REHEARSAL_RUN_DIR/device-token" || true
   chmod 600 "$REHEARSAL_RUN_DIR/device-token" 2>/dev/null || true
+}
+
+# --------------------------------------------------------------- preflight
+
+# Everything that has silently ruined a rehearsal before. Each problem prints
+# the exact command that fixes it, and nothing destructive runs until all of
+# them are gone. Local checks come first so a purely local problem never hides
+# behind a slow network check.
+REHEARSAL_PREFLIGHT_FAILURES=0
+
+rehearsal::preflight_problem() {
+  printf '   \033[31mblocked:\033[0m %s\n' "$1"
+  printf '            fix: %s\n' "$2"
+  REHEARSAL_PREFLIGHT_FAILURES=$((REHEARSAL_PREFLIGHT_FAILURES + 1))
+}
+
+rehearsal::preflight() {
+  rehearsal::step 'Preflight'
+  REHEARSAL_PREFLIGHT_FAILURES=0
+
+  # A foreign listener on the app port survives the purge and then answers as if
+  # it were the Mac App.
+  local pid owner foreign=""
+  for pid in $(lsof -nP -iTCP:47832 -sTCP:LISTEN -t 2>/dev/null || true); do
+    owner="$(ps -o comm= -p "$pid" 2>/dev/null || true)"
+    case "$owner" in
+      *VibeTVControlCenter|*codexbar-display) ;;
+      '') ;;
+      *) foreign="$foreign $owner($pid)" ;;
+    esac
+  done
+  [[ -z "$foreign" ]] || rehearsal::preflight_problem \
+    "port 47832 is held by a foreign process:$foreign" \
+    'stop it, or check with: lsof -nP -iTCP:47832 -sTCP:LISTEN'
+
+  # hdiutil refuses to attach while a volume of the same name is still mounted.
+  local volume
+  for volume in /Volumes/VibeTV*; do
+    [[ -e "$volume" ]] || continue
+    rehearsal::preflight_problem \
+      "a VibeTV disk image is still mounted at $volume" \
+      "hdiutil detach '$volume'"
+  done
+
+  # The restore chain walks back to the newest run that captured something, so a
+  # second rehearsal on top of an unrestored one buries the original state.
+  local pending="" run
+  for run in $(ls -1dt "$REHEARSAL_STATE_DIR"/runs/*/ 2>/dev/null); do
+    if [[ -s "${run}backup/manifest.txt" ]]; then
+      pending="$run"
+      break
+    fi
+  done
+  if [[ -n "$pending" ]]; then
+    rehearsal::warn "an earlier rehearsal is still unrestored: $(basename "${pending%/}")"
+    rehearsal::warn 'running now buries your original state one level deeper, and'
+    rehearsal::warn "a later --restore will not reach it. Restore first, or recover"
+    rehearsal::warn "by hand from ${pending}backup/."
+  fi
+
+  local free_mb
+  free_mb="$(df -m "$HOME" 2>/dev/null | awk 'NR==2 {print $4}')"
+  if [[ -n "$free_mb" ]] && ((free_mb < 2048)); then
+    rehearsal::preflight_problem \
+      "only ${free_mb} MB free; the candidate and the backup need about 2 GB" \
+      'free up disk space'
+  fi
+
+  if ! gh auth status >/dev/null 2>&1; then
+    rehearsal::preflight_problem \
+      'gh is not authenticated, so the candidate cannot be downloaded' \
+      'gh auth login'
+  elif [[ -z "$REHEARSAL_RUN_ID" ]] \
+    && [[ -z "$(gh run list --repo "$REHEARSAL_REPOSITORY" --workflow vibetv-merge-gate.yml \
+                 --status success --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || true)" ]]; then
+    rehearsal::preflight_problem \
+      'no successful CODEX Test VibeTV Merge run to take a candidate from' \
+      'run the merge gate for this PR, or pass --run-id <id>'
+  fi
+
+  # Device last: it is the slowest check and dies with its own message.
+  rehearsal::discover_device
+  local board firmware device_id
+  device_id="$(rehearsal::device_field "$REHEARSAL_DEVICE_TARGET" deviceId)"
+  board="$(rehearsal::device_field "$REHEARSAL_DEVICE_TARGET" board)"
+  firmware="$(rehearsal::device_field "$REHEARSAL_DEVICE_TARGET" firmware)"
+  rehearsal::info "VibeTV $device_id ($board) on firmware $firmware at $REHEARSAL_DEVICE_TARGET"
+
+  if [[ -n "$board" && "$board" != "$REHEARSAL_BOARD" ]]; then
+    rehearsal::preflight_problem \
+      "device board is $board but this rehearsal targets $REHEARSAL_BOARD" \
+      'pass --device-target for the right VibeTV, or set REHEARSAL_BOARD'
+  fi
+
+  # Merge-gate candidates are versioned 9999.0.<run>. A device already carrying
+  # one belongs to some other pull request: the flash is skipped, the device
+  # keeps its pairing, and the new-customer screen never appears.
+  if [[ "$REHEARSAL_MODE" == cold && "$firmware" == 9999.* ]]; then
+    rehearsal::warn "this VibeTV already runs candidate firmware $firmware"
+    rehearsal::warn 'if that is the candidate under test, nothing gets flashed, the'
+    rehearsal::warn 'device keeps its pairing, and this is not a real cold start.'
+  fi
+
+  ((REHEARSAL_PREFLIGHT_FAILURES == 0)) \
+    || rehearsal::die "preflight found $REHEARSAL_PREFLIGHT_FAILURES blocking problem(s); nothing was changed"
+  rehearsal::info 'preflight clean'
 }
 
 # --------------------------------------------------------------- purge / restore
