@@ -29,6 +29,44 @@ Before building anything, check once per chat whether the remote branch is ahead
 - Diagnose usage bugs end to end before editing: bundled CodexBar output -> collector -> persisted snapshot -> Companion API -> Control Center -> VibeTV frame.
 - Fix usage bugs in this order: remove the conflicting local rule, remove a duplicate data path, reuse the existing central owner, and only then add code.
 
+## Customer Rehearsal (Cold And Warm Start)
+
+Every change to the VibeTV product is validated on the connected bench Mac with
+both rehearsal scripts before it is handed over, and the real screen is shown.
+Green unit tests, green CI, and a healthy Companion API say nothing about what
+the customer sees. A message can point at an action that does not exist in the
+UI, and only the rendered screen shows that.
+
+- `scripts/vibetv-rehearse-cold-start.sh` -- wipes every VibeTV and CodexBar trace from this Mac, then installs the Mac App and firmware from a pull request candidate. No update path: the "unboxed today, already on the new build" state.
+- `scripts/vibetv-rehearse-warm-start.sh` -- restores today's public customer state (current public Mac App + released firmware), then publishes the candidate so both updates appear in the Updates tab. You drive the visible customer flow yourself: Mac App through Sparkle first, then firmware.
+- Shared logic lives in `scripts/lib/vibetv-rehearsal.sh`. Both take `--pr <number>`, `--run-id`, `--device-target`, `--companion-override`, `--keep-codexbar`, `--restore`, `--yes`; warm start also takes `--skip-firmware-baseline`.
+
+```bash
+scripts/vibetv-rehearse-cold-start.sh --pr 348
+scripts/vibetv-rehearse-warm-start.sh --pr 348
+scripts/vibetv-rehearse-cold-start.sh --restore
+```
+
+A signed DMG is not required for a normal validation run. Build locally and use
+`--companion-override` to rehearse a fix that has no signed CI candidate yet;
+the app is then re-signed ad-hoc and the report records it. The merge-gate
+candidate is only needed when the run has to produce release evidence.
+
+Known traps, all paid for on the bench:
+
+- `--restore` does not return the original state. It walks back to the newest run with a non-empty `backup/manifest.txt`, so after cold+warm the original sits one level deeper, and a second `--restore` points at the same emptied warm run while still reporting "restore complete". Recover the original by hand with `ditto` from `<cold-run>/backup/`.
+- Every flash rotates the device token, and no code plays a captured token back. After cold+warm both saved tokens are dead and the stream reports `pairing_token_rejected`. Recover with `POST /v1/device/repair {"forcePair":true,"target":...}`; it takes about a minute and still answers `paired:false` -- only the next `/v1/status` shows `paired:true`. Do not write again too early.
+- `--keep-codexbar` is a decision, not a default. Without it `~/.codexbar` is gone and the stream reports `provider_setup_required` -- exactly what you want when reproducing a no-provider bug, and a trap otherwise. To force that state without purging, use the regular toggle: `PATCH /v1/preferences/codexbar.providers.<id>.enabled {"value":false}`.
+- Firmware is not restored; the restore chain only rebuilds the Mac. If the device was on another pull request's candidate, it stays on the last flashed version.
+- If the device already runs the candidate version the script reports "already on X, nothing to flash" and the device keeps its pairing. That is not a real cold start and the new-customer pairing screen will not appear.
+- `PREVIEW UNAVAILABLE` for an active custom theme is not a product bug. A Theme Studio theme lives in `/themes/u/` and its spec exists only in the local app, so after a purge the app cannot reload it from the catalog.
+- Quit the app and detach all images before a run; `hdiutil attach` fails transiently while a volume of the same name is still mounted. Check for foreign listeners with `lsof -nP -iTCP:47832 -sTCP:LISTEN`.
+- Warm start needs one manual Sparkle "Install Update" click. That is a native macOS dialog and cannot be scripted headlessly.
+
+`scripts/vibetv-hw-selftest.sh` is the firmware/Companion bench tool and does not
+replace this. `scripts/test-companion-coldwarm-e2e.sh` is the cold/warm
+simulation against the Virtual VibeTV; it runs in CI and needs no hardware.
+
 ## Merge, Release, and Production Guardrails
 
 - Never run `gh pr merge`, merge into `main` with `git merge`, run `git push origin main`, create a tag with `git tag`, run `git push origin refs/tags/*`, run `gh release ...`, or trigger a release workflow unless the user gives explicit approval in the current conversation for that exact action and target.
