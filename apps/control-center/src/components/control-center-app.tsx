@@ -2981,6 +2981,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (codexBarRepairTimeout.current !== null) {
         window.clearTimeout(codexBarRepairTimeout.current);
         codexBarRepairTimeout.current = null;
+        // A reload here would otherwise leave the temporary CodexBar this
+        // recovery started running for the rest of the window session: the
+        // native side only stops it on the finish action or on window close.
+        finishCodexBarRecovery();
       }
     };
   }, [addEvent, retryProviderSetup]);

@@ -951,3 +951,17 @@ issue scope, or release permission never implies UI permission.
   appears only after a customer retry fails.
 - Approved files: `control-center-app.tsx`, `device-startup-screen.tsx`,
   `device-startup-screen.test.tsx`, `main.swift`, and this approval record.
+
+## 2026-08-19 — The temporary CodexBar is stopped on reload too
+
+- User approval: The Codex review of `090a8db` reported that reloading the
+  Control Center while a repair is outstanding leaves the temporary CodexBar
+  this app started running for the rest of the window session. The user's
+  standing instruction for #373 is to bring the pull request to a mergeable
+  state, which includes clearing valid review findings.
+- Approved customer-visible result: None. No screen, copy, control, or order
+  changes. The recovery effect now sends the existing finish action when it
+  tears down an outstanding repair, so the private CodexBar instance is stopped
+  on a reload exactly as it already was on window close. A customer-owned
+  CodexBar is still never stopped.
+- Approved files: `control-center-app.tsx` and this approval record.
