@@ -1014,3 +1014,20 @@ issue scope, or release permission never implies UI permission.
   status poll remains the single owner of that. No copy, control, or
   screen-order changes.
 - Approved files: `control-center-app.tsx` and this approval record.
+
+## 2026-08-19 — Cleanup after the flicker hunt
+
+- User approval: With the root cause fixed and confirmed on hardware
+  ("funktioniert jetzt"), the user asked to work through the remaining review
+  findings, push, and watch CI.
+- Approved customer-visible result: One change is visible and it removes a trap.
+  A provider incident whose Mac App never comes back is now treated as a Mac App
+  outage, so the customer reaches the Mac App recovery screen with its restart
+  action instead of being held on "AI usage could not start" and offered a
+  CodexBar download that cannot restart a stopped runtime. The incident still
+  holds for the whole duration of a repair the app started. Everything else is
+  internal: dead indirection removed, and the automatic repair can no longer be
+  skipped for an incident because its scheduling timer was cancelled by an
+  unrelated re-render. No copy, control, or screen-order changes.
+- Approved files: `control-center-app.tsx`, `control-center-app.test.ts`, and
+  this approval record.

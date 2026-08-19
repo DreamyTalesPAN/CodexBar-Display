@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeDeviceInfo, nextProviderIncident } from "./control-center-app";
+import { mergeDeviceInfo } from "./control-center-app";
 import { deviceAwaitsProviderSetup } from "./control-center-types";
 
 const TARGET = "http://192.168.178.153";
@@ -78,43 +78,28 @@ describe("device snapshot funnel", () => {
   });
 });
 
-describe("provider incident latch", () => {
-  const incident = withStream({
-    running: true,
-    healthy: false,
-    errorCode: "provider_setup_required",
+describe("provider incident", () => {
+  // The incident is open exactly when the merged device says so. It holds
+  // across a repair because no snapshot arrives at all while the Mac App is
+  // down — the disconnect paths write through setDevice, which never
+  // recomputes it.
+  it("is open for a device that awaits provider setup", () => {
+    expect(
+      deviceAwaitsProviderSetup(
+        withStream({
+          running: true,
+          healthy: false,
+          errorCode: "provider_setup_required",
+        }),
+      ),
+    ).toBe(true);
   });
 
-  // Recorded on hardware: pressing Try again unregisters the runtime, every
-  // companion request fails, and the app marks the device disconnected. No
-  // snapshot arrives at all in that window, so the incident must simply hold.
-  // Ending it there dropped the customer onto Overview until the next poll.
-  it("holds while the repair has the Mac App down", () => {
-    expect(nextProviderIncident(false, incident)).toBe(true);
-    expect(nextProviderIncident(true, null)).toBe(true);
-    expect(nextProviderIncident(true, incident)).toBe(true);
-  });
-
-  it("closes on a snapshot that shows the device is fine again", () => {
-    const healthy = withStream({
-      running: true,
-      healthy: true,
-      lastTarget: TARGET,
-    });
-    expect(nextProviderIncident(true, healthy)).toBe(false);
-  });
-
-  it("closes when the device reports a different problem", () => {
-    const broken = withStream({
-      running: true,
-      healthy: false,
-      errorCode: "display_send_failed",
-    });
-    expect(nextProviderIncident(true, broken)).toBe(false);
-  });
-
-  it("closes when the VibeTV is genuinely gone, so the connect screen wins", () => {
-    const gone = { ...base, connected: false, stream: undefined } as never;
-    expect(nextProviderIncident(true, gone)).toBe(false);
+  it("is closed once the device draws again", () => {
+    expect(
+      deviceAwaitsProviderSetup(
+        withStream({ running: true, healthy: true, lastTarget: TARGET }),
+      ),
+    ).toBe(false);
   });
 });

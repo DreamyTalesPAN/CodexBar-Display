@@ -408,10 +408,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           current.themeSetupIdentity,
           mergedDevice,
         ),
-        providerIncidentOpen: nextProviderIncident(
-          current.providerIncidentOpen,
-          mergedDevice,
-        ),
+        providerIncidentOpen: deviceAwaitsProviderSetup(mergedDevice),
       };
     });
   }, []);
@@ -3188,11 +3185,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     device.paired !== false &&
     !connectionRecoveryRequired &&
     !hasEnteredControlCenter;
+  // A repair takes the Mac App down on purpose, so the incident holds while one
+  // runs. But an incident whose Mac App never comes back is a Mac App outage:
+  // holding it forever hid the recovery screen behind "AI usage could not start"
+  // and offered a CodexBar download that cannot restart a dead runtime.
   const providerRecoveryRequired =
-    providerIncidentOpen ||
-    (companionStatus === "online" &&
-      (deviceAwaitsProviderSetup(device) ||
-        (waitingForFirstUsage && providerSetupRequiresRecovery(providerSetup))));
+    (companionStatus === "online" || busyAction === "usage-service-repair") &&
+    (providerIncidentOpen ||
+      deviceAwaitsProviderSetup(device) ||
+      (waitingForFirstUsage && providerSetupRequiresRecovery(providerSetup)));
 
   useEffect(() => {
     if (!providerRecoveryRequired) {
@@ -3220,7 +3221,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         repairUsageService();
       }
     }, 0);
-    return () => window.clearTimeout(timer);
+    // Deliberately not cleared on re-run: companionStatus and
+    // providerRecoveryRequired change while this incident is open, and clearing
+    // the pending timer there dropped the automatic repair for the whole
+    // incident. providerRecoveryAttempted already prevents a second one.
+    void timer;
   }, [companionStatus, providerRecoveryRequired, repairUsageService]);
 
   const startupDeviceSearchState: DeviceSearchState =
@@ -4183,21 +4188,6 @@ export function mergeDeviceInfo(
   };
 }
 
-// An incident is closed only by a snapshot that shows the device is fine again.
-// While the repair has the runtime down no snapshot arrives at all, so the
-// incident simply holds — that gap used to mark the device disconnected, end
-// the incident, and drop the customer into Overview until the next poll
-// brought the error back.
-export function nextProviderIncident(
-  open: boolean,
-  device: DeviceInfo | null,
-): boolean {
-  if (!device) {
-    return open;
-  }
-  return deviceAwaitsProviderSetup(device);
-}
-
 // A stream that is restarting reports no error for a moment. Reading that quiet
 // sample as "the incident is over" ended recovery mid-repair, dropped the
 // customer into Overview, and opened a fresh incident three seconds later when
@@ -4216,7 +4206,7 @@ function mergeDeviceStream(
     !next.errorCode &&
     !next.healthy
   ) {
-    return { ...next, detail: current.detail, errorCode: current.errorCode };
+    return { ...next, errorCode: current.errorCode };
   }
   return next;
 }
