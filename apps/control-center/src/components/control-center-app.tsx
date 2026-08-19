@@ -1613,6 +1613,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setDeviceSession({
         device: null,
         themeSetupIdentity: null,
+        providerIncidentOpen: false,
       });
       setDeviceState("unknown");
       setDeviceCandidates([]);
