@@ -170,7 +170,10 @@ describe("DeviceStartupScreen", () => {
 
     expect(html).toContain("Starting AI usage</h1>");
     expect(html.match(/role="status"/g)).toHaveLength(1);
-    expect(html).not.toContain("Try again</span></button>");
+    // Calm, but never a dead end: nothing is in flight here, so the way out
+    // stays usable.
+    expect(html).toContain("Try again</span></button>");
+    expect(html).not.toContain("disabled=\"\"");
   });
 
   it("waits for the first live image after AI usage recovers", () => {
@@ -188,7 +191,9 @@ describe("DeviceStartupScreen", () => {
 
     expect(html).toContain("Starting your VibeTV display</h1>");
     expect(html).toContain("loading the first live image");
-    expect(html).not.toContain("Try again</span></button>");
+    // A provider that reports ready while the device still has no picture must
+    // not strand the customer on a spinner.
+    expect(html).toContain("Try again</span></button>");
   });
 
   it("uses shadcn recovery UI and names the action that is actually shown", () => {
@@ -288,5 +293,29 @@ describe("DeviceStartupScreen", () => {
     );
     expect(html).not.toContain("We couldn&#x27;t find your VibeTV");
     expect(html).not.toContain("Open WiFi settings");
+  });
+
+  it("keeps the way out usable while nothing is running, and locks it while it is", () => {
+    const props = {
+      deviceCandidates: [],
+      deviceSearchState: "waiting" as const,
+      onPair: vi.fn(),
+      onRepairUsageService: vi.fn(),
+      onSearch: vi.fn(),
+      onSelect: vi.fn(),
+      providerRecovery: true,
+      providerSetup: { status: "ready" },
+    };
+
+    // "AI usage is ready" while the device still shows no picture is a wait
+    // with no owner. It used to render a spinner and nothing else.
+    const idle = renderToStaticMarkup(<DeviceStartupScreen {...props} />);
+    expect(idle).toContain("Try again</span></button>");
+    expect(idle).not.toContain("disabled=\"\"");
+
+    const running = renderToStaticMarkup(
+      <DeviceStartupScreen {...props} busyAction="usage-service-repair" />,
+    );
+    expect(running).toContain("disabled=\"\"");
   });
 });

@@ -81,10 +81,14 @@ export function DeviceStartupScreen({
         showCodexBarFallback,
       )
     : null;
+  // A running request may disable the way out. A calm view may not: the
+  // "ready but no picture yet" state reports checking with nothing actually in
+  // flight, and disabling the button there rebuilt the dead end this screen
+  // exists to remove.
+  const providerRecoveryActionBusy =
+    busyAction === "providers-retry" || busyAction === "usage-service-repair";
   const providerRecoveryBusy = Boolean(
-    providerRecoveryView?.checking ||
-      busyAction === "providers-retry" ||
-      busyAction === "usage-service-repair",
+    providerRecoveryView?.checking || providerRecoveryActionBusy,
   );
   const choosing =
     deviceSearchState === "multiple" && deviceCandidates.length > 0;
@@ -166,11 +170,14 @@ export function DeviceStartupScreen({
     <CircleAlert aria-hidden />
   ) : undefined;
 
-  const actions = providerRecoveryView && !providerRecoveryView.checking ? (
+  // Never leave recovery without a way out. The busy states used to render a
+  // spinner and nothing else, so a provider that reported ready while the
+  // device still had no picture became a dead end.
+  const actions = providerRecoveryView ? (
     <div className="grid gap-3">
       <Button
         className="w-full"
-        disabled={providerRecoveryBusy}
+        disabled={providerRecoveryActionBusy}
         onClick={onRepairUsageService}
         size="lg"
       >

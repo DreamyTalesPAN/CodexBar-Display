@@ -1490,6 +1490,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
     private func beginControlCenterCodexBarRepair() {
         guard preparationTask == nil else {
+            // Another preparation already owns the runtime. Say so instead of
+            // dropping the request: the setup screen waits on this answer and
+            // would otherwise sit inert until its own timeout expires.
+            notifyCodexBarRepairResult(success: false)
             return
         }
         codexBarRepairRequired = true

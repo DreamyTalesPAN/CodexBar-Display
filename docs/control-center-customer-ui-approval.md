@@ -928,3 +928,26 @@ issue scope, or release permission never implies UI permission.
   incident, so the customer keeps the approved `Try again` instead of watching a
   second automatic repair start. No copy, control, or screen order changes.
 - Approved files: `control-center-app.tsx` and this approval record.
+
+## 2026-08-19 — One repair is one screen, not five
+
+- User approval: A live test on this Mac with the PR candidate installed
+  (Mac App `99.0.144`, firmware `1.0.40`) walked the user through five screens
+  in two minutes for a single `Try again`: the correct recovery screen, then a
+  spinner-only "Starting your VibeTV display" with no usable action, then
+  "Mac App offline — RECONNECT VIBETV TO CONTINUE" while the VibeTV had been
+  connected the whole time, then a premature "CodexBar is needed", and finally
+  Overview. The user called it flaky, asked for a read-only diagnosis and simple
+  fixes, and approved them with "ja".
+- Approved customer-visible result: A repair the app starts is presented as one
+  operation. While it runs, the setup screen owns the window, so the runtime the
+  repair stops on purpose no longer surfaces as a Mac App outage and no longer
+  asks the customer to reconnect a VibeTV that never disconnected. The recovery
+  screen always offers `Try again`, and that action is locked only while a check
+  or repair is genuinely running — the "AI usage is ready, waiting for the first
+  live image" state is a wait with no owner and now keeps its way out. Copy,
+  layout, and screen order are unchanged, `Create support report` and the
+  existing error alert stay available throughout, and `Download CodexBar` still
+  appears only after a customer retry fails.
+- Approved files: `control-center-app.tsx`, `device-startup-screen.tsx`,
+  `device-startup-screen.test.tsx`, `main.swift`, and this approval record.

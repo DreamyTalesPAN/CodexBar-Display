@@ -3178,6 +3178,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     device.paired !== false &&
     !connectionRecoveryRequired &&
     !hasEnteredControlCenter;
+  // A repair or provider check only ever starts from the setup screen, and the
+  // repair takes the managed runtime down on purpose. While one runs, that
+  // screen owns the window: otherwise every five-second sample of a
+  // self-inflicted outage became its own screen, and one repair walked the
+  // customer through five of them.
+  const providerRepairInFlight =
+    busyAction === "usage-service-repair" || busyAction === "providers-retry";
   const providerRecoveryRequired =
     companionStatus === "online" &&
     (deviceAwaitsProviderSetup(device) ||
@@ -3442,7 +3449,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     );
   }
 
-  if (!hasEnteredControlCenter && needsRuntimeRecovery) {
+  if (!hasEnteredControlCenter && needsRuntimeRecovery && !providerRepairInFlight) {
     return (
       <MacAppRecoveryScreen
         checking={busyAction === "status"}
@@ -3455,6 +3462,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   if (
     !hasEnteredControlCenter &&
+    !providerRepairInFlight &&
     (companionStatus !== "online" ||
       (requiresMacAppMigration && !deviceReady) ||
       Boolean(setupPreviewStep))
@@ -3463,10 +3471,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }
 
   if (
-    companionStatus === "online" &&
+    (companionStatus === "online" || providerRepairInFlight) &&
     !requiresMacAppMigration &&
     !firmwareUpdateInProgress &&
     (providerRecoveryRequired ||
+      providerRepairInFlight ||
       connectionRecoveryRequired ||
       (!hasEnteredControlCenter &&
         (!hasActiveDevice ||
@@ -3504,7 +3513,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         selectingDeviceTarget={
           busyAction === "select" ? selectingDeviceTarget : undefined
         }
-        providerRecovery={providerRecoveryRequired}
+        providerRecovery={providerRecoveryRequired || providerRepairInFlight}
         providerSetup={providerSetup}
         showCodexBarFallback={showCodexBarFallback}
         supportReportBusy={supportReportBusy}
