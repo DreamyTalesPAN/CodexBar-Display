@@ -892,3 +892,23 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `device-startup-screen.tsx`, `control-center-app.tsx`,
   `control-center-types.ts`, `live-vibetv-preview.tsx`, their tests, the
   customer-flow test, native runtime repair files, and this approval record.
+
+## 2026-08-19 — A partly-ready provider list is not a broken Mac
+
+- User approval: After a review of #373 reported that
+  `providerSetupRequiresRecovery` treats the Companion's normal
+  `{status: "ready", providers: [ready, not-ready]}` payload as a device that
+  needs repair, the user instructed: "ok dann fix das." The reported visible
+  consequence was that a Mac with one working provider and a second signed-out
+  or usage-less provider met the full-screen AI-usage recovery on every cold
+  start instead of Overview.
+- Approved customer-visible result: The recovery screen appears only when the
+  Companion's reconciled provider status is itself not usable. A customer whose
+  CodexBar reports several providers, of which at least one delivers usage,
+  goes straight to Overview as before; the individual failing providers stay
+  visible as unavailable rather than escalating to a repair. Every state
+  approved on 2026-08-19 is otherwise unchanged: the same recovery copy, the
+  same single `Try again`, the same `Download CodexBar` only after a customer
+  retry fails, and `Create support report` throughout.
+- Approved files: `control-center-types.ts`, `control-center-types.test.ts`,
+  `device-startup-screen.tsx`, the customer-flow test, and this approval record.

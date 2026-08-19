@@ -8157,7 +8157,6 @@ async function routeCompanionOnline(
     statusFailuresAfter = 0,
     providerSetup = readyProviderSetup(),
     onProviderRetry,
-    onOpenCodexBar,
   } = {},
 ) {
   let currentDevice = device;
@@ -8211,16 +8210,6 @@ async function routeCompanionOnline(
     if (pathname === "/v1/providers/retry") {
       currentProviderSetup =
         onProviderRetry?.(currentProviderSetup) || currentProviderSetup;
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ ok: true, providerSetup: currentProviderSetup }),
-      });
-      return;
-    }
-    if (pathname === "/v1/providers/open-codexbar") {
-      currentProviderSetup =
-        onOpenCodexBar?.(currentProviderSetup) || currentProviderSetup;
       await route.fulfill({
         status: 200,
         contentType: "application/json",

@@ -10,12 +10,13 @@ import {
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import type {
-  ApiError,
-  DeviceCandidate,
-  DeviceSearchState,
-  ProviderSetupInfo,
-  SupportDiagnostics,
+import {
+  normalizedProviderStatus,
+  type ApiError,
+  type DeviceCandidate,
+  type DeviceSearchState,
+  type ProviderSetupInfo,
+  type SupportDiagnostics,
 } from "./control-center-types";
 import { DeviceTargetForm } from "./device-target-form";
 import { SupportReportActions } from "./support-report-actions";
@@ -359,10 +360,6 @@ function describeProviderRecovery(
       "VibeTV could not read AI usage on this Mac. Try again. If it still fails, create a support report.",
     title: "AI usage could not start",
   };
-}
-
-function normalizedProviderStatus(value?: string) {
-  return value?.trim().toLowerCase().replace(/^provider_/, "") || "";
 }
 
 function StartupActions({

@@ -2788,21 +2788,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return .failure(.applicationIncomplete)
         }
 
+        var runtimeStoppedForCodexBarRepair = false
         if codexBarRepairRestartRequired {
             guard await unregisterBundledRuntimeService() else {
                 NSLog("VibeTV Control Center could not stop its runtime before repairing CodexBar")
                 return .failure(.serviceStart)
             }
             codexBarRepairRestartRequired = false
+            runtimeStoppedForCodexBarRepair = true
+        }
+
+        // The repair stops the managed runtime so the private CodexBar payload
+        // can be replaced underneath it. A repair that cannot finish must put
+        // that runtime back before it reports the failure, or a missing AI
+        // provider turns into a Mac with no Companion at all.
+        func codexBarRepairUnfinished() async -> RuntimePreparationOutcome {
+            if runtimeStoppedForCodexBarRepair {
+                runtimeStoppedForCodexBarRepair = false
+                // Put back exactly the registration this repair tore down.
+                // Legacy migration already ran for the runtime that was
+                // healthy a moment ago, so this must not repeat it.
+                if registerBundledRuntimeService() != .ready {
+                    NSLog(
+                        "VibeTV Control Center could not restart its runtime after the failed CodexBar repair"
+                    )
+                }
+            }
+            return .codexBarRepairRequired
         }
 
         guard bootstrapCodexBar() else {
-            return .codexBarRepairRequired
+            return await codexBarRepairUnfinished()
         }
 
         if codexBarRepairRequired,
            !(await launchBundledCodexBarInBackground()) {
-            return .codexBarRepairRequired
+            return await codexBarRepairUnfinished()
         }
 
         let expectedVersion = currentCompanionVersion()

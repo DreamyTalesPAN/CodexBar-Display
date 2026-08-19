@@ -214,7 +214,6 @@ type Server struct {
 	usageCache             *usageResponse
 	probeProviderSetup     func(context.Context, string) codexbar.ProviderSetup
 	probeExactProvider     func(context.Context, string, string) codexbar.ProviderSetup
-	openCodexBar           func(context.Context) error
 	providerSetupMu        sync.Mutex
 	exactProviderProbeMu   sync.Mutex
 	exactProviderProbes    map[string]*exactProviderProbeFlight
@@ -911,7 +910,6 @@ func New(opts Options) (*Server, error) {
 		probeProviderSetup:    codexbar.ProbeProviderSetup,
 		probeExactProvider:    codexbar.ProbeProviderSetupForProvider,
 		exactProviderProbes:   make(map[string]*exactProviderProbeFlight),
-		openCodexBar:          codexbar.OpenApp,
 		providerPreferences: providerPreferencesState{
 			load:          codexbar.FetchProviderSettings,
 			set:           codexbar.SetProviderEnabled,
@@ -971,7 +969,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/providers/retry", s.handleProviderRetry)
-	mux.HandleFunc("/v1/providers/open-codexbar", s.handleOpenCodexBar)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
 	mux.HandleFunc("/v1/device/search", s.handleDeviceSearch)
 	mux.HandleFunc("/v1/device/select", s.handleDeviceSelect)

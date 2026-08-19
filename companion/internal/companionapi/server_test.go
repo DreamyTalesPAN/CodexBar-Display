@@ -9008,7 +9008,6 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		}
 	}
 	server.providerPreferences.loadInventory = nil
-	server.openCodexBar = func(context.Context) error { return nil }
 	server.subnetTargets = func() []string {
 		return nil
 	}

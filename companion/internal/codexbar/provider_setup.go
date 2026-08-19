@@ -54,10 +54,6 @@ type ProviderSetup struct {
 	ExactUsage *ParsedFrame        `json:"-"`
 }
 
-var openCodexBarCommand = func(ctx context.Context, args ...string) error {
-	return exec.CommandContext(ctx, "/usr/bin/open", args...).Run()
-}
-
 var runConfigBootstrapCommandFn = runConfigBootstrapCommand
 
 // EnsureConfig selects an existing CodexBar config without modifying it. If
@@ -535,17 +531,4 @@ func BinarySource(bin string) string {
 		return "bundled"
 	}
 	return "system"
-}
-
-func OpenApp(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if version := strings.TrimSpace(os.Getenv(appManagedCodexBarVersionEnvVar)); version != "" {
-		app, _, err := findAppManagedPayload(version)
-		if err != nil {
-			return err
-		}
-		return openCodexBarCommand(ctx, "-a", app)
-	}
-	return openCodexBarCommand(ctx, "-b", "com.steipete.codexbar")
 }

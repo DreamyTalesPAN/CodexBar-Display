@@ -8,6 +8,7 @@ import {
   deviceIsReady,
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
+  providerSetupRequiresRecovery,
 } from "./control-center-types";
 
 describe("device connection contract", () => {
@@ -350,5 +351,62 @@ describe("device connection contract", () => {
         display: { themeSpec: { active: true, renderOk: true } },
       }),
     ).toBe(true);
+  });
+});
+
+describe("provider recovery contract", () => {
+  // The Companion reports status "ready" as soon as one provider delivers usage
+  // and keeps every other provider in the list with its own failing status.
+  // TestProviderSetupTokenEvidenceKeepsOneHealthyOneFailingIsolated pins that
+  // payload on the Go side. Treating it as broken sent a working Mac into
+  // full-screen recovery and restarted its runtime for nothing.
+  it("accepts a reconciled setup where only some providers are ready", () => {
+    expect(
+      providerSetupRequiresRecovery({
+        status: "ready",
+        engine: { status: "ready" },
+        providers: [
+          { id: "codex", label: "Codex", enabled: true, status: "ready" },
+          {
+            id: "claude",
+            label: "Claude",
+            enabled: true,
+            status: "auth_required",
+          },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      providerSetupRequiresRecovery({
+        status: "ready",
+        providers: [
+          { id: "codex", status: "ready" },
+          { id: "gemini", status: "no_usage_available" },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it("still recovers when the reconciled status itself is not usable", () => {
+    expect(providerSetupRequiresRecovery({ status: "setup_required" })).toBe(
+      true,
+    );
+    expect(
+      providerSetupRequiresRecovery({
+        status: "provider_not_configured",
+        providers: [{ id: "codex", status: "ready" }],
+      }),
+    ).toBe(true);
+  });
+
+  it("never claims recovery while the status is unknown or still checking", () => {
+    expect(providerSetupRequiresRecovery({ status: "checking" })).toBe(false);
+    expect(providerSetupRequiresRecovery(null)).toBe(false);
+    expect(providerSetupRequiresRecovery(undefined)).toBe(false);
+    expect(
+      providerSetupRequiresRecovery({
+        providers: [{ id: "claude", status: "auth_required" }],
+      }),
+    ).toBe(false);
   });
 });

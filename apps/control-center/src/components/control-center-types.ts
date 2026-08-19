@@ -528,21 +528,18 @@ export function deviceAwaitsProviderSetup(
   );
 }
 
+// The Companion owns provider readiness. It reports status "ready" as soon as
+// one provider delivers usage and deliberately keeps the remaining providers in
+// the list with their own failing status, so a per-provider rule here would
+// declare a working Mac broken. Only the reconciled status decides.
 export function providerSetupRequiresRecovery(
   providerSetup: ProviderSetupInfo | null | undefined,
 ) {
   const status = normalizedProviderStatus(providerSetup?.status);
-  if (status && status !== "ready" && status !== "checking") {
-    return true;
-  }
-  return Boolean(
-    providerSetup?.providers?.some(
-      (provider) => normalizedProviderStatus(provider.status) !== "ready",
-    ),
-  );
+  return status !== "" && status !== "ready" && status !== "checking";
 }
 
-function normalizedProviderStatus(value?: string) {
+export function normalizedProviderStatus(value?: string) {
   return value?.trim().toLowerCase().replace(/^provider_/, "") || "";
 }
 

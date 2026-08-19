@@ -3,7 +3,6 @@ package companionapi
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -654,24 +653,6 @@ func TestExactProviderRetryIsSingleFlight(t *testing.T) {
 	}
 	if probes.Load() != 1 {
 		t.Fatalf("parallel exact retries started %d probes", probes.Load())
-	}
-}
-
-func TestOpenCodexBarUsesFixedActionAndReturnsSetup(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	called := false
-	server.openCodexBar = func(context.Context) error { called = true; return nil }
-	rec := httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/open-codexbar", nil))
-	if rec.Code != http.StatusOK || !called || !strings.Contains(rec.Body.String(), `"providerSetup"`) {
-		t.Fatalf("unexpected open response: called=%t status=%d body=%s", called, rec.Code, rec.Body.String())
-	}
-
-	server.openCodexBar = func(context.Context) error { return errors.New("not found") }
-	rec = httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/open-codexbar", nil))
-	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), `"codexbar_open_failed"`) {
-		t.Fatalf("unexpected open error: %d %s", rec.Code, rec.Body.String())
 	}
 }
 
