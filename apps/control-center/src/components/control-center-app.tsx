@@ -2807,7 +2807,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setThemeInstallEnabled(
           Boolean(payload.companion?.features?.themeInstallEnabled),
         );
-        applyPolledDeviceSnapshot(payload.device);
       }
       addEvent({
         label: partial
@@ -2844,7 +2843,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [
     addEvent,
     activeTab,
-    applyPolledDeviceSnapshot,
     companionInfo,
     companionStatus,
     device,

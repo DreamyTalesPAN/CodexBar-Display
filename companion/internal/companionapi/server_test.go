@@ -9772,3 +9772,50 @@ func TestReloadDisplayWithoutProviderReportsProviderSetup(t *testing.T) {
 		t.Fatalf("reload must point to the central recovery step: %s", rec.Body.String())
 	}
 }
+
+// A support report must describe the same VibeTV as every other endpoint.
+// Shipping active=false made the Control Center believe the configured device
+// had gone away, which dropped a customer out of AI-usage recovery and onto
+// Overview every time they pressed Create support report.
+func TestDiagnosticsReportsTheConfiguredDeviceAsActive(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-active","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"usage"}}`))
+		}
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-active", DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+
+	read := func(path string) deviceInfo {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status=%d body=%s", path, rec.Code, rec.Body.String())
+		}
+		var payload struct {
+			Device deviceInfo `json:"device"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		return payload.Device
+	}
+
+	status := read("/v1/status")
+	diagnostics := read("/v1/diagnostics")
+
+	if !status.Active {
+		t.Fatalf("status must report the configured device as active: %+v", status)
+	}
+	if diagnostics.Active != status.Active {
+		t.Fatalf("diagnostics describes a different device than status: diagnostics.active=%t status.active=%t",
+			diagnostics.Active, status.Active)
+	}
+}

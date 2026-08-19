@@ -1982,6 +1982,11 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	device = s.withDisplayStream(r.Context(), cfg.DeviceTarget, deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello))
+	// A report describes the same VibeTV the rest of the API describes. Leaving
+	// this unset shipped active=false — the field has no omitempty — and the
+	// Control Center believed the configured device had gone away every time a
+	// customer created a support report.
+	device.Active = strings.TrimSpace(cfg.DeviceID) != "" && strings.EqualFold(cfg.DeviceID, device.DeviceID)
 	checks = append(checks, diagnosticCheck{
 		Name:   "device_hello",
 		Status: "pass",

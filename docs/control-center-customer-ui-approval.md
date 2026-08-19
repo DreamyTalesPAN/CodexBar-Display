@@ -1000,3 +1000,17 @@ issue scope, or release permission never implies UI permission.
   copy, control, or screen-order changes.
 - Approved files: `control-center-app.tsx`, `control-center-app.test.ts`, and
   this approval record.
+
+## 2026-08-19 — A support report describes the device, it does not redefine it
+
+- User approval: After three failed attempts the user reported that pressing
+  `Create support report` still switched the app to Overview. Measured on the
+  live machine: `GET /v1/status` returns `active=true` for the connected VibeTV
+  while `GET /v1/diagnostics` returns `active=false` for the same device. The
+  user's standing instruction is to fix what makes sense along the way.
+- Approved customer-visible result: Creating a support report, and repairing AI
+  usage, no longer switch the screen. The report describes the same VibeTV as
+  every other endpoint, and it no longer overwrites the live device state — the
+  status poll remains the single owner of that. No copy, control, or
+  screen-order changes.
+- Approved files: `control-center-app.tsx` and this approval record.
