@@ -277,12 +277,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [deviceSession, setDeviceSession] = useState<{
     device: DeviceInfo | null;
     themeSetupIdentity: ThemeSetupDeviceIdentity | null;
+    providerIncidentOpen: boolean;
   }>({
     device: null,
     themeSetupIdentity: null,
+    providerIncidentOpen: false,
   });
   const device = deviceSession.device;
   const themeSetupIdentity = deviceSession.themeSetupIdentity;
+  const providerIncidentOpen = deviceSession.providerIncidentOpen;
   const setDevice = useCallback(
     (
       update:
@@ -403,6 +406,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         device: mergedDevice,
         themeSetupIdentity: reconcileThemeSetupIdentity(
           current.themeSetupIdentity,
+          mergedDevice,
+        ),
+        providerIncidentOpen: nextProviderIncident(
+          current.providerIncidentOpen,
           mergedDevice,
         ),
       };
@@ -3182,17 +3189,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     device.paired !== false &&
     !connectionRecoveryRequired &&
     !hasEnteredControlCenter;
-  // A repair or provider check only ever starts from the setup screen, and the
-  // repair takes the managed runtime down on purpose. While one runs, that
-  // screen owns the window: otherwise every five-second sample of a
-  // self-inflicted outage became its own screen, and one repair walked the
-  // customer through five of them.
-  const providerRepairInFlight =
-    busyAction === "usage-service-repair" || busyAction === "providers-retry";
   const providerRecoveryRequired =
-    companionStatus === "online" &&
-    (deviceAwaitsProviderSetup(device) ||
-      (waitingForFirstUsage && providerSetupRequiresRecovery(providerSetup)));
+    providerIncidentOpen ||
+    (companionStatus === "online" &&
+      (deviceAwaitsProviderSetup(device) ||
+        (waitingForFirstUsage && providerSetupRequiresRecovery(providerSetup))));
 
   useEffect(() => {
     if (!providerRecoveryRequired) {
@@ -3453,7 +3454,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     );
   }
 
-  if (!hasEnteredControlCenter && needsRuntimeRecovery && !providerRepairInFlight) {
+  if (!hasEnteredControlCenter && needsRuntimeRecovery && !providerRecoveryRequired) {
     return (
       <MacAppRecoveryScreen
         checking={busyAction === "status"}
@@ -3466,7 +3467,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   if (
     !hasEnteredControlCenter &&
-    !providerRepairInFlight &&
+    !providerRecoveryRequired &&
     (companionStatus !== "online" ||
       (requiresMacAppMigration && !deviceReady) ||
       Boolean(setupPreviewStep))
@@ -3475,11 +3476,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }
 
   if (
-    (companionStatus === "online" || providerRepairInFlight) &&
+    (companionStatus === "online" || providerRecoveryRequired) &&
     !requiresMacAppMigration &&
     !firmwareUpdateInProgress &&
     (providerRecoveryRequired ||
-      providerRepairInFlight ||
       connectionRecoveryRequired ||
       (!hasEnteredControlCenter &&
         (!hasActiveDevice ||
@@ -3517,7 +3517,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         selectingDeviceTarget={
           busyAction === "select" ? selectingDeviceTarget : undefined
         }
-        providerRecovery={providerRecoveryRequired || providerRepairInFlight}
+        providerRecovery={providerRecoveryRequired}
         providerSetup={providerSetup}
         showCodexBarFallback={showCodexBarFallback}
         supportReportBusy={supportReportBusy}
@@ -4182,6 +4182,21 @@ export function mergeDeviceInfo(
     health: next.health ?? current.health,
     stream: mergeDeviceStream(current.stream, next.stream),
   };
+}
+
+// An incident is closed only by a snapshot that shows the device is fine again.
+// While the repair has the runtime down no snapshot arrives at all, so the
+// incident simply holds — that gap used to mark the device disconnected, end
+// the incident, and drop the customer into Overview until the next poll
+// brought the error back.
+export function nextProviderIncident(
+  open: boolean,
+  device: DeviceInfo | null,
+): boolean {
+  if (!device) {
+    return open;
+  }
+  return deviceAwaitsProviderSetup(device);
 }
 
 // A stream that is restarting reports no error for a moment. Reading that quiet

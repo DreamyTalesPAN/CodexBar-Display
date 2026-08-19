@@ -984,3 +984,19 @@ issue scope, or release permission never implies UI permission.
   never reported one. No copy, control, or screen-order changes.
 - Approved files: `control-center-app.tsx`, `control-center-app.test.ts`, and
   this approval record.
+
+## 2026-08-19 — The incident, not the sample, decides the screen
+
+- User approval: The previous attempt did not hold. Testing on hardware the user
+  reported "ja flackert immer noch. ich komme immer noch auf overview" and asked
+  for a KISS, global fix with code removed where possible.
+- Approved customer-visible result: The AI-usage recovery screen no longer
+  flickers to Overview while a repair runs or a support report is created. A
+  provider incident is now carried alongside the device it belongs to and closes
+  only on a snapshot that shows the device is fine again. While the repair has
+  the Mac App down no snapshot arrives at all, so the incident holds instead of
+  ending on the gap. A VibeTV that is genuinely gone still closes the incident so
+  the connect screen wins, and a different device failure still takes over. No
+  copy, control, or screen-order changes.
+- Approved files: `control-center-app.tsx`, `control-center-app.test.ts`, and
+  this approval record.
