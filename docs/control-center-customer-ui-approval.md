@@ -965,3 +965,22 @@ issue scope, or release permission never implies UI permission.
   on a reload exactly as it already was on window close. A customer-owned
   CodexBar is still never stopped.
 - Approved files: `control-center-app.tsx` and this approval record.
+
+## 2026-08-19 — An incident ends on evidence, not on a quiet sample
+
+- User approval: Testing the candidate on hardware, the user pressed `Try again`
+  and landed briefly on Overview before being thrown back onto
+  "CodexBar is needed"; `Create support report` flickered the same way. The
+  recorded state log shows why: while the display stream restarts it reports no
+  error for a single poll, and that quiet sample ended the incident. The user
+  asked for a KISS, global fix and approved it with "KISS fix. nimm auch wieder
+  code weg, falls möglich und bau ne globale lösung."
+- Approved customer-visible result: The AI-usage recovery screen no longer
+  flickers to Overview and back while a repair runs or while a support report is
+  created. A provider incident now ends only on evidence that the device draws
+  again — a healthy display stream, or a different failure — and never on a
+  sample that merely reports nothing. A genuinely different stream failure still
+  takes over immediately, and no incident is ever invented for a device that
+  never reported one. No copy, control, or screen-order changes.
+- Approved files: `control-center-app.tsx`, `control-center-app.test.ts`, and
+  this approval record.

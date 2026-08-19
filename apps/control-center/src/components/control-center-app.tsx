@@ -4153,7 +4153,7 @@ async function readLocalNetworkAccessState(): Promise<
   return "unsupported";
 }
 
-function mergeDeviceInfo(
+export function mergeDeviceInfo(
   current: DeviceInfo | null,
   next: DeviceInfo,
 ): DeviceInfo {
@@ -4180,8 +4180,31 @@ function mergeDeviceInfo(
     ),
     display: mergeDeviceDisplay(current.display, next.display),
     health: next.health ?? current.health,
-    stream: next.stream ?? current.stream,
+    stream: mergeDeviceStream(current.stream, next.stream),
   };
+}
+
+// A stream that is restarting reports no error for a moment. Reading that quiet
+// sample as "the incident is over" ended recovery mid-repair, dropped the
+// customer into Overview, and opened a fresh incident three seconds later when
+// the error came back. An incident ends on evidence that the device draws
+// again — a healthy stream or a different error — never on one sample that
+// simply says nothing.
+function mergeDeviceStream(
+  current: DeviceInfo["stream"],
+  next: DeviceInfo["stream"],
+): DeviceInfo["stream"] {
+  if (!next) {
+    return current;
+  }
+  if (
+    current?.errorCode === "provider_setup_required" &&
+    !next.errorCode &&
+    !next.healthy
+  ) {
+    return { ...next, detail: current.detail, errorCode: current.errorCode };
+  }
+  return next;
 }
 
 function deviceIsConfigured(device: DeviceInfo | null | undefined): boolean {
