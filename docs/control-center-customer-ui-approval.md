@@ -873,3 +873,28 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-types.ts`, `control-center-types.test.ts`,
   `control-center-app.tsx`, `test-customer-flows.mjs`, `server.go`,
   `server_test.go`, and this approval record.
+
+## 2026-08-19 — A missing AI provider is visible and actionable
+
+- User approval: After the 2026-08-18 change, the user asked what a customer
+  actually does in that state and requested the screen. Investigation showed the
+  install message pointed at an action the product did not offer:
+  `ProviderSetupCard` was imported by nothing but its own test, `providerSetup`
+  was stored in state and passed to no component, and `/v1/providers/open-codexbar`
+  had no caller. Overview said "LIVE PREVIEW PAUSED — RECONNECT VIBETV TO
+  CONTINUE" and Usage stayed on "Checking providers" with no action at all. The
+  user instructed: "ja mach beides" — soften the copy and wire the card.
+- Approved customer-visible result: A connected VibeTV whose stream reports
+  `provider_setup_required` now shows a "Connect an AI provider" panel on both
+  Overview (above the device preview) and Usage (above the usage content). The
+  panel names the affected provider, states why it is not delivering usage, and
+  offers a single **Check again** action. The theme-install success message now
+  reads "Theme installed. VibeTV shows it once an AI provider is ready." instead
+  of naming an action that did not exist. Provider copy that previously said
+  "Open provider setup" now describes the condition instead, since that button is
+  deliberately not offered. CodexBar is not named, shown, or opened anywhere: the
+  card is rendered without its `onOpenCodexBar` action, and the only wired call is
+  `POST /v1/providers/retry`.
+- Approved files: `usage-screen.tsx`, `overview-screen.tsx`,
+  `provider-setup-card.tsx`, `control-center-app.tsx`, `server.go`, and this
+  approval record.

@@ -3220,10 +3220,30 @@ async function testProviderlessDeviceReachesControlCenterInsteadOfThemeChooser(
 
   // Usage is where the customer connects a provider; the trap replaced exactly
   // this screen, so reaching it is the point of the fix.
+  // The message the install now shows must point somewhere real: the customer
+  // needs a named provider state and an action, not just an unblocked shell.
+  await page
+    .getByRole("heading", { name: "Connect an AI provider" })
+    .waitFor({ timeout: 5_000 });
+  assert(
+    (await page.getByRole("button", { name: "Check again" }).count()) > 0,
+    "A VibeTV without a provider must offer a Check again action on Overview",
+  );
+
   await clickNavigation(page, "Usage");
   await page
     .getByRole("heading", { name: "Usage", exact: true })
     .waitFor({ timeout: 5_000 });
+  await page
+    .getByRole("heading", { name: "Connect an AI provider" })
+    .waitFor({ timeout: 5_000 });
+
+  // CodexBar is an implementation detail and must never reach the customer.
+  const visibleText = await page.evaluate(() => document.body.innerText);
+  assert(
+    !/codexbar/i.test(visibleText),
+    "Customer-facing provider surfaces must never name CodexBar",
+  );
 
   assertNoInstallRequests(installRequests);
   await page.close();

@@ -2584,6 +2584,26 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return true;
   }, [catalog.themes, device, firmwareUpdateStatus, installTheme]);
 
+  // The provider surfaces only ever re-check; connecting a provider happens
+  // outside VibeTV, and the customer is never sent into the usage service.
+  const retryProviderSetup = useCallback(async () => {
+    setBusyAction("providers-retry");
+    try {
+      const payload = await runCompanion<{ providerSetup?: ProviderSetupInfo }>(
+        "/v1/providers/retry",
+        { method: "POST" },
+      );
+      setProviderSetup(payload.providerSetup || null);
+      setCompanionStatus("online");
+    } catch (error) {
+      setLastError(
+        normalizeCaughtError(error, "The provider check needs attention."),
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }, [runCompanion]);
+
   const refreshUsage = useCallback(
     async (options?: { quiet?: boolean }) => {
       const quiet = Boolean(options?.quiet);
@@ -3381,10 +3401,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     >
       {activeShellTab === "overview" ? (
         <OverviewScreen
+          busyAction={busyAction}
           companionVersion={companionInfo?.version}
           companionStatus={companionStatus}
           device={device}
           displayFrame={displayFrame}
+          providerSetup={providerSetup}
+          onProviderRetry={() => void retryProviderSetup()}
           usage={usage}
         />
       ) : null}
@@ -3394,6 +3417,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           busyAction={busyAction}
           companionStatus={companionStatus}
           onRefresh={() => refreshUsage()}
+          // #262-era decision (2026-07-21): no provider box next to real usage
+          // data, it contradicts what the screen already shows. It only appears
+          // when the device is genuinely starved of a provider.
+          providerSetup={
+            deviceAwaitsProviderSetup(device) ? providerSetup : null
+          }
+          onProviderRetry={() => void retryProviderSetup()}
           pendingPreferenceIds={pendingPreferenceIds}
           preferences={providerPreferences}
           preferencesError={providerPreferencesError}

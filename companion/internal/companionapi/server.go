@@ -4576,7 +4576,7 @@ func customerInstallProgress(line string, job *themeInstallJob) (string, int, bo
 	case strings.HasPrefix(line, "Display stream: refreshed"):
 		return "Display stream refreshed.", 98, true
 	case strings.HasPrefix(line, "Display stream: waiting for AI provider"):
-		return "Theme installed. Connect an AI provider to see it on VibeTV.", 98, true
+		return "Theme installed. VibeTV shows it once an AI provider is ready.", 98, true
 	case strings.HasPrefix(line, "Done:"):
 		return "Theme installed.", 88, true
 	default:

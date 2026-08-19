@@ -90,7 +90,7 @@ export function ProviderSetupCard({
               key={`${provider.id}-${provider.status}`}
             >
               <span className="break-words text-sm font-black text-[#1B1B1B]">
-                {provider.label || providerName(provider.id)}
+                {providerDisplayName(provider)}
               </span>
               <span className="break-words text-sm leading-6 text-[#444933]">
                 {providerIssueDetail(provider)}
@@ -205,7 +205,7 @@ export function providerSetupStatusLabel(
     const readyProvider = providerSetup.providers?.find(
       (provider) => normalizeStatus(provider.status) === "ready",
     );
-    return readyProvider?.label || providerName(readyProvider?.id) || "Ready";
+    return (readyProvider ? providerDisplayName(readyProvider) : "") || "Ready";
   }
   if (normalizeStatus(providerSetup.status) === "checking") {
     return "Checking";
@@ -239,7 +239,7 @@ export function providerSetupStatusDetail(
     providerSetup.engine?.detail?.trim() ||
     providerSetup.nextAction?.trim() ||
     providerSetup.engine?.nextAction?.trim() ||
-    "Open provider setup and connect a provider that exposes usage limits."
+    "No AI provider is delivering usage data yet."
   );
 }
 
@@ -272,7 +272,7 @@ function providerSetupSummary(providerSetup: ProviderSetupInfo): string {
     providerSetup.engine?.detail?.trim() ||
     providerSetup.nextAction?.trim() ||
     providerSetup.engine?.nextAction?.trim() ||
-    "Open provider setup and connect a provider that exposes usage limits."
+    "No AI provider is delivering usage data yet."
   );
 }
 
@@ -280,7 +280,9 @@ function providerReadyLabel(providerSetup: ProviderSetupInfo): string {
   const readyProvider = providerSetup.providers?.find(
     (provider) => normalizeStatus(provider.status) === "ready",
   );
-  const name = readyProvider?.label || providerName(readyProvider?.id);
+  const name = readyProvider
+    ? providerDisplayName(readyProvider)
+    : "";
   return name ? `${name} is ready.` : "AI provider is ready.";
 }
 
@@ -289,7 +291,7 @@ function providerIssueDetail(provider: ProviderReadinessInfo): string {
   if (detail) {
     return detail;
   }
-  const name = provider.label || providerName(provider.id) || "This provider";
+  const name = providerDisplayName(provider) || "This provider";
   switch (normalizeStatus(provider.status)) {
     case "auth_required":
       return `Sign in to ${name}, then check again.`;
@@ -304,9 +306,9 @@ function providerIssueDetail(provider: ProviderReadinessInfo): string {
     case "engine_error":
       return "The usage service needs attention before VibeTV can read provider usage.";
     case "not_configured":
-      return `Open provider setup and connect ${name}, then check again.`;
+      return `${name} is not set up yet. Finish its sign-in on this Mac, then check again.`;
     default:
-      return `Open provider setup and finish setting up ${name}.`;
+      return `${name} needs attention before VibeTV can read its usage.`;
   }
 }
 
@@ -331,6 +333,12 @@ function providerStatusLabel(status: ProviderReadinessStatus): string {
   }
 }
 
+// The bundled usage engine is not an AI provider, and its product name is an
+// implementation detail the customer must never see. It keeps one neutral name
+// here regardless of the label upstream sends.
+const ENGINE_PROVIDER_ID = "codexbar";
+const ENGINE_PROVIDER_NAME = "Usage service";
+
 function providerName(id: string | undefined): string {
   if (!id) {
     return "";
@@ -341,11 +349,21 @@ function providerName(id: string | undefined): string {
     copilot: "Copilot",
     cursor: "Cursor",
     gemini: "Gemini",
+    [ENGINE_PROVIDER_ID]: ENGINE_PROVIDER_NAME,
   };
   return (
     known[id.toLowerCase()] ||
     id.charAt(0).toUpperCase() + id.slice(1).replace(/[-_]+/g, " ")
   );
+}
+
+function providerDisplayName(
+  provider: Pick<ProviderReadinessInfo, "id" | "label">,
+): string {
+  if (provider.id?.trim().toLowerCase() === ENGINE_PROVIDER_ID) {
+    return ENGINE_PROVIDER_NAME;
+  }
+  return provider.label?.trim() || providerName(provider.id);
 }
 
 function normalizeStatus(value: string | undefined): string {
