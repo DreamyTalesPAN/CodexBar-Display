@@ -2799,31 +2799,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
 
         // The repair stops the managed runtime so the private CodexBar payload
-        // can be replaced underneath it. A repair that cannot finish must put
-        // that runtime back before it reports the failure, or a missing AI
-        // provider turns into a Mac with no Companion at all.
-        func codexBarRepairUnfinished() async -> RuntimePreparationOutcome {
-            if runtimeStoppedForCodexBarRepair {
-                runtimeStoppedForCodexBarRepair = false
-                // Put back exactly the registration this repair tore down.
-                // Legacy migration already ran for the runtime that was
-                // healthy a moment ago, so this must not repeat it.
-                if registerBundledRuntimeService() != .ready {
-                    NSLog(
-                        "VibeTV Control Center could not restart its runtime after the failed CodexBar repair"
-                    )
-                }
+        // can be replaced underneath it. Every early return between here and
+        // the registration below would otherwise leave the customer with no
+        // Companion at all, turning a missing AI provider into a Mac App
+        // outage. Put back exactly the registration this repair tore down;
+        // legacy migration already ran for the runtime that was healthy a
+        // moment ago, so this must not repeat it.
+        defer {
+            if runtimeStoppedForCodexBarRepair,
+               registerBundledRuntimeService() != .ready {
+                NSLog(
+                    "VibeTV Control Center could not restart its runtime after the unfinished CodexBar repair"
+                )
             }
-            return .codexBarRepairRequired
         }
 
         guard bootstrapCodexBar() else {
-            return await codexBarRepairUnfinished()
+            return .codexBarRepairRequired
         }
 
         if codexBarRepairRequired,
            !(await launchBundledCodexBarInBackground()) {
-            return await codexBarRepairUnfinished()
+            return .codexBarRepairRequired
         }
 
         let expectedVersion = currentCompanionVersion()
@@ -2861,6 +2858,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         // SMAppService.register() bootstraps a LaunchAgent immediately. Stop
         // every legacy writer first so migration never overlaps two streams.
+        runtimeStoppedForCodexBarRepair = false
         switch await ensureBundledRuntimeServiceRegistered() {
         case .ready:
             break

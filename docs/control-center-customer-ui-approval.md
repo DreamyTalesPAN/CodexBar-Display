@@ -912,3 +912,19 @@ issue scope, or release permission never implies UI permission.
   retry fails, and `Create support report` throughout.
 - Approved files: `control-center-types.ts`, `control-center-types.test.ts`,
   `device-startup-screen.tsx`, the customer-flow test, and this approval record.
+
+## 2026-08-19 — One provider incident cannot inherit the previous one
+
+- User approval: The user instructed "fix CI until green" for #373, which
+  includes the automated review gate. The Codex review of `f99d9ad` reported
+  that a stale `CodexBar is needed` state survives into a later incident, and
+  that the deliberate runtime restart during a repair is mistaken for a
+  resolved incident and relaunches the automatic repair instead of showing the
+  approved `Try again`.
+- Approved customer-visible result: Every AI-usage incident starts at the plain
+  `Try again` state. `Download CodexBar` appears only after a customer retry
+  fails inside that same incident, never carried over from an earlier one. The
+  Mac App restarting itself during a repair no longer counts as a resolved
+  incident, so the customer keeps the approved `Try again` instead of watching a
+  second automatic repair start. No copy, control, or screen order changes.
+- Approved files: `control-center-app.tsx` and this approval record.

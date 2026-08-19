@@ -3185,23 +3185,32 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   useEffect(() => {
     if (!providerRecoveryRequired) {
-      providerRecoveryAttempted.current = false;
-      providerRecoveryManualAttempted.current = false;
+      // A Mac App that briefly disappears does not end a provider incident, and
+      // the native repair takes it down on purpose. Ending the incident on that
+      // gap would relaunch the automatic repair instead of showing the approved
+      // Try again. Only a reachable Mac App that no longer needs recovery ends
+      // one.
+      if (companionStatus === "online") {
+        providerRecoveryAttempted.current = false;
+        providerRecoveryManualAttempted.current = false;
+      }
       return;
     }
-    if (
-      providerRecoveryAttempted.current ||
-      !isNativeControlCenterApp()
-    ) {
+    if (providerRecoveryAttempted.current) {
       return;
     }
     providerRecoveryAttempted.current = true;
     const timer = window.setTimeout(() => {
+      // Every incident starts without the CodexBar fallback. It is earned by a
+      // customer retry that fails in this incident, never inherited from the
+      // previous one.
       setShowCodexBarFallback(false);
-      repairUsageService();
+      if (isNativeControlCenterApp()) {
+        repairUsageService();
+      }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [providerRecoveryRequired, repairUsageService]);
+  }, [companionStatus, providerRecoveryRequired, repairUsageService]);
 
   const startupDeviceSearchState: DeviceSearchState =
     waitingForFirstUsage

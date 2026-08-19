@@ -919,15 +919,26 @@ if not (codexbar_publish < codexbar_launch):
     raise SystemExit(
         "native CodexBar repair must publish the verified payload before launching it"
     )
+codexbar_stopped_runtime = prepare_method.find("runtimeStoppedForCodexBarRepair = true")
+codexbar_restore = prepare_method.find(
+    "if runtimeStoppedForCodexBarRepair,", codexbar_stopped_runtime
+)
+codexbar_restore_handoff = prepare_method.find(
+    "runtimeStoppedForCodexBarRepair = false", codexbar_restore
+)
+codexbar_registration = prepare_method.find(
+    "switch await ensureBundledRuntimeServiceRegistered()", codexbar_restore_handoff
+)
 if (
-    "runtimeStoppedForCodexBarRepair = true" not in prepare_method
-    or "func codexBarRepairUnfinished() async" not in prepare_method
-    or "if registerBundledRuntimeService() != .ready" not in prepare_method
-    or prepare_method.count("return await codexBarRepairUnfinished()") != 2
-    or prepare_method.count("return .codexBarRepairRequired") != 1
+    "registerBundledRuntimeService() != .ready" not in prepare_method
+    or "defer {" not in prepare_method[codexbar_stopped_runtime:codexbar_restore]
+    or not (
+        0 <= codexbar_stopped_runtime < codexbar_restore
+        < codexbar_restore_handoff < codexbar_registration
+    )
 ):
     raise SystemExit(
-        "a failed native CodexBar repair must restart the managed runtime it stopped"
+        "an unfinished native CodexBar repair must restart the managed runtime it stopped on every early return"
     )
 native_ready = prepare_method.find("return .nativeRuntimeReady")
 if not (0 <= prepare_method.find("var health = await waitForHealthyRuntime") < native_ready):
