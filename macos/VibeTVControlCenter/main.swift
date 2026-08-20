@@ -553,7 +553,6 @@ private struct RuntimeStatusPayload: Decodable {
 
     let ok: Bool
     let companion: Companion
-    let updateInProgress: Bool?
 }
 
 enum RuntimeHealthEvaluation: Equatable, CustomStringConvertible {
@@ -2872,6 +2871,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 return .codexBarRepairRequired
             }
             guard await unregisterBundledRuntimeService() else {
+                // The runtime is still alive and still holding updates back for
+                // a shutdown that did not happen. Give it back.
+                await runtimeReleaseUpdateHold()
                 NSLog("VibeTV Control Center could not stop its runtime before repairing CodexBar")
                 return .failure(.serviceStart)
             }
@@ -3180,7 +3182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     // otherwise a dead runtime could never be registered again.
     private func runtimeShouldDeferRepairForUpdate() async -> Bool {
         for _ in 0..<runtimeUpdateProbeAttempts {
-            switch await runtimeUpdateProbe() {
+            switch await runtimeClaimUpdateHold() {
             case .noUpdate:
                 return false
             case .updateRunning, .answeredWithoutField:
@@ -3200,29 +3202,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         case updateRunning
     }
 
-    private func runtimeUpdateProbe() async -> RuntimeUpdateProbe {
+    // Asking whether an update runs and then killing the runtime are two steps,
+    // and an update that starts between them dies with the process that owns its
+    // job. So do not ask -- claim: the runtime refuses new update jobs from here
+    // on, under the same lock that starts them. A 409 means an update already
+    // owns the runtime and the repair waits, exactly as before.
+    private func runtimeClaimUpdateHold() async -> RuntimeUpdateProbe {
         for origin in runtimeOriginCandidates() {
-            var request = URLRequest(
-                url: origin.appendingPathComponent("v1/runtime-health"),
-                cachePolicy: .reloadIgnoringLocalCacheData,
-                timeoutInterval: runtimeHealthRequestTimeout
-            )
-            request.httpMethod = "GET"
-            guard let (data, response) = try? await URLSession.shared.data(for: request),
-                  let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode),
-                  let payload = try? JSONDecoder().decode(
-                      RuntimeStatusPayload.self,
-                      from: data
-                  ) else {
+            guard let http = await runtimeUpdateHoldRequest(origin, release: false) else {
                 continue
             }
-            guard let updating = payload.updateInProgress else {
+            if http.statusCode == 409 {
+                return .updateRunning
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                // An older runtime has no hold endpoint. It also has no atomic
+                // answer to give, so treat it the way the missing field is
+                // treated: hold back rather than strand an update.
                 return .answeredWithoutField
             }
-            return updating ? .updateRunning : .noUpdate
+            return .noUpdate
         }
         return .noAnswer
+    }
+
+    // The hold outlives a repair that never stopped the runtime, so release it
+    // whenever the shutdown does not happen.
+    private func runtimeReleaseUpdateHold() async {
+        for origin in runtimeOriginCandidates() {
+            if await runtimeUpdateHoldRequest(origin, release: true) != nil {
+                return
+            }
+        }
+    }
+
+    private func runtimeUpdateHoldRequest(
+        _ origin: URL,
+        release: Bool
+    ) async -> HTTPURLResponse? {
+        var request = URLRequest(
+            url: origin.appendingPathComponent("v1/runtime-health/update-hold"),
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: runtimeHealthRequestTimeout
+        )
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = release ? Data("{\"release\":true}".utf8) : Data("{}".utf8)
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse else {
+            return nil
+        }
+        return http
     }
 
     private func waitForRuntimeAPIToStop() async -> Bool {

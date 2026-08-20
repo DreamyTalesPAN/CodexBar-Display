@@ -1588,3 +1588,20 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-app.tsx`, `theme-library-screen.tsx`,
   `companion/internal/companionapi/server.go`, `scripts/test-customer-flows.mjs`,
   and this approval record.
+
+## 2026-08-20 — An update cannot start into a Mac App that is stopping
+
+- User approval: Asked how to close the fifth Codex finding (the update/repair
+  race across the process boundary), the user chose "Neue Jobs abweisen": "der
+  Companion blockt während eines angekündigten Shutdowns neue Update-Jobs mit
+  409, Swift meldet den Shutdown vorher an."
+- Approved customer-visible result: In the seconds while the Mac App is stopping
+  its background work to repair the AI usage service, pressing `Update` in the
+  Updates tab reports `Mac App is restarting.` with `Wait a moment, then start
+  the update again.` instead of starting an update that would be killed
+  mid-flight. No new control and no new screen; this is the existing update
+  failure path with its own reason. The opposite order is unchanged: an update
+  that is already running still makes the repair wait, and the customer sees
+  nothing at all.
+- Approved files: `companion/internal/companionapi/server.go`,
+  `macos/VibeTVControlCenter/main.swift`, and this approval record.

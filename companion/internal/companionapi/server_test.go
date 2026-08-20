@@ -10418,3 +10418,116 @@ func TestThemeInstallAsyncKeepsProviderOutcomeAsFinalMessage(t *testing.T) {
 		t.Fatalf("a providerless install must not claim the theme is active: %q", got.Job.Logs)
 	}
 }
+
+// The Mac App stops this runtime to repair CodexBar. Asking runtime-health
+// whether an update runs and then killing the process are two steps, so an
+// update started in between died with the process that owned its job. The hold
+// makes the two the same step: claiming it and starting an update take the same
+// lock, so one of them always loses cleanly.
+func TestRuntimeUpdateHoldRefusesUpdatesStartedAfterTheProbe(t *testing.T) {
+	initial := runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	}
+	server := newTestServer(t, initial)
+
+	claim := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/runtime-health/update-hold",
+			strings.NewReader(`{}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+	startUpdate := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/updates/install",
+			strings.NewReader(`{}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := claim(); rec.Code != http.StatusOK {
+		t.Fatalf("an idle runtime must grant the hold, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec := startUpdate()
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("an update started after the hold must be refused, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "mac_app_restarting" {
+		t.Fatalf("error code=%q want mac_app_restarting", response.Error.Code)
+	}
+
+	// A repair that never stopped the runtime must not keep updates blocked.
+	relRec := httptest.NewRecorder()
+	relReq := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/runtime-health/update-hold",
+		strings.NewReader(`{"release":true}`),
+	)
+	relReq.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(relRec, relReq)
+	if relRec.Code != http.StatusOK {
+		t.Fatalf("releasing the hold must succeed, got %d body=%s", relRec.Code, relRec.Body.String())
+	}
+	if rec := startUpdate(); rec.Code == http.StatusConflict {
+		var released struct {
+			Error apiError `json:"error"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &released)
+		if released.Error.Code == "mac_app_restarting" {
+			t.Fatal("a released hold must stop refusing updates")
+		}
+	}
+}
+
+// The reverse order was already guarded and must stay guarded: an update that
+// owns the runtime refuses the hold, and the repair waits.
+func TestRuntimeUpdateHoldRefusedWhileAnUpdateOwnsTheRuntime(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+	server.updateJobs["active-update"] = &firmwareUpdateJob{
+		ID:    "active-update",
+		Phase: "installing",
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/runtime-health/update-hold",
+		strings.NewReader(`{}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("a running update must refuse the hold, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "firmware_update_in_progress" {
+		t.Fatalf("error code=%q want firmware_update_in_progress", response.Error.Code)
+	}
+}

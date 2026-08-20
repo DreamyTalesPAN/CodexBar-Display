@@ -196,6 +196,7 @@ type Server struct {
 	wakeDisplayStream      func()
 	firmwareUpdateActive   atomic.Bool
 	firmwareUpdateStartMu  sync.Mutex
+	updateHoldUntil        time.Time
 	configMu               sync.Mutex
 	repairMu               sync.Mutex
 	repairFlightsMu        sync.Mutex
@@ -1005,6 +1006,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerControlCenterRoutes(mux)
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/runtime-health", s.handleRuntimeHealth)
+	mux.HandleFunc("/v1/runtime-health/update-hold", s.handleRuntimeUpdateHold)
 	mux.HandleFunc("/v1/usage", s.handleUsage)
 	mux.HandleFunc("/v1/preferences", s.handlePreferences)
 	mux.HandleFunc("/v1/preferences/", s.handlePreference)
@@ -1465,6 +1467,50 @@ func (s *Server) currentTime() time.Time {
 		return s.now().UTC()
 	}
 	return time.Now().UTC()
+}
+
+// The Mac App stops this runtime to repair CodexBar. runtime-health alone could
+// only report a job that had already started, so a firmware update begun
+// between that answer and the shutdown still died with this process. The Mac
+// App now claims a hold first: taking it and starting an update are the same
+// lock, so one of the two always loses cleanly. The hold expires on its own
+// because the process it protects is normally gone before it matters.
+const runtimeUpdateHoldWindow = 60 * time.Second
+
+func (s *Server) handleRuntimeUpdateHold(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var req struct {
+		Release bool `json:"release"`
+	}
+	if !decodeOptionalJSON(w, r, &req) {
+		return
+	}
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if req.Release {
+		s.updateHoldUntil = time.Time{}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+	if _, running := s.activeFirmwareUpdateJob(); running {
+		writeError(
+			w,
+			http.StatusConflict,
+			"firmware_update_in_progress",
+			"VibeTV update is still running.",
+			"Wait for the update to finish.",
+		)
+		return
+	}
+	s.updateHoldUntil = time.Now().Add(runtimeUpdateHoldWindow)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// Callers must hold firmwareUpdateStartMu.
+func (s *Server) updateHoldActive() bool {
+	return !s.updateHoldUntil.IsZero() && time.Now().Before(s.updateHoldUntil)
 }
 
 func (s *Server) handleRuntimeHealth(w http.ResponseWriter, r *http.Request) {
@@ -4022,6 +4068,16 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 	}
 	s.firmwareUpdateStartMu.Lock()
 	defer s.firmwareUpdateStartMu.Unlock()
+	if s.updateHoldActive() {
+		writeError(
+			w,
+			http.StatusConflict,
+			"mac_app_restarting",
+			"Mac App is restarting.",
+			"Wait a moment, then start the update again.",
+		)
+		return
+	}
 	cfg, hello, ok := s.requireDevice(w, r)
 	if !ok {
 		return
