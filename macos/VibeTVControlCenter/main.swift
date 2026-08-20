@@ -1388,6 +1388,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             beginCodexBarRepair()
             return
         }
+        // Same reason the repair above is routed here: the recovery screen also
+        // reaches Open CodexBar from a context that is not the WKWebView, and
+        // macOS then delivers the URL through this handler. urlRouter.receive
+        // only accepts open-control-center, so without this the button is dead.
+        if urls.contains(where: isOpenCodexBarURL) {
+            openManagedCodexBar()
+            return
+        }
         if urlRouter.receive(urls) {
             presentControlCenter()
         }

@@ -605,6 +605,9 @@ required_source = [
     # The managed runtime runs with --api-fallback, so the quiesce wait after an
     # unregister must watch the origin it actually published, not 47832.
     "waitForRuntimeAPIToStop(managedOrigin)",
+    # Open CodexBar is reached from outside the WKWebView too, and macOS then
+    # delivers it through application(_:open:), which urlRouter.receive rejects.
+    "if urls.contains(where: isOpenCodexBarURL) {",
     # .ready only means the registration was accepted; the health gate below can
     # still fail and unregister it. The repair's restoration must survive that.
     "        runtimeStoppedForCodexBarRepair = false\n        clearPendingNativeUpdate()",
