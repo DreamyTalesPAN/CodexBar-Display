@@ -3255,8 +3255,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         return http
     }
 
-    private func waitForRuntimeAPIToStop() async -> Bool {
-        guard let origin = URL(string: defaultRuntimeOriginString) else {
+    // The managed runtime runs with --api-fallback, so when 47832 is taken it
+    // serves from a free port and publishes it in runtime-endpoint.json. Waiting
+    // on the default origin then watches the wrong listener in both directions:
+    // whatever took 47832 keeps answering after the managed runtime is gone and
+    // the wait times out, or nothing answers there and the wait returns while
+    // the fallback runtime is still exiting -- and the caller registers a second
+    // runtime onto a port the old one still owns. Wait on the origin the runtime
+    // actually published, captured before the unregister rewrites it.
+    private func waitForRuntimeAPIToStop(_ managedOrigin: URL?) async -> Bool {
+        guard let origin = managedOrigin ?? URL(string: defaultRuntimeOriginString) else {
             return true
         }
         let healthURL = origin.appendingPathComponent("v1/runtime-health")
@@ -3282,7 +3290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         // on a port the old one still owns, which is the very collision the
         // wait exists to prevent.
         NSLog(
-            "VibeTV Control Center runtime still answered on \(defaultRuntimeOriginString) after unregister"
+            "VibeTV Control Center runtime still answered on \(origin.absoluteString) after unregister"
         )
         return false
     }
@@ -3291,6 +3299,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         if usesLocalPreviewRuntime {
             return await unregisterLocalPreviewRuntimeService()
         }
+        let managedOrigin = runtimeOriginCandidates().first
         switch runtimeService.status {
         case .notRegistered, .notFound:
             break
@@ -3305,7 +3314,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
             switch runtimeService.status {
             case .notRegistered, .notFound:
-                guard await waitForRuntimeAPIToStop() else {
+                guard await waitForRuntimeAPIToStop(managedOrigin) else {
                     return false
                 }
             case .enabled, .requiresApproval:

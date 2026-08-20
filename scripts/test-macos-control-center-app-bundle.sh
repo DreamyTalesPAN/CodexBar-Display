@@ -602,6 +602,9 @@ required_source = [
     'runtimeEndpointFileName = "runtime-endpoint.json"',
     "validatedRuntimeEndpointOrigin(",
     "runtimeOriginCandidates()",
+    # The managed runtime runs with --api-fallback, so the quiesce wait after an
+    # unregister must watch the origin it actually published, not 47832.
+    "waitForRuntimeAPIToStop(managedOrigin)",
     "rediscoverRuntimeOriginForNavigationRetry()",
     'nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"',
     "webView.customUserAgent = nativeControlCenterUserAgent(",
