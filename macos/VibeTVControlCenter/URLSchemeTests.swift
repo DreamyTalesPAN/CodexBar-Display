@@ -328,6 +328,28 @@ func runURLSchemeTests() {
         "the WebView finish URL must stop only the temporary CodexBar app"
     )
     require(
+        isOpenCodexBarURL(URL(string: "vibetv://open-codexbar")!),
+        "the exact open-CodexBar action must be accepted"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://open-codexbar")!
+        ) == .openCodexBar,
+        "the WebView open URL must bring CodexBar to the front"
+    )
+    for rejectedOpenURL in [
+        "vibetv://open-codexbar/extra",
+        "vibetv://open-codexbar?activate=true",
+        "vibetv://open-codexbar#now",
+        "vibetv://user@open-codexbar",
+        "https://open-codexbar",
+    ] {
+        require(
+            !isOpenCodexBarURL(URL(string: rejectedOpenURL)!),
+            "unexpected open-CodexBar action must be rejected: \(rejectedOpenURL)"
+        )
+    }
+    require(
         nativeControlCenterAction(
             for: URL(string: "vibetv://check-for-updates")!
         ) == .checkForUpdates,

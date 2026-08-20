@@ -3,6 +3,7 @@
 import {
   CircleAlert,
   Download,
+  ExternalLink,
   Monitor,
   RefreshCw,
   Wifi,
@@ -12,6 +13,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   normalizedProviderStatus,
+  providerSetupHasEngineButNoEnabledProvider,
   type ApiError,
   type DeviceCandidate,
   type DeviceSearchState,
@@ -34,6 +36,7 @@ type Props = {
   lastError?: ApiError | null;
   diagnostics?: SupportDiagnostics | null;
   onCreateSupportReport?: () => void;
+  onOpenCodexBar?: () => void;
   onRepairUsageService?: () => void;
   onDeviceTargetChange?: (target: string) => void;
   onManualTarget?: (target: string) => void;
@@ -55,6 +58,7 @@ export function DeviceStartupScreen({
   lastError,
   diagnostics,
   onCreateSupportReport,
+  onOpenCodexBar,
   onRepairUsageService,
   onDeviceTargetChange,
   onManualTarget,
@@ -73,12 +77,15 @@ export function DeviceStartupScreen({
   const searching =
     deviceSearchState === "searching" || busyAction === "search";
   const waiting = deviceSearchState === "waiting";
+  const everyProviderSwitchedOff =
+    providerSetupHasEngineButNoEnabledProvider(providerSetup);
   const providerRecoveryView = providerRecovery
     ? describeProviderRecovery(
         providerSetup,
         busyAction,
         lastError,
         showCodexBarFallback,
+        everyProviderSwitchedOff,
       )
     : null;
   // A running request may disable the way out. A calm view may not: the
@@ -184,7 +191,20 @@ export function DeviceStartupScreen({
         <RefreshCw data-icon="inline-start" aria-hidden />
         <span>Try again</span>
       </Button>
-      {showCodexBarFallback ? (
+      {showCodexBarFallback && everyProviderSwitchedOff ? (
+        // The recovery screen has no sidebar, so the provider list in Usage is
+        // out of reach from here. Open the app that owns the switches instead.
+        // Stopgap until #245 moves provider selection into setup and settings.
+        <Button
+          className="w-full"
+          onClick={onOpenCodexBar}
+          size="lg"
+          variant="outline"
+        >
+          <ExternalLink data-icon="inline-start" aria-hidden />
+          <span>Open CodexBar</span>
+        </Button>
+      ) : showCodexBarFallback ? (
         <Button asChild className="w-full" size="lg" variant="outline">
           <a href="https://github.com/steipete/CodexBar/releases/latest">
             <Download data-icon="inline-start" aria-hidden />
@@ -328,6 +348,7 @@ function describeProviderRecovery(
   busyAction: string | null | undefined,
   lastError: ApiError | null | undefined,
   showCodexBarFallback: boolean,
+  everyProviderSwitchedOff: boolean,
 ) {
   const setupStatus = normalizedProviderStatus(providerSetup?.status);
   if (
@@ -341,6 +362,15 @@ function describeProviderRecovery(
       checking: true,
       detail: "VibeTV is starting its built-in usage service and checking this Mac.",
       title: "Starting AI usage",
+    };
+  }
+
+  if (showCodexBarFallback && everyProviderSwitchedOff) {
+    return {
+      checking: false,
+      detail:
+        "CodexBar is installed, but every AI provider in it is switched off. Open CodexBar, switch one on, then try again.",
+      title: "No AI provider is switched on",
     };
   }
 

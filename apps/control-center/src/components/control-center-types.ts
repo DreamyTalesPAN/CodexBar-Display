@@ -547,6 +547,21 @@ export function normalizedProviderStatus(value?: string) {
   return value?.trim().toLowerCase().replace(/^provider_/, "") || "";
 }
 
+// A usable engine with every provider switched off is not a missing install:
+// the customer has CodexBar and turned the switches off. Telling them to
+// download it sends them after software they already have. CodexBar still owns
+// the switches -- this only reads what it reports.
+export function providerSetupHasEngineButNoEnabledProvider(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  const providers = providerSetup?.providers ?? [];
+  return (
+    normalizedProviderStatus(providerSetup?.engine?.status) === "ready" &&
+    providers.length > 0 &&
+    !providers.some((provider) => provider.enabled === true)
+  );
+}
+
 function comparableDeviceTarget(value: string | undefined) {
   return value?.trim().replace(/\/+$/, "") || "";
 }

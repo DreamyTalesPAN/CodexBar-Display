@@ -155,6 +155,66 @@ describe("DeviceStartupScreen", () => {
     expect(html).toContain("Download CodexBar</span></a>");
   });
 
+  it("offers opening CodexBar instead of downloading it when every provider is off", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onCreateSupportReport={vi.fn()}
+        onOpenCodexBar={vi.fn()}
+        onPair={vi.fn()}
+        onRepairUsageService={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{
+          status: "setup_required",
+          engine: { status: "ready" },
+          providers: [
+            { id: "codex", status: "not_configured", enabled: false },
+            { id: "claude", status: "not_configured", enabled: false },
+          ],
+        }}
+        showCodexBarFallback
+      />,
+    );
+
+    expect(html).toContain("No AI provider is switched on</h1>");
+    expect(html).toContain("Open CodexBar</span></button>");
+    // A download would send the customer after software they already have.
+    expect(html).not.toContain("Download CodexBar");
+    expect(html).not.toContain(
+      'href="https://github.com/steipete/CodexBar/releases/latest"',
+    );
+    expect(html).toContain("Try again</span></button>");
+    expect(html).toContain("Create support report</span></button>");
+  });
+
+  it("keeps the download when one provider is still switched on", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onOpenCodexBar={vi.fn()}
+        onPair={vi.fn()}
+        onRepairUsageService={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{
+          status: "setup_required",
+          engine: { status: "ready" },
+          providers: [{ id: "codex", status: "auth_required", enabled: true }],
+        }}
+        showCodexBarFallback
+      />,
+    );
+
+    expect(html).toContain("CodexBar is needed</h1>");
+    expect(html).toContain("Download CodexBar</span></a>");
+    expect(html).not.toContain("Open CodexBar");
+  });
+
   it("shows one calm checking state while provider status loads", () => {
     const html = renderToStaticMarkup(
       <DeviceStartupScreen

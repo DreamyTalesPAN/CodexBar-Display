@@ -1031,3 +1031,23 @@ issue scope, or release permission never implies UI permission.
   unrelated re-render. No copy, control, or screen-order changes.
 - Approved files: `control-center-app.tsx`, `control-center-app.test.ts`, and
   this approval record.
+
+## 2026-08-20 — Do not send a customer after software they already have
+
+- User approval: On the bench the recovery screen offered `Download CodexBar`
+  while CodexBar was installed and running; the real cause was that every
+  provider was switched off. The user rejected forcing at least one provider to
+  stay enabled, asked for the `Open CodexBar` route instead, and asked that
+  #245 record its removal.
+- Approved customer-visible result: When CodexBar's engine is ready but every
+  provider in it is switched off, the recovery screen reads `No AI provider is
+  switched on` and offers `Open CodexBar`, which brings CodexBar to the front.
+  The `CodexBar is needed` screen with `Download CodexBar` stays exactly as it
+  was for the case where CodexBar really is missing. `Try again` and `Create
+  support report` are unchanged in both. This is a stopgap: the recovery screen
+  has no sidebar, so the provider list in Usage cannot be reached from there.
+  #245 removes it once setup and settings own provider selection.
+- Approved files: `device-startup-screen.tsx`, `device-startup-screen.test.tsx`,
+  `control-center-types.ts`, `control-center-runtime.ts`,
+  `control-center-app.tsx`, `check-customer-ui-copy.mjs`, and this approval
+  record.

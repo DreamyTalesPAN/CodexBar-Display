@@ -20,6 +20,7 @@ private let repairRuntimeURLHost = "repair-runtime"
 private let checkForUpdatesURLHost = "check-for-updates"
 private let repairCodexBarURLHost = "repair-codexbar"
 private let finishCodexBarRecoveryURLHost = "finish-codexbar-recovery"
+private let openCodexBarURLHost = "open-codexbar"
 private let controlCenterBundleIdentifier = "shop.vibetv.control-center"
 private let runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"
 private let previewRuntimeLaunchAgentLabel =
@@ -150,12 +151,28 @@ func isFinishCodexBarRecoveryURL(_ url: URL) -> Bool {
     return true
 }
 
+func isOpenCodexBarURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == openCodexBarURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/" else {
+        return false
+    }
+    return true
+}
+
 enum NativeControlCenterAction: Equatable {
     case restartControlCenter
     case repairRuntime
     case checkForUpdates
     case repairCodexBar
     case finishCodexBarRecovery
+    case openCodexBar
 }
 
 func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
@@ -173,6 +190,9 @@ func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
     }
     if isFinishCodexBarRecoveryURL(url) {
         return .finishCodexBarRecovery
+    }
+    if isOpenCodexBarURL(url) {
+        return .openCodexBar
     }
     return nil
 }
@@ -1514,6 +1534,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             self.codexBarRepairRequired = false
             self.installationReady = true
             self.notifyCodexBarRepairResult(success: true)
+        }
+    }
+
+    // The recovery screen has no sidebar, so the provider list in Usage cannot
+    // be reached from there. CodexBar owns the switches, so send the customer
+    // into CodexBar rather than after a download they already have.
+    // Stopgap until #245 moves provider selection into setup and settings.
+    private func openManagedCodexBar() {
+        let running = NSRunningApplication.runningApplications(
+            withBundleIdentifier: codexBarBundleIdentifier
+        )
+        let appURL: URL
+        if let bundleURL = running.first?.bundleURL {
+            appURL = bundleURL
+        } else {
+            let managed = appManagedCodexBarAppURL(
+                applicationSupportURL: applicationSupportURL()
+            )
+            guard validatedPinnedCodexBarCLI(at: managed) != nil else {
+                NSLog("VibeTV Control Center refused to open an unverified CodexBar app")
+                return
+            }
+            appURL = managed
+        }
+        // From here the app is the customer's to use. Recovery cleanup must not
+        // terminate it under them, so drop our claim on it.
+        codexBarRecoveryApplication = nil
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.addsToRecentItems = false
+        NSWorkspace.shared.openApplication(
+            at: appURL,
+            configuration: configuration
+        ) { _, error in
+            if let error {
+                NSLog(
+                    "VibeTV Control Center could not open CodexBar: \(error.localizedDescription)"
+                )
+            }
         }
     }
 
@@ -3971,6 +4031,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 beginCodexBarRepair()
             case .finishCodexBarRecovery:
                 finishControlCenterCodexBarRecovery()
+            case .openCodexBar:
+                openManagedCodexBar()
             }
             return
         }

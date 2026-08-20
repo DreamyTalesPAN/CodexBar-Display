@@ -23,6 +23,7 @@ import {
   localControlCenterUrl,
   launchCodexBarRepair,
   needsLoopbackTargetAddressSpace,
+  openCodexBarApp,
   repairLocalControlCenterRuntime,
   restartLocalControlCenterApp,
   shouldRedirectToLocalControlCenter,
@@ -3521,6 +3522,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         selectingDeviceTarget={
           busyAction === "select" ? selectingDeviceTarget : undefined
         }
+        onOpenCodexBar={openCodexBarApp}
         providerRecovery={providerRecoveryRequired}
         providerSetup={providerSetup}
         showCodexBarFallback={showCodexBarFallback}
