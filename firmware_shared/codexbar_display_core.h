@@ -15,6 +15,8 @@
 #include "theme_spec_renderer_core.h"
 #endif
 
+#include "device_clock.h"
+
 namespace codexbar_display {
 namespace core {
 
@@ -27,6 +29,13 @@ constexpr size_t kUsageWindowPercentWireDigits = 3;
 constexpr size_t kUsageWindowResetSecsWireDigits = 19;
 constexpr size_t kUsageWindowObjectSyntaxBytes =
     sizeof("{\"id\":\"\",\"label\":\"\",\"percent\":,\"resetSecs\":}") - 1;
+constexpr size_t kUsageWindowWireBudgetBytes =
+    kUsageWindowObjectSyntaxBytes +
+    kUsageWindowIDWireBytes +
+    kUsageWindowLabelWireBytes +
+    kUsageWindowPercentWireDigits +
+    kUsageWindowResetSecsWireDigits;
+constexpr size_t kUsageWindowWireBudgetWithCommaBytes = kUsageWindowWireBudgetBytes + 1;
 constexpr size_t kUsageWindowJSONStringWorstCaseExpansionBytes = 6;
 constexpr size_t kProviderEscapedWireBytes =
     kProviderWireBytes * kUsageWindowJSONStringWorstCaseExpansionBytes;
@@ -50,12 +59,27 @@ constexpr size_t kUsageWindowFrameOverheadBytes =
     kUsageWindowPercentWireDigits +
     kUsageWindowResetSecsWireDigits;
 static_assert(kFrameLineBufferBytes > kUsageWindowFrameOverheadBytes, "usage window frame overhead must fit");
+constexpr size_t kUsageWindowFrameOverheadWithProviderBytes =
+    kUsageWindowFrameOverheadBytes +
+    kProviderWireBytes +
+    kProviderLabelWireBytes;
+static_assert(kFrameLineBufferBytes > kUsageWindowFrameOverheadWithProviderBytes, "usage window frame overhead with provider text must fit");
+constexpr size_t kMaxUsageWindows = usage_window_contract::kMaxWindows;
+static_assert(
+    kUsageWindowFrameOverheadWithProviderBytes + (kMaxUsageWindows * kUsageWindowWireBudgetWithCommaBytes) - 1 <= kFrameLineBufferBytes,
+    "normal usage window parser capacity must fit max frame bytes");
+constexpr size_t kMaxProviderSlots = 2;
+constexpr size_t kProviderSlotsFrameOverheadBytes = sizeof(",\"providerSlots\":[]") - 1;
+static_assert(
+    kUsageWindowFrameOverheadWithProviderBytes + (kMaxUsageWindows * kUsageWindowWireBudgetWithCommaBytes) - 1 +
+            kProviderSlotsFrameOverheadBytes + (kMaxProviderSlots * kUsageWindowWireBudgetWithCommaBytes) - 1 <=
+        kFrameLineBufferBytes,
+    "provider slot parser capacity must fit max frame bytes");
 constexpr size_t kAdvertisedUsageWindowFrameOverheadBytes =
     kUsageWindowFrameOverheadBytes +
     kProviderEscapedWireBytes +
     kProviderLabelEscapedWireBytes;
 constexpr size_t kAdvertisedMaxUsageWindows = usage_window_contract::kMaxWindows;
-constexpr size_t kMaxUsageWindows = usage_window_contract::kMaxWindows;
 static_assert(kAdvertisedMaxUsageWindows > 0, "advertised usage window capability must be positive");
 static_assert(
     kAdvertisedUsageWindowFrameOverheadBytes + (kAdvertisedMaxUsageWindows * kAdvertisedUsageWindowWireBudgetWithCommaBytes) - 1 <= kFrameLineBufferBytes,
@@ -69,24 +93,73 @@ struct UsageWindow {
   bool available = false;
 };
 
+// How long a collected reset deadline stays trustworthy without fresh data.
+// Mirrors protocol.ResetTrustHorizon on the host side.
+constexpr int64_t kResetTrustHorizonSecs = 5 * 60 * 60;
+
+// A basis older than this is no longer "live", no matter what the host claimed.
+// The host is required to send at least every 60 seconds, so this allows two
+// missed sends before the device downgrades the state it shows.
+constexpr int64_t kResetLiveMaxAgeSecs = 150;
+
+// A self-initiated restart costs boot plus WiFi association time that the
+// device cannot measure without a wall clock. Charged to the restored deadline
+// so a handover can only ever under-report the remaining time.
+constexpr int64_t kResetRestartDowntimeSecs = 30;
+
+// Trust in the reset deadline. The device has no wall clock, so every value is
+// a seconds count valid at the instant a frame arrived and ticked down with the
+// device's own monotonic clock. The host value is the best case; the device
+// re-evaluates it locally and may only downgrade it, never upgrade it.
+enum class ResetTrust : uint8_t {
+  kUnknown = 0,  // frame predates the trust contract: legacy local countdown
+  kLive = 1,
+  kOffline = 2,
+  kStale = 3,
+};
+
 struct Frame {
   String provider;
   String label;
   int session = 0;
   int weekly = 0;
   int64_t resetSecs = 0;
+  // Freshness contract fields. `resetAgeSecs` is not parsed: it is exactly
+  // `kResetTrustHorizonSecs - resetTrustSecs`, so the device derives it.
+  int64_t resetTrustSecs = 0;
+  String resetSource;
+  ResetTrust resetTrust = ResetTrust::kUnknown;
+  // False for frames that say nothing about the deadline (a ThemeSpec-only
+  // apply frame, for example). Those must not change the stored trust state.
+  bool hasResetFields = false;
   bool usageUnavailable = false;
   UsageWindow usageWindows[kMaxUsageWindows];
+  UsageWindow providerSlots[kMaxProviderSlots];
   bool sessionUnavailable = false;
   bool weeklyUnavailable = false;
   int64_t sessionTokens = 0;
   int64_t weekTokens = 0;
   int64_t totalTokens = 0;
+  // True only when the frame carried token totals on the wire. Absent totals
+  // must never render as a fabricated 0.
+  bool hasTokenTotals = false;
   bool hasUsageMode = false;
   String usageMode;
   String activity;
+  // Pre-formatted Companion clock strings. Fallback only: the device clock
+  // (firmware_shared/device_clock.h) owns {time}/{date} once SNTP answered, and
+  // these strings are dropped as soon as they stop being current. Repainting
+  // the clock is driven by the resolved text, not by these fields changing.
   String timeText;
   String dateText;
+  // True when the frame carries a validated current offset. A non-zero
+  // transition epoch then carries the optional next two transitions.
+  bool hasClockSchedule = false;
+  int16_t clockOffsetMinutes = 0;
+  int64_t clockTransitionEpoch = 0;
+  int16_t clockTransitionOffsetMinutes = 0;
+  int64_t clockFollowingTransitionEpoch = 0;
+  int16_t clockFollowingTransitionOffsetMinutes = 0;
   bool clearThemeSpec = false;
   bool hasThemeSpec = false;
   String themeSpecId;
@@ -103,9 +176,25 @@ struct Frame {
   String error;
 };
 
+// The deadline the device is willing to stand behind, anchored to the device's
+// own monotonic clock. Everything the renderer shows for `reset` is derived
+// from this, so a countdown the device cannot justify cannot reach a theme.
+struct ResetTrustState {
+  bool hasDeadline = false;
+  // True once a contract-aware frame was seen: the trust budget is enforced.
+  // Legacy frames keep the old unbounded local countdown.
+  bool enforced = false;
+  bool hostLive = false;
+  int64_t deadlineSecs = 0;  // remaining at baseMillis
+  int64_t trustSecs = 0;     // remaining budget at baseMillis, if enforced
+  unsigned long baseMillis = 0;
+  String source;
+};
+
 struct RuntimeState {
   Frame current;
   bool hasFrame = false;
+  ResetTrustState reset;
   unsigned long resetBaseMillis = 0;
   int64_t resetBaseSecs = 0;
   String cachedThemeId;
@@ -128,6 +217,17 @@ struct SerialConsumeEvent {
   bool themeSpecChanged = false;
   bool themeSpecCacheHit = false;
   bool themeSpecPartialRender = false;
+  // The frame moved the usage numbers, which is the only signal the device has
+  // that someone is coding. Standby uses it as its activity clock.
+  bool usageProgressed = false;
+  // The frame reports the customer as working. This is the Companion's own
+  // activity verdict, carried in the frame, not something the device infers.
+  // Standby uses it as its activity clock so that a customer who is coding
+  // wakes the device immediately, instead of waiting for a whole usage
+  // percent to tick over. Frames that omit `activity` fall back to
+  // `usageProgressed` through the same field, because ConsumeFrameLine fills
+  // the missing value in before this is computed.
+  bool reportsWorking = false;
   uint32_t themeSpecChangedFields = 0;
 };
 
@@ -148,24 +248,76 @@ inline int64_t ClampNonNegativeInt64(int64_t value) {
   return value;
 }
 
+inline int64_t ResetElapsedSecs(const ResetTrustState& state, unsigned long nowMillis) {
+  return static_cast<int64_t>((nowMillis - state.baseMillis) / 1000UL);
+}
+
+inline int64_t ResetDeadlineSecs(const ResetTrustState& state, unsigned long nowMillis) {
+  if (!state.hasDeadline) {
+    return 0;
+  }
+  const int64_t remain = state.deadlineSecs - ResetElapsedSecs(state, nowMillis);
+  return remain > 0 ? remain : 0;
+}
+
+inline int64_t ResetTrustBudgetSecs(const ResetTrustState& state, unsigned long nowMillis) {
+  if (!state.enforced) {
+    return kResetTrustHorizonSecs;
+  }
+  const int64_t remain = state.trustSecs - ResetElapsedSecs(state, nowMillis);
+  return remain > 0 ? remain : 0;
+}
+
+inline int64_t ResetBasisAgeSecs(const ResetTrustState& state, unsigned long nowMillis) {
+  return kResetTrustHorizonSecs - ResetTrustBudgetSecs(state, nowMillis);
+}
+
+// Trust is about the freshness of the basis, not about any single countdown.
+// The root deadline is only the first window the host projected onto
+// `resetSecs`, so letting its expiry mark everything stale would blank a
+// still-running weekly window the moment a short session window runs out
+// offline. Each countdown clamps itself at zero; only a missing basis or an
+// expired freshness budget makes them all untrustworthy.
+inline ResetTrust CurrentResetTrust(const ResetTrustState& state, unsigned long nowMillis) {
+  if (!state.hasDeadline || ResetTrustBudgetSecs(state, nowMillis) <= 0) {
+    return ResetTrust::kStale;
+  }
+  if (!state.enforced) {
+    return ResetTrust::kUnknown;
+  }
+  if (!state.hostLive || ResetBasisAgeSecs(state, nowMillis) > kResetLiveMaxAgeSecs) {
+    return ResetTrust::kOffline;
+  }
+  return ResetTrust::kLive;
+}
+
+inline const char* ResetTrustName(ResetTrust trust) {
+  switch (trust) {
+    case ResetTrust::kLive:
+      return "live";
+    case ResetTrust::kOffline:
+      return "offline";
+    case ResetTrust::kStale:
+      return "stale";
+    default:
+      return "unknown";
+  }
+}
+
 inline int64_t CurrentRemainingSecs(const RuntimeState& state, unsigned long nowMillis) {
-  if (!state.hasFrame) {
+  if (!state.hasFrame || CurrentResetTrust(state.reset, nowMillis) == ResetTrust::kStale) {
     return 0;
   }
-  const unsigned long elapsedMillis = nowMillis - state.resetBaseMillis;
-  const int64_t elapsedSecs = static_cast<int64_t>(elapsedMillis / 1000UL);
-  const int64_t remain = state.resetBaseSecs - elapsedSecs;
-  if (remain < 0) {
-    return 0;
-  }
-  return remain;
+  return ResetDeadlineSecs(state.reset, nowMillis);
 }
 
 inline int64_t CurrentUsageWindowRemainingSecs(
     const RuntimeState& state,
     size_t slotIndex,
     unsigned long nowMillis) {
-  if (!state.hasFrame || slotIndex >= kMaxUsageWindows ||
+  if (!state.hasFrame ||
+      CurrentResetTrust(state.reset, nowMillis) == ResetTrust::kStale ||
+      slotIndex >= kMaxUsageWindows ||
       !state.current.usageWindows[slotIndex].available) {
     return 0;
   }
@@ -175,7 +327,23 @@ inline int64_t CurrentUsageWindowRemainingSecs(
   return remain < 0 ? 0 : remain;
 }
 
-inline bool IsSafeActivityName(const String& value) {
+inline int64_t CurrentProviderSlotRemainingSecs(
+    const RuntimeState& state,
+    size_t slotIndex,
+    unsigned long nowMillis) {
+  if (!state.hasFrame ||
+      CurrentResetTrust(state.reset, nowMillis) == ResetTrust::kStale ||
+      slotIndex >= kMaxProviderSlots ||
+      !state.current.providerSlots[slotIndex].available) {
+    return 0;
+  }
+  const unsigned long elapsedMillis = nowMillis - state.resetBaseMillis;
+  const int64_t elapsedSecs = static_cast<int64_t>(elapsedMillis / 1000UL);
+  const int64_t remain = state.current.providerSlots[slotIndex].resetSecs - elapsedSecs;
+  return remain < 0 ? 0 : remain;
+}
+
+inline bool IsSafeIdentifier(const String& value, bool allowSourceChars) {
   const size_t len = value.length();
   if (len == 0 || len > 31) {
     return false;
@@ -185,11 +353,137 @@ inline bool IsSafeActivityName(const String& value) {
     const bool valid = (c >= 'a' && c <= 'z') ||
                        (c >= '0' && c <= '9') ||
                        c == '_' ||
-                       c == '-';
+                       c == '-' ||
+                       (allowSourceChars && (c == ':' || c == '.'));
     if (!valid) {
       return false;
     }
   }
+  return true;
+}
+
+inline bool IsSafeActivityName(const String& value) {
+  return IsSafeIdentifier(value, false);
+}
+
+inline ResetTrust ParseResetTrustName(const String& value) {
+  if (value == "live") {
+    return ResetTrust::kLive;
+  }
+  if (value == "offline") {
+    return ResetTrust::kOffline;
+  }
+  if (value == "stale") {
+    return ResetTrust::kStale;
+  }
+  return ResetTrust::kUnknown;
+}
+
+// Trust says whether the basis is fresh enough to keep counting anything down,
+// so any carried deadline qualifies. Requiring the legacy root would discard a
+// perfectly valid provider-slot countdown just because the selected provider
+// happens to have none.
+inline bool FrameCarriesResetDeadline(const Frame& frame) {
+  if (frame.resetSecs > 0) {
+    return true;
+  }
+  for (size_t i = 0; i < kMaxUsageWindows; ++i) {
+    if (frame.usageWindows[i].available && frame.usageWindows[i].resetSecs > 0) {
+      return true;
+    }
+  }
+  for (size_t i = 0; i < kMaxProviderSlots; ++i) {
+    if (frame.providerSlots[i].available && frame.providerSlots[i].resetSecs > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+inline void ApplyFrameResetTrust(ResetTrustState& state, const Frame& frame, unsigned long nowMillis) {
+  if (frame.hasError || !frame.hasResetFields) {
+    return;
+  }
+
+  const bool enforced = frame.resetTrust != ResetTrust::kUnknown;
+  int64_t deadlineSecs = frame.resetSecs;
+  int64_t trustSecs = enforced ? frame.resetTrustSecs : 0;
+  if (enforced && frame.resetTrust == ResetTrust::kOffline &&
+      state.enforced && state.hasDeadline && state.source == frame.resetSource) {
+    const int64_t heldDeadline = ResetDeadlineSecs(state, nowMillis);
+    const int64_t heldTrust = ResetTrustBudgetSecs(state, nowMillis);
+    if (deadlineSecs > heldDeadline) {
+      deadlineSecs = heldDeadline;
+    }
+    if (trustSecs > heldTrust) {
+      trustSecs = heldTrust;
+    }
+  }
+
+  const bool usable = FrameCarriesResetDeadline(frame) &&
+                      frame.resetTrust != ResetTrust::kStale &&
+                      (!enforced || (trustSecs > 0 && frame.resetSource.length() > 0));
+  state = ResetTrustState{};
+  state.enforced = enforced;
+  state.baseMillis = nowMillis;
+  if (!usable) {
+    return;
+  }
+  state.hasDeadline = true;
+  state.hostLive = frame.resetTrust == ResetTrust::kLive;
+  state.deadlineSecs = deadlineSecs;
+  state.trustSecs = trustSecs;
+  state.source = frame.resetSource;
+}
+
+inline String EncodeResetTrustRecord(const ResetTrustState& state, unsigned long nowMillis) {
+  const int64_t deadlineSecs = ResetDeadlineSecs(state, nowMillis);
+  const int64_t trustSecs = ResetTrustBudgetSecs(state, nowMillis);
+  if (!state.enforced || !state.hasDeadline || deadlineSecs <= 0 || trustSecs <= 0) {
+    return String();
+  }
+  String out = "1 ";
+  out += String(static_cast<long>(deadlineSecs));
+  out += " ";
+  out += String(static_cast<long>(trustSecs));
+  out += " ";
+  out += state.source;
+  return out;
+}
+
+inline bool DecodeResetTrustRecord(
+    const String& raw,
+    int64_t downtimeSecs,
+    unsigned long nowMillis,
+    ResetTrustState& out) {
+  out = ResetTrustState{};
+  const int firstSpace = raw.indexOf(' ');
+  const int secondSpace = firstSpace < 0 ? -1 : raw.indexOf(' ', firstSpace + 1);
+  const int thirdSpace = secondSpace < 0 ? -1 : raw.indexOf(' ', secondSpace + 1);
+  if (thirdSpace < 0 || raw.substring(0, firstSpace) != "1") {
+    return false;
+  }
+
+  String source = raw.substring(thirdSpace + 1);
+  source.trim();
+  if (!IsSafeIdentifier(source, true)) {
+    return false;
+  }
+  const int64_t deadlineSecs =
+      static_cast<int64_t>(raw.substring(firstSpace + 1, secondSpace).toInt()) - downtimeSecs;
+  const int64_t trustSecs =
+      static_cast<int64_t>(raw.substring(secondSpace + 1, thirdSpace).toInt()) - downtimeSecs;
+  if (deadlineSecs <= 0 || trustSecs <= 0 || trustSecs > kResetTrustHorizonSecs) {
+    return false;
+  }
+
+  out.hasDeadline = true;
+  out.enforced = true;
+  out.hostLive = false;
+  out.deadlineSecs = deadlineSecs;
+  out.trustSecs = trustSecs;
+  out.baseMillis = nowMillis;
+  out.source = source;
   return true;
 }
 
@@ -201,18 +495,61 @@ inline bool UsageWindowChanged(const UsageWindow& previous, const UsageWindow& n
          previous.available != next.available;
 }
 
+inline bool UsagePercentProgressed(
+    const Frame& previous,
+    const Frame& next,
+    int previousPercent,
+    int nextPercent) {
+  if (previous.hasUsageMode != next.hasUsageMode ||
+      previous.usageMode != next.usageMode) {
+    return false;
+  }
+  return next.usageMode == "remaining"
+             ? nextPercent < previousPercent
+             : nextPercent > previousPercent;
+}
+
 inline bool UsageProgressChanged(const Frame& previous, const Frame& next) {
-  if (previous.session != next.session || previous.weekly != next.weekly) {
+  const bool usageAvailable = !previous.usageUnavailable && !next.usageUnavailable;
+  if (!usageAvailable || previous.provider != next.provider) {
+    return false;
+  }
+
+  bool previousHasWindows = false;
+  bool nextHasWindows = false;
+  for (size_t i = 0; i < kMaxUsageWindows; ++i) {
+    previousHasWindows = previousHasWindows || previous.usageWindows[i].available;
+    nextHasWindows = nextHasWindows || next.usageWindows[i].available;
+  }
+  if (!previousHasWindows && !nextHasWindows &&
+      ((!previous.sessionUnavailable && !next.sessionUnavailable &&
+        UsagePercentProgressed(previous, next, previous.session, next.session)) ||
+       (!previous.weeklyUnavailable && !next.weeklyUnavailable &&
+        UsagePercentProgressed(previous, next, previous.weekly, next.weekly)))) {
     return true;
   }
-  for (size_t i = 0; i < kMaxUsageWindows; ++i) {
-    if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i])) {
-      return true;
+
+  for (size_t previousIndex = 0; previousIndex < kMaxUsageWindows; ++previousIndex) {
+    // Countdown, label and availability changes redraw the theme, but do not
+    // mean that the customer used their provider.
+    if (!previous.usageWindows[previousIndex].available) {
+      continue;
+    }
+    for (size_t nextIndex = 0; nextIndex < kMaxUsageWindows; ++nextIndex) {
+      if (next.usageWindows[nextIndex].available &&
+          previous.usageWindows[previousIndex].id == next.usageWindows[nextIndex].id &&
+          UsagePercentProgressed(
+              previous,
+              next,
+              previous.usageWindows[previousIndex].percent,
+              next.usageWindows[nextIndex].percent)) {
+        return true;
+      }
     }
   }
-  return previous.sessionTokens != next.sessionTokens ||
-         previous.weekTokens != next.weekTokens ||
-         previous.totalTokens != next.totalTokens;
+  // Token totals come from history scans. Expiry and recovery can change them
+  // without any provider consumption, so they must not drive standby activity.
+  return false;
 }
 
 inline bool ThemeSpecUsesBinding(const String& raw, const char* fullName, const char* compactName) {
@@ -291,7 +628,8 @@ inline bool FrameTokenStatsVisualChanged(const Frame& previous, const Frame& nex
   if (!next.hasThemeSpec || !ThemeSpecUsesTokenFields(raw)) {
     return false;
   }
-  return previous.sessionTokens != next.sessionTokens ||
+  return previous.hasTokenTotals != next.hasTokenTotals ||
+         previous.sessionTokens != next.sessionTokens ||
          previous.weekTokens != next.weekTokens ||
          previous.totalTokens != next.totalTokens;
 #else
@@ -360,6 +698,20 @@ inline bool ThemeSpecUsesUsageWindowBinding(const String& raw, size_t slotIndex)
          ThemeSpecRawHasJsonNumber(raw, "slot", static_cast<unsigned>(slotIndex + 1));
 }
 
+inline bool ThemeSpecUsesProviderSlotBinding(const String& raw, size_t slotIndex) {
+  char longName[20] = {0};
+  char compactPrefix[8] = {0};
+  char compactTemplate[8] = {0};
+  std::snprintf(longName, sizeof(longName), "providerSlot%u", static_cast<unsigned>(slotIndex + 1));
+  std::snprintf(compactPrefix, sizeof(compactPrefix), "\"pv%u", static_cast<unsigned>(slotIndex + 1));
+  std::snprintf(compactTemplate, sizeof(compactTemplate), "{pv%u", static_cast<unsigned>(slotIndex + 1));
+  return raw.indexOf(longName) >= 0 ||
+         raw.indexOf(compactPrefix) >= 0 ||
+         raw.indexOf(compactTemplate) >= 0 ||
+         ThemeSpecRawHasJsonNumber(raw, "pl", static_cast<unsigned>(slotIndex + 1)) ||
+         ThemeSpecRawHasJsonNumber(raw, "providerSlot", static_cast<unsigned>(slotIndex + 1));
+}
+
 inline bool ThemeSpecUsesUsageWindowResetBinding(const String& raw, size_t slotIndex) {
   char longName[24] = {0};
   char indexedName[24] = {0};
@@ -387,6 +739,16 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
     usesUsageWindows = usesUsageWindows || ThemeSpecUsesUsageWindowBinding(raw, i);
   }
+  bool providerSlotsChanged = false;
+  for (size_t i = 0; i < kMaxProviderSlots; ++i) {
+    if (ThemeSpecUsesProviderSlotBinding(raw, i) &&
+        UsageWindowChanged(previous.providerSlots[i], next.providerSlots[i])) {
+      providerSlotsChanged = true;
+    }
+  }
+  if (providerSlotsChanged) {
+    return true;
+  }
   const bool usesUsage = ThemeSpecUsesBinding(raw, "session", "s") ||
                          ThemeSpecUsesBinding(raw, "weekly", "w") ||
                          ThemeSpecUsesBinding(raw, "reset", "r") ||
@@ -412,8 +774,6 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
          (ThemeSpecUsesBinding(raw, "usageMode", "u") &&
           (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode)) ||
          (ThemeSpecUsesActivity(raw) && previous.activity != next.activity) ||
-         (ThemeSpecUsesBinding(raw, "time", "tm") && previous.timeText != next.timeText) ||
-         (ThemeSpecUsesBinding(raw, "date", "dt") && previous.dateText != next.dateText) ||
          FrameTokenStatsVisualChanged(previous, next, raw);
 #else
   (void)previous;
@@ -446,6 +806,11 @@ inline uint32_t ThemeSpecLiveChangedFields(const Frame& previous, const Frame& n
       fields |= ThemeSpecUsageWindowField(i);
     }
   }
+  for (size_t i = 0; i < kMaxProviderSlots; ++i) {
+    if (UsageWindowChanged(previous.providerSlots[i], next.providerSlots[i])) {
+      fields |= themespec::kThemeSpecFieldProviderSlots;
+    }
+  }
   if (previous.usageUnavailable != next.usageUnavailable) {
     fields |= themespec::kThemeSpecFieldSession |
               themespec::kThemeSpecFieldWeekly |
@@ -466,19 +831,14 @@ inline uint32_t ThemeSpecLiveChangedFields(const Frame& previous, const Frame& n
   if (previous.activity != next.activity) {
     fields |= themespec::kThemeSpecFieldActivity;
   }
-  if (previous.timeText != next.timeText) {
-    fields |= themespec::kThemeSpecFieldTime;
-  }
-  if (previous.dateText != next.dateText) {
-    fields |= themespec::kThemeSpecFieldDate;
-  }
-  if (previous.sessionTokens != next.sessionTokens) {
+  const bool tokenAvailabilityChanged = previous.hasTokenTotals != next.hasTokenTotals;
+  if (tokenAvailabilityChanged || previous.sessionTokens != next.sessionTokens) {
     fields |= themespec::kThemeSpecFieldSessionTokens;
   }
-  if (previous.weekTokens != next.weekTokens) {
+  if (tokenAvailabilityChanged || previous.weekTokens != next.weekTokens) {
     fields |= themespec::kThemeSpecFieldWeekTokens;
   }
-  if (previous.totalTokens != next.totalTokens) {
+  if (tokenAvailabilityChanged || previous.totalTokens != next.totalTokens) {
     fields |= themespec::kThemeSpecFieldTotalTokens;
   }
   return fields;
@@ -586,8 +946,13 @@ inline bool ExtractJsonObjectRaw(const char* json, const char* key, String& out)
 #endif
 
 inline String FormatDuration(int64_t secs) {
-  const int64_t hours = secs / 3600;
-  const int64_t minutes = (secs % 3600) / 60;
+  const int64_t totalMinutes = secs < 0 ? 0 : secs / 60;
+  const int64_t days = totalMinutes / (24 * 60);
+  const int64_t hours = (totalMinutes % (24 * 60)) / 60;
+  const int64_t minutes = totalMinutes % 60;
+  if (days > 0) {
+    return String(days) + "d " + String(hours) + "h";
+  }
   if (hours > 0) {
     return String(hours) + "h " + String(minutes) + "m";
   }
@@ -651,6 +1016,26 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
     }
   }
 
+  // Reset freshness. A frame that carries neither a deadline nor a trust state
+  // says nothing about the countdown and must leave the stored basis alone.
+  ResetTrust resetTrust = ResetTrust::kUnknown;
+  String resetSource;
+  if (doc["resetTrust"].is<const char*>()) {
+    String raw = String(doc["resetTrust"].as<const char*>());
+    raw.trim();
+    raw.toLowerCase();
+    resetTrust = ParseResetTrustName(raw);
+  }
+  if (doc["resetSource"].is<const char*>()) {
+    resetSource = String(doc["resetSource"].as<const char*>());
+    resetSource.trim();
+    resetSource.toLowerCase();
+    if (!IsSafeIdentifier(resetSource, true)) {
+      resetSource = "";
+    }
+  }
+  const bool hasResetFields = resetTrust != ResetTrust::kUnknown || !doc["resetSecs"].isNull();
+
   String activity;
   if (doc["activity"].is<const char*>()) {
     activity = String(doc["activity"].as<const char*>());
@@ -658,6 +1043,41 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
     activity.toLowerCase();
     if (!IsSafeActivityName(activity)) {
       activity = "";
+    }
+  }
+
+  bool hasClockSchedule = false;
+  int clockOffsetMinutes = 0;
+  int64_t clockTransitionEpoch = 0;
+  int clockTransitionOffsetMinutes = 0;
+  int64_t clockFollowingTransitionEpoch = 0;
+  int clockFollowingTransitionOffsetMinutes = 0;
+  if (doc["clockSchedule"].is<JsonObjectConst>()) {
+    JsonObjectConst schedule = doc["clockSchedule"].as<JsonObjectConst>();
+    if (schedule["currentOffsetMinutes"].is<int>()) {
+      clockOffsetMinutes = schedule["currentOffsetMinutes"].as<int>();
+      hasClockSchedule = deviceclock::UtcOffsetValid(clockOffsetMinutes);
+    }
+    clockTransitionEpoch = static_cast<int64_t>(
+        schedule["transitionEpoch"] | static_cast<int64_t>(0));
+    clockTransitionOffsetMinutes = schedule["offsetMinutes"] | 0;
+    clockFollowingTransitionEpoch = static_cast<int64_t>(
+        schedule["followingTransitionEpoch"] | static_cast<int64_t>(0));
+    clockFollowingTransitionOffsetMinutes = schedule["followingOffsetMinutes"] | 0;
+    if (!hasClockSchedule ||
+        (clockTransitionEpoch != 0 &&
+         (clockTransitionEpoch < deviceclock::kMinPlausibleEpoch ||
+          !deviceclock::UtcOffsetValid(clockTransitionOffsetMinutes))) ||
+        (clockTransitionEpoch == 0 && clockTransitionOffsetMinutes != 0) ||
+        (clockFollowingTransitionEpoch != 0 &&
+         (clockFollowingTransitionEpoch <= clockTransitionEpoch ||
+          clockFollowingTransitionEpoch < deviceclock::kMinPlausibleEpoch ||
+          !deviceclock::UtcOffsetValid(clockFollowingTransitionOffsetMinutes))) ||
+        (clockFollowingTransitionEpoch == 0 && clockFollowingTransitionOffsetMinutes != 0)) {
+      clockTransitionEpoch = 0;
+      clockTransitionOffsetMinutes = 0;
+      clockFollowingTransitionEpoch = 0;
+      clockFollowingTransitionOffsetMinutes = 0;
     }
   }
 
@@ -687,6 +1107,14 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
     out.activity = activity;
     out.timeText = String(doc["time"] | "");
     out.dateText = String(doc["date"] | "");
+    out.hasClockSchedule = hasClockSchedule;
+    out.clockOffsetMinutes = static_cast<int16_t>(clockOffsetMinutes);
+    out.clockTransitionEpoch = clockTransitionEpoch;
+    out.clockTransitionOffsetMinutes =
+        static_cast<int16_t>(clockTransitionOffsetMinutes);
+    out.clockFollowingTransitionEpoch = clockFollowingTransitionEpoch;
+    out.clockFollowingTransitionOffsetMinutes =
+        static_cast<int16_t>(clockFollowingTransitionOffsetMinutes);
     out.clearThemeSpec = clearThemeSpec;
     out.hasThemeSpec = hasThemeSpec;
     out.themeSpecId = themeSpecId;
@@ -710,6 +1138,11 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   out.session = ClampPct(doc["session"] | 0);
   out.weekly = ClampPct(doc["weekly"] | 0);
   out.resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(doc["resetSecs"] | static_cast<int64_t>(0)));
+  out.resetTrustSecs =
+      ClampNonNegativeInt64(static_cast<int64_t>(doc["resetTrustSecs"] | static_cast<int64_t>(0)));
+  out.resetSource = resetSource;
+  out.resetTrust = resetTrust;
+  out.hasResetFields = hasResetFields;
   out.usageUnavailable = doc["usageUnavailable"] | false;
   if (doc["usageWindows"].is<JsonArrayConst>() || doc["usageSlots"].is<JsonArrayConst>()) {
     JsonArrayConst slots = doc["usageWindows"].is<JsonArrayConst>()
@@ -733,13 +1166,44 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
       ++slotIndex;
     }
   }
+  if (doc["providerSlots"].is<JsonArrayConst>()) {
+    int providerSlotIndex = 0;
+    for (JsonObjectConst slot : doc["providerSlots"].as<JsonArrayConst>()) {
+      if (providerSlotIndex >= static_cast<int>(kMaxProviderSlots)) {
+        break;
+      }
+      const char* slotLabel = slot["label"] | "";
+      const char* slotID = slot["id"] | "";
+      if (slotID[0] == '\0' || slotLabel[0] == '\0') {
+        continue;
+      }
+      out.providerSlots[providerSlotIndex].id = String(slotID);
+      out.providerSlots[providerSlotIndex].label = String(slotLabel);
+      out.providerSlots[providerSlotIndex].percent = ClampPct(slot["percent"] | 0);
+      out.providerSlots[providerSlotIndex].resetSecs = ClampNonNegativeInt64(static_cast<int64_t>(slot["resetSecs"] | static_cast<int64_t>(0)));
+      out.providerSlots[providerSlotIndex].available = true;
+      ++providerSlotIndex;
+    }
+  }
   out.sessionUnavailable = doc["sessionUnavailable"] | false;
   out.weeklyUnavailable = doc["weeklyUnavailable"] | false;
   out.timeText = String(doc["time"] | "");
   out.dateText = String(doc["date"] | "");
+  out.hasClockSchedule = hasClockSchedule;
+  out.clockOffsetMinutes = static_cast<int16_t>(clockOffsetMinutes);
+  out.clockTransitionEpoch = clockTransitionEpoch;
+  out.clockTransitionOffsetMinutes =
+      static_cast<int16_t>(clockTransitionOffsetMinutes);
+  out.clockFollowingTransitionEpoch = clockFollowingTransitionEpoch;
+  out.clockFollowingTransitionOffsetMinutes =
+      static_cast<int16_t>(clockFollowingTransitionOffsetMinutes);
   out.sessionTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["sessionTokens"] | static_cast<int64_t>(0)));
   out.weekTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["weekTokens"] | static_cast<int64_t>(0)));
   out.totalTokens = ClampNonNegativeInt64(static_cast<int64_t>(doc["totalTokens"] | static_cast<int64_t>(0)));
+  out.hasTokenTotals = (doc["tokenTotalsKnown"] | false) ||
+                       !doc["sessionTokens"].isNull() ||
+                       !doc["weekTokens"].isNull() ||
+                       !doc["totalTokens"].isNull();
   out.hasUsageMode = hasUsageMode;
   out.usageMode = usageMode;
   out.activity = activity;
@@ -776,14 +1240,13 @@ inline bool FrameVisualChangedWithThemeSpecRaw(const Frame& previous, const Fram
                                      previous.usageUnavailable != next.usageUnavailable ||
                                      previous.sessionUnavailable != next.sessionUnavailable ||
                                      previous.weeklyUnavailable != next.weeklyUnavailable ||
+                                     previous.hasTokenTotals != next.hasTokenTotals ||
                                      previous.sessionTokens != next.sessionTokens ||
                                      previous.weekTokens != next.weekTokens ||
                                      previous.totalTokens != next.totalTokens ||
                                      previous.hasUsageMode != next.hasUsageMode ||
                                      previous.usageMode != next.usageMode ||
-                                     previous.activity != next.activity ||
-                                     previous.timeText != next.timeText ||
-                                     previous.dateText != next.dateText;
+                                     previous.activity != next.activity;
   const bool themeIdentityChanged =
          previous.clearThemeSpec != next.clearThemeSpec ||
          previous.hasThemeSpec != next.hasThemeSpec ||
@@ -966,9 +1429,15 @@ inline bool ConsumeFrameLine(
 
   const Frame& previous = runtimeState.current;
   ApplyThemeSpecCache(runtimeState, previous, next, outEvent);
+  outEvent.usageProgressed =
+      !next.hasError && runtimeState.hasFrame && UsageProgressChanged(previous, next);
   if (!next.hasError && next.activity.length() == 0) {
-    next.activity = runtimeState.hasFrame && UsageProgressChanged(previous, next) ? "coding" : "idle";
+    next.activity = outEvent.usageProgressed ? "coding" : "idle";
   }
+  // Read the activity verdict after the fallback above, so a frame that
+  // carries `activity` is taken at its word and a frame that omits it still
+  // resolves to the inferred value. An error frame reports nothing.
+  outEvent.reportsWorking = !next.hasError && next.activity == "coding";
 
   outEvent.hadFrame = runtimeState.hasFrame;
   const String& themeSpecRaw = ThemeSpecRawForFrame(runtimeState, next);
@@ -986,8 +1455,9 @@ inline bool ConsumeFrameLine(
 
   runtimeState.current = next;
   runtimeState.hasFrame = true;
-  runtimeState.resetBaseSecs = runtimeState.current.resetSecs;
+  runtimeState.resetBaseSecs = next.resetSecs;
   runtimeState.resetBaseMillis = nowMillis;
+  ApplyFrameResetTrust(runtimeState.reset, next, nowMillis);
   outEvent.frameAccepted = true;
   return true;
 }

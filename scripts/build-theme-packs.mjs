@@ -70,6 +70,7 @@ for (const theme of themeDirs) {
     throw new Error(`theme directory ${theme.id} contains manifest id ${manifest.id}`);
   }
   const version = String(manifest.version || "").trim();
+  const usage = String(manifest.usage || "live").trim() || "live";
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
     throw new Error(`theme ${manifest.id} needs a SemVer version`);
   }
@@ -79,6 +80,7 @@ for (const theme of themeDirs) {
   catalog.themes.push({
     id: manifest.id,
     title: manifest.name || manifest.id,
+    usage,
     version,
     themeRev: await themeRevFromManifest(manifest),
     themeSpecPath: manifest.themeSpec?.path,

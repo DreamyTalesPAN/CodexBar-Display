@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 )
 
@@ -22,6 +23,58 @@ func TestFrameNormalizeDropsUnsupportedTheme(t *testing.T) {
 	normalized := frame.Normalize()
 	if normalized.Theme != "" {
 		t.Fatalf("expected unsupported theme to be dropped, got %q", normalized.Theme)
+	}
+}
+
+func TestFrameNormalizeKeepsValidClockSchedule(t *testing.T) {
+	frame := Frame{
+		NextClockTransition: &ClockSchedule{
+			CurrentOffsetMinutes:     60,
+			TransitionEpoch:          1792886400,
+			OffsetMinutes:            120,
+			FollowingTransitionEpoch: 1800000000,
+			FollowingOffsetMinutes:   60,
+		},
+	}
+
+	normalized := frame.Normalize()
+	if normalized.NextClockTransition == nil ||
+		normalized.NextClockTransition.CurrentOffsetMinutes != 60 ||
+		normalized.NextClockTransition.FollowingTransitionEpoch != 1800000000 ||
+		normalized.NextClockTransition.FollowingOffsetMinutes != 60 {
+		t.Fatalf("expected valid clock schedule to stay, got %+v", normalized.NextClockTransition)
+	}
+
+	line, err := normalized.MarshalLine()
+	if err != nil {
+		t.Fatalf("marshal clock schedule: %v", err)
+	}
+	if !strings.Contains(string(line), `"currentOffsetMinutes":60`) ||
+		!strings.Contains(string(line), `"offsetMinutes":120`) ||
+		!strings.Contains(string(line), `"followingTransitionEpoch":1800000000`) ||
+		!strings.Contains(string(line), `"followingOffsetMinutes":60`) {
+		t.Fatalf("clock schedule missing from wire frame: %s", line)
+	}
+}
+
+func TestFrameNormalizeDropsInvalidClockSchedule(t *testing.T) {
+	frame := Frame{
+		NextClockTransition: &ClockSchedule{CurrentOffsetMinutes: 7},
+	}
+	if normalized := frame.Normalize(); normalized.NextClockTransition != nil {
+		t.Fatalf("expected invalid clock schedule to be dropped, got %+v", normalized.NextClockTransition)
+	}
+	frame = Frame{
+		NextClockTransition: &ClockSchedule{
+			CurrentOffsetMinutes:     60,
+			TransitionEpoch:          1792886400,
+			OffsetMinutes:            120,
+			FollowingTransitionEpoch: 1792886399,
+			FollowingOffsetMinutes:   60,
+		},
+	}
+	if normalized := frame.Normalize(); normalized.NextClockTransition != nil {
+		t.Fatalf("expected out-of-order clock schedule to be dropped, got %+v", normalized.NextClockTransition)
 	}
 }
 
@@ -465,6 +518,59 @@ func TestFrameNormalizeV1OmitsUsageWindowsOnWire(t *testing.T) {
 	}
 	if wire.Session != 12 || wire.Weekly != 34 || wire.ResetSec != 60 {
 		t.Fatalf("wire legacy projection mismatch: got session=%d weekly=%d reset=%d", wire.Session, wire.Weekly, wire.ResetSec)
+	}
+}
+
+func TestApplyResetTrustReanchorsAllResetCountdowns(t *testing.T) {
+	sendAt := time.Date(2026, 8, 3, 9, 0, 0, 0, time.UTC)
+	collectedAt := sendAt.Add(-30 * time.Second)
+
+	windows := (Frame{
+		V:            ProtocolVersionV2,
+		Provider:     "codex",
+		ResetSec:     120,
+		ResetSource:  "codex:primary",
+		UsageWindows: []UsageWindow{{ID: "primary", Label: "Primary", ResetSec: 120}},
+	}).ApplyResetTrust(collectedAt, sendAt, true)
+	if windows.ResetSec != 90 || len(windows.UsageWindows) != 1 || windows.UsageWindows[0].ResetSec != 90 {
+		t.Fatalf("expected root and usage window countdowns re-anchored to 90, got root=%d windows=%+v", windows.ResetSec, windows.UsageWindows)
+	}
+
+	laterWindow := (Frame{
+		V:        ProtocolVersionV2,
+		Provider: "codex",
+		UsageWindows: []UsageWindow{
+			{ID: "primary", Label: "Primary"},
+			{ID: "secondary", Label: "Secondary", ResetSec: 120},
+		},
+	}).ApplyResetTrust(collectedAt, sendAt, true)
+	if laterWindow.ResetTrust != ResetTrustLive || laterWindow.ResetSec != 90 ||
+		laterWindow.UsageWindows[0].ResetSec != 0 || laterWindow.UsageWindows[1].ResetSec != 90 {
+		t.Fatalf("expected later reset to anchor shared trust, got %+v", laterWindow)
+	}
+
+	slots := (Frame{
+		V:           ProtocolVersionV1,
+		Provider:    "codex",
+		ResetSec:    120,
+		ResetSource: "codex:primary",
+		UsageSlots:  []UsageSlot{{ID: "primary", Label: "Primary", ResetSec: 120}},
+	}).ApplyResetTrust(collectedAt, sendAt, true)
+	if slots.ResetSec != 90 || len(slots.UsageSlots) != 1 || slots.UsageSlots[0].ResetSec != 90 {
+		t.Fatalf("expected root and legacy slot countdowns re-anchored to 90, got root=%d slots=%+v", slots.ResetSec, slots.UsageSlots)
+	}
+
+	stale := (Frame{
+		V:            ProtocolVersionV1,
+		Provider:     "codex",
+		ResetSec:     120,
+		ResetSource:  "codex:primary",
+		UsageWindows: []UsageWindow{{ID: "primary", Label: "Primary", ResetSec: 120}},
+		UsageSlots:   []UsageSlot{{ID: "primary", Label: "Primary", ResetSec: 120}},
+	}).ApplyResetTrust(time.Time{}, sendAt, true)
+	if stale.ResetTrust != ResetTrustStale || stale.ResetSec != 0 || stale.ResetTrustSec != 0 ||
+		len(stale.UsageSlots) != 1 || stale.UsageSlots[0].ResetSec != 0 {
+		t.Fatalf("expected stale root and usage countdowns to be zero, got %+v", stale)
 	}
 }
 

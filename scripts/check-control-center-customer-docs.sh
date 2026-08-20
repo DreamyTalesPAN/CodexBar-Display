@@ -52,16 +52,6 @@ checks = [
     ),
 ]
 
-section_checks = [
-    (
-        "docs/vibetv-shopify-theme-shop.md Customer Flow",
-        (root / "docs/vibetv-shopify-theme-shop.md").read_text(encoding="utf-8"),
-        "## Customer Flow",
-        "## GitHub Theme Pack Artifacts",
-        ["Companion", "bridge", "API", "terminal command"],
-    ),
-]
-
 forbidden = [
     "Copy Mac Setup Command",
     "AI-native path",
@@ -86,7 +76,6 @@ terminal_install_forbidden = [
 
 terminal_install_allowed_labels = {
     "docs/control-center-customer-readiness.md",
-    "docs/vibetv-shopify-theme-shop.md",
 }
 
 errors = []
@@ -100,16 +89,7 @@ for label, body, stop_marker in checks:
     if label not in terminal_install_allowed_labels:
         for needle in terminal_install_forbidden:
             if needle in scanned:
-                errors.append(f"{label}: terminal install copy is only allowed in Shopify theme product docs: {needle}")
-
-for label, body, start_marker, end_marker, needles in section_checks:
-    if start_marker not in body or end_marker not in body:
-        errors.append(f"{label}: expected customer-facing section markers are missing")
-        continue
-    scanned = body.split(start_marker, 1)[1].split(end_marker, 1)[0]
-    for needle in needles:
-        if needle in scanned:
-            errors.append(f"{label}: customer flow uses internal wording: {needle}")
+                errors.append(f"{label}: terminal install copy is only allowed in the customer-readiness doc: {needle}")
 
 if errors:
     for error in errors:

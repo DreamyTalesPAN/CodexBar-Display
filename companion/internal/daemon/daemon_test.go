@@ -779,6 +779,11 @@ func TestRunCycleWithDepsAttachesClockFields(t *testing.T) {
 	if frame.Time != "12:34" || frame.Date != "23.02.2026" {
 		t.Fatalf("expected clock fields from daemon time, got time=%q date=%q", frame.Time, frame.Date)
 	}
+	if frame.NextClockTransition == nil ||
+		frame.NextClockTransition.CurrentOffsetMinutes != 0 ||
+		frame.NextClockTransition.TransitionEpoch != 0 {
+		t.Fatalf("expected UTC clock schedule, got %+v", frame.NextClockTransition)
+	}
 }
 
 func TestRunCycleWithDepsSkipsThemeWhenDeviceDoesNotSupportIt(t *testing.T) {
@@ -1999,7 +2004,8 @@ func TestMarshalFrameWithinLimitTrimsV1UsageSlotsInOrder(t *testing.T) {
 		t.Fatalf("expected trimmed v1 line to fit limit %d, got %d", len(limitLine), len(line))
 	}
 	if len(marshaled.UsageWindows) != 0 || len(marshaled.UsageSlots) != 1 ||
-		marshaled.UsageSlots[0].ID != frame.UsageSlots[0].ID {
+		marshaled.UsageSlots[0].ID != frame.UsageSlots[0].ID ||
+		marshaled.Weekly != 0 || !marshaled.WeeklyUnavailable {
 		t.Fatalf("expected first legacy usage slot to survive, got %+v", marshaled)
 	}
 }
@@ -5090,6 +5096,29 @@ func TestProviderCollectorKeepsScanningWhileTokenHistoryStillGrows(t *testing.T)
 	}
 	if got := collector.providers["codex"].Meta.Cost.Last30DaysTokens; got != 1020 {
 		t.Fatalf("expected the settled total, got %d", got)
+	}
+}
+
+func TestTokenHistoryFingerprintSeparatesTodayHistoryFromLiveActivity(t *testing.T) {
+	now := time.Date(2026, 7, 30, 11, 35, 0, 0, time.UTC)
+	fingerprint := func(todayTokens, latestTokens int64) string {
+		return tokenHistoryFingerprint(&codexbar.ProviderCostUsage{
+			LatestTokens: latestTokens,
+			Daily: []codexbar.ProviderCostDay{{
+				Day:         "2026-07-30",
+				TotalTokens: todayTokens,
+			}},
+		}, now)
+	}
+
+	if fingerprint(120, 120) != fingerprint(150, 150) {
+		t.Fatal("ordinary activity in today's latest session must not keep history unsettled")
+	}
+	if fingerprint(150, 150) == fingerprint(320, 150) {
+		t.Fatal("earlier sessions discovered today must keep history unsettled")
+	}
+	if got := fingerprint(120, 120); got == "" {
+		t.Fatal("today's presence must distinguish a populated history from an empty scan")
 	}
 }
 

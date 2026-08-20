@@ -614,6 +614,7 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		frame.SessionTokens = stats.SessionTokens
 		frame.WeekTokens = stats.WeekTokens
 		frame.TotalTokens = stats.TotalTokens
+		frame.TokenTotalsKnown = true
 		meta := snapshot.Meta
 		meta.Cost = stats.Cost
 
@@ -744,6 +745,7 @@ func carryForwardSnapshotTokenStats(previous providerSnapshot, next *providerSna
 	next.Frame.SessionTokens = prevFrame.SessionTokens
 	next.Frame.WeekTokens = prevFrame.WeekTokens
 	next.Frame.TotalTokens = prevFrame.TotalTokens
+	next.Frame.TokenTotalsKnown = prevFrame.TokenTotalsKnown
 	next.Meta.Cost = previous.Meta.Cost
 	next.TokenStatsCollected = previous.TokenStatsCollected
 	next.TokenHistorySettled = previous.TokenHistorySettled
@@ -755,9 +757,9 @@ func carryForwardSnapshotTokenStats(previous providerSnapshot, next *providerSna
 // tokenHistoryFingerprint identifies the finished part of a provider's history.
 // CodexBar warms its cost scan incrementally and reports every intermediate
 // result as a success, so a history that stops changing is the only available
-// completeness signal. Today is excluded because a warming scan fills in older
-// days while ordinary usage only moves today, which would otherwise keep an
-// active provider permanently unsettled.
+// completeness signal. Today's latest session is excluded because ordinary
+// activity moves both values together; earlier sessions discovered today still
+// change the fingerprint and keep a warming scan unsettled.
 func tokenHistoryFingerprint(cost *codexbar.ProviderCostUsage, now time.Time) string {
 	if cost == nil {
 		return ""
@@ -765,19 +767,21 @@ func tokenHistoryFingerprint(cost *codexbar.ProviderCostUsage, now time.Time) st
 	today := now.UTC().Format("2006-01-02")
 	var print strings.Builder
 	for _, day := range cost.Daily {
+		tokens := day.TotalTokens
 		if day.Day == today {
-			continue
+			tokens = max(0, tokens-cost.LatestTokens)
 		}
 		print.WriteString(day.Day)
 		print.WriteByte(':')
-		print.WriteString(strconv.FormatInt(day.TotalTokens, 10))
+		print.WriteString(strconv.FormatInt(tokens, 10))
 		print.WriteByte(';')
 	}
 	return print.String()
 }
 
 func frameHasTokenStats(frame protocol.Frame) bool {
-	return frame.SessionTokens > 0 || frame.WeekTokens > 0 || frame.TotalTokens > 0
+	return frame.TokenTotalsKnown ||
+		frame.SessionTokens > 0 || frame.WeekTokens > 0 || frame.TotalTokens > 0
 }
 
 func snapshotHasTokenStats(snapshot providerSnapshot) bool {
@@ -791,6 +795,7 @@ func clearSnapshotTokenStats(snapshot *providerSnapshot) {
 	snapshot.Frame.SessionTokens = 0
 	snapshot.Frame.WeekTokens = 0
 	snapshot.Frame.TotalTokens = 0
+	snapshot.Frame.TokenTotalsKnown = false
 	snapshot.Meta.Cost = nil
 	snapshot.TokenStatsCollected = time.Time{}
 	snapshot.TokenHistorySettled = false

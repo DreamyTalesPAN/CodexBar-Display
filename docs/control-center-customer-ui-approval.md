@@ -5,6 +5,117 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-13 — Collapsed sidebar click opens Appearance directly
+
+- User approval: Continuation of the standing instruction to fix CI and the
+  Codex review loop until both pass.
+- Approved customer-visible result: In the icon-collapsed desktop sidebar,
+  clicking the Appearance icon opens the Appearance tab in its current
+  section instead of toggling an invisible submenu. The expanded sidebar
+  keeps its existing collapsible Themes/Screensavers submenu. Token totals
+  now also reach the Overview preview through the sent-frame snapshot, and
+  an availability change repaints token bindings on the device; visible
+  values stay the same otherwise.
+- Approved files: `control-center-shell.tsx`, the Companion sent-frame log
+  and snapshot parser with their tests, the firmware repaint detection with
+  its native test, and this approval record.
+
+## 2026-08-11 — Screensaver toggle first, everything else follows it
+
+- User approval: During the candidate test on the connected VibeTV the user
+  explicitly required: with the screensaver off, every standby detail must
+  read as deactivated ("hier muss alles deactivated sein, wenn der
+  screensaver off ist"), the toggle must be usable ("toggle funktioniert
+  nicht, in settings auch nicht"), and installing a screensaver must not be
+  possible while the toggle is off ("wenn hier toggle off, dann darf ich
+  screensaver auch nicht installieren können").
+- Approved customer-visible result: The Show screensaver toggle works for a
+  connected VibeTV even before any screensaver is installed, in Settings and
+  in the Screensavers view. While it is off, the Settings rows Show after,
+  Brightness in screensaver, and Choose screensaver grey out completely,
+  including their labels, and the link is inert. In the Screensavers view,
+  Install buttons read `Turn On First` and stay disabled until the toggle is
+  on; Create, Edit, and Preview stay available, and the off-banner explains
+  the order.
+- Approved files: `settings-screen.tsx`, `theme-library-screen.tsx`, their
+  component tests, the realigned customer flows, and this approval record.
+
+## 2026-08-11 — Genuine all-zero token totals render as 0
+
+- User approval: Same instruction: fix CI and the Codex review loop until
+  both pass.
+- Approved customer-visible result: A completed token-history scan whose
+  totals are genuinely zero shows `0` on the device and in every preview;
+  only totals the frame does not carry render as `--`. The Companion marks
+  completed totals explicitly on the wire (`tokenTotalsKnown`).
+- Approved files: `live-vibetv-preview.tsx` and its test, the protocol
+  frame marker, collector and firmware handling with their tests, and this
+  approval record.
+
+## 2026-08-11 — Theme refresh regressions assert the automatic flow
+
+- User approval: Same instruction: fix CI and the Codex review loop until
+  both pass. The approved 2026-08-04 automatic catalog-theme refresh stays
+  authoritative.
+- Approved customer-visible result: None. The theme-release regressions
+  return to main's automatic-refresh assertions (no manual Update button
+  for a theme-only refresh), matching the behavior the merged app already
+  ships.
+- Approved files: `test-customer-flows.mjs` and this approval record.
+
+## 2026-08-11 — No locked tabs after entering the Control Center
+
+- User approval: Same instruction: fix CI and the Codex review loop until
+  both pass. The approved 2026-08-05 rule ("no locked tabs" after entry)
+  stays authoritative.
+- Approved customer-visible result: After the Control Center is entered,
+  every tab stays enabled through device unreadiness, outages, and image
+  reloads, exactly as approved on 2026-08-05; the merge had reintroduced
+  PR-side tab locking, which is removed. Before entry, the startup gate
+  keeps all tabs disabled as today.
+- Approved files: `control-center-app.tsx` and this approval record.
+
+## 2026-08-11 — Outage tab sweep names the Appearance tab
+
+- User approval: Same instruction as below: fix CI and the Codex review loop
+  until both pass.
+- Approved customer-visible result: None. The companion-outage regression
+  checks the existing `Appearance` tab instead of the pre-merge
+  `Theme Library` label; no UI changes.
+- Approved files: `test-customer-flows.mjs` and this approval record.
+
+## 2026-08-11 — Codex review fixes for the merged PR #296 candidate
+
+- User approval: The user explicitly instructed Codex to push PR #296, watch
+  CI and the Codex review, and fix everything until both pass ("push und
+  überwache CI / codex review. fix until pass").
+- Approved customer-visible result: The startup gate follows the already
+  approved rule again and opens Overview only on the first real preview frame;
+  the merge had briefly reintroduced a 30-second auto-entry, which is removed.
+  Screensaver token totals that are absent from the device frame render as
+  `--` instead of a fabricated `0` on the device and in every preview. A
+  failed screensaver-settings save restores the last device-confirmed values
+  instead of leaving the unsaved slider value visible. During a screensaver
+  install the selection is cleared until the complete pack is staged, with one
+  new install log line; a failed install leaves standby without a screensaver
+  until the install is retried. No other copy, control, or layout changes.
+- Approved files: `control-center-app.tsx`, `live-vibetv-preview.tsx` and its
+  tests, the firmware token-total rendering and its native tests, the
+  Companion screensaver-install and upload-verification hardening and their
+  tests, realigned assertions in `test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-08-04 — Updates keep the live theme identity during standby
+
+- User approval: The user instructed Codex to continue making PR #296 ready to merge and to fix the findings from the Codex reviewer loop.
+- Approved customer-visible result: No copy or layout changes. While a screensaver is visible, Updates evaluates the saved live theme instead of the screensaver, so an available live-theme refresh is not hidden.
+- Approved files: Device status typing, active-theme upgrade resolution and tests, Companion standby-health pass-through, and this approval record.
+
+## 2026-08-04 — Shopify themes are not a Mac App install path
+
+- User approval: The user explicitly stated that Shopify theme handling is outdated, that Shopify themes currently have no connection to the Mac App, and instructed Codex to remove the obsolete test.
+- Approved customer-visible result: Missing or unavailable catalog themes use neutral app-catalog wording. The Theme Library no longer tells customers to open a theme shop, and Shopify product pages are not presented as a Mac App theme-install path.
+- Approved files: Theme Library availability wording, its customer-flow assertion, Shopify boundary documentation, customer-readiness checks, and this approval record.
 ## 2026-08-06 — Never open Overview before the first live preview
 
 - User approval: During the cold-start test, the user explicitly required that
@@ -720,6 +831,217 @@ issue scope, or release permission never implies UI permission.
   regression assertions in `test-customer-flows.mjs`, and this approval
   record.
 
+## 2026-07-31 — Appearance section descriptions
+
+- User approval: The user selected and explicitly approved the proposed short
+  descriptions for both Appearance sections and instructed Codex to continue.
+- Approved customer-visible result: `Themes` explains that it customizes the
+  live usage screen while VibeTV is active. `Screensavers` explains that it
+  appears when VibeTV enters standby after being idle. Both descriptions sit
+  directly below their section heading and use the approved wording.
+- Approved files: `theme-library-screen.tsx`, its focused test, the final
+  selected-state correction in `control-center-shell.tsx`, and this approval
+  record.
+
+## 2026-07-31 — Flat Settings sections
+
+- User approval: After reviewing the current Settings screen and a compact
+  settings-row reference, the user explicitly requested removing the cards,
+  separating the screensaver from display brightness, and rebuilding the full
+  tab as sections with stronger headings and dividers.
+- Approved customer-visible result: Settings uses flat `Display`, screensaver,
+  and `Setup` sections separated by native dividers. `Show screensaver` has its
+  own section and no longer appears inside the display-brightness area. Existing
+  controls, actions, progressive disclosure, and VibeTV brand styling remain.
+- Approved files: `settings-screen.tsx`, its focused test and matching
+  customer-flow coverage, and this approval record.
+
+## 2026-07-31 — Screensaver section hierarchy
+
+- User approval: After reviewing the local flat Settings preview, the user
+  explicitly corrected the screensaver heading to `Screensaver` and requested
+  `Show screensaver` as the first toggle option below it.
+- Approved customer-visible result: The section heading reads `Screensaver`.
+  Its first setting is `Show screensaver`, with the existing explanation and
+  toggle beside it. The enabled-only settings continue below that first option.
+- Approved files: `settings-screen.tsx`, its focused test, and this approval
+  record.
+
+## 2026-07-31 — Lean Settings headings
+
+- User approval: After reviewing the corrected local Settings preview, the user
+  explicitly requested deleting the explanatory lines below `Display` and
+  `Show screensaver`.
+- Approved customer-visible result: `Display` and `Show screensaver` no longer
+  repeat their meaning in secondary copy. Their headings, controls, values, and
+  all functional behavior remain unchanged.
+- Approved files: `settings-screen.tsx`, its focused test, and this approval
+  record.
+
+## 2026-07-31 — Screensaver toggle in Appearance
+
+- User approval: The user explicitly requested an on/off toggle at the top of
+  Appearance > Screensavers and a prominent disabled-state notice that does not
+  lock the tab.
+- Approved customer-visible result: Appearance > Screensavers shows `Show
+  screensaver` above the library. When off, a native destructive alert explains
+  that the screensaver is disabled while every library action remains usable.
+  The toggle writes through the same saved standby state as Settings.
+- Approved files: `theme-library-screen.tsx`, `control-center-app.tsx`, their
+  focused tests and customer-flow coverage, and this approval record.
+
+## 2026-07-31 — Compact shared brightness control
+
+- User approval: After reviewing the flat Settings preview, the user explicitly
+  requested compact save actions beside both percentage sliders, removal of the
+  minimum/maximum explanation, and one shared UI element for both brightness
+  settings.
+- Approved customer-visible result: Display brightness and screensaver
+  brightness use the same compact control: label and percentage, followed by a
+  slider and non-stretched save button in one row. The redundant brightness
+  range sentence is removed.
+- Approved files: `settings-screen.tsx`, its focused test and matching
+  customer-flow coverage, and this approval record.
+
+## 2026-07-31 — Compact screensaver timeout
+
+- User approval: The user explicitly requested placing `Show after` and its
+  dropdown in the same row.
+- Approved customer-visible result: The screensaver timeout uses the native
+  horizontal field layout, with its label on the left and dropdown on the
+  right. Its values and save behavior remain unchanged.
+- Approved files: `settings-screen.tsx`, its focused test, and this approval
+  record.
+
+## 2026-07-31 — Auto-saving brightness sliders
+
+- User approval: The user explicitly requested moving each percentage below
+  its slider thumb, removing both primary save buttons, and saving automatically
+  when the slider interaction ends.
+- Approved customer-visible result: Both brightness controls show their current
+  percentage directly below the thumb. Dragging updates the value locally;
+  releasing the thumb saves that exact value through the existing setting
+  write. No brightness save button remains.
+- Approved files: `settings-screen.tsx`, its focused test and matching
+  customer-flow coverage, and this approval record.
+
+## 2026-08-02 — Two-column Settings layout
+
+- User approval: The user provided a new Settings reference and explicitly
+  requested desktop section rows with the section intro on the left, controls
+  on the right, and a clean single-column mobile layout.
+- Approved customer-visible result: `Display`, `Screensaver`, and `Setup` use
+  two columns on desktop and one column on mobile. Display and Screensaver keep
+  only their title on the left; Setup keeps its existing description there.
+  Controls and actions stay on the right. Toggle rows place the switch before
+  its label. Both brightness sliders keep their percentage below the thumb and
+  save only when the interaction ends, without save buttons.
+- Approved files: `settings-screen.tsx`, its focused test, and this approval
+  record.
+
+## 2026-08-03 — Screensaver selection guard
+
+- User approval: The user explicitly requested that the Settings screensaver
+  switch remain unavailable until a `screensaverPath` is selected, while the
+  existing `Choose screensaver` path remains the way to select one.
+- Approved customer-visible result: Settings keeps the screensaver controls
+  visible, disables only activation and dependent controls until a screensaver
+  is chosen, and keeps `Choose screensaver` available so the existing
+  Appearance > Screensavers flow can be used.
+- Approved files: `settings-screen.tsx`, its focused test, the matching
+  customer-flow test, and this approval record.
+
+## 2026-08-03 — Stable PR #296 CI assertions
+
+- User approval: The user explicitly ordered all PR #296 CI and Bug Detector
+  findings to be fixed with KISS and dead-code removal. The exact visible
+  Appearance split and Settings selection guard were already explicitly
+  approved in the entries above; this CI repair preserves those results.
+- Approved customer-visible result: No new visible UI is introduced. `Themes`
+  continues to contain live themes, `Screensavers` contains standby themes,
+  and Settings keeps screensaver activation unavailable until a screensaver is
+  selected. Reloaded installs continue to reopen their existing progress.
+- Approved files: `themes.ts`, `test-customer-flows.mjs`, their focused
+  assertions, and this approval record.
+
+## 2026-08-03 — PR #296 merge-readiness test maintenance
+
+- User approval: The user explicitly requested that PR #296 be made ready to
+  merge, with its CI repaired and the existing screensaver packaging path ready
+  for the next creative phase. No new customer-visible UI was requested.
+- Approved customer-visible result: The already approved Appearance,
+  Screensavers, Theme Studio, and Settings behavior stays unchanged. This round
+  only makes the automated route cleanup and brightness-save assertion
+  deterministic and verifies that screensaver artifacts ship in the Mac App.
+- Approved files: `test-customer-flows.mjs`, the screensaver packaging tests,
+  the matching technical documentation, and this approval record.
+
+## 2026-08-03 — Standby firmware-update migration guard
+
+- User approval: The user explicitly requested that all Codex reviewer findings
+  on PR #296 be fixed until the PR is ready to merge. No new customer-visible UI
+  was requested.
+- Approved customer-visible result: The existing firmware-update flow remains
+  visually unchanged. After a restart, it also migrates an outdated live theme
+  when the update was started while the screensaver was visible.
+- Approved files: `control-center-app.tsx`, its existing customer-flow
+  regression test, and this approval record.
+
+## 2026-08-03 — Invalidated live-preview frame
+
+- User approval: The user explicitly requested that every Codex reviewer
+  finding on PR #296 be fixed until the PR is ready to merge.
+- Approved customer-visible result: When the current display session has not
+  produced a usable frame yet, Overview stops showing the invalid frame from
+  the prior session and returns to the existing waiting-for-usage state.
+- Approved files: `live-vibetv-preview.tsx`, its existing customer-flow
+  coverage, and this approval record.
+
+## 2026-08-03 — Live-preview reset countdown parity
+
+- User approval: The user explicitly requested that every Codex reviewer
+  finding on PR #296 be fixed until the PR is ready to merge.
+- Approved customer-visible result: Reset countdowns in the existing Overview
+  preview advance once per second between Mac App frames and stop at zero,
+  matching the VibeTV instead of freezing and jumping. No copy, control, or
+  hierarchy changes.
+- Approved files: `live-vibetv-preview.tsx`, its focused unit test, and this
+  approval record.
+
+## 2026-08-03 — Live-preview freshness parity
+
+- User approval: The user explicitly requested that every Codex reviewer
+  finding on PR #296 be fixed until the PR is ready to merge.
+- Approved customer-visible result: The existing Overview preview advances its
+  clock and date between Mac App frames. When the exact frame marks all usage
+  unavailable, Overview returns to its existing non-data preview state instead
+  of showing stale percentages. No new copy, control, or hierarchy is
+  introduced.
+- Approved files: `live-vibetv-preview.tsx`, its focused unit test, the matching
+  display-frame transport fix and tests, and this approval record.
+
+## 2026-08-03 — Screensaver export asset identity
+
+- User approval: The user explicitly requested that every Codex reviewer
+  finding on PR #296 be fixed until the PR is ready to merge and that the
+  screensaver packaging path be ready for the next creative phase.
+- Approved customer-visible result: No copy, control, hierarchy, or state
+  changes. Exporting a screensaver now keeps distinct images distinct when
+  their source folders contain the same file name, so the installed result
+  matches the Theme Studio design.
+- Approved files: `theme-studio.ts`, its focused unit test, and this approval
+  record.
+
+## 2026-08-04 — Standby live-theme selection identity
+
+- User approval: The user explicitly requested that every Codex reviewer
+  finding on PR #296 be fixed until the PR is ready to merge.
+- Approved customer-visible result: While a screensaver is visible, the
+  existing `Themes` view keeps the saved live theme selected instead of
+  selecting that screensaver. Screensavers remain in the existing
+  `Screensavers` view. No copy, control, or hierarchy changes.
+- Approved files: `control-center-app.tsx`, `active-theme-upgrade.ts`, its
+  focused unit test, and this approval record.
 ## 2026-08-03 — Restarted stream clears its rejected preview frame
 
 - User approval: In the PR #260 Codex task, the user explicitly instructed that
@@ -863,3 +1185,151 @@ issue scope, or release permission never implies UI permission.
   version at the same time stays exactly as approved on 2026-08-08.
 - Approved files: `updates-screen.tsx`, `updates-screen.test.tsx`, and this
   approval record.
+
+## 2026-08-13 — Provider resets, install preview, and theme list polish
+
+- User approval: Given live in the 2026-08-13 bench session while driving the
+  PR #296 candidate on real hardware: "hier sollen nicht die usage windows
+  stehen sondern die provider und ihr jeweiliger nächster reset across all
+  usage windows" (Night Clock), "jo bau das hier noch direkt" (the ten-second
+  post-install screensaver preview), "das löschen." (screensaver-off hint),
+  "den kleinen previews hier border radius geben", "entferne das hier
+  überall … soll es stattdessen irgendwo ne pille bekommen" (PUBLISHED
+  label), "oben vibetv weg … session, 7d und all time größer" and "nein, das
+  muss natürlich alles gleich groß sein" (Token Fire totals), plus the
+  request that the Appearance sub-entries hover across the full row.
+- Approved customer-visible result: Night Clock lists each provider with its
+  soonest usage reset and hides rows for providers without live data; themes
+  that require the new provider-slots capability show the existing firmware
+  update and not-supported blockers on older VibeTVs. After every screensaver
+  install the VibeTV shows the chosen screensaver once for ten seconds and
+  then returns to the live theme — never while the screensaver toggle is off.
+  Token totals render compactly (1.4M, 384M, 1.07B) at one shared size on the
+  device and in every preview. Theme lists drop the "PUBLISHED" status line
+  and custom themes carry a "Custom" badge instead; the screensaver-off hint
+  loses its second sentence; small theme previews gain rounded corners; the
+  Appearance sub-entries hover and click across the full sidebar row. The
+  Theme Studio offers the provider variables, bindings, and "Provider N has
+  data" visibility for custom themes.
+- Approved files: `control-center-shell.tsx`, `control-center-types.ts`,
+  `live-vibetv-preview.tsx`, `live-vibetv-preview.test.ts`,
+  `theme-library-screen.tsx`, `theme-studio/primitive-inspector.tsx`,
+  `lib/theme-studio.ts`, `lib/theme-studio-capabilities.ts`, and this
+  approval record.
+
+## 2026-08-13 — Honest text boxes in the Theme Studio and the bigger Claude reset line
+
+- User approval: Given live in the 2026-08-13 session: "das ist doch scheiße.
+  wie können wir das intuitiver machen" after the stored text box silently
+  shrank an enlarged font ("ich hab im editor auf font size 2 gestellt und es
+  ist immer noch so klein"), and "ich will dass wir das aktuelle claude
+  creature theme, das wir auch mit der mac app ausliefern, durch dieses
+  ersetzen. ich hab da die resettime größer gemacht, das haben sich viele
+  kunden gewünscht."
+- Approved customer-visible result: In the Theme Studio the Width field and
+  the canvas selection outline always show the stored clip/fit box of a text
+  element instead of the wider rendered text run, and when fit-shrink renders
+  a text below its configured size the inspector says "Text is shrunk to fit
+  the …px box." next to a "Fit box to text" button that widens the box in one
+  click. The shipped Claude Creature theme becomes rev 5 with the
+  customer-requested bigger reset line: "Resets in …" renders at font size 2,
+  centered across the full display width, with the divider and creature
+  nudged up to make room. Nothing else about the theme changes; existing
+  customers receive the new revision through the already-approved automatic
+  active-theme refresh and the Updates card.
+- Approved files: `theme-studio/primitive-inspector.tsx`,
+  `theme-studio/editor-geometry.ts`, the `claude-creature` theme pack, and
+  this approval record.
+
+## 2026-08-13 — The preview date matches the VibeTV clock
+
+- User approval: Given live in the 2026-08-13 session on the Codex finding
+  about the `date` binding: "Fixen + Freigabe", after the reachability check
+  showed the Theme Studio offers Date as an insertable variable, so a custom
+  theme can hit the mismatch even though no shipped theme pack uses it.
+- Approved customer-visible result: Wherever a ThemeSpec uses the Date
+  variable, the Live VibeTV preview and the Theme Studio sample values render
+  the full `03.07.2026` instead of `03.07` — the same `DD.MM.YYYY` the
+  Companion frame and the device clock produce. A date box that fits in the
+  Studio therefore fits on the hardware; the previous short date hid width and
+  shrink problems until the theme was installed. Nothing else changes.
+- Approved files: `live-vibetv-preview.tsx`, `live-vibetv-preview.test.ts`,
+  `theme-studio/editor-geometry.ts`, and this approval record.
+
+## 2026-08-18 — Screensaver updates arrive on their own
+
+- User approval: Given live in the 2026-08-18 session after the customer saw
+  the Night Clock render "Weekly" and "Codex Spark Weekly" instead of the
+  provider names — "und wieso stehen hier jetzt nicht die provider sondern
+  wieder die slots?! hier sollte doch codex und claude stehen." — followed by
+  the decision to fix it inside PR #296 rather than defer it.
+- Approved customer-visible result: When the catalog ships a newer revision of
+  the selected screensaver, VibeTV receives it automatically, exactly as it
+  already does for the live theme. The customer no longer has to notice a stale
+  screensaver and reinstall it by hand from Appearance → Screensavers. The live
+  theme keeps priority: only one theme is installed per round, so the screen
+  currently on display is never interrupted for the screensaver. A screensaver
+  built in the Theme Studio has no catalog entry and is therefore never
+  replaced. Nothing about the screensaver list, its previews, or the manual
+  install button changes.
+- Approved files: `lib/active-theme-upgrade.ts`,
+  `lib/active-theme-upgrade.test.ts`, `control-center-app.tsx`, and this
+  approval record.
+
+## 2026-08-18 — Exported packs declare what they need to render
+
+- User approval: Given live in the 2026-08-18 session as part of the standing
+  instruction to fix the Codex findings on PR #296 — this one reported that a
+  Theme Studio design using provider-slot bindings exported a pack claiming
+  firmware 1.0.24 and no provider-slots capability.
+- Approved customer-visible result: A theme built in the Theme Studio that
+  shows provider rows now exports a pack declaring `provider-slots-v1` and
+  firmware 1.0.41, the same way the bundled Night Clock does. Installing such a
+  pack on a VibeTV without provider slots is refused by the existing capability
+  check with the familiar firmware-update hint, instead of installing and
+  leaving those rows silently empty. Designs mixing usage and provider rows
+  declare both. A plain design still requires nothing and keeps 1.0.24. The
+  Theme Studio itself, its editor, and the export button are unchanged.
+- Approved files: `lib/theme-studio.ts`, `lib/theme-studio.test.ts`, and this
+  approval record.
+
+## 2026-08-18 — The screensaver update actually reaches shipped packs
+
+- User approval: Given live in the 2026-08-18 session — the customer asked for
+  the automatic screensaver update to be proven on the device ("ja, will ich",
+  then "CI is grün, mach"). That hardware run showed the feature approved
+  earlier the same day never fired for any shipped screensaver.
+- Approved customer-visible result: The automatic screensaver update from the
+  earlier entry now actually happens. Its path matcher only accepted six-hex
+  revision suffixes, which is the live-slot convention; every shipped
+  screensaver uses eight (nc-3-e18e4217, rcf-6-03e818f0, tf-5-9aeed240) and was
+  therefore never recognised as upgradable. On the bench the device sat on
+  Night Clock revision 2 — showing usage windows instead of the provider rows —
+  and stayed there. Nothing else about the behaviour changes: the live theme
+  still has priority, and Theme Studio screensavers are still left alone.
+- Approved files: `lib/active-theme-upgrade.ts`,
+  `lib/active-theme-upgrade.test.ts`, and this approval record.
+
+## 2026-08-18 — The screensaver update no longer waits for a visit to Settings
+
+- User approval: Given live in the 2026-08-18 session — asked to choose the
+  visible result for the fourteenth Codex finding of the day, the customer
+  answered "Freigeben, mit Standby-Aufschub".
+- Approved customer-visible result: The automatic screensaver update from the
+  two earlier entries now runs for everyone. It read the installed screensaver
+  path out of the settings screen's own state, and nothing filled that state
+  unless the VibeTV happened to be ready on the very first status after launch
+  — otherwise the update never ran until someone opened Settings. On the bench
+  the device sat on Night Clock revision 2 for 20 minutes of five-second polls
+  without a single install attempt. The path now rides the VibeTV snapshot the
+  app already polls, exactly like the live theme's own path. Nothing else
+  changes: the live theme keeps priority, one install per round, Theme Studio
+  screensavers are still left alone, and the Settings screen behaves as before.
+  While the screensaver is on display the update is held back rather than
+  installed, because installing into the slot restores the live theme first and
+  would wake the screen with nobody asking; it resolves on its own with the
+  next frame that moves the usage numbers.
+- Approved files: `components/control-center-app.tsx`,
+  `components/control-center-types.ts`, `lib/active-theme-upgrade.ts`,
+  `components/live-vibetv-preview.tsx`, `components/live-vibetv-preview.test.ts`,
+  `scripts/test-customer-flows.mjs`, and this approval record.

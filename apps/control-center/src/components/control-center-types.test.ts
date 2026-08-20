@@ -52,9 +52,9 @@ describe("device connection contract", () => {
         ready: false,
       }),
     ).toBe(false);
-    expect(deviceIsActive({ active: true, connected: false, ready: false })).toBe(
-      true,
-    );
+    expect(
+      deviceIsActive({ active: true, connected: false, ready: false }),
+    ).toBe(true);
   });
 
   it("never treats fast reachable-before-selected updates as customer connected", () => {
@@ -210,7 +210,7 @@ describe("device connection contract", () => {
     ).toBe(false);
   });
 
-  it("keeps an entered theme setup eligible until the complete device readback", () => {
+  it("completes theme setup from a successful render without waiting for provider readiness", () => {
     expect(
       deviceCanContinueThemeSetup({
         active: true,
@@ -234,7 +234,7 @@ describe("device connection contract", () => {
         stream: { healthy: true, running: true },
         display: { themeSpec: { active: true, renderOk: true } },
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       deviceCompletedThemeSetup({
         active: true,

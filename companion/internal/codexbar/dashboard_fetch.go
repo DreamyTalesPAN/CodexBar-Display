@@ -105,7 +105,11 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 	if label == "" {
 		label = humanLabel(id)
 	}
-	metaWindows := usageWindowsFromDashboardWindows(normalized.Windows, now)
+	countdownAt := collectedAt
+	if countdownAt.IsZero() {
+		countdownAt = now
+	}
+	metaWindows := usageWindowsFromDashboardWindows(normalized.Windows, countdownAt)
 	windows := usageWindowsFromWindows(metaWindows)
 	frame := protocol.Frame{
 		V:            protocol.ProtocolVersionV2,

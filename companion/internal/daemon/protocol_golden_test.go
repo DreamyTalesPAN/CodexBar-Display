@@ -75,6 +75,18 @@ func assertFrameMatch(t *testing.T, got, want protocol.Frame) {
 	if got.ResetSec != want.ResetSec {
 		t.Fatalf("reset mismatch: got=%d want=%d", got.ResetSec, want.ResetSec)
 	}
+	if got.ResetAgeSec != want.ResetAgeSec {
+		t.Fatalf("resetAgeSecs mismatch: got=%d want=%d", got.ResetAgeSec, want.ResetAgeSec)
+	}
+	if got.ResetTrustSec != want.ResetTrustSec {
+		t.Fatalf("resetTrustSecs mismatch: got=%d want=%d", got.ResetTrustSec, want.ResetTrustSec)
+	}
+	if got.ResetSource != want.ResetSource {
+		t.Fatalf("resetSource mismatch: got=%q want=%q", got.ResetSource, want.ResetSource)
+	}
+	if got.ResetTrust != want.ResetTrust {
+		t.Fatalf("resetTrust mismatch: got=%q want=%q", got.ResetTrust, want.ResetTrust)
+	}
 	if got.UsageMode != want.UsageMode {
 		t.Fatalf("usageMode mismatch: got=%q want=%q", got.UsageMode, want.UsageMode)
 	}

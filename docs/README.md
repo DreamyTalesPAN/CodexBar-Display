@@ -22,6 +22,8 @@ Center on the customer's Mac.
 - [Hardware contract](hardware-contract.md): firmware, WiFi (incl. the 802.11g interop rule), display, and endpoint contract.
 - [Firmware provisioning](firmware-provisioning.md): provisioning and OTA packaging.
 - [Firmware guardrails](firmware-guardrails.md): firmware safety rules.
+- [ThemeSpec slot budget](themespec-slot-budget.md): measured RAM and transition cost of a second resident ThemeSpec.
+- [Operator runbook](operator-runbook.md): support, recovery, and smoke-test procedures.
 - [Firmware migrations](firmware-migrations/1.0.36-to-1.0.37.md): per-version migration notes and their compatibility modes.
 - [macOS DMG distribution](macos-dmg-distribution.md): signed and notarized customer distribution path.
 - [Hosted VibeTV gates](vibetv-hosted-gates.md): owner-dispatched merge and release-candidate gates in GitHub Actions.
@@ -38,7 +40,7 @@ Center on the customer's Mac.
 - [Themes](themes.md): public theme overview.
 - [Theme packs](theme-packs.md): installable theme-pack format and CLI.
 - [Theme development guide](theme-dev-guide.md): hardware-safe ThemeSpec and asset rules.
-- [Theme shop notes](vibetv-shopify-theme-shop.md): Shopify catalog and Control Center integration.
+- [Shopify theme boundary](vibetv-shopify-theme-shop.md): separation between Shopify products and Mac App theme packaging.
 
 ## Product Wording
 

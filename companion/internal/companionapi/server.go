@@ -48,30 +48,35 @@ import (
 var embeddedControlCenterStatic embed.FS
 
 const (
-	DefaultAddr               = "127.0.0.1:47832"
-	appOrigin                 = "https://app.vibetv.shop"
-	defaultDevOrigin          = "http://localhost:3000"
-	previewOriginHostPrefix   = "codex-vibetv-control-center-"
-	previewOriginHostSuffix   = "-paul-anduschus-projects.vercel.app"
-	nativeControlCenterUA     = "VibeTVControlCenter/"
-	deviceConnectionReady     = "ready"
-	deviceConnectionRetrying  = "reconnecting"
-	deviceConnectionSetup     = "setup_required"
-	deviceTimeout             = 15 * time.Second
-	deviceSearchWindow        = 30 * time.Second
-	discoveryProbeTime        = 1500 * time.Millisecond
-	deviceProbeCacheTime      = 750 * time.Millisecond
-	repairDiscoveryAttempts   = 3
-	repairDiscoveryRetryGap   = 1200 * time.Millisecond
-	subnetProbeLimit          = 64
-	maxSubnetDiscoveryPrefix  = 23
-	maxSubnetDiscoveryTargets = 510
-	themeInstallDisableEnv    = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
-	macAppUpdateDisableEnv    = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
-	displayStreamLegacyLabel  = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
-	displayStreamLabelEnv     = runtimepaths.DisplayStreamLaunchAgentLabelEnv
-	displayStreamOutLogEnv    = runtimepaths.DisplayStreamOutLogEnv
-	displayStreamReadyAge     = 2 * time.Minute
+	DefaultAddr              = "127.0.0.1:47832"
+	appOrigin                = "https://app.vibetv.shop"
+	defaultDevOrigin         = "http://localhost:3000"
+	previewOriginHostPrefix  = "codex-vibetv-control-center-"
+	previewOriginHostSuffix  = "-paul-anduschus-projects.vercel.app"
+	nativeControlCenterUA    = "VibeTVControlCenter/"
+	deviceConnectionReady    = "ready"
+	deviceConnectionRetrying = "reconnecting"
+	deviceConnectionSetup    = "setup_required"
+	deviceTimeout            = 15 * time.Second
+	deviceSearchWindow       = 30 * time.Second
+	repairRequestTimeout     = 110 * time.Second
+	// Device requests are serialized because the ESP8266 serves one request at
+	// a time. A read-only probe can therefore wait behind a frame render before
+	// it reaches the device; keep this below the client timeout, but long enough
+	// to cover the normal render acknowledgement on stored themes.
+	discoveryProbeTime           = 12 * time.Second
+	deviceProbeCacheTime         = 750 * time.Millisecond
+	repairDiscoveryAttempts      = 3
+	repairDiscoveryRetryGap      = 1200 * time.Millisecond
+	subnetProbeLimit             = 64
+	maxSubnetDiscoveryPrefix     = 23
+	maxSubnetDiscoveryTargets    = 510
+	themeInstallDisableEnv       = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
+	macAppUpdateDisableEnv       = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
+	displayStreamLegacyLabel     = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
+	displayStreamLabelEnv        = runtimepaths.DisplayStreamLaunchAgentLabelEnv
+	displayStreamOutLogEnv       = runtimepaths.DisplayStreamOutLogEnv
+	displayStreamReadyAge        = 2 * time.Minute
 	// deviceConnectedGraceWindow keeps a just-seen device Connected (state
 	// "reconnecting") through transient probe misses: 2.5x the 30s WiFi
 	// interval. Long enough to absorb single misses, short enough that a
@@ -138,11 +143,17 @@ var displayStreamLogKeys = []string{
 	"label",
 	"session",
 	"weekly",
+	"sessionTokens",
+	"weekTokens",
+	"totalTokens",
+	"tokenTotalsKnown",
+	"usageUnavailable",
 	"sessionUnavailable",
 	"weeklyUnavailable",
 	"reset",
 	"usageWindows",
 	"usageSlots",
+	"providerSlots",
 	"activity",
 	"time",
 	"date",
@@ -377,6 +388,7 @@ type deviceInfo struct {
 	Capabilities    *protocol.CapabilityBlock `json:"capabilities,omitempty"`
 	Stream          *displayStreamInfo        `json:"stream,omitempty"`
 	Display         *deviceDisplayInfo        `json:"display,omitempty"`
+	Standby         *deviceStandbyInfo        `json:"standby,omitempty"`
 	Health          *deviceHealthInfo         `json:"health,omitempty"`
 }
 
@@ -399,6 +411,16 @@ type displayVerification struct {
 
 type deviceDisplayInfo struct {
 	ThemeSpec *themeSpecHealth `json:"themeSpec,omitempty"`
+}
+
+type deviceStandbyInfo struct {
+	Active        bool   `json:"active"`
+	LiveThemePath string `json:"liveThemePath,omitempty"`
+	// Mirrored from settings.standby.screensaverPath on the same health probe.
+	// The slot is standby state the Control Center needs on every poll, the way
+	// it already gets the live theme path — reading it from the settings screen
+	// instead left the automatic screensaver update waiting for a visit there.
+	ScreensaverPath string `json:"screensaverPath,omitempty"`
 }
 
 type deviceHealthInfo struct {
@@ -446,6 +468,9 @@ type deviceSearchEntry struct {
 }
 
 type themeInstallRequest struct {
+	// Slot is themepack.UsageLive or themepack.UsageScreensaver. Empty means
+	// the live theme slot.
+	Slot               string `json:"slot"`
 	ThemeID            string `json:"themeId"`
 	ThemeName          string `json:"themeName"`
 	PackURL            string `json:"packUrl"`
@@ -461,6 +486,7 @@ type themeInstallJob struct {
 	ID         string               `json:"id"`
 	ThemeID    string               `json:"themeId,omitempty"`
 	ThemeName  string               `json:"themeName,omitempty"`
+	Slot       string               `json:"slot,omitempty"`
 	Phase      string               `json:"phase"`
 	Message    string               `json:"message"`
 	Progress   int                  `json:"progress"`
@@ -678,11 +704,23 @@ type settingsResponse struct {
 }
 
 type deviceSettings struct {
-	Display displaySettings `json:"display"`
+	Display displaySettings  `json:"display"`
+	Standby *standbySettings `json:"standby,omitempty"`
 }
 
 type displaySettings struct {
 	BrightnessPercent int `json:"brightnessPercent"`
+}
+
+// standbySettings mirrors the device standby block. ScreensaverPath is the
+// screensaver slot: the stored ThemeSpec the device shows in standby, null
+// while the slot is empty. It is a pointer so that a write can leave the slot
+// untouched by omitting the field.
+type standbySettings struct {
+	Enabled           bool    `json:"enabled"`
+	TimeoutMinutes    int     `json:"timeoutMinutes"`
+	BrightnessPercent int     `json:"brightnessPercent"`
+	ScreensaverPath   *string `json:"screensaverPath"`
 }
 
 type usageResponse struct {
@@ -709,6 +747,10 @@ type usageRefreshInfo struct {
 	BlockedUntil string `json:"blockedUntil,omitempty"`
 	Message      string `json:"message,omitempty"`
 }
+
+// The collector caps one provider collection at 15 minutes. After that bound,
+// a manual request cannot still describe a normal in-flight collection.
+const usageRefreshRequestMaxAge = 15 * time.Minute
 
 type displayFrameResponse struct {
 	OK      bool           `json:"ok"`
@@ -1275,8 +1317,11 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 				reachable = true
 				device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
 				device.Active = configuredID != "" && strings.EqualFold(configuredID, observedID)
-				device.Paired = strings.TrimSpace(cfg.DeviceToken) != "" &&
-					stream.ErrorCode != "device_pairing_required"
+				device.Paired = savedPairingRemainsValid(
+					cfg.DeviceToken,
+					tokenRejected,
+					stream.ErrorCode,
+				)
 				if tokenRejected {
 					device.Paired = false
 					stream.Healthy = false
@@ -1284,10 +1329,17 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 					stream.Detail = "VibeTV connection needs attention."
 					device.Stream = streamPointer(stream)
 				}
+				readinessToken := pairingTokenForReadiness(
+					cfg.DeviceToken,
+					probeToken,
+					device.Paired,
+				)
 				// /health is intentionally public and therefore only reports device
-				// health. Pairing is proven by the authenticated /hello probe above.
+				// health. Only an explicit rejection invalidates a saved pairing; a
+				// busy device may answer the public fallback after the authenticated
+				// probe timed out.
 				if health, healthErr := s.getHealthProbe(r.Context(), cfg.DeviceTarget, "", deviceHealthProbeTime); healthErr == nil {
-					device = s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, probeToken, false)
+					device = s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, readinessToken, false)
 				} else {
 					device = withDeviceHealthProbeError(device, healthErr)
 				}
@@ -1311,6 +1363,22 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		ThemeInstall:   themeInstall,
 		FirmwareUpdate: firmwareUpdate,
 	})
+}
+
+func savedPairingRemainsValid(savedToken string, tokenRejected bool, streamError string) bool {
+	return strings.TrimSpace(savedToken) != "" &&
+		!tokenRejected &&
+		strings.TrimSpace(streamError) != "device_pairing_required"
+}
+
+func pairingTokenForReadiness(savedToken string, probeToken string, paired bool) string {
+	if token := strings.TrimSpace(probeToken); token != "" {
+		return token
+	}
+	if paired {
+		return strings.TrimSpace(savedToken)
+	}
+	return ""
 }
 
 func (s *Server) withConfiguredConnectionState(
@@ -1563,6 +1631,14 @@ func (s *Server) usageRefreshInfo(now time.Time, usage daemon.PersistedUsage) us
 			s.usageRefresh.RequestedAt = time.Time{}
 			s.usageRefreshMu.Unlock()
 			return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh", time.Time{})}
+		}
+		if !now.Before(requestedAt.Add(usageRefreshRequestMaxAge)) {
+			s.usageRefreshMu.Unlock()
+			return usageRefreshInfo{
+				State:       "unavailable",
+				RequestedAt: formatOptionalTime(requestedAt),
+				Message:     "Usage refresh did not produce new data. Current values may be out of date.",
+			}
 		}
 		s.usageRefreshMu.Unlock()
 		return usageRefreshInfo{
@@ -2854,8 +2930,10 @@ func (s *Server) handleDeviceRepair(w http.ResponseWriter, r *http.Request) {
 	if !decodeOptionalJSON(w, r, &req) {
 		return
 	}
+	repairCtx, cancel := context.WithTimeout(r.Context(), repairRequestTimeout)
+	defer cancel()
 	device, err := s.repairDevice(
-		r.Context(),
+		repairCtx,
 		strings.TrimSpace(req.Target),
 		strings.TrimSpace(req.ExpectedDeviceID),
 		req.ForcePair,
@@ -3507,30 +3585,55 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 		Display           struct {
 			BrightnessPercent int `json:"brightnessPercent"`
 		} `json:"display"`
+		Standby *standbySettings `json:"standby"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	brightness := req.BrightnessPercent
-	if brightness == 0 {
-		brightness = req.Display.BrightnessPercent
-	}
 	caps := protocol.CapabilitiesFromHello(hello)
-	if caps.Known && !caps.SupportsBrightness {
-		writeError(w, http.StatusBadRequest, "brightness_unsupported", "This VibeTV does not advertise brightness control.", "Update firmware or use a device with brightness support.")
-		return
+	form := url.Values{}
+	form.Set("api", "1")
+	if req.Standby != nil {
+		if caps.Known && !caps.SupportsStandby {
+			writeError(w, http.StatusBadRequest, "standby_unsupported", "This VibeTV cannot show a screensaver.", "Update VibeTV, then try again.")
+			return
+		}
+		enabled := "0"
+		if req.Standby.Enabled {
+			enabled = "1"
+		}
+		// The device clamps timeout and screensaver brightness and answers with
+		// the stored values, so the Companion does not repeat that arithmetic.
+		form.Set("sb", enabled)
+		form.Set("st", strconv.Itoa(req.Standby.TimeoutMinutes))
+		form.Set("sbr", strconv.Itoa(req.Standby.BrightnessPercent))
+		// Omitting screensaverPath leaves the slot as it is; an empty string
+		// clears it. The device rejects a path it has no file for.
+		if req.Standby.ScreensaverPath != nil {
+			form.Set("ss", strings.TrimSpace(*req.Standby.ScreensaverPath))
+		}
+	} else {
+		brightness := req.BrightnessPercent
+		if brightness == 0 {
+			brightness = req.Display.BrightnessPercent
+		}
+		if caps.Known && !caps.SupportsBrightness {
+			writeError(w, http.StatusBadRequest, "brightness_unsupported", "This VibeTV does not advertise brightness control.", "Update firmware or use a device with brightness support.")
+			return
+		}
+		minBrightness := protocol.DefaultMinBrightness
+		maxBrightness := protocol.DefaultMaxBrightness
+		if caps.SupportsBrightness {
+			minBrightness = caps.MinBrightnessPercent
+			maxBrightness = caps.MaxBrightnessPercent
+		}
+		if brightness < minBrightness || brightness > maxBrightness {
+			writeError(w, http.StatusBadRequest, "invalid_brightness", fmt.Sprintf("Brightness must be between %d and %d.", minBrightness, maxBrightness), "Choose a supported brightness value and retry.")
+			return
+		}
+		form.Set("b", strconv.Itoa(brightness))
 	}
-	minBrightness := protocol.DefaultMinBrightness
-	maxBrightness := protocol.DefaultMaxBrightness
-	if caps.SupportsBrightness {
-		minBrightness = caps.MinBrightnessPercent
-		maxBrightness = caps.MaxBrightnessPercent
-	}
-	if brightness < minBrightness || brightness > maxBrightness {
-		writeError(w, http.StatusBadRequest, "invalid_brightness", fmt.Sprintf("Brightness must be between %d and %d.", minBrightness, maxBrightness), "Choose a supported brightness value and retry.")
-		return
-	}
-	settings, err := s.updateBrightness(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, brightness)
+	settings, err := s.updateDeviceSettings(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, form)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "settings_write_failed", "Could not update VibeTV settings.", "Keep VibeTV powered on and retry.")
 		return
@@ -3573,6 +3676,11 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_theme_source", "themeId or packUrl is required.", "Select a theme and retry.")
 		return
 	}
+	req.Slot = installSlot(req.Slot)
+	if req.Slot == "" {
+		writeError(w, http.StatusBadRequest, "invalid_install_slot", "This theme cannot be installed here.", "Reload Control Center, then try again.")
+		return
+	}
 	if !validRemoteThemePackURL(req.PackURL) || !validRemoteThemePackURL(req.CatalogURL) {
 		writeError(
 			w,
@@ -3593,12 +3701,26 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		)
 		return
 	}
-	cfg, hello, ok := s.requireDevice(w, r)
-	if !ok {
-		return
-	}
-	if !s.requireThemeInstallPreflight(w, r, cfg, hello) {
-		return
+	var cfg runtimeconfig.Config
+	if req.Async {
+		// The async job pauses the display stream before it probes the device.
+		// Probing here would race the active ESP8266 render loop and can consume
+		// the receive/heap budget before maintenance has started.
+		cfg, err = s.config()
+		if err != nil {
+			writeInternalError(w, err)
+			return
+		}
+	} else {
+		var hello protocol.DeviceHello
+		var ok bool
+		cfg, hello, ok = s.requireDevice(w, r)
+		if !ok {
+			return
+		}
+		if !s.requireThemeInstallPreflight(w, r, cfg, hello) {
+			return
+		}
 	}
 	if req.Async {
 		job := s.createThemeInstallJob(req)
@@ -3619,6 +3741,18 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		Result themeinstall.Result `json:"result"`
 		Logs   []string            `json:"logs,omitempty"`
 	}{OK: true, Result: result, Logs: splitInstallLog(installLog.String())})
+}
+
+// installSlot normalizes the requested slot and returns "" for an unknown one.
+func installSlot(raw string) string {
+	switch slot := strings.TrimSpace(raw); slot {
+	case "", themepack.UsageLive:
+		return themepack.UsageLive
+	case themepack.UsageScreensaver:
+		return themepack.UsageScreensaver
+	default:
+		return ""
+	}
 }
 
 func decodeThemeInstallRequest(w http.ResponseWriter, r *http.Request) (themeInstallRequest, bool) {
@@ -3659,6 +3793,7 @@ func decodeThemeInstallRequest(w http.ResponseWriter, r *http.Request) (themeIns
 	}
 
 	return themeInstallRequest{
+		Slot:      strings.TrimSpace(r.URL.Query().Get("slot")),
 		ThemeID:   strings.TrimSpace(r.URL.Query().Get("themeId")),
 		ThemeName: strings.TrimSpace(r.URL.Query().Get("themeName")),
 		PackBytes: packBytes,
@@ -4023,16 +4158,22 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			},
 		}
 	}
-	s.clearDisplayVerification(cfg.DeviceTarget)
-	baseline, err := s.captureDisplayRenderBaseline(ctx, cfg.DeviceTarget, cfg.DeviceToken)
-	if err != nil {
-		return themeinstall.Result{}, &statusAPIError{
-			status: http.StatusBadGateway,
-			api: apiError{
-				Code:       "display_render_failed",
-				Message:    "Mac App could not read the current VibeTV screen state.",
-				NextAction: "Keep VibeTV powered on, then retry the theme install.",
-			},
+	// Only a live theme install changes what is on screen, so only it has a
+	// render to baseline and verify against afterwards.
+	live := req.Slot != themepack.UsageScreensaver
+	var baseline deviceHealth
+	if live {
+		s.clearDisplayVerification(cfg.DeviceTarget)
+		baseline, err = s.captureDisplayRenderBaseline(ctx, cfg.DeviceTarget, cfg.DeviceToken)
+		if err != nil {
+			return themeinstall.Result{}, &statusAPIError{
+				status: http.StatusBadGateway,
+				api: apiError{
+					Code:       "display_render_failed",
+					Message:    "Mac App could not read the current VibeTV screen state.",
+					NextAction: "Keep VibeTV powered on, then retry the theme install.",
+				},
+			}
 		}
 	}
 	logThemeInstallTiming(out, "preflight", preflightStartedAt)
@@ -4044,6 +4185,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	pairedDuringThemeInstall := false
 	deviceInstallStartedAt := time.Now()
 	result, err := s.installTheme(ctx, themeinstall.Options{
+		Slot:               req.Slot,
 		ThemeID:            strings.TrimSpace(req.ThemeID),
 		PackURL:            strings.TrimSpace(req.PackURL),
 		PackBytes:          req.PackBytes,
@@ -4080,6 +4222,12 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		} else {
 			fmt.Fprintln(out, "Preview cache: ready")
 		}
+	}
+	if !live {
+		// The live theme rendered throughout, so there is no new image to wait
+		// for and no verification to run.
+		resumeStream()
+		return result, nil
 	}
 	fmt.Fprintln(out, "Refreshing display stream...")
 	resumeStream()
@@ -4358,10 +4506,15 @@ func (s *Server) createThemeInstallJob(req themeInstallRequest) themeInstallJob 
 	}
 	s.nextInstallJob++
 	id := fmt.Sprintf("theme-install-%d-%d", time.Now().UnixNano(), s.nextInstallJob)
+	slot := strings.TrimSpace(req.Slot)
+	if slot == "" {
+		slot = themepack.UsageLive
+	}
 	job := &themeInstallJob{
 		ID:        id,
 		ThemeID:   strings.TrimSpace(req.ThemeID),
 		ThemeName: strings.TrimSpace(req.ThemeName),
+		Slot:      slot,
 		Phase:     "installing",
 		Message:   "Preparing theme install.",
 		Progress:  5,
@@ -4408,13 +4561,19 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 			})
 			return
 		}
+		// A screensaver is stored for standby, not put on screen, so saying it
+		// is active would be wrong.
+		done := "Theme is active on VibeTV."
+		if req.Slot == themepack.UsageScreensaver {
+			done = "Screensaver is ready on VibeTV."
+		}
 		s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
 			job.Phase = "complete"
-			job.Message = "Theme is active on VibeTV."
+			job.Message = done
 			job.Progress = 100
 			job.FinishedAt = &finishedAt
 			job.Result = &result
-			appendInstallJobLog(job, "Theme is active on VibeTV.")
+			appendInstallJobLog(job, done)
 		})
 	}()
 }
@@ -6310,8 +6469,9 @@ func deviceAuthorizationRejected(err error) bool {
 }
 
 type deviceHealth struct {
-	OK       bool           `json:"ok"`
-	Settings deviceSettings `json:"settings"`
+	OK       bool               `json:"ok"`
+	Settings deviceSettings     `json:"settings"`
+	Standby  *deviceStandbyInfo `json:"standby"`
 	// correlatedFrameProof is set only by the companion after it correlates a
 	// fresh, target-matching stream acknowledgement with device render counters.
 	// It is intentionally not populated from device JSON.
@@ -6541,7 +6701,7 @@ func localOverlayRenderKind(raw string) bool {
 }
 
 func liveScreenRenderKind(raw string) bool {
-	return usageRenderKind(raw) || localOverlayRenderKind(raw)
+	return usageRenderKind(raw) || localOverlayRenderKind(raw) || strings.TrimSpace(raw) == "clock"
 }
 
 func correlatedOverlayProvesUsage(
@@ -6628,15 +6788,11 @@ func (s *Server) reactivateCurrentThemeAndWaitForFullRender(
 	return health, nil
 }
 
-func (s *Server) updateBrightness(ctx context.Context, target, token string, brightness int) (deviceSettings, error) {
-	query := url.Values{}
-	query.Set("api", "1")
-	query.Set("b", fmt.Sprintf("%d", brightness))
-	query.Set("token", strings.TrimSpace(token))
+func (s *Server) updateDeviceSettings(ctx context.Context, target, token string, form url.Values) (deviceSettings, error) {
 	var response struct {
 		Settings deviceSettings `json:"settings"`
 	}
-	if err := s.doJSON(ctx, http.MethodPost, target, "/api/settings?"+query.Encode(), "", nil, &response); err != nil {
+	if err := s.doForm(ctx, target, "/api/settings", token, form, &response); err != nil {
 		return deviceSettings{}, err
 	}
 	return response.Settings, nil
@@ -6773,6 +6929,19 @@ func (s *Server) doJSON(ctx context.Context, method, target, path, token string,
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	applyDeviceToken(req, token)
+	return s.do(req, out)
+}
+
+func (s *Server) doForm(ctx context.Context, target, path, token string, form url.Values, out any) error {
+	if s.firmwareUpdateActive.Load() {
+		return errors.New("VibeTV firmware update is in progress")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint(target, path), strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	applyDeviceToken(req, token)
 	return s.do(req, out)
 }
@@ -7160,6 +7329,22 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 		RenderKind:  strings.TrimSpace(health.Render.LastKind),
 	}
 	device.ActiveTheme = strings.TrimSpace(health.Display.ActiveTheme)
+	device.Standby = nil
+	if health.Standby != nil {
+		device.Standby = &deviceStandbyInfo{
+			Active:        health.Standby.Active,
+			LiveThemePath: strings.TrimSpace(health.Standby.LiveThemePath),
+		}
+		// The device reports the slot under settings, not under standby, but it
+		// arrives on this same probe. Firmware emits both blocks together, so a
+		// health payload without a standby block has no slot worth reporting.
+		if health.Settings.Standby != nil &&
+			health.Settings.Standby.ScreensaverPath != nil {
+			device.Standby.ScreensaverPath = strings.TrimSpace(
+				*health.Settings.Standby.ScreensaverPath,
+			)
+		}
+	}
 	if health.Display.ThemeSpec.Active || health.Display.ThemeSpec.RenderOK != nil {
 		device.Display = &deviceDisplayInfo{
 			ThemeSpec: &themeSpecHealth{
@@ -7716,8 +7901,11 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 		Label:              displayStreamLogValue(line, "label"),
 		Session:            session,
 		Weekly:             weekly,
+		UsageUnavailable:   boolFieldFromDisplayStreamLog(line, "usageUnavailable"),
 		SessionUnavailable: boolFieldFromDisplayStreamLog(line, "sessionUnavailable"),
 		WeeklyUnavailable:  boolFieldFromDisplayStreamLog(line, "weeklyUnavailable"),
+		ResetSource:        displayStreamLogValue(line, "resetSource"),
+		ResetTrust:         displayStreamLogValue(line, "resetTrust"),
 		UsageMode:          displayStreamLogValue(line, "usageMode"),
 		Activity:           displayStreamLogValue(line, "activity"),
 		Time:               displayStreamLogValue(line, "time"),
@@ -7727,6 +7915,16 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
 		frame.ResetSec = reset
 	}
+	if sessionTokens, ok := int64FieldFromDisplayStreamLog(line, "sessionTokens"); ok {
+		frame.SessionTokens = sessionTokens
+	}
+	if weekTokens, ok := int64FieldFromDisplayStreamLog(line, "weekTokens"); ok {
+		frame.WeekTokens = weekTokens
+	}
+	if totalTokens, ok := int64FieldFromDisplayStreamLog(line, "totalTokens"); ok {
+		frame.TotalTokens = totalTokens
+	}
+	frame.TokenTotalsKnown = boolFieldFromDisplayStreamLog(line, "tokenTotalsKnown")
 	if encodedWindows := displayStreamLogValue(line, "usageWindows"); encodedWindows != "" && encodedWindows != "-" {
 		if rawWindows, err := url.QueryUnescape(encodedWindows); err == nil {
 			_ = json.Unmarshal([]byte(rawWindows), &frame.UsageWindows)
@@ -7735,6 +7933,12 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 	} else if encodedSlots := displayStreamLogValue(line, "usageSlots"); encodedSlots != "" {
 		if rawSlots, err := url.QueryUnescape(encodedSlots); err == nil {
 			_ = json.Unmarshal([]byte(rawSlots), &frame.UsageSlots)
+			frame.V = protocol.ProtocolVersionV2
+		}
+	}
+	if encodedProviderSlots := displayStreamLogValue(line, "providerSlots"); encodedProviderSlots != "" && encodedProviderSlots != "-" {
+		if rawProviderSlots, err := url.QueryUnescape(encodedProviderSlots); err == nil {
+			_ = json.Unmarshal([]byte(rawProviderSlots), &frame.ProviderSlots)
 			frame.V = protocol.ProtocolVersionV2
 		}
 	}

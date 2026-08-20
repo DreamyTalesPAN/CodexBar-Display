@@ -3,10 +3,11 @@ package protocol
 import "strings"
 
 const (
-	FeatureTheme          = "theme"
-	FeatureThemeSpecV1    = "theme-spec-v1"
-	FeatureUsageSlotsV1   = "usage-slots-v1"
-	FeatureUsageWindowsV1 = "usage-windows-v1"
+	FeatureTheme           = "theme"
+	FeatureThemeSpecV1     = "theme-spec-v1"
+	FeatureUsageSlotsV1    = "usage-slots-v1"
+	FeatureUsageWindowsV1  = "usage-windows-v1"
+	FeatureProviderSlotsV1 = "provider-slots-v1"
 	DefaultMaxFrameBytes  = 512
 	DefaultMinBrightness  = 10
 	DefaultMaxBrightness  = 100
@@ -25,10 +26,21 @@ type DisplayCapabilities struct {
 	Brightness     DisplayBrightnessCapabilities `json:"brightness,omitempty"`
 }
 
+// StandbyCapabilities mirrors the device hello block verbatim so hosts keep the
+// advertised limits when the capabilities travel through the Companion.
+type StandbyCapabilities struct {
+	Supported             bool `json:"supported,omitempty"`
+	MinTimeoutMinutes     int  `json:"minTimeoutMinutes,omitempty"`
+	MaxTimeoutMinutes     int  `json:"maxTimeoutMinutes,omitempty"`
+	DefaultTimeoutMinutes int  `json:"defaultTimeoutMinutes,omitempty"`
+	ScreensaverSlot       bool `json:"screensaverSlot,omitempty"`
+}
+
 type ThemeCapabilities struct {
 	SupportsThemeSpecV1     bool     `json:"supportsThemeSpecV1,omitempty"`
 	SupportsUsageSlotsV1    bool     `json:"supportsUsageSlotsV1,omitempty"`
 	SupportsUsageWindowsV1  bool     `json:"supportsUsageWindowsV1,omitempty"`
+	SupportsProviderSlotsV1 bool     `json:"supportsProviderSlotsV1,omitempty"`
 	MaxUsageWindows         int      `json:"maxUsageWindows,omitempty"`
 	SupportsStoredThemes    bool     `json:"supportsStoredThemes,omitempty"`
 	MaxThemeSpecBytes       int      `json:"maxThemeSpecBytes,omitempty"`
@@ -61,6 +73,7 @@ type AuthCapabilities struct {
 
 type CapabilityBlock struct {
 	Display   DisplayCapabilities   `json:"display,omitempty"`
+	Standby   StandbyCapabilities   `json:"standby,omitempty"`
 	Theme     ThemeCapabilities     `json:"theme,omitempty"`
 	Auth      *AuthCapabilities     `json:"auth,omitempty"`
 	Transport TransportCapabilities `json:"transport,omitempty"`
@@ -143,6 +156,7 @@ type DeviceCapabilities struct {
 	SupportsThemeSpecV1        bool
 	SupportsUsageSlotsV1       bool
 	SupportsUsageWindowsV1     bool
+	SupportsProviderSlotsV1    bool
 	MaxUsageWindows            int
 	SupportsStoredThemes       bool
 	MaxFrameBytes              int
@@ -165,6 +179,7 @@ type DeviceCapabilities struct {
 	SupportsBrightness         bool
 	MinBrightnessPercent       int
 	MaxBrightnessPercent       int
+	SupportsStandby            bool
 	ActiveTransport            string
 	SupportedTransportChannels []string
 }
@@ -187,6 +202,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 	supportsThemeSpecV1 := h.HasFeature(FeatureThemeSpecV1) || h.Capabilities.Theme.SupportsThemeSpecV1
 	supportsUsageWindowsV1 := h.HasFeature(FeatureUsageWindowsV1) || h.Capabilities.Theme.SupportsUsageWindowsV1
 	supportsUsageSlotsV1 := h.HasFeature(FeatureUsageSlotsV1) || h.Capabilities.Theme.SupportsUsageSlotsV1 || supportsUsageWindowsV1
+	supportsProviderSlotsV1 := h.HasFeature(FeatureProviderSlotsV1) || h.Capabilities.Theme.SupportsProviderSlotsV1
 	supportsStoredThemes := h.Capabilities.Theme.SupportsStoredThemes || h.Capabilities.Theme.MaxStoredThemeSpecBytes > 0
 	if !supportsTheme {
 		supportsTheme = len(h.Capabilities.Theme.BuiltinThemes) > 0 || supportsThemeSpecV1
@@ -204,6 +220,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		SupportsThemeSpecV1:        supportsThemeSpecV1,
 		SupportsUsageSlotsV1:       supportsUsageSlotsV1,
 		SupportsUsageWindowsV1:     supportsUsageWindowsV1,
+		SupportsProviderSlotsV1:    supportsProviderSlotsV1,
 		MaxUsageWindows:            h.Capabilities.Theme.MaxUsageWindows,
 		SupportsStoredThemes:       supportsStoredThemes,
 		MaxFrameBytes:              h.MaxFrameBytes,
@@ -226,6 +243,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		SupportsBrightness:         h.Capabilities.Display.Brightness.Supported,
 		MinBrightnessPercent:       h.Capabilities.Display.Brightness.MinPercent,
 		MaxBrightnessPercent:       h.Capabilities.Display.Brightness.MaxPercent,
+		SupportsStandby:            h.Capabilities.Standby.Supported,
 		ActiveTransport:            h.Capabilities.Transport.Active,
 		SupportedTransportChannels: append([]string(nil), h.Capabilities.Transport.Supported...),
 	}

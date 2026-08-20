@@ -36,7 +36,7 @@ Runs the no-write Control Center customer-ready gate.
 
 Default behavior:
   - runs local Control Center checks,
-  - checks the hosted customer app and Shopify catalog,
+  - checks the hosted customer app theme catalog,
   - checks the latest GitHub release for Mac setup assets,
   - fails until customer-like Mac setup and approved hardware-test evidence is supplied.
 
@@ -46,7 +46,7 @@ Options:
   --app-url URL          Hosted app URL. Default: https://app.vibetv.shop.
   --theme-id ID          Public free theme used for deep-link checks. Default: synthwave.
   --skip-local           Skip local app/UI tests.
-  --skip-live            Skip hosted app and Shopify catalog checks.
+  --skip-live            Skip hosted app theme-catalog checks.
   --skip-release         Skip release asset checks.
   --automated-only       Do not require manual Clean-Mac or hardware evidence.
                          Release checks still run; combine with --skip-release
@@ -252,13 +252,12 @@ run_live_checks() {
     return
   }
 
-  run_step "Hosted app, Shopify catalog, and public theme links" \
+  run_step "Hosted app theme catalog and install routes" \
     "$READINESS" \
       --app-url "$APP_URL" \
       --expect-catalog-source shopify \
       --expect-theme-id "$THEME_ID" \
-      --expect-all-free-themes-installable \
-      --expect-shopify-product-pages
+      --expect-all-free-themes-installable
 }
 
 run_release_checks() {

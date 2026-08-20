@@ -18,6 +18,7 @@ using codexbar_display::themespec::RectCommand;
 using codexbar_display::themespec::CompileThemeSpec;
 using codexbar_display::themespec::CompiledThemeSpec;
 using codexbar_display::themespec::CompiledThemeSpecHasGifAssets;
+using codexbar_display::themespec::CompiledThemeSpecReferencesAsset;
 using codexbar_display::themespec::AnyAnimatedCompiledPrimitiveOverlaps;
 using codexbar_display::themespec::Bounds;
 using codexbar_display::themespec::RenderCompiledThemeSpec;
@@ -36,6 +37,13 @@ using codexbar_display::themespec::kThemeSpecFieldSession;
 using codexbar_display::themespec::kThemeSpecFieldUsageWindows;
 using codexbar_display::themespec::kThemeSpecFieldWeekly;
 using codexbar_display::core::ConsumeFrameLine;
+using codexbar_display::core::CurrentRemainingSecs;
+using codexbar_display::core::CurrentResetTrust;
+using codexbar_display::core::DecodeResetTrustRecord;
+using codexbar_display::core::EncodeResetTrustRecord;
+using codexbar_display::core::ResetTrust;
+using codexbar_display::core::ResetTrustBudgetSecs;
+using codexbar_display::core::ResetTrustState;
 using codexbar_display::core::RuntimeState;
 using codexbar_display::core::SerialConsumeEvent;
 using codexbar_display::esp8266::ThemeSpecRuntimePolicy;
@@ -200,6 +208,7 @@ FrameData testFrame() {
   frame.sessionTokens = 1234;
   frame.weekTokens = 5678;
   frame.totalTokens = 9012;
+  frame.hasTokenTotals = true;
   return frame;
 }
 
@@ -310,6 +319,21 @@ void testGifLimitsRejectOversizedOrMultipleGifs() {
   TEST_ASSERT_TRUE(renderSpec(miniSized, testFrame(), sink));
 }
 
+void testCompiledThemeSpecFindsEveryReferencedAsset() {
+  const char* spec = R"JSON({"v":1,"id":"asset-references","rev":1,"p":[{"t":"g","x":0,"y":0,"w":40,"h":40,"a":"/themes/s/clock.gif"},{"t":"sp","x":0,"y":40,"w":40,"h":40,"a":"/themes/s/base.cba","sa":{"idle":"/themes/s/idle.cba","coding":"/themes/s/rc-orbit.cba"}}]})JSON";
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+  TEST_ASSERT_TRUE(CompiledThemeSpecReferencesAsset(scene, "/themes/s/clock.gif"));
+  TEST_ASSERT_TRUE(CompiledThemeSpecReferencesAsset(scene, "/themes/s/base.cba"));
+  TEST_ASSERT_TRUE(CompiledThemeSpecReferencesAsset(scene, "/themes/s/idle.cba"));
+  TEST_ASSERT_TRUE(CompiledThemeSpecReferencesAsset(scene, "/themes/s/rc-orbit.cba"));
+  TEST_ASSERT_FALSE(CompiledThemeSpecReferencesAsset(scene, "/themes/s/orphan.cba"));
+  TEST_ASSERT_FALSE(CompiledThemeSpecReferencesAsset(scene, ""));
+  TEST_ASSERT_FALSE(CompiledThemeSpecReferencesAsset(scene, nullptr));
+  ReleaseCompiledThemeSpec(scene);
+}
+
 void testRendersCommandsAndBindings() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -347,7 +371,7 @@ void testRendersCommandsAndBindings() {
 
   const RecordedCommand& text = sink.commands[2];
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(text.type));
-  TEST_ASSERT_EQUAL_STRING("Codex codex 97/71 1h 29m remaining 21:25 7/5/2026 1234 5678 9012", text.text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Codex codex 97/71 1h 29m remaining 21:25 7/5/2026 1.23K 5.67K 9.01K", text.text.c_str());
   TEST_ASSERT_EQUAL_INT(5, text.x);
   TEST_ASSERT_EQUAL_INT(6, text.y);
   TEST_ASSERT_EQUAL_INT(2, text.font);
@@ -398,6 +422,63 @@ void testRendersCommandsAndBindings() {
   TEST_ASSERT_EQUAL_INT(2, pixels.height);
   TEST_ASSERT_EQUAL_HEX16(0xFFFF, pixels.color);
   TEST_ASSERT_EQUAL_STRING("A5", pixels.data.c_str());
+}
+
+void testAbsentTokenTotalsRenderUnavailable() {
+  const char* spec = R"JSON({"v":1,"id":"tokens","rev":1,"p":[
+    {"t":"tx","x":0,"y":0,"b":"st","s":1},
+    {"t":"tx","x":0,"y":10,"b":"wt","s":1},
+    {"t":"tx","x":0,"y":20,"v":"{totalTokens}","s":1}
+  ]})JSON";
+
+  FrameData frame = testFrame();
+  frame.hasTokenTotals = false;
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("--", sink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("--", sink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("--", sink.commands[3].text.c_str());
+}
+
+void testConsumeFrameLineTracksTokenTotalPresence() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  TEST_ASSERT_TRUE(codexbar_display::core::ConsumeFrameLine(
+      state,
+      "{\"v\":2,\"provider\":\"codex\",\"label\":\"Codex\",\"session\":10,\"weekly\":20,\"resetSecs\":60,\"sessionTokens\":5}",
+      1000,
+      event));
+  TEST_ASSERT_TRUE(state.current.hasTokenTotals);
+
+  TEST_ASSERT_TRUE(codexbar_display::core::ConsumeFrameLine(
+      state,
+      "{\"v\":2,\"provider\":\"codex\",\"label\":\"Codex\",\"session\":11,\"weekly\":21,\"resetSecs\":59}",
+      2000,
+      event));
+  TEST_ASSERT_FALSE(state.current.hasTokenTotals);
+
+  // A finished all-zero token history omits every total on the wire, so the
+  // Companion marks it explicitly and the device renders 0 instead of "--".
+  TEST_ASSERT_TRUE(codexbar_display::core::ConsumeFrameLine(
+      state,
+      "{\"v\":2,\"provider\":\"codex\",\"label\":\"Codex\",\"session\":12,\"weekly\":22,\"resetSecs\":58,\"tokenTotalsKnown\":true}",
+      3000,
+      event));
+  TEST_ASSERT_TRUE(state.current.hasTokenTotals);
+}
+
+void testTokenAvailabilityFlipRepaintsTokenBindings() {
+  // Only hasTokenTotals changes between these frames: the totals stay zero.
+  codexbar_display::core::Frame previous;
+  codexbar_display::core::Frame next;
+  next.hasThemeSpec = true;
+  next.hasTokenTotals = true;
+  const String raw(R"JSON({"p":[{"t":"tx","b":"st"}]})JSON");
+  TEST_ASSERT_TRUE(
+      codexbar_display::core::FrameTokenStatsVisualChanged(previous, next, raw));
+  TEST_ASSERT_FALSE(codexbar_display::core::FrameTokenStatsVisualChanged(
+      previous, previous, raw));
 }
 
 void testUsageUnavailableKeepsThemeAndProgress() {
@@ -465,6 +546,90 @@ void testUsageWindowOwnershipHidesCompleteMissingLane() {
   TEST_ASSERT_EQUAL_UINT32(5, twoSlotSink.commands.size());
 }
 
+void testTokenTotalsRenderCompactAndTruncated() {
+  char out[16];
+  codexbar_display::themespec::FormatTokenCount(0, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("0", out);
+  codexbar_display::themespec::FormatTokenCount(999, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("999", out);
+  codexbar_display::themespec::FormatTokenCount(1400000, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("1.4M", out);
+  codexbar_display::themespec::FormatTokenCount(384000000, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("384M", out);
+  codexbar_display::themespec::FormatTokenCount(1070000000, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("1.07B", out);
+  // Three significant digits: two decimals below 10 units, one below 100,
+  // none above — every value stays at most five glyphs wide.
+  codexbar_display::themespec::FormatTokenCount(43930900, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("43.9M", out);
+  codexbar_display::themespec::FormatTokenCount(156140000, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("156M", out);
+  codexbar_display::themespec::FormatTokenCount(9970000000, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("9.97B", out);
+  // Truncated, never rounded, so the Mac preview parity holds.
+  codexbar_display::themespec::FormatTokenCount(1999999, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("1.99M", out);
+  codexbar_display::themespec::FormatTokenCount(12345, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("12.3K", out);
+}
+
+void testProviderSlotBindingsRenderLabelAndFormattedReset() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"provider-slots",
+    "rev":1,
+    "p":[
+      {"t":"tx","x":0,"y":0,"pl":1,"v":"{providerSlot1Label}"},
+      {"t":"tx","x":0,"y":20,"pl":1,"b":"pv1r"},
+      {"t":"tx","x":0,"y":40,"pl":2,"v":"{pv2l}"},
+      {"t":"tx","x":0,"y":60,"pl":2,"b":"pv2r"}
+    ]
+  })JSON";
+
+  FrameData frame;
+  frame.providerSlots[0].label = "Claude";
+  frame.providerSlots[0].resetSecs = 3600;
+  frame.providerSlots[0].available = true;
+
+  RecordingSink oneProviderSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, oneProviderSink));
+  TEST_ASSERT_EQUAL_UINT32(3, oneProviderSink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("Claude", oneProviderSink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("1h 0m", oneProviderSink.commands[2].text.c_str());
+
+  frame.providerSlots[1].label = "Codex";
+  frame.providerSlots[1].resetSecs = 12000;
+  frame.providerSlots[1].available = true;
+  RecordingSink twoProviderSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, twoProviderSink));
+  TEST_ASSERT_EQUAL_UINT32(5, twoProviderSink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("Codex", twoProviderSink.commands[3].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("3h 20m", twoProviderSink.commands[4].text.c_str());
+}
+
+void testProviderSlotsParseTickAndTriggerLiveRedraw() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* frameLine =
+      R"JSON({"v":2,"provider":"claude","label":"Claude","resetSecs":3600,"resetAgeSecs":0,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"live","providerSlots":[{"id":"claude","label":"Claude","percent":12,"resetSecs":3600},{"id":"codex","label":"Codex","percent":4,"resetSecs":7200}],"themeSpec":{"v":1,"id":"provider-slot-redraw","rev":1,"p":[{"t":"tx","x":0,"y":0,"pl":1,"b":"pv1r"}]}})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, frameLine, 1000, event));
+  TEST_ASSERT_TRUE(state.current.providerSlots[0].available);
+  TEST_ASSERT_EQUAL_STRING("Claude", state.current.providerSlots[0].label.c_str());
+  TEST_ASSERT_EQUAL_STRING("Codex", state.current.providerSlots[1].label.c_str());
+  TEST_ASSERT_EQUAL_INT64(3600, state.current.providerSlots[0].resetSecs);
+
+  // The device ticks the countdown from its own clock between frames.
+  TEST_ASSERT_EQUAL_INT64(
+      3540, codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, 61000));
+
+  const char* resetAdvances =
+      R"JSON({"v":2,"provider":"claude","label":"Claude","resetSecs":1800,"resetAgeSecs":0,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"live","providerSlots":[{"id":"claude","label":"Claude","percent":12,"resetSecs":1800},{"id":"codex","label":"Codex","percent":4,"resetSecs":7200}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, resetAdvances, 2000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldProviderSlots) != 0);
+}
+
 void testIndexedProgressHidesMissingWindow() {
   const char* spec = R"JSON({"v":1,"id":"indexed-progress","rev":1,"p":[{"t":"p","x":0,"y":0,"w":100,"h":8,"b":"usage.2.percent"}]})JSON";
 
@@ -489,6 +654,12 @@ void testIndexedProgressHidesMissingWindow() {
 void testUsageWindowResetCountdownsTickIndependently() {
   RuntimeState state;
   state.hasFrame = true;
+  state.reset.hasDeadline = true;
+  state.reset.enforced = true;
+  state.reset.hostLive = true;
+  state.reset.deadlineSecs = 3600;
+  state.reset.trustSecs = codexbar_display::core::kResetTrustHorizonSecs;
+  state.reset.baseMillis = 1000;
   state.resetBaseMillis = 1000;
   state.current.usageWindows[0].available = true;
   state.current.usageWindows[0].resetSecs = 100;
@@ -570,6 +741,28 @@ void testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses() {
   TEST_ASSERT_TRUE(frame.usageWindows[codexbar_display::core::kAdvertisedMaxUsageWindows - 1].available);
 }
 
+void testRawUsageWindowParserCapacityStillAcceptsNormalLabels() {
+  std::string frameLine =
+      "{\"v\":2,\"provider\":\"p\",\"label\":\"Provider\",\"session\":100,\"weekly\":100,\"resetSecs\":9223372036854775807,\"usageMode\":\"remaining\",\"usageWindows\":[";
+  for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
+    if (i > 0) {
+      frameLine += ",";
+    }
+    frameLine += "{\"id\":\"";
+    frameLine += std::string(codexbar_display::core::kUsageWindowIDWireBytes, 'i');
+    frameLine += "\",\"label\":\"";
+    frameLine += std::string(codexbar_display::core::kUsageWindowLabelWireBytes, 'L');
+    frameLine += "\",\"percent\":100,\"resetSecs\":9223372036854775807}";
+  }
+  frameLine += "]}";
+
+  TEST_ASSERT_TRUE(frameLine.size() + 1 <= codexbar_display::core::kFrameLineBufferBytes);
+
+  codexbar_display::core::Frame frame;
+  TEST_ASSERT_TRUE(codexbar_display::core::ParseFrameLine(frameLine.c_str(), frame));
+  TEST_ASSERT_TRUE(frame.usageWindows[codexbar_display::core::kMaxUsageWindows - 1].available);
+}
+
 void testHighestAdvertisedUsageWindowBindingCompiles() {
   char binding[40];
   std::snprintf(
@@ -621,6 +814,112 @@ void testConsumeFrameLineComparesCurrentBeforeAssignment() {
   TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
   TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldActivity) != 0);
   TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindows) != 0);
+}
+
+void testQuotaReplenishmentDoesNotCountAsUsageProgress() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* usedBeforeReset = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":80,"weekly":90,"usageWindows":[{"id":"weekly","label":"Weekly","percent":90}]})JSON";
+  const char* usedAfterReset = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":0,"weekly":0,"usageWindows":[{"id":"weekly","label":"Weekly","percent":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, usedBeforeReset, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, usedAfterReset, 2000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* remainingBeforeReset = R"JSON({"v":2,"provider":"codex","usageMode":"remaining","session":20,"weekly":10,"usageWindows":[{"id":"weekly","label":"Weekly","percent":10}]})JSON";
+  const char* remainingAfterReset = R"JSON({"v":2,"provider":"codex","usageMode":"remaining","session":100,"weekly":100,"usageWindows":[{"id":"weekly","label":"Weekly","percent":100}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, remainingBeforeReset, 3000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, remainingAfterReset, 4000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* remainingAfterUsage = R"JSON({"v":2,"provider":"codex","usageMode":"remaining","session":99,"weekly":100,"usageWindows":[{"id":"weekly","label":"Weekly","percent":99}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, remainingAfterUsage, 5000, event));
+  TEST_ASSERT_TRUE(event.usageProgressed);
+}
+
+void testUsageProgressRequiresStableProviderAndWindowIdentity() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* codexFrame = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":10,"weekly":20,"usageWindows":[{"id":"gone","label":"Gone","percent":10},{"id":"stable","label":"Stable","percent":20}]})JSON";
+  const char* claudeFrame = R"JSON({"v":2,"provider":"claude","usageMode":"used","session":30,"weekly":40,"usageWindows":[{"id":"stable","label":"Stable","percent":40}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, codexFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, claudeFrame, 2000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, codexFrame, 3000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+  const char* compactedFrame = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":20,"weekly":0,"usageWindows":[{"id":"stable","label":"Stable","percent":20}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, compactedFrame, 4000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* progressedFrame = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":21,"weekly":0,"usageWindows":[{"id":"stable","label":"Stable","percent":21}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, progressedFrame, 5000, event));
+  TEST_ASSERT_TRUE(event.usageProgressed);
+}
+
+// Standby's activity clock. Usage percentages are whole numbers, so a customer
+// coding against a weekly quota can work for a long time before the value
+// ticks over. The frame's own activity verdict must wake the device in that
+// window, otherwise the screensaver stays up while the customer types.
+void testReportsWorkingFollowsTheFrameActivityVerdict() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* idleFrame = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":7,"weekly":7,"activity":"idle","usageWindows":[{"id":"weekly","label":"Weekly","percent":7}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idleFrame, 1000, event));
+  TEST_ASSERT_FALSE(event.reportsWorking);
+
+  // The percentages stand completely still, and the old usage-delta inference
+  // reports nothing. This is the case that kept a coding customer asleep.
+  const char* workingFrame = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":7,"weekly":7,"activity":"coding","usageWindows":[{"id":"weekly","label":"Weekly","percent":7}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, workingFrame, 2000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+  TEST_ASSERT_TRUE(event.reportsWorking);
+
+  // The verdict is read every frame, so the customer stopping is seen at once.
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idleFrame, 3000, event));
+  TEST_ASSERT_FALSE(event.reportsWorking);
+}
+
+// A frame without `activity` still resolves, because ConsumeFrameLine fills the
+// inferred value in first. Older Companions keep the behaviour they had.
+void testReportsWorkingFallsBackToUsageProgressWithoutActivity() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* first = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":10,"weekly":10,"usageWindows":[{"id":"weekly","label":"Weekly","percent":10}]})JSON";
+  const char* progressed = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":11,"weekly":11,"usageWindows":[{"id":"weekly","label":"Weekly","percent":11}]})JSON";
+  const char* standingStill = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":11,"weekly":11,"usageWindows":[{"id":"weekly","label":"Weekly","percent":11}]})JSON";
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, first, 1000, event));
+  TEST_ASSERT_FALSE(event.reportsWorking);
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, progressed, 2000, event));
+  TEST_ASSERT_TRUE(event.usageProgressed);
+  TEST_ASSERT_TRUE(event.reportsWorking);
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, standingStill, 3000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+  TEST_ASSERT_FALSE(event.reportsWorking);
+}
+
+// An error frame states nothing about the customer, so it must not hold the
+// device awake. Quota replenishment must not either, now that the Companion's
+// verdict is what counts.
+void testReportsWorkingIgnoresErrorFramesAndReplenishment() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* working = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":7,"weekly":7,"activity":"coding","usageWindows":[{"id":"weekly","label":"Weekly","percent":7}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, working, 1000, event));
+  TEST_ASSERT_TRUE(event.reportsWorking);
+
+  const char* errorFrame = R"JSON({"v":2,"error":"provider unreachable"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, errorFrame, 2000, event));
+  TEST_ASSERT_FALSE(event.reportsWorking);
+
+  // A quota reset moves the numbers without the customer doing anything, and
+  // the Companion reports that honestly as idle.
+  const char* replenished = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":0,"weekly":0,"activity":"idle","usageWindows":[{"id":"weekly","label":"Weekly","percent":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, replenished, 3000, event));
+  TEST_ASSERT_FALSE(event.reportsWorking);
 }
 
 void testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw() {
@@ -698,6 +997,16 @@ void testPartialUsageProtocolRendersOnlyUnknownLane() {
   TEST_ASSERT_EQUAL_UINT32(2, sink.commands.size());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Progress), static_cast<int>(sink.commands[1].type));
   TEST_ASSERT_EQUAL_INT(57, sink.commands[1].percent);
+}
+
+void testResetCountdownFormatsDaysAndHours() {
+  FrameData frame;
+  frame.resetSecs = (6 * 24 * 60 * 60) + (20 * 60 * 60) + (53 * 60);
+
+  char reset[32] = {0};
+  codexbar_display::themespec::BoundValue("reset", frame, reset, sizeof(reset));
+
+  TEST_ASSERT_EQUAL_STRING("6d 20h", reset);
 }
 
 void testLabelBindingUsesProviderLabelWithoutUpdateNotice() {
@@ -1676,14 +1985,86 @@ void testFrameActivityDefaultsToCodingWhenUsageChanges() {
   const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
   TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+  TEST_ASSERT_FALSE(event.usageProgressed);
 
   const char* idleFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, idleFrame, 2000, event));
   TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+  TEST_ASSERT_FALSE(event.usageProgressed);
 
-  const char* codingFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":120,"weekTokens":220,"totalTokens":340})JSON";
+  const char* codingFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
   TEST_ASSERT_TRUE(ConsumeFrameLine(state, codingFrame, 3000, event));
   TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+  TEST_ASSERT_TRUE(event.usageProgressed);
+}
+
+void testUsageProgressIgnoresTokenHistoryExpiryAndRestore() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame =
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+
+  const char* expiredFrame =
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":0,"weekTokens":0,"totalTokens":0})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, expiredFrame, 2000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* restoredFrame =
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, restoredFrame, 3000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* usageMoved =
+      R"JSON({"v":2,"provider":"codex","label":"Codex","session":11,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, usageMoved, 4000, event));
+  TEST_ASSERT_TRUE(event.usageProgressed);
+}
+
+// Standby's activity clock hangs on this event, so a frame that only claims to
+// be coding, or an error frame, must not count as activity.
+void testUsageProgressEventIgnoresDeclaredActivityAndErrors() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+
+  const char* declaredCoding = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"activity":"coding"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, declaredCoding, 2000, event));
+  TEST_ASSERT_EQUAL_STRING("coding", state.current.activity.c_str());
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* errorFrame = R"JSON({"v":2,"error":"runtime/cycle-timeout","session":80,"weekly":90})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, errorFrame, 3000, event));
+  TEST_ASSERT_TRUE(state.current.hasError);
+  TEST_ASSERT_FALSE(event.usageProgressed);
+}
+
+void testUsageProgressEventIgnoresDisplayOnlyUsageChanges() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":7200,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageWindows":[{"id":"five-hour","label":"5-hour","percent":25,"resetSecs":7200}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+
+  const char* displayOnlyChange = R"JSON({"v":2,"provider":"codex","label":"Codex refreshed","session":10,"weekly":20,"resetSecs":7199,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageWindows":[{"id":"five-hour","label":"5-hour refreshed","percent":25,"resetSecs":7199}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, displayOnlyChange, 2000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+  TEST_ASSERT_EQUAL_STRING("idle", state.current.activity.c_str());
+
+  const char* unavailable = R"JSON({"v":2,"provider":"codex","label":"Usage unavailable","session":0,"weekly":0,"resetSecs":7198,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageUnavailable":true,"sessionUnavailable":true,"weeklyUnavailable":true})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, unavailable, 3000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* restored = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":7197,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageWindows":[{"id":"five-hour","label":"5-hour","percent":25,"resetSecs":7197}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, restored, 4000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+
+  const char* usageMoved = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"weekly":20,"resetSecs":7196,"sessionTokens":100,"weekTokens":200,"totalTokens":300,"usageWindows":[{"id":"five-hour","label":"5-hour","percent":26,"resetSecs":7196}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, usageMoved, 5000, event));
+  TEST_ASSERT_TRUE(event.usageProgressed);
 }
 
 void testThemeSpecActivityChangeUsesPartialRenderEvent() {
@@ -1766,26 +2147,60 @@ void testStoredThemeBootActivationRestoresFrameAndFullRenderIntent() {
 }
 
 void testStoredThemeBootActivationRejectsInvalidRaw() {
-  RuntimeState state;
+  RuntimeState emptyState;
   SerialConsumeEvent event;
 
-  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(state, "clippy", 7, "{}", 4000, event));
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(emptyState, "clippy", 7, "{}", 4000, event));
+  TEST_ASSERT_FALSE(emptyState.hasFrame);
+  TEST_ASSERT_FALSE(emptyState.current.hasThemeSpec);
+  TEST_ASSERT_FALSE(event.frameAccepted);
+
   TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(
-      state,
+      emptyState,
       "clippy",
       7,
       R"JSON({"v":1,"id":"clippy","rev":7,"p":[]})JSON",
       4000,
       event));
   TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(
-      state,
+      emptyState,
       "clippy",
       7,
       R"JSON({"v":1,"id":"clippy","rev":7,"p":[{"t":"unsupported"}]})JSON",
       4000,
       event));
-  TEST_ASSERT_FALSE(state.hasFrame);
-  TEST_ASSERT_FALSE(state.current.hasThemeSpec);
+  TEST_ASSERT_FALSE(emptyState.hasFrame);
+  TEST_ASSERT_FALSE(emptyState.current.hasThemeSpec);
+
+  RuntimeState state;
+  state.hasFrame = true;
+  state.current.session = 42;
+  state.current.hasThemeSpec = true;
+  state.current.themeSpecId = "keep";
+  state.current.themeSpecRev = 3;
+  state.cachedThemeId = "keep";
+  state.cachedThemeRev = 3;
+
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(
+      state, "screensaver", 1, "GIF89a", 5000, event));
+  TEST_ASSERT_EQUAL_INT(42, state.current.session);
+  TEST_ASSERT_EQUAL_STRING("keep", state.current.themeSpecId.c_str());
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+  TEST_ASSERT_FALSE(event.frameAccepted);
+
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(
+      state, "screensaver", 1, "CBA1\n240 240\n", 6000, event));
+  TEST_ASSERT_EQUAL_INT(42, state.current.session);
+  TEST_ASSERT_EQUAL_STRING("keep", state.current.themeSpecId.c_str());
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
+  TEST_ASSERT_FALSE(event.frameAccepted);
+
+  const char* metadataOnly = R"JSON({"id":"x","rev":1})JSON";
+  TEST_ASSERT_FALSE(RestoreStoredThemeSpecFrame(
+      state, "screensaver", 1, metadataOnly, 7000, event));
+  TEST_ASSERT_EQUAL_INT(42, state.current.session);
+  TEST_ASSERT_EQUAL_STRING("keep", state.current.themeSpecId.c_str());
+  TEST_ASSERT_TRUE(state.current.hasThemeSpec);
   TEST_ASSERT_FALSE(event.frameAccepted);
 }
 
@@ -2062,6 +2477,23 @@ void testThemeSpecRuntimePolicyRejectsObservedFragmentedHeap() {
       ThemeSpecRuntimePolicy::kMinAnimationMaxFreeBlockBytes - 1));
 }
 
+void testCbaHeaderParserAcceptsWhitespaceAndExactIntegers() {
+  int values[4] = {0, 0, 0, 0};
+  TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::ParseCbaHeader(" \t52  52\t12 6 \r\n", values, 4));
+  TEST_ASSERT_EQUAL_INT(52, values[0]);
+  TEST_ASSERT_EQUAL_INT(52, values[1]);
+  TEST_ASSERT_EQUAL_INT(12, values[2]);
+  TEST_ASSERT_EQUAL_INT(6, values[3]);
+}
+
+void testCbaHeaderParserRejectsMalformedOrTrailingInput() {
+  int values[4] = {0, 0, 0, 0};
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ParseCbaHeader("52 52 12", values, 4));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ParseCbaHeader("52 52 12 6 extra", values, 4));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ParseCbaHeader("52 -52 12 6", values, 4));
+  TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ParseCbaHeader("52 999999999999 12 6", values, 4));
+}
+
 void testAnimatedAssetDuePolicySkipsFilesystemWorkBetweenFrames() {
   TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::AnimatedAssetDue(true, true, 10, 10, 200, 100));
   TEST_ASSERT_TRUE(ThemeSpecRuntimePolicy::AnimatedAssetDue(false, false, 0, 0, 0, 100));
@@ -2100,24 +2532,344 @@ void testAnimatedSpriteFrameOffsetsAreIndexedOneFrameAtATime() {
   TEST_ASSERT_FALSE(ThemeSpecRuntimePolicy::ShouldIndexNextAnimatedFrame(7, 8, 8));
 }
 
+// --- Reset countdown trust (#279) -------------------------------------------
+//
+// The device has no wall clock. Every expectation below is expressed in
+// millis() deltas, exactly as the firmware sees them.
+
+constexpr unsigned long kHourMs = 3600UL * 1000UL;
+
+// resetSecs 6h, budget the full 5h horizon: a fresh live basis.
+const char* kLiveResetFrame =
+    R"JSON({"v":2,"provider":"claude","label":"Claude","session":73,"weekly":45,"resetSecs":21600,"resetAgeSecs":0,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"live"})JSON";
+
+void feedLiveResetFrame(RuntimeState& state, unsigned long atMillis) {
+  SerialConsumeEvent event;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, kLiveResetFrame, atMillis, event));
+}
+
+void testResetTrustLiveFrameCountsDownLocallyForFiveHours() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kLive),
+                        static_cast<int>(CurrentResetTrust(state.reset, 1000)));
+  TEST_ASSERT_EQUAL_INT64(21600, CurrentRemainingSecs(state, 1000));
+
+  // Updates stop here. The countdown stays exact for the whole trust budget.
+  TEST_ASSERT_EQUAL_INT64(21600 - 3600, CurrentRemainingSecs(state, 1000 + kHourMs));
+  // One second short of the horizon: still exact, still shown.
+  TEST_ASSERT_EQUAL_INT64(21600 - 17999, CurrentRemainingSecs(state, 1000 + 5 * kHourMs - 1000));
+
+  // Without fresh data the host claim of "live" no longer holds.
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kOffline),
+                        static_cast<int>(CurrentResetTrust(state.reset, 1000 + kHourMs)));
+}
+
+void testResetTrustExpiredBudgetBlanksAStillRunningDeadline() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+
+  // One second past the horizon the basis is stale even though the deadline
+  // itself is still 1h out. The firmware refuses the number it cannot back.
+  const unsigned long past = 1000 + 5 * kHourMs + 1000;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, past)));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, past));
+}
+
+void testUsageWindowResetCountdownsStopWhenTrustExpires() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+  state.current.usageWindows[0].available = true;
+  state.current.usageWindows[0].resetSecs = 21600;
+  state.current.usageWindows[1].available = true;
+  state.current.usageWindows[1].resetSecs = 43200;
+
+  const unsigned long beforeExpiry = 1000 + 5 * kHourMs - 1000;
+  TEST_ASSERT_EQUAL_INT64(
+      3601,
+      codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 0, beforeExpiry));
+  TEST_ASSERT_EQUAL_INT64(
+      25201,
+      codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 1, beforeExpiry));
+
+  const unsigned long afterExpiry = 1000 + 5 * kHourMs + 1000;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, afterExpiry)));
+  TEST_ASSERT_EQUAL_INT64(
+      0,
+      codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 0, afterExpiry));
+  TEST_ASSERT_EQUAL_INT64(
+      0,
+      codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 1, afterExpiry));
+}
+
+void testResetTrustDeadlineReachedOfflineDoesNotStartNewCycle() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* nearlyDone =
+      R"JSON({"v":2,"provider":"claude","resetSecs":60,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"offline"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, nearlyDone, 1000, event));
+  TEST_ASSERT_EQUAL_INT64(60, CurrentRemainingSecs(state, 1000));
+
+  // Passing the deadline clamps at zero and stays there instead of wrapping
+  // into an invented next window. The basis itself is still fresh, so the
+  // trust stays offline rather than stale — an expired countdown says nothing
+  // about the windows that are still running.
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, 1000 + 61UL * 1000UL));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, 1000 + 2 * kHourMs));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kOffline),
+                        static_cast<int>(CurrentResetTrust(state.reset, 1000 + 2 * kHourMs)));
+}
+
+// The host projects the FIRST window onto the root `resetSecs`. A short
+// session window expiring offline must not blank the long weekly window that
+// is still running well inside the trust budget.
+void testAShortRootDeadlineDoesNotBlankLongerWindows() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* shortRoot =
+      R"JSON({"v":2,"provider":"claude","resetSecs":60,"resetTrustSecs":18000,"resetSource":"claude:session","resetTrust":"live"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, shortRoot, 1000, event));
+  state.current.usageWindows[0].available = true;
+  state.current.usageWindows[0].resetSecs = 60;
+  state.current.usageWindows[1].available = true;
+  state.current.usageWindows[1].resetSecs = 4 * 3600;
+
+  // Two minutes later the 60s window is gone; the four-hour one is not.
+  const unsigned long afterShort = 1000 + 120UL * 1000UL;
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, afterShort));
+  TEST_ASSERT_EQUAL_INT64(
+      0, codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 0, afterShort));
+  TEST_ASSERT_EQUAL_INT64(
+      4 * 3600 - 120,
+      codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 1, afterShort));
+
+  // Once the freshness budget is gone, every window blanks after all.
+  const unsigned long afterBudget = 1000 + 5 * kHourMs + 1000;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, afterBudget)));
+  TEST_ASSERT_EQUAL_INT64(
+      0, codexbar_display::core::CurrentUsageWindowRemainingSecs(state, 1, afterBudget));
+}
+
+void testResetTrustSourceChangeNeverInheritsPreviousDeadline() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+
+  SerialConsumeEvent event;
+  const char* otherWindow =
+      R"JSON({"v":2,"provider":"claude","resetSecs":900,"resetTrustSecs":18000,"resetSource":"claude:weekly","resetTrust":"live"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, otherWindow, 2000, event));
+  TEST_ASSERT_EQUAL_INT64(900, CurrentRemainingSecs(state, 2000));
+  TEST_ASSERT_EQUAL_STRING("claude:weekly", state.reset.source.c_str());
+
+  // A stale frame for a different source leaves nothing behind either.
+  const char* staleOther =
+      R"JSON({"v":2,"provider":"codex","resetSecs":0,"resetTrustSecs":0,"resetSource":"codex:primary","resetTrust":"stale"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, staleOther, 3000, event));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, 3000));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, 3000)));
+}
+
+void testResetTrustOfflineResendCannotExtendDeadlineOrBudget() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+
+  // Two hours later the host resends the same last known good numbers without
+  // re-anchoring them. The device may only downgrade, so its own clock wins.
+  SerialConsumeEvent event;
+  const char* resend =
+      R"JSON({"v":2,"provider":"claude","resetSecs":21600,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"offline"})JSON";
+  const unsigned long later = 1000 + 2 * kHourMs;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, resend, later, event));
+  TEST_ASSERT_EQUAL_INT64(21600 - 2 * 3600, CurrentRemainingSecs(state, later));
+  TEST_ASSERT_EQUAL_INT64(18000 - 2 * 3600, ResetTrustBudgetSecs(state.reset, later));
+}
+
+void testResetTrustRecoversFromStaleWithFreshDataWithoutRestart() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+  const unsigned long stale = 1000 + 6 * kHourMs;
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, stale));
+
+  feedLiveResetFrame(state, stale);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kLive),
+                        static_cast<int>(CurrentResetTrust(state.reset, stale)));
+  TEST_ASSERT_EQUAL_INT64(21600, CurrentRemainingSecs(state, stale));
+}
+
+void testResetTrustRestartHandoverKeepsStillValidDeadline() {
+  RuntimeState before;
+  feedLiveResetFrame(before, 1000);
+
+  const unsigned long rebootAt = 1000 + kHourMs;
+  const String record = EncodeResetTrustRecord(before.reset, rebootAt);
+  TEST_ASSERT_EQUAL_STRING("1 18000 14400 claude:primary", record.c_str());
+
+  // Fresh boot: millis() restarted, and the restart gap is charged to both
+  // counters because the device cannot measure it.
+  RuntimeState after;
+  after.hasFrame = true;
+  TEST_ASSERT_TRUE(DecodeResetTrustRecord(record, 30, 5000, after.reset));
+  TEST_ASSERT_EQUAL_INT64(18000 - 30, CurrentRemainingSecs(after, 5000));
+  TEST_ASSERT_EQUAL_INT64(14400 - 30, ResetTrustBudgetSecs(after.reset, 5000));
+  TEST_ASSERT_EQUAL_STRING("claude:primary", after.reset.source.c_str());
+
+  // A restored basis is never live: no frame has arrived yet.
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kOffline),
+                        static_cast<int>(CurrentResetTrust(after.reset, 5000)));
+}
+
+void testResetTrustHandoverRefusesUntrustworthyRecords() {
+  RuntimeState state;
+  ResetTrustState restored;
+
+  // Nothing to hand over before any contract-aware frame.
+  TEST_ASSERT_EQUAL_STRING("", EncodeResetTrustRecord(state.reset, 1000).c_str());
+
+  // A legacy countdown has no budget and must not survive as an unbounded one.
+  SerialConsumeEvent event;
+  const char* legacy = R"JSON({"v":2,"provider":"codex","resetSecs":3600})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, legacy, 1000, event));
+  TEST_ASSERT_EQUAL_STRING("", EncodeResetTrustRecord(state.reset, 1000).c_str());
+
+  TEST_ASSERT_FALSE(DecodeResetTrustRecord("", 30, 1000, restored));
+  TEST_ASSERT_FALSE(DecodeResetTrustRecord("1 18000 14400", 30, 1000, restored));
+  TEST_ASSERT_FALSE(DecodeResetTrustRecord("2 18000 14400 claude:primary", 30, 1000, restored));
+  TEST_ASSERT_FALSE(DecodeResetTrustRecord("1 18000 14400 claude primary", 30, 1000, restored));
+  // Budget beyond the horizon cannot come from an honest handover.
+  TEST_ASSERT_FALSE(DecodeResetTrustRecord("1 18000 99999 claude:primary", 30, 1000, restored));
+  // Deadline already consumed by the restart gap.
+  TEST_ASSERT_FALSE(DecodeResetTrustRecord("1 20 14400 claude:primary", 30, 1000, restored));
+}
+
+void testResetTrustLegacyFrameKeepsUnboundedLocalCountdown() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* legacy = R"JSON({"v":2,"provider":"codex","label":"Codex","session":10,"resetSecs":21600})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, legacy, 1000, event));
+
+  // No trust claim, so no budget: exactly the pre-contract behaviour.
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kUnknown),
+                        static_cast<int>(CurrentResetTrust(state.reset, 1000)));
+  TEST_ASSERT_EQUAL_INT64(21600 - 6 * 3600, CurrentRemainingSecs(state, 1000 + 6 * kHourMs));
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, 1000 + 7 * kHourMs));
+}
+
+void testResetTrustIsUntouchedByFramesWithoutResetFields() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+
+  SerialConsumeEvent event;
+  const char* themeOnly =
+      R"JSON({"v":2,"provider":"claude","label":"Claude","themeSpec":{"v":1,"id":"mini","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"{reset}"}]}})JSON";
+  const unsigned long later = 1000 + kHourMs;
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, themeOnly, later, event));
+  TEST_ASSERT_EQUAL_INT64(21600 - 3600, CurrentRemainingSecs(state, later));
+  TEST_ASSERT_EQUAL_STRING("claude:primary", state.reset.source.c_str());
+}
+
+void testStaleResetRendersUnavailableWhateverTheThemeBinds() {
+  RuntimeState state;
+  feedLiveResetFrame(state, 1000);
+  const unsigned long stale = 1000 + 6 * kHourMs;
+
+  const char* spec =
+      R"JSON({"v":1,"id":"reset-theme","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"Reset in {reset}"},{"t":"tx","x":0,"y":20,"b":"r"}]})JSON";
+
+  FrameData frame;
+  frame.label = "Claude";
+  // Renderers never read the raw frame value; they read the enforced one.
+  frame.resetSecs = CurrentRemainingSecs(state, stale);
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_UINT32(3, sink.commands.size());
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[1].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[2].text.c_str());
+}
+
+// The selected provider can lack a reset while another fresh provider has one.
+// providerResetSlots still ships that countdown, so trust must not hinge on the
+// legacy root projection being positive.
+void testProviderSlotDeadlineAloneKeepsTrust() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* rootless =
+      R"JSON({"v":2,"provider":"claude","resetSecs":0,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"live","providerSlots":[{"id":"codex","label":"Codex","percent":20,"resetSecs":7200}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, rootless, 1000, event));
+
+  // The root itself stays at zero — nothing is invented for it.
+  TEST_ASSERT_EQUAL_INT64(0, CurrentRemainingSecs(state, 1000));
+  // ...but the provider slot keeps its own valid countdown.
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kLive),
+                        static_cast<int>(CurrentResetTrust(state.reset, 1000)));
+  TEST_ASSERT_EQUAL_INT64(
+      7200,
+      codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, 1000));
+  TEST_ASSERT_EQUAL_INT64(
+      7200 - 3600,
+      codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, 1000 + kHourMs));
+
+  // The shared freshness budget still governs everything.
+  const unsigned long afterBudget = 1000 + 5 * kHourMs + 1000;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, afterBudget)));
+  TEST_ASSERT_EQUAL_INT64(
+      0,
+      codexbar_display::core::CurrentProviderSlotRemainingSecs(state, 0, afterBudget));
+}
+
+// A frame with no deadline anywhere still has nothing to be trusted about.
+void testFrameWithoutAnyDeadlineStaysStale() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* empty =
+      R"JSON({"v":2,"provider":"claude","resetSecs":0,"resetTrustSecs":18000,"resetSource":"claude:primary","resetTrust":"live"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, empty, 1000, event));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ResetTrust::kStale),
+                        static_cast<int>(CurrentResetTrust(state.reset, 1000)));
+}
+
 }  // namespace
+
+// Defined in test_device_clock.cpp.
+void RunDeviceClockTests();
 
 int main() {
   UNITY_BEGIN();
+  RunDeviceClockTests();
   RUN_TEST(testInvalidSpecsReturnFalse);
   RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);
+  RUN_TEST(testCompiledThemeSpecFindsEveryReferencedAsset);
   RUN_TEST(testRendersCommandsAndBindings);
+  RUN_TEST(testAbsentTokenTotalsRenderUnavailable);
+  RUN_TEST(testConsumeFrameLineTracksTokenTotalPresence);
+  RUN_TEST(testTokenAvailabilityFlipRepaintsTokenBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testUsageWindowOwnershipHidesCompleteMissingLane);
+  RUN_TEST(testTokenTotalsRenderCompactAndTruncated);
+  RUN_TEST(testProviderSlotBindingsRenderLabelAndFormattedReset);
+  RUN_TEST(testProviderSlotsParseTickAndTriggerLiveRedraw);
   RUN_TEST(testIndexedProgressHidesMissingWindow);
   RUN_TEST(testUsageWindowResetCountdownsTickIndependently);
   RUN_TEST(testAdvertisedUsageWindowCapacityFitsFrameBufferAndParses);
+  RUN_TEST(testRawUsageWindowParserCapacityStillAcceptsNormalLabels);
   RUN_TEST(testHighestAdvertisedUsageWindowBindingCompiles);
   RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
   RUN_TEST(testConsumeFrameLineComparesCurrentBeforeAssignment);
+  RUN_TEST(testQuotaReplenishmentDoesNotCountAsUsageProgress);
+  RUN_TEST(testUsageProgressRequiresStableProviderAndWindowIdentity);
+  RUN_TEST(testReportsWorkingFollowsTheFrameActivityVerdict);
+  RUN_TEST(testReportsWorkingFallsBackToUsageProgressWithoutActivity);
+  RUN_TEST(testReportsWorkingIgnoresErrorFramesAndReplenishment);
   RUN_TEST(testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw);
   RUN_TEST(testWhitespaceUsageWindowOwnersTriggerLiveRedraw);
   RUN_TEST(testPartialUsageProtocolRendersOnlyUnknownLane);
+  RUN_TEST(testResetCountdownFormatsDaysAndHours);
   RUN_TEST(testLabelBindingUsesProviderLabelWithoutUpdateNotice);
   RUN_TEST(testChangedLabelPassUsesSynchronizedUpdateNoticeText);
   RUN_TEST(testChangedLabelPassCanRestoreProviderText);
@@ -2152,6 +2904,9 @@ int main() {
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
   RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);
+  RUN_TEST(testUsageProgressIgnoresTokenHistoryExpiryAndRestore);
+  RUN_TEST(testUsageProgressEventIgnoresDeclaredActivityAndErrors);
+  RUN_TEST(testUsageProgressEventIgnoresDisplayOnlyUsageChanges);
   RUN_TEST(testThemeSpecActivityChangeUsesPartialRenderEvent);
   RUN_TEST(testLegacyThemeFieldsAreIgnored);
   RUN_TEST(testStoredThemeActivationLiveFrameUsesPartialRenderEvent);
@@ -2171,8 +2926,25 @@ int main() {
   RUN_TEST(testUnconfirmedThemeSpecNullKeepsCachedLayout);
   RUN_TEST(testConfirmedThemeSpecNullClearsCachedLayout);
   RUN_TEST(testThemeSpecRuntimePolicyRejectsObservedFragmentedHeap);
+  RUN_TEST(testCbaHeaderParserAcceptsWhitespaceAndExactIntegers);
+  RUN_TEST(testCbaHeaderParserRejectsMalformedOrTrailingInput);
   RUN_TEST(testAnimatedAssetDuePolicySkipsFilesystemWorkBetweenFrames);
   RUN_TEST(testAssetDecodeYieldPolicyBoundsLongRleWork);
   RUN_TEST(testAnimatedSpriteFrameOffsetsAreIndexedOneFrameAtATime);
+  RUN_TEST(testResetTrustLiveFrameCountsDownLocallyForFiveHours);
+  RUN_TEST(testResetTrustExpiredBudgetBlanksAStillRunningDeadline);
+  RUN_TEST(testUsageWindowResetCountdownsStopWhenTrustExpires);
+  RUN_TEST(testResetTrustDeadlineReachedOfflineDoesNotStartNewCycle);
+  RUN_TEST(testAShortRootDeadlineDoesNotBlankLongerWindows);
+  RUN_TEST(testProviderSlotDeadlineAloneKeepsTrust);
+  RUN_TEST(testFrameWithoutAnyDeadlineStaysStale);
+  RUN_TEST(testResetTrustSourceChangeNeverInheritsPreviousDeadline);
+  RUN_TEST(testResetTrustOfflineResendCannotExtendDeadlineOrBudget);
+  RUN_TEST(testResetTrustRecoversFromStaleWithFreshDataWithoutRestart);
+  RUN_TEST(testResetTrustRestartHandoverKeepsStillValidDeadline);
+  RUN_TEST(testResetTrustHandoverRefusesUntrustworthyRecords);
+  RUN_TEST(testResetTrustLegacyFrameKeepsUnboundedLocalCountdown);
+  RUN_TEST(testResetTrustIsUntouchedByFramesWithoutResetFields);
+  RUN_TEST(testStaleResetRendersUnavailableWhateverTheThemeBinds);
   return UNITY_END();
 }

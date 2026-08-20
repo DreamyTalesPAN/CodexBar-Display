@@ -46,7 +46,7 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
    paired, and its first display frame contains real usage data.
 7. Theme Library is additionally locked until theme installs are allowed by the release gate.
 8. Support may stay available because it only creates support reports and shows recent activity, not a setup workflow.
-9. A Shopify theme install deep link must not bypass setup gating.
+9. A theme install deep link must not bypass setup gating.
 
 ## Review Checklist
 

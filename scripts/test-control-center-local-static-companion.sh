@@ -108,6 +108,20 @@ main() {
       exit 1
     }
   curl -fsS "${base_url}/theme-packs/vibetv-theme-packs-v2.json" \
+    | grep -F '"vibetv-theme-reset-countdown-v1.0.0.zip"' >/dev/null \
+    || {
+      printf 'error: bundled screensaver catalog entry is unavailable\n' >&2
+      exit 1
+    }
+  curl -fsS "${base_url}/theme-packs/vibetv-theme-reset-countdown-v1.0.0.zip" >/dev/null \
+    || {
+      printf 'error: bundled screensaver ZIP is unavailable\n' >&2
+      exit 1
+    }
+  curl -fsS "${base_url}/theme-packs/render/reset-countdown/reset-1-39352d.json" \
+    | grep -F '"specPath":"/themes/s/reset-1-39352d.json"' >/dev/null \
+    || {
+      printf 'error: bundled screensaver render pack is unavailable\n' >&2
     | grep -E '"vibetv-theme-mini-classic-v[0-9]+\.[0-9]+\.[0-9]+\.zip"' >/dev/null \
     || {
       printf 'error: current versioned theme catalog is unavailable\n' >&2

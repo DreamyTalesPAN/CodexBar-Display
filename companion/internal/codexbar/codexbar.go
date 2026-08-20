@@ -797,11 +797,15 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		"openaiDashboard.secondaryLimit",
 	)
 
+	resetWindow := "primary"
 	resetAt := firstStringAtPaths(payload,
 		"usage.primary.resetsAt",
 		"primary.resetsAt",
-		"usage.secondary.resetsAt",
 	)
+	if resetAt == "" {
+		resetWindow = "secondary"
+		resetAt = firstStringAtPaths(payload, "usage.secondary.resetsAt")
+	}
 	resetSecs := int64(0)
 	if resetAt != "" {
 		if t, err := time.Parse(time.RFC3339, resetAt); err == nil {
@@ -809,6 +813,10 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 				resetSecs = int64(d.Seconds())
 			}
 		}
+	}
+	resetSource := ""
+	if resetSecs > 0 {
+		resetSource = protocol.ResetSourceKey(provider, resetWindow)
 	}
 
 	accountEmail := firstStringAtPaths(payload,
@@ -846,6 +854,7 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		Session:            session,
 		Weekly:             weekly,
 		ResetSec:           resetSecs,
+		ResetSource:        resetSource,
 		UsageWindows:       usageWindows,
 		UsageUnavailable:   !sessionKnown && !weeklyKnown && len(usageWindows) == 0,
 		SessionUnavailable: !sessionKnown,

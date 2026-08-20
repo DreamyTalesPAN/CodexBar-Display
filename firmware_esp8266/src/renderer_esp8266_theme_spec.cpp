@@ -10,7 +10,6 @@
 
 #include <LittleFS.h>
 
-#include <cstdio>
 #include <cstring>
 #include <new>
 
@@ -42,9 +41,6 @@ unsigned long cbaLastPushDurationUs = 0;
 const char* lastThemeSpecRenderError = "";
 unsigned long themeSpecRenderFailures = 0;
 unsigned long themeSpecPartialSuccesses = 0;
-unsigned long themeSpecPartialFailures = 0;
-uint32_t lastPartialChangedFields = 0;
-const char* lastPartialError = "";
 String lastSuccessfulThemeSpecId = "";
 int lastSuccessfulThemeSpecRev = 0;
 uint32_t lastSuccessfulThemeSpecRawHash = 0;
@@ -90,22 +86,9 @@ void markThemeSpecRenderFailed(const char* error) {
   themeSpecRenderFailures += 1;
 }
 
-void markThemeSpecPartialAttempt(uint32_t changedFields) {
-  lastPartialChangedFields = changedFields;
-  lastPartialError = "";
-}
-
-void markThemeSpecPartialOk(uint32_t changedFields) {
-  lastPartialChangedFields = changedFields;
-  lastPartialError = "";
+void markThemeSpecPartialOk() {
   themeSpecPartialSuccesses += 1;
   markThemeSpecRenderOk();
-}
-
-void markThemeSpecPartialFailed(uint32_t changedFields, const char* error) {
-  lastPartialChangedFields = changedFields;
-  lastPartialError = error == nullptr ? "partial_fail" : error;
-  themeSpecPartialFailures += 1;
 }
 
 uint32_t themeSpecRawHash(const String& raw) {
@@ -289,7 +272,13 @@ bool readSpriteLine(File& file, String& line) {
 bool parseSpriteHeader(const String& line, int& width, int& height) {
   width = 0;
   height = 0;
-  return std::sscanf(line.c_str(), "%d %d", &width, &height) == 2 && width > 0 && height > 0;
+  int values[2] = {0, 0};
+  if (!ThemeSpecRuntimePolicy::ParseCbaHeader(line.c_str(), values, 2)) {
+    return false;
+  }
+  width = values[0];
+  height = values[1];
+  return width > 0 && height > 0;
 }
 
 bool parseAnimatedSpriteHeader(const String& line, int& width, int& height, int& frameCount, int& fps) {
@@ -297,8 +286,15 @@ bool parseAnimatedSpriteHeader(const String& line, int& width, int& height, int&
   height = 0;
   frameCount = 0;
   fps = 0;
-  return std::sscanf(line.c_str(), "%d %d %d %d", &width, &height, &frameCount, &fps) == 4 &&
-         width > 0 &&
+  int values[4] = {0, 0, 0, 0};
+  if (!ThemeSpecRuntimePolicy::ParseCbaHeader(line.c_str(), values, 4)) {
+    return false;
+  }
+  width = values[0];
+  height = values[1];
+  frameCount = values[2];
+  fps = values[3];
+  return width > 0 &&
          height > 0 &&
          frameCount > 0 &&
          frameCount <= 64 &&
@@ -1094,15 +1090,31 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   frame.usageSlot2Percent = frame.usageWindows[1].percent;
   frame.usageSlot2ResetSecs = frame.usageWindows[1].resetSecs;
   frame.usageSlot2Available = frame.usageWindows[1].available;
+  for (size_t i = 0; i < codexbar_display::themespec::kMaxThemeSpecProviderSlots &&
+                     i < codexbar_display::core::kMaxProviderSlots; ++i) {
+    frame.providerSlots[i].label = CurrentFrame().providerSlots[i].label.c_str();
+    frame.providerSlots[i].percent = CurrentFrame().providerSlots[i].percent;
+    frame.providerSlots[i].resetSecs =
+        codexbar_display::core::CurrentProviderSlotRemainingSecs(RuntimeState(), i, millis());
+    frame.providerSlots[i].available = CurrentFrame().providerSlots[i].available;
+  }
   frame.sessionUnavailable = CurrentFrame().sessionUnavailable;
   frame.weeklyUnavailable = CurrentFrame().weeklyUnavailable;
   frame.usageMode = usageModeText();
   frame.activity = CurrentFrame().activity.c_str();
-  frame.time = CurrentFrame().timeText.c_str();
-  frame.date = CurrentFrame().dateText.c_str();
+  // The device clock owns {time}/{date}; the Companion string is only a
+  // fallback and is dropped once it is no longer current.
+  static char clockTimeText[deviceclock::kTimeTextSize];
+  static char clockDateText[deviceclock::kDateTextSize];
+  const unsigned long nowMs = millis();
+  app::ClockTimeText(Context(), nowMs, clockTimeText, sizeof(clockTimeText));
+  app::ClockDateText(Context(), nowMs, clockDateText, sizeof(clockDateText));
+  frame.time = clockTimeText;
+  frame.date = clockDateText;
   frame.sessionTokens = CurrentFrame().sessionTokens;
   frame.weekTokens = CurrentFrame().weekTokens;
   frame.totalTokens = CurrentFrame().totalTokens;
+  frame.hasTokenTotals = CurrentFrame().hasTokenTotals;
   return frame;
 }
 
@@ -1118,6 +1130,12 @@ void MarkThemeSpecCountdownsRendered() {
         codexbar_display::core::CurrentUsageWindowRemainingSecs(RuntimeState(), i, now);
     Context().lastRenderedUsageWindowSecs[i] = slotRemain;
     Context().lastRenderedUsageWindowMinuteBuckets[i] = slotRemain / 60;
+  }
+  for (size_t i = 0; i < codexbar_display::core::kMaxProviderSlots; ++i) {
+    const int64_t slotRemain =
+        codexbar_display::core::CurrentProviderSlotRemainingSecs(RuntimeState(), i, now);
+    Context().lastRenderedProviderSlotSecs[i] = slotRemain;
+    Context().lastRenderedProviderSlotMinuteBuckets[i] = slotRemain / 60;
   }
 }
 
@@ -1201,21 +1219,17 @@ bool ThemeSpecAnimationWorkPending() {
 }
 
 bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText) {
-  markThemeSpecPartialAttempt(changedFields);
   const String& raw = currentThemeSpecRaw();
   if (!CurrentFrame().hasThemeSpec || !codexbar_display::core::ThemeSpecRawLooksRenderable(raw) || changedFields == 0) {
-    markThemeSpecPartialFailed(changedFields, changedFields == 0 ? "no_changes" : "missing_spec");
     return false;
   }
 
   if (!hasThemeSpecHeap(false)) {
-    markThemeSpecPartialFailed(changedFields, "low_heap");
     ScreenDirty() = true;
     return false;
   }
 
   if (!ensureThemeSpecSceneCached(raw)) {
-    markThemeSpecPartialFailed(changedFields, "parse_fail");
     return false;
   }
 
@@ -1229,7 +1243,6 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
           sink,
           &partialError,
           nullptr)) {
-    markThemeSpecPartialFailed(changedFields, partialError);
     return false;
   }
   // State assets are selected by activity. Clearing the cache cancels the old
@@ -1237,7 +1250,7 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
   if ((changedFields & themespec::kThemeSpecFieldActivity) != 0) {
     resetAnimatedSpriteCaches();
   }
-  markThemeSpecPartialOk(changedFields);
+  markThemeSpecPartialOk();
   nextThemeSpecAnimatedTickAtMs = cachedThemeSpecScene.hasAnimatedAssets
                                       ? millis() + kThemeSpecAnimatedTickMs
                                       : 0;
@@ -1311,8 +1324,6 @@ void ResetThemeSpecSpriteCaches() {
   lastSuccessfulThemeSpecId = "";
   lastSuccessfulThemeSpecRev = 0;
   lastSuccessfulThemeSpecRawHash = 0;
-  lastPartialChangedFields = 0;
-  lastPartialError = "";
   cachedThemeSpecDoc.clear();
   cachedThemeSpecDocHash = 0;
   themespec::ReleaseCompiledThemeSpec(cachedThemeSpecScene);
@@ -1340,22 +1351,12 @@ unsigned long ThemeSpecRenderFailures() {
 
 ThemeSpecRuntimeStats ThemeSpecRuntimeStatsSnapshot() {
   ThemeSpecRuntimeStats stats;
-  stats.compiled = cachedThemeSpecScene.primitiveCount > 0;
-  stats.primitiveCount = static_cast<uint16_t>(cachedThemeSpecScene.primitiveCount);
-  stats.primitiveCapacity = static_cast<uint16_t>(cachedThemeSpecScene.primitiveCapacity);
-  stats.stringBytes = static_cast<uint16_t>(cachedThemeSpecScene.stringPoolUsed);
-  stats.stringCapacity = static_cast<uint16_t>(cachedThemeSpecScene.stringPoolCapacity);
-  stats.keepsJsonDocument = cachedThemeSpecScene.requiresJsonDocument;
-  stats.hasAnimatedAssets = cachedThemeSpecScene.hasAnimatedAssets;
   stats.cbaCompletedFrames = cbaCompletedFrames;
   stats.cbaLastFrameDurationMs = cbaLastFrameDurationMs;
   stats.cbaBufferBytes = cbaFrameBufferCapacityPixels * sizeof(uint16_t);
   stats.cbaBufferAllocationFailures = cbaBufferAllocationFailures;
   stats.cbaLastPushDurationUs = cbaLastPushDurationUs;
   stats.partialSuccesses = themeSpecPartialSuccesses;
-  stats.partialFailures = themeSpecPartialFailures;
-  stats.lastPartialChangedFields = lastPartialChangedFields;
-  stats.lastPartialError = lastPartialError;
   return stats;
 }
 

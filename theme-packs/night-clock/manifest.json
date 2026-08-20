@@ -1,0 +1,21 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "night-clock",
+  "name": "Night Clock",
+  "version": "0.2.0",
+  "minFirmware": "1.0.41",
+  "usage": "screensaver",
+  "requiredCapabilities": [
+    "usage-slots-v1",
+    "provider-slots-v1"
+  ],
+  "themeSpec": {
+    "path": "/themes/s/nc-3-e18e4217.json",
+    "file": "theme.json",
+    "bytes": 811,
+    "sha256": "e18e4217a4aef8705b1b8a2828060af339b3c30e2573844fcd3c6f93e31d7a49",
+    "contentType": "application/json"
+  },
+  "assets": []
+}

@@ -70,6 +70,28 @@
       "type": "integer",
       "minimum": 0
     },
+    "resetAgeSecs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "resetTrustSecs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "resetSource": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 31,
+      "pattern": "^[a-z0-9_.:-]+$"
+    },
+    "resetTrust": {
+      "type": "string",
+      "enum": [
+        "live",
+        "offline",
+        "stale"
+      ]
+    },
     "usageUnavailable": {
       "type": "boolean"
     },

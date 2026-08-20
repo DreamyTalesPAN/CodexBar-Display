@@ -11,6 +11,7 @@ import {
   livePreviewDisplayFrame,
   parseLatestDisplayFrameResponse,
   primitiveUsageSlotVisible,
+  renderTextPrimitive,
   progressPercent,
   THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
@@ -51,6 +52,49 @@ describe("latest display frame response", () => {
 });
 
 describe("dynamic usage slot preview", () => {
+  it("renders absent token totals as unavailable instead of zero", () => {
+    const withoutTokens = buildFrameData("2026-08-11T09:00:00Z", {
+      v: 2,
+      provider: "codex",
+      label: "Codex",
+      session: 12,
+      weekly: 34,
+    });
+    expect(withoutTokens.hasTokenTotals).toBe(false);
+    expect(
+      renderTextPrimitive({ t: "tx", b: "st" }, withoutTokens),
+    ).toBe("--");
+    expect(
+      renderTextPrimitive({ t: "tx", v: "{totalTokens}" }, withoutTokens),
+    ).toBe("--");
+
+    const withTokens = buildFrameData("2026-08-11T09:00:00Z", {
+      v: 2,
+      provider: "codex",
+      label: "Codex",
+      session: 12,
+      weekly: 34,
+      sessionTokens: 1400000,
+    });
+    expect(withTokens.hasTokenTotals).toBe(true);
+    expect(renderTextPrimitive({ t: "tx", b: "st" }, withTokens)).toBe(
+      "1.4M",
+    );
+
+    const zeroTotalsKnown = buildFrameData("2026-08-11T09:00:00Z", {
+      v: 2,
+      provider: "codex",
+      label: "Codex",
+      session: 12,
+      weekly: 34,
+      tokenTotalsKnown: true,
+    });
+    expect(zeroTotalsKnown.hasTokenTotals).toBe(true);
+    expect(renderTextPrimitive({ t: "tx", b: "st" }, zeroTotalsKnown)).toBe(
+      "0",
+    );
+  });
+
   it("keeps a prior valid frame for a selected reachable VibeTV while readiness waits", () => {
     const device = {
       active: true,
@@ -223,6 +267,131 @@ describe("dynamic usage slot preview", () => {
         },
       }),
     ).toBe(true);
+    expect(
+      hasRenderableUsage({
+        ok: true,
+        frame: {
+          v: 2,
+          provider: "claude",
+          label: "Claude",
+          usageUnavailable: true,
+          usageSlots: [{ id: "session", label: "Session", percent: 25 }],
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it("advances every reset countdown from the saved frame time", () => {
+    const frame = buildFrameData(
+      "2026-07-24T10:30:00Z",
+      {
+        v: 2,
+        provider: "codex",
+        label: "Codex",
+        resetSecs: 100,
+        usageSlots: [
+          { id: "session", label: "Session", percent: 10, resetSecs: 100 },
+          { id: "weekly", label: "Weekly", percent: 20, resetSecs: 10 },
+        ],
+      },
+      new Date("2026-07-24T10:30:35.900Z"),
+    );
+
+    expect(frame.resetSecs).toBe(65);
+    expect(frame.usageWindows.map((window) => window.resetSecs)).toEqual([
+      65, 0,
+    ]);
+    expect(frame.usageSlot1ResetSecs).toBe(65);
+    expect(frame.usageSlot2ResetSecs).toBe(0);
+    expect(frame.time).toBe(
+      new Intl.DateTimeFormat("de-DE", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date("2026-07-24T10:30:35.900Z")),
+    );
+    // The literal device contract: attachClockFields sends "02.01.2006" and
+    // the device clock renders "%02d.%02d.%04d". A preview that drops the year
+    // would hide width and shrink problems that happen on the hardware.
+    expect(frame.date).toBe("24.07.2026");
+  });
+
+  it("formats multi-day reset countdowns like the VibeTV firmware", () => {
+    expect(
+      boundValue("reset", {
+        ...THEME_CATALOG_PREVIEW_FRAME,
+        resetSecs: (141 * 60 + 4) * 60,
+      }),
+    ).toBe("5d 21h");
+  });
+
+  // The device renders "Reset unavailable" for an expired countdown
+  // (theme_spec_renderer_core.h). A preview that showed "0m" instead would
+  // contradict the screen it is previewing.
+  it("reports an expired countdown the way the firmware does", () => {
+    const expired = { ...THEME_CATALOG_PREVIEW_FRAME, resetSecs: 0 };
+    expect(boundValue("reset", expired)).toBe("Reset unavailable");
+    expect(boundValue("r", expired)).toBe("Reset unavailable");
+  });
+
+  it("reports expired slot countdowns the way the firmware does", () => {
+    const frame = buildFrameData("2026-07-24T10:30:00Z", {
+      v: 2,
+      provider: "codex",
+      label: "Codex",
+      resetSecs: 0,
+      usageSlots: [
+        { id: "session", label: "Session", percent: 10, resetSecs: 0 },
+        { id: "weekly", label: "Weekly", percent: 20, resetSecs: 0 },
+      ],
+      providerSlots: [{ id: "codex", label: "Codex", percent: 10, resetSecs: 0 }],
+    });
+    expect(boundValue("us1r", frame)).toBe("Reset unavailable");
+    expect(boundValue("us2r", frame)).toBe("Reset unavailable");
+    expect(boundValue("usage.0.reset", frame)).toBe("Reset unavailable");
+    expect(boundValue("pv1r", frame)).toBe("Reset unavailable");
+  });
+
+  it("keeps an unavailable slot empty rather than reporting it unavailable", () => {
+    const frame = buildFrameData("2026-07-24T10:30:00Z", {
+      v: 2,
+      provider: "codex",
+      label: "Codex",
+      resetSecs: 100,
+      usageSlots: [{ id: "session", label: "Session", percent: 10, resetSecs: 0 }],
+    });
+    expect(boundValue("us2r", frame)).toBe("");
+  });
+
+  it("replaces the whole template for an expired root countdown", () => {
+    const expired = { ...THEME_CATALOG_PREVIEW_FRAME, resetSecs: 0 };
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Reset in {reset}" }, expired),
+    ).toBe("Reset unavailable");
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Reset in {resetCountdown}" }, expired),
+    ).toBe("Reset unavailable");
+    expect(renderTextPrimitive({ t: "tx", v: "Reset in {r}" }, expired)).toBe(
+      "Reset unavailable",
+    );
+  });
+
+  // Pins the asymmetry so nobody "tidies" it later: RenderTextTemplate probes
+  // only the root tokens, so slot tokens really do substitute in place on the
+  // device and leave the surrounding text standing.
+  it("substitutes slot countdown tokens in place, like the firmware", () => {
+    const expired = buildFrameData("2026-07-24T10:30:00Z", {
+      v: 2,
+      provider: "codex",
+      label: "Codex",
+      resetSecs: 0,
+      usageSlots: [{ id: "session", label: "Session", percent: 10, resetSecs: 0 }],
+    });
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Reset in {usage.0.reset}" }, expired),
+    ).toBe("Reset in Reset unavailable");
+    expect(
+      renderTextPrimitive({ t: "tx", v: "Reset in {us1r}" }, expired),
+    ).toBe("Reset in Reset unavailable");
   });
 
   it("uses a legacy render cache only when its path matches the active Custom Theme", async () => {
@@ -519,5 +688,34 @@ describe("live VibeTV partial usage", () => {
     expect(boundValue("weekly", frame)).toBe("60");
     expect(progressPercent({ binding: "session" }, frame)).toBe(0);
     expect(progressPercent({ binding: "weekly" }, frame)).toBe(60);
+  });
+
+  it("renders cross-provider slots with per-provider resets and gates their rows", () => {
+    const frame = buildFrameData("2026-07-24T12:00:00Z", {
+      v: 2,
+      provider: "claude",
+      label: "Claude",
+      providerSlots: [
+        { id: "claude", label: "Claude", percent: 40, resetSecs: 3600 },
+        { id: "codex", label: "Codex", percent: 4, resetSecs: 12000 },
+      ],
+    }, new Date("2026-07-24T12:00:00Z"));
+
+    expect(boundValue("providerSlot1Label", frame)).toBe("Claude");
+    expect(boundValue("pv1r", frame)).toBe(boundValue("providerSlot1Reset", frame));
+    expect(boundValue("providerSlot2Label", frame)).toBe("Codex");
+    expect(primitiveUsageSlotVisible({ providerSlot: 1 }, frame)).toBe(true);
+    expect(primitiveUsageSlotVisible({ pl: 2 }, frame)).toBe(true);
+
+    const singleProvider = buildFrameData("2026-07-24T12:00:00Z", {
+      v: 2,
+      provider: "claude",
+      label: "Claude",
+      providerSlots: [
+        { id: "claude", label: "Claude", percent: 40, resetSecs: 3600 },
+      ],
+    });
+    expect(primitiveUsageSlotVisible({ providerSlot: 2 }, singleProvider)).toBe(false);
+    expect(boundValue("providerSlot2Label", singleProvider)).toBe("");
   });
 });

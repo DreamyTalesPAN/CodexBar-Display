@@ -3,12 +3,18 @@
 import {
   Activity,
   BarChart3,
+  ChevronRight,
   FileText,
   Grid2X2,
   RefreshCw,
   SlidersHorizontal,
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Sidebar,
   SidebarContent,
@@ -20,6 +26,9 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
@@ -27,6 +36,7 @@ import {
 } from "@/components/ui/sidebar";
 import {
   type ActiveTab,
+  type AppearanceSection,
   type DeviceInfo,
   type ShellNavItem,
 } from "./control-center-types";
@@ -34,6 +44,8 @@ import { ControlCenterBrand } from "./control-center-brand";
 
 type ControlCenterShellProps = {
   activeTab: ActiveTab;
+  activeAppearanceSection?: AppearanceSection;
+  onAppearanceSectionChange?: (section: AppearanceSection) => void;
   onTabChange: (tab: ActiveTab) => void;
   children: ReactNode;
   device: DeviceInfo | null;
@@ -60,7 +72,7 @@ const NAV_ITEMS: ShellNavItem[] = [
   },
   {
     id: "theme-library",
-    label: "Theme Library",
+    label: "Appearance",
     icon: <Grid2X2 aria-hidden />,
   },
   {
@@ -77,6 +89,8 @@ const NAV_ITEMS: ShellNavItem[] = [
 
 export function ControlCenterShell({
   activeTab,
+  activeAppearanceSection = "themes",
+  onAppearanceSectionChange,
   onTabChange,
   children,
   disabledTabs = [],
@@ -109,7 +123,9 @@ export function ControlCenterShell({
           <SidebarContent>
             <ControlCenterNavigation
               activeTab={activeTab}
+              activeAppearanceSection={activeAppearanceSection}
               isTabDisabled={isTabDisabled}
+              onAppearanceSectionChange={onAppearanceSectionChange}
               onTabChange={onTabChange}
               updateAvailable={updateAvailable}
             />
@@ -166,12 +182,16 @@ function BrandHomeButton({
 
 function ControlCenterNavigation({
   activeTab,
+  activeAppearanceSection,
   isTabDisabled,
+  onAppearanceSectionChange,
   onTabChange,
   updateAvailable,
 }: {
   activeTab: ActiveTab;
+  activeAppearanceSection: AppearanceSection;
   isTabDisabled: (tab: ActiveTab) => boolean;
+  onAppearanceSectionChange?: (section: AppearanceSection) => void;
   onTabChange: (tab: ActiveTab) => void;
   updateAvailable: boolean;
 }) {
@@ -182,17 +202,62 @@ function ControlCenterNavigation({
       <SidebarGroupContent>
         <nav aria-label={isMobile ? "Control Center mobile" : "Control Center"}>
           <SidebarMenu className="gap-1">
-            {NAV_ITEMS.map((item) => (
-              <SidebarMenuItem key={item.id}>
-                <ShellNavButton
-                  active={item.id === activeTab}
-                  disabled={isTabDisabled(item.id)}
-                  item={item}
-                  notify={item.id === "updates" && updateAvailable}
-                  onClick={() => onTabChange(item.id)}
-                />
-              </SidebarMenuItem>
-            ))}
+            {NAV_ITEMS.map((item) => {
+              const appearance = item.id === "theme-library";
+              const disabled = isTabDisabled(item.id);
+              const menuItem = (
+                <SidebarMenuItem key={item.id}>
+                  <ShellNavButton
+                    active={item.id === activeTab}
+                    collapsible={appearance}
+                    current={!appearance}
+                    disabled={disabled}
+                    item={item}
+                    notify={item.id === "updates" && updateAvailable}
+                    onClick={() => onTabChange(item.id)}
+                  />
+                  {appearance ? (
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        {(["themes", "screensavers"] as const).map(
+                          (section) => (
+                            <SidebarMenuSubItem key={section}>
+                              <AppearanceNavButton
+                                active={
+                                  activeTab === "theme-library" &&
+                                  activeAppearanceSection === section
+                                }
+                                disabled={disabled}
+                                label={
+                                  section === "themes"
+                                    ? "Themes"
+                                    : "Screensavers"
+                                }
+                                onClick={() => {
+                                  onAppearanceSectionChange?.(section);
+                                  onTabChange("theme-library");
+                                }}
+                              />
+                            </SidebarMenuSubItem>
+                          ),
+                        )}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  ) : null}
+                </SidebarMenuItem>
+              );
+              return appearance ? (
+                <Collapsible
+                  key={item.id}
+                  asChild
+                  className="group/collapsible"
+                >
+                  {menuItem}
+                </Collapsible>
+              ) : (
+                menuItem
+              );
+            })}
           </SidebarMenu>
         </nav>
       </SidebarGroupContent>
@@ -202,38 +267,59 @@ function ControlCenterNavigation({
 
 function ShellNavButton({
   active,
+  collapsible = false,
+  current = true,
   disabled,
   item,
   notify,
   onClick,
 }: {
   active: boolean;
+  collapsible?: boolean;
+  current?: boolean;
   disabled?: boolean;
   item: ShellNavItem;
   notify?: boolean;
   onClick: () => void;
 }) {
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setOpenMobile, state } = useSidebar();
+  // In the icon-collapsed sidebar the Appearance submenu is hidden, so the
+  // collapsed click must navigate directly instead of toggling an invisible
+  // Collapsible.
+  const collapsedToIcons = !isMobile && state === "collapsed";
+
+  const button = (
+    <SidebarMenuButton
+      aria-current={active && current ? "page" : undefined}
+      className="h-11 rounded-[var(--radius-control)] px-3 text-sm data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:[&_svg]:text-sidebar-primary group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11! [&_svg]:size-5!"
+      disabled={disabled}
+      isActive={active}
+      onClick={() => {
+        if (!collapsible || collapsedToIcons) {
+          onClick();
+        }
+        if (isMobile && !collapsible) {
+          setOpenMobile(false);
+        }
+      }}
+      tooltip={item.label}
+      type="button"
+    >
+      {item.icon}
+      <span className="min-w-0 truncate">{item.label}</span>
+      {collapsible ? (
+        <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+      ) : null}
+    </SidebarMenuButton>
+  );
 
   return (
     <>
-      <SidebarMenuButton
-        aria-current={active ? "page" : undefined}
-        className="h-11 rounded-[var(--radius-control)] px-3 text-sm data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:[&_svg]:text-sidebar-primary group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11! [&_svg]:size-5!"
-        disabled={disabled}
-        isActive={active}
-        onClick={() => {
-          onClick();
-          if (isMobile) {
-            setOpenMobile(false);
-          }
-        }}
-        tooltip={item.label}
-        type="button"
-      >
-        {item.icon}
-        <span className="min-w-0 truncate">{item.label}</span>
-      </SidebarMenuButton>
+      {collapsible ? (
+        <CollapsibleTrigger asChild>{button}</CollapsibleTrigger>
+      ) : (
+        button
+      )}
       {notify ? (
         <SidebarMenuBadge
           aria-label="Update available"
@@ -243,5 +329,41 @@ function ShellNavButton({
         </SidebarMenuBadge>
       ) : null}
     </>
+  );
+}
+
+function AppearanceNavButton({
+  active,
+  disabled,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  disabled: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  const { isMobile, setOpenMobile } = useSidebar();
+
+  return (
+    <SidebarMenuSubButton
+      asChild
+      className="h-11 w-full data-active:bg-transparent! data-active:font-semibold data-active:text-sidebar-accent-foreground"
+      isActive={active}
+    >
+      <button
+        aria-current={active ? "page" : undefined}
+        disabled={disabled}
+        onClick={() => {
+          onClick();
+          if (isMobile) {
+            setOpenMobile(false);
+          }
+        }}
+        type="button"
+      >
+        <span>{label}</span>
+      </button>
+    </SidebarMenuSubButton>
   );
 }

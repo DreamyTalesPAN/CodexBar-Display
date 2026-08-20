@@ -1513,6 +1513,9 @@ func runThemePackCatalog(args []string) error {
 			title = theme.ID
 		}
 		fmt.Printf("- %s: %s", theme.ID, title)
+		if usage := strings.TrimSpace(theme.Usage); usage != "" {
+			fmt.Printf(" usage=%s", usage)
+		}
 		if theme.ThemeRev > 0 {
 			fmt.Printf(" rev=%d", theme.ThemeRev)
 		}
@@ -1544,9 +1547,10 @@ func runThemePackValidate(args []string) error {
 		return err
 	}
 	fmt.Printf(
-		"theme-pack valid: id=%s name=%q themeId=%s rev=%d assets=%d themeSpecBytes=%d\n",
+		"theme-pack valid: id=%s name=%q usage=%s themeId=%s rev=%d assets=%d themeSpecBytes=%d\n",
 		pack.Manifest.ID,
 		pack.Manifest.Name,
+		pack.Manifest.PackUsage(),
 		pack.ThemeSpec.ThemeID,
 		pack.ThemeSpec.ThemeRev,
 		len(pack.Assets),
@@ -1557,6 +1561,7 @@ func runThemePackValidate(args []string) error {
 
 func runThemePackInstall(args []string) error {
 	fs := flag.NewFlagSet("theme-pack install", flag.ContinueOnError)
+	slot := fs.String("slot", themepack.UsageLive, "device slot to install into: live or screensaver")
 	packPath := fs.String("pack", "", "path or HTTP(S) URL to VibeTV theme pack directory or zip")
 	packSHA256 := fs.String("pack-sha256", "", "expected SHA-256 for a remote theme pack")
 	packSizeBytes := fs.Int64("pack-size-bytes", 0, "expected byte size for a remote theme pack")
@@ -1574,8 +1579,13 @@ func runThemePackInstall(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	installSlot := strings.TrimSpace(*slot)
+	if installSlot != themepack.UsageLive && installSlot != themepack.UsageScreensaver {
+		return fmt.Errorf("unknown slot %q (expected %q or %q)", installSlot, themepack.UsageLive, themepack.UsageScreensaver)
+	}
 	installTarget := resolveThemePackInstallTarget(fs, strings.TrimSpace(*target))
 	_, err := themeinstall.Install(context.Background(), themeinstall.Options{
+		Slot:                installSlot,
 		PackURL:             strings.TrimSpace(*packPath),
 		PackSHA256:          strings.TrimSpace(*packSHA256),
 		PackSizeBytes:       *packSizeBytes,

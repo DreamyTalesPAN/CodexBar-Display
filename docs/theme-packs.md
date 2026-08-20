@@ -16,6 +16,7 @@ Each pack is either a directory or a `.zip` with `manifest.json` at the root.
   "name": "Cozy Meadow",
   "version": "0.1.0",
   "minFirmware": "1.0.0",
+  "usage": "live",
   "themeSpec": {
     "path": "/themes/u/cm.json",
     "file": "theme.json",
@@ -33,7 +34,20 @@ Each pack is either a directory or a `.zip` with `manifest.json` at the root.
 
 Rules:
 
+- `kind` marks the file format. `usage` marks which device slot the pack is for:
+  `live` or `screensaver`. The field is optional; a pack without it is a `live`
+  theme, so packs written before the field keep working. There is no category
+  covering both slots, because the two slots own separate device directories.
+- A pack whose `usage` does not match the target slot is rejected before
+  anything is uploaded to the device:
+  `theme pack "night-clock" is a screensaver pack and cannot be installed into the live slot`.
+- Generated catalog entries carry `usage`, normalized to `live` when the
+  manifest omits it.
 - Device paths must start with `/themes/`.
+- A `screensaver` pack must put every file under `/themes/s/`, and no other pack
+  may use that directory. Installing into a slot deletes the stale files in that
+  slot's directory only — `/themes/s/` for the screensaver, `/themes/u/` for the
+  live theme — so the two slots can never delete each other's files.
 - Device paths must be 31 characters or shorter because ESP8266 LittleFS paths are short.
 - ThemeSpec `gif` and `sprite` primitives must reference files listed in `assets`.
 - ESP8266 GIF assets are intentionally small: one `.gif` per ThemeSpec, max 24 KiB, max 80x80 draw box.
@@ -61,6 +75,13 @@ dist/theme-packs/vibetv-theme-packs-v2.json
 dist/theme-packs/vibetv-theme-<theme-id>-v<theme-version>.zip
 dist/theme-packs/render/<theme-id>/<theme-spec-file>.json
 ```
+
+Adding another shipped screensaver needs no separate app or firmware work:
+copy an existing screensaver directory such as `theme-packs/reset-countdown`,
+give it a unique `id`, `version`, ThemeSpec `rev`, and `/themes/s/` path, then
+run `node scripts/build-theme-packs.mjs`. The same build produces its ZIP,
+catalog entry, and exact preview render pack; `npm run build:local` copies all
+of those artifacts into the Mac App.
 
 The revisioned render packs contain both frozen legacy and current revisions.
 They power exact previews in the hosted Control Center and are copied into the
@@ -138,4 +159,17 @@ Install by catalog theme ID:
 go run ./cmd/codexbar-display theme-pack install --theme clippy --target http://<device-ip> --skip-firmware-update
 ```
 
+Install a screensaver into the second slot with `--slot screensaver`:
+
+```bash
+go run ./cmd/codexbar-display theme-pack install --slot screensaver --pack ../theme-packs/night-clock --target http://<device-ip> --skip-firmware-update
+```
+
 Without `--skip-firmware-update`, install first runs the WiFi firmware update flow for the same `--target`. If the device is already current, it continues without flashing. Then it uploads assets, uploads the stored ThemeSpec, and activates it via `/theme/active`. The regular daemon keeps sending real live frames after install.
+
+`--slot screensaver` takes the same upload path, including the asset upload rate
+limiting, and then records the reference via `/screensaver/active` instead of
+activating it. Nothing is drawn and no live frame is sent, so the running live
+theme stays on screen. The device must advertise standby support; without it the
+install is refused before any upload. The Companion API takes the same choice as
+`"slot": "screensaver"` on `POST /v1/themes/install`.

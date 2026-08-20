@@ -3,10 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import type { ReactNode } from "react";
-import type {
-  DeviceInfo,
-  UsageSnapshot,
-} from "./control-center-types";
+import type { DeviceInfo, UsageSnapshot } from "./control-center-types";
 import {
   deviceIsActive,
   deviceIsCustomerConnected,
@@ -70,16 +67,19 @@ type DisplayFrame = {
   label?: string;
   session?: number;
   weekly?: number;
+  usageUnavailable?: boolean;
   sessionUnavailable?: boolean;
   weeklyUnavailable?: boolean;
   resetSecs?: number;
   usageMode?: string;
   usageWindows?: UsageWindowFrame[];
   usageSlots?: UsageSlotFrame[];
+  providerSlots?: UsageSlotFrame[];
   activity?: string;
   sessionTokens?: number;
   weekTokens?: number;
   totalTokens?: number;
+  tokenTotalsKnown?: boolean;
 };
 
 type LocalDisplayFrameRequestInit = RequestInit & {
@@ -106,6 +106,8 @@ export type ThemePrimitive = {
   h?: number;
   slot?: number;
   sl?: number;
+  providerSlot?: number;
+  pl?: number;
   usageIndex?: number;
   ui?: number;
   text?: string;
@@ -169,10 +171,18 @@ type FrameData = {
   usageSlot2Percent: number;
   usageSlot2ResetSecs: number;
   usageSlot2Available: boolean;
+  providerSlots: Array<{
+    label: string;
+    percent: number;
+    resetSecs: number;
+    available: boolean;
+  }>;
   activity: string;
   sessionTokens: number;
   weekTokens: number;
   totalTokens: number;
+  // Mirrors the firmware: token totals absent from the frame render as "--".
+  hasTokenTotals: boolean;
   time: string;
   date: string;
 };
@@ -201,12 +211,17 @@ export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
   usageSlot2Percent: 28,
   usageSlot2ResetSecs: 7200,
   usageSlot2Available: true,
+  providerSlots: [
+    { label: "Claude", percent: 64, resetSecs: 3600, available: true },
+    { label: "Codex", percent: 28, resetSecs: 12000, available: true },
+  ],
   activity: "preview",
-  sessionTokens: 0,
-  weekTokens: 0,
-  totalTokens: 0,
+  sessionTokens: 1_400_000,
+  weekTokens: 384_000_000,
+  totalTokens: 1_070_000_000,
+  hasTokenTotals: true,
   time: "12:00",
-  date: "03.07",
+  date: "03.07.2026",
 };
 
 const DEVICE_THEME_ALIASES: Record<string, string> = {
@@ -337,6 +352,7 @@ export function LiveVibeTVPreview({
     ? buildFrameData(
         effectiveDisplayFrame?.savedAt || usage?.generatedAt,
         effectiveDisplayFrame.frame,
+        new Date(),
       )
     : null;
   const [packState, setPackState] = useState<ThemePackState | null>(null);
@@ -532,10 +548,7 @@ export function ThemeSpecPreview({
 
 function VibeTVCaseShell({ children }: { children: ReactNode }) {
   return (
-    <div
-      className="relative mx-auto w-full"
-      data-testid="vibetv-case"
-    >
+    <div className="relative mx-auto w-full" data-testid="vibetv-case">
       <Image
         aria-hidden
         alt=""
@@ -586,7 +599,11 @@ function ThemeSpecSVG({
       role="img"
       viewBox="0 0 240 240"
     >
-      <rect height="240" width="240" fill={colorFor(spec.bgColor || spec.bg, "#000000")} />
+      <rect
+        height="240"
+        width="240"
+        fill={colorFor(spec.bgColor || spec.bg, "#000000")}
+      />
       {primitives.map((primitive, index) => (
         <ThemePrimitiveNode
           assets={assets}
@@ -644,7 +661,8 @@ function ThemePrimitiveNode({
 
   if (type === "text" || type === "tx") {
     const text = renderTextPrimitive(primitive, frame);
-    const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
+    const maxWidth =
+      primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
     const font = primitive.font || primitive.f || 1;
     const maxSize = Math.max(1, primitive.fontSize || primitive.s || 1);
     const size = themeTextFittedSize(
@@ -675,7 +693,12 @@ function ThemePrimitiveNode({
     return <ThemeProgress frame={frame} primitive={primitive} />;
   }
 
-  if (type === "sprite" || type === "sp" || type === "image" || type === "img") {
+  if (
+    type === "sprite" ||
+    type === "sp" ||
+    type === "image" ||
+    type === "img"
+  ) {
     const assetPath = activeAssetPath(primitive, frame);
     const sprite = assetPath ? sprites[assetPath] : undefined;
     const renderWidth = width || sprite?.width || 0;
@@ -692,7 +715,9 @@ function ThemePrimitiveNode({
       ) : null;
     }
     const currentFrame =
-      sprite.frames[spriteFrameIndex(sprite, animationTick)] || sprite.frames[0] || [];
+      sprite.frames[spriteFrameIndex(sprite, animationTick)] ||
+      sprite.frames[0] ||
+      [];
     return (
       <g>
         {(primitive.bg || primitive.bgColor) && (
@@ -704,7 +729,14 @@ function ThemePrimitiveNode({
             y={y}
           />
         )}
-        {scaleSpriteRects(currentFrame, sprite, x, y, renderWidth, renderHeight).map((rect, index) => (
+        {scaleSpriteRects(
+          currentFrame,
+          sprite,
+          x,
+          y,
+          renderWidth,
+          renderHeight,
+        ).map((rect, index) => (
           <rect
             fill={rect.color}
             height={rect.height}
@@ -887,7 +919,10 @@ function ThemeProgress({
   const width = primitive.width || primitive.w || 0;
   const height = primitive.height || primitive.h || 0;
   const percent = progressPercent(primitive, frame);
-  const borderColor = colorFor(primitive.borderColor || primitive.bc, "#7BEF7B");
+  const borderColor = colorFor(
+    primitive.borderColor || primitive.bc,
+    "#7BEF7B",
+  );
   const bgColor = colorFor(primitive.bgColor || primitive.bg, "#000000");
   const fillColor = colorFor(primitive.color || primitive.c, "#FFFFFF");
   const innerWidth = Math.max(0, width - 2);
@@ -907,8 +942,25 @@ function ThemeProgress({
 
   return (
     <g>
-      <rect fill="none" height={height} rx={radius} ry={radius} stroke={borderColor} width={width} x={x} y={y} />
-      <rect fill={bgColor} height={innerHeight} rx={innerRadius} ry={innerRadius} width={innerWidth} x={x + 1} y={y + 1} />
+      <rect
+        fill="none"
+        height={height}
+        rx={radius}
+        ry={radius}
+        stroke={borderColor}
+        width={width}
+        x={x}
+        y={y}
+      />
+      <rect
+        fill={bgColor}
+        height={innerHeight}
+        rx={innerRadius}
+        ry={innerRadius}
+        width={innerWidth}
+        x={x + 1}
+        y={y + 1}
+      />
       {segmented ? (
         <SegmentedProgress
           fillColor={fillColor}
@@ -1007,18 +1059,20 @@ function PixelRows({
   if (palette.length > 0 && rows.length > 0) {
     return (
       <g>
-        {decodeRleRows(rows, width, palette.map((entry) => colorFor(entry, "#000000"))).map(
-          (rect, index) => (
-            <rect
-              fill={rect.color}
-              height={rect.height}
-              key={index}
-              width={rect.width}
-              x={x + rect.x}
-              y={y + rect.y}
-            />
-          ),
-        )}
+        {decodeRleRows(
+          rows,
+          width,
+          palette.map((entry) => colorFor(entry, "#000000")),
+        ).map((rect, index) => (
+          <rect
+            fill={rect.color}
+            height={rect.height}
+            key={index}
+            width={rect.width}
+            x={x + rect.x}
+            y={y + rect.y}
+          />
+        ))}
       </g>
     );
   }
@@ -1087,6 +1141,7 @@ export function hasRenderableUsage(
   if (
     snapshot?.ok !== true ||
     !displayFrame ||
+    displayFrame.usageUnavailable === true ||
     typeof displayFrame.v !== "number" ||
     !Number.isInteger(displayFrame.v) ||
     displayFrame.v < 1
@@ -1099,8 +1154,9 @@ export function hasRenderableUsage(
   const hasLegacyUsage = [displayFrame.session, displayFrame.weekly].some(
     (value) => typeof value === "number" && Number.isFinite(value),
   );
-  const frameUsageWindows =
-    displayFrame.usageWindows?.length ? displayFrame.usageWindows : displayFrame.usageSlots;
+  const frameUsageWindows = displayFrame.usageWindows?.length
+    ? displayFrame.usageWindows
+    : displayFrame.usageSlots;
   const hasSlotUsage = (frameUsageWindows || []).some(
     (slot) =>
       Boolean(slot.id?.trim() && slot.label?.trim()) &&
@@ -1113,13 +1169,22 @@ export function hasRenderableUsage(
 export function buildFrameData(
   generatedAt: string | undefined,
   displayFrame: DisplayFrame,
+  currentTime = new Date(),
 ): FrameData {
-  const now = generatedAt ? new Date(generatedAt) : new Date();
-  const usableDate = Number.isNaN(now.getTime()) ? new Date() : now;
-  const sourceUsageMode = frameUsageMode(displayFrame);
-  const slots = ((displayFrame.usageWindows?.length ? displayFrame.usageWindows : displayFrame.usageSlots) || []).filter(
-    (slot) => Boolean(slot.id?.trim() && slot.label?.trim()),
+  const savedAt = generatedAt ? new Date(generatedAt) : currentTime;
+  const usableSavedAt = Number.isNaN(savedAt.getTime()) ? currentTime : savedAt;
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor((currentTime.getTime() - usableSavedAt.getTime()) / 1000),
   );
+  const remainingResetSeconds = (seconds: number | undefined) =>
+    Math.max(0, (seconds ?? 0) - elapsedSeconds);
+  const sourceUsageMode = frameUsageMode(displayFrame);
+  const slots = (
+    (displayFrame.usageWindows?.length
+      ? displayFrame.usageWindows
+      : displayFrame.usageSlots) || []
+  ).filter((slot) => Boolean(slot.id?.trim() && slot.label?.trim()));
   const slot1 = slots[0];
   const slot2 = slots[1];
   return {
@@ -1129,34 +1194,50 @@ export function buildFrameData(
     weekly: clampPercent(displayFrame.weekly),
     sessionUnavailable: displayFrame.sessionUnavailable === true,
     weeklyUnavailable: displayFrame.weeklyUnavailable === true,
-    resetSecs: displayFrame.resetSecs ?? 0,
+    resetSecs: remainingResetSeconds(displayFrame.resetSecs),
     usageMode: sourceUsageMode,
     usageWindows: slots.map((slot) => ({
       label: slot.label || "",
       percent: clampPercent(slot.percent),
-      resetSecs: slot.resetSecs ?? 0,
+      resetSecs: remainingResetSeconds(slot.resetSecs),
       available: true,
     })),
     usageSlot1Label: slot1?.label || "",
     usageSlot1Percent: clampPercent(slot1?.percent),
-    usageSlot1ResetSecs: slot1?.resetSecs ?? 0,
+    usageSlot1ResetSecs: remainingResetSeconds(slot1?.resetSecs),
     usageSlot1Available: Boolean(slot1),
     usageSlot2Label: slot2?.label || "",
     usageSlot2Percent: clampPercent(slot2?.percent),
-    usageSlot2ResetSecs: slot2?.resetSecs ?? 0,
+    usageSlot2ResetSecs: remainingResetSeconds(slot2?.resetSecs),
     usageSlot2Available: Boolean(slot2),
+    providerSlots: (displayFrame.providerSlots || [])
+      .filter((slot) => Boolean(slot.id?.trim() && slot.label?.trim()))
+      .map((slot) => ({
+        label: slot.label || "",
+        percent: clampPercent(slot.percent),
+        resetSecs: remainingResetSeconds(slot.resetSecs),
+        available: true,
+      })),
     activity: displayFrame.activity || "idle",
     sessionTokens: displayFrame.sessionTokens ?? 0,
+    hasTokenTotals:
+      displayFrame.tokenTotalsKnown === true ||
+      displayFrame.sessionTokens !== undefined ||
+      displayFrame.weekTokens !== undefined ||
+      displayFrame.totalTokens !== undefined,
     weekTokens: displayFrame.weekTokens ?? 0,
     totalTokens: displayFrame.totalTokens ?? 0,
     time: new Intl.DateTimeFormat("de-DE", {
       hour: "2-digit",
       minute: "2-digit",
-    }).format(usableDate),
+    }).format(currentTime),
+    // DD.MM.YYYY, matching attachClockFields and the device clock. A shorter
+    // date here would hide the width and shrink behaviour of the hardware.
     date: new Intl.DateTimeFormat("de-DE", {
       day: "2-digit",
       month: "2-digit",
-    }).format(usableDate),
+      year: "numeric",
+    }).format(currentTime),
   };
 }
 
@@ -1175,6 +1256,10 @@ export function primitiveUsageSlotVisible(
   if (slot === 2) {
     return frame.usageSlot2Available;
   }
+  const providerSlot = primitive.providerSlot ?? primitive.pl;
+  if (providerSlot === 1 || providerSlot === 2) {
+    return frame.providerSlots[providerSlot - 1]?.available === true;
+  }
   return true;
 }
 
@@ -1185,10 +1270,11 @@ export function themeSpecAriaLabel(themeId: string, frame: FrameData): string {
   return `Rendered VibeTV theme ${themeId} showing ${frame.label}, ${usage.length > 0 ? usage.join(", ") : "no usage windows available"}`;
 }
 
-function frameUsageMode(
-  displayFrame: DisplayFrame | undefined,
-): string {
-  if (displayFrame?.usageMode === "remaining" || displayFrame?.usageMode === "used") {
+function frameUsageMode(displayFrame: DisplayFrame | undefined): string {
+  if (
+    displayFrame?.usageMode === "remaining" ||
+    displayFrame?.usageMode === "used"
+  ) {
     return displayFrame.usageMode;
   }
   return "used";
@@ -1275,19 +1361,75 @@ export function themeRenderPackMatchesActiveRevision(
   );
 }
 
-export function renderTextPrimitive(primitive: ThemePrimitive, frame: FrameData): string {
+// The firmware renders this wherever a countdown has expired or its basis went
+// stale. A preview that softens it to "0m" tells the customer something the
+// device never shows.
+const RESET_UNAVAILABLE = "Reset unavailable";
+
+export function renderTextPrimitive(
+  primitive: ThemePrimitive,
+  frame: FrameData,
+): string {
   const binding = primitive.binding || primitive.b;
   if (binding) {
     return boundValue(binding, frame);
   }
   const raw = primitive.text || primitive.v || "";
+  // RenderTextTemplate replaces the whole template for an expired root
+  // countdown instead of substituting in place, so the surrounding literal
+  // text disappears. Only the root tokens do this — {usage.N.reset}, {us1r}
+  // and {pv1r} substitute inline, and the device really does render
+  // "Reset in Reset unavailable" for those.
+  if (frame.resetSecs <= 0 && /\{reset\}|\{resetCountdown\}|\{r\}/.test(raw)) {
+    return RESET_UNAVAILABLE;
+  }
   return raw.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_match, key: string) =>
     boundValue(key, frame),
   );
 }
 
+// Mirrors the firmware's FormatTokenCount digit for digit (truncated
+// hundredths, never rounded) so catalog previews and the device agree.
+export function formatTokenCount(value: number): string {
+  if (!Number.isFinite(value) || value < 0) {
+    value = 0;
+  }
+  value = Math.floor(value);
+  if (value < 1000) {
+    return String(value);
+  }
+  let unit = "K";
+  let divisor = 1000;
+  if (value >= 1_000_000_000) {
+    unit = "B";
+    divisor = 1_000_000_000;
+  } else if (value >= 1_000_000) {
+    unit = "M";
+    divisor = 1_000_000;
+  }
+  const hundredths = Math.floor((value * 100) / divisor);
+  const whole = Math.floor(hundredths / 100);
+  // Three significant digits keep every value at most five glyphs wide, so
+  // stacked token rows share one font size instead of shrinking per row.
+  let frac = hundredths % 100;
+  if (whole >= 100) {
+    frac = 0;
+  } else if (whole >= 10) {
+    frac -= frac % 10;
+  }
+  if (frac === 0) {
+    return `${whole}${unit}`;
+  }
+  if (frac % 10 === 0) {
+    return `${whole}.${frac / 10}${unit}`;
+  }
+  return `${whole}.${String(frac).padStart(2, "0")}${unit}`;
+}
+
 export function boundValue(key: string, frame: FrameData): string {
-  const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(key);
+  const usageMatch = /^usage\.(\d+)\.(label|percent|reset|available)$/.exec(
+    key,
+  );
   if (usageMatch) {
     const window = frame.usageWindows[Number(usageMatch[1])];
     const field = usageMatch[2];
@@ -1333,7 +1475,9 @@ export function boundValue(key: string, frame: FrameData): string {
       return frame.usageSlot1Available ? String(frame.usageSlot1Percent) : "";
     case "usageSlot1Reset":
     case "us1r":
-      return frame.usageSlot1Available ? formatReset(frame.usageSlot1ResetSecs) : "";
+      return frame.usageSlot1Available
+        ? formatReset(frame.usageSlot1ResetSecs)
+        : "";
     case "usageSlot1Available":
     case "us1a":
       return String(frame.usageSlot1Available);
@@ -1345,10 +1489,44 @@ export function boundValue(key: string, frame: FrameData): string {
       return frame.usageSlot2Available ? String(frame.usageSlot2Percent) : "";
     case "usageSlot2Reset":
     case "us2r":
-      return frame.usageSlot2Available ? formatReset(frame.usageSlot2ResetSecs) : "";
+      return frame.usageSlot2Available
+        ? formatReset(frame.usageSlot2ResetSecs)
+        : "";
     case "usageSlot2Available":
     case "us2a":
       return String(frame.usageSlot2Available);
+    case "providerSlot1Label":
+    case "pv1l":
+      return frame.providerSlots[0]?.available ? frame.providerSlots[0].label : "";
+    case "providerSlot1Percent":
+    case "pv1p":
+      return frame.providerSlots[0]?.available
+        ? String(frame.providerSlots[0].percent)
+        : "";
+    case "providerSlot1Reset":
+    case "pv1r":
+      return frame.providerSlots[0]?.available
+        ? formatReset(frame.providerSlots[0].resetSecs)
+        : "";
+    case "providerSlot1Available":
+    case "pv1a":
+      return String(frame.providerSlots[0]?.available === true);
+    case "providerSlot2Label":
+    case "pv2l":
+      return frame.providerSlots[1]?.available ? frame.providerSlots[1].label : "";
+    case "providerSlot2Percent":
+    case "pv2p":
+      return frame.providerSlots[1]?.available
+        ? String(frame.providerSlots[1].percent)
+        : "";
+    case "providerSlot2Reset":
+    case "pv2r":
+      return frame.providerSlots[1]?.available
+        ? formatReset(frame.providerSlots[1].resetSecs)
+        : "";
+    case "providerSlot2Available":
+    case "pv2a":
+      return String(frame.providerSlots[1]?.available === true);
     case "usageMode":
     case "u":
       return frame.usageMode;
@@ -1363,19 +1541,22 @@ export function boundValue(key: string, frame: FrameData): string {
       return frame.date;
     case "sessionTokens":
     case "st":
-      return String(frame.sessionTokens);
+      return frame.hasTokenTotals ? formatTokenCount(frame.sessionTokens) : "--";
     case "weekTokens":
     case "wt":
-      return String(frame.weekTokens);
+      return frame.hasTokenTotals ? formatTokenCount(frame.weekTokens) : "--";
     case "totalTokens":
     case "tt":
-      return String(frame.totalTokens);
+      return frame.hasTokenTotals ? formatTokenCount(frame.totalTokens) : "--";
     default:
       return "";
   }
 }
 
-export function progressPercent(primitive: ThemePrimitive, frame: FrameData): number {
+export function progressPercent(
+  primitive: ThemePrimitive,
+  frame: FrameData,
+): number {
   const binding = primitive.binding || primitive.b || "";
   const usageMatch = /^usage\.(\d+)\.percent$/.exec(binding);
   if (usageMatch) {
@@ -1440,9 +1621,9 @@ function decodeSprite(raw: string): DecodedSprite | null {
   if (width <= 0 || height <= 0 || frameCount <= 0 || paletteSize <= 0) {
     return null;
   }
-  const palette = lines.slice(3, 3 + paletteSize).map((entry) =>
-    colorFor(entry, "#000000"),
-  );
+  const palette = lines
+    .slice(3, 3 + paletteSize)
+    .map((entry) => colorFor(entry, "#000000"));
   const rowStart = 3 + paletteSize;
   const frames: Array<Array<SpriteRect>> = [];
   for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
@@ -1531,7 +1712,10 @@ function useAnimationTick(framesPerSecond: number): number {
   return framesPerSecond > 0 ? tick : 0;
 }
 
-function spriteFrameIndex(sprite: DecodedSprite, animationTick: number): number {
+function spriteFrameIndex(
+  sprite: DecodedSprite,
+  animationTick: number,
+): number {
   if (sprite.frames.length <= 1 || sprite.fps <= 0) {
     return 0;
   }
@@ -1550,9 +1734,11 @@ function scaleSpriteRects(
   const drawHeight = targetHeight > 0 ? targetHeight : sprite.height;
   return rects.map((rect) => {
     const x1 = x + Math.floor((rect.x * drawWidth) / sprite.width);
-    const x2 = x + Math.ceil(((rect.x + rect.width) * drawWidth) / sprite.width);
+    const x2 =
+      x + Math.ceil(((rect.x + rect.width) * drawWidth) / sprite.width);
     const y1 = y + Math.floor((rect.y * drawHeight) / sprite.height);
-    const y2 = y + Math.ceil(((rect.y + rect.height) * drawHeight) / sprite.height);
+    const y2 =
+      y + Math.ceil(((rect.y + rect.height) * drawHeight) / sprite.height);
     return {
       ...rect,
       height: Math.max(1, y2 - y1),
@@ -1599,7 +1785,11 @@ function decodeRleRows(
   return rects;
 }
 
-function decodeBitmapBits(data: string, width: number, height: number): SpriteRect[] {
+function decodeBitmapBits(
+  data: string,
+  width: number,
+  height: number,
+): SpriteRect[] {
   const rects: SpriteRect[] = [];
   if (!data || width <= 0 || height <= 0) {
     return rects;
@@ -1611,7 +1801,13 @@ function decodeBitmapBits(data: string, width: number, height: number): SpriteRe
       if (bit && runStart < 0) {
         runStart = x;
       } else if (!bit && runStart >= 0) {
-        rects.push({ x: runStart, y, width: x - runStart, height: 1, color: "" });
+        rects.push({
+          x: runStart,
+          y,
+          width: x - runStart,
+          height: 1,
+          color: "",
+        });
         runStart = -1;
       }
     }
@@ -1720,10 +1916,10 @@ export function themeTextFittedSize(
 // Mirrors TFT_eSPI 2.5.43 Fonts/Font16.c, pinned in
 // firmware_esp8266/platformio.ini. Update both together when the pin changes.
 const TFT_ESPI_FONT2_WIDTHS = [
-  6, 3, 4, 9, 8, 9, 9, 3, 7, 7, 8, 6, 3, 6, 5, 7, 8, 8, 8, 8, 8, 8, 8, 8,
-  8, 8, 3, 3, 6, 6, 6, 8, 9, 8, 8, 8, 8, 8, 8, 8, 8, 4, 8, 8, 7, 10, 8, 8,
-  8, 8, 8, 8, 8, 8, 8, 10, 8, 8, 8, 4, 7, 4, 7, 9, 5, 7, 7, 7, 7, 7, 6, 7,
-  7, 4, 5, 6, 4, 8, 7, 8, 7, 8, 6, 6, 5, 7, 8, 8, 6, 7, 7, 5, 3, 5, 8, 6,
+  6, 3, 4, 9, 8, 9, 9, 3, 7, 7, 8, 6, 3, 6, 5, 7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+  3, 3, 6, 6, 6, 8, 9, 8, 8, 8, 8, 8, 8, 8, 8, 4, 8, 8, 7, 10, 8, 8, 8, 8, 8, 8,
+  8, 8, 8, 10, 8, 8, 8, 4, 7, 4, 7, 9, 5, 7, 7, 7, 7, 7, 6, 7, 7, 4, 5, 6, 4, 8,
+  7, 8, 7, 8, 6, 6, 5, 7, 8, 8, 6, 7, 7, 5, 3, 5, 8, 6,
 ] as const;
 
 // Mirrors the classic GLCD font's CP437 glyph order in TFT_eSPI 2.5.43.
@@ -1747,7 +1943,8 @@ export function themeFirmwareTextMetrics(
   const scale = Math.max(1, size);
   let layoutOffset = 0;
   let drawOffset = 0;
-  const glyphs: Array<{ character: string; offset: number; width: number }> = [];
+  const glyphs: Array<{ character: string; offset: number; width: number }> =
+    [];
   for (const character of Array.from(text)) {
     const codePoint = character.codePointAt(0);
     if (codePoint === undefined) {
@@ -1836,11 +2033,15 @@ function clampPercent(value?: number): number {
 
 function formatReset(seconds?: number): string {
   if (!seconds || seconds <= 0) {
-    return "0m";
+    return RESET_UNAVAILABLE;
   }
   const totalMinutes = Math.floor(seconds / 60);
-  const hours = Math.floor(totalMinutes / 60);
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
   const minutes = totalMinutes % 60;
+  if (days > 0) {
+    return `${days}d ${hours}h`;
+  }
   if (hours > 0) {
     return `${hours}h ${minutes}m`;
   }

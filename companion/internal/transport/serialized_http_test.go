@@ -51,3 +51,26 @@ func TestSerializedDeviceHTTPClientsShareOneRequestPerHost(t *testing.T) {
 		t.Fatalf("maximum concurrent requests = %d, want 1", got)
 	}
 }
+
+func TestSerializedDeviceHTTPClientClosesEachConnection(t *testing.T) {
+	var requestClosed int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Close {
+			atomic.StoreInt32(&requestClosed, 1)
+		}
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer server.Close()
+
+	client := SerializeDeviceHTTPClient(server.Client())
+	response, err := client.Get(server.URL + "/hello")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	_, _ = io.Copy(io.Discard, response.Body)
+	_ = response.Body.Close()
+
+	if atomic.LoadInt32(&requestClosed) != 1 {
+		t.Fatal("expected device request to close its connection")
+	}
+}

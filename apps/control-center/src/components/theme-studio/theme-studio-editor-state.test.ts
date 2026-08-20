@@ -28,6 +28,7 @@ function document(packName = "Test Theme"): ThemeStudioDocument {
 describe("themeStudioEditorReducer", () => {
   it("tracks dirty state and supports undo and redo", () => {
     const initial = createThemeStudioEditorState(document());
+    expect(initial.present.usage).toBe("live");
     const changed = themeStudioEditorReducer(initial, {
       mutate: (draft) => {
         draft.packName = "Changed";

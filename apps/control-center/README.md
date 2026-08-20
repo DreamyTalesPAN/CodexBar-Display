@@ -173,7 +173,10 @@ falls back to an unchecked `/latest/download/...` URL.
   and starts WiFi onboarding only when no usable VibeTV connection exists.
 - After local discovery and verification succeed, the installed app opens
   Overview directly; existing healthy installations open Overview immediately.
-- The server reads Shopify product data through the Storefront API and only sends normalized public theme data to the browser.
+- The hosted server may read Shopify product data through the Storefront API.
+- The local Mac App ships the repository theme catalog and packs inside its
+  static Control Center export. Shopify product pages are not connected to Mac
+  App theme installation.
 
 Validate the hosted customer catalog before rollout:
 
@@ -182,8 +185,7 @@ Validate the hosted customer catalog before rollout:
   --app-url https://app.vibetv.shop \
   --expect-catalog-source shopify \
   --expect-theme-id <theme_id> \
-  --expect-all-free-themes-installable \
-  --expect-shopify-product-pages
+  --expect-all-free-themes-installable
 ```
 
 Paid theme entitlement logic is not part of the first customer flow.
