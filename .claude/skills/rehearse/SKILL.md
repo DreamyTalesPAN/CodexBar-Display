@@ -59,8 +59,14 @@ scripts/vibetv-rehearse-warm-start.sh --pr <number>
 scripts/vibetv-rehearse-cold-start.sh --restore
 ```
 
-A signed merge-gate candidate is only needed for release evidence. For a normal
-validation run, build locally and pass `--companion-override <path>`.
+The rehearsal scripts install candidate DMGs, so a run tied to an exact PR head
+needs the signed merge-gate candidate. `--companion-override` does not replace
+it: re-signing the notarised bundle ad-hoc breaks the Developer ID launch
+constraint `SMAppService` still holds, and the Mac App never gets past "VibeTV's
+background service couldn't start". Use the override for companion-level checks
+only, stamped with the installed app's version or the script refuses it. To
+drive a local build through the real UI, build the app with
+`scripts/build-macos-control-center-app.sh --local-preview`.
 
 Warm start puts a Sparkle "Install Update" dialog in front of you, and you click
 it yourself. Driving it from a CLI would record the update as done without ever

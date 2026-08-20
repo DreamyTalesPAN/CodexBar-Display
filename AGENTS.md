@@ -47,10 +47,28 @@ scripts/vibetv-rehearse-warm-start.sh --pr 348
 scripts/vibetv-rehearse-cold-start.sh --restore
 ```
 
-A signed DMG is not required for a normal validation run. Build locally and use
-`--companion-override` to rehearse a fix that has no signed CI candidate yet;
-the app is then re-signed ad-hoc and the report records it. The merge-gate
-candidate is only needed when the run has to produce release evidence.
+`--companion-override` swaps a locally built Companion into the installed,
+notarised bundle and re-signs it ad-hoc. `SMAppService` still holds the
+Developer ID launch constraint from the production install, so the app's own
+runtime registration fails and the Mac App stops at "VibeTV's background service
+couldn't start" however healthy the Companion is. Use the override for
+companion- and API-level checks only. It now refuses outright unless the binary
+carries the installed app's version: a plain `go build` leaves that at 1.0.0,
+which the app rejects forever -- and reports as a port conflict naming its own
+runtime, which sends you hunting the wrong problem.
+
+To drive a local build through the real UI, build the app itself with
+`scripts/build-macos-control-center-app.sh --local-preview`. That sets
+`VibeTVLocalPreviewRuntime`, and the app then registers its own preview
+LaunchAgent instead of the Developer-ID-constrained bundled one. The rehearsal
+scripts themselves install candidate DMGs only, so a run that has to produce
+evidence for an exact pull request head still needs the signed merge-gate
+candidate (`CODEX Test VibeTV Merge`, `workflow_dispatch`, `pr_number`).
+
+Before re-flashing for a newer head, check what actually changed:
+`git diff --name-only <candidate-sha>..<head-sha> -- macos/ firmware/`. When that
+is empty, the installed app shell and the flashed firmware already match the
+head and only the Companion differs.
 
 Known traps, all paid for on the bench:
 
