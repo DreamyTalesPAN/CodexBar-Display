@@ -27,6 +27,7 @@ if [[ "$REHEARSAL_RESTORE" == 1 ]]; then
 fi
 
 rehearsal::require_tools curl python3 gh hdiutil ditto codesign
+rehearsal::require_sparkle_toolchain
 rehearsal::open_run_dir
 
 rehearsal::step 'Checking the connected VibeTV'

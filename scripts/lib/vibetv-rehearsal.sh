@@ -70,6 +70,20 @@ rehearsal::confirm() {
   [[ "$reply" == [yY] ]] || rehearsal::die 'aborted by operator'
 }
 
+# --install-mac-app needs a full Xcode to build the pinned Sparkle CLI. Say so
+# before the flashes, not after them.
+rehearsal::require_sparkle_toolchain() {
+  [[ "$REHEARSAL_INSTALL_MAC_APP" == 1 ]] || return 0
+  local developer_dir
+  developer_dir="$(xcode-select -p 2>/dev/null || true)"
+  if [[ "$developer_dir" == *CommandLineTools* || -z "$developer_dir" ]]; then
+    rehearsal::die "--install-mac-app needs a full Xcode (xcode-select -p is '${developer_dir:-unset}').
+Install Xcode and point at it with:
+  sudo xcode-select -s /Applications/Xcode.app
+or drop --install-mac-app and click the Sparkle dialog yourself."
+  fi
+}
+
 rehearsal::require_tools() {
   local missing=()
   local tool
@@ -308,8 +322,13 @@ rehearsal::sparkle_update() {
   if [[ ! -x "$cli" ]]; then
     rehearsal::info 'building the pinned Sparkle CLI once (several minutes)'
     rm -rf "$cli_dir"
-    "$root/scripts/build-sparkle-cli.sh" --output "$cli_dir" >>"$REHEARSAL_LOG" 2>&1 \
-      || rehearsal::die 'could not build the pinned Sparkle CLI'
+    if ! "$root/scripts/build-sparkle-cli.sh" --output "$cli_dir" >>"$REHEARSAL_LOG" 2>&1; then
+      # Never take the whole run down for a convenience: the flashes and the
+      # install already happened, and the customer flow is still drivable by
+      # hand from the dialog.
+      rehearsal::warn 'could not build the pinned Sparkle CLI; leaving the Sparkle dialog for you'
+      return 1
+    fi
   fi
 
   local before
