@@ -34,17 +34,18 @@ exist in the UI, and only the rendered screen shows that.
 All of them are read-only, and each one has silently ruined a run before:
 
 ```bash
-lsof -nP -iTCP:47832 -sTCP:LISTEN      # a foreign listener survives the purge
-ls -d /Volumes/VibeTV* 2>/dev/null     # a mounted image makes hdiutil attach fail
-ls -1dt ~/.vibetv-rehearsal/runs/*/    # an unrestored run buries the original state
-gh auth status                         # the candidate download needs it
-swift -e 'import ApplicationServices; print(AXIsProcessTrusted())'   # false = your clicks are dead
+scripts/vibetv-bench-state.sh
 ```
 
-If the newest run under `~/.vibetv-rehearsal/runs/` still has a non-empty
-`backup/manifest.txt`, an earlier rehearsal was never restored. Running now
-pushes the user's original state one level deeper, where `--restore` will not
-reach it. Restore first, or say so before continuing.
+One call, and it already names the traps: a second listener on 47832, an app
+copy running outside `/Applications`, a mounted image, a missing
+`~/.codexbar`, loopback overrides left staged, whether your clicks work, and
+which run `--restore` would actually use.
+
+Read its restore section before starting. `--restore` takes the **newest** run
+with a backup, which after a cold start followed by a warm start is the
+candidate state, not what the Mac looked like first. The pre-session state is
+the oldest run of the current chain; recover that one by hand with `ditto`.
 
 ## Procedure
 
@@ -62,9 +63,11 @@ A signed merge-gate candidate is only needed for release evidence. For a normal
 validation run, build locally and pass `--companion-override <path>`.
 
 Warm start puts a Sparkle "Install Update" dialog in front of you. `AGENTS.md`
-calls that click unscriptable; a Sparkle dialog does answer `Return` on its
-default button, verified on the up-to-date dialog. Try `Return` before you ask
-the user to click, and say which of the two happened.
+calls that click unscriptable. It is not: pass `--install-mac-app` and the warm
+start performs the update with the same pinned Sparkle CLI the merge gate uses,
+and the report records `macAppInstalledBy=sparkle-cli`. The dialog also answers
+`Return` on its default button if you want to watch it happen, but do not spend
+a run chasing focus -- other apps steal it and the dialog closes.
 
 Read the **Customer Rehearsal** section in `AGENTS.md` before the first run. It
 records the traps that cost bench time: the restore chain not reaching the
@@ -103,14 +106,25 @@ Every customer-facing control in this UI is a real `<button>` or `<a>`, so
 tab-and-Return reaches all of them. Take a screenshot after each step: the focus
 ring tells you where you are.
 
-**Native actions have a URL scheme**, which needs no input at all:
+**Native actions have a URL scheme**, which needs no input at all. Always
+address the installed app with `-a`; a bare `open` hands the URL to whatever
+LaunchServices ranks first, and an old copy in a backup folder wins that often
+enough to waste a run. It then launches and shows "Move to Applications", which
+looks like a product bug and is not one.
 
 ```bash
-open "vibetv://check-for-updates"        # verified end to end
-open "vibetv://repair-codexbar"          # the provider recovery this PR added
-open "vibetv://repair-runtime"
-open "vibetv://restart-control-center"
+APP="/Applications/VibeTV Control Center.app"
+open -a "$APP" "vibetv://check-for-updates"    # opens the Sparkle dialog
+open -a "$APP" "vibetv://repair-codexbar"      # the provider recovery
+open -a "$APP" "vibetv://repair-runtime"       # the "Restart service" button
+open -a "$APP" "vibetv://restart-control-center"
 ```
+
+**Never `launchctl bootout` the runtime service.** `SMAppService` does not come
+back from it -- not on app restart, not on `vibetv://repair-runtime`. The app
+ends up on "VibeTV's background service couldn't start" with no way out, and
+only reinstalling the app bundle recovers it. Use `rehearsal::stop_runtime`
+through the scripts, or reinstall afterwards.
 
 Only if the installed app cannot be driven at all, fall back to `npm run dev` in
 `apps/control-center` and the real Companion through `http://localhost:3000`.
@@ -124,8 +138,39 @@ When checking a message that suggests an action, verify the action exists in the
 UI. `grep` the component name; if only its own test file imports it, it is dead
 code and the message points nowhere.
 
+## Reading a firmware update
+
+`progress` is a stage marker, not a byte count: `firmwareUpdateStageProgress()`
+maps `uploading` to one fixed number and it stays there for the whole upload.
+A long stretch at the same value means "still uploading", never "stalled". The
+only honest signal is the job's own phase and the updater log at
+`~/Library/Application Support/codexbar-display/logs/firmware-update.log`.
+
+A RAW-OTA upload stalls intermittently even on healthy firmware (roughly one
+leg in 5-10; see `docs/hardware-contract.md`). The device says so itself:
+`uploadAccepted: false` and "VibeTV must restart before another update
+attempt". The remedy is a real **power cycle** -- the device's own software
+restart is not enough -- and then one retry. Ask the user; you cannot unplug it.
+
+Killing a polling script does not kill the update: the runtime spawns
+`codexbar-display install-update` as a child, and it keeps writing to the
+device. Check for it before starting anything else.
+
+## Before you push
+
+```bash
+scripts/check-before-push.sh
+```
+
+It runs what CI runs for the areas the branch touches. The customer-flow suite
+is the one that catches recovery-screen regressions and the one that is easy to
+skip because it is slow. Three red CI runs in a row came from skipping it.
+
 ## Do not
 
 - Do not run the rehearsals against a device the user has not approved for this run.
 - Do not retry a failed hardware write without new approval.
 - Do not report a change as validated when only the API was checked.
+- Do not conclude a fix works because a run was quiet. Check that the condition
+  it guards against was actually present: a firmware update that never met a
+  provider recovery proves nothing about serialising the two.

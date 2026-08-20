@@ -131,21 +131,37 @@ rehearsal::apply_companion_override
 # come up after they are set.
 rehearsal::stop_runtime
 rehearsal::open_app
-rehearsal::write_report staged
+
+# The Sparkle dialog is the one step a human had to click. It does not have to
+# be: the merge gate drives the same update through the pinned Sparkle CLI.
+MAC_APP_OUTCOME=staged
+if [[ "$REHEARSAL_INSTALL_MAC_APP" == 1 ]]; then
+  if rehearsal::sparkle_update; then
+    MAC_APP_OUTCOME=updated
+    BASELINE_VERSION="$CANDIDATE_VERSION"
+  else
+    MAC_APP_OUTCOME=sparkle-failed
+  fi
+fi
+
+rehearsal::write_report "$MAC_APP_OUTCOME"
 
 cat <<NEXT
 
 ────────────────────────────────────────────────────────────────────────
  WARM START READY
 ────────────────────────────────────────────────────────────────────────
- Mac App installed   $BASELINE_VERSION   (public customer build)
+ Mac App installed   $BASELINE_VERSION
  VibeTV firmware     $PUBLIC_FIRMWARE_VERSION   (public customer build)
  Candidate offered   $CANDIDATE_VERSION   (commit ${CANDIDATE_SHA:0:12})
+
+ Mac App update       $MAC_APP_OUTCOME
 
  Now drive the customer flow yourself:
    1. Pair the VibeTV in the app as a customer would.
    2. Updates tab: update the Mac App. Sparkle downloads $CANDIDATE_VERSION,
-      replaces the app and relaunches it.
+      replaces the app and relaunches it. Already done when the line above
+      reads "updated" -- pass --install-mac-app to skip that click.
    3. Updates tab: update the VibeTV firmware to $CANDIDATE_VERSION.
 
  Expected afterwards: Mac App and firmware both report $CANDIDATE_VERSION,

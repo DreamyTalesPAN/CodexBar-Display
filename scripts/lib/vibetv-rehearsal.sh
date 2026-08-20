@@ -30,6 +30,7 @@ REHEARSAL_ASSUME_YES=0
 REHEARSAL_RESTORE=0
 REHEARSAL_KEEP_CODEXBAR=0
 REHEARSAL_SKIP_FIRMWARE_BASELINE=0
+REHEARSAL_INSTALL_MAC_APP=0
 REHEARSAL_COMPANION_OVERRIDE=""
 
 REHEARSAL_STATE_DIR="$HOME/.vibetv-rehearsal"
@@ -92,6 +93,9 @@ Usage: $(basename "$0") [options]
   --pr <number>          Pull request whose merge-gate candidate to install (default: $REHEARSAL_PR)
   --run-id <id>          Use an explicit CODEX Test VibeTV Merge run instead of the newest for --pr
   --device-target <url>  VibeTV base URL, e.g. http://192.168.178.72 (default: autodetect)
+  --install-mac-app      Warm start only: perform the Sparkle update headlessly
+                         with the pinned Sparkle CLI instead of leaving the
+                         dialog for a human to click
   --companion-override <path>
                          Swap the installed app's companion helper for a locally
                          built one. Use to rehearse a fix that has no signed CI
@@ -117,6 +121,7 @@ rehearsal::parse_args() {
         REHEARSAL_COMPANION_OVERRIDE="$2"; shift 2 ;;
       --keep-codexbar) REHEARSAL_KEEP_CODEXBAR=1; shift ;;
       --skip-firmware-baseline) REHEARSAL_SKIP_FIRMWARE_BASELINE=1; shift ;;
+      --install-mac-app) REHEARSAL_INSTALL_MAC_APP=1; shift ;;
       --restore) REHEARSAL_RESTORE=1; shift ;;
       --yes|-y) REHEARSAL_ASSUME_YES=1; shift ;;
       -h|--help) rehearsal::usage; exit 0 ;;
@@ -282,6 +287,50 @@ rehearsal::purge_mac() {
   killall cfprefsd >/dev/null 2>&1 || true
   rehearsal::record purgeBackup "$REHEARSAL_BACKUP_DIR"
   rehearsal::info "backup kept at $REHEARSAL_BACKUP_DIR"
+}
+
+# Performs the Mac App update the way the merge gate does: through the official
+# Sparkle CLI, pinned and built from source. AGENTS.md calls this click
+# unscriptable; it is not, and driving a native dialog blind is what makes a
+# rehearsal expensive.
+rehearsal::sparkle_update() {
+  rehearsal::step 'Updating the Mac App through Sparkle'
+  local root cli_dir cli
+  root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  cli_dir="$REHEARSAL_STATE_DIR/sparkle-cli"
+  cli="$cli_dir/sparkle.app/Contents/MacOS/sparkle"
+  if [[ ! -x "$cli" ]]; then
+    rehearsal::info 'building the pinned Sparkle CLI once (several minutes)'
+    rm -rf "$cli_dir"
+    "$root/scripts/build-sparkle-cli.sh" --output "$cli_dir" >>"$REHEARSAL_LOG" 2>&1 \
+      || rehearsal::die 'could not build the pinned Sparkle CLI'
+  fi
+
+  local before
+  before="$(pgrep -f "$REHEARSAL_APP_PATH/Contents/MacOS/VibeTVControlCenter" | head -n1 || true)"
+  "$cli" --check-immediately --feed-url "$REHEARSAL_SERVER_URL/appcast.xml" \
+    --user-agent-name 'CODEX VibeTV rehearsal' "$REHEARSAL_APP_PATH" >>"$REHEARSAL_LOG" 2>&1 || true
+
+  # Sparkle replaces the bundle and relaunches; wait for a different process.
+  local deadline=$((SECONDS + 90)) after=''
+  while (( SECONDS < deadline )); do
+    after="$(pgrep -f "$REHEARSAL_APP_PATH/Contents/MacOS/VibeTVControlCenter" | head -n1 || true)"
+    [[ -n "$after" && "$after" != "$before" ]] && break
+    sleep 2
+  done
+  local installed
+  installed="$(rehearsal::installed_app_version)"
+  if [[ "$installed" != "$CANDIDATE_VERSION" ]]; then
+    rehearsal::warn "Sparkle left version $installed installed, expected $CANDIDATE_VERSION"
+    return 1
+  fi
+  rehearsal::info "Sparkle installed $installed and relaunched the app"
+  rehearsal::record macAppInstalledBy sparkle-cli
+}
+
+rehearsal::installed_app_version() {
+  /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+    "$REHEARSAL_APP_PATH/Contents/Info.plist" 2>/dev/null || true
 }
 
 rehearsal::restore() {
