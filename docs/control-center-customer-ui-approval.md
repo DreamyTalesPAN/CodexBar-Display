@@ -1622,3 +1622,17 @@ issue scope, or release permission never implies UI permission.
   now says whether a recovery is outstanding, and one function both clears it
   and sends the finish.
 - Approved files: `control-center-app.tsx` and this approval record.
+
+## 2026-08-20 — Recovery flow drives the frozen clock (no visible change)
+
+- User approval: Standing instruction for this PR — close the Codex findings and
+  get #373 green. This entry covers a flaky required check, not a UI decision.
+- Approved customer-visible result: None. No copy, control, hierarchy, or state
+  changes, and the flow asserts exactly what it asserted before. Only the way
+  the test drives time changes: the app reaches `Starting AI usage` through a
+  `setTimeout(..., 0)`, and `page.clock` freezes time until the test advances
+  it. A single `runFor(0)` right after `goto` fires only what is already
+  scheduled, so when the first `/v1/status` lands just after it, the timer that
+  sets the busy state stays pending for good and the screen never moves. The
+  flow now keeps nudging the clock while it waits.
+- Approved files: `scripts/test-customer-flows.mjs` and this approval record.

@@ -3349,10 +3349,7 @@ async function testFirstUsageServiceFailureOffersRecovery(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.clock.runFor(0);
-  await page
-    .getByRole("heading", { name: "Starting AI usage" })
-    .waitFor({ timeout: 10_000 });
+  await waitForHeadingWithClock(page, "Starting AI usage");
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
       0,
@@ -10505,6 +10502,28 @@ async function clickNavigation(page, name) {
   }
   await page.waitForTimeout(350);
   await (await getNavigationButton(page, name)).click({ timeout: 10_000 });
+}
+
+// The app schedules its recovery work on setTimeout(..., 0), and page.clock
+// freezes time until the test advances it. A single runFor(0) right after goto
+// only fires timers that were already scheduled -- if the first /v1/status is
+// still in flight, the timer that sets busyAction is scheduled afterwards and
+// never runs, so the screen never reaches its next state. Keep nudging the
+// clock while waiting for it.
+async function waitForHeadingWithClock(page, name, timeoutMs = 15_000) {
+  const heading = page.getByRole("heading", { name });
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (await heading.count()) {
+      await heading.waitFor({ timeout: 5_000 });
+      return;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`heading ${JSON.stringify(name)} never appeared`);
+    }
+    await page.clock.runFor(50);
+    await page.waitForTimeout(50);
+  }
 }
 
 async function waitForCondition(predicate, message, timeoutMs = 10_000) {
