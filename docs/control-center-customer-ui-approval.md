@@ -1670,3 +1670,17 @@ issue scope, or release permission never implies UI permission.
   Nothing else changes: a Mac App that genuinely never comes back still reaches
   its own recovery screen, because that path does not depend on the busy state.
 - Approved files: `control-center-app.tsx` and this approval record.
+
+## 2026-08-20 — A repair waits for the theme install it would delete
+
+- User approval: Standing instruction for this PR — close the Codex findings on
+  #373. This removes a failure, adds no copy and no control.
+- Approved customer-visible result: When AI usage drops out while a theme
+  install is running, the automatic repair waits for the install to finish
+  instead of starting immediately. The install job and its worker live inside
+  the Mac App's background process, and the repair stops that process on
+  purpose, so firing during an install deleted the running install and the
+  progress the customer was watching — it simply stopped answering. The customer
+  now sees the install finish, and the usage recovery starts after it. Nothing
+  is skipped: the recovery still runs, only later.
+- Approved files: `control-center-app.tsx` and this approval record.

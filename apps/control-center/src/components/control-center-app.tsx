@@ -349,6 +349,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [firmwareUpdateStatus, setFirmwareUpdateStatus] =
     useState<FirmwareUpdateStatus | null>(null);
   const firmwareUpdateInProgress = firmwareUpdateStatus?.phase === "installing";
+  const themeInstallInProgress = themeInstallStatus?.phase === "installing";
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [usageError, setUsageError] = useState<ApiError | null>(null);
   const [providerSetup, setProviderSetup] = useState<ProviderSetupInfo | null>(
@@ -3539,6 +3540,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     if (providerRecoveryAttempted.current) {
       return;
     }
+    // A theme install job and its worker live inside the Companion process, and
+    // the repair unregisters that process on purpose: firing now would delete a
+    // running install together with the status the UI is polling for it. The
+    // native shutdown hold covers firmware jobs only. Defer rather than skip --
+    // the attempt flag stays down, so this runs again on the terminal phase.
+    if (themeInstallInProgress) {
+      return;
+    }
     providerRecoveryAttempted.current = true;
     const timer = window.setTimeout(() => {
       // Every incident starts without the CodexBar fallback. It is earned by a
@@ -3554,7 +3563,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     // the pending timer there dropped the automatic repair for the whole
     // incident. providerRecoveryAttempted already prevents a second one.
     void timer;
-  }, [companionStatus, providerRecoveryRequired, repairUsageService]);
+  }, [
+    companionStatus,
+    providerRecoveryRequired,
+    repairUsageService,
+    themeInstallInProgress,
+  ]);
 
   const startupDeviceSearchState: DeviceSearchState = waitingForFirstUsage
     ? "waiting"
