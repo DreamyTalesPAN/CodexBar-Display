@@ -3511,8 +3511,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // runs. But an incident whose Mac App never comes back is a Mac App outage:
   // holding it forever hid the recovery screen behind "AI usage could not start"
   // and offered a CodexBar download that cannot restart a dead runtime.
+  // Both busy states belong to one incident. The repair hands straight over to
+  // the provider retry, which flips busyAction before the Companion reports
+  // online again -- and dropping recovery in that gap put the Mac App recovery
+  // screen in front of a repair that had just succeeded.
+  const providerRecoveryBusy =
+    busyAction === "usage-service-repair" || busyAction === "providers-retry";
   const providerRecoveryRequired =
-    (companionStatus === "online" || busyAction === "usage-service-repair") &&
+    (companionStatus === "online" || providerRecoveryBusy) &&
     (providerIncidentOpen ||
       deviceAwaitsProviderSetup(device) ||
       (waitingForFirstUsage && providerSetupRequiresRecovery(providerSetup)));

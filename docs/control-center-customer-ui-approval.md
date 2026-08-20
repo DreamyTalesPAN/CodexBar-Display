@@ -1655,3 +1655,18 @@ issue scope, or release permission never implies UI permission.
   failure and keeps the existing screen.
 - Approved files: `companion/internal/codexbar/provider_setup.go`,
   `companion/internal/companionapi/provider_setup.go`, and this approval record.
+
+## 2026-08-20 — One repair keeps one screen across the provider retry
+
+- User approval: Standing instruction for this PR — close the Codex findings on
+  #373. This one removes a screen that should never have appeared; it adds no
+  copy and no control.
+- Approved customer-visible result: During a usage-service repair the customer
+  keeps the recovery screen until the repair reports back. The repair hands
+  straight over to the provider retry, which changes the busy state before the
+  Mac App reports itself online again, and in that gap the Mac App recovery
+  screen pushed itself in front of a repair that had just succeeded — the same
+  flicker this PR removed elsewhere. Both busy states now count as one incident.
+  Nothing else changes: a Mac App that genuinely never comes back still reaches
+  its own recovery screen, because that path does not depend on the busy state.
+- Approved files: `control-center-app.tsx` and this approval record.
