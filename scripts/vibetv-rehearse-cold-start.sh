@@ -84,6 +84,13 @@ launchctl setenv "$REHEARSAL_MAC_RELEASE_ENV_VAR" "$REHEARSAL_SERVER_URL/mac-app
 DEVICE_FIRMWARE_AFTER="$(rehearsal::device_field "$REHEARSAL_DEVICE_TARGET" firmware)"
 rehearsal::record deviceFirmwareAfter "$DEVICE_FIRMWARE_AFTER"
 
+# The runtime reads these overrides from its environment at launch, so it has to
+# come up after they are set. --companion-override already bootstrapped it back
+# in step 2, and launchctl setenv does not reach a process that is already
+# running: without this the Updates tab compares the installed candidate against
+# the public release, which is not what the closing message below promises.
+# Warm start does the same two lines for the same reason.
+rehearsal::stop_runtime
 rehearsal::open_app
 rehearsal::write_report "$FIRMWARE_OUTCOME"
 
