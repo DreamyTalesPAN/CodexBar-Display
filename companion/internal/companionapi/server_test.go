@@ -4139,8 +4139,8 @@ func TestStatusKeepsReachableDeviceConnectedWhileFirstUsageIsPending(t *testing.
 	if !got.Device.Active || !got.Device.Connected || !got.Device.Paired {
 		t.Fatalf("first-usage wait lost the configured VibeTV: %+v", got.Device)
 	}
-	if got.Device.Ready || got.Device.ConnectionState != deviceConnectionRetrying {
-		t.Fatalf("usage-pending device must stay connected but not ready: %+v", got.Device)
+	if got.Device.Ready || got.Device.ConnectionState != deviceConnectionNoProvider {
+		t.Fatalf("usage-pending device must stay connected, not ready, and not reconnecting: %+v", got.Device)
 	}
 }
 

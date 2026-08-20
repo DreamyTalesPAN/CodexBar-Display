@@ -192,7 +192,11 @@ export type DeviceInfo = {
   connected: boolean;
   paired?: boolean;
   ready?: boolean;
-  connectionState?: "ready" | "reconnecting" | "setup_required";
+  connectionState?:
+    | "ready"
+    | "reconnecting"
+    | "setup_required"
+    | "provider_setup_required";
   lastSeenAt?: string;
   board?: string;
   firmware?: string;

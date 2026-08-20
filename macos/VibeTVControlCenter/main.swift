@@ -39,6 +39,8 @@ private let runtimeHealthRequestTimeout: TimeInterval = 5
 private let localNetworkPrivacyProbeURLString = "http://192.168.4.1/hello"
 private let localNetworkPrivacyProbeTimeout: TimeInterval = 15
 private let runtimeUnregistrationSettleDelay: Duration = .seconds(2)
+private let runtimeUnregistrationQuiesceTimeout: TimeInterval = 20
+private let runtimeUnregistrationQuiescePollDelay: Duration = .milliseconds(250)
 private let runtimeValidationUnregisterArgument =
     "--vibetv-validation-unregister-runtime"
 private let runtimeValidationUnregisterEnvironmentKey =
@@ -3087,6 +3089,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
     }
 
+    // SMAppService reports .notRegistered as soon as launchd accepted the
+    // unregister, not when the daemon has exited. Registering inside that
+    // window puts two processes on the API port: the old one still holds the
+    // listener while the new one binds it. A fixed delay only guesses when
+    // that is over, so wait for the port itself to go quiet.
+    private func waitForRuntimeAPIToStop() async {
+        guard let origin = URL(string: defaultRuntimeOriginString) else {
+            return
+        }
+        let healthURL = origin.appendingPathComponent("v1/runtime-health")
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = runtimeHealthRequestTimeout
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+
+        let deadline = Date().addingTimeInterval(runtimeUnregistrationQuiesceTimeout)
+        while Date() < deadline {
+            var request = URLRequest(
+                url: healthURL,
+                cachePolicy: .reloadIgnoringLocalCacheData,
+                timeoutInterval: runtimeHealthRequestTimeout
+            )
+            request.httpMethod = "GET"
+            guard (try? await session.data(for: request)) != nil else {
+                return
+            }
+            try? await Task<Never, Never>.sleep(for: runtimeUnregistrationQuiescePollDelay)
+        }
+        NSLog(
+            "VibeTV Control Center runtime still answered on \(defaultRuntimeOriginString) after unregister"
+        )
+    }
+
     private func unregisterBundledRuntimeService() async -> Bool {
         if usesLocalPreviewRuntime {
             return await unregisterLocalPreviewRuntimeService()
@@ -3105,7 +3140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
             switch runtimeService.status {
             case .notRegistered, .notFound:
-                try? await Task<Never, Never>.sleep(for: runtimeUnregistrationSettleDelay)
+                await waitForRuntimeAPIToStop()
             case .enabled, .requiresApproval:
                 NSLog(
                     "VibeTV Control Center could not unregister its runtime: \(errorDescription ?? "service remained registered")"

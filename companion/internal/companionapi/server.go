@@ -1368,9 +1368,22 @@ func (s *Server) withConfiguredConnectionState(
 	if !state.lastSeenAt.IsZero() {
 		device.LastSeenAt = state.lastSeenAt.UTC().Format(time.RFC3339Nano)
 	}
+	// Missing AI usage is not a connection problem. Reporting "reconnecting"
+	// here sends the customer after a link that is already up. This needs the
+	// live probe in streamConnected, not device.Connected: the anti-flap grace
+	// window above keeps an unreachable device Connected, and that one really
+	// is reconnecting.
+	if streamConnected {
+		device.ConnectionState = deviceConnectionNoProvider
+		return device
+	}
 	device.ConnectionState = deviceConnectionRetrying
 	return device
 }
+
+// A reachable, paired device whose only missing piece is AI usage is not
+// reconnecting. Naming that separately keeps the connection story honest.
+const deviceConnectionNoProvider = "provider_setup_required"
 
 func configuredDeviceKey(cfg runtimeconfig.Config) string {
 	if id := strings.ToLower(strings.TrimSpace(cfg.DeviceID)); id != "" {
