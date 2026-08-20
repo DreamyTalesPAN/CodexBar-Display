@@ -130,6 +130,11 @@ silently flash firmware.
 - Support diagnostics are created only when requested. They include device/app
   health fields and are designed to avoid secrets, pairing tokens, raw cookie
   values, direct contact data, and tokenized URLs.
+- A support report names its surface (`native-mac-app` or `browser`) plus the
+  Mac App version and build. The loopback runtime address appears only in the
+  internal `internalRuntimeAddress` field, never as a `page` link: that route
+  answers `410 Gone` in a normal browser. A hosted report keeps its real
+  public page URL.
 
 ## Developer Entry Points
 

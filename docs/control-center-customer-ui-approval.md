@@ -830,6 +830,23 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `updates-screen.tsx`, `updates-screen.test.tsx`, and this
   approval record.
 
+## 2026-08-20 — Support reports name the Mac App surface instead of a dead link
+
+- User approval: The user explicitly assigned issue #341 ("Remove the unusable
+  loopback Control Center URL from support reports") in the Codex task of
+  2026-08-20, including its acceptance criteria for the native surface, the
+  non-navigable loopback field, and the unchanged hosted report.
+- Approved customer-visible result: A support report created in the Mac App no
+  longer contains a `page` field pointing at `http://127.0.0.1:47832/control-center`,
+  which answers `410 Gone` in a normal browser. Instead it records the surface
+  (`native-mac-app` or `browser`), the Mac App version and build, and keeps the
+  loopback address only in the clearly internal `internalRuntimeAddress`
+  diagnostic field. A report created on the hosted page keeps its real,
+  openable public page URL. No visible control, screen, or copy changes.
+- Approved files: `support-report.ts`, `support-report.test.ts`,
+  `control-center-runtime.ts`, `control-center-types.ts`, and this approval
+  record.
+
 ## 2026-08-09 — Completed updates stop gating newly discovered releases
 
 - User approval: Covered by the standing bulletproofing mandate for the update
