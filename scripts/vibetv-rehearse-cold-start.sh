@@ -62,6 +62,14 @@ rehearsal::apply_companion_override
 # --- 3. flash the candidate firmware ----------------------------------------
 rehearsal::start_artifact_server
 
+# --companion-override bootstraps the runtime agent back in step 2, and a direct
+# CLI flash refuses to start beside another device writer: the whole run ends in
+# "quiesce-device-writers: another VibeTV runtime is running and polling the
+# device". Warm start stops the runtime before its baseline flash for exactly
+# this reason; without the override nothing is polling yet, which is why the
+# documented local-validation path was the only one that hit it.
+rehearsal::stop_runtime
+
 rehearsal::step "Flashing candidate firmware $CANDIDATE_VERSION"
 FIRMWARE_OUTCOME=installed
 if [[ "$DEVICE_FIRMWARE" == "$CANDIDATE_VERSION" ]]; then
@@ -114,3 +122,7 @@ cat <<NEXT
  Undo     scripts/vibetv-rehearse-cold-start.sh --restore
 ────────────────────────────────────────────────────────────────────────
 NEXT
+
+# The summary prints "flash: failed" but the shell only sees $?. A rehearsal that
+# never reached the device must not look like a pass to whatever checks it next.
+[[ "$FIRMWARE_OUTCOME" != failed ]] || exit 1
