@@ -551,6 +551,7 @@ private struct RuntimeStatusPayload: Decodable {
 
     let ok: Bool
     let companion: Companion
+    let updateInProgress: Bool?
 }
 
 enum RuntimeHealthEvaluation: Equatable, CustomStringConvertible {
@@ -2856,6 +2857,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         var runtimeStoppedForCodexBarRepair = false
         if codexBarRepairRestartRequired {
+            // A firmware update job lives inside the runtime process and dies
+            // with it. Restarting the runtime under a running update leaves the
+            // customer with a half-written VibeTV and a progress screen that
+            // never answers again. Provider recovery is the one that can wait.
+            if await runtimeReportsUpdateInProgress() {
+                NSLog(
+                    "VibeTV Control Center held back its CodexBar repair while a VibeTV update is running"
+                )
+                return .codexBarRepairRequired
+            }
             guard await unregisterBundledRuntimeService() else {
                 NSLog("VibeTV Control Center could not stop its runtime before repairing CodexBar")
                 return .failure(.serviceStart)
@@ -3154,6 +3165,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     // window puts two processes on the API port: the old one still holds the
     // listener while the new one binds it. A fixed delay only guesses when
     // that is over, so wait for the port itself to go quiet.
+    private func runtimeReportsUpdateInProgress() async -> Bool {
+        for origin in runtimeOriginCandidates() {
+            var request = URLRequest(
+                url: origin.appendingPathComponent("v1/runtime-health"),
+                cachePolicy: .reloadIgnoringLocalCacheData,
+                timeoutInterval: runtimeHealthRequestTimeout
+            )
+            request.httpMethod = "GET"
+            guard let (data, response) = try? await URLSession.shared.data(for: request),
+                  let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode),
+                  let payload = try? JSONDecoder().decode(
+                      RuntimeStatusPayload.self,
+                      from: data
+                  ) else {
+                continue
+            }
+            if payload.updateInProgress == true {
+                return true
+            }
+        }
+        return false
+    }
+
     private func waitForRuntimeAPIToStop() async {
         guard let origin = URL(string: defaultRuntimeOriginString) else {
             return

@@ -1403,6 +1403,7 @@ func (s *Server) handleRuntimeHealth(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
+	_, updateInProgress := s.activeFirmwareUpdateJob()
 	writeJSON(w, http.StatusOK, struct {
 		OK bool `json:"ok"`
 		// The writer-quiesce gate cares about device writers, not runtimes: a
@@ -1410,14 +1411,20 @@ func (s *Server) handleRuntimeHealth(w http.ResponseWriter, r *http.Request) {
 		// owning a display stream, and its own child updater must not
 		// mistake it for one. Absent field (older runtimes) means writer.
 		DisplayWriter bool `json:"displayWriter"`
-		Companion     struct {
+		// A firmware update job lives in this process and dies with it. The Mac
+		// App asks here before restarting the runtime for a CodexBar repair,
+		// because that restart would strand a running update: the next status
+		// poll asks a fresh process for a job id it has never seen.
+		UpdateInProgress bool `json:"updateInProgress"`
+		Companion        struct {
 			Version string               `json:"version"`
 			App     companionAppInfo     `json:"app"`
 			Runtime companionRuntimeInfo `json:"runtime"`
 		} `json:"companion"`
 	}{
-		OK:            true,
-		DisplayWriter: s.pauseDisplayStream != nil,
+		OK:               true,
+		DisplayWriter:    s.pauseDisplayStream != nil,
+		UpdateInProgress: updateInProgress,
 		Companion: struct {
 			Version string               `json:"version"`
 			App     companionAppInfo     `json:"app"`

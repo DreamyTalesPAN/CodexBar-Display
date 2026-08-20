@@ -200,6 +200,45 @@ func TestRuntimeHealthDoesNotProbeDeviceOrRelease(t *testing.T) {
 	}
 }
 
+// The Mac App reads this flag before restarting the runtime for a CodexBar
+// repair. A restart under a running update strands the job in a dead process.
+func TestRuntimeHealthReportsARunningFirmwareUpdate(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: "http://127.0.0.1:1", DeviceToken: "pair-token"})
+
+	readUpdateInProgress := func() bool {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/runtime-health", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("runtime health status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var got struct {
+			UpdateInProgress bool `json:"updateInProgress"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode runtime health: %v", err)
+		}
+		return got.UpdateInProgress
+	}
+
+	if readUpdateInProgress() {
+		t.Fatal("an idle runtime must not claim an update is running")
+	}
+
+	server.updateJobsMu.Lock()
+	server.updateJobs["job-1"] = &firmwareUpdateJob{ID: "job-1", Phase: "installing"}
+	server.updateJobsMu.Unlock()
+	if !readUpdateInProgress() {
+		t.Fatal("a runtime installing firmware must say so")
+	}
+
+	server.updateJobsMu.Lock()
+	server.updateJobs["job-1"].Phase = "complete"
+	server.updateJobsMu.Unlock()
+	if readUpdateInProgress() {
+		t.Fatal("a finished update must not keep the restart blocked")
+	}
+}
+
 func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 	sawStaleHello := false
 	sawTokenlessHello := false
