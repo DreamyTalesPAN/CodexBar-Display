@@ -78,7 +78,16 @@ job="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["job"]["id
 printf 'job: %s\n' "$job"
 
 fired=0 polls=0 answered=0
-holds_before="$(grep -c 'update hold refused' "$LOG" 2>/dev/null || echo 0)"
+hold_refusals() {
+  # grep -c already prints 0 when it finds nothing, and still exits 1 for it.
+  # Adding a fallback value here appends a second line and every (( )) below
+  # dies on it, which reads as "the repair never reached the guard".
+  local count
+  count="$(grep -c 'update hold refused' "$LOG" 2>/dev/null || true)"
+  printf '%s' "${count:-0}"
+}
+
+holds_before="$(hold_refusals)"
 deadline=$((SECONDS + 600))
 while (( SECONDS < deadline )); do
   polls=$((polls + 1))
@@ -105,7 +114,7 @@ print(j.get("phase"), j.get("stage"))' "$WORK/status.json")"
       # refused while a job owns this process. That refusal is the only evidence
       # from outside that the two actually met.
       for _ in $(seq 1 30); do
-        now="$(grep -c 'update hold refused' "$LOG" 2>/dev/null || echo 0)"
+        now="$(hold_refusals)"
         if (( now > holds_before )); then
           fired=1
           printf '  >>> %s the repair asked for a hold and was refused\n' "$(date -u +%H:%M:%SZ)"
