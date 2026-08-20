@@ -27,7 +27,7 @@ Center on the customer's Mac.
 - [Hosted VibeTV gates](vibetv-hosted-gates.md): owner-dispatched merge and release-candidate gates in GitHub Actions.
 - [Operator runbook](operator-runbook.md): support, recovery, network diagnosis (`net-probe`), the one-command hardware self-test, and smoke tests.
 - [Firmware OTA contract](firmware-ota-contract.md): the supported customer update path and its safety invariants.
-- [Rehearsal bug report](vibetv-rehearsal-bug-report.md): the hardware investigation log (802.11n A-MSDU black hole, BUG-1/7/8/9/12) with a status summary up top.
+- [Customer rehearsal](../AGENTS.md#customer-rehearsal-cold-and-warm-start): the cold/warm-start scripts every change is validated with before hand-off.
 - [Usage polling architecture](usage-polling-architecture.md): usage collection and latency behavior.
 - [Preferences registry](preferences.md): typed local settings descriptors and the provider adapter.
 - [Token usage support matrix](token-usage-support-matrix.md): token stats by provider shape.
