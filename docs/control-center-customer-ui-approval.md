@@ -1684,3 +1684,17 @@ issue scope, or release permission never implies UI permission.
   now sees the install finish, and the usage recovery starts after it. Nothing
   is skipped: the recovery still runs, only later.
 - Approved files: `control-center-app.tsx` and this approval record.
+
+## 2026-08-20 — A VibeTV that is gone is a connection problem, not a provider one
+
+- User approval: Standing instruction for this PR — close the Codex findings on
+  #373. This restores a screen the customer should already have been getting.
+- Approved customer-visible result: When a VibeTV that was waiting for an AI
+  provider is switched off or leaves the network, the customer now reaches the
+  reconnect screen once the device is confirmed gone. Until now the provider
+  incident was carried past the loss, so `AI usage could not start` stayed in
+  front of a device that was not there at all, and the reconnect picker never
+  appeared. No copy and no controls change; an existing screen simply stops
+  being blocked by the wrong one. A single missed poll and a Mac App outage
+  still keep the incident, because the repair takes the Mac App down on purpose.
+- Approved files: `control-center-app.tsx` and this approval record.

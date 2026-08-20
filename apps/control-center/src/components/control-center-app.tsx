@@ -464,6 +464,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     });
   }, []);
 
+  // Connectivity and provider readiness are different questions. A VibeTV that
+  // was waiting for a provider and is now confirmed gone is a connection
+  // problem: carrying its incident past the loss held the AI recovery screen in
+  // front of the reconnect picker for a device that is not there at all. Only
+  // the recovery gate's confirmed-loss paths use this -- a single missed poll or
+  // a Mac App outage must still keep the incident, because the repair takes the
+  // Mac App down on purpose.
+  const markDeviceLost = useCallback(() => {
+    setDeviceSession((current) => ({
+      ...current,
+      device: markDeviceDisconnected(current.device),
+      providerIncidentOpen: false,
+    }));
+  }, []);
+
   const addEvent = useCallback(
     (event: Omit<ControlCenterEvent, "id" | "at"> & { at?: string }) => {
       setEvents((current) =>
@@ -543,7 +558,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
 
       if (transition.state.preferredDeviceId) {
-        setDevice((current) => markDeviceDisconnected(current));
+        markDeviceLost();
         if (transition.openPicker) {
           setDeviceSearchState("searching");
           addEvent({
@@ -555,15 +570,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return false;
       }
 
-      setDevice((current) => markDeviceDisconnected(current));
+      markDeviceLost();
       setDeviceState("offline");
       return false;
     },
     [
       addEvent,
+      markDeviceLost,
       mergeDevice,
       operationRecoveryGraceActive,
-      setDevice,
       setDeviceRecoveryGate,
     ],
   );
