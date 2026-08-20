@@ -75,7 +75,11 @@ fi
 
 # Keep the candidate manifest active so the Updates tab stays consistent with
 # what is actually installed instead of offering the public release again.
+# Both halves, or the Mac App row keeps comparing the installed candidate
+# against the public release and reads "Available 1.0.53" under an "Up to date"
+# heading -- which is not what the closing message below promises.
 launchctl setenv "$REHEARSAL_FIRMWARE_ENV_VAR" "$REHEARSAL_SERVER_URL/firmware-manifest.json"
+launchctl setenv "$REHEARSAL_MAC_RELEASE_ENV_VAR" "$REHEARSAL_SERVER_URL/mac-app-release.json"
 
 DEVICE_FIRMWARE_AFTER="$(rehearsal::device_field "$REHEARSAL_DEVICE_TARGET" firmware)"
 rehearsal::record deviceFirmwareAfter "$DEVICE_FIRMWARE_AFTER"

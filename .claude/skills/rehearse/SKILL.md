@@ -38,6 +38,7 @@ lsof -nP -iTCP:47832 -sTCP:LISTEN      # a foreign listener survives the purge
 ls -d /Volumes/VibeTV* 2>/dev/null     # a mounted image makes hdiutil attach fail
 ls -1dt ~/.vibetv-rehearsal/runs/*/    # an unrestored run buries the original state
 gh auth status                         # the candidate download needs it
+swift -e 'import ApplicationServices; print(AXIsProcessTrusted())'   # false = your clicks are dead
 ```
 
 If the newest run under `~/.vibetv-rehearsal/runs/` still has a non-empty
@@ -60,8 +61,10 @@ scripts/vibetv-rehearse-cold-start.sh --restore
 A signed merge-gate candidate is only needed for release evidence. For a normal
 validation run, build locally and pass `--companion-override <path>`.
 
-Warm start needs one manual Sparkle "Install Update" click from the user -- a
-native macOS dialog that cannot be scripted.
+Warm start puts a Sparkle "Install Update" dialog in front of you. `AGENTS.md`
+calls that click unscriptable; a Sparkle dialog does answer `Return` on its
+default button, verified on the up-to-date dialog. Try `Return` before you ask
+the user to click, and say which of the two happened.
 
 Read the **Customer Rehearsal** section in `AGENTS.md` before the first run. It
 records the traps that cost bench time: the restore chain not reaching the
@@ -71,12 +74,51 @@ already on the candidate not producing a real cold start.
 
 ## Showing the screen is part of the job
 
-Report the rendered UI, not `stream.healthy:true`. If you cannot take a
-screenshot, run `npm run dev` in `apps/control-center` and drive the real
-Companion through `http://localhost:3000` -- the DMG's local `/control-center`
-answers non-native user agents with 410, and hosted `app.vibetv.shop` proxies
-server-side and never reaches loopback. The local dev server cannot load the
-theme catalog, so a custom theme will not preview there.
+Report the rendered UI, not `stream.healthy:true`.
+
+## Driving the installed app
+
+Drive the app the customer actually got. Screenshots and `zoom` always work, so
+you can always see; the question is only how you act.
+
+**Synthetic mouse clicks are silently swallowed** unless the host process is
+trusted for Accessibility (`AXIsProcessTrusted()`). The click still reports
+`Clicked.` and nothing happens -- not in the WebView, not in a native Sparkle
+dialog. Do not read that as a broken UI, and do not spend the run hunting a
+coordinate offset: `zoom` proves the coordinate frame is already correct. The
+one-time fix is the user's to make, in System Settings -> Privacy & Security ->
+Accessibility, for the app that hosts this session (`/Applications/Claude.app`).
+
+**The keyboard is delivered either way** -- this is the path that works today:
+
+| goal | keys |
+| --- | --- |
+| move focus | `Tab`, `shift+Tab` |
+| activate the focused control | `Return` |
+| scroll a screen | `pagedown`, `pageup` (`Page_Down` is rejected) |
+| confirm a native dialog | `Return` hits its default button |
+| reload the WebView | `cmd+r` |
+
+Every customer-facing control in this UI is a real `<button>` or `<a>`, so
+tab-and-Return reaches all of them. Take a screenshot after each step: the focus
+ring tells you where you are.
+
+**Native actions have a URL scheme**, which needs no input at all:
+
+```bash
+open "vibetv://check-for-updates"        # verified end to end
+open "vibetv://repair-codexbar"          # the provider recovery this PR added
+open "vibetv://repair-runtime"
+open "vibetv://restart-control-center"
+```
+
+Only if the installed app cannot be driven at all, fall back to `npm run dev` in
+`apps/control-center` and the real Companion through `http://localhost:3000`.
+Treat that as the last resort: it renders the working tree, not the candidate
+bundle, so it proves nothing about the native shell. The DMG's local
+`/control-center` answers non-native user agents with 410, and hosted
+`app.vibetv.shop` proxies server-side and never reaches loopback. The local dev
+server cannot load the theme catalog, so a custom theme will not preview there.
 
 When checking a message that suggests an action, verify the action exists in the
 UI. `grep` the component name; if only its own test file imports it, it is dead
