@@ -2941,12 +2941,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         // SMAppService.register() bootstraps a LaunchAgent immediately. Stop
         // every legacy writer first so migration never overlaps two streams.
-        // The repair's restoration stays armed across this switch: registration
-        // can still come back needing approval or failing outright, and
-        // disarming first would leave a previously healthy Companion stopped.
+        // The repair's restoration stays armed across this switch and past it:
+        // .ready only means Service Management accepted the registration, and
+        // the health gate below can still fail and unregister what it just
+        // registered. Disarming here left the Mac with no Companion at all.
         switch await ensureBundledRuntimeServiceRegistered() {
         case .ready:
-            runtimeStoppedForCodexBarRepair = false
+            break
         case .requiresApproval:
             return .failure(.backgroundApproval)
         case .failed:
@@ -3025,6 +3026,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             }
             return .failure(failure)
         }
+        // A healthy runtime is established. Only now is there nothing left for
+        // the repair's restoration to put back.
+        runtimeStoppedForCodexBarRepair = false
         clearPendingNativeUpdate()
 
         if legacyStates.isEmpty {

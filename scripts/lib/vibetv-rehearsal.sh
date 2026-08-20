@@ -600,6 +600,23 @@ for entity in entities:
 
 # Replaces the installed app's companion helper with a locally built one. This
 # is how a fix that has no signed CI candidate yet gets rehearsed on hardware.
+# rehearsal::stop_runtime bootouts every agent under the bundle id, and the
+# override's standalone agent is one of them. The app's own bundled agent never
+# starts after an override, so without this the Mac is left with no runtime and
+# the app opens on "VibeTV couldn't start". Safe to call when no override is in
+# play: there is no user plist then.
+rehearsal::bootstrap_override_runtime() {
+  local user_plist="$HOME/Library/LaunchAgents/${REHEARSAL_BUNDLE_ID}.runtime.plist"
+  [[ -f "$user_plist" ]] || return 0
+  launchctl bootout "gui/$(id -u)/${REHEARSAL_BUNDLE_ID}.runtime" >/dev/null 2>&1 || true
+  local bootstrap_error
+  if bootstrap_error="$(launchctl bootstrap "gui/$(id -u)" "$user_plist" 2>&1)"; then
+    rehearsal::info 'restarted the overridden runtime agent'
+    return 0
+  fi
+  rehearsal::die "launchd rejected the runtime agent at $user_plist: ${bootstrap_error:-unknown error}"
+}
+
 rehearsal::apply_companion_override() {
   [[ -n "$REHEARSAL_COMPANION_OVERRIDE" ]] || return 0
   local source="$REHEARSAL_COMPANION_OVERRIDE"

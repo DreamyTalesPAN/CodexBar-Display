@@ -130,6 +130,9 @@ rehearsal::apply_companion_override
 # The runtime reads these overrides from its environment at launch, so it has to
 # come up after they are set.
 rehearsal::stop_runtime
+# Same hole as in cold start: the stop bootouts the override's standalone agent
+# and open_app only runs `open`.
+rehearsal::bootstrap_override_runtime
 rehearsal::open_app
 
 # The Sparkle "Install Update" click is a native macOS dialog. Driving it from a

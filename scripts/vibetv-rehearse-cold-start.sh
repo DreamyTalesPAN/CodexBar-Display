@@ -99,6 +99,10 @@ rehearsal::record deviceFirmwareAfter "$DEVICE_FIRMWARE_AFTER"
 # the public release, which is not what the closing message below promises.
 # Warm start does the same two lines for the same reason.
 rehearsal::stop_runtime
+# The stop above bootouts the override's standalone agent too, and open_app only
+# runs `open`. Bring it back with the feeds now staged, or the documented
+# local-validation path opens without its Companion at all.
+rehearsal::bootstrap_override_runtime
 rehearsal::open_app
 rehearsal::write_report "$FIRMWARE_OUTCOME"
 
