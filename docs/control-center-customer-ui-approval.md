@@ -1051,3 +1051,15 @@ issue scope, or release permission never implies UI permission.
   `control-center-types.ts`, `control-center-runtime.ts`,
   `control-center-app.tsx`, `check-customer-ui-copy.mjs`, and this approval
   record.
+
+## 2026-08-20 — A provider that timed out is not a provider that was switched off
+
+- User approval: The customer-flow suite went red on the `Open CodexBar`
+  stopgap; the user asked to get CI green.
+- Approved customer-visible result: `No AI provider is switched on` now needs
+  every provider to report `enabled: false`. A provider that reports a failure
+  without an `enabled` flag — a timeout, for instance — keeps the existing
+  `CodexBar is needed` screen instead of being described as switched off. No new
+  copy, controls, or screen order; this only narrows which of the two existing
+  screens a customer sees.
+- Approved files: `control-center-types.ts` and this approval record.

@@ -558,7 +558,10 @@ export function providerSetupHasEngineButNoEnabledProvider(
   return (
     normalizedProviderStatus(providerSetup?.engine?.status) === "ready" &&
     providers.length > 0 &&
-    !providers.some((provider) => provider.enabled === true)
+    // Every provider must say it is off. A missing flag is not evidence: a
+    // provider that timed out reports no `enabled` at all, and calling that
+    // "switched off" would hide a real failure behind the wrong screen.
+    providers.every((provider) => provider.enabled === false)
   );
 }
 
