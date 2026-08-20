@@ -31,6 +31,7 @@ REHEARSAL_RESTORE=0
 REHEARSAL_KEEP_CODEXBAR=0
 REHEARSAL_SKIP_FIRMWARE_BASELINE=0
 REHEARSAL_INSTALL_MAC_APP=0
+REHEARSAL_RESTORE_FROM=""
 REHEARSAL_COMPANION_OVERRIDE=""
 
 REHEARSAL_STATE_DIR="$HOME/.vibetv-rehearsal"
@@ -93,6 +94,8 @@ Usage: $(basename "$0") [options]
   --pr <number>          Pull request whose merge-gate candidate to install (default: $REHEARSAL_PR)
   --run-id <id>          Use an explicit CODEX Test VibeTV Merge run instead of the newest for --pr
   --device-target <url>  VibeTV base URL, e.g. http://192.168.178.72 (default: autodetect)
+  --restore-from <run>   Restore a named run under ~/.vibetv-rehearsal/runs
+                         instead of the newest one with a backup
   --install-mac-app      Warm start only: perform the Sparkle update headlessly
                          with the pinned Sparkle CLI instead of leaving the
                          dialog for a human to click
@@ -123,6 +126,9 @@ rehearsal::parse_args() {
       --skip-firmware-baseline) REHEARSAL_SKIP_FIRMWARE_BASELINE=1; shift ;;
       --install-mac-app) REHEARSAL_INSTALL_MAC_APP=1; shift ;;
       --restore) REHEARSAL_RESTORE=1; shift ;;
+      --restore-from)
+        [[ -n "${2:-}" ]] || rehearsal::die '--restore-from needs a run directory name'
+        REHEARSAL_RESTORE=1; REHEARSAL_RESTORE_FROM="$2"; shift 2 ;;
       --yes|-y) REHEARSAL_ASSUME_YES=1; shift ;;
       -h|--help) rehearsal::usage; exit 0 ;;
       *) rehearsal::usage >&2; rehearsal::die "unknown argument: $1" ;;
@@ -335,14 +341,24 @@ rehearsal::installed_app_version() {
 
 rehearsal::restore() {
   # A rehearsal on an already-purged Mac stashes nothing, so restore has to walk
-  # back to the newest run that actually captured something.
+  # back to the newest run that actually captured something. After cold+warm
+  # that newest run holds the candidate state, not the pre-session Mac, so
+  # --restore-from names the run that does.
   local backup="" candidate
-  for candidate in $(ls -1dt "$REHEARSAL_STATE_DIR"/runs/*/ 2>/dev/null); do
-    if [[ -s "${candidate}backup/manifest.txt" ]]; then
-      backup="${candidate}backup"
-      break
-    fi
-  done
+  if [[ -n "$REHEARSAL_RESTORE_FROM" ]]; then
+    candidate="$REHEARSAL_STATE_DIR/runs/$REHEARSAL_RESTORE_FROM"
+    [[ -s "$candidate/backup/manifest.txt" ]] \
+      || rehearsal::die "run $REHEARSAL_RESTORE_FROM has no restorable backup"
+    backup="$candidate/backup"
+  fi
+  if [[ -z "$backup" ]]; then
+    for candidate in $(ls -1dt "$REHEARSAL_STATE_DIR"/runs/*/ 2>/dev/null); do
+      if [[ -s "${candidate}backup/manifest.txt" ]]; then
+        backup="${candidate}backup"
+        break
+      fi
+    done
+  fi
   [[ -n "$backup" ]] \
     || rehearsal::die "no rehearsal with a restorable backup found under $REHEARSAL_STATE_DIR/runs"
 
@@ -377,12 +393,23 @@ rehearsal::fetch_candidate() {
   rehearsal::require_tools gh
 
   if [[ -z "$REHEARSAL_RUN_ID" ]]; then
-    rehearsal::info "looking for the newest successful CODEX Test VibeTV Merge run"
-    REHEARSAL_RUN_ID="$(gh run list --repo "$REHEARSAL_REPOSITORY" \
-      --workflow vibetv-merge-gate.yml --status success --limit 1 \
-      --json databaseId --jq '.[0].databaseId' 2>/dev/null || true)"
+    # A merge gate that ends red still uploads its candidate: the guest tests
+    # run after sign-and-package. Insisting on --status success sends a
+    # rehearsal off to build an older PR's code, which is worse than useless.
+    rehearsal::info 'looking for the newest CODEX Test VibeTV Merge run with a candidate'
+    local run_id
+    for run_id in $(gh run list --repo "$REHEARSAL_REPOSITORY" \
+      --workflow vibetv-merge-gate.yml --limit 12 \
+      --json databaseId --jq '.[].databaseId' 2>/dev/null || true); do
+      if gh api "repos/$REHEARSAL_REPOSITORY/actions/runs/$run_id/artifacts" \
+        --jq '.artifacts[].name' 2>/dev/null \
+        | grep -qx "CODEX-vibetv-merge-candidate-$run_id"; then
+        REHEARSAL_RUN_ID="$run_id"
+        break
+      fi
+    done
   fi
-  [[ -n "$REHEARSAL_RUN_ID" ]] || rehearsal::die 'no successful merge-gate run found; pass --run-id'
+  [[ -n "$REHEARSAL_RUN_ID" ]] || rehearsal::die 'no merge-gate run with a candidate found; pass --run-id'
 
   local cache="$REHEARSAL_STATE_DIR/candidates/$REHEARSAL_RUN_ID"
   if [[ -f "$cache/dist/macos/candidate-manifest.json" ]]; then
