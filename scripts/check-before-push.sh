@@ -13,6 +13,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 BASE="${1:-origin/main}"
+# An unresolvable base makes the diff below fail silently, every area check drop
+# out as untouched, and this script print "safe to push" having checked nothing.
+git rev-parse --verify --quiet "${BASE}^{commit}" >/dev/null || {
+  printf 'error: cannot resolve comparison base %s\n' "$BASE" >&2
+  exit 2
+}
 FAILED=()
 SKIPPED=()
 

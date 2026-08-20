@@ -1605,3 +1605,20 @@ issue scope, or release permission never implies UI permission.
   nothing at all.
 - Approved files: `companion/internal/companionapi/server.go`,
   `macos/VibeTVControlCenter/main.swift`, and this approval record.
+
+## 2026-08-20 — The temporary CodexBar is released on reload too (no visible change)
+
+- User approval: Standing instruction for this PR, given as "Alle vier" and then
+  "Neue Jobs abweisen" — close the Codex findings on #373. This entry covers a
+  finding with no customer-visible result; it is recorded because the gate
+  covers every file under `src/components/`, not because anything on screen
+  changed.
+- Approved customer-visible result: None. No copy, control, hierarchy, or state
+  the customer can see changes. The recovery cleanup decided whether a repair
+  was still outstanding by looking at the timeout handle, but the success path
+  clears that handle before awaiting the provider retry. A reload in that window
+  therefore skipped the finish action, and the native side kept the temporary
+  CodexBar it had started for the rest of the window session. An explicit flag
+  now says whether a recovery is outstanding, and one function both clears it
+  and sends the finish.
+- Approved files: `control-center-app.tsx` and this approval record.

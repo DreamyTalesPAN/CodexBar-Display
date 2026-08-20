@@ -398,6 +398,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const runtimeRepairAttempted = useRef(false);
   const runtimeRepairTimeout = useRef<number | null>(null);
   const codexBarRepairTimeout = useRef<number | null>(null);
+  // The timeout handle is not the same thing as an outstanding recovery: the
+  // success path clears it before awaiting the provider retry. Only this ref
+  // says whether the native side still holds a temporary CodexBar for us.
+  const codexBarRecoveryOutstanding = useRef(false);
   const providerRecoveryAttempted = useRef(false);
   const providerRecoveryManualAttempted = useRef(false);
   const themeInstallPollJobRef = useRef("");
@@ -3164,6 +3168,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return null;
   }, [runCompanion]);
 
+  // One place tells the native side it may drop the temporary CodexBar, and it
+  // is the same place that clears the outstanding flag. Every exit from a
+  // recovery goes through here.
+  const endCodexBarRecovery = useCallback(() => {
+    codexBarRecoveryOutstanding.current = false;
+    finishCodexBarRecovery();
+  }, []);
+
   const repairUsageService = useCallback(() => {
     if (!isNativeControlCenterApp()) {
       void retryProviderSetup().then((setup) => {
@@ -3187,6 +3199,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       tone: "unknown",
     });
     launchCodexBarRepair();
+    codexBarRecoveryOutstanding.current = true;
     codexBarRepairTimeout.current = window.setTimeout(() => {
       codexBarRepairTimeout.current = null;
       setBusyAction(null);
@@ -3203,9 +3216,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (providerRecoveryManualAttempted.current) {
         setShowCodexBarFallback(true);
       }
-      finishCodexBarRecovery();
+      endCodexBarRecovery();
     }, NATIVE_RUNTIME_REPAIR_TIMEOUT_MS);
-  }, [addEvent, retryProviderSetup]);
+  }, [addEvent, endCodexBarRecovery, retryProviderSetup]);
 
   useEffect(() => {
     const handleResult = (event: Event) => {
@@ -3232,7 +3245,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             providerRecoveryManualAttempted.current = false;
             setShowCodexBarFallback(false);
           })
-          .finally(finishCodexBarRecovery);
+          .finally(endCodexBarRecovery);
         return;
       }
       setBusyAction(null);
@@ -3249,7 +3262,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (providerRecoveryManualAttempted.current) {
         setShowCodexBarFallback(true);
       }
-      finishCodexBarRecovery();
+      endCodexBarRecovery();
     };
     window.addEventListener(NATIVE_CODEXBAR_REPAIR_RESULT_EVENT, handleResult);
     return () => {
@@ -3260,13 +3273,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (codexBarRepairTimeout.current !== null) {
         window.clearTimeout(codexBarRepairTimeout.current);
         codexBarRepairTimeout.current = null;
-        // A reload here would otherwise leave the temporary CodexBar this
-        // recovery started running for the rest of the window session: the
-        // native side only stops it on the finish action or on window close.
-        finishCodexBarRecovery();
+      }
+      // A reload here would otherwise leave the temporary CodexBar this
+      // recovery started running for the rest of the window session: the native
+      // side only stops it on the finish action or on window close. This also
+      // covers a reload during the provider retry, where the timeout handle is
+      // already cleared but the retry's own finish can no longer be sent.
+      if (codexBarRecoveryOutstanding.current) {
+        endCodexBarRecovery();
       }
     };
-  }, [addEvent, retryProviderSetup]);
+  }, [addEvent, endCodexBarRecovery, retryProviderSetup]);
 
   const retryUsageService = useCallback(() => {
     providerRecoveryManualAttempted.current = true;
