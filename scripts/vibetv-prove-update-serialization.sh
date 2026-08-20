@@ -11,7 +11,10 @@
 # The test fails loudly if the guard is gone: no restart may happen between the
 # job's own startedAt and finishedAt, and every status poll must be answered.
 #
-#   scripts/vibetv-prove-update-serialization.sh
+# This writes firmware to the VibeTV the Companion currently has configured, so
+# it names that device and takes a confirmation first. --yes skips the prompt.
+#
+#   scripts/vibetv-prove-update-serialization.sh [--yes]
 
 set -uo pipefail
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin:$PATH
@@ -27,9 +30,46 @@ listeners() {
     | sed -nE 's/^p([0-9]+)$/\1/p' | sort -u | tr '\n' ' '
 }
 
+ASSUME_YES=0
+case "${1:-}" in
+  --yes|-y) ASSUME_YES=1 ;;
+  '') ;;
+  *) echo "usage: $(basename "$0") [--yes]" >&2; exit 2 ;;
+esac
+
 before="$(listeners)"
 printf 'listener before: %s\n' "${before:-none}"
 [[ -n "$before" ]] || { echo 'error: no Companion runtime on 47832' >&2; exit 1; }
+
+# A bench script that flashes whichever device happens to be configured is one
+# stale terminal away from writing to the wrong live VibeTV. Name the device and
+# the command, and fail closed when the Companion cannot say which device it is.
+read -r target device_id firmware <<<"$(
+  curl -fsS --max-time 10 "$API/v1/status" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin).get("device") or {}
+except Exception:
+    d = {}
+print(d.get("target") or "-", d.get("deviceId") or "-", d.get("firmware") or "-")
+' 2>/dev/null)"
+[[ "${target:--}" != "-" ]] \
+  || { echo 'error: the Companion names no configured VibeTV; refusing to flash' >&2; exit 1; }
+
+cat <<RISK
+
+This starts a REAL firmware update and fires a CodexBar repair into it.
+
+  device   ${device_id} at ${target}   (firmware ${firmware})
+  command  POST ${API}/v1/updates/install
+
+RISK
+if [[ "$ASSUME_YES" == 1 ]]; then
+  echo 'auto-confirmed (--yes)'
+else
+  read -r -p "Update this VibeTV now? [y/N] " reply
+  [[ "$reply" == [yY] ]] || { echo 'aborted'; exit 1; }
+fi
 
 curl -fsS --max-time 30 -H 'Content-Type: application/json' --data '{}' \
   "$API/v1/updates/install" > "$WORK/start.json" || { echo 'error: could not start the update' >&2; exit 1; }

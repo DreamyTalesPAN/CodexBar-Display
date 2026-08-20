@@ -27,7 +27,6 @@ if [[ "$REHEARSAL_RESTORE" == 1 ]]; then
 fi
 
 rehearsal::require_tools curl python3 gh hdiutil ditto codesign
-rehearsal::require_sparkle_toolchain
 rehearsal::open_run_dir
 
 rehearsal::step 'Checking the connected VibeTV'
@@ -133,19 +132,10 @@ rehearsal::apply_companion_override
 rehearsal::stop_runtime
 rehearsal::open_app
 
-# The Sparkle dialog is the one step a human had to click. It does not have to
-# be: the merge gate drives the same update through the pinned Sparkle CLI.
-MAC_APP_OUTCOME=staged
-if [[ "$REHEARSAL_INSTALL_MAC_APP" == 1 ]]; then
-  if rehearsal::sparkle_update; then
-    MAC_APP_OUTCOME=updated
-    BASELINE_VERSION="$CANDIDATE_VERSION"
-  else
-    MAC_APP_OUTCOME=sparkle-failed
-  fi
-fi
-
-rehearsal::write_report "$MAC_APP_OUTCOME"
+# The Sparkle "Install Update" click is a native macOS dialog. Driving it from a
+# CLI would record the update as done without ever showing the customer-visible
+# flow, which is the only thing a warm start is evidence for.
+rehearsal::write_report staged
 
 cat <<NEXT
 
@@ -156,13 +146,13 @@ cat <<NEXT
  VibeTV firmware     $PUBLIC_FIRMWARE_VERSION   (public customer build)
  Candidate offered   $CANDIDATE_VERSION   (commit ${CANDIDATE_SHA:0:12})
 
- Mac App update       $MAC_APP_OUTCOME
+ Mac App update       staged (yours to click)
 
  Now drive the customer flow yourself:
    1. Pair the VibeTV in the app as a customer would.
    2. Updates tab: update the Mac App. Sparkle downloads $CANDIDATE_VERSION,
-      replaces the app and relaunches it. Already done when the line above
-      reads "updated" -- pass --install-mac-app to skip that click.
+      replaces the app and relaunches it. Click "Install Update" yourself --
+      that dialog is the step this rehearsal exists to exercise.
    3. Updates tab: update the VibeTV firmware to $CANDIDATE_VERSION.
 
  Expected afterwards: Mac App and firmware both report $CANDIDATE_VERSION,

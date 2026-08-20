@@ -62,12 +62,11 @@ scripts/vibetv-rehearse-cold-start.sh --restore
 A signed merge-gate candidate is only needed for release evidence. For a normal
 validation run, build locally and pass `--companion-override <path>`.
 
-Warm start puts a Sparkle "Install Update" dialog in front of you. `AGENTS.md`
-calls that click unscriptable. It is not: pass `--install-mac-app` and the warm
-start performs the update with the same pinned Sparkle CLI the merge gate uses,
-and the report records `macAppInstalledBy=sparkle-cli`. The dialog also answers
-`Return` on its default button if you want to watch it happen, but do not spend
-a run chasing focus -- other apps steal it and the dialog closes.
+Warm start puts a Sparkle "Install Update" dialog in front of you, and you click
+it yourself. Driving it from a CLI would record the update as done without ever
+exercising the customer-visible flow -- which is the only thing a warm start is
+evidence for. Do not spend a run chasing focus for it either: other apps steal
+focus and the dialog closes.
 
 Read the **Customer Rehearsal** section in `AGENTS.md` before the first run. It
 records the traps that cost bench time: the restore chain not reaching the

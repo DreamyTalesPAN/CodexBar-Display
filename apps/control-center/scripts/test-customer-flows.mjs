@@ -536,6 +536,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testProviderlessInstallKeepsTheCompanionOutcome(
+        browser,
+        appContext.appUrl,
+      );
       await testThemeSetupWaitsAfterDeviceReadbackFailure(
         browser,
         appContext.appUrl,
@@ -712,6 +716,10 @@ async function main() {
       appContext.appUrl,
     );
     await testThemeSetupLeavesChooserWhenConnectionIsLost(
+      browser,
+      appContext.appUrl,
+    );
+    await testProviderlessInstallKeepsTheCompanionOutcome(
       browser,
       appContext.appUrl,
     );
@@ -3970,6 +3978,62 @@ async function testThemeSetupLeavesChooserWhenConnectionIsLost(
     "A disconnected VibeTV must leave theme setup for the existing recovery UI",
   );
   assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+// The install succeeded, but the VibeTV cannot draw usage yet, so the Companion
+// finishes the job saying so. Three places used to overwrite that with "Theme is
+// active on VibeTV." -- the job completion, the app's final status, and the
+// install card itself -- telling the customer the theme was on screen while the
+// device still drew the error frame.
+async function testProviderlessInstallKeepsTheCompanionOutcome(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const awaitingProvider =
+    "Theme installed. VibeTV shows it once AI usage is ready.";
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    statusThemeInstallJob: {
+      id: "providerless-install-job",
+      themeId: "synthwave",
+      themeName: "Fixture Synthwave Theme",
+      slot: "live",
+      phase: "installing",
+      message: "Uploading theme files.",
+      progress: 40,
+      startedAt: "2026-08-20T12:00:00.000Z",
+      logs: ["Preparing theme files.", "Uploading theme files."],
+    },
+    installStatusSequence: [
+      {
+        phase: "complete",
+        message: awaitingProvider,
+        progress: 100,
+        logs: [
+          "Preparing theme files.",
+          "Uploading theme files.",
+          awaitingProvider,
+        ],
+        result: {
+          themeId: "synthwave",
+          packId: "synthwave",
+          name: "Synthwave",
+          activePath: "/themes/u/synthwave.json",
+          themeRev: 1,
+        },
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByText(awaitingProvider, { exact: true })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("Theme is active on VibeTV.").count()) === 0,
+    "A VibeTV that cannot draw usage yet must never be described as showing the theme",
+  );
   await page.close();
 }
 

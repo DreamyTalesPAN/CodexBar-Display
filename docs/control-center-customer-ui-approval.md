@@ -1564,3 +1564,27 @@ issue scope, or release permission never implies UI permission.
   still shows the switched-off screen. No new copy or controls.
 - Approved files: `control-center-types.ts`, `device-startup-screen.test.tsx`,
   and this approval record.
+
+## 2026-08-20 — A theme is not "active" while the VibeTV cannot draw it
+
+- User approval: Asked which of the four open Codex findings on PR #373 to take
+  on, the user chose "Alle vier", the option covering "die überschriebene
+  Provider-Meldung in server.go und das zu kurze Repair-Timeout".
+- Approved customer-visible result: When a theme install finishes on a VibeTV
+  that has no ready AI provider, the install card now reads `Theme installed.
+  VibeTV shows it once AI usage is ready.` instead of `Theme is active on
+  VibeTV.` The install still counts as successful and no control changes; only
+  the completion sentence differs, and only for that outcome. Every other
+  install keeps `Theme is active on VibeTV.`, and a screensaver keeps
+  `Screensaver is ready on VibeTV.` The Companion decides the sentence, so the
+  card cannot contradict the device again: three layers used to overwrite it —
+  the install job at 100%, the app's final status, and the card itself — and a
+  customer whose device was still drawing the error frame was told the theme was
+  on screen.
+- Also approved, not customer-visible: the browser's own repair timeout no
+  longer expires while the native repair is still working (55s could not cover
+  the repair's bounded 8s + 20s + 2s + 35s worst case, so a successful repair was
+  reported as a failure and its result discarded).
+- Approved files: `control-center-app.tsx`, `theme-library-screen.tsx`,
+  `companion/internal/companionapi/server.go`, `scripts/test-customer-flows.mjs`,
+  and this approval record.

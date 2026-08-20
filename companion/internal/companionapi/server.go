@@ -64,19 +64,19 @@ const (
 	// a time. A read-only probe can therefore wait behind a frame render before
 	// it reaches the device; keep this below the client timeout, but long enough
 	// to cover the normal render acknowledgement on stored themes.
-	discoveryProbeTime           = 12 * time.Second
-	deviceProbeCacheTime         = 750 * time.Millisecond
-	repairDiscoveryAttempts      = 3
-	repairDiscoveryRetryGap      = 1200 * time.Millisecond
-	subnetProbeLimit             = 64
-	maxSubnetDiscoveryPrefix     = 23
-	maxSubnetDiscoveryTargets    = 510
-	themeInstallDisableEnv       = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
-	macAppUpdateDisableEnv       = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
-	displayStreamLegacyLabel     = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
-	displayStreamLabelEnv        = runtimepaths.DisplayStreamLaunchAgentLabelEnv
-	displayStreamOutLogEnv       = runtimepaths.DisplayStreamOutLogEnv
-	displayStreamReadyAge        = 2 * time.Minute
+	discoveryProbeTime        = 12 * time.Second
+	deviceProbeCacheTime      = 750 * time.Millisecond
+	repairDiscoveryAttempts   = 3
+	repairDiscoveryRetryGap   = 1200 * time.Millisecond
+	subnetProbeLimit          = 64
+	maxSubnetDiscoveryPrefix  = 23
+	maxSubnetDiscoveryTargets = 510
+	themeInstallDisableEnv    = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
+	macAppUpdateDisableEnv    = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
+	displayStreamLegacyLabel  = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
+	displayStreamLabelEnv     = runtimepaths.DisplayStreamLaunchAgentLabelEnv
+	displayStreamOutLogEnv    = runtimepaths.DisplayStreamOutLogEnv
+	displayStreamReadyAge     = 2 * time.Minute
 	// deviceConnectedGraceWindow keeps a just-seen device Connected (state
 	// "reconnecting") through transient probe misses: 2.5x the 30s WiFi
 	// interval. Long enough to absorb single misses, short enough that a
@@ -4585,6 +4585,10 @@ func (s *Server) finishThemeInstall() {
 	s.installJobsMu.Unlock()
 }
 
+// The install finished, but the device cannot draw usage yet. Both the progress
+// step and the job's terminal message use this one wording.
+const themeInstallAwaitingProviderMessage = "Theme installed. VibeTV shows it once AI usage is ready."
+
 func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runtimeconfig.Config, req themeInstallRequest) {
 	go func() {
 		defer s.finishThemeInstall()
@@ -4613,11 +4617,17 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 		}
 		s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
 			job.Phase = "complete"
-			job.Message = done
+			// Without a ready provider the VibeTV keeps drawing the error frame,
+			// so "active on VibeTV" would contradict the screen the customer is
+			// looking at. The install still succeeded: the provider outcome owns
+			// the final message and says what is still missing.
+			if job.Message != themeInstallAwaitingProviderMessage {
+				job.Message = done
+				appendInstallJobLog(job, done)
+			}
 			job.Progress = 100
 			job.FinishedAt = &finishedAt
 			job.Result = &result
-			appendInstallJobLog(job, done)
 		})
 	}()
 }
@@ -4757,7 +4767,7 @@ func customerInstallProgress(line string, job *themeInstallJob) (string, int, bo
 	case strings.HasPrefix(line, "Display stream: refreshed"):
 		return "Display stream refreshed.", 98, true
 	case strings.HasPrefix(line, "Display stream: waiting for AI provider"):
-		return "Theme installed. VibeTV shows it once AI usage is ready.", 98, true
+		return themeInstallAwaitingProviderMessage, 98, true
 	case strings.HasPrefix(line, "Done:"):
 		return "Theme installed.", 88, true
 	default:

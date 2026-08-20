@@ -111,7 +111,12 @@ const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
 const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
 const LAUNCHD_RECOVERY_GRACE_MS = 12_000;
-const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 55_000;
+// Only a safety net for a native side that never answers at all, so it has to
+// outlast the repair's own bounded worst case: 8s initial health gate + 20s
+// unregister quiesce + 2s settle + 35s health wait, plus provisioning and app
+// launch (main.swift:37-43). At 55s this fired while the repair was still
+// working, reported failure, and then discarded the successful native result.
+const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 120_000;
 const NATIVE_RUNTIME_REPAIR_RESULT_EVENT = "vibetv:runtime-repair-result";
 const NATIVE_CODEXBAR_REPAIR_RESULT_EVENT = "vibetv:codexbar-repair-result";
 
@@ -2093,6 +2098,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         );
         let result = payload.result;
         let logs = customerInstallLogs(payload.logs, initialLogs);
+        // The Companion owns what the install ended as. A providerless VibeTV
+        // finishes with "shows it once AI usage is ready", and overwriting that
+        // here told the customer the theme was active while the device was
+        // still drawing the error frame.
+        let finalMessage = completeMessage;
         if (payload.job) {
           installJobId = payload.job.id;
           themeInstallPollJobRef.current = installJobId;
@@ -2113,6 +2123,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }
           result = finishedJob.result;
           logs = customerInstallLogs(finishedJob.logs, logs);
+          finalMessage = finishedJob.message || completeMessage;
         }
         if (!result) {
           throw {
@@ -2129,9 +2140,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           title: theme.title,
           startedAt,
           finishedAt,
-          message: completeMessage,
+          message: finalMessage,
           progress: 100,
-          logs: customerInstallLogs([...logs, completeMessage]),
+          logs: customerInstallLogs([...logs, finalMessage]),
           result,
         });
         const [, verifiedDevice] = await Promise.all([

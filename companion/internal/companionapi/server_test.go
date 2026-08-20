@@ -10341,3 +10341,80 @@ func TestStatusOmitsClearedScreensaverSlot(t *testing.T) {
 		t.Fatalf("cleared slot must be omitted, got %s", rec.Body.String())
 	}
 }
+
+// The install itself succeeded, but a VibeTV without a ready provider keeps
+// drawing the error frame. Completing the job with "Theme is active on VibeTV."
+// contradicted the screen the customer was looking at, so the provider outcome
+// owns the terminal message.
+func TestThemeInstallAsyncKeepsProviderOutcomeAsFinalMessage(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"error"},"display":{"activeTheme":"theme-missing","themeSpec":{"active":false,"path":"/themes/u/cm.json","renderOk":true}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{ThemeID: opts.ThemeID, PackID: "mini", Name: "Mini"}, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    target,
+			ErrorCode: "provider_setup_required",
+			Detail:    "VibeTV is connected, but no AI provider is ready yet.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		t.Fatal("render proof must not be demanded while no provider can produce usage")
+		return deviceHealth{}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/themes/install",
+		strings.NewReader(`{"themeId":"mini","packUrl":"https://example.com/mini.zip","async":true}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var started themeInstallJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatalf("decode start response: %v", err)
+	}
+
+	var got themeInstallJobResponse
+	for attempt := 0; attempt < 100; attempt++ {
+		rec = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodGet, "/v1/themes/install/status?jobId="+started.Job.ID, nil)
+		server.Handler().ServeHTTP(rec, req)
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status response: %v", err)
+		}
+		if got.Job.Phase == "complete" || got.Job.Phase == "error" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got.Job.Phase != "complete" {
+		t.Fatalf("a theme install without a provider must still complete: %+v", got.Job)
+	}
+	if got.Job.Message != themeInstallAwaitingProviderMessage {
+		t.Fatalf("the provider outcome must survive job completion, got %q", got.Job.Message)
+	}
+	if strings.Contains(strings.Join(got.Job.Logs, "\n"), "Theme is active on VibeTV.") {
+		t.Fatalf("a providerless install must not claim the theme is active: %q", got.Job.Logs)
+	}
+}
