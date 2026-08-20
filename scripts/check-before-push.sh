@@ -64,8 +64,13 @@ else
   SKIPPED+=("control-center (untouched)")
 fi
 
-if touches '^macos/'; then
+if touches '^macos/|^scripts/test-macos-control-center-app-bundle\.sh|^scripts/test-vibetv-hosted-gates\.sh'; then
   run "swift parse" bash -c 'swiftc -parse macos/VibeTVControlCenter/*.swift'
+  # The parser is not the contract. These two pin how the bundle and the native
+  # repair are allowed to behave, and CI runs both; a gate that only parses can
+  # call a branch safe while the macOS job fails.
+  run "macos bundle contract" ./scripts/test-macos-control-center-app-bundle.sh
+  run "hosted gate contract"  ./scripts/test-vibetv-hosted-gates.sh
 else
   SKIPPED+=("macos (untouched)")
 fi

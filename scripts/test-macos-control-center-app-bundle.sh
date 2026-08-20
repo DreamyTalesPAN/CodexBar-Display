@@ -923,22 +923,26 @@ codexbar_stopped_runtime = prepare_method.find("runtimeStoppedForCodexBarRepair 
 codexbar_restore = prepare_method.find(
     "if runtimeStoppedForCodexBarRepair,", codexbar_stopped_runtime
 )
-codexbar_restore_handoff = prepare_method.find(
-    "runtimeStoppedForCodexBarRepair = false", codexbar_restore
-)
 codexbar_registration = prepare_method.find(
-    "switch await ensureBundledRuntimeServiceRegistered()", codexbar_restore_handoff
+    "switch await ensureBundledRuntimeServiceRegistered()", codexbar_restore
+)
+# The handoff belongs AFTER the registration, not before it. Registration can
+# still come back needing approval or failing outright, and disarming the
+# restoration first leaves a previously healthy Companion stopped.
+codexbar_restore_handoff = prepare_method.find(
+    "runtimeStoppedForCodexBarRepair = false", codexbar_registration
 )
 if (
     "registerBundledRuntimeService() != .ready" not in prepare_method
     or "defer {" not in prepare_method[codexbar_stopped_runtime:codexbar_restore]
     or not (
         0 <= codexbar_stopped_runtime < codexbar_restore
-        < codexbar_restore_handoff < codexbar_registration
+        < codexbar_registration < codexbar_restore_handoff
     )
 ):
     raise SystemExit(
-        "an unfinished native CodexBar repair must restart the managed runtime it stopped on every early return"
+        "an unfinished native CodexBar repair must restart the managed runtime it stopped on every early return, "
+        "and must stay armed until registration reports ready"
     )
 native_ready = prepare_method.find("return .nativeRuntimeReady")
 if not (0 <= prepare_method.find("var health = await waitForHealthyRuntime") < native_ready):
