@@ -10531,3 +10531,38 @@ func TestRuntimeUpdateHoldRefusedWhileAnUpdateOwnsTheRuntime(t *testing.T) {
 		t.Fatalf("error code=%q want firmware_update_in_progress", response.Error.Code)
 	}
 }
+
+// The bench script proving update/repair serialisation can only see this from
+// outside: the Mac App keeps no log a script can read, so a repair that was held
+// back and one that never arrived look identical without it.
+func TestRuntimeUpdateHoldRefusalIsObservable(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+	server.updateJobs["active-update"] = &firmwareUpdateJob{ID: "active-update", Phase: "installing"}
+
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalStderr := os.Stderr
+	os.Stderr = write
+	defer func() { os.Stderr = originalStderr }()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/runtime-health/update-hold", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	_ = write.Close()
+
+	logged, _ := io.ReadAll(read)
+	os.Stderr = originalStderr
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", rec.Code)
+	}
+	if !strings.Contains(string(logged), "update hold refused") {
+		t.Fatalf("a refused hold must be observable in the runtime log, got %q", logged)
+	}
+}

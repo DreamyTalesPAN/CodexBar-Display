@@ -78,6 +78,7 @@ job="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["job"]["id
 printf 'job: %s\n' "$job"
 
 fired=0 polls=0 answered=0
+holds_before="$(grep -c 'update hold refused' "$LOG" 2>/dev/null || echo 0)"
 deadline=$((SECONDS + 600))
 while (( SECONDS < deadline )); do
   polls=$((polls + 1))
@@ -92,8 +93,29 @@ print(j.get("phase"), j.get("stage"))' "$WORK/status.json")"
     if [[ "$fired" == 0 && "$stage" == uploading ]]; then
       sleep 20
       printf '  >>> %s firing vibetv://repair-codexbar INTO the running job\n' "$(date -u +%H:%M:%SZ)"
-      open -a "$APP" "vibetv://repair-codexbar"
-      fired=1
+      # A failed open leaves the update running undisturbed, every poll answered
+      # and the listener unchanged -- the exact shape of a pass. Counting that as
+      # a collision is how this script reports PASSED having proven nothing.
+      if ! open -a "$APP" "vibetv://repair-codexbar"; then
+        echo 'error: could not deliver vibetv://repair-codexbar to the installed app' >&2
+        exit 1
+      fi
+      # Delivery is not collision. The Mac App keeps no log a script can read,
+      # so the runtime says it instead: the repair asks for an update hold and is
+      # refused while a job owns this process. That refusal is the only evidence
+      # from outside that the two actually met.
+      for _ in $(seq 1 30); do
+        now="$(grep -c 'update hold refused' "$LOG" 2>/dev/null || echo 0)"
+        if (( now > holds_before )); then
+          fired=1
+          printf '  >>> %s the repair asked for a hold and was refused\n' "$(date -u +%H:%M:%SZ)"
+          break
+        fi
+        sleep 2
+      done
+      if [[ "$fired" == 0 ]]; then
+        printf '  !! the repair was delivered but never reached the update guard\n'
+      fi
     fi
     case "$phase" in complete|error|attention) break ;; esac
   else
@@ -105,7 +127,8 @@ done
 after="$(listeners)"
 printf '\nlistener after:  %s\n' "${after:-none}"
 printf 'polls answered:  %s/%s\n' "$answered" "$polls"
-[[ "$fired" == 1 ]] || printf '!! the repair was never fired: the job never reached uploading\n'
+[[ "$fired" == 1 ]] \
+  || printf '!! no repair ever met this job, so nothing about serialisation was proven\n'
 
 python3 - "$WORK/status.json" "$LOG" "$before" "$after" "$answered" "$polls" "$fired" <<'PY'
 import json, sys

@@ -1495,6 +1495,10 @@ func (s *Server) handleRuntimeUpdateHold(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if _, running := s.activeFirmwareUpdateJob(); running {
+		// The only place the collision is observable from outside: the Mac App
+		// has no log a script can read, so without this line a bench run cannot
+		// tell a repair that was held back from one that never arrived.
+		_, _ = fmt.Fprintln(os.Stderr, "VibeTV update hold refused: a firmware update owns this runtime")
 		writeError(
 			w,
 			http.StatusConflict,
