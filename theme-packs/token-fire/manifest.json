@@ -1,0 +1,35 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "token-fire",
+  "name": "Token Fire",
+  "version": "0.2.3",
+  "minFirmware": "1.0.40",
+  "usage": "screensaver",
+  "requiredCapabilities": [
+    "usage-slots-v1"
+  ],
+  "themeSpec": {
+    "path": "/themes/s/tf-5-9aeed240.json",
+    "file": "theme.json",
+    "bytes": 914,
+    "sha256": "9aeed2406cd53bf24bd4997c75fa71815edbef717bbed35e4f955bca11d978ae",
+    "contentType": "application/json"
+  },
+  "assets": [
+    {
+      "path": "/themes/s/tf-bg.cbi",
+      "file": "assets/tf-bg.cbi",
+      "bytes": 2826,
+      "sha256": "8b9a4627db9d676bf84aa86ebf1c68777fc607e937b9be2fe7771d12248e6496",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/s/tf-fire.cba",
+      "file": "assets/tf-fire.cba",
+      "bytes": 8713,
+      "sha256": "c4512a958ad7f53a1076878d2a6fa0e007dbe2943bb055f1eb4971faa42211cb",
+      "contentType": "text/plain"
+    }
+  ]
+}

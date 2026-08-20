@@ -258,7 +258,7 @@ describe("UpdatesScreen Mac-App-first gate", () => {
       installedFirmware: "1.0.39",
       latestFirmware: "9999.0.32",
       updateAvailable: true,
-      status: "update_available",
+      status: "update_available" as const,
     },
   };
 

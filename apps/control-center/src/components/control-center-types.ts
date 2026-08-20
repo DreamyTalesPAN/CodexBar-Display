@@ -134,6 +134,11 @@ export type SupportDiagnostics = {
       viewport?: string;
       timezone?: string;
       visibility?: string;
+      surface?: "native-mac-app" | "browser";
+      appVersion?: string;
+      appBuild?: string;
+      /** Loopback runtime address. Diagnostic only; not navigable. */
+      internalRuntimeAddress?: string;
       page?: string;
     };
     state: SupportReportClientState;
@@ -154,6 +159,13 @@ export type SupportReportClientState = {
   device?: DeviceInfo | null;
   deviceSearchState: DeviceSearchState;
   deviceCandidates: DeviceCandidate[];
+  deviceRecovery?: {
+    preferredDeviceId?: string;
+    failedNormalChecks: number;
+    pickerReason?: string | null;
+    normalFailureLimit: number;
+    operationFailureLimit: number;
+  };
   providerSetup?: ProviderSetupInfo | null;
   lastError?: ApiError | null;
   recentEvents: ControlCenterEvent[];
@@ -229,6 +241,11 @@ export type DeviceInfo = {
       renderFailures?: number;
     };
   };
+  standby?: {
+    active?: boolean;
+    liveThemePath?: string;
+    screensaverPath?: string;
+  };
   capabilities?: {
     auth?: {
       paired?: boolean;
@@ -245,10 +262,14 @@ export type DeviceInfo = {
       widthPx?: number;
       heightPx?: number;
     };
+    standby?: {
+      supported?: boolean;
+    };
     theme?: {
       supportsThemeSpecV1?: boolean;
       supportsUsageSlotsV1?: boolean;
       supportsUsageWindowsV1?: boolean;
+      supportsProviderSlotsV1?: boolean;
       maxUsageWindows?: number;
       supportsStoredThemes?: boolean;
       maxThemeSpecBytes?: number;
@@ -268,6 +289,15 @@ export type DeviceInfo = {
     };
   };
 };
+
+export type StandbySettings = {
+  enabled: boolean;
+  timeoutMinutes: number;
+  brightnessPercent: number;
+  screensaverPath?: string | null;
+};
+
+export type AppearanceSection = "themes" | "screensavers";
 
 export type ActiveTab =
   "overview" | "usage" | "settings" | "theme-library" | "updates" | "logs";
@@ -428,13 +458,7 @@ export type PreferenceHealthState =
   | string;
 
 export type PreferenceType =
-  | "boolean"
-  | "enum"
-  | "integer"
-  | "duration"
-  | "string"
-  | "secret"
-  | "action";
+  "boolean" | "enum" | "integer" | "duration" | "string" | "secret" | "action";
 
 export type PreferenceValue = boolean | number | string | null;
 
@@ -460,10 +484,7 @@ export type PreferenceDescriptor = {
   };
   requiredCapability?: string;
   writeStrategy:
-    | "codexbar_command"
-    | "vibetv_override"
-    | "device_api"
-    | "secure_session";
+    "codexbar_command" | "vibetv_override" | "device_api" | "secure_session";
   writable: boolean;
   secretState?: "configured" | "not_configured";
   health?: {
@@ -584,9 +605,7 @@ export function deviceNeedsExplicitConnect(
   );
 }
 
-export function deviceNeedsThemeSetup(
-  device: DeviceInfo | null | undefined,
-) {
+export function deviceNeedsThemeSetup(device: DeviceInfo | null | undefined) {
   if (!deviceCanContinueThemeSetup(device) || device?.ready === true) {
     return false;
   }
@@ -623,8 +642,7 @@ export function deviceCompletedThemeSetup(
 ) {
   return (
     deviceCanContinueThemeSetup(device) &&
-    device?.ready === true &&
-    device.display?.themeSpec?.active === true &&
+    device?.display?.themeSpec?.active === true &&
     device.display.themeSpec.renderOk === true
   );
 }

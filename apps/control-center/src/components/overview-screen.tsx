@@ -6,8 +6,10 @@ import {
   Check,
   CircleHelp,
   Monitor,
+  WifiOff,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
   Item,
@@ -23,6 +25,7 @@ import type {
   UsageSnapshot,
 } from "./control-center-types";
 import {
+  deviceIsActive,
   deviceIsCustomerConnected,
   deviceIsReady,
   deviceIsWaitingForUsage,
@@ -47,9 +50,15 @@ export function OverviewScreen({
   displayFrame = null,
   usage,
 }: OverviewScreenProps) {
+  const pairingRejected = device?.paired === false;
   const connected = deviceIsCustomerConnected(device);
   const displayReady = deviceIsReady(device);
   const waitingForUsage = deviceIsWaitingForUsage(device);
+  const reconnecting =
+    deviceIsActive(device) &&
+    !deviceIsReady(device) &&
+    !pairingRejected &&
+    !waitingForUsage;
   const hero = buildHeroCopy(companionStatus, connected);
 
   return (
@@ -115,6 +124,22 @@ export function OverviewScreen({
         </div>
       </section>
     </div>
+  );
+}
+
+function ReconnectNotice({ device }: { device: DeviceInfo | null }) {
+  const wifiSetupLikely =
+    device?.connected === false || device?.connectionState === "setup_required";
+  return (
+    <Alert className="w-full max-w-[1040px]">
+      <WifiOff aria-hidden />
+      <AlertTitle>Reconnecting to VibeTV</AlertTitle>
+      <AlertDescription>
+        {wifiSetupLikely
+          ? "If VibeTV shows VibeTV-Setup, connect your phone to it and choose the new WiFi. Your pairing and settings stay saved."
+          : "VibeTV is online, but its display is still reconnecting."}
+      </AlertDescription>
+    </Alert>
   );
 }
 

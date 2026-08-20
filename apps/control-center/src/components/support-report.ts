@@ -2,6 +2,11 @@ import type {
   SupportDiagnostics,
   SupportReportClientState,
 } from "./control-center-types";
+import {
+  isLoopbackHostname,
+  isNativeControlCenterApp,
+  nativeControlCenterAppBuild,
+} from "./control-center-runtime";
 
 export async function collectSupportReport(
   loadDiagnostics: () => Promise<SupportDiagnostics>,
@@ -76,6 +81,9 @@ function readClientEnvironment() {
   if (typeof window === "undefined" || typeof navigator === "undefined") {
     return {};
   }
+  const native = isNativeControlCenterApp();
+  const { version, build } = nativeControlCenterAppBuild(navigator.userAgent);
+  const location = `${window.location.origin}${window.location.pathname}`;
   return {
     userAgent: navigator.userAgent,
     platform: navigator.platform,
@@ -84,7 +92,15 @@ function readClientEnvironment() {
     viewport: `${window.innerWidth}x${window.innerHeight}@${window.devicePixelRatio}`,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     visibility: document.visibilityState,
-    page: `${window.location.origin}${window.location.pathname}`,
+    surface: native ? "native-mac-app" : "browser",
+    appVersion: version,
+    appBuild: build,
+    // A loopback route is only served to the native Mac App: in a browser the
+    // same URL answers 410 Gone. Keep it as a diagnostic address that names the
+    // runtime owner, never as a page a customer or support can open.
+    ...(native || isLoopbackHostname(window.location.hostname)
+      ? { internalRuntimeAddress: location }
+      : { page: location }),
   };
 }
 

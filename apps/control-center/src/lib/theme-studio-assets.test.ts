@@ -36,6 +36,9 @@ describe("Theme Studio asset helpers", () => {
     );
     expect(path).toMatch(/^\/themes\/u\/[a-z0-9._-]+\.cba$/);
     expect(path.replace("/themes/u/", "")).toHaveLength(21);
+    expect(themeAssetPathForFile("clock.gif", ".gif", "screensaver")).toBe(
+      "/themes/s/clock.gif",
+    );
   });
 
   it("reports asset kinds and encoded byte sizes", () => {

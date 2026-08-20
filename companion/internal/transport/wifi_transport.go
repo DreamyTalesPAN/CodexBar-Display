@@ -77,6 +77,31 @@ type DeviceHealthSnapshot struct {
 			LastErrorStage   string `json:"lastErrorStage"`
 		} `json:"gif"`
 	} `json:"display"`
+	// Whenever something borrows the screen — standby, or the ten-second
+	// post-install screensaver preview — Display.ThemeSpec.Path is that
+	// borrowed spec and LiveThemePath is the slot the device returns to.
+	Standby struct {
+		Active        bool   `json:"active"`
+		LiveThemePath string `json:"liveThemePath"`
+	} `json:"standby"`
+}
+
+// LiveThemeSpecPath reports the live slot regardless of what is drawn right
+// now, so a caller cannot mistake a screensaver on screen for the live theme.
+func (s DeviceHealthSnapshot) LiveThemeSpecPath() string {
+	// A reported way back means someone is borrowing the screen, so it is the
+	// live slot — not what happens to be drawn. Checking Standby.Active alone
+	// missed the post-install preview, which borrows it without standby.
+	if live := strings.TrimSpace(s.Standby.LiveThemePath); live != "" {
+		return live
+	}
+	if s.Standby.Active {
+		return ""
+	}
+	if !s.Display.ThemeSpec.Active {
+		return ""
+	}
+	return strings.TrimSpace(s.Display.ThemeSpec.Path)
 }
 
 type DeviceAsset struct {
@@ -397,6 +422,15 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 	contentType := writer.FormDataContentType()
 	bodyBytes := body.Bytes()
 	uploadClient := t.assetUploadClient(len(bodyBytes))
+	// A lost upload response is only provable through the /assets readback when
+	// the pre-upload state cannot be mistaken for the committed upload. If the
+	// path already holds a same-sized file (or the pre-upload state is unknown),
+	// a size match proves nothing and the upload must be retried instead.
+	sizeMatchProvesCommit := false
+	if preAssets, preErr := t.DeviceAssets(target); preErr == nil {
+		preBytes, existed := preAssets.AssetSize(devicePath)
+		sizeMatchProvesCommit = !existed || preBytes != int64(len(data))
+	}
 	var lastErr error
 	for attempt := 1; attempt <= assetUploadAttempts; attempt++ {
 		req, err := http.NewRequest(http.MethodPost, endpoint, newRateLimitedAssetReader(bodyBytes))
@@ -409,6 +443,13 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 		applyDeviceAuth(req, target)
 		resp, err := uploadClient.Do(req)
 		if err != nil {
+			// ESP8266WebServer can close the socket after committing the file
+			// without delivering the final HTTP response. Confirm the durable
+			// asset before retrying, otherwise the same upload is sent again.
+			if retryableAssetError(err) && sizeMatchProvesCommit &&
+				t.assetUploadWasCommitted(target, devicePath, len(data)) {
+				return nil
+			}
 			lastErr = fmt.Errorf("post asset %s: %w", devicePath, err)
 			if !retryableAssetError(err) || attempt >= assetUploadAttempts {
 				return lastErr
@@ -441,6 +482,15 @@ func (t WiFiTransport) UploadAsset(target, devicePath, filename string, data []b
 		time.Sleep(assetUploadRetryDelay)
 	}
 	return lastErr
+}
+
+func (t WiFiTransport) assetUploadWasCommitted(target, devicePath string, expectedBytes int) bool {
+	assets, err := t.DeviceAssets(target)
+	if err != nil {
+		return false
+	}
+	actualBytes, ok := assets.AssetSize(devicePath)
+	return ok && actualBytes == int64(expectedBytes)
 }
 
 func (t WiFiTransport) assetUploadClient(bodyBytes int) *http.Client {
@@ -526,6 +576,17 @@ func retryableAssetStatus(statusCode int) bool {
 }
 
 func (t WiFiTransport) ActivateStoredTheme(target, devicePath string) error {
+	return t.activateSlot(target, "/theme/active", devicePath)
+}
+
+// ActivateScreensaver points the screensaver slot at a stored ThemeSpec. The
+// device only records the reference here; it never redraws, so the live theme
+// keeps running.
+func (t WiFiTransport) ActivateScreensaver(target, devicePath string) error {
+	return t.activateSlot(target, "/screensaver/active", devicePath)
+}
+
+func (t WiFiTransport) activateSlot(target, endpoint, devicePath string) error {
 	base, err := normalizeWiFiTarget(target)
 	if err != nil {
 		return err
@@ -536,7 +597,7 @@ func (t WiFiTransport) ActivateStoredTheme(target, devicePath string) error {
 	if err != nil {
 		return fmt.Errorf("marshal theme activation: %w", err)
 	}
-	req, err := http.NewRequest(http.MethodPost, base+"/theme/active", bytes.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, base+endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("build theme activation request: %w", err)
 	}

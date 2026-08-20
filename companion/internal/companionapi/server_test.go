@@ -79,6 +79,40 @@ func TestStatusSerializesFalseDeviceBooleans(t *testing.T) {
 	}
 }
 
+func TestStatusIncludesStandbyLiveThemePath(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"saved-device","capabilities":{"standby":{"supported":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"night-clock","themeSpec":{"active":true,"path":"/themes/s/night.json","renderOk":true}},"standby":{"active":true,"idleSecs":900,"liveThemePath":"/themes/u/synthwave.json"}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "saved-device",
+	})
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Device.Standby == nil || !got.Device.Standby.Active ||
+		got.Device.Standby.LiveThemePath != "/themes/u/synthwave.json" {
+		t.Fatalf("expected saved live slot in status, got %+v", got.Device.Standby)
+	}
+}
+
 func TestStatusIncludesLatestFirmwareUpdateJob(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	startedAt := time.Now().UTC().Add(-time.Minute)
@@ -134,6 +168,7 @@ func TestStatusIncludesLatestThemeInstallJob(t *testing.T) {
 		ID:        "active-theme",
 		ThemeID:   "clippy",
 		ThemeName: "Clippy",
+		Slot:      themepack.UsageScreensaver,
 		Phase:     "installing",
 		Message:   "Uploading theme files.",
 		Progress:  40,
@@ -158,6 +193,9 @@ func TestStatusIncludesLatestThemeInstallJob(t *testing.T) {
 	}
 	if got.ThemeInstall.ThemeID != "clippy" || got.ThemeInstall.ThemeName != "Clippy" {
 		t.Fatalf("expected resumable theme identity, got %+v", got.ThemeInstall)
+	}
+	if got.ThemeInstall.Slot != themepack.UsageScreensaver {
+		t.Fatalf("expected resumable theme slot, got %+v", got.ThemeInstall)
 	}
 	if got.ThemeInstall.Phase != "installing" || got.ThemeInstall.Progress != 40 {
 		t.Fatalf("unexpected theme install snapshot: %+v", got.ThemeInstall)
@@ -309,6 +347,40 @@ func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 	}
 	if !sawStaleHello || !sawTokenlessHello || !sawTokenlessHealth {
 		t.Fatalf("expected stale hello, tokenless hello, and tokenless health probes; stale=%t tokenlessHello=%t tokenlessHealth=%t", sawStaleHello, sawTokenlessHello, sawTokenlessHealth)
+	}
+}
+
+func TestSavedPairingRemainsValidUntilExplicitlyRejected(t *testing.T) {
+	tests := []struct {
+		name          string
+		savedToken    string
+		tokenRejected bool
+		streamError   string
+		want          bool
+	}{
+		{name: "busy device fallback", savedToken: "saved-token", want: true},
+		{name: "explicit token rejection", savedToken: "saved-token", tokenRejected: true, want: false},
+		{name: "stream requests pairing", savedToken: "saved-token", streamError: "device_pairing_required", want: false},
+		{name: "no saved token", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := savedPairingRemainsValid(tt.savedToken, tt.tokenRejected, tt.streamError); got != tt.want {
+				t.Fatalf("savedPairingRemainsValid() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPairingTokenForReadinessUsesSavedTokenAfterPublicFallback(t *testing.T) {
+	if got := pairingTokenForReadiness("saved-token", "", true); got != "saved-token" {
+		t.Fatalf("paired public fallback must keep the saved token for readiness, got %q", got)
+	}
+	if got := pairingTokenForReadiness("saved-token", "verified-token", true); got != "verified-token" {
+		t.Fatalf("authenticated probe token must win, got %q", got)
+	}
+	if got := pairingTokenForReadiness("saved-token", "", false); got != "" {
+		t.Fatalf("unpaired device must not receive a saved readiness token, got %q", got)
 	}
 }
 
@@ -2132,6 +2204,70 @@ func TestUsageManualRefreshReportsRefreshingForOldCollectorSnapshot(t *testing.T
 	}
 }
 
+func TestUsageManualRefreshExpiresWithoutNewCollectorSnapshot(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	requestedAt := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	now := requestedAt
+	collectedAt := requestedAt.Add(-time.Minute)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         collectedAt,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used"},
+				CollectedAt: collectedAt,
+			}},
+		}, true
+	}
+
+	initial := httptest.NewRecorder()
+	server.Handler().ServeHTTP(initial, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+	var got usageResponse
+	if err := json.Unmarshal(initial.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode initial response: %v", err)
+	}
+	if initial.Code != http.StatusOK || got.Refresh.State != "refreshing" {
+		t.Fatalf("expected refresh to start, status=%d got=%+v", initial.Code, got.Refresh)
+	}
+
+	now = requestedAt.Add(usageRefreshRequestMaxAge)
+	expired := httptest.NewRecorder()
+	server.Handler().ServeHTTP(expired, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+
+	got = usageResponse{}
+	if err := json.Unmarshal(expired.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode expired response: %v", err)
+	}
+	if expired.Code != http.StatusOK || got.Refresh.State != "unavailable" {
+		t.Fatalf("failed collector refresh must stop refreshing, status=%d got=%+v", expired.Code, got.Refresh)
+	}
+	if got.Refresh.RequestedAt != requestedAt.Format(time.RFC3339) || len(got.Providers) != 1 || got.Providers[0].Weekly != 36 {
+		t.Fatalf("expired refresh must retain its request and last-good values, got %+v", got)
+	}
+
+	stillUnavailable := httptest.NewRecorder()
+	server.Handler().ServeHTTP(stillUnavailable, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if err := json.Unmarshal(stillUnavailable.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode repeated unavailable response: %v", err)
+	}
+	if got.Refresh.State != "unavailable" {
+		t.Fatalf("expired request returned to refreshing or claimed success: %+v", got.Refresh)
+	}
+
+	collectedAt = now
+	recovered := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recovered, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if err := json.Unmarshal(recovered.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode recovered response: %v", err)
+	}
+	if got.Refresh.State != "fresh" {
+		t.Fatalf("new collector snapshot did not clear the failed refresh: %+v", got.Refresh)
+	}
+}
+
 func TestUsageManualRefreshDoesNotCompleteForCachedDashboardSnapshotReread(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
@@ -2663,7 +2799,7 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	usageSlots := url.QueryEscape(`[{"id":"secondary","label":"Weekly","percent":75,"resetSecs":490812},{"id":"codex-spark-weekly","label":"Codex Spark Weekly","percent":0,"resetSecs":604794}]`)
 	if err := os.WriteFile(
 		logPath,
-		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=0 weekly=58 sessionUnavailable=true weeklyUnavailable=false reset=2733s usageSlots=`+usageSlots+` activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
+		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=0 weekly=58 sessionTokens=1400000 weekTokens=384000000 totalTokens=1070000000 tokenTotalsKnown=true sessionUnavailable=true weeklyUnavailable=false reset=2733s usageSlots=`+usageSlots+` activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
 		0o644,
 	); err != nil {
 		t.Fatalf("write display stream log: %v", err)
@@ -2708,6 +2844,10 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	}
 	if got.Frame.UsageMode != "remaining" || got.Frame.Activity != "coding" {
 		t.Fatalf("unexpected sent frame state: %+v", got.Frame)
+	}
+	if got.Frame.SessionTokens != 1400000 || got.Frame.WeekTokens != 384000000 ||
+		got.Frame.TotalTokens != 1070000000 || !got.Frame.TokenTotalsKnown {
+		t.Fatalf("expected token totals from the sent-frame log, got %+v", got.Frame)
 	}
 	if len(got.Frame.UsageWindows) != 2 ||
 		got.Frame.UsageWindows[0].Label != "Weekly" ||
@@ -4834,6 +4974,15 @@ func TestRenderHealthyRequiresCountersAndUsageKind(t *testing.T) {
 		if renderHealthyFromHealth(health) {
 			t.Fatalf("local %s render must not prove that the Mac sent a frame", localRenderKind)
 		}
+	}
+}
+
+func TestClockRenderKeepsTheLiveScreenReadyWithoutProvingAFrame(t *testing.T) {
+	if !liveScreenRenderKind("clock") {
+		t.Fatal("a clock repaint is still the live customer screen")
+	}
+	if usageRenderKind("clock") || localOverlayRenderKind("clock") {
+		t.Fatal("a clock repaint must not prove that the Mac sent a fresh usage frame")
 	}
 }
 
@@ -7218,19 +7367,8 @@ func TestWriteRepairErrorMapsPairingAuthorizationStatus(t *testing.T) {
 
 func TestDefaultRepairDeadlineFitsExtendedUIRequestBudget(t *testing.T) {
 	const uiRequestBudget = 120 * time.Second
-	renderBudget := displayRenderWaitTime
-	if deviceTimeout > renderBudget {
-		renderBudget = deviceTimeout
-	}
-	worstCase := time.Duration(repairDiscoveryAttempts)*discoveryProbeTime +
-		time.Duration(repairDiscoveryAttempts-1)*repairDiscoveryRetryGap +
-		time.Duration(defaultPairAttempts)*defaultPairAttemptTimeout +
-		time.Duration(defaultPairAttempts-1)*defaultPairRetryGap +
-		2*deviceHealthProbeTime +
-		2*displayStreamWaitTime +
-		renderBudget
-	if worstCase >= uiRequestBudget {
-		t.Fatalf("backend repair deadline %s must stay below extended UI request budget %s", worstCase, uiRequestBudget)
+	if repairRequestTimeout >= uiRequestBudget {
+		t.Fatalf("backend repair request timeout %s must stay below extended UI request budget %s", repairRequestTimeout, uiRequestBudget)
 	}
 }
 
@@ -7525,6 +7663,61 @@ func TestThemeInstallCapturesRenderBaselineBeforeActivation(t *testing.T) {
 	}
 }
 
+func TestThemeInstallScreensaverSlotSkipsTheLiveRenderVerification(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("a screensaver install must not read the live render state: %s", r.URL.Path)
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	var gotSlot string
+	server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+		gotSlot = opts.Slot
+		return themeinstall.Result{ThemeID: "night-clock", Slot: opts.Slot}, nil
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		t.Fatal("a screensaver install has no new image to wait for")
+		return deviceHealth{}, nil
+	}
+
+	result, err := server.runThemeInstall(
+		context.Background(),
+		cfg,
+		themeInstallRequest{ThemeID: "night-clock", Slot: themepack.UsageScreensaver},
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("run screensaver install: %v", err)
+	}
+	if gotSlot != themepack.UsageScreensaver || result.Slot != themepack.UsageScreensaver {
+		t.Fatalf("expected the screensaver slot to reach the installer, got %q and %+v", gotSlot, result)
+	}
+}
+
+func TestThemeInstallRejectsUnknownSlot(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		t.Fatal("an unknown slot must be rejected before the install starts")
+		return themeinstall.Result{}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(`{"themeId":"cozy-meadow","slot":"wall"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "invalid_install_slot") {
+		t.Fatalf("expected invalid_install_slot, got %s", rec.Body.String())
+	}
+}
+
 func TestThemeInstallAcceptsZipAndReadsAsyncFromQuery(t *testing.T) {
 	device := newThemeInstallReadyDeviceServer(t)
 	defer device.Close()
@@ -7544,7 +7737,7 @@ func TestThemeInstallAcceptsZipAndReadsAsyncFromQuery(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true&themeId=cozy-meadow&themeName=Cozy%20Meadow", bytes.NewReader(zipBytes))
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true&slot=screensaver&themeId=cozy-meadow&themeName=Cozy%20Meadow", bytes.NewReader(zipBytes))
 	req.Header.Set("Content-Type", "application/zip")
 	server.Handler().ServeHTTP(rec, req)
 
@@ -7561,10 +7754,13 @@ func TestThemeInstallAcceptsZipAndReadsAsyncFromQuery(t *testing.T) {
 	if started.Job.ThemeID != "cozy-meadow" || started.Job.ThemeName != "Cozy Meadow" {
 		t.Fatalf("expected resumable theme identity, got %+v", started.Job)
 	}
+	if started.Job.Slot != themepack.UsageScreensaver {
+		t.Fatalf("expected resumable theme slot, got %+v", started.Job)
+	}
 
 	select {
 	case opts := <-gotOpts:
-		if opts.ThemeID != "cozy-meadow" || opts.PackURL != "" || opts.CatalogURL != "" {
+		if opts.ThemeID != "cozy-meadow" || opts.Slot != themepack.UsageScreensaver || opts.PackURL != "" || opts.CatalogURL != "" {
 			t.Fatalf("unexpected in-memory theme source: %+v", opts)
 		}
 		if !bytes.Equal(opts.PackBytes, zipBytes) {
@@ -8950,20 +9146,14 @@ func TestSettingsValidatesAndForwardsBrightness(t *testing.T) {
 			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"display":{"brightness":{"supported":true,"minPercent":10,"maxPercent":80}},"transport":{"active":"wifi"}}}`))
 		case "/api/settings":
 			settingsCalls++
-			if got := r.Header.Get("X-VibeTV-Token"); got != "" {
-				t.Fatalf("expected no pairing token header, got %q", got)
+			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+				t.Fatalf("expected pairing token header, got %q", got)
 			}
-			if got := r.URL.Query().Get("token"); got != "pair-token" {
-				t.Fatalf("expected pairing query token, got %q", got)
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse form: %v", err)
 			}
-			if got := r.URL.Query().Get("b"); got != "40" {
+			if got := r.Form.Get("b"); got != "40" {
 				t.Fatalf("expected brightness b=40, got %q", got)
-			}
-			if got := r.URL.Query().Get("api"); got != "1" {
-				t.Fatalf("expected API response query, got %q", got)
-			}
-			if r.ContentLength != 0 {
-				t.Fatalf("expected bodyless settings request, got content length %d", r.ContentLength)
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40}}}`))
@@ -9002,6 +9192,189 @@ func TestSettingsValidatesAndForwardsBrightness(t *testing.T) {
 	}
 	if settingsCalls != 1 {
 		t.Fatalf("expected one forwarded settings call, got %d", settingsCalls)
+	}
+}
+
+func TestSettingsForwardsStandbyAndPassesTheCapabilityThrough(t *testing.T) {
+	settingsCalls := 0
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"display":{"brightness":{"supported":true}},"standby":{"supported":true,"minTimeoutMinutes":1,"maxTimeoutMinutes":240,"defaultTimeoutMinutes":10,"screensaverSlot":true},"transport":{"active":"wifi"}}}`))
+		case "/api/settings":
+			settingsCalls++
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse form: %v", err)
+			}
+			if got := r.Form.Get("sb"); got != "1" {
+				t.Fatalf("expected standby sb=1, got %q", got)
+			}
+			if got := r.Form.Get("st"); got != "30" {
+				t.Fatalf("expected standby st=30, got %q", got)
+			}
+			if got := r.Form.Get("sbr"); got != "15" {
+				t.Fatalf("expected standby sbr=15, got %q", got)
+			}
+			if r.Form.Has("b") {
+				t.Fatalf("a standby write must not change display brightness")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40},"standby":{"enabled":true,"timeoutMinutes":30,"brightnessPercent":15,"screensaverPath":null}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":{"display":{"brightnessPercent":40},"standby":{"enabled":true,"timeoutMinutes":30,"brightnessPercent":15,"screensaverPath":null}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/settings", strings.NewReader(`{"standby":{"enabled":true,"timeoutMinutes":30,"brightnessPercent":15}}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected standby write status 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if settingsCalls != 1 {
+		t.Fatalf("expected one forwarded settings call, got %d", settingsCalls)
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, `"standby":{"enabled":true,"timeoutMinutes":30,"brightnessPercent":15,"screensaverPath":null}`) {
+		t.Fatalf("expected the stored standby settings in the response, got %s", body)
+	}
+	if !strings.Contains(body, `"standby":{"supported":true,"minTimeoutMinutes":1,"maxTimeoutMinutes":240,"defaultTimeoutMinutes":10,"screensaverSlot":true}`) {
+		t.Fatalf("expected the standby capability to reach the Control Center, got %s", body)
+	}
+}
+
+func TestSettingsReadsAndWritesTheScreensaverSlot(t *testing.T) {
+	const slotPath = "/themes/s/night.json"
+	storedSlot := ""
+	settings := func() string {
+		slot := "null"
+		if storedSlot != "" {
+			slot = `"` + storedSlot + `"`
+		}
+		return `{"display":{"brightnessPercent":40},"standby":{"enabled":true,"timeoutMinutes":10,"brightnessPercent":20,"screensaverPath":` + slot + `}}`
+	}
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"display":{"brightness":{"supported":true}},"standby":{"supported":true,"screensaverSlot":true},"transport":{"active":"wifi"}}}`))
+		case "/api/settings":
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse form: %v", err)
+			}
+			if got := r.Form.Get("ss"); got != slotPath {
+				t.Fatalf("expected screensaver slot ss=%q, got %q", slotPath, got)
+			}
+			storedSlot = slotPath
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":` + settings() + `}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":` + settings() + `}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/settings", strings.NewReader(
+		`{"standby":{"enabled":true,"timeoutMinutes":10,"brightnessPercent":20,"screensaverPath":"`+slotPath+`"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected screensaver slot write status 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	recorder = httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/settings", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected settings read status 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"screensaverPath":"`+slotPath+`"`) {
+		t.Fatalf("expected the screensaver slot in the settings read, got %s", recorder.Body.String())
+	}
+}
+
+func TestSettingsLeavesTheScreensaverSlotAloneWhenOmitted(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"display":{"brightness":{"supported":true}},"standby":{"supported":true},"transport":{"active":"wifi"}}}`))
+		case "/api/settings":
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse form: %v", err)
+			}
+			if r.Form.Has("ss") {
+				t.Fatalf("a standby write without screensaverPath must not touch the slot")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40},"standby":{"enabled":false,"timeoutMinutes":10,"brightnessPercent":20,"screensaverPath":"/themes/s/night.json"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":{"display":{"brightnessPercent":40},"standby":{"enabled":false,"timeoutMinutes":10,"brightnessPercent":20,"screensaverPath":"/themes/s/night.json"}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/settings", strings.NewReader(`{"standby":{"enabled":false,"timeoutMinutes":10,"brightnessPercent":20}}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected standby write status 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"screensaverPath":"/themes/s/night.json"`) {
+		t.Fatalf("expected the untouched screensaver slot in the response, got %s", recorder.Body.String())
+	}
+}
+
+func TestSettingsRejectsStandbyWithoutDeviceSupport(t *testing.T) {
+	settingsCalls := 0
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"display":{"brightness":{"supported":true}},"standby":{"supported":false},"transport":{"active":"wifi"}}}`))
+		case "/api/settings":
+			settingsCalls++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/settings", strings.NewReader(`{"standby":{"enabled":true,"timeoutMinutes":10,"brightnessPercent":20}}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected standby write status 400, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if settingsCalls != 0 {
+		t.Fatalf("an unsupported standby write must not reach the device")
 	}
 }
 
@@ -9856,5 +10229,115 @@ func TestDiagnosticsReportsTheConfiguredDeviceAsActive(t *testing.T) {
 	if diagnostics.Active != status.Active {
 		t.Fatalf("diagnostics describes a different device than status: diagnostics.active=%t status.active=%t",
 			diagnostics.Active, status.Active)
+	}
+}
+
+// The automatic screensaver update reads the slot off the polled snapshot. It
+// arrives on the tokenless health probe under settings, not under standby, so
+// both are pinned here: the value, and the fact that the probe stays tokenless.
+func TestStatusIncludesScreensaverSlot(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.41","deviceId":"saved-device","capabilities":{"standby":{"supported":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			if token := r.Header.Get("X-VibeTV-Token"); token != "" {
+				t.Fatalf("health probe must stay tokenless, got %q", token)
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"night-clock","themeSpec":{"active":true,"path":"/themes/u/synthwave.json","renderOk":true}},"standby":{"active":false,"idleSecs":5,"liveThemePath":null},"settings":{"display":{"brightnessPercent":40},"standby":{"enabled":true,"timeoutMinutes":10,"brightnessPercent":20,"screensaverPath":"/themes/s/nc-2-cb6d64ba.json"}}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "saved-device",
+	})
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Device.Standby == nil ||
+		got.Device.Standby.ScreensaverPath != "/themes/s/nc-2-cb6d64ba.json" {
+		t.Fatalf("expected screensaver slot in status, got %+v", got.Device.Standby)
+	}
+}
+
+// handleDevice reaches the health probe by a different route than handleStatus,
+// and the Control Center polls both.
+func TestDeviceIncludesScreensaverSlot(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.41","deviceId":"saved-device","capabilities":{"standby":{"supported":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"night-clock","themeSpec":{"active":true,"path":"/themes/u/synthwave.json","renderOk":true}},"standby":{"active":false,"idleSecs":5,"liveThemePath":null},"settings":{"standby":{"enabled":true,"screensaverPath":"  /themes/s/nc-2-cb6d64ba.json  "}}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "saved-device",
+	})
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/device", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Device deviceInfo `json:"device"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Device.Standby == nil ||
+		got.Device.Standby.ScreensaverPath != "/themes/s/nc-2-cb6d64ba.json" {
+		t.Fatalf("expected trimmed screensaver slot, got %+v", got.Device.Standby)
+	}
+}
+
+// An empty slot must not reach the Control Center as an empty string: the
+// automatic update treats "no slot" and "slot unknown" alike, and omitempty is
+// what keeps a cleared slot from looking like a value.
+func TestStatusOmitsClearedScreensaverSlot(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.41","deviceId":"saved-device","capabilities":{"standby":{"supported":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"synthwave","themeSpec":{"active":true,"path":"/themes/u/synthwave.json","renderOk":true}},"standby":{"active":false,"idleSecs":5},"settings":{"standby":{"enabled":true,"screensaverPath":null}}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "saved-device",
+	})
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "screensaverPath") {
+		t.Fatalf("cleared slot must be omitted, got %s", rec.Body.String())
 	}
 }

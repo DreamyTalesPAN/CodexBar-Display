@@ -18,8 +18,9 @@ on the active theme.
 | Synthwave | <img src="assets/vibetv-theme-synthwave.png" alt="Synthwave theme" width="140"> | High-contrast theme with a more visual display style. |
 
 The repository catalog also contains additional theme-pack work such as Cozy
-Meadow. The public Control Center catalog comes from Shopify and maps products
-to VibeTV theme-pack IDs.
+Meadow. The Mac App ships the matching repository catalog and theme packs in
+its local Control Center bundle. Shopify theme products are not part of this
+install path.
 
 ## Customer Flow
 

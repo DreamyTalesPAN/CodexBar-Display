@@ -603,7 +603,7 @@ func TestRunOpenControlCenterFailsWhenLocalControlCenterUnavailable(t *testing.T
 	openControlCenterHTTPClient = server.Client()
 
 	addr := strings.TrimPrefix(server.URL, "http://")
-	err := runOpenControlCenter([]string{"--addr", addr, "--path", "/control-center", "--timeout", "20ms"})
+	err := runOpenControlCenter([]string{"--addr", addr, "--path", "/control-center", "--timeout", "1s"})
 	if err == nil {
 		t.Fatalf("expected unavailable Control Center error")
 	}

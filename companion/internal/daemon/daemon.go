@@ -268,6 +268,9 @@ type cycleResult struct {
 	usageSource     string
 	usageFresh      bool
 	activityDetail  string
+	// resetBasisAt is when the reset deadline in frame was collected. It is the
+	// anchor the device-facing freshness fields are derived from.
+	resetBasisAt time.Time
 }
 
 type persistedLastGood struct {
@@ -1040,8 +1043,61 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		decision.Selected.CollectedAt = collectedAt
 	}
 	result.collectedAt = collectedAt
+	result.resetBasisAt = collectedAt
+	result.frame.ProviderSlots = providerResetSlots(allProviders, collectedAt)
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
+}
+
+// providerResetSlots turns every provider with a live usage countdown into one
+// cross-provider row: label plus that provider's soonest window reset. Each
+// snapshot was collected at its own time, so every reset is first expressed as
+// of resetBasisAt — the selected frame's basis — because ApplyResetTrust later
+// re-anchors the whole frame from exactly that instant. Stale or unavailable
+// providers stay out: a countdown the collector cannot vouch for must not tick
+// on the customer's screen.
+func providerResetSlots(allProviders []codexbar.ParsedFrame, resetBasisAt time.Time) []protocol.UsageSlot {
+	var slots []protocol.UsageSlot
+	for _, provider := range allProviders {
+		if provider.Stale || provider.Frame.UsageUnavailable {
+			continue
+		}
+		var soonest int64
+		var percent int
+		for _, window := range provider.Frame.UsageWindows {
+			reset := window.ResetSec
+			if reset > 0 && !provider.CollectedAt.IsZero() && !resetBasisAt.IsZero() {
+				reset -= int64(resetBasisAt.Sub(provider.CollectedAt) / time.Second)
+			}
+			if reset > 0 && (soonest == 0 || reset < soonest) {
+				soonest = reset
+			}
+			if window.Percent > percent {
+				percent = window.Percent
+			}
+		}
+		if soonest <= 0 {
+			continue
+		}
+		label := strings.TrimSpace(provider.Frame.Label)
+		if label == "" {
+			label = provider.Provider
+		}
+		id := strings.TrimSpace(provider.Frame.Provider)
+		if id == "" {
+			id = provider.Provider
+		}
+		slots = append(slots, protocol.UsageSlot{
+			ID:       id,
+			Label:    label,
+			Percent:  percent,
+			ResetSec: soonest,
+		})
+		if len(slots) == protocol.MaxProviderSlots {
+			break
+		}
+	}
+	return slots
 }
 
 func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time) cycleResult {
@@ -1054,6 +1110,7 @@ func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time)
 		if !isLastGoodFreshAt(state.lastGoodAt, now, lastGoodMaxAge()) {
 			result.frame.UsageUnavailable = true
 		}
+		result.resetBasisAt = state.lastGoodAt
 		result.usedLastGood = true
 		result.selectionReason = "stale-last-good"
 		result.selectionDetail = fmt.Sprintf("kind=%s", result.failureKind)
@@ -1196,7 +1253,14 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = applyDeviceUsageWindowLimit(frame, caps)
-	frame = attachClockFields(frame, deps.now())
+	if !caps.SupportsProviderSlotsV1 {
+		// Firmware without provider-slots-v1 would carry these rows as dead
+		// wire bytes against its frame budget.
+		frame.ProviderSlots = nil
+	}
+	now := deps.now()
+	frame = attachClockFields(frame, now)
+	frame = frame.ApplyResetTrust(result.resetBasisAt, now, result.usageFresh)
 
 	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
 		var applied bool
@@ -1273,8 +1337,8 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		updateLastGoodState(state, authoritativeFrame, collectedAt, deps)
 	}
 
-	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
-		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
+	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionTokens=%d weekTokens=%d totalTokens=%d tokenTotalsKnown=%t sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s providerSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
+		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionTokens, frame.WeekTokens, frame.TotalTokens, frame.TokenTotalsKnown, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), usageSlotsLogValue(frame.ProviderSlots), frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -1380,7 +1444,51 @@ func attachClockFields(frame protocol.Frame, now time.Time) protocol.Frame {
 	}
 	frame.Time = now.Format("15:04")
 	frame.Date = now.Format("02.01.2006")
+	frame.NextClockTransition = nextClockTransition(now)
 	return frame
+}
+
+func nextClockTransition(now time.Time) *protocol.ClockSchedule {
+	if now.IsZero() {
+		return nil
+	}
+	location := now.Location()
+	if location == nil {
+		location = time.Local
+	}
+	localNow := now.In(location)
+	_, currentOffset := localNow.Zone()
+	schedule := &protocol.ClockSchedule{CurrentOffsetMinutes: currentOffset / 60}
+	nowEpoch := now.UTC().Unix()
+	transitionsFound := 0
+	for transitionsFound < 2 {
+		_, end := localNow.ZoneBounds()
+		if end.IsZero() {
+			break
+		}
+		transitionEpoch := end.UTC().Unix()
+		if transitionEpoch <= nowEpoch {
+			localNow = end.Add(time.Nanosecond).In(location)
+			continue
+		}
+		afterTransition := end.Add(time.Nanosecond).In(location)
+		_, nextOffset := afterTransition.Zone()
+		if nextOffset == currentOffset {
+			localNow = afterTransition
+			continue
+		}
+		if transitionsFound == 0 {
+			schedule.TransitionEpoch = transitionEpoch
+			schedule.OffsetMinutes = nextOffset / 60
+		} else {
+			schedule.FollowingTransitionEpoch = transitionEpoch
+			schedule.FollowingOffsetMinutes = nextOffset / 60
+		}
+		currentOffset = nextOffset
+		localNow = afterTransition
+		transitionsFound++
+	}
+	return schedule
 }
 
 func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeState, deps runtimeDeps) error {
@@ -2234,7 +2342,7 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 	}
 
 	frame = frame.Normalize()
-	line, err := frame.MarshalLine()
+	line, err := frame.MarshalNormalizedLine()
 	if err != nil {
 		return nil, protocol.Frame{}, err
 	}
@@ -2243,44 +2351,41 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 	}
 
 	if frame.Update != nil {
-		compactUpdate := frame.Normalize()
+		compactUpdate := frame
 		compactUpdate.Update = compactFrameUpdate(frame.Update)
 		for _, candidate := range compactUpdateCandidates(compactUpdate) {
-			normalized := candidate.Normalize()
-			line, err = normalized.MarshalLine()
+			line, err = candidate.MarshalNormalizedLine()
 			if err != nil {
 				return nil, protocol.Frame{}, err
 			}
 			if len(line) <= maxBytes {
-				return line, normalized, nil
+				return line, candidate, nil
 			}
 		}
 
-		noUpdate := frame.Normalize()
+		noUpdate := frame
 		noUpdate.Update = nil
-		normalized := noUpdate.Normalize()
-		line, err = normalized.MarshalLine()
+		line, err = noUpdate.MarshalNormalizedLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, normalized, nil
+			return line, noUpdate, nil
 		}
-		frame = normalized
+		frame = noUpdate
 	}
 
 	if frame.Theme != "" {
 		noTheme := frame
 		noTheme.Theme = ""
-		normalized := noTheme.Normalize()
-		line, err = normalized.MarshalLine()
+		line, err = noTheme.MarshalNormalizedLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, normalized, nil
+			return line, noTheme, nil
 		}
-		frame = normalized
+		frame = noTheme
 	}
 
 	if frame.SessionTokens > 0 || frame.WeekTokens > 0 || frame.TotalTokens > 0 {
@@ -2288,30 +2393,47 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		noTokens.SessionTokens = 0
 		noTokens.WeekTokens = 0
 		noTokens.TotalTokens = 0
-		normalized := noTokens.Normalize()
-		line, err = normalized.MarshalLine()
+		noTokens.TokenTotalsKnown = false
+		line, err = noTokens.MarshalNormalizedLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, normalized, nil
+			return line, noTokens, nil
 		}
-		frame = normalized
+		frame = noTokens
 	}
 
 	if frame.Time != "" || frame.Date != "" {
 		noClock := frame
 		noClock.Time = ""
 		noClock.Date = ""
-		normalized := noClock.Normalize()
-		line, err = normalized.MarshalLine()
+		line, err = noClock.MarshalNormalizedLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
-			return line, normalized, nil
+			return line, noClock, nil
 		}
-		frame = normalized
+		frame = noClock
+	}
+
+	// Provider rows are an overview extra; the selected provider's own usage
+	// windows are the core customer data and must outlive them in the trim.
+	if len(frame.ProviderSlots) > 0 {
+		for limit := len(frame.ProviderSlots) - 1; limit >= 0; limit-- {
+			trimmed := frame
+			trimmed.ProviderSlots = append([]protocol.UsageSlot(nil), frame.ProviderSlots[:limit]...)
+			normalized := trimmed.Normalize()
+			line, err = normalized.MarshalNormalizedLine()
+			if err != nil {
+				return nil, protocol.Frame{}, err
+			}
+			if len(line) <= maxBytes {
+				return line, normalized, nil
+			}
+		}
+		frame.ProviderSlots = nil
 	}
 
 	usageWindowsActive := len(frame.UsageWindows) > 0
@@ -2328,7 +2450,7 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 				trimmed.UsageSlots = append([]protocol.UsageSlot(nil), frame.UsageSlots[:limit]...)
 			}
 			normalized := trimmed.Normalize()
-			line, err = normalized.MarshalLine()
+			line, err = normalized.MarshalNormalizedLine()
 			if err != nil {
 				return nil, protocol.Frame{}, err
 			}
@@ -2339,7 +2461,7 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 	}
 
 	fallback := protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorFrameTooLarge)).Normalize()
-	line, err = fallback.MarshalLine()
+	line, err = fallback.MarshalNormalizedLine()
 	if err != nil {
 		return nil, protocol.Frame{}, err
 	}
@@ -2365,10 +2487,14 @@ func compactFrameUpdate(update *protocol.UpdateState) *protocol.UpdateState {
 func compactUpdateCandidates(frame protocol.Frame) []protocol.Frame {
 	candidates := []protocol.Frame{frame}
 
+	// Dropping the totals drops the claim with them: leaving the marker set
+	// would let the device read the omitted fields as a completed all-zero
+	// history and render fabricated zeroes.
 	withoutTokens := frame
 	withoutTokens.SessionTokens = 0
 	withoutTokens.WeekTokens = 0
 	withoutTokens.TotalTokens = 0
+	withoutTokens.TokenTotalsKnown = false
 	candidates = append(candidates, withoutTokens)
 
 	withoutClock := withoutTokens

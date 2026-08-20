@@ -48,7 +48,7 @@ display frames.
 | CodexBar | Provider integrations, provider usage fetching, local token scans, provider status. |
 | VibeTV Mac App | Local API, device discovery, pairing, provider-neutral usage transport, one bounded last-good state, theme install, firmware update, support diagnostics. |
 | Control Center | Customer setup, next action UI, Theme Library, Usage view, Settings, Updates, Support logs. |
-| Shopify | Hardware product pages and theme catalog source for Control Center. |
+| Shopify | Hardware storefront. Theme products are not connected to Mac App installs. |
 | GitHub releases | Mac App binaries, checksums, firmware binaries, installer script, theme-pack catalog artifacts. |
 
 ## Why CodexBar Exists In The Stack
@@ -107,7 +107,7 @@ daemon. API language belongs in developer and operator docs.
 
 ## Theme Flow
 
-1. Control Center reads the public theme catalog from Shopify.
+1. The Mac App serves the repository theme catalog bundled with its local Control Center.
 2. Each theme maps to a VibeTV theme-pack ID.
 3. Published themes use catalog artifacts; Theme Studio sends its generated ZIP
    directly to the loopback Mac App without a hosted API or temporary URL.
@@ -118,18 +118,65 @@ daemon. API language belongs in developer and operator docs.
 Theme install and firmware update are separate flows. Theme install must not
 silently flash firmware.
 
+## Screensaver Slot
+
+The device has two independent ThemeSpec slots, and the Mac App is the only path
+to both. Control Center never talks to the device directly.
+
+- `POST /v1/themes/install` takes `"slot": "live"` (the default) or
+  `"slot": "screensaver"`. Both run the same verified install: same pack
+  validation, same asset upload with its rate limiting, same upload verification.
+  The screensaver slot then records the reference through `/screensaver/active`
+  instead of activating and re-rendering, so the live theme stays on screen and
+  there is no new image to verify.
+- A pack is rejected when its `usage` does not match the target slot, before
+  anything is uploaded. The screensaver slot additionally requires a device that
+  advertises `capabilities.standby.supported`.
+- `GET`/`POST /v1/settings` carries `standby` with `enabled`, `timeoutMinutes`,
+  `brightnessPercent` and `screensaverPath`. `screensaverPath` is the slot state:
+  the stored ThemeSpec the device shows in standby, `null` while the slot is
+  empty. Omitting it on a write leaves the slot untouched. The device clamps and
+  validates; the Mac App forwards and returns the readback.
+
+## Device Clock
+
+VibeTV keeps its own wall clock so `{time}` and `{date}` stay correct while the
+Mac is off.
+
+- After the WiFi link is up, the firmware starts SNTP against `pool.ntp.org`
+  (**UDP port 123, outbound**) and reads UTC from the system clock. This is the
+  only traffic the firmware initiates on its own. It is not an HTTPS fetch, so
+  the rule that the firmware must not fetch public HTTPS manifests is untouched.
+- SNTP delivers UTC only. The Companion sends its validated current UTC offset
+  and may send the next two offset transitions as UTC epochs plus follow-on
+  offsets (computed with Go `time.Location`/`ZoneBounds`). Firmware stores the
+  current offset and two 10-byte transition records append-only, then applies
+  them in order when its own SNTP epoch reaches them. The device has no timezone
+  database, POSIX TZ string, libc timezone function, or rule parser.
+- Rendering order: device clock first; the Companion string second, and only
+  while it is still current (two minutes); otherwise `--:--` / `--.--.----`.
+  A frozen value is never presented as the current time.
+- `GET /health` reports `clock.synced`, `clock.source`, `clock.epoch`,
+  `clock.utcOffsetMinutes`, `clock.lastSyncAgeMs`, `clock.syncCount` and the
+  resolved `clock.time` / `clock.date`.
+
 ## Privacy Shape
 
 - Provider usage is read on the customer's Mac through CodexBar and the Mac App.
 - The Mac App sends display frames to VibeTV over local WiFi.
-- The hosted setup page, release metadata, and Shopify theme catalog data come
-  from the web.
+- The hosted setup page and release metadata come from the web. The Mac App
+  theme catalog ships with the app.
 - The full Control Center app is served from the local Mac App after setup.
 - In the normal product flow, provider usage is displayed in the browser and on
   VibeTV; it is not stored as a VibeTV cloud account dataset.
 - Support diagnostics are created only when requested. They include device/app
   health fields and are designed to avoid secrets, pairing tokens, raw cookie
   values, direct contact data, and tokenized URLs.
+- A support report names its surface (`native-mac-app` or `browser`) plus the
+  Mac App version and build. The loopback runtime address appears only in the
+  internal `internalRuntimeAddress` field, never as a `page` link: that route
+  answers `410 Gone` in a normal browser. A hosted report keeps its real
+  public page URL.
 
 ## Developer Entry Points
 
