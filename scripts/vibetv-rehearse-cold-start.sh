@@ -106,6 +106,7 @@ rehearsal::bootstrap_override_runtime
 rehearsal::open_app
 rehearsal::write_report "$FIRMWARE_OUTCOME"
 
+if rehearsal::rehearsal_evidence_possible; then
 cat <<NEXT
 
 ────────────────────────────────────────────────────────────────────────
@@ -126,6 +127,7 @@ cat <<NEXT
  Undo     scripts/vibetv-rehearse-cold-start.sh --restore
 ────────────────────────────────────────────────────────────────────────
 NEXT
+fi
 
 # The summary prints "flash: failed" but the shell only sees $?. A rehearsal that
 # never reached the device must not look like a pass to whatever checks it next.

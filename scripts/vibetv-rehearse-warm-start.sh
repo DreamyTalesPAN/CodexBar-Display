@@ -140,6 +140,7 @@ rehearsal::open_app
 # flow, which is the only thing a warm start is evidence for.
 rehearsal::write_report staged
 
+if rehearsal::rehearsal_evidence_possible; then
 cat <<NEXT
 
 ────────────────────────────────────────────────────────────────────────
@@ -166,3 +167,4 @@ cat <<NEXT
  Undo     scripts/vibetv-rehearse-warm-start.sh --restore
 ────────────────────────────────────────────────────────────────────────
 NEXT
+fi

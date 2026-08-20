@@ -785,6 +785,33 @@ rehearsal::wait_for_device_firmware() {
 
 # --------------------------------------------------------------- reporting
 
+# An ad-hoc re-signed bundle cannot register its runtime -- SMAppService keeps
+# the Developer ID launch constraint from the production install -- so with an
+# override the Mac App does not start and the customer flow cannot be driven at
+# all. Printing READY over that is how an API-level check gets filed as
+# rehearsal evidence, which is the one thing a rehearsal exists to prevent.
+# Returns 1 when this run cannot produce customer evidence.
+rehearsal::rehearsal_evidence_possible() {
+  [[ -n "$REHEARSAL_COMPANION_OVERRIDE" ]] || return 0
+  rehearsal::record customerEvidence unavailable-companion-override
+  cat <<'OVERRIDE'
+
+────────────────────────────────────────────────────────────────────────
+ OVERRIDE RUN -- NOT REHEARSAL EVIDENCE
+────────────────────────────────────────────────────────────────────────
+ --companion-override re-signs the app ad-hoc, and SMAppService then
+ refuses to register its runtime. The Mac App will not start, so there
+ is no customer flow to drive and this run proves nothing about what a
+ customer sees.
+
+ It is still good for companion- and API-level checks against the
+ device. For anything with a screen, build the app with --local-preview
+ and rehearse that.
+────────────────────────────────────────────────────────────────────────
+OVERRIDE
+  return 1
+}
+
 rehearsal::write_report() {
   local outcome="$1"
   rehearsal::record finishedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
