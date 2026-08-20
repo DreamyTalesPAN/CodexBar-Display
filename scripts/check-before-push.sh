@@ -71,7 +71,15 @@ else
 fi
 
 if touches '^scripts/'; then
-  run "shell syntax" bash -c 'for f in $(git diff --name-only '"$BASE"'...HEAD -- scripts | grep "\.sh$"); do [[ -f "$f" ]] && bash -n "$f" || true; done'
+  # `|| true` on the whole list would swallow bash -n and report a clean gate
+  # for a script that does not parse. Skip deleted files, keep every real error.
+  run "shell syntax" bash -c '
+    rc=0
+    for f in $(git diff --name-only '"$BASE"'...HEAD -- scripts | grep "\.sh$"); do
+      [[ -f "$f" ]] || continue
+      bash -n "$f" || rc=1
+    done
+    exit $rc'
 else
   SKIPPED+=("scripts (untouched)")
 fi

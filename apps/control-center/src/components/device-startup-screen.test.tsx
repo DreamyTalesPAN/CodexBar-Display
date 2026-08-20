@@ -190,6 +190,35 @@ describe("DeviceStartupScreen", () => {
     expect(html).toContain("Create support report</span></button>");
   });
 
+  it("does not read a timed-out usage service as every provider being off", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onCreateSupportReport={vi.fn()}
+        onOpenCodexBar={vi.fn()}
+        onPair={vi.fn()}
+        onRepairUsageService={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{
+          status: "setup_required",
+          engine: { status: "ready" },
+          // What CodexBar sends when its own probe timed out: the usage service
+          // stands in for the inventory, and its enablement flag is a zero
+          // value rather than an answer.
+          providers: [{ id: "codexbar", status: "timeout", enabled: false }],
+        }}
+        showCodexBarFallback
+      />,
+    );
+
+    expect(html).toContain("CodexBar is needed</h1>");
+    expect(html).not.toContain("No AI provider is switched on");
+    expect(html).not.toContain("Open CodexBar");
+  });
+
   it("keeps the download when one provider is still switched on", () => {
     const html = renderToStaticMarkup(
       <DeviceStartupScreen

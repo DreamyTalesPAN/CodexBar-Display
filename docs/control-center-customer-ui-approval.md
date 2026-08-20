@@ -1063,3 +1063,17 @@ issue scope, or release permission never implies UI permission.
   copy, controls, or screen order; this only narrows which of the two existing
   screens a customer sees.
 - Approved files: `control-center-types.ts` and this approval record.
+
+## 2026-08-20 — The usage service standing in for the inventory is not a provider
+
+- User approval: The user asked for the six review findings on this PR to be
+  fixed, this one among them.
+- Approved customer-visible result: When CodexBar's own probe times out, it
+  reports a single `codexbar` entry standing in for the provider inventory, and
+  the enablement flag on that stand-in is a zero value rather than an answer.
+  `No AI provider is switched on` and `Open CodexBar` no longer appear for that
+  payload; the customer sees the existing `CodexBar is needed` failure screen
+  instead. A real inventory in which every provider reports `enabled: false`
+  still shows the switched-off screen. No new copy or controls.
+- Approved files: `control-center-types.ts`, `device-startup-screen.test.tsx`,
+  and this approval record.

@@ -558,9 +558,12 @@ export function providerSetupHasEngineButNoEnabledProvider(
   return (
     normalizedProviderStatus(providerSetup?.engine?.status) === "ready" &&
     providers.length > 0 &&
-    // Every provider must say it is off. A missing flag is not evidence: a
-    // provider that timed out reports no `enabled` at all, and calling that
-    // "switched off" would hide a real failure behind the wrong screen.
+    // `codexbar` is not a provider. CodexBar reports the usage service itself
+    // under that id when its own probe timed out or failed, and the enablement
+    // flag on that stand-in is a zero value, not an answer. Reading it as
+    // "every provider is off" hides a failure behind the wrong screen.
+    !providers.some((provider) => provider.id === "codexbar") &&
+    // Every real provider must say it is off. A missing flag is not evidence.
     providers.every((provider) => provider.enabled === false)
   );
 }

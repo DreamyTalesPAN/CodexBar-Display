@@ -42,6 +42,8 @@ private let localNetworkPrivacyProbeTimeout: TimeInterval = 15
 private let runtimeUnregistrationSettleDelay: Duration = .seconds(2)
 private let runtimeUnregistrationQuiesceTimeout: TimeInterval = 20
 private let runtimeUnregistrationQuiescePollDelay: Duration = .milliseconds(250)
+private let runtimeUpdateProbeAttempts = 3
+private let runtimeUpdateProbeRetryDelay: Duration = .seconds(2)
 private let runtimeValidationUnregisterArgument =
     "--vibetv-validation-unregister-runtime"
 private let runtimeValidationUnregisterEnvironmentKey =
@@ -2776,11 +2778,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let runningApplications = NSRunningApplication.runningApplications(
             withBundleIdentifier: codexBarBundleIdentifier
         )
-        if let application = runningApplications.first(where: {
+        if runningApplications.contains(where: {
             $0.bundleURL?.standardizedFileURL == appURL.standardizedFileURL
         }) {
-            codexBarRecoveryApplication = application
-            NSLog("VibeTV Control Center found its temporary CodexBar app already running")
+            // Deliberately not recorded as ours. The customer may have opened it
+            // from the recovery screen, and the finish action would then close
+            // the app under them.
+            NSLog("VibeTV Control Center found the app-managed CodexBar already running")
             return true
         }
         if !runningApplications.isEmpty {
@@ -2861,7 +2865,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             // with it. Restarting the runtime under a running update leaves the
             // customer with a half-written VibeTV and a progress screen that
             // never answers again. Provider recovery is the one that can wait.
-            if await runtimeReportsUpdateInProgress() {
+            if await runtimeShouldDeferRepairForUpdate() {
                 NSLog(
                     "VibeTV Control Center held back its CodexBar repair while a VibeTV update is running"
                 )
@@ -2935,10 +2939,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         // SMAppService.register() bootstraps a LaunchAgent immediately. Stop
         // every legacy writer first so migration never overlaps two streams.
-        runtimeStoppedForCodexBarRepair = false
+        // The repair's restoration stays armed across this switch: registration
+        // can still come back needing approval or failing outright, and
+        // disarming first would leave a previously healthy Companion stopped.
         switch await ensureBundledRuntimeServiceRegistered() {
         case .ready:
-            break
+            runtimeStoppedForCodexBarRepair = false
         case .requiresApproval:
             return .failure(.backgroundApproval)
         case .failed:
@@ -3165,7 +3171,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     // window puts two processes on the API port: the old one still holds the
     // listener while the new one binds it. A fixed delay only guesses when
     // that is over, so wait for the port itself to go quiet.
-    private func runtimeReportsUpdateInProgress() async -> Bool {
+    // Returns true when the CodexBar repair must stand down. Only a runtime that
+    // answers and explicitly says no update is running clears the way: a probe
+    // that fails while an update is in flight, or an older runtime that does not
+    // report the field at all, is exactly the case this guard exists for. A
+    // runtime that never answers after several tries is not running an update
+    // either -- the job lives inside that process -- so that case proceeds,
+    // otherwise a dead runtime could never be registered again.
+    private func runtimeShouldDeferRepairForUpdate() async -> Bool {
+        for _ in 0..<runtimeUpdateProbeAttempts {
+            switch await runtimeUpdateProbe() {
+            case .noUpdate:
+                return false
+            case .updateRunning, .answeredWithoutField:
+                return true
+            case .noAnswer:
+                try? await Task<Never, Never>.sleep(for: runtimeUpdateProbeRetryDelay)
+            }
+        }
+        NSLog("VibeTV Control Center got no runtime answer about a running update; assuming none")
+        return false
+    }
+
+    private enum RuntimeUpdateProbe {
+        case noAnswer
+        case answeredWithoutField
+        case noUpdate
+        case updateRunning
+    }
+
+    private func runtimeUpdateProbe() async -> RuntimeUpdateProbe {
         for origin in runtimeOriginCandidates() {
             var request = URLRequest(
                 url: origin.appendingPathComponent("v1/runtime-health"),
@@ -3182,16 +3217,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                   ) else {
                 continue
             }
-            if payload.updateInProgress == true {
-                return true
+            guard let updating = payload.updateInProgress else {
+                return .answeredWithoutField
             }
+            return updating ? .updateRunning : .noUpdate
         }
-        return false
+        return .noAnswer
     }
 
-    private func waitForRuntimeAPIToStop() async {
+    private func waitForRuntimeAPIToStop() async -> Bool {
         guard let origin = URL(string: defaultRuntimeOriginString) else {
-            return
+            return true
         }
         let healthURL = origin.appendingPathComponent("v1/runtime-health")
         let configuration = URLSessionConfiguration.ephemeral
@@ -3208,13 +3244,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             )
             request.httpMethod = "GET"
             guard (try? await session.data(for: request)) != nil else {
-                return
+                return true
             }
             try? await Task<Never, Never>.sleep(for: runtimeUnregistrationQuiescePollDelay)
         }
+        // Reporting success here would let the caller register a second runtime
+        // on a port the old one still owns, which is the very collision the
+        // wait exists to prevent.
         NSLog(
             "VibeTV Control Center runtime still answered on \(defaultRuntimeOriginString) after unregister"
         )
+        return false
     }
 
     private func unregisterBundledRuntimeService() async -> Bool {
@@ -3235,7 +3275,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
             switch runtimeService.status {
             case .notRegistered, .notFound:
-                await waitForRuntimeAPIToStop()
+                guard await waitForRuntimeAPIToStop() else {
+                    return false
+                }
             case .enabled, .requiresApproval:
                 NSLog(
                     "VibeTV Control Center could not unregister its runtime: \(errorDescription ?? "service remained registered")"
