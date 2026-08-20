@@ -19,6 +19,10 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
+// ProviderReadiness.Enabled is a tri-state: only CodexBar's own inventory
+// answers it, so an omitted flag stays omitted.
+func providerEnabled(value bool) *bool { return &value }
+
 func TestStatusIncludesProviderSetup(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
@@ -49,7 +53,7 @@ func TestProviderSetupReconcilesFreshCollectorUsageAcrossStatusUsageAndDiagnosti
 			CheckedAt: now.Add(-time.Minute).Format(time.RFC3339Nano),
 			Engine:    codexbar.EngineReadiness{Status: codexbar.ProviderReady, Version: "0.46.0"},
 			Providers: []codexbar.ProviderReadiness{{
-				ID: "codexbar", Label: "Usage service", Enabled: true, Status: codexbar.ProviderEngineError,
+				ID: "codexbar", Label: "Usage service", Enabled: providerEnabled(true), Status: codexbar.ProviderEngineError,
 				Detail: "The usage service could not read this provider.",
 			}},
 		}
@@ -115,7 +119,7 @@ func TestProviderSetupRecoversFromCachedEngineErrorAfterLaterCollectorSuccess(t 
 			Status: "setup_required",
 			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
 			Providers: []codexbar.ProviderReadiness{{
-				ID: "codexbar", Label: "Usage service", Enabled: true, Status: codexbar.ProviderEngineError,
+				ID: "codexbar", Label: "Usage service", Enabled: providerEnabled(true), Status: codexbar.ProviderEngineError,
 			}},
 		}
 	}
@@ -158,7 +162,7 @@ func TestProviderSetupDoesNotPromoteGloballyWithHealthyAndFailingProviders(t *te
 			Status: "setup_required",
 			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderEngineError},
 			Providers: []codexbar.ProviderReadiness{{
-				ID: "claude", Label: "Claude", Enabled: true, Status: codexbar.ProviderAuthRequired,
+				ID: "claude", Label: "Claude", Enabled: providerEnabled(true), Status: codexbar.ProviderAuthRequired,
 				Detail: "This provider needs an active sign-in.",
 			}},
 		}
@@ -199,11 +203,11 @@ func TestProviderSetupPreservesCurrentEngineErrorOverCachedUsage(t *testing.T) {
 		Status: "setup_required",
 		Engine: codexbar.EngineReadiness{Status: codexbar.ProviderEngineError},
 		Providers: []codexbar.ProviderReadiness{{
-			ID: "codexbar", Label: "Usage service", Enabled: true, Status: codexbar.ProviderEngineError,
+			ID: "codexbar", Label: "Usage service", Enabled: providerEnabled(true), Status: codexbar.ProviderEngineError,
 		}},
 	}
 	ready := []codexbar.ProviderReadiness{{
-		ID: "codex", Label: "Codex", Enabled: true, Status: codexbar.ProviderReady,
+		ID: "codex", Label: "Codex", Enabled: providerEnabled(true), Status: codexbar.ProviderReady,
 	}}
 
 	for _, reconcile := range []struct {
@@ -264,7 +268,7 @@ func TestProviderSetupDoesNotReconcileFromStaleOrUnavailableUsage(t *testing.T) 
 					Status: "setup_required",
 					Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
 					Providers: []codexbar.ProviderReadiness{{
-						ID: "codexbar", Label: "Usage service", Enabled: true, Status: codexbar.ProviderEngineError,
+						ID: "codexbar", Label: "Usage service", Enabled: providerEnabled(true), Status: codexbar.ProviderEngineError,
 					}},
 				}
 			}
@@ -300,7 +304,7 @@ func TestProviderSetupUsesFreshTokenEvidenceWithoutClaimingQuotaReady(t *testing
 			Status: "setup_required",
 			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
 			Providers: []codexbar.ProviderReadiness{{
-				ID: "codexbar", Label: "Usage service", Enabled: true, Status: codexbar.ProviderEngineError,
+				ID: "codexbar", Label: "Usage service", Enabled: providerEnabled(true), Status: codexbar.ProviderEngineError,
 				Detail: "The usage service could not read this provider.",
 			}},
 		}
@@ -348,7 +352,7 @@ func TestProviderSetupTokenEvidencePreservesSpecificProviderFailures(t *testing.
 			Status: "setup_required",
 			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
 			Providers: []codexbar.ProviderReadiness{{
-				ID: "codex", Label: "Codex", Enabled: true, Status: codexbar.ProviderAuthRequired,
+				ID: "codex", Label: "Codex", Enabled: providerEnabled(true), Status: codexbar.ProviderAuthRequired,
 				Detail: "This provider needs an active sign-in.",
 			}},
 		}
@@ -379,7 +383,7 @@ func TestProviderSetupUsagePreservesSpecificProviderFailures(t *testing.T) {
 			Status: "setup_required",
 			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
 			Providers: []codexbar.ProviderReadiness{{
-				ID: "codex", Label: "Codex", Enabled: true, Status: codexbar.ProviderAuthRequired,
+				ID: "codex", Label: "Codex", Enabled: providerEnabled(true), Status: codexbar.ProviderAuthRequired,
 				Detail: "This provider needs an active sign-in.",
 			}},
 		}
@@ -410,7 +414,7 @@ func TestProviderSetupTokenEvidenceKeepsOneHealthyOneFailingIsolated(t *testing.
 			Status: "setup_required",
 			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
 			Providers: []codexbar.ProviderReadiness{{
-				ID: "claude", Label: "Claude", Enabled: true, Status: codexbar.ProviderAuthRequired,
+				ID: "claude", Label: "Claude", Enabled: providerEnabled(true), Status: codexbar.ProviderAuthRequired,
 				Detail: "This provider needs an active sign-in.",
 			}},
 		}
@@ -537,7 +541,7 @@ func TestProviderRetryCanTargetExactProvider(t *testing.T) {
 		return codexbar.ProviderSetup{
 			Status: "setup_required",
 			Providers: []codexbar.ProviderReadiness{{
-				ID: "future-provider", Label: "Future Provider", Enabled: true, Status: codexbar.ProviderAuthRequired,
+				ID: "future-provider", Label: "Future Provider", Enabled: providerEnabled(true), Status: codexbar.ProviderAuthRequired,
 			}},
 		}
 	}
@@ -577,7 +581,7 @@ func TestExactProviderRetryPreservesFreshFailureOverLastGoodUsage(t *testing.T) 
 					CheckedAt: now.Format(time.RFC3339Nano),
 					Engine:    codexbar.EngineReadiness{Status: codexbar.ProviderReady},
 					Providers: []codexbar.ProviderReadiness{{
-						ID: providerID, Label: "Codex", Enabled: true, Status: status,
+						ID: providerID, Label: "Codex", Enabled: providerEnabled(true), Status: status,
 					}},
 				}
 			}
@@ -618,7 +622,7 @@ func TestExactProviderRetryIsSingleFlight(t *testing.T) {
 		return codexbar.ProviderSetup{
 			Status: codexbar.ProviderReady,
 			Providers: []codexbar.ProviderReadiness{{
-				ID: providerID, Label: "Future Provider", Enabled: true, Status: codexbar.ProviderReady,
+				ID: providerID, Label: "Future Provider", Enabled: providerEnabled(true), Status: codexbar.ProviderReady,
 			}},
 		}
 	}
@@ -731,7 +735,7 @@ func setupFixture(status string) codexbar.ProviderSetup {
 		Status: "setup_required",
 		Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
 		Providers: []codexbar.ProviderReadiness{{
-			ID: "claude", Label: "Claude", Enabled: true, Status: status,
+			ID: "claude", Label: "Claude", Enabled: providerEnabled(true), Status: status,
 			Detail: "Provider setup needs attention.", NextAction: "Open CodexBar and check again.",
 		}},
 	}

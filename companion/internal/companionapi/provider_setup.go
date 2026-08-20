@@ -135,7 +135,6 @@ func freshUsableUsageProviderReadiness(snapshot daemon.ProviderUsageSnapshot, no
 	return codexbar.ProviderReadiness{
 		ID:          info.ID,
 		Label:       info.Label,
-		Enabled:     true,
 		Status:      codexbar.ProviderReady,
 		Source:      strings.TrimSpace(info.Source),
 		CollectedAt: info.CollectedAt,
@@ -176,7 +175,6 @@ func freshTokenUsageProviderReadiness(snapshot daemon.ProviderUsageSnapshot, now
 	return codexbar.ProviderReadiness{
 		ID:          info.ID,
 		Label:       info.Label,
-		Enabled:     true,
 		Status:      codexbar.ProviderReady,
 		Source:      strings.TrimSpace(info.Source),
 		CollectedAt: tokenAt.Format(time.RFC3339),
@@ -345,10 +343,9 @@ func timedOutExactProviderSetup(providerID string, now time.Time) codexbar.Provi
 		Status:    "setup_required",
 		CheckedAt: now.UTC().Format(time.RFC3339Nano),
 		Providers: []codexbar.ProviderReadiness{{
-			ID:      providerID,
-			Label:   providerID,
-			Enabled: true,
-			Status:  codexbar.ProviderTimeout,
+			ID:     providerID,
+			Label:  providerID,
+			Status: codexbar.ProviderTimeout,
 		}},
 	}
 }

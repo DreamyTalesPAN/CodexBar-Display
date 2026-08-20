@@ -38,7 +38,7 @@ type EngineReadiness struct {
 type ProviderReadiness struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
-	Enabled     bool   `json:"enabled"`
+	Enabled     *bool  `json:"enabled,omitempty"`
 	Status      string `json:"status"`
 	Source      string `json:"source,omitempty"`
 	CollectedAt string `json:"collectedAt,omitempty"`
@@ -328,10 +328,11 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 	out, commandErr := runUsageCommandFn(probeCtx, 18*time.Second, bin, args...)
 	if exactProvider == "" {
 		result.Providers = providerReadinessFromOutput(out, commandErr, probeCtx.Err())
+		result.Providers = switchedOffInventory(probeCtx, bin, result.Providers)
 	} else {
 		provider := exactProviderReadinessFromOutput(exactProvider, out, commandErr, probeCtx.Err())
 		provider.Label = exactSetting.Label
-		provider.Enabled = exactSetting.Enabled
+		provider.Enabled = &exactSetting.Enabled
 		result.Providers = []ProviderReadiness{provider}
 		if provider.Status == ProviderReady {
 			collectedAt, collectedErr := time.Parse(time.RFC3339, provider.CollectedAt)
@@ -369,6 +370,38 @@ func exactProviderReadinessFromOutput(providerID string, raw []byte, commandErr,
 	return providerResult(providerID, ProviderNoUsageAvailable)
 }
 
+// `usage --json` lists only the providers that are switched on and carries no
+// enablement field at all, so "everything is off" arrives here as an empty list
+// and becomes the not-configured stand-in -- indistinguishable from CodexBar
+// having no providers. The customer was then told to download the CodexBar they
+// already have. Only in that state, ask CodexBar's own inventory, which is the
+// authority on the switches. Anything else -- a timeout, a config error, one
+// working provider -- never reaches this and pays for no extra call.
+func switchedOffInventory(ctx context.Context, bin string, providers []ProviderReadiness) []ProviderReadiness {
+	if len(providers) != 1 || providers[0].ID != "codexbar" ||
+		providers[0].Status != ProviderNotConfigured {
+		return providers
+	}
+	raw, runErr := runUsageCommandFn(ctx, 5*time.Second, bin, "config", "providers", "--json")
+	inventory, parseErr := parseProviderSettings(raw)
+	if runErr != nil || parseErr != nil || len(inventory) == 0 {
+		return providers
+	}
+	switchedOff := make([]ProviderReadiness, 0, len(inventory))
+	for i := range inventory {
+		if inventory[i].Enabled {
+			// A provider is on but produced no usage line. That is a failure to
+			// report, not a switch that is off, and the stand-in already says so.
+			return providers
+		}
+		provider := providerResult(inventory[i].ID, ProviderNotConfigured)
+		provider.Label = inventory[i].Label
+		provider.Enabled = &inventory[i].Enabled
+		switchedOff = append(switchedOff, provider)
+	}
+	return switchedOff
+}
+
 func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []ProviderReadiness {
 	if errors.Is(contextErr, context.DeadlineExceeded) || errors.Is(commandErr, context.DeadlineExceeded) {
 		return []ProviderReadiness{providerResult("codexbar", ProviderTimeout)}
@@ -398,7 +431,6 @@ func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []Pro
 			status = ProviderNoUsageAvailable
 		}
 		provider := providerResult(id, status)
-		provider.Enabled = true
 		provider.Source = safeProviderSource(firstString(payload, "source"))
 		if collectedAt := firstRFC3339AtPaths(payload, "usage.updatedAt", "updatedAt"); !collectedAt.IsZero() {
 			provider.CollectedAt = collectedAt.Format(time.RFC3339)

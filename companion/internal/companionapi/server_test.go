@@ -9415,7 +9415,7 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 			Status: "ready",
 			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
 			Providers: []codexbar.ProviderReadiness{{
-				ID: "codex", Label: "Codex", Enabled: true, Status: codexbar.ProviderReady,
+				ID: "codex", Label: "Codex", Enabled: providerEnabled(true), Status: codexbar.ProviderReady,
 			}},
 		}
 	}

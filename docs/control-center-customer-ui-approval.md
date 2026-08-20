@@ -1636,3 +1636,22 @@ issue scope, or release permission never implies UI permission.
   sets the busy state stays pending for good and the screen never moves. The
   flow now keeps nudging the clock while it waits.
 - Approved files: `scripts/test-customer-flows.mjs` and this approval record.
+
+## 2026-08-20 — "No AI provider is switched on" can finally happen
+
+- User approval: Asked how the aggregate path should learn the real enablement,
+  the user chose "Nur im Fehlerfall fragen": drop the invented flag, and ask
+  CodexBar's inventory only when the usage probe returns nothing usable.
+- Approved customer-visible result: The approved `No AI provider is switched on`
+  screen with `Open CodexBar` becomes reachable. Until now it could not appear
+  with real data, so a customer who had switched every provider off was sent to
+  `CodexBar is needed — Download and open CodexBar` — told to download the app
+  whose switches they had just flipped, which is what commit 791d061 in this
+  same PR set out to stop. No new copy or controls; an approved screen simply
+  starts appearing in the state it was written for. Verified against bundled
+  CodexBar 0.46.0: `usage --json` lists only switched-on providers and carries
+  no enabled field at all, while `config providers --json` reports all 65 with
+  an honest flag. One provider switched on but silent is still a reporting
+  failure and keeps the existing screen.
+- Approved files: `companion/internal/codexbar/provider_setup.go`,
+  `companion/internal/companionapi/provider_setup.go`, and this approval record.

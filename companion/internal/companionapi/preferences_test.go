@@ -290,7 +290,7 @@ func TestPreferencePatchReturnsCheckingBeforeExactHealthCompletes(t *testing.T) 
 		<-releaseProbe
 		defer close(probeDone)
 		return codexbar.ProviderSetup{Providers: []codexbar.ProviderReadiness{{
-			ID: id, Label: "Claude", Enabled: true, Status: codexbar.ProviderAuthRequired,
+			ID: id, Label: "Claude", Enabled: providerEnabled(true), Status: codexbar.ProviderAuthRequired,
 		}}}
 	}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
@@ -344,8 +344,8 @@ func TestProviderPreferencePatchIsExactCustomerRetryPath(t *testing.T) {
 		return codexbar.ProviderSetup{
 			Status: codexbar.ProviderReady,
 			Providers: []codexbar.ProviderReadiness{
-				{ID: "codex", Label: "Codex", Enabled: true, Status: codexbar.ProviderReady},
-				{ID: id, Label: "Future Provider", Enabled: true, Status: codexbar.ProviderAuthRequired},
+				{ID: "codex", Label: "Codex", Enabled: providerEnabled(true), Status: codexbar.ProviderReady},
+				{ID: id, Label: "Future Provider", Enabled: providerEnabled(true), Status: codexbar.ProviderAuthRequired},
 			},
 		}
 	}
@@ -408,7 +408,7 @@ func TestEnablingAnotherProviderDoesNotCancelFirstExactProbe(t *testing.T) {
 			<-releaseB
 		}
 		return codexbar.ProviderSetup{Providers: []codexbar.ProviderReadiness{{
-			ID: id, Label: id, Enabled: true, Status: codexbar.ProviderAuthRequired,
+			ID: id, Label: id, Enabled: providerEnabled(true), Status: codexbar.ProviderAuthRequired,
 		}}}
 	}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
@@ -529,7 +529,7 @@ func TestEnabledProviderExactUsageDoesNotReplaceUnavailableCollectorSnapshot(t *
 		return codexbar.ProviderSetup{
 			Status: codexbar.ProviderReady,
 			Providers: []codexbar.ProviderReadiness{{
-				ID: id, Label: "Future Provider", Enabled: true, Status: codexbar.ProviderReady,
+				ID: id, Label: "Future Provider", Enabled: providerEnabled(true), Status: codexbar.ProviderReady,
 			}},
 			ExactUsage: &codexbar.ParsedFrame{
 				Provider:    id,
@@ -1024,7 +1024,7 @@ func TestEnablingProviderInvalidatesWarmUsageCache(t *testing.T) {
 	}
 	server.probeExactProvider = func(_ context.Context, _ string, id string) codexbar.ProviderSetup {
 		return codexbar.ProviderSetup{Status: codexbar.ProviderReady, Providers: []codexbar.ProviderReadiness{{
-			ID: id, Label: "Future Provider", Enabled: true, Status: codexbar.ProviderReady,
+			ID: id, Label: "Future Provider", Enabled: providerEnabled(true), Status: codexbar.ProviderReady,
 		}}}
 	}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }

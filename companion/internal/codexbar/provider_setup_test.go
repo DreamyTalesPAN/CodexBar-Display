@@ -422,8 +422,13 @@ func TestProbeProviderSetupReportsReadyProvider(t *testing.T) {
 	if got.Status != ProviderReady || got.Engine.Status != ProviderReady || got.Engine.Version != "0.46" {
 		t.Fatalf("unexpected ready probe: %+v", got)
 	}
-	if len(got.Providers) != 1 || !got.Providers[0].Enabled || got.Providers[0].Status != ProviderReady {
+	if len(got.Providers) != 1 || got.Providers[0].Status != ProviderReady {
 		t.Fatalf("unexpected ready providers: %+v", got.Providers)
+	}
+	// `usage --json` carries no enablement field, so the aggregate path must not
+	// answer that question. Only CodexBar's own inventory can.
+	if got.Providers[0].Enabled != nil {
+		t.Fatalf("aggregate usage must leave enablement unknown: %+v", got.Providers[0])
 	}
 }
 
@@ -578,4 +583,85 @@ func fileMode(t *testing.T, path string) os.FileMode {
 		t.Fatalf("stat %s: %v", path, err)
 	}
 	return info.Mode()
+}
+
+// Verified against bundled CodexBar 0.46.0: `usage --json` lists only the
+// providers that are switched on and carries no enabled field, so switching
+// every provider off yields an empty list. That used to become the
+// not-configured stand-in, and the customer was told to download the CodexBar
+// they already have. CodexBar's own inventory is the authority on the switches.
+func TestProbeProviderSetupReportsEveryProviderSwitchedOff(t *testing.T) {
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	defer func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	}()
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	setExistingConfig(t)
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.46.0"), nil
+	}
+	inventoryCalls := 0
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[0] == "config" && args[1] == "providers" {
+			inventoryCalls++
+			return []byte(`[{"provider":"codex","displayName":"Codex","enabled":false},
+				{"provider":"claude","displayName":"Claude","enabled":false}]`), nil
+		}
+		return []byte(`[]`), nil
+	}
+
+	got := ProbeProviderSetup(context.Background(), t.TempDir())
+	if inventoryCalls != 1 {
+		t.Fatalf("the inventory must be asked exactly once, got %d", inventoryCalls)
+	}
+	if len(got.Providers) != 2 {
+		t.Fatalf("every switched-off provider must be reported: %+v", got.Providers)
+	}
+	for _, provider := range got.Providers {
+		if provider.ID == "codexbar" {
+			t.Fatalf("the stand-in must be replaced by the real inventory: %+v", got.Providers)
+		}
+		if provider.Enabled == nil || *provider.Enabled {
+			t.Fatalf("a switched-off provider must say so: %+v", provider)
+		}
+	}
+}
+
+// One provider switched on but silent is a reporting failure, not a switch that
+// is off. Claiming "no provider is switched on" there would send the customer to
+// flip a switch that is already flipped.
+func TestProbeProviderSetupKeepsStandInWhenAProviderIsSwitchedOn(t *testing.T) {
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	defer func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	}()
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	setExistingConfig(t)
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.46.0"), nil
+	}
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[0] == "config" && args[1] == "providers" {
+			return []byte(`[{"provider":"codex","displayName":"Codex","enabled":true},
+				{"provider":"claude","displayName":"Claude","enabled":false}]`), nil
+		}
+		return []byte(`[]`), nil
+	}
+
+	got := ProbeProviderSetup(context.Background(), t.TempDir())
+	if len(got.Providers) != 1 || got.Providers[0].ID != "codexbar" {
+		t.Fatalf("a switched-on provider must keep the stand-in: %+v", got.Providers)
+	}
 }
