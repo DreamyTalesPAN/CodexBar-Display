@@ -18,6 +18,20 @@ export function isNativeControlCenterUserAgent(userAgent: string): boolean {
   return userAgent.startsWith(NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX);
 }
 
+export function nativeControlCenterAppBuild(userAgent: string): {
+  version?: string;
+  build?: string;
+} {
+  if (!isNativeControlCenterUserAgent(userAgent)) {
+    return {};
+  }
+  const [version, build] = userAgent
+    .slice(NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX.length)
+    .trim()
+    .split("+");
+  return { version: version || undefined, build: build || undefined };
+}
+
 export function isNativeControlCenterApp(): boolean {
   return (
     typeof navigator !== "undefined" &&

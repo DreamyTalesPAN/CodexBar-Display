@@ -134,6 +134,11 @@ export type SupportDiagnostics = {
       viewport?: string;
       timezone?: string;
       visibility?: string;
+      surface?: "native-mac-app" | "browser";
+      appVersion?: string;
+      appBuild?: string;
+      /** Loopback runtime address. Diagnostic only; not navigable. */
+      internalRuntimeAddress?: string;
       page?: string;
     };
     state: SupportReportClientState;
