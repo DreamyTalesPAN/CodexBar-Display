@@ -12,10 +12,12 @@ namespace standby {
 // calls, so it stays natively testable per docs/firmware-guardrails.md. What a
 // transition renders is the caller's job.
 //
-// The only activity signal is a frame whose usage values changed. That one
-// timer covers both "the Mac is off" (no frames at all) and "the Mac is on but
-// nobody is coding" (frames arrive, values stand still) without telling the two
-// cases apart, so the Companion decides nothing.
+// The only activity signal is a frame that reports the customer as working.
+// The caller reads that verdict from the frame itself instead of inferring it
+// from usage percentages, which are whole numbers and can stand still through
+// a long coding session. That one timer covers both "the Mac is off" (no
+// frames at all) and "the Mac is on but nobody is coding" (frames arrive and
+// report not working) without telling the two cases apart.
 
 struct State {
   bool active = false;

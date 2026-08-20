@@ -220,6 +220,14 @@ struct SerialConsumeEvent {
   // The frame moved the usage numbers, which is the only signal the device has
   // that someone is coding. Standby uses it as its activity clock.
   bool usageProgressed = false;
+  // The frame reports the customer as working. This is the Companion's own
+  // activity verdict, carried in the frame, not something the device infers.
+  // Standby uses it as its activity clock so that a customer who is coding
+  // wakes the device immediately, instead of waiting for a whole usage
+  // percent to tick over. Frames that omit `activity` fall back to
+  // `usageProgressed` through the same field, because ConsumeFrameLine fills
+  // the missing value in before this is computed.
+  bool reportsWorking = false;
   uint32_t themeSpecChangedFields = 0;
 };
 
@@ -1426,6 +1434,10 @@ inline bool ConsumeFrameLine(
   if (!next.hasError && next.activity.length() == 0) {
     next.activity = outEvent.usageProgressed ? "coding" : "idle";
   }
+  // Read the activity verdict after the fallback above, so a frame that
+  // carries `activity` is taken at its word and a frame that omits it still
+  // resolves to the inferred value. An error frame reports nothing.
+  outEvent.reportsWorking = !next.hasError && next.activity == "coding";
 
   outEvent.hadFrame = runtimeState.hasFrame;
   const String& themeSpecRaw = ThemeSpecRawForFrame(runtimeState, next);

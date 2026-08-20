@@ -857,6 +857,71 @@ void testUsageProgressRequiresStableProviderAndWindowIdentity() {
   TEST_ASSERT_TRUE(event.usageProgressed);
 }
 
+// Standby's activity clock. Usage percentages are whole numbers, so a customer
+// coding against a weekly quota can work for a long time before the value
+// ticks over. The frame's own activity verdict must wake the device in that
+// window, otherwise the screensaver stays up while the customer types.
+void testReportsWorkingFollowsTheFrameActivityVerdict() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* idleFrame = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":7,"weekly":7,"activity":"idle","usageWindows":[{"id":"weekly","label":"Weekly","percent":7}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idleFrame, 1000, event));
+  TEST_ASSERT_FALSE(event.reportsWorking);
+
+  // The percentages stand completely still, and the old usage-delta inference
+  // reports nothing. This is the case that kept a coding customer asleep.
+  const char* workingFrame = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":7,"weekly":7,"activity":"coding","usageWindows":[{"id":"weekly","label":"Weekly","percent":7}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, workingFrame, 2000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+  TEST_ASSERT_TRUE(event.reportsWorking);
+
+  // The verdict is read every frame, so the customer stopping is seen at once.
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, idleFrame, 3000, event));
+  TEST_ASSERT_FALSE(event.reportsWorking);
+}
+
+// A frame without `activity` still resolves, because ConsumeFrameLine fills the
+// inferred value in first. Older Companions keep the behaviour they had.
+void testReportsWorkingFallsBackToUsageProgressWithoutActivity() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* first = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":10,"weekly":10,"usageWindows":[{"id":"weekly","label":"Weekly","percent":10}]})JSON";
+  const char* progressed = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":11,"weekly":11,"usageWindows":[{"id":"weekly","label":"Weekly","percent":11}]})JSON";
+  const char* standingStill = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":11,"weekly":11,"usageWindows":[{"id":"weekly","label":"Weekly","percent":11}]})JSON";
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, first, 1000, event));
+  TEST_ASSERT_FALSE(event.reportsWorking);
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, progressed, 2000, event));
+  TEST_ASSERT_TRUE(event.usageProgressed);
+  TEST_ASSERT_TRUE(event.reportsWorking);
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, standingStill, 3000, event));
+  TEST_ASSERT_FALSE(event.usageProgressed);
+  TEST_ASSERT_FALSE(event.reportsWorking);
+}
+
+// An error frame states nothing about the customer, so it must not hold the
+// device awake. Quota replenishment must not either, now that the Companion's
+// verdict is what counts.
+void testReportsWorkingIgnoresErrorFramesAndReplenishment() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* working = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":7,"weekly":7,"activity":"coding","usageWindows":[{"id":"weekly","label":"Weekly","percent":7}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, working, 1000, event));
+  TEST_ASSERT_TRUE(event.reportsWorking);
+
+  const char* errorFrame = R"JSON({"v":2,"error":"provider unreachable"})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, errorFrame, 2000, event));
+  TEST_ASSERT_FALSE(event.reportsWorking);
+
+  // A quota reset moves the numbers without the customer doing anything, and
+  // the Companion reports that honestly as idle.
+  const char* replenished = R"JSON({"v":2,"provider":"codex","usageMode":"used","session":0,"weekly":0,"activity":"idle","usageWindows":[{"id":"weekly","label":"Weekly","percent":0}]})JSON";
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, replenished, 3000, event));
+  TEST_ASSERT_FALSE(event.reportsWorking);
+}
+
 void testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw() {
   RuntimeState ownershipState;
   SerialConsumeEvent event;
@@ -2798,6 +2863,9 @@ int main() {
   RUN_TEST(testConsumeFrameLineComparesCurrentBeforeAssignment);
   RUN_TEST(testQuotaReplenishmentDoesNotCountAsUsageProgress);
   RUN_TEST(testUsageProgressRequiresStableProviderAndWindowIdentity);
+  RUN_TEST(testReportsWorkingFollowsTheFrameActivityVerdict);
+  RUN_TEST(testReportsWorkingFallsBackToUsageProgressWithoutActivity);
+  RUN_TEST(testReportsWorkingIgnoresErrorFramesAndReplenishment);
   RUN_TEST(testUsageWindowOwnershipAndCompactTemplateTriggerLiveRedraw);
   RUN_TEST(testWhitespaceUsageWindowOwnersTriggerLiveRedraw);
   RUN_TEST(testPartialUsageProtocolRendersOnlyUnknownLane);

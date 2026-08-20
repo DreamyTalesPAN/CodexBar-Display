@@ -1063,7 +1063,14 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
   // particular, entering standby must not count as fresh customer usage or the
   // next loop immediately exits standby and restores the live theme again.
   // Real Wi-Fi and USB usage frames still reset the idle timer as before.
-  if (event.usageProgressed && strcmp(transport, "theme") != 0) {
+  //
+  // The activity clock reads the frame's own `activity` verdict rather than
+  // inferring one from usage percentages. Percentages are whole numbers, so a
+  // customer coding against a weekly quota can work for a long time before the
+  // value ticks over, and standby would keep the screensaver up while they
+  // type. The Companion already decides this honestly, with its own hold and
+  // idle-evidence rules; the device just uses that answer.
+  if (event.reportsWorking && strcmp(transport, "theme") != 0) {
     standby::NoteUsageActivity(standbyState, lastFrameAcceptedAtMs);
   }
   // SNTP delivers UTC only. The Companion supplies the current local date/time
