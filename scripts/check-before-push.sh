@@ -33,7 +33,17 @@ run() {
 if touches '^companion/'; then
   run "go vet"  bash -c 'cd companion && go vet ./...'
   run "go test" bash -c 'cd companion && go test ./...'
-  run "gofmt"   bash -c 'cd companion && [[ -z "$(gofmt -l .)" ]] || { gofmt -l .; false; }'
+  # Only files this branch touched: the repo carries older violations, and a
+  # gate that fails on someone else's formatting is a gate people switch off.
+  run "gofmt" bash -c '
+    files="$(git diff --name-only '"$BASE"'...HEAD -- "companion/**/*.go" | sed "s#^companion/##")"
+    [[ -n "$files" ]] || exit 0
+    cd companion || exit 1
+    existing=""
+    for f in $files; do [[ -f "$f" ]] && existing="$existing $f"; done
+    [[ -n "$existing" ]] || exit 0
+    bad="$(gofmt -l $existing)"
+    [[ -z "$bad" ]] || { printf "   unformatted: %s\n" "$bad"; exit 1; }'
 else
   SKIPPED+=("companion (untouched)")
 fi
