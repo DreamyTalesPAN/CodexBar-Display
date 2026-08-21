@@ -1451,14 +1451,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             }
             let outcome = await self.prepareCompanion()
             self.preparationTask = nil
-            // A repair that arrives without a WebView is routed through here,
-            // and there is no page to send the finish action back. Releasing
-            // the temporary CodexBar lived only in
-            // beginControlCenterCodexBarRepair, which this route bypasses, so
-            // an app started here survived until the window closed. Released
-            // on every outcome: the finding is about success and failure alike,
-            // and the call is a no-op when this preparation started nothing.
-            self.finishControlCenterCodexBarRecovery()
+            // Deliberately does not release the temporary CodexBar here. Doing
+            // so would end it before anything checked that it produced usable
+            // usage: this route never calls the authoritative provider retry,
+            // which is what owns that app's lifetime on the WebView side. The
+            // app therefore lives until the window closes on this route, which
+            // is the lesser of the two faults and the one that was already
+            // there. Closing it properly means giving this path its own
+            // verification -- new behaviour, tracked separately.
             switch outcome {
             case .nativeRuntimeReady:
                 self.codexBarRepairRequired = false

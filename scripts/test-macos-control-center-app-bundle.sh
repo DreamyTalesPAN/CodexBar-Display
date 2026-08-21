@@ -611,10 +611,6 @@ required_source = [
     # A repair delivered as a URL has no page waiting for the result, so the
     # page's handler drops the event and never sends the finish action. The
     # native side has to release its temporary CodexBar itself in that case.
-    # A repair without a WebView runs through startRuntimePreparation, which has
-    # no page to send the finish action back. Without this the temporary
-    # CodexBar it started survived until the window closed.
-    "            self.finishControlCenterCodexBarRecovery()\n            switch outcome {",
     # The no-WebView repair must not go through retryRuntimePreparation: that
     # wrapper clears codexBarRepairRequired, and prepareCompanion starts the
     # verified CodexBar only while that flag is set.
