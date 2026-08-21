@@ -88,6 +88,11 @@ const approvedCodexBarRecoveryCopy = new Set([
   // Stopgap copy until #245 moves provider selection into setup and settings.
   "Open CodexBar",
   "CodexBar is installed, but every AI provider in it is switched off. Open CodexBar, switch one on, then try again.",
+  // CodexBar answered, so it is installed. Whatever is still missing is settled
+  // inside it, and the download page cannot fix any of it. Deliberately does
+  // not name which step is missing: CodexBar owns that.
+  "Finish AI setup in CodexBar",
+  "CodexBar is installed, but it still cannot read your AI usage. Open CodexBar, finish what it asks for, then try again.",
 ]);
 
 for (const file of files) {

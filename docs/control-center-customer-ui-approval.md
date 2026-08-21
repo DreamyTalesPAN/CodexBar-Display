@@ -1698,3 +1698,24 @@ issue scope, or release permission never implies UI permission.
   being blocked by the wrong one. A single missed poll and a Mac App outage
   still keep the incident, because the repair takes the Mac App down on purpose.
 - Approved files: `control-center-app.tsx` and this approval record.
+
+## 2026-08-21 — Extend "software they already have" to a sign-in that is missing
+
+- User approval: Reviewing PR #373 the user was shown that the recovery screen
+  still offered `Download CodexBar` when CodexBar was installed and a provider
+  was switched on but not signed in, and explicitly asked for that to be fixed
+  in the same pull request together with a fresh bench run. This applies the
+  principle the user already approved on 2026-08-20 under "Do not send a
+  customer after software they already have" to the remaining cases; the
+  narrower wording then only covered every provider being switched off.
+- Approved customer-visible result: Whenever CodexBar's engine answers, the
+  recovery screen offers `Open CodexBar` and reads
+  `Finish AI setup in CodexBar` / `CodexBar is installed, but it still cannot
+  read your AI usage. Open CodexBar, finish what it asks for, then try again.`
+  The `Download CodexBar` action and its `CodexBar is needed` heading remain
+  only when the engine never answered. VibeTV does not say which step is
+  missing -- a sign-in, a macOS permission, an account without usage -- because
+  CodexBar owns that distinction and VibeTV only reads the status it reports.
+- Approved files: `control-center-types.ts`, `device-startup-screen.tsx`,
+  `check-customer-ui-copy.mjs`, `device-startup-screen.test.tsx`, and this
+  approval record.

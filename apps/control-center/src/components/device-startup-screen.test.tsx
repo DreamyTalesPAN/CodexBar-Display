@@ -214,12 +214,15 @@ describe("DeviceStartupScreen", () => {
       />,
     );
 
+    // The stand-in is not an inventory. CodexBar reports itself under that id
+    // when its own probe failed, which is a broken usage service rather than a
+    // provider waiting for one step, so this keeps the missing-install route.
     expect(html).toContain("CodexBar is needed</h1>");
     expect(html).not.toContain("No AI provider is switched on");
     expect(html).not.toContain("Open CodexBar");
   });
 
-  it("keeps the download when one provider is still switched on", () => {
+  it("opens CodexBar when an enabled provider only needs a sign-in", () => {
     const html = renderToStaticMarkup(
       <DeviceStartupScreen
         deviceCandidates={[]}
@@ -234,6 +237,35 @@ describe("DeviceStartupScreen", () => {
           status: "setup_required",
           engine: { status: "ready" },
           providers: [{ id: "codex", status: "auth_required", enabled: true }],
+        }}
+        showCodexBarFallback
+      />,
+    );
+
+    // Reinstalling signs nobody in. CodexBar answered, so it is installed and
+    // whatever is still missing is settled inside it.
+    expect(html).toContain("Finish AI setup in CodexBar</h1>");
+    expect(html).toContain("Open CodexBar</span></button>");
+    expect(html).not.toContain("Download CodexBar");
+    expect(html).not.toContain(
+      'href="https://github.com/steipete/CodexBar/releases/latest"',
+    );
+  });
+
+  it("keeps the download only when CodexBar never answered", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onOpenCodexBar={vi.fn()}
+        onPair={vi.fn()}
+        onRepairUsageService={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{
+          status: "setup_required",
+          engine: { status: "unavailable" },
         }}
         showCodexBarFallback
       />,

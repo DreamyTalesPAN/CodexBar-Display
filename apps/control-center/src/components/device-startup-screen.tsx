@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import {
   normalizedProviderStatus,
   providerSetupHasEngineButNoEnabledProvider,
+  providerSetupHasRealProviderInventory,
   type ApiError,
   type DeviceCandidate,
   type DeviceSearchState,
@@ -79,6 +80,8 @@ export function DeviceStartupScreen({
   const waiting = deviceSearchState === "waiting";
   const everyProviderSwitchedOff =
     providerSetupHasEngineButNoEnabledProvider(providerSetup);
+  const codexBarListedProviders =
+    providerSetupHasRealProviderInventory(providerSetup);
   const providerRecoveryView = providerRecovery
     ? describeProviderRecovery(
         providerSetup,
@@ -86,6 +89,7 @@ export function DeviceStartupScreen({
         lastError,
         showCodexBarFallback,
         everyProviderSwitchedOff,
+        codexBarListedProviders,
       )
     : null;
   // A running request may disable the way out. A calm view may not: the
@@ -191,9 +195,11 @@ export function DeviceStartupScreen({
         <RefreshCw data-icon="inline-start" aria-hidden />
         <span>Try again</span>
       </Button>
-      {showCodexBarFallback && everyProviderSwitchedOff ? (
-        // The recovery screen has no sidebar, so the provider list in Usage is
-        // out of reach from here. Open the app that owns the switches instead.
+      {showCodexBarFallback && (everyProviderSwitchedOff || codexBarListedProviders) ? (
+        // CodexBar answered, so it is installed: whatever is still missing --
+        // a switch, a sign-in, a macOS permission -- is settled inside it, and
+        // the download page fixes none of those. The recovery screen has no
+        // sidebar either, so Usage is out of reach from here.
         // Stopgap until #245 moves provider selection into setup and settings.
         <Button
           className="w-full"
@@ -349,6 +355,7 @@ function describeProviderRecovery(
   lastError: ApiError | null | undefined,
   showCodexBarFallback: boolean,
   everyProviderSwitchedOff: boolean,
+  codexBarListedProviders: boolean,
 ) {
   const setupStatus = normalizedProviderStatus(providerSetup?.status);
   if (
@@ -371,6 +378,15 @@ function describeProviderRecovery(
       detail:
         "CodexBar is installed, but every AI provider in it is switched off. Open CodexBar, switch one on, then try again.",
       title: "No AI provider is switched on",
+    };
+  }
+
+  if (showCodexBarFallback && codexBarListedProviders) {
+    return {
+      checking: false,
+      detail:
+        "CodexBar is installed, but it still cannot read your AI usage. Open CodexBar, finish what it asks for, then try again.",
+      title: "Finish AI setup in CodexBar",
     };
   }
 

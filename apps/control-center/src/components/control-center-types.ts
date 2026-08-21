@@ -568,6 +568,25 @@ export function normalizedProviderStatus(value?: string) {
   return value?.trim().toLowerCase().replace(/^provider_/, "") || "";
 }
 
+// CodexBar answered with a real inventory, so it is installed and reporting
+// actual providers. Whatever is still missing on one of them -- a sign-in, a
+// macOS permission, an account with no usage on it -- is settled inside
+// CodexBar, and the download page fixes none of it. Which of those it is stays
+// CodexBar's to say; this only reads that an inventory came back.
+//
+// The `codexbar` stand-in does not count. CodexBar reports itself under that id
+// when its own probe failed, and that is a broken usage service rather than a
+// provider waiting for one step, so it keeps the missing-install route.
+export function providerSetupHasRealProviderInventory(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  const providers = providerSetup?.providers ?? [];
+  return (
+    normalizedProviderStatus(providerSetup?.engine?.status) === "ready" &&
+    providers.some((provider) => provider.id !== "codexbar")
+  );
+}
+
 // A usable engine with every provider switched off is not a missing install:
 // the customer has CodexBar and turned the switches off. Telling them to
 // download it sends them after software they already have. CodexBar still owns
