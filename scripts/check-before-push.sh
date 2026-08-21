@@ -43,6 +43,18 @@ run() {
 if touches '^companion/'; then
   run "go vet"  bash -c 'cd companion && go vet ./...'
   run "go test" bash -c 'cd companion && go test ./...'
+  # companion-tests in CI runs staticcheck as well, so a staticcheck-only
+  # failure used to pass here and red CI afterwards -- the exact blind spot this
+  # gate exists to close. Install it when missing, the way CI does, and fail
+  # loudly if that cannot happen: a skipped check that still prints "safe to
+  # push" is worse than no check at all.
+  run "staticcheck" bash -c '
+    export PATH="$(go env GOPATH)/bin:$PATH"
+    if ! command -v staticcheck >/dev/null 2>&1; then
+      printf "   installing staticcheck\n"
+      go install honnef.co/go/tools/cmd/staticcheck@latest || exit 1
+    fi
+    cd companion && staticcheck ./...'
   # Only files this branch touched: the repo carries older violations, and a
   # gate that fails on someone else's formatting is a gate people switch off.
   run "gofmt" bash -c '

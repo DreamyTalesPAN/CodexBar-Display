@@ -730,6 +730,12 @@ PY
   rehearsal::record companionOverride "$source"
   rehearsal::record companionOverrideCommit "$commit"
   rehearsal::record notarisationIntact false
+  # Recorded here rather than where the banner prints: both callers write the
+  # report before that point, so recording it later reached facts.tsv only and
+  # left report.json looking like an ordinary run. A consumer reading the
+  # machine-readable report would then take an API-only override for customer
+  # evidence, which is the one thing this flag exists to prevent.
+  rehearsal::record customerEvidence unavailable-companion-override
 }
 
 rehearsal::download_release_dmg() {
@@ -806,7 +812,6 @@ rehearsal::wait_for_device_firmware() {
 # Returns 1 when this run cannot produce customer evidence.
 rehearsal::rehearsal_evidence_possible() {
   [[ -n "$REHEARSAL_COMPANION_OVERRIDE" ]] || return 0
-  rehearsal::record customerEvidence unavailable-companion-override
   cat <<'OVERRIDE'
 
 ────────────────────────────────────────────────────────────────────────
