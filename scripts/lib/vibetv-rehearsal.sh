@@ -23,6 +23,8 @@ REHEARSAL_BOARD="${REHEARSAL_BOARD:-esp8266-smalltv-st7789}"
 
 # Populated by rehearsal::parse_args.
 REHEARSAL_MODE=""
+REHEARSAL_MAIN=0
+REHEARSAL_MAIN_SHA=""
 REHEARSAL_PR=""
 REHEARSAL_RUN_ID=""
 REHEARSAL_DEVICE_TARGET=""
@@ -89,8 +91,10 @@ rehearsal::usage() {
   cat <<USAGE
 Usage: $(basename "$0") [options]
 
+  --main                 Rehearse the current main tip against the published
+                         release: its release candidate is the candidate
   --pr <number>          Pull request whose merge-gate candidate to install (default: $REHEARSAL_PR)
-  --run-id <id>          Use an explicit CODEX Test VibeTV Merge run instead of the newest for --pr
+  --run-id <id>          Use an explicit candidate run instead of resolving one
   --device-target <url>  VibeTV base URL, e.g. http://192.168.178.72 (default: autodetect)
   --companion-override <path>
                          Swap the installed app's companion helper for a locally
@@ -109,6 +113,7 @@ USAGE
 rehearsal::parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --main) REHEARSAL_MAIN=1; shift ;;
       --pr) [[ -n "${2:-}" ]] || rehearsal::die '--pr needs a value'; REHEARSAL_PR="$2"; shift 2 ;;
       --run-id) [[ -n "${2:-}" ]] || rehearsal::die '--run-id needs a value'; REHEARSAL_RUN_ID="$2"; shift 2 ;;
       --device-target) [[ -n "${2:-}" ]] || rehearsal::die '--device-target needs a value'; REHEARSAL_DEVICE_TARGET="$2"; shift 2 ;;
@@ -322,48 +327,44 @@ rehearsal::restore() {
 
 # --------------------------------------------------------------- candidate artifacts
 
-# Resolves the newest successful merge-gate run and downloads its signed candidate.
+# Downloads the signed candidate for whatever was asked for and resolves its
+# artifacts. Both candidate workflows are accepted; see rehearsal::resolve_run_id.
 rehearsal::fetch_candidate() {
-  rehearsal::step 'Fetching the signed merge-gate candidate'
+  rehearsal::step 'Fetching the signed candidate'
   rehearsal::require_tools gh
 
-  if [[ -z "$REHEARSAL_RUN_ID" ]]; then
-    rehearsal::info "looking for the newest successful CODEX Test VibeTV Merge run"
-    REHEARSAL_RUN_ID="$(gh run list --repo "$REHEARSAL_REPOSITORY" \
-      --workflow vibetv-merge-gate.yml --status success --limit 1 \
-      --json databaseId --jq '.[0].databaseId' 2>/dev/null || true)"
-  fi
-  [[ -n "$REHEARSAL_RUN_ID" ]] || rehearsal::die 'no successful merge-gate run found; pass --run-id'
+  rehearsal::resolve_run_id
 
   local cache="$REHEARSAL_STATE_DIR/candidates/$REHEARSAL_RUN_ID"
-  if [[ -f "$cache/dist/macos/candidate-manifest.json" ]]; then
+  CANDIDATE_DIR="$cache"
+  CANDIDATE_MANIFEST="$(rehearsal::candidate_manifest_path "$cache")"
+
+  if [[ -n "$CANDIDATE_MANIFEST" ]]; then
     rehearsal::info "reusing cached candidate $REHEARSAL_RUN_ID"
   else
+    # The merge gate builds an open pull request head and suffixes its artifact
+    # with the run id. The release candidate builds the exact main SHA and does
+    # not suffix it. Only main is releasable, so both have to be rehearsable.
+    local artifact
+    artifact="$(gh api "repos/$REHEARSAL_REPOSITORY/actions/runs/$REHEARSAL_RUN_ID/artifacts" \
+      --jq '.artifacts[].name' 2>/dev/null \
+      | grep -Fx -e "CODEX-vibetv-merge-candidate-$REHEARSAL_RUN_ID" -e vibetv-release-candidate \
+      | head -n 1)"
+    [[ -n "$artifact" ]] || rehearsal::die "run $REHEARSAL_RUN_ID carries no rehearsable candidate artifact"
     mkdir -p "$cache"
-    rehearsal::info "downloading candidate artifacts of run $REHEARSAL_RUN_ID (~110 MB)"
+    rehearsal::info "downloading $artifact of run $REHEARSAL_RUN_ID (~110 MB)"
     gh run download "$REHEARSAL_RUN_ID" --repo "$REHEARSAL_REPOSITORY" \
-      -n "CODEX-vibetv-merge-candidate-$REHEARSAL_RUN_ID" -D "$cache" \
-      || rehearsal::die "could not download candidate artifacts of run $REHEARSAL_RUN_ID (expired?)"
+      -n "$artifact" -D "$cache" \
+      || rehearsal::die "could not download $artifact of run $REHEARSAL_RUN_ID (expired?)"
+    CANDIDATE_MANIFEST="$(rehearsal::candidate_manifest_path "$cache")"
+    [[ -n "$CANDIDATE_MANIFEST" ]] || rehearsal::die "$artifact carries no candidate-manifest.json"
   fi
-
-  CANDIDATE_DIR="$cache"
-  CANDIDATE_MANIFEST="$cache/dist/macos/candidate-manifest.json"
-  CANDIDATE_DMG="$cache/dist/macos/VibeTV-Control-Center.dmg"
-  CANDIDATE_APPCAST="$cache/dist/macos/appcast.xml"
-  CANDIDATE_FIRMWARE="$cache/tmp/vibetv-merge/firmware.bin"
-  CANDIDATE_FIRMWARE_MANIFEST="$cache/tmp/vibetv-merge/firmware-manifest.json"
-
-  local file
-  for file in "$CANDIDATE_MANIFEST" "$CANDIDATE_DMG" "$CANDIDATE_APPCAST" \
-              "$CANDIDATE_FIRMWARE" "$CANDIDATE_FIRMWARE_MANIFEST"; do
-    [[ -f "$file" ]] || rehearsal::die "candidate is incomplete, missing $(basename "$file")"
-  done
 
   CANDIDATE_SHA="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["sourceSha"])' "$CANDIDATE_MANIFEST")"
   CANDIDATE_VERSION="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$CANDIDATE_MANIFEST")"
 
-  rehearsal::verify_candidate_checksums
-  rehearsal::check_candidate_matches_pr
+  rehearsal::resolve_candidate_artifacts
+  rehearsal::check_candidate_target
 
   rehearsal::info "candidate version $CANDIDATE_VERSION from commit ${CANDIDATE_SHA:0:12}"
   rehearsal::record candidateRunId "$REHEARSAL_RUN_ID"
@@ -371,53 +372,156 @@ rehearsal::fetch_candidate() {
   rehearsal::record candidateSha "$CANDIDATE_SHA"
 }
 
-# The manifest carries a sha256 per artifact; a mismatch means a corrupted download.
-rehearsal::verify_candidate_checksums() {
-  python3 - "$CANDIDATE_MANIFEST" "$CANDIDATE_DIR" <<'PY' || rehearsal::die 'candidate checksum verification failed'
-import hashlib, json, pathlib, sys
-
-manifest_path, root = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-manifest = json.loads(manifest_path.read_text())
-locations = {
-    "signed-dmg": "dist/macos/VibeTV-Control-Center.dmg",
-    "sparkle-appcast": "dist/macos/appcast.xml",
-    "companion": "tmp/vibetv-merge/codexbar-display",
-    "firmware": "tmp/vibetv-merge/firmware.bin",
-    "firmware-manifest": "tmp/vibetv-merge/firmware-manifest.json",
-    "virtual-vibetv": "tmp/vibetv-merge/virtual-vibetv",
+rehearsal::candidate_manifest_path() {
+  find "$1" -maxdepth 3 -name candidate-manifest.json -type f 2>/dev/null | head -n 1
 }
-failed = False
+
+# The merge gate and the release candidate lay the same roles out under
+# different directories, so the manifest is the only reliable index: it names
+# every file and carries its checksum. Resolving through it replaces a
+# hard-coded path map and verifies the download in the same pass. The firmware
+# binary is taken from the firmware manifest entry for this board, because a
+# release candidate publishes one binary per board.
+rehearsal::resolve_candidate_artifacts() {
+  local resolved
+  resolved="$(python3 - "$CANDIDATE_MANIFEST" "$CANDIDATE_DIR" "$REHEARSAL_BOARD" <<'PY'
+import hashlib, json, pathlib, shlex, sys
+
+manifest_path, root, board = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3]
+manifest = json.loads(manifest_path.read_text())
+
+by_name = {}
+for path in root.rglob("*"):
+    if path.is_file():
+        by_name.setdefault(path.name, []).append(path)
+
+problems = []
+
+
+def locate(artifact):
+    # The release candidate records a path relative to the artifact root, the
+    # merge gate records the bare file name.
+    path = root / artifact["path"]
+    if not path.is_file():
+        matches = by_name.get(artifact["name"], [])
+        if len(matches) != 1:
+            problems.append(f"{artifact['name']}: expected one copy, found {len(matches)}")
+            return None
+        path = matches[0]
+    if hashlib.sha256(path.read_bytes()).hexdigest() != artifact["sha256"]:
+        problems.append(f"{artifact['name']}: checksum mismatch")
+        return None
+    return path
+
+
+by_role = {}
 for artifact in manifest["artifacts"]:
-    relative = locations.get(artifact["role"])
-    if relative is None:
+    by_role.setdefault(artifact["role"], []).append(artifact)
+
+resolved = {}
+for role, variable in (
+    ("signed-dmg", "CANDIDATE_DMG"),
+    ("sparkle-appcast", "CANDIDATE_APPCAST"),
+    ("firmware-manifest", "CANDIDATE_FIRMWARE_MANIFEST"),
+):
+    entries = by_role.get(role, [])
+    if len(entries) != 1:
+        problems.append(f"{role}: expected one artifact, found {len(entries)}")
         continue
-    path = root / relative
-    if not path.exists():
-        print(f"   missing {relative}")
-        failed = True
-        continue
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    if digest != artifact["sha256"]:
-        print(f"   checksum mismatch for {relative}")
-        failed = True
-raise SystemExit(1 if failed else 0)
+    path = locate(entries[0])
+    if path is not None:
+        resolved[variable] = path
+
+firmware_manifest = resolved.get("CANDIDATE_FIRMWARE_MANIFEST")
+if firmware_manifest is not None:
+    entries = json.loads(firmware_manifest.read_text())["artifacts"]
+    wanted = [entry for entry in entries if entry.get("board") == board]
+    if len(wanted) != 1:
+        problems.append(f"firmware manifest lists {len(wanted)} entries for board {board}")
+    else:
+        asset = pathlib.PurePosixPath(wanted[0].get("asset") or wanted[0]["firmwareUrl"]).name
+        binaries = [item for item in by_role.get("firmware", []) if item["name"] == asset]
+        if len(binaries) != 1:
+            problems.append(f"firmware: {asset} is not in the candidate manifest")
+        else:
+            path = locate(binaries[0])
+            if path is not None:
+                resolved["CANDIDATE_FIRMWARE"] = path
+
+if problems:
+    print("\n".join(f"   {problem}" for problem in problems), file=sys.stderr)
+    raise SystemExit(1)
+
+for variable, path in resolved.items():
+    print(f"{variable}={shlex.quote(str(path))}")
 PY
+)" || rehearsal::die 'candidate is incomplete or corrupted'
+  eval "$resolved"
   rehearsal::info 'candidate checksums verified against the signed manifest'
 }
 
-# Guards against rehearsing a candidate that no longer matches the PR head.
-rehearsal::check_candidate_matches_pr() {
-  [[ -n "$REHEARSAL_PR" ]] || return 0
-  local head
-  head="$(gh pr view "$REHEARSAL_PR" --repo "$REHEARSAL_REPOSITORY" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
-  [[ -n "$head" ]] || { rehearsal::warn "could not read PR #$REHEARSAL_PR head; skipping match check"; return 0; }
-  rehearsal::record prHeadSha "$head"
-  if [[ "$head" != "$CANDIDATE_SHA" ]]; then
-    rehearsal::warn "candidate is ${CANDIDATE_SHA:0:12} but PR #$REHEARSAL_PR head is ${head:0:12}"
-    rehearsal::warn 're-run the merge gate for this PR to rehearse the exact head'
-    rehearsal::confirm 'Continue with the older candidate anyway?'
+# Resolves which candidate run to rehearse. main is the only releasable state,
+# so it gets a first-class path: the release candidate builds the SHA it runs
+# on, which makes its head SHA the built SHA. The merge gate cannot serve here
+# -- it only ever builds an open pull request head.
+rehearsal::resolve_run_id() {
+  [[ -z "$REHEARSAL_RUN_ID" ]] || return 0
+
+  if [[ "$REHEARSAL_MAIN" == 1 ]]; then
+    rehearsal::main_sha >/dev/null
+    rehearsal::info "main is at ${REHEARSAL_MAIN_SHA:0:12}"
+    REHEARSAL_RUN_ID="$(gh run list --repo "$REHEARSAL_REPOSITORY" \
+      --workflow vibetv-release-candidate.yml --status success --limit 20 \
+      --json databaseId,headSha \
+      --jq "[.[] | select(.headSha == \"$REHEARSAL_MAIN_SHA\")][0].databaseId" 2>/dev/null || true)"
+    [[ -n "$REHEARSAL_RUN_ID" && "$REHEARSAL_RUN_ID" != null ]] || rehearsal::die \
+      "no successful CODEX Test VibeTV Release Candidate run for main ${REHEARSAL_MAIN_SHA:0:12}; dispatch that workflow for this commit first"
+    return 0
+  fi
+
+  [[ -n "$REHEARSAL_PR" ]] || rehearsal::die 'nothing to rehearse; pass --main, --pr <number> or --run-id <id>'
+
+  rehearsal::info 'looking for the newest successful CODEX Test VibeTV Merge run'
+  REHEARSAL_RUN_ID="$(gh run list --repo "$REHEARSAL_REPOSITORY" \
+    --workflow vibetv-merge-gate.yml --status success --limit 1 \
+    --json databaseId --jq '.[0].databaseId' 2>/dev/null || true)"
+  [[ -n "$REHEARSAL_RUN_ID" ]] || rehearsal::die 'no successful merge-gate run found; pass --run-id'
+}
+
+rehearsal::main_sha() {
+  if [[ -z "$REHEARSAL_MAIN_SHA" ]]; then
+    rehearsal::require_tools git
+    REHEARSAL_MAIN_SHA="$(git ls-remote "https://github.com/$REHEARSAL_REPOSITORY" refs/heads/main 2>/dev/null | awk 'NR==1{print $1}')"
+    [[ -n "$REHEARSAL_MAIN_SHA" ]] || rehearsal::die 'could not read the main tip'
+  fi
+  printf '%s\n' "$REHEARSAL_MAIN_SHA"
+}
+
+# Guards against rehearsing something other than what was asked for. The merge
+# gate is dispatched from main, so every one of its runs reports main as the
+# head branch even though it builds a pull request head. Only the candidate
+# manifest is truthful, so the comparison happens against that.
+rehearsal::check_candidate_target() {
+  local label expected
+  if [[ "$REHEARSAL_MAIN" == 1 ]]; then
+    label=main
+    expected="$(rehearsal::main_sha)"
+  elif [[ -n "$REHEARSAL_PR" ]]; then
+    label="PR #$REHEARSAL_PR"
+    expected="$(gh pr view "$REHEARSAL_PR" --repo "$REHEARSAL_REPOSITORY" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
+    [[ -n "$expected" ]] || { rehearsal::warn "could not read PR #$REHEARSAL_PR head; skipping match check"; return 0; }
+    rehearsal::record prHeadSha "$expected"
   else
-    rehearsal::info "candidate matches PR #$REHEARSAL_PR head exactly"
+    rehearsal::warn "rehearsing ${CANDIDATE_SHA:0:12} without --main or --pr, so what it is stays unverified"
+    return 0
+  fi
+
+  rehearsal::record candidateTarget "$label"
+  if [[ "$expected" != "$CANDIDATE_SHA" ]]; then
+    rehearsal::warn "candidate is ${CANDIDATE_SHA:0:12} but $label is ${expected:0:12}"
+    rehearsal::confirm "Continue with a candidate that is not $label?"
+  else
+    rehearsal::info "candidate matches $label exactly (${CANDIDATE_SHA:0:12})"
   fi
 }
 
@@ -433,8 +537,11 @@ rehearsal::start_artifact_server() {
   mkdir -p "$REHEARSAL_SERVE_DIR"
   cp "$CANDIDATE_DMG" "$REHEARSAL_SERVE_DIR/VibeTV-Control-Center.dmg"
   cp "$CANDIDATE_APPCAST" "$REHEARSAL_SERVE_DIR/appcast.xml"
-  cp "$CANDIDATE_FIRMWARE" "$REHEARSAL_SERVE_DIR/firmware.bin"
   cp "$CANDIDATE_FIRMWARE_MANIFEST" "$REHEARSAL_SERVE_DIR/firmware-manifest.json"
+  # The firmware is resolved through the manifest that names it, so its own file
+  # name is the asset name the rewritten URL below will point at. A release
+  # candidate names it per version and gzips it, not firmware.bin.
+  cp "$CANDIDATE_FIRMWARE" "$REHEARSAL_SERVE_DIR/$(basename "$CANDIDATE_FIRMWARE")"
 
   # The Updates tab reads the available Mac App version from the GitHub releases
   # API, not from the Sparkle appcast, so the candidate has to be announced here
