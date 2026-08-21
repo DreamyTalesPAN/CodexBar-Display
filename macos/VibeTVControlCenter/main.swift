@@ -1525,7 +1525,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             detail: "Preparing the verified version included with VibeTV Control Center.",
             failed: false
         )
-        retryRuntimePreparation()
+        // Deliberately not retryRuntimePreparation(): that entry point clears
+        // codexBarRepairRequired, because a customer retrying an ordinary
+        // preparation is not asking for a repair. prepareCompanion now starts
+        // the verified CodexBar only while that flag is set, so going through
+        // the retry wrapper would clear the very thing this repair just asked
+        // for and report success without ever launching CodexBar.
+        discardMismatchedPendingNativeUpdate()
+        startRuntimePreparation()
     }
 
     private func beginControlCenterCodexBarRepair(hasJavaScriptOwner: Bool) {

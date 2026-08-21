@@ -615,6 +615,10 @@ required_source = [
     # no page to send the finish action back. Without this the temporary
     # CodexBar it started survived until the window closed.
     "            self.finishControlCenterCodexBarRecovery()\n            switch outcome {",
+    # The no-WebView repair must not go through retryRuntimePreparation: that
+    # wrapper clears codexBarRepairRequired, and prepareCompanion starts the
+    # verified CodexBar only while that flag is set.
+    "        discardMismatchedPendingNativeUpdate()\n        startRuntimePreparation()\n    }",
     "beginCodexBarRepair(hasJavaScriptOwner: false)",
     "beginCodexBarRepair(hasJavaScriptOwner: true)",
     "            if !hasJavaScriptOwner {\n                self.finishControlCenterCodexBarRecovery()\n            }",
