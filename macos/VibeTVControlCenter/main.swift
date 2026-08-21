@@ -3336,34 +3336,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     // the fallback runtime is still exiting -- and the caller registers a second
     // runtime onto a port the old one still owns. Wait on the origin the runtime
     // actually published, captured before the unregister rewrites it.
-    private func waitForRuntimeAPIToStop(_ managedOrigin: URL?) async -> Bool {
-        guard let origin = managedOrigin ?? URL(string: defaultRuntimeOriginString) else {
+    // Every candidate has to go quiet, not just one of them. Picking a single
+    // origin fails in both directions: the published one can be stale after a
+    // failed writeRuntimeEndpoint, and the app's own verified origin belongs to
+    // this build rather than to whatever is running -- during an upgrade from a
+    // public release that is somebody else's runtime, on the port its own
+    // endpoint file names. Waiting on all of them costs nothing, since a stale
+    // origin answers nothing and returns at once.
+    private func waitForRuntimeAPIToStop(_ managedOrigins: [URL]) async -> Bool {
+        var origins = managedOrigins
+        if let fallback = URL(string: defaultRuntimeOriginString), !origins.contains(fallback) {
+            origins.append(fallback)
+        }
+        guard !origins.isEmpty else {
             return true
         }
-        let healthURL = origin.appendingPathComponent("v1/runtime-health")
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = runtimeHealthRequestTimeout
         let session = URLSession(configuration: configuration)
         defer { session.invalidateAndCancel() }
 
         let deadline = Date().addingTimeInterval(runtimeUnregistrationQuiesceTimeout)
+        var pending = origins
         while Date() < deadline {
-            var request = URLRequest(
-                url: healthURL,
-                cachePolicy: .reloadIgnoringLocalCacheData,
-                timeoutInterval: runtimeHealthRequestTimeout
-            )
-            request.httpMethod = "GET"
-            guard (try? await session.data(for: request)) != nil else {
+            var stillAnswering: [URL] = []
+            for origin in pending {
+                var request = URLRequest(
+                    url: origin.appendingPathComponent("v1/runtime-health"),
+                    cachePolicy: .reloadIgnoringLocalCacheData,
+                    timeoutInterval: runtimeHealthRequestTimeout
+                )
+                request.httpMethod = "GET"
+                if (try? await session.data(for: request)) != nil {
+                    stillAnswering.append(origin)
+                }
+            }
+            if stillAnswering.isEmpty {
                 return true
             }
+            pending = stillAnswering
             try? await Task<Never, Never>.sleep(for: runtimeUnregistrationQuiescePollDelay)
         }
         // Reporting success here would let the caller register a second runtime
         // on a port the old one still owns, which is the very collision the
         // wait exists to prevent.
         NSLog(
-            "VibeTV Control Center runtime still answered on \(origin.absoluteString) after unregister"
+            "VibeTV Control Center runtime still answered on \(pending.map(\.absoluteString).joined(separator: ", ")) after unregister"
         )
         return false
     }
@@ -3372,14 +3390,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         if usesLocalPreviewRuntime {
             return await unregisterLocalPreviewRuntimeService()
         }
-        // The origin that actually answered, not the first candidate. The
-        // endpoint file can hold a stale but well-formed URL -- writeRuntimeEndpoint
-        // may have failed while the daemon carried on serving the default
-        // address -- and quiescing against that dead endpoint returns at once,
-        // letting the next registration race a runtime that is still exiting on
-        // 47832. activeRuntimeOrigin is only set once a health check answered
-        // there and listener ownership was verified.
-        let managedOrigin = activeRuntimeOrigin
+        // Everything that could be serving: the origin the running runtime
+        // published, this build's verified one, and the default. The wait below
+        // requires all of them to go quiet.
+        var managedOrigins = runtimeOriginCandidates()
+        if !managedOrigins.contains(activeRuntimeOrigin) {
+            managedOrigins.append(activeRuntimeOrigin)
+        }
         switch runtimeService.status {
         case .notRegistered, .notFound:
             break
@@ -3394,7 +3411,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
             switch runtimeService.status {
             case .notRegistered, .notFound:
-                guard await waitForRuntimeAPIToStop(managedOrigin) else {
+                guard await waitForRuntimeAPIToStop(managedOrigins) else {
                     return false
                 }
             case .enabled, .requiresApproval:

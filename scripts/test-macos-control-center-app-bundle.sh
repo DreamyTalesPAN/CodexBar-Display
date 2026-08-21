@@ -606,11 +606,14 @@ required_source = [
     # unregister must watch the origin it actually published, not 47832.
     # Quiesce against the origin that answered and was proven owned, not the
     # first candidate: the endpoint file can hold a stale but valid URL.
-    "let managedOrigin = activeRuntimeOrigin",
+    # The unregister wait must cover every candidate, not one: the published
+    # origin can be stale, and this build's verified origin is not the origin of
+    # whatever is running during an upgrade from a public release.
+    "var managedOrigins = runtimeOriginCandidates()",
+    "waitForRuntimeAPIToStop(managedOrigins)",
     # Both hold loops must verify listener ownership before trusting an answer:
     # a stale port from runtime-endpoint.json can be held by anything.
     "            guard case .owned = verifyRuntimeListenerOwnership(\n                port: origin.port ?? defaultRuntimePort\n            ) else {\n                continue\n            }\n            if await runtimeUpdateHoldRequest(origin, release: true) != nil {",
-    "waitForRuntimeAPIToStop(managedOrigin)",
     # Open CodexBar is reached from outside the WKWebView too, and macOS then
     # delivers it through application(_:open:), which urlRouter.receive rejects.
     "if urls.contains(where: isOpenCodexBarURL) {",
