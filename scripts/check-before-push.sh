@@ -55,10 +55,22 @@ if touches '^companion/'; then
       go install honnef.co/go/tools/cmd/staticcheck@latest || exit 1
     fi
     cd companion && staticcheck ./...'
+  # companion-tests in CI enforces the daemon latency and allocation budgets
+  # after the Go tests. Without it a change to the cycle or to frame marshaling
+  # passes here and only fails there.
+  run "bench budget" ./scripts/check-companion-bench-budget.sh
   # Only files this branch touched: the repo carries older violations, and a
   # gate that fails on someone else's formatting is a gate people switch off.
+  # "Touched" has to mean the same four sources `changed` is built from, though
+  # -- go vet, the tests and staticcheck all accept an unformatted file, so a
+  # working-tree or staged Go file that never reached a commit was the one thing
+  # nothing here looked at.
   run "gofmt" bash -c '
-    files="$(git diff --name-only '"$BASE"'...HEAD -- "companion/**/*.go" | sed "s#^companion/##")"
+    files="$( { git diff --name-only '"$BASE"'...HEAD -- "companion/**/*.go"
+                git diff --name-only -- "companion/**/*.go"
+                git diff --cached --name-only -- "companion/**/*.go"
+                git ls-files --others --exclude-standard -- "companion/**/*.go"
+              } | sort -u | sed "s#^companion/##")"
     [[ -n "$files" ]] || exit 0
     cd companion || exit 1
     existing=""
