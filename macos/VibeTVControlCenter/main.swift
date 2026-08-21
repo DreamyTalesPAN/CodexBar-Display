@@ -3344,13 +3344,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     // endpoint file names. Waiting on all of them costs nothing, since a stale
     // origin answers nothing and returns at once.
     private func waitForRuntimeAPIToStop(_ managedOrigins: [URL]) async -> Bool {
-        var origins = managedOrigins
-        if let fallback = URL(string: defaultRuntimeOriginString), !origins.contains(fallback) {
-            origins.append(fallback)
-        }
-        guard !origins.isEmpty else {
+        // Exactly what the caller proved ours. Empty means nothing of ours was
+        // listening, so there is nothing to outlive; adding the default back
+        // here would park the wait on whatever stranger holds 47832.
+        guard !managedOrigins.isEmpty else {
             return true
         }
+        let origins = managedOrigins
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = runtimeHealthRequestTimeout
         let session = URLSession(configuration: configuration)
@@ -3391,11 +3391,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return await unregisterLocalPreviewRuntimeService()
         }
         // Everything that could be serving: the origin the running runtime
-        // published, this build's verified one, and the default. The wait below
-        // requires all of them to go quiet.
-        var managedOrigins = runtimeOriginCandidates()
-        if !managedOrigins.contains(activeRuntimeOrigin) {
-            managedOrigins.append(activeRuntimeOrigin)
+        // published, this build's verified one, and the default -- narrowed to
+        // the ones whose listener actually belongs to this service. A stale port
+        // reused by some other server would otherwise answer forever and time
+        // the wait out, and the caller reports that as a failed unregister after
+        // Service Management already dropped the registration.
+        //
+        // The narrowing has to happen here, before the unregister. Afterwards
+        // launchctl no longer knows the label, ownership comes back
+        // .serviceUnavailable for every candidate, and filtering then would
+        // discard the runtime that is still exiting -- the exact race this wait
+        // exists to prevent.
+        var candidateOrigins = runtimeOriginCandidates()
+        if !candidateOrigins.contains(activeRuntimeOrigin) {
+            candidateOrigins.append(activeRuntimeOrigin)
+        }
+        let managedOrigins = candidateOrigins.filter { origin in
+            if case .owned = verifyRuntimeListenerOwnership(
+                port: origin.port ?? defaultRuntimePort
+            ) {
+                return true
+            }
+            return false
         }
         switch runtimeService.status {
         case .notRegistered, .notFound:

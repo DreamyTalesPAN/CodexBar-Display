@@ -609,7 +609,11 @@ required_source = [
     # The unregister wait must cover every candidate, not one: the published
     # origin can be stale, and this build's verified origin is not the origin of
     # whatever is running during an upgrade from a public release.
-    "var managedOrigins = runtimeOriginCandidates()",
+    # Ownership narrowing must happen where the candidates are captured, before
+    # the unregister: afterwards launchctl no longer knows the label and every
+    # candidate would be discarded, including the runtime still exiting.
+    "var candidateOrigins = runtimeOriginCandidates()",
+    "let managedOrigins = candidateOrigins.filter { origin in",
     "waitForRuntimeAPIToStop(managedOrigins)",
     # Both hold loops must verify listener ownership before trusting an answer:
     # a stale port from runtime-endpoint.json can be held by anything.
