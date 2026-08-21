@@ -58,7 +58,16 @@ if touches '^companion/'; then
   # companion-tests in CI enforces the daemon latency and allocation budgets
   # after the Go tests. Without it a change to the cycle or to frame marshaling
   # passes here and only fails there.
-  run "bench budget" ./scripts/check-companion-bench-budget.sh
+  #
+  # Allocations are enforced exactly as CI does: they are deterministic, and
+  # they are where a real regression shows up. The wall-clock budgets get four
+  # times the headroom locally, because they measure the machine as much as the
+  # code -- marshaling took 506ns on an idle Mac and 1099ns against CI's 1000ns
+  # limit while the rest of this gate was running. Failing a push for that would
+  # teach people to distrust the gate, and an order-of-magnitude slowdown still
+  # trips these. CI keeps the real numbers on a controlled runner.
+  run "bench budget" env MAX_CYCLE_NS=200000 MAX_MARSHAL_NS=4000 \
+    ./scripts/check-companion-bench-budget.sh
   # companion-tests in CI also runs the cold/warm honesty simulation against the
   # virtual VibeTV. It covers startup and recovery across a process restart,
   # which is exactly what provider recovery and the runtime restarts touch, and
@@ -95,9 +104,15 @@ if touches '^apps/control-center/'; then
     run "unit tests"        bash -c 'cd apps/control-center && npx vitest run'
     run "customer copy"     bash -c 'cd apps/control-center && npm run --silent check:customer-ui-copy'
     run "UI review gate"    bash -c 'cd apps/control-center && npm run --silent check:ui-review'
-    run "eslint"            bash -c 'cd apps/control-center && npx eslint src'
+    # npm run lint, not `eslint src`: CI lints the whole project, so anything
+    # outside src was never linted locally and could only fail there.
+    run "eslint"            bash -c 'cd apps/control-center && npm run --silent lint'
     # The slow one, and the one that catches recovery-screen regressions.
     run "customer flows"    bash -c 'cd apps/control-center && npm run --silent test:customer-flows'
+    # theme-studio-tests is a separate CI job, and the customer-flow run does
+    # not reach the --theme-studio-safety branch, so both Theme Studio browser
+    # flows were CI-only. About 41 seconds.
+    run "theme studio"      bash -c 'cd apps/control-center && npm run --silent test:theme-studio'
   fi
 else
   SKIPPED+=("control-center (untouched)")
