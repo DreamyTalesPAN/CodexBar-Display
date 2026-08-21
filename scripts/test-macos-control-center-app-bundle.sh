@@ -604,6 +604,9 @@ required_source = [
     "runtimeOriginCandidates()",
     # The managed runtime runs with --api-fallback, so the quiesce wait after an
     # unregister must watch the origin it actually published, not 47832.
+    # Quiesce against the origin that answered and was proven owned, not the
+    # first candidate: the endpoint file can hold a stale but valid URL.
+    "let managedOrigin = activeRuntimeOrigin",
     "waitForRuntimeAPIToStop(managedOrigin)",
     # Open CodexBar is reached from outside the WKWebView too, and macOS then
     # delivers it through application(_:open:), which urlRouter.receive rejects.

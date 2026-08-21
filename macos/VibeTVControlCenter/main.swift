@@ -3354,7 +3354,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         if usesLocalPreviewRuntime {
             return await unregisterLocalPreviewRuntimeService()
         }
-        let managedOrigin = runtimeOriginCandidates().first
+        // The origin that actually answered, not the first candidate. The
+        // endpoint file can hold a stale but well-formed URL -- writeRuntimeEndpoint
+        // may have failed while the daemon carried on serving the default
+        // address -- and quiescing against that dead endpoint returns at once,
+        // letting the next registration race a runtime that is still exiting on
+        // 47832. activeRuntimeOrigin is only set once a health check answered
+        // there and listener ownership was verified.
+        let managedOrigin = activeRuntimeOrigin
         switch runtimeService.status {
         case .notRegistered, .notFound:
             break
