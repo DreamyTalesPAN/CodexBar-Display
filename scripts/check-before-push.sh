@@ -22,7 +22,11 @@ git rev-parse --verify --quiet "${BASE}^{commit}" >/dev/null || {
 FAILED=()
 SKIPPED=()
 
-changed="$(git diff --name-only "$BASE"...HEAD 2>/dev/null; git diff --name-only; git ls-files --others --exclude-standard)"
+# `git diff` reads the working tree against the index, so a change that was
+# already `git add`ed shows up in none of the other three. Staging before
+# running the gate is ordinary, and without --cached such a change skipped every
+# area check and still reported "safe to push".
+changed="$(git diff --name-only "$BASE"...HEAD 2>/dev/null; git diff --name-only; git diff --cached --name-only; git ls-files --others --exclude-standard)"
 touches() { printf '%s\n' "$changed" | grep -qE "$1"; }
 
 run() {
@@ -85,14 +89,15 @@ if touches '^scripts/'; then
   # `|| true` on the whole list would swallow bash -n and report a clean gate
   # for a script that does not parse. Skip deleted files, keep every real error.
   #
-  # Enumerate the same three sources `changed` is built from. Listing only
-  # committed files let an unstaged edit or a brand new untracked script reach
-  # "all checks passed -- safe to push" without ever being parsed, even though
-  # that very file is what put this section in scope.
+  # Enumerate the same four sources `changed` is built from. Listing only
+  # committed files let an unstaged edit, a staged one, or a brand new untracked
+  # script reach "all checks passed -- safe to push" without ever being parsed,
+  # even though that very file is what put this section in scope.
   run "shell syntax" bash -c '
     rc=0
     for f in $( { git diff --name-only '"$BASE"'...HEAD -- scripts
                   git diff --name-only -- scripts
+                  git diff --cached --name-only -- scripts
                   git ls-files --others --exclude-standard -- scripts
                 } | sort -u | grep "\.sh$"); do
       [[ -f "$f" ]] || continue
