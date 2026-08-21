@@ -68,6 +68,21 @@ if touches '^companion/'; then
   # trips these. CI keeps the real numbers on a controlled runner.
   run "bench budget" env MAX_CYCLE_NS=200000 MAX_MARSHAL_NS=4000 \
     ./scripts/check-companion-bench-budget.sh
+  # companion-tests in CI runs this before the cold/warm simulation. It forces
+  # the daemon resilience and theme-contract tests to run uncached with
+  # -count=1, so a green `go test` above says nothing about it. Seven seconds.
+  run "soak gate" ./scripts/check-esp8266-soak-gate.sh
+  # The rest of what companion-tests runs. These were arriving one review round
+  # at a time, so here is the whole job instead: every step of it now has a
+  # counterpart above or below. Together about 39 seconds, the legacy installer
+  # being 25 of them.
+  run "git guardrails"    ./scripts/test-agent-git-guardrails.sh
+  run "hosted gates"      ./scripts/test-vibetv-hosted-gates.sh
+  run "customer readiness" ./scripts/test-control-center-companion-customer-readiness.sh
+  run "customer-ready gate" ./scripts/test-control-center-customer-ready-gate.sh
+  run "release workflow"  ./scripts/test-control-center-release-workflow.sh
+  run "legacy installer"  ./scripts/test-control-center-companion-legacy-installer.sh
+  run "install.sh migration" ./scripts/test-install-sh-control-center-migration.sh
   # companion-tests in CI also runs the cold/warm honesty simulation against the
   # virtual VibeTV. It covers startup and recovery across a process restart,
   # which is exactly what provider recovery and the runtime restarts touch, and
