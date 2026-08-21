@@ -37,13 +37,19 @@ Green unit tests, green CI, and a healthy Companion API say nothing about what
 the customer sees. A message can point at an action that does not exist in the
 UI, and only the rendered screen shows that.
 
-- `scripts/vibetv-rehearse-cold-start.sh` -- wipes every VibeTV and CodexBar trace from this Mac, then installs the Mac App and firmware from a pull request candidate. No update path: the "unboxed today, already on the new build" state.
+- `scripts/vibetv-rehearse-cold-start.sh` -- wipes every VibeTV and CodexBar trace from this Mac, then installs the Mac App and firmware from the candidate under test. No update path: the "unboxed today, already on the new build" state.
 - `scripts/vibetv-rehearse-warm-start.sh` -- restores today's public customer state (current public Mac App + released firmware), then publishes the candidate so both updates appear in the Updates tab. You drive the visible customer flow yourself: Mac App through Sparkle first, then firmware.
-- Shared logic lives in `scripts/lib/vibetv-rehearsal.sh`. Both take `--pr <number>`, `--run-id`, `--device-target`, `--companion-override`, `--keep-codexbar`, `--restore`, `--yes`; warm start also takes `--skip-firmware-baseline`.
+- Shared logic lives in `scripts/lib/vibetv-rehearsal.sh`. Both take `--main`, `--pr <number>`, `--run-id`, `--device-target`, `--companion-override`, `--keep-codexbar`, `--restore`, `--yes`; warm start also takes `--skip-firmware-baseline`.
+
+`--main` is what a release is validated with: the current `main` tip is the
+candidate, tested against the published customer state. It resolves the release
+candidate built from that exact SHA and stops when there is none, instead of
+reaching for a different candidate.
 
 ```bash
+scripts/vibetv-rehearse-cold-start.sh --main
+scripts/vibetv-rehearse-warm-start.sh --main
 scripts/vibetv-rehearse-cold-start.sh --pr 348
-scripts/vibetv-rehearse-warm-start.sh --pr 348
 scripts/vibetv-rehearse-cold-start.sh --restore
 ```
 
@@ -78,6 +84,8 @@ Known traps, all paid for on the bench:
 - Firmware is not restored; the restore chain only rebuilds the Mac. If the device was on another pull request's candidate, it stays on the last flashed version.
 - If the device already runs the candidate version the script reports "already on X, nothing to flash" and the device keeps its pairing. That is not a real cold start and the new-customer pairing screen will not appear.
 - `PREVIEW UNAVAILABLE` for an active custom theme is not a product bug. A Theme Studio theme lives in `/themes/u/` and its spec exists only in the local app, so after a purge the app cannot reload it from the catalog.
+- A merge-gate run reports `main` as its head branch and main's tip as its head SHA, because the workflow is dispatched from `main` -- but it builds the **pull request head** it was given. Only `candidate-manifest.json`'s `sourceSha` says what a candidate actually contains. Passing `--main` or `--pr` makes the scripts check that themselves; `--run-id` alone rehearses whatever that run happened to build.
+- Only `CODEX Test VibeTV Release Candidate` builds an exact `main` SHA. The merge gate cannot: it takes a `pr_number` and resolves an open pull request head.
 - Quit the app and detach all images before a run; `hdiutil attach` fails transiently while a volume of the same name is still mounted. Check for foreign listeners with `lsof -nP -iTCP:47832 -sTCP:LISTEN`.
 - Warm start needs one manual Sparkle "Install Update" click. That is a native macOS dialog and cannot be scripted headlessly.
 

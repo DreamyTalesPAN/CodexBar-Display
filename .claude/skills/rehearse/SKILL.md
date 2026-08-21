@@ -54,10 +54,21 @@ guardrails in `AGENTS.md` apply: state the device and the command, and get the
 user's explicit approval for this run before starting.
 
 ```bash
+scripts/vibetv-rehearse-cold-start.sh --main
+scripts/vibetv-rehearse-warm-start.sh --main
 scripts/vibetv-rehearse-cold-start.sh --pr <number>
-scripts/vibetv-rehearse-warm-start.sh --pr <number>
 scripts/vibetv-rehearse-cold-start.sh --restore
 ```
+
+Name what you are rehearsing. `--main` takes the current `main` tip as the
+candidate -- that is what a release is validated with. `--pr <number>` takes an
+open pull request head. Both verify the candidate's `sourceSha` against what you
+asked for before anything is installed.
+
+Never identify a candidate from a workflow run's head branch or head SHA. The
+merge gate is dispatched from `main`, so every run of it says `main` while
+building a pull request head. `--run-id` on its own rehearses whatever that run
+happened to build, and says so.
 
 The rehearsal scripts install candidate DMGs, so a run tied to an exact PR head
 needs the signed merge-gate candidate. `--companion-override` does not replace

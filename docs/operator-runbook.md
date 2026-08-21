@@ -577,8 +577,16 @@ artifacts and logs land in `~/.vibetv-selftest/runs/<timestamp>/`.
 This is the firmware/Companion tool. For the full **customer** rehearsal that
 also drives the Mac App update through Sparkle, use
 `scripts/vibetv-rehearse-warm-start.sh` / `vibetv-rehearse-cold-start.sh`;
-those need a signed merge-gate candidate and one manual Sparkle "Install
-Update" click (a native macOS dialog that cannot be scripted headlessly).
+those need a signed candidate and one manual Sparkle "Install Update" click (a
+native macOS dialog that cannot be scripted headlessly).
+
+Pass `--main` to rehearse what a release would ship: it resolves the release
+candidate built from the current `main` tip and refuses to run when there is
+none, rather than falling back to some other candidate. `--pr <number>` uses the
+merge-gate candidate for an open pull request. Either way the candidate's
+`sourceSha` is compared against what was asked for before anything is installed
+— a merge-gate run reports `main` as its head branch even though it builds a
+pull request head, so run metadata cannot be used to identify a candidate.
 
 ## Error Code Recovery Map
 
