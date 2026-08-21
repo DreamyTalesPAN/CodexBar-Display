@@ -84,9 +84,17 @@ fi
 if touches '^scripts/'; then
   # `|| true` on the whole list would swallow bash -n and report a clean gate
   # for a script that does not parse. Skip deleted files, keep every real error.
+  #
+  # Enumerate the same three sources `changed` is built from. Listing only
+  # committed files let an unstaged edit or a brand new untracked script reach
+  # "all checks passed -- safe to push" without ever being parsed, even though
+  # that very file is what put this section in scope.
   run "shell syntax" bash -c '
     rc=0
-    for f in $(git diff --name-only '"$BASE"'...HEAD -- scripts | grep "\.sh$"); do
+    for f in $( { git diff --name-only '"$BASE"'...HEAD -- scripts
+                  git diff --name-only -- scripts
+                  git ls-files --others --exclude-standard -- scripts
+                } | sort -u | grep "\.sh$"); do
       [[ -f "$f" ]] || continue
       bash -n "$f" || rc=1
     done

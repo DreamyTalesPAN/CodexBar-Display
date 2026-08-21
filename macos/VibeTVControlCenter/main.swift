@@ -1385,7 +1385,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
         if urls.contains(where: isRepairCodexBarURL) {
-            beginCodexBarRepair()
+            beginCodexBarRepair(hasJavaScriptOwner: false)
             return
         }
         // Same reason the repair above is routed here: the recovery screen also
@@ -1502,9 +1502,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         restartControlCenter()
     }
 
-    private func beginCodexBarRepair() {
+    private func beginCodexBarRepair(hasJavaScriptOwner: Bool) {
         if webView != nil {
-            beginControlCenterCodexBarRepair()
+            beginControlCenterCodexBarRepair(hasJavaScriptOwner: hasJavaScriptOwner)
             return
         }
         installationReady = false
@@ -1520,7 +1520,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         retryRuntimePreparation()
     }
 
-    private func beginControlCenterCodexBarRepair() {
+    private func beginControlCenterCodexBarRepair(hasJavaScriptOwner: Bool) {
         guard preparationTask == nil else {
             // Another preparation already owns the runtime. Say so instead of
             // dropping the request: the setup screen waits on this answer and
@@ -1544,6 +1544,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             self.codexBarRepairRequired = false
             self.installationReady = true
             self.notifyCodexBarRepairResult(success: true)
+            // Only a repair the page started sends the finish action back: its
+            // result handler returns early unless it has an outstanding repair
+            // of its own. An externally delivered vibetv://repair-codexbar has
+            // no such owner, so the temporary CodexBar this recovery started
+            // would keep running until the window closes. Release it here.
+            if !hasJavaScriptOwner {
+                self.finishControlCenterCodexBarRecovery()
+            }
         }
     }
 
@@ -4156,7 +4164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             case .checkForUpdates:
                 checkForUpdates()
             case .repairCodexBar:
-                beginCodexBarRepair()
+                beginCodexBarRepair(hasJavaScriptOwner: true)
             case .finishCodexBarRecovery:
                 finishControlCenterCodexBarRecovery()
             case .openCodexBar:

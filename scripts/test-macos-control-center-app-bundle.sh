@@ -608,6 +608,12 @@ required_source = [
     # Open CodexBar is reached from outside the WKWebView too, and macOS then
     # delivers it through application(_:open:), which urlRouter.receive rejects.
     "if urls.contains(where: isOpenCodexBarURL) {",
+    # A repair delivered as a URL has no page waiting for the result, so the
+    # page's handler drops the event and never sends the finish action. The
+    # native side has to release its temporary CodexBar itself in that case.
+    "beginCodexBarRepair(hasJavaScriptOwner: false)",
+    "beginCodexBarRepair(hasJavaScriptOwner: true)",
+    "            if !hasJavaScriptOwner {\n                self.finishControlCenterCodexBarRecovery()\n            }",
     # .ready only means the registration was accepted; the health gate below can
     # still fail and unregister it. The repair's restoration must survive that.
     "        runtimeStoppedForCodexBarRepair = false\n        clearPendingNativeUpdate()",
@@ -915,11 +921,11 @@ if (
     raise SystemExit(
         "native CodexBar payload may reuse only its running verified app; otherwise it must stage the bundled ZIP, normalize xattrs, validate, publish, then revalidate"
     )
-repair_start = source.find("private func beginCodexBarRepair()")
+repair_start = source.find("private func beginCodexBarRepair(hasJavaScriptOwner: Bool)")
 repair_end = source.find("@objc private func openSupportLog()", repair_start)
 repair_method = source[repair_start:repair_end]
 if (
-    "beginControlCenterCodexBarRepair()" not in repair_method
+    "beginControlCenterCodexBarRepair(hasJavaScriptOwner: hasJavaScriptOwner)" not in repair_method
     or "codexBarRepairRestartRequired = true" not in repair_method
     or "notifyCodexBarRepairResult(success: true)" not in repair_method
     or "notifyCodexBarRepairResult(success: false)" not in repair_method
