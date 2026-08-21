@@ -253,9 +253,12 @@ rehearsal::stop_runtime() {
   # directory: a customer-owned CodexBar lives elsewhere and is never stopped.
   pkill -f "$REHEARSAL_SUPPORT_DIR/CodexBar/" >/dev/null 2>&1 || true
   sleep 2
-  local survivors
-  survivors="$(pgrep -f "$REHEARSAL_SUPPORT_DIR/CodexBar/" 2>/dev/null | tr '\n' ' ')"
-  [[ -z "$survivors" ]] \
+  # pgrep exits 1 when nothing matches, which is the normal case here. Under
+  # `set -e` that status would abort the whole rehearsal from a line whose only
+  # job is to report, so it must never propagate.
+  local survivors=""
+  survivors="$(pgrep -f "$REHEARSAL_SUPPORT_DIR/CodexBar/" 2>/dev/null | tr '\n' ' ')" || true
+  [[ -z "${survivors// /}" ]] \
     || rehearsal::warn "app-managed CodexBar still running after stop: $survivors"
 }
 
