@@ -1168,6 +1168,10 @@ enum InstallationStatusKind: Equatable {
     case updateMismatch
     case applicationIncomplete
     case legacyRepair
+    // Its button must not go through retryRuntimePreparation: that wrapper
+    // clears codexBarRepairRequired, and the launch this screen exists to
+    // trigger happens only while that flag is set.
+    case codexBarRepair
 }
 
 struct InstallationStatus {
@@ -1468,7 +1472,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                     title: "Usage service needs repair",
                     detail: "Repair the usage service to install and start the verified copy included with VibeTV Control Center.",
                     failed: true,
-                    retryTitle: "Repair usage service"
+                    retryTitle: "Repair usage service",
+                    kind: .codexBarRepair
                 )
             case .failure(let failure):
                 self.codexBarRepairRequired = false
@@ -1508,6 +1513,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     @objc private func restartControlCenterAfterFailedUpdate() {
         discardMismatchedPendingNativeUpdate()
         restartControlCenter()
+    }
+
+    // The button on the native "Usage service needs repair" screen. It reuses
+    // the repair entry point rather than the generic retry so the flag survives.
+    @objc private func repairCodexBarFromNativeStatus() {
+        beginCodexBarRepair(hasJavaScriptOwner: false)
     }
 
     private func beginCodexBarRepair(hasJavaScriptOwner: Bool) {
@@ -2433,6 +2444,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                         title: "Download VibeTV again",
                         action: #selector(downloadVibeTVAgain),
                         symbolName: "arrow.down.circle",
+                        variant: .primary
+                    ),
+                ]
+            case .codexBarRepair:
+                recoveryButtons = [
+                    makeNativeSetupButton(
+                        title: retryTitle,
+                        action: #selector(repairCodexBarFromNativeStatus),
+                        symbolName: "wrench.and.screwdriver",
                         variant: .primary
                     ),
                 ]

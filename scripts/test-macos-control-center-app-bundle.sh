@@ -619,6 +619,11 @@ required_source = [
     # wrapper clears codexBarRepairRequired, and prepareCompanion starts the
     # verified CodexBar only while that flag is set.
     "        discardMismatchedPendingNativeUpdate()\n        startRuntimePreparation()\n    }",
+    # The "Repair usage service" button must reach the repair entry point, not
+    # the generic retry: that wrapper clears codexBarRepairRequired, and the
+    # launch this screen exists to trigger happens only while it is set.
+    "action: #selector(repairCodexBarFromNativeStatus),",
+    "kind: .codexBarRepair",
     "beginCodexBarRepair(hasJavaScriptOwner: false)",
     "beginCodexBarRepair(hasJavaScriptOwner: true)",
     "            if !hasJavaScriptOwner {\n                self.finishControlCenterCodexBarRecovery()\n            }",

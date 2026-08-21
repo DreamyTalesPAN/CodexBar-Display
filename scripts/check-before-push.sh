@@ -59,6 +59,11 @@ if touches '^companion/'; then
   # after the Go tests. Without it a change to the cycle or to frame marshaling
   # passes here and only fails there.
   run "bench budget" ./scripts/check-companion-bench-budget.sh
+  # companion-tests in CI also runs the cold/warm honesty simulation against the
+  # virtual VibeTV. It covers startup and recovery across a process restart,
+  # which is exactly what provider recovery and the runtime restarts touch, and
+  # it needs no hardware. About 22 seconds.
+  run "cold/warm honesty" ./scripts/test-companion-coldwarm-e2e.sh
   # Only files this branch touched: the repo carries older violations, and a
   # gate that fails on someone else's formatting is a gate people switch off.
   # "Touched" has to mean the same four sources `changed` is built from, though
