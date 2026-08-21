@@ -246,7 +246,17 @@ rehearsal::stop_runtime() {
   osascript -e 'tell application "VibeTV Control Center" to quit' >/dev/null 2>&1 || true
   pkill -f "$REHEARSAL_APP_PATH/Contents/MacOS/VibeTVControlCenter" >/dev/null 2>&1 || true
   pkill -f 'codexbar-display daemon' >/dev/null 2>&1 || true
+  # The app-managed CodexBar keeps running with open file handles after the
+  # support directory is moved away, so a purge that only moves files leaves a
+  # serve process from a deleted install alive. One survived eight days and
+  # every cold start in between. Only ever the managed copy under the support
+  # directory: a customer-owned CodexBar lives elsewhere and is never stopped.
+  pkill -f "$REHEARSAL_SUPPORT_DIR/CodexBar/" >/dev/null 2>&1 || true
   sleep 2
+  local survivors
+  survivors="$(pgrep -f "$REHEARSAL_SUPPORT_DIR/CodexBar/" 2>/dev/null | tr '\n' ' ')"
+  [[ -z "$survivors" ]] \
+    || rehearsal::warn "app-managed CodexBar still running after stop: $survivors"
 }
 
 # Moves a path into the backup directory, preserving its layout.
