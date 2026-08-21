@@ -3267,6 +3267,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             guard let http = await runtimeUpdateHoldRequest(origin, release: false) else {
                 continue
             }
+            // runtime-endpoint.json can be stale, and any process may reuse the
+            // port it names. Such a listener answering 404 would read as
+            // "answered without the field" and refuse the repair without the
+            // real runtime on the default port ever being asked. Only an answer
+            // from a listener this label owns is authoritative -- the same test
+            // waitForHealthyRuntime applies before recording an origin.
+            guard case .owned = verifyRuntimeListenerOwnership(
+                port: origin.port ?? defaultRuntimePort
+            ) else {
+                continue
+            }
             if http.statusCode == 409 {
                 return .updateRunning
             }
@@ -3285,6 +3296,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     // whenever the shutdown does not happen.
     private func runtimeReleaseUpdateHold() async {
         for origin in runtimeOriginCandidates() {
+            // Same reason as the claim: releasing against a foreign listener on
+            // a stale port reports success and leaves the real hold in place.
+            guard case .owned = verifyRuntimeListenerOwnership(
+                port: origin.port ?? defaultRuntimePort
+            ) else {
+                continue
+            }
             if await runtimeUpdateHoldRequest(origin, release: true) != nil {
                 return
             }

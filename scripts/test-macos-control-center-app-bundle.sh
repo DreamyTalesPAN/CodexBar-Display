@@ -607,6 +607,9 @@ required_source = [
     # Quiesce against the origin that answered and was proven owned, not the
     # first candidate: the endpoint file can hold a stale but valid URL.
     "let managedOrigin = activeRuntimeOrigin",
+    # Both hold loops must verify listener ownership before trusting an answer:
+    # a stale port from runtime-endpoint.json can be held by anything.
+    "            guard case .owned = verifyRuntimeListenerOwnership(\n                port: origin.port ?? defaultRuntimePort\n            ) else {\n                continue\n            }\n            if await runtimeUpdateHoldRequest(origin, release: true) != nil {",
     "waitForRuntimeAPIToStop(managedOrigin)",
     # Open CodexBar is reached from outside the WKWebView too, and macOS then
     # delivers it through application(_:open:), which urlRouter.receive rejects.
