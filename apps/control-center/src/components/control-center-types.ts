@@ -568,22 +568,29 @@ export function normalizedProviderStatus(value?: string) {
   return value?.trim().toLowerCase().replace(/^provider_/, "") || "";
 }
 
-// CodexBar answered with a real inventory, so it is installed and reporting
-// actual providers. Whatever is still missing on one of them -- a sign-in, a
-// macOS permission, an account with no usage on it -- is settled inside
-// CodexBar, and the download page fixes none of it. Which of those it is stays
-// CodexBar's to say; this only reads that an inventory came back.
+// A ready engine means CodexBar answered, so it is installed and running.
+// Whatever is still missing -- a sign-in, a macOS permission, an account with
+// no usage, or simply nothing reported yet -- is settled inside CodexBar, and
+// the download page fixes none of it. Which of those it is stays CodexBar's to
+// say; this only reads that it answered.
 //
-// The `codexbar` stand-in does not count. CodexBar reports itself under that id
-// when its own probe failed, and that is a broken usage service rather than a
-// provider waiting for one step, so it keeps the missing-install route.
-export function providerSetupHasRealProviderInventory(
+// An empty inventory counts. CodexBar returns one after its providers are
+// switched back on until one of them is opened once, and the daemon's own
+// recovery hint for that state is literally "Open a provider once in CodexBar,
+// then retry". Sending that customer to a download was the bug this predicate
+// exists to prevent, seen on the bench on 2026-08-21.
+//
+// The `codexbar` stand-in is the one exclusion. CodexBar reports itself under
+// that id when its own probe failed, which is a broken usage service rather
+// than a provider waiting for one step, so it keeps the missing-install route.
+export function providerSetupCodexBarAnswered(
   providerSetup: ProviderSetupInfo | null | undefined,
 ) {
   const providers = providerSetup?.providers ?? [];
   return (
     normalizedProviderStatus(providerSetup?.engine?.status) === "ready" &&
-    providers.some((provider) => provider.id !== "codexbar")
+    (providers.length === 0 ||
+      providers.some((provider) => provider.id !== "codexbar"))
   );
 }
 

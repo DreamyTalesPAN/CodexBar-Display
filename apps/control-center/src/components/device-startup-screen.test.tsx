@@ -252,6 +252,63 @@ describe("DeviceStartupScreen", () => {
     );
   });
 
+  it("opens CodexBar when it answered with nothing to report yet", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onCreateSupportReport={vi.fn()}
+        onOpenCodexBar={vi.fn()}
+        onPair={vi.fn()}
+        onRepairUsageService={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{
+          status: "setup_required",
+          engine: { status: "ready" },
+          // What CodexBar returns after its providers are switched back on,
+          // until one of them is opened once. Seen on the bench 2026-08-21,
+          // where this screen offered a download for software that was
+          // installed and running at that moment.
+          providers: [],
+        }}
+        showCodexBarFallback
+      />,
+    );
+
+    expect(html).toContain("Finish AI setup in CodexBar</h1>");
+    expect(html).toContain("Open CodexBar</span></button>");
+    expect(html).not.toContain("Download CodexBar");
+  });
+
+  it("says it is working while a retry the customer pressed is in flight", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        busyAction="providers-retry"
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onCreateSupportReport={vi.fn()}
+        onPair={vi.fn()}
+        onRepairUsageService={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{ status: "setup_required" }}
+        // The error from the attempt before it must not keep the screen silent:
+        // without this the button greys out and nothing else changes.
+        lastError={{
+          code: "PROVIDER_SETUP_REQUIRED",
+          message: "no providers",
+          nextAction: "retry",
+        }}
+      />,
+    );
+
+    expect(html).toContain("Starting AI usage</h1>");
+    expect(html).not.toContain("AI usage could not start");
+  });
+
   it("keeps the download only when CodexBar never answered", () => {
     const html = renderToStaticMarkup(
       <DeviceStartupScreen

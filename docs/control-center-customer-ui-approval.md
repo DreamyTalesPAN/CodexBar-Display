@@ -1719,3 +1719,23 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-types.ts`, `device-startup-screen.tsx`,
   `check-customer-ui-copy.mjs`, `device-startup-screen.test.tsx`, and this
   approval record.
+
+## 2026-08-21 — Two faults the user found on the bench, not in review
+
+- User approval: Driving the recovery screen himself on the final candidate, the
+  user reported both directly: pressing `Try again` left him with "gar keinen
+  state, der mir jetzt anzeigt ob etwas passiert im Hintergrund oder nicht, der
+  button ist einfach nur inactive", and then `Download CodexBar` appeared while
+  CodexBar was installed and running on that Mac. He had asked for that download
+  to stop appearing for software customers already have on 2026-08-20, and again
+  on 2026-08-21.
+- Approved customer-visible result: A retry the customer pressed now shows
+  `Starting AI usage` while it runs, instead of leaving the previous error on
+  screen with only a greyed-out button; the error from the attempt before no
+  longer suppresses that. And a CodexBar that answers with an empty inventory --
+  what it returns after providers are switched back on, until one is opened once
+  -- is treated as installed, so the screen offers `Open CodexBar` rather than a
+  download. `Download CodexBar` remains only when the engine never answered, or
+  when CodexBar reports its own probe failed under the `codexbar` stand-in.
+- Approved files: `control-center-types.ts`, `device-startup-screen.tsx`,
+  `device-startup-screen.test.tsx`, and this approval record.

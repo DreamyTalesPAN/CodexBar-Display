@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import {
   normalizedProviderStatus,
   providerSetupHasEngineButNoEnabledProvider,
-  providerSetupHasRealProviderInventory,
+  providerSetupCodexBarAnswered,
   type ApiError,
   type DeviceCandidate,
   type DeviceSearchState,
@@ -81,7 +81,7 @@ export function DeviceStartupScreen({
   const everyProviderSwitchedOff =
     providerSetupHasEngineButNoEnabledProvider(providerSetup);
   const codexBarListedProviders =
-    providerSetupHasRealProviderInventory(providerSetup);
+    providerSetupCodexBarAnswered(providerSetup);
   const providerRecoveryView = providerRecovery
     ? describeProviderRecovery(
         providerSetup,
@@ -358,12 +358,16 @@ function describeProviderRecovery(
   codexBarListedProviders: boolean,
 ) {
   const setupStatus = normalizedProviderStatus(providerSetup?.status);
+  // A retry the customer just pressed outranks the error from the attempt
+  // before it. That error describes something already finished, and leaving it
+  // on screen while the new attempt runs left nothing but a greyed-out button:
+  // no way to tell whether anything was happening. Reported from the bench on
+  // 2026-08-21, in exactly that state.
+  const retryInFlight =
+    busyAction === "providers-retry" || busyAction === "usage-service-repair";
   if (
-    !lastError &&
-    (!providerSetup ||
-      setupStatus === "checking" ||
-      busyAction === "providers-retry" ||
-      busyAction === "usage-service-repair")
+    retryInFlight ||
+    (!lastError && (!providerSetup || setupStatus === "checking"))
   ) {
     return {
       checking: true,
