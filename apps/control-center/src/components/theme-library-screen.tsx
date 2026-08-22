@@ -1128,9 +1128,14 @@ function InlineInstallProgress({
   const detail = failed
     ? status.error || "Theme was not installed. Try again."
     : complete
-      ? usage === "screensaver"
-        ? "Screensaver is ready on VibeTV."
-        : "Theme is active on VibeTV."
+      // The Companion says how the install ended. On a VibeTV without a ready
+      // provider that is "shows it once AI usage is ready", and overriding it
+      // here claimed the theme was on screen while the device drew the error
+      // frame. The fallback only covers a completion that carries no message.
+      ? status.message ||
+        (usage === "screensaver"
+          ? "Screensaver is ready on VibeTV."
+          : "Theme is active on VibeTV.")
       : status.message ||
         status.logs[status.logs.length - 1] ||
         "Preparing theme install.";

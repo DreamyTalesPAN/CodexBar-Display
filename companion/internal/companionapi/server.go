@@ -64,19 +64,19 @@ const (
 	// a time. A read-only probe can therefore wait behind a frame render before
 	// it reaches the device; keep this below the client timeout, but long enough
 	// to cover the normal render acknowledgement on stored themes.
-	discoveryProbeTime           = 12 * time.Second
-	deviceProbeCacheTime         = 750 * time.Millisecond
-	repairDiscoveryAttempts      = 3
-	repairDiscoveryRetryGap      = 1200 * time.Millisecond
-	subnetProbeLimit             = 64
-	maxSubnetDiscoveryPrefix     = 23
-	maxSubnetDiscoveryTargets    = 510
-	themeInstallDisableEnv       = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
-	macAppUpdateDisableEnv       = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
-	displayStreamLegacyLabel     = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
-	displayStreamLabelEnv        = runtimepaths.DisplayStreamLaunchAgentLabelEnv
-	displayStreamOutLogEnv       = runtimepaths.DisplayStreamOutLogEnv
-	displayStreamReadyAge        = 2 * time.Minute
+	discoveryProbeTime        = 12 * time.Second
+	deviceProbeCacheTime      = 750 * time.Millisecond
+	repairDiscoveryAttempts   = 3
+	repairDiscoveryRetryGap   = 1200 * time.Millisecond
+	subnetProbeLimit          = 64
+	maxSubnetDiscoveryPrefix  = 23
+	maxSubnetDiscoveryTargets = 510
+	themeInstallDisableEnv    = "VIBETV_DISABLE_WIFI_THEME_INSTALL"
+	macAppUpdateDisableEnv    = "VIBETV_DISABLE_MAC_APP_SELF_UPDATE"
+	displayStreamLegacyLabel  = runtimepaths.LegacyDisplayStreamLaunchAgentLabel
+	displayStreamLabelEnv     = runtimepaths.DisplayStreamLaunchAgentLabelEnv
+	displayStreamOutLogEnv    = runtimepaths.DisplayStreamOutLogEnv
+	displayStreamReadyAge     = 2 * time.Minute
 	// deviceConnectedGraceWindow keeps a just-seen device Connected (state
 	// "reconnecting") through transient probe misses: 2.5x the 30s WiFi
 	// interval. Long enough to absorb single misses, short enough that a
@@ -196,6 +196,7 @@ type Server struct {
 	wakeDisplayStream      func()
 	firmwareUpdateActive   atomic.Bool
 	firmwareUpdateStartMu  sync.Mutex
+	updateHoldUntil        time.Time
 	configMu               sync.Mutex
 	repairMu               sync.Mutex
 	repairFlightsMu        sync.Mutex
@@ -225,7 +226,6 @@ type Server struct {
 	usageCache             *usageResponse
 	probeProviderSetup     func(context.Context, string) codexbar.ProviderSetup
 	probeExactProvider     func(context.Context, string, string) codexbar.ProviderSetup
-	openCodexBar           func(context.Context) error
 	providerSetupMu        sync.Mutex
 	exactProviderProbeMu   sync.Mutex
 	exactProviderProbes    map[string]*exactProviderProbeFlight
@@ -953,7 +953,6 @@ func New(opts Options) (*Server, error) {
 		probeProviderSetup:    codexbar.ProbeProviderSetup,
 		probeExactProvider:    codexbar.ProbeProviderSetupForProvider,
 		exactProviderProbes:   make(map[string]*exactProviderProbeFlight),
-		openCodexBar:          codexbar.OpenApp,
 		providerPreferences: providerPreferencesState{
 			load:          codexbar.FetchProviderSettings,
 			set:           codexbar.SetProviderEnabled,
@@ -1007,13 +1006,13 @@ func (s *Server) Handler() http.Handler {
 	s.registerControlCenterRoutes(mux)
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/runtime-health", s.handleRuntimeHealth)
+	mux.HandleFunc("/v1/runtime-health/update-hold", s.handleRuntimeUpdateHold)
 	mux.HandleFunc("/v1/usage", s.handleUsage)
 	mux.HandleFunc("/v1/preferences", s.handlePreferences)
 	mux.HandleFunc("/v1/preferences/", s.handlePreference)
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/providers/retry", s.handleProviderRetry)
-	mux.HandleFunc("/v1/providers/open-codexbar", s.handleOpenCodexBar)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
 	mux.HandleFunc("/v1/device/search", s.handleDeviceSearch)
 	mux.HandleFunc("/v1/device/select", s.handleDeviceSelect)
@@ -1439,9 +1438,22 @@ func (s *Server) withConfiguredConnectionState(
 	if !state.lastSeenAt.IsZero() {
 		device.LastSeenAt = state.lastSeenAt.UTC().Format(time.RFC3339Nano)
 	}
+	// Missing AI usage is not a connection problem. Reporting "reconnecting"
+	// here sends the customer after a link that is already up. This needs the
+	// live probe in streamConnected, not device.Connected: the anti-flap grace
+	// window above keeps an unreachable device Connected, and that one really
+	// is reconnecting.
+	if streamConnected {
+		device.ConnectionState = deviceConnectionNoProvider
+		return device
+	}
 	device.ConnectionState = deviceConnectionRetrying
 	return device
 }
+
+// A reachable, paired device whose only missing piece is AI usage is not
+// reconnecting. Naming that separately keeps the connection story honest.
+const deviceConnectionNoProvider = "provider_setup_required"
 
 func configuredDeviceKey(cfg runtimeconfig.Config) string {
 	if id := strings.ToLower(strings.TrimSpace(cfg.DeviceID)); id != "" {
@@ -1457,10 +1469,59 @@ func (s *Server) currentTime() time.Time {
 	return time.Now().UTC()
 }
 
+// The Mac App stops this runtime to repair CodexBar. runtime-health alone could
+// only report a job that had already started, so a firmware update begun
+// between that answer and the shutdown still died with this process. The Mac
+// App now claims a hold first: taking it and starting an update are the same
+// lock, so one of the two always loses cleanly. The hold expires on its own
+// because the process it protects is normally gone before it matters.
+const runtimeUpdateHoldWindow = 60 * time.Second
+
+func (s *Server) handleRuntimeUpdateHold(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var req struct {
+		Release bool `json:"release"`
+	}
+	if !decodeOptionalJSON(w, r, &req) {
+		return
+	}
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if req.Release {
+		s.updateHoldUntil = time.Time{}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+	if _, running := s.activeFirmwareUpdateJob(); running {
+		// The only place the collision is observable from outside: the Mac App
+		// has no log a script can read, so without this line a bench run cannot
+		// tell a repair that was held back from one that never arrived.
+		_, _ = fmt.Fprintln(os.Stderr, "VibeTV update hold refused: a firmware update owns this runtime")
+		writeError(
+			w,
+			http.StatusConflict,
+			"firmware_update_in_progress",
+			"VibeTV update is still running.",
+			"Wait for the update to finish.",
+		)
+		return
+	}
+	s.updateHoldUntil = time.Now().Add(runtimeUpdateHoldWindow)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// Callers must hold firmwareUpdateStartMu.
+func (s *Server) updateHoldActive() bool {
+	return !s.updateHoldUntil.IsZero() && time.Now().Before(s.updateHoldUntil)
+}
+
 func (s *Server) handleRuntimeHealth(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
+	_, updateInProgress := s.activeFirmwareUpdateJob()
 	writeJSON(w, http.StatusOK, struct {
 		OK bool `json:"ok"`
 		// The writer-quiesce gate cares about device writers, not runtimes: a
@@ -1468,14 +1529,20 @@ func (s *Server) handleRuntimeHealth(w http.ResponseWriter, r *http.Request) {
 		// owning a display stream, and its own child updater must not
 		// mistake it for one. Absent field (older runtimes) means writer.
 		DisplayWriter bool `json:"displayWriter"`
-		Companion     struct {
+		// A firmware update job lives in this process and dies with it. The Mac
+		// App asks here before restarting the runtime for a CodexBar repair,
+		// because that restart would strand a running update: the next status
+		// poll asks a fresh process for a job id it has never seen.
+		UpdateInProgress bool `json:"updateInProgress"`
+		Companion        struct {
 			Version string               `json:"version"`
 			App     companionAppInfo     `json:"app"`
 			Runtime companionRuntimeInfo `json:"runtime"`
 		} `json:"companion"`
 	}{
-		OK:            true,
-		DisplayWriter: s.pauseDisplayStream != nil,
+		OK:               true,
+		DisplayWriter:    s.pauseDisplayStream != nil,
+		UpdateInProgress: updateInProgress,
 		Companion: struct {
 			Version string               `json:"version"`
 			App     companionAppInfo     `json:"app"`
@@ -2061,6 +2128,11 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	device = s.withDisplayStream(r.Context(), cfg.DeviceTarget, deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello))
+	// A report describes the same VibeTV the rest of the API describes. Leaving
+	// this unset shipped active=false — the field has no omitempty — and the
+	// Control Center believed the configured device had gone away every time a
+	// customer created a support report.
+	device.Active = strings.TrimSpace(cfg.DeviceID) != "" && strings.EqualFold(cfg.DeviceID, device.DeviceID)
 	checks = append(checks, diagnosticCheck{
 		Name:   "device_hello",
 		Status: "pass",
@@ -2114,7 +2186,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			Status:     "attention",
 			Detail:     device.Stream.Detail,
 			ErrorCode:  "provider_setup_required",
-			NextAction: "Open provider setup, connect an AI provider, then click Check again.",
+			NextAction: "Finish AI setup in the Mac App, then click Check again.",
 		})
 	} else {
 		checks = append(checks, diagnosticCheck{
@@ -2990,6 +3062,19 @@ func (s *Server) handleDeviceReloadDisplay(w http.ResponseWriter, r *http.Reques
 	}
 	stream := s.waitForFreshDisplayStream(r.Context(), cfg.DeviceTarget, streamStartedAt)
 	device := withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
+	// There is no image to reload while no provider delivers usage. Name that
+	// instead of reporting an unexplained render failure the customer cannot act
+	// on.
+	if providerSetupStreamForTarget(&stream, cfg.DeviceTarget) {
+		writeError(
+			w,
+			http.StatusConflict,
+			"provider_setup_required",
+			"VibeTV is connected, but AI usage is not ready yet.",
+			"Finish AI setup in the Mac App, then press Reload image again.",
+		)
+		return
+	}
 	health, err := s.waitForVerifiedDisplayRender(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
 	if err != nil {
 		writeError(
@@ -3987,6 +4072,16 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 	}
 	s.firmwareUpdateStartMu.Lock()
 	defer s.firmwareUpdateStartMu.Unlock()
+	if s.updateHoldActive() {
+		writeError(
+			w,
+			http.StatusConflict,
+			"mac_app_restarting",
+			"Mac App is restarting.",
+			"Wait a moment, then start the update again.",
+		)
+		return
+	}
 	cfg, hello, ok := s.requireDevice(w, r)
 	if !ok {
 		return
@@ -4251,6 +4346,15 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		stream = s.waitForFreshDisplayStream(ctx, cfg.DeviceTarget, streamStartedAt)
 	}
 	logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
+	// A stream that restarted, owns this exact VibeTV, and is only held back by
+	// provider setup has nothing left to prove about the theme install. It draws
+	// no usage picture because no provider is ready, so waiting for one reports
+	// a failed install to a customer whose theme is already on the device. The
+	// firmware update path makes the same call for the same reason.
+	if providerSetupStreamForTarget(&stream, cfg.DeviceTarget) {
+		fmt.Fprintln(out, "Display stream: waiting for AI provider")
+		return result, nil
+	}
 	renderVerificationStartedAt := time.Now()
 	health, err := s.waitForVerifiedDisplayRender(ctx, cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
 	logThemeInstallTiming(out, "render-verification", renderVerificationStartedAt)
@@ -4541,6 +4645,10 @@ func (s *Server) finishThemeInstall() {
 	s.installJobsMu.Unlock()
 }
 
+// The install finished, but the device cannot draw usage yet. Both the progress
+// step and the job's terminal message use this one wording.
+const themeInstallAwaitingProviderMessage = "Theme installed. VibeTV shows it once AI usage is ready."
+
 func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runtimeconfig.Config, req themeInstallRequest) {
 	go func() {
 		defer s.finishThemeInstall()
@@ -4569,11 +4677,17 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 		}
 		s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
 			job.Phase = "complete"
-			job.Message = done
+			// Without a ready provider the VibeTV keeps drawing the error frame,
+			// so "active on VibeTV" would contradict the screen the customer is
+			// looking at. The install still succeeded: the provider outcome owns
+			// the final message and says what is still missing.
+			if job.Message != themeInstallAwaitingProviderMessage {
+				job.Message = done
+				appendInstallJobLog(job, done)
+			}
 			job.Progress = 100
 			job.FinishedAt = &finishedAt
 			job.Result = &result
-			appendInstallJobLog(job, done)
 		})
 	}()
 }
@@ -4712,6 +4826,8 @@ func customerInstallProgress(line string, job *themeInstallJob) (string, int, bo
 		return "Refreshing display stream.", 94, true
 	case strings.HasPrefix(line, "Display stream: refreshed"):
 		return "Display stream refreshed.", 98, true
+	case strings.HasPrefix(line, "Display stream: waiting for AI provider"):
+		return themeInstallAwaitingProviderMessage, 98, true
 	case strings.HasPrefix(line, "Done:"):
 		return "Theme installed.", 88, true
 	default:
@@ -7786,7 +7902,7 @@ func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Ti
 			detail := "Display stream hit an error after the last frame and is reconnecting."
 			code := "display_stream_failed"
 			if displayStreamLogValue(line, "code") == "runtime/no-providers" || strings.Contains(line, "runtime/no-providers") {
-				detail = "VibeTV is connected, but no AI provider is ready yet."
+				detail = "VibeTV is connected, but AI usage is not ready yet."
 				code = "provider_setup_required"
 			} else if op == "send-line" {
 				detail = "Display stream could not send to VibeTV and is reconnecting."

@@ -154,6 +154,32 @@ describe("dynamic usage slot preview", () => {
     expect(markup).not.toContain("Reconnect VibeTV to continue");
   });
 
+  it("never tells a provider-starved connected VibeTV to reconnect", () => {
+    const markup = renderToStaticMarkup(
+      createElement(LiveVibeTVPreview, {
+        device: {
+          target: "http://192.168.178.72",
+          active: true,
+          connected: true,
+          paired: true,
+          ready: false,
+          health: { ok: true },
+          stream: {
+            healthy: false,
+            running: true,
+            target: "http://192.168.178.72",
+            errorCode: "provider_setup_required",
+          },
+        },
+        displayFrame: null,
+        usage: null,
+      }),
+    );
+
+    expect(markup).toContain("Waiting for AI setup");
+    expect(markup).not.toContain("Reconnect VibeTV to continue");
+  });
+
   it("keeps a prior valid frame when a connected VibeTV is not display-ready but the stream is healthy", () => {
     const displayFrame = {
       ok: true,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  deviceAwaitsProviderSetup,
   deviceCanContinueThemeSetup,
   deviceCompletedThemeSetup,
   deviceIsActive,
@@ -7,6 +8,7 @@ import {
   deviceIsReady,
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
+  providerSetupRequiresRecovery,
 } from "./control-center-types";
 
 describe("device connection contract", () => {
@@ -210,6 +212,108 @@ describe("device connection contract", () => {
     ).toBe(false);
   });
 
+  it("keeps a VibeTV that only lacks an AI provider out of theme setup", () => {
+    const awaitingProvider = {
+      target: "http://192.168.178.72",
+      active: true,
+      connected: true,
+      paired: true,
+      ready: false,
+      activeTheme: "theme-missing",
+      health: { ok: true },
+      stream: {
+        healthy: false,
+        running: true,
+        target: "http://192.168.178.72/",
+        errorCode: "provider_setup_required",
+      },
+      display: { themeSpec: { active: false, renderOk: true } },
+    } as const;
+
+    expect(deviceAwaitsProviderSetup(awaitingProvider)).toBe(true);
+    // Without AI usage the device draws the error frame forever, so this state
+    // must route to recovery before theme setup.
+    expect(deviceNeedsThemeSetup(awaitingProvider)).toBe(false);
+    expect(deviceCanContinueThemeSetup(awaitingProvider)).toBe(false);
+  });
+
+  it("does not trust an old provider error as live device evidence", () => {
+    const awaitingProvider = {
+      target: "http://192.168.178.72",
+      active: true,
+      connected: true,
+      paired: true,
+      ready: false,
+      health: { ok: true },
+      stream: {
+        healthy: false,
+        running: true,
+        target: "http://192.168.178.72",
+        errorCode: "provider_setup_required",
+      },
+    } as const;
+
+    expect(
+      deviceAwaitsProviderSetup({ ...awaitingProvider, connected: false }),
+    ).toBe(false);
+    expect(
+      deviceAwaitsProviderSetup({
+        ...awaitingProvider,
+        health: { ok: false },
+      }),
+    ).toBe(false);
+    expect(
+      deviceAwaitsProviderSetup({
+        ...awaitingProvider,
+        stream: { ...awaitingProvider.stream, target: "http://192.168.178.99" },
+      }),
+    ).toBe(false);
+  });
+
+  it("still shows theme setup for other stream failures", () => {
+    for (const errorCode of ["display_send_failed", "device_pairing_required"]) {
+      expect(
+        deviceAwaitsProviderSetup({
+          active: true,
+          connected: true,
+          paired: true,
+          ready: false,
+          stream: { healthy: false, running: true, errorCode },
+        }),
+      ).toBe(false);
+    }
+    expect(
+      deviceNeedsThemeSetup({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: false,
+        activeTheme: "theme-missing",
+        health: { ok: true },
+        stream: {
+          healthy: false,
+          running: true,
+          errorCode: "display_send_failed",
+        },
+        display: { themeSpec: { active: false, renderOk: true } },
+      }),
+    ).toBe(true);
+    // A stopped stream is not a provider that is merely missing.
+    expect(
+      deviceAwaitsProviderSetup({
+        active: true,
+        connected: true,
+        paired: true,
+        ready: false,
+        stream: {
+          healthy: false,
+          running: false,
+          errorCode: "provider_setup_required",
+        },
+      }),
+    ).toBe(false);
+  });
+
   it("completes theme setup from a successful render without waiting for provider readiness", () => {
     expect(
       deviceCanContinueThemeSetup({
@@ -247,5 +351,62 @@ describe("device connection contract", () => {
         display: { themeSpec: { active: true, renderOk: true } },
       }),
     ).toBe(true);
+  });
+});
+
+describe("provider recovery contract", () => {
+  // The Companion reports status "ready" as soon as one provider delivers usage
+  // and keeps every other provider in the list with its own failing status.
+  // TestProviderSetupTokenEvidenceKeepsOneHealthyOneFailingIsolated pins that
+  // payload on the Go side. Treating it as broken sent a working Mac into
+  // full-screen recovery and restarted its runtime for nothing.
+  it("accepts a reconciled setup where only some providers are ready", () => {
+    expect(
+      providerSetupRequiresRecovery({
+        status: "ready",
+        engine: { status: "ready" },
+        providers: [
+          { id: "codex", label: "Codex", enabled: true, status: "ready" },
+          {
+            id: "claude",
+            label: "Claude",
+            enabled: true,
+            status: "auth_required",
+          },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      providerSetupRequiresRecovery({
+        status: "ready",
+        providers: [
+          { id: "codex", status: "ready" },
+          { id: "gemini", status: "no_usage_available" },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it("still recovers when the reconciled status itself is not usable", () => {
+    expect(providerSetupRequiresRecovery({ status: "setup_required" })).toBe(
+      true,
+    );
+    expect(
+      providerSetupRequiresRecovery({
+        status: "provider_not_configured",
+        providers: [{ id: "codex", status: "ready" }],
+      }),
+    ).toBe(true);
+  });
+
+  it("never claims recovery while the status is unknown or still checking", () => {
+    expect(providerSetupRequiresRecovery({ status: "checking" })).toBe(false);
+    expect(providerSetupRequiresRecovery(null)).toBe(false);
+    expect(providerSetupRequiresRecovery(undefined)).toBe(false);
+    expect(
+      providerSetupRequiresRecovery({
+        providers: [{ id: "claude", status: "auth_required" }],
+      }),
+    ).toBe(false);
   });
 });

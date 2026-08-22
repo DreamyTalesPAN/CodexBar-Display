@@ -81,6 +81,19 @@ const forbiddenPatterns = [
 ];
 
 const findings = [];
+const approvedCodexBarRecoveryCopy = new Set([
+  "CodexBar is needed",
+  "Download CodexBar",
+  "VibeTV needs CodexBar to read AI usage, but could not complete the setup here. Download and open CodexBar, then try again.",
+  // Stopgap copy until #245 moves provider selection into setup and settings.
+  "Open CodexBar",
+  "CodexBar is installed, but every AI provider in it is switched off. Open CodexBar, switch one on, then try again.",
+  // CodexBar answered, so it is installed. Whatever is still missing is settled
+  // inside it, and the download page cannot fix any of it. Deliberately does
+  // not name which step is missing: CodexBar owns that.
+  "Finish AI setup in CodexBar",
+  "CodexBar is installed, but it still cannot read your AI usage. Open CodexBar, finish what it asks for, then try again.",
+]);
 
 for (const file of files) {
   const source = readFileSync(file, "utf8");
@@ -99,6 +112,14 @@ for (const file of files) {
     }
     for (const forbidden of forbiddenPatterns) {
       if (forbidden.pattern.test(text)) {
+        if (
+          forbidden.label === "internal usage service name" &&
+          relative(appRoot, file) ===
+            "src/components/device-startup-screen.tsx" &&
+          approvedCodexBarRecoveryCopy.has(text)
+        ) {
+          continue;
+        }
         const { line, character } = sourceFile.getLineAndCharacterOfPosition(
           item.pos,
         );

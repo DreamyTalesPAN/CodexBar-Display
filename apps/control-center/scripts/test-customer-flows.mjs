@@ -453,7 +453,7 @@ async function main() {
       return;
     }
     if (startupTimeoutOnly) {
-      await testLocalReachableWithoutFrameWaitsUntilPreview(
+      await testFirstUsageServiceFailureOffersRecovery(
         browser,
         appContext.appUrl,
       );
@@ -512,7 +512,15 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testFirstUsageServiceFailureOffersRecovery(
+        browser,
+        appContext.appUrl,
+      );
       await testThemeMissingDeviceChoosesThemeAndCompletesSetup(
+        browser,
+        appContext.appUrl,
+      );
+      await testProviderlessDeviceUsesRecoveryBeforeThemeAndOverview(
         browser,
         appContext.appUrl,
       );
@@ -525,6 +533,10 @@ async function main() {
         appContext.appUrl,
       );
       await testThemeSetupLeavesChooserWhenConnectionIsLost(
+        browser,
+        appContext.appUrl,
+      );
+      await testProviderlessInstallKeepsTheCompanionOutcome(
         browser,
         appContext.appUrl,
       );
@@ -683,11 +695,15 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testLocalReachableWithoutFrameWaitsUntilPreview(
+    await testFirstUsageServiceFailureOffersRecovery(
       browser,
       appContext.appUrl,
     );
     await testThemeMissingDeviceChoosesThemeAndCompletesSetup(
+      browser,
+      appContext.appUrl,
+    );
+    await testProviderlessDeviceUsesRecoveryBeforeThemeAndOverview(
       browser,
       appContext.appUrl,
     );
@@ -700,6 +716,10 @@ async function main() {
       appContext.appUrl,
     );
     await testThemeSetupLeavesChooserWhenConnectionIsLost(
+      browser,
+      appContext.appUrl,
+    );
+    await testProviderlessInstallKeepsTheCompanionOutcome(
       browser,
       appContext.appUrl,
     );
@@ -3275,9 +3295,10 @@ async function testLocalReachableWithoutFrameWaitsForUsage(browser, appUrl) {
   await page.close();
 }
 
-async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) {
+async function testFirstUsageServiceFailureOffersRecovery(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
+    userAgent: "VibeTVControlCenter/1.0.53",
   });
   const noProviderUsage = {
     ok: true,
@@ -3286,6 +3307,7 @@ async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) 
   };
   let recovered = false;
   let recoveredFrameRequests = 0;
+  let providerRetries = 0;
   await page.clock.install({ time: new Date("2026-07-29T08:00:00Z") });
   await routeCompanionOnline(page, [], () => {}, {
     device: companionDevice,
@@ -3307,27 +3329,86 @@ async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) 
     },
     preferencesResponse: { ok: true, items: [] },
     providerSetup: {
-      status: "not_configured",
-      engine: { status: "not_configured" },
-      providers: [],
+      status: "setup_required",
+      engine: { status: "ready" },
+      providers: [{ id: "codexbar", status: "timeout" }],
+    },
+    onProviderRetry: () => {
+      providerRetries += 1;
+      if (providerRetries === 3) {
+        recovered = true;
+        return readyProviderSetup();
+      }
+      return {
+        status: "setup_required",
+        engine: { status: "ready" },
+        providers: [{ id: "codexbar", status: "timeout" }],
+      };
     },
     usageResponse: noProviderUsage,
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.clock.runFor(0);
-  await page
-    .getByText("Waiting for live preview…", { exact: true })
-    .waitFor({ timeout: 10_000 });
-  await page.clock.runFor(60_000);
+  await waitForHeadingWithClock(page, "Starting AI usage");
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
       0,
-    "Startup must remain visible until a live preview exists",
+    "A failed first usage check must keep setup visible",
+  );
+  await page.getByRole("button", { name: "Create support report" }).waitFor();
+  assert(providerRetries === 0, "The automatic repair must run before provider retry");
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:codexbar-repair-result", {
+        detail: { success: true },
+      }),
+    );
+  });
+  await page
+    .getByRole("heading", { name: "AI usage could not start" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    providerRetries === 1,
+    "Automatic CodexBar startup must trigger exactly one provider check",
+  );
+  assert(
+    (await page.getByRole("link", { name: "Download CodexBar" }).count()) === 0,
+    "The CodexBar fallback must stay hidden before the customer retries",
   );
 
-  recovered = true;
+  await page.getByRole("button", { name: "Try again" }).click();
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:codexbar-repair-result", {
+        detail: { success: true },
+      }),
+    );
+  });
+  await page
+    .getByRole("heading", { name: "CodexBar is needed" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    providerRetries === 2,
+    "Manual retry must start exactly one fresh provider check",
+  );
+  await page.getByRole("link", { name: "Download CodexBar" }).waitFor();
+  await page.getByRole("button", { name: "Try again" }).waitFor();
+  await page.getByRole("button", { name: "Create support report" }).waitFor();
+
+  await page.getByRole("button", { name: "Try again" }).click();
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:codexbar-repair-result", {
+        detail: { success: true },
+      }),
+    );
+  });
+
   await page.clock.runFor(1_000);
+  assert(
+    providerRetries === 3,
+    "A later successful retry must run one final provider check",
+  );
   await waitForCondition(
     () => recoveredFrameRequests > 0,
     "Display-frame recovery must keep polling after startup entry",
@@ -3337,6 +3418,69 @@ async function testLocalReachableWithoutFrameWaitsUntilPreview(browser, appUrl) 
     .waitFor({ timeout: 10_000 });
   await page.close();
 }
+
+// A VibeTV whose Mac has no ready AI provider draws the error frame, so it
+// reports theme-missing forever. The mandatory theme chooser used to claim that
+// state, replace the whole Control Center, and fail every install it offered —
+// leaving the customer with no reachable way to connect a provider. Reproduced
+// from a real support report (Mac App 1.0.53, firmware 1.0.40).
+async function testProviderlessDeviceUsesRecoveryBeforeThemeAndOverview(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...themeMissingDevice,
+      deviceId: "fixture-device-1",
+      stream: {
+        healthy: false,
+        running: true,
+        target: themeMissingDevice.target,
+        errorCode: "provider_setup_required",
+        detail: "VibeTV is connected, but no AI provider is ready yet.",
+      },
+    },
+    providerSetup: providerSetupFixture("not_configured"),
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "AI usage could not start" })
+    .waitFor({ timeout: 10_000 });
+
+  assert(
+    (await page
+      .getByRole("heading", { name: "Choose your VibeTV theme" })
+      .count()) === 0,
+    "Provider recovery must run before the theme chooser",
+  );
+  assert(
+    (await page
+      .getByRole("navigation", { name: "Control Center" })
+      .count()) === 0,
+    "Provider recovery must run before Overview",
+  );
+  await page.getByRole("button", { name: "Try again" }).waitFor();
+  assert(
+    (await page.getByText("Reconnect VibeTV to continue").count()) === 0,
+    "A connected VibeTV must never be described as disconnected",
+  );
+
+  // CodexBar is named only after a customer retry fails.
+  const visibleText = await page.evaluate(() => document.body.innerText);
+  assert(
+    !/codexbar/i.test(visibleText),
+    "Initial recovery must not name CodexBar before a customer retry fails",
+  );
+
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
 async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
   browser,
   appUrl,
@@ -3831,6 +3975,62 @@ async function testThemeSetupLeavesChooserWhenConnectionIsLost(
     "A disconnected VibeTV must leave theme setup for the existing recovery UI",
   );
   assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+// The install succeeded, but the VibeTV cannot draw usage yet, so the Companion
+// finishes the job saying so. Three places used to overwrite that with "Theme is
+// active on VibeTV." -- the job completion, the app's final status, and the
+// install card itself -- telling the customer the theme was on screen while the
+// device still drew the error frame.
+async function testProviderlessInstallKeepsTheCompanionOutcome(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const awaitingProvider =
+    "Theme installed. VibeTV shows it once AI usage is ready.";
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    statusThemeInstallJob: {
+      id: "providerless-install-job",
+      themeId: "synthwave",
+      themeName: "Fixture Synthwave Theme",
+      slot: "live",
+      phase: "installing",
+      message: "Uploading theme files.",
+      progress: 40,
+      startedAt: "2026-08-20T12:00:00.000Z",
+      logs: ["Preparing theme files.", "Uploading theme files."],
+    },
+    installStatusSequence: [
+      {
+        phase: "complete",
+        message: awaitingProvider,
+        progress: 100,
+        logs: [
+          "Preparing theme files.",
+          "Uploading theme files.",
+          awaitingProvider,
+        ],
+        result: {
+          themeId: "synthwave",
+          packId: "synthwave",
+          name: "Synthwave",
+          activePath: "/themes/u/synthwave.json",
+          themeRev: 1,
+        },
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByText(awaitingProvider, { exact: true })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("Theme is active on VibeTV.").count()) === 0,
+    "A VibeTV that cannot draw usage yet must never be described as showing the theme",
+  );
   await page.close();
 }
 
@@ -8652,7 +8852,6 @@ async function routeCompanionOnline(
     statusFailuresAfter = 0,
     providerSetup = readyProviderSetup(),
     onProviderRetry,
-    onOpenCodexBar,
   } = {},
 ) {
   let currentDevice = device;
@@ -8712,16 +8911,6 @@ async function routeCompanionOnline(
     if (pathname === "/v1/providers/retry") {
       currentProviderSetup =
         onProviderRetry?.(currentProviderSetup) || currentProviderSetup;
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ ok: true, providerSetup: currentProviderSetup }),
-      });
-      return;
-    }
-    if (pathname === "/v1/providers/open-codexbar") {
-      currentProviderSetup =
-        onOpenCodexBar?.(currentProviderSetup) || currentProviderSetup;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -10313,6 +10502,28 @@ async function clickNavigation(page, name) {
   }
   await page.waitForTimeout(350);
   await (await getNavigationButton(page, name)).click({ timeout: 10_000 });
+}
+
+// The app schedules its recovery work on setTimeout(..., 0), and page.clock
+// freezes time until the test advances it. A single runFor(0) right after goto
+// only fires timers that were already scheduled -- if the first /v1/status is
+// still in flight, the timer that sets busyAction is scheduled afterwards and
+// never runs, so the screen never reaches its next state. Keep nudging the
+// clock while waiting for it.
+async function waitForHeadingWithClock(page, name, timeoutMs = 15_000) {
+  const heading = page.getByRole("heading", { name });
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (await heading.count()) {
+      await heading.waitFor({ timeout: 5_000 });
+      return;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`heading ${JSON.stringify(name)} never appeared`);
+    }
+    await page.clock.runFor(50);
+    await page.waitForTimeout(50);
+  }
 }
 
 async function waitForCondition(predicate, message, timeoutMs = 10_000) {

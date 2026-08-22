@@ -204,7 +204,11 @@ export type DeviceInfo = {
   connected: boolean;
   paired?: boolean;
   ready?: boolean;
-  connectionState?: "ready" | "reconnecting" | "setup_required";
+  connectionState?:
+    | "ready"
+    | "reconnecting"
+    | "setup_required"
+    | "provider_setup_required";
   lastSeenAt?: string;
   board?: string;
   firmware?: string;
@@ -530,6 +534,91 @@ export function deviceIsActive(device: DeviceInfo | null | undefined) {
   return device?.active === true;
 }
 
+// A reachable VibeTV whose display stream is running for this exact device but
+// has no AI usage to draw. Mirrors providerSetupStreamForTarget on the
+// Companion side without letting an old stream error prove connectivity.
+export function deviceAwaitsProviderSetup(
+  device: DeviceInfo | null | undefined,
+) {
+  const deviceTarget = comparableDeviceTarget(device?.target);
+  const streamTarget = comparableDeviceTarget(device?.stream?.target);
+  return (
+    deviceIsCustomerConnected(device) &&
+    device.paired === true &&
+    device.health?.ok === true &&
+    device.stream?.running === true &&
+    device.stream.errorCode === "provider_setup_required" &&
+    deviceTarget !== "" &&
+    deviceTarget === streamTarget
+  );
+}
+
+// The Companion owns provider readiness. It reports status "ready" as soon as
+// one provider delivers usage and deliberately keeps the remaining providers in
+// the list with their own failing status, so a per-provider rule here would
+// declare a working Mac broken. Only the reconciled status decides.
+export function providerSetupRequiresRecovery(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  const status = normalizedProviderStatus(providerSetup?.status);
+  return status !== "" && status !== "ready" && status !== "checking";
+}
+
+export function normalizedProviderStatus(value?: string) {
+  return value?.trim().toLowerCase().replace(/^provider_/, "") || "";
+}
+
+// A ready engine means CodexBar answered, so it is installed and running.
+// Whatever is still missing -- a sign-in, a macOS permission, an account with
+// no usage, or simply nothing reported yet -- is settled inside CodexBar, and
+// the download page fixes none of it. Which of those it is stays CodexBar's to
+// say; this only reads that it answered.
+//
+// An empty inventory counts. CodexBar returns one after its providers are
+// switched back on until one of them is opened once, and the daemon's own
+// recovery hint for that state is literally "Open a provider once in CodexBar,
+// then retry". Sending that customer to a download was the bug this predicate
+// exists to prevent, seen on the bench on 2026-08-21.
+//
+// The `codexbar` stand-in is the one exclusion. CodexBar reports itself under
+// that id when its own probe failed, which is a broken usage service rather
+// than a provider waiting for one step, so it keeps the missing-install route.
+export function providerSetupCodexBarAnswered(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  const providers = providerSetup?.providers ?? [];
+  return (
+    normalizedProviderStatus(providerSetup?.engine?.status) === "ready" &&
+    (providers.length === 0 ||
+      providers.some((provider) => provider.id !== "codexbar"))
+  );
+}
+
+// A usable engine with every provider switched off is not a missing install:
+// the customer has CodexBar and turned the switches off. Telling them to
+// download it sends them after software they already have. CodexBar still owns
+// the switches -- this only reads what it reports.
+export function providerSetupHasEngineButNoEnabledProvider(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  const providers = providerSetup?.providers ?? [];
+  return (
+    normalizedProviderStatus(providerSetup?.engine?.status) === "ready" &&
+    providers.length > 0 &&
+    // `codexbar` is not a provider. CodexBar reports the usage service itself
+    // under that id when its own probe timed out or failed, and the enablement
+    // flag on that stand-in is a zero value, not an answer. Reading it as
+    // "every provider is off" hides a failure behind the wrong screen.
+    !providers.some((provider) => provider.id === "codexbar") &&
+    // Every real provider must say it is off. A missing flag is not evidence.
+    providers.every((provider) => provider.enabled === false)
+  );
+}
+
+function comparableDeviceTarget(value: string | undefined) {
+  return value?.trim().replace(/\/+$/, "") || "";
+}
+
 export function deviceNeedsExplicitConnect(
   device: DeviceInfo | null | undefined,
 ) {
@@ -566,7 +655,12 @@ export function deviceCanContinueThemeSetup(
     return false;
   }
 
-  return true;
+  // A device without a ready AI provider draws the error frame, which carries
+  // no ThemeSpec, so it reports theme-missing forever. Theme setup can never
+  // complete in that state, and this screen replaces the whole Control Center —
+  // including the surfaces that connect a provider. Missing usage is not a
+  // missing theme, so it must not claim this state.
+  return !deviceAwaitsProviderSetup(device);
 }
 
 export function deviceCompletedThemeSetup(

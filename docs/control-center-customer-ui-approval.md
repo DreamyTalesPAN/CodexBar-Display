@@ -1333,3 +1333,409 @@ issue scope, or release permission never implies UI permission.
   `components/control-center-types.ts`, `lib/active-theme-upgrade.ts`,
   `components/live-vibetv-preview.tsx`, `components/live-vibetv-preview.test.ts`,
   `scripts/test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-18 — A missing AI provider no longer replaces the Control Center
+
+- User approval: A customer support report (Mac App `1.0.53`, firmware
+  `1.0.40`) plus a screen recording showed the customer stuck on "Choose your
+  VibeTV theme" with every install ending in "Install failed — Theme installed,
+  but Mac App did not send a fresh image to VibeTV." The user confirmed the
+  diagnosis, ruled out sending customers to CodexBar ("die kunden wissen nicht
+  was codexbar ist und sollen auch nie in codexbar kommen"), and instructed to
+  file and implement the fix for a release the customer can download: "leg die
+  an und fang direkt an, die zu bearbeiten."
+- Approved customer-visible result: Installing a theme while AI usage is not
+  ready no longer reports a failed installation after the files reached the
+  device. A `theme-missing` device with a healthy stream still opens the theme
+  chooser exactly as approved on 2026-07-30, and every other stream failure
+  keeps its existing handling.
+- Approved files: `control-center-types.ts`, `control-center-types.test.ts`,
+  `server.go`, `server_test.go`, and this approval record.
+
+## 2026-08-19 — AI usage recovery runs before themes and Overview
+
+- User approval: The user rejected the provider panel on Overview and the
+  misleading `LIVE PREVIEW PAUSED — RECONNECT VIBETV TO CONTINUE` state, then
+  instructed: "ok dann bau das so. leg meinetwegen auch issues zusammen, wenns
+  sinn macht" after reviewing the proposed setup-first recovery flow. During
+  implementation the user rejected the provider-specific permission, timeout,
+  and sign-in instructions, requested an automatic background CodexBar start,
+  and approved naming CodexBar only after `Try again` also fails, with a
+  download action.
+- Approved customer-visible result: A connected VibeTV with
+  `provider_setup_required` stays in the existing full-screen setup language.
+  The Mac App automatically repairs and starts the verified bundled CodexBar
+  app without taking focus; CodexBar owns provider detection and enablement,
+  while VibeTV only accepts a provider after a fresh usable usage check. The
+  first failed automatic attempt shows one plain `Try again` action, without
+  exposing internal provider status codes. Only when that customer retry also
+  fails does the screen explain that CodexBar is required and offer
+  `Download CodexBar` from the official release page. `Create support report`
+  remains available. Recovery runs before mandatory theme setup and before
+  Overview, including when the last usable provider disappears later. Overview
+  and Usage contain no duplicate provider panel, and a connected VibeTV is
+  never told to reconnect because only AI usage is missing. Full deliberate
+  provider selection remains in #245.
+- Approved files: `device-startup-screen.tsx`, `control-center-app.tsx`,
+  `control-center-types.ts`, `live-vibetv-preview.tsx`, their tests, the
+  customer-flow test, native runtime repair files, and this approval record.
+
+## 2026-08-19 — A partly-ready provider list is not a broken Mac
+
+- User approval: After a review of #373 reported that
+  `providerSetupRequiresRecovery` treats the Companion's normal
+  `{status: "ready", providers: [ready, not-ready]}` payload as a device that
+  needs repair, the user instructed: "ok dann fix das." The reported visible
+  consequence was that a Mac with one working provider and a second signed-out
+  or usage-less provider met the full-screen AI-usage recovery on every cold
+  start instead of Overview.
+- Approved customer-visible result: The recovery screen appears only when the
+  Companion's reconciled provider status is itself not usable. A customer whose
+  CodexBar reports several providers, of which at least one delivers usage,
+  goes straight to Overview as before; the individual failing providers stay
+  visible as unavailable rather than escalating to a repair. Every state
+  approved on 2026-08-19 is otherwise unchanged: the same recovery copy, the
+  same single `Try again`, the same `Download CodexBar` only after a customer
+  retry fails, and `Create support report` throughout.
+- Approved files: `control-center-types.ts`, `control-center-types.test.ts`,
+  `device-startup-screen.tsx`, the customer-flow test, and this approval record.
+
+## 2026-08-19 — One provider incident cannot inherit the previous one
+
+- User approval: The user instructed "fix CI until green" for #373, which
+  includes the automated review gate. The Codex review of `f99d9ad` reported
+  that a stale `CodexBar is needed` state survives into a later incident, and
+  that the deliberate runtime restart during a repair is mistaken for a
+  resolved incident and relaunches the automatic repair instead of showing the
+  approved `Try again`.
+- Approved customer-visible result: Every AI-usage incident starts at the plain
+  `Try again` state. `Download CodexBar` appears only after a customer retry
+  fails inside that same incident, never carried over from an earlier one. The
+  Mac App restarting itself during a repair no longer counts as a resolved
+  incident, so the customer keeps the approved `Try again` instead of watching a
+  second automatic repair start. No copy, control, or screen order changes.
+- Approved files: `control-center-app.tsx` and this approval record.
+
+## 2026-08-19 — One repair is one screen, not five
+
+- User approval: A live test on this Mac with the PR candidate installed
+  (Mac App `99.0.144`, firmware `1.0.40`) walked the user through five screens
+  in two minutes for a single `Try again`: the correct recovery screen, then a
+  spinner-only "Starting your VibeTV display" with no usable action, then
+  "Mac App offline — RECONNECT VIBETV TO CONTINUE" while the VibeTV had been
+  connected the whole time, then a premature "CodexBar is needed", and finally
+  Overview. The user called it flaky, asked for a read-only diagnosis and simple
+  fixes, and approved them with "ja".
+- Approved customer-visible result: A repair the app starts is presented as one
+  operation. While it runs, the setup screen owns the window, so the runtime the
+  repair stops on purpose no longer surfaces as a Mac App outage and no longer
+  asks the customer to reconnect a VibeTV that never disconnected. The recovery
+  screen always offers `Try again`, and that action is locked only while a check
+  or repair is genuinely running — the "AI usage is ready, waiting for the first
+  live image" state is a wait with no owner and now keeps its way out. Copy,
+  layout, and screen order are unchanged, `Create support report` and the
+  existing error alert stay available throughout, and `Download CodexBar` still
+  appears only after a customer retry fails.
+- Approved files: `control-center-app.tsx`, `device-startup-screen.tsx`,
+  `device-startup-screen.test.tsx`, `main.swift`, and this approval record.
+
+## 2026-08-19 — The temporary CodexBar is stopped on reload too
+
+- User approval: The Codex review of `090a8db` reported that reloading the
+  Control Center while a repair is outstanding leaves the temporary CodexBar
+  this app started running for the rest of the window session. The user's
+  standing instruction for #373 is to bring the pull request to a mergeable
+  state, which includes clearing valid review findings.
+- Approved customer-visible result: None. No screen, copy, control, or order
+  changes. The recovery effect now sends the existing finish action when it
+  tears down an outstanding repair, so the private CodexBar instance is stopped
+  on a reload exactly as it already was on window close. A customer-owned
+  CodexBar is still never stopped.
+- Approved files: `control-center-app.tsx` and this approval record.
+
+## 2026-08-19 — An incident ends on evidence, not on a quiet sample
+
+- User approval: Testing the candidate on hardware, the user pressed `Try again`
+  and landed briefly on Overview before being thrown back onto
+  "CodexBar is needed"; `Create support report` flickered the same way. The
+  recorded state log shows why: while the display stream restarts it reports no
+  error for a single poll, and that quiet sample ended the incident. The user
+  asked for a KISS, global fix and approved it with "KISS fix. nimm auch wieder
+  code weg, falls möglich und bau ne globale lösung."
+- Approved customer-visible result: The AI-usage recovery screen no longer
+  flickers to Overview and back while a repair runs or while a support report is
+  created. A provider incident now ends only on evidence that the device draws
+  again — a healthy display stream, or a different failure — and never on a
+  sample that merely reports nothing. A genuinely different stream failure still
+  takes over immediately, and no incident is ever invented for a device that
+  never reported one. No copy, control, or screen-order changes.
+- Approved files: `control-center-app.tsx`, `control-center-app.test.ts`, and
+  this approval record.
+
+## 2026-08-19 — The incident, not the sample, decides the screen
+
+- User approval: The previous attempt did not hold. Testing on hardware the user
+  reported "ja flackert immer noch. ich komme immer noch auf overview" and asked
+  for a KISS, global fix with code removed where possible.
+- Approved customer-visible result: The AI-usage recovery screen no longer
+  flickers to Overview while a repair runs or a support report is created. A
+  provider incident is now carried alongside the device it belongs to and closes
+  only on a snapshot that shows the device is fine again. While the repair has
+  the Mac App down no snapshot arrives at all, so the incident holds instead of
+  ending on the gap. A VibeTV that is genuinely gone still closes the incident so
+  the connect screen wins, and a different device failure still takes over. No
+  copy, control, or screen-order changes.
+- Approved files: `control-center-app.tsx`, `control-center-app.test.ts`, and
+  this approval record.
+
+## 2026-08-19 — A support report describes the device, it does not redefine it
+
+- User approval: After three failed attempts the user reported that pressing
+  `Create support report` still switched the app to Overview. Measured on the
+  live machine: `GET /v1/status` returns `active=true` for the connected VibeTV
+  while `GET /v1/diagnostics` returns `active=false` for the same device. The
+  user's standing instruction is to fix what makes sense along the way.
+- Approved customer-visible result: Creating a support report, and repairing AI
+  usage, no longer switch the screen. The report describes the same VibeTV as
+  every other endpoint, and it no longer overwrites the live device state — the
+  status poll remains the single owner of that. No copy, control, or
+  screen-order changes.
+- Approved files: `control-center-app.tsx` and this approval record.
+
+## 2026-08-19 — Cleanup after the flicker hunt
+
+- User approval: With the root cause fixed and confirmed on hardware
+  ("funktioniert jetzt"), the user asked to work through the remaining review
+  findings, push, and watch CI.
+- Approved customer-visible result: One change is visible and it removes a trap.
+  A provider incident whose Mac App never comes back is now treated as a Mac App
+  outage, so the customer reaches the Mac App recovery screen with its restart
+  action instead of being held on "AI usage could not start" and offered a
+  CodexBar download that cannot restart a stopped runtime. The incident still
+  holds for the whole duration of a repair the app started. Everything else is
+  internal: dead indirection removed, and the automatic repair can no longer be
+  skipped for an incident because its scheduling timer was cancelled by an
+  unrelated re-render. No copy, control, or screen-order changes.
+- Approved files: `control-center-app.tsx`, `control-center-app.test.ts`, and
+  this approval record.
+
+## 2026-08-20 — Do not send a customer after software they already have
+
+- User approval: On the bench the recovery screen offered `Download CodexBar`
+  while CodexBar was installed and running; the real cause was that every
+  provider was switched off. The user rejected forcing at least one provider to
+  stay enabled, asked for the `Open CodexBar` route instead, and asked that
+  #245 record its removal.
+- Approved customer-visible result: When CodexBar's engine is ready but every
+  provider in it is switched off, the recovery screen reads `No AI provider is
+  switched on` and offers `Open CodexBar`, which brings CodexBar to the front.
+  The `CodexBar is needed` screen with `Download CodexBar` stays exactly as it
+  was for the case where CodexBar really is missing. `Try again` and `Create
+  support report` are unchanged in both. This is a stopgap: the recovery screen
+  has no sidebar, so the provider list in Usage cannot be reached from there.
+  #245 removes it once setup and settings own provider selection.
+- Approved files: `device-startup-screen.tsx`, `device-startup-screen.test.tsx`,
+  `control-center-types.ts`, `control-center-runtime.ts`,
+  `control-center-app.tsx`, `check-customer-ui-copy.mjs`, and this approval
+  record.
+
+## 2026-08-20 — A provider that timed out is not a provider that was switched off
+
+- User approval: The customer-flow suite went red on the `Open CodexBar`
+  stopgap; the user asked to get CI green.
+- Approved customer-visible result: `No AI provider is switched on` now needs
+  every provider to report `enabled: false`. A provider that reports a failure
+  without an `enabled` flag — a timeout, for instance — keeps the existing
+  `CodexBar is needed` screen instead of being described as switched off. No new
+  copy, controls, or screen order; this only narrows which of the two existing
+  screens a customer sees.
+- Approved files: `control-center-types.ts` and this approval record.
+
+## 2026-08-20 — The usage service standing in for the inventory is not a provider
+
+- User approval: The user asked for the six review findings on this PR to be
+  fixed, this one among them.
+- Approved customer-visible result: When CodexBar's own probe times out, it
+  reports a single `codexbar` entry standing in for the provider inventory, and
+  the enablement flag on that stand-in is a zero value rather than an answer.
+  `No AI provider is switched on` and `Open CodexBar` no longer appear for that
+  payload; the customer sees the existing `CodexBar is needed` failure screen
+  instead. A real inventory in which every provider reports `enabled: false`
+  still shows the switched-off screen. No new copy or controls.
+- Approved files: `control-center-types.ts`, `device-startup-screen.test.tsx`,
+  and this approval record.
+
+## 2026-08-20 — A theme is not "active" while the VibeTV cannot draw it
+
+- User approval: Asked which of the four open Codex findings on PR #373 to take
+  on, the user chose "Alle vier", the option covering "die überschriebene
+  Provider-Meldung in server.go und das zu kurze Repair-Timeout".
+- Approved customer-visible result: When a theme install finishes on a VibeTV
+  that has no ready AI provider, the install card now reads `Theme installed.
+  VibeTV shows it once AI usage is ready.` instead of `Theme is active on
+  VibeTV.` The install still counts as successful and no control changes; only
+  the completion sentence differs, and only for that outcome. Every other
+  install keeps `Theme is active on VibeTV.`, and a screensaver keeps
+  `Screensaver is ready on VibeTV.` The Companion decides the sentence, so the
+  card cannot contradict the device again: three layers used to overwrite it —
+  the install job at 100%, the app's final status, and the card itself — and a
+  customer whose device was still drawing the error frame was told the theme was
+  on screen.
+- Also approved, not customer-visible: the browser's own repair timeout no
+  longer expires while the native repair is still working (55s could not cover
+  the repair's bounded 8s + 20s + 2s + 35s worst case, so a successful repair was
+  reported as a failure and its result discarded).
+- Approved files: `control-center-app.tsx`, `theme-library-screen.tsx`,
+  `companion/internal/companionapi/server.go`, `scripts/test-customer-flows.mjs`,
+  and this approval record.
+
+## 2026-08-20 — An update cannot start into a Mac App that is stopping
+
+- User approval: Asked how to close the fifth Codex finding (the update/repair
+  race across the process boundary), the user chose "Neue Jobs abweisen": "der
+  Companion blockt während eines angekündigten Shutdowns neue Update-Jobs mit
+  409, Swift meldet den Shutdown vorher an."
+- Approved customer-visible result: In the seconds while the Mac App is stopping
+  its background work to repair the AI usage service, pressing `Update` in the
+  Updates tab reports `Mac App is restarting.` with `Wait a moment, then start
+  the update again.` instead of starting an update that would be killed
+  mid-flight. No new control and no new screen; this is the existing update
+  failure path with its own reason. The opposite order is unchanged: an update
+  that is already running still makes the repair wait, and the customer sees
+  nothing at all.
+- Approved files: `companion/internal/companionapi/server.go`,
+  `macos/VibeTVControlCenter/main.swift`, and this approval record.
+
+## 2026-08-20 — The temporary CodexBar is released on reload too (no visible change)
+
+- User approval: Standing instruction for this PR, given as "Alle vier" and then
+  "Neue Jobs abweisen" — close the Codex findings on #373. This entry covers a
+  finding with no customer-visible result; it is recorded because the gate
+  covers every file under `src/components/`, not because anything on screen
+  changed.
+- Approved customer-visible result: None. No copy, control, hierarchy, or state
+  the customer can see changes. The recovery cleanup decided whether a repair
+  was still outstanding by looking at the timeout handle, but the success path
+  clears that handle before awaiting the provider retry. A reload in that window
+  therefore skipped the finish action, and the native side kept the temporary
+  CodexBar it had started for the rest of the window session. An explicit flag
+  now says whether a recovery is outstanding, and one function both clears it
+  and sends the finish.
+- Approved files: `control-center-app.tsx` and this approval record.
+
+## 2026-08-20 — Recovery flow drives the frozen clock (no visible change)
+
+- User approval: Standing instruction for this PR — close the Codex findings and
+  get #373 green. This entry covers a flaky required check, not a UI decision.
+- Approved customer-visible result: None. No copy, control, hierarchy, or state
+  changes, and the flow asserts exactly what it asserted before. Only the way
+  the test drives time changes: the app reaches `Starting AI usage` through a
+  `setTimeout(..., 0)`, and `page.clock` freezes time until the test advances
+  it. A single `runFor(0)` right after `goto` fires only what is already
+  scheduled, so when the first `/v1/status` lands just after it, the timer that
+  sets the busy state stays pending for good and the screen never moves. The
+  flow now keeps nudging the clock while it waits.
+- Approved files: `scripts/test-customer-flows.mjs` and this approval record.
+
+## 2026-08-20 — "No AI provider is switched on" can finally happen
+
+- User approval: Asked how the aggregate path should learn the real enablement,
+  the user chose "Nur im Fehlerfall fragen": drop the invented flag, and ask
+  CodexBar's inventory only when the usage probe returns nothing usable.
+- Approved customer-visible result: The approved `No AI provider is switched on`
+  screen with `Open CodexBar` becomes reachable. Until now it could not appear
+  with real data, so a customer who had switched every provider off was sent to
+  `CodexBar is needed — Download and open CodexBar` — told to download the app
+  whose switches they had just flipped, which is what commit 791d061 in this
+  same PR set out to stop. No new copy or controls; an approved screen simply
+  starts appearing in the state it was written for. Verified against bundled
+  CodexBar 0.46.0: `usage --json` lists only switched-on providers and carries
+  no enabled field at all, while `config providers --json` reports all 65 with
+  an honest flag. One provider switched on but silent is still a reporting
+  failure and keeps the existing screen.
+- Approved files: `companion/internal/codexbar/provider_setup.go`,
+  `companion/internal/companionapi/provider_setup.go`, and this approval record.
+
+## 2026-08-20 — One repair keeps one screen across the provider retry
+
+- User approval: Standing instruction for this PR — close the Codex findings on
+  #373. This one removes a screen that should never have appeared; it adds no
+  copy and no control.
+- Approved customer-visible result: During a usage-service repair the customer
+  keeps the recovery screen until the repair reports back. The repair hands
+  straight over to the provider retry, which changes the busy state before the
+  Mac App reports itself online again, and in that gap the Mac App recovery
+  screen pushed itself in front of a repair that had just succeeded — the same
+  flicker this PR removed elsewhere. Both busy states now count as one incident.
+  Nothing else changes: a Mac App that genuinely never comes back still reaches
+  its own recovery screen, because that path does not depend on the busy state.
+- Approved files: `control-center-app.tsx` and this approval record.
+
+## 2026-08-20 — A repair waits for the theme install it would delete
+
+- User approval: Standing instruction for this PR — close the Codex findings on
+  #373. This removes a failure, adds no copy and no control.
+- Approved customer-visible result: When AI usage drops out while a theme
+  install is running, the automatic repair waits for the install to finish
+  instead of starting immediately. The install job and its worker live inside
+  the Mac App's background process, and the repair stops that process on
+  purpose, so firing during an install deleted the running install and the
+  progress the customer was watching — it simply stopped answering. The customer
+  now sees the install finish, and the usage recovery starts after it. Nothing
+  is skipped: the recovery still runs, only later.
+- Approved files: `control-center-app.tsx` and this approval record.
+
+## 2026-08-20 — A VibeTV that is gone is a connection problem, not a provider one
+
+- User approval: Standing instruction for this PR — close the Codex findings on
+  #373. This restores a screen the customer should already have been getting.
+- Approved customer-visible result: When a VibeTV that was waiting for an AI
+  provider is switched off or leaves the network, the customer now reaches the
+  reconnect screen once the device is confirmed gone. Until now the provider
+  incident was carried past the loss, so `AI usage could not start` stayed in
+  front of a device that was not there at all, and the reconnect picker never
+  appeared. No copy and no controls change; an existing screen simply stops
+  being blocked by the wrong one. A single missed poll and a Mac App outage
+  still keep the incident, because the repair takes the Mac App down on purpose.
+- Approved files: `control-center-app.tsx` and this approval record.
+
+## 2026-08-21 — Extend "software they already have" to a sign-in that is missing
+
+- User approval: Reviewing PR #373 the user was shown that the recovery screen
+  still offered `Download CodexBar` when CodexBar was installed and a provider
+  was switched on but not signed in, and explicitly asked for that to be fixed
+  in the same pull request together with a fresh bench run. This applies the
+  principle the user already approved on 2026-08-20 under "Do not send a
+  customer after software they already have" to the remaining cases; the
+  narrower wording then only covered every provider being switched off.
+- Approved customer-visible result: Whenever CodexBar's engine answers, the
+  recovery screen offers `Open CodexBar` and reads
+  `Finish AI setup in CodexBar` / `CodexBar is installed, but it still cannot
+  read your AI usage. Open CodexBar, finish what it asks for, then try again.`
+  The `Download CodexBar` action and its `CodexBar is needed` heading remain
+  only when the engine never answered. VibeTV does not say which step is
+  missing -- a sign-in, a macOS permission, an account without usage -- because
+  CodexBar owns that distinction and VibeTV only reads the status it reports.
+- Approved files: `control-center-types.ts`, `device-startup-screen.tsx`,
+  `check-customer-ui-copy.mjs`, `device-startup-screen.test.tsx`, and this
+  approval record.
+
+## 2026-08-21 — Two faults the user found on the bench, not in review
+
+- User approval: Driving the recovery screen himself on the final candidate, the
+  user reported both directly: pressing `Try again` left him with "gar keinen
+  state, der mir jetzt anzeigt ob etwas passiert im Hintergrund oder nicht, der
+  button ist einfach nur inactive", and then `Download CodexBar` appeared while
+  CodexBar was installed and running on that Mac. He had asked for that download
+  to stop appearing for software customers already have on 2026-08-20, and again
+  on 2026-08-21.
+- Approved customer-visible result: A retry the customer pressed now shows
+  `Starting AI usage` while it runs, instead of leaving the previous error on
+  screen with only a greyed-out button; the error from the attempt before no
+  longer suppresses that. And a CodexBar that answers with an empty inventory --
+  what it returns after providers are switched back on, until one is opened once
+  -- is treated as installed, so the screen offers `Open CodexBar` rather than a
+  download. `Download CodexBar` remains only when the engine never answered, or
+  when CodexBar reports its own probe failed under the `codexbar` stand-in.
+- Approved files: `control-center-types.ts`, `device-startup-screen.tsx`,
+  `device-startup-screen.test.tsx`, and this approval record.

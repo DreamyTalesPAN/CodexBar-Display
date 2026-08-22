@@ -5,6 +5,7 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 import type { DeviceInfo, UsageSnapshot } from "./control-center-types";
 import {
+  deviceAwaitsProviderSetup,
   deviceIsActive,
   deviceIsCustomerConnected,
   deviceIsReady,
@@ -346,6 +347,7 @@ export function LiveVibeTVPreview({
         hasRenderableUsage(displayFrame)),
   );
   const deviceReady = deviceIsReady(device);
+  const awaitingProviderSetup = deviceAwaitsProviderSetup(device);
   const waitingForUsage = deviceIsWaitingForUsage(device);
   const effectiveDisplayFrame = livePreviewDisplayFrame(device, displayFrame);
   const frame = hasRenderableUsage(effectiveDisplayFrame)
@@ -453,7 +455,13 @@ export function LiveVibeTVPreview({
   return (
     <figure className="w-full max-w-[520px]">
       <VibeTVCaseShell>
-        {!deviceConnected || (!deviceReady && !waitingForUsage && !frame) ? (
+        {awaitingProviderSetup ? (
+          <ThemeSpecLoading
+            message="Waiting for AI setup…"
+            status="loading"
+            themeId={themeId}
+          />
+        ) : !deviceConnected || (!deviceReady && !waitingForUsage && !frame) ? (
           <ThemePreviewOffline />
         ) : pack?.spec && frame ? (
           <ThemeSpecSVG

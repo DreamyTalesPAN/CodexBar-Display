@@ -130,22 +130,33 @@ rehearsal::apply_companion_override
 # The runtime reads these overrides from its environment at launch, so it has to
 # come up after they are set.
 rehearsal::stop_runtime
+# Same hole as in cold start: the stop bootouts the override's standalone agent
+# and open_app only runs `open`.
+rehearsal::bootstrap_override_runtime
 rehearsal::open_app
+
+# The Sparkle "Install Update" click is a native macOS dialog. Driving it from a
+# CLI would record the update as done without ever showing the customer-visible
+# flow, which is the only thing a warm start is evidence for.
 rehearsal::write_report staged
 
+if rehearsal::rehearsal_evidence_possible; then
 cat <<NEXT
 
 ────────────────────────────────────────────────────────────────────────
  WARM START READY
 ────────────────────────────────────────────────────────────────────────
- Mac App installed   $BASELINE_VERSION   (public customer build)
+ Mac App installed   $BASELINE_VERSION
  VibeTV firmware     $PUBLIC_FIRMWARE_VERSION   (public customer build)
  Candidate offered   $CANDIDATE_VERSION   (commit ${CANDIDATE_SHA:0:12})
+
+ Mac App update       staged (yours to click)
 
  Now drive the customer flow yourself:
    1. Pair the VibeTV in the app as a customer would.
    2. Updates tab: update the Mac App. Sparkle downloads $CANDIDATE_VERSION,
-      replaces the app and relaunches it.
+      replaces the app and relaunches it. Click "Install Update" yourself --
+      that dialog is the step this rehearsal exists to exercise.
    3. Updates tab: update the VibeTV firmware to $CANDIDATE_VERSION.
 
  Expected afterwards: Mac App and firmware both report $CANDIDATE_VERSION,
@@ -156,3 +167,4 @@ cat <<NEXT
  Undo     scripts/vibetv-rehearse-warm-start.sh --restore
 ────────────────────────────────────────────────────────────────────────
 NEXT
+fi
