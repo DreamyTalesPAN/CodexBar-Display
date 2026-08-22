@@ -3,8 +3,6 @@
   "sourceSha": "0123456789abcdef0123456789abcdef01234567",
   "version": "1.2.3",
   "candidateRunId": "12345",
-  "hardwareCanaryRunId": "67890",
-  "now": "2026-07-28T12:00:00Z",
   "files": {
     "publish/VibeTV-Control-Center.dmg": "fixture signed dmg\n",
     "publish/appcast.xml": "<rss xmlns:sparkle=\"http://www.andymatuschak.org/xml-namespaces/sparkle\"><channel><item><enclosure sparkle:edSignature=\"fixture-signature\" url=\"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.2.3/VibeTV-Control-Center.dmg\" /></item></channel></rss>\n",
@@ -19,36 +17,6 @@
     "test/codexbar-display": "fixture test-only universal companion\n",
     "test/virtual-vibetv": "fixture virtual VibeTV\n",
     "test/notarization-log.json": "{\"status\":\"Accepted\",\"issues\":[]}\n"
-  },
-  "candidateRun": {
-    "id": 12345,
-    "conclusion": "success",
-    "event": "workflow_dispatch",
-    "head_sha": "0123456789abcdef0123456789abcdef01234567",
-    "head_branch": "main",
-    "workflow_id": 101,
-    "repository": {
-      "full_name": "DreamyTalesPAN/CodexBar-Display"
-    }
-  },
-  "candidateWorkflow": {
-    "id": 101,
-    "path": ".github/workflows/vibetv-release-candidate.yml"
-  },
-  "hardwareRun": {
-    "id": 67890,
-    "conclusion": "success",
-    "event": "workflow_dispatch",
-    "head_sha": "0123456789abcdef0123456789abcdef01234567",
-    "head_branch": "main",
-    "workflow_id": 202,
-    "repository": {
-      "full_name": "DreamyTalesPAN/CodexBar-Display"
-    }
-  },
-  "hardwareWorkflow": {
-    "id": 202,
-    "path": ".github/workflows/record-hardware-canary.yml"
   },
   "candidateManifest": {
     "schemaVersion": 1,
@@ -163,19 +131,5 @@
     "candidateRunId": "12345",
     "result": "success",
     "artifactHashes": {}
-  },
-  "hardwareEvidence": {
-    "schemaVersion": 1,
-    "repository": "DreamyTalesPAN/CodexBar-Display",
-    "sourceSha": "0123456789abcdef0123456789abcdef01234567",
-    "version": "1.2.3",
-    "candidateRunId": "12345",
-    "candidateManifestSha256": "",
-    "artifactHashes": {},
-    "timestamps": {
-      "startedAt": "2026-07-28T10:00:00Z",
-      "finishedAt": "2026-07-28T11:00:00Z"
-    },
-    "result": "success"
   }
 }
