@@ -65,8 +65,6 @@ main() {
     "public release must wait for Production approval"
   assert_contains "$publish" "group: codex-vibetv-production-release" \
     "all release versions must share one publication lock"
-  assert_contains "$publish" "queue: max" \
-    "multiple waiting release approvals must queue instead of replacing each other"
   assert_contains "$publish" "cancel-in-progress: false" \
     "a later approval must never cancel an active publication"
   assert_contains "$publish" "pattern: vibetv-release-candidate*" \

@@ -50,7 +50,6 @@ jobs:
     environment: Production
     concurrency:
       group: codex-vibetv-production-release
-      queue: max
       cancel-in-progress: false
     permissions:
       actions: read
