@@ -480,13 +480,15 @@ Run this list before every v0 release decision.
 - [ ] GO: all checklist items done, no open P0/P1 blockers.
 - [ ] NO-GO: at least one blocker open (record blocker, owner, next check time).
 
-## Candidate -> Canary -> Promotion Flow
+## Candidate -> Production Approval Flow
 
-1. Run the exact-version candidate workflow from the intended `main` SHA.
-2. Run the virtual matrix once, then perform the guided physical canary with
-   the unchanged candidate bundle.
-3. Record both successful evidence runs and promote only through the manual
-   Production-gated publish workflow.
+1. Run `CODEX Prepare and Release VibeTV` from the intended `main` SHA with the
+   final Mac App version and `firmware=unchanged` or `firmware=bump`.
+2. Wait for signing, notarization, and the hosted guest matrix. The same run
+   then pauses at the `Production` environment for up to 30 days.
+3. Test the immutable candidate bundle. After approval, the waiting job
+   publishes those exact bytes without rebuilding or requiring the original
+   chat context.
 4. Keep the previous known-good release available. A correction requires a
    new candidate and version; never replace an immutable tag or release.
 
@@ -618,47 +620,64 @@ Firmware bench envs:
 - ESP8266: `esp8266_smalltv_st7789_bench`
 - ESP32 fallback: `lilygo_t_display_s3_bench`
 
-## Immutable Candidate Promotion (Issue #353)
+## Immutable Candidate Promotion (Issues #353 and #387)
 
-The release candidate is the only publishable input. Run `CODEX Test VibeTV
-Release Candidate` from the exact `main` SHA and record its run ID. That run
-builds, signs, notarizes, hashes, and exercises the candidate once; its
-`candidate-manifest.json` binds `sourceSha`, version, candidate run ID, every
-publishable artifact, and every SHA-256. Candidate and virtual-test evidence is
-retained for 7 days, so promotion must use the same run before that retention
-window expires.
+`CODEX Prepare and Release VibeTV` is the only release entrypoint. Dispatch it
+from the intended `main` SHA with the final Mac App version. `firmware=bump`
+increments every board one patch above the current public manifest;
+`firmware=unchanged` keeps the public firmware versions. Those choices are
+frozen before the first build, so the tested candidate is already the final
+release payload.
 
-Use the unchanged candidate bundle for the guided physical canary. Record its
-device identity, operator, timestamps, required checks, candidate manifest
-SHA-256, and the complete artifact-hash map with
-`CODEX Record VibeTV Hardware Canary`. The recorder only validates and stores
-evidence; it does not flash or otherwise operate hardware automatically.
-Successful evidence is retained for 90 days and must match the candidate
-source SHA, version, run ID, manifest hash, and artifact hashes.
+One-time repository setup: the GitHub `Production` environment must have Paul
+as a required reviewer and must allow that reviewer to approve a run they
+started. Candidate preparation fails before building if the environment has no
+required-reviewer protection, preventing an accidental immediate release.
 
-After both gates pass, manually dispatch `CODEX Publish VibeTV Release` from
-the same `main` SHA with `version`, `candidate_run_id`, and
-`hardware_canary_run_id`. The `Production` environment is the explicit release
-approval. Preflight downloads the candidate and evidence, rejects missing or
-mismatched identity, hashes, signing/notarization evidence, tag, or release,
-and copies only `publish=true` candidate files into the internal promotion
-payload. The publish job then rechecks `main`, creates the tag and GitHub
-Release from those copied bytes, and performs no app, Companion, firmware,
-Sparkle, signing, or notarization build.
+The workflow builds, signs, notarizes, hashes, and exercises the candidate
+once. `candidate-manifest.json` binds `sourceSha`, version, run ID, every
+artifact, and every SHA-256. Candidate and test evidence are retained for 30
+days. After the automated matrix succeeds, the same workflow run waits at the
+`Production` environment. GitHub's waiting deployment is the durable handoff:
+a later Codex chat can discover the run and version without relying on chat
+memory.
+
+Approving `Production` validates and copies only `publish=true` files, creates
+the tag on the candidate's recorded `sourceSha`, and publishes without a
+second dispatch, a separate hardware-canary run, a current-`main` comparison,
+or any rebuild. If `main` moves while the candidate is tested, the approved
+candidate remains publishable because its exact source and bytes are already
+bound by the manifest.
+
+A fresh Codex chat finds the waiting handoff in GitHub rather than chat memory:
+
+```bash
+gh run list \
+  --repo DreamyTalesPAN/CodexBar-Display \
+  --workflow vibetv-release-candidate.yml \
+  --limit 20 \
+  --json databaseId,displayTitle,status,headSha,url
+gh api \
+  repos/DreamyTalesPAN/CodexBar-Display/actions/runs/<run-id>/pending_deployments
+```
+
+The pending deployment response supplies the `Production` environment ID and
+whether the current user may approve it. Approving that deployment is the
+release action, so the merge/release guardrails still require the exact version
+and risk to be stated in chat before approval.
 
 Post-publish verification downloads every public release asset and compares its
 SHA-256 with the validated candidate payload before running the existing
 release canary. If any gate fails, do not overwrite or rerun the same tag or
 release. Keep the previous known-good release for rollback and create a new
-candidate/version for a correction; an uncertain hardware write remains an
-unknown device state and requires a separate approved recovery decision.
+candidate/version for a correction.
 
 ## Versioning and Release Notes
 
 - Companion and firmware releases use SemVer `1.x`.
 - Release go/no-go for MVP is gated by `esp8266_smalltv_st7789`.
 - `codexbar-display upgrade` enforces companion/firmware compatibility with a version guard.
-- Candidate firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the candidate version.
+- Candidate firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the final frozen firmware manifest.
 - GitHub release artifacts include companion binaries, firmware binaries, checksums, manifests, and `install-control-center-companion.sh`.
 - The customer Mac App target is a signed/notarized DMG containing `VibeTV Control Center.app`. Keep its hosted download feature flag disabled until the latest release contains the verified DMG asset; the setup prompt remains the support fallback.
 - Current customer releases must not publish Mac App `.pkg` assets.

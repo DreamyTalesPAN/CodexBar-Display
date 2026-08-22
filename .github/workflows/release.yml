@@ -1,216 +1,82 @@
-name: CODEX Publish VibeTV Release
+name: CODEX Publish Prepared VibeTV Candidate
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: Public release SemVer without a leading v
-        required: true
-        type: string
-      candidate_run_id:
-        description: Successful CODEX VibeTV release-candidate run id
-        required: true
-        type: string
-      hardware_canary_run_id:
-        description: Successful CODEX hardware-canary record run id
-        required: true
-        type: string
+  workflow_call:
 
 permissions:
   contents: read
-  actions: read
-
-concurrency:
-  group: codex-publish-vibetv-release-${{ inputs.version }}
-  cancel-in-progress: false
 
 jobs:
-  preflight:
-    if: >-
-      github.repository == 'DreamyTalesPAN/CodexBar-Display' &&
-      github.ref == 'refs/heads/main' &&
-      (github.actor == github.repository_owner || github.actor == 'marcus7989')
+  validate-candidate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      VERSION: ${{ inputs.version }}
-      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
-      HARDWARE_CANARY_RUN_ID: ${{ inputs.hardware_canary_run_id }}
-      SOURCE_SHA: ${{ github.sha }}
-      CANDIDATE_WORKFLOW: .github/workflows/vibetv-release-candidate.yml
-      HARDWARE_WORKFLOW: .github/workflows/record-hardware-canary.yml
-      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout trusted publish gate from current main
+      - name: Checkout the candidate's trusted validator
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Validate run inputs and unpublished version
+      - name: Download the immutable candidate and automated result
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vibetv-release-candidate*
+          path: downloaded
+
+      - name: Validate and freeze the exact publish payload
         run: |
-          set -euo pipefail
-          [[ "${VERSION}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] \
-            || { echo "error: version must be SemVer x.y.z without a leading v" >&2; exit 1; }
-          [[ "${CANDIDATE_RUN_ID}" =~ ^[0-9]+$ ]] \
-            || { echo "error: candidate_run_id must contain digits only" >&2; exit 1; }
-          [[ "${HARDWARE_CANARY_RUN_ID}" =~ ^[0-9]+$ ]] \
-            || { echo "error: hardware_canary_run_id must contain digits only" >&2; exit 1; }
-
-          ensure_absent() {
-            local endpoint="$1"
-            local label="$2"
-            local error_file
-            error_file="$(mktemp)"
-            if gh api "${endpoint}" >/dev/null 2>"${error_file}"; then
-              echo "error: ${label} already exists" >&2
-              exit 1
-            fi
-            if ! grep -F "HTTP 404" "${error_file}" >/dev/null; then
-              cat "${error_file}" >&2
-              echo "error: could not prove ${label} is absent" >&2
-              exit 1
-            fi
-          }
-          ensure_absent \
-            "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}" \
-            "tag v${VERSION}"
-          ensure_absent \
-            "repos/${GITHUB_REPOSITORY}/releases/tags/v${VERSION}" \
-            "release v${VERSION}"
-
-      - name: Read authoritative workflow-run metadata
-        run: |
-          set -euo pipefail
-          mkdir -p evidence
-
-          gh api \
-            "repos/${GITHUB_REPOSITORY}/actions/runs/${CANDIDATE_RUN_ID}" \
-            > evidence/candidate-run.json
-          candidate_workflow_id="$(
-            python3 -c 'import json; print(json.load(open("evidence/candidate-run.json"))["workflow_id"])'
-          )"
-          gh api \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/${candidate_workflow_id}" \
-            > evidence/candidate-workflow.json
-
-          gh api \
-            "repos/${GITHUB_REPOSITORY}/actions/runs/${HARDWARE_CANARY_RUN_ID}" \
-            > evidence/hardware-run.json
-          hardware_workflow_id="$(
-            python3 -c 'import json; print(json.load(open("evidence/hardware-run.json"))["workflow_id"])'
-          )"
-          gh api \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/${hardware_workflow_id}" \
-            > evidence/hardware-workflow.json
-
-      - name: Download immutable candidate, result, and hardware evidence
-        run: |
-          set -euo pipefail
-          gh run download "${CANDIDATE_RUN_ID}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --name vibetv-release-candidate \
-            --dir candidate
-          gh run download "${CANDIDATE_RUN_ID}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --name vibetv-release-candidate-result \
-            --dir candidate-result
-          gh run download "${HARDWARE_CANARY_RUN_ID}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --name vibetv-hardware-canary \
-            --dir hardware
-
-      - name: Validate exact publish evidence and freeze assets
-        run: |
-          set -euo pipefail
-          python3 scripts/validate-release-publish-gate.py preflight \
+          python3 scripts/validate-release-publish-gate.py prepare \
             --repository "${GITHUB_REPOSITORY}" \
-            --source-sha "${SOURCE_SHA}" \
-            --version "${VERSION}" \
-            --candidate-run-id "${CANDIDATE_RUN_ID}" \
-            --candidate-run evidence/candidate-run.json \
-            --candidate-workflow evidence/candidate-workflow.json \
-            --candidate-dir candidate \
-            --candidate-result candidate-result/candidate-result.json \
-            --hardware-canary-run-id "${HARDWARE_CANARY_RUN_ID}" \
-            --hardware-run evidence/hardware-run.json \
-            --hardware-workflow evidence/hardware-workflow.json \
-            --hardware-evidence hardware/hardware-canary.json \
-            --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --source-sha "${GITHUB_SHA}" \
+            --candidate-run-id "${GITHUB_RUN_ID}" \
+            --candidate-dir downloaded/vibetv-release-candidate \
+            --candidate-result downloaded/vibetv-release-candidate-result/candidate-result.json \
             --output validated/publish-payload.json \
             --copy-dir validated/assets
 
-      - name: Upload validated internal publish payload
+      - name: Upload the validated publish payload for Production approval
         uses: actions/upload-artifact@v4
         with:
           name: vibetv-validated-publish
-          path: |
-            validated/publish-payload.json
-            validated/assets
+          path: validated
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 30
 
   publish-release:
-    needs: preflight
+    needs: validate-candidate
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: Production
     permissions:
       contents: write
-      actions: read
+    outputs:
+      source_sha: ${{ steps.identity.outputs.source_sha }}
+      version: ${{ steps.identity.outputs.version }}
     env:
-      VERSION: ${{ inputs.version }}
-      SOURCE_SHA: ${{ github.sha }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Download validated publish payload and candidate assets
+      - name: Download the approved candidate payload
         uses: actions/download-artifact@v4
         with:
           name: vibetv-validated-publish
           path: validated
 
-      - name: Recheck current main after Production approval
+      - name: Read immutable release identity
+        id: identity
         run: |
-          set -euo pipefail
-          CURRENT_MAIN_SHA="$(
-            gh api \
-              "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
-              --jq .object.sha
-          )"
-          [[ "${CURRENT_MAIN_SHA}" == "${SOURCE_SHA}" ]] || {
-            echo "error: main moved from validated ${SOURCE_SHA} to ${CURRENT_MAIN_SHA}; dispatch a new release candidate" >&2
-            exit 1
-          }
+          python3 - validated/publish-payload.json >> "$GITHUB_OUTPUT" <<'PY'
+          import json, sys
+          payload = json.load(open(sys.argv[1], encoding="utf-8"))
+          print(f"version={payload['version']}")
+          print(f"source_sha={payload['sourceSha']}")
+          PY
 
-      - name: Recheck unpublished version after Production approval
+      - name: Create the exact GitHub tag and release without rebuilding
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+          SOURCE_SHA: ${{ steps.identity.outputs.source_sha }}
         run: |
           set -euo pipefail
-          ensure_absent() {
-            local endpoint="$1"
-            local label="$2"
-            local error_file
-            error_file="$(mktemp)"
-            if gh api "${endpoint}" >/dev/null 2>"${error_file}"; then
-              echo "error: ${label} already exists" >&2
-              exit 1
-            fi
-            if ! grep -F "HTTP 404" "${error_file}" >/dev/null; then
-              cat "${error_file}" >&2
-              echo "error: could not prove ${label} is absent" >&2
-              exit 1
-            fi
-          }
-          ensure_absent \
-            "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}" \
-            "tag v${VERSION}"
-          ensure_absent \
-            "repos/${GITHUB_REPOSITORY}/releases/tags/v${VERSION}" \
-            "release v${VERSION}"
-
-      - name: Create exact GitHub tag and release without rebuild
-        run: |
-          set -euo pipefail
-          test -s validated/publish-payload.json
           mapfile -d '' release_files < <(
             find validated/assets -type f -print0 | sort -z
           )
@@ -220,7 +86,8 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --target "${SOURCE_SHA}" \
             --title "v${VERSION}" \
-            --generate-notes
+            --generate-notes \
+            --latest
 
   verify-public-release:
     needs: publish-release
@@ -228,49 +95,45 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      actions: read
     env:
       GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.publish-release.outputs.version }}
+      SOURCE_SHA: ${{ needs.publish-release.outputs.source_sha }}
     steps:
-      - name: Checkout exact published source for canary script
+      - name: Checkout the exact published source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
 
-      - name: Download validated candidate payload
+      - name: Download the approved candidate payload
         uses: actions/download-artifact@v4
         with:
           name: vibetv-validated-publish
           path: validated
 
-      - name: Download published release assets
-        run: gh release download "v${{ inputs.version }}" --repo "${GITHUB_REPOSITORY}" --dir published
+      - name: Download the public release assets
+        run: gh release download "v${VERSION}" --repo "${GITHUB_REPOSITORY}" --dir published
 
-      - name: Verify release assets are byte-identical to the candidate
+      - name: Verify public assets are byte-identical to the candidate
         run: |
-          python3 - "validated/publish-payload.json" published <<'PY'
-          import hashlib
-          import json
-          import pathlib
-          import sys
-
+          python3 - validated/publish-payload.json published <<'PY'
+          import hashlib, json, pathlib, sys
           payload_path, published_root = sys.argv[1:]
           payload = json.loads(pathlib.Path(payload_path).read_text(encoding="utf-8"))
-          expected = {
-              item["name"]: item["sha256"]
-              for item in payload["artifacts"]
+          expected = {item["name"]: item["sha256"] for item in payload["artifacts"]}
+          actual = {
+              path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+              for path in pathlib.Path(published_root).iterdir()
+              if path.is_file()
           }
-          actual = {}
-          for path in pathlib.Path(published_root).iterdir():
-              if path.is_file():
-                  actual[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
           if actual != expected:
-              raise SystemExit(
-                  "published release assets do not exactly match the validated candidate"
-              )
-          print(f"verified {len(actual)} release assets against candidate SHA-256 hashes")
+              raise SystemExit("published release assets do not exactly match the candidate")
+          print(f"verified {len(actual)} public release assets")
           PY
 
-      - name: Verify published release endpoints
-        run: ./scripts/verify-release-canary.sh --version "${{ inputs.version }}"
+      - name: Verify the public update endpoints
+        run: |
+          ./scripts/verify-release-canary.sh \
+            --version "${VERSION}" \
+            --firmware-config validated/assets/publish/firmware/firmware-manifest.json

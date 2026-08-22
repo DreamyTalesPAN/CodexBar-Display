@@ -54,26 +54,10 @@ class PublishGateFixtureTests(unittest.TestCase):
         (candidate_dir / "candidate-manifest.json").write_bytes(manifest.read_bytes())
 
         fixture["candidateResult"]["artifactHashes"] = hashes
-        fixture["hardwareEvidence"]["artifactHashes"] = hashes
-        fixture["hardwareEvidence"]["candidateManifestSha256"] = sha256(
-            candidate_dir / "candidate-manifest.json"
-        )
-
         return {
             "candidate_dir": candidate_dir,
-            "candidate_run": self._write_json("candidate-run.json", fixture["candidateRun"]),
-            "candidate_workflow": self._write_json(
-                "candidate-workflow.json", fixture["candidateWorkflow"]
-            ),
             "candidate_result": self._write_json(
                 "candidate-result.json", fixture["candidateResult"]
-            ),
-            "hardware_run": self._write_json("hardware-run.json", fixture["hardwareRun"]),
-            "hardware_workflow": self._write_json(
-                "hardware-workflow.json", fixture["hardwareWorkflow"]
-            ),
-            "hardware_evidence": self._write_json(
-                "hardware-canary.json", fixture["hardwareEvidence"]
             ),
             "output": self.case_root / "publish/publish-payload.json",
             "copy_dir": self.case_root / "publish/assets",
@@ -83,42 +67,23 @@ class PublishGateFixtureTests(unittest.TestCase):
         values = {
             "repository": self.fixture["repository"],
             "source_sha": self.fixture["sourceSha"],
-            "version": self.fixture["version"],
             "candidate_run_id": self.fixture["candidateRunId"],
-            "hardware_canary_run_id": self.fixture["hardwareCanaryRunId"],
-            "now": self.fixture["now"],
         }
         values.update(overrides)
         return [
             "python3",
             str(VALIDATOR),
-            "preflight",
+            "prepare",
             "--repository",
             values["repository"],
             "--source-sha",
             values["source_sha"],
-            "--version",
-            values["version"],
             "--candidate-run-id",
             values["candidate_run_id"],
-            "--candidate-run",
-            str(self.paths["candidate_run"]),
-            "--candidate-workflow",
-            str(self.paths["candidate_workflow"]),
             "--candidate-dir",
             str(self.paths["candidate_dir"]),
             "--candidate-result",
             str(self.paths["candidate_result"]),
-            "--hardware-canary-run-id",
-            values["hardware_canary_run_id"],
-            "--hardware-run",
-            str(self.paths["hardware_run"]),
-            "--hardware-workflow",
-            str(self.paths["hardware_workflow"]),
-            "--hardware-evidence",
-            str(self.paths["hardware_evidence"]),
-            "--now",
-            values["now"],
             "--output",
             str(self.paths["output"]),
             "--copy-dir",
@@ -133,6 +98,57 @@ class PublishGateFixtureTests(unittest.TestCase):
             check=False,
         )
 
+    def _resolve_versions(
+        self, mode: str, release_version: str = "1.2.4"
+    ) -> tuple[subprocess.CompletedProcess[str], Path]:
+        baseline = self._write_json(
+            "baseline.json",
+            {"baselines": {"current_public": {"version": "1.2.3"}}},
+        )
+        defaults = self._write_json(
+            "firmware-defaults.json",
+            {
+                "schemaVersion": 1,
+                "artifacts": [
+                    {"firmwareEnv": "esp8266", "firmwareVersion": "0.0.0"},
+                    {"firmwareEnv": "esp32", "firmwareVersion": "0.0.0"},
+                ],
+            },
+        )
+        public = self._write_json(
+            "public-firmware.json",
+            {
+                "artifacts": [
+                    {"firmwareEnv": "esp8266", "firmwareVersion": "1.0.41"},
+                    {"firmwareEnv": "esp32", "firmwareVersion": "1.0.36"},
+                ]
+            },
+        )
+        output = self.case_root / "effective-firmware.json"
+        result = subprocess.run(
+            [
+                "python3",
+                str(VALIDATOR),
+                "resolve-versions",
+                "--baseline-manifest",
+                str(baseline),
+                "--current-firmware-manifest",
+                str(public),
+                "--defaults",
+                str(defaults),
+                "--release-version",
+                release_version,
+                "--firmware-mode",
+                mode,
+                "--output",
+                str(output),
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        return result, output
+
     def _rewrite(self, key: str, mutate) -> None:
         path = self.paths[key]
         body = json.loads(path.read_text(encoding="utf-8"))
@@ -145,12 +161,6 @@ class PublishGateFixtureTests(unittest.TestCase):
         mutate(manifest)
         manifest_path.write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
-        )
-        evidence_path = self.paths["hardware_evidence"]
-        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
-        evidence["candidateManifestSha256"] = sha256(manifest_path)
-        evidence_path.write_text(
-            json.dumps(evidence, indent=2) + "\n", encoding="utf-8"
         )
 
     def _remove_manifest_artifact_and_rebind(self, name: str) -> None:
@@ -165,13 +175,10 @@ class PublishGateFixtureTests(unittest.TestCase):
         manifest_path.write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
         )
-        for key in ("candidate_result", "hardware_evidence"):
-            path = self.paths[key]
-            body = json.loads(path.read_text(encoding="utf-8"))
-            body["artifactHashes"].pop(removed["path"])
-            if key == "hardware_evidence":
-                body["candidateManifestSha256"] = sha256(manifest_path)
-            path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+        path = self.paths["candidate_result"]
+        body = json.loads(path.read_text(encoding="utf-8"))
+        body["artifactHashes"].pop(removed["path"])
+        path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
 
     def _replace_asset_and_rebind(self, relative: str, contents: str) -> None:
         asset = self.paths["candidate_dir"] / relative
@@ -188,16 +195,27 @@ class PublishGateFixtureTests(unittest.TestCase):
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
         )
 
-        for key in ("candidate_result", "hardware_evidence"):
-            path = self.paths[key]
-            body = json.loads(path.read_text(encoding="utf-8"))
-            body["artifactHashes"][relative] = new_hash
-            if key == "hardware_evidence":
-                body["candidateManifestSha256"] = sha256(manifest_path)
-            path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+        path = self.paths["candidate_result"]
+        body = json.loads(path.read_text(encoding="utf-8"))
+        body["artifactHashes"][relative] = new_hash
+        path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
 
     def test_validator_exists(self) -> None:
         self.assertTrue(VALIDATOR.is_file(), "publish-gate validator is missing")
+
+    def test_resolves_final_firmware_versions_before_build(self) -> None:
+        result, output = self._resolve_versions("bump")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        versions = [
+            item["firmwareVersion"]
+            for item in json.loads(output.read_text(encoding="utf-8"))["artifacts"]
+        ]
+        self.assertEqual(versions, ["1.0.42", "1.0.37"])
+
+    def test_rejects_release_version_that_is_not_newer(self) -> None:
+        result, _ = self._resolve_versions("unchanged", release_version="1.2.3")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("newer", result.stderr)
 
     @unittest.skipUnless(VALIDATOR.is_file(), "validator not implemented yet")
     def test_hosted_candidate_fixture_contract_is_accepted(self) -> None:
@@ -352,7 +370,10 @@ class PublishGateFixtureTests(unittest.TestCase):
 
     @unittest.skipUnless(VALIDATOR.is_file(), "validator not implemented yet")
     def test_rejects_non_semver_release_version(self) -> None:
-        result = self._run(version="1.2")
+        self._rewrite_manifest_and_rebind(
+            lambda manifest: manifest.update(version="1.2")
+        )
+        result = self._run()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("SemVer", result.stderr)
 
@@ -371,42 +392,6 @@ class PublishGateFixtureTests(unittest.TestCase):
         result = self._run()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("sha256", result.stderr)
-
-    @unittest.skipUnless(VALIDATOR.is_file(), "validator not implemented yet")
-    def test_rejects_hardware_result_other_than_success(self) -> None:
-        self._rewrite("hardware_evidence", lambda body: body.update(result="passed"))
-        result = self._run()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("hardware evidence result", result.stderr)
-
-    @unittest.skipUnless(VALIDATOR.is_file(), "validator not implemented yet")
-    def test_rejects_hardware_evidence_older_than_seven_days(self) -> None:
-        result = self._run(now="2026-08-04T11:00:01Z")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("older than 7 days", result.stderr)
-
-    @unittest.skipUnless(VALIDATOR.is_file(), "validator not implemented yet")
-    def test_rejects_wrong_candidate_workflow(self) -> None:
-        self._rewrite(
-            "candidate_workflow",
-            lambda body: body.update(path=".github/workflows/release.yml"),
-        )
-        result = self._run()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("candidate workflow", result.stderr)
-
-    @unittest.skipUnless(VALIDATOR.is_file(), "validator not implemented yet")
-    def test_rejects_hardware_hashes_that_differ_from_candidate(self) -> None:
-        self._rewrite(
-            "hardware_evidence",
-            lambda body: body["artifactHashes"].update(
-                {"publish/firmware.bin": "0" * 64}
-            ),
-        )
-        result = self._run()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("hardware artifact hashes", result.stderr)
-
 
 if __name__ == "__main__":
     unittest.main()
