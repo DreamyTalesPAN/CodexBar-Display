@@ -4,6 +4,7 @@ on:
   workflow_call:
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -45,13 +46,15 @@ jobs:
   publish-release:
     needs: validate-candidate
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     environment: Production
+    concurrency:
+      group: codex-vibetv-production-release
+      queue: max
+      cancel-in-progress: false
     permissions:
+      actions: read
       contents: write
-    outputs:
-      source_sha: ${{ steps.identity.outputs.source_sha }}
-      version: ${{ steps.identity.outputs.version }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -115,30 +118,15 @@ jobs:
             --generate-notes \
             --latest
 
-  verify-public-release:
-    needs: publish-release
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      GH_TOKEN: ${{ github.token }}
-      VERSION: ${{ needs.publish-release.outputs.version }}
-      SOURCE_SHA: ${{ needs.publish-release.outputs.source_sha }}
-    steps:
       - name: Checkout the exact published source
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.SOURCE_SHA }}
+          ref: ${{ steps.identity.outputs.source_sha }}
           persist-credentials: false
 
-      - name: Download the approved candidate payload
-        uses: actions/download-artifact@v4
-        with:
-          name: vibetv-validated-publish
-          path: validated
-
       - name: Download the public release assets
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
         run: gh release download "v${VERSION}" --repo "${GITHUB_REPOSITORY}" --dir published
 
       - name: Verify public assets are byte-identical to the candidate
@@ -159,6 +147,8 @@ jobs:
           PY
 
       - name: Verify the public update endpoints
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
         run: |
           ./scripts/verify-release-canary.sh \
             --version "${VERSION}" \
