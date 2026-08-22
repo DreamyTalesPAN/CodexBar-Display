@@ -71,6 +71,32 @@ jobs:
           print(f"source_sha={payload['sourceSha']}")
           PY
 
+      - name: Reject stale or conflicting release identity
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          current_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)"
+          python3 - "$VERSION" "${current_tag#v}" <<'PY'
+          import re, sys
+          candidate, current = sys.argv[1:]
+          semver = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+          def parse(value):
+              match = semver.fullmatch(value)
+              if not match: raise SystemExit(f"invalid public release SemVer: {value}")
+              return tuple(int(part) for part in match.groups())
+          if parse(candidate) <= parse(current):
+              raise SystemExit(f"candidate v{candidate} is no longer newer than public v{current}")
+          PY
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}" >/dev/null 2>&1; then
+            echo "error: tag v${VERSION} already exists" >&2
+            exit 1
+          fi
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${VERSION}" >/dev/null 2>&1; then
+            echo "error: release v${VERSION} already exists" >&2
+            exit 1
+          fi
+
       - name: Create the exact GitHub tag and release without rebuilding
         env:
           VERSION: ${{ steps.identity.outputs.version }}

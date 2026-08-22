@@ -71,6 +71,14 @@ main() {
     "approved candidate must create exactly one GitHub release"
   assert_contains "$publish" '--target "${SOURCE_SHA}"' \
     "release tag must target the candidate source SHA"
+  assert_contains "$publish" "releases/latest" \
+    "Production approval must reject a candidate older than the current public release"
+  assert_contains "$publish" "is no longer newer than public" \
+    "stale waiting candidates must fail before changing the latest release"
+  assert_contains "$publish" "git/ref/tags/v" \
+    "publication must reject an existing tag before creating a release"
+  assert_contains "$publish" "releases/tags/v" \
+    "publication must reject an existing release before creating a release"
   assert_contains "$publish" "byte-identical to the candidate" \
     "public verification must compare every release asset with the candidate"
   assert_contains "$publish" "verify-release-canary.sh" \
@@ -84,10 +92,6 @@ main() {
     "normal release path must not require separate hardware evidence"
   assert_not_contains "$publish" "git/ref/heads/main" \
     "main moving after candidate creation must not invalidate tested bytes"
-  assert_not_contains "$publish" "git/ref/tags/v" \
-    "release creation itself must own duplicate-tag rejection"
-  assert_not_contains "$publish" "releases/tags/v" \
-    "release creation itself must own duplicate-release rejection"
   for forbidden in "go build" "npm ci" "pio run" "git tag" "git push"; do
     assert_not_contains "$publish" "$forbidden" \
       "publish workflow must not rebuild or manually push: ${forbidden}"
