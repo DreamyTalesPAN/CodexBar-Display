@@ -372,8 +372,14 @@ rehearsal::fetch_candidate() {
   rehearsal::record candidateSha "$CANDIDATE_SHA"
 }
 
+# Returns nothing, successfully, when the candidate has not been downloaded yet.
+# find exits non-zero on a missing directory and pipefail carries that through
+# the pipe, which under set -e would kill the run on its very first download.
 rehearsal::candidate_manifest_path() {
-  find "$1" -maxdepth 3 -name candidate-manifest.json -type f 2>/dev/null | head -n 1
+  if [[ -d "$1" ]]; then
+    find "$1" -maxdepth 3 -name candidate-manifest.json -type f 2>/dev/null | head -n 1 || true
+  fi
+  return 0
 }
 
 # The merge gate and the release candidate lay the same roles out under

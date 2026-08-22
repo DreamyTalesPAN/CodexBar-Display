@@ -23,6 +23,15 @@ expect_equal() {
   [[ "$want" == "$got" ]] || fail "$label: expected '$want', got '$got'"
 }
 
+# --- an undownloaded candidate must not kill the run ------------------------
+# The cache directory does not exist before the first download. Under
+# set -euo pipefail a find over a missing directory ends the script silently,
+# which is how this failed on the bench.
+missing="$(rehearsal::candidate_manifest_path "$tmp_dir/never-downloaded")"
+expect_equal 'missing cache resolves to nothing' '' "$missing"
+mkdir -p "$tmp_dir/empty-cache"
+expect_equal 'empty cache resolves to nothing' '' "$(rehearsal::candidate_manifest_path "$tmp_dir/empty-cache")"
+
 # --- merge gate layout: bare names in the manifest, firmware.bin ------------
 gate="$tmp_dir/gate"
 mkdir -p "$gate/dist/macos" "$gate/tmp/vibetv-merge"
