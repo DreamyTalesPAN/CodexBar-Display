@@ -425,12 +425,17 @@ for artifact in manifest["artifacts"]:
     by_role.setdefault(artifact["role"], []).append(artifact)
 
 resolved = {}
-for role, variable in (
-    ("signed-dmg", "CANDIDATE_DMG"),
-    ("sparkle-appcast", "CANDIDATE_APPCAST"),
-    ("firmware-manifest", "CANDIDATE_FIRMWARE_MANIFEST"),
+for role, variable, canonical in (
+    ("signed-dmg", "CANDIDATE_DMG", None),
+    ("sparkle-appcast", "CANDIDATE_APPCAST", None),
+    # A release candidate ships the firmware manifest twice, once stamped with
+    # the version. Both are byte-identical; the unstamped one is what a release
+    # serves, so that is the one under test.
+    ("firmware-manifest", "CANDIDATE_FIRMWARE_MANIFEST", "firmware-manifest.json"),
 ):
     entries = by_role.get(role, [])
+    if canonical is not None:
+        entries = [entry for entry in entries if entry["name"] == canonical] or entries
     if len(entries) != 1:
         problems.append(f"{role}: expected one artifact, found {len(entries)}")
         continue
@@ -594,23 +599,25 @@ if count != 1:
 open(path, "w", encoding="utf-8").write(patched)
 PY
 
-  # The candidate ships a manifest template whose firmwareUrl is the bare asset
-  # name. The companion does not resolve it against the manifest URL, so it has
-  # to be made absolute here or the download fails with "unsupported protocol
-  # scheme".
-  python3 - "$REHEARSAL_SERVE_DIR/firmware-manifest.json" "$REHEARSAL_SERVER_URL" <<'PY'
-import json, sys, urllib.parse
+  # The manifest addresses the firmware by a bare asset name (merge gate) or by
+  # its published release URL (release candidate, pointing at a release that does
+  # not exist yet). Either way the bytes under test are the ones on this loopback
+  # server, so the entry for this board is repointed at it. Other boards keep
+  # their published URL -- this rehearsal does not flash them.
+  python3 - "$REHEARSAL_SERVE_DIR/firmware-manifest.json" "$REHEARSAL_SERVER_URL" \
+    "$REHEARSAL_BOARD" "$(basename "$CANDIDATE_FIRMWARE")" <<'PY'
+import json, sys
 
-path, base = sys.argv[1:]
+path, base, board, asset = sys.argv[1:]
 manifest = json.loads(open(path, encoding="utf-8").read())
 patched = 0
 for artifact in manifest.get("artifacts", []):
-    url = str(artifact.get("firmwareUrl") or "")
-    if not urllib.parse.urlparse(url).scheme:
-        artifact["firmwareUrl"] = f"{base}/{url.lstrip('/')}"
-        patched += 1
-if patched == 0:
-    raise SystemExit("expected at least one relative firmwareUrl to rewrite")
+    if artifact.get("board") != board:
+        continue
+    artifact["firmwareUrl"] = f"{base}/{asset}"
+    patched += 1
+if patched != 1:
+    raise SystemExit(f"expected exactly one firmware entry for board {board}, patched {patched}")
 with open(path, "w", encoding="utf-8") as destination:
     json.dump(manifest, destination, indent=2)
     destination.write("\n")

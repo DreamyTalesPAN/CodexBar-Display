@@ -65,18 +65,23 @@ printf 'rc dmg\n' > "$rc/publish/macos/VibeTV-Control-Center.dmg"
 printf 'rc appcast\n' > "$rc/publish/macos/appcast.xml"
 printf 'rc esp8266\n' > "$rc/publish/firmware/codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.54.bin.gz"
 printf 'rc esp32\n' > "$rc/publish/firmware/codexbar-display-firmware-esp32_display-v1.0.54.bin.gz"
+# A release candidate addresses the firmware by its published release URL, for a
+# release that does not exist yet, and ships the manifest twice -- once stamped
+# with the version.
 cat > "$rc/publish/firmware/firmware-manifest.json" <<JSON
 {"schemaVersion":1,"release":"v1.0.54","artifacts":[
-{"firmwareEnv":"esp32_display","board":"esp32-display","firmwareVersion":"1.0.54","asset":"codexbar-display-firmware-esp32_display-v1.0.54.bin.gz","firmwareUrl":"codexbar-display-firmware-esp32_display-v1.0.54.bin.gz"},
-{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.54","asset":"codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.54.bin.gz","firmwareUrl":"codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.54.bin.gz"}]}
+{"firmwareEnv":"esp32_display","board":"esp32-display","firmwareVersion":"1.0.54","asset":"codexbar-display-firmware-esp32_display-v1.0.54.bin.gz","firmwareUrl":"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.54/codexbar-display-firmware-esp32_display-v1.0.54.bin.gz"},
+{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.54","asset":"codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.54.bin.gz","firmwareUrl":"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.0.54/codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.54.bin.gz"}]}
 JSON
+cp "$rc/publish/firmware/firmware-manifest.json" "$rc/publish/firmware/firmware-manifest-v1.0.54.json"
 cat > "$rc/candidate-manifest.json" <<JSON
 {"schemaVersion":1,"sourceSha":"2222222222222222222222222222222222222222","version":"1.0.54","artifacts":[
 {"name":"VibeTV-Control-Center.dmg","path":"publish/macos/VibeTV-Control-Center.dmg","sha256":"$(digest "$rc/publish/macos/VibeTV-Control-Center.dmg")","role":"signed-dmg","publish":true},
 {"name":"appcast.xml","path":"publish/macos/appcast.xml","sha256":"$(digest "$rc/publish/macos/appcast.xml")","role":"sparkle-appcast","publish":true},
 {"name":"codexbar-display-firmware-esp32_display-v1.0.54.bin.gz","path":"publish/firmware/codexbar-display-firmware-esp32_display-v1.0.54.bin.gz","sha256":"$(digest "$rc/publish/firmware/codexbar-display-firmware-esp32_display-v1.0.54.bin.gz")","role":"firmware","publish":true},
 {"name":"codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.54.bin.gz","path":"publish/firmware/codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.54.bin.gz","sha256":"$(digest "$rc/publish/firmware/codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.54.bin.gz")","role":"firmware","publish":true},
-{"name":"firmware-manifest.json","path":"publish/firmware/firmware-manifest.json","sha256":"$(digest "$rc/publish/firmware/firmware-manifest.json")","role":"firmware-manifest","publish":true}]}
+{"name":"firmware-manifest.json","path":"publish/firmware/firmware-manifest.json","sha256":"$(digest "$rc/publish/firmware/firmware-manifest.json")","role":"firmware-manifest","publish":true},
+{"name":"firmware-manifest-v1.0.54.json","path":"publish/firmware/firmware-manifest-v1.0.54.json","sha256":"$(digest "$rc/publish/firmware/firmware-manifest-v1.0.54.json")","role":"firmware-manifest","publish":true}]}
 JSON
 
 CANDIDATE_DIR="$rc"
@@ -86,7 +91,7 @@ expect_equal 'release candidate dmg' "$rc/publish/macos/VibeTV-Control-Center.dm
 expect_equal 'release candidate appcast' "$rc/publish/macos/appcast.xml" "$CANDIDATE_APPCAST"
 expect_equal 'release candidate firmware for this board' \
   "$rc/publish/firmware/codexbar-display-firmware-esp8266_smalltv_st7789-v1.0.54.bin.gz" "$CANDIDATE_FIRMWARE"
-expect_equal 'release candidate firmware manifest' "$rc/publish/firmware/firmware-manifest.json" "$CANDIDATE_FIRMWARE_MANIFEST"
+expect_equal 'release candidate picks the unstamped firmware manifest' "$rc/publish/firmware/firmware-manifest.json" "$CANDIDATE_FIRMWARE_MANIFEST"
 
 # The served file name is what the rewritten firmwareUrl points at.
 expect_equal 'served firmware name' \
@@ -98,6 +103,12 @@ printf 'tampered\n' > "$rc/publish/macos/VibeTV-Control-Center.dmg"
 if (rehearsal::resolve_candidate_artifacts) >/dev/null 2>&1; then
   fail 'a checksum mismatch was accepted'
 fi
+
+# --- the served manifest must point at the loopback server -------------------
+# Runs the library's own rewrite block, so this cannot drift from the real code.
+python3 "$script_dir/test-vibetv-rehearsal-candidate-layout.py" \
+  "$script_dir/lib/vibetv-rehearsal.sh" "$rc/publish/firmware/firmware-manifest.json" \
+  || fail 'firmware URL rewrite'
 
 if [[ "$failures" -gt 0 ]]; then
   printf '\n%d check(s) failed\n' "$failures" >&2
