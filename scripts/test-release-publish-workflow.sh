@@ -44,6 +44,14 @@ main() {
     "publication must wait for the immutable candidate result"
   assert_contains "$candidate" 'select(.type == "required_reviewers")' \
     "candidate preparation must refuse an unprotected Production environment"
+  assert_contains "$candidate" "actions: read" \
+    "candidate workflow must be allowed to inspect the Production environment"
+  assert_contains "$candidate" "current_public.firmware" \
+    "unchanged mode must freeze the exact public firmware bytes"
+  assert_contains "$candidate" '[[ "$artifact_source" == public ]]' \
+    "unchanged mode must copy public firmware instead of rebuilding it"
+  assert_contains "$candidate" "public firmware checksum mismatch" \
+    "copied public firmware must be verified before candidate packaging"
   assert_contains "$candidate" "retention-days: 30" \
     "candidate artifacts must survive the full approval window"
 

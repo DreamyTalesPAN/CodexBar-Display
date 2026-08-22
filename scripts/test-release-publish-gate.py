@@ -118,9 +118,29 @@ class PublishGateFixtureTests(unittest.TestCase):
         public = self._write_json(
             "public-firmware.json",
             {
+                "schemaVersion": 1,
+                "protocolVersion": 1,
                 "artifacts": [
-                    {"firmwareEnv": "esp8266", "firmwareVersion": "1.0.41"},
-                    {"firmwareEnv": "esp32", "firmwareVersion": "1.0.36"},
+                    {
+                        "firmwareEnv": "esp8266",
+                        "board": "esp8266-board",
+                        "firmwareVersion": "1.0.41",
+                        "asset": "esp8266-v1.0.41.bin.gz",
+                        "sha256": "1" * 64,
+                        "severity": "recommended",
+                        "message": "Public ESP8266 firmware",
+                        "firmwareUrl": "https://example.com/esp8266-v1.0.41.bin.gz",
+                    },
+                    {
+                        "firmwareEnv": "esp32",
+                        "board": "esp32-board",
+                        "firmwareVersion": "1.0.36",
+                        "asset": "esp32-v1.0.36.bin",
+                        "sha256": "2" * 64,
+                        "severity": "recommended",
+                        "message": "Public ESP32 firmware",
+                        "firmwareUrl": "https://example.com/esp32-v1.0.36.bin",
+                    },
                 ]
             },
         )
@@ -211,6 +231,34 @@ class PublishGateFixtureTests(unittest.TestCase):
             for item in json.loads(output.read_text(encoding="utf-8"))["artifacts"]
         ]
         self.assertEqual(versions, ["1.0.42", "1.0.37"])
+        self.assertEqual(
+            [
+                item["artifactSource"]
+                for item in json.loads(output.read_text(encoding="utf-8"))["artifacts"]
+            ],
+            ["build", "build"],
+        )
+
+    def test_unchanged_mode_reuses_public_firmware_identity(self) -> None:
+        result, output = self._resolve_versions("unchanged")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        effective = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(effective["protocolVersion"], 1)
+        self.assertEqual(
+            [
+                (
+                    item["firmwareVersion"],
+                    item["asset"],
+                    item["sha256"],
+                    item["artifactSource"],
+                )
+                for item in effective["artifacts"]
+            ],
+            [
+                ("1.0.41", "esp8266-v1.0.41.bin.gz", "1" * 64, "public"),
+                ("1.0.36", "esp32-v1.0.36.bin", "2" * 64, "public"),
+            ],
+        )
 
     def test_rejects_release_version_that_is_not_newer(self) -> None:
         result, _ = self._resolve_versions("unchanged", release_version="1.2.3")

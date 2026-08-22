@@ -18,6 +18,7 @@ on:
           - bump
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -96,20 +97,34 @@ jobs:
           import json, sys
           for item in json.load(open(sys.argv[1]))["artifacts"]:
               env, board, fw = item["firmwareEnv"], item["board"], item["firmwareVersion"]
-              if env == "esp8266_smalltv_st7789": print("firmware_esp8266\t%s\t%s\t%s\tcodexbar-display-firmware-%s-v%s.bin.gz" % (env, board, fw, env, fw))
-              elif env == "lilygo_t_display_s3": print("firmware_esp32\t%s\t%s\t%s\tcodexbar-display-firmware-%s-v%s.bin" % (env, board, fw, env, fw))
-              else: raise SystemExit("unsupported firmware environment: " + env)
+              source = item["artifactSource"]
+              if source == "public": asset, expected = item["asset"], item["sha256"]
+              elif source == "build" and env == "esp8266_smalltv_st7789": asset, expected = f"codexbar-display-firmware-{env}-v{fw}.bin.gz", "-"
+              elif source == "build" and env == "lilygo_t_display_s3": asset, expected = f"codexbar-display-firmware-{env}-v{fw}.bin", "-"
+              else: raise SystemExit(f"unsupported firmware target: {env} from {source}")
+              directory = "firmware_esp8266" if env == "esp8266_smalltv_st7789" else "firmware_esp32"
+              print("\t".join((directory, env, board, fw, asset, source, expected)))
           PY
-          while IFS=$'\t' read -r dir env board fw asset; do
-            BUILD_LOG="$(mktemp)"
-            (cd "$dir" && CODEXBAR_DISPLAY_FW_VERSION="$fw" pio run -e "$env") 2>&1 | tee "$BUILD_LOG"
-            source="$dir/.pio/build/$env/firmware.bin"
-            if [[ "$env" == esp8266_* ]]; then
-              ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 46 82 482000 350000
+          while IFS=$'\t' read -r dir env board fw asset artifact_source expected_sha; do
+            destination="tmp/vibetv-rc/publish/firmware/$asset"
+            if [[ "$artifact_source" == public ]]; then
+              source="tmp/vibetv-baselines/baselines/current_public.firmware/$asset"
+              test -f "$source" || { echo "missing frozen public firmware: $asset" >&2; exit 1; }
+              [[ "$(shasum -a 256 "$source" | awk '{print $1}')" == "$expected_sha" ]] \
+                || { echo "frozen public firmware checksum mismatch: $asset" >&2; exit 1; }
+              cp "$source" "$destination"
             else
-              ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 46 82 0 0
+              BUILD_LOG="$(mktemp)"
+              (cd "$dir" && CODEXBAR_DISPLAY_FW_VERSION="$fw" pio run -e "$env") 2>&1 | tee "$BUILD_LOG"
+              source="$dir/.pio/build/$env/firmware.bin"
+              if [[ "$env" == esp8266_* ]]; then
+                ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 46 82 482000 350000
+                gzip -c -9 "$source" > "$destination"
+              else
+                ./scripts/check-firmware-size-budget.sh "$BUILD_LOG" "$source" "$env" 46 82 0 0
+                cp "$source" "$destination"
+              fi
             fi
-            if [[ "$env" == esp8266_* ]]; then gzip -c -9 "$source" > "tmp/vibetv-rc/publish/firmware/$asset"; else cp "$source" "tmp/vibetv-rc/publish/firmware/$asset"; fi
           done < tmp/vibetv-rc/firmware-targets.tsv
           python3 - "$version" "$GITHUB_REPOSITORY" "$firmware_config" tmp/vibetv-rc/firmware-targets.tsv tmp/vibetv-rc/publish/firmware > tmp/vibetv-rc/publish/firmware/firmware-manifest.json <<'PY'
           import hashlib, json, os, sys
@@ -118,7 +133,7 @@ jobs:
           configured={item["firmwareEnv"]: item for item in config["artifacts"]}
           entries=[]
           for line in open(targets, encoding="utf-8"):
-              _, env, board, fw, asset = line.rstrip("\n").split("\t")
+              _, env, board, fw, asset, _, _ = line.rstrip("\n").split("\t")
               data=open(os.path.join(root, asset), "rb").read()
               item=configured[env]
               entries.append({"firmwareEnv":env,"board":board,"firmwareVersion":fw,"asset":asset,"sha256":hashlib.sha256(data).hexdigest(),"severity":item.get("severity", "recommended"),"message":item.get("message", ""),"firmwareUrl":f"https://github.com/{repo}/releases/download/v{version}/{asset}"})
@@ -257,6 +272,17 @@ jobs:
               esp = next(item for item in firmware['artifacts'] if item['firmwareEnv'] == 'esp8266_smalltv_st7789')
               baseline['esp8266FirmwareVersion'] = esp['firmwareVersion']
               baseline['esp8266FirmwareSha256'] = esp['sha256']
+              if state == 'current_public':
+                  firmware_root = root / 'current_public.firmware'; firmware_root.mkdir()
+                  for item in firmware['artifacts']:
+                      asset = item['asset']
+                      if not asset or any(char in asset for char in '\t\r\n') or pathlib.Path(asset).name != asset:
+                          raise SystemExit('unsafe public firmware asset: ' + asset)
+                      data = urllib.request.urlopen(item['firmwareUrl']).read()
+                      digest = hashlib.sha256(data).hexdigest()
+                      if digest != item['sha256']:
+                          raise SystemExit('public firmware checksum mismatch: ' + asset)
+                      (firmware_root / asset).write_bytes(data)
           path.write_text(json.dumps(manifest, indent=2) + '\n')
           PY
           python3 scripts/validate-release-publish-gate.py resolve-versions \

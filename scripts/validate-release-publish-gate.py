@@ -425,23 +425,57 @@ def resolve_versions(args: argparse.Namespace) -> None:
         for item in public.get("artifacts", [])
         if isinstance(item, dict)
     }
-    artifacts = defaults.get("artifacts")
-    if not isinstance(artifacts, list) or not artifacts:
+    default_artifacts = defaults.get("artifacts")
+    public_artifacts = public.get("artifacts")
+    if not isinstance(default_artifacts, list) or not default_artifacts:
         fail("firmware defaults must contain artifacts")
-    for item in artifacts:
+    if not isinstance(public_artifacts, list) or not public_artifacts:
+        fail("public firmware manifest must contain artifacts")
+    for item in default_artifacts:
         if not isinstance(item, dict) or not item.get("firmwareEnv"):
             fail("firmware default artifact is invalid")
         current = public_by_env.get(item["firmwareEnv"])
         if not current:
             fail(f"public firmware is missing {item['firmwareEnv']}")
-        version = list(
-            parse_semver(current.get("firmwareVersion"), "public firmware version")
-        )
         if args.firmware_mode == "bump":
+            version = list(
+                parse_semver(
+                    current.get("firmwareVersion"), "public firmware version"
+                )
+            )
             version[2] += 1
-        item["firmwareVersion"] = ".".join(str(part) for part in version)
-    write_json(Path(args.output), defaults)
-    print(json.dumps(defaults, sort_keys=True))
+            item["firmwareVersion"] = ".".join(str(part) for part in version)
+            item["artifactSource"] = "build"
+
+    if args.firmware_mode == "unchanged":
+        if set(public_by_env) != {
+            item["firmwareEnv"] for item in default_artifacts
+        }:
+            fail("public firmware environments do not match firmware defaults")
+        frozen = []
+        for item in public_artifacts:
+            if not isinstance(item, dict) or not item.get("firmwareEnv"):
+                fail("public firmware artifact is invalid")
+            asset = item.get("asset")
+            if (
+                not isinstance(asset, str)
+                or not asset
+                or Path(asset).name != asset
+                or not SHA256.fullmatch(str(item.get("sha256", "")))
+            ):
+                fail("public firmware artifact has an unsafe asset or invalid sha256")
+            parse_semver(item.get("firmwareVersion"), "public firmware version")
+            frozen.append({**item, "artifactSource": "public"})
+        effective = {
+            "schemaVersion": public.get("schemaVersion", 1),
+            "protocolVersion": public.get("protocolVersion", 1),
+            "artifacts": frozen,
+        }
+    else:
+        effective = defaults
+
+    write_json(Path(args.output), effective)
+    print(json.dumps(effective, sort_keys=True))
 
 
 def prepare(args: argparse.Namespace) -> None:
