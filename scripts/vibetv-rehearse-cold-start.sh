@@ -43,7 +43,7 @@ cat <<PLAN
 This rehearsal will:
   1. move every VibeTV and CodexBar file on this Mac into a restorable backup
   2. install Mac App $CANDIDATE_VERSION (commit ${CANDIDATE_SHA:0:12}) from the candidate DMG
-  3. flash VibeTV $DEVICE_ID to firmware $CANDIDATE_VERSION
+  3. flash VibeTV $DEVICE_ID to firmware $CANDIDATE_FIRMWARE_VERSION
 
 The VibeTV will be written to. Everything removed from this Mac is restorable
 with --restore.
@@ -62,13 +62,16 @@ rehearsal::apply_companion_override
 # --- 3. flash the candidate firmware ----------------------------------------
 rehearsal::start_artifact_server
 
-rehearsal::step "Flashing candidate firmware $CANDIDATE_VERSION"
+# The firmware carries its own version, not the release version: 1.0.54 ships
+# firmware 1.0.40. Waiting for the release version here reports every real
+# release candidate as unconfirmed after a flash that in fact succeeded.
+rehearsal::step "Flashing candidate firmware $CANDIDATE_FIRMWARE_VERSION"
 FIRMWARE_OUTCOME=installed
-if [[ "$DEVICE_FIRMWARE" == "$CANDIDATE_VERSION" ]]; then
-  rehearsal::info "already on $CANDIDATE_VERSION, nothing to flash"
-elif rehearsal::flash_firmware "$REHEARSAL_SERVER_URL/firmware-manifest.json" "$CANDIDATE_VERSION" 1; then
-  rehearsal::wait_for_device_firmware "$CANDIDATE_VERSION" \
-    || { rehearsal::warn "VibeTV did not report $CANDIDATE_VERSION within 3 minutes"; FIRMWARE_OUTCOME=unconfirmed; }
+if [[ "$DEVICE_FIRMWARE" == "$CANDIDATE_FIRMWARE_VERSION" ]]; then
+  rehearsal::info "already on $CANDIDATE_FIRMWARE_VERSION, nothing to flash"
+elif rehearsal::flash_firmware "$REHEARSAL_SERVER_URL/firmware-manifest.json" "$CANDIDATE_FIRMWARE_VERSION" 1; then
+  rehearsal::wait_for_device_firmware "$CANDIDATE_FIRMWARE_VERSION" \
+    || { rehearsal::warn "VibeTV did not report $CANDIDATE_FIRMWARE_VERSION within 3 minutes"; FIRMWARE_OUTCOME=unconfirmed; }
 else
   FIRMWARE_OUTCOME=failed
 fi
@@ -95,8 +98,8 @@ cat <<NEXT
    1. Pair the VibeTV in the app as a brand new customer would.
    2. Watch the Overview: it must reach a live preview without flapping
       between the setup screen and Overview.
-   3. Updates tab: both entries must read $CANDIDATE_VERSION with no
-      update offered.
+   3. Updates tab: Mac App must read $CANDIDATE_VERSION and firmware
+      $CANDIDATE_FIRMWARE_VERSION, with no update offered for either.
 
  Report   $REHEARSAL_RUN_DIR/report.json
  Log      $REHEARSAL_LOG

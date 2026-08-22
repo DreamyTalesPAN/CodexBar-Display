@@ -424,7 +424,7 @@ by_role = {}
 for artifact in manifest["artifacts"]:
     by_role.setdefault(artifact["role"], []).append(artifact)
 
-resolved = {}
+resolved, scalars = {}, {}
 for role, variable, canonical in (
     ("signed-dmg", "CANDIDATE_DMG", None),
     ("sparkle-appcast", "CANDIDATE_APPCAST", None),
@@ -458,6 +458,13 @@ if firmware_manifest is not None:
             path = locate(binaries[0])
             if path is not None:
                 resolved["CANDIDATE_FIRMWARE"] = path
+                # A release stamps the firmware with its own version, not the
+                # release version: 1.0.54 ships firmware 1.0.40. Only merge-gate
+                # candidates make the two coincide.
+                scalars["CANDIDATE_FIRMWARE_VERSION"] = str(wanted[0]["firmwareVersion"])
+
+if "CANDIDATE_FIRMWARE_VERSION" not in scalars:
+    problems.append("firmware: no version resolved for this board")
 
 if problems:
     print("\n".join(f"   {problem}" for problem in problems), file=sys.stderr)
@@ -465,6 +472,8 @@ if problems:
 
 for variable, path in resolved.items():
     print(f"{variable}={shlex.quote(str(path))}")
+for variable, value in scalars.items():
+    print(f"{variable}={shlex.quote(value)}")
 PY
 )" || rehearsal::die 'candidate is incomplete or corrupted'
   eval "$resolved"
