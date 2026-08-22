@@ -18,6 +18,12 @@ assert_not_contains() {
   [[ "$1" != *"$2"* ]] || die "$3"
 }
 
+assert_before() {
+  local text="$1" first="$2" second="$3" message="$4"
+  local prefix="${text%%"$first"*}"
+  [[ "$prefix" != "$text" && "$prefix" != *"$second"* ]] || die "$message"
+}
+
 main() {
   [[ -f "$CANDIDATE_WORKFLOW" ]] || die "candidate workflow is missing"
   [[ -f "$PUBLISH_WORKFLOW" ]] || die "reusable publish workflow is missing"
@@ -69,6 +75,10 @@ main() {
     "a later approval must never cancel an active publication"
   assert_contains "$publish" "pattern: vibetv-release-candidate*" \
     "publish gate must consume artifacts from the same workflow run"
+  assert_before "$publish" \
+    "Checkout the exact candidate source before staging assets" \
+    "Download the approved candidate payload" \
+    "Production checkout must happen before staging the validated payload"
   assert_contains "$publish" "validate-release-publish-gate.py prepare" \
     "publish gate must validate the immutable candidate and result"
   assert_contains "$publish" "gh release create" \

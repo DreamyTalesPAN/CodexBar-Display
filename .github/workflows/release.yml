@@ -57,6 +57,12 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Checkout the exact candidate source before staging assets
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
       - name: Download the approved candidate payload
         uses: actions/download-artifact@v4
         with:
@@ -116,12 +122,6 @@ jobs:
             --title "v${VERSION}" \
             --generate-notes \
             --latest
-
-      - name: Checkout the exact published source
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.identity.outputs.source_sha }}
-          persist-credentials: false
 
       - name: Download the public release assets
         env:
