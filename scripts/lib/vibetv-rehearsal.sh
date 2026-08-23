@@ -360,6 +360,19 @@ rehearsal::fetch_candidate() {
     [[ -n "$CANDIDATE_MANIFEST" ]] || rehearsal::die "$artifact carries no candidate-manifest.json"
   fi
 
+  if [[ "$REHEARSAL_MAIN" == 1 ]]; then
+    local result="$cache/candidate-result/candidate-result.json"
+    if [[ ! -f "$result" ]]; then
+      mkdir -p "$(dirname "$result")"
+      gh run download "$REHEARSAL_RUN_ID" --repo "$REHEARSAL_REPOSITORY" \
+        -n vibetv-release-candidate-result -D "$(dirname "$result")" \
+        || rehearsal::die "candidate run $REHEARSAL_RUN_ID has no successful automated result"
+    fi
+    python3 "$ROOT/scripts/validate-hardware-canary.py" candidate-result \
+      --candidate-dir "$cache" --result "$result" >/dev/null \
+      || rehearsal::die "candidate run $REHEARSAL_RUN_ID did not pass its automated matrix"
+  fi
+
   CANDIDATE_SHA="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["sourceSha"])' "$CANDIDATE_MANIFEST")"
   CANDIDATE_VERSION="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$CANDIDATE_MANIFEST")"
 
@@ -490,12 +503,23 @@ rehearsal::resolve_run_id() {
   if [[ "$REHEARSAL_MAIN" == 1 ]]; then
     rehearsal::main_sha >/dev/null
     rehearsal::info "main is at ${REHEARSAL_MAIN_SHA:0:12}"
-    REHEARSAL_RUN_ID="$(gh run list --repo "$REHEARSAL_REPOSITORY" \
-      --workflow vibetv-release-candidate.yml --status success --limit 20 \
+    local run_id artifact_names
+    while IFS= read -r run_id; do
+      [[ -n "$run_id" ]] || continue
+      artifact_names="$(gh api \
+        "repos/$REHEARSAL_REPOSITORY/actions/runs/$run_id/artifacts" \
+        --jq '.artifacts[].name' 2>/dev/null || true)"
+      if grep -Fx vibetv-release-candidate <<<"$artifact_names" >/dev/null &&
+        grep -Fx vibetv-release-candidate-result <<<"$artifact_names" >/dev/null; then
+        REHEARSAL_RUN_ID="$run_id"
+        break
+      fi
+    done < <(gh run list --repo "$REHEARSAL_REPOSITORY" \
+      --workflow vibetv-release-candidate.yml --limit 20 \
       --json databaseId,headSha \
-      --jq "[.[] | select(.headSha == \"$REHEARSAL_MAIN_SHA\")][0].databaseId" 2>/dev/null || true)"
+      --jq ".[] | select(.headSha == \"$REHEARSAL_MAIN_SHA\") | .databaseId" 2>/dev/null || true)
     [[ -n "$REHEARSAL_RUN_ID" && "$REHEARSAL_RUN_ID" != null ]] || rehearsal::die \
-      "no successful CODEX Test VibeTV Release Candidate run for main ${REHEARSAL_MAIN_SHA:0:12}; dispatch that workflow for this commit first"
+      "no CODEX Prepare and Release VibeTV candidate for main ${REHEARSAL_MAIN_SHA:0:12}; dispatch that workflow for this commit first"
     return 0
   fi
 

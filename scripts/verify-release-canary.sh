@@ -8,18 +8,18 @@ set -euo pipefail
 
 VERSION=""
 BASE_URL="https://app.vibetv.shop"
-FIRMWARE_CONFIG="release/firmware-versions.json"
+FIRMWARE_CONFIG=""
 TIMEOUT_SECONDS=600
 RETRY_SLEEP_SECONDS=30
 
 usage() {
   cat >&2 <<'EOF'
-usage: verify-release-canary.sh --version <x.y.z> [options]
+usage: verify-release-canary.sh --version <x.y.z> --firmware-config <path> [options]
 
 options:
   --version <x.y.z>          published Mac App release version (no leading v)
   --base-url <url>           hosted Control Center base URL (default https://app.vibetv.shop)
-  --firmware-config <path>   firmware versions config (default release/firmware-versions.json)
+  --firmware-config <path>   exact published candidate firmware manifest
   --timeout <seconds>        total retry budget per check (default 600)
 EOF
   exit 2
@@ -38,6 +38,10 @@ done
 VERSION="${VERSION#v}"
 if [[ -z "${VERSION}" ]]; then
   usage
+fi
+if [[ -z "${FIRMWARE_CONFIG}" ]]; then
+  echo "error: --firmware-config is required" >&2
+  exit 2
 fi
 if [[ ! -f "${FIRMWARE_CONFIG}" ]]; then
   echo "error: firmware config not found: ${FIRMWARE_CONFIG}" >&2
