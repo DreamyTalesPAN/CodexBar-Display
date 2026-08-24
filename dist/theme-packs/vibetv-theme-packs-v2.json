@@ -6,46 +6,46 @@
       "id": "claude-creature",
       "title": "Claude Creature",
       "usage": "live",
-      "version": "1.2.0",
-      "themeRev": 5,
-      "themeSpecPath": "/themes/u/claude--5-ef8ada.json",
+      "version": "1.2.1",
+      "themeRev": 6,
+      "themeSpecPath": "/themes/u/claude--6-546f9e.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-claude-creature-v1.2.0.zip",
-      "sha256": "ea77f42e3c78afd8253cfcfeaefcb2bf0bb882715ef82cc18c65d15ad8cf6187",
-      "bytes": 3347
+      "downloadAsset": "vibetv-theme-claude-creature-v1.2.1.zip",
+      "sha256": "b040090eaf8dd6db99a0704bbe94214be18a1e1a949f9058a33bfd2d0359597b",
+      "bytes": 3343
     },
     {
       "id": "clippy",
       "title": "Clippy",
       "usage": "live",
-      "version": "1.1.2",
-      "themeRev": 4,
-      "themeSpecPath": "/themes/u/clippy-4-7eb2b0.json",
+      "version": "1.1.3",
+      "themeRev": 5,
+      "themeSpecPath": "/themes/u/clippy-5-4f3746.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-clippy-v1.1.2.zip",
-      "sha256": "fbce61452ae633a8f9b8d5f76a31518741699d021feb871a9aee20835a91ed15",
-      "bytes": 18642
+      "downloadAsset": "vibetv-theme-clippy-v1.1.3.zip",
+      "sha256": "c1a8cbfc7f222d2250bca8a93915a6f73b338cdd4f81ce52eb40ded6473033a6",
+      "bytes": 18640
     },
     {
       "id": "mini-classic",
       "title": "Mini Classic",
       "usage": "live",
-      "version": "1.1.3",
-      "themeRev": 5,
-      "themeSpecPath": "/themes/u/mini-cl-5-14d68f.json",
+      "version": "1.1.4",
+      "themeRev": 6,
+      "themeSpecPath": "/themes/u/mini-cl-6-024b0e.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-mini-classic-v1.1.3.zip",
-      "sha256": "1d89c5d8a09ec560e61ee0a24c9b9da64f8d70b04e99ab13819900f8d7d784ae",
-      "bytes": 18502
+      "downloadAsset": "vibetv-theme-mini-classic-v1.1.4.zip",
+      "sha256": "b0a24d1caaf73b7e801962ea165e6ee425cf7da92482dae8556e1e3c610e4df3",
+      "bytes": 18504
     },
     {
       "id": "night-clock",
@@ -82,16 +82,16 @@
       "id": "synthwave",
       "title": "Synthwave",
       "usage": "live",
-      "version": "1.1.2",
-      "themeRev": 4,
-      "themeSpecPath": "/themes/u/synthwa-4-d3ff8f.json",
+      "version": "1.1.3",
+      "themeRev": 5,
+      "themeSpecPath": "/themes/u/synthwa-5-0f760a.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
       ],
-      "downloadAsset": "vibetv-theme-synthwave-v1.1.2.zip",
-      "sha256": "088632f0de6cc588b49061a4c020580b94290db27dced6eae703486ee10d275c",
-      "bytes": 1587
+      "downloadAsset": "vibetv-theme-synthwave-v1.1.3.zip",
+      "sha256": "70c4382b601043f6c25f26415bae0d4308cbb1478cfc8dab7ac1a1349aee5df2",
+      "bytes": 1585
     },
     {
       "id": "token-fire",

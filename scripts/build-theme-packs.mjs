@@ -74,15 +74,27 @@ for (const theme of themeDirs) {
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
     throw new Error(`theme ${manifest.id} needs a SemVer version`);
   }
+  const specRaw = await readFile(
+    path.join(theme.dir, manifest.themeSpec?.file || "theme.json"),
+    "utf8",
+  );
+  if (usage === "live" && !usesLabelBinding(specRaw)) {
+    throw new Error(
+      `theme ${manifest.id} has no label binding; the firmware would push the update notice ` +
+        `into the 24px overlay bar instead of the theme, and the provider line would render the ` +
+        `lowercased provider id. Bind the provider line to {label} (compact "l").`,
+    );
+  }
   const zipName = `vibetv-theme-${manifest.id}-v${version}.zip`;
   const zipPath = path.join(distRoot, zipName);
   const zipBytes = await buildImmutableZip(theme.dir, manifest.id, zipPath);
+  const spec = JSON.parse(specRaw);
   catalog.themes.push({
     id: manifest.id,
     title: manifest.name || manifest.id,
     usage,
     version,
-    themeRev: await themeRevFromManifest(manifest),
+    themeRev: Number(spec.rev || spec.themeRev || 1),
     themeSpecPath: manifest.themeSpec?.path,
     requiresFirmware: manifest.minFirmware,
     requiredCapabilities: manifest.requiredCapabilities,
@@ -171,14 +183,12 @@ async function listPackFiles(root) {
   }
 }
 
-async function themeRevFromManifest(manifest) {
-  const specPath = path.join(sourceRoot, manifest.id, manifest.themeSpec?.file || "theme.json");
-  try {
-    const spec = JSON.parse(await readFile(specPath, "utf8"));
-    return Number(spec.rev || spec.themeRev || 1);
-  } catch {
-    return 1;
-  }
+// Mirrors core::ThemeSpecUsesBinding(raw, "label", "l") in
+// firmware_shared/codexbar_display_core.h. That substring check is what decides
+// whether the firmware renders the update notice inside the theme or falls back
+// to the overlay bar, so the guard has to ask the question the same way.
+function usesLabelBinding(specRaw) {
+  return specRaw.includes("label") || specRaw.includes('"l"');
 }
 
 async function writeCatalog(catalog) {

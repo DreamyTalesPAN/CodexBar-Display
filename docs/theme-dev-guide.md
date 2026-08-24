@@ -34,10 +34,11 @@ Companion.
 - Use `CBA1` animated sprites for character animation and state animation.
 - Make the main background full-screen at 240x240. If the design uses an inset panel or window, include the surrounding background in the background asset instead of leaving the display uncovered.
 - Keep ThemeSpec primitives for dynamic content: usage bars, percentages, reset time, provider identity, time, date, and state-dependent asset selection.
-- Use `{provider}` for provider identity. Never hardcode `VibeTV`, `Codex`, or another provider name into a shipped theme; the same pack must render the active provider correctly.
+- Never hardcode `VibeTV`, `Codex`, or another provider name into a shipped theme; the same pack must render the active provider correctly. Bind the provider line to `{label}` in a live theme and to `{provider}` in a screensaver.
 - Give dynamic provider and usage-window text an explicit width and use `fit: "shrink"` (`ft: "shrink"` in compact specs). Set `fontSize` to the largest size the lane can hold vertically; firmware and previews then choose the largest integer size that also fits the live text horizontally.
 - Keep units and suffixes in theme text. When current quota values are unavailable, session/weekly bindings become `??`, reset templates become `Reset unavailable`, and progress bindings keep their last numeric fill (or zero on a cold start).
-- Treat `{label}` / `label` as the firmware update-notice slot, not as the provider slot. Firmware may replace it with `Update available` and `Open VibeTV Mac App`; keep provider identity in its own `{provider}` binding. If a theme has no label binding, the notice may use a temporary 24px edge overlay, so keep at least one horizontal edge free of animated GIF/sprite primitives when possible.
+- Give every live theme exactly one `{label}` / `l` binding for the provider line. It carries the provider display name, and it is the firmware update-notice slot: when an update is available the firmware rotates that text through `Update available` and `Open VibeTV Mac App`, so do not reserve a separate bar for this. A live theme without a label binding instead gets a temporary 24px edge overlay, so keep at least one horizontal edge free of animated GIF/sprite primitives when possible.
+- Know the difference between the two bindings before choosing one. On the wire `provider` is the lowercased provider key (`codex`) and `label` is the display name (`Codex`), so `{provider}` on a provider line renders lowercase. Screensavers still use `{provider}`: the update notice must not take over the screensaver.
 - Keep all primitives that can change at runtime inside stable bounds. Text without a width is allowed, but the firmware treats it conservatively up to the right display edge for partial render safety.
 - Combine many small decorative rects into one sprite asset.
 - Combine static text labels into a sprite when they do not need to change.
@@ -60,8 +61,8 @@ Companion.
 - Do not put large static scenes into JSON `pixels` unless there is a specific reason. Use a sprite file.
 - Do not use animated repaint work for static art.
 - Do not add new primitive types when an existing streamed asset can solve the same visual problem.
-- Do not hardcode a provider or product name where `{provider}` belongs.
-- Do not use `{label}` as a provider substitute; it is reserved for firmware update notices.
+- Do not hardcode a provider or product name where a provider binding belongs.
+- Do not replace a live theme's `{label}` binding with `{provider}`. That silently removes the update-notice slot and renders the lowercased provider id instead of the display name. `node scripts/build-theme-packs.mjs` rejects it.
 - Do not quantize a reference by independently snapping every RGB channel to large intervals. That creates posterized shadows, excessive contrast, and visible banding in pixel art.
 - Do not judge a palette only from a small browser thumbnail. Inspect the 240x240 render pack and the final-size Theme Studio preview.
 - Do not ship a theme only because it looks right in Theme Studio. The hardware result is the source of truth.
@@ -119,21 +120,23 @@ Use long bindings in source themes when readability matters:
   "x": 112,
   "y": 56,
   "w": 120,
-  "v": "{provider}",
+  "v": "{label}",
   "ft": "shrink",
   "al": "center"
 }
 ```
 
-Common live bindings include `{provider}`, `{reset}`, `{usageMode}`,
+Common live bindings include `{label}`, `{provider}`, `{reset}`, `{usageMode}`,
 `{usageSlot1Label}`, `{usageSlot1Reset}`, `{usageSlot1Percent}`, and their
 slot-2 equivalents. Compact binding keys are supported for shipped specs, but
 the meaning must remain the same; a compact key is not permission to invent a
 provider-specific fallback.
 
-Preview data is deliberately neutral example data. A preview proving that
-`{provider}` renders only proves the binding and geometry; it does not prove
+Preview data is deliberately neutral example data. A preview proving that the
+provider line renders only proves the binding and geometry; it does not prove
 that a specific provider is connected or that the hardware can render the pack.
+The preview also never rotates the update notice, so it cannot show whether the
+notice lands in the theme or in the overlay bar.
 
 ## Generate and Validate the Pack
 
