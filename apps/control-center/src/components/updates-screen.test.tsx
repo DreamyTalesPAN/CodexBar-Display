@@ -9,6 +9,39 @@ import { UpdatesScreen } from "./updates-screen";
 // states. The installed version must come from device truth, never from the
 // update job result.
 describe("UpdatesScreen VibeTV update card", () => {
+  it("tells the customer to wait during the update-owned reboot", () => {
+    const html = renderToStaticMarkup(
+      <UpdatesScreen
+        companionStatus="online"
+        device={{
+          connected: false,
+          board: "esp8266-smalltv-st7789",
+          firmware: "1.0.39",
+        }}
+        firmwareUpdate={{
+          checkedAt: "2026-08-24T10:00:00Z",
+          installedFirmware: "1.0.39",
+          latestFirmware: "1.0.40",
+          updateAvailable: true,
+          status: "update_available",
+        }}
+        updateStatus={{
+          phase: "installing",
+          stage: "rediscovering",
+          startedAt: "2026-08-24T10:01:00Z",
+          message: "Finding VibeTV again.",
+          logs: [],
+        }}
+      />,
+    );
+
+    expect(html).toContain("VibeTV is restarting");
+    expect(html).toContain("Keep VibeTV connected to power and wait");
+    expect(html).toContain("No action is required");
+    expect(html).toContain(">VibeTV is restarting</h2>");
+    expect(html).not.toContain("Reconnect VibeTV");
+  });
+
   it("shows the device-truth installed firmware after a failed update, never the job result", () => {
     // DO NOT weaken this test.
     const html = renderToStaticMarkup(

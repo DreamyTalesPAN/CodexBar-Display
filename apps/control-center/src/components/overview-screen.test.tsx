@@ -38,12 +38,44 @@ describe("OverviewScreen", () => {
           ready: false,
           connectionState: "reconnecting",
         }}
+        firmwareUpdateStatus={{
+          phase: "error",
+          stage: "rediscovering",
+        }}
       />,
     );
 
     expect(html).toContain("VibeTV status");
     expect(html).toContain("Not connected");
+    expect(html).toContain("Reconnect VibeTV to continue");
+    expect(html).not.toContain("VibeTV is restarting");
     expect(html).not.toContain("VibeTV is connected");
+  });
+
+  it("keeps an update-owned reboot distinct from a real disconnect", () => {
+    const html = renderToStaticMarkup(
+      <OverviewScreen
+        companionStatus="online"
+        device={{
+          active: true,
+          connected: false,
+          deviceId: "14799300",
+          paired: true,
+          ready: false,
+          connectionState: "reconnecting",
+        }}
+        firmwareUpdateStatus={{
+          phase: "installing",
+          stage: "rebooting",
+        }}
+      />,
+    );
+
+    expect(html).toContain("VibeTV is restarting");
+    expect(html).toContain("Keep VibeTV connected to power and wait");
+    expect(html).toContain("No action is required");
+    expect(html).not.toContain("Not connected");
+    expect(html).not.toContain("Reconnect VibeTV to continue");
   });
 
   it("does not treat a cached frame as a live connection or display", () => {

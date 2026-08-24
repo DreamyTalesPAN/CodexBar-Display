@@ -61,6 +61,7 @@ export type FirmwareUpdateStatus = {
   logs: string[];
   result?: {
     firmware?: string;
+    observedFirmware?: string;
     target?: string;
     deviceId?: string;
     artifactValidated?: boolean;
@@ -196,7 +197,12 @@ export function UpdatesScreen({
   const companionAvailable =
     companionRelease?.latestVersion || companionRelease?.release || "Checking";
   const pageStatusHeading =
-    macAppCheckFailed || firmwareCheckFailed
+    installingUpdate
+      ? updateStatus?.stage === "rebooting" ||
+        updateStatus?.stage === "rediscovering"
+        ? "VibeTV is restarting"
+        : "Updating VibeTV"
+      : macAppCheckFailed || firmwareCheckFailed
       ? "Update check failed"
       : anyUpdateAvailable
         ? "Update available"
@@ -439,6 +445,9 @@ function InlineUpdateProgress({
   const failed = status.phase === "error";
   const complete = status.phase === "complete";
   const attention = status.phase === "attention";
+  const restarting =
+    status.phase === "installing" &&
+    (status.stage === "rebooting" || status.stage === "rediscovering");
   const progress = clampUpdateProgress(
     failed || complete || attention ? 100 : status.progress,
   );
@@ -448,6 +457,8 @@ function InlineUpdateProgress({
       ? "Firmware current — attention needed"
     : complete
       ? "Update complete"
+      : restarting
+        ? "VibeTV is restarting"
       : "Updating VibeTV";
   const detail = failed
     ? status.error || "Update was not installed."
@@ -458,6 +469,8 @@ function InlineUpdateProgress({
       ? status.result?.firmware
         ? `Firmware ${status.result.firmware} is installed.`
         : "VibeTV is up to date."
+      : restarting
+        ? "Keep VibeTV connected to power and wait. No action is required."
       : status.message ||
         status.logs[status.logs.length - 1] ||
         "Preparing VibeTV update.";

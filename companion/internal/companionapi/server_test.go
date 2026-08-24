@@ -8650,6 +8650,26 @@ func TestFirmwareUpdateAsyncReportsCustomerError(t *testing.T) {
 	}
 }
 
+func TestFirmwareUpdateDiagnosticsRetainFailedPhaseAndObservedFirmware(t *testing.T) {
+	job := firmwareUpdateJob{
+		Phase: "error",
+		Stage: "rediscovering",
+		Result: &firmwareUpdateResult{
+			Firmware:         "1.0.40",
+			ObservedFirmware: "1.0.39",
+		},
+		Error: &apiError{Message: "VibeTV update failed."},
+	}
+
+	detail := firmwareUpdateDiagnosticDetail(job)
+	if !strings.Contains(detail, "rediscovering") || !strings.Contains(detail, "1.0.39") {
+		t.Fatalf("diagnostics lost the failed phase or observed firmware: %q", detail)
+	}
+	if strings.Contains(detail, "1.0.40 is installed") {
+		t.Fatalf("diagnostics rewrote the target as observed firmware: %q", detail)
+	}
+}
+
 func TestFirmwareUpdateAsyncRequiresPowerCycleAfterUnsafeUpload(t *testing.T) {
 	device := newThemeInstallReadyDeviceServer(t)
 	defer device.Close()
