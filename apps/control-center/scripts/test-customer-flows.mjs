@@ -10103,10 +10103,19 @@ async function startVerifiedDmgSetupDownload(
       "VibeTV-Control-Center.dmg",
     "Setup should only expose the verified DMG asset",
   );
-  assert(
-    (await page.getByText(/open the DMG|Applications/i).count()) === 0,
-    "Setup must not explain manual DMG handling to customers",
-  );
+  await page.getByText("Open the downloaded DMG.", { exact: true }).waitFor();
+  await page
+    .getByText(
+      "Drag VibeTV Control Center to Applications and wait for the copy to finish.",
+      { exact: true },
+    )
+    .waitFor();
+  await page
+    .getByText(
+      "Open VibeTV Control Center from Applications. If macOS asks, choose Open.",
+      { exact: true },
+    )
+    .waitFor();
   assert(
     (await page.getByRole("tab", { name: "Agentic setup" }).count()) === 0,
     "Verified DMG setup must hide the Agentic Terminal installer",
