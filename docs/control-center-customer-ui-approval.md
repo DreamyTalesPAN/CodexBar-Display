@@ -1797,3 +1797,22 @@ issue scope, or release permission never implies UI permission.
   2026-08-20. Nothing about the confirmed-loss case changes, and no copy changes.
 - Approved files: `control-center-app.tsx`, `device-recovery-gate.ts`,
   `device-recovery-gate.test.ts`, and this approval record.
+
+## 2026-08-24 — Mandatory theme setup explains temporary readiness
+
+- User approval: Issue #400 was assigned for implementation with the explicit
+  acceptance criteria that mandatory theme setup replace unexplained `Wait`
+  labels with one visible activity indicator and a plain-language reason, keep
+  provider recovery owned by #371 / PR #373, advance automatically to `Install`,
+  and turn a bounded failure into an actionable error.
+- Approved customer-visible result: While VibeTV checks firmware support or
+  confirms its connection and theme-install support, one shared status above
+  the theme list explains that work and shows one spinner. Theme buttons stay
+  disabled but retain `Install` or their concrete blocker such as `Update
+  Needed`; they never read `Wait` in mandatory setup. Firmware install keeps its
+  existing reboot/reconnect progress, provider recovery keeps its separate
+  #371 screen, a completed check exposes enabled `Install` actions
+  automatically, and a terminal readiness error offers `Create support report`.
+- Approved files: `theme-library-screen.tsx`,
+  `theme-library-screen.test.tsx`, `control-center-app.tsx`, and this approval
+  record.

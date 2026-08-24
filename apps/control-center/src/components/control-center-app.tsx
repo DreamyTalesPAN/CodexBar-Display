@@ -3929,9 +3929,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         firmwareUpdateStatus={firmwareUpdateStatus}
         installStatus={themeInstallStatus}
         lastInstall={lastInstall}
+        readinessError={lastError}
         onInstallCustomTheme={installCustomTheme}
         onInstallFirmwareUpdate={installFirmwareUpdate}
         onInstallTheme={installTheme}
+        onCreateSupportReport={loadSupportDiagnostics}
         onSelectTheme={setSelectedThemeId}
         requestedThemeId={initialThemeId}
         selectedTheme={selectedTheme}
