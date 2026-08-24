@@ -65,6 +65,21 @@ candidate -- that is what a release is validated with. `--pr <number>` takes an
 open pull request head. Both verify the candidate's `sourceSha` against what you
 asked for before anything is installed.
 
+For `--main`, first dispatch the owner-restricted
+`CODEX Prepare and Release VibeTV` workflow with the final Mac App version and
+the final firmware choice. The rehearsal resolves that exact `main` SHA from
+the immutable `vibetv-release-candidate` artifact and requires its successful
+`vibetv-release-candidate-result`. The workflow run may still be `in_progress`
+while it waits for the `Production` approval; do not filter it to completed or
+successful runs. Rehearsing must not approve `Production`, dispatch a separate
+publish workflow, rebuild the candidate, or create a tag. After the user
+confirms that this exact candidate was tested, a later chat releases the same
+bytes by approving the waiting `Production` deployment.
+
+For `--pr`, continue to use the newest successful `CODEX Test VibeTV Merge`
+candidate for that open pull request. It is test-only and cannot be promoted to
+a release.
+
 Never identify a candidate from a workflow run's head branch or head SHA. The
 merge gate is dispatched from `main`, so every run of it says `main` while
 building a pull request head. `--run-id` on its own rehearses whatever that run

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate exact VibeTV release evidence and freeze publishable assets."""
+"""Validate one immutable VibeTV candidate and freeze its publishable assets."""
 
 from __future__ import annotations
 
@@ -19,9 +19,6 @@ SEMVER = re.compile(
 )
 SHA1 = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
-CANDIDATE_WORKFLOW = ".github/workflows/vibetv-release-candidate.yml"
-HARDWARE_WORKFLOW = ".github/workflows/record-hardware-canary.yml"
-MAX_EVIDENCE_AGE = dt.timedelta(days=7)
 
 
 class GateError(ValueError):
@@ -92,36 +89,6 @@ def exact_identity(
     for key, value in expected.items():
         if str(body.get(key, "")) != value:
             fail(f"{label} {key} does not match the requested candidate")
-
-
-def validate_run(
-    run: dict,
-    workflow: dict,
-    *,
-    run_id: str,
-    repository: str,
-    source_sha: str,
-    workflow_path: str,
-    label: str,
-) -> None:
-    if str(run.get("id", "")) != run_id:
-        fail(f"{label} run id does not match the dispatch input")
-    if run.get("conclusion") != "success":
-        fail(f"{label} workflow conclusion is not success")
-    if run.get("event") != "workflow_dispatch":
-        fail(f"{label} run was not manually dispatched")
-    if run.get("head_sha") != source_sha or run.get("head_branch") != "main":
-        fail(f"{label} run is not for the current main SHA")
-    run_repository = run.get("repository")
-    if (
-        not isinstance(run_repository, dict)
-        or run_repository.get("full_name") != repository
-    ):
-        fail(f"{label} run repository does not match")
-    if str(run.get("workflow_id", "")) != str(workflow.get("id", "")):
-        fail(f"{label} run workflow id does not match its workflow metadata")
-    if workflow.get("path") != workflow_path:
-        fail(f"{label} workflow path must be {workflow_path}")
 
 
 def safe_artifact(candidate_dir: Path, relative: object) -> Path:
@@ -418,63 +385,6 @@ def validate_result(
     return result
 
 
-def validate_hardware(
-    path: Path,
-    *,
-    repository: str,
-    source_sha: str,
-    version: str,
-    candidate_run_id: str,
-    manifest_path: Path,
-    hashes: dict[str, str],
-    now: dt.datetime,
-) -> dict:
-    evidence = read_json(path, "hardware evidence")
-    required(
-        evidence,
-        (
-            "schemaVersion",
-            "repository",
-            "sourceSha",
-            "version",
-            "candidateRunId",
-            "candidateManifestSha256",
-            "artifactHashes",
-            "timestamps",
-            "result",
-        ),
-        "hardware evidence",
-    )
-    if evidence["schemaVersion"] != 1:
-        fail("hardware evidence schemaVersion must be 1")
-    if evidence["result"] != "success":
-        fail("hardware evidence result must be success")
-    exact_identity(
-        evidence,
-        repository=repository,
-        source_sha=source_sha,
-        version=version,
-        candidate_run_id=candidate_run_id,
-        label="hardware evidence",
-    )
-    if evidence["candidateManifestSha256"] != digest(manifest_path):
-        fail("hardware candidate manifest sha256 does not match")
-    if evidence["artifactHashes"] != hashes:
-        fail("hardware artifact hashes do not match candidate manifest")
-    timestamps = evidence["timestamps"]
-    if not isinstance(timestamps, dict):
-        fail("hardware timestamps must be an object")
-    started = timestamp(timestamps.get("startedAt"), "hardware startedAt")
-    finished = timestamp(timestamps.get("finishedAt"), "hardware finishedAt")
-    if started > finished:
-        fail("hardware evidence finishedAt precedes startedAt")
-    if finished > now:
-        fail("hardware evidence finishedAt is in the future")
-    if now - finished > MAX_EVIDENCE_AGE:
-        fail("hardware evidence is older than 7 days")
-    return evidence
-
-
 def copy_artifacts(
     candidate_dir: Path, copy_dir: Path, publish_artifacts: list[dict]
 ) -> None:
@@ -488,48 +398,102 @@ def copy_artifacts(
         shutil.copy2(source, destination)
 
 
-def preflight(args: argparse.Namespace) -> None:
-    if not SEMVER.fullmatch(args.version):
-        fail("release version must be SemVer x.y.z without a leading v")
+def parse_semver(value: object, label: str) -> tuple[int, int, int]:
+    match = SEMVER.fullmatch(str(value))
+    if not match:
+        fail(f"{label} must be SemVer x.y.z")
+    return tuple(int(part) for part in match.groups())
+
+
+def resolve_versions(args: argparse.Namespace) -> None:
+    if args.firmware_mode not in {"unchanged", "bump"}:
+        fail("firmware mode must be unchanged or bump")
+    baselines = read_json(args.baseline_manifest, "baseline manifest")
+    try:
+        current_release = baselines["baselines"]["current_public"]["version"]
+    except (KeyError, TypeError):
+        fail("baseline manifest is missing current_public version")
+    if parse_semver(args.release_version, "release version") <= parse_semver(
+        current_release, "current public version"
+    ):
+        fail("release version must be newer than the current public release")
+
+    defaults = read_json(args.defaults, "firmware defaults")
+    public = read_json(args.current_firmware_manifest, "current firmware manifest")
+    public_by_env = {
+        item.get("firmwareEnv"): item
+        for item in public.get("artifacts", [])
+        if isinstance(item, dict)
+    }
+    default_artifacts = defaults.get("artifacts")
+    public_artifacts = public.get("artifacts")
+    if not isinstance(default_artifacts, list) or not default_artifacts:
+        fail("firmware defaults must contain artifacts")
+    if not isinstance(public_artifacts, list) or not public_artifacts:
+        fail("public firmware manifest must contain artifacts")
+    for item in default_artifacts:
+        if not isinstance(item, dict) or not item.get("firmwareEnv"):
+            fail("firmware default artifact is invalid")
+        current = public_by_env.get(item["firmwareEnv"])
+        if not current:
+            fail(f"public firmware is missing {item['firmwareEnv']}")
+        if args.firmware_mode == "bump":
+            version = list(
+                parse_semver(
+                    current.get("firmwareVersion"), "public firmware version"
+                )
+            )
+            version[2] += 1
+            item["firmwareVersion"] = ".".join(str(part) for part in version)
+            item["artifactSource"] = "build"
+
+    if args.firmware_mode == "unchanged":
+        if set(public_by_env) != {
+            item["firmwareEnv"] for item in default_artifacts
+        }:
+            fail("public firmware environments do not match firmware defaults")
+        frozen = []
+        for item in public_artifacts:
+            if not isinstance(item, dict) or not item.get("firmwareEnv"):
+                fail("public firmware artifact is invalid")
+            asset = item.get("asset")
+            if (
+                not isinstance(asset, str)
+                or not asset
+                or Path(asset).name != asset
+                or not SHA256.fullmatch(str(item.get("sha256", "")))
+            ):
+                fail("public firmware artifact has an unsafe asset or invalid sha256")
+            parse_semver(item.get("firmwareVersion"), "public firmware version")
+            frozen.append({**item, "artifactSource": "public"})
+        effective = {
+            "schemaVersion": public.get("schemaVersion", 1),
+            "protocolVersion": public.get("protocolVersion", 1),
+            "artifacts": frozen,
+        }
+    else:
+        effective = defaults
+
+    write_json(Path(args.output), effective)
+    print(json.dumps(effective, sort_keys=True))
+
+
+def prepare(args: argparse.Namespace) -> None:
     if not SHA1.fullmatch(args.source_sha):
         fail("source SHA must be a lowercase 40-character Git SHA")
-    if not args.candidate_run_id.isdigit() or not args.hardware_canary_run_id.isdigit():
-        fail("run ids must contain digits only")
-    now = (
-        timestamp(args.now, "validation time")
-        if args.now
-        else dt.datetime.now(dt.timezone.utc)
-    )
-
-    candidate_run = read_json(args.candidate_run, "candidate run")
-    candidate_workflow = read_json(args.candidate_workflow, "candidate workflow")
-    validate_run(
-        candidate_run,
-        candidate_workflow,
-        run_id=args.candidate_run_id,
-        repository=args.repository,
-        source_sha=args.source_sha,
-        workflow_path=CANDIDATE_WORKFLOW,
-        label="candidate",
-    )
-    hardware_run = read_json(args.hardware_run, "hardware run")
-    hardware_workflow = read_json(args.hardware_workflow, "hardware workflow")
-    validate_run(
-        hardware_run,
-        hardware_workflow,
-        run_id=args.hardware_canary_run_id,
-        repository=args.repository,
-        source_sha=args.source_sha,
-        workflow_path=HARDWARE_WORKFLOW,
-        label="hardware",
-    )
+    if not args.candidate_run_id.isdigit():
+        fail("candidate run id must contain digits only")
 
     candidate_dir = Path(args.candidate_dir).resolve()
+    manifest = read_json(candidate_dir / "candidate-manifest.json", "candidate manifest")
+    version = str(manifest.get("version", ""))
+    if not SEMVER.fullmatch(version):
+        fail("candidate version must be SemVer x.y.z without a leading v")
     manifest, hashes, publish_artifacts = validate_candidate(
         candidate_dir,
         repository=args.repository,
         source_sha=args.source_sha,
-        version=args.version,
+        version=version,
         candidate_run_id=args.candidate_run_id,
     )
     result_path = Path(args.candidate_result)
@@ -537,20 +501,9 @@ def preflight(args: argparse.Namespace) -> None:
         result_path,
         repository=args.repository,
         source_sha=args.source_sha,
-        version=args.version,
+        version=version,
         candidate_run_id=args.candidate_run_id,
         hashes=hashes,
-    )
-    evidence_path = Path(args.hardware_evidence)
-    validate_hardware(
-        evidence_path,
-        repository=args.repository,
-        source_sha=args.source_sha,
-        version=args.version,
-        candidate_run_id=args.candidate_run_id,
-        manifest_path=candidate_dir / "candidate-manifest.json",
-        hashes=hashes,
-        now=now,
     )
 
     copy_dir = Path(args.copy_dir)
@@ -559,16 +512,13 @@ def preflight(args: argparse.Namespace) -> None:
         "schemaVersion": 1,
         "repository": args.repository,
         "sourceSha": args.source_sha,
-        "version": args.version,
-        "tag": f"v{args.version}",
+        "version": version,
+        "tag": f"v{version}",
         "candidateRunId": args.candidate_run_id,
-        "hardwareCanaryRunId": args.hardware_canary_run_id,
         "candidateManifestSha256": digest(
             candidate_dir / "candidate-manifest.json"
         ),
         "candidateResultSha256": digest(result_path),
-        "hardwareEvidenceSha256": digest(evidence_path),
-        "validatedAt": now.isoformat().replace("+00:00", "Z"),
         "artifacts": publish_artifacts,
     }
     write_json(Path(args.output), payload)
@@ -578,23 +528,23 @@ def preflight(args: argparse.Namespace) -> None:
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser()
     commands = root.add_subparsers(dest="command", required=True)
-    command = commands.add_parser("preflight")
+    versions = commands.add_parser("resolve-versions")
+    versions.add_argument("--baseline-manifest", required=True)
+    versions.add_argument("--current-firmware-manifest", required=True)
+    versions.add_argument("--defaults", required=True)
+    versions.add_argument("--release-version", required=True)
+    versions.add_argument("--firmware-mode", required=True)
+    versions.add_argument("--output", required=True)
+    versions.set_defaults(handler=resolve_versions)
+    command = commands.add_parser("prepare")
     command.add_argument("--repository", required=True)
     command.add_argument("--source-sha", required=True)
-    command.add_argument("--version", required=True)
     command.add_argument("--candidate-run-id", required=True)
-    command.add_argument("--candidate-run", required=True)
-    command.add_argument("--candidate-workflow", required=True)
     command.add_argument("--candidate-dir", required=True)
     command.add_argument("--candidate-result", required=True)
-    command.add_argument("--hardware-canary-run-id", required=True)
-    command.add_argument("--hardware-run", required=True)
-    command.add_argument("--hardware-workflow", required=True)
-    command.add_argument("--hardware-evidence", required=True)
-    command.add_argument("--now")
     command.add_argument("--output", required=True)
     command.add_argument("--copy-dir", required=True)
-    command.set_defaults(handler=preflight)
+    command.set_defaults(handler=prepare)
     return root
 
 

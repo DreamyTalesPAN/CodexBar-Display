@@ -2,159 +2,120 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORKFLOW="${ROOT}/.github/workflows/release.yml"
-HARDWARE_WORKFLOW="${ROOT}/.github/workflows/record-hardware-canary.yml"
+CANDIDATE_WORKFLOW="${ROOT}/.github/workflows/vibetv-release-candidate.yml"
+PUBLISH_WORKFLOW="${ROOT}/.github/workflows/release.yml"
 
 die() {
   printf 'error: %s\n' "$*" >&2
   exit 1
 }
 
-job_block() {
-  local job="$1"
-  awk -v job="$job" '
-    $0 == "  " job ":" { in_job = 1; print; next }
-    in_job && $0 ~ /^  [A-Za-z0-9_-]+:/ { exit }
-    in_job { print }
-  ' "$WORKFLOW"
-}
-
-input_block() {
-  local input="$1"
-  awk -v input="$input" '
-    $0 == "      " input ":" { in_input = 1; print; next }
-    in_input && $0 ~ /^      [A-Za-z0-9_-]+:/ { exit }
-    in_input && $0 ~ /^[^ ]/ { exit }
-    in_input { print }
-  ' "$WORKFLOW"
-}
-
 assert_contains() {
-  local haystack="$1"
-  local needle="$2"
-  local message="$3"
-  [[ "$haystack" == *"$needle"* ]] || die "$message"
+  [[ "$1" == *"$2"* ]] || die "$3"
 }
 
 assert_not_contains() {
-  local haystack="$1"
-  local needle="$2"
-  local message="$3"
-  [[ "$haystack" != *"$needle"* ]] || die "$message"
+  [[ "$1" != *"$2"* ]] || die "$3"
+}
+
+assert_before() {
+  local text="$1" first="$2" second="$3" message="$4"
+  local prefix="${text%%"$first"*}"
+  [[ "$prefix" != "$text" && "$prefix" != *"$second"* ]] || die "$message"
 }
 
 main() {
-  [[ -f "$WORKFLOW" ]] || die "release workflow is missing"
-  [[ -f "$HARDWARE_WORKFLOW" ]] || die "hardware canary recorder workflow is missing"
-  local workflow preflight publish verify
-  workflow="$(cat "$WORKFLOW")"
-  local hardware_workflow
-  hardware_workflow="$(cat "$HARDWARE_WORKFLOW")"
-  preflight="$(job_block preflight)"
-  publish="$(job_block publish-release)"
-  verify="$(job_block verify-public-release)"
+  [[ -f "$CANDIDATE_WORKFLOW" ]] || die "candidate workflow is missing"
+  [[ -f "$PUBLISH_WORKFLOW" ]] || die "reusable publish workflow is missing"
 
-  assert_contains "$workflow" "name: CODEX Publish VibeTV Release" \
-    "publish workflow must use the CODEX release name"
-  assert_contains "$workflow" "workflow_dispatch:" \
-    "publish workflow must be manually dispatched"
-  assert_not_contains "$workflow" "push:" \
-    "a pushed tag or branch must never trigger publication"
-  assert_contains "$hardware_workflow" "evidence_base64:" \
-    "hardware canary recording must accept explicit evidence"
-  assert_contains "$hardware_workflow" "validate-hardware-canary.py" \
-    "hardware canary recording must validate evidence against the candidate"
-  assert_contains "$hardware_workflow" "statuses: write" \
-    "hardware canary recording must publish a bound commit status"
-  for forbidden in curl pio "POST /update" "POST /frame"; do
-    assert_not_contains "$hardware_workflow" "$forbidden" \
-      "hardware canary recording must not perform device actions: ${forbidden}"
-  done
-  for input in version candidate_run_id hardware_canary_run_id; do
-    local block
-    block="$(input_block "$input")"
-    assert_contains "$block" "required: true" \
-      "input ${input} must be required"
-    assert_contains "$block" "type: string" \
-      "input ${input} must use an explicit string contract"
-  done
+  local candidate publish
+  candidate="$(cat "$CANDIDATE_WORKFLOW")"
+  publish="$(cat "$PUBLISH_WORKFLOW")"
 
-  assert_contains "$workflow" "contents: read" \
-    "workflow default permissions must be read-only"
-  assert_contains "$workflow" "actions: read" \
-    "preflight needs read-only Actions access"
-  assert_not_contains "$preflight" "contents: write" \
-    "preflight must not receive repository write access"
-  assert_contains "$preflight" "github.ref == 'refs/heads/main'" \
-    "preflight must run from trusted main"
-  assert_contains "$preflight" "gh run download" \
-    "preflight must download evidence by run id"
-  for artifact in \
-    vibetv-release-candidate \
-    vibetv-release-candidate-result \
-    vibetv-hardware-canary
-  do
-    assert_contains "$preflight" "--name ${artifact}" \
-      "preflight must download ${artifact}"
-  done
-  assert_contains "$preflight" ".github/workflows/vibetv-release-candidate.yml" \
-    "preflight must bind the candidate run to its trusted workflow"
-  assert_contains "$preflight" ".github/workflows/record-hardware-canary.yml" \
-    "preflight must bind the hardware run to its trusted workflow"
-  assert_contains "$preflight" "validate-release-publish-gate.py preflight" \
-    "preflight must use the tested JSON validator"
-  assert_contains "$preflight" "git/ref/tags/v" \
-    "preflight must reject an existing release tag"
-  assert_contains "$preflight" "releases/tags/v" \
-    "preflight must reject an existing GitHub Release"
-  assert_contains "$preflight" "name: vibetv-validated-publish" \
-    "preflight must upload one validated internal publish artifact"
+  assert_contains "$candidate" "name: CODEX Prepare and Release VibeTV" \
+    "candidate workflow must be the single operator entrypoint"
+  assert_contains "$candidate" "workflow_dispatch:" \
+    "candidate workflow must remain manually dispatched"
+  assert_contains "$candidate" "firmware:" \
+    "candidate workflow must choose unchanged or bumped firmware before build"
+  assert_contains "$candidate" "options:" \
+    "firmware mode must use an explicit choice contract"
+  assert_contains "$candidate" "- unchanged" \
+    "candidate workflow must support unchanged firmware"
+  assert_contains "$candidate" "- bump" \
+    "candidate workflow must support patch-bumped firmware"
+  assert_contains "$candidate" "uses: ./.github/workflows/release.yml" \
+    "successful candidate tests must continue into the reusable publish gate"
+  assert_contains "$candidate" "needs: aggregate-result" \
+    "publication must wait for the immutable candidate result"
+  assert_contains "$candidate" 'select(.type == "required_reviewers")' \
+    "candidate preparation must refuse an unprotected Production environment"
+  assert_contains "$candidate" "actions: read" \
+    "candidate workflow must be allowed to inspect the Production environment"
+  assert_contains "$candidate" "current_public.firmware" \
+    "unchanged mode must freeze the exact public firmware bytes"
+  assert_contains "$candidate" '[[ "$artifact_source" == public ]]' \
+    "unchanged mode must copy public firmware instead of rebuilding it"
+  assert_contains "$candidate" "public firmware checksum mismatch" \
+    "copied public firmware must be verified before candidate packaging"
+  assert_contains "$candidate" "retention-days: 30" \
+    "candidate artifacts must survive the full approval window"
 
+  assert_contains "$publish" "name: CODEX Publish Prepared VibeTV Candidate" \
+    "publish workflow must use the stable CODEX name"
+  assert_contains "$publish" "workflow_call:" \
+    "publish workflow must only be called by the candidate run"
+  assert_not_contains "$publish" "workflow_dispatch:" \
+    "publish workflow must not require a second manual dispatch"
   assert_contains "$publish" "environment: Production" \
-    "write access must remain behind Production approval"
-  assert_contains "$publish" "contents: write" \
-    "publish job alone needs repository write access"
-  assert_contains "$publish" "name: vibetv-validated-publish" \
-    "publish job must download only the validated internal artifact"
+    "public release must wait for Production approval"
+  assert_contains "$publish" "group: codex-vibetv-production-release" \
+    "all release versions must share one publication lock"
+  assert_contains "$publish" "cancel-in-progress: false" \
+    "a later approval must never cancel an active publication"
+  assert_contains "$publish" "pattern: vibetv-release-candidate*" \
+    "publish gate must consume artifacts from the same workflow run"
+  assert_before "$publish" \
+    "Checkout the exact candidate source before staging assets" \
+    "Download the approved candidate payload" \
+    "Production checkout must happen before staging the validated payload"
+  assert_contains "$publish" "validate-release-publish-gate.py prepare" \
+    "publish gate must validate the immutable candidate and result"
   assert_contains "$publish" "gh release create" \
-    "publish job must create the tag and release"
+    "approved candidate must create exactly one GitHub release"
   assert_contains "$publish" '--target "${SOURCE_SHA}"' \
-    "release tag must target the validated source SHA"
-  assert_contains "$publish" "git/ref/heads/main" \
-    "publish job must re-read current main after Production approval"
-  assert_contains "$publish" 'CURRENT_MAIN_SHA' \
-    "publish job must compare current main with the validated source SHA"
-  assert_not_contains "$publish" "actions/checkout" \
-    "publish job must not checkout or rebuild source"
-  assert_not_contains "$publish" "go build" \
-    "publish job must not rebuild Go assets"
-  assert_not_contains "$publish" "npm " \
-    "publish job must not rebuild web assets"
-  assert_not_contains "$publish" "platformio" \
-    "publish job must not rebuild firmware"
-  assert_not_contains "$publish" "git tag" \
-    "publish job must not create an unvalidated local tag"
-  assert_not_contains "$publish" "git push" \
-    "publish job must not push a manually assembled tag"
+    "release tag must target the candidate source SHA"
+  assert_contains "$publish" "releases/latest" \
+    "Production approval must reject a candidate older than the current public release"
+  assert_contains "$publish" "is no longer newer than public" \
+    "stale waiting candidates must fail before changing the latest release"
+  assert_contains "$publish" "git/ref/tags/v" \
+    "publication must reject an existing tag before creating a release"
+  assert_contains "$publish" "releases/tags/v" \
+    "publication must reject an existing release before creating a release"
+  assert_contains "$publish" "byte-identical to the candidate" \
+    "public verification must compare every release asset with the candidate"
+  assert_contains "$publish" "verify-release-canary.sh" \
+    "public endpoints must be verified after release"
+  assert_contains "$publish" "firmware-manifest.json" \
+    "public canary must use the candidate's final firmware versions"
+  assert_contains "$(cat "$ROOT/scripts/verify-release-canary.sh")" \
+    'error: --firmware-config is required' \
+    "release canary must never fall back to stale repository firmware versions"
+  assert_not_contains "$publish" "hardware_canary" \
+    "normal release path must not require separate hardware evidence"
+  assert_not_contains "$publish" "git/ref/heads/main" \
+    "main moving after candidate creation must not invalidate tested bytes"
+  for forbidden in "go build" "npm ci" "pio run" "git tag" "git push"; do
+    assert_not_contains "$publish" "$forbidden" \
+      "publish workflow must not rebuild or manually push: ${forbidden}"
+  done
 
-  assert_contains "$verify" "needs: publish-release" \
-    "public verification must wait for publication"
-  assert_contains "$verify" "Download validated candidate payload" \
-    "public verification must load the exact validated candidate payload"
-  assert_contains "$verify" "gh release download" \
-    "public verification must download the published release assets"
-  assert_contains "$verify" "byte-identical to the candidate" \
-    "public verification must compare release assets with the candidate"
-  assert_contains "$verify" "hashes" \
-    "public verification must compare SHA-256 hashes"
-  assert_contains "$verify" "verify-release-canary.sh" \
-    "public verification must reuse the existing release canary"
-  assert_not_contains "$verify" "contents: write" \
-    "public verification must remain read-only"
-  [[ "$(grep -cF "contents: write" "$WORKFLOW")" == "1" ]] \
-    || die "only publish-release may receive contents: write"
-
-  [[ "$(grep -cF "gh release create" "$WORKFLOW")" == "1" ]] \
+  [[ "$(grep -cF "contents: write" "$PUBLISH_WORKFLOW")" == "1" ]] \
+    || die "only the Production-gated publish job may write repository contents"
+  [[ "$(grep -cF "group: codex-vibetv-production-release" "$PUBLISH_WORKFLOW")" == "1" ]] \
+    || die "the complete public release and verification path must use one lock"
+  [[ "$(grep -cF "gh release create" "$PUBLISH_WORKFLOW")" == "1" ]] \
     || die "workflow must contain exactly one release creation command"
 
   printf 'release publish workflow contract passed\n'

@@ -287,9 +287,13 @@ curl --fail --silent http://127.0.0.1:47834/__virtual/state > "$OUTPUT/virtual-s
 python3 - "$OUTPUT/virtual-state.json" "$expected_uploads" <<'PY'
 import json, sys
 state = json.load(open(sys.argv[1], encoding="utf-8"))
-if state.get("updateUploads") != int(sys.argv[2]) or state.get("violations") or state.get("framesAccepted", 0) < 1:
+expected_uploads = int(sys.argv[2])
+if state.get("updateUploads") != expected_uploads or state.get("violations") or state.get("framesAccepted", 0) < 1:
     raise SystemExit("candidate companion did not complete raw OTA/render/no-op sequence")
-if not any(event.get("path") == "/update/firmware.raw" for event in state.get("events", [])):
+# A candidate whose firmware matches the baseline uploads nothing -- the outcome
+# asserted above is already_current -- so there is no Raw OTA to find. Demanding
+# one regardless fails every release that ships no new firmware.
+if expected_uploads and not any(event.get("path") == "/update/firmware.raw" for event in state.get("events", [])):
     raise SystemExit("candidate companion did not use Raw OTA port 8081")
 PY
 

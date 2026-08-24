@@ -140,6 +140,21 @@ rehearsal::open_app
 # flow, which is the only thing a warm start is evidence for.
 rehearsal::write_report staged
 
+# The firmware carries its own version and often does not change between two
+# releases. Telling the operator to update it when the candidate ships the
+# firmware the customer already has points at an action the Updates tab will not
+# offer -- exactly the kind of instruction this rehearsal exists to catch.
+if [[ "$CANDIDATE_FIRMWARE_VERSION" == "$PUBLIC_FIRMWARE_VERSION" ]]; then
+  FIRMWARE_STEP="   3. Updates tab: no firmware update is offered. The candidate ships
+      firmware $CANDIDATE_FIRMWARE_VERSION, which this VibeTV already runs."
+  FIRMWARE_EXPECTATION="Expected afterwards: Mac App reports $CANDIDATE_VERSION, firmware stays on
+ $CANDIDATE_FIRMWARE_VERSION,"
+else
+  FIRMWARE_STEP="   3. Updates tab: update the VibeTV firmware to $CANDIDATE_FIRMWARE_VERSION."
+  FIRMWARE_EXPECTATION="Expected afterwards: Mac App reports $CANDIDATE_VERSION and firmware
+ $CANDIDATE_FIRMWARE_VERSION,"
+fi
+
 if rehearsal::rehearsal_evidence_possible; then
 cat <<NEXT
 
@@ -157,9 +172,9 @@ cat <<NEXT
    2. Updates tab: update the Mac App. Sparkle downloads $CANDIDATE_VERSION,
       replaces the app and relaunches it. Click "Install Update" yourself --
       that dialog is the step this rehearsal exists to exercise.
-   3. Updates tab: update the VibeTV firmware to $CANDIDATE_VERSION.
+$FIRMWARE_STEP
 
- Expected afterwards: Mac App and firmware both report $CANDIDATE_VERSION,
+ $FIRMWARE_EXPECTATION
  and the preview matches what the VibeTV shows.
 
  Report   $REHEARSAL_RUN_DIR/report.json

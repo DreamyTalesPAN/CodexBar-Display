@@ -397,6 +397,19 @@ rehearsal::fetch_candidate() {
     [[ -n "$CANDIDATE_MANIFEST" ]] || rehearsal::die "$artifact carries no candidate-manifest.json"
   fi
 
+  if [[ "$REHEARSAL_MAIN" == 1 ]]; then
+    local result="$cache/candidate-result/candidate-result.json"
+    if [[ ! -f "$result" ]]; then
+      mkdir -p "$(dirname "$result")"
+      gh run download "$REHEARSAL_RUN_ID" --repo "$REHEARSAL_REPOSITORY" \
+        -n vibetv-release-candidate-result -D "$(dirname "$result")" \
+        || rehearsal::die "candidate run $REHEARSAL_RUN_ID has no successful automated result"
+    fi
+    python3 "$ROOT/scripts/validate-hardware-canary.py" candidate-result \
+      --candidate-dir "$cache" --result "$result" >/dev/null \
+      || rehearsal::die "candidate run $REHEARSAL_RUN_ID did not pass its automated matrix"
+  fi
+
   CANDIDATE_SHA="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["sourceSha"])' "$CANDIDATE_MANIFEST")"
   CANDIDATE_VERSION="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$CANDIDATE_MANIFEST")"
 
@@ -409,8 +422,14 @@ rehearsal::fetch_candidate() {
   rehearsal::record candidateSha "$CANDIDATE_SHA"
 }
 
+# Returns nothing, successfully, when the candidate has not been downloaded yet.
+# find exits non-zero on a missing directory and pipefail carries that through
+# the pipe, which under set -e would kill the run on its very first download.
 rehearsal::candidate_manifest_path() {
-  find "$1" -maxdepth 3 -name candidate-manifest.json -type f 2>/dev/null | head -n 1
+  if [[ -d "$1" ]]; then
+    find "$1" -maxdepth 3 -name candidate-manifest.json -type f 2>/dev/null | head -n 1 || true
+  fi
+  return 0
 }
 
 # The merge gate and the release candidate lay the same roles out under
@@ -455,13 +474,18 @@ by_role = {}
 for artifact in manifest["artifacts"]:
     by_role.setdefault(artifact["role"], []).append(artifact)
 
-resolved = {}
-for role, variable in (
-    ("signed-dmg", "CANDIDATE_DMG"),
-    ("sparkle-appcast", "CANDIDATE_APPCAST"),
-    ("firmware-manifest", "CANDIDATE_FIRMWARE_MANIFEST"),
+resolved, scalars = {}, {}
+for role, variable, canonical in (
+    ("signed-dmg", "CANDIDATE_DMG", None),
+    ("sparkle-appcast", "CANDIDATE_APPCAST", None),
+    # A release candidate ships the firmware manifest twice, once stamped with
+    # the version. Both are byte-identical; the unstamped one is what a release
+    # serves, so that is the one under test.
+    ("firmware-manifest", "CANDIDATE_FIRMWARE_MANIFEST", "firmware-manifest.json"),
 ):
     entries = by_role.get(role, [])
+    if canonical is not None:
+        entries = [entry for entry in entries if entry["name"] == canonical] or entries
     if len(entries) != 1:
         problems.append(f"{role}: expected one artifact, found {len(entries)}")
         continue
@@ -484,6 +508,13 @@ if firmware_manifest is not None:
             path = locate(binaries[0])
             if path is not None:
                 resolved["CANDIDATE_FIRMWARE"] = path
+                # A release stamps the firmware with its own version, not the
+                # release version: 1.0.54 ships firmware 1.0.40. Only merge-gate
+                # candidates make the two coincide.
+                scalars["CANDIDATE_FIRMWARE_VERSION"] = str(wanted[0]["firmwareVersion"])
+
+if "CANDIDATE_FIRMWARE_VERSION" not in scalars:
+    problems.append("firmware: no version resolved for this board")
 
 if problems:
     print("\n".join(f"   {problem}" for problem in problems), file=sys.stderr)
@@ -491,6 +522,8 @@ if problems:
 
 for variable, path in resolved.items():
     print(f"{variable}={shlex.quote(str(path))}")
+for variable, value in scalars.items():
+    print(f"{variable}={shlex.quote(value)}")
 PY
 )" || rehearsal::die 'candidate is incomplete or corrupted'
   eval "$resolved"
@@ -507,12 +540,23 @@ rehearsal::resolve_run_id() {
   if [[ "$REHEARSAL_MAIN" == 1 ]]; then
     rehearsal::main_sha >/dev/null
     rehearsal::info "main is at ${REHEARSAL_MAIN_SHA:0:12}"
-    REHEARSAL_RUN_ID="$(gh run list --repo "$REHEARSAL_REPOSITORY" \
-      --workflow vibetv-release-candidate.yml --status success --limit 20 \
+    local run_id artifact_names
+    while IFS= read -r run_id; do
+      [[ -n "$run_id" ]] || continue
+      artifact_names="$(gh api \
+        "repos/$REHEARSAL_REPOSITORY/actions/runs/$run_id/artifacts" \
+        --jq '.artifacts[].name' 2>/dev/null || true)"
+      if grep -Fx vibetv-release-candidate <<<"$artifact_names" >/dev/null &&
+        grep -Fx vibetv-release-candidate-result <<<"$artifact_names" >/dev/null; then
+        REHEARSAL_RUN_ID="$run_id"
+        break
+      fi
+    done < <(gh run list --repo "$REHEARSAL_REPOSITORY" \
+      --workflow vibetv-release-candidate.yml --limit 20 \
       --json databaseId,headSha \
-      --jq "[.[] | select(.headSha == \"$REHEARSAL_MAIN_SHA\")][0].databaseId" 2>/dev/null || true)"
+      --jq ".[] | select(.headSha == \"$REHEARSAL_MAIN_SHA\") | .databaseId" 2>/dev/null || true)
     [[ -n "$REHEARSAL_RUN_ID" && "$REHEARSAL_RUN_ID" != null ]] || rehearsal::die \
-      "no successful CODEX Test VibeTV Release Candidate run for main ${REHEARSAL_MAIN_SHA:0:12}; dispatch that workflow for this commit first"
+      "no CODEX Prepare and Release VibeTV candidate for main ${REHEARSAL_MAIN_SHA:0:12}; dispatch that workflow for this commit first"
     return 0
   fi
 
@@ -625,23 +669,25 @@ if count != 1:
 open(path, "w", encoding="utf-8").write(patched)
 PY
 
-  # The candidate ships a manifest template whose firmwareUrl is the bare asset
-  # name. The companion does not resolve it against the manifest URL, so it has
-  # to be made absolute here or the download fails with "unsupported protocol
-  # scheme".
-  python3 - "$REHEARSAL_SERVE_DIR/firmware-manifest.json" "$REHEARSAL_SERVER_URL" <<'PY'
-import json, sys, urllib.parse
+  # The manifest addresses the firmware by a bare asset name (merge gate) or by
+  # its published release URL (release candidate, pointing at a release that does
+  # not exist yet). Either way the bytes under test are the ones on this loopback
+  # server, so the entry for this board is repointed at it. Other boards keep
+  # their published URL -- this rehearsal does not flash them.
+  python3 - "$REHEARSAL_SERVE_DIR/firmware-manifest.json" "$REHEARSAL_SERVER_URL" \
+    "$REHEARSAL_BOARD" "$(basename "$CANDIDATE_FIRMWARE")" <<'PY'
+import json, sys
 
-path, base = sys.argv[1:]
+path, base, board, asset = sys.argv[1:]
 manifest = json.loads(open(path, encoding="utf-8").read())
 patched = 0
 for artifact in manifest.get("artifacts", []):
-    url = str(artifact.get("firmwareUrl") or "")
-    if not urllib.parse.urlparse(url).scheme:
-        artifact["firmwareUrl"] = f"{base}/{url.lstrip('/')}"
-        patched += 1
-if patched == 0:
-    raise SystemExit("expected at least one relative firmwareUrl to rewrite")
+    if artifact.get("board") != board:
+        continue
+    artifact["firmwareUrl"] = f"{base}/{asset}"
+    patched += 1
+if patched != 1:
+    raise SystemExit(f"expected exactly one firmware entry for board {board}, patched {patched}")
 with open(path, "w", encoding="utf-8") as destination:
     json.dump(manifest, destination, indent=2)
     destination.write("\n")

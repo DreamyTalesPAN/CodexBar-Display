@@ -292,10 +292,22 @@ main() {
   [[ "$untrusted_build" != *'SPARKLE_ED25519_PRIVATE_KEY'* ]] \
     || die 'untrusted PR build must not receive the Sparkle signing key'
 
-  assert_contains "$RC_WORKFLOW" 'name: CODEX Test VibeTV Release Candidate' \
-    'release-candidate workflow needs the stable CODEX name'
+  assert_contains "$RC_WORKFLOW" 'name: CODEX Prepare and Release VibeTV' \
+    'release workflow needs the stable CODEX name'
   assert_contains "$RC_WORKFLOW" 'version:' \
     'release-candidate workflow must require a candidate version'
+  assert_contains "$RC_WORKFLOW" 'firmware:' \
+    'release-candidate workflow must choose final firmware versions before build'
+  assert_contains "$RC_WORKFLOW" 'effective-firmware-versions.json' \
+    'release candidate must freeze its final firmware versions'
+  assert_contains "$RC_WORKFLOW" 'uses: ./.github/workflows/release.yml' \
+    'successful candidate tests must continue to the Production approval'
+  assert_contains "$ROOT/scripts/lib/vibetv-rehearsal.sh" \
+    'vibetv-release-candidate-result' \
+    'manual rehearsal must require the successful result of a waiting candidate'
+  assert_not_contains "$ROOT/scripts/lib/vibetv-rehearsal.sh" \
+    '--workflow vibetv-release-candidate.yml --status success' \
+    'manual rehearsal must discover candidates waiting for Production approval'
   assert_contains "$RC_WORKFLOW" 'ref: ${{ github.sha }}' \
     'release candidate must build the exact main SHA that dispatched it'
   assert_contains "$RC_WORKFLOW" 'pip install platformio intelhex' \
@@ -316,8 +328,8 @@ main() {
     assert_contains "$RC_WORKFLOW" "\"${field}\"" \
       "candidate manifest must include ${field}"
   done
-  assert_contains "$RC_WORKFLOW" 'retention-days: 7' \
-    'release candidate artifacts and reports must remain available for seven days'
+  assert_contains "$RC_WORKFLOW" 'retention-days: 30' \
+    'release candidate artifacts and reports must remain available for thirty days'
   assert_contains "$RC_WORKFLOW" 'name: vibetv-release-candidate-result' \
     'release candidate result artifact name must remain stable for publish gates'
   for field in artifactHashes candidate-result.json 'result = "success"'; do
@@ -372,8 +384,8 @@ main() {
     assert_contains "$RC_WORKFLOW" 'baselines/baselines/${{ matrix.state }}.'"${frozen_baseline}" \
       "guest matrix must consume the downloaded frozen ${frozen_baseline} bytes"
   done
-  assert_contains "$RC_WORKFLOW" "esp8266_smalltv_st7789\"))').bin.gz" \
-    'release candidate must close the firmware-version Python expression'
+  assert_contains "$RC_WORKFLOW" 'firmware_asset="$(python3' \
+    'release candidate must resolve the tested firmware from its own manifest'
   assert_contains "$RC_WORKFLOW" '"${baseline_args[@]+"${baseline_args[@]}"}"' \
     'clean OS guest test must expand optional baseline arguments safely under set -u'
   assert_contains "$RC_WORKFLOW" '"protocolVersion":config.get' \
@@ -406,6 +418,10 @@ main() {
     'the runtime must own the paired device before the API firmware update starts'
   assert_contains "$GUEST_TEST" 'api_firmware_update "$OUTPUT/candidate-already-current.json" already_current' \
     'public guest states must prove already_current through the runtime API as well'
+  assert_contains "$GUEST_TEST" 'if expected_uploads and not any(event.get("path") == "/update/firmware.raw"' \
+    'the Raw OTA assertion must be conditional: a candidate whose firmware matches the baseline uploads nothing, and demanding a Raw OTA regardless fails every release that ships no new firmware'
+  assert_contains "$GUEST_TEST" 'expected_uploads = int(sys.argv[2])' \
+    'guest test must read the expected upload count once and reuse it for both state assertions'
   assert_contains "$GUEST_TEST" 'listenerOwner' \
     'guest test must bind the live Companion port to the installed runtime service'
   assert_contains "$GUEST_TEST" 'installationMode' \

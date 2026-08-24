@@ -85,7 +85,7 @@ Known traps, all paid for on the bench:
 - If the device already runs the candidate version the script reports "already on X, nothing to flash" and the device keeps its pairing. That is not a real cold start and the new-customer pairing screen will not appear.
 - `PREVIEW UNAVAILABLE` for an active custom theme is not a product bug. A Theme Studio theme lives in `/themes/u/` and its spec exists only in the local app, so after a purge the app cannot reload it from the catalog.
 - A merge-gate run reports `main` as its head branch and main's tip as its head SHA, because the workflow is dispatched from `main` -- but it builds the **pull request head** it was given. Only `candidate-manifest.json`'s `sourceSha` says what a candidate actually contains. Passing `--main` or `--pr` makes the scripts check that themselves; `--run-id` alone rehearses whatever that run happened to build.
-- Only `CODEX Test VibeTV Release Candidate` builds an exact `main` SHA. The merge gate cannot: it takes a `pr_number` and resolves an open pull request head.
+- Only `CODEX Prepare and Release VibeTV` builds an exact `main` SHA. The merge gate cannot: it takes a `pr_number` and resolves an open pull request head.
 - Quit the app and detach all images before a run; `hdiutil attach` fails transiently while a volume of the same name is still mounted. Check for foreign listeners with `lsof -nP -iTCP:47832 -sTCP:LISTEN`.
 - Warm start needs one manual Sparkle "Install Update" click. That is a native macOS dialog and cannot be scripted headlessly.
 
