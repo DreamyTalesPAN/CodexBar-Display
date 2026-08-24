@@ -3745,14 +3745,28 @@ async function testThemeSetupUpdatesFirmwareBeforeThemeInstall(
     scrollHeight: document.documentElement.scrollHeight,
   }));
   assert(
-    defaultOverflow.scrollHeight <= defaultOverflow.innerHeight + 1,
-    `Mandatory theme setup must fit the native default viewport without an initial scrollbar, got ${defaultOverflow.scrollHeight}px of content in ${defaultOverflow.innerHeight}px`,
+    defaultOverflow.scrollHeight > defaultOverflow.innerHeight,
+    "Mandatory theme setup must keep the theme choices in a deliberate vertical list",
   );
   await captureMigrationScreenshot(
     page,
     "09-theme-setup-native-default.png",
     false,
   );
+  const defaultFinalThemeAction = page
+    .getByRole("listitem")
+    .last()
+    .getByRole("button");
+  await defaultFinalThemeAction.scrollIntoViewIfNeeded();
+  const defaultActionBounds = await defaultFinalThemeAction.boundingBox();
+  assert(
+    defaultActionBounds &&
+      defaultActionBounds.y >= 0 &&
+      defaultActionBounds.y + defaultActionBounds.height <=
+        nativeDefaultViewport.height,
+    "All stacked theme actions must remain reachable in the native default viewport",
+  );
+  await page.evaluate(() => window.scrollTo(0, 0));
 
   await page.setViewportSize(smallerNativeViewport);
   const smallerOverflow = await page.evaluate(() => ({

@@ -692,11 +692,7 @@ export function ThemeLibraryScreen({
               />
             ) : null}
 
-            <ItemGroup
-              className={
-                setupMode ? "lg:grid lg:grid-cols-2 xl:grid-cols-3" : undefined
-              }
-            >
+            <ItemGroup>
               {libraryThemes.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}
@@ -1021,13 +1017,12 @@ function ThemeListItem({
 
   return (
     <Item
-      className={setupMode ? "lg:flex-nowrap" : undefined}
       role="listitem"
       variant={
         !setupMode && item.themeId === displayThemeId ? "muted" : "outline"
       }
     >
-      <ItemMedia className={cn("w-28 sm:w-36", setupMode && "lg:w-28")}>
+      <ItemMedia className="w-28 sm:w-36">
         {setupMode ? (
           <ThemePreview theme={item} />
         ) : (
@@ -1042,9 +1037,7 @@ function ThemeListItem({
           </Button>
         )}
       </ItemMedia>
-      <ItemContent
-        className={cn("min-w-[180px]", setupMode && "lg:min-w-0")}
-      >
+      <ItemContent className="min-w-[180px]">
         <ItemTitle className="text-lg font-bold">{item.title}</ItemTitle>
         {!setupMode && isCustom ? (
           <Badge variant="secondary">Custom</Badge>
@@ -1054,7 +1047,7 @@ function ThemeListItem({
         className={cn(
           "basis-full grid w-full gap-2 sm:basis-auto sm:w-auto",
           setupMode
-            ? "sm:grid-cols-1 lg:basis-auto lg:w-auto lg:shrink-0"
+            ? "sm:grid-cols-1"
             : isCustom
               ? "sm:grid-cols-3"
               : "sm:grid-cols-2",

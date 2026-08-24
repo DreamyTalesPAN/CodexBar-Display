@@ -304,6 +304,16 @@ describe("mandatory theme setup readiness", () => {
     expect(html).not.toContain("Checking VibeTV readiness");
     expect(html).not.toContain(">Wait</button>");
   });
+
+  it("keeps theme choices in one vertical list", () => {
+    const html = renderThemeSetup({});
+    const itemGroup = html.match(
+      /<div role="list" data-slot="item-group" class="([^"]+)"/,
+    )?.[1];
+
+    expect(itemGroup).toContain("flex-col");
+    expect(itemGroup).not.toContain("grid-cols");
+  });
 });
 
 describe("ThemeLibraryScreen Appearance sections", () => {
