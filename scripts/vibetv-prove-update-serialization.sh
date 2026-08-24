@@ -88,8 +88,7 @@ job="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["job"]["id
 printf 'job: %s\n' "$job"
 
 fired=0 polls=0 answered=0
-# Asking the guard is the first thing the Mac App's repair does, so a 409 here
-# proves the same lock on the same path, at the same moment the repair asked.
+# The count of holds this runtime has refused, straight from the API.
 #
 # This used to grep daemon.out.log for the runtime's refusal line. That can
 # never work: the line goes to stderr, and the managed runtime's LaunchAgent
@@ -97,22 +96,26 @@ fired=0 polls=0 answered=0
 # neither StandardOutPath nor StandardErrorPath -- daemon.out.log is written by
 # the daemon itself, for other things. So the evidence never appeared and this
 # script reported FAILED after flashing real firmware, every time.
-hold_refused() {
-  local code
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 \
-    -H 'Content-Type: application/json' --data '{}' \
-    "$API/v1/runtime-health/update-hold" 2>/dev/null)"
-  if [[ "$code" == 200 ]]; then
-    # The guard let us in while a job owns this runtime -- the failure this
-    # script exists to catch. Hand the hold straight back so the report is not
-    # produced by blocking the very update it is measuring.
-    curl -s -o /dev/null --max-time 12 -H 'Content-Type: application/json' \
-      --data '{"release":true}' "$API/v1/runtime-health/update-hold" 2>/dev/null || true
-    printf '  !! the guard GRANTED a hold while the job was running\n'
-    return 1
-  fi
-  [[ "$code" == 409 ]]
+#
+# Asking the guard ourselves is not a substitute: the running job would answer
+# 409 to anyone, so it proves the guard is live and says nothing about whether
+# the repair ever reached it. A repair can bail out before asking -- an
+# externally delivered vibetv://repair-codexbar returns immediately when a
+# preparation already owns the app -- and that is exactly the case this run must
+# not report as proven. Only the runtime's own refusal counter distinguishes
+# them, so read it before and after the delivery.
+hold_refusals() {
+  curl -fsS --max-time 12 "$API/v1/runtime-health" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    print(int(json.load(sys.stdin).get("updateHoldRefusals") or 0))
+except Exception:
+    print(-1)
+' 2>/dev/null || printf '%s' -1
 }
+holds_before="$(hold_refusals)"
+[[ "$holds_before" == -1 ]] \
+  && echo 'warning: this runtime predates updateHoldRefusals; the collision cannot be proven' >&2
 deadline=$((SECONDS + 600))
 while (( SECONDS < deadline )); do
   polls=$((polls + 1))
@@ -134,14 +137,24 @@ print(j.get("phase"), j.get("stage"))' "$WORK/status.json")"
         echo 'error: could not deliver vibetv://repair-codexbar to the installed app' >&2
         exit 1
       fi
-      # Delivery is not collision. Ask the guard the same question the repair
-      # just asked: while this job owns the runtime it must refuse, and that
-      # refusal is the evidence from outside that the two actually met.
-      if hold_refused; then
-        fired=1
-        printf '  >>> %s the guard refuses a hold while this job runs\n' "$(date -u +%H:%M:%SZ)"
-      else
-        printf '  !! the update guard did not refuse while the job was running\n'
+      # Delivery is not collision. The repair asks this runtime for an update
+      # hold and is refused while a job owns it; that refusal, counted by the
+      # runtime itself, is the evidence from outside that the two actually met.
+      for _ in $(seq 1 30); do
+        now="$(hold_refusals)"
+        if [[ "$now" == -1 ]]; then
+          printf '  !! this runtime does not report updateHoldRefusals\n'
+          break
+        fi
+        if (( now > holds_before )); then
+          fired=1
+          printf '  >>> %s the repair asked for a hold and was refused\n' "$(date -u +%H:%M:%SZ)"
+          break
+        fi
+        sleep 2
+      done
+      if [[ "$fired" == 0 ]]; then
+        printf '  !! the repair was delivered but never reached the update guard\n'
       fi
     fi
     case "$phase" in complete|error|attention) break ;; esac

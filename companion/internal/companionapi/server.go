@@ -197,6 +197,7 @@ type Server struct {
 	firmwareUpdateActive   atomic.Bool
 	firmwareUpdateStartMu  sync.Mutex
 	updateHoldUntil        time.Time
+	updateHoldRefusals     atomic.Uint64
 	configMu               sync.Mutex
 	repairMu               sync.Mutex
 	repairFlightsMu        sync.Mutex
@@ -1499,6 +1500,7 @@ func (s *Server) handleRuntimeUpdateHold(w http.ResponseWriter, r *http.Request)
 		// the managed LaunchAgent redirects neither stream, so this never
 		// reaches daemon.out.log. The 409 below is the observable contract, and
 		// scripts/vibetv-prove-update-serialization.sh asks for it directly.
+		s.updateHoldRefusals.Add(1)
 		_, _ = fmt.Fprintln(os.Stderr, "VibeTV update hold refused: a firmware update owns this runtime")
 		writeError(
 			w,
@@ -1516,6 +1518,7 @@ func (s *Server) handleRuntimeUpdateHold(w http.ResponseWriter, r *http.Request)
 	// passes through that check -- the guard has to be here, where the hold is
 	// granted.
 	if s.themeInstallInFlight() {
+		s.updateHoldRefusals.Add(1)
 		_, _ = fmt.Fprintln(os.Stderr, "VibeTV update hold refused: a theme install owns this runtime")
 		writeError(
 			w,
@@ -1561,15 +1564,25 @@ func (s *Server) handleRuntimeHealth(w http.ResponseWriter, r *http.Request) {
 		// because that restart would strand a running update: the next status
 		// poll asks a fresh process for a job id it has never seen.
 		UpdateInProgress bool `json:"updateInProgress"`
-		Companion        struct {
+		// How often this runtime has refused an update hold. The refusal is the
+		// only sign from outside that a CodexBar repair actually met a running
+		// job, and the runtime's stderr does not reach any file a script can
+		// read: the managed LaunchAgent redirects neither stream. A bench run
+		// reads this before and after it delivers the repair; an increase is
+		// the collision. scripts/vibetv-prove-update-serialization.sh requires
+		// it, and without it that script cannot tell a repair that was held
+		// back from one that bailed out before ever asking.
+		UpdateHoldRefusals uint64 `json:"updateHoldRefusals"`
+		Companion          struct {
 			Version string               `json:"version"`
 			App     companionAppInfo     `json:"app"`
 			Runtime companionRuntimeInfo `json:"runtime"`
 		} `json:"companion"`
 	}{
-		OK:               true,
-		DisplayWriter:    s.pauseDisplayStream != nil,
-		UpdateInProgress: updateInProgress,
+		OK:                 true,
+		DisplayWriter:      s.pauseDisplayStream != nil,
+		UpdateInProgress:   updateInProgress,
+		UpdateHoldRefusals: s.updateHoldRefusals.Load(),
 		Companion: struct {
 			Version string               `json:"version"`
 			App     companionAppInfo     `json:"app"`

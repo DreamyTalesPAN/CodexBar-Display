@@ -118,7 +118,6 @@ if touches '^apps/control-center/'; then
   else
     run "unit tests"        bash -c 'cd apps/control-center && npx vitest run'
     run "customer copy"     bash -c 'cd apps/control-center && npm run --silent check:customer-ui-copy'
-    run "UI review gate"    bash -c 'cd apps/control-center && npm run --silent check:ui-review'
     # npm run lint, not `eslint src`: CI lints the whole project, so anything
     # outside src was never linted locally and could only fail there.
     run "eslint"            bash -c 'cd apps/control-center && npm run --silent lint'
@@ -131,6 +130,20 @@ if touches '^apps/control-center/'; then
   fi
 else
   SKIPPED+=("control-center (untouched)")
+fi
+
+# Both steps of the control-center-ui-review-gate CI job. It used to live in the
+# control-center section, which is the one place it must not: a branch that
+# fixes the gate itself touches neither apps/control-center/ nor companion/, so
+# the gate implementation and its contract were the one area where this script
+# printed "safe to push" without ever running them. The contract test was not
+# run here at all -- only inside the customer-ready gate, which this script does
+# not call either.
+if touches '^apps/control-center/|^scripts/check-control-center-ui-review-gate\.mjs$|^scripts/test-control-center-ui-review-gate\.sh$'; then
+  run "UI review gate"     node scripts/check-control-center-ui-review-gate.mjs
+  run "UI review contract" ./scripts/test-control-center-ui-review-gate.sh
+else
+  SKIPPED+=("UI review gate (untouched)")
 fi
 
 if touches '^macos/|^scripts/test-macos-control-center-app-bundle\.sh|^scripts/test-vibetv-hosted-gates\.sh'; then

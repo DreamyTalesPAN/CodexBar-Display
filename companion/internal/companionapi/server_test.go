@@ -10684,3 +10684,72 @@ func TestThemeInstallRefusedAfterTheRepairHoldIsGranted(t *testing.T) {
 		}
 	}
 }
+
+// The refusal is the only sign from outside that a CodexBar repair actually met
+// a running job: the runtime's stderr reaches no file a script can read, and a
+// script asking the guard itself would be answered by the running job and learn
+// nothing about the repair. scripts/vibetv-prove-update-serialization.sh reads
+// this counter before and after it delivers the repair.
+func TestRuntimeHealthReportsRefusedUpdateHolds(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+
+	refusals := func() uint64 {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/runtime-health", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("runtime-health status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var payload struct {
+			UpdateHoldRefusals uint64 `json:"updateHoldRefusals"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("decode runtime-health: %v", err)
+		}
+		return payload.UpdateHoldRefusals
+	}
+	claim := func() int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/runtime-health/update-hold",
+			strings.NewReader(`{}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if got := refusals(); got != 0 {
+		t.Fatalf("a fresh runtime must report 0 refusals, got %d", got)
+	}
+	// A granted hold is not a refusal and must not be counted, or the bench
+	// would read its own successful claim as a collision.
+	if code := claim(); code != http.StatusOK {
+		t.Fatalf("an idle runtime must grant the hold, got %d", code)
+	}
+	if got := refusals(); got != 0 {
+		t.Fatalf("a granted hold must not count as a refusal, got %d", got)
+	}
+
+	server.updateHoldUntil = time.Time{}
+	server.updateJobs["active-update"] = &firmwareUpdateJob{ID: "active-update", Phase: "installing"}
+	if code := claim(); code != http.StatusConflict {
+		t.Fatalf("a running update must refuse the hold, got %d", code)
+	}
+	if got := refusals(); got != 1 {
+		t.Fatalf("a refused firmware hold must be counted, got %d", got)
+	}
+
+	delete(server.updateJobs, "active-update")
+	server.themeInstallActive = true
+	if code := claim(); code != http.StatusConflict {
+		t.Fatalf("a running theme install must refuse the hold, got %d", code)
+	}
+	if got := refusals(); got != 2 {
+		t.Fatalf("a refused theme-install hold must be counted too, got %d", got)
+	}
+}
