@@ -49,6 +49,12 @@ if ! launchctl print "gui/$(id -u)/${BUNDLE_ID}.runtime" >/dev/null 2>&1; then
 fi
 
 say "== Companion"
+say "  api         $API"
+# Diagnostic, not a gate: this script exists to explain a messy bench, so it
+# reports a foreign listener rather than refusing to run. A stale
+# runtime-endpoint.json whose port was reused answers exactly like ours.
+bench::api_owned_by_runtime "$API" \
+  || warn "this listener is not the runtime launchd manages; the state below may describe another Companion"
 if status="$(curl -fsS --max-time 10 "$API/v1/status" 2>/dev/null)"; then
   printf '%s' "$status" | python3 -c '
 import json, sys

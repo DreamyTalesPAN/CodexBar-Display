@@ -47,6 +47,12 @@ case "${1:-}" in
 esac
 
 printf 'companion api:   %s\n' "$API"
+# Answering runtime-health is not identity. If that listener is not the runtime
+# launchd manages, this run would drive one Companion while the installed app
+# repairs another, and every check below would still pass -- an invalid proof is
+# worse than no proof, and this one costs real firmware to produce.
+bench::api_owned_by_runtime "$API" \
+  || { echo "error: $API is not the managed runtime (launchd label $BENCH_RUNTIME_LABEL); refusing to produce evidence" >&2; exit 1; }
 before="$(listeners)"
 printf 'listener before: %s\n' "${before:-none}"
 [[ -n "$before" ]] || { echo "error: no Companion runtime on $API" >&2; exit 1; }

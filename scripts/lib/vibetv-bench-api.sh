@@ -39,3 +39,33 @@ bench::api_port() {
   [[ "$port" =~ ^[0-9]+$ ]] || port=47832
   printf '%s\n' "$port"
 }
+
+BENCH_RUNTIME_LABEL="${BENCH_RUNTIME_LABEL:-shop.vibetv.control-center.runtime}"
+
+# The pid launchd has for the managed runtime, empty when it does not know the
+# label at all.
+bench::runtime_pid() {
+  launchctl print "gui/$(id -u)/$BENCH_RUNTIME_LABEL" 2>/dev/null \
+    | sed -nE 's/^[[:space:]]*pid = ([0-9]+)$/\1/p' | head -n 1
+}
+
+# True when the listener on this origin's port is the managed runtime itself.
+#
+# Answering /v1/runtime-health is not identity. runtime-endpoint.json can be
+# stale, any process may reuse the port it names, and another Companion-
+# compatible runtime answers exactly like ours -- so a bench tool can end up
+# describing one runtime while the installed app manages another. The native
+# side makes the same distinction before it trusts an answer
+# (verifyRuntimeListenerOwnership in macos/VibeTVControlCenter/main.swift);
+# this is the shell equivalent: launchd's pid for the label must be the pid
+# holding the port.
+bench::api_owned_by_runtime() {
+  local port pid listener
+  port="$(bench::api_port "$1")"
+  pid="$(bench::runtime_pid)"
+  [[ -n "$pid" ]] || return 1
+  listener="$(lsof -nP -a -iTCP@127.0.0.1:"$port" -sTCP:LISTEN -Fp 2>/dev/null \
+    | sed -nE 's/^p([0-9]+)$/\1/p' | sort -u)"
+  [[ -n "$listener" ]] || return 1
+  grep -qx "$pid" <<<"$listener"
+}
