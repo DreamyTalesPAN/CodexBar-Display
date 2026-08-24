@@ -262,7 +262,7 @@ export function SetupScreen({
               {activeStep === "mac-app" ? (
                 <div className="grid min-w-0 gap-4">
                   {dmgUrl ? (
-                    <div className="grid gap-3 border border-border bg-card p-4">
+                    <div className="grid gap-5 border border-border bg-card p-4 sm:p-5">
                       <Button asChild className="w-full" size="lg">
                         <a href={dmgUrl} onClick={() => setDmgDownloadStarted(true)}>
                         <Download data-icon="inline-start" />
@@ -271,6 +271,7 @@ export function SetupScreen({
                         </span>
                         </a>
                       </Button>
+                      {hostedMode ? <MacAppInstallSteps /> : null}
                     </div>
                   ) : (
                     <div className="grid gap-3 border border-border bg-card p-4">
@@ -357,6 +358,35 @@ export function SetupScreen({
           />
         </div>
       </section>
+    </div>
+  );
+}
+
+function MacAppInstallSteps() {
+  const steps = [
+    "Open the downloaded DMG.",
+    "Drag VibeTV Control Center to Applications and wait for the copy to finish.",
+    "Open VibeTV Control Center from Applications. If macOS asks, choose Open.",
+  ];
+
+  return (
+    <div className="grid gap-3 border-t border-border pt-5">
+      <p className="font-semibold text-foreground">Install, then open VibeTV</p>
+      <ol className="grid gap-3">
+        {steps.map((step, index) => (
+          <li className="flex items-start gap-3" key={step}>
+            <span
+              aria-hidden
+              className="flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-bold text-background"
+            >
+              {index + 1}
+            </span>
+            <span className="pt-0.5 text-sm leading-6 text-muted-foreground">
+              {step}
+            </span>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
