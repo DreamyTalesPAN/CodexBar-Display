@@ -26,6 +26,8 @@ const themePreviewVectorGoldens = JSON.parse(
 const nextBin = join(root, "node_modules", "next", "dist", "bin", "next");
 const viewport = { width: 390, height: 844 };
 const desktopViewport = { width: 1280, height: 900 };
+const nativeDefaultViewport = { width: 1280, height: 900 };
+const smallerNativeViewport = { width: 760, height: 560 };
 const themeStudioViewport = { width: 1180, height: 820 };
 const smokeOnly = process.argv.includes("--smoke");
 const providerSettingsOnly = process.argv.includes("--provider-settings");
@@ -3633,8 +3635,18 @@ async function testThemeSetupUpdatesFirmwareBeforeThemeInstall(
   browser,
   appUrl,
 ) {
+  const nativeSource = await readFile(
+    join(root, "../../macos/VibeTVControlCenter/main.swift"),
+    "utf8",
+  );
+  assert(
+    nativeSource.includes(
+      `contentRect: NSRect(x: 0, y: 0, width: ${nativeDefaultViewport.width}, height: ${nativeDefaultViewport.height})`,
+    ),
+    "The rendered default viewport must match the native Mac App opening size",
+  );
   const page = await newCustomerPage(browser, appUrl, {
-    viewport: desktopViewport,
+    viewport: nativeDefaultViewport,
   });
   const installRequests = [];
   const firmwareUpdateRequests = [];
@@ -3728,6 +3740,73 @@ async function testThemeSetupUpdatesFirmwareBeforeThemeInstall(
     exact: true,
   });
   await updateButton.waitFor({ timeout: 10_000 });
+  const defaultOverflow = await page.evaluate(() => ({
+    innerHeight: window.innerHeight,
+    scrollHeight: document.documentElement.scrollHeight,
+  }));
+  assert(
+    defaultOverflow.scrollHeight <= defaultOverflow.innerHeight + 1,
+    `Mandatory theme setup must fit the native default viewport without an initial scrollbar, got ${defaultOverflow.scrollHeight}px of content in ${defaultOverflow.innerHeight}px`,
+  );
+  await captureMigrationScreenshot(
+    page,
+    "09-theme-setup-native-default.png",
+    false,
+  );
+
+  await page.setViewportSize(smallerNativeViewport);
+  const smallerOverflow = await page.evaluate(() => ({
+    innerHeight: window.innerHeight,
+    scrollHeight: document.documentElement.scrollHeight,
+  }));
+  assert(
+    smallerOverflow.scrollHeight > smallerOverflow.innerHeight,
+    "Mandatory theme setup must keep deliberate scrolling when the window is smaller",
+  );
+  await updateButton.scrollIntoViewIfNeeded();
+  const smallerUpdateBounds = await updateButton.boundingBox();
+  assert(
+    smallerUpdateBounds &&
+      smallerUpdateBounds.y >= 0 &&
+      smallerUpdateBounds.y + smallerUpdateBounds.height <=
+        smallerNativeViewport.height,
+    "The firmware action must remain reachable in the smaller-window fallback",
+  );
+  await captureMigrationScreenshot(
+    page,
+    "10-theme-setup-smaller-window.png",
+    false,
+  );
+  await page.setViewportSize(nativeDefaultViewport);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "150%";
+  });
+  const zoomedOverflow = await page.evaluate(() => ({
+    innerHeight: window.innerHeight,
+    scrollHeight: document.documentElement.scrollHeight,
+  }));
+  assert(
+    zoomedOverflow.scrollHeight > zoomedOverflow.innerHeight,
+    "Mandatory theme setup must scroll instead of clipping at 150% accessibility zoom",
+  );
+  const finalThemeAction = page
+    .getByRole("listitem")
+    .last()
+    .getByRole("button");
+  await finalThemeAction.scrollIntoViewIfNeeded();
+  const zoomedActionBounds = await finalThemeAction.boundingBox();
+  assert(
+    zoomedActionBounds &&
+      zoomedActionBounds.y >= 0 &&
+      zoomedActionBounds.y + zoomedActionBounds.height <=
+        nativeDefaultViewport.height,
+    "Theme actions must remain reachable at 150% accessibility zoom",
+  );
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "";
+    window.scrollTo(0, 0);
+  });
   const blockedInstallButton = synthwaveRow.getByRole("button", {
     name: "Update Needed",
     exact: true,
@@ -10586,13 +10665,13 @@ async function assertCompanionRequestTimeoutContract() {
   );
 }
 
-async function captureMigrationScreenshot(page, name) {
+async function captureMigrationScreenshot(page, name, fullPage = true) {
   if (!migrationScreenshotDir) {
     return;
   }
   await mkdir(migrationScreenshotDir, { recursive: true });
   await page.screenshot({
-    fullPage: true,
+    fullPage,
     path: join(migrationScreenshotDir, name),
   });
 }
