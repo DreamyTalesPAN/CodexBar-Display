@@ -1015,6 +1015,15 @@ func TestRunInstallUpdateRediscoverAfterFirmwareRebootIPChange(t *testing.T) {
 	if !strings.Contains(output, "Using rediscovered VibeTV address: "+newServer.URL) {
 		t.Fatalf("expected rediscovery output, got:\n%s", output)
 	}
+	rebootingAt := strings.Index(output, `"stage":"rebooting"`)
+	rediscoveringAt := strings.Index(output, `"stage":"rediscovering"`)
+	verifiedAt := strings.LastIndex(output, `"stage":"verifying_health"`)
+	if rebootingAt < 0 || rediscoveringAt <= rebootingAt || verifiedAt <= rediscoveringAt {
+		t.Fatalf("expected truthful reboot -> rediscovery -> verification events, got:\n%s", output)
+	}
+	if !strings.Contains(output[verifiedAt:], `"observedFirmware":"1.0.1"`) {
+		t.Fatalf("final verification event lost the observed firmware, got:\n%s", output)
+	}
 	if !strings.Contains(strings.Join(discoveryCandidates, ","), oldServer.URL) {
 		t.Fatalf("expected old target in discovery candidates, got %v", discoveryCandidates)
 	}

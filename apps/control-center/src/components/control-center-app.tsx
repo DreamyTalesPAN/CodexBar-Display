@@ -184,6 +184,7 @@ type ThemeInstallJob = {
 
 type FirmwareUpdateResult = {
   firmware?: string;
+  observedFirmware?: string;
   target?: string;
   deviceId?: string;
   artifactValidated?: boolean;
@@ -3965,6 +3966,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           companionStatus={companionStatus}
           device={device}
           displayFrame={displayFrame}
+          firmwareUpdateStatus={firmwareUpdateStatus}
           usage={usage}
         />
       ) : null}

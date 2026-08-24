@@ -21,6 +21,7 @@ import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
 type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
   displayFrame: DisplayFrameSnapshot | null;
+  updateOwnedDisconnect?: boolean;
   usage: UsageSnapshot | null;
 };
 
@@ -325,6 +326,7 @@ export async function parseLatestDisplayFrameResponse(
 export function LiveVibeTVPreview({
   device,
   displayFrame,
+  updateOwnedDisconnect = false,
   usage,
 }: LiveVibeTVPreviewProps) {
   const themeId = activeThemeId(device);
@@ -455,7 +457,9 @@ export function LiveVibeTVPreview({
   return (
     <figure className="w-full max-w-[520px]">
       <VibeTVCaseShell>
-        {awaitingProviderSetup ? (
+        {updateOwnedDisconnect ? (
+          <FirmwareUpdateRestarting />
+        ) : awaitingProviderSetup ? (
           <ThemeSpecLoading
             message="Waiting for AI setup…"
             status="loading"
@@ -1137,6 +1141,21 @@ function ThemePreviewOffline() {
       <div>
         <div className="mb-3 text-[#FF4FC3]">Live preview paused</div>
         <div className="text-[#FFFFFF]">Reconnect VibeTV to continue</div>
+      </div>
+    </div>
+  );
+}
+
+function FirmwareUpdateRestarting() {
+  return (
+    <div
+      aria-label="VibeTV firmware update is restarting the device"
+      className="grid aspect-square w-full place-items-center bg-[#050505] p-5 text-center font-mono text-[11px] font-bold uppercase text-[#CCFF00]"
+      role="status"
+    >
+      <div>
+        <div className="mb-3 text-[#CCFF00]">VibeTV is restarting</div>
+        <div className="text-[#FFFFFF]">Keep power connected and wait</div>
       </div>
     </div>
   );

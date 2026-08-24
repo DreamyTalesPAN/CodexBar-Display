@@ -275,6 +275,26 @@ describe("dynamic usage slot preview", () => {
     expect(markup).toContain("Reconnect VibeTV to continue");
   });
 
+  it("shows wait guidance instead of reconnect guidance during an update-owned reboot", () => {
+    const markup = renderToStaticMarkup(
+      createElement(LiveVibeTVPreview, {
+        device: {
+          active: true,
+          connected: false,
+          paired: true,
+          ready: false,
+        },
+        displayFrame: null,
+        updateOwnedDisconnect: true,
+        usage: null,
+      }),
+    );
+
+    expect(markup).toContain("VibeTV is restarting");
+    expect(markup).toContain("Keep power connected and wait");
+    expect(markup).not.toContain("Reconnect VibeTV to continue");
+  });
+
   it("waits for actual usage instead of accepting a provider label alone", () => {
     expect(
       hasRenderableUsage({

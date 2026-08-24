@@ -532,6 +532,7 @@ type firmwareReleaseArtifact struct {
 
 type firmwareUpdateResult struct {
 	Firmware          string `json:"firmware,omitempty"`
+	ObservedFirmware  string `json:"observedFirmware,omitempty"`
 	Target            string `json:"target,omitempty"`
 	DeviceID          string `json:"deviceId,omitempty"`
 	ArtifactValidated bool   `json:"artifactValidated"`
@@ -5072,6 +5073,7 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 		result.HelloVerified = true
 		result.Target = target
 		result.Firmware = strings.TrimSpace(hello.Firmware)
+		result.ObservedFirmware = strings.TrimSpace(hello.Firmware)
 	})
 	if strings.TrimSpace(cfg.DeviceTarget) != target {
 		cfg.DeviceTarget = target
@@ -5422,6 +5424,9 @@ func (s *Server) applyFirmwareUpdateEvent(jobID string, event firmwareUpdateEven
 		if value := strings.TrimSpace(event.Firmware); value != "" {
 			job.firmware = value
 			job.Result.Firmware = value
+		}
+		if value := strings.TrimSpace(event.ObservedFirmware); value != "" {
+			job.Result.ObservedFirmware = value
 		}
 		if value := strings.TrimSpace(event.Target); value != "" {
 			job.target = value
@@ -5803,24 +5808,39 @@ func firmwareUpdateDiagnosticStatus(job firmwareUpdateJob) string {
 }
 
 func firmwareUpdateDiagnosticDetail(job firmwareUpdateJob) string {
+	stage := strings.TrimSpace(job.Stage)
+	observed := ""
+	if job.Result != nil && strings.TrimSpace(job.Result.ObservedFirmware) != "" {
+		observed = " Last observed firmware: " + strings.TrimSpace(job.Result.ObservedFirmware) + "."
+	}
 	switch job.Phase {
 	case "complete":
+		if observed != "" {
+			return "Last VibeTV update completed." + observed
+		}
 		if job.Result != nil && strings.TrimSpace(job.Result.Firmware) != "" {
 			return "Last VibeTV update completed. Firmware " + strings.TrimSpace(job.Result.Firmware) + " is installed."
 		}
 		return "Last VibeTV update completed."
 	case "error":
-		if job.Error != nil && strings.TrimSpace(job.Error.Message) != "" {
-			return "Last VibeTV update failed: " + strings.TrimSpace(job.Error.Message)
+		prefix := "Last VibeTV update failed"
+		if stage != "" {
+			prefix += " during " + stage
 		}
-		return "Last VibeTV update failed."
+		if job.Error != nil && strings.TrimSpace(job.Error.Message) != "" {
+			return prefix + ": " + strings.TrimSpace(job.Error.Message) + observed
+		}
+		return prefix + "." + observed
 	case "attention":
 		if strings.TrimSpace(job.Message) != "" {
-			return strings.TrimSpace(job.Message)
+			return strings.TrimSpace(job.Message) + observed
 		}
-		return "Firmware is current, but VibeTV still needs attention."
+		return "Firmware is current, but VibeTV still needs attention." + observed
 	default:
-		return "VibeTV update is still running."
+		if stage != "" {
+			return "VibeTV update is still running in " + stage + "." + observed
+		}
+		return "VibeTV update is still running." + observed
 	}
 }
 

@@ -614,6 +614,7 @@ func runInstallUpdate(args []string) (retErr error) {
 			Phase:             "complete",
 			Outcome:           "already_current",
 			Firmware:          caps.Firmware,
+			ObservedFirmware:  caps.Firmware,
 			Target:            base,
 			DeviceID:          deviceID,
 			ArtifactValidated: true,
@@ -731,6 +732,7 @@ func runInstallUpdate(args []string) (retErr error) {
 		Stage:             "verifying_health",
 		Phase:             "installing",
 		Firmware:          targetVersion,
+		ObservedFirmware:  targetVersion,
 		Target:            verifiedBase,
 		DeviceID:          deviceID,
 		ArtifactValidated: true,
@@ -816,6 +818,16 @@ func waitForHTTPFirmwareVersionWithDiscovery(ctx context.Context, home, base, ve
 	if err == nil {
 		return base, nil
 	}
+	emitFirmwareUpdateEvent(firmwareUpdateEvent{
+		Stage:             "rediscovering",
+		Phase:             "installing",
+		Firmware:          version,
+		Target:            base,
+		DeviceID:          deviceID,
+		ArtifactValidated: true,
+		UploadAccepted:    true,
+		HelloVerified:     true,
+	})
 
 	var lastDiscoveryErr error
 	for time.Now().Before(deadline) {

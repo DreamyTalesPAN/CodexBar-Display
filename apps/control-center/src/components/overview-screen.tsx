@@ -40,6 +40,10 @@ type OverviewScreenProps = {
   companionStatus: CompanionStatus;
   device: DeviceInfo | null;
   displayFrame?: DisplayFrameSnapshot | null;
+  firmwareUpdateStatus?: {
+    phase?: string;
+    stage?: string;
+  } | null;
   usage?: UsageSnapshot | null;
 };
 
@@ -48,6 +52,7 @@ export function OverviewScreen({
   companionStatus,
   device,
   displayFrame = null,
+  firmwareUpdateStatus = null,
   usage,
 }: OverviewScreenProps) {
   const pairingRejected = device?.paired === false;
@@ -59,7 +64,10 @@ export function OverviewScreen({
     !deviceIsReady(device) &&
     !pairingRejected &&
     !waitingForUsage;
-  const hero = buildHeroCopy(companionStatus, connected);
+  const updateOwnedDisconnect = Boolean(
+    !connected && firmwareUpdateStatus?.phase === "installing",
+  );
+  const hero = buildHeroCopy(companionStatus, connected, updateOwnedDisconnect);
 
   return (
     <div className="mx-auto max-w-[1180px] py-4">
@@ -74,7 +82,11 @@ export function OverviewScreen({
               className="text-4xl font-black tracking-tight md:text-5xl"
               id="vibetv-overview-title"
             >
-              {connected ? "VibeTV is connected" : "VibeTV status"}
+              {connected
+                ? "VibeTV is connected"
+                : updateOwnedDisconnect
+                  ? "VibeTV is restarting"
+                  : "VibeTV status"}
             </h2>
           </div>
 
@@ -82,6 +94,7 @@ export function OverviewScreen({
             <LiveVibeTVPreview
               device={device}
               displayFrame={displayFrame}
+              updateOwnedDisconnect={updateOwnedDisconnect}
               usage={usage || null}
             />
           </div>
@@ -95,12 +108,20 @@ export function OverviewScreen({
             <StatusItem
               icon={<ArrowUpFromLine aria-hidden />}
               label="VibeTV"
-              value={connected ? "Connected" : "Not connected"}
+              value={
+                connected
+                  ? "Connected"
+                  : updateOwnedDisconnect
+                    ? "Restarting"
+                    : "Not connected"
+              }
             />
             <StatusItem
               detail={
                 displayReady
                   ? undefined
+                  : updateOwnedDisconnect
+                    ? "No action is required. Keep VibeTV connected to power and wait."
                   : waitingForUsage
                     ? "This can take up to 60 seconds."
                     : "Waiting for a fresh image from VibeTV."
@@ -110,6 +131,8 @@ export function OverviewScreen({
               value={
                 displayReady
                   ? "Live"
+                  : updateOwnedDisconnect
+                    ? "Update running"
                   : waitingForUsage
                     ? "Waiting for usage"
                     : "Waiting for first image"
@@ -169,12 +192,20 @@ function StatusItem({
 function buildHeroCopy(
   companionStatus: CompanionStatus,
   connected: boolean,
+  updateOwnedDisconnect = false,
 ) {
   if (connected) {
     return {
       badge: "Connected",
       badgeVariant: "default" as const,
       icon: <Check data-icon="inline-start" aria-hidden />,
+    };
+  }
+  if (updateOwnedDisconnect) {
+    return {
+      badge: "Updating",
+      badgeVariant: "default" as const,
+      icon: <ArrowUpFromLine data-icon="inline-start" aria-hidden />,
     };
   }
   return {
