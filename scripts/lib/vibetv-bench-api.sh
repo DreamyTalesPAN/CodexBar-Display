@@ -22,8 +22,14 @@ try:
 except Exception:
     print("")
 ' "$endpoint" 2>/dev/null)"
+  # Answering runtime-health is not identity, and a foreign listener on a stale
+  # published port must not shadow a healthy managed runtime on the default one.
+  # Prefer the published origin only when it is ours; otherwise fall through, so
+  # the port-reuse case this helper exists for resolves to the runtime that is
+  # actually managed instead of failing the caller's own ownership check.
   if [[ -n "$published" ]] \
-    && curl -fsS --max-time 3 "$published/v1/runtime-health" >/dev/null 2>&1; then
+    && curl -fsS --max-time 3 "$published/v1/runtime-health" >/dev/null 2>&1 \
+    && bench::api_owned_by_runtime "$published"; then
     printf '%s\n' "$published"
     return
   fi

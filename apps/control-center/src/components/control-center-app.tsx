@@ -64,6 +64,7 @@ import {
 import { DeviceStartupScreen } from "./device-startup-screen";
 import {
   applyDeviceRecoveryStatus,
+  deviceRecoveryConfirmedLoss,
   createDeviceRecoveryGateState,
   DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT,
   DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT,
@@ -558,7 +559,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
 
       if (transition.state.preferredDeviceId) {
-        markDeviceLost();
+        // Confirmed loss is the failure limit being reached, not the first
+        // miss: openPicker stays false until then. Ending the incident here on
+        // every missed poll also reset the automatic-attempt guard, so the next
+        // provider_setup_required snapshot started a second native repair
+        // instead of showing the approved Try again -- the exact case
+        // markDeviceLost was split out to avoid.
+        if (deviceRecoveryConfirmedLoss(transition)) {
+          markDeviceLost();
+        } else {
+          setDevice((current) => markDeviceDisconnected(current));
+        }
         if (transition.openPicker) {
           setDeviceSearchState("searching");
           addEvent({
@@ -579,6 +590,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       markDeviceLost,
       mergeDevice,
       operationRecoveryGraceActive,
+      setDevice,
       setDeviceRecoveryGate,
     ],
   );

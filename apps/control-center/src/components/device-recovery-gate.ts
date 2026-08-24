@@ -18,6 +18,18 @@ export type DeviceRecoveryGateResult = {
   state: DeviceRecoveryGateState;
 };
 
+// The device is gone, as opposed to having missed a poll. Only the failure
+// limit decides that: openPicker stays false until it is reached, and false
+// again on every later poll once the picker already says "confirmed-loss".
+// Reading either half alone as loss ends a provider incident on the first
+// transient miss, which relaunches the automatic repair instead of leaving the
+// customer on the approved Try again.
+export function deviceRecoveryConfirmedLoss(
+  result: DeviceRecoveryGateResult,
+): boolean {
+  return result.openPicker || result.state.pickerReason === "confirmed-loss";
+}
+
 export function createDeviceRecoveryGateState(): DeviceRecoveryGateState {
   return {
     preferredDeviceId: "",

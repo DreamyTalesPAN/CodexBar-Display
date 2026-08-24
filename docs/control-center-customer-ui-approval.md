@@ -1776,3 +1776,24 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-types.ts`, `device-startup-screen.tsx`,
   `control-center-app.tsx`, `device-startup-screen.test.tsx`, and this approval
   record.
+
+## 2026-08-24 — A missed poll is not a lost VibeTV
+
+- User approval: Found by the automated review the user asked to be run on this
+  pull request and instructed to be fixed. It is a defect against a result the
+  user has already approved: the 2026-08-20 entry that put provider recovery in
+  front of the reconnect picker, and the approved rule that the first
+  unsuccessful automatic attempt is followed by one plain `Try again` rather
+  than another automatic repair. No new rule; the code did not hold to that one.
+  This entry records work done on the user's instruction and is his to confirm
+  on the bench before hand-off.
+- Approved customer-visible result: During AI-usage recovery, a single missed
+  status poll no longer ends the incident. The recovery screen stays where it
+  is, and the customer keeps the `Try again` he was offered, instead of the
+  screen flipping to the reconnect picker and a second automatic repair
+  starting behind it. The device is still described as reconnecting only once
+  the recovery gate has confirmed the loss -- the failure limit -- and only then
+  does the reconnect picker take over from AI recovery, exactly as approved on
+  2026-08-20. Nothing about the confirmed-loss case changes, and no copy changes.
+- Approved files: `control-center-app.tsx`, `device-recovery-gate.ts`,
+  `device-recovery-gate.test.ts`, and this approval record.
