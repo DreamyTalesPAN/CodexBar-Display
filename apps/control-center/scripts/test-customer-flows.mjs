@@ -3372,7 +3372,7 @@ async function testFirstUsageServiceFailureOffersRecovery(browser, appUrl) {
     "Automatic CodexBar startup must trigger exactly one provider check",
   );
   assert(
-    (await page.getByRole("link", { name: "Download CodexBar" }).count()) === 0,
+    (await page.getByRole("button", { name: "Open CodexBar" }).count()) === 0,
     "The CodexBar fallback must stay hidden before the customer retries",
   );
 
@@ -3384,14 +3384,23 @@ async function testFirstUsageServiceFailureOffersRecovery(browser, appUrl) {
       }),
     );
   });
+  // This fixture answers with engine.status "ready", which is the Companion
+  // saying it found CodexBar's binary and read its version -- CodexBar is on
+  // this Mac. The earned fallback is therefore Open, never the download; the
+  // download belongs to an engine that never answered and is covered in
+  // device-startup-screen.test.tsx.
   await page
-    .getByRole("heading", { name: "CodexBar is needed" })
+    .getByRole("heading", { name: "Finish AI setup in CodexBar" })
     .waitFor({ timeout: 10_000 });
   assert(
     providerRetries === 2,
     "Manual retry must start exactly one fresh provider check",
   );
-  await page.getByRole("link", { name: "Download CodexBar" }).waitFor();
+  await page.getByRole("button", { name: "Open CodexBar" }).waitFor();
+  assert(
+    (await page.getByRole("link", { name: "Download CodexBar" }).count()) === 0,
+    "A CodexBar that answered must never be offered as a download",
+  );
   await page.getByRole("button", { name: "Try again" }).waitFor();
   await page.getByRole("button", { name: "Create support report" }).waitFor();
 

@@ -214,12 +214,16 @@ describe("DeviceStartupScreen", () => {
       />,
     );
 
-    // The stand-in is not an inventory. CodexBar reports itself under that id
-    // when its own probe failed, which is a broken usage service rather than a
-    // provider waiting for one step, so this keeps the missing-install route.
-    expect(html).toContain("CodexBar is needed</h1>");
+    // The stand-in is not an inventory, so this must not read as "every
+    // provider is off" -- the subject of this test.
     expect(html).not.toContain("No AI provider is switched on");
-    expect(html).not.toContain("Open CodexBar");
+    // The route is Open, not Download. The engine is ready, which means the
+    // Companion found CodexBar's binary, read its config and accepted its
+    // version, so CodexBar is installed on this Mac and a download fixes
+    // nothing about a probe that timed out.
+    expect(html).toContain("Finish AI setup in CodexBar</h1>");
+    expect(html).toContain("Open CodexBar</span></button>");
+    expect(html).not.toContain("Download CodexBar");
   });
 
   it("opens CodexBar when an enabled provider only needs a sign-in", () => {
@@ -280,6 +284,98 @@ describe("DeviceStartupScreen", () => {
     expect(html).toContain("Finish AI setup in CodexBar</h1>");
     expect(html).toContain("Open CodexBar</span></button>");
     expect(html).not.toContain("Download CodexBar");
+  });
+
+  // The wire shape of that same bench state. An empty `usage --json` never
+  // reaches the browser as an empty list: the Companion turns it into the
+  // `codexbar` stand-in. Asserting only the empty list left the real payload
+  // going to the download, which is the fault this screen exists to prevent.
+  it("opens CodexBar when the only entry is the codexbar stand-in", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onCreateSupportReport={vi.fn()}
+        onOpenCodexBar={vi.fn()}
+        onPair={vi.fn()}
+        onRepairUsageService={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{
+          status: "setup_required",
+          engine: { status: "ready" },
+          providers: [{ id: "codexbar", status: "not_configured" }],
+        }}
+        showCodexBarFallback
+      />,
+    );
+
+    expect(html).toContain("Finish AI setup in CodexBar</h1>");
+    expect(html).toContain("Open CodexBar</span></button>");
+    expect(html).not.toContain("Download CodexBar");
+  });
+
+  // The Companion answers {status:"checking"} on any /v1/status that lands while
+  // its provider probe holds the lock. It carries no engine and no providers,
+  // and it arrives every 5s during an open incident, so reading it as evidence
+  // about CodexBar flipped a Mac that has CodexBar to "Download CodexBar" and
+  // back on the next poll.
+  it("keeps checking when the Companion is mid-probe, even after a failed retry", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        lastError={{
+          code: "CODEXBAR_REPAIR_FAILED",
+          message: "Repair could not finish.",
+          nextAction: "Try the repair again or create a support report.",
+        }}
+        onCreateSupportReport={vi.fn()}
+        onOpenCodexBar={vi.fn()}
+        onPair={vi.fn()}
+        onRepairUsageService={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{ status: "checking" }}
+        showCodexBarFallback
+      />,
+    );
+
+    expect(html).toContain("Starting AI usage</h1>");
+    expect(html).not.toContain("Download CodexBar");
+    expect(html).not.toContain("CodexBar is needed");
+    // The way out must stay usable while a calm view is on screen.
+    expect(html).toContain("Try again</span></button>");
+  });
+
+  // The download still has to be reachable, or the fix above would simply hide
+  // it: an engine that is not ready is CodexBar missing, too old, or broken.
+  it("offers the download when the engine is not ready", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onCreateSupportReport={vi.fn()}
+        onOpenCodexBar={vi.fn()}
+        onPair={vi.fn()}
+        onRepairUsageService={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{
+          status: "setup_required",
+          engine: { status: "not_configured" },
+          providers: [{ id: "codexbar", status: "not_configured" }],
+        }}
+        showCodexBarFallback
+      />,
+    );
+
+    expect(html).toContain("CodexBar is needed</h1>");
+    expect(html).toContain("Download CodexBar");
+    expect(html).not.toContain("Open CodexBar</span></button>");
   });
 
   it("says it is working while a retry the customer pressed is in flight", () => {

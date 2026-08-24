@@ -1575,7 +1575,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             // of its own. An externally delivered vibetv://repair-codexbar has
             // no such owner, so the temporary CodexBar this recovery started
             // would keep running until the window closes. Release it here.
-            if !hasJavaScriptOwner {
+            //
+            // A page that owned the repair can also be gone by now. The window
+            // cleanup runs finishControlCenterCodexBarRecovery before this task
+            // launches CodexBar, so it releases nothing, and the launch then
+            // records an app nobody is left to finish -- it outlived the window
+            // that started it. The cleanup nils the WebView, so that is the
+            // signal the owner has gone.
+            if !hasJavaScriptOwner || self.webView == nil {
                 self.finishControlCenterCodexBarRecovery()
             }
         }
@@ -3294,18 +3301,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
     // The hold outlives a repair that never stopped the runtime, so release it
     // whenever the shutdown does not happen.
+    //
+    // Deliberately without the claim's ownership check, and without stopping at
+    // the first origin that answers. This runs after SMAppService.unregister,
+    // where launchctl no longer knows the label: every candidate reads
+    // .serviceUnavailable, so the check skipped all of them and released
+    // nothing, leaving firmware updates and theme installs refused with
+    // "Mac App is restarting" for the rest of the 60s window after a restart
+    // that never happened. Releasing is idempotent and a stranger on a stale
+    // port simply refuses it, so send it to every candidate the claim could
+    // have used.
     private func runtimeReleaseUpdateHold() async {
         for origin in runtimeOriginCandidates() {
-            // Same reason as the claim: releasing against a foreign listener on
-            // a stale port reports success and leaves the real hold in place.
-            guard case .owned = verifyRuntimeListenerOwnership(
-                port: origin.port ?? defaultRuntimePort
-            ) else {
-                continue
-            }
-            if await runtimeUpdateHoldRequest(origin, release: true) != nil {
-                return
-            }
+            _ = await runtimeUpdateHoldRequest(origin, release: true)
         }
     }
 

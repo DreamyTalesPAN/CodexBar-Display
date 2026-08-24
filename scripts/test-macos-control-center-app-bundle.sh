@@ -615,9 +615,16 @@ required_source = [
     "var candidateOrigins = runtimeOriginCandidates()",
     "let managedOrigins = candidateOrigins.filter { origin in",
     "waitForRuntimeAPIToStop(managedOrigins)",
-    # Both hold loops must verify listener ownership before trusting an answer:
-    # a stale port from runtime-endpoint.json can be held by anything.
-    "            guard case .owned = verifyRuntimeListenerOwnership(\n                port: origin.port ?? defaultRuntimePort\n            ) else {\n                continue\n            }\n            if await runtimeUpdateHoldRequest(origin, release: true) != nil {",
+    # The claim must verify listener ownership before trusting an answer: a
+    # stale port from runtime-endpoint.json can be held by anything, and it runs
+    # before the unregister, where ownership is still knowable.
+    "            guard case .owned = verifyRuntimeListenerOwnership(\n                port: origin.port ?? defaultRuntimePort\n            ) else {\n                continue\n            }\n            if http.statusCode == 409 {",
+    # The release must NOT, and must not stop at the first answer. It runs after
+    # the unregister, where launchctl no longer knows the label: every candidate
+    # reads .serviceUnavailable, so the check skipped all of them and released
+    # nothing, leaving updates and theme installs refused with "Mac App is
+    # restarting" for the rest of the window after a restart that never happened.
+    "    private func runtimeReleaseUpdateHold() async {\n        for origin in runtimeOriginCandidates() {\n            _ = await runtimeUpdateHoldRequest(origin, release: true)\n        }\n    }",
     # Open CodexBar is reached from outside the WKWebView too, and macOS then
     # delivers it through application(_:open:), which urlRouter.receive rejects.
     "if urls.contains(where: isOpenCodexBarURL) {",
@@ -635,7 +642,10 @@ required_source = [
     "kind: .codexBarRepair",
     "beginCodexBarRepair(hasJavaScriptOwner: false)",
     "beginCodexBarRepair(hasJavaScriptOwner: true)",
-    "            if !hasJavaScriptOwner {\n                self.finishControlCenterCodexBarRecovery()\n            }",
+    # ... and also when the page that owned it is gone: the window cleanup runs
+    # before this task launches CodexBar, so it releases nothing, and the launch
+    # then records an app nobody is left to finish.
+    "            if !hasJavaScriptOwner || self.webView == nil {\n                self.finishControlCenterCodexBarRecovery()\n            }",
     # .ready only means the registration was accepted; the health gate below can
     # still fail and unregister it. The repair's restoration must survive that.
     "        runtimeStoppedForCodexBarRepair = false\n        clearPendingNativeUpdate()",

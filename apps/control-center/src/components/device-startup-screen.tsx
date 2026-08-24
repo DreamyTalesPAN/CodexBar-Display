@@ -80,8 +80,9 @@ export function DeviceStartupScreen({
   const waiting = deviceSearchState === "waiting";
   const everyProviderSwitchedOff =
     providerSetupHasEngineButNoEnabledProvider(providerSetup);
-  const codexBarListedProviders =
-    providerSetupCodexBarAnswered(providerSetup);
+  // Not "CodexBar listed something": CodexBar is there at all. A ready engine
+  // is the Companion's proof of that, and it is what decides Open vs Download.
+  const codexBarInstalled = providerSetupCodexBarAnswered(providerSetup);
   const providerRecoveryView = providerRecovery
     ? describeProviderRecovery(
         providerSetup,
@@ -89,7 +90,7 @@ export function DeviceStartupScreen({
         lastError,
         showCodexBarFallback,
         everyProviderSwitchedOff,
-        codexBarListedProviders,
+        codexBarInstalled,
       )
     : null;
   // A running request may disable the way out. A calm view may not: the
@@ -101,6 +102,11 @@ export function DeviceStartupScreen({
   const providerRecoveryBusy = Boolean(
     providerRecoveryView?.checking || providerRecoveryActionBusy,
   );
+  // A checking view has no answer to act on yet, so the CodexBar choice is not
+  // offered with it. The title and the buttons are decided in two places, and
+  // without this the download rendered underneath "Starting AI usage".
+  const offerCodexBarChoice =
+    showCodexBarFallback && !providerRecoveryView?.checking;
   const choosing =
     deviceSearchState === "multiple" && deviceCandidates.length > 0;
   const legacyRecovery =
@@ -195,7 +201,7 @@ export function DeviceStartupScreen({
         <RefreshCw data-icon="inline-start" aria-hidden />
         <span>Try again</span>
       </Button>
-      {showCodexBarFallback && (everyProviderSwitchedOff || codexBarListedProviders) ? (
+      {offerCodexBarChoice && codexBarInstalled ? (
         // CodexBar answered, so it is installed: whatever is still missing --
         // a switch, a sign-in, a macOS permission -- is settled inside it, and
         // the download page fixes none of those. The recovery screen has no
@@ -210,7 +216,7 @@ export function DeviceStartupScreen({
           <ExternalLink data-icon="inline-start" aria-hidden />
           <span>Open CodexBar</span>
         </Button>
-      ) : showCodexBarFallback ? (
+      ) : offerCodexBarChoice ? (
         <Button asChild className="w-full" size="lg" variant="outline">
           <a href="https://github.com/steipete/CodexBar/releases/latest">
             <Download data-icon="inline-start" aria-hidden />
@@ -355,7 +361,7 @@ function describeProviderRecovery(
   lastError: ApiError | null | undefined,
   showCodexBarFallback: boolean,
   everyProviderSwitchedOff: boolean,
-  codexBarListedProviders: boolean,
+  codexBarInstalled: boolean,
 ) {
   const setupStatus = normalizedProviderStatus(providerSetup?.status);
   // A retry the customer just pressed outranks the error from the attempt
@@ -365,9 +371,17 @@ function describeProviderRecovery(
   // 2026-08-21, in exactly that state.
   const retryInFlight =
     busyAction === "providers-retry" || busyAction === "usage-service-repair";
+  // "checking" is the Companion saying it is re-probing right now, not an
+  // answer about this Mac -- providerSetupRequiresRecovery reads it the same
+  // way. It arrives with no engine and no providers, so letting it reach the
+  // branches below made every one of them read "CodexBar is missing" and
+  // offered a download to a Mac that has it, flipping back on the next poll.
+  // It outranks a stale lastError for the same reason a fresh retry does: that
+  // error describes an attempt that is already over.
   if (
     retryInFlight ||
-    (!lastError && (!providerSetup || setupStatus === "checking"))
+    setupStatus === "checking" ||
+    (!lastError && !providerSetup)
   ) {
     return {
       checking: true,
@@ -385,7 +399,7 @@ function describeProviderRecovery(
     };
   }
 
-  if (showCodexBarFallback && codexBarListedProviders) {
+  if (showCodexBarFallback && codexBarInstalled) {
     return {
       checking: false,
       detail:

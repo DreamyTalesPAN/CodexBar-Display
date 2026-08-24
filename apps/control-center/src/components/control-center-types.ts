@@ -568,30 +568,28 @@ export function normalizedProviderStatus(value?: string) {
   return value?.trim().toLowerCase().replace(/^provider_/, "") || "";
 }
 
-// A ready engine means CodexBar answered, so it is installed and running.
-// Whatever is still missing -- a sign-in, a macOS permission, an account with
-// no usage, or simply nothing reported yet -- is settled inside CodexBar, and
-// the download page fixes none of it. Which of those it is stays CodexBar's to
-// say; this only reads that it answered.
+// A ready engine means CodexBar is installed: the Companion only reports it
+// after finding the binary, reading its config and accepting its version
+// (companion/internal/codexbar/provider_setup.go). Whatever is still missing --
+// a sign-in, a macOS permission, a switch, an account with no usage, or simply
+// nothing reported yet -- is settled inside CodexBar, and the download page
+// fixes none of it. Which of those it is stays CodexBar's to say; this only
+// reads that CodexBar is there.
 //
-// An empty inventory counts. CodexBar returns one after its providers are
-// switched back on until one of them is opened once, and the daemon's own
-// recovery hint for that state is literally "Open a provider once in CodexBar,
-// then retry". Sending that customer to a download was the bug this predicate
-// exists to prevent, seen on the bench on 2026-08-21.
+// The provider list deliberately does not enter into it. An earlier version
+// asked for a provider other than the `codexbar` stand-in and treated an empty
+// list as the "nothing to report yet" state. The Companion never sends an empty
+// list: an empty `usage --json` becomes exactly that stand-in
+// ([{id:"codexbar",status:"not_configured"}]), so the state this predicate
+// exists for -- providers switched back on, none opened once, seen on the bench
+// on 2026-08-21 -- was the one state it still sent to the download.
 //
-// The `codexbar` stand-in is the one exclusion. CodexBar reports itself under
-// that id when its own probe failed, which is a broken usage service rather
-// than a provider waiting for one step, so it keeps the missing-install route.
+// The download route belongs to an engine that is NOT ready: CodexBar missing,
+// too old, or broken. That is the case a download actually fixes.
 export function providerSetupCodexBarAnswered(
   providerSetup: ProviderSetupInfo | null | undefined,
 ) {
-  const providers = providerSetup?.providers ?? [];
-  return (
-    normalizedProviderStatus(providerSetup?.engine?.status) === "ready" &&
-    (providers.length === 0 ||
-      providers.some((provider) => provider.id !== "codexbar"))
-  );
+  return normalizedProviderStatus(providerSetup?.engine?.status) === "ready";
 }
 
 // A usable engine with every provider switched off is not a missing install:

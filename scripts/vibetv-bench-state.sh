@@ -14,30 +14,9 @@ BUNDLE_ID="shop.vibetv.control-center"
 APP="/Applications/VibeTV Control Center.app"
 STATE_DIR="$HOME/.vibetv-rehearsal"
 
-# The bundled agent runs with --api-fallback: when 47832 is taken it serves from
-# a free port and publishes that in runtime-endpoint.json. A fixed 47832 here
-# would question whatever took the port, or report no Companion at all while the
-# managed one is healthy elsewhere -- and it would do so precisely in the messy
-# bench state this check exists to explain. Same resolution
-# scripts/vibetv-hw-selftest.sh uses.
-resolve_api() {
-  local ep="$HOME/Library/Application Support/codexbar-display/run/runtime-endpoint.json"
-  local published
-  published="$(/usr/bin/python3 -c '
-import json, sys
-try:
-    print(json.load(open(sys.argv[1])).get("origin") or "")
-except Exception:
-    print("")
-' "$ep" 2>/dev/null)"
-  if [[ -n "$published" ]] \
-    && curl -fsS --max-time 3 "$published/v1/runtime-health" >/dev/null 2>&1; then
-    printf '%s\n' "$published"
-    return
-  fi
-  printf '%s\n' "http://127.0.0.1:47832"
-}
-API="$(resolve_api)"
+# shellcheck source=lib/vibetv-bench-api.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/vibetv-bench-api.sh"
+API="$(bench::resolve_api)"
 
 say() { printf '%s\n' "$*"; }
 warn() { printf '  !! %s\n' "$*"; }

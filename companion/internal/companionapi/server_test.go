@@ -10566,3 +10566,121 @@ func TestRuntimeUpdateHoldRefusalIsObservable(t *testing.T) {
 		t.Fatalf("a refused hold must be observable in the runtime log, got %q", logged)
 	}
 }
+
+// A theme install job and its worker live in this process exactly like a
+// firmware job. The Mac App's repair unregisters the runtime, so granting the
+// hold while an install runs erases that install and the status the customer is
+// watching for it. The browser defers its own repair, but an externally
+// delivered vibetv://repair-codexbar never passes through that check.
+func TestRuntimeUpdateHoldRefusedWhileAThemeInstallOwnsTheRuntime(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+	server.themeInstallActive = true
+
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalStderr := os.Stderr
+	os.Stderr = write
+	defer func() { os.Stderr = originalStderr }()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/runtime-health/update-hold",
+		strings.NewReader(`{}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	_ = write.Close()
+
+	logged, _ := io.ReadAll(read)
+	os.Stderr = originalStderr
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("a running theme install must refuse the hold, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "theme_install_in_progress" {
+		t.Fatalf("error code=%q want theme_install_in_progress", response.Error.Code)
+	}
+	// Same reason the firmware refusal is logged: it is there for someone
+	// tailing the runtime. The 409 above is the contract a script relies on.
+	if !strings.Contains(string(logged), "update hold refused") {
+		t.Fatalf("a refused hold must be observable in the runtime log, got %q", logged)
+	}
+}
+
+// The other direction of the same race: once the Mac App has been told it may
+// restart, an install started after that answer would die with the runtime.
+func TestThemeInstallRefusedAfterTheRepairHoldIsGranted(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+
+	hold := func(body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/runtime-health/update-hold",
+			strings.NewReader(body),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+	startInstall := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/themes/install",
+			strings.NewReader(`{"themeId":"cozy-meadow","slot":"wall"}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := hold(`{}`); rec.Code != http.StatusOK {
+		t.Fatalf("an idle runtime must grant the hold, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec := startInstall()
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("an install started after the hold must be refused, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "mac_app_restarting" {
+		t.Fatalf("error code=%q want mac_app_restarting", response.Error.Code)
+	}
+
+	// A repair that never stopped the runtime must not keep installs blocked.
+	if rec := hold(`{"release":true}`); rec.Code != http.StatusOK {
+		t.Fatalf("releasing the hold must succeed, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if rec := startInstall(); rec.Code == http.StatusConflict {
+		var released struct {
+			Error apiError `json:"error"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &released)
+		if released.Error.Code == "mac_app_restarting" {
+			t.Fatal("a released hold must stop refusing theme installs")
+		}
+	}
+}

@@ -3547,8 +3547,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       // Try again. Only a reachable Mac App that no longer needs recovery ends
       // one.
       if (companionStatus === "online") {
+        // The fallback is earned inside one incident and must not outlive it.
+        // The realistic way out of a fallback screen is the customer fixing
+        // CodexBar himself, which is exactly what its copy tells him to do --
+        // and that path cleared nothing, so the next incident could open with
+        // the download already on screen before anything had been tried. The
+        // clear at the start of an incident does not cover it: that one sits
+        // behind the theme-install deferral.
+        //
+        // Only when an incident had actually started, and deferred for the
+        // same reason that clear is: a synchronous setState in an effect
+        // cascades a second render pass.
+        const incidentWasOpen = providerRecoveryAttempted.current;
         providerRecoveryAttempted.current = false;
         providerRecoveryManualAttempted.current = false;
+        if (incidentWasOpen) {
+          window.setTimeout(() => setShowCodexBarFallback(false), 0);
+        }
       }
       return;
     }

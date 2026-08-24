@@ -1495,9 +1495,10 @@ func (s *Server) handleRuntimeUpdateHold(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if _, running := s.activeFirmwareUpdateJob(); running {
-		// The only place the collision is observable from outside: the Mac App
-		// has no log a script can read, so without this line a bench run cannot
-		// tell a repair that was held back from one that never arrived.
+		// For someone tailing this runtime in a terminal. Not bench evidence:
+		// the managed LaunchAgent redirects neither stream, so this never
+		// reaches daemon.out.log. The 409 below is the observable contract, and
+		// scripts/vibetv-prove-update-serialization.sh asks for it directly.
 		_, _ = fmt.Fprintln(os.Stderr, "VibeTV update hold refused: a firmware update owns this runtime")
 		writeError(
 			w,
@@ -1508,6 +1509,23 @@ func (s *Server) handleRuntimeUpdateHold(w http.ResponseWriter, r *http.Request)
 		)
 		return
 	}
+	// A theme install job and its worker live in this process exactly like a
+	// firmware job, so the repair's restart erases a running install and the
+	// status the customer is watching for it. The browser defers its own repair
+	// while one runs, but an externally delivered vibetv://repair-codexbar never
+	// passes through that check -- the guard has to be here, where the hold is
+	// granted.
+	if s.themeInstallInFlight() {
+		_, _ = fmt.Fprintln(os.Stderr, "VibeTV update hold refused: a theme install owns this runtime")
+		writeError(
+			w,
+			http.StatusConflict,
+			"theme_install_in_progress",
+			"Theme install is still running.",
+			"Wait for the theme install to finish.",
+		)
+		return
+	}
 	s.updateHoldUntil = time.Now().Add(runtimeUpdateHoldWindow)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
@@ -1515,6 +1533,15 @@ func (s *Server) handleRuntimeUpdateHold(w http.ResponseWriter, r *http.Request)
 // Callers must hold firmwareUpdateStartMu.
 func (s *Server) updateHoldActive() bool {
 	return !s.updateHoldUntil.IsZero() && time.Now().Before(s.updateHoldUntil)
+}
+
+// Callers must hold firmwareUpdateStartMu, so that asking this and granting a
+// hold are one step. Lock order is firmwareUpdateStartMu -> installJobsMu
+// everywhere; tryStartThemeInstall takes the same two in the same order.
+func (s *Server) themeInstallInFlight() bool {
+	s.installJobsMu.Lock()
+	defer s.installJobsMu.Unlock()
+	return s.themeInstallActive
 }
 
 func (s *Server) handleRuntimeHealth(w http.ResponseWriter, r *http.Request) {
@@ -3738,8 +3765,13 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !s.tryStartThemeInstall() {
-		writeError(w, http.StatusConflict, "theme_install_in_progress", "Another theme install is already running.", "Wait for the current theme install to finish, then retry.")
+	switch refusal := s.tryStartThemeInstall(); refusal {
+	case "":
+	case "mac_app_restarting":
+		writeError(w, http.StatusConflict, refusal, "Mac App is restarting.", "Wait a moment, then start the theme install again.")
+		return
+	default:
+		writeError(w, http.StatusConflict, refusal, "Another theme install is already running.", "Wait for the current theme install to finish, then retry.")
 		return
 	}
 	releaseInstall := true
@@ -4629,14 +4661,26 @@ func (s *Server) createThemeInstallJob(req themeInstallRequest) themeInstallJob 
 	return cloneThemeInstallJob(job)
 }
 
-func (s *Server) tryStartThemeInstall() bool {
+// Returns the error code that refused the start, or "" when the install may
+// run. Each guard sits under the lock that owns the thing it guards, and both
+// are taken in the same order handleRuntimeUpdateHold uses --
+// firmwareUpdateStartMu, then installJobsMu -- so a repair and an install can
+// never deadlock and one of the two always loses cleanly. Checking the hold
+// outside this lock would leave the gap the hold exists to close: an install
+// that starts after the Mac App was told it may restart dies with the runtime.
+func (s *Server) tryStartThemeInstall() string {
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if s.updateHoldActive() {
+		return "mac_app_restarting"
+	}
 	s.installJobsMu.Lock()
 	defer s.installJobsMu.Unlock()
 	if s.themeInstallActive {
-		return false
+		return "theme_install_in_progress"
 	}
 	s.themeInstallActive = true
-	return true
+	return ""
 }
 
 func (s *Server) finishThemeInstall() {

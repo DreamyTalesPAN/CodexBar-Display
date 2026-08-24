@@ -19,14 +19,23 @@
 set -uo pipefail
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin:$PATH
 
-API="http://127.0.0.1:47832"
+# A hard-coded 47832 proves nothing here. The managed agent runs with
+# --api-fallback, so when that port is taken it serves from a free one and
+# publishes the real origin. Against a fixed port this script would drive an
+# unrelated service, or update one runtime while firing the repair into another
+# and call the result evidence. Resolve the origin, and watch the listener on
+# the port that origin names.
+# shellcheck source=lib/vibetv-bench-api.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/vibetv-bench-api.sh"
+API="$(bench::resolve_api)"
+API_PORT="$(bench::api_port "$API")"
 APP="/Applications/VibeTV Control Center.app"
 LOG="$HOME/Library/Application Support/codexbar-display/logs/daemon.out.log"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 listeners() {
-  lsof -nP -a -iTCP@127.0.0.1:47832 -sTCP:LISTEN -Fp 2>/dev/null \
+  lsof -nP -a -iTCP@127.0.0.1:"$API_PORT" -sTCP:LISTEN -Fp 2>/dev/null \
     | sed -nE 's/^p([0-9]+)$/\1/p' | sort -u | tr '\n' ' '
 }
 
@@ -37,9 +46,10 @@ case "${1:-}" in
   *) echo "usage: $(basename "$0") [--yes]" >&2; exit 2 ;;
 esac
 
+printf 'companion api:   %s\n' "$API"
 before="$(listeners)"
 printf 'listener before: %s\n' "${before:-none}"
-[[ -n "$before" ]] || { echo 'error: no Companion runtime on 47832' >&2; exit 1; }
+[[ -n "$before" ]] || { echo "error: no Companion runtime on $API" >&2; exit 1; }
 
 # A bench script that flashes whichever device happens to be configured is one
 # stale terminal away from writing to the wrong live VibeTV. Name the device and
@@ -78,16 +88,31 @@ job="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["job"]["id
 printf 'job: %s\n' "$job"
 
 fired=0 polls=0 answered=0
-hold_refusals() {
-  # grep -c already prints 0 when it finds nothing, and still exits 1 for it.
-  # Adding a fallback value here appends a second line and every (( )) below
-  # dies on it, which reads as "the repair never reached the guard".
-  local count
-  count="$(grep -c 'update hold refused' "$LOG" 2>/dev/null || true)"
-  printf '%s' "${count:-0}"
+# Asking the guard is the first thing the Mac App's repair does, so a 409 here
+# proves the same lock on the same path, at the same moment the repair asked.
+#
+# This used to grep daemon.out.log for the runtime's refusal line. That can
+# never work: the line goes to stderr, and the managed runtime's LaunchAgent
+# (macos/VibeTVControlCenter/shop.vibetv.control-center.runtime.plist) sets
+# neither StandardOutPath nor StandardErrorPath -- daemon.out.log is written by
+# the daemon itself, for other things. So the evidence never appeared and this
+# script reported FAILED after flashing real firmware, every time.
+hold_refused() {
+  local code
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 \
+    -H 'Content-Type: application/json' --data '{}' \
+    "$API/v1/runtime-health/update-hold" 2>/dev/null)"
+  if [[ "$code" == 200 ]]; then
+    # The guard let us in while a job owns this runtime -- the failure this
+    # script exists to catch. Hand the hold straight back so the report is not
+    # produced by blocking the very update it is measuring.
+    curl -s -o /dev/null --max-time 12 -H 'Content-Type: application/json' \
+      --data '{"release":true}' "$API/v1/runtime-health/update-hold" 2>/dev/null || true
+    printf '  !! the guard GRANTED a hold while the job was running\n'
+    return 1
+  fi
+  [[ "$code" == 409 ]]
 }
-
-holds_before="$(hold_refusals)"
 deadline=$((SECONDS + 600))
 while (( SECONDS < deadline )); do
   polls=$((polls + 1))
@@ -109,21 +134,14 @@ print(j.get("phase"), j.get("stage"))' "$WORK/status.json")"
         echo 'error: could not deliver vibetv://repair-codexbar to the installed app' >&2
         exit 1
       fi
-      # Delivery is not collision. The Mac App keeps no log a script can read,
-      # so the runtime says it instead: the repair asks for an update hold and is
-      # refused while a job owns this process. That refusal is the only evidence
-      # from outside that the two actually met.
-      for _ in $(seq 1 30); do
-        now="$(hold_refusals)"
-        if (( now > holds_before )); then
-          fired=1
-          printf '  >>> %s the repair asked for a hold and was refused\n' "$(date -u +%H:%M:%SZ)"
-          break
-        fi
-        sleep 2
-      done
-      if [[ "$fired" == 0 ]]; then
-        printf '  !! the repair was delivered but never reached the update guard\n'
+      # Delivery is not collision. Ask the guard the same question the repair
+      # just asked: while this job owns the runtime it must refuse, and that
+      # refusal is the evidence from outside that the two actually met.
+      if hold_refused; then
+        fired=1
+        printf '  >>> %s the guard refuses a hold while this job runs\n' "$(date -u +%H:%M:%SZ)"
+      else
+        printf '  !! the update guard did not refuse while the job was running\n'
       fi
     fi
     case "$phase" in complete|error|attention) break ;; esac

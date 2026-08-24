@@ -1739,3 +1739,40 @@ issue scope, or release permission never implies UI permission.
   when CodexBar reports its own probe failed under the `codexbar` stand-in.
 - Approved files: `control-center-types.ts`, `device-startup-screen.tsx`,
   `device-startup-screen.test.tsx`, and this approval record.
+
+## 2026-08-24 — Deliver the approved download rule, and stop a mid-probe answer from undoing it
+
+- User approval: The user asked for PR #373 to be made merge-ready and for the
+  findings of a bug detector run to be fixed. The findings below are three ways
+  the screen still contradicted a result the user had already approved twice --
+  on 2026-08-20 under "Do not send a customer after software they already have",
+  and on 2026-08-21 as "`Download CodexBar` ... remain only when the engine never
+  answered". No new customer-visible rule is introduced here; this makes the
+  code produce the result those entries describe. The exact visible wording is
+  unchanged from the 2026-08-21 entries -- only which state reaches which of
+  them. This entry records work done on the user's instruction and is his to
+  confirm on the bench before hand-off.
+- Approved customer-visible result: `Download CodexBar` and its `CodexBar is
+  needed` heading now appear only when CodexBar's engine did not answer -- that
+  is, CodexBar is missing, too old, or broken, the only cases a download fixes.
+  Three states that previously reached the download no longer do:
+  - CodexBar installed with providers switched on but none opened yet. The
+    2026-08-21 entry approved treating this as installed, but the Companion
+    never sends the empty provider list that was checked for; it sends a
+    `codexbar` stand-in, which the same check excluded. The screen offers
+    `Open CodexBar` and reads `Finish AI setup in CodexBar`.
+  - The Companion answering `checking` because its own provider probe is
+    running. It carries no engine and no providers, arrives on any status poll
+    during an incident, and was read as "CodexBar is missing", flipping the
+    screen to a download and back seconds later. It now keeps `Starting AI
+    usage`, with `Try again` still pressable and the support report still
+    reachable. This narrows the stand-in exception named at the end of the
+    2026-08-21 entry: a stand-in under an engine that answered no longer routes
+    to the download, because finding CodexBar's binary and reading its version
+    is already proof it is installed.
+  - A CodexBar choice inherited from a previous, already-closed incident. It is
+    now cleared when an incident ends, so a new one never opens with a download
+    on screen before anything has been tried.
+- Approved files: `control-center-types.ts`, `device-startup-screen.tsx`,
+  `control-center-app.tsx`, `device-startup-screen.test.tsx`, and this approval
+  record.
