@@ -10,6 +10,6 @@ import (
 // command stubs. Detection tests call autoEnableFirstRunProviders directly or
 // install their own hook.
 func TestMain(m *testing.M) {
-	autoEnableFirstRunProvidersFn = func(string, string) bool { return true }
+	autoEnableFirstRunProvidersFn = func(string, string) error { return nil }
 	os.Exit(m.Run())
 }

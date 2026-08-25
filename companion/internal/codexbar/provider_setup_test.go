@@ -798,7 +798,9 @@ func TestAutoEnableFirstRunProvidersEnablesOnlyDeliveringProviders(t *testing.T)
 		return nil, nil
 	}
 
-	autoEnableFirstRunProviders(configPath, "/usr/local/bin/CodexBarCLI")
+	if err := autoEnableFirstRunProviders(configPath, "/usr/local/bin/CodexBarCLI"); err != nil {
+		t.Fatalf("autoEnableFirstRunProviders: %v", err)
+	}
 
 	var enabled []string
 	for _, call := range enables {
@@ -809,9 +811,9 @@ func TestAutoEnableFirstRunProvidersEnablesOnlyDeliveringProviders(t *testing.T)
 	}
 }
 
-// A detection probe that yields no parsable providers must switch nothing on:
-// CodexBar's untouched default stays.
-func TestAutoEnableFirstRunProvidersLeavesDefaultWithoutProviderAnswer(t *testing.T) {
+// A detection probe that yields no parsable providers must fail so the
+// first-run initializer does not publish an incomplete config.
+func TestAutoEnableFirstRunProvidersRejectsMissingProviderAnswer(t *testing.T) {
 	originalBootstrap := runConfigBootstrapCommandFn
 	defer func() { runConfigBootstrapCommandFn = originalBootstrap }()
 	runConfigBootstrapCommandFn = func(
@@ -827,7 +829,30 @@ func TestAutoEnableFirstRunProvidersLeavesDefaultWithoutProviderAnswer(t *testin
 		return nil, nil
 	}
 
-	autoEnableFirstRunProviders(filepath.Join(t.TempDir(), "config.json"), "/usr/local/bin/CodexBarCLI")
+	if err := autoEnableFirstRunProviders(filepath.Join(t.TempDir(), "config.json"), "/usr/local/bin/CodexBarCLI"); err == nil {
+		t.Fatal("missing provider answer must fail")
+	}
+}
+
+func TestAutoEnableFirstRunProvidersRejectsTimedOutProbe(t *testing.T) {
+	originalBootstrap := runConfigBootstrapCommandFn
+	defer func() { runConfigBootstrapCommandFn = originalBootstrap }()
+	runConfigBootstrapCommandFn = func(
+		_ context.Context,
+		_ string,
+		_ string,
+		args ...string,
+	) ([]byte, error) {
+		if args[0] == "usage" {
+			return []byte(`[{"provider":"codex","usage":{"primary":{"usedPercent":7}}}]`), context.DeadlineExceeded
+		}
+		t.Fatalf("no enable may run after a timed-out probe: %v", args)
+		return nil, nil
+	}
+
+	if err := autoEnableFirstRunProviders(filepath.Join(t.TempDir(), "config.json"), "/usr/local/bin/CodexBarCLI"); err == nil {
+		t.Fatal("timed-out provider probe must fail")
+	}
 }
 
 // Creating the first-run config completes detection before returning; an
@@ -853,26 +878,76 @@ func TestEnsureConfigCompletesFirstRunDetectionBeforeReturning(t *testing.T) {
 	) ([]byte, error) {
 		return []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`), nil
 	}
+	home := t.TempDir()
 	var detected []string
-	autoEnableFirstRunProvidersFn = func(configPath, _ string) bool {
+	autoEnableFirstRunProvidersFn = func(configPath, _ string) error {
 		detected = append(detected, configPath)
-		return true
+		if _, err := os.Stat(filepath.Join(home, ".codexbar", "config.json")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("config was published before detection completed: %v", err)
+		}
+		return nil
 	}
 
-	home := t.TempDir()
 	path, err := EnsureConfig(home)
 	if err != nil {
 		t.Fatalf("EnsureConfig: %v", err)
 	}
-	if !reflect.DeepEqual(detected, []string{path}) {
-		t.Fatalf("detection must complete for the created config before return, got %v", detected)
+	if len(detected) != 1 || detected[0] == path {
+		t.Fatalf("detection must use one private staged config, got %v", detected)
 	}
 
 	if _, err := EnsureConfig(home); err != nil {
 		t.Fatalf("EnsureConfig with existing config: %v", err)
 	}
-	if !reflect.DeepEqual(detected, []string{path}) {
+	if len(detected) != 1 {
 		t.Fatalf("an existing config must not run detection again, got %v", detected)
+	}
+}
+
+func TestEnsureConfigRetriesAfterIncompleteFirstRunDetection(t *testing.T) {
+	t.Setenv("CODEXBAR_CONFIG", "")
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	originalBootstrap := runConfigBootstrapCommandFn
+	originalDetect := autoEnableFirstRunProvidersFn
+	defer func() {
+		runConfigBootstrapCommandFn = originalBootstrap
+		autoEnableFirstRunProvidersFn = originalDetect
+	}()
+	runConfigBootstrapCommandFn = func(
+		_ context.Context,
+		_ string,
+		_ string,
+		args ...string,
+	) ([]byte, error) {
+		return []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`), nil
+	}
+	detections := 0
+	autoEnableFirstRunProvidersFn = func(string, string) error {
+		detections++
+		if detections == 1 {
+			return errors.New("probe timed out")
+		}
+		return nil
+	}
+
+	home := t.TempDir()
+	wantPath := filepath.Join(home, ".codexbar", "config.json")
+	if _, err := EnsureConfig(home); err == nil {
+		t.Fatal("incomplete first-run detection must fail")
+	}
+	if _, err := os.Stat(wantPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("incomplete config was published: %v", err)
+	}
+	path, err := EnsureConfig(home)
+	if err != nil {
+		t.Fatalf("retry EnsureConfig: %v", err)
+	}
+	if path != wantPath || detections != 2 {
+		t.Fatalf("expected second detection to publish %q, path=%q detections=%d", wantPath, path, detections)
 	}
 }
 
@@ -899,10 +974,10 @@ func TestEnsureConfigConcurrentCallerWaitsForFirstRunDetection(t *testing.T) {
 	}
 	detectionStarted := make(chan struct{})
 	releaseDetection := make(chan struct{})
-	autoEnableFirstRunProvidersFn = func(string, string) bool {
+	autoEnableFirstRunProvidersFn = func(string, string) error {
 		close(detectionStarted)
 		<-releaseDetection
-		return true
+		return nil
 	}
 
 	home := t.TempDir()
@@ -929,67 +1004,5 @@ func TestEnsureConfigConcurrentCallerWaitsForFirstRunDetection(t *testing.T) {
 	}
 	if err := <-secondDone; err != nil {
 		t.Fatalf("second EnsureConfig: %v", err)
-	}
-}
-
-// An interrupted or failed first probe must not strand this Mac on CodexBar's
-// untouched default: the pending marker survives and the next start retries
-// detection until one provider answer was applied.
-func TestEnsureConfigRetriesFirstRunDetectionAfterIncompleteProbe(t *testing.T) {
-	t.Setenv("CODEXBAR_CONFIG", "")
-	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("CODEXBAR_BIN", bin)
-	originalBootstrap := runConfigBootstrapCommandFn
-	originalDetect := autoEnableFirstRunProvidersFn
-	defer func() {
-		runConfigBootstrapCommandFn = originalBootstrap
-		autoEnableFirstRunProvidersFn = originalDetect
-	}()
-	runConfigBootstrapCommandFn = func(
-		_ context.Context,
-		_ string,
-		_ string,
-		args ...string,
-	) ([]byte, error) {
-		return []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`), nil
-	}
-	answers := []bool{false, true}
-	attempts := 0
-	autoEnableFirstRunProvidersFn = func(string, string) bool {
-		applied := answers[attempts]
-		attempts++
-		return applied
-	}
-
-	home := t.TempDir()
-	path, err := EnsureConfig(home)
-	if err != nil {
-		t.Fatalf("EnsureConfig: %v", err)
-	}
-	if attempts != 1 {
-		t.Fatalf("creation must attempt detection once, got %d", attempts)
-	}
-	if _, err := os.Stat(firstRunMarkerPath(path)); err != nil {
-		t.Fatalf("a failed probe must keep the pending marker: %v", err)
-	}
-
-	if _, err := EnsureConfig(home); err != nil {
-		t.Fatalf("EnsureConfig retry: %v", err)
-	}
-	if attempts != 2 {
-		t.Fatalf("a pending marker must retry detection, got %d attempts", attempts)
-	}
-	if _, err := os.Stat(firstRunMarkerPath(path)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("an applied provider answer must consume the marker: %v", err)
-	}
-
-	if _, err := EnsureConfig(home); err != nil {
-		t.Fatalf("EnsureConfig after completion: %v", err)
-	}
-	if attempts != 2 {
-		t.Fatalf("a consumed marker must not run detection again, got %d attempts", attempts)
 	}
 }
