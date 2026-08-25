@@ -854,8 +854,9 @@ func TestEnsureConfigCompletesFirstRunDetectionBeforeReturning(t *testing.T) {
 		return []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`), nil
 	}
 	var detected []string
-	autoEnableFirstRunProvidersFn = func(configPath, _ string) {
+	autoEnableFirstRunProvidersFn = func(configPath, _ string) bool {
 		detected = append(detected, configPath)
+		return true
 	}
 
 	home := t.TempDir()
@@ -898,9 +899,10 @@ func TestEnsureConfigConcurrentCallerWaitsForFirstRunDetection(t *testing.T) {
 	}
 	detectionStarted := make(chan struct{})
 	releaseDetection := make(chan struct{})
-	autoEnableFirstRunProvidersFn = func(string, string) {
+	autoEnableFirstRunProvidersFn = func(string, string) bool {
 		close(detectionStarted)
 		<-releaseDetection
+		return true
 	}
 
 	home := t.TempDir()
@@ -927,5 +929,67 @@ func TestEnsureConfigConcurrentCallerWaitsForFirstRunDetection(t *testing.T) {
 	}
 	if err := <-secondDone; err != nil {
 		t.Fatalf("second EnsureConfig: %v", err)
+	}
+}
+
+// An interrupted or failed first probe must not strand this Mac on CodexBar's
+// untouched default: the pending marker survives and the next start retries
+// detection until one provider answer was applied.
+func TestEnsureConfigRetriesFirstRunDetectionAfterIncompleteProbe(t *testing.T) {
+	t.Setenv("CODEXBAR_CONFIG", "")
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	originalBootstrap := runConfigBootstrapCommandFn
+	originalDetect := autoEnableFirstRunProvidersFn
+	defer func() {
+		runConfigBootstrapCommandFn = originalBootstrap
+		autoEnableFirstRunProvidersFn = originalDetect
+	}()
+	runConfigBootstrapCommandFn = func(
+		_ context.Context,
+		_ string,
+		_ string,
+		args ...string,
+	) ([]byte, error) {
+		return []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`), nil
+	}
+	answers := []bool{false, true}
+	attempts := 0
+	autoEnableFirstRunProvidersFn = func(string, string) bool {
+		applied := answers[attempts]
+		attempts++
+		return applied
+	}
+
+	home := t.TempDir()
+	path, err := EnsureConfig(home)
+	if err != nil {
+		t.Fatalf("EnsureConfig: %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("creation must attempt detection once, got %d", attempts)
+	}
+	if _, err := os.Stat(firstRunMarkerPath(path)); err != nil {
+		t.Fatalf("a failed probe must keep the pending marker: %v", err)
+	}
+
+	if _, err := EnsureConfig(home); err != nil {
+		t.Fatalf("EnsureConfig retry: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("a pending marker must retry detection, got %d attempts", attempts)
+	}
+	if _, err := os.Stat(firstRunMarkerPath(path)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("an applied provider answer must consume the marker: %v", err)
+	}
+
+	if _, err := EnsureConfig(home); err != nil {
+		t.Fatalf("EnsureConfig after completion: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("a consumed marker must not run detection again, got %d attempts", attempts)
 	}
 }

@@ -123,16 +123,41 @@ func ensureConfigFile(path string) (string, error) {
 		return path, fmt.Errorf("protect CodexBar config: %w", err)
 	}
 	if created {
-		detect := autoEnableFirstRunProvidersFn
-		if detect == nil {
-			detect = autoEnableFirstRunProviders
+		// The pending marker survives an interrupted or failed first probe, so
+		// a crash, a timeout, or a malformed answer cannot strand this Mac on
+		// CodexBar's untouched default forever: the next start retries.
+		if err := os.WriteFile(firstRunMarkerPath(path), []byte("pending\n"), 0o600); err != nil {
+			log.Printf("codexbar first-run detection: marker not written: %v", err)
 		}
-		// The first authoritative collection must see the detected switches.
-		// Waiting here also means a normal Companion shutdown cannot strand an
-		// existing config behind an untracked background probe.
-		detect(path, bin)
+	}
+	if _, err := os.Stat(firstRunMarkerPath(path)); err == nil {
+		if bin == "" {
+			// An existing config with a pending marker means an earlier first
+			// run was interrupted; the binary was not resolved on this path.
+			if resolved, findErr := FindBinary(); findErr == nil {
+				bin = resolved
+			}
+		}
+		if bin != "" {
+			detect := autoEnableFirstRunProvidersFn
+			if detect == nil {
+				detect = autoEnableFirstRunProviders
+			}
+			// The first authoritative collection must see the detected
+			// switches. Waiting here also means a normal Companion shutdown
+			// cannot strand an existing config behind an untracked probe.
+			if detect(path, bin) {
+				if err := os.Remove(firstRunMarkerPath(path)); err != nil {
+					log.Printf("codexbar first-run detection: marker not removed: %v", err)
+				}
+			}
+		}
 	}
 	return path, writableConfig(path)
+}
+
+func firstRunMarkerPath(configPath string) string {
+	return configPath + ".vibetv-first-run"
 }
 
 func initializeConfigFile(path, bin string) (bool, error) {
@@ -206,8 +231,10 @@ func runConfigBootstrapCommand(
 
 // autoEnableFirstRunProvidersFn is nil in production (tests override it); a
 // nil value means autoEnableFirstRunProviders. An initializer expression here
-// would close an initialization cycle through runUsageCommandFn.
-var autoEnableFirstRunProvidersFn func(configPath, bin string)
+// would close an initialization cycle through runUsageCommandFn. The return
+// value reports whether a provider answer was applied; only then is the
+// first-run marker consumed.
+var autoEnableFirstRunProvidersFn func(configPath, bin string) bool
 
 // autoEnableFirstRunProviders runs once, right after CodexBar rendered its
 // first-run default config (which switches on only its own default provider,
@@ -219,7 +246,7 @@ var autoEnableFirstRunProvidersFn func(configPath, bin string)
 // that were never installed, so an error is not evidence of a local tool.
 // Nothing is invented and no VibeTV-side provider list appears; a Mac whose
 // providers deliver nothing keeps CodexBar's untouched default.
-func autoEnableFirstRunProviders(configPath, bin string) {
+func autoEnableFirstRunProviders(configPath, bin string) bool {
 	// The full-inventory probe visits every provider; the bundled CodexBar
 	// needs ~90s for it, so the first authoritative collection waits for this
 	// one bounded setup operation.
@@ -232,7 +259,7 @@ func autoEnableFirstRunProviders(configPath, bin string) {
 	providers, parseErr := extractProvidersFromRawJSON(raw)
 	if parseErr != nil || len(providers) == 0 {
 		log.Printf("codexbar first-run detection: no provider answer (parse=%v)", parseErr)
-		return
+		return false
 	}
 	var enabled []string
 	for _, item := range providers {
@@ -257,6 +284,7 @@ func autoEnableFirstRunProviders(configPath, bin string) {
 		enabled = append(enabled, id)
 	}
 	log.Printf("codexbar first-run detection: probed=%d enabled=%s", len(providers), strings.Join(enabled, ","))
+	return true
 }
 
 func writableConfig(path string) error {
