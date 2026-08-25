@@ -214,6 +214,12 @@ func firstRunProviderSetupState(configPath string) string {
 	return strings.TrimSpace(string(raw))
 }
 
+// FirstRunProviderSetupInProgress reports whether the initial complete
+// provider inventory is still running for this config.
+func FirstRunProviderSetupInProgress(configPath string) bool {
+	return firstRunProviderSetupState(configPath) == firstRunProviderSetupPendingState
+}
+
 func writeFirstRunProviderSetupState(configPath, state string) error {
 	return os.WriteFile(firstRunMarkerPath(configPath), []byte(strings.TrimSpace(state)+"\n"), 0o600)
 }
