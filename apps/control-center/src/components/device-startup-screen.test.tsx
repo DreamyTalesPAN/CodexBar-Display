@@ -592,4 +592,116 @@ describe("DeviceStartupScreen", () => {
     );
     expect(running).toContain("disabled=\"\"");
   });
+  it("names the failing provider and the switched-off tools beside it", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onCreateSupportReport={vi.fn()}
+        onOpenCodexBar={vi.fn()}
+        onPair={vi.fn()}
+        onRepairUsageService={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{
+          status: "setup_required",
+          engine: { status: "ready" },
+          // The Companion completes every non-ready answer with CodexBar's
+          // switch state (issue #405): the enabled provider keeps its own
+          // failing detail, the customer's other tools show as merely off.
+          providers: [
+            {
+              id: "codex",
+              label: "Codex",
+              status: "auth_required",
+              enabled: true,
+              detail: "This provider needs an active sign-in.",
+            },
+            { id: "claude", label: "Claude", status: "not_configured", enabled: false },
+            { id: "gemini", label: "Gemini", status: "not_configured", enabled: false },
+          ],
+        }}
+        showCodexBarFallback
+      />,
+    );
+
+    expect(html).toContain('data-testid="provider-recovery-status-list"');
+    expect(html).toContain("Codex</span>");
+    expect(html).toContain("This provider needs an active sign-in.");
+    expect(html).toContain("Claude</span>");
+    expect(html).toContain("Gemini</span>");
+    expect(html).toContain("Switched off.");
+  });
+
+  it("collapses a fresh setup's many switched-off providers into one count row", () => {
+    const switchedOff = Array.from({ length: 62 }, (_, index) => ({
+      id: `provider-${index}`,
+      label: `Provider ${index}`,
+      status: "not_configured",
+      enabled: false,
+    }));
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onCreateSupportReport={vi.fn()}
+        onOpenCodexBar={vi.fn()}
+        onPair={vi.fn()}
+        onRepairUsageService={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{
+          status: "setup_required",
+          engine: { status: "ready" },
+          providers: [
+            {
+              id: "codex",
+              label: "Codex",
+              status: "not_configured",
+              enabled: true,
+            },
+            ...switchedOff,
+          ],
+        }}
+        showCodexBarFallback
+      />,
+    );
+
+    expect(html).toContain("62 AI providers</span>");
+    expect(html).toContain("Switched off.");
+    expect(html).not.toContain("Provider 5</span>");
+    // The stand-in detail is setup-level wording; a named provider row says
+    // what is missing for that provider.
+    expect(html).toContain("Not connected yet.");
+  });
+
+  it("keeps the all-off view free of redundant status rows", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="waiting"
+        onCreateSupportReport={vi.fn()}
+        onOpenCodexBar={vi.fn()}
+        onPair={vi.fn()}
+        onRepairUsageService={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        providerRecovery
+        providerSetup={{
+          status: "setup_required",
+          engine: { status: "ready" },
+          providers: [
+            { id: "codex", status: "not_configured", enabled: false },
+            { id: "claude", status: "not_configured", enabled: false },
+          ],
+        }}
+        showCodexBarFallback
+      />,
+    );
+
+    expect(html).toContain("No AI provider is switched on");
+    expect(html).not.toContain('data-testid="provider-recovery-status-list"');
+  });
 });

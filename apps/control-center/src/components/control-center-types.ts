@@ -596,6 +596,52 @@ export function providerSetupCodexBarAnswered(
 // the customer has CodexBar and turned the switches off. Telling them to
 // download it sends them after software they already have. CodexBar still owns
 // the switches -- this only reads what it reports.
+// The Companion completes every non-ready provider answer with CodexBar's
+// real switch state (issue #405). These are the short status rows the recovery
+// screen shows under its verdict: enabled providers keep their own failing
+// detail, switched-off tools are named -- and past a handful they collapse
+// into one count row, because a fresh setup switches every undetected
+// provider off and sixty rows would bury the one that matters. The Companion
+// stays the authority on every status and detail; this only arranges them.
+export function providerRecoveryStatusRows(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  const providers = (providerSetup?.providers ?? []).filter(
+    (provider) =>
+      provider.id !== "codexbar" &&
+      normalizedProviderStatus(provider.status) !== "ready",
+  );
+  const rows = providers
+    .filter((provider) => provider.enabled !== false)
+    .map((provider) => ({
+      id: provider.id,
+      label: provider.label?.trim() || provider.id,
+      text:
+        normalizedProviderStatus(provider.status) === "not_configured"
+          ? "Not connected yet."
+          : provider.detail?.trim() || "Not ready yet.",
+    }));
+  const switchedOff = providers.filter(
+    (provider) => provider.enabled === false,
+  );
+  if (switchedOff.length > 0 && switchedOff.length <= 4) {
+    rows.push(
+      ...switchedOff.map((provider) => ({
+        id: provider.id,
+        label: provider.label?.trim() || provider.id,
+        text: "Switched off.",
+      })),
+    );
+  } else if (switchedOff.length > 4) {
+    rows.push({
+      id: "switched-off-providers",
+      label: `${switchedOff.length} AI providers`,
+      text: "Switched off.",
+    });
+  }
+  return rows;
+}
+
 export function providerSetupHasEngineButNoEnabledProvider(
   providerSetup: ProviderSetupInfo | null | undefined,
 ) {

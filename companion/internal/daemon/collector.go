@@ -63,12 +63,16 @@ type providerCollector struct {
 	wake                  <-chan struct{}
 	afterWakeCollect      func()
 
+	warmupUntil time.Time
+
 	mu                      sync.RWMutex
 	providers               map[string]providerSnapshot
 	lastPersistedRaw        string
 	lastPersistedAt         time.Time
 	inventoryKnown          bool
 	inventoryEnabled        map[string]struct{}
+	firstCollectDone        bool
+	lastFetchErr            error
 	tokenStatsMu            sync.Mutex
 	tokenStatsRunning       bool
 	tokenStatsCancel        context.CancelFunc
@@ -110,6 +114,12 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		persistInterval:       1 * time.Minute,
 		tokenStatsCooldown:    tokenStatsScanCooldown,
 		providers:             make(map[string]providerSnapshot),
+	}
+	if !opts.Once {
+		// Until the first collection since runtime start completes, an empty
+		// or unavailable collector is warm-up, not an answer about this Mac.
+		// `daemon --once` is exempt: one support cycle reports what it finds.
+		collector.warmupUntil = nowFn().Add(collectorWarmupMaxAge())
 	}
 	if normalizeTransportName(opts.Transport) == "wifi" || deps.transportName == "wifi" {
 		collector.requestedPortFn = func() string {
@@ -310,11 +320,17 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	collectedAt := c.now().UTC()
 	if err != nil {
 		updated := false
+		c.mu.Lock()
 		if inventoryAuthoritative {
-			c.mu.Lock()
 			updated = c.applyProviderInventoryLocked(inventory)
-			c.mu.Unlock()
 		}
+		c.lastFetchErr = err
+		if codexbar.FetchErrorKindOf(err) == codexbar.FetchErrorNoProviders {
+			// CodexBar answered with zero providers. That is a definitive
+			// enumeration, not a transport failure, so warm-up is over.
+			c.firstCollectDone = true
+		}
+		c.mu.Unlock()
 		if updated {
 			c.persistIfNeeded(collectedAt)
 		}
@@ -327,6 +343,8 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	var authoritativeEnabled map[string]struct{}
 
 	c.mu.Lock()
+	c.firstCollectDone = true
+	c.lastFetchErr = nil
 	if inventoryAuthoritative {
 		updated = c.applyProviderInventoryLocked(inventory)
 		_, authoritativeEnabled = enabledProviderInventory(inventory)
@@ -449,6 +467,27 @@ func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.Pro
 		updated = true
 	}
 	return updated
+}
+
+// firstCollectState reports whether one collection since runtime start has
+// completed with a real CodexBar answer, and the last fetch error while none
+// has. Before that first answer the collector knows nothing about this Mac's
+// providers, so an empty or unavailable state is warm-up, not a verdict.
+func (c *providerCollector) firstCollectState() (bool, error) {
+	if c == nil {
+		return true, nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.firstCollectDone, c.lastFetchErr
+}
+
+func (c *providerCollector) warmingUp(now time.Time) bool {
+	if c == nil || c.warmupUntil.IsZero() {
+		return false
+	}
+	settled, _ := c.firstCollectState()
+	return !settled && now.Before(c.warmupUntil)
 }
 
 func (c *providerCollector) providerEnabledByInventory(provider string) (bool, bool) {

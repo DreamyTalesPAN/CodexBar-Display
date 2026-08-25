@@ -202,6 +202,12 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 		protectedByID["codexbar"] = struct{}{}
 	}
 	for _, provider := range setup.Providers {
+		// A switched-off provider row is switch-state disclosure, not a probe
+		// failure; it must not stop fresh usage evidence from proving another
+		// provider ready.
+		if provider.Enabled != nil && !*provider.Enabled {
+			continue
+		}
 		id := strings.TrimSpace(strings.ToLower(provider.ID))
 		if id != "" && providerSetupFailureMustWin(provider.Status) {
 			protectedByID[id] = struct{}{}

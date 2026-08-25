@@ -634,9 +634,10 @@ func TestProbeProviderSetupReportsEveryProviderSwitchedOff(t *testing.T) {
 }
 
 // One provider switched on but silent is a reporting failure, not a switch that
-// is off. Claiming "no provider is switched on" there would send the customer to
-// flip a switch that is already flipped.
-func TestProbeProviderSetupKeepsStandInWhenAProviderIsSwitchedOn(t *testing.T) {
+// is off: the stand-in stays as that unanswered state. The switched-off
+// provider next to it must still be disclosed -- one silent switch must not
+// hide every switched-off tool (issue #405).
+func TestProbeProviderSetupDisclosesSwitchedOffBesideSilentEnabledProvider(t *testing.T) {
 	originalUsage := runUsageCommandFn
 	originalVersion := runVersionCommandFn
 	defer func() {
@@ -661,7 +662,226 @@ func TestProbeProviderSetupKeepsStandInWhenAProviderIsSwitchedOn(t *testing.T) {
 	}
 
 	got := ProbeProviderSetup(context.Background(), t.TempDir())
-	if len(got.Providers) != 1 || got.Providers[0].ID != "codexbar" {
-		t.Fatalf("a switched-on provider must keep the stand-in: %+v", got.Providers)
+	if len(got.Providers) != 2 {
+		t.Fatalf("stand-in plus the switched-off provider expected: %+v", got.Providers)
+	}
+	if got.Providers[0].ID != "codexbar" {
+		t.Fatalf("a switched-on provider must keep the stand-in first: %+v", got.Providers)
+	}
+	claude := got.Providers[1]
+	if claude.ID != "claude" || claude.Enabled == nil || *claude.Enabled {
+		t.Fatalf("the switched-off provider must be disclosed with its switch state: %+v", claude)
+	}
+}
+
+// A failing enabled provider must not hide the switched-off tools beside it:
+// the customer whose Claude is merely off must see exactly that, not the
+// generic connect message (issue #405). The reported provider keeps its own
+// status and gains its real switch state from the inventory.
+func TestProbeProviderSetupDisclosesSwitchedOffBesideFailingProvider(t *testing.T) {
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	defer func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	}()
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	setExistingConfig(t)
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.46.0"), nil
+	}
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[0] == "config" && args[1] == "providers" {
+			return []byte(`[{"provider":"codex","displayName":"Codex","enabled":true},
+				{"provider":"claude","displayName":"Claude","enabled":false},
+				{"provider":"gemini","displayName":"Gemini","enabled":false}]`), nil
+		}
+		return []byte(`[{"provider":"codex","error":"Not logged in. Sign in to Codex."}]`), nil
+	}
+
+	got := ProbeProviderSetup(context.Background(), t.TempDir())
+	if len(got.Providers) != 3 {
+		t.Fatalf("failing provider plus both switched-off providers expected: %+v", got.Providers)
+	}
+	codex := got.Providers[0]
+	if codex.ID != "codex" || codex.Status != ProviderAuthRequired {
+		t.Fatalf("the reported provider keeps its own status first: %+v", codex)
+	}
+	if codex.Enabled == nil || !*codex.Enabled {
+		t.Fatalf("the reported provider carries its real switch state: %+v", codex)
+	}
+	for _, provider := range got.Providers[1:] {
+		if provider.Enabled == nil || *provider.Enabled {
+			t.Fatalf("switched-off providers must say so: %+v", provider)
+		}
+		if provider.Status != ProviderNotConfigured {
+			t.Fatalf("switched-off providers report not_configured: %+v", provider)
+		}
+	}
+}
+
+// A ready provider means there is nothing to disclose and no inventory call to
+// pay for.
+func TestProbeProviderSetupSkipsInventoryWhenAProviderIsReady(t *testing.T) {
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	defer func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	}()
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	setExistingConfig(t)
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.46.0"), nil
+	}
+	inventoryCalls := 0
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[0] == "config" && args[1] == "providers" {
+			inventoryCalls++
+			return []byte(`[]`), nil
+		}
+		return []byte(`[{"provider":"codex","usage":{"primary":{"usedPercent":12}}}]`), nil
+	}
+
+	got := ProbeProviderSetup(context.Background(), t.TempDir())
+	if got.Status != ProviderReady {
+		t.Fatalf("a delivering provider must make setup ready: %+v", got)
+	}
+	if inventoryCalls != 0 {
+		t.Fatalf("a ready answer must not pay for an inventory call, got %d", inventoryCalls)
+	}
+}
+
+// First-run detection: the one probe of CodexBar's complete inventory enables
+// exactly the providers that deliver usage. An error answer -- even an
+// actionable sign-in message -- does not qualify, because the bundled CodexBar
+// reports "not logged in" for tools that were never installed.
+func TestAutoEnableFirstRunProvidersEnablesOnlyDeliveringProviders(t *testing.T) {
+	originalBootstrap := runConfigBootstrapCommandFn
+	defer func() { runConfigBootstrapCommandFn = originalBootstrap }()
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	var enables [][]string
+	runConfigBootstrapCommandFn = func(
+		_ context.Context,
+		_ string,
+		gotConfig string,
+		args ...string,
+	) ([]byte, error) {
+		if gotConfig != configPath {
+			t.Fatalf("unexpected config path: %q", gotConfig)
+		}
+		if reflect.DeepEqual(args, []string{"usage", "--json", "--provider", "all", "--web-timeout", "8"}) {
+			// Non-zero exit with a full JSON body, exactly like the bundled
+			// CodexBar when some providers fail.
+			return []byte(`[
+				{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":7}}},
+				{"provider":"claude","error":"Not logged in to Claude. Sign in."},
+				{"provider":"gemini","error":"Not logged in to Gemini. Run 'gemini' in Terminal."},
+				{"provider":"cursor","source":"web","usage":{"secondary":{"usedPercent":21}}},
+				{"provider":"opencode","usage":{}},
+				{"provider":"cli","usage":{"primary":{"usedPercent":1}}}
+			]`), errors.New("exit status 1")
+		}
+		if len(args) == 4 && args[0] == "config" && args[1] == "enable" && args[2] == "--provider" {
+			enables = append(enables, args)
+			return []byte(`{"enabled":true}`), nil
+		}
+		t.Fatalf("unexpected detection args: %v", args)
+		return nil, nil
+	}
+
+	autoEnableFirstRunProviders(configPath, "/usr/local/bin/CodexBarCLI")
+
+	var enabled []string
+	for _, call := range enables {
+		enabled = append(enabled, call[3])
+	}
+	if !reflect.DeepEqual(enabled, []string{"codex", "cursor"}) {
+		t.Fatalf("only delivering providers may be switched on, got %v", enabled)
+	}
+}
+
+// A detection probe that yields no parsable providers must switch nothing on:
+// CodexBar's untouched default stays.
+func TestAutoEnableFirstRunProvidersLeavesDefaultWithoutProviderAnswer(t *testing.T) {
+	originalBootstrap := runConfigBootstrapCommandFn
+	defer func() { runConfigBootstrapCommandFn = originalBootstrap }()
+	runConfigBootstrapCommandFn = func(
+		_ context.Context,
+		_ string,
+		_ string,
+		args ...string,
+	) ([]byte, error) {
+		if args[0] == "usage" {
+			return nil, errors.New("exit status 1")
+		}
+		t.Fatalf("no enable may run without a provider answer: %v", args)
+		return nil, nil
+	}
+
+	autoEnableFirstRunProviders(filepath.Join(t.TempDir(), "config.json"), "/usr/local/bin/CodexBarCLI")
+}
+
+// Creating the first-run config starts detection exactly once; an existing
+// config never does.
+func TestEnsureConfigStartsFirstRunDetectionExactlyOnce(t *testing.T) {
+	t.Setenv("CODEXBAR_CONFIG", "")
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	originalBootstrap := runConfigBootstrapCommandFn
+	originalDetect := autoEnableFirstRunProvidersFn
+	originalStarted := firstRunDetectStarted.Load()
+	defer func() {
+		runConfigBootstrapCommandFn = originalBootstrap
+		autoEnableFirstRunProvidersFn = originalDetect
+		firstRunDetectStarted.Store(originalStarted)
+	}()
+	firstRunDetectStarted.Store(false)
+	runConfigBootstrapCommandFn = func(
+		_ context.Context,
+		_ string,
+		_ string,
+		args ...string,
+	) ([]byte, error) {
+		return []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`), nil
+	}
+	detected := make(chan string, 2)
+	autoEnableFirstRunProvidersFn = func(configPath, _ string) {
+		detected <- configPath
+	}
+
+	home := t.TempDir()
+	path, err := EnsureConfig(home)
+	if err != nil {
+		t.Fatalf("EnsureConfig: %v", err)
+	}
+	select {
+	case got := <-detected:
+		if got != path {
+			t.Fatalf("detection must probe the created config, got %q want %q", got, path)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("creating the config must start first-run detection")
+	}
+
+	firstRunDetectStarted.Store(false)
+	if _, err := EnsureConfig(home); err != nil {
+		t.Fatalf("EnsureConfig with existing config: %v", err)
+	}
+	select {
+	case <-detected:
+		t.Fatal("an existing config must not start detection")
+	case <-time.After(100 * time.Millisecond):
 	}
 }

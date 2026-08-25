@@ -1832,3 +1832,27 @@ issue scope, or release permission never implies UI permission.
   readiness status above the list are unchanged.
 - Approved files: `theme-library-screen.tsx`, `theme-library-screen.test.tsx`,
   `scripts/test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-25 — Recovery names the customer's tools and their real switch state
+
+- User approval: Issue #405 was assigned for implementation with the explicit
+  acceptance criterion that a non-ready provider answer list switched-off
+  providers with their real switch state, so the customer sees which tools
+  exist and are merely off instead of the generic connect message. The user
+  additionally decided in the assigning conversation that first-run detection
+  switches on only providers that actually deliver usage, never sign-in-error
+  ones. This entry records work done on that instruction and is his to confirm
+  on the bench before hand-off.
+- Approved customer-visible result: After the customer's own retry fails, the
+  AI-usage recovery screen adds short status rows under its verdict: each
+  switched-on provider is named with its own failing reason (for example
+  `Codex — This provider needs an active sign-in.`), and switched-off tools are
+  named with `Switched off.` -- up to four; a fresh setup's dozens of
+  untouched-off providers collapse into one `N AI providers — Switched off.`
+  row. The first automatic attempt keeps its plain `Try again` without
+  internals, the all-off state keeps its dedicated `No AI provider is switched
+  on` view, and a checking probe shows no rows. On the Usage screen nothing
+  changes: its provider list with switches already shows off providers.
+- Approved files: `control-center-types.ts`, `device-startup-screen.tsx`,
+  `control-center-types.test.ts`, `device-startup-screen.test.tsx`, and this
+  approval record.

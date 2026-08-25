@@ -8,6 +8,7 @@ import {
   deviceIsReady,
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
+  providerRecoveryStatusRows,
   providerSetupRequiresRecovery,
 } from "./control-center-types";
 
@@ -408,5 +409,57 @@ describe("provider recovery contract", () => {
         providers: [{ id: "claude", status: "auth_required" }],
       }),
     ).toBe(false);
+  });
+});
+
+describe("providerRecoveryStatusRows", () => {
+  it("names up to four switched-off providers, then collapses into a count", () => {
+    const off = (id: string) => ({
+      id,
+      status: "not_configured",
+      enabled: false,
+    });
+    const few = providerRecoveryStatusRows({
+      status: "setup_required",
+      providers: [off("claude"), off("gemini"), off("cursor"), off("opencode")],
+    });
+    expect(few.map((row) => row.id)).toEqual([
+      "claude",
+      "gemini",
+      "cursor",
+      "opencode",
+    ]);
+
+    const many = providerRecoveryStatusRows({
+      status: "setup_required",
+      providers: [off("a"), off("b"), off("c"), off("d"), off("e")],
+    });
+    expect(many).toEqual([
+      { id: "switched-off-providers", label: "5 AI providers", text: "Switched off." },
+    ]);
+  });
+
+  it("keeps the codexbar stand-in and ready providers out of the rows", () => {
+    const rows = providerRecoveryStatusRows({
+      status: "setup_required",
+      providers: [
+        { id: "codexbar", status: "not_configured" },
+        { id: "codex", status: "ready", enabled: true },
+        {
+          id: "claude",
+          label: "Claude",
+          status: "auth_required",
+          enabled: true,
+          detail: "This provider needs an active sign-in.",
+        },
+      ],
+    });
+    expect(rows).toEqual([
+      {
+        id: "claude",
+        label: "Claude",
+        text: "This provider needs an active sign-in.",
+      },
+    ]);
   });
 });

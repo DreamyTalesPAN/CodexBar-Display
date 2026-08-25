@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -103,6 +105,13 @@ func ensureConfigFile(path string) (string, error) {
 		if initErr := initializeConfigFile(path, bin); initErr != nil {
 			return path, initErr
 		}
+		if firstRunDetectStarted.CompareAndSwap(false, true) {
+			detect := autoEnableFirstRunProvidersFn
+			if detect == nil {
+				detect = autoEnableFirstRunProviders
+			}
+			go detect(path, bin)
+		}
 	} else if err != nil {
 		return path, fmt.Errorf("inspect CodexBar config: %w", err)
 	}
@@ -179,6 +188,63 @@ func runConfigBootstrapCommand(
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = environmentWithConfig(configPath)
 	return cmd.Output()
+}
+
+// autoEnableFirstRunProvidersFn is nil in production (tests override it); a
+// nil value means autoEnableFirstRunProviders. An initializer expression here
+// would close an initialization cycle through runUsageCommandFn.
+var (
+	firstRunDetectStarted         atomic.Bool
+	autoEnableFirstRunProvidersFn func(configPath, bin string)
+)
+
+// autoEnableFirstRunProviders runs once, right after CodexBar rendered its
+// first-run default config (which switches on only its own default provider,
+// regardless of which AI tools this Mac actually uses). One bounded probe of
+// CodexBar's complete inventory -- its own `usage --provider all`, which
+// ignores the switches -- finds the providers that deliver usage here, and
+// CodexBar's own `config enable` switches exactly those on. Sign-in errors do
+// not qualify: the bundled CodexBar reports "not logged in" even for tools
+// that were never installed, so an error is not evidence of a local tool.
+// Nothing is invented and no VibeTV-side provider list appears; a Mac whose
+// providers deliver nothing keeps CodexBar's untouched default.
+func autoEnableFirstRunProviders(configPath, bin string) {
+	// The full-inventory probe visits every provider; the bundled CodexBar
+	// needs ~90s for it, so this runs detached from every probe and cycle.
+	probeCtx, cancelProbe := context.WithTimeout(context.Background(), 4*time.Minute)
+	raw, _ := runConfigBootstrapCommandFn(probeCtx, bin, configPath,
+		"usage", "--json", "--provider", "all", "--web-timeout", "8")
+	cancelProbe()
+	// A non-zero exit only says that some providers failed; the JSON body
+	// still lists every probed provider and is the authoritative answer.
+	providers, parseErr := extractProvidersFromRawJSON(raw)
+	if parseErr != nil || len(providers) == 0 {
+		log.Printf("codexbar first-run detection: no provider answer (parse=%v)", parseErr)
+		return
+	}
+	var enabled []string
+	for _, item := range providers {
+		payload, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		id := strings.ToLower(strings.TrimSpace(firstString(payload, "provider", "id", "slug", "name")))
+		if id == "" || id == "cli" || !validProviderID(id) {
+			continue
+		}
+		if providerPayloadHasError(payload) || !providerPayloadHasUsage(payload) {
+			continue
+		}
+		enableCtx, cancelEnable := context.WithTimeout(context.Background(), 15*time.Second)
+		_, err := runConfigBootstrapCommandFn(enableCtx, bin, configPath, "config", "enable", "--provider", id)
+		cancelEnable()
+		if err != nil {
+			log.Printf("codexbar first-run detection: enable %s failed: %v", id, err)
+			continue
+		}
+		enabled = append(enabled, id)
+	}
+	log.Printf("codexbar first-run detection: probed=%d enabled=%s", len(providers), strings.Join(enabled, ","))
 }
 
 func writableConfig(path string) error {
@@ -328,7 +394,7 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 	out, commandErr := runUsageCommandFn(probeCtx, 18*time.Second, bin, args...)
 	if exactProvider == "" {
 		result.Providers = providerReadinessFromOutput(out, commandErr, probeCtx.Err())
-		result.Providers = switchedOffInventory(probeCtx, bin, result.Providers)
+		result.Providers = providersWithSwitchState(probeCtx, bin, result.Providers)
 	} else {
 		provider := exactProviderReadinessFromOutput(exactProvider, out, commandErr, probeCtx.Err())
 		provider.Label = exactSetting.Label
@@ -371,35 +437,65 @@ func exactProviderReadinessFromOutput(providerID string, raw []byte, commandErr,
 }
 
 // `usage --json` lists only the providers that are switched on and carries no
-// enablement field at all, so "everything is off" arrives here as an empty list
-// and becomes the not-configured stand-in -- indistinguishable from CodexBar
-// having no providers. The customer was then told to download the CodexBar they
-// already have. Only in that state, ask CodexBar's own inventory, which is the
-// authority on the switches. Anything else -- a timeout, a config error, one
-// working provider -- never reaches this and pays for no extra call.
-func switchedOffInventory(ctx context.Context, bin string, providers []ProviderReadiness) []ProviderReadiness {
-	if len(providers) != 1 || providers[0].ID != "codexbar" ||
-		providers[0].Status != ProviderNotConfigured {
+// enablement field at all, so a customer whose tools are merely switched off is
+// invisible in the usage answer alone -- a Mac full of AI tools then reads as
+// "no AI provider". Whenever no provider is ready, CodexBar's own inventory,
+// the authority on the switches, completes the answer: reported providers carry
+// their real switch state, and every switched-off provider appears as its own
+// row. An engine-level failure (timeout, config error, engine error) keeps the
+// bare stand-in -- an inventory read is no more trustworthy than the usage call
+// that just failed. A ready provider skips the extra call entirely.
+func providersWithSwitchState(ctx context.Context, bin string, providers []ProviderReadiness) []ProviderReadiness {
+	standIn := len(providers) == 1 && providers[0].ID == "codexbar"
+	if standIn && providers[0].Status != ProviderNotConfigured {
 		return providers
+	}
+	for _, provider := range providers {
+		if provider.Status == ProviderReady {
+			return providers
+		}
 	}
 	raw, runErr := runUsageCommandFn(ctx, 5*time.Second, bin, "config", "providers", "--json")
 	inventory, parseErr := parseProviderSettings(raw)
 	if runErr != nil || parseErr != nil || len(inventory) == 0 {
 		return providers
 	}
-	switchedOff := make([]ProviderReadiness, 0, len(inventory))
+	settingByID := make(map[string]*ProviderSetting, len(inventory))
+	anyEnabled := false
+	for i := range inventory {
+		settingByID[inventory[i].ID] = &inventory[i]
+		anyEnabled = anyEnabled || inventory[i].Enabled
+	}
+	reported := make(map[string]struct{}, len(providers))
+	merged := make([]ProviderReadiness, 0, len(providers)+len(inventory))
+	for _, provider := range providers {
+		if provider.ID == "codexbar" {
+			// The stand-in means "switched-on providers answered nothing". With
+			// every switch off there is nothing left for it to say; with a
+			// switch still on it stays as that unanswered state.
+			if !anyEnabled {
+				continue
+			}
+		} else if setting := settingByID[provider.ID]; setting != nil {
+			provider.Label = setting.Label
+			provider.Enabled = &setting.Enabled
+		}
+		reported[provider.ID] = struct{}{}
+		merged = append(merged, provider)
+	}
 	for i := range inventory {
 		if inventory[i].Enabled {
-			// A provider is on but produced no usage line. That is a failure to
-			// report, not a switch that is off, and the stand-in already says so.
-			return providers
+			continue
+		}
+		if _, seen := reported[inventory[i].ID]; seen {
+			continue
 		}
 		provider := providerResult(inventory[i].ID, ProviderNotConfigured)
 		provider.Label = inventory[i].Label
 		provider.Enabled = &inventory[i].Enabled
-		switchedOff = append(switchedOff, provider)
+		merged = append(merged, provider)
 	}
-	return switchedOff
+	return merged
 }
 
 func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []ProviderReadiness {
