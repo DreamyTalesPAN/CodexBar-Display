@@ -32,6 +32,7 @@ REHEARSAL_ASSUME_YES=0
 REHEARSAL_RESTORE=0
 REHEARSAL_KEEP_CODEXBAR=0
 REHEARSAL_SKIP_FIRMWARE_BASELINE=0
+REHEARSAL_RESTORE_FROM=""
 REHEARSAL_COMPANION_OVERRIDE=""
 
 REHEARSAL_STATE_DIR="$HOME/.vibetv-rehearsal"
@@ -96,11 +97,16 @@ Usage: $(basename "$0") [options]
   --pr <number>          Pull request whose merge-gate candidate to install (default: $REHEARSAL_PR)
   --run-id <id>          Use an explicit candidate run instead of resolving one
   --device-target <url>  VibeTV base URL, e.g. http://192.168.178.72 (default: autodetect)
+  --restore-from <run>   Restore a named run under ~/.vibetv-rehearsal/runs
+                         instead of the newest one with a backup
   --companion-override <path>
                          Swap the installed app's companion helper for a locally
-                         built one. Use to rehearse a fix that has no signed CI
-                         candidate yet. Breaks notarisation, so the app is
-                         re-signed ad-hoc and the report records it.
+                         built one, for companion- and API-level checks. The
+                         ad-hoc re-sign breaks the Developer ID launch
+                         constraint SMAppService holds, so the Mac App will not
+                         start; build it with --local-preview for UI work. The
+                         binary must carry the installed app's version or the
+                         swap is refused.
   --keep-codexbar        Do not purge ~/.codexbar (keeps your CodexBar provider config)
   --skip-firmware-baseline
                          Warm start only: trust the firmware already on the device
@@ -123,6 +129,9 @@ rehearsal::parse_args() {
       --keep-codexbar) REHEARSAL_KEEP_CODEXBAR=1; shift ;;
       --skip-firmware-baseline) REHEARSAL_SKIP_FIRMWARE_BASELINE=1; shift ;;
       --restore) REHEARSAL_RESTORE=1; shift ;;
+      --restore-from)
+        [[ -n "${2:-}" ]] || rehearsal::die '--restore-from needs a run directory name'
+        REHEARSAL_RESTORE=1; REHEARSAL_RESTORE_FROM="$2"; shift 2 ;;
       --yes|-y) REHEARSAL_ASSUME_YES=1; shift ;;
       -h|--help) rehearsal::usage; exit 0 ;;
       *) rehearsal::usage >&2; rehearsal::die "unknown argument: $1" ;;
@@ -242,7 +251,20 @@ rehearsal::stop_runtime() {
   osascript -e 'tell application "VibeTV Control Center" to quit' >/dev/null 2>&1 || true
   pkill -f "$REHEARSAL_APP_PATH/Contents/MacOS/VibeTVControlCenter" >/dev/null 2>&1 || true
   pkill -f 'codexbar-display daemon' >/dev/null 2>&1 || true
+  # The app-managed CodexBar keeps running with open file handles after the
+  # support directory is moved away, so a purge that only moves files leaves a
+  # serve process from a deleted install alive. One survived eight days and
+  # every cold start in between. Only ever the managed copy under the support
+  # directory: a customer-owned CodexBar lives elsewhere and is never stopped.
+  pkill -f "$REHEARSAL_SUPPORT_DIR/CodexBar/" >/dev/null 2>&1 || true
   sleep 2
+  # pgrep exits 1 when nothing matches, which is the normal case here. Under
+  # `set -e` that status would abort the whole rehearsal from a line whose only
+  # job is to report, so it must never propagate.
+  local survivors=""
+  survivors="$(pgrep -f "$REHEARSAL_SUPPORT_DIR/CodexBar/" 2>/dev/null | tr '\n' ' ')" || true
+  [[ -z "${survivors// /}" ]] \
+    || rehearsal::warn "app-managed CodexBar still running after stop: $survivors"
 }
 
 # Moves a path into the backup directory, preserving its layout.
@@ -289,16 +311,31 @@ rehearsal::purge_mac() {
   rehearsal::info "backup kept at $REHEARSAL_BACKUP_DIR"
 }
 
+rehearsal::installed_app_version() {
+  /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+    "$REHEARSAL_APP_PATH/Contents/Info.plist" 2>/dev/null || true
+}
+
 rehearsal::restore() {
   # A rehearsal on an already-purged Mac stashes nothing, so restore has to walk
-  # back to the newest run that actually captured something.
+  # back to the newest run that actually captured something. After cold+warm
+  # that newest run holds the candidate state, not the pre-session Mac, so
+  # --restore-from names the run that does.
   local backup="" candidate
-  for candidate in $(ls -1dt "$REHEARSAL_STATE_DIR"/runs/*/ 2>/dev/null); do
-    if [[ -s "${candidate}backup/manifest.txt" ]]; then
-      backup="${candidate}backup"
-      break
-    fi
-  done
+  if [[ -n "$REHEARSAL_RESTORE_FROM" ]]; then
+    candidate="$REHEARSAL_STATE_DIR/runs/$REHEARSAL_RESTORE_FROM"
+    [[ -s "$candidate/backup/manifest.txt" ]] \
+      || rehearsal::die "run $REHEARSAL_RESTORE_FROM has no restorable backup"
+    backup="$candidate/backup"
+  fi
+  if [[ -z "$backup" ]]; then
+    for candidate in $(ls -1dt "$REHEARSAL_STATE_DIR"/runs/*/ 2>/dev/null); do
+      if [[ -s "${candidate}backup/manifest.txt" ]]; then
+        backup="${candidate}backup"
+        break
+      fi
+    done
+  fi
   [[ -n "$backup" ]] \
     || rehearsal::die "no rehearsal with a restorable backup found under $REHEARSAL_STATE_DIR/runs"
 
@@ -719,8 +756,37 @@ for entity in entities:
   REHEARSAL_INSTALLED_VERSION="$version"
 }
 
-# Replaces the installed app's companion helper with a locally built one. This
-# is how a fix that has no signed CI candidate yet gets rehearsed on hardware.
+# Reads one field from a companion binary's `version --json`.
+rehearsal::companion_field() {
+  "$1" version --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin).get(sys.argv[1]) or "unknown")
+except Exception:
+    print("unknown")
+' "$2"
+}
+
+# rehearsal::stop_runtime bootouts every agent under the bundle id, and the
+# override's standalone agent is one of them. The app's own bundled agent never
+# starts after an override, so without this the Mac is left with no runtime and
+# the app opens on "VibeTV couldn't start". Safe to call when no override is in
+# play: there is no user plist then.
+rehearsal::bootstrap_override_runtime() {
+  local user_plist="$HOME/Library/LaunchAgents/${REHEARSAL_BUNDLE_ID}.runtime.plist"
+  [[ -f "$user_plist" ]] || return 0
+  launchctl bootout "gui/$(id -u)/${REHEARSAL_BUNDLE_ID}.runtime" >/dev/null 2>&1 || true
+  local bootstrap_error
+  if bootstrap_error="$(launchctl bootstrap "gui/$(id -u)" "$user_plist" 2>&1)"; then
+    rehearsal::info 'restarted the overridden runtime agent'
+    return 0
+  fi
+  rehearsal::die "launchd rejected the runtime agent at $user_plist: ${bootstrap_error:-unknown error}"
+}
+
+# Replaces the installed app's companion helper with a locally built one, for
+# companion- and API-level checks. The Mac App itself will not come up
+# afterwards: see the ad-hoc warning below.
 rehearsal::apply_companion_override() {
   [[ -n "$REHEARSAL_COMPANION_OVERRIDE" ]] || return 0
   local source="$REHEARSAL_COMPANION_OVERRIDE"
@@ -729,27 +795,41 @@ rehearsal::apply_companion_override() {
   local helper="$REHEARSAL_APP_PATH/Contents/Helpers/codexbar-display"
   [[ -f "$helper" ]] || rehearsal::die "no companion helper to replace at $helper"
 
+  local version commit app_version
+  version="$(rehearsal::companion_field "$source" version)"
+  commit="$(rehearsal::companion_field "$source" commit)"
+  app_version="$(rehearsal::installed_app_version)"
+
+  # The app starts only once its Companion reports the bundle's own version, and
+  # an unstamped `go build` leaves that at 1.0.0. Worse, the app then blames a
+  # port conflict on whatever owns 47832 -- including its own runtime -- so the
+  # run dead-ends pointing at the wrong problem. Refuse before the bundle is
+  # touched rather than after the flash.
+  if [[ "$version" != "$app_version" ]]; then
+    rehearsal::die "companion override reports version $version but the installed app is $app_version.
+   Build it with the version the app expects:
+     (cd apps/control-center && npm ci && npm run build:local)
+     rm -rf companion/internal/companionapi/controlcenter_static
+     mkdir -p companion/internal/companionapi/controlcenter_static
+     cp -R apps/control-center/out-local/. companion/internal/companionapi/controlcenter_static/
+     (cd companion && CGO_ENABLED=0 go build -o '$source' \\
+       -ldflags '-X github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/buildinfo.Version=$app_version' \\
+       ./cmd/codexbar-display)"
+  fi
+
   rehearsal::step 'Swapping in the locally built companion'
   rehearsal::warn 'this replaces a notarised binary; the app is re-signed ad-hoc'
+  # Proven on the bench 2026-08-20: SMAppService keeps the Developer ID launch
+  # constraint from the production install, so after the ad-hoc re-sign the
+  # app's own runtime registration fails and the Mac App stops at "VibeTV's
+  # background service couldn't start" -- with a healthy, correctly versioned
+  # runtime still listening on 47832. The user-owned agent below keeps the
+  # Companion serving for API-level checks; it cannot rescue the app. Build the
+  # app with --local-preview to drive a local build through the real UI.
+  rehearsal::warn 'the Mac App will not start against an ad-hoc signature; use build-macos-control-center-app.sh --local-preview for UI work'
   cp -f "$source" "$helper"
   codesign --force --deep --sign - "$REHEARSAL_APP_PATH" >/dev/null 2>&1 \
     || rehearsal::die 'could not re-sign the app after the override'
-
-  local version commit
-  version="$("$helper" version --json 2>/dev/null | python3 -c '
-import json, sys
-try:
-    print(json.load(sys.stdin).get("version") or "unknown")
-except Exception:
-    print("unknown")
-')"
-  commit="$("$helper" version --json 2>/dev/null | python3 -c '
-import json, sys
-try:
-    print(json.load(sys.stdin).get("commit") or "unknown")
-except Exception:
-    print("unknown")
-')"
   # The app's own agent lives inside the bundle and never starts after an
   # override, so the same agent is registered from a user-owned path.
   local agent_plist="$REHEARSAL_APP_PATH/Contents/Library/LaunchAgents/${REHEARSAL_BUNDLE_ID}.runtime.plist"
@@ -792,6 +872,12 @@ PY
   rehearsal::record companionOverride "$source"
   rehearsal::record companionOverrideCommit "$commit"
   rehearsal::record notarisationIntact false
+  # Recorded here rather than where the banner prints: both callers write the
+  # report before that point, so recording it later reached facts.tsv only and
+  # left report.json looking like an ordinary run. A consumer reading the
+  # machine-readable report would then take an API-only override for customer
+  # evidence, which is the one thing this flag exists to prevent.
+  rehearsal::record customerEvidence unavailable-companion-override
 }
 
 rehearsal::download_release_dmg() {
@@ -859,6 +945,32 @@ rehearsal::wait_for_device_firmware() {
 }
 
 # --------------------------------------------------------------- reporting
+
+# An ad-hoc re-signed bundle cannot register its runtime -- SMAppService keeps
+# the Developer ID launch constraint from the production install -- so with an
+# override the Mac App does not start and the customer flow cannot be driven at
+# all. Printing READY over that is how an API-level check gets filed as
+# rehearsal evidence, which is the one thing a rehearsal exists to prevent.
+# Returns 1 when this run cannot produce customer evidence.
+rehearsal::rehearsal_evidence_possible() {
+  [[ -n "$REHEARSAL_COMPANION_OVERRIDE" ]] || return 0
+  cat <<'OVERRIDE'
+
+────────────────────────────────────────────────────────────────────────
+ OVERRIDE RUN -- NOT REHEARSAL EVIDENCE
+────────────────────────────────────────────────────────────────────────
+ --companion-override re-signs the app ad-hoc, and SMAppService then
+ refuses to register its runtime. The Mac App will not start, so there
+ is no customer flow to drive and this run proves nothing about what a
+ customer sees.
+
+ It is still good for companion- and API-level checks against the
+ device. For anything with a screen, build the app with --local-preview
+ and rehearse that.
+────────────────────────────────────────────────────────────────────────
+OVERRIDE
+  return 1
+}
 
 rehearsal::write_report() {
   local outcome="$1"

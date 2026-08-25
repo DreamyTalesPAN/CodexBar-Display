@@ -98,7 +98,12 @@ PY
   done
   [[ -n "$runtime_pid" ]] || die 'installed candidate runtime did not become healthy on port 47832'
   listener_pids="$(lsof -nP -a -iTCP@127.0.0.1:47832 -sTCP:LISTEN -Fp 2>/dev/null | sed -nE 's/^p([0-9]+)$/\1/p' | sort -u)"
-  [[ "$listener_pids" == "$runtime_pid" ]] || die 'installed candidate runtime is not the sole port-47832 listener'
+  # Name the processes: without them this failure only says "not sole" and the
+  # next person has to re-run the whole gate to learn who else held the port.
+  if [[ "$listener_pids" != "$runtime_pid" ]]; then
+    ps -o pid=,lstart=,command= -p ${listener_pids//$'\n'/ } 2>/dev/null || true
+    die "installed candidate runtime is not the sole port-47832 listener (runtime ${runtime_pid}, listeners ${listener_pids//$'\n'/ })"
+  fi
 }
 
 # Drives one firmware update through the installed runtime's Companion API and

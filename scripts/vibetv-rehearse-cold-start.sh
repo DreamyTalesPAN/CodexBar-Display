@@ -62,6 +62,14 @@ rehearsal::apply_companion_override
 # --- 3. flash the candidate firmware ----------------------------------------
 rehearsal::start_artifact_server
 
+# --companion-override bootstraps the runtime agent back in step 2, and a direct
+# CLI flash refuses to start beside another device writer: the whole run ends in
+# "quiesce-device-writers: another VibeTV runtime is running and polling the
+# device". Warm start stops the runtime before its baseline flash for exactly
+# this reason; without the override nothing is polling yet, which is why the
+# documented local-validation path was the only one that hit it.
+rehearsal::stop_runtime
+
 # The firmware carries its own version, not the release version: 1.0.54 ships
 # firmware 1.0.40. Waiting for the release version here reports every real
 # release candidate as unconfirmed after a flash that in fact succeeded.
@@ -78,14 +86,30 @@ fi
 
 # Keep the candidate manifest active so the Updates tab stays consistent with
 # what is actually installed instead of offering the public release again.
+# Both halves, or the Mac App row keeps comparing the installed candidate
+# against the public release and reads "Available 1.0.53" under an "Up to date"
+# heading -- which is not what the closing message below promises.
 launchctl setenv "$REHEARSAL_FIRMWARE_ENV_VAR" "$REHEARSAL_SERVER_URL/firmware-manifest.json"
+launchctl setenv "$REHEARSAL_MAC_RELEASE_ENV_VAR" "$REHEARSAL_SERVER_URL/mac-app-release.json"
 
 DEVICE_FIRMWARE_AFTER="$(rehearsal::device_field "$REHEARSAL_DEVICE_TARGET" firmware)"
 rehearsal::record deviceFirmwareAfter "$DEVICE_FIRMWARE_AFTER"
 
+# The runtime reads these overrides from its environment at launch, so it has to
+# come up after they are set. --companion-override already bootstrapped it back
+# in step 2, and launchctl setenv does not reach a process that is already
+# running: without this the Updates tab compares the installed candidate against
+# the public release, which is not what the closing message below promises.
+# Warm start does the same two lines for the same reason.
+rehearsal::stop_runtime
+# The stop above bootouts the override's standalone agent too, and open_app only
+# runs `open`. Bring it back with the feeds now staged, or the documented
+# local-validation path opens without its Companion at all.
+rehearsal::bootstrap_override_runtime
 rehearsal::open_app
 rehearsal::write_report "$FIRMWARE_OUTCOME"
 
+if rehearsal::rehearsal_evidence_possible; then
 cat <<NEXT
 
 ────────────────────────────────────────────────────────────────────────
@@ -106,3 +130,8 @@ cat <<NEXT
  Undo     scripts/vibetv-rehearse-cold-start.sh --restore
 ────────────────────────────────────────────────────────────────────────
 NEXT
+fi
+
+# The summary prints "flash: failed" but the shell only sees $?. A rehearsal that
+# never reached the device must not look like a pass to whatever checks it next.
+[[ "$FIRMWARE_OUTCOME" != failed ]] || exit 1

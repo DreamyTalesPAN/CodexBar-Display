@@ -238,6 +238,45 @@ func TestRuntimeHealthDoesNotProbeDeviceOrRelease(t *testing.T) {
 	}
 }
 
+// The Mac App reads this flag before restarting the runtime for a CodexBar
+// repair. A restart under a running update strands the job in a dead process.
+func TestRuntimeHealthReportsARunningFirmwareUpdate(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: "http://127.0.0.1:1", DeviceToken: "pair-token"})
+
+	readUpdateInProgress := func() bool {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/runtime-health", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("runtime health status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var got struct {
+			UpdateInProgress bool `json:"updateInProgress"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode runtime health: %v", err)
+		}
+		return got.UpdateInProgress
+	}
+
+	if readUpdateInProgress() {
+		t.Fatal("an idle runtime must not claim an update is running")
+	}
+
+	server.updateJobsMu.Lock()
+	server.updateJobs["job-1"] = &firmwareUpdateJob{ID: "job-1", Phase: "installing"}
+	server.updateJobsMu.Unlock()
+	if !readUpdateInProgress() {
+		t.Fatal("a runtime installing firmware must say so")
+	}
+
+	server.updateJobsMu.Lock()
+	server.updateJobs["job-1"].Phase = "complete"
+	server.updateJobsMu.Unlock()
+	if readUpdateInProgress() {
+		t.Fatal("a finished update must not keep the restart blocked")
+	}
+}
+
 func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 	sawStaleHello := false
 	sawTokenlessHello := false
@@ -3135,17 +3174,105 @@ func TestWaitForDisplayStreamAfterPairIgnoresTransientPairingError(t *testing.T)
 		return displayStreamInfo{Running: true, Healthy: true}
 	}
 
-	got := waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), false, inspect)
+	got := waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), false, inspect, nil)
 	if !got.Healthy || calls.Load() != 2 {
 		t.Fatalf("post-pair wait must ignore one stale auth error, got=%+v calls=%d", got, calls.Load())
 	}
 
 	calls.Store(0)
-	got = waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), true, inspect)
+	got = waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), true, inspect, nil)
 	if got.Healthy || got.ErrorCode != "device_pairing_required" || calls.Load() != 1 {
 		t.Fatalf("normal wait must surface pairing error immediately, got=%+v calls=%d", got, calls.Load())
 	}
 
+}
+
+// A provider the customer has not connected settles the wait immediately. The
+// customer's VibeTV finished half a minute before the Mac App did, and waiting
+// out the window answers with the same stream either way (issue #371).
+func TestWaitForDisplayStreamStopsOnSettledStream(t *testing.T) {
+	var calls atomic.Int32
+	inspect := func(context.Context, string, time.Time) displayStreamInfo {
+		calls.Add(1)
+		return displayStreamInfo{
+			Running:   true,
+			Target:    "http://192.0.2.10",
+			ErrorCode: "provider_setup_required",
+		}
+	}
+	settled := func(stream displayStreamInfo) bool {
+		return stream.ErrorCode == "provider_setup_required"
+	}
+
+	got := waitForDisplayStreamAfterProbe(
+		context.Background(), "http://192.0.2.10", time.Now(), true, inspect, settled,
+	)
+	if got.ErrorCode != "provider_setup_required" || calls.Load() != 1 {
+		t.Fatalf("settled stream must end the wait at once, got=%+v calls=%d", got, calls.Load())
+	}
+}
+
+// The same stream error while a provider is still warming up keeps its full
+// window: that provider does deliver usage, and ending early would tell a
+// working customer to connect one. A transient probe result -- timeout,
+// momentary engine error -- also keeps the window: it arrives as the same
+// global setup_required, but nothing about it is the customer's to fix.
+func TestProviderSetupNeedsCustomerActionOnlyForActionableStates(t *testing.T) {
+	for _, status := range []string{"", codexbar.ProviderReady, "checking", "CHECKING"} {
+		if providerSetupNeedsCustomerAction(codexbar.ProviderSetup{Status: status}) {
+			t.Fatalf("status %q must keep waiting", status)
+		}
+	}
+	for _, status := range []string{codexbar.ProviderTimeout, codexbar.ProviderEngineError, codexbar.ProviderNoUsageAvailable} {
+		setup := codexbar.ProviderSetup{
+			Status:    "setup_required",
+			Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: status}},
+		}
+		if providerSetupNeedsCustomerAction(setup) {
+			t.Fatalf("transient provider status %q must keep waiting", status)
+		}
+	}
+	if providerSetupNeedsCustomerAction(codexbar.ProviderSetup{Status: "setup_required"}) {
+		t.Fatal("setup_required with no diagnosed provider must keep waiting")
+	}
+	for _, status := range []string{codexbar.ProviderAuthRequired, codexbar.ProviderNotConfigured, codexbar.ProviderPermissionRequired, codexbar.ProviderConfigError} {
+		setup := codexbar.ProviderSetup{
+			Status:    "setup_required",
+			Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: status}},
+		}
+		if !providerSetupNeedsCustomerAction(setup) {
+			t.Fatalf("customer-owned provider status %q must end the wait", status)
+		}
+	}
+	engineBroken := codexbar.ProviderSetup{Status: "setup_required"}
+	engineBroken.Engine.Status = codexbar.ProviderNotConfigured
+	if !providerSetupNeedsCustomerAction(engineBroken) {
+		t.Fatal("a missing engine must end the wait")
+	}
+}
+
+// The wait reads the provider state the Companion already owns. A cold cache
+// reports "checking", so a Mac App that has not probed yet never cuts a wait
+// short on a guess.
+func TestWaitForDisplayStreamModeHonoursProviderSetup(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: "http://192.0.2.10", DeviceToken: "token"})
+	target := "http://192.0.2.10"
+	stream := displayStreamInfo{Running: true, Target: target, ErrorCode: "provider_setup_required"}
+
+	if providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
+		t.Fatal("a cold provider cache must not settle the wait")
+	}
+	server.providerSetupCache = codexbar.ProviderSetup{
+		Status:    "setup_required",
+		Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: codexbar.ProviderNotConfigured}},
+	}
+	server.providerSetupCachedAt = time.Now()
+	if !providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
+		t.Fatal("an unconfigured provider must settle the wait")
+	}
+	if !providerSetupStreamForTarget(&stream, target) {
+		t.Fatal("stream must be the provider-held stream for this device")
+	}
 }
 
 func TestInspectDisplayStreamAfterIgnoresEarlierFrameAndError(t *testing.T) {
@@ -4279,8 +4406,8 @@ func TestStatusKeepsReachableDeviceConnectedWhileFirstUsageIsPending(t *testing.
 	if !got.Device.Active || !got.Device.Connected || !got.Device.Paired {
 		t.Fatalf("first-usage wait lost the configured VibeTV: %+v", got.Device)
 	}
-	if got.Device.Ready || got.Device.ConnectionState != deviceConnectionRetrying {
-		t.Fatalf("usage-pending device must stay connected but not ready: %+v", got.Device)
+	if got.Device.Ready || got.Device.ConnectionState != deviceConnectionNoProvider {
+		t.Fatalf("usage-pending device must stay connected, not ready, and not reconnecting: %+v", got.Device)
 	}
 }
 
@@ -8650,6 +8777,26 @@ func TestFirmwareUpdateAsyncReportsCustomerError(t *testing.T) {
 	}
 }
 
+func TestFirmwareUpdateDiagnosticsRetainFailedPhaseAndObservedFirmware(t *testing.T) {
+	job := firmwareUpdateJob{
+		Phase: "error",
+		Stage: "rediscovering",
+		Result: &firmwareUpdateResult{
+			Firmware:         "1.0.40",
+			ObservedFirmware: "1.0.39",
+		},
+		Error: &apiError{Message: "VibeTV update failed."},
+	}
+
+	detail := firmwareUpdateDiagnosticDetail(job)
+	if !strings.Contains(detail, "rediscovering") || !strings.Contains(detail, "1.0.39") {
+		t.Fatalf("diagnostics lost the failed phase or observed firmware: %q", detail)
+	}
+	if strings.Contains(detail, "1.0.40 is installed") {
+		t.Fatalf("diagnostics rewrote the target as observed firmware: %q", detail)
+	}
+}
+
 func TestFirmwareUpdateAsyncRequiresPowerCycleAfterUnsafeUpload(t *testing.T) {
 	device := newThemeInstallReadyDeviceServer(t)
 	defer device.Close()
@@ -9376,12 +9523,11 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 			Status: "ready",
 			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
 			Providers: []codexbar.ProviderReadiness{{
-				ID: "codex", Label: "Codex", Enabled: true, Status: codexbar.ProviderReady,
+				ID: "codex", Label: "Codex", Enabled: providerEnabled(true), Status: codexbar.ProviderReady,
 			}},
 		}
 	}
 	server.providerPreferences.loadInventory = nil
-	server.openCodexBar = func(context.Context) error { return nil }
 	server.subnetTargets = func() []string {
 		return nil
 	}
@@ -10017,6 +10163,183 @@ func TestFirmwareUpdateKeepsChildDiagnosticsOnDisk(t *testing.T) {
 	}
 }
 
+// A Mac without a ready AI provider has no usage picture to draw, so the
+// restarted stream reports provider_setup_required forever. Demanding a
+// verified render there told the customer the install failed while the theme
+// was already on the device, and the mandatory theme chooser then offered the
+// same install again — a closed loop with no exit. The firmware update path
+// already makes this exact call for the same reason.
+func TestThemeInstallWithoutProviderCompletesWithoutRenderProof(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"error"},"display":{"activeTheme":"theme-missing","themeSpec":{"active":false,"path":"/themes/u/cm.json","renderOk":true}}}`))
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{ThemeID: "mini"}, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    target,
+			ErrorCode: "provider_setup_required",
+			Detail:    "VibeTV is connected, but no AI provider is ready yet.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		t.Fatal("render proof must not be demanded while no provider can produce usage")
+		return deviceHealth{}, nil
+	}
+
+	var out bytes.Buffer
+	result, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, &out)
+	if err != nil {
+		t.Fatalf("theme install without a provider must succeed: %v", err)
+	}
+	if result.ThemeID != "mini" {
+		t.Fatalf("install result must be returned: %+v", result)
+	}
+	if !strings.Contains(out.String(), "Display stream: waiting for AI provider") {
+		t.Fatalf("install must state why no picture arrived:\n%s", out.String())
+	}
+}
+
+// The provider tolerance is scoped to provider_setup_required on this exact
+// device. A stream that genuinely stopped delivering must still fail the
+// install, or a broken display would be reported as a finished setup.
+func TestThemeInstallStillFailsWhenStreamIsBroken(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"usage"}}`))
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{ThemeID: "mini"}, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    target,
+			ErrorCode: "display_send_failed",
+			Detail:    "VibeTV stopped accepting images.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		return deviceHealth{}, errors.New("display render not ready")
+	}
+
+	var out bytes.Buffer
+	if _, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, &out); err == nil {
+		t.Fatal("a broken display stream must still fail the install")
+	}
+}
+
+// Reload image cannot produce a picture while AI usage is unavailable. Route
+// the customer back to the Mac App without guessing whether the engine or an
+// account is the missing part.
+func TestReloadDisplayWithoutProviderReportsProviderSetup(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-no-provider","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"error"}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-no-provider", DeviceToken: "pair-token"})
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    target,
+			ErrorCode: "provider_setup_required",
+			Detail:    "VibeTV is connected, but no AI provider is ready yet.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		t.Fatal("render proof must not be demanded while no provider can produce usage")
+		return deviceHealth{}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/reload-display", nil))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("reload without a provider must not report a render failure: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "provider_setup_required") {
+		t.Fatalf("reload must name the missing provider: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Finish AI setup in the Mac App") {
+		t.Fatalf("reload must point to the central recovery step: %s", rec.Body.String())
+	}
+}
+
+// A support report must describe the same VibeTV as every other endpoint.
+// Shipping active=false made the Control Center believe the configured device
+// had gone away, which dropped a customer out of AI-usage recovery and onto
+// Overview every time they pressed Create support report.
+func TestDiagnosticsReportsTheConfiguredDeviceAsActive(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-active","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"usage"}}`))
+		}
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-active", DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+
+	read := func(path string) deviceInfo {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status=%d body=%s", path, rec.Code, rec.Body.String())
+		}
+		var payload struct {
+			Device deviceInfo `json:"device"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		return payload.Device
+	}
+
+	status := read("/v1/status")
+	diagnostics := read("/v1/diagnostics")
+
+	if !status.Active {
+		t.Fatalf("status must report the configured device as active: %+v", status)
+	}
+	if diagnostics.Active != status.Active {
+		t.Fatalf("diagnostics describes a different device than status: diagnostics.active=%t status.active=%t",
+			diagnostics.Active, status.Active)
+	}
+}
+
 // The automatic screensaver update reads the slot off the polled snapshot. It
 // arrives on the tokenless health probe under settings, not under standby, so
 // both are pinned here: the value, and the fact that the probe stays tokenless.
@@ -10124,5 +10447,417 @@ func TestStatusOmitsClearedScreensaverSlot(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "screensaverPath") {
 		t.Fatalf("cleared slot must be omitted, got %s", rec.Body.String())
+	}
+}
+
+// The install itself succeeded, but a VibeTV without a ready provider keeps
+// drawing the error frame. Completing the job with "Theme is active on VibeTV."
+// contradicted the screen the customer was looking at, so the provider outcome
+// owns the terminal message.
+func TestThemeInstallAsyncKeepsProviderOutcomeAsFinalMessage(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"error"},"display":{"activeTheme":"theme-missing","themeSpec":{"active":false,"path":"/themes/u/cm.json","renderOk":true}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{ThemeID: opts.ThemeID, PackID: "mini", Name: "Mini"}, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    target,
+			ErrorCode: "provider_setup_required",
+			Detail:    "VibeTV is connected, but no AI provider is ready yet.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		t.Fatal("render proof must not be demanded while no provider can produce usage")
+		return deviceHealth{}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/themes/install",
+		strings.NewReader(`{"themeId":"mini","packUrl":"https://example.com/mini.zip","async":true}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var started themeInstallJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatalf("decode start response: %v", err)
+	}
+
+	var got themeInstallJobResponse
+	for attempt := 0; attempt < 100; attempt++ {
+		rec = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodGet, "/v1/themes/install/status?jobId="+started.Job.ID, nil)
+		server.Handler().ServeHTTP(rec, req)
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status response: %v", err)
+		}
+		if got.Job.Phase == "complete" || got.Job.Phase == "error" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got.Job.Phase != "complete" {
+		t.Fatalf("a theme install without a provider must still complete: %+v", got.Job)
+	}
+	if got.Job.Message != themeInstallAwaitingProviderMessage {
+		t.Fatalf("the provider outcome must survive job completion, got %q", got.Job.Message)
+	}
+	if strings.Contains(strings.Join(got.Job.Logs, "\n"), "Theme is active on VibeTV.") {
+		t.Fatalf("a providerless install must not claim the theme is active: %q", got.Job.Logs)
+	}
+}
+
+// The Mac App stops this runtime to repair CodexBar. Asking runtime-health
+// whether an update runs and then killing the process are two steps, so an
+// update started in between died with the process that owned its job. The hold
+// makes the two the same step: claiming it and starting an update take the same
+// lock, so one of them always loses cleanly.
+func TestRuntimeUpdateHoldRefusesUpdatesStartedAfterTheProbe(t *testing.T) {
+	initial := runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	}
+	server := newTestServer(t, initial)
+
+	claim := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/runtime-health/update-hold",
+			strings.NewReader(`{}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+	startUpdate := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/updates/install",
+			strings.NewReader(`{}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := claim(); rec.Code != http.StatusOK {
+		t.Fatalf("an idle runtime must grant the hold, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec := startUpdate()
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("an update started after the hold must be refused, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "mac_app_restarting" {
+		t.Fatalf("error code=%q want mac_app_restarting", response.Error.Code)
+	}
+
+	// A repair that never stopped the runtime must not keep updates blocked.
+	relRec := httptest.NewRecorder()
+	relReq := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/runtime-health/update-hold",
+		strings.NewReader(`{"release":true}`),
+	)
+	relReq.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(relRec, relReq)
+	if relRec.Code != http.StatusOK {
+		t.Fatalf("releasing the hold must succeed, got %d body=%s", relRec.Code, relRec.Body.String())
+	}
+	if rec := startUpdate(); rec.Code == http.StatusConflict {
+		var released struct {
+			Error apiError `json:"error"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &released)
+		if released.Error.Code == "mac_app_restarting" {
+			t.Fatal("a released hold must stop refusing updates")
+		}
+	}
+}
+
+// The reverse order was already guarded and must stay guarded: an update that
+// owns the runtime refuses the hold, and the repair waits.
+func TestRuntimeUpdateHoldRefusedWhileAnUpdateOwnsTheRuntime(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+	server.updateJobs["active-update"] = &firmwareUpdateJob{
+		ID:    "active-update",
+		Phase: "installing",
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/runtime-health/update-hold",
+		strings.NewReader(`{}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("a running update must refuse the hold, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "firmware_update_in_progress" {
+		t.Fatalf("error code=%q want firmware_update_in_progress", response.Error.Code)
+	}
+}
+
+// The bench script proving update/repair serialisation can only see this from
+// outside: the Mac App keeps no log a script can read, so a repair that was held
+// back and one that never arrived look identical without it.
+func TestRuntimeUpdateHoldRefusalIsObservable(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+	server.updateJobs["active-update"] = &firmwareUpdateJob{ID: "active-update", Phase: "installing"}
+
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalStderr := os.Stderr
+	os.Stderr = write
+	defer func() { os.Stderr = originalStderr }()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/runtime-health/update-hold", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	_ = write.Close()
+
+	logged, _ := io.ReadAll(read)
+	os.Stderr = originalStderr
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", rec.Code)
+	}
+	if !strings.Contains(string(logged), "update hold refused") {
+		t.Fatalf("a refused hold must be observable in the runtime log, got %q", logged)
+	}
+}
+
+// A theme install job and its worker live in this process exactly like a
+// firmware job. The Mac App's repair unregisters the runtime, so granting the
+// hold while an install runs erases that install and the status the customer is
+// watching for it. The browser defers its own repair, but an externally
+// delivered vibetv://repair-codexbar never passes through that check.
+func TestRuntimeUpdateHoldRefusedWhileAThemeInstallOwnsTheRuntime(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+	server.themeInstallActive = true
+
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalStderr := os.Stderr
+	os.Stderr = write
+	defer func() { os.Stderr = originalStderr }()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/runtime-health/update-hold",
+		strings.NewReader(`{}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	_ = write.Close()
+
+	logged, _ := io.ReadAll(read)
+	os.Stderr = originalStderr
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("a running theme install must refuse the hold, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "theme_install_in_progress" {
+		t.Fatalf("error code=%q want theme_install_in_progress", response.Error.Code)
+	}
+	// Same reason the firmware refusal is logged: it is there for someone
+	// tailing the runtime. The 409 above is the contract a script relies on.
+	if !strings.Contains(string(logged), "update hold refused") {
+		t.Fatalf("a refused hold must be observable in the runtime log, got %q", logged)
+	}
+}
+
+// The other direction of the same race: once the Mac App has been told it may
+// restart, an install started after that answer would die with the runtime.
+func TestThemeInstallRefusedAfterTheRepairHoldIsGranted(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+
+	hold := func(body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/runtime-health/update-hold",
+			strings.NewReader(body),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+	startInstall := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/themes/install",
+			strings.NewReader(`{"themeId":"cozy-meadow","slot":"wall"}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := hold(`{}`); rec.Code != http.StatusOK {
+		t.Fatalf("an idle runtime must grant the hold, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec := startInstall()
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("an install started after the hold must be refused, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "mac_app_restarting" {
+		t.Fatalf("error code=%q want mac_app_restarting", response.Error.Code)
+	}
+
+	// A repair that never stopped the runtime must not keep installs blocked.
+	if rec := hold(`{"release":true}`); rec.Code != http.StatusOK {
+		t.Fatalf("releasing the hold must succeed, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if rec := startInstall(); rec.Code == http.StatusConflict {
+		var released struct {
+			Error apiError `json:"error"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &released)
+		if released.Error.Code == "mac_app_restarting" {
+			t.Fatal("a released hold must stop refusing theme installs")
+		}
+	}
+}
+
+// The refusal is the only sign from outside that a CodexBar repair actually met
+// a running job: the runtime's stderr reaches no file a script can read, and a
+// script asking the guard itself would be answered by the running job and learn
+// nothing about the repair. scripts/vibetv-prove-update-serialization.sh reads
+// this counter before and after it delivers the repair.
+func TestRuntimeHealthReportsRefusedUpdateHolds(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+
+	refusals := func() uint64 {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/runtime-health", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("runtime-health status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var payload struct {
+			UpdateHoldRefusals uint64 `json:"updateHoldRefusals"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("decode runtime-health: %v", err)
+		}
+		return payload.UpdateHoldRefusals
+	}
+	claim := func() int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/runtime-health/update-hold",
+			strings.NewReader(`{}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if got := refusals(); got != 0 {
+		t.Fatalf("a fresh runtime must report 0 refusals, got %d", got)
+	}
+	// A granted hold is not a refusal and must not be counted, or the bench
+	// would read its own successful claim as a collision.
+	if code := claim(); code != http.StatusOK {
+		t.Fatalf("an idle runtime must grant the hold, got %d", code)
+	}
+	if got := refusals(); got != 0 {
+		t.Fatalf("a granted hold must not count as a refusal, got %d", got)
+	}
+
+	server.updateHoldUntil = time.Time{}
+	server.updateJobs["active-update"] = &firmwareUpdateJob{ID: "active-update", Phase: "installing"}
+	if code := claim(); code != http.StatusConflict {
+		t.Fatalf("a running update must refuse the hold, got %d", code)
+	}
+	if got := refusals(); got != 1 {
+		t.Fatalf("a refused firmware hold must be counted, got %d", got)
+	}
+
+	delete(server.updateJobs, "active-update")
+	server.themeInstallActive = true
+	if code := claim(); code != http.StatusConflict {
+		t.Fatalf("a running theme install must refuse the hold, got %d", code)
+	}
+	if got := refusals(); got != 2 {
+		t.Fatalf("a refused theme-install hold must be counted too, got %d", got)
 	}
 }

@@ -21,17 +21,21 @@ import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import { ControlCenterShell } from "./control-center-shell";
 import {
   companionRequestUrl,
+  finishCodexBarRecovery,
   isLocalCompanionOrigin,
   isNativeControlCenterApp,
   localizeCompanionAssetUrl,
   localControlCenterUrl,
+  launchCodexBarRepair,
   needsLoopbackTargetAddressSpace,
+  openCodexBarApp,
   repairLocalControlCenterRuntime,
   restartLocalControlCenterApp,
   shouldRedirectToLocalControlCenter,
   shouldUseHostedSetupShell,
 } from "./control-center-runtime";
 import {
+  deviceAwaitsProviderSetup,
   deviceCanContinueThemeSetup,
   deviceCompletedThemeSetup,
   deviceIsActive,
@@ -40,6 +44,7 @@ import {
   deviceIsReady,
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
+  providerSetupRequiresRecovery,
   type ActiveTab,
   type AppearanceSection,
   type ApiError,
@@ -59,6 +64,7 @@ import {
 import { DeviceStartupScreen } from "./device-startup-screen";
 import {
   applyDeviceRecoveryStatus,
+  deviceRecoveryConfirmedLoss,
   createDeviceRecoveryGateState,
   DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT,
   DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT,
@@ -106,8 +112,14 @@ const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
 const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
 const LAUNCHD_RECOVERY_GRACE_MS = 12_000;
-const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 55_000;
+// Only a safety net for a native side that never answers at all, so it has to
+// outlast the repair's own bounded worst case: 8s initial health gate + 20s
+// unregister quiesce + 2s settle + 35s health wait, plus provisioning and app
+// launch (main.swift:37-43). At 55s this fired while the repair was still
+// working, reported failure, and then discarded the successful native result.
+const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 120_000;
 const NATIVE_RUNTIME_REPAIR_RESULT_EVENT = "vibetv:runtime-repair-result";
+const NATIVE_CODEXBAR_REPAIR_RESULT_EVENT = "vibetv:codexbar-repair-result";
 
 type LocalNetworkRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
@@ -172,6 +184,7 @@ type ThemeInstallJob = {
 
 type FirmwareUpdateResult = {
   firmware?: string;
+  observedFirmware?: string;
   target?: string;
   deviceId?: string;
   artifactValidated?: boolean;
@@ -300,12 +313,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [deviceSession, setDeviceSession] = useState<{
     device: DeviceInfo | null;
     themeSetupIdentity: ThemeSetupDeviceIdentity | null;
+    providerIncidentOpen: boolean;
   }>({
     device: null,
     themeSetupIdentity: null,
+    providerIncidentOpen: false,
   });
   const device = deviceSession.device;
   const themeSetupIdentity = deviceSession.themeSetupIdentity;
+  const providerIncidentOpen = deviceSession.providerIncidentOpen;
   const setDevice = useCallback(
     (
       update:
@@ -335,6 +351,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [firmwareUpdateStatus, setFirmwareUpdateStatus] =
     useState<FirmwareUpdateStatus | null>(null);
   const firmwareUpdateInProgress = firmwareUpdateStatus?.phase === "installing";
+  const themeInstallInProgress = themeInstallStatus?.phase === "installing";
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [usageError, setUsageError] = useState<ApiError | null>(null);
   const [providerSetup, setProviderSetup] = useState<ProviderSetupInfo | null>(
@@ -358,6 +375,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   >("repairing");
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
   const [hasEnteredControlCenter, setHasEnteredControlCenter] = useState(false);
+  const [showCodexBarFallback, setShowCodexBarFallback] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
   const brightnessDirtyRef = useRef(false);
@@ -382,6 +400,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const recoveryPreferredConnectAttemptRef = useRef("");
   const runtimeRepairAttempted = useRef(false);
   const runtimeRepairTimeout = useRef<number | null>(null);
+  const codexBarRepairTimeout = useRef<number | null>(null);
+  // The timeout handle is not the same thing as an outstanding recovery: the
+  // success path clears it before awaiting the provider retry. Only this ref
+  // says whether the native side still holds a temporary CodexBar for us.
+  const codexBarRecoveryOutstanding = useRef(false);
+  const providerRecoveryAttempted = useRef(false);
+  const providerRecoveryManualAttempted = useRef(false);
   const themeInstallPollJobRef = useRef("");
   const activeThemeUpgradeAttemptRef = useRef("");
   const [events, setEvents] = useState<ControlCenterEvent[]>(() => [
@@ -436,8 +461,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           current.themeSetupIdentity,
           mergedDevice,
         ),
+        providerIncidentOpen: deviceAwaitsProviderSetup(mergedDevice),
       };
     });
+  }, []);
+
+  // Connectivity and provider readiness are different questions. A VibeTV that
+  // was waiting for a provider and is now confirmed gone is a connection
+  // problem: carrying its incident past the loss held the AI recovery screen in
+  // front of the reconnect picker for a device that is not there at all. Only
+  // the recovery gate's confirmed-loss paths use this -- a single missed poll or
+  // a Mac App outage must still keep the incident, because the repair takes the
+  // Mac App down on purpose.
+  const markDeviceLost = useCallback(() => {
+    setDeviceSession((current) => ({
+      ...current,
+      device: markDeviceDisconnected(current.device),
+      providerIncidentOpen: false,
+    }));
   }, []);
 
   const addEvent = useCallback(
@@ -519,7 +560,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
 
       if (transition.state.preferredDeviceId) {
-        setDevice((current) => markDeviceDisconnected(current));
+        // Confirmed loss is the failure limit being reached, not the first
+        // miss: openPicker stays false until then. Ending the incident here on
+        // every missed poll also reset the automatic-attempt guard, so the next
+        // provider_setup_required snapshot started a second native repair
+        // instead of showing the approved Try again -- the exact case
+        // markDeviceLost was split out to avoid.
+        if (deviceRecoveryConfirmedLoss(transition)) {
+          markDeviceLost();
+        } else {
+          setDevice((current) => markDeviceDisconnected(current));
+        }
         if (transition.openPicker) {
           setDeviceSearchState("searching");
           addEvent({
@@ -531,12 +582,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return false;
       }
 
-      setDevice((current) => markDeviceDisconnected(current));
+      markDeviceLost();
       setDeviceState("offline");
       return false;
     },
     [
       addEvent,
+      markDeviceLost,
       mergeDevice,
       operationRecoveryGraceActive,
       setDevice,
@@ -1767,6 +1819,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setDeviceSession({
         device: null,
         themeSetupIdentity: null,
+        providerIncidentOpen: false,
       });
       setDeviceState("unknown");
       setDeviceCandidates([]);
@@ -2078,6 +2131,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         );
         let result = payload.result;
         let logs = customerInstallLogs(payload.logs, initialLogs);
+        // The Companion owns what the install ended as. A providerless VibeTV
+        // finishes with "shows it once AI usage is ready", and overwriting that
+        // here told the customer the theme was active while the device was
+        // still drawing the error frame.
+        let finalMessage = completeMessage;
         if (payload.job) {
           installJobId = payload.job.id;
           themeInstallPollJobRef.current = installJobId;
@@ -2098,6 +2156,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }
           result = finishedJob.result;
           logs = customerInstallLogs(finishedJob.logs, logs);
+          finalMessage = finishedJob.message || completeMessage;
         }
         if (!result) {
           throw {
@@ -2114,9 +2173,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           title: theme.title,
           startedAt,
           finishedAt,
-          message: completeMessage,
+          message: finalMessage,
           progress: 100,
-          logs: customerInstallLogs([...logs, completeMessage]),
+          logs: customerInstallLogs([...logs, finalMessage]),
           result,
         });
         const [, verifiedDevice] = await Promise.all([
@@ -3053,7 +3112,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setThemeInstallEnabled(
           Boolean(payload.companion?.features?.themeInstallEnabled),
         );
-        applyPolledDeviceSnapshot(payload.device, "/v1/diagnostics");
       }
       addEvent({
         label: partial
@@ -3090,7 +3148,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [
     addEvent,
     activeTab,
-    applyPolledDeviceSnapshot,
     companionInfo,
     companionStatus,
     device,
@@ -3111,6 +3168,157 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     themeInstallStatus,
     usage,
   ]);
+
+  const retryProviderSetup = useCallback(async () => {
+    const setupGeneration = setupGenerationRef.current;
+    setBusyAction("providers-retry");
+    setLastError(null);
+    try {
+      const payload = await runCompanion<{
+        providerSetup?: ProviderSetupInfo;
+      }>("/v1/providers/retry", { method: "POST" });
+      if (setupGeneration === setupGenerationRef.current) {
+        const setup = payload.providerSetup || null;
+        setProviderSetup(setup);
+        setCompanionStatus("online");
+        return setup;
+      }
+    } catch (error) {
+      if (setupGeneration === setupGenerationRef.current) {
+        setLastError(
+          normalizeCaughtError(error, "Usage check could not finish."),
+        );
+      }
+    } finally {
+      if (setupGeneration === setupGenerationRef.current) {
+        setBusyAction(null);
+      }
+    }
+    return null;
+  }, [runCompanion]);
+
+  // One place tells the native side it may drop the temporary CodexBar, and it
+  // is the same place that clears the outstanding flag. Every exit from a
+  // recovery goes through here.
+  const endCodexBarRecovery = useCallback(() => {
+    codexBarRecoveryOutstanding.current = false;
+    finishCodexBarRecovery();
+  }, []);
+
+  const repairUsageService = useCallback(() => {
+    if (!isNativeControlCenterApp()) {
+      void retryProviderSetup().then((setup) => {
+        if (
+          providerRecoveryManualAttempted.current &&
+          (!setup || providerSetupRequiresRecovery(setup))
+        ) {
+          setShowCodexBarFallback(true);
+        }
+      });
+      return;
+    }
+    if (codexBarRepairTimeout.current !== null) {
+      window.clearTimeout(codexBarRepairTimeout.current);
+    }
+    setBusyAction("usage-service-repair");
+    setLastError(null);
+    addEvent({
+      label: "Usage service repair started",
+      detail: "Restarting the managed usage service.",
+      tone: "unknown",
+    });
+    launchCodexBarRepair();
+    codexBarRecoveryOutstanding.current = true;
+    codexBarRepairTimeout.current = window.setTimeout(() => {
+      codexBarRepairTimeout.current = null;
+      setBusyAction(null);
+      setLastError({
+        code: "CODEXBAR_REPAIR_TIMEOUT",
+        message: "Repair could not finish.",
+        nextAction: "Try the repair again or create a support report.",
+      });
+      addEvent({
+        label: "Usage service restart timed out",
+        detail: "The managed usage service did not return in time.",
+        tone: "attention",
+      });
+      if (providerRecoveryManualAttempted.current) {
+        setShowCodexBarFallback(true);
+      }
+      endCodexBarRecovery();
+    }, NATIVE_RUNTIME_REPAIR_TIMEOUT_MS);
+  }, [addEvent, endCodexBarRecovery, retryProviderSetup]);
+
+  useEffect(() => {
+    const handleResult = (event: Event) => {
+      if (codexBarRepairTimeout.current === null) {
+        return;
+      }
+      window.clearTimeout(codexBarRepairTimeout.current);
+      codexBarRepairTimeout.current = null;
+      const detail = (event as CustomEvent<{ success?: boolean }>).detail;
+      if (detail?.success) {
+        addEvent({
+          label: "Usage service restarted",
+          detail: "Checking whether valid usage data is available now.",
+          tone: "unknown",
+        });
+        void retryProviderSetup()
+          .then((setup) => {
+            if (!setup || providerSetupRequiresRecovery(setup)) {
+              if (providerRecoveryManualAttempted.current) {
+                setShowCodexBarFallback(true);
+              }
+              return;
+            }
+            providerRecoveryManualAttempted.current = false;
+            setShowCodexBarFallback(false);
+          })
+          .finally(endCodexBarRecovery);
+        return;
+      }
+      setBusyAction(null);
+      setLastError({
+        code: "CODEXBAR_REPAIR_FAILED",
+        message: "Repair could not finish.",
+        nextAction: "Try the repair again or create a support report.",
+      });
+      addEvent({
+        label: "Usage service restart failed",
+        detail: "The managed usage service could not restart.",
+        tone: "attention",
+      });
+      if (providerRecoveryManualAttempted.current) {
+        setShowCodexBarFallback(true);
+      }
+      endCodexBarRecovery();
+    };
+    window.addEventListener(NATIVE_CODEXBAR_REPAIR_RESULT_EVENT, handleResult);
+    return () => {
+      window.removeEventListener(
+        NATIVE_CODEXBAR_REPAIR_RESULT_EVENT,
+        handleResult,
+      );
+      if (codexBarRepairTimeout.current !== null) {
+        window.clearTimeout(codexBarRepairTimeout.current);
+        codexBarRepairTimeout.current = null;
+      }
+      // A reload here would otherwise leave the temporary CodexBar this
+      // recovery started running for the rest of the window session: the native
+      // side only stops it on the finish action or on window close. This also
+      // covers a reload during the provider retry, where the timeout handle is
+      // already cleared but the retry's own finish can no longer be sent.
+      if (codexBarRecoveryOutstanding.current) {
+        endCodexBarRecovery();
+      }
+    };
+  }, [addEvent, endCodexBarRecovery, retryProviderSetup]);
+
+  const retryUsageService = useCallback(() => {
+    providerRecoveryManualAttempted.current = true;
+    setShowCodexBarFallback(false);
+    repairUsageService();
+  }, [repairUsageService]);
 
   useEffect(() => {
     if (!deviceBoard || !deviceFirmware) {
@@ -3306,7 +3514,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" &&
     !themeSetupComplete &&
     (themeSetupEntryRequired || themeSetupSessionMatches);
-
   const startupDeviceCandidates =
     deviceCandidates.length > 0
       ? deviceCandidates
@@ -3329,6 +3536,83 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     device.paired !== false &&
     !connectionRecoveryRequired &&
     !hasEnteredControlCenter;
+  // A repair takes the Mac App down on purpose, so the incident holds while one
+  // runs. But an incident whose Mac App never comes back is a Mac App outage:
+  // holding it forever hid the recovery screen behind "AI usage could not start"
+  // and offered a CodexBar download that cannot restart a dead runtime.
+  // Both busy states belong to one incident. The repair hands straight over to
+  // the provider retry, which flips busyAction before the Companion reports
+  // online again -- and dropping recovery in that gap put the Mac App recovery
+  // screen in front of a repair that had just succeeded.
+  const providerRecoveryBusy =
+    busyAction === "usage-service-repair" || busyAction === "providers-retry";
+  const providerRecoveryRequired =
+    (companionStatus === "online" || providerRecoveryBusy) &&
+    (providerIncidentOpen ||
+      deviceAwaitsProviderSetup(device) ||
+      (waitingForFirstUsage && providerSetupRequiresRecovery(providerSetup)));
+
+  useEffect(() => {
+    if (!providerRecoveryRequired) {
+      // A Mac App that briefly disappears does not end a provider incident, and
+      // the native repair takes it down on purpose. Ending the incident on that
+      // gap would relaunch the automatic repair instead of showing the approved
+      // Try again. Only a reachable Mac App that no longer needs recovery ends
+      // one.
+      if (companionStatus === "online") {
+        // The fallback is earned inside one incident and must not outlive it.
+        // The realistic way out of a fallback screen is the customer fixing
+        // CodexBar himself, which is exactly what its copy tells him to do --
+        // and that path cleared nothing, so the next incident could open with
+        // the download already on screen before anything had been tried. The
+        // clear at the start of an incident does not cover it: that one sits
+        // behind the theme-install deferral.
+        //
+        // Only when an incident had actually started, and deferred for the
+        // same reason that clear is: a synchronous setState in an effect
+        // cascades a second render pass.
+        const incidentWasOpen = providerRecoveryAttempted.current;
+        providerRecoveryAttempted.current = false;
+        providerRecoveryManualAttempted.current = false;
+        if (incidentWasOpen) {
+          window.setTimeout(() => setShowCodexBarFallback(false), 0);
+        }
+      }
+      return;
+    }
+    if (providerRecoveryAttempted.current) {
+      return;
+    }
+    // A theme install job and its worker live inside the Companion process, and
+    // the repair unregisters that process on purpose: firing now would delete a
+    // running install together with the status the UI is polling for it. The
+    // native shutdown hold covers firmware jobs only. Defer rather than skip --
+    // the attempt flag stays down, so this runs again on the terminal phase.
+    if (themeInstallInProgress) {
+      return;
+    }
+    providerRecoveryAttempted.current = true;
+    const timer = window.setTimeout(() => {
+      // Every incident starts without the CodexBar fallback. It is earned by a
+      // customer retry that fails in this incident, never inherited from the
+      // previous one.
+      setShowCodexBarFallback(false);
+      if (isNativeControlCenterApp()) {
+        repairUsageService();
+      }
+    }, 0);
+    // Deliberately not cleared on re-run: companionStatus and
+    // providerRecoveryRequired change while this incident is open, and clearing
+    // the pending timer there dropped the automatic repair for the whole
+    // incident. providerRecoveryAttempted already prevents a second one.
+    void timer;
+  }, [
+    companionStatus,
+    providerRecoveryRequired,
+    repairUsageService,
+    themeInstallInProgress,
+  ]);
+
   const startupDeviceSearchState: DeviceSearchState = waitingForFirstUsage
     ? "waiting"
     : connectionRecoveryRequired && startupDeviceCandidates.length > 0
@@ -3557,7 +3841,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     );
   }
 
-  if (!hasEnteredControlCenter && needsRuntimeRecovery) {
+  if (!hasEnteredControlCenter && needsRuntimeRecovery && !providerRecoveryRequired) {
     return (
       <MacAppRecoveryScreen
         checking={busyAction === "status"}
@@ -3570,6 +3854,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   if (
     !hasEnteredControlCenter &&
+    !providerRecoveryRequired &&
     (companionStatus !== "online" ||
       (requiresMacAppMigration && !deviceReady) ||
       Boolean(setupPreviewStep))
@@ -3578,10 +3863,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }
 
   if (
-    companionStatus === "online" &&
+    (companionStatus === "online" || providerRecoveryRequired) &&
     !requiresMacAppMigration &&
     !firmwareUpdateInProgress &&
-    (!hasActiveDevice ||
+    (providerRecoveryRequired ||
+      !hasActiveDevice ||
       recoveryPickerOpen ||
       connectionRecoveryRequired ||
       (waitingForFirstUsage && !themeSetupRequired))
@@ -3600,6 +3886,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           void connectManualTarget(target);
         }}
         onCreateSupportReport={loadSupportDiagnostics}
+        onRepairUsageService={retryUsageService}
         onPair={() => {
           const candidate = pendingPairingCandidate.current;
           setLastError(null);
@@ -3623,6 +3910,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         selectingDeviceTarget={
           busyAction === "select" ? selectingDeviceTarget : undefined
         }
+        onOpenCodexBar={openCodexBarApp}
+        providerRecovery={providerRecoveryRequired}
+        providerSetup={providerSetup}
+        showCodexBarFallback={showCodexBarFallback}
         supportReportBusy={supportReportBusy}
       />
     );
@@ -3639,9 +3930,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         firmwareUpdateStatus={firmwareUpdateStatus}
         installStatus={themeInstallStatus}
         lastInstall={lastInstall}
+        readinessError={lastError}
         onInstallCustomTheme={installCustomTheme}
         onInstallFirmwareUpdate={installFirmwareUpdate}
         onInstallTheme={installTheme}
+        onCreateSupportReport={loadSupportDiagnostics}
         onSelectTheme={setSelectedThemeId}
         requestedThemeId={initialThemeId}
         selectedTheme={selectedTheme}
@@ -3675,6 +3968,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           companionStatus={companionStatus}
           device={device}
           displayFrame={displayFrame}
+          firmwareUpdateStatus={firmwareUpdateStatus}
           usage={usage}
         />
       ) : null}
@@ -4283,7 +4577,7 @@ async function readLocalNetworkAccessState(): Promise<
   return "unsupported";
 }
 
-function mergeDeviceInfo(
+export function mergeDeviceInfo(
   current: DeviceInfo | null,
   next: DeviceInfo,
 ): DeviceInfo {
@@ -4310,8 +4604,31 @@ function mergeDeviceInfo(
     ),
     display: mergeDeviceDisplay(current.display, next.display),
     health: next.health ?? current.health,
-    stream: next.stream ?? current.stream,
+    stream: mergeDeviceStream(current.stream, next.stream),
   };
+}
+
+// A stream that is restarting reports no error for a moment. Reading that quiet
+// sample as "the incident is over" ended recovery mid-repair, dropped the
+// customer into Overview, and opened a fresh incident three seconds later when
+// the error came back. An incident ends on evidence that the device draws
+// again — a healthy stream or a different error — never on one sample that
+// simply says nothing.
+function mergeDeviceStream(
+  current: DeviceInfo["stream"],
+  next: DeviceInfo["stream"],
+): DeviceInfo["stream"] {
+  if (!next) {
+    return current;
+  }
+  if (
+    current?.errorCode === "provider_setup_required" &&
+    !next.errorCode &&
+    !next.healthy
+  ) {
+    return { ...next, errorCode: current.errorCode };
+  }
+  return next;
 }
 
 function deviceIsConfigured(device: DeviceInfo | null | undefined): boolean {

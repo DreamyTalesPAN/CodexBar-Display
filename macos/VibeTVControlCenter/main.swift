@@ -19,6 +19,8 @@ private let restartControlCenterURLHost = "restart-control-center"
 private let repairRuntimeURLHost = "repair-runtime"
 private let checkForUpdatesURLHost = "check-for-updates"
 private let repairCodexBarURLHost = "repair-codexbar"
+private let finishCodexBarRecoveryURLHost = "finish-codexbar-recovery"
+private let openCodexBarURLHost = "open-codexbar"
 private let controlCenterBundleIdentifier = "shop.vibetv.control-center"
 private let runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"
 private let previewRuntimeLaunchAgentLabel =
@@ -38,6 +40,10 @@ private let runtimeHealthRequestTimeout: TimeInterval = 5
 private let localNetworkPrivacyProbeURLString = "http://192.168.4.1/hello"
 private let localNetworkPrivacyProbeTimeout: TimeInterval = 15
 private let runtimeUnregistrationSettleDelay: Duration = .seconds(2)
+private let runtimeUnregistrationQuiesceTimeout: TimeInterval = 20
+private let runtimeUnregistrationQuiescePollDelay: Duration = .milliseconds(250)
+private let runtimeUpdateProbeAttempts = 3
+private let runtimeUpdateProbeRetryDelay: Duration = .seconds(2)
 private let runtimeValidationUnregisterArgument =
     "--vibetv-validation-unregister-runtime"
 private let runtimeValidationUnregisterEnvironmentKey =
@@ -132,11 +138,43 @@ func isRepairCodexBarURL(_ url: URL) -> Bool {
     return true
 }
 
+func isFinishCodexBarRecoveryURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == finishCodexBarRecoveryURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/" else {
+        return false
+    }
+    return true
+}
+
+func isOpenCodexBarURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == openCodexBarURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/" else {
+        return false
+    }
+    return true
+}
+
 enum NativeControlCenterAction: Equatable {
     case restartControlCenter
     case repairRuntime
     case checkForUpdates
     case repairCodexBar
+    case finishCodexBarRecovery
+    case openCodexBar
 }
 
 func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
@@ -151,6 +189,12 @@ func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
     }
     if isRepairCodexBarURL(url) {
         return .repairCodexBar
+    }
+    if isFinishCodexBarRecoveryURL(url) {
+        return .finishCodexBarRecovery
+    }
+    if isOpenCodexBarURL(url) {
+        return .openCodexBar
     }
     return nil
 }
@@ -188,6 +232,20 @@ func isApprovedDMGDownloadURL(_ url: URL) -> Bool {
         of: #"^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"#,
         options: .regularExpression
     ) != nil
+}
+
+func isApprovedCodexBarDownloadURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == "https",
+          components.host?.lowercased() == "github.com",
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil else {
+        return false
+    }
+    return components.percentEncodedPath == "/steipete/CodexBar/releases/latest"
 }
 
 struct ControlCenterURLRouter {
@@ -1110,6 +1168,10 @@ enum InstallationStatusKind: Equatable {
     case updateMismatch
     case applicationIncomplete
     case legacyRepair
+    // Its button must not go through retryRuntimePreparation: that wrapper
+    // clears codexBarRepairRequired, and the launch this screen exists to
+    // trigger happens only while that flag is set.
+    case codexBarRepair
 }
 
 struct InstallationStatus {
@@ -1265,6 +1327,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var installationReady = false
     private var installationStatus: InstallationStatus?
     private var codexBarRepairRequired = false
+    private var codexBarRepairRestartRequired = false
+    // A repair that arrived while another preparation already owned the
+    // runtime. That task read codexBarRepairRequired before the request
+    // existed, so its outcome must not answer the repair -- the completion
+    // reruns preparation with the flag still set instead.
+    private var pendingCodexBarRepairRerun = false
+    private var codexBarRecoveryApplication: NSRunningApplication?
     private var installationStatusTitle = "Starting Control Center"
     private var installationStatusDetail = "Preparing the Mac App."
     private var installationStatusFailed = false
@@ -1325,7 +1394,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
         if urls.contains(where: isRepairCodexBarURL) {
-            beginCodexBarRepair()
+            beginCodexBarRepair(hasJavaScriptOwner: false)
+            return
+        }
+        // Same reason the repair above is routed here: the recovery screen also
+        // reaches Open CodexBar from a context that is not the WKWebView, and
+        // macOS then delivers the URL through this handler. urlRouter.receive
+        // only accepts open-control-center, so without this the button is dead.
+        if urls.contains(where: isOpenCodexBarURL) {
+            openManagedCodexBar()
             return
         }
         if urlRouter.receive(urls) {
@@ -1379,6 +1456,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             }
             let outcome = await self.prepareCompanion()
             self.preparationTask = nil
+            if self.pendingCodexBarRepairRerun {
+                // This outcome belongs to a preparation that never saw the
+                // repair request; answering with it would clear the repair
+                // flags without launching CodexBar. Rerun with the flags set.
+                self.pendingCodexBarRepairRerun = false
+                self.codexBarRepairRequired = true
+                self.startRuntimePreparation()
+                return
+            }
+            // Deliberately does not release the temporary CodexBar here. Doing
+            // so would end it before anything checked that it produced usable
+            // usage: this route never calls the authoritative provider retry,
+            // which is what owns that app's lifetime on the WebView side. The
+            // app therefore lives until the window closes on this route, which
+            // is the lesser of the two faults and the one that was already
+            // there. Closing it properly means giving this path its own
+            // verification -- new behaviour, tracked separately.
             switch outcome {
             case .nativeRuntimeReady:
                 self.codexBarRepairRequired = false
@@ -1392,7 +1486,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                     title: "Usage service needs repair",
                     detail: "Repair the usage service to install and start the verified copy included with VibeTV Control Center.",
                     failed: true,
-                    retryTitle: "Repair usage service"
+                    retryTitle: "Repair usage service",
+                    kind: .codexBarRepair
                 )
             case .failure(let failure):
                 self.codexBarRepairRequired = false
@@ -1434,9 +1529,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         restartControlCenter()
     }
 
-    private func beginCodexBarRepair() {
+    // The button on the native "Usage service needs repair" screen. It reuses
+    // the repair entry point rather than the generic retry so the flag survives.
+    @objc private func repairCodexBarFromNativeStatus() {
+        beginCodexBarRepair(hasJavaScriptOwner: false)
+    }
+
+    private func beginCodexBarRepair(hasJavaScriptOwner: Bool) {
+        if webView != nil {
+            beginControlCenterCodexBarRepair(hasJavaScriptOwner: hasJavaScriptOwner)
+            return
+        }
         installationReady = false
         codexBarRepairRequired = true
+        codexBarRepairRestartRequired = true
         activeNavigation = nil
         webView = nil
         presentInstallationStatus(
@@ -1444,7 +1550,117 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             detail: "Preparing the verified version included with VibeTV Control Center.",
             failed: false
         )
-        retryRuntimePreparation()
+        // Deliberately not retryRuntimePreparation(): that entry point clears
+        // codexBarRepairRequired, because a customer retrying an ordinary
+        // preparation is not asking for a repair. prepareCompanion now starts
+        // the verified CodexBar only while that flag is set, so going through
+        // the retry wrapper would clear the very thing this repair just asked
+        // for and report success without ever launching CodexBar.
+        discardMismatchedPendingNativeUpdate()
+        if preparationTask != nil {
+            // A cold launch's own preparation is already running and read the
+            // repair flag before this request existed. Starting nothing here
+            // used to drop the repair silently; the running task's completion
+            // now reruns preparation with the flag still set.
+            pendingCodexBarRepairRerun = true
+            return
+        }
+        startRuntimePreparation()
+    }
+
+    private func beginControlCenterCodexBarRepair(hasJavaScriptOwner: Bool) {
+        guard preparationTask == nil else {
+            // Another preparation already owns the runtime. Say so instead of
+            // dropping the request: the setup screen waits on this answer and
+            // would otherwise sit inert until its own timeout expires.
+            notifyCodexBarRepairResult(success: false)
+            return
+        }
+        codexBarRepairRequired = true
+        codexBarRepairRestartRequired = true
+        preparationTask = Task { [weak self] in
+            guard let self else {
+                return
+            }
+            let outcome = await self.prepareCompanion()
+            self.preparationTask = nil
+            guard outcome == .nativeRuntimeReady else {
+                self.finishControlCenterCodexBarRecovery()
+                self.notifyCodexBarRepairResult(success: false)
+                return
+            }
+            self.codexBarRepairRequired = false
+            self.installationReady = true
+            self.notifyCodexBarRepairResult(success: true)
+            // Only a repair the page started sends the finish action back: its
+            // result handler returns early unless it has an outstanding repair
+            // of its own. An externally delivered vibetv://repair-codexbar has
+            // no such owner, so the temporary CodexBar this recovery started
+            // would keep running until the window closes. Release it here.
+            //
+            // A page that owned the repair can also be gone by now. The window
+            // cleanup runs finishControlCenterCodexBarRecovery before this task
+            // launches CodexBar, so it releases nothing, and the launch then
+            // records an app nobody is left to finish -- it outlived the window
+            // that started it. The cleanup nils the WebView, so that is the
+            // signal the owner has gone.
+            if !hasJavaScriptOwner || self.webView == nil {
+                self.finishControlCenterCodexBarRecovery()
+            }
+        }
+    }
+
+    // The recovery screen has no sidebar, so the provider list in Usage cannot
+    // be reached from there. CodexBar owns the switches, so send the customer
+    // into CodexBar rather than after a download they already have.
+    // Stopgap until #245 moves provider selection into setup and settings.
+    private func openManagedCodexBar() {
+        let running = NSRunningApplication.runningApplications(
+            withBundleIdentifier: codexBarBundleIdentifier
+        )
+        let appURL: URL
+        if let bundleURL = running.first?.bundleURL {
+            appURL = bundleURL
+        } else {
+            let managed = appManagedCodexBarAppURL(
+                applicationSupportURL: applicationSupportURL()
+            )
+            guard validatedPinnedCodexBarCLI(at: managed) != nil else {
+                NSLog("VibeTV Control Center refused to open an unverified CodexBar app")
+                return
+            }
+            appURL = managed
+        }
+        // From here the app is the customer's to use. Recovery cleanup must not
+        // terminate it under them, so drop our claim on it.
+        codexBarRecoveryApplication = nil
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.addsToRecentItems = false
+        NSWorkspace.shared.openApplication(
+            at: appURL,
+            configuration: configuration
+        ) { _, error in
+            if let error {
+                NSLog(
+                    "VibeTV Control Center could not open CodexBar: \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
+    private func finishControlCenterCodexBarRecovery() {
+        defer { codexBarRecoveryApplication = nil }
+        guard let application = codexBarRecoveryApplication,
+              application.bundleURL?.standardizedFileURL == appManagedCodexBarAppURL(
+                  applicationSupportURL: applicationSupportURL()
+              ).standardizedFileURL else {
+            return
+        }
+        if !application.terminate() {
+            NSLog("VibeTV Control Center could not stop its temporary CodexBar app")
+        }
     }
 
     @objc private func openSupportLog() {
@@ -1974,6 +2190,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
     }
 
+    private func notifyCodexBarRepairResult(success: Bool) {
+        let value = success ? "true" : "false"
+        let script = "window.dispatchEvent(new CustomEvent('vibetv:codexbar-repair-result', { detail: { success: \(value) } })); true"
+        webView?.evaluateJavaScript(script) { _, error in
+            if let error {
+                NSLog(
+                    "VibeTV Control Center could not report CodexBar repair result: \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
     private func presentControlCenter() {
         guard !installationRequired, installationReady else {
             return
@@ -2049,7 +2277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
     private func makeMainWindow() -> NSWindow {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1180, height: 820),
+            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 900),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -2248,6 +2476,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                         variant: .primary
                     ),
                 ]
+            case .codexBarRepair:
+                recoveryButtons = [
+                    makeNativeSetupButton(
+                        title: retryTitle,
+                        action: #selector(repairCodexBarFromNativeStatus),
+                        symbolName: "wrench.and.screwdriver",
+                        variant: .primary
+                    ),
+                ]
             case .legacyRepair:
                 recoveryButtons = [
                     makeNativeSetupButton(
@@ -2335,6 +2572,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         allowPreparedWindowClose = false
         scheduledCloseFallback?.cancel()
         scheduledCloseFallback = nil
+        finishControlCenterCodexBarRecovery()
         activeNavigation = nil
         webView?.stopLoading()
         webView?.navigationDelegate = nil
@@ -2517,6 +2755,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return nil
         }
 
+        if NSRunningApplication.runningApplications(
+            withBundleIdentifier: codexBarBundleIdentifier
+        ).contains(where: {
+            $0.bundleURL?.standardizedFileURL == targetAppURL.standardizedFileURL
+        }), let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL) {
+            return cliURL
+        }
+
         guard let archiveURL = bundledCodexBarArchiveURL() else {
             return nil
         }
@@ -2604,6 +2850,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         return true
     }
 
+    private func launchBundledCodexBarInBackground() async -> Bool {
+        let appURL = appManagedCodexBarAppURL(
+            applicationSupportURL: applicationSupportURL()
+        )
+        let runningApplications = NSRunningApplication.runningApplications(
+            withBundleIdentifier: codexBarBundleIdentifier
+        )
+        if runningApplications.contains(where: {
+            $0.bundleURL?.standardizedFileURL == appURL.standardizedFileURL
+        }) {
+            // Deliberately not recorded as ours. The customer may have opened it
+            // from the recovery screen, and the finish action would then close
+            // the app under them.
+            NSLog("VibeTV Control Center found the app-managed CodexBar already running")
+            return true
+        }
+        if !runningApplications.isEmpty {
+            NSLog("VibeTV Control Center found the customer's CodexBar app already running")
+            return true
+        }
+
+        guard validatedPinnedCodexBarCLI(at: appURL) != nil else {
+            NSLog("VibeTV Control Center refused to launch an unverified CodexBar app")
+            return false
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        configuration.addsToRecentItems = false
+        let application: NSRunningApplication? = await withCheckedContinuation { continuation in
+            NSWorkspace.shared.openApplication(
+                at: appURL,
+                configuration: configuration
+            ) { application, error in
+                if let error {
+                    NSLog(
+                        "VibeTV Control Center could not start CodexBar in the background: \(error.localizedDescription)"
+                    )
+                }
+                continuation.resume(returning: error == nil ? application : nil)
+            }
+        }
+        if application?.bundleURL?.standardizedFileURL == appURL.standardizedFileURL {
+            codexBarRecoveryApplication = application
+        }
+        return application != nil
+    }
+
     private func prepareCompanion() async -> RuntimePreparationOutcome {
         guard isInstalledApplicationsBundle(Bundle.main.bundleURL) else {
             NSLog(
@@ -2644,7 +2938,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return .failure(.applicationIncomplete)
         }
 
+        var runtimeStoppedForCodexBarRepair = false
+        if codexBarRepairRestartRequired {
+            // A firmware update job lives inside the runtime process and dies
+            // with it. Restarting the runtime under a running update leaves the
+            // customer with a half-written VibeTV and a progress screen that
+            // never answers again. Provider recovery is the one that can wait.
+            if await runtimeShouldDeferRepairForUpdate() {
+                NSLog(
+                    "VibeTV Control Center held back its CodexBar repair while a VibeTV update is running"
+                )
+                return .codexBarRepairRequired
+            }
+            guard await unregisterBundledRuntimeService() else {
+                // The runtime is still alive and still holding updates back for
+                // a shutdown that did not happen. Give it back.
+                await runtimeReleaseUpdateHold()
+                NSLog("VibeTV Control Center could not stop its runtime before repairing CodexBar")
+                return .failure(.serviceStart)
+            }
+            codexBarRepairRestartRequired = false
+            runtimeStoppedForCodexBarRepair = true
+        }
+
+        // The repair stops the managed runtime so the private CodexBar payload
+        // can be replaced underneath it. Every early return between here and
+        // the registration below would otherwise leave the customer with no
+        // Companion at all, turning a missing AI provider into a Mac App
+        // outage. Put back exactly the registration this repair tore down;
+        // legacy migration already ran for the runtime that was healthy a
+        // moment ago, so this must not repeat it.
+        defer {
+            if runtimeStoppedForCodexBarRepair,
+               registerBundledRuntimeService() != .ready {
+                NSLog(
+                    "VibeTV Control Center could not restart its runtime after the unfinished CodexBar repair"
+                )
+            }
+        }
+
         guard bootstrapCodexBar() else {
+            return .codexBarRepairRequired
+        }
+
+        if codexBarRepairRequired,
+           !(await launchBundledCodexBarInBackground()) {
             return .codexBarRepairRequired
         }
 
@@ -2683,6 +3021,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         // SMAppService.register() bootstraps a LaunchAgent immediately. Stop
         // every legacy writer first so migration never overlaps two streams.
+        // The repair's restoration stays armed across this switch and past it:
+        // .ready only means Service Management accepted the registration, and
+        // the health gate below can still fail and unregister what it just
+        // registered. Disarming here left the Mac with no Companion at all.
         switch await ensureBundledRuntimeServiceRegistered() {
         case .ready:
             break
@@ -2764,6 +3106,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             }
             return .failure(failure)
         }
+        // A healthy runtime is established. Only now is there nothing left for
+        // the repair's restoration to put back.
+        runtimeStoppedForCodexBarRepair = false
         clearPendingNativeUpdate()
 
         if legacyStates.isEmpty {
@@ -2907,9 +3252,197 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
     }
 
+    // SMAppService reports .notRegistered as soon as launchd accepted the
+    // unregister, not when the daemon has exited. Registering inside that
+    // window puts two processes on the API port: the old one still holds the
+    // listener while the new one binds it. A fixed delay only guesses when
+    // that is over, so wait for the port itself to go quiet.
+    // Returns true when the CodexBar repair must stand down. Only a runtime that
+    // answers and explicitly says no update is running clears the way: a probe
+    // that fails while an update is in flight, or an older runtime that does not
+    // report the field at all, is exactly the case this guard exists for. A
+    // runtime that never answers after several tries is not running an update
+    // either -- the job lives inside that process -- so that case proceeds,
+    // otherwise a dead runtime could never be registered again.
+    private func runtimeShouldDeferRepairForUpdate() async -> Bool {
+        for _ in 0..<runtimeUpdateProbeAttempts {
+            switch await runtimeClaimUpdateHold() {
+            case .noUpdate:
+                return false
+            case .updateRunning, .answeredWithoutField:
+                return true
+            case .noAnswer:
+                try? await Task<Never, Never>.sleep(for: runtimeUpdateProbeRetryDelay)
+            }
+        }
+        NSLog("VibeTV Control Center got no runtime answer about a running update; assuming none")
+        return false
+    }
+
+    private enum RuntimeUpdateProbe {
+        case noAnswer
+        case answeredWithoutField
+        case noUpdate
+        case updateRunning
+    }
+
+    // Asking whether an update runs and then killing the runtime are two steps,
+    // and an update that starts between them dies with the process that owns its
+    // job. So do not ask -- claim: the runtime refuses new update jobs from here
+    // on, under the same lock that starts them. A 409 means an update already
+    // owns the runtime and the repair waits, exactly as before.
+    private func runtimeClaimUpdateHold() async -> RuntimeUpdateProbe {
+        for origin in runtimeOriginCandidates() {
+            guard let http = await runtimeUpdateHoldRequest(origin, release: false) else {
+                continue
+            }
+            // runtime-endpoint.json can be stale, and any process may reuse the
+            // port it names. Such a listener answering 404 would read as
+            // "answered without the field" and refuse the repair without the
+            // real runtime on the default port ever being asked. Only an answer
+            // from a listener this label owns is authoritative -- the same test
+            // waitForHealthyRuntime applies before recording an origin.
+            guard case .owned = verifyRuntimeListenerOwnership(
+                port: origin.port ?? defaultRuntimePort
+            ) else {
+                continue
+            }
+            if http.statusCode == 409 {
+                return .updateRunning
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                // An older runtime has no hold endpoint. It also has no atomic
+                // answer to give, so treat it the way the missing field is
+                // treated: hold back rather than strand an update.
+                return .answeredWithoutField
+            }
+            return .noUpdate
+        }
+        return .noAnswer
+    }
+
+    // The hold outlives a repair that never stopped the runtime, so release it
+    // whenever the shutdown does not happen.
+    //
+    // Deliberately without the claim's ownership check, and without stopping at
+    // the first origin that answers. This runs after SMAppService.unregister,
+    // where launchctl no longer knows the label: every candidate reads
+    // .serviceUnavailable, so the check skipped all of them and released
+    // nothing, leaving firmware updates and theme installs refused with
+    // "Mac App is restarting" for the rest of the 60s window after a restart
+    // that never happened. Releasing is idempotent and a stranger on a stale
+    // port simply refuses it, so send it to every candidate the claim could
+    // have used.
+    private func runtimeReleaseUpdateHold() async {
+        for origin in runtimeOriginCandidates() {
+            _ = await runtimeUpdateHoldRequest(origin, release: true)
+        }
+    }
+
+    private func runtimeUpdateHoldRequest(
+        _ origin: URL,
+        release: Bool
+    ) async -> HTTPURLResponse? {
+        var request = URLRequest(
+            url: origin.appendingPathComponent("v1/runtime-health/update-hold"),
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: runtimeHealthRequestTimeout
+        )
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = release ? Data("{\"release\":true}".utf8) : Data("{}".utf8)
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse else {
+            return nil
+        }
+        return http
+    }
+
+    // The managed runtime runs with --api-fallback, so when 47832 is taken it
+    // serves from a free port and publishes it in runtime-endpoint.json. Waiting
+    // on the default origin then watches the wrong listener in both directions:
+    // whatever took 47832 keeps answering after the managed runtime is gone and
+    // the wait times out, or nothing answers there and the wait returns while
+    // the fallback runtime is still exiting -- and the caller registers a second
+    // runtime onto a port the old one still owns. Wait on the origin the runtime
+    // actually published, captured before the unregister rewrites it.
+    // Every candidate has to go quiet, not just one of them. Picking a single
+    // origin fails in both directions: the published one can be stale after a
+    // failed writeRuntimeEndpoint, and the app's own verified origin belongs to
+    // this build rather than to whatever is running -- during an upgrade from a
+    // public release that is somebody else's runtime, on the port its own
+    // endpoint file names. Waiting on all of them costs nothing, since a stale
+    // origin answers nothing and returns at once.
+    private func waitForRuntimeAPIToStop(_ managedOrigins: [URL]) async -> Bool {
+        // Exactly what the caller proved ours. Empty means nothing of ours was
+        // listening, so there is nothing to outlive; adding the default back
+        // here would park the wait on whatever stranger holds 47832.
+        guard !managedOrigins.isEmpty else {
+            return true
+        }
+        let origins = managedOrigins
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = runtimeHealthRequestTimeout
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+
+        let deadline = Date().addingTimeInterval(runtimeUnregistrationQuiesceTimeout)
+        var pending = origins
+        while Date() < deadline {
+            var stillAnswering: [URL] = []
+            for origin in pending {
+                var request = URLRequest(
+                    url: origin.appendingPathComponent("v1/runtime-health"),
+                    cachePolicy: .reloadIgnoringLocalCacheData,
+                    timeoutInterval: runtimeHealthRequestTimeout
+                )
+                request.httpMethod = "GET"
+                if (try? await session.data(for: request)) != nil {
+                    stillAnswering.append(origin)
+                }
+            }
+            if stillAnswering.isEmpty {
+                return true
+            }
+            pending = stillAnswering
+            try? await Task<Never, Never>.sleep(for: runtimeUnregistrationQuiescePollDelay)
+        }
+        // Reporting success here would let the caller register a second runtime
+        // on a port the old one still owns, which is the very collision the
+        // wait exists to prevent.
+        NSLog(
+            "VibeTV Control Center runtime still answered on \(pending.map(\.absoluteString).joined(separator: ", ")) after unregister"
+        )
+        return false
+    }
+
     private func unregisterBundledRuntimeService() async -> Bool {
         if usesLocalPreviewRuntime {
             return await unregisterLocalPreviewRuntimeService()
+        }
+        // Everything that could be serving: the origin the running runtime
+        // published, this build's verified one, and the default -- narrowed to
+        // the ones whose listener actually belongs to this service. A stale port
+        // reused by some other server would otherwise answer forever and time
+        // the wait out, and the caller reports that as a failed unregister after
+        // Service Management already dropped the registration.
+        //
+        // The narrowing has to happen here, before the unregister. Afterwards
+        // launchctl no longer knows the label, ownership comes back
+        // .serviceUnavailable for every candidate, and filtering then would
+        // discard the runtime that is still exiting -- the exact race this wait
+        // exists to prevent.
+        var candidateOrigins = runtimeOriginCandidates()
+        if !candidateOrigins.contains(activeRuntimeOrigin) {
+            candidateOrigins.append(activeRuntimeOrigin)
+        }
+        let managedOrigins = candidateOrigins.filter { origin in
+            if case .owned = verifyRuntimeListenerOwnership(
+                port: origin.port ?? defaultRuntimePort
+            ) {
+                return true
+            }
+            return false
         }
         switch runtimeService.status {
         case .notRegistered, .notFound:
@@ -2925,7 +3458,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
             switch runtimeService.status {
             case .notRegistered, .notFound:
-                try? await Task<Never, Never>.sleep(for: runtimeUnregistrationSettleDelay)
+                guard await waitForRuntimeAPIToStop(managedOrigins) else {
+                    return false
+                }
             case .enabled, .requiresApproval:
                 NSLog(
                     "VibeTV Control Center could not unregister its runtime: \(errorDescription ?? "service remained registered")"
@@ -3753,7 +4288,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             case .checkForUpdates:
                 checkForUpdates()
             case .repairCodexBar:
-                beginCodexBarRepair()
+                beginCodexBarRepair(hasJavaScriptOwner: true)
+            case .finishCodexBarRecovery:
+                finishControlCenterCodexBarRecovery()
+            case .openCodexBar:
+                openManagedCodexBar()
             }
             return
         }
@@ -3771,14 +4310,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
 
-        guard isApprovedDMGDownloadURL(url) else {
+        guard isApprovedDMGDownloadURL(url) || isApprovedCodexBarDownloadURL(url) else {
             decisionHandler(.allow)
             return
         }
 
         decisionHandler(.cancel)
         if !NSWorkspace.shared.open(url) {
-            NSLog("VibeTV Control Center could not open verified DMG URL in the default browser")
+            NSLog("VibeTV Control Center could not open an approved download URL in the default browser")
         }
     }
 

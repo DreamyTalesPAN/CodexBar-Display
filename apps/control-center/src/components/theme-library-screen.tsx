@@ -187,6 +187,10 @@ export type ThemeLibraryScreenProps = {
   firmwareUpdateStatus?: ThemeSetupFirmwareUpdateStatus | null;
   installEntry?: boolean;
   lastInstall?: ThemeInstallResult;
+  readinessError?: {
+    message: string;
+    nextAction?: string;
+  } | null;
   requestedThemeId?: string;
   setupMode?: boolean;
   storefrontConfigured: boolean;
@@ -195,6 +199,7 @@ export type ThemeLibraryScreenProps = {
   onInstallCustomTheme: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
   onInstallFirmwareUpdate?: () => Promise<boolean> | boolean | void;
   onInstallTheme: (theme: ThemeProduct) => Promise<unknown> | void;
+  onCreateSupportReport?: () => Promise<unknown> | void;
   onSaveStandby?: (value: StandbySettings) => Promise<void> | void;
 };
 
@@ -210,6 +215,7 @@ export function ThemeLibraryScreen({
   firmwareUpdate,
   firmwareUpdateStatus,
   lastInstall,
+  readinessError,
   requestedThemeId,
   setupMode = false,
   companionStatus,
@@ -218,6 +224,7 @@ export function ThemeLibraryScreen({
   themeInstallEnabled,
   onInstallCustomTheme,
   onInstallFirmwareUpdate,
+  onCreateSupportReport,
   onSelectTheme,
   onInstallTheme,
   onSaveStandby,
@@ -302,6 +309,14 @@ export function ThemeLibraryScreen({
     visibleThemes.some((theme) =>
       themeNeedsUpgradeableFirmware(theme, device, themeInstallEnabled),
     );
+  const setupReadiness = setupMode
+    ? themeSetupReadinessState({
+        busyAction,
+        firmwareUpdateStatus,
+        installStatus,
+        readinessError,
+      })
+    : null;
   useEffect(() => {
     if (setupMode) {
       return;
@@ -627,7 +642,13 @@ export function ThemeLibraryScreen({
         </section>
       ) : null}
 
-      <section className="py-8">
+      <section aria-busy={setupReadiness?.kind === "loading"} className="py-8">
+        {setupReadiness ? (
+          <ThemeSetupReadinessNotice
+            onCreateSupportReport={onCreateSupportReport}
+            state={setupReadiness}
+          />
+        ) : null}
         {setupNeedsFirmwareUpdate ? (
           <ThemeSetupFirmwareUpdate
             firmwareUpdate={firmwareUpdate}
@@ -1064,11 +1085,12 @@ function ThemeListItem({
         >
           {labelForInstallButton({
             actionInFlight,
-            blockedLabel,
+            blockedLabel: blocker ? blockedLabel : "",
             installInFlight: installInFlight || preparingInstall,
             installed,
             selected: item.themeId === selectedThemeId,
             disabled,
+            setupMode,
           })}
         </Button>
         {!setupMode && item.kind === "custom" ? (
@@ -1128,9 +1150,14 @@ function InlineInstallProgress({
   const detail = failed
     ? status.error || "Theme was not installed. Try again."
     : complete
-      ? usage === "screensaver"
-        ? "Screensaver is ready on VibeTV."
-        : "Theme is active on VibeTV."
+      // The Companion says how the install ended. On a VibeTV without a ready
+      // provider that is "shows it once AI usage is ready", and overriding it
+      // here claimed the theme was on screen while the device drew the error
+      // frame. The fallback only covers a completion that carries no message.
+      ? status.message ||
+        (usage === "screensaver"
+          ? "Screensaver is ready on VibeTV."
+          : "Theme is active on VibeTV.")
       : status.message ||
         status.logs[status.logs.length - 1] ||
         "Preparing theme install.";
@@ -1184,6 +1211,7 @@ function labelForInstallButton({
   installInFlight,
   installed,
   selected,
+  setupMode,
 }: {
   actionInFlight: boolean;
   blockedLabel: string;
@@ -1191,11 +1219,15 @@ function labelForInstallButton({
   installInFlight: boolean;
   installed: boolean;
   selected: boolean;
+  setupMode: boolean;
 }) {
   if (installInFlight && selected) {
     return "Installing";
   }
   if (actionInFlight) {
+    if (setupMode) {
+      return blockedLabel || "Install";
+    }
     return "Wait";
   }
   if (installed) {
@@ -1208,6 +1240,103 @@ function labelForInstallButton({
     return blockedLabel;
   }
   return "Install";
+}
+
+type ThemeSetupReadinessState = {
+  detail: string;
+  kind: "loading" | "error";
+  title: string;
+};
+
+function themeSetupReadinessState({
+  busyAction,
+  firmwareUpdateStatus,
+  installStatus,
+  readinessError,
+}: {
+  busyAction: string | null;
+  firmwareUpdateStatus?: ThemeSetupFirmwareUpdateStatus | null;
+  installStatus?: ThemeInstallStatus | null;
+  readinessError?: ThemeLibraryScreenProps["readinessError"];
+}): ThemeSetupReadinessState | null {
+  // Firmware and theme installs already have their own single progress surface.
+  if (
+    firmwareUpdateStatus?.phase === "installing" ||
+    installStatus?.phase === "installing"
+  ) {
+    return null;
+  }
+  // Provider recovery owns its full-screen state in ControlCenterApp. Do not
+  // let a transition frame turn this notice into a second provider/auth flow.
+  if (
+    busyAction === "usage-service-repair" ||
+    busyAction === "providers-retry"
+  ) {
+    return null;
+  }
+  if (busyAction === "firmware-check") {
+    return {
+      kind: "loading",
+      title: "Checking theme readiness",
+      detail:
+        "VibeTV is checking firmware support before theme install becomes available.",
+    };
+  }
+  if (busyAction && busyAction !== "install") {
+    return {
+      kind: "loading",
+      title: "Checking VibeTV readiness",
+      detail:
+        "VibeTV is confirming its connection and theme install support.",
+    };
+  }
+  if (
+    readinessError &&
+    installStatus?.phase !== "error" &&
+    firmwareUpdateStatus?.phase !== "error" &&
+    firmwareUpdateStatus?.phase !== "attention"
+  ) {
+    return {
+      kind: "error",
+      title: "Theme setup needs attention",
+      detail: readinessError.nextAction || readinessError.message,
+    };
+  }
+  return null;
+}
+
+function ThemeSetupReadinessNotice({
+  onCreateSupportReport,
+  state,
+}: {
+  onCreateSupportReport?: ThemeLibraryScreenProps["onCreateSupportReport"];
+  state: ThemeSetupReadinessState;
+}) {
+  const failed = state.kind === "error";
+  return (
+    <Alert
+      aria-live={failed ? "assertive" : "polite"}
+      className="mb-5"
+      role={failed ? "alert" : "status"}
+      variant={failed ? "destructive" : "default"}
+    >
+      {failed ? <CircleAlert aria-hidden /> : <Spinner />}
+      <AlertTitle>{state.title}</AlertTitle>
+      <AlertDescription>{state.detail}</AlertDescription>
+      {failed && onCreateSupportReport ? (
+        <AlertAction>
+          <Button
+            onClick={() => void onCreateSupportReport()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Create support report
+          </Button>
+        </AlertAction>
+      ) : null}
+    </Alert>
+  );
 }
 
 function buildCustomThemeInstallBlocker({

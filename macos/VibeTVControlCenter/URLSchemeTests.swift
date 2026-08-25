@@ -316,6 +316,40 @@ func runURLSchemeTests() {
         "the WebView repair URL must route to the native CodexBar repair action"
     )
     require(
+        isFinishCodexBarRecoveryURL(
+            URL(string: "vibetv://finish-codexbar-recovery")!
+        ),
+        "the exact temporary CodexBar stop action must be accepted"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://finish-codexbar-recovery")!
+        ) == .finishCodexBarRecovery,
+        "the WebView finish URL must stop only the temporary CodexBar app"
+    )
+    require(
+        isOpenCodexBarURL(URL(string: "vibetv://open-codexbar")!),
+        "the exact open-CodexBar action must be accepted"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://open-codexbar")!
+        ) == .openCodexBar,
+        "the WebView open URL must bring CodexBar to the front"
+    )
+    for rejectedOpenURL in [
+        "vibetv://open-codexbar/extra",
+        "vibetv://open-codexbar?activate=true",
+        "vibetv://open-codexbar#now",
+        "vibetv://user@open-codexbar",
+        "https://open-codexbar",
+    ] {
+        require(
+            !isOpenCodexBarURL(URL(string: rejectedOpenURL)!),
+            "unexpected open-CodexBar action must be rejected: \(rejectedOpenURL)"
+        )
+    }
+    require(
         nativeControlCenterAction(
             for: URL(string: "vibetv://check-for-updates")!
         ) == .checkForUpdates,
@@ -357,6 +391,16 @@ func runURLSchemeTests() {
             "unexpected CodexBar repair action must be rejected: \(rejectedRepairURL)"
         )
     }
+    for rejectedFinishURL in [
+        "vibetv://finish-codexbar-recovery/extra",
+        "vibetv://finish-codexbar-recovery?force=true",
+        "https://finish-codexbar-recovery",
+    ] {
+        require(
+            !isFinishCodexBarRecoveryURL(URL(string: rejectedFinishURL)!),
+            "unexpected CodexBar finish action must be rejected: \(rejectedFinishURL)"
+        )
+    }
     require(
         nativeControlCenterAction(
             for: URL(string: "https://app.vibetv.shop/control-center")!
@@ -390,6 +434,23 @@ func runURLSchemeTests() {
         require(
             !isApprovedDMGDownloadURL(URL(string: rejectedURL)!),
             "unverified DMG URL must stay inside the WebView policy: \(rejectedURL)"
+        )
+    }
+    require(
+        isApprovedCodexBarDownloadURL(
+            URL(string: "https://github.com/steipete/CodexBar/releases/latest")!
+        ),
+        "the official CodexBar releases page must open externally"
+    )
+    for rejectedURL in [
+        "http://github.com/steipete/CodexBar/releases/latest",
+        "https://github.com/other/CodexBar/releases/latest",
+        "https://github.com/steipete/CodexBar/releases/latest?download=1",
+        "https://github.com/steipete/CodexBar/releases/download/v0.46.0/CodexBar.zip",
+    ] {
+        require(
+            !isApprovedCodexBarDownloadURL(URL(string: rejectedURL)!),
+            "unapproved CodexBar download URL must stay inside the WebView policy: \(rejectedURL)"
         )
     }
 

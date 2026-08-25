@@ -8,6 +8,7 @@ type Event struct {
 	Outcome           string `json:"outcome,omitempty"`
 	RetryPolicy       string `json:"retryPolicy,omitempty"`
 	Firmware          string `json:"firmware,omitempty"`
+	ObservedFirmware  string `json:"observedFirmware,omitempty"`
 	Target            string `json:"target,omitempty"`
 	DeviceID          string `json:"deviceId,omitempty"`
 	ArtifactValidated bool   `json:"artifactValidated,omitempty"`

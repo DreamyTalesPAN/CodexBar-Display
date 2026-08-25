@@ -69,6 +69,9 @@ jobs:
       - name: Test cold/warm start honesty (virtual VibeTV)
         run: ./scripts/test-companion-coldwarm-e2e.sh
 
+      - name: Test provider-less theme install (virtual VibeTV)
+        run: ./scripts/test-providerless-theme-install-e2e.sh
+
       - name: Test customer-readiness checker
         run: ./scripts/test-control-center-companion-customer-readiness.sh
 

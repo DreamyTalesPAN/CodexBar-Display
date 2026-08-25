@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   applyDeviceRecoveryStatus,
   createDeviceRecoveryGateState,
+  DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT,
   DEVICE_RECOVERY_OPERATION_FAILURE_LIMIT,
+  deviceRecoveryConfirmedLoss,
   openManualRecoveryPicker,
   selectRecoveryDevice,
 } from "./device-recovery-gate";
@@ -123,5 +125,37 @@ describe("device recovery gate", () => {
 
     expect(result.acceptDevice).toBe(false);
     expect(result.state.preferredDeviceId).toBe("stable-a");
+  });
+});
+
+describe("deviceRecoveryConfirmedLoss", () => {
+  const selected = {
+    connected: true,
+    deviceId: "device-a",
+    target: "http://192.168.178.72",
+  };
+
+  it("does not call a missed poll a loss", () => {
+    let state = applyDeviceRecoveryStatus(createDeviceRecoveryGateState(), {
+      device: selected,
+    }).state;
+
+    // Every miss below the limit. A provider incident must survive all of them:
+    // the native repair takes the Mac App down on purpose.
+    for (let i = 1; i < DEVICE_RECOVERY_NORMAL_FAILURE_LIMIT; i += 1) {
+      const miss = applyDeviceRecoveryStatus(state, { device: null });
+      expect(deviceRecoveryConfirmedLoss(miss)).toBe(false);
+      state = miss.state;
+    }
+
+    const limit = applyDeviceRecoveryStatus(state, { device: null });
+    expect(limit.openPicker).toBe(true);
+    expect(deviceRecoveryConfirmedLoss(limit)).toBe(true);
+
+    // openPicker goes false again once the picker already says confirmed-loss.
+    // Reading only that half would call the device present again.
+    const after = applyDeviceRecoveryStatus(limit.state, { device: null });
+    expect(after.openPicker).toBe(false);
+    expect(deviceRecoveryConfirmedLoss(after)).toBe(true);
   });
 });

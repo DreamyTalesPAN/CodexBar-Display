@@ -135,7 +135,6 @@ func freshUsableUsageProviderReadiness(snapshot daemon.ProviderUsageSnapshot, no
 	return codexbar.ProviderReadiness{
 		ID:          info.ID,
 		Label:       info.Label,
-		Enabled:     true,
 		Status:      codexbar.ProviderReady,
 		Source:      strings.TrimSpace(info.Source),
 		CollectedAt: info.CollectedAt,
@@ -176,7 +175,6 @@ func freshTokenUsageProviderReadiness(snapshot daemon.ProviderUsageSnapshot, now
 	return codexbar.ProviderReadiness{
 		ID:          info.ID,
 		Label:       info.Label,
-		Enabled:     true,
 		Status:      codexbar.ProviderReady,
 		Source:      strings.TrimSpace(info.Source),
 		CollectedAt: tokenAt.Format(time.RFC3339),
@@ -345,10 +343,9 @@ func timedOutExactProviderSetup(providerID string, now time.Time) codexbar.Provi
 		Status:    "setup_required",
 		CheckedAt: now.UTC().Format(time.RFC3339Nano),
 		Providers: []codexbar.ProviderReadiness{{
-			ID:      providerID,
-			Label:   providerID,
-			Enabled: true,
-			Status:  codexbar.ProviderTimeout,
+			ID:     providerID,
+			Label:  providerID,
+			Status: codexbar.ProviderTimeout,
 		}},
 	}
 }
@@ -370,24 +367,6 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 		s.wakeDisplayStream()
 	}
 	writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
-}
-
-func (s *Server) handleOpenCodexBar(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodPost) {
-		return
-	}
-	openApp := s.openCodexBar
-	if openApp == nil {
-		openApp = codexbar.OpenApp
-	}
-	if err := openApp(r.Context()); err != nil {
-		writeError(w, http.StatusServiceUnavailable, "codexbar_open_failed", "Provider setup could not be opened.", "Open provider setup from Applications, then check again.")
-		return
-	}
-	writeJSON(w, http.StatusOK, providerSetupResponse{
-		OK:            true,
-		ProviderSetup: s.currentProviderSetup(r.Context(), false),
-	})
 }
 
 func providerDiagnosticCheck(setup codexbar.ProviderSetup) diagnosticCheck {

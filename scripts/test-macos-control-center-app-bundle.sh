@@ -602,6 +602,59 @@ required_source = [
     'runtimeEndpointFileName = "runtime-endpoint.json"',
     "validatedRuntimeEndpointOrigin(",
     "runtimeOriginCandidates()",
+    # The managed runtime runs with --api-fallback, so the quiesce wait after an
+    # unregister must watch the origin it actually published, not 47832.
+    # Quiesce against the origin that answered and was proven owned, not the
+    # first candidate: the endpoint file can hold a stale but valid URL.
+    # The unregister wait must cover every candidate, not one: the published
+    # origin can be stale, and this build's verified origin is not the origin of
+    # whatever is running during an upgrade from a public release.
+    # Ownership narrowing must happen where the candidates are captured, before
+    # the unregister: afterwards launchctl no longer knows the label and every
+    # candidate would be discarded, including the runtime still exiting.
+    "var candidateOrigins = runtimeOriginCandidates()",
+    "let managedOrigins = candidateOrigins.filter { origin in",
+    "waitForRuntimeAPIToStop(managedOrigins)",
+    # The claim must verify listener ownership before trusting an answer: a
+    # stale port from runtime-endpoint.json can be held by anything, and it runs
+    # before the unregister, where ownership is still knowable.
+    "            guard case .owned = verifyRuntimeListenerOwnership(\n                port: origin.port ?? defaultRuntimePort\n            ) else {\n                continue\n            }\n            if http.statusCode == 409 {",
+    # The release must NOT, and must not stop at the first answer. It runs after
+    # the unregister, where launchctl no longer knows the label: every candidate
+    # reads .serviceUnavailable, so the check skipped all of them and released
+    # nothing, leaving updates and theme installs refused with "Mac App is
+    # restarting" for the rest of the window after a restart that never happened.
+    "    private func runtimeReleaseUpdateHold() async {\n        for origin in runtimeOriginCandidates() {\n            _ = await runtimeUpdateHoldRequest(origin, release: true)\n        }\n    }",
+    # Open CodexBar is reached from outside the WKWebView too, and macOS then
+    # delivers it through application(_:open:), which urlRouter.receive rejects.
+    "if urls.contains(where: isOpenCodexBarURL) {",
+    # A repair delivered as a URL has no page waiting for the result, so the
+    # page's handler drops the event and never sends the finish action. The
+    # native side has to release its temporary CodexBar itself in that case.
+    # The no-WebView repair must not go through retryRuntimePreparation: that
+    # wrapper clears codexBarRepairRequired, and prepareCompanion starts the
+    # verified CodexBar only while that flag is set. And when a cold launch's
+    # own preparation is already running, the repair is queued instead of
+    # dropped: that task read the flag before the request existed, so its
+    # completion must rerun preparation rather than answer the repair.
+    "        discardMismatchedPendingNativeUpdate()\n        if preparationTask != nil {",
+    "            pendingCodexBarRepairRerun = true\n            return\n        }\n        startRuntimePreparation()\n    }",
+    "            if self.pendingCodexBarRepairRerun {",
+    "                self.pendingCodexBarRepairRerun = false\n                self.codexBarRepairRequired = true\n                self.startRuntimePreparation()\n                return\n            }",
+    # The "Repair usage service" button must reach the repair entry point, not
+    # the generic retry: that wrapper clears codexBarRepairRequired, and the
+    # launch this screen exists to trigger happens only while it is set.
+    "action: #selector(repairCodexBarFromNativeStatus),",
+    "kind: .codexBarRepair",
+    "beginCodexBarRepair(hasJavaScriptOwner: false)",
+    "beginCodexBarRepair(hasJavaScriptOwner: true)",
+    # ... and also when the page that owned it is gone: the window cleanup runs
+    # before this task launches CodexBar, so it releases nothing, and the launch
+    # then records an app nobody is left to finish.
+    "            if !hasJavaScriptOwner || self.webView == nil {\n                self.finishControlCenterCodexBarRecovery()\n            }",
+    # .ready only means the registration was accepted; the health gate below can
+    # still fail and unregister it. The repair's restoration must survive that.
+    "        runtimeStoppedForCodexBarRepair = false\n        clearPendingNativeUpdate()",
     "rediscoverRuntimeOriginForNavigationRetry()",
     'nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"',
     "webView.customUserAgent = nativeControlCenterUserAgent(",
@@ -850,7 +903,9 @@ for forbidden_codexbar_bootstrap in [
             f"native CodexBar bootstrap must not use public app candidates or repair paths: {forbidden_codexbar_bootstrap}"
         )
 bootstrap_start = source.find("private func bootstrapCodexBar()")
-bootstrap_end = source.find("private func prepareCompanion() async", bootstrap_start)
+bootstrap_end = source.find(
+    "private func launchBundledCodexBarInBackground() async", bootstrap_start
+)
 bootstrap_method = source[bootstrap_start:bootstrap_end]
 if (
     "prepareBundledCodexBarCLI()" not in bootstrap_method
@@ -860,6 +915,25 @@ if (
     raise SystemExit(
         "native CodexBar bootstrap must prepare only the private pinned CLI"
     )
+launch_start = bootstrap_end
+launch_end = source.find("private func prepareCompanion() async", launch_start)
+launch_method = source[launch_start:launch_end]
+for required_launch_behavior in [
+    "withBundleIdentifier: codexBarBundleIdentifier",
+    "appManagedCodexBarAppURL(",
+    "validatedPinnedCodexBarCLI(at: appURL)",
+    "NSWorkspace.OpenConfiguration()",
+    "configuration.activates = false",
+    "configuration.addsToRecentItems = false",
+    "NSWorkspace.shared.openApplication(",
+    "codexBarRecoveryApplication = application",
+]:
+    if required_launch_behavior not in launch_method:
+        raise SystemExit(
+            f"native CodexBar background launch is missing: {required_launch_behavior}"
+        )
+if "private func finishControlCenterCodexBarRecovery()" not in source or "application.terminate()" not in source:
+    raise SystemExit("native app must stop only its temporary CodexBar app after provider recovery")
 prepare_payload_start = source.find("private func prepareBundledCodexBarCLI()")
 prepare_payload_end = source.find("private func bootstrapCodexBar()", prepare_payload_start)
 prepare_payload = source[prepare_payload_start:prepare_payload_end]
@@ -868,7 +942,9 @@ if (
     or 'let appSupportURL = applicationSupportURL()' not in prepare_payload
     or 'guard privateCodexBarTargetIsSafe(' not in prepare_payload
     or 'if let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL)' in prepare_payload
-    or 'return cliURL' in prepare_payload
+    or 'withBundleIdentifier: codexBarBundleIdentifier' not in prepare_payload
+    or 'let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL)' not in prepare_payload
+    or 'return cliURL' not in prepare_payload
     or 'normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)' not in prepare_payload
     or 'validatedPinnedCodexBarCLI(at: stagedAppURL)' not in prepare_payload
     or 'return validatedPinnedCodexBarCLI(at: targetAppURL)' not in prepare_payload
@@ -881,7 +957,58 @@ if (
         > prepare_payload.find('return validatedPinnedCodexBarCLI(at: targetAppURL)')
 ):
     raise SystemExit(
-        "native CodexBar payload must always stage the bundled ZIP, normalize xattrs, validate, publish, then revalidate"
+        "native CodexBar payload may reuse only its running verified app; otherwise it must stage the bundled ZIP, normalize xattrs, validate, publish, then revalidate"
+    )
+repair_start = source.find("private func beginCodexBarRepair(hasJavaScriptOwner: Bool)")
+repair_end = source.find("@objc private func openSupportLog()", repair_start)
+repair_method = source[repair_start:repair_end]
+if (
+    "beginControlCenterCodexBarRepair(hasJavaScriptOwner: hasJavaScriptOwner)" not in repair_method
+    or "codexBarRepairRestartRequired = true" not in repair_method
+    or "notifyCodexBarRepairResult(success: true)" not in repair_method
+    or "notifyCodexBarRepairResult(success: false)" not in repair_method
+):
+    raise SystemExit(
+        "native CodexBar repair must restart the runtime and report its result to the existing setup screen"
+    )
+repair_restart = prepare_method.find("if codexBarRepairRestartRequired")
+repair_stop = prepare_method.find("await unregisterBundledRuntimeService()", repair_restart)
+codexbar_publish = prepare_method.find("guard bootstrapCodexBar()")
+if not (0 <= repair_restart < repair_stop < codexbar_publish):
+    raise SystemExit(
+        "native CodexBar repair must stop the managed runtime before replacing its private payload"
+    )
+codexbar_launch = prepare_method.find(
+    "await launchBundledCodexBarInBackground()", codexbar_publish
+)
+if not (codexbar_publish < codexbar_launch):
+    raise SystemExit(
+        "native CodexBar repair must publish the verified payload before launching it"
+    )
+codexbar_stopped_runtime = prepare_method.find("runtimeStoppedForCodexBarRepair = true")
+codexbar_restore = prepare_method.find(
+    "if runtimeStoppedForCodexBarRepair,", codexbar_stopped_runtime
+)
+codexbar_registration = prepare_method.find(
+    "switch await ensureBundledRuntimeServiceRegistered()", codexbar_restore
+)
+# The handoff belongs AFTER the registration, not before it. Registration can
+# still come back needing approval or failing outright, and disarming the
+# restoration first leaves a previously healthy Companion stopped.
+codexbar_restore_handoff = prepare_method.find(
+    "runtimeStoppedForCodexBarRepair = false", codexbar_registration
+)
+if (
+    "registerBundledRuntimeService() != .ready" not in prepare_method
+    or "defer {" not in prepare_method[codexbar_stopped_runtime:codexbar_restore]
+    or not (
+        0 <= codexbar_stopped_runtime < codexbar_restore
+        < codexbar_registration < codexbar_restore_handoff
+    )
+):
+    raise SystemExit(
+        "an unfinished native CodexBar repair must restart the managed runtime it stopped on every early return, "
+        "and must stay armed until registration reports ready"
     )
 native_ready = prepare_method.find("return .nativeRuntimeReady")
 if not (0 <= prepare_method.find("var health = await waitForHealthyRuntime") < native_ready):
