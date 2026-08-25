@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
@@ -215,30 +217,41 @@ func TestEnsureConfigPreservesFirstRunMarkerWhenParallelBootstrapWins(t *testing
 	t.Setenv("CODEXBAR_BIN", bin)
 	originalBootstrap := runConfigBootstrapCommandFn
 	defer func() { runConfigBootstrapCommandFn = originalBootstrap }()
+	runConfigBootstrapCommandFn = func(context.Context, string, string, ...string) ([]byte, error) {
+		return nil, errors.New("parallel bootstrap loser must reuse the winning config")
+	}
 
 	home := t.TempDir()
 	path := filepath.Join(home, ".codexbar", "config.json")
-	generated := []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`)
-	runConfigBootstrapCommandFn = func(
-		_ context.Context,
-		_ string,
-		_ string,
-		args ...string,
-	) ([]byte, error) {
-		if reflect.DeepEqual(args, []string{"config", "dump", "--format", "json"}) {
-			return generated, nil
-		}
-		if reflect.DeepEqual(args, []string{"config", "validate", "--format", "json"}) {
-			if err := os.WriteFile(path, generated, 0o600); err != nil {
-				t.Fatalf("publish competing bootstrap config: %v", err)
-			}
-			return []byte(`{}`), nil
-		}
-		t.Fatalf("unexpected bootstrap command: %v", args)
-		return nil, nil
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	winnerLock, err := writerlock.AcquireAt(path + ".vibetv-bootstrap.lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer winnerLock.Release()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := EnsureConfig(home)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("parallel bootstrap loser did not wait for the winner: %v", err)
+	case <-time.After(50 * time.Millisecond):
 	}
 
-	if _, err := EnsureConfig(home); err != nil {
+	if err := os.WriteFile(path, []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(firstRunMarkerPath(path), []byte("pending\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	winnerLock.Release()
+
+	if err := <-done; err != nil {
 		t.Fatalf("EnsureConfig: %v", err)
 	}
 	if !firstRunProviderSetupPending(path) {

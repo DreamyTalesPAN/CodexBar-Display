@@ -1,7 +1,6 @@
 package codexbar
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 const (
@@ -103,6 +104,11 @@ func ensureConfigFile(path string) (string, error) {
 	// first config publication so concurrent callers share one private config.
 	configBootstrapMu.Lock()
 	defer configBootstrapMu.Unlock()
+	bootstrapLock, err := writerlock.AcquireAtWait(path + ".vibetv-bootstrap.lock")
+	if err != nil {
+		return path, fmt.Errorf("lock CodexBar config initialization: %w", err)
+	}
+	defer bootstrapLock.Release()
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		bin, findErr := FindBinary()
 		if findErr != nil {
@@ -176,13 +182,6 @@ func initializeConfigFile(path, bin string) (bool, error) {
 	// have created while CodexBar was rendering its defaults.
 	if err := os.Link(stagedPath, path); err != nil {
 		if _, statErr := os.Stat(path); statErr == nil {
-			winner, readErr := os.ReadFile(path)
-			if readErr != nil {
-				return false, fmt.Errorf("read competing CodexBar config: %w", readErr)
-			}
-			if bytes.Equal(winner, raw) {
-				return false, nil
-			}
 			if removeErr := os.Remove(firstRunMarkerPath(path)); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 				return false, fmt.Errorf("discard first-run CodexBar provider setup marker: %w", removeErr)
 			}
