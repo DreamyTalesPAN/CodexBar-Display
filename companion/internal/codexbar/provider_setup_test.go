@@ -159,6 +159,53 @@ func TestEnsureConfigPreservesExistingStandardConfig(t *testing.T) {
 	}
 }
 
+func TestEnsureConfigDiscardsFirstRunMarkerWhenAnotherConfigWins(t *testing.T) {
+	t.Setenv("CODEXBAR_CONFIG", "")
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	originalBootstrap := runConfigBootstrapCommandFn
+	defer func() { runConfigBootstrapCommandFn = originalBootstrap }()
+
+	home := t.TempDir()
+	path := filepath.Join(home, ".codexbar", "config.json")
+	runConfigBootstrapCommandFn = func(
+		_ context.Context,
+		_ string,
+		_ string,
+		args ...string,
+	) ([]byte, error) {
+		if reflect.DeepEqual(args, []string{"config", "dump", "--format", "json"}) {
+			return []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`), nil
+		}
+		if reflect.DeepEqual(args, []string{"config", "validate", "--format", "json"}) {
+			if err := os.WriteFile(path, []byte(`{"existing":true}`), 0o600); err != nil {
+				t.Fatalf("publish competing config: %v", err)
+			}
+			return []byte(`{}`), nil
+		}
+		t.Fatalf("unexpected bootstrap command: %v", args)
+		return nil, nil
+	}
+
+	gotPath, err := EnsureConfig(home)
+	if err != nil {
+		t.Fatalf("EnsureConfig: %v", err)
+	}
+	if gotPath != path {
+		t.Fatalf("expected competing config path %q, got %q", path, gotPath)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != `{"existing":true}` {
+		t.Fatalf("competing config changed: data=%q err=%v", data, err)
+	}
+	if firstRunProviderSetupPending(path) {
+		t.Fatal("losing config publication retained the first-run marker")
+	}
+}
+
 func TestRunUsageCommandInjectsResolvedConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

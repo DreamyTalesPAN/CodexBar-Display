@@ -1856,3 +1856,19 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-types.ts`, `device-startup-screen.tsx`,
   `control-center-types.test.ts`, `device-startup-screen.test.tsx`, and this
   approval record.
+
+## 2026-08-25 — Recovery test does not require a transient paint
+
+- User approval: Continuation of the user's instruction to finish issue #405
+  and PR #406 after fixing every automated review finding. This records a test
+  correction found while proving that exact approved recovery flow; it adds no
+  new copy, control, decision, or customer state.
+- Approved customer-visible result: AI-usage recovery remains unchanged. While
+  the automatic first attempt is still running, the setup gate may show
+  `Starting AI usage`. If that attempt finishes before the browser paints the
+  intermediate state, the same gate may proceed directly to the already
+  approved `AI usage could not start` result. The customer still gets the same
+  recovery action, provider checks, retry behavior, and final successful
+  transition. The customer-flow test now accepts either valid entry paint and
+  continues to assert the complete recovery contract.
+- Approved files: `scripts/test-customer-flows.mjs` and this approval record.

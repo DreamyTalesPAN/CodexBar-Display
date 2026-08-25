@@ -175,6 +175,9 @@ func initializeConfigFile(path, bin string) (bool, error) {
 	// have created while CodexBar was rendering its defaults.
 	if err := os.Link(stagedPath, path); err != nil {
 		if _, statErr := os.Stat(path); statErr == nil {
+			if removeErr := os.Remove(firstRunMarkerPath(path)); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				return false, fmt.Errorf("discard first-run CodexBar provider setup marker: %w", removeErr)
+			}
 			return false, nil
 		}
 		return false, fmt.Errorf("publish CodexBar default config: %w", err)

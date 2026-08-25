@@ -3351,7 +3351,10 @@ async function testFirstUsageServiceFailureOffersRecovery(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await waitForHeadingWithClock(page, "Starting AI usage");
+  await waitForHeadingWithClock(
+    page,
+    /Starting AI usage|AI usage could not start/,
+  );
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
       0,
