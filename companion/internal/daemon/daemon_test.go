@@ -6133,7 +6133,7 @@ func TestFirstCollectionWarmupStartsWhenCollectionStarts(t *testing.T) {
 		warmupUntil: startedAt.Add(-5 * time.Minute),
 	}
 	collector.beginFirstCollect(startedAt)
-	if !collector.warmingUp(startedAt) {
+	if _, warming, _ := collector.firstCollectState(startedAt); !warming {
 		t.Fatalf("the warm-up window must restart with the first real collection, until=%v", collector.warmupUntil)
 	}
 	want := startedAt.Add(collectorWarmupMaxAge())

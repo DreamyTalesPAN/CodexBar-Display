@@ -486,25 +486,21 @@ func (c *providerCollector) beginFirstCollect(now time.Time) {
 	}
 }
 
-// firstCollectState reports whether one collection since runtime start has
-// completed with a real CodexBar answer, and the last fetch error while none
-// has. Before that first answer the collector knows nothing about this Mac's
-// providers, so an empty or unavailable state is warm-up, not a verdict.
-func (c *providerCollector) firstCollectState() (bool, error) {
+// firstCollectState reports, from one locked snapshot, whether one collection
+// since runtime start has completed with a real CodexBar answer, whether the
+// bounded warm-up window is still open while none has, and the last fetch
+// error. Before that first answer the collector knows nothing about this Mac's
+// providers, so an empty or unavailable state is warm-up, not a verdict. One
+// snapshot keeps the three answers consistent: a collection completing between
+// two separate reads made a cycle fabricate a warm-up-exceeded error.
+func (c *providerCollector) firstCollectState(now time.Time) (settled, warming bool, fetchErr error) {
 	if c == nil {
-		return true, nil
+		return true, false, nil
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.firstCollectDone, c.lastFetchErr
-}
-
-func (c *providerCollector) warmingUp(now time.Time) bool {
-	if c == nil || c.warmupUntil.IsZero() {
-		return false
-	}
-	settled, _ := c.firstCollectState()
-	return !settled && now.Before(c.warmupUntil)
+	warming = !c.firstCollectDone && !c.warmupUntil.IsZero() && now.Before(c.warmupUntil)
+	return c.firstCollectDone, warming, c.lastFetchErr
 }
 
 func (c *providerCollector) providerEnabledByInventory(provider string) (bool, bool) {

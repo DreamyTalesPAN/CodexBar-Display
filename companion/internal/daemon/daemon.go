@@ -1572,8 +1572,8 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	// no-providers. Once CodexBar has answered -- including with zero
 	// providers -- the verdict stands.
 	if result.failureKind == runtimeErrorNoProviders && !state.hasLastGood {
-		settled, fetchErr := collector.firstCollectState()
-		if !settled && collector.warmingUp(now) {
+		settled, warming, fetchErr := collector.firstCollectState(now)
+		if warming {
 			deps.logf("runtime event=usage-waiting port=%s reason=collector-warming\n", publicDeviceTarget(port))
 			return nil
 		}
