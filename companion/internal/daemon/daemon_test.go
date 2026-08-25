@@ -6090,6 +6090,58 @@ func TestRunCycleFromCollectorReportsFetchErrorKindPastWarmup(t *testing.T) {
 	}
 }
 
+func TestRunCycleFromCollectorReportsTimeoutWhileFirstCollectionStillRunsPastWarmup(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	collector := &providerCollector{
+		now:                 func() time.Time { return now },
+		logf:                func(string, ...any) {},
+		snapshotMaxAge:      2 * time.Hour,
+		providers:           map[string]providerSnapshot{},
+		warmupUntil:         now.Add(-time.Second),
+		firstCollectStarted: true,
+	}
+
+	var sentLine []byte
+	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	var runtimeErr *RuntimeError
+	if !errors.As(err, &runtimeErr) || runtimeErr.Kind != runtimeErrorCodexbarCmd {
+		t.Fatalf("expected an overlong first collection to report a collection error, got %v", err)
+	}
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Error == string(errcode.RuntimeNoProviders) {
+		t.Fatalf("an in-flight collection must not claim no-providers: %+v", frame)
+	}
+}
+
+func TestFirstCollectionWarmupStartsWhenCollectionStarts(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	startedAt := time.Date(2026, 8, 25, 12, 10, 0, 0, time.UTC)
+	collector := &providerCollector{
+		providers:   map[string]providerSnapshot{},
+		warmupUntil: startedAt.Add(-5 * time.Minute),
+	}
+	collector.beginFirstCollect(startedAt)
+	if !collector.warmingUp(startedAt) {
+		t.Fatalf("the warm-up window must restart with the first real collection, until=%v", collector.warmupUntil)
+	}
+	want := startedAt.Add(collectorWarmupMaxAge())
+	if !collector.warmupUntil.Equal(want) {
+		t.Fatalf("unexpected first-collection warm-up bound: got=%v want=%v", collector.warmupUntil, want)
+	}
+}
+
 // Once CodexBar has answered -- even with nothing usable -- the no-providers
 // verdict stands regardless of the warm-up bound. The hosted guest matrix
 // depends on a provider-less Mac still sending this honest error frame.

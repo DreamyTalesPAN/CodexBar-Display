@@ -71,6 +71,7 @@ type providerCollector struct {
 	lastPersistedAt         time.Time
 	inventoryKnown          bool
 	inventoryEnabled        map[string]struct{}
+	firstCollectStarted     bool
 	firstCollectDone        bool
 	lastFetchErr            error
 	tokenStatsMu            sync.Mutex
@@ -299,6 +300,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	}
 
 	now := c.now()
+	c.beginFirstCollect(now)
 	ctx := parent
 	cancel := func() {}
 	if c.timeout > 0 {
@@ -325,11 +327,9 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			updated = c.applyProviderInventoryLocked(inventory)
 		}
 		c.lastFetchErr = err
-		if codexbar.FetchErrorKindOf(err) == codexbar.FetchErrorNoProviders {
-			// CodexBar answered with zero providers. That is a definitive
-			// enumeration, not a transport failure, so warm-up is over.
-			c.firstCollectDone = true
-		}
+		// The first attempt has completed. Its own error kind is now an
+		// authoritative answer, including the genuine no-providers case.
+		c.firstCollectDone = true
 		c.mu.Unlock()
 		if updated {
 			c.persistIfNeeded(collectedAt)
@@ -467,6 +467,23 @@ func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.Pro
 		updated = true
 	}
 	return updated
+}
+
+func (c *providerCollector) beginFirstCollect(now time.Time) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.firstCollectStarted {
+		return
+	}
+	c.firstCollectStarted = true
+	if !c.warmupUntil.IsZero() {
+		// Pairing may happen long after runtime startup. The bounded waiting
+		// window belongs to the first real CodexBar request, not app launch.
+		c.warmupUntil = now.Add(collectorWarmupMaxAge())
+	}
 }
 
 // firstCollectState reports whether one collection since runtime start has

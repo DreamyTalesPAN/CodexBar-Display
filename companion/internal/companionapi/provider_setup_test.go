@@ -197,6 +197,35 @@ func TestProviderSetupDoesNotPromoteGloballyWithHealthyAndFailingProviders(t *te
 	}
 }
 
+func TestProviderSetupPreservesDisabledProviderOverCachedUsage(t *testing.T) {
+	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	setup := codexbar.ProviderSetup{
+		Status: "setup_required",
+		Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
+		Providers: []codexbar.ProviderReadiness{
+			{ID: "claude", Label: "Claude", Enabled: providerEnabled(false), Status: codexbar.ProviderNotConfigured},
+			{ID: "codex", Label: "Codex", Enabled: providerEnabled(true), Status: codexbar.ProviderReady},
+		},
+	}
+	ready := []codexbar.ProviderReadiness{
+		{ID: "claude", Label: "Claude", Status: codexbar.ProviderReady},
+		{ID: "codex", Label: "Codex", Status: codexbar.ProviderReady},
+	}
+
+	got := reconcileProviderSetupWithUsage(setup, ready, now)
+	if got.Status != codexbar.ProviderReady {
+		t.Fatalf("an enabled ready provider should make setup ready: %+v", got)
+	}
+	claude := providerByID(got.Providers, "claude")
+	if claude == nil || claude.Enabled == nil || *claude.Enabled || claude.Status != codexbar.ProviderNotConfigured {
+		t.Fatalf("cached usage replaced the authoritative disabled state: %+v", got)
+	}
+	codex := providerByID(got.Providers, "codex")
+	if codex == nil || codex.Status != codexbar.ProviderReady {
+		t.Fatalf("enabled ready provider was not reconciled: %+v", got)
+	}
+}
+
 func TestProviderSetupPreservesCurrentEngineErrorOverCachedUsage(t *testing.T) {
 	now := time.Date(2026, 7, 28, 13, 30, 0, 0, time.UTC)
 	setup := codexbar.ProviderSetup{

@@ -6,7 +6,7 @@ import (
 )
 
 // TestMain neutralizes the first-run detection hook: EnsureConfig tests create
-// fresh config files and must not spawn a background probe against their
+// fresh config files and must not run the real provider probe against their
 // command stubs. Detection tests call autoEnableFirstRunProviders directly or
 // install their own hook.
 func TestMain(m *testing.M) {

@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 )
 
@@ -57,6 +57,7 @@ type ProviderSetup struct {
 }
 
 var runConfigBootstrapCommandFn = runConfigBootstrapCommand
+var configBootstrapMu sync.Mutex
 
 // EnsureConfig selects an existing CodexBar config without modifying it. If
 // none exists, CodexBar itself renders and validates its current default config
@@ -79,7 +80,7 @@ func EnsureConfig(home string) (string, error) {
 		filepath.Join(home, ".codexbar", "config.json"),
 	} {
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate, writableConfig(candidate)
+			return ensureConfigFile(candidate)
 		}
 	}
 	return ensureConfigFile(filepath.Join(home, ".codexbar", "config.json"))
@@ -97,20 +98,23 @@ func ensureConfigFile(path string) (string, error) {
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return path, fmt.Errorf("protect CodexBar config directory: %w", err)
 	}
+	// The UI readiness probe and the collector start together. Serialize the
+	// first config publication and detection so a concurrent caller cannot read
+	// CodexBar's untouched default while the winner is still enabling providers.
+	configBootstrapMu.Lock()
+	defer configBootstrapMu.Unlock()
+	created := false
+	var bin string
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		bin, findErr := FindBinary()
+		var findErr error
+		bin, findErr = FindBinary()
 		if findErr != nil {
 			return path, fmt.Errorf("find CodexBar for config initialization: %w", findErr)
 		}
-		if initErr := initializeConfigFile(path, bin); initErr != nil {
+		var initErr error
+		created, initErr = initializeConfigFile(path, bin)
+		if initErr != nil {
 			return path, initErr
-		}
-		if firstRunDetectStarted.CompareAndSwap(false, true) {
-			detect := autoEnableFirstRunProvidersFn
-			if detect == nil {
-				detect = autoEnableFirstRunProviders
-			}
-			go detect(path, bin)
 		}
 	} else if err != nil {
 		return path, fmt.Errorf("inspect CodexBar config: %w", err)
@@ -118,22 +122,32 @@ func ensureConfigFile(path string) (string, error) {
 	if err := os.Chmod(path, 0o600); err != nil {
 		return path, fmt.Errorf("protect CodexBar config: %w", err)
 	}
+	if created {
+		detect := autoEnableFirstRunProvidersFn
+		if detect == nil {
+			detect = autoEnableFirstRunProviders
+		}
+		// The first authoritative collection must see the detected switches.
+		// Waiting here also means a normal Companion shutdown cannot strand an
+		// existing config behind an untracked background probe.
+		detect(path, bin)
+	}
 	return path, writableConfig(path)
 }
 
-func initializeConfigFile(path, bin string) error {
+func initializeConfigFile(path, bin string) (bool, error) {
 	dir := filepath.Dir(path)
 	staged, err := os.CreateTemp(dir, ".vibetv-codexbar-default-*")
 	if err != nil {
-		return fmt.Errorf("stage CodexBar config: %w", err)
+		return false, fmt.Errorf("stage CodexBar config: %w", err)
 	}
 	stagedPath := staged.Name()
 	if closeErr := staged.Close(); closeErr != nil {
 		_ = os.Remove(stagedPath)
-		return fmt.Errorf("close staged CodexBar config: %w", closeErr)
+		return false, fmt.Errorf("close staged CodexBar config: %w", closeErr)
 	}
 	if err := os.Remove(stagedPath); err != nil {
-		return fmt.Errorf("prepare CodexBar config staging path: %w", err)
+		return false, fmt.Errorf("prepare CodexBar config staging path: %w", err)
 	}
 	defer os.Remove(stagedPath)
 
@@ -149,13 +163,13 @@ func initializeConfigFile(path, bin string) error {
 		"json",
 	)
 	if err != nil {
-		return fmt.Errorf("render CodexBar default config: %w", err)
+		return false, fmt.Errorf("render CodexBar default config: %w", err)
 	}
 	if !json.Valid(raw) {
-		return errors.New("CodexBar default config is not valid JSON")
+		return false, errors.New("CodexBar default config is not valid JSON")
 	}
 	if err := os.WriteFile(stagedPath, raw, 0o600); err != nil {
-		return fmt.Errorf("write staged CodexBar config: %w", err)
+		return false, fmt.Errorf("write staged CodexBar config: %w", err)
 	}
 	if _, err := runConfigBootstrapCommandFn(
 		ctx,
@@ -166,17 +180,17 @@ func initializeConfigFile(path, bin string) error {
 		"--format",
 		"json",
 	); err != nil {
-		return fmt.Errorf("validate CodexBar default config: %w", err)
+		return false, fmt.Errorf("validate CodexBar default config: %w", err)
 	}
 	// A hard link publishes without replacing a config another process may
 	// have created while CodexBar was rendering its defaults.
 	if err := os.Link(stagedPath, path); err != nil {
 		if _, statErr := os.Stat(path); statErr == nil {
-			return nil
+			return false, nil
 		}
-		return fmt.Errorf("publish CodexBar default config: %w", err)
+		return false, fmt.Errorf("publish CodexBar default config: %w", err)
 	}
-	return nil
+	return true, nil
 }
 
 func runConfigBootstrapCommand(
@@ -193,10 +207,7 @@ func runConfigBootstrapCommand(
 // autoEnableFirstRunProvidersFn is nil in production (tests override it); a
 // nil value means autoEnableFirstRunProviders. An initializer expression here
 // would close an initialization cycle through runUsageCommandFn.
-var (
-	firstRunDetectStarted         atomic.Bool
-	autoEnableFirstRunProvidersFn func(configPath, bin string)
-)
+var autoEnableFirstRunProvidersFn func(configPath, bin string)
 
 // autoEnableFirstRunProviders runs once, right after CodexBar rendered its
 // first-run default config (which switches on only its own default provider,
@@ -210,7 +221,8 @@ var (
 // providers deliver nothing keeps CodexBar's untouched default.
 func autoEnableFirstRunProviders(configPath, bin string) {
 	// The full-inventory probe visits every provider; the bundled CodexBar
-	// needs ~90s for it, so this runs detached from every probe and cycle.
+	// needs ~90s for it, so the first authoritative collection waits for this
+	// one bounded setup operation.
 	probeCtx, cancelProbe := context.WithTimeout(context.Background(), 4*time.Minute)
 	raw, _ := runConfigBootstrapCommandFn(probeCtx, bin, configPath,
 		"usage", "--json", "--provider", "all", "--web-timeout", "8")

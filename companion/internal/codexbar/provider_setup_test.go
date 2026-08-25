@@ -830,9 +830,9 @@ func TestAutoEnableFirstRunProvidersLeavesDefaultWithoutProviderAnswer(t *testin
 	autoEnableFirstRunProviders(filepath.Join(t.TempDir(), "config.json"), "/usr/local/bin/CodexBarCLI")
 }
 
-// Creating the first-run config starts detection exactly once; an existing
-// config never does.
-func TestEnsureConfigStartsFirstRunDetectionExactlyOnce(t *testing.T) {
+// Creating the first-run config completes detection before returning; an
+// existing config never runs it again.
+func TestEnsureConfigCompletesFirstRunDetectionBeforeReturning(t *testing.T) {
 	t.Setenv("CODEXBAR_CONFIG", "")
 	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
@@ -841,13 +841,10 @@ func TestEnsureConfigStartsFirstRunDetectionExactlyOnce(t *testing.T) {
 	t.Setenv("CODEXBAR_BIN", bin)
 	originalBootstrap := runConfigBootstrapCommandFn
 	originalDetect := autoEnableFirstRunProvidersFn
-	originalStarted := firstRunDetectStarted.Load()
 	defer func() {
 		runConfigBootstrapCommandFn = originalBootstrap
 		autoEnableFirstRunProvidersFn = originalDetect
-		firstRunDetectStarted.Store(originalStarted)
 	}()
-	firstRunDetectStarted.Store(false)
 	runConfigBootstrapCommandFn = func(
 		_ context.Context,
 		_ string,
@@ -856,9 +853,9 @@ func TestEnsureConfigStartsFirstRunDetectionExactlyOnce(t *testing.T) {
 	) ([]byte, error) {
 		return []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`), nil
 	}
-	detected := make(chan string, 2)
+	var detected []string
 	autoEnableFirstRunProvidersFn = func(configPath, _ string) {
-		detected <- configPath
+		detected = append(detected, configPath)
 	}
 
 	home := t.TempDir()
@@ -866,22 +863,69 @@ func TestEnsureConfigStartsFirstRunDetectionExactlyOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureConfig: %v", err)
 	}
-	select {
-	case got := <-detected:
-		if got != path {
-			t.Fatalf("detection must probe the created config, got %q want %q", got, path)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("creating the config must start first-run detection")
+	if !reflect.DeepEqual(detected, []string{path}) {
+		t.Fatalf("detection must complete for the created config before return, got %v", detected)
 	}
 
-	firstRunDetectStarted.Store(false)
 	if _, err := EnsureConfig(home); err != nil {
 		t.Fatalf("EnsureConfig with existing config: %v", err)
 	}
+	if !reflect.DeepEqual(detected, []string{path}) {
+		t.Fatalf("an existing config must not run detection again, got %v", detected)
+	}
+}
+
+func TestEnsureConfigConcurrentCallerWaitsForFirstRunDetection(t *testing.T) {
+	t.Setenv("CODEXBAR_CONFIG", "")
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	originalBootstrap := runConfigBootstrapCommandFn
+	originalDetect := autoEnableFirstRunProvidersFn
+	defer func() {
+		runConfigBootstrapCommandFn = originalBootstrap
+		autoEnableFirstRunProvidersFn = originalDetect
+	}()
+	runConfigBootstrapCommandFn = func(
+		_ context.Context,
+		_ string,
+		_ string,
+		args ...string,
+	) ([]byte, error) {
+		return []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`), nil
+	}
+	detectionStarted := make(chan struct{})
+	releaseDetection := make(chan struct{})
+	autoEnableFirstRunProvidersFn = func(string, string) {
+		close(detectionStarted)
+		<-releaseDetection
+	}
+
+	home := t.TempDir()
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := EnsureConfig(home)
+		firstDone <- err
+	}()
+	<-detectionStarted
+
+	secondDone := make(chan error, 1)
+	go func() {
+		_, err := EnsureConfig(home)
+		secondDone <- err
+	}()
 	select {
-	case <-detected:
-		t.Fatal("an existing config must not start detection")
-	case <-time.After(100 * time.Millisecond):
+	case err := <-secondDone:
+		t.Fatalf("concurrent caller returned before detection completed: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(releaseDetection)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first EnsureConfig: %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second EnsureConfig: %v", err)
 	}
 }

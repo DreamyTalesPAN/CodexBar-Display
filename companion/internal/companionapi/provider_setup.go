@@ -198,19 +198,23 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 	}
 	protectedByID := make(map[string]struct{}, len(setup.Providers))
 	engineFailed := setup.Engine.Status == codexbar.ProviderEngineError
+	blocksReady := engineFailed
 	if engineFailed {
 		protectedByID["codexbar"] = struct{}{}
 	}
 	for _, provider := range setup.Providers {
-		// A switched-off provider row is switch-state disclosure, not a probe
-		// failure; it must not stop fresh usage evidence from proving another
-		// provider ready.
+		id := strings.TrimSpace(strings.ToLower(provider.ID))
 		if provider.Enabled != nil && !*provider.Enabled {
+			// A disabled row must protect its own ID from cached readiness, but it
+			// does not prevent another provider from proving the setup ready.
+			if id != "" {
+				protectedByID[id] = struct{}{}
+			}
 			continue
 		}
-		id := strings.TrimSpace(strings.ToLower(provider.ID))
 		if id != "" && providerSetupFailureMustWin(provider.Status) {
 			protectedByID[id] = struct{}{}
+			blocksReady = true
 		}
 	}
 	readyByID := make(map[string]codexbar.ProviderReadiness, len(ready))
@@ -227,7 +231,7 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 		readyByID[id] = provider
 		providers = append(providers, provider)
 	}
-	if len(readyByID) > 0 && len(protectedByID) == 0 {
+	if len(readyByID) > 0 && !blocksReady {
 		setup.Status = codexbar.ProviderReady
 		setup.Engine.Status = codexbar.ProviderReady
 	}

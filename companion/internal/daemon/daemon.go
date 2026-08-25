@@ -1572,20 +1572,24 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	// no-providers. Once CodexBar has answered -- including with zero
 	// providers -- the verdict stands.
 	if result.failureKind == runtimeErrorNoProviders && !state.hasLastGood {
-		if settled, fetchErr := collector.firstCollectState(); !settled {
-			if collector.warmingUp(now) {
-				deps.logf("runtime event=usage-waiting port=%s reason=collector-warming\n", publicDeviceTarget(port))
-				return nil
-			}
-			if fetchErr != nil {
-				result = finalizeCycleResult(state, cycleResult{
-					selectionReason: "collector-warming-failed",
-					errorSource:     "collector",
-					failureKind:     runtimeErrorKindFromFetchErr(fetchErr),
-					failureOp:       "collect-usage",
-					failureErr:      fetchErr,
-				}, now)
-			}
+		settled, fetchErr := collector.firstCollectState()
+		if !settled && collector.warmingUp(now) {
+			deps.logf("runtime event=usage-waiting port=%s reason=collector-warming\n", publicDeviceTarget(port))
+			return nil
+		}
+		failureKind := runtimeErrorKindFromFetchErr(fetchErr)
+		if !settled && fetchErr == nil {
+			fetchErr = errors.New("first provider collection exceeded the warm-up window")
+			failureKind = runtimeErrorCodexbarCmd
+		}
+		if fetchErr != nil && codexbar.FetchErrorKindOf(fetchErr) != codexbar.FetchErrorNoProviders {
+			result = finalizeCycleResult(state, cycleResult{
+				selectionReason: "collector-warming-failed",
+				errorSource:     "collector",
+				failureKind:     failureKind,
+				failureOp:       "collect-usage",
+				failureErr:      fetchErr,
+			}, now)
 		}
 	}
 
