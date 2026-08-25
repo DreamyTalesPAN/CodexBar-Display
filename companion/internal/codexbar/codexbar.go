@@ -365,7 +365,11 @@ func completeFirstRunProviderSetup(
 	if errors.Is(commandErr, context.DeadlineExceeded) || errors.Is(commandErr, context.Canceled) {
 		return fmt.Errorf("first-run CodexBar provider collection: %w", commandErr)
 	}
-	if parseErr != nil && !(errors.Is(parseErr, ErrNoProviders) && completeEmptyProviderAnswer(raw)) {
+	if errors.Is(parseErr, ErrNoProviders) && completeEmptyProviderAnswer(raw) {
+		if commandErr != nil {
+			return fmt.Errorf("first-run CodexBar provider collection: %w", commandErr)
+		}
+	} else if parseErr != nil {
 		return fmt.Errorf("first-run CodexBar provider collection: %w", parseErr)
 	}
 

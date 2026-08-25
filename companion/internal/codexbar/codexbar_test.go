@@ -1289,6 +1289,30 @@ func TestFetchAllProvidersCompletesFirstRunForAuthoritativeEmptyAnswer(t *testin
 	}
 }
 
+func TestFetchAllProvidersKeepsFirstRunPendingAfterFailedEmptyAnswer(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+	configPath := os.Getenv("CODEXBAR_CONFIG")
+	if err := os.WriteFile(firstRunMarkerPath(configPath), []byte("pending\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() { runUsageCommandFn = originalRunUsageCommand }()
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if args[0] != "usage" {
+			t.Fatalf("failed empty answer must not enable a provider: %v", args)
+		}
+		return []byte(`[]`), errors.New("signal: killed")
+	}
+
+	if _, err := FetchAllProviders(context.Background()); err == nil {
+		t.Fatal("failed empty provider answer must fail the first collection")
+	}
+	if !firstRunProviderSetupPending(configPath) {
+		t.Fatal("failed empty provider answer consumed the pending marker")
+	}
+}
+
 func TestFetchAllProvidersDoesNotRunCostScanOnFastPath(t *testing.T) {
 	stubSupportedCodexBarVersion(t)
 
