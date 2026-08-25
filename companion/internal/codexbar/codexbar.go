@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 var knownBinaryPaths = []string{
@@ -321,6 +322,11 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	if pending {
 		firstRunProviderSetupMu.Lock()
 		defer firstRunProviderSetupMu.Unlock()
+		setupLock, lockErr := writerlock.AcquireAtWait(firstRunMarkerPath(configPath) + ".lock")
+		if lockErr != nil {
+			return nil, wrapFetchError(FetchErrorCommand, fmt.Errorf("lock first-run CodexBar provider setup: %w", lockErr))
+		}
+		defer setupLock.Release()
 		pending = firstRunProviderSetupPending(configPath)
 		if pending {
 			if err := writeFirstRunProviderSetupState(configPath, firstRunProviderSetupPendingState); err != nil {
@@ -370,7 +376,7 @@ func completeFirstRunProviderSetup(
 	commandErr error,
 	parseErr error,
 ) error {
-	if errors.Is(commandErr, context.DeadlineExceeded) || errors.Is(commandErr, context.Canceled) {
+	if !completeProviderCommandExit(commandErr) {
 		return fmt.Errorf("first-run CodexBar provider collection: %w", commandErr)
 	}
 	if errors.Is(parseErr, ErrNoProviders) && completeEmptyProviderAnswer(raw) {
@@ -405,6 +411,14 @@ func completeFirstRunProviderSetup(
 		return fmt.Errorf("complete first-run CodexBar provider setup: %w", err)
 	}
 	return nil
+}
+
+func completeProviderCommandExit(err error) bool {
+	if err == nil {
+		return true
+	}
+	var exitErr interface{ ExitCode() int }
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 1
 }
 
 func completeEmptyProviderAnswer(raw []byte) bool {

@@ -13,7 +13,13 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
+
+type testExitCodeError int
+
+func (e testExitCodeError) Error() string { return "test process exited" }
+func (e testExitCodeError) ExitCode() int { return int(e) }
 
 func TestParseUsageJSONReturnsFirstProvider(t *testing.T) {
 	raw := []byte(`[
@@ -1175,7 +1181,7 @@ func TestFetchAllProvidersCompletesFirstRunOnAuthoritativeCollection(t *testing.
 					{"provider":"codex","usage":{"primary":{"usedPercent":7}}},
 					{"provider":"claude","error":"Not logged in"},
 					{"provider":"cursor","usage":{"secondary":{"usedPercent":21}}}
-				]`), errors.New("exit status 1")
+				]`), testExitCodeError(1)
 			}
 			return []byte(`[{"provider":"codex","usage":{"primary":{"usedPercent":8}}}]`), nil
 		case len(args) == 4 && args[0] == "config" && args[1] == "enable" && args[2] == "--provider":
@@ -1268,6 +1274,71 @@ func TestFetchAllProvidersKeepsFirstRunPendingAfterTimedOutPartialAnswer(t *test
 	}
 	if state := firstRunProviderSetupState(configPath); state != firstRunProviderSetupFailedState {
 		t.Fatalf("timed-out first collection must publish recovery state, got %q", state)
+	}
+}
+
+func TestFetchAllProvidersKeepsFirstRunPendingAfterCrashedPartialAnswer(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+	configPath := os.Getenv("CODEXBAR_CONFIG")
+	if err := os.WriteFile(firstRunMarkerPath(configPath), []byte("pending\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() { runUsageCommandFn = originalRunUsageCommand }()
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if args[0] != "usage" {
+			t.Fatalf("crashed answer must not enable a provider: %v", args)
+		}
+		return []byte(`[{"provider":"codex","usage":{"primary":{"usedPercent":7}}}]`), errors.New("signal: killed")
+	}
+
+	if _, err := FetchAllProviders(context.Background()); err == nil {
+		t.Fatal("crashed partial first collection must fail")
+	}
+	if state := firstRunProviderSetupState(configPath); state != firstRunProviderSetupFailedState {
+		t.Fatalf("crashed partial first collection must publish recovery state, got %q", state)
+	}
+}
+
+func TestFetchAllProvidersSerializesFirstRunAcrossProcesses(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+	configPath := os.Getenv("CODEXBAR_CONFIG")
+	if err := os.WriteFile(firstRunMarkerPath(configPath), []byte("pending\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	externalLock, err := writerlock.AcquireAtWait(firstRunMarkerPath(configPath) + ".lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() { runUsageCommandFn = originalRunUsageCommand }()
+	called := make(chan struct{}, 1)
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		called <- struct{}{}
+		return []byte(`[]`), nil
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, fetchErr := FetchAllProviders(context.Background())
+		done <- fetchErr
+	}()
+
+	select {
+	case <-called:
+		externalLock.Release()
+		t.Fatal("first-run collection started before the cross-process lock was released")
+	case <-time.After(100 * time.Millisecond):
+	}
+	externalLock.Release()
+	select {
+	case fetchErr := <-done:
+		if FetchErrorKindOf(fetchErr) != FetchErrorNoProviders {
+			t.Fatalf("serialized first-run collection returned %v", fetchErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("first-run collection did not continue after lock release")
 	}
 }
 
