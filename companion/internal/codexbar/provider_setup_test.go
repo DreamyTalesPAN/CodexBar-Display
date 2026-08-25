@@ -1006,3 +1006,54 @@ func TestEnsureConfigConcurrentCallerWaitsForFirstRunDetection(t *testing.T) {
 		t.Fatalf("second EnsureConfig: %v", err)
 	}
 }
+
+// The heavy-user fresh start, end to end through the real wiring: a Mac whose
+// Claude delivers usage while CodexBar's default provider is signed out. One
+// EnsureConfig call renders the default config through the real bootstrap
+// runner, probes the full inventory against the still-private staged config,
+// and switches on exactly the provider that delivered -- no stubbed hook, a
+// real CLI stand-in records the calls.
+func TestFreshSetupEnablesTheProviderThatDeliversUsage(t *testing.T) {
+	t.Setenv("CODEXBAR_CONFIG", "")
+	record := filepath.Join(t.TempDir(), "calls.log")
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	script := `#!/bin/sh
+echo "$@" >> ` + record + `
+case "$1 $2" in
+  "config dump") printf '{"version":1,"providers":[{"id":"codex","enabled":true},{"id":"claude","enabled":false}]}' ;;
+  "config validate") printf '[]' ;;
+  "config enable") printf '{"enabled":true}' ;;
+  "usage --json") printf '[{"provider":"codex","error":"Not logged in. Sign in to Codex."},{"provider":"claude","source":"oauth","usage":{"primary":{"usedPercent":9}}}]'; exit 1 ;;
+  *) printf 'CodexBar 0.46.0' ;;
+esac
+`
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	originalDetect := autoEnableFirstRunProvidersFn
+	autoEnableFirstRunProvidersFn = nil
+	defer func() { autoEnableFirstRunProvidersFn = originalDetect }()
+
+	home := t.TempDir()
+	path, err := EnsureConfig(home)
+	if err != nil {
+		t.Fatalf("EnsureConfig: %v", err)
+	}
+	calls, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatalf("read recorded CLI calls: %v", err)
+	}
+	if !strings.Contains(string(calls), "usage --json --provider all --web-timeout 8") {
+		t.Fatalf("detection must probe CodexBar's complete inventory once, got:\n%s", calls)
+	}
+	if !strings.Contains(string(calls), "config enable --provider claude") {
+		t.Fatalf("the delivering provider must be switched on, got:\n%s", calls)
+	}
+	if strings.Contains(string(calls), "config enable --provider codex") {
+		t.Fatalf("a sign-in error is not evidence of a local tool, got:\n%s", calls)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("the detected config must be published: %v", err)
+	}
+}

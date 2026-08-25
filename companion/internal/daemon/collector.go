@@ -327,9 +327,16 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			updated = c.applyProviderInventoryLocked(inventory)
 		}
 		c.lastFetchErr = err
-		// The first attempt has completed. Its own error kind is now an
-		// authoritative answer, including the genuine no-providers case.
-		c.firstCollectDone = true
+		if codexbar.FetchErrorKindOf(err) == codexbar.FetchErrorNoProviders {
+			// CodexBar answered with zero providers: a definitive enumeration,
+			// not a transport failure, so warm-up is over. Any other error does
+			// NOT settle -- the very first attempt on a cold start fails
+			// instantly with "dashboard serve unavailable" while the serve is
+			// still booting, and settling on it would defeat the warm-up on
+			// exactly the production path it exists for. The error is kept and
+			// reported with its own kind once the bounded window has passed.
+			c.firstCollectDone = true
+		}
 		c.mu.Unlock()
 		if updated {
 			c.persistIfNeeded(collectedAt)
@@ -486,21 +493,39 @@ func (c *providerCollector) beginFirstCollect(now time.Time) {
 	}
 }
 
-// firstCollectState reports, from one locked snapshot, whether one collection
-// since runtime start has completed with a real CodexBar answer, whether the
-// bounded warm-up window is still open while none has, and the last fetch
-// error. Before that first answer the collector knows nothing about this Mac's
-// providers, so an empty or unavailable state is warm-up, not a verdict. One
-// snapshot keeps the three answers consistent: a collection completing between
-// two separate reads made a cycle fabricate a warm-up-exceeded error.
-func (c *providerCollector) firstCollectState(now time.Time) (settled, warming bool, fetchErr error) {
+// firstCollectSnapshot is one locked view of the first collection since
+// runtime start. One snapshot keeps the answers consistent: a collection
+// completing between two separate reads made a cycle fabricate a
+// warm-up-exceeded error.
+type firstCollectSnapshot struct {
+	// settled: CodexBar has answered -- usage arrived or it enumerated zero
+	// providers. Before that the collector knows nothing about this Mac.
+	settled bool
+	// started: one collectOnce actually reached its fetch. The device gate can
+	// hold this off long after runtime start.
+	started bool
+	// bounded: a warm-up window exists at all. `daemon --once` runs without
+	// one and reports the immediate verdict.
+	bounded bool
+	// warming: the bounded window is still open while nothing has settled.
+	warming bool
+	// fetchErr: the last fetch failure while none has settled.
+	fetchErr error
+}
+
+func (c *providerCollector) firstCollectState(now time.Time) firstCollectSnapshot {
 	if c == nil {
-		return true, false, nil
+		return firstCollectSnapshot{settled: true}
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	warming = !c.firstCollectDone && !c.warmupUntil.IsZero() && now.Before(c.warmupUntil)
-	return c.firstCollectDone, warming, c.lastFetchErr
+	return firstCollectSnapshot{
+		settled:  c.firstCollectDone,
+		started:  c.firstCollectStarted,
+		bounded:  !c.warmupUntil.IsZero(),
+		warming:  !c.firstCollectDone && !c.warmupUntil.IsZero() && now.Before(c.warmupUntil),
+		fetchErr: c.lastFetchErr,
+	}
 }
 
 func (c *providerCollector) providerEnabledByInventory(provider string) (bool, bool) {

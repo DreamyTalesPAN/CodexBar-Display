@@ -245,7 +245,9 @@ func autoEnableFirstRunProviders(configPath, bin string) error {
 			continue
 		}
 		id := strings.ToLower(strings.TrimSpace(firstString(payload, "provider", "id", "slug", "name")))
-		if id == "" || id == "cli" || !validProviderID(id) {
+		// A leading '-' would let an id masquerade as a CLI flag on the enable
+		// call below.
+		if id == "" || id == "cli" || strings.HasPrefix(id, "-") || !validProviderID(id) {
 			continue
 		}
 		if providerPayloadHasError(payload) || !providerPayloadHasUsage(payload) {

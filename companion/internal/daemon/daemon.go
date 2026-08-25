@@ -1571,25 +1571,34 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	// a failed fetch keeps its own error kind instead of flattening into
 	// no-providers. Once CodexBar has answered -- including with zero
 	// providers -- the verdict stands.
+	// `daemon --once` runs without a warm-up window (first.bounded == false)
+	// and keeps the immediate no-providers verdict: the hosted guest matrix
+	// greps exactly that code from a provider-less one-shot run.
 	if result.failureKind == runtimeErrorNoProviders && !state.hasLastGood {
-		settled, warming, fetchErr := collector.firstCollectState(now)
-		if warming {
-			deps.logf("runtime event=usage-waiting port=%s reason=collector-warming\n", publicDeviceTarget(port))
-			return nil
-		}
-		failureKind := runtimeErrorKindFromFetchErr(fetchErr)
-		if !settled && fetchErr == nil {
-			fetchErr = errors.New("first provider collection exceeded the warm-up window")
-			failureKind = runtimeErrorCodexbarCmd
-		}
-		if fetchErr != nil && codexbar.FetchErrorKindOf(fetchErr) != codexbar.FetchErrorNoProviders {
-			result = finalizeCycleResult(state, cycleResult{
-				selectionReason: "collector-warming-failed",
-				errorSource:     "collector",
-				failureKind:     failureKind,
-				failureOp:       "collect-usage",
-				failureErr:      fetchErr,
-			}, now)
+		if first := collector.firstCollectState(now); first.bounded && !first.settled {
+			if first.warming || !first.started {
+				// Warm-up, or the device gate has not let the collector ask
+				// CodexBar even once (pairing can happen long after runtime
+				// start; the next tick or wake starts the collection and
+				// re-anchors the window). Neither is an answer about this Mac.
+				deps.logf("runtime event=usage-waiting port=%s reason=collector-warming\n", publicDeviceTarget(port))
+				return nil
+			}
+			fetchErr := first.fetchErr
+			failureKind := runtimeErrorKindFromFetchErr(fetchErr)
+			if fetchErr == nil {
+				fetchErr = errors.New("first provider collection exceeded the warm-up window")
+				failureKind = runtimeErrorCodexbarCmd
+			}
+			if codexbar.FetchErrorKindOf(fetchErr) != codexbar.FetchErrorNoProviders {
+				result = finalizeCycleResult(state, cycleResult{
+					selectionReason: "collector-warming-failed",
+					errorSource:     "collector",
+					failureKind:     failureKind,
+					failureOp:       "collect-usage",
+					failureErr:      fetchErr,
+				}, now)
+			}
 		}
 	}
 
@@ -2010,8 +2019,11 @@ func providerSnapshotMaxAge() time.Duration {
 
 func collectorWarmupMaxAge() time.Duration {
 	// Bound the warm-up window in which a cycle waits for the first collection
-	// instead of settling on a provider verdict.
-	const fallback = 2 * time.Minute
+	// instead of settling on a provider verdict. The bound must outlast the
+	// synchronous first-run provider detection (a ~90s-4min probe holds the
+	// config bootstrap, and the dashboard serve starts only after it), or a
+	// fresh Mac reports a fabricated collection error mid-setup.
+	const fallback = 5 * time.Minute
 	raw := strings.TrimSpace(os.Getenv(collectorWarmupEnvVar))
 	if raw == "" {
 		return fallback
