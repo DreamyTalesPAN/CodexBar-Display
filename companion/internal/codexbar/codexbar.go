@@ -322,7 +322,7 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	if pending {
 		firstRunProviderSetupMu.Lock()
 		defer firstRunProviderSetupMu.Unlock()
-		setupLock, lockErr := writerlock.AcquireAtWait(firstRunMarkerPath(configPath) + ".lock")
+		setupLock, lockErr := writerlock.AcquireAtContext(ctx, firstRunMarkerPath(configPath)+".lock")
 		if lockErr != nil {
 			return nil, wrapFetchError(FetchErrorCommand, fmt.Errorf("lock first-run CodexBar provider setup: %w", lockErr))
 		}

@@ -1342,6 +1342,32 @@ func TestFetchAllProvidersSerializesFirstRunAcrossProcesses(t *testing.T) {
 	}
 }
 
+func TestFetchAllProvidersCancelsFirstRunLockWait(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+	configPath := os.Getenv("CODEXBAR_CONFIG")
+	if err := os.WriteFile(firstRunMarkerPath(configPath), []byte("pending\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	externalLock, err := writerlock.AcquireAtWait(firstRunMarkerPath(configPath) + ".lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer externalLock.Release()
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() { runUsageCommandFn = originalRunUsageCommand }()
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		t.Fatalf("canceled lock wait must not run CodexBar: %v", args)
+		return nil, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if _, err := FetchAllProviders(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("first-run lock wait ignored collector deadline: %v", err)
+	}
+}
+
 func TestFetchAllProvidersCompletesFirstRunForAuthoritativeEmptyAnswer(t *testing.T) {
 	stubSupportedCodexBarVersion(t)
 	configPath := os.Getenv("CODEXBAR_CONFIG")
