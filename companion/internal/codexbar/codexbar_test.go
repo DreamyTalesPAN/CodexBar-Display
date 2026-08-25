@@ -1155,6 +1155,140 @@ func TestFetchAllProvidersDoesNotFallBackToCodexCLIOnAggregateCommandFailure(t *
 	}
 }
 
+func TestFetchAllProvidersCompletesFirstRunOnAuthoritativeCollection(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+	configPath := os.Getenv("CODEXBAR_CONFIG")
+	if err := os.WriteFile(firstRunMarkerPath(configPath), []byte("pending\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() { runUsageCommandFn = originalRunUsageCommand }()
+	var usageCalls [][]string
+	var enabled []string
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		switch {
+		case len(args) > 0 && args[0] == "usage":
+			usageCalls = append(usageCalls, append([]string(nil), args...))
+			if len(usageCalls) == 1 {
+				return []byte(`[
+					{"provider":"codex","usage":{"primary":{"usedPercent":7}}},
+					{"provider":"claude","error":"Not logged in"},
+					{"provider":"cursor","usage":{"secondary":{"usedPercent":21}}}
+				]`), errors.New("exit status 1")
+			}
+			return []byte(`[{"provider":"codex","usage":{"primary":{"usedPercent":8}}}]`), nil
+		case len(args) == 4 && args[0] == "config" && args[1] == "enable" && args[2] == "--provider":
+			enabled = append(enabled, args[3])
+			return []byte(`{"enabled":true}`), nil
+		default:
+			return nil, errors.New("unexpected command")
+		}
+	}
+
+	providers, err := FetchAllProviders(context.Background())
+	if err != nil {
+		t.Fatalf("first authoritative collection: %v", err)
+	}
+	if len(providers) != 3 {
+		t.Fatalf("collector lost the first complete provider answer: %#v", providers)
+	}
+	if got := strings.Join(usageCalls[0], " "); !strings.Contains(got, "--provider all") {
+		t.Fatalf("first collector request did not use the complete inventory: %s", got)
+	}
+	if got := strings.Join(enabled, ","); got != "codex,cursor" {
+		t.Fatalf("only centrally normalized usable providers may be enabled, got %s", got)
+	}
+	if firstRunProviderSetupPending(configPath) {
+		t.Fatal("completed first collector answer kept the pending marker")
+	}
+
+	if _, err := FetchAllProviders(context.Background()); err != nil {
+		t.Fatalf("normal collection after first run: %v", err)
+	}
+	if len(usageCalls) != 2 || strings.Contains(strings.Join(usageCalls[1], " "), "--provider all") {
+		t.Fatalf("later collection must honor the persisted switches: %#v", usageCalls)
+	}
+}
+
+func TestFetchAllProvidersKeepsFirstRunPendingWhenEnableFails(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+	configPath := os.Getenv("CODEXBAR_CONFIG")
+	if err := os.WriteFile(firstRunMarkerPath(configPath), []byte("pending\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() { runUsageCommandFn = originalRunUsageCommand }()
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if args[0] == "usage" {
+			return []byte(`[
+				{"provider":"codex","usage":{"primary":{"usedPercent":7}}},
+				{"provider":"cursor","usage":{"secondary":{"usedPercent":21}}}
+			]`), nil
+		}
+		if args[3] == "cursor" {
+			return nil, errors.New("save failed")
+		}
+		return []byte(`{"enabled":true}`), nil
+	}
+
+	if _, err := FetchAllProviders(context.Background()); err == nil {
+		t.Fatal("failed provider enable must fail the first collection")
+	}
+	if !firstRunProviderSetupPending(configPath) {
+		t.Fatal("failed provider enable consumed the pending marker")
+	}
+}
+
+func TestFetchAllProvidersKeepsFirstRunPendingAfterTimedOutPartialAnswer(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+	configPath := os.Getenv("CODEXBAR_CONFIG")
+	if err := os.WriteFile(firstRunMarkerPath(configPath), []byte("pending\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() { runUsageCommandFn = originalRunUsageCommand }()
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if args[0] != "usage" {
+			t.Fatalf("timed-out answer must not enable a provider: %v", args)
+		}
+		return []byte(`[{"provider":"codex","usage":{"primary":{"usedPercent":7}}}]`), context.DeadlineExceeded
+	}
+
+	if _, err := FetchAllProviders(context.Background()); err == nil {
+		t.Fatal("timed-out first collection must fail")
+	}
+	if !firstRunProviderSetupPending(configPath) {
+		t.Fatal("timed-out first collection consumed the pending marker")
+	}
+}
+
+func TestFetchAllProvidersCompletesFirstRunForAuthoritativeEmptyAnswer(t *testing.T) {
+	stubSupportedCodexBarVersion(t)
+	configPath := os.Getenv("CODEXBAR_CONFIG")
+	if err := os.WriteFile(firstRunMarkerPath(configPath), []byte("pending\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	originalRunUsageCommand := runUsageCommandFn
+	defer func() { runUsageCommandFn = originalRunUsageCommand }()
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if args[0] != "usage" {
+			t.Fatalf("empty provider answer must not enable a provider: %v", args)
+		}
+		return []byte(`[]`), nil
+	}
+
+	if _, err := FetchAllProviders(context.Background()); FetchErrorKindOf(err) != FetchErrorNoProviders {
+		t.Fatalf("authoritative empty answer must stay no-providers, got %v", err)
+	}
+	if firstRunProviderSetupPending(configPath) {
+		t.Fatal("authoritative empty answer kept the pending marker")
+	}
+}
+
 func TestFetchAllProvidersDoesNotRunCostScanOnFastPath(t *testing.T) {
 	stubSupportedCodexBarVersion(t)
 
@@ -1536,6 +1670,8 @@ func TestClassifyParseError(t *testing.T) {
 
 func stubSupportedCodexBarVersion(t *testing.T) {
 	t.Helper()
+	setExistingConfig(t)
+	t.Setenv("CODEXBAR_BIN", "/bin/sh")
 
 	originalRunVersionCommand := runVersionCommandFn
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {

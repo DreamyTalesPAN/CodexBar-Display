@@ -3913,6 +3913,45 @@ func TestProviderCollectorUsesFetchCompletionForDashboardWithoutProducerTime(t *
 	}
 }
 
+func TestProviderCollectorUsesAuthoritativeUsageWhileFirstRunSetupIsPending(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	pending := true
+	usageCalls := 0
+	dashboardCalls := 0
+	collector := &providerCollector{
+		now:                  func() time.Time { return current },
+		logf:                 func(string, ...any) {},
+		order:                []string{"codex"},
+		interval:             30 * time.Second,
+		timeout:              time.Minute,
+		snapshotMaxAge:       10 * time.Minute,
+		persistInterval:      time.Minute,
+		providers:            make(map[string]providerSnapshot),
+		firstRunSetupPending: func() bool { return pending },
+		dashboard:            staticDashboardServe{info: testDashboardServeInfo(1001)},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			usageCalls++
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 17, 0, 3600)}, nil
+		},
+		fetchDashboard: func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error) {
+			dashboardCalls++
+			return []codexbar.ParsedFrame{dashboardParsedFrame("codex", "Weekly", "Codex Spark Weekly", 24, 0)}, nil
+		},
+	}
+
+	collector.collectOnce(context.Background())
+	if usageCalls != 1 || dashboardCalls != 0 {
+		t.Fatalf("pending first run must use only authoritative usage, usage=%d dashboard=%d", usageCalls, dashboardCalls)
+	}
+	pending = false
+	collector.collectOnce(context.Background())
+	if usageCalls != 1 || dashboardCalls != 1 {
+		t.Fatalf("completed first run may use dashboard, usage=%d dashboard=%d", usageCalls, dashboardCalls)
+	}
+}
+
 func TestRunCycleFromCollectorSendsFreshDashboardQuotaWithOldActivityTime(t *testing.T) {
 	prepareFastTestEnv(t)
 

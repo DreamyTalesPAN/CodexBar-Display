@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,6 +57,7 @@ type ProviderSetup struct {
 
 var runConfigBootstrapCommandFn = runConfigBootstrapCommand
 var configBootstrapMu sync.Mutex
+var firstRunProviderSetupMu sync.Mutex
 
 // EnsureConfig selects an existing CodexBar config without modifying it. If
 // none exists, CodexBar itself renders and validates its current default config
@@ -99,8 +99,7 @@ func ensureConfigFile(path string) (string, error) {
 		return path, fmt.Errorf("protect CodexBar config directory: %w", err)
 	}
 	// The UI readiness probe and the collector start together. Serialize the
-	// first config publication and detection so a concurrent caller cannot read
-	// CodexBar's untouched default while the winner is still enabling providers.
+	// first config publication so concurrent callers share one private config.
 	configBootstrapMu.Lock()
 	defer configBootstrapMu.Unlock()
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
@@ -167,15 +166,10 @@ func initializeConfigFile(path, bin string) (bool, error) {
 	); err != nil {
 		return false, fmt.Errorf("validate CodexBar default config: %w", err)
 	}
-	detect := autoEnableFirstRunProvidersFn
-	if detect == nil {
-		detect = autoEnableFirstRunProviders
-	}
-	// Keep the new config private until provider detection completes. A failed
-	// probe therefore leaves nothing persistent and the next start retries the
-	// same authoritative first-run path.
-	if err := detect(stagedPath, bin); err != nil {
-		return false, fmt.Errorf("detect first-run CodexBar providers: %w", err)
+	// Publish the pending marker first. The collector consumes it only after its
+	// own authoritative usage request has applied every detected switch.
+	if err := os.WriteFile(firstRunMarkerPath(path), []byte("pending\n"), 0o600); err != nil {
+		return false, fmt.Errorf("mark first-run CodexBar provider setup: %w", err)
 	}
 	// A hard link publishes without replacing a config another process may
 	// have created while CodexBar was rendering its defaults.
@@ -188,6 +182,23 @@ func initializeConfigFile(path, bin string) (bool, error) {
 	return true, nil
 }
 
+func firstRunMarkerPath(configPath string) string {
+	return configPath + ".vibetv-first-run"
+}
+
+func firstRunProviderSetupPending(configPath string) bool {
+	_, err := os.Stat(firstRunMarkerPath(configPath))
+	return err == nil
+}
+
+// FirstRunProviderSetupPending tells the collector to use CodexBar's complete
+// inventory for its first authoritative usage request instead of the dashboard
+// snapshot, which still reflects the untouched default switches.
+func FirstRunProviderSetupPending() bool {
+	path, err := EnsureConfig("")
+	return err != nil || firstRunProviderSetupPending(path)
+}
+
 func runConfigBootstrapCommand(
 	ctx context.Context,
 	bin string,
@@ -197,72 +208,6 @@ func runConfigBootstrapCommand(
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = environmentWithConfig(configPath)
 	return cmd.Output()
-}
-
-// autoEnableFirstRunProvidersFn is nil in production (tests override it); a
-// nil value means autoEnableFirstRunProviders. An initializer expression here
-// would close an initialization cycle through runUsageCommandFn.
-var autoEnableFirstRunProvidersFn func(configPath, bin string) error
-
-// autoEnableFirstRunProviders runs once, right after CodexBar rendered its
-// first-run default config (which switches on only its own default provider,
-// regardless of which AI tools this Mac actually uses). One bounded probe of
-// CodexBar's complete inventory -- its own `usage --provider all`, which
-// ignores the switches -- finds the providers that deliver usage here, and
-// CodexBar's own `config enable` switches exactly those on. Sign-in errors do
-// not qualify: the bundled CodexBar reports "not logged in" even for tools
-// that were never installed, so an error is not evidence of a local tool.
-// Nothing is invented and no VibeTV-side provider list appears; a Mac whose
-// providers deliver nothing keeps CodexBar's untouched default.
-func autoEnableFirstRunProviders(configPath, bin string) error {
-	// The full-inventory probe visits every provider; the bundled CodexBar
-	// needs ~90s for it, so the first authoritative collection waits for this
-	// one bounded setup operation.
-	probeCtx, cancelProbe := context.WithTimeout(context.Background(), 4*time.Minute)
-	raw, probeErr := runConfigBootstrapCommandFn(probeCtx, bin, configPath,
-		"usage", "--json", "--provider", "all", "--web-timeout", "8")
-	probeContextErr := probeCtx.Err()
-	cancelProbe()
-	if errors.Is(probeErr, context.DeadlineExceeded) ||
-		errors.Is(probeErr, context.Canceled) ||
-		errors.Is(probeContextErr, context.DeadlineExceeded) {
-		timeoutErr := probeErr
-		if timeoutErr == nil {
-			timeoutErr = probeContextErr
-		}
-		return fmt.Errorf("provider probe timed out: %w", timeoutErr)
-	}
-	// A non-zero exit only says that some providers failed; the JSON body
-	// still lists every probed provider and is the authoritative answer.
-	providers, parseErr := extractProvidersFromRawJSON(raw)
-	if parseErr != nil || len(providers) == 0 {
-		return fmt.Errorf("no provider answer (parse=%v)", parseErr)
-	}
-	var enabled []string
-	for _, item := range providers {
-		payload, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		id := strings.ToLower(strings.TrimSpace(firstString(payload, "provider", "id", "slug", "name")))
-		// A leading '-' would let an id masquerade as a CLI flag on the enable
-		// call below.
-		if id == "" || id == "cli" || strings.HasPrefix(id, "-") || !validProviderID(id) {
-			continue
-		}
-		if providerPayloadHasError(payload) || !providerPayloadHasUsage(payload) {
-			continue
-		}
-		enableCtx, cancelEnable := context.WithTimeout(context.Background(), 15*time.Second)
-		_, err := runConfigBootstrapCommandFn(enableCtx, bin, configPath, "config", "enable", "--provider", id)
-		cancelEnable()
-		if err != nil {
-			return fmt.Errorf("enable %s: %w", id, err)
-		}
-		enabled = append(enabled, id)
-	}
-	log.Printf("codexbar first-run detection: probed=%d enabled=%s", len(providers), strings.Join(enabled, ","))
-	return nil
 }
 
 func writableConfig(path string) error {

@@ -133,6 +133,7 @@ type runtimeDeps struct {
 	resolvePort           func(string) (string, error)
 	deviceCaps            func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
+	firstRunSetupPending  func() bool
 	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error)
 	fetchProvider         func(context.Context, string) (codexbar.ParsedFrame, error)
 	fetchInventory        func(context.Context) ([]codexbar.ProviderSetting, error)
@@ -174,6 +175,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.fetchProviders == nil {
 		d.fetchProviders = codexbar.FetchAllProviders
+	}
+	if d.firstRunSetupPending == nil {
+		d.firstRunSetupPending = codexbar.FirstRunProviderSetupPending
 	}
 	if d.fetchDashboard == nil {
 		d.fetchDashboard = codexbar.FetchDashboardProviders

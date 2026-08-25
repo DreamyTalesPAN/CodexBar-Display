@@ -45,6 +45,7 @@ type providerCollector struct {
 	now                   func() time.Time
 	logf                  func(string, ...any)
 	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
+	firstRunSetupPending  func() bool
 	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error)
 	fetchInventory        func(context.Context) ([]codexbar.ProviderSetting, error)
 	fetchTokenStats       func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
@@ -99,6 +100,7 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		now:                   nowFn,
 		logf:                  logFn,
 		fetchProviders:        deps.fetchProviders,
+		firstRunSetupPending:  deps.firstRunSetupPending,
 		fetchDashboard:        deps.fetchDashboard,
 		fetchInventory:        deps.fetchInventory,
 		fetchTokenStats:       deps.fetchTokenStats,
@@ -441,6 +443,13 @@ func parsedProviderCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time) 
 }
 
 func (c *providerCollector) fetchProvidersForCollect(ctx context.Context, now time.Time) ([]codexbar.ParsedFrame, string, error) {
+	// The first complete inventory is itself the authoritative collector read.
+	// Do not consult a dashboard snapshot made from CodexBar's untouched default
+	// switches while that one-time collection is still pending.
+	if c.firstRunSetupPending != nil && c.firstRunSetupPending() && c.fetchProviders != nil {
+		providers, err := c.fetchProviders(ctx)
+		return providers, "codexbar-usage-json", err
+	}
 	if c.dashboard != nil && c.fetchDashboard != nil {
 		info := c.dashboard.Info()
 		if strings.TrimSpace(info.Endpoint) != "" && info.Running {
