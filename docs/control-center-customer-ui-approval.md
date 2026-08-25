@@ -1816,3 +1816,19 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `theme-library-screen.tsx`,
   `theme-library-screen.test.tsx`, `control-center-app.tsx`, and this approval
   record.
+## 2026-08-25 — Mandatory theme setup keeps one stacked theme list
+
+- User approval: Continuation of the standing instruction to finish PR #373 and
+  get its CI green. Records the visible result of commit 1870680 ("restore
+  stacked theme setup list"), authored on the bench on 2026-08-24.
+- Approved customer-visible result: In mandatory theme setup, the theme choices
+  are one stacked vertical list again — one theme per row at every window size.
+  The wide-window two/three-column grid introduced for #398 is removed, and the
+  setup page may scroll vertically in the native default window. Every theme's
+  install action stays reachable: the customer-flow regression now asserts the
+  deliberate vertical list and that the last theme's action can be scrolled
+  fully into view inside the native default viewport, replacing the earlier
+  no-initial-scrollbar assertion. Theme previews, buttons, copy, and the #400
+  readiness status above the list are unchanged.
+- Approved files: `theme-library-screen.tsx`, `theme-library-screen.test.tsx`,
+  `scripts/test-customer-flows.mjs`, and this approval record.
