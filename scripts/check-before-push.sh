@@ -88,6 +88,12 @@ if touches '^companion/'; then
   # which is exactly what provider recovery and the runtime restarts touch, and
   # it needs no hardware. About 22 seconds.
   run "cold/warm honesty" ./scripts/test-companion-coldwarm-e2e.sh
+  # The customer state of issue #371 -- paired VibeTV, no AI provider, live
+  # theme install -- end to end against the same virtual device. Nothing else
+  # here runs a real install against a device that cannot draw usage, which is
+  # how "Theme installed, but Mac App did not send a fresh image" reached a
+  # customer. About 20 seconds.
+  run "provider-less install" ./scripts/test-providerless-theme-install-e2e.sh
   # Only files this branch touched: the repo carries older violations, and a
   # gate that fails on someone else's formatting is a gate people switch off.
   # "Touched" has to mean the same four sources `changed` is built from, though

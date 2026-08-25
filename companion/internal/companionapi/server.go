@@ -917,7 +917,7 @@ func New(opts Options) (*Server, error) {
 			return nil, fmt.Errorf("load embedded control center: %w", err)
 		}
 	}
-	return &Server{
+	server := &Server{
 		addr:                  addr,
 		home:                  home,
 		allowedOrigins:        origins,
@@ -930,9 +930,6 @@ func New(opts Options) (*Server, error) {
 		subnetTargets:         localSubnetTargets,
 		defaultWiFiTarget:     setup.DefaultWiFiTarget,
 		streamStatus:          inspectDisplayStream,
-		waitStream:            waitForDisplayStream,
-		waitStreamAfter:       waitForDisplayStreamAfter,
-		waitStreamAfterPair:   waitForDisplayStreamAfterPair,
 		waitRender:            nil,
 		refreshStream:         opts.RefreshDisplayStream,
 		pauseDisplayStream:    opts.PauseDisplayStream,
@@ -966,7 +963,17 @@ func New(opts Options) (*Server, error) {
 		installJobs:        make(map[string]*themeInstallJob),
 		updateJobs:         make(map[string]*firmwareUpdateJob),
 		macAppUpdateJobs:   make(map[string]*macAppUpdateJob),
-	}, nil
+	}
+	server.waitStream = func(ctx context.Context, target string) displayStreamInfo {
+		return server.waitForDisplayStreamMode(ctx, target, time.Time{}, true)
+	}
+	server.waitStreamAfter = func(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+		return server.waitForDisplayStreamMode(ctx, target, notBefore, true)
+	}
+	server.waitStreamAfterPair = func(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+		return server.waitForDisplayStreamMode(ctx, target, notBefore, false)
+	}
+	return server, nil
 }
 
 func (s *Server) ListenAndServe(ctx context.Context) error {
@@ -7800,20 +7807,32 @@ func inspectDisplayStreamAfter(ctx context.Context, target string, notBefore tim
 	return stream
 }
 
-func waitForDisplayStream(ctx context.Context, target string) displayStreamInfo {
-	return waitForDisplayStreamAfter(ctx, target, time.Time{})
+func (s *Server) waitForDisplayStreamMode(
+	ctx context.Context,
+	target string,
+	notBefore time.Time,
+	stopOnPairingError bool,
+) displayStreamInfo {
+	return waitForDisplayStreamAfterProbe(
+		ctx, target, notBefore, stopOnPairingError, inspectDisplayStreamAfter,
+		func(stream displayStreamInfo) bool {
+			return providerSetupStreamForTarget(&stream, target) &&
+				providerSetupNeedsCustomerAction(s.providerSetupForStatus())
+		},
+	)
 }
 
-func waitForDisplayStreamAfter(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
-	return waitForDisplayStreamAfterMode(ctx, target, notBefore, true)
-}
-
-func waitForDisplayStreamAfterPair(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
-	return waitForDisplayStreamAfterMode(ctx, target, notBefore, false)
-}
-
-func waitForDisplayStreamAfterMode(ctx context.Context, target string, notBefore time.Time, stopOnPairingError bool) displayStreamInfo {
-	return waitForDisplayStreamAfterProbe(ctx, target, notBefore, stopOnPairingError, inspectDisplayStreamAfter)
+// providerSetupNeedsCustomerAction reports a provider state that only the
+// customer can move. "checking" is not one: a provider still warming up does
+// deliver usage, and the runtime sends the same no-providers error frame while
+// it waits. Mirrors providerSetupRequiresRecovery in the Control Center.
+func providerSetupNeedsCustomerAction(setup codexbar.ProviderSetup) bool {
+	switch strings.TrimSpace(strings.ToLower(setup.Status)) {
+	case "", codexbar.ProviderReady, "checking":
+		return false
+	default:
+		return true
+	}
 }
 
 func waitForDisplayStreamAfterProbe(
@@ -7822,13 +7841,17 @@ func waitForDisplayStreamAfterProbe(
 	notBefore time.Time,
 	stopOnPairingError bool,
 	inspect func(context.Context, string, time.Time) displayStreamInfo,
+	settled func(displayStreamInfo) bool,
 ) displayStreamInfo {
 	deadline := time.Now().Add(displayStreamWaitTime)
 	var last displayStreamInfo
 	for {
 		last = inspect(ctx, target, notBefore)
+		// A settled stream has nothing left to prove: waiting out the rest of
+		// the window leaves the customer on "Installing" long after their
+		// VibeTV finished, and answers with the same stream either way.
 		if last.Healthy || (stopOnPairingError && last.ErrorCode == "device_pairing_required") ||
-			time.Now().After(deadline) {
+			(settled != nil && settled(last)) || time.Now().After(deadline) {
 			return last
 		}
 		select {

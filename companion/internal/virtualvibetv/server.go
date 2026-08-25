@@ -152,6 +152,8 @@ type Server struct {
 	assets              map[string][]byte
 	lastFrame           json.RawMessage
 	framesAccepted      int
+	renderFullCount     uint64
+	renderPartialCount  uint64
 	updateUploads       int
 	offlineRequestsLeft int
 	droppedUpdateReply  bool
@@ -270,11 +272,26 @@ func (s *Server) handleHello(w http.ResponseWriter, r *http.Request) {
 		MaxFrameBytes:             4096,
 		Capabilities: protocol.CapabilityBlock{
 			Display: protocol.DisplayCapabilities{WidthPx: 240, HeightPx: 240, ColorDepthBits: 16},
+			// Mirrors themeCapabilitiesJSON in firmware_esp8266/src/main.cpp:
+			// without these a repository theme pack is refused before it ever
+			// reaches the device, so no harness could rehearse a live install.
 			Theme: protocol.ThemeCapabilities{
-				SupportsThemeSpecV1: true,
-				MaxThemeSpecBytes:   4096,
-				MaxThemePrimitives:  64,
-				BuiltinThemes:       []string{"mini-classic", "claude-creature"},
+				SupportsThemeSpecV1:     true,
+				SupportsUsageSlotsV1:    true,
+				SupportsUsageWindowsV1:  true,
+				SupportsProviderSlotsV1: true,
+				MaxUsageWindows:         3,
+				SupportsStoredThemes:    true,
+				MaxThemeSpecBytes:       2048,
+				MaxStoredThemeSpecBytes: 4096,
+				MaxThemePrimitives:      32,
+				MaxThemeGifAssets:       1,
+				MaxThemeGifBytes:        24 * 1024,
+				MaxThemeGifWidth:        80,
+				MaxThemeGifHeight:       80,
+				MaxThemeGifPixels:       80 * 80,
+				MaxThemeGifLzwBits:      11,
+				BuiltinThemes:           []string{"mini-classic", "claude-creature"},
 			},
 			Transport: protocol.TransportCapabilities{Active: "wifi", Supported: []string{"usb", "wifi"}, Mode: "station"},
 		},
@@ -291,18 +308,34 @@ func (s *Server) currentDeviceIDLocked() string {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
+	// RendererESP8266::HealthSnapshot reports the theme of the frame currently
+	// on screen, not the stored one: an error frame carries no ThemeSpec, so
+	// the device reports theme-missing while the file is still installed. That
+	// is the customer state in issue #371, and a double that always reports the
+	// stored theme can never reproduce it.
+	themeSpecActive := s.activeThemePath != "" && !s.lastFrameIsErrorLocked()
+	activeTheme := s.activeTheme
+	if !themeSpecActive {
+		activeTheme = "theme-missing"
+	}
 	payload := map[string]any{
 		"ok": !s.cfg.HealthUnhealthy,
 		"display": map[string]any{
-			"activeTheme": s.activeTheme,
+			"activeTheme": activeTheme,
 			"themeSpec": map[string]any{
-				"active":         s.activeThemePath != "",
+				"active":         themeSpecActive,
 				"path":           s.activeThemePath,
 				"hash":           s.activeThemeSHA256,
 				"renderOk":       !s.cfg.RenderVerificationFails,
 				"renderError":    renderError(s.cfg.RenderVerificationFails),
 				"renderFailures": boolInt(s.cfg.RenderVerificationFails),
 			},
+			"gif": s.activeGIFHealthLocked(),
+		},
+		"render": map[string]any{
+			"fullCount":    s.renderFullCount,
+			"partialCount": s.renderPartialCount,
+			"lastKind":     s.renderLastKind(),
 		},
 		"stream": map[string]any{
 			"healthy": !s.cfg.StreamRestartFails,
@@ -310,6 +343,79 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Unlock()
 	s.writeJSON(w, r, http.StatusOK, payload, "")
+}
+
+// lastFrameIsErrorLocked reports whether the frame on screen is the runtime's
+// error frame. protocol.ErrorFrame carries an error code and no usage, and the
+// firmware draws its status screen for it.
+func (s *Server) lastFrameIsErrorLocked() bool {
+	if len(s.lastFrame) == 0 {
+		return false
+	}
+	var frame struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(s.lastFrame, &frame); err != nil {
+		return false
+	}
+	return strings.TrimSpace(frame.Error) != ""
+}
+
+// activeGIFHealthLocked mirrors the firmware's gif playback health for the GIF
+// the active ThemeSpec references. themeinstall verifies it after every live
+// install, so a double without it fails every install that ships a GIF.
+func (s *Server) activeGIFHealthLocked() map[string]any {
+	health := map[string]any{
+		"activePath":       "",
+		"filePresent":      false,
+		"decoderAllocated": false,
+		"decoderOpen":      false,
+		"lastError":        nil,
+	}
+	spec, ok := s.assets[s.activeThemePath]
+	if !ok || s.lastFrameIsErrorLocked() {
+		return health
+	}
+	var parsed struct {
+		Primitives []struct {
+			Type  string `json:"t"`
+			Asset string `json:"a"`
+		} `json:"p"`
+	}
+	if err := json.Unmarshal(spec, &parsed); err != nil {
+		return health
+	}
+	for _, primitive := range parsed.Primitives {
+		asset := strings.TrimSpace(primitive.Asset)
+		if primitive.Type != "g" || asset == "" {
+			continue
+		}
+		if _, present := s.assets[asset]; !present {
+			continue
+		}
+		health["activePath"] = asset
+		health["filePresent"] = true
+		health["decoderAllocated"] = true
+		health["decoderOpen"] = true
+		break
+	}
+	return health
+}
+
+// renderLastKind mirrors recordRenderFull/recordRenderPartial in the firmware:
+// the status screen for an error frame is not a usage render, and the Companion
+// refuses to call a device ready without one.
+func (s *Server) renderLastKind() string {
+	switch {
+	case len(s.lastFrame) == 0:
+		return "none"
+	case s.lastFrameIsErrorLocked():
+		return "status"
+	case s.activeThemePath != "":
+		return "theme_spec_usage"
+	default:
+		return "usage"
+	}
 }
 
 func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
@@ -328,6 +434,11 @@ func (s *Server) handleFrame(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.lastFrame = append(s.lastFrame[:0], body...)
 	s.framesAccepted++
+	if s.activeThemePath != "" && !s.lastFrameIsErrorLocked() {
+		s.renderPartialCount++
+	} else {
+		s.renderFullCount++
+	}
 	s.mu.Unlock()
 	s.respond(w, r, http.StatusOK, "ok", "frame accepted")
 }

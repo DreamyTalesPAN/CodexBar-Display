@@ -3174,17 +3174,79 @@ func TestWaitForDisplayStreamAfterPairIgnoresTransientPairingError(t *testing.T)
 		return displayStreamInfo{Running: true, Healthy: true}
 	}
 
-	got := waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), false, inspect)
+	got := waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), false, inspect, nil)
 	if !got.Healthy || calls.Load() != 2 {
 		t.Fatalf("post-pair wait must ignore one stale auth error, got=%+v calls=%d", got, calls.Load())
 	}
 
 	calls.Store(0)
-	got = waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), true, inspect)
+	got = waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), true, inspect, nil)
 	if got.Healthy || got.ErrorCode != "device_pairing_required" || calls.Load() != 1 {
 		t.Fatalf("normal wait must surface pairing error immediately, got=%+v calls=%d", got, calls.Load())
 	}
 
+}
+
+// A provider the customer has not connected settles the wait immediately. The
+// customer's VibeTV finished half a minute before the Mac App did, and waiting
+// out the window answers with the same stream either way (issue #371).
+func TestWaitForDisplayStreamStopsOnSettledStream(t *testing.T) {
+	var calls atomic.Int32
+	inspect := func(context.Context, string, time.Time) displayStreamInfo {
+		calls.Add(1)
+		return displayStreamInfo{
+			Running:   true,
+			Target:    "http://192.0.2.10",
+			ErrorCode: "provider_setup_required",
+		}
+	}
+	settled := func(stream displayStreamInfo) bool {
+		return stream.ErrorCode == "provider_setup_required"
+	}
+
+	got := waitForDisplayStreamAfterProbe(
+		context.Background(), "http://192.0.2.10", time.Now(), true, inspect, settled,
+	)
+	if got.ErrorCode != "provider_setup_required" || calls.Load() != 1 {
+		t.Fatalf("settled stream must end the wait at once, got=%+v calls=%d", got, calls.Load())
+	}
+}
+
+// The same stream error while a provider is still warming up keeps its full
+// window: that provider does deliver usage, and ending early would tell a
+// working customer to connect one.
+func TestProviderSetupNeedsCustomerActionOnlyForActionableStates(t *testing.T) {
+	for _, status := range []string{"", codexbar.ProviderReady, "checking", "CHECKING"} {
+		if providerSetupNeedsCustomerAction(codexbar.ProviderSetup{Status: status}) {
+			t.Fatalf("status %q must keep waiting", status)
+		}
+	}
+	for _, status := range []string{"setup_required", codexbar.ProviderAuthRequired, codexbar.ProviderNotConfigured} {
+		if !providerSetupNeedsCustomerAction(codexbar.ProviderSetup{Status: status}) {
+			t.Fatalf("status %q must end the wait", status)
+		}
+	}
+}
+
+// The wait reads the provider state the Companion already owns. A cold cache
+// reports "checking", so a Mac App that has not probed yet never cuts a wait
+// short on a guess.
+func TestWaitForDisplayStreamModeHonoursProviderSetup(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: "http://192.0.2.10", DeviceToken: "token"})
+	target := "http://192.0.2.10"
+	stream := displayStreamInfo{Running: true, Target: target, ErrorCode: "provider_setup_required"}
+
+	if providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
+		t.Fatal("a cold provider cache must not settle the wait")
+	}
+	server.providerSetupCache = codexbar.ProviderSetup{Status: codexbar.ProviderNotConfigured}
+	server.providerSetupCachedAt = time.Now()
+	if !providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
+		t.Fatal("an unconfigured provider must settle the wait")
+	}
+	if !providerSetupStreamForTarget(&stream, target) {
+		t.Fatal("stream must be the provider-held stream for this device")
+	}
 }
 
 func TestInspectDisplayStreamAfterIgnoresEarlierFrameAndError(t *testing.T) {
