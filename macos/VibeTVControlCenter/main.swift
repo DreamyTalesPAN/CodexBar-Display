@@ -1328,6 +1328,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var installationStatus: InstallationStatus?
     private var codexBarRepairRequired = false
     private var codexBarRepairRestartRequired = false
+    // A repair that arrived while another preparation already owned the
+    // runtime. That task read codexBarRepairRequired before the request
+    // existed, so its outcome must not answer the repair -- the completion
+    // reruns preparation with the flag still set instead.
+    private var pendingCodexBarRepairRerun = false
     private var codexBarRecoveryApplication: NSRunningApplication?
     private var installationStatusTitle = "Starting Control Center"
     private var installationStatusDetail = "Preparing the Mac App."
@@ -1451,6 +1456,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             }
             let outcome = await self.prepareCompanion()
             self.preparationTask = nil
+            if self.pendingCodexBarRepairRerun {
+                // This outcome belongs to a preparation that never saw the
+                // repair request; answering with it would clear the repair
+                // flags without launching CodexBar. Rerun with the flags set.
+                self.pendingCodexBarRepairRerun = false
+                self.codexBarRepairRequired = true
+                self.startRuntimePreparation()
+                return
+            }
             // Deliberately does not release the temporary CodexBar here. Doing
             // so would end it before anything checked that it produced usable
             // usage: this route never calls the authoritative provider retry,
@@ -1543,6 +1557,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         // the retry wrapper would clear the very thing this repair just asked
         // for and report success without ever launching CodexBar.
         discardMismatchedPendingNativeUpdate()
+        if preparationTask != nil {
+            // A cold launch's own preparation is already running and read the
+            // repair flag before this request existed. Starting nothing here
+            // used to drop the repair silently; the running task's completion
+            // now reruns preparation with the flag still set.
+            pendingCodexBarRepairRerun = true
+            return
+        }
         startRuntimePreparation()
     }
 

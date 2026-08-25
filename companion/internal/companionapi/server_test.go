@@ -3214,17 +3214,40 @@ func TestWaitForDisplayStreamStopsOnSettledStream(t *testing.T) {
 
 // The same stream error while a provider is still warming up keeps its full
 // window: that provider does deliver usage, and ending early would tell a
-// working customer to connect one.
+// working customer to connect one. A transient probe result -- timeout,
+// momentary engine error -- also keeps the window: it arrives as the same
+// global setup_required, but nothing about it is the customer's to fix.
 func TestProviderSetupNeedsCustomerActionOnlyForActionableStates(t *testing.T) {
 	for _, status := range []string{"", codexbar.ProviderReady, "checking", "CHECKING"} {
 		if providerSetupNeedsCustomerAction(codexbar.ProviderSetup{Status: status}) {
 			t.Fatalf("status %q must keep waiting", status)
 		}
 	}
-	for _, status := range []string{"setup_required", codexbar.ProviderAuthRequired, codexbar.ProviderNotConfigured} {
-		if !providerSetupNeedsCustomerAction(codexbar.ProviderSetup{Status: status}) {
-			t.Fatalf("status %q must end the wait", status)
+	for _, status := range []string{codexbar.ProviderTimeout, codexbar.ProviderEngineError, codexbar.ProviderNoUsageAvailable} {
+		setup := codexbar.ProviderSetup{
+			Status:    "setup_required",
+			Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: status}},
 		}
+		if providerSetupNeedsCustomerAction(setup) {
+			t.Fatalf("transient provider status %q must keep waiting", status)
+		}
+	}
+	if providerSetupNeedsCustomerAction(codexbar.ProviderSetup{Status: "setup_required"}) {
+		t.Fatal("setup_required with no diagnosed provider must keep waiting")
+	}
+	for _, status := range []string{codexbar.ProviderAuthRequired, codexbar.ProviderNotConfigured, codexbar.ProviderPermissionRequired, codexbar.ProviderConfigError} {
+		setup := codexbar.ProviderSetup{
+			Status:    "setup_required",
+			Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: status}},
+		}
+		if !providerSetupNeedsCustomerAction(setup) {
+			t.Fatalf("customer-owned provider status %q must end the wait", status)
+		}
+	}
+	engineBroken := codexbar.ProviderSetup{Status: "setup_required"}
+	engineBroken.Engine.Status = codexbar.ProviderNotConfigured
+	if !providerSetupNeedsCustomerAction(engineBroken) {
+		t.Fatal("a missing engine must end the wait")
 	}
 }
 
@@ -3239,7 +3262,10 @@ func TestWaitForDisplayStreamModeHonoursProviderSetup(t *testing.T) {
 	if providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
 		t.Fatal("a cold provider cache must not settle the wait")
 	}
-	server.providerSetupCache = codexbar.ProviderSetup{Status: codexbar.ProviderNotConfigured}
+	server.providerSetupCache = codexbar.ProviderSetup{
+		Status:    "setup_required",
+		Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: codexbar.ProviderNotConfigured}},
+	}
 	server.providerSetupCachedAt = time.Now()
 	if !providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
 		t.Fatal("an unconfigured provider must settle the wait")

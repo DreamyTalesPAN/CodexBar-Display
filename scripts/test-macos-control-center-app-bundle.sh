@@ -633,8 +633,14 @@ required_source = [
     # native side has to release its temporary CodexBar itself in that case.
     # The no-WebView repair must not go through retryRuntimePreparation: that
     # wrapper clears codexBarRepairRequired, and prepareCompanion starts the
-    # verified CodexBar only while that flag is set.
-    "        discardMismatchedPendingNativeUpdate()\n        startRuntimePreparation()\n    }",
+    # verified CodexBar only while that flag is set. And when a cold launch's
+    # own preparation is already running, the repair is queued instead of
+    # dropped: that task read the flag before the request existed, so its
+    # completion must rerun preparation rather than answer the repair.
+    "        discardMismatchedPendingNativeUpdate()\n        if preparationTask != nil {",
+    "            pendingCodexBarRepairRerun = true\n            return\n        }\n        startRuntimePreparation()\n    }",
+    "            if self.pendingCodexBarRepairRerun {",
+    "                self.pendingCodexBarRepairRerun = false\n                self.codexBarRepairRequired = true\n                self.startRuntimePreparation()\n                return\n            }",
     # The "Repair usage service" button must reach the repair entry point, not
     # the generic retry: that wrapper clears codexBarRepairRequired, and the
     # launch this screen exists to trigger happens only while it is set.

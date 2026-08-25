@@ -7825,14 +7825,24 @@ func (s *Server) waitForDisplayStreamMode(
 // providerSetupNeedsCustomerAction reports a provider state that only the
 // customer can move. "checking" is not one: a provider still warming up does
 // deliver usage, and the runtime sends the same no-providers error frame while
-// it waits. Mirrors providerSetupRequiresRecovery in the Control Center.
+// it waits. Neither is a transient probe result -- a timeout or a momentary
+// engine error also arrives as the global setup_required, but the provider
+// could still deliver inside the wait window. Only the failures the reconciler
+// already protects as customer-owned settle the wait.
 func providerSetupNeedsCustomerAction(setup codexbar.ProviderSetup) bool {
 	switch strings.TrimSpace(strings.ToLower(setup.Status)) {
 	case "", codexbar.ProviderReady, "checking":
 		return false
-	default:
+	}
+	if providerSetupFailureMustWin(strings.TrimSpace(strings.ToLower(setup.Engine.Status))) {
 		return true
 	}
+	for _, provider := range setup.Providers {
+		if providerSetupFailureMustWin(strings.TrimSpace(strings.ToLower(provider.Status))) {
+			return true
+		}
+	}
+	return false
 }
 
 func waitForDisplayStreamAfterProbe(
