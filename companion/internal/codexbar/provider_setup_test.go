@@ -567,7 +567,7 @@ func TestProbeProviderSetupWaitsForFirstRunInventory(t *testing.T) {
 	}
 
 	got := ProbeProviderSetup(context.Background(), t.TempDir())
-	if got.Status != "checking" || got.Engine.Status != ProviderReady || !ProviderSetupFirstRunPending(got) {
+	if got.Status != "checking" || got.Engine.Status != ProviderReady {
 		t.Fatalf("first-run inventory must remain the visible checking state: %+v", got)
 	}
 

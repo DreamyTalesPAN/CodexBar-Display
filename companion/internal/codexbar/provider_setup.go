@@ -218,15 +218,6 @@ func writeFirstRunProviderSetupState(configPath, state string) error {
 	return os.WriteFile(firstRunMarkerPath(configPath), []byte(strings.TrimSpace(state)+"\n"), 0o600)
 }
 
-// ProviderSetupFirstRunPending keeps every other surface on the same first-run
-// truth as the collector. A normal provider probe must not overtake the full
-// inventory read and report Codex's default switch as the finished setup.
-func ProviderSetupFirstRunPending(setup ProviderSetup) bool {
-	return strings.TrimSpace(setup.Status) == "checking" &&
-		strings.TrimSpace(setup.Engine.ConfigPath) != "" &&
-		firstRunProviderSetupState(setup.Engine.ConfigPath) == firstRunProviderSetupPendingState
-}
-
 // FirstRunProviderSetupPending tells the collector to use CodexBar's complete
 // inventory for its first authoritative usage request instead of the dashboard
 // snapshot, which still reflects the untouched default switches.

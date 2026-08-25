@@ -226,6 +226,31 @@ func TestProviderSetupPreservesDisabledProviderOverCachedUsage(t *testing.T) {
 	}
 }
 
+func TestCheckingProviderSetupNeverReusesCachedUsage(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 8, 25, 19, 18, 45, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return freshProviderUsage("codex", "Codex", now), true
+	}
+
+	for _, setup := range []codexbar.ProviderSetup{
+		{Status: "checking"},
+		{
+			Status: "checking",
+			Engine: codexbar.EngineReadiness{
+				Status:     codexbar.ProviderReady,
+				ConfigPath: filepath.Join(t.TempDir(), "config.json"),
+			},
+		},
+	} {
+		got := server.providerSetupWithFreshUsage(setup, now)
+		if got.Status != "checking" || len(got.Providers) != 0 {
+			t.Fatalf("checking provider setup consumed cached readiness: %+v", got)
+		}
+	}
+}
+
 func TestProviderSetupPreservesCurrentEngineErrorOverCachedUsage(t *testing.T) {
 	now := time.Date(2026, 7, 28, 13, 30, 0, 0, time.UTC)
 	setup := codexbar.ProviderSetup{

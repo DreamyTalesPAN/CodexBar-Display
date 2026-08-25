@@ -84,10 +84,10 @@ func (s *Server) providerSetupWithFreshUsage(setup codexbar.ProviderSetup, now t
 	if s == nil || s.loadUsage == nil {
 		return setup
 	}
-	// The fresh config's complete inventory scan owns the first answer. Reusing
-	// an older usage snapshot here would let the theme chooser overtake that scan
-	// and make the following theme install wait for it instead.
-	if codexbar.ProviderSetupFirstRunPending(setup) {
+	// Checking means CodexBar has not answered this request yet. Reusing an older
+	// usage snapshot would let the theme chooser overtake a first-run inventory
+	// scan, including the lock-contention response that carries no config path.
+	if strings.EqualFold(strings.TrimSpace(setup.Status), "checking") {
 		return setup
 	}
 	if now.IsZero() {
