@@ -61,6 +61,11 @@ var runConfigBootstrapCommandFn = runConfigBootstrapCommand
 var configBootstrapMu sync.Mutex
 var firstRunProviderSetupMu sync.Mutex
 
+const (
+	firstRunProviderSetupPendingState = "pending"
+	firstRunProviderSetupFailedState  = "failed"
+)
+
 // EnsureConfig selects an existing CodexBar config without modifying it. If
 // none exists, CodexBar itself renders and validates its current default config
 // into a private path outside ~/.config. VibeTV never owns the provider
@@ -175,7 +180,7 @@ func initializeConfigFile(path, bin string) (bool, error) {
 	}
 	// Publish the pending marker first. The collector consumes it only after its
 	// own authoritative usage request has applied every detected switch.
-	if err := os.WriteFile(firstRunMarkerPath(path), []byte("pending\n"), 0o600); err != nil {
+	if err := writeFirstRunProviderSetupState(path, firstRunProviderSetupPendingState); err != nil {
 		return false, fmt.Errorf("mark first-run CodexBar provider setup: %w", err)
 	}
 	// A hard link publishes without replacing a config another process may
@@ -199,6 +204,27 @@ func firstRunMarkerPath(configPath string) string {
 func firstRunProviderSetupPending(configPath string) bool {
 	_, err := os.Stat(firstRunMarkerPath(configPath))
 	return err == nil
+}
+
+func firstRunProviderSetupState(configPath string) string {
+	raw, err := os.ReadFile(firstRunMarkerPath(configPath))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+func writeFirstRunProviderSetupState(configPath, state string) error {
+	return os.WriteFile(firstRunMarkerPath(configPath), []byte(strings.TrimSpace(state)+"\n"), 0o600)
+}
+
+// ProviderSetupFirstRunPending keeps every other surface on the same first-run
+// truth as the collector. A normal provider probe must not overtake the full
+// inventory read and report Codex's default switch as the finished setup.
+func ProviderSetupFirstRunPending(setup ProviderSetup) bool {
+	return strings.TrimSpace(setup.Status) == "checking" &&
+		strings.TrimSpace(setup.Engine.ConfigPath) != "" &&
+		firstRunProviderSetupState(setup.Engine.ConfigPath) == firstRunProviderSetupPendingState
 }
 
 // FirstRunProviderSetupPending tells the collector to use CodexBar's complete
@@ -331,6 +357,16 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 		return result
 	}
 	result.Engine.Status = ProviderReady
+	if exactProvider == "" {
+		switch firstRunProviderSetupState(configPath) {
+		case firstRunProviderSetupPendingState:
+			result.Status = "checking"
+			return result
+		case firstRunProviderSetupFailedState:
+			result.Providers = []ProviderReadiness{providerResult("codexbar", ProviderEngineError)}
+			return result
+		}
+	}
 
 	probeCtx, cancel := context.WithTimeout(configuredCtx, 20*time.Second)
 	defer cancel()

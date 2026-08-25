@@ -397,6 +397,10 @@ async function main() {
     });
     app = appContext.app;
     if (themeMissingOnly) {
+      await testThemeMissingDeviceWaitsForInitialProviderCheck(
+        browser,
+        appContext.appUrl,
+      );
       await testThemeMissingDeviceChoosesThemeAndCompletesSetup(
         browser,
         appContext.appUrl,
@@ -515,6 +519,10 @@ async function main() {
         appContext.appUrl,
       );
       await testFirstUsageServiceFailureOffersRecovery(
+        browser,
+        appContext.appUrl,
+      );
+      await testThemeMissingDeviceWaitsForInitialProviderCheck(
         browser,
         appContext.appUrl,
       );
@@ -698,6 +706,10 @@ async function main() {
       appContext.appUrl,
     );
     await testFirstUsageServiceFailureOffersRecovery(
+      browser,
+      appContext.appUrl,
+    );
+    await testThemeMissingDeviceWaitsForInitialProviderCheck(
       browser,
       appContext.appUrl,
     );
@@ -3491,6 +3503,53 @@ async function testProviderlessDeviceUsesRecoveryBeforeThemeAndOverview(
     "Initial recovery must not name CodexBar before a customer retry fails",
   );
 
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testThemeMissingDeviceWaitsForInitialProviderCheck(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  let providerReady = false;
+  await page.clock.install({ time: new Date("2026-08-25T19:18:45Z") });
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...themeMissingDevice,
+      deviceId: "fixture-device-1",
+    },
+    displayFrameStatus: 404,
+    onStatusProviderSetup: () =>
+      providerReady ? readyProviderSetup() : { status: "checking" },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "Starting AI usage" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page
+      .getByRole("heading", { name: "Choose your VibeTV theme" })
+      .count()) === 0,
+    "Theme selection must not overtake the initial provider inventory",
+  );
+  assertNoInstallRequests(installRequests);
+
+  providerReady = true;
+  await page.clock.runFor(6_000);
+  await page
+    .getByRole("heading", { name: "Choose your VibeTV theme" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page
+      .getByRole("heading", { name: "Starting AI usage" })
+      .count()) === 0,
+    "Theme selection must replace the provider check only after it settles",
+  );
   assertNoInstallRequests(installRequests);
   await page.close();
 }
@@ -8957,6 +9016,7 @@ async function routeCompanionOnline(
     statusFailuresAfter = 0,
     providerSetup = readyProviderSetup(),
     onProviderRetry,
+    onStatusProviderSetup,
   } = {},
 ) {
   let currentDevice = device;
@@ -9622,6 +9682,9 @@ async function routeCompanionOnline(
     }
     if (pathname === "/v1/status") {
       statusRequestCount += 1;
+      currentProviderSetup =
+        onStatusProviderSetup?.(statusRequestCount, currentProviderSetup) ||
+        currentProviderSetup;
       const statusShouldFail =
         typeof statusFailuresAfter === "function"
           ? statusFailuresAfter(statusRequestCount)

@@ -538,6 +538,48 @@ func TestProbeProviderSetupReportsReadyProvider(t *testing.T) {
 	}
 }
 
+func TestProbeProviderSetupWaitsForFirstRunInventory(t *testing.T) {
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	defer func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	}()
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"version":1,"providers":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(firstRunMarkerPath(configPath), []byte("pending\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_CONFIG", configPath)
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.46.0"), nil
+	}
+	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		t.Fatal("the normal readiness probe must not overtake first-run inventory")
+		return nil, nil
+	}
+
+	got := ProbeProviderSetup(context.Background(), t.TempDir())
+	if got.Status != "checking" || got.Engine.Status != ProviderReady || !ProviderSetupFirstRunPending(got) {
+		t.Fatalf("first-run inventory must remain the visible checking state: %+v", got)
+	}
+
+	if err := writeFirstRunProviderSetupState(configPath, firstRunProviderSetupFailedState); err != nil {
+		t.Fatal(err)
+	}
+	got = ProbeProviderSetup(context.Background(), t.TempDir())
+	if got.Status != "setup_required" || len(got.Providers) != 1 || got.Providers[0].Status != ProviderEngineError {
+		t.Fatalf("a failed first-run inventory must enter recovery: %+v", got)
+	}
+}
+
 func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 	originalUsage := runUsageCommandFn
 	originalVersion := runVersionCommandFn

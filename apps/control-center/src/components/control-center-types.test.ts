@@ -9,6 +9,7 @@ import {
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
   providerRecoveryStatusRows,
+  providerSetupIsChecking,
   providerSetupRequiresRecovery,
 } from "./control-center-types";
 
@@ -409,6 +410,13 @@ describe("provider recovery contract", () => {
         providers: [{ id: "claude", status: "auth_required" }],
       }),
     ).toBe(false);
+  });
+
+  it("keeps unknown and checking setup ahead of theme selection", () => {
+    expect(providerSetupIsChecking(null)).toBe(true);
+    expect(providerSetupIsChecking({ status: "checking" })).toBe(true);
+    expect(providerSetupIsChecking({ status: "ready" })).toBe(false);
+    expect(providerSetupIsChecking({ status: "setup_required" })).toBe(false);
   });
 });
 

@@ -564,6 +564,13 @@ export function providerSetupRequiresRecovery(
   return status !== "" && status !== "ready" && status !== "checking";
 }
 
+export function providerSetupIsChecking(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  const status = normalizedProviderStatus(providerSetup?.status);
+  return status === "" || status === "checking";
+}
+
 export function normalizedProviderStatus(value?: string) {
   return value?.trim().toLowerCase().replace(/^provider_/, "") || "";
 }

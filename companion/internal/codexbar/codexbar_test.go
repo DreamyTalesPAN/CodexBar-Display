@@ -1239,6 +1239,9 @@ func TestFetchAllProvidersKeepsFirstRunPendingWhenEnableFails(t *testing.T) {
 	if !firstRunProviderSetupPending(configPath) {
 		t.Fatal("failed provider enable consumed the pending marker")
 	}
+	if state := firstRunProviderSetupState(configPath); state != firstRunProviderSetupFailedState {
+		t.Fatalf("failed provider enable must publish recovery state, got %q", state)
+	}
 }
 
 func TestFetchAllProvidersKeepsFirstRunPendingAfterTimedOutPartialAnswer(t *testing.T) {
@@ -1262,6 +1265,9 @@ func TestFetchAllProvidersKeepsFirstRunPendingAfterTimedOutPartialAnswer(t *test
 	}
 	if !firstRunProviderSetupPending(configPath) {
 		t.Fatal("timed-out first collection consumed the pending marker")
+	}
+	if state := firstRunProviderSetupState(configPath); state != firstRunProviderSetupFailedState {
+		t.Fatalf("timed-out first collection must publish recovery state, got %q", state)
 	}
 }
 
@@ -1310,6 +1316,9 @@ func TestFetchAllProvidersKeepsFirstRunPendingAfterFailedEmptyAnswer(t *testing.
 	}
 	if !firstRunProviderSetupPending(configPath) {
 		t.Fatal("failed empty provider answer consumed the pending marker")
+	}
+	if state := firstRunProviderSetupState(configPath); state != firstRunProviderSetupFailedState {
+		t.Fatalf("failed empty provider answer must publish recovery state, got %q", state)
 	}
 }
 

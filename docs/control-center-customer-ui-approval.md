@@ -5,6 +5,22 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-25 — First AI provider check finishes before theme selection
+
+- User approval: During the clean-Mac PR #406 rehearsal, the user observed that
+  the mandatory theme chooser appeared while the first 65-provider check was
+  still running, making the selected theme remain on `Installing` for more than
+  two minutes. The user explicitly required that the provider check finish on
+  the existing AI-usage checking screen before theme selection begins.
+- Approved customer-visible result: On a fresh setup with no installed theme,
+  `Starting AI usage` remains visible until CodexBar's one-time complete provider
+  inventory has settled. Only then does `Choose your VibeTV theme` appear. The
+  theme install no longer overlaps the initial provider scan; existing provider
+  recovery, theme choices, install progress, and Overview entry remain unchanged.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`, their
+  regression tests, the Companion provider-setup gate and tests, and this
+  approval record.
+
 ## 2026-08-13 — Collapsed sidebar click opens Appearance directly
 
 - User approval: Continuation of the standing instruction to fix CI and the

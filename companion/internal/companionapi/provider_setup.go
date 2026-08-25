@@ -84,6 +84,12 @@ func (s *Server) providerSetupWithFreshUsage(setup codexbar.ProviderSetup, now t
 	if s == nil || s.loadUsage == nil {
 		return setup
 	}
+	// The fresh config's complete inventory scan owns the first answer. Reusing
+	// an older usage snapshot here would let the theme chooser overtake that scan
+	// and make the following theme install wait for it instead.
+	if codexbar.ProviderSetupFirstRunPending(setup) {
+		return setup
+	}
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}

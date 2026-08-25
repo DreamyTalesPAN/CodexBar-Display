@@ -322,6 +322,11 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 		firstRunProviderSetupMu.Lock()
 		defer firstRunProviderSetupMu.Unlock()
 		pending = firstRunProviderSetupPending(configPath)
+		if pending {
+			if err := writeFirstRunProviderSetupState(configPath, firstRunProviderSetupPendingState); err != nil {
+				return nil, wrapFetchError(FetchErrorCommand, fmt.Errorf("restart first-run CodexBar provider setup: %w", err))
+			}
+		}
 	}
 	args := []string{"usage", "--json", "--web-timeout", "8"}
 	if pending {
@@ -331,6 +336,9 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	allParsed, parseErr := parseAllProviders(out)
 	if pending {
 		if setupErr := completeFirstRunProviderSetup(ctx, bin, configPath, out, allParsed, err, parseErr); setupErr != nil {
+			if markerErr := writeFirstRunProviderSetupState(configPath, firstRunProviderSetupFailedState); markerErr != nil {
+				setupErr = fmt.Errorf("%w (record failure: %v)", setupErr, markerErr)
+			}
 			return nil, wrapFetchError(FetchErrorCommand, setupErr)
 		}
 	}
