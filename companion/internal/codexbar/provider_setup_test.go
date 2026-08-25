@@ -206,6 +206,46 @@ func TestEnsureConfigDiscardsFirstRunMarkerWhenAnotherConfigWins(t *testing.T) {
 	}
 }
 
+func TestEnsureConfigPreservesFirstRunMarkerWhenParallelBootstrapWins(t *testing.T) {
+	t.Setenv("CODEXBAR_CONFIG", "")
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	originalBootstrap := runConfigBootstrapCommandFn
+	defer func() { runConfigBootstrapCommandFn = originalBootstrap }()
+
+	home := t.TempDir()
+	path := filepath.Join(home, ".codexbar", "config.json")
+	generated := []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`)
+	runConfigBootstrapCommandFn = func(
+		_ context.Context,
+		_ string,
+		_ string,
+		args ...string,
+	) ([]byte, error) {
+		if reflect.DeepEqual(args, []string{"config", "dump", "--format", "json"}) {
+			return generated, nil
+		}
+		if reflect.DeepEqual(args, []string{"config", "validate", "--format", "json"}) {
+			if err := os.WriteFile(path, generated, 0o600); err != nil {
+				t.Fatalf("publish competing bootstrap config: %v", err)
+			}
+			return []byte(`{}`), nil
+		}
+		t.Fatalf("unexpected bootstrap command: %v", args)
+		return nil, nil
+	}
+
+	if _, err := EnsureConfig(home); err != nil {
+		t.Fatalf("EnsureConfig: %v", err)
+	}
+	if !firstRunProviderSetupPending(path) {
+		t.Fatal("losing parallel bootstrap consumed the winner's first-run marker")
+	}
+}
+
 func TestRunUsageCommandInjectsResolvedConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
