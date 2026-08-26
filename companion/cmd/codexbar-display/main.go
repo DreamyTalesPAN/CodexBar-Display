@@ -1255,20 +1255,20 @@ func readDoctorCableCapabilitiesOrigins(origins []string, expectedOwner string) 
 			continue
 		}
 		if !result.OK {
-			lastErr = errors.New("Companion status reported not ok")
+			lastErr = errors.New("companion status reported not ok")
 			continue
 		}
 		owner := strings.TrimSpace(result.Companion.Runtime.ListenerOwner)
 		if owner == "" && expectedOwner != "" && expectedOwner != runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
-			lastErr = errors.New("Companion status did not identify its listener owner")
+			lastErr = errors.New("companion status did not identify its listener owner")
 			continue
 		}
 		if owner != "" && expectedOwner != "" && owner != expectedOwner {
-			lastErr = fmt.Errorf("Companion status belongs to %q, expected %q", owner, expectedOwner)
+			lastErr = fmt.Errorf("companion status belongs to %q, expected %q", owner, expectedOwner)
 			continue
 		}
 		if result.Device.Capabilities == nil {
-			lastErr = errors.New("Companion status did not provide Cable capabilities")
+			lastErr = errors.New("companion status did not provide Cable capabilities")
 			continue
 		}
 		caps := protocol.CapabilitiesFromHello(protocol.DeviceHello{
@@ -1280,17 +1280,17 @@ func readDoctorCableCapabilitiesOrigins(origins []string, expectedOwner string) 
 			Capabilities: *result.Device.Capabilities,
 		})
 		if !caps.Known {
-			lastErr = errors.New("Companion status reported unknown Cable capabilities")
+			lastErr = errors.New("companion status reported unknown Cable capabilities")
 			continue
 		}
 		if !strings.EqualFold(caps.ActiveTransport, "usb") || !strings.EqualFold(caps.ConnectionMode, "cable") {
-			lastErr = fmt.Errorf("Companion status reported transport active=%q mode=%q", caps.ActiveTransport, caps.ConnectionMode)
+			lastErr = fmt.Errorf("companion status reported transport active=%q mode=%q", caps.ActiveTransport, caps.ConnectionMode)
 			continue
 		}
 		return caps, nil
 	}
 	if lastErr == nil {
-		lastErr = errors.New("Companion status unavailable")
+		lastErr = errors.New("companion status unavailable")
 	}
 	return protocol.DeviceCapabilities{}, lastErr
 }
