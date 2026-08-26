@@ -69,6 +69,58 @@ func TestConfiguredConnectionModePrefersRuntimeConfig(t *testing.T) {
 	}
 }
 
+func TestConfiguredConnectionModePreservesLegacyWiFiConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "legacy-vibetv",
+	}); err != nil {
+		t.Fatalf("save legacy runtime config: %v", err)
+	}
+	if got := configuredConnectionMode("usb"); got != "wifi" {
+		t.Fatalf("legacy WiFi target must override the new Cable fallback, got %q", got)
+	}
+}
+
+func TestResolveCycleDevicePersistsFreshCableIdentity(t *testing.T) {
+	cfg := runtimeconfig.Config{}
+	port, _, _, err := resolveCycleDevice("", nil, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig:    func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		saveConfig: func(_ string, next runtimeconfig.Config) error {
+			cfg = next
+			return nil
+		},
+		resolveUSBDevice: func(requested, expectedDeviceID string) (string, error) {
+			if requested != "" || expectedDeviceID != "" {
+				t.Fatalf("fresh Cable resolution received requested=%q expectedDeviceID=%q", requested, expectedDeviceID)
+			}
+			return "/dev/cu.usbserial-vibetv", nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:                     true,
+				DeviceID:                  "fresh-vibetv",
+				ConnectionMode:            "cable",
+				ActiveTransport:           "usb",
+				MaxFrameBytes:             2048,
+				ProtocolVersion:           protocol.ProtocolVersionV2,
+				NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+			}, nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("resolve fresh Cable device: %v", err)
+	}
+	if port != "/dev/cu.usbserial-vibetv" || cfg.ConnectionMode != "cable" || cfg.DeviceID != "fresh-vibetv" {
+		t.Fatalf("fresh Cable identity was not persisted: port=%q cfg=%+v", port, cfg)
+	}
+}
+
 func TestConnectionModeChangeStopsCurrentTransportCycle(t *testing.T) {
 	err := runCycleWithDeps(context.Background(), "", nil, runtimeDeps{
 		transportName: "usb",

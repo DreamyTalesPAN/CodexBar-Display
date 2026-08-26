@@ -660,6 +660,12 @@ func configuredConnectionMode(fallback string) string {
 	if transport := transportForConnectionMode(cfg.ConnectionMode); transport != "" {
 		return transport
 	}
+	// Configs written before connectionMode existed could only describe WiFi.
+	// Preserve that proven customer choice instead of applying a newer Cable
+	// launch fallback to an upgraded legacy installation.
+	if strings.TrimSpace(cfg.DeviceTarget) != "" {
+		return "wifi"
+	}
 	return fallback
 }
 
@@ -783,8 +789,45 @@ func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeD
 		}
 	}
 
+	persistActiveCableIdentity(caps, deps)
 	rememberActiveWiFiTarget(port, caps, state)
 	return port, caps, maxFrameBytesForCaps(caps), nil
+}
+
+func persistActiveCableIdentity(caps protocol.DeviceCapabilities, deps runtimeDeps) {
+	deviceID := strings.TrimSpace(caps.DeviceID)
+	if deps.transportName != "usb" || !caps.Known || deviceID == "" ||
+		!strings.EqualFold(caps.ActiveTransport, "usb") ||
+		!strings.EqualFold(caps.ConnectionMode, "cable") {
+		return
+	}
+	home, err := deps.homeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return
+	}
+	cfg, err := deps.loadConfig(home)
+	if err != nil {
+		deps.logf("runtime event=cable-identity-persist-failed deviceId=%s err=%v\n", deviceID, err)
+		return
+	}
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "wifi" {
+		return
+	}
+	if savedID := strings.TrimSpace(cfg.DeviceID); savedID != "" && !strings.EqualFold(savedID, deviceID) {
+		deps.logf("runtime event=cable-identity-persist-rejected expected=%s observed=%s\n", savedID, deviceID)
+		return
+	}
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" &&
+		strings.EqualFold(cfg.DeviceID, deviceID) {
+		return
+	}
+	cfg.ConnectionMode = "cable"
+	cfg.DeviceID = deviceID
+	if err := deps.saveConfig(home, cfg); err != nil {
+		deps.logf("runtime event=cable-identity-persist-failed deviceId=%s err=%v\n", deviceID, err)
+		return
+	}
+	deps.logf("runtime event=cable-identity-persisted deviceId=%s\n", deviceID)
 }
 
 func wifiDeviceHelloRuntimeError(target string, err error) *RuntimeError {
