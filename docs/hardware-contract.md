@@ -48,6 +48,43 @@ Companion negotiation:
   mode, and `deviceId` match. Port names, alphabetical order, and CH340
   enumeration are never identity. Zero or several matches stop explicitly.
 
+### Safe connection-mode transition
+
+A mode switch is a two-step transaction. The stable target is written to `/s`
+and a five-byte temporary `/cm` record stores the previous and target modes.
+The target mode gets one 60-second boot window to prove the same `deviceId` on
+its new transport:
+
+- Cable confirmation:
+  `{"kind":"request","op":"confirm-connection-mode","deviceId":"..."}`
+- WiFi confirmation: authenticated `POST /api/connection-mode/confirm` with
+  `{"deviceId":"..."}`
+
+Cable starts a switch with the serial request `set-connection-mode`; WiFi uses
+authenticated `POST /api/connection-mode`. A confirmation removes `/cm` and
+makes the target stable. Missing WiFi credentials, failed WiFi association, or
+an expired confirmation window restores the previous mode and reboots once.
+An incomplete power-loss write is discarded on boot when `/cm` does not match
+the mode in `/s`. `legacy-wifi-only` can never start a Cable transition.
+
+Hello advertises `transitionPending`, `transitionFrom`, and `transitionTo`
+inside `capabilities.transport` while confirmation is required. The Companion
+confirms only after identity resolution selected exactly one matching Cable
+device or WiFi rediscovery matched the stored `deviceId`.
+
+Hardware validation on 2026-08-26 used supplier device `16199051` at
+`/dev/cu.usbserial-11230` behind the D6000 dock. The branch binary
+(`fc4e898a7b9932d1cd51fae24eb0bc90f577393b7b8f2d23ae3dcf92be76ed84`,
+479,904-byte image) flashed and hash-verified at 115200 baud. That tested build
+used 475,755 bytes flash and 46,768 bytes RAM. One explicit
+Cable-to-WiFi switch without stored credentials logged
+`wifi_association_failed`, restored Cable once, and returned the same
+`deviceId` with `networkMode=off` and `transitionPending=false`.
+
+The final 60-second-window build uses 475,771 bytes flash and 46,768 bytes RAM;
+its 479,920-byte image hash is
+`c2361122a515fa13c9c1b9422d75cbf22df969c6b8efe0f5fc443237ff6d0698`.
+
 ## Cutover Migration Contract
 
 The connection-mode byte is appended to the existing `/s` record. Shorter

@@ -88,6 +88,46 @@ void test_stored_mode_is_never_reinterpreted() {
       ConnectionModeName(ConnectionMode::kLegacyWifiOnly));
 }
 
+void test_connection_transition_round_trips_both_directions() {
+  uint8_t record[kConnectionTransitionRecordBytes] = {};
+  ConnectionTransition decoded;
+
+  EncodeConnectionTransition(
+      {ConnectionMode::kCable, ConnectionMode::kWifi}, record);
+  TEST_ASSERT_TRUE(DecodeConnectionTransition(record, sizeof(record), decoded));
+  TEST_ASSERT_EQUAL(
+      static_cast<int>(ConnectionMode::kCable),
+      static_cast<int>(decoded.previous));
+  TEST_ASSERT_EQUAL(
+      static_cast<int>(ConnectionMode::kWifi),
+      static_cast<int>(decoded.target));
+
+  EncodeConnectionTransition(
+      {ConnectionMode::kWifi, ConnectionMode::kCable}, record);
+  TEST_ASSERT_TRUE(DecodeConnectionTransition(record, sizeof(record), decoded));
+  TEST_ASSERT_EQUAL(
+      static_cast<int>(ConnectionMode::kWifi),
+      static_cast<int>(decoded.previous));
+  TEST_ASSERT_EQUAL(
+      static_cast<int>(ConnectionMode::kCable),
+      static_cast<int>(decoded.target));
+}
+
+void test_connection_transition_rejects_unsafe_modes_and_corruption() {
+  TEST_ASSERT_FALSE(CanBeginConnectionTransition(
+      ConnectionMode::kLegacyWifiOnly, ConnectionMode::kCable));
+  TEST_ASSERT_FALSE(CanBeginConnectionTransition(
+      ConnectionMode::kCable, ConnectionMode::kCable));
+
+  uint8_t record[kConnectionTransitionRecordBytes] = {};
+  ConnectionTransition decoded;
+  EncodeConnectionTransition(
+      {ConnectionMode::kCable, ConnectionMode::kWifi}, record);
+  record[0] = 0;
+  TEST_ASSERT_FALSE(DecodeConnectionTransition(record, sizeof(record), decoded));
+  TEST_ASSERT_FALSE(DecodeConnectionTransition(record, sizeof(record) - 1, decoded));
+}
+
 }  // namespace
 
 void setUp() {}
@@ -105,5 +145,7 @@ int main(int, char**) {
   RUN_TEST(test_cutover_migrates_legacy_state_once);
   RUN_TEST(test_factory_fresh_cutover_device_starts_in_cable);
   RUN_TEST(test_stored_mode_is_never_reinterpreted);
+  RUN_TEST(test_connection_transition_round_trips_both_directions);
+  RUN_TEST(test_connection_transition_rejects_unsafe_modes_and_corruption);
   return UNITY_END();
 }

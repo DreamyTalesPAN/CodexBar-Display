@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 namespace codexbar_display {
@@ -15,6 +16,13 @@ enum class ConnectionMode : uint8_t {
   kCable = 1,
   kWifi = 2,
   kLegacyWifiOnly = 3,
+};
+
+constexpr size_t kConnectionTransitionRecordBytes = 5;
+
+struct ConnectionTransition {
+  ConnectionMode previous = ConnectionMode::kUnspecified;
+  ConnectionMode target = ConnectionMode::kUnspecified;
 };
 
 inline ConnectionMode DecodeConnectionMode(int value) {
@@ -45,6 +53,44 @@ inline bool UsesWifi(ConnectionMode mode) {
 
 inline bool SupportsCable(ConnectionMode mode) {
   return mode == ConnectionMode::kCable || mode == ConnectionMode::kWifi;
+}
+
+inline bool IsSwitchableConnectionMode(ConnectionMode mode) {
+  return mode == ConnectionMode::kCable || mode == ConnectionMode::kWifi;
+}
+
+inline bool CanBeginConnectionTransition(ConnectionMode current, ConnectionMode target) {
+  return IsSwitchableConnectionMode(current) &&
+         IsSwitchableConnectionMode(target) &&
+         current != target;
+}
+
+inline void EncodeConnectionTransition(
+    const ConnectionTransition& transition,
+    uint8_t* record) {
+  record[0] = 'C';
+  record[1] = 'M';
+  record[2] = 1;
+  record[3] = static_cast<uint8_t>(transition.previous);
+  record[4] = static_cast<uint8_t>(transition.target);
+}
+
+inline bool DecodeConnectionTransition(
+    const uint8_t* record,
+    size_t length,
+    ConnectionTransition& transition) {
+  if (record == nullptr || length != kConnectionTransitionRecordBytes ||
+      record[0] != 'C' || record[1] != 'M' || record[2] != 1) {
+    return false;
+  }
+  const ConnectionMode previous = DecodeConnectionMode(record[3]);
+  const ConnectionMode target = DecodeConnectionMode(record[4]);
+  if (!CanBeginConnectionTransition(previous, target)) {
+    return false;
+  }
+  transition.previous = previous;
+  transition.target = target;
+  return true;
 }
 
 inline const char* ConnectionModeName(ConnectionMode mode) {

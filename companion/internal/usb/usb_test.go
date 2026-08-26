@@ -3,6 +3,8 @@ package usb
 import (
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -245,6 +247,38 @@ func TestDeviceHelloUsesRequestWithoutResetProbe(t *testing.T) {
 	}
 	if len(port.writePayloads) != 1 || string(port.writePayloads[0]) != string(helloRequestLine) {
 		t.Fatalf("expected one hello request, got %#v", port.writePayloads)
+	}
+}
+
+func TestResolverConfirmsPendingCableTransitionAfterIdentityMatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cu.usbserial-vibetv")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatalf("create serial candidate: %v", err)
+	}
+	port := newMockSerialPort()
+	helloLine := []byte(
+		`{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"14799300","capabilities":{"transport":{"active":"usb","mode":"cable","transitionPending":true,"transitionFrom":"wifi","transitionTo":"cable"}}}` + "\n",
+	)
+	port.readQueue = [][]byte{helloLine[:100], helloLine[100:]}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener: &mockOpener{portsByPath: map[string]SerialPort{path: port}},
+		Sleep:  func(time.Duration) {},
+	})
+	defer sender.Close()
+
+	resolved, err := sender.ResolvePort(path, "14799300")
+	if err != nil {
+		t.Fatalf("resolve pending Cable device: %v", err)
+	}
+	if resolved != path {
+		t.Fatalf("resolved %q, expected %q", resolved, path)
+	}
+	if len(port.writePayloads) != 2 {
+		t.Fatalf("expected hello plus confirmation requests, got %#v", port.writePayloads)
+	}
+	want := "{\"kind\":\"request\",\"op\":\"confirm-connection-mode\",\"deviceId\":\"14799300\"}\n"
+	if got := string(port.writePayloads[1]); got != want {
+		t.Fatalf("unexpected confirmation request %q", got)
 	}
 }
 

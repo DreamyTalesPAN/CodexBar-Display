@@ -61,7 +61,7 @@ func ResolvePort(explicit string) (string, error) {
 // names are only candidates: they are never remembered, ranked, or treated as
 // identity.
 func ResolveVibeTVPort(explicit, expectedDeviceID string) (string, error) {
-	return resolveVibeTVPort(explicit, expectedDeviceID, defaultSender.DeviceHello)
+	return defaultSender.ResolvePort(explicit, expectedDeviceID)
 }
 
 func resolveVibeTVPort(

@@ -89,6 +89,9 @@ const char kCustomerAppHost[] = "app.vibetv.shop";
 const char kCustomerAppUrl[] = "https://app.vibetv.shop";
 const char kDeviceSettingsPath[] = "/s";
 const char kDeviceSettingsTemporaryPath[] = "/s.tmp";
+const char kConnectionTransitionPath[] = "/cm";
+const char kConnectionTransitionTemporaryPath[] = "/cm.tmp";
+constexpr unsigned long kConnectionTransitionConfirmationMs = 60000UL;
 // The device settings record stays append-only: brightness byte, learned UTC
 // offset, standby, then optional next UTC-offset transitions. A shorter file is
 // an older record, so every reader must length-check its own section instead of
@@ -172,6 +175,7 @@ struct RuntimeRenderDiagnostics {
 
 namespace standby = codexbar_display::esp8266::standby;
 namespace screensaver_preview = codexbar_display::esp8266::screensaver_preview;
+namespace device_settings = codexbar_display::esp8266::device_settings;
 
 struct DeviceSettings {
   uint8_t brightnessPercent = kDefaultBrightnessPercent;
@@ -219,6 +223,7 @@ bool savedWifiCredentialsAvailable = false;
 codexbar_display::esp8266::wifi_recovery::State wifiSetupRecoveryState;
 bool rebootPending = false;
 void applyWifiInteropPhyMode();
+void scheduleReboot(const char* reason);
 unsigned long rebootAtMs = 0;
 unsigned long lastFrameAcceptedAtMs = 0;
 bool pendingHttpRender = false;
@@ -233,6 +238,9 @@ bool firmwareUpdateNoticeDirty = false;
 RuntimeRenderDiagnostics renderDiagnostics;
 DeviceSettings deviceSettings;
 bool deviceSettingsRecordAvailable = false;
+device_settings::ConnectionTransition connectionTransition;
+bool connectionTransitionPending = false;
+unsigned long connectionTransitionStartedAtMs = 0;
 String deviceAuthToken;
 String deviceID;
 String bootID;
@@ -416,6 +424,176 @@ bool saveDeviceSettings() {
     return false;
   }
   return true;
+}
+
+bool clearConnectionTransition() {
+  if (!LittleFS.begin()) {
+    return false;
+  }
+  if (LittleFS.exists(kConnectionTransitionTemporaryPath)) {
+    LittleFS.remove(kConnectionTransitionTemporaryPath);
+  }
+  if (LittleFS.exists(kConnectionTransitionPath) &&
+      !LittleFS.remove(kConnectionTransitionPath)) {
+    return false;
+  }
+  connectionTransition = {};
+  connectionTransitionPending = false;
+  connectionTransitionStartedAtMs = 0;
+  return true;
+}
+
+bool saveConnectionTransition(const device_settings::ConnectionTransition& transition) {
+  if (!LittleFS.begin()) {
+    return false;
+  }
+  File file = LittleFS.open(kConnectionTransitionTemporaryPath, "w");
+  if (!file) {
+    return false;
+  }
+  uint8_t record[device_settings::kConnectionTransitionRecordBytes] = {};
+  device_settings::EncodeConnectionTransition(transition, record);
+  const size_t written = file.write(record, sizeof(record));
+  file.close();
+  if (written != sizeof(record)) {
+    LittleFS.remove(kConnectionTransitionTemporaryPath);
+    return false;
+  }
+  if (!LittleFS.rename(kConnectionTransitionTemporaryPath, kConnectionTransitionPath)) {
+    LittleFS.remove(kConnectionTransitionTemporaryPath);
+    return false;
+  }
+  return true;
+}
+
+bool loadConnectionTransition() {
+  connectionTransition = {};
+  connectionTransitionPending = false;
+  connectionTransitionStartedAtMs = 0;
+  if (!LittleFS.begin() || !LittleFS.exists(kConnectionTransitionPath)) {
+    return false;
+  }
+  File file = LittleFS.open(kConnectionTransitionPath, "r");
+  if (!file) {
+    return false;
+  }
+  uint8_t record[device_settings::kConnectionTransitionRecordBytes] = {};
+  const int readBytes = file.read(record, sizeof(record));
+  file.close();
+  if (!device_settings::DecodeConnectionTransition(
+          record, static_cast<size_t>(readBytes), connectionTransition) ||
+      deviceSettings.connectionMode != connectionTransition.target) {
+    Serial.println("connection_mode_transition_discarded reason=invalid_or_incomplete");
+    (void)clearConnectionTransition();
+    return false;
+  }
+  connectionTransitionPending = true;
+  connectionTransitionStartedAtMs = millis();
+  Serial.printf(
+      "connection_mode_transition_loaded from=%s to=%s confirmation_ms=%lu\n",
+      device_settings::ConnectionModeName(connectionTransition.previous),
+      device_settings::ConnectionModeName(connectionTransition.target),
+      kConnectionTransitionConfirmationMs);
+  return true;
+}
+
+device_settings::ConnectionMode requestedConnectionMode(const String& name) {
+  if (name == "cable") {
+    return device_settings::ConnectionMode::kCable;
+  }
+  if (name == "wifi") {
+    return device_settings::ConnectionMode::kWifi;
+  }
+  return device_settings::ConnectionMode::kUnspecified;
+}
+
+bool beginConnectionTransition(
+    device_settings::ConnectionMode target,
+    String& error) {
+  const device_settings::ConnectionMode previous = deviceSettings.connectionMode;
+  if (connectionTransitionPending) {
+    error = "connection mode transition already pending";
+    return false;
+  }
+  if (!device_settings::CanBeginConnectionTransition(previous, target)) {
+    error = previous == device_settings::ConnectionMode::kLegacyWifiOnly
+                ? "Cable is not supported on this migrated device"
+                : "invalid connection mode transition";
+    return false;
+  }
+
+  const device_settings::ConnectionTransition transition{previous, target};
+  if (!saveConnectionTransition(transition)) {
+    error = "failed to persist connection mode transition";
+    return false;
+  }
+  deviceSettings.connectionMode = target;
+  if (!saveDeviceSettings()) {
+    deviceSettings.connectionMode = previous;
+    (void)clearConnectionTransition();
+    error = "failed to persist connection mode";
+    return false;
+  }
+  connectionTransition = transition;
+  connectionTransitionPending = true;
+  connectionTransitionStartedAtMs = millis();
+  Serial.printf(
+      "connection_mode_transition_started from=%s to=%s\n",
+      device_settings::ConnectionModeName(previous),
+      device_settings::ConnectionModeName(target));
+  return true;
+}
+
+bool confirmConnectionTransition(const String& expectedDeviceID, String& status) {
+  if (expectedDeviceID != deviceID) {
+    status = "deviceId does not match";
+    return false;
+  }
+  if (!connectionTransitionPending) {
+    status = "stable";
+    return true;
+  }
+  if (!clearConnectionTransition()) {
+    status = "failed to persist connection mode confirmation";
+    return false;
+  }
+  status = "confirmed";
+  Serial.printf(
+      "connection_mode_transition_confirmed mode=%s\n",
+      device_settings::ConnectionModeName(deviceSettings.connectionMode));
+  return true;
+}
+
+bool rollbackConnectionTransition(const char* reason) {
+  if (!connectionTransitionPending) {
+    return true;
+  }
+  const device_settings::ConnectionMode failedTarget = connectionTransition.target;
+  deviceSettings.connectionMode = connectionTransition.previous;
+  if (!saveDeviceSettings()) {
+    deviceSettings.connectionMode = failedTarget;
+    connectionTransitionStartedAtMs = millis();
+    Serial.printf("connection_mode_rollback_failed reason=%s\n", reason);
+    return false;
+  }
+  (void)clearConnectionTransition();
+  Serial.printf(
+      "connection_mode_rolled_back failed=%s restored=%s reason=%s\n",
+      device_settings::ConnectionModeName(failedTarget),
+      device_settings::ConnectionModeName(deviceSettings.connectionMode),
+      reason);
+  scheduleReboot("connection_mode_rollback");
+  return true;
+}
+
+void maintainConnectionTransition() {
+  if (!connectionTransitionPending || rebootPending) {
+    return;
+  }
+  if ((millis() - connectionTransitionStartedAtMs) >=
+      kConnectionTransitionConfirmationMs) {
+    (void)rollbackConnectionTransition("confirmation_timeout");
+  }
 }
 
 bool resolveInitialConnectionMode(bool hasLegacyState) {
@@ -1212,7 +1390,16 @@ const char* transportCapabilitiesJSON(const char* activeTransport, bool compact 
   json += "\"wifi\"],\"mode\":\"";
   json += codexbar_display::esp8266::device_settings::ConnectionModeName(
       deviceSettings.connectionMode);
-  json += "\"}}";
+  json += "\",\"transitionPending\":";
+  json += connectionTransitionPending ? "true" : "false";
+  if (connectionTransitionPending) {
+    json += ",\"transitionFrom\":\"";
+    json += device_settings::ConnectionModeName(connectionTransition.previous);
+    json += "\",\"transitionTo\":\"";
+    json += device_settings::ConnectionModeName(connectionTransition.target);
+    json += "\"";
+  }
+  json += "}}";
   return json.c_str();
 }
 
@@ -1621,6 +1808,78 @@ void handleHello() {
   webServer.send(200, "application/json", out);
 }
 
+bool parseConnectionModeRequest(
+    device_settings::ConnectionMode& mode,
+    String& expectedDeviceID,
+    String& error) {
+  JsonDocument doc;
+  if (deserializeJson(doc, webServer.arg("plain"))) {
+    error = "invalid JSON body";
+    return false;
+  }
+  expectedDeviceID = String(doc["deviceId"] | "");
+  mode = requestedConnectionMode(String(doc["mode"] | ""));
+  if (expectedDeviceID != deviceID) {
+    error = "deviceId does not match";
+    return false;
+  }
+  if (mode == device_settings::ConnectionMode::kUnspecified) {
+    error = "mode must be cable or wifi";
+    return false;
+  }
+  return true;
+}
+
+void handleConnectionModeSwitch() {
+  addCorsHeaders();
+  if (!requireWriteAuth()) {
+    return;
+  }
+  device_settings::ConnectionMode target =
+      device_settings::ConnectionMode::kUnspecified;
+  String expectedDeviceID;
+  String error;
+  if (!parseConnectionModeRequest(target, expectedDeviceID, error) ||
+      !beginConnectionTransition(target, error)) {
+    webServer.send(400, "text/plain; charset=utf-8", error);
+    return;
+  }
+  String out;
+  out.reserve(180);
+  out += "{\"ok\":true,\"deviceId\":\"";
+  out += deviceID;
+  out += "\",\"mode\":\"";
+  out += device_settings::ConnectionModeName(target);
+  out += "\",\"confirmationRequired\":true}";
+  webServer.send(202, "application/json", out);
+  scheduleReboot("connection_mode_switch");
+}
+
+void handleConnectionModeConfirmation() {
+  addCorsHeaders();
+  if (!requireWriteAuth()) {
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, webServer.arg("plain"))) {
+    webServer.send(400, "text/plain; charset=utf-8", "invalid JSON body");
+    return;
+  }
+  String status;
+  if (!confirmConnectionTransition(String(doc["deviceId"] | ""), status)) {
+    webServer.send(409, "text/plain; charset=utf-8", status);
+    return;
+  }
+  String out = "{\"ok\":true,\"deviceId\":\"";
+  out += deviceID;
+  out += "\",\"mode\":\"";
+  out += device_settings::ConnectionModeName(deviceSettings.connectionMode);
+  out += "\",\"status\":\"";
+  out += status;
+  out += "\"}";
+  webServer.send(200, "application/json", out);
+}
+
 void emitSerialStatus() {
   String out;
   out.reserve(240);
@@ -1633,7 +1892,9 @@ void emitSerialStatus() {
   out += "\",\"connectionMode\":\"";
   out += codexbar_display::esp8266::device_settings::ConnectionModeName(
       deviceSettings.connectionMode);
-  out += "\",\"transport\":\"usb\",\"hasFrame\":";
+  out += "\",\"transitionPending\":";
+  out += connectionTransitionPending ? "true" : "false";
+  out += ",\"transport\":\"usb\",\"hasFrame\":";
   out += codexbar_display::app::HasFrame(runtimeCtx) ? "true" : "false";
   out += "}";
   Serial.println(out);
@@ -1654,6 +1915,47 @@ bool handleSerialControlLine(const String& line) {
     codexbar_display::app::EmitDeviceHello(makeTransportConfig("usb"));
   } else if (op == "status") {
     emitSerialStatus();
+  } else if (op == "set-connection-mode") {
+    const String expectedDeviceID = String(doc["deviceId"] | "");
+    const device_settings::ConnectionMode target =
+        requestedConnectionMode(String(doc["mode"] | ""));
+    String error;
+    if (expectedDeviceID != deviceID) {
+      error = "deviceId does not match";
+    } else if (!beginConnectionTransition(target, error)) {
+      // beginConnectionTransition supplies the customer-safe reason.
+    }
+    if (error.length() > 0) {
+      String out = "{\"kind\":\"error\",\"code\":\"connection-mode-rejected\",\"message\":\"";
+      out += jsonEscape(error);
+      out += "\"}";
+      Serial.println(out);
+    } else {
+      String out = "{\"kind\":\"connection-mode\",\"status\":\"switching\",\"deviceId\":\"";
+      out += deviceID;
+      out += "\",\"mode\":\"";
+      out += device_settings::ConnectionModeName(target);
+      out += "\",\"confirmationRequired\":true}";
+      Serial.println(out);
+      scheduleReboot("connection_mode_switch");
+    }
+  } else if (op == "confirm-connection-mode") {
+    String status;
+    if (!confirmConnectionTransition(String(doc["deviceId"] | ""), status)) {
+      String out = "{\"kind\":\"error\",\"code\":\"connection-mode-confirmation-rejected\",\"message\":\"";
+      out += jsonEscape(status);
+      out += "\"}";
+      Serial.println(out);
+    } else {
+      String out = "{\"kind\":\"connection-mode\",\"status\":\"";
+      out += status;
+      out += "\",\"deviceId\":\"";
+      out += deviceID;
+      out += "\",\"mode\":\"";
+      out += device_settings::ConnectionModeName(deviceSettings.connectionMode);
+      out += "\"}";
+      Serial.println(out);
+    }
   } else {
     String out;
     out.reserve(100);
@@ -3246,6 +3548,11 @@ void startHttpServer() {
   webServer.on("/hello", HTTP_GET, handleHello);
   webServer.on("/health", HTTP_GET, handleHealth);
   webServer.on("/api/settings", HTTP_POST, handleSettingsAPI);
+  webServer.on("/api/connection-mode", HTTP_POST, handleConnectionModeSwitch);
+  webServer.on(
+      "/api/connection-mode/confirm",
+      HTTP_POST,
+      handleConnectionModeConfirmation);
   webServer.on("/api/pair", HTTP_POST, handlePairingAPI);
   webServer.on("/assets", HTTP_GET, handleAssetsList);
   webServer.on(
@@ -3450,6 +3757,7 @@ void setup() {
   const bool hasLegacyState =
       deviceSettingsRecordAvailable || hasSavedWifi || deviceAuthConfigured();
   (void)resolveInitialConnectionMode(hasLegacyState);
+  (void)loadConnectionTransition();
   Serial.printf(
       "connection_mode_loaded mode=%s cable_supported=%d\n",
       codexbar_display::esp8266::device_settings::ConnectionModeName(
@@ -3500,6 +3808,12 @@ void setup() {
     // lwIP keeps the system clock corrected without any retry code here.
     configTime(0, 0, "pool.ntp.org");
     startHttpServer();
+  } else if (connectionTransitionPending) {
+    const unsigned long renderStartUs = micros();
+    renderer.DrawStatus(runtimeCtx, "VIBE TV", "WiFi unavailable", "Returning to Cable");
+    recordRenderFull("connection_mode_rollback", micros() - renderStartUs);
+    waitStatusRendered = true;
+    (void)rollbackConnectionTransition("wifi_association_failed");
   } else {
     startSetupAccessPoint();
   }
@@ -3522,6 +3836,7 @@ void loop() {
     webServer.handleClient();
   }
   handleRawOtaClient();
+  maintainConnectionTransition();
   maintainWifiConnection();
   if (!otaUploadInProgress && !assetUploadInProgress) {
     maintainDeviceClock();
