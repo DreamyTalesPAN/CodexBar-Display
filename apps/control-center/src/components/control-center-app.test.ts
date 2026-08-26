@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { mergeDeviceInfo } from "./control-center-app";
+import {
+  connectionModeChoiceStatus,
+  mergeDeviceInfo,
+} from "./control-center-app";
 import { deviceAwaitsProviderSetup } from "./control-center-types";
 
 const TARGET = "http://192.168.178.153";
@@ -75,6 +78,35 @@ describe("device snapshot funnel", () => {
   it("does not invent an incident that never existed", () => {
     const quiet = withStream({ running: true, healthy: false });
     expect(mergeDeviceInfo(quiet, quiet).stream?.errorCode).toBeUndefined();
+  });
+});
+
+describe("connection mode choice status", () => {
+  it("keeps observing an empty early startup snapshot", () => {
+    expect(
+      connectionModeChoiceStatus({
+        connectionModeChoiceRequired: false,
+        device: { connected: false },
+      }),
+    ).toEqual({ required: true, resolved: false });
+  });
+
+  it("keeps the chooser once Cable auto-binding requires it", () => {
+    expect(
+      connectionModeChoiceStatus({
+        connectionModeChoiceRequired: true,
+        device: { ...base, target: "Cable" },
+      }),
+    ).toEqual({ required: true, resolved: true });
+  });
+
+  it("accepts an existing saved device as a completed choice", () => {
+    expect(
+      connectionModeChoiceStatus({
+        connectionModeChoiceRequired: false,
+        device: base,
+      }),
+    ).toEqual({ required: false, resolved: true });
   });
 });
 

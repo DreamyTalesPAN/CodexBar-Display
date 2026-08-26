@@ -3351,13 +3351,16 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	}
 
 	cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
+		identityChanged := !strings.EqualFold(current.DeviceID, hello.DeviceID)
 		current.ConnectionMode = "cable"
 		current.CableAutoBindDisabled = false
 		current.ConnectionModeChoiceRequired = false
 		current.DeviceTransports = supportedTransports
 		current.DeviceID = strings.TrimSpace(hello.DeviceID)
-		current.DeviceTarget = ""
-		current.DeviceToken = ""
+		if identityChanged {
+			current.DeviceTarget = ""
+			current.DeviceToken = ""
+		}
 	})
 	if err != nil {
 		writeInternalError(w, err)

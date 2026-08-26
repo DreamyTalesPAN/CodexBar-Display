@@ -7402,6 +7402,48 @@ func TestSetupConnectionModeExplicitlySelectsCableAfterReset(t *testing.T) {
 	}
 }
 
+func TestSetupConnectionModePreservesPairingForSameDeviceOnCable(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "wifi",
+		DeviceID:       "paired-vibetv",
+		DeviceTarget:   "http://192.168.178.72",
+		DeviceToken:    "pair-token",
+	})
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/cu.usbserial-vibetv", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			DeviceID: "paired-vibetv",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "wifi", Supported: []string{"usb", "wifi"}},
+			},
+		}, nil
+	}
+	server.setCableConnectionMode = func(_, deviceID, mode string) error {
+		if deviceID != "paired-vibetv" || mode != "cable" {
+			t.Fatalf("unexpected Cable transition device=%q mode=%q", deviceID, mode)
+		}
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceTarget != "http://192.168.178.72" || cfg.DeviceToken != "pair-token" {
+		t.Fatalf("same-device Cable selection discarded WiFi authentication: %+v", cfg)
+	}
+}
+
 func TestSetupResetRejectsActiveFirmwareUpdate(t *testing.T) {
 	initial := runtimeconfig.Config{
 		DeviceTarget: "http://192.168.178.72",
