@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 var knownBinaryPaths = []string{
@@ -310,10 +311,43 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	if err := CheckMinimumVersion(ctx, bin); err != nil {
 		return nil, wrapFetchError(FetchErrorVersion, err)
 	}
+	configPath, err := EnsureConfig("")
+	if err != nil {
+		return nil, wrapFetchError(FetchErrorCommand, err)
+	}
+	ctx = context.WithValue(ctx, configPathContextKey{}, configPath)
 
 	timeout := commandTimeout()
-	out, err := runUsageCommandFn(ctx, timeout, bin, "usage", "--json", "--web-timeout", "8")
+	pending := firstRunProviderSetupPending(configPath)
+	if pending {
+		firstRunProviderSetupMu.Lock()
+		defer firstRunProviderSetupMu.Unlock()
+		setupLock, lockErr := writerlock.AcquireAtContext(ctx, firstRunMarkerPath(configPath)+".lock")
+		if lockErr != nil {
+			return nil, wrapFetchError(FetchErrorCommand, fmt.Errorf("lock first-run CodexBar provider setup: %w", lockErr))
+		}
+		defer setupLock.Release()
+		pending = firstRunProviderSetupPending(configPath)
+		if pending {
+			if err := writeFirstRunProviderSetupState(configPath, firstRunProviderSetupPendingState); err != nil {
+				return nil, wrapFetchError(FetchErrorCommand, fmt.Errorf("restart first-run CodexBar provider setup: %w", err))
+			}
+		}
+	}
+	args := []string{"usage", "--json", "--web-timeout", "8"}
+	if pending {
+		args = append(args, "--provider", "all")
+	}
+	out, err := runUsageCommandFn(ctx, timeout, bin, args...)
 	allParsed, parseErr := parseAllProviders(out)
+	if pending {
+		if setupErr := completeFirstRunProviderSetup(ctx, bin, configPath, out, allParsed, err, parseErr); setupErr != nil {
+			if markerErr := writeFirstRunProviderSetupState(configPath, firstRunProviderSetupFailedState); markerErr != nil {
+				setupErr = fmt.Errorf("%w (record failure: %v)", setupErr, markerErr)
+			}
+			return nil, wrapFetchError(FetchErrorCommand, setupErr)
+		}
+	}
 
 	if err != nil {
 		if len(bytes.TrimSpace(out)) == 0 {
@@ -331,6 +365,78 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 	}
 
 	return allParsed, nil
+}
+
+func completeFirstRunProviderSetup(
+	ctx context.Context,
+	bin string,
+	configPath string,
+	raw []byte,
+	providers []ParsedFrame,
+	commandErr error,
+	parseErr error,
+) error {
+	if !completeProviderCommandExit(commandErr) {
+		return fmt.Errorf("first-run CodexBar provider collection: %w", commandErr)
+	}
+	if errors.Is(parseErr, ErrNoProviders) && completeEmptyProviderAnswer(raw) {
+		if commandErr != nil {
+			return fmt.Errorf("first-run CodexBar provider collection: %w", commandErr)
+		}
+	} else if parseErr != nil {
+		return fmt.Errorf("first-run CodexBar provider collection: %w", parseErr)
+	}
+
+	enabled := make(map[string]struct{}, len(providers))
+	for _, provider := range providers {
+		if provider.Frame.UsageUnavailable {
+			continue
+		}
+		id := strings.ToLower(strings.TrimSpace(provider.Provider))
+		if id == "" {
+			id = strings.ToLower(strings.TrimSpace(provider.Frame.Provider))
+		}
+		if id == "" {
+			return errors.New("first-run CodexBar provider has no identity")
+		}
+		if _, exists := enabled[id]; exists {
+			continue
+		}
+		if _, err := runUsageCommandFn(ctx, 15*time.Second, bin, "config", "enable", "--provider", id); err != nil {
+			return fmt.Errorf("enable first-run CodexBar provider %s: %w", id, err)
+		}
+		enabled[id] = struct{}{}
+	}
+	if err := os.Remove(firstRunMarkerPath(configPath)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("complete first-run CodexBar provider setup: %w", err)
+	}
+	return nil
+}
+
+func completeProviderCommandExit(err error) bool {
+	if err == nil {
+		return true
+	}
+	var exitErr interface{ ExitCode() int }
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 1
+}
+
+func completeEmptyProviderAnswer(raw []byte) bool {
+	var root any
+	if json.Unmarshal(raw, &root) != nil {
+		return false
+	}
+	switch value := root.(type) {
+	case []any:
+		return len(value) == 0
+	case map[string]any:
+		for _, key := range []string{"providers", "items", "data", "results"} {
+			if providers, ok := value[key].([]any); ok {
+				return len(providers) == 0
+			}
+		}
+	}
+	return false
 }
 
 // FetchFirstFrame returns one selected frame for one-shot calls (doctor/setup).
@@ -417,7 +523,11 @@ func runUsageCommand(parent context.Context, timeout time.Duration, bin string, 
 
 	cmd := exec.CommandContext(cmdCtx, bin, args...)
 	cmd.Env = commandEnvironment(configPathFromContext(parent))
-	return cmd.Output()
+	out, err := cmd.Output()
+	if err != nil && cmdCtx.Err() != nil {
+		return out, cmdCtx.Err()
+	}
+	return out, err
 }
 
 func usageBarsShowUsedFromEnv() (bool, bool) {
