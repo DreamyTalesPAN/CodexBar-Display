@@ -1333,7 +1333,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			observedID := strings.TrimSpace(hello.DeviceID)
 			identityMismatch = configuredID != "" && observedID != "" &&
 				!strings.EqualFold(configuredID, observedID)
-			if !identityMismatch {
+			transitionConfirmed := tokenRejected || s.confirmPendingWiFiTransition(
+				r.Context(), cfg.DeviceTarget, cfg.DeviceToken, configuredID, hello,
+			) == nil
+			if !identityMismatch && transitionConfirmed {
 				reachable = true
 				device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
 				device.Active = configuredID != "" && strings.EqualFold(configuredID, observedID)
