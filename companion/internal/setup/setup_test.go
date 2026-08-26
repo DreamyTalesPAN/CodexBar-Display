@@ -1608,6 +1608,56 @@ func TestApplyRuntimeConfigRefusesUnconfirmedCableToWiFiSwitch(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsRejectsUnconfirmedWiFiBeforeMutatingSetup(t *testing.T) {
+	home := t.TempDir()
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "cable-vibetv",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mutated := false
+	err := runWithDeps(context.Background(), Options{
+		Transport: "wifi",
+		Target:    "192.168.178.66",
+		AssumeYes: true,
+		SkipFlash: true,
+	}, deps{
+		stdout:  &bytes.Buffer{},
+		homeDir: func() (string, error) { return home, nil },
+		executablePath: func() (string, error) {
+			mutated = true
+			return "", errors.New("must not resolve executable")
+		},
+		findCodexbar: func() (string, error) {
+			mutated = true
+			return "", errors.New("must not install CodexBar")
+		},
+		discoverWiFi: func(context.Context, []string) (transportlayer.WiFiDiscoveryResult, error) {
+			mutated = true
+			return transportlayer.WiFiDiscoveryResult{}, errors.New("must not discover WiFi")
+		},
+		runCommand: func(context.Context, string, string, ...string) (string, error) {
+			mutated = true
+			return "", errors.New("must not stop launch agent")
+		},
+	})
+	var stepErr *StepError
+	if !errors.As(err, &stepErr) || stepErr.Step != "validate-connection-mode" || !strings.Contains(err.Error(), "must confirm") {
+		t.Fatalf("expected early connection-mode rejection, got %v", err)
+	}
+	if mutated {
+		t.Fatal("invalid WiFi setup reached a mutating setup dependency")
+	}
+	cfg, loadErr := runtimeconfig.Load(home)
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.DeviceID != "cable-vibetv" {
+		t.Fatalf("invalid WiFi setup changed runtime config: %+v", cfg)
+	}
+}
+
 func TestResolveFirmwareEnvironmentRejectsUnsupported(t *testing.T) {
 	if _, ok := ResolveFirmwareEnvironment("esp8266_smalltv_st7789_crt"); ok {
 		t.Fatalf("expected legacy compile-theme env to be rejected")

@@ -7413,6 +7413,58 @@ func TestSetupConnectionModeRejectsWiFiForCableOnlyBoard(t *testing.T) {
 	}
 }
 
+func TestSetupConnectionModeReselectsLegacyWiFiOnlyWithoutTransition(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: true,
+		DeviceTransports:             []string{"wifi"},
+	})
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/cu.usbserial-legacy", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			Board:    "esp8266-smalltv-st7789",
+			DeviceID: "legacy-vibetv",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{
+					Active:    "usb",
+					Mode:      "legacy-wifi-only",
+					Supported: []string{"wifi"},
+				},
+			},
+		}, nil
+	}
+	server.setCableConnectionMode = func(string, string, string) error {
+		t.Fatal("legacy WiFi-only reselection must not start a connection transition")
+		return nil
+	}
+
+	cable := httptest.NewRecorder()
+	cableRequest := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	cableRequest.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(cable, cableRequest)
+	if cable.Code != http.StatusConflict || !strings.Contains(cable.Body.String(), "connection_mode_unsupported") {
+		t.Fatalf("unsupported Cable status=%d body=%s", cable.Code, cable.Body.String())
+	}
+
+	wifi := httptest.NewRecorder()
+	wifiRequest := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	wifiRequest.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(wifi, wifiRequest)
+	if wifi.Code != http.StatusAccepted {
+		t.Fatalf("WiFi reselection status=%d body=%s", wifi.Code, wifi.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceID != "legacy-vibetv" || cfg.ConnectionMode != "" || !cfg.CableAutoBindDisabled || cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("legacy WiFi reselection persisted wrong state: %+v", cfg)
+	}
+}
+
 func TestSetupConnectionModeExplicitlySelectsCableAfterReset(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		ConnectionMode:        "cable",
@@ -7422,7 +7474,13 @@ func TestSetupConnectionModeExplicitlySelectsCableAfterReset(t *testing.T) {
 		return "/dev/cu.usbserial-vibetv", nil
 	}
 	server.readCableHello = func(string) (protocol.DeviceHello, error) {
-		return protocol.DeviceHello{Kind: "hello", DeviceID: "new-cable-vibetv"}, nil
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			DeviceID: "new-cable-vibetv",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Supported: []string{"usb"}},
+			},
+		}, nil
 	}
 	server.setCableConnectionMode = func(port, deviceID, mode string) error {
 		if port != "/dev/cu.usbserial-vibetv" || deviceID != "new-cable-vibetv" || mode != "cable" {

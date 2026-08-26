@@ -119,6 +119,32 @@ func TestResolveVibeTVControlCandidatesAcceptsWiFiModeOverUSB(t *testing.T) {
 	}
 }
 
+func TestResolveVibeTVControlCandidatesAcceptsLegacyWiFiOnlyForReselection(t *testing.T) {
+	port := "/dev/cu.usbserial-legacy-wifi"
+	hello := cableHello("14799300")
+	hello.Capabilities.Transport.Mode = "legacy-wifi-only"
+	hello.Capabilities.Transport.Supported = []string{"wifi"}
+
+	got, err := resolveVibeTVCandidatesForControl(
+		[]string{port},
+		port,
+		"14799300",
+		func(string) (protocol.DeviceHello, error) { return hello, nil },
+		true,
+	)
+	if err != nil || got != port {
+		t.Fatalf("resolve legacy WiFi-only VibeTV for control: got=%q err=%v", got, err)
+	}
+	if _, err := resolveVibeTVCandidates(
+		[]string{port},
+		port,
+		"14799300",
+		func(string) (protocol.DeviceHello, error) { return hello, nil },
+	); errcode.Of(err) != errcode.TransportNoMatchingDevice {
+		t.Fatalf("runtime Cable resolver accepted unsupported legacy WiFi-only mode: %v", err)
+	}
+}
+
 func TestCableSerialCandidatesDropsMacOSTTYAliasOnly(t *testing.T) {
 	ports := []string{
 		"/dev/cu.usbserial-11230",
