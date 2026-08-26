@@ -81,6 +81,43 @@ func TestDiscoverConfirmsPendingWiFiTransitionForExpectedDevice(t *testing.T) {
 	}
 }
 
+func TestStatusConfirmsPendingWiFiTransitionForExpectedDevice(t *testing.T) {
+	var confirmCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = io.WriteString(w, `{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"device-390","networkMode":"station","capabilities":{"transport":{"active":"wifi","mode":"wifi","transitionPending":true,"transitionFrom":"cable","transitionTo":"wifi"}}}`)
+		case "/api/connection-mode/confirm":
+			confirmCalls.Add(1)
+			if r.Method != http.MethodPost || r.Header.Get("X-VibeTV-Token") != "pair-token" {
+				t.Fatalf("unexpected transition confirmation request: method=%s token=%q", r.Method, r.Header.Get("X-VibeTV-Token"))
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/health":
+			_, _ = io.WriteString(w, `{"ok":true}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "wifi",
+		DeviceTarget:   device.URL,
+		DeviceID:       "device-390",
+		DeviceToken:    "pair-token",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo { return displayStreamInfo{} }
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if confirmCalls.Load() != 1 {
+		t.Fatalf("status polling made %d transition confirmations, expected 1", confirmCalls.Load())
+	}
+}
+
 func TestStatusWorksWithoutDevice(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	rec := httptest.NewRecorder()

@@ -14,6 +14,7 @@ import (
 )
 
 const vibeTVBoardID = "esp8266-smalltv-st7789"
+const lilygoVibeTVBoardID = "esp32-lilygo-t-display-s3"
 
 type systemDiscoverer struct{}
 
@@ -137,7 +138,7 @@ func resolveVibeTVCandidates(
 		}
 		hello = hello.Normalize()
 		if hello.Kind != "hello" ||
-			hello.Board != vibeTVBoardID ||
+			!isSupportedCableBoard(hello.Board) ||
 			hello.DeviceID == "" ||
 			hello.Capabilities.Transport.Active != "usb" ||
 			hello.Capabilities.Transport.Mode != "cable" {
@@ -172,5 +173,14 @@ func resolveVibeTVCandidates(
 			"Leave exactly one matching VibeTV connected and retry.",
 			fmt.Errorf("multiple matching VibeTVs: %s", strings.Join(matches, ", ")),
 		)
+	}
+}
+
+func isSupportedCableBoard(board string) bool {
+	switch strings.ToLower(strings.TrimSpace(board)) {
+	case vibeTVBoardID, lilygoVibeTVBoardID:
+		return true
+	default:
+		return false
 	}
 }

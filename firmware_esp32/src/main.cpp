@@ -72,13 +72,22 @@ void setup() {
   renderer.DrawSplash(runtimeCtx);
 
   codexbar_display::app::TransportConfig transportConfig;
+  const uint64_t chipID = ESP.getEfuseMac();
+  char deviceID[17];
+  snprintf(
+      deviceID,
+      sizeof(deviceID),
+      "%04X%08X",
+      static_cast<unsigned int>((chipID >> 32) & 0xFFFF),
+      static_cast<unsigned int>(chipID & 0xFFFFFFFF));
   transportConfig.boardId = CODEXBAR_DISPLAY_BOARD_ID;
+  transportConfig.deviceId = deviceID;
   transportConfig.firmwareVersion = CODEXBAR_DISPLAY_FW_VERSION;
   transportConfig.featuresJSON = "[]";
   transportConfig.capabilitiesJSON =
       "{\"display\":{\"widthPx\":170,\"heightPx\":320,\"colorDepthBits\":16},"
       "\"theme\":{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0,\"builtinThemes\":[]},"
-      "\"transport\":{\"active\":\"usb\",\"supported\":[\"usb\"]}}";
+      "\"transport\":{\"active\":\"usb\",\"mode\":\"cable\",\"supported\":[\"usb\"]}}";
   transportConfig.maxFrameBytes = 1024;
   codexbar_display::app::EmitDeviceHello(transportConfig);
 

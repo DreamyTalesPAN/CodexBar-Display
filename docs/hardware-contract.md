@@ -20,7 +20,10 @@ The firmware `hello.board` value must match the selected firmware environment:
 | `esp8266_smalltv_st7789` | `esp8266-smalltv-st7789` | release-gated |
 | `lilygo_t_display_s3` | `esp32-lilygo-t-display-s3` | experimental, non-blocking |
 
-Companion setup enforces this mapping when a device hello is available.
+Companion setup enforces this mapping when a device hello is available. Both
+supported Cable targets emit a stable, non-empty `deviceId` and advertise
+`transport.active=usb` with `transport.mode=cable`; serial port names are never
+used as device identity.
 
 ## Transport and Protocol Contract
 - CH340 USB-UART serial at `115200` baud.

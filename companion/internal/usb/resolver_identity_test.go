@@ -39,6 +39,21 @@ func TestResolveVibeTVCandidatesUsesDeviceIdentityNotPortName(t *testing.T) {
 	}
 }
 
+func TestResolveVibeTVCandidatesAcceptsLilygoCableIdentity(t *testing.T) {
+	port := "/dev/cu.usbmodem-lilygo"
+	hello := cableHello("A1B2C3D4E5F6")
+	hello.Board = lilygoVibeTVBoardID
+	got, err := resolveVibeTVCandidates(
+		[]string{port},
+		port,
+		"A1B2C3D4E5F6",
+		func(string) (protocol.DeviceHello, error) { return hello, nil },
+	)
+	if err != nil || got != port {
+		t.Fatalf("resolve LilyGO Cable identity: got=%q err=%v", got, err)
+	}
+}
+
 func TestResolveVibeTVCandidatesIgnoresForeignAndUnresponsivePorts(t *testing.T) {
 	ports := []string{"/dev/cu.usbserial-foreign", "/dev/cu.usbserial-offline"}
 	_, err := resolveVibeTVCandidates(
