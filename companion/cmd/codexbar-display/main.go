@@ -944,14 +944,20 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 			if err != nil {
 				return doctorRuntimeConfig{}, err
 			}
-			probeTarget := doctorWiFiProbeTarget(cfg.DeviceTarget, cfg, false)
+			transportName := doctorTransportForRuntimeConfig(cfg)
+			target := ""
+			probeTarget := ""
+			if transportName == "wifi" {
+				target = cfg.DeviceTarget
+				probeTarget = doctorWiFiProbeTarget(target, cfg, false)
+			}
 			return doctorRuntimeConfig{
 				configured:  true,
 				label:       label,
-				transport:   "wifi",
-				target:      cfg.DeviceTarget,
+				transport:   transportName,
+				target:      target,
 				probeTarget: probeTarget,
-				authReady:   deviceTokenFromCommandTarget(probeTarget) != "",
+				authReady:   transportName != "wifi" || deviceTokenFromCommandTarget(probeTarget) != "",
 			}, nil
 		}
 	}
@@ -991,6 +997,20 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		probeTarget: probeTarget,
 		authReady:   transportName != "wifi" || deviceTokenFromCommandTarget(probeTarget) != "",
 	}, nil
+}
+
+func doctorTransportForRuntimeConfig(cfg runtimeconfig.Config) string {
+	switch runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) {
+	case "wifi":
+		return "wifi"
+	case "cable":
+		return "usb"
+	default:
+		if strings.TrimSpace(cfg.DeviceTarget) != "" {
+			return "wifi"
+		}
+		return "usb"
+	}
 }
 
 func readDoctorLegacyLaunchAgentPlist(home, launchctlOutput string, readFile func(string) ([]byte, error)) ([]byte, error) {

@@ -33,6 +33,26 @@ func TestDoctorWiFiTargetFallsBackToLegacyPlist(t *testing.T) {
 	}
 }
 
+func TestDoctorTransportFollowsRuntimeConnectionMode(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  runtimeconfig.Config
+		want string
+	}{
+		{name: "fresh bundled runtime", cfg: runtimeconfig.Config{}, want: "usb"},
+		{name: "Cable", cfg: runtimeconfig.Config{ConnectionMode: "cable", DeviceTarget: "http://192.0.2.10"}, want: "usb"},
+		{name: "WiFi", cfg: runtimeconfig.Config{ConnectionMode: "wifi"}, want: "wifi"},
+		{name: "legacy WiFi", cfg: runtimeconfig.Config{DeviceTarget: "http://192.0.2.10"}, want: "wifi"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := doctorTransportForRuntimeConfig(tt.cfg); got != tt.want {
+				t.Fatalf("doctor transport=%q, expected %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDoctorWiFiProbeTargetUsesTokenOnlyForMatchingDevice(t *testing.T) {
 	cfg := runtimeconfig.Config{
 		DeviceTarget: "http://192.0.2.10",
