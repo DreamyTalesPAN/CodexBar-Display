@@ -124,9 +124,22 @@ PY
 api_firmware_update() {
   local status_output="$1" expected_outcome="$2"
   local start_output="${status_output%.json}.start.json"
-  curl --fail --silent --show-error --max-time 30 \
-    -H 'Content-Type: application/json' --data '{}' \
-    http://127.0.0.1:47832/v1/updates/install > "$start_output"
+  local start_deadline=$((SECONDS + 70)) http_status
+  while true; do
+    http_status="$(curl --silent --show-error --max-time 30 \
+      --output "$start_output" --write-out '%{http_code}' \
+      -H 'Content-Type: application/json' --data '{}' \
+      http://127.0.0.1:47832/v1/updates/install)"
+    [[ "$http_status" == 202 ]] && break
+    if [[ "$http_status" == 409 ]] \
+      && python3 -c 'import json,sys; raise SystemExit(json.load(open(sys.argv[1])).get("error", {}).get("code") != "mac_app_restarting")' "$start_output" \
+      && (( SECONDS < start_deadline )); then
+      sleep 2
+      continue
+    fi
+    sed 's/^/firmware update start: /' "$start_output" >&2
+    die "installed runtime refused the firmware update start with HTTP $http_status"
+  done
   local job_id
   job_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["job"]["id"])' "$start_output")"
   [[ -n "$job_id" ]] || die 'installed runtime did not start a firmware update job'

@@ -414,6 +414,8 @@ main() {
     'public guest states must drive the firmware update through the installed runtime API, not a direct CLI flash'
   assert_contains "$GUEST_TEST" '/v1/updates/install/status?jobId=' \
     'guest test must wait for the runtime firmware update job to finish'
+  assert_contains "$GUEST_TEST" 'mac_app_restarting' \
+    'guest test must retry only the documented transient runtime-restart conflict'
   assert_before "$GUEST_TEST" '/v1/device/repair' 'api_firmware_update "$OUTPUT/candidate-install-update.json"' \
     'the runtime must own the paired device before the API firmware update starts'
   assert_contains "$GUEST_TEST" 'api_firmware_update "$OUTPUT/candidate-already-current.json" already_current' \
