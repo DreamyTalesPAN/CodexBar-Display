@@ -46,6 +46,7 @@ type Config struct {
 	DeviceToken                    string                 `json:"deviceToken,omitempty"`
 	DeviceID                       string                 `json:"deviceId,omitempty"`
 	KnownDevices                   []KnownDevice          `json:"knownDevices,omitempty"`
+	CableAutoBindDisabled          bool                   `json:"cableAutoBindDisabled,omitempty"`
 	ProviderDisplay                *ProviderDisplayConfig `json:"providerDisplay,omitempty"`
 	ProviderSelectionSetupComplete *bool                  `json:"providerSelectionSetupComplete,omitempty"`
 }
@@ -420,6 +421,7 @@ func (cfg *Config) SetActiveDevice(device KnownDevice) {
 	if cfg.ProviderSelectionSetupComplete == nil && !cfg.hasPairedDevice() {
 		cfg.SetProviderSelectionSetupComplete(false)
 	}
+	cfg.CableAutoBindDisabled = false
 	cfg.DeviceID = device.DeviceID
 	cfg.DeviceTarget = device.Target
 	cfg.DeviceToken = device.DeviceToken
@@ -431,6 +433,7 @@ func (cfg *Config) RememberDevice(device KnownDevice) {
 }
 
 func (cfg *Config) ClearDevices() {
+	cfg.CableAutoBindDisabled = true
 	cfg.DeviceTarget = ""
 	cfg.DeviceToken = ""
 	cfg.DeviceID = ""

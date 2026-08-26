@@ -7245,6 +7245,9 @@ func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
 	if cfg.DeviceTarget != "" || cfg.DeviceToken != "" || cfg.DeviceID != "" || len(cfg.KnownDevices) != 0 {
 		t.Fatalf("expected reset to remove every stored device profile, got %+v", cfg)
 	}
+	if !cfg.CableAutoBindDisabled {
+		t.Fatal("setup reset must prevent automatic Cable rebinding")
+	}
 }
 
 func TestSetupResetRejectsActiveFirmwareUpdate(t *testing.T) {

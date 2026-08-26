@@ -218,9 +218,10 @@ func assertPermissions(t *testing.T, path string, want os.FileMode) {
 
 func TestSetActiveDeviceKeepsPreviousDeviceKnown(t *testing.T) {
 	cfg := Config{
-		DeviceID:     "device-a",
-		DeviceTarget: "192.168.1.20",
-		DeviceToken:  "token-a",
+		DeviceID:              "device-a",
+		DeviceTarget:          "192.168.1.20",
+		DeviceToken:           "token-a",
+		CableAutoBindDisabled: true,
 	}
 	cfg.Normalize()
 	cfg.SetActiveDevice(KnownDevice{
@@ -238,6 +239,9 @@ func TestSetActiveDeviceKeepsPreviousDeviceKnown(t *testing.T) {
 	}
 	if previous, ok := cfg.KnownDevice("device-a"); !ok || previous.DeviceToken != "token-a" {
 		t.Fatalf("previous device was not preserved: %+v", cfg.KnownDevices)
+	}
+	if cfg.CableAutoBindDisabled {
+		t.Fatal("selecting a device must re-enable Cable binding")
 	}
 }
 
@@ -281,6 +285,9 @@ func TestClearDevicesRemovesActiveAndKnownProfiles(t *testing.T) {
 
 	if cfg.DeviceID != "" || cfg.DeviceTarget != "" || cfg.DeviceToken != "" || len(cfg.KnownDevices) != 0 {
 		t.Fatalf("expected a complete device reset, got %+v", cfg)
+	}
+	if !cfg.CableAutoBindDisabled {
+		t.Fatal("device reset must prevent automatic Cable rebinding")
 	}
 }
 

@@ -816,6 +816,9 @@ func persistActiveCableIdentity(caps protocol.DeviceCapabilities, deps runtimeDe
 	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "wifi" {
 		return
 	}
+	if cfg.CableAutoBindDisabled {
+		return
+	}
 	if savedID := strings.TrimSpace(cfg.DeviceID); savedID != "" && !strings.EqualFold(savedID, deviceID) {
 		deps.logf("runtime event=cable-identity-persist-rejected expected=%s observed=%s\n", savedID, deviceID)
 		return

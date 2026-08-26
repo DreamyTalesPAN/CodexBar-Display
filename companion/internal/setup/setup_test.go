@@ -1566,6 +1566,27 @@ func TestDefaultFirmwareEnvironment(t *testing.T) {
 	}
 }
 
+func TestApplyRuntimeConfigReenablesCableBindingAfterReset(t *testing.T) {
+	home := t.TempDir()
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		ConnectionMode:        "cable",
+		CableAutoBindDisabled: true,
+	}); err != nil {
+		t.Fatalf("save reset config: %v", err)
+	}
+
+	if err := applyRuntimeConfig(home, "", "usb", "", "new-vibetv", nil); err != nil {
+		t.Fatalf("apply Cable config: %v", err)
+	}
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		t.Fatalf("load Cable config: %v", err)
+	}
+	if cfg.CableAutoBindDisabled || cfg.DeviceID != "new-vibetv" || cfg.ConnectionMode != "cable" {
+		t.Fatalf("Cable setup did not replace reset state: %+v", cfg)
+	}
+}
+
 func TestResolveFirmwareEnvironmentRejectsUnsupported(t *testing.T) {
 	if _, ok := ResolveFirmwareEnvironment("esp8266_smalltv_st7789_crt"); ok {
 		t.Fatalf("expected legacy compile-theme env to be rejected")

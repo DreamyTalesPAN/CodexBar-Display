@@ -121,6 +121,42 @@ func TestResolveCycleDevicePersistsFreshCableIdentity(t *testing.T) {
 	}
 }
 
+func TestResolveCycleDeviceDoesNotRebindCableAfterSetupReset(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		ConnectionMode:        "cable",
+		CableAutoBindDisabled: true,
+	}
+	saveCalls := 0
+	_, _, _, err := resolveCycleDevice("", nil, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig:    func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		saveConfig: func(_ string, next runtimeconfig.Config) error {
+			saveCalls++
+			cfg = next
+			return nil
+		},
+		resolveUSBDevice: func(string, string) (string, error) {
+			return "/dev/cu.usbserial-vibetv", nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:           true,
+				DeviceID:        "previous-vibetv",
+				ConnectionMode:  "cable",
+				ActiveTransport: "usb",
+			}, nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("resolve Cable device after reset: %v", err)
+	}
+	if saveCalls != 0 || cfg.DeviceID != "" {
+		t.Fatalf("reset Cable binding was restored: saveCalls=%d cfg=%+v", saveCalls, cfg)
+	}
+}
+
 func TestConnectionModeChangeStopsCurrentTransportCycle(t *testing.T) {
 	err := runCycleWithDeps(context.Background(), "", nil, runtimeDeps{
 		transportName: "usb",
