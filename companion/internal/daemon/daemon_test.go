@@ -58,6 +58,30 @@ func TestRunCycleWithDepsSendsErrorFrameWhenNoLastGood(t *testing.T) {
 	}
 }
 
+func TestConfiguredConnectionModePrefersRuntimeConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable"}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+	if got := configuredConnectionMode("wifi"); got != "usb" {
+		t.Fatalf("runtime config must own connection mode, got %q", got)
+	}
+}
+
+func TestConnectionModeChangeStopsCurrentTransportCycle(t *testing.T) {
+	err := runCycleWithDeps(context.Background(), "", nil, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) {
+			return runtimeconfig.Config{ConnectionMode: "wifi"}, nil
+		},
+	})
+	if !errors.Is(err, ErrConnectionModeChanged) {
+		t.Fatalf("expected current Cable cycle to stop for WiFi mode, got %v", err)
+	}
+}
+
 func TestRunCycleCoordinatesOnlyTheDeviceWrite(t *testing.T) {
 	prepareFastTestEnv(t)
 

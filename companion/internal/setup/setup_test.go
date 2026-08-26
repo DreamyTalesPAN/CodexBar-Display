@@ -106,6 +106,10 @@ func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Setup complete.") {
 		t.Fatalf("expected setup completion output, got:\n%s", stdout.String())
 	}
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil || cfg.ConnectionMode != "cable" {
+		t.Fatalf("expected Cable as the authoritative runtime mode, cfg=%+v err=%v", cfg, err)
+	}
 
 	if !commandSeen(calls, "brew", []string{"install", "--cask", codexbarBrewCask}) {
 		t.Fatalf("expected brew install call, got %#v", calls)
@@ -321,6 +325,9 @@ func TestRunWithDepsPersistsWiFiTargetAndTokenInRuntimeConfig(t *testing.T) {
 	}
 	if cfg.DeviceTarget != "http://192.168.178.66" || cfg.DeviceToken != "pair-token-123" {
 		t.Fatalf("unexpected runtime device config: %+v", cfg)
+	}
+	if cfg.ConnectionMode != "wifi" {
+		t.Fatalf("expected WiFi as the authoritative runtime mode, got %+v", cfg)
 	}
 
 	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
