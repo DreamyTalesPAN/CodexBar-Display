@@ -345,7 +345,6 @@ func TestDoctorUSBUsesIdentityResolverAcrossSeveralPortNames(t *testing.T) {
 		return []string{"/dev/cu.usbserial-1", "/dev/cu.usbserial-2"}, nil
 	}
 	doctorResolvePortFn = func(string) (string, error) { return "/dev/cu.usbserial-1", nil }
-	doctorProbePortFn = func(string) error { return nil }
 	doctorReadDeviceHelloFn = func(string) (protocol.DeviceHello, error) {
 		return protocol.DeviceHello{
 			Kind:     "hello",
@@ -371,12 +370,6 @@ func TestDoctorUSBResolvesFreshIdentity(t *testing.T) {
 			t.Fatalf("doctor must not reuse a stored port, got %q", requested)
 		}
 		return configuredPort, nil
-	}
-	doctorProbePortFn = func(port string) error {
-		if port != configuredPort {
-			t.Fatalf("expected probe on %q, got %q", configuredPort, port)
-		}
-		return nil
 	}
 	doctorReadDeviceHelloFn = func(port string) (protocol.DeviceHello, error) {
 		if port != configuredPort {
@@ -408,14 +401,12 @@ func restoreDoctorTestDeps(t *testing.T) {
 	t.Helper()
 	listPorts := doctorListPortsFn
 	resolvePort := doctorResolvePortFn
-	probePort := doctorProbePortFn
 	readHello := doctorReadDeviceHelloFn
 	readWiFiCapabilities := doctorReadWiFiCapabilitiesFn
 	checkCompanionHealth := doctorCheckCompanionHealthFn
 	t.Cleanup(func() {
 		doctorListPortsFn = listPorts
 		doctorResolvePortFn = resolvePort
-		doctorProbePortFn = probePort
 		doctorReadDeviceHelloFn = readHello
 		doctorReadWiFiCapabilitiesFn = readWiFiCapabilities
 		doctorCheckCompanionHealthFn = checkCompanionHealth
