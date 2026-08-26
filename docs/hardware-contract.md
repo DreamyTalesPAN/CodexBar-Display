@@ -92,6 +92,10 @@ Cable-to-WiFi switch without stored credentials logged
 The final 60-second-window build uses 475,771 bytes flash and 46,768 bytes RAM;
 its 479,920-byte image hash is
 `c2361122a515fa13c9c1b9422d75cbf22df969c6b8efe0f5fc443237ff6d0698`.
+That exact image was subsequently flashed at 115200 baud and passed the
+device-side hash check. A final live identity lookup without a supplied port
+resolved `/dev/cu.usbserial-11230`, protocol 2, and the expected board and
+theme limits.
 
 ## Cutover Migration Contract
 
