@@ -137,7 +137,7 @@ bool testPendingHttpRenderRunsBeforeUsb(const std::string& source) {
   const std::size_t loopStart = source.find("void loop()");
   const std::size_t pending = source.find("if (pendingHttpRender)", loopStart);
   const std::size_t render = source.find("renderAcceptedFrame(event)", pending);
-  const std::size_t usb = source.find("ConsumeSerial(runtimeCtx, millis(), event)", render);
+  const std::size_t usb = source.find("handleSerialInput();", render);
   return expect(
       loopStart != std::string::npos && pending != std::string::npos && render != std::string::npos &&
           usb != std::string::npos && pending < render && render < usb,
