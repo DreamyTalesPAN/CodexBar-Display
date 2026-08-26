@@ -6,6 +6,7 @@ import {
   deviceIsActive,
   deviceIsCustomerConnected,
   deviceIsReady,
+  deviceUsesCable,
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
   providerRecoveryStatusRows,
@@ -59,6 +60,24 @@ describe("device connection contract", () => {
     expect(
       deviceIsActive({ active: true, connected: false, ready: false }),
     ).toBe(true);
+  });
+
+  it("recognizes Cable from the transport contract or Cable target", () => {
+    expect(
+      deviceUsesCable({
+        connected: true,
+        capabilities: { transport: { active: "usb", mode: "cable" } },
+      }),
+    ).toBe(true);
+    expect(deviceUsesCable({ connected: true, target: "cable://vibetv" })).toBe(
+      true,
+    );
+    expect(
+      deviceUsesCable({
+        connected: true,
+        capabilities: { transport: { active: "wifi", mode: "wifi" } },
+      }),
+    ).toBe(false);
   });
 
   it("never treats fast reachable-before-selected updates as customer connected", () => {

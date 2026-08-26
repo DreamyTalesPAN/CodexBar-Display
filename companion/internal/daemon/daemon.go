@@ -815,7 +815,11 @@ func persistActiveCableIdentity(caps protocol.DeviceCapabilities, deps runtimeDe
 	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "wifi" {
 		return
 	}
-	if cfg.CableAutoBindDisabled {
+	rolledBackFromWiFi := cfg.CableAutoBindDisabled &&
+		runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "" &&
+		!cfg.ConnectionModeChoiceRequired &&
+		strings.EqualFold(cfg.DeviceID, deviceID)
+	if cfg.CableAutoBindDisabled && !rolledBackFromWiFi {
 		return
 	}
 	if savedID := strings.TrimSpace(cfg.DeviceID); savedID != "" && !strings.EqualFold(savedID, deviceID) {
@@ -835,14 +839,21 @@ func persistActiveCableIdentity(caps protocol.DeviceCapabilities, deps runtimeDe
 	cfg.ConnectionMode = "cable"
 	cfg.DeviceID = deviceID
 	cfg.DeviceTransports = supportedTransports
-	if freshSetup {
+	if freshSetup || rolledBackFromWiFi {
 		cfg.ConnectionModeChoiceRequired = true
+	}
+	if rolledBackFromWiFi {
+		cfg.CableAutoBindDisabled = false
 	}
 	if err := deps.saveConfig(home, cfg); err != nil {
 		deps.logf("runtime event=cable-identity-persist-failed deviceId=%s err=%v\n", deviceID, err)
 		return
 	}
-	deps.logf("runtime event=cable-identity-persisted deviceId=%s\n", deviceID)
+	if rolledBackFromWiFi {
+		deps.logf("runtime event=wifi-transition-rolled-back deviceId=%s\n", deviceID)
+	} else {
+		deps.logf("runtime event=cable-identity-persisted deviceId=%s\n", deviceID)
+	}
 }
 
 func wifiDeviceHelloRuntimeError(target string, err error) *RuntimeError {

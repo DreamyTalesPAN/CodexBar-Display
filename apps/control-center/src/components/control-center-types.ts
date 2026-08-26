@@ -558,6 +558,14 @@ export function deviceIsActive(device: DeviceInfo | null | undefined) {
   return device?.active === true;
 }
 
+export function deviceUsesCable(device: DeviceInfo | null | undefined) {
+  const transport = device?.capabilities?.transport;
+  return Boolean(
+    (transport?.active === "usb" && transport.mode === "cable") ||
+      device?.target?.toLowerCase().startsWith("cable:"),
+  );
+}
+
 // A reachable VibeTV whose display stream is running for this exact device but
 // has no AI usage to draw. Mirrors providerSetupStreamForTarget on the
 // Companion side without letting an old stream error prove connectivity.

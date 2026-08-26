@@ -1333,15 +1333,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	reachable := false
 	identityMismatch := false
 	if cableMode {
-		if len(cfg.DeviceTransports) > 0 {
-			device.Capabilities = &protocol.CapabilityBlock{
-				Transport: protocol.TransportCapabilities{
-					Active:    "usb",
-					Mode:      "cable",
-					Supported: append([]string(nil), cfg.DeviceTransports...),
-				},
-			}
-		}
+		device.Capabilities = cableCapabilityBlock(cfg.DeviceTransports)
 		// Cable has no HTTP endpoint or pairing token. A current exact-transport
 		// stream result is the authoritative connection evidence.
 		reachable = providerSetupStreamForTarget(device.Stream, device.Target)
@@ -1413,6 +1405,19 @@ func configuredStatusTarget(cfg runtimeconfig.Config) string {
 		return cableDeviceTarget
 	}
 	return cfg.DeviceTarget
+}
+
+func cableCapabilityBlock(supported []string) *protocol.CapabilityBlock {
+	if len(supported) == 0 {
+		return nil
+	}
+	return &protocol.CapabilityBlock{
+		Transport: protocol.TransportCapabilities{
+			Active:    "usb",
+			Mode:      "cable",
+			Supported: append([]string(nil), supported...),
+		},
+	}
 }
 
 func savedPairingRemainsValid(savedToken string, tokenRejected bool, streamError string) bool {
@@ -3372,11 +3377,12 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	}
 	stream := s.streamStatus(r.Context(), cableDeviceTarget)
 	device := s.withConfiguredConnectionState(cfg, deviceInfo{
-		Target:   cableDeviceTarget,
-		DeviceID: strings.TrimSpace(hello.DeviceID),
-		Paired:   true,
-		Active:   true,
-		Stream:   streamPointer(stream),
+		Target:       cableDeviceTarget,
+		DeviceID:     strings.TrimSpace(hello.DeviceID),
+		Paired:       true,
+		Active:       true,
+		Capabilities: cableCapabilityBlock(supportedTransports),
+		Stream:       streamPointer(stream),
 	}, providerSetupStreamForTarget(streamPointer(stream), cableDeviceTarget), false)
 	writeJSON(w, http.StatusOK, struct {
 		OK             bool       `json:"ok"`
