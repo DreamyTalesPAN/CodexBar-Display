@@ -294,6 +294,9 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 			return err
 		}
 		fmt.Fprintf(d.stdout, "Serial port: %s\n", port)
+		// Identity resolution owns the package-level serial handle. Release it
+		// before validation paths open the same exclusive port for a probe.
+		usb.CloseDefaultSender()
 	}
 
 	if !opts.ValidateOnly && !opts.DryRun {

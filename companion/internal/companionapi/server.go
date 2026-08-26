@@ -2106,6 +2106,8 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
+	diagnosticsTarget := configuredStatusTarget(cfg)
+	cableMode := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable"
 
 	discoveryResult := make(chan diagnosticsDiscovery, 1)
 	go func() {
@@ -2135,7 +2137,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 				PID:       os.Getpid(),
 			},
 			Configuration: diagnosticsConfiguration{
-				DeviceTarget:     publicTarget(cfg.DeviceTarget),
+				DeviceTarget:     publicTarget(diagnosticsTarget),
 				DeviceID:         strings.TrimSpace(cfg.DeviceID),
 				HasPairingToken:  strings.TrimSpace(cfg.DeviceToken) != "",
 				KnownDeviceCount: len(cfg.KnownDevices),
@@ -2163,12 +2165,42 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	device := deviceInfo{
-		Target:    publicTarget(cfg.DeviceTarget),
+		Target:    publicTarget(diagnosticsTarget),
+		DeviceID:  strings.TrimSpace(cfg.DeviceID),
 		Connected: false,
-		Paired:    strings.TrimSpace(cfg.DeviceToken) != "",
-		Stream:    streamPointer(s.streamStatus(r.Context(), cfg.DeviceTarget)),
+		Paired:    strings.TrimSpace(cfg.DeviceToken) != "" || (cableMode && strings.TrimSpace(cfg.DeviceID) != ""),
+		Active:    strings.TrimSpace(cfg.DeviceID) != "",
+		Stream:    streamPointer(s.streamStatus(r.Context(), diagnosticsTarget)),
 	}
-	if strings.TrimSpace(cfg.DeviceTarget) == "" {
+	writeDeviceReport := func(device deviceInfo) {
+		checks = appendDisplayStreamDiagnostic(checks, device.Stream)
+		if updateJob, ok := s.latestFirmwareUpdateJob(); ok {
+			checks = append(checks, diagnosticCheck{
+				Name:       "firmware_update",
+				Status:     firmwareUpdateDiagnosticStatus(updateJob),
+				Detail:     firmwareUpdateDiagnosticDetail(updateJob),
+				ErrorCode:  firmwareUpdateDiagnosticErrorCode(updateJob),
+				NextAction: firmwareUpdateDiagnosticNextAction(updateJob),
+			})
+		}
+		writeReport(device)
+	}
+	if cableMode {
+		checks = append(checks, diagnosticCheck{
+			Name:   "device_target",
+			Status: "pass",
+			Detail: cableDeviceTarget,
+		})
+		device = s.withConfiguredConnectionState(
+			cfg,
+			device,
+			providerSetupStreamForTarget(device.Stream, device.Target),
+			false,
+		)
+		writeDeviceReport(device)
+		return
+	}
+	if strings.TrimSpace(diagnosticsTarget) == "" {
 		checks = append(checks, diagnosticCheck{
 			Name:       "device_target",
 			Status:     "attention",
@@ -2245,40 +2277,33 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if device.Stream != nil && device.Stream.Healthy {
-		checks = append(checks, diagnosticCheck{
+	writeDeviceReport(device)
+}
+
+func appendDisplayStreamDiagnostic(checks []diagnosticCheck, stream *displayStreamInfo) []diagnosticCheck {
+	if stream != nil && stream.Healthy {
+		return append(checks, diagnosticCheck{
 			Name:   "display_stream",
 			Status: "pass",
-			Detail: device.Stream.Detail,
+			Detail: stream.Detail,
 		})
-	} else if device.Stream != nil && device.Stream.ErrorCode == "provider_setup_required" {
-		checks = append(checks, diagnosticCheck{
+	}
+	if stream != nil && stream.ErrorCode == "provider_setup_required" {
+		return append(checks, diagnosticCheck{
 			Name:       "display_stream",
 			Status:     "attention",
-			Detail:     device.Stream.Detail,
+			Detail:     stream.Detail,
 			ErrorCode:  "provider_setup_required",
 			NextAction: "Finish AI setup in the Mac App, then click Check again.",
 		})
-	} else {
-		checks = append(checks, diagnosticCheck{
-			Name:       "display_stream",
-			Status:     "fail",
-			Detail:     displayStreamDiagnosticDetail(device.Stream),
-			ErrorCode:  "display_stream_not_ready",
-			NextAction: "Click Fix connection to restart the display stream.",
-		})
 	}
-	if updateJob, ok := s.latestFirmwareUpdateJob(); ok {
-		checks = append(checks, diagnosticCheck{
-			Name:       "firmware_update",
-			Status:     firmwareUpdateDiagnosticStatus(updateJob),
-			Detail:     firmwareUpdateDiagnosticDetail(updateJob),
-			ErrorCode:  firmwareUpdateDiagnosticErrorCode(updateJob),
-			NextAction: firmwareUpdateDiagnosticNextAction(updateJob),
-		})
-	}
-
-	writeReport(device)
+	return append(checks, diagnosticCheck{
+		Name:       "display_stream",
+		Status:     "fail",
+		Detail:     displayStreamDiagnosticDetail(stream),
+		ErrorCode:  "display_stream_not_ready",
+		NextAction: "Click Fix connection to restart the display stream.",
+	})
 }
 
 func (s *Server) diagnosticsNetworkDiscovery(ctx context.Context, cfg runtimeconfig.Config) diagnosticsDiscovery {

@@ -5556,6 +5556,46 @@ func TestDiagnosticsWorksWithoutDeviceTarget(t *testing.T) {
 	}
 }
 
+func TestDiagnosticsUsesHealthyCableStreamWithoutWiFiTarget(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "vibetv-cable",
+	})
+	server.streamStatus = func(_ context.Context, target string) displayStreamInfo {
+		if target != cableDeviceTarget {
+			t.Fatalf("Cable diagnostics target=%q, expected %q", target, cableDeviceTarget)
+		}
+		return displayStreamInfo{
+			Healthy:    true,
+			Running:    true,
+			Target:     cableDeviceTarget,
+			LastTarget: cableDeviceTarget,
+			LastSentAt: time.Now().UTC().Format(time.RFC3339),
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got diagnosticsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode diagnostics: %v", err)
+	}
+	if got.Configuration.DeviceTarget != cableDeviceTarget || got.Device.Target != cableDeviceTarget {
+		t.Fatalf("Cable diagnostics exposed the wrong target: %+v", got)
+	}
+	if !got.Device.Connected || !got.Device.Paired || !got.Device.Ready || !got.Device.Active {
+		t.Fatalf("healthy Cable stream was not authoritative: %+v", got.Device)
+	}
+	if hasDiagnosticCheck(got.Checks, "device_target", "attention") ||
+		!hasDiagnosticCheck(got.Checks, "device_target", "pass") ||
+		!hasDiagnosticCheck(got.Checks, "display_stream", "pass") {
+		t.Fatalf("Cable diagnostics checks are inconsistent: %+v", got.Checks)
+	}
+}
+
 func TestDiagnosticsFindsVibeTVOnWiFiWithoutSelectingIt(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/hello" {
