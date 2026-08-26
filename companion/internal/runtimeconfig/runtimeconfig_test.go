@@ -243,6 +243,9 @@ func TestSetActiveDeviceKeepsPreviousDeviceKnown(t *testing.T) {
 	if cfg.CableAutoBindDisabled {
 		t.Fatal("selecting a device must re-enable Cable binding")
 	}
+	if cfg.ConnectionModeChoiceRequired {
+		t.Fatal("selecting a device must record the explicit connection choice")
+	}
 }
 
 func TestProviderDisplayNormalizeAndSetupMigration(t *testing.T) {
@@ -288,6 +291,9 @@ func TestClearDevicesRemovesActiveAndKnownProfiles(t *testing.T) {
 	}
 	if !cfg.CableAutoBindDisabled {
 		t.Fatal("device reset must prevent automatic Cable rebinding")
+	}
+	if !cfg.ConnectionModeChoiceRequired {
+		t.Fatal("device reset must require a new connection choice")
 	}
 }
 

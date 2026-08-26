@@ -45,8 +45,10 @@ type Config struct {
 	DeviceTarget                   string                 `json:"deviceTarget,omitempty"`
 	DeviceToken                    string                 `json:"deviceToken,omitempty"`
 	DeviceID                       string                 `json:"deviceId,omitempty"`
+	DeviceTransports               []string               `json:"deviceTransports,omitempty"`
 	KnownDevices                   []KnownDevice          `json:"knownDevices,omitempty"`
 	CableAutoBindDisabled          bool                   `json:"cableAutoBindDisabled,omitempty"`
+	ConnectionModeChoiceRequired   bool                   `json:"connectionModeChoiceRequired,omitempty"`
 	ProviderDisplay                *ProviderDisplayConfig `json:"providerDisplay,omitempty"`
 	ProviderSelectionSetupComplete *bool                  `json:"providerSelectionSetupComplete,omitempty"`
 }
@@ -339,6 +341,9 @@ func (cfg *Config) Normalize() {
 	if cfg.ProviderDisplay != nil {
 		cfg.ProviderDisplay.Normalize()
 	}
+	for index := range cfg.DeviceTransports {
+		cfg.DeviceTransports[index] = strings.TrimSpace(strings.ToLower(cfg.DeviceTransports[index]))
+	}
 	cfg.normalizeKnownDevices()
 }
 
@@ -422,6 +427,7 @@ func (cfg *Config) SetActiveDevice(device KnownDevice) {
 		cfg.SetProviderSelectionSetupComplete(false)
 	}
 	cfg.CableAutoBindDisabled = false
+	cfg.ConnectionModeChoiceRequired = false
 	cfg.DeviceID = device.DeviceID
 	cfg.DeviceTarget = device.Target
 	cfg.DeviceToken = device.DeviceToken
@@ -434,9 +440,11 @@ func (cfg *Config) RememberDevice(device KnownDevice) {
 
 func (cfg *Config) ClearDevices() {
 	cfg.CableAutoBindDisabled = true
+	cfg.ConnectionModeChoiceRequired = true
 	cfg.DeviceTarget = ""
 	cfg.DeviceToken = ""
 	cfg.DeviceID = ""
+	cfg.DeviceTransports = nil
 	cfg.KnownDevices = nil
 }
 

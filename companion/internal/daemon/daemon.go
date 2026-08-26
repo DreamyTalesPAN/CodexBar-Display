@@ -330,12 +330,11 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 		})
 	}
 
-	sender := usb.NewSender()
-	defer sender.Close()
+	defer usb.CloseDefaultSender()
 	return runWithDeps(ctx, opts, runtimeDeps{
-		deviceCaps:        sender.DeviceCapabilities,
-		resolveUSBDevice:  sender.ResolvePort,
-		sendLine:          sender.Send,
+		deviceCaps:        usb.GetDeviceCapabilities,
+		resolveUSBDevice:  usb.ResolveVibeTVPort,
+		sendLine:          usb.SendLine,
 		transportName:     "usb",
 		usageBarsShowUsed: codexbar.UsageBarsShowUsed,
 		startDashboard:    codexbar.StartDashboardServe,
@@ -823,12 +822,22 @@ func persistActiveCableIdentity(caps protocol.DeviceCapabilities, deps runtimeDe
 		deps.logf("runtime event=cable-identity-persist-rejected expected=%s observed=%s\n", savedID, deviceID)
 		return
 	}
+	supportedTransports := append([]string(nil), caps.SupportedTransportChannels...)
 	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" &&
-		strings.EqualFold(cfg.DeviceID, deviceID) {
+		strings.EqualFold(cfg.DeviceID, deviceID) &&
+		strings.Join(cfg.DeviceTransports, "\x00") == strings.Join(supportedTransports, "\x00") {
 		return
 	}
+	freshSetup := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "" &&
+		strings.TrimSpace(cfg.DeviceID) == "" &&
+		strings.TrimSpace(cfg.DeviceTarget) == "" &&
+		len(cfg.KnownDevices) == 0
 	cfg.ConnectionMode = "cable"
 	cfg.DeviceID = deviceID
+	cfg.DeviceTransports = supportedTransports
+	if freshSetup {
+		cfg.ConnectionModeChoiceRequired = true
+	}
 	if err := deps.saveConfig(home, cfg); err != nil {
 		deps.logf("runtime event=cable-identity-persist-failed deviceId=%s err=%v\n", deviceID, err)
 		return

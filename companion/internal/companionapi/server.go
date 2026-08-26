@@ -452,13 +452,14 @@ type themeSpecHealth struct {
 }
 
 type statusResponse struct {
-	OK             bool                   `json:"ok"`
-	Companion      companion              `json:"companion"`
-	Device         deviceInfo             `json:"device"`
-	ProviderSetup  codexbar.ProviderSetup `json:"providerSetup"`
-	Setup          setupProgress          `json:"setup"`
-	ThemeInstall   *themeInstallJob       `json:"themeInstall,omitempty"`
-	FirmwareUpdate *firmwareUpdateJob     `json:"firmwareUpdate,omitempty"`
+	OK                           bool                   `json:"ok"`
+	Companion                    companion              `json:"companion"`
+	Device                       deviceInfo             `json:"device"`
+	ConnectionModeChoiceRequired bool                   `json:"connectionModeChoiceRequired"`
+	ProviderSetup                codexbar.ProviderSetup `json:"providerSetup"`
+	Setup                        setupProgress          `json:"setup"`
+	ThemeInstall                 *themeInstallJob       `json:"themeInstall,omitempty"`
+	FirmwareUpdate               *firmwareUpdateJob     `json:"firmwareUpdate,omitempty"`
 }
 
 type deviceActionResponse struct {
@@ -935,7 +936,7 @@ func New(opts Options) (*Server, error) {
 		saveConfig:             runtimeconfig.Save,
 		installTheme:           themeinstall.Install,
 		runSetup:               setup.Run,
-		resolveCablePort:       usb.ResolveVibeTVPort,
+		resolveCablePort:       usb.ResolveVibeTVControlPort,
 		readCableHello:         usb.ReadDeviceHello,
 		setCableConnectionMode: usb.SetConnectionMode,
 		subnetTargets:          localSubnetTargets,
@@ -1332,6 +1333,15 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	reachable := false
 	identityMismatch := false
 	if cableMode {
+		if len(cfg.DeviceTransports) > 0 {
+			device.Capabilities = &protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{
+					Active:    "usb",
+					Mode:      "cable",
+					Supported: append([]string(nil), cfg.DeviceTransports...),
+				},
+			}
+		}
 		// Cable has no HTTP endpoint or pairing token. A current exact-transport
 		// stream result is the authoritative connection evidence.
 		reachable = providerSetupStreamForTarget(device.Stream, device.Target)
@@ -1387,13 +1397,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		themeInstall = &latest
 	}
 	writeJSON(w, http.StatusOK, statusResponse{
-		OK:             true,
-		Companion:      s.companionInfo(r.Context()),
-		Device:         device,
-		ProviderSetup:  s.providerSetupForStatus(),
-		Setup:          setupProgressForConfig(cfg),
-		ThemeInstall:   themeInstall,
-		FirmwareUpdate: firmwareUpdate,
+		OK:                           true,
+		Companion:                    s.companionInfo(r.Context()),
+		Device:                       device,
+		ConnectionModeChoiceRequired: cfg.ConnectionModeChoiceRequired,
+		ProviderSetup:                s.providerSetupForStatus(),
+		Setup:                        setupProgressForConfig(cfg),
+		ThemeInstall:                 themeInstall,
+		FirmwareUpdate:               firmwareUpdate,
 	})
 }
 
@@ -3241,10 +3252,11 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	s.clearDisplayVerification("")
 	s.clearConfiguredDeviceState()
 	writeJSON(w, http.StatusOK, statusResponse{
-		OK:        true,
-		Companion: s.companionInfo(r.Context()),
-		Device:    deviceInfo{Connected: false},
-		Setup:     setupProgress{ProviderSelectionRequired: true},
+		OK:                           true,
+		Companion:                    s.companionInfo(r.Context()),
+		Device:                       deviceInfo{Connected: false},
+		ConnectionModeChoiceRequired: true,
+		Setup:                        setupProgress{ProviderSelectionRequired: true},
 	})
 }
 
@@ -3292,8 +3304,13 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	hello = hello.Normalize()
+	supportedTransports := append([]string(nil), hello.Capabilities.Transport.Supported...)
 	if expected := strings.TrimSpace(cfg.DeviceID); expected != "" && !strings.EqualFold(expected, hello.DeviceID) {
 		writeError(w, http.StatusConflict, "device_identity_changed", "A different VibeTV answered on Cable.", "Connect the VibeTV you selected, then try again.")
+		return
+	}
+	if mode == "wifi" && !supportsTransport(hello, "wifi") {
+		writeError(w, http.StatusConflict, "connection_mode_unsupported", "This VibeTV does not support WiFi.", "Keep this VibeTV connected by Cable.")
 		return
 	}
 	if runtimeconfig.NormalizeConnectionMode(hello.Capabilities.Transport.Mode) != mode {
@@ -3308,6 +3325,8 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 			current.ConnectionMode = ""
 			current.DeviceID = strings.TrimSpace(hello.DeviceID)
 			current.CableAutoBindDisabled = true
+			current.ConnectionModeChoiceRequired = false
+			current.DeviceTransports = supportedTransports
 		}); err != nil {
 			writeInternalError(w, err)
 			return
@@ -3334,6 +3353,8 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
 		current.ConnectionMode = "cable"
 		current.CableAutoBindDisabled = false
+		current.ConnectionModeChoiceRequired = false
+		current.DeviceTransports = supportedTransports
 		current.DeviceID = strings.TrimSpace(hello.DeviceID)
 		current.DeviceTarget = ""
 		current.DeviceToken = ""
@@ -8486,6 +8507,16 @@ func deviceFromHello(target, token string, hello protocol.DeviceHello) deviceInf
 		Firmware:     caps.Firmware,
 		Capabilities: capabilityBlock,
 	}
+}
+
+func supportsTransport(hello protocol.DeviceHello, transport string) bool {
+	transport = strings.TrimSpace(strings.ToLower(transport))
+	for _, supported := range hello.Normalize().Capabilities.Transport.Supported {
+		if supported == transport {
+			return true
+		}
+	}
+	return false
 }
 
 func endpoint(target, path string) string {

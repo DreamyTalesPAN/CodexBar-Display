@@ -103,6 +103,22 @@ func TestResolveVibeTVCandidatesRejectsWiFiModeOnSerial(t *testing.T) {
 	}
 }
 
+func TestResolveVibeTVControlCandidatesAcceptsWiFiModeOverUSB(t *testing.T) {
+	port := "/dev/cu.usbserial-wifi"
+	hello := cableHello("14799300")
+	hello.Capabilities.Transport.Mode = "wifi"
+	got, err := resolveVibeTVCandidatesForControl(
+		[]string{port},
+		port,
+		"14799300",
+		func(string) (protocol.DeviceHello, error) { return hello, nil },
+		true,
+	)
+	if err != nil || got != port {
+		t.Fatalf("resolve WiFi-mode VibeTV control port: got=%q err=%v", got, err)
+	}
+}
+
 func TestCableSerialCandidatesDropsMacOSTTYAliasOnly(t *testing.T) {
 	ports := []string{
 		"/dev/cu.usbserial-11230",

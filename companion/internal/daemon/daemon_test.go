@@ -102,13 +102,14 @@ func TestResolveCycleDevicePersistsFreshCableIdentity(t *testing.T) {
 		},
 		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
 			return protocol.DeviceCapabilities{
-				Known:                     true,
-				DeviceID:                  "fresh-vibetv",
-				ConnectionMode:            "cable",
-				ActiveTransport:           "usb",
-				MaxFrameBytes:             2048,
-				ProtocolVersion:           protocol.ProtocolVersionV2,
-				NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+				Known:                      true,
+				DeviceID:                   "fresh-vibetv",
+				ConnectionMode:             "cable",
+				ActiveTransport:            "usb",
+				SupportedTransportChannels: []string{"usb", "wifi"},
+				MaxFrameBytes:              2048,
+				ProtocolVersion:            protocol.ProtocolVersionV2,
+				NegotiatedProtocolVersion:  protocol.ProtocolVersionV2,
 			}, nil
 		},
 		logf: func(string, ...any) {},
@@ -118,6 +119,12 @@ func TestResolveCycleDevicePersistsFreshCableIdentity(t *testing.T) {
 	}
 	if port != "/dev/cu.usbserial-vibetv" || cfg.ConnectionMode != "cable" || cfg.DeviceID != "fresh-vibetv" {
 		t.Fatalf("fresh Cable identity was not persisted: port=%q cfg=%+v", port, cfg)
+	}
+	if !cfg.ConnectionModeChoiceRequired {
+		t.Fatal("fresh Cable auto-binding must preserve the connection chooser")
+	}
+	if len(cfg.DeviceTransports) != 2 || cfg.DeviceTransports[1] != "wifi" {
+		t.Fatalf("fresh Cable capabilities were not persisted: %+v", cfg.DeviceTransports)
 	}
 }
 

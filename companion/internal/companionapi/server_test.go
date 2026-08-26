@@ -7250,6 +7250,31 @@ func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
 	}
 }
 
+func TestStatusPreservesFreshCableChoiceAndReportsTransportSupport(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:               "cable",
+		DeviceID:                     "lilygo",
+		DeviceTransports:             []string{"usb"},
+		ConnectionModeChoiceRequired: true,
+	})
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.ConnectionModeChoiceRequired {
+		t.Fatal("fresh Cable auto-binding lost the explicit chooser")
+	}
+	if got.Device.Capabilities == nil || len(got.Device.Capabilities.Transport.Supported) != 1 || got.Device.Capabilities.Transport.Supported[0] != "usb" {
+		t.Fatalf("Cable transport capabilities missing from status: %+v", got.Device.Capabilities)
+	}
+}
+
 func TestSetupConnectionModeStartsWiFiTransitionBeforeChangingHostMode(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		ConnectionMode: "cable",
@@ -7262,7 +7287,13 @@ func TestSetupConnectionModeStartsWiFiTransitionBeforeChangingHostMode(t *testin
 		return "/dev/cu.usbserial-vibetv", nil
 	}
 	server.readCableHello = func(port string) (protocol.DeviceHello, error) {
-		return protocol.DeviceHello{Kind: "hello", DeviceID: "device-cable"}, nil
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			DeviceID: "device-cable",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Supported: []string{"usb", "wifi"}},
+			},
+		}, nil
 	}
 	switchCalls := 0
 	server.setCableConnectionMode = func(port, deviceID, mode string) error {
@@ -7289,6 +7320,38 @@ func TestSetupConnectionModeStartsWiFiTransitionBeforeChangingHostMode(t *testin
 	}
 	if cfg.ConnectionMode != "" || !cfg.CableAutoBindDisabled || cfg.DeviceID != "device-cable" {
 		t.Fatalf("host mode changed before WiFi confirmation: %+v", cfg)
+	}
+	if cfg.ConnectionModeChoiceRequired {
+		t.Fatal("explicit WiFi selection must clear the connection chooser")
+	}
+}
+
+func TestSetupConnectionModeRejectsWiFiForCableOnlyBoard(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{DeviceID: "lilygo"})
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/cu.usbmodem-lilygo", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			Board:    "esp32-lilygo-t-display-s3",
+			DeviceID: "lilygo",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb"}},
+			},
+		}, nil
+	}
+	server.setCableConnectionMode = func(string, string, string) error {
+		t.Fatal("Cable-only board must not receive a WiFi switch command")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "connection_mode_unsupported") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
