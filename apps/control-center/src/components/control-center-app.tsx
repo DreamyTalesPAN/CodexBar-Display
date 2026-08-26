@@ -263,6 +263,24 @@ type FirmwareCheckOptions = {
 };
 
 type RuntimeSurface = "unknown" | "hosted-setup" | "local-control-center";
+
+export function connectionModeChoiceStatus(payload: {
+  connectionModeChoiceRequired?: boolean;
+  device?: DeviceInfo;
+}) {
+  if (payload.connectionModeChoiceRequired === true) {
+    return { required: true, resolved: true };
+  }
+  const hasBoundDevice = Boolean(
+    payload.device?.active === true ||
+      payload.device?.target?.trim() ||
+      payload.device?.deviceId?.trim(),
+  );
+  return hasBoundDevice
+    ? { required: false, resolved: true }
+    : { required: true, resolved: false };
+}
+
 export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   useEffect(() => {
     clearRetiredAiThemeStorage();
@@ -1072,13 +1090,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setCompanionInfo(payload.companion || null);
         setProviderSetup(payload.providerSetup || null);
         if (!connectionModeChoiceResolved.current) {
-          connectionModeChoiceResolved.current = true;
-          setConnectionModeChoiceRequired(
-            payload.connectionModeChoiceRequired ??
-              (payload.device?.active !== true &&
-                !payload.device?.target &&
-                !payload.device?.deviceId),
-          );
+          const choice = connectionModeChoiceStatus(payload);
+          connectionModeChoiceResolved.current = choice.resolved;
+          setConnectionModeChoiceRequired(choice.required);
         }
         const pairingRejection = pairingRejectionForDevice(payload.device);
         if (pairingRejection) {
@@ -1559,6 +1573,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (setupGeneration !== setupGenerationRef.current) {
           return false;
         }
+        connectionModeChoiceResolved.current = true;
         if (mode === "cable" && payload.device) {
           acceptDeviceSnapshot(payload.device);
         }

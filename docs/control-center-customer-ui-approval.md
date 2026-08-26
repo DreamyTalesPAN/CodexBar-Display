@@ -1925,3 +1925,16 @@ issue scope, or release permission never implies UI permission.
   `device-startup-screen.tsx`, `device-startup-screen.test.tsx`,
   `scripts/test-customer-flows.mjs`, the Companion status/setup endpoint and
   tests, and this approval record.
+
+## 2026-08-27 — First status cannot hide the approved chooser
+
+- User approval: Continuation of the user's explicit instruction to fix every
+  automated review finding on PR #407 and repeat the review loop. This is a
+  defect against the approved Cable/WiFi chooser, not a new visible rule.
+- Approved customer-visible result: On genuine first setup, the neutral
+  Cable/WiFi cards remain visible even when the browser's first status arrives
+  just before the Cable worker records the connected VibeTV. An existing saved
+  setup still opens normally without the chooser, and an explicit Cable or WiFi
+  choice still ends the decision exactly once.
+- Approved files: `control-center-app.tsx`, `control-center-app.test.ts`, and
+  this approval record.
