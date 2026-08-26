@@ -278,7 +278,8 @@ func TestResolverConfirmsPendingCableTransitionAfterIdentityMatch(t *testing.T) 
 	helloLine := []byte(
 		`{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"14799300","capabilities":{"transport":{"active":"usb","mode":"cable","transitionPending":true,"transitionFrom":"wifi","transitionTo":"cable"}}}` + "\n",
 	)
-	port.readQueue = [][]byte{helloLine[:100], helloLine[100:]}
+	confirmationLine := []byte(`{"kind":"connection-mode","status":"confirmed","deviceId":"14799300","mode":"cable"}` + "\n")
+	port.readQueue = [][]byte{helloLine[:100], helloLine[100:], confirmationLine}
 	sender := NewSenderWithConfig(SenderConfig{
 		Opener: &mockOpener{portsByPath: map[string]SerialPort{path: port}},
 		Sleep:  func(time.Duration) {},
@@ -298,6 +299,33 @@ func TestResolverConfirmsPendingCableTransitionAfterIdentityMatch(t *testing.T) 
 	want := "{\"kind\":\"request\",\"op\":\"confirm-connection-mode\",\"deviceId\":\"14799300\"}\n"
 	if got := string(port.writePayloads[1]); got != want {
 		t.Fatalf("unexpected confirmation request %q", got)
+	}
+}
+
+func TestResolverKeepsPendingCableTransitionWhenConfirmationIsRejected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cu.usbserial-vibetv")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatalf("create serial candidate: %v", err)
+	}
+	port := newMockSerialPort()
+	helloLine := []byte(`{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"14799300","capabilities":{"transport":{"active":"usb","mode":"cable","transitionPending":true,"transitionFrom":"wifi","transitionTo":"cable"}}}` + "\n")
+	port.readQueue = [][]byte{
+		helloLine[:100],
+		helloLine[100:],
+		[]byte(`{"kind":"error","code":"connection-mode-confirmation-rejected","message":"failed to persist connection mode confirmation"}` + "\n"),
+	}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{path: port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+	defer sender.Close()
+
+	if _, err := sender.ResolvePort(path, "14799300"); err == nil || !strings.Contains(err.Error(), "rejected confirmation") {
+		t.Fatalf("expected rejected confirmation error, got %v", err)
+	}
+	if !sender.hello.Capabilities.Transport.TransitionPending {
+		t.Fatalf("rejected confirmation must not clear cached pending state")
 	}
 }
 

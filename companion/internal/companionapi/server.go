@@ -57,6 +57,7 @@ const (
 	deviceConnectionReady    = "ready"
 	deviceConnectionRetrying = "reconnecting"
 	deviceConnectionSetup    = "setup_required"
+	cableDeviceTarget        = "cable://vibetv"
 	deviceTimeout            = 15 * time.Second
 	deviceSearchWindow       = 30 * time.Second
 	repairRequestTimeout     = 110 * time.Second
@@ -1303,19 +1304,25 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg, _ := s.config()
-	stream := s.streamStatus(r.Context(), cfg.DeviceTarget)
+	statusTarget := configuredStatusTarget(cfg)
+	cableMode := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable"
+	stream := s.streamStatus(r.Context(), statusTarget)
 	device := deviceInfo{
-		Target:          publicTarget(cfg.DeviceTarget),
+		Target:          publicTarget(statusTarget),
 		DeviceID:        strings.TrimSpace(cfg.DeviceID),
 		Connected:       false,
-		Paired:          strings.TrimSpace(cfg.DeviceToken) != "",
+		Paired:          strings.TrimSpace(cfg.DeviceToken) != "" || (cableMode && strings.TrimSpace(cfg.DeviceID) != ""),
 		Active:          strings.TrimSpace(cfg.DeviceID) != "",
 		ConnectionState: deviceConnectionSetup,
 		Stream:          streamPointer(stream),
 	}
 	reachable := false
 	identityMismatch := false
-	if strings.TrimSpace(cfg.DeviceTarget) != "" {
+	if cableMode {
+		// Cable has no HTTP endpoint or pairing token. A current exact-transport
+		// stream result is the authoritative connection evidence.
+		reachable = providerSetupStreamForTarget(device.Stream, device.Target)
+	} else if strings.TrimSpace(cfg.DeviceTarget) != "" {
 		if hello, probeToken, tokenRejected, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
 			configuredID := strings.TrimSpace(cfg.DeviceID)
 			observedID := strings.TrimSpace(hello.DeviceID)
@@ -1371,6 +1378,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		ThemeInstall:   themeInstall,
 		FirmwareUpdate: firmwareUpdate,
 	})
+}
+
+func configuredStatusTarget(cfg runtimeconfig.Config) string {
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
+		return cableDeviceTarget
+	}
+	return cfg.DeviceTarget
 }
 
 func savedPairingRemainsValid(savedToken string, tokenRejected bool, streamError string) bool {
@@ -7827,7 +7841,7 @@ func inspectDisplayStreamAfter(ctx context.Context, target string, notBefore tim
 	if !notBefore.IsZero() && notBefore.After(boundary) {
 		boundary = notBefore
 	}
-	lastSentAt, lastTarget, _, frameOK := lastDisplayStreamFrameLineAfter(logPath, boundary)
+	lastSentAt, lastTarget, frameLine, frameOK := lastDisplayStreamFrameLineAfter(logPath, boundary)
 	errorAt, errorDetail, errorCode, errorOK := lastDisplayStreamErrorRecordAfter(logPath, boundary)
 	if !frameOK || lastSentAt.IsZero() {
 		if errorOK && time.Since(errorAt) <= displayStreamReadyAge {
@@ -7841,7 +7855,15 @@ func inspectDisplayStreamAfter(ctx context.Context, target string, notBefore tim
 	stream.LastSentAt = lastSentAt.UTC().Format(time.RFC3339)
 	stream.LastTarget = publicTarget(lastTarget)
 
-	if stream.LastTarget != "" && !samePublicTarget(target, stream.LastTarget) {
+	if samePublicTarget(target, cableDeviceTarget) {
+		if !strings.EqualFold(displayStreamLogValue(frameLine, "transport"), "usb") {
+			stream.Detail = "Display stream is using another connection mode."
+			return stream
+		}
+		// A serial path is only a current transport endpoint, never customer
+		// identity. Report the stable Cable target after the log proves USB.
+		stream.LastTarget = publicTarget(cableDeviceTarget)
+	} else if stream.LastTarget != "" && !samePublicTarget(target, stream.LastTarget) {
 		stream.Detail = "Display stream is sending to another VibeTV."
 		return stream
 	}

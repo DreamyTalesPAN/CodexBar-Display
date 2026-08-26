@@ -2977,6 +2977,30 @@ func TestInspectDisplayStreamUsesConfiguredRuntimeLabelAndSharedLog(t *testing.T
 	}
 }
 
+func TestInspectDisplayStreamMapsCurrentUSBPathToStableCableTarget(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	sentAt := time.Now().UTC().Add(-time.Second).Truncate(time.Second)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(sentAt.Format(time.RFC3339Nano)+` sent frame -> /dev/cu.usbserial-1410 transport=usb source=oauth fresh=true usageMode=remaining provider=codex label=VibeTV session=73 weekly=58 reset=2733s`+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write display stream log: %v", err)
+	}
+
+	oldPrint := printDisplayStreamService
+	t.Cleanup(func() { printDisplayStreamService = oldPrint })
+	printDisplayStreamService = func(context.Context, string) ([]byte, error) {
+		return []byte("state = running\n"), nil
+	}
+
+	stream := inspectDisplayStream(context.Background(), cableDeviceTarget)
+	if !stream.Running || !stream.Healthy || stream.Target != cableDeviceTarget || stream.LastTarget != cableDeviceTarget {
+		t.Fatalf("expected healthy canonical Cable stream, got %+v", stream)
+	}
+}
+
 func TestConfiguredRuntimeRejectsRecentLegacyFrameWithoutStartMarker(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
 	t.Setenv(displayStreamOutLogEnv, logPath)
@@ -4410,6 +4434,52 @@ func TestStatusKeepsConfiguredDeviceReadyDuringTransientProbeFailureWithHealthyS
 	}
 	if subnetCalls.Load() != 0 {
 		t.Fatalf("short reboot recovery unexpectedly scanned the subnet %d times", subnetCalls.Load())
+	}
+}
+
+func TestStatusUsesAuthoritativeCableStreamWithoutHTTPProbe(t *testing.T) {
+	var probeCalls atomic.Int32
+	staleWiFiTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probeCalls.Add(1)
+		http.Error(w, "Cable mode must not probe WiFi", http.StatusInternalServerError)
+	}))
+	defer staleWiFiTarget.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceTarget:   staleWiFiTarget.URL,
+		DeviceID:       "vibetv-cable",
+	})
+	server.streamStatus = func(_ context.Context, target string) displayStreamInfo {
+		if target != cableDeviceTarget {
+			t.Fatalf("Cable status target=%q, expected %q", target, cableDeviceTarget)
+		}
+		return displayStreamInfo{
+			Healthy:    true,
+			Running:    true,
+			Target:     cableDeviceTarget,
+			LastTarget: cableDeviceTarget,
+			LastSentAt: time.Now().UTC().Format(time.RFC3339),
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if probeCalls.Load() != 0 {
+		t.Fatalf("Cable status made %d HTTP probes", probeCalls.Load())
+	}
+	if !got.Device.Connected || !got.Device.Paired || !got.Device.Ready || got.Device.ConnectionState != deviceConnectionReady {
+		t.Fatalf("healthy Cable stream was not authoritative: %+v", got.Device)
+	}
+	if got.Device.Target != cableDeviceTarget {
+		t.Fatalf("Cable status exposed stale WiFi target: %+v", got.Device)
 	}
 }
 
