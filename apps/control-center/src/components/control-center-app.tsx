@@ -44,6 +44,7 @@ import {
   deviceIsReady,
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
+  providerSetupIsChecking,
   providerSetupRequiresRecovery,
   type ActiveTab,
   type AppearanceSection,
@@ -3621,6 +3622,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     (providerIncidentOpen ||
       deviceAwaitsProviderSetup(device) ||
       (waitingForFirstUsage && providerSetupRequiresRecovery(providerSetup)));
+  const initialProviderCheckInProgress =
+    themeSetupRequired &&
+    waitingForFirstUsage &&
+    providerSetupIsChecking(providerSetup);
 
   useEffect(() => {
     if (!providerRecoveryRequired) {
@@ -3940,7 +3945,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       !hasActiveDevice ||
       recoveryPickerOpen ||
       connectionRecoveryRequired ||
-      (waitingForFirstUsage && !themeSetupRequired))
+      (waitingForFirstUsage && !themeSetupRequired) ||
+      initialProviderCheckInProgress)
   ) {
     return (
       <DeviceStartupScreen
@@ -3983,7 +3989,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           busyAction === "select" ? selectingDeviceTarget : undefined
         }
         onOpenCodexBar={openCodexBarApp}
-        providerRecovery={providerRecoveryRequired}
+        providerRecovery={
+          providerRecoveryRequired || initialProviderCheckInProgress
+        }
         providerSetup={providerSetup}
         showCodexBarFallback={showCodexBarFallback}
         supportReportBusy={supportReportBusy}

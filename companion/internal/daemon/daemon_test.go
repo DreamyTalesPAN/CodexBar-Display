@@ -2846,11 +2846,15 @@ func TestRunCycleWithDepsUsesLastGoodFrameDuringTransientFetchFailure(t *testing
 	if !second.UsageUnavailable {
 		t.Fatalf("expected expired last-good usage to be unavailable, got %+v", second)
 	}
-	if _, _, ok := loadPersistedLastGoodAnyAge(); ok {
-		t.Fatal("expired usage left the previously sent percentages persisted")
+	// The persisted last-good survives the unavailable send: it is the only
+	// restart evidence that this Mac ever delivered usage, and loading already
+	// marks an expired frame unavailable. Deleting it here booted every
+	// restart during a hiccup into the no-providers classification.
+	if _, _, ok := loadPersistedLastGoodAnyAge(); !ok {
+		t.Fatal("an unavailable send must keep the persisted last-good as restart evidence")
 	}
 	if !state.hasLastGood || state.lastGood.UsageUnavailable {
-		t.Fatalf("clearing the display snapshot also removed the in-memory recovery frame: %+v", state.lastGood)
+		t.Fatalf("the unavailable send must not remove the in-memory recovery frame: %+v", state.lastGood)
 	}
 }
 
@@ -4042,6 +4046,45 @@ func TestProviderCollectorUsesFetchCompletionForDashboardWithoutProducerTime(t *
 	}
 	if !frames[0].CollectedAt.Equal(current) {
 		t.Fatalf("expected fetch completion collectedAt %s, got %s", current, frames[0].CollectedAt)
+	}
+}
+
+func TestProviderCollectorUsesAuthoritativeUsageWhileFirstRunSetupIsPending(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	current := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	pending := true
+	usageCalls := 0
+	dashboardCalls := 0
+	collector := &providerCollector{
+		now:                  func() time.Time { return current },
+		logf:                 func(string, ...any) {},
+		order:                []string{"codex"},
+		interval:             30 * time.Second,
+		timeout:              time.Minute,
+		snapshotMaxAge:       10 * time.Minute,
+		persistInterval:      time.Minute,
+		providers:            make(map[string]providerSnapshot),
+		firstRunSetupPending: func() bool { return pending },
+		dashboard:            staticDashboardServe{info: testDashboardServeInfo(1001)},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			usageCalls++
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 17, 0, 3600)}, nil
+		},
+		fetchDashboard: func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error) {
+			dashboardCalls++
+			return []codexbar.ParsedFrame{dashboardParsedFrame("codex", "Weekly", "Codex Spark Weekly", 24, 0)}, nil
+		},
+	}
+
+	collector.collectOnce(context.Background())
+	if usageCalls != 1 || dashboardCalls != 0 {
+		t.Fatalf("pending first run must use only authoritative usage, usage=%d dashboard=%d", usageCalls, dashboardCalls)
+	}
+	pending = false
+	collector.collectOnce(context.Background())
+	if usageCalls != 1 || dashboardCalls != 1 {
+		t.Fatalf("completed first run may use dashboard, usage=%d dashboard=%d", usageCalls, dashboardCalls)
 	}
 }
 
@@ -6134,4 +6177,316 @@ func waitForCondition(t *testing.T, timeout time.Duration, ready func() bool) {
 		return
 	}
 	t.Fatal("condition was not met before timeout")
+}
+
+// Until the first collection since runtime start completes, an empty collector
+// is warm-up, not a no-providers verdict: the cycle waits instead of sending
+// the error frame that Control Center reports as provider_setup_required.
+func TestRunCycleFromCollectorWaitsForFirstCollectionBeforeNoProviders(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	collector := &providerCollector{
+		now:            func() time.Time { return now },
+		logf:           func(string, ...any) {},
+		snapshotMaxAge: 2 * time.Hour,
+		providers:      map[string]providerSnapshot{},
+		warmupUntil:    now.Add(2 * time.Minute),
+	}
+
+	sent := false
+	var logged []string
+	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(string, []byte) error {
+			sent = true
+			return nil
+		},
+		logf: func(format string, args ...any) {
+			logged = append(logged, fmt.Sprintf(format, args...))
+		},
+	})
+	if err != nil {
+		t.Fatalf("warm-up must not fail the cycle, got %v", err)
+	}
+	if sent {
+		t.Fatal("warm-up must not send a no-providers frame")
+	}
+	found := false
+	for _, line := range logged {
+		if strings.Contains(line, "reason=collector-warming") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the waiting cycle must say why it waits, got %v", logged)
+	}
+}
+
+// Past the warm-up bound a collection that never completed reports its own
+// failure kind instead of flattening into no-providers: a Mac whose usage
+// engine cannot be read is not a Mac without providers.
+func TestRunCycleFromCollectorReportsFetchErrorKindPastWarmup(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	// Started, window expired, every fetch failed so far: the collector state
+	// after a whole warm-up window of failing collections. collectOnce cannot
+	// stage this directly because starting a collection re-anchors the window.
+	collector := &providerCollector{
+		now:                 func() time.Time { return now },
+		logf:                func(string, ...any) {},
+		snapshotMaxAge:      2 * time.Hour,
+		providers:           map[string]providerSnapshot{},
+		warmupUntil:         now.Add(-time.Second),
+		firstCollectStarted: true,
+		lastFetchErr:        &codexbar.FetchError{Kind: codexbar.FetchErrorCommand, Err: errors.New("engine unreadable")},
+	}
+
+	var sentLine []byte
+	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	var runtimeErr *RuntimeError
+	if !errors.As(err, &runtimeErr) || runtimeErr.Kind != runtimeErrorCodexbarCmd {
+		t.Fatalf("expected the collector failure to keep its own kind, got %v", err)
+	}
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Error == string(errcode.RuntimeNoProviders) {
+		t.Fatalf("an unreadable engine must not claim no-providers: %+v", frame)
+	}
+}
+
+func TestRunCycleFromCollectorReportsTimeoutWhileFirstCollectionStillRunsPastWarmup(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	collector := &providerCollector{
+		now:                 func() time.Time { return now },
+		logf:                func(string, ...any) {},
+		snapshotMaxAge:      2 * time.Hour,
+		providers:           map[string]providerSnapshot{},
+		warmupUntil:         now.Add(-time.Second),
+		firstCollectStarted: true,
+	}
+
+	var sentLine []byte
+	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	var runtimeErr *RuntimeError
+	if !errors.As(err, &runtimeErr) || runtimeErr.Kind != runtimeErrorCodexbarCmd {
+		t.Fatalf("expected an overlong first collection to report a collection error, got %v", err)
+	}
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Error == string(errcode.RuntimeNoProviders) {
+		t.Fatalf("an in-flight collection must not claim no-providers: %+v", frame)
+	}
+}
+
+func TestFirstCollectionWarmupStartsWhenCollectionStarts(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	startedAt := time.Date(2026, 8, 25, 12, 10, 0, 0, time.UTC)
+	collector := &providerCollector{
+		providers:   map[string]providerSnapshot{},
+		warmupUntil: startedAt.Add(-5 * time.Minute),
+	}
+	collector.beginFirstCollect(startedAt)
+	if first := collector.firstCollectState(startedAt); !first.warming || !first.started {
+		t.Fatalf("the warm-up window must restart with the first real collection, until=%v", collector.warmupUntil)
+	}
+	want := startedAt.Add(collectorWarmupMaxAge())
+	if !collector.warmupUntil.Equal(want) {
+		t.Fatalf("unexpected first-collection warm-up bound: got=%v want=%v", collector.warmupUntil, want)
+	}
+}
+
+// Once CodexBar has answered -- even with nothing usable -- the no-providers
+// verdict stands regardless of the warm-up bound. The hosted guest matrix
+// depends on a provider-less Mac still sending this honest error frame.
+func TestRunCycleFromCollectorKeepsNoProvidersVerdictAfterFirstCollection(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	collector := &providerCollector{
+		now:            func() time.Time { return now },
+		logf:           func(string, ...any) {},
+		snapshotMaxAge: 2 * time.Hour,
+		providers:      map[string]providerSnapshot{},
+		warmupUntil:    now.Add(2 * time.Minute),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return nil, nil
+		},
+	}
+	collector.collectOnce(context.Background())
+
+	var sentLine []byte
+	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	var runtimeErr *RuntimeError
+	if !errors.As(err, &runtimeErr) || runtimeErr.Kind != runtimeErrorNoProviders {
+		t.Fatalf("a completed empty collection is the genuine no-providers state, got %v", err)
+	}
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Error != string(errcode.RuntimeNoProviders) {
+		t.Fatalf("the honest error frame must reach the device: %+v", frame)
+	}
+}
+
+// `daemon --once` runs one support cycle and reports what it finds now; the
+// warm-up wait belongs to the continuous runtime only.
+func TestNewProviderCollectorSkipsWarmupForOnce(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	deps := runtimeDeps{
+		now:  func() time.Time { return time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC) },
+		logf: func(string, ...any) {},
+	}
+	if collector := newProviderCollector(deps, Options{Once: true}); !collector.warmupUntil.IsZero() {
+		t.Fatalf("--once must not wait out a warm-up window, got %v", collector.warmupUntil)
+	}
+	if collector := newProviderCollector(deps, Options{}); collector.warmupUntil.IsZero() {
+		t.Fatal("the continuous runtime must get a warm-up window")
+	}
+}
+
+// The hosted guest matrix greps `error code=runtime/no-providers` from a
+// provider-less `daemon --once`: without a warm-up window the immediate
+// verdict must stay exactly that, even while the collector's first fetch --
+// which on a fresh Mac includes the first-run provider detection -- is still
+// running.
+func TestRunCycleFromCollectorOnceKeepsNoProvidersWhileFirstCollectionRuns(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	deps := runtimeDeps{
+		now:  func() time.Time { return now },
+		logf: func(string, ...any) {},
+	}
+	collector := newProviderCollector(deps, Options{Once: true})
+	collector.now = func() time.Time { return now }
+	collector.logf = func(string, ...any) {}
+	// The single cycle races the collector startup; the collector is still
+	// inside its first fetch and has neither settled nor errored.
+	collector.mu.Lock()
+	collector.firstCollectStarted = true
+	collector.mu.Unlock()
+
+	var sentLine []byte
+	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	var runtimeErr *RuntimeError
+	if !errors.As(err, &runtimeErr) || runtimeErr.Kind != runtimeErrorNoProviders {
+		t.Fatalf("--once must keep the immediate no-providers verdict, got %v", err)
+	}
+	frame := decodeFrameLine(t, sentLine)
+	if frame.Error != string(errcode.RuntimeNoProviders) {
+		t.Fatalf("--once must send the honest no-providers frame, got %+v", frame)
+	}
+}
+
+// Pairing can happen long after the warm-up window anchored at runtime start
+// has passed. Until the device gate lets the collector ask CodexBar even once,
+// there is nothing to report -- fabricating a collection error here painted a
+// CodexBar failure onto the exact post-pairing window #405 removes.
+func TestRunCycleFromCollectorWaitsWhenFirstCollectionNeverStarted(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	collector := &providerCollector{
+		now:            func() time.Time { return now },
+		logf:           func(string, ...any) {},
+		snapshotMaxAge: 2 * time.Hour,
+		providers:      map[string]providerSnapshot{},
+		warmupUntil:    now.Add(-time.Minute),
+	}
+
+	sent := false
+	var logged []string
+	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(string, []byte) error {
+			sent = true
+			return nil
+		},
+		logf: func(format string, args ...any) {
+			logged = append(logged, fmt.Sprintf(format, args...))
+		},
+	})
+	if err != nil || sent {
+		t.Fatalf("a never-started collection is not an answer: err=%v sent=%t", err, sent)
+	}
+	found := false
+	for _, line := range logged {
+		if strings.Contains(line, "reason=collector-warming") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the waiting cycle must say why it waits, got %v", logged)
+	}
+}
+
+// The very first fetch on a cold start fails instantly with "dashboard serve
+// unavailable" while the serve is still booting. That transport failure must
+// not settle the first collection, or the warm-up never waits on exactly the
+// production path it exists for.
+func TestFirstCollectionDoesNotSettleOnTransportError(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:            func() time.Time { return now },
+		logf:           func(string, ...any) {},
+		snapshotMaxAge: 2 * time.Hour,
+		providers:      map[string]providerSnapshot{},
+		warmupUntil:    now.Add(2 * time.Minute),
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return nil, errors.New("dashboard serve unavailable")
+		},
+	}
+	collector.collectOnce(context.Background())
+
+	first := collector.firstCollectState(now)
+	if first.settled {
+		t.Fatal("a transport failure is not a CodexBar answer and must not settle")
+	}
+	if !first.warming || !first.started || first.fetchErr == nil {
+		t.Fatalf("the failed attempt keeps warming with its error retained: %+v", first)
+	}
 }

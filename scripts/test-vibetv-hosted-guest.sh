@@ -70,9 +70,18 @@ trap cleanup EXIT HUP INT TERM
 validate_installed_runtime() {
   local status_output="$1"
   local runtime_pid="" listener_pids
+  local build_version expected_bundle_version registered_bundle_version
+  build_version="$(plutil -extract CFBundleVersion raw -o - "$INSTALL_APP/Contents/Info.plist")"
+  expected_bundle_version="${VERSION}+${build_version}"
   rm -f "$status_output"
-  for _ in $(seq 1 30); do
-    if curl --fail --silent --max-time 3 http://127.0.0.1:47832/v1/status > "$status_output"; then
+  local deadline=$((SECONDS + 120))
+  while (( SECONDS < deadline )); do
+    registered_bundle_version="$(
+      defaults read shop.vibetv.control-center \
+        shop.vibetv.control-center.runtime.registered-bundle-version 2>/dev/null || true
+    )"
+    if [[ "$registered_bundle_version" == "$expected_bundle_version" ]] \
+      && curl --fail --silent --max-time 3 http://127.0.0.1:47832/v1/status > "$status_output"; then
       if runtime_pid="$(python3 - "$status_output" "$VERSION" "$INSTALL_APP" <<'PY'
 import json, sys
 status_path, expected_version, install_app = sys.argv[1:]
@@ -96,7 +105,8 @@ PY
     runtime_pid=""
     sleep 1
   done
-  [[ -n "$runtime_pid" ]] || die 'installed candidate runtime did not become healthy on port 47832'
+  [[ -n "$runtime_pid" ]] \
+    || die 'installed candidate app preparation and runtime did not become healthy on port 47832'
   listener_pids="$(lsof -nP -a -iTCP@127.0.0.1:47832 -sTCP:LISTEN -Fp 2>/dev/null | sed -nE 's/^p([0-9]+)$/\1/p' | sort -u)"
   # Name the processes: without them this failure only says "not sole" and the
   # next person has to re-run the whole gate to learn who else held the port.
@@ -114,9 +124,22 @@ PY
 api_firmware_update() {
   local status_output="$1" expected_outcome="$2"
   local start_output="${status_output%.json}.start.json"
-  curl --fail --silent --show-error --max-time 30 \
-    -H 'Content-Type: application/json' --data '{}' \
-    http://127.0.0.1:47832/v1/updates/install > "$start_output"
+  local start_deadline=$((SECONDS + 70)) http_status
+  while true; do
+    http_status="$(curl --silent --show-error --max-time 30 \
+      --output "$start_output" --write-out '%{http_code}' \
+      -H 'Content-Type: application/json' --data '{}' \
+      http://127.0.0.1:47832/v1/updates/install)"
+    [[ "$http_status" == 202 ]] && break
+    if [[ "$http_status" == 409 ]] \
+      && python3 -c 'import json,sys; raise SystemExit(json.load(open(sys.argv[1])).get("error", {}).get("code") != "mac_app_restarting")' "$start_output" \
+      && (( SECONDS < start_deadline )); then
+      sleep 2
+      continue
+    fi
+    sed 's/^/firmware update start: /' "$start_output" >&2
+    die "installed runtime refused the firmware update start with HTTP $http_status"
+  done
   local job_id
   job_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["job"]["id"])' "$start_output")"
   [[ -n "$job_id" ]] || die 'installed runtime did not start a firmware update job'

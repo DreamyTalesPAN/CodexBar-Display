@@ -45,6 +45,7 @@ type providerCollector struct {
 	now                   func() time.Time
 	logf                  func(string, ...any)
 	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
+	firstRunSetupPending  func() bool
 	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error)
 	fetchInventory        func(context.Context) ([]codexbar.ProviderSetting, error)
 	fetchTokenStats       func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
@@ -63,12 +64,17 @@ type providerCollector struct {
 	wake                  <-chan struct{}
 	afterWakeCollect      func()
 
+	warmupUntil time.Time
+
 	mu                      sync.RWMutex
 	providers               map[string]providerSnapshot
 	lastPersistedRaw        string
 	lastPersistedAt         time.Time
 	inventoryKnown          bool
 	inventoryEnabled        map[string]struct{}
+	firstCollectStarted     bool
+	firstCollectDone        bool
+	lastFetchErr            error
 	tokenStatsMu            sync.Mutex
 	tokenStatsRunning       bool
 	tokenStatsCancel        context.CancelFunc
@@ -94,6 +100,7 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		now:                   nowFn,
 		logf:                  logFn,
 		fetchProviders:        deps.fetchProviders,
+		firstRunSetupPending:  deps.firstRunSetupPending,
 		fetchDashboard:        deps.fetchDashboard,
 		fetchInventory:        deps.fetchInventory,
 		fetchTokenStats:       deps.fetchTokenStats,
@@ -110,6 +117,12 @@ func newProviderCollector(deps runtimeDeps, opts Options) *providerCollector {
 		persistInterval:       1 * time.Minute,
 		tokenStatsCooldown:    tokenStatsScanCooldown,
 		providers:             make(map[string]providerSnapshot),
+	}
+	if !opts.Once {
+		// Until the first collection since runtime start completes, an empty
+		// or unavailable collector is warm-up, not an answer about this Mac.
+		// `daemon --once` is exempt: one support cycle reports what it finds.
+		collector.warmupUntil = nowFn().Add(collectorWarmupMaxAge())
 	}
 	if normalizeTransportName(opts.Transport) == "wifi" || deps.transportName == "wifi" {
 		collector.requestedPortFn = func() string {
@@ -289,6 +302,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	}
 
 	now := c.now()
+	c.beginFirstCollect(now)
 	ctx := parent
 	cancel := func() {}
 	if c.timeout > 0 {
@@ -310,11 +324,22 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	collectedAt := c.now().UTC()
 	if err != nil {
 		updated := false
+		c.mu.Lock()
 		if inventoryAuthoritative {
-			c.mu.Lock()
 			updated = c.applyProviderInventoryLocked(inventory)
-			c.mu.Unlock()
 		}
+		c.lastFetchErr = err
+		if codexbar.FetchErrorKindOf(err) == codexbar.FetchErrorNoProviders {
+			// CodexBar answered with zero providers: a definitive enumeration,
+			// not a transport failure, so warm-up is over. Any other error does
+			// NOT settle -- the very first attempt on a cold start fails
+			// instantly with "dashboard serve unavailable" while the serve is
+			// still booting, and settling on it would defeat the warm-up on
+			// exactly the production path it exists for. The error is kept and
+			// reported with its own kind once the bounded window has passed.
+			c.firstCollectDone = true
+		}
+		c.mu.Unlock()
 		if updated {
 			c.persistIfNeeded(collectedAt)
 		}
@@ -327,6 +352,8 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	var authoritativeEnabled map[string]struct{}
 
 	c.mu.Lock()
+	c.firstCollectDone = true
+	c.lastFetchErr = nil
 	if inventoryAuthoritative {
 		updated = c.applyProviderInventoryLocked(inventory)
 		_, authoritativeEnabled = enabledProviderInventory(inventory)
@@ -416,6 +443,13 @@ func parsedProviderCollectedAt(parsed codexbar.ParsedFrame, fallback time.Time) 
 }
 
 func (c *providerCollector) fetchProvidersForCollect(ctx context.Context, now time.Time) ([]codexbar.ParsedFrame, string, error) {
+	// The first complete inventory is itself the authoritative collector read.
+	// Do not consult a dashboard snapshot made from CodexBar's untouched default
+	// switches while that one-time collection is still pending.
+	if c.firstRunSetupPending != nil && c.firstRunSetupPending() && c.fetchProviders != nil {
+		providers, err := c.fetchProviders(ctx)
+		return providers, "codexbar-usage-json", err
+	}
 	if c.dashboard != nil && c.fetchDashboard != nil {
 		info := c.dashboard.Info()
 		if strings.TrimSpace(info.Endpoint) != "" && info.Running {
@@ -449,6 +483,58 @@ func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.Pro
 		updated = true
 	}
 	return updated
+}
+
+func (c *providerCollector) beginFirstCollect(now time.Time) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.firstCollectStarted {
+		return
+	}
+	c.firstCollectStarted = true
+	if !c.warmupUntil.IsZero() {
+		// Pairing may happen long after runtime startup. The bounded waiting
+		// window belongs to the first real CodexBar request, not app launch.
+		c.warmupUntil = now.Add(collectorWarmupMaxAge())
+	}
+}
+
+// firstCollectSnapshot is one locked view of the first collection since
+// runtime start. One snapshot keeps the answers consistent: a collection
+// completing between two separate reads made a cycle fabricate a
+// warm-up-exceeded error.
+type firstCollectSnapshot struct {
+	// settled: CodexBar has answered -- usage arrived or it enumerated zero
+	// providers. Before that the collector knows nothing about this Mac.
+	settled bool
+	// started: one collectOnce actually reached its fetch. The device gate can
+	// hold this off long after runtime start.
+	started bool
+	// bounded: a warm-up window exists at all. `daemon --once` runs without
+	// one and reports the immediate verdict.
+	bounded bool
+	// warming: the bounded window is still open while nothing has settled.
+	warming bool
+	// fetchErr: the last fetch failure while none has settled.
+	fetchErr error
+}
+
+func (c *providerCollector) firstCollectState(now time.Time) firstCollectSnapshot {
+	if c == nil {
+		return firstCollectSnapshot{settled: true}
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return firstCollectSnapshot{
+		settled:  c.firstCollectDone,
+		started:  c.firstCollectStarted,
+		bounded:  !c.warmupUntil.IsZero(),
+		warming:  !c.firstCollectDone && !c.warmupUntil.IsZero() && now.Before(c.warmupUntil),
+		fetchErr: c.lastFetchErr,
+	}
 }
 
 func (c *providerCollector) providerEnabledByInventory(provider string) (bool, bool) {

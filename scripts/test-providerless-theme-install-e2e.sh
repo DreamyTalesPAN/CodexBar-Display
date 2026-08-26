@@ -75,6 +75,16 @@ http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
 PY
 fi
 if [[ "${1:-}" == "usage" ]]; then echo '[]'; exit 0; fi
+if [[ "${1:-} ${2:-}" == "config dump" ]]; then
+  echo '{"version":1,"providers":[{"id":"codex","enabled":true}]}'
+  exit 0
+fi
+if [[ "${1:-} ${2:-}" == "config validate" ]]; then echo '{}'; exit 0; fi
+if [[ "${1:-} ${2:-}" == "config providers" ]]; then
+  echo '[{"provider":"codex","enabled":true}]'
+  exit 0
+fi
+if [[ "${1:-} ${2:-}" == "config enable" ]]; then echo '{"enabled":true}'; exit 0; fi
 echo "codexbar-stub 0.46.0"
 STUB
 chmod +x "$WORK/codexbar-stub"

@@ -57,6 +57,7 @@ const (
 	collectorTimeoutEnvVar     = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
 	collectorOrderEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
 	providerMaxAgeEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
+	collectorWarmupEnvVar      = "CODEXBAR_DISPLAY_COLLECTOR_WARMUP_MAX_AGE"
 	defaultProviderMaxAge      = 10 * time.Minute
 	firmwareManifestEnvVar     = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
 	firmwareManifestURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
@@ -134,6 +135,7 @@ type runtimeDeps struct {
 	resolveUSBDevice      func(string, string) (string, error)
 	deviceCaps            func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
+	firstRunSetupPending  func() bool
 	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error)
 	fetchProvider         func(context.Context, string) (codexbar.ParsedFrame, error)
 	fetchInventory        func(context.Context) ([]codexbar.ProviderSetting, error)
@@ -175,6 +177,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.fetchProviders == nil {
 		d.fetchProviders = codexbar.FetchAllProviders
+	}
+	if d.firstRunSetupPending == nil {
+		d.firstRunSetupPending = codexbar.FirstRunProviderSetupPending
 	}
 	if d.fetchDashboard == nil {
 		d.fetchDashboard = codexbar.FetchDashboardProviders
@@ -1430,11 +1435,13 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		return err
 	}
 	persistActiveWiFiTarget(port, deps)
-	if frame.UsageUnavailable {
-		if err := clearPersistedDisplayFrame(state); err != nil {
-			deps.logf("runtime event=last-sent-frame-clear-failed reason=usage-unavailable err=%v\n", err)
-		}
-	} else if result.failureErr == nil {
+	// A sent unavailable frame keeps the persisted last-good: that file is the
+	// only evidence after a restart that this Mac ever delivered usage, and
+	// deleting it turned every restart during a hiccup into the no-providers
+	// classification. Loading already marks an expired frame unavailable, and
+	// a provider switched off in inventory still clears it deliberately
+	// (invalidateLastGoodDisabledByInventory).
+	if !frame.UsageUnavailable && result.failureErr == nil {
 		collectedAt := result.collectedAt
 		if collectedAt.IsZero() {
 			collectedAt = deps.now()
@@ -1669,6 +1676,43 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 		fmt.Sprintf("snapshot_max_age=%s", collector.snapshotMaxAge),
 		"collector",
 	)
+
+	// Before the first collection since runtime start completes, a no-providers
+	// verdict is warm-up, not an answer about this Mac: the collector simply
+	// has not asked CodexBar yet. Wait for it, bounded in time; past the bound
+	// a failed fetch keeps its own error kind instead of flattening into
+	// no-providers. Once CodexBar has answered -- including with zero
+	// providers -- the verdict stands.
+	// `daemon --once` runs without a warm-up window (first.bounded == false)
+	// and keeps the immediate no-providers verdict: the hosted guest matrix
+	// greps exactly that code from a provider-less one-shot run.
+	if result.failureKind == runtimeErrorNoProviders && !state.hasLastGood {
+		if first := collector.firstCollectState(now); first.bounded && !first.settled {
+			if first.warming || !first.started {
+				// Warm-up, or the device gate has not let the collector ask
+				// CodexBar even once (pairing can happen long after runtime
+				// start; the next tick or wake starts the collection and
+				// re-anchors the window). Neither is an answer about this Mac.
+				deps.logf("runtime event=usage-waiting port=%s reason=collector-warming\n", publicDeviceTarget(port))
+				return nil
+			}
+			fetchErr := first.fetchErr
+			failureKind := runtimeErrorKindFromFetchErr(fetchErr)
+			if fetchErr == nil {
+				fetchErr = errors.New("first provider collection exceeded the warm-up window")
+				failureKind = runtimeErrorCodexbarCmd
+			}
+			if codexbar.FetchErrorKindOf(fetchErr) != codexbar.FetchErrorNoProviders {
+				result = finalizeCycleResult(state, cycleResult{
+					selectionReason: "collector-warming-failed",
+					errorSource:     "collector",
+					failureKind:     failureKind,
+					failureOp:       "collect-usage",
+					failureErr:      fetchErr,
+				}, now)
+			}
+		}
+	}
 
 	attachFirmwareUpdateState(ctx, state, deps, caps, &result)
 	return sendCycleResult(ctx, port, caps, maxFrameBytes, state, deps, result)
@@ -2081,6 +2125,24 @@ func providerSnapshotMaxAge() time.Duration {
 	parsed, err := time.ParseDuration(raw)
 	if err != nil || parsed <= 0 {
 		return defaultProviderMaxAge
+	}
+	return parsed
+}
+
+func collectorWarmupMaxAge() time.Duration {
+	// Bound the warm-up window in which a cycle waits for the first collection
+	// instead of settling on a provider verdict. The bound must outlast the
+	// synchronous first-run provider detection (a ~90s-4min probe holds the
+	// config bootstrap, and the dashboard serve starts only after it), or a
+	// fresh Mac reports a fabricated collection error mid-setup.
+	const fallback = 5 * time.Minute
+	raw := strings.TrimSpace(os.Getenv(collectorWarmupEnvVar))
+	if raw == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil || parsed <= 0 {
+		return fallback
 	}
 	return parsed
 }

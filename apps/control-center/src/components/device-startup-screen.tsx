@@ -15,6 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   normalizedProviderStatus,
+  providerRecoveryStatusRows,
   providerSetupHasEngineButNoEnabledProvider,
   providerSetupCodexBarAnswered,
   type ApiError,
@@ -102,6 +103,18 @@ export function DeviceStartupScreen({
         codexBarInstalled,
       )
     : null;
+  // The customer's tools, by name and real state: which provider is failing
+  // with what, and which is merely switched off (issue #405). Earned the same
+  // way as the CodexBar choice -- the first automatic attempt stays a plain
+  // "Try again" without internals. The all-off view already says everything is
+  // off, and a checking view has no answer yet.
+  const providerStatusRows =
+    providerRecoveryView &&
+    !providerRecoveryView.checking &&
+    showCodexBarFallback &&
+    !everyProviderSwitchedOff
+      ? providerRecoveryStatusRows(providerSetup)
+      : [];
   // A running request may disable the way out. A calm view may not: the
   // "ready but no picture yet" state reports checking with nothing actually in
   // flight, and disabling the button there rebuilt the dead end this screen
@@ -385,6 +398,21 @@ export function DeviceStartupScreen({
               <span>Scan WiFi again</span>
             </Button>
           </>
+        ) : null}
+
+        {providerStatusRows.length > 0 ? (
+          <ul
+            className="grid gap-1.5 text-left text-sm text-muted-foreground"
+            data-testid="provider-recovery-status-list"
+          >
+            {providerStatusRows.map((row) => (
+              <li key={row.id}>
+                <span className="font-medium text-foreground">{row.label}</span>
+                {" — "}
+                {row.text}
+              </li>
+            ))}
+          </ul>
         ) : null}
 
         {!providerRecoveryView && choosing ? (

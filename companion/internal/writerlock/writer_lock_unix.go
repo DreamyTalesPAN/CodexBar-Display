@@ -43,6 +43,14 @@ func Acquire() (*Lock, error) {
 }
 
 func AcquireAt(path string) (*Lock, error) {
+	return acquireAt(path, syscall.LOCK_EX|syscall.LOCK_NB)
+}
+
+func AcquireAtWait(path string) (*Lock, error) {
+	return acquireAt(path, syscall.LOCK_EX)
+}
+
+func acquireAt(path string, operation int) (*Lock, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return nil, errors.New("display writer lock path is empty")
@@ -54,7 +62,7 @@ func AcquireAt(path string) (*Lock, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open display writer lock: %w", err)
 	}
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := syscall.Flock(int(file.Fd()), operation); err != nil {
 		_ = file.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
 			return nil, &lockedError{path: path}

@@ -30,7 +30,8 @@ func (s *Server) currentProviderSetup(ctx context.Context, force bool) codexbar.
 	now := s.currentTime()
 	if !s.providerSetupCachedAt.IsZero() {
 		age := now.Sub(s.providerSetupCachedAt)
-		if age >= 0 && (age < providerSetupCacheTTL && !force || age < time.Second) {
+		if age >= 0 && (age < providerSetupCacheTTL && !force || age < time.Second) &&
+			providerSetupCacheIsCurrent(s.providerSetupCache) {
 			cached := s.providerSetupCache
 			s.providerSetupMu.Unlock()
 			return s.providerSetupWithFreshUsage(cached, now)
@@ -61,7 +62,7 @@ func (s *Server) providerSetupForStatus() codexbar.ProviderSetup {
 
 	if !cachedAt.IsZero() {
 		age := now.Sub(cachedAt)
-		if age >= 0 && age < providerSetupCacheTTL {
+		if age >= 0 && age < providerSetupCacheTTL && providerSetupCacheIsCurrent(cached) {
 			return s.providerSetupWithFreshUsage(cached, now)
 		}
 	}
@@ -80,8 +81,22 @@ func (s *Server) providerSetupForStatus() codexbar.ProviderSetup {
 	return s.providerSetupWithFreshUsage(checkingProviderSetup(now), now)
 }
 
+func providerSetupCacheIsCurrent(setup codexbar.ProviderSetup) bool {
+	if !strings.EqualFold(strings.TrimSpace(setup.Status), "checking") {
+		return true
+	}
+	configPath := strings.TrimSpace(setup.Engine.ConfigPath)
+	return configPath == "" || codexbar.FirstRunProviderSetupInProgress(configPath)
+}
+
 func (s *Server) providerSetupWithFreshUsage(setup codexbar.ProviderSetup, now time.Time) codexbar.ProviderSetup {
 	if s == nil || s.loadUsage == nil {
+		return setup
+	}
+	// Checking means CodexBar has not answered this request yet. Reusing an older
+	// usage snapshot would let the theme chooser overtake a first-run inventory
+	// scan, including the lock-contention response that carries no config path.
+	if strings.EqualFold(strings.TrimSpace(setup.Status), "checking") {
 		return setup
 	}
 	if now.IsZero() {
@@ -198,13 +213,23 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 	}
 	protectedByID := make(map[string]struct{}, len(setup.Providers))
 	engineFailed := setup.Engine.Status == codexbar.ProviderEngineError
+	blocksReady := engineFailed
 	if engineFailed {
 		protectedByID["codexbar"] = struct{}{}
 	}
 	for _, provider := range setup.Providers {
 		id := strings.TrimSpace(strings.ToLower(provider.ID))
+		if provider.Enabled != nil && !*provider.Enabled {
+			// A disabled row must protect its own ID from cached readiness, but it
+			// does not prevent another provider from proving the setup ready.
+			if id != "" {
+				protectedByID[id] = struct{}{}
+			}
+			continue
+		}
 		if id != "" && providerSetupFailureMustWin(provider.Status) {
 			protectedByID[id] = struct{}{}
+			blocksReady = true
 		}
 	}
 	readyByID := make(map[string]codexbar.ProviderReadiness, len(ready))
@@ -221,7 +246,7 @@ func reconcileProviderSetupWithUsage(setup codexbar.ProviderSetup, ready []codex
 		readyByID[id] = provider
 		providers = append(providers, provider)
 	}
-	if len(readyByID) > 0 && len(protectedByID) == 0 {
+	if len(readyByID) > 0 && !blocksReady {
 		setup.Status = codexbar.ProviderReady
 		setup.Engine.Status = codexbar.ProviderReady
 	}

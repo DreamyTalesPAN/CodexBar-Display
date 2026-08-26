@@ -12,4 +12,8 @@ func AcquireAt(string) (*Lock, error) {
 	return &Lock{}, nil
 }
 
+func AcquireAtWait(string) (*Lock, error) {
+	return &Lock{}, nil
+}
+
 func (l *Lock) Release() {}
