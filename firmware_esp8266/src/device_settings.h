@@ -19,6 +19,8 @@ enum class ConnectionMode : uint8_t {
 };
 
 constexpr size_t kConnectionTransitionRecordBytes = 5;
+constexpr unsigned long kConnectionTransitionConfirmationMs = 60000UL;
+constexpr unsigned long kConnectionTransitionSetupMs = 10UL * 60UL * 1000UL;
 
 struct ConnectionTransition {
   ConnectionMode previous = ConnectionMode::kUnspecified;
@@ -63,6 +65,11 @@ inline bool CanBeginConnectionTransition(ConnectionMode current, ConnectionMode 
   return IsSwitchableConnectionMode(current) &&
          IsSwitchableConnectionMode(target) &&
          current != target;
+}
+
+inline unsigned long ConnectionTransitionTimeoutMs(bool setupMode) {
+  return setupMode ? kConnectionTransitionSetupMs
+                   : kConnectionTransitionConfirmationMs;
 }
 
 inline void EncodeConnectionTransition(
