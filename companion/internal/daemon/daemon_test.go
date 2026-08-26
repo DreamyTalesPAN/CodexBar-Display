@@ -3449,6 +3449,30 @@ func TestRunDaemonLoopRetriesQuicklyAfterCycleError(t *testing.T) {
 	}
 }
 
+func TestRunDaemonLoopReturnsConnectionModeChange(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	cycleCalls := 0
+	err := runDaemonLoop(context.Background(), Options{Interval: time.Second}, runtimeDeps{
+		now:  time.Now,
+		logf: func(string, ...any) {},
+		after: func(time.Duration) <-chan time.Time {
+			t.Fatal("connection mode change must exit before retry wait")
+			return nil
+		},
+	}, func(context.Context) error {
+		cycleCalls++
+		return ErrConnectionModeChanged
+	})
+
+	if !errors.Is(err, ErrConnectionModeChanged) {
+		t.Fatalf("expected connection mode change, got %v", err)
+	}
+	if cycleCalls != 1 {
+		t.Fatalf("expected one cycle before exit, got %d", cycleCalls)
+	}
+}
+
 func TestRunWithDepsUsesConfiguredIntervalAfterSleepWakeGap(t *testing.T) {
 	prepareFastTestEnv(t)
 

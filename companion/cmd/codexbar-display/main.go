@@ -53,7 +53,6 @@ var doctorListPortsFn = usb.ListPorts
 var doctorResolvePortFn = func(explicit string) (string, error) {
 	return usb.ResolveVibeTVPort(explicit, "")
 }
-var doctorProbePortFn = usb.ProbePort
 var doctorReadDeviceHelloFn = usb.ReadDeviceHello
 var doctorReadWiFiCapabilitiesFn = func(target string) (protocol.DeviceCapabilities, error) {
 	client := &http.Client{
@@ -1119,17 +1118,6 @@ func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, _ []string) error {
 		return fmt.Errorf("runtime serial resolve failed: %w", err)
 	}
 	fmt.Printf("  serial resolve: ok (%s)\n", port)
-
-	if err := doctorProbePortFn(port); err != nil {
-		if errcode.Of(err) == errcode.TransportSerialCloseTimeout {
-			fmt.Printf("  serial probe: warning (%v)\n", err)
-		} else {
-			fmt.Printf("  serial probe: failed (%v)\n", err)
-			return fmt.Errorf("runtime serial probe failed: %w", err)
-		}
-	} else {
-		fmt.Printf("  serial probe: ok (%s)\n", port)
-	}
 
 	fmt.Println("  Cable identity: resolved from device hello")
 

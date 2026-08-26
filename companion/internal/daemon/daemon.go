@@ -514,6 +514,9 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		if opts.Once {
 			return err
 		}
+		if errors.Is(err, ErrConnectionModeChanged) {
+			return err
+		}
 
 		waitFor := opts.Interval
 		if err != nil {
