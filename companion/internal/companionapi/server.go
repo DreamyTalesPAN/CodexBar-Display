@@ -188,6 +188,7 @@ type Server struct {
 	runSetup               func(context.Context, setup.Options) error
 	resolveCablePort       func(string, string) (string, error)
 	readCableHello         func(string) (protocol.DeviceHello, error)
+	currentCableHello      func() (protocol.DeviceHello, bool)
 	setCableConnectionMode func(string, string, string) error
 	subnetTargets          func() []string
 	defaultWiFiTarget      func() string
@@ -938,6 +939,7 @@ func New(opts Options) (*Server, error) {
 		runSetup:               setup.Run,
 		resolveCablePort:       usb.ResolveVibeTVControlPort,
 		readCableHello:         usb.ReadDeviceHello,
+		currentCableHello:      usb.CurrentDeviceHello,
 		setCableConnectionMode: usb.SetConnectionMode,
 		subnetTargets:          localSubnetTargets,
 		defaultWiFiTarget:      setup.DefaultWiFiTarget,
@@ -1334,6 +1336,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	identityMismatch := false
 	if cableMode {
 		device.Capabilities = cableCapabilityBlock(cfg.DeviceTransports)
+		if hello, ok := s.currentCableHello(); ok && cableHelloMatchesConfig(hello, cfg.DeviceID) {
+			observed := deviceFromHello(cableDeviceTarget, "", hello)
+			device.Board = observed.Board
+			device.Firmware = observed.Firmware
+			device.Capabilities = observed.Capabilities
+		}
 		// Cable has no HTTP endpoint or pairing token. A current exact-transport
 		// stream result is the authoritative connection evidence.
 		reachable = providerSetupStreamForTarget(device.Stream, device.Target)
@@ -1398,6 +1406,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		ThemeInstall:                 themeInstall,
 		FirmwareUpdate:               firmwareUpdate,
 	})
+}
+
+func cableHelloMatchesConfig(hello protocol.DeviceHello, configuredDeviceID string) bool {
+	hello = hello.Normalize()
+	return strings.EqualFold(hello.DeviceID, strings.TrimSpace(configuredDeviceID)) &&
+		strings.EqualFold(hello.Capabilities.Transport.Active, "usb") &&
+		strings.EqualFold(hello.Capabilities.Transport.Mode, "cable")
 }
 
 func configuredStatusTarget(cfg runtimeconfig.Config) string {
@@ -2133,12 +2148,16 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	diagnosticsTarget := configuredStatusTarget(cfg)
 	cableMode := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable"
 
-	discoveryResult := make(chan diagnosticsDiscovery, 1)
-	go func() {
-		discoveryResult <- s.diagnosticsNetworkDiscovery(r.Context(), cfg)
-	}()
+	discovery := diagnosticsDiscovery{Devices: []deviceSearchEntry{}}
+	var discoveryResult <-chan diagnosticsDiscovery
+	if !cableMode {
+		result := make(chan diagnosticsDiscovery, 1)
+		discoveryResult = result
+		go func() {
+			result <- s.diagnosticsNetworkDiscovery(r.Context(), cfg)
+		}()
+	}
 	providerSetup := s.currentProviderSetup(r.Context(), false)
-	discovery := <-discoveryResult
 	checks := []diagnosticCheck{
 		{
 			Name:   "companion_api",
@@ -2146,7 +2165,10 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			Detail: "Companion API is responding on loopback.",
 		},
 		providerDiagnosticCheck(providerSetup),
-		discoveryDiagnosticCheck(discovery),
+	}
+	if discoveryResult != nil {
+		discovery = <-discoveryResult
+		checks = append(checks, discoveryDiagnosticCheck(discovery))
 	}
 	writeReport := func(device deviceInfo) {
 		writeJSON(w, http.StatusOK, diagnosticsResponse{
@@ -3239,7 +3261,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	}
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
-	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
+	cfg, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
 		cfg.ClearDevices()
 		cfg.SetProviderSelectionSetupComplete(false)
 		// Setting up again asks for the display choice again, so the old one is
@@ -3257,9 +3279,12 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	s.clearDisplayVerification("")
 	s.clearConfiguredDeviceState()
 	writeJSON(w, http.StatusOK, statusResponse{
-		OK:                           true,
-		Companion:                    s.companionInfo(r.Context()),
-		Device:                       deviceInfo{Connected: false},
+		OK:        true,
+		Companion: s.companionInfo(r.Context()),
+		Device: deviceInfo{
+			Connected:    false,
+			Capabilities: cableCapabilityBlock(cfg.DeviceTransports),
+		},
 		ConnectionModeChoiceRequired: true,
 		Setup:                        setupProgress{ProviderSelectionRequired: true},
 	})
@@ -3634,6 +3659,10 @@ func (s *Server) repairDeviceOnceLocked(
 				DeviceToken: token,
 			})
 			current.ConnectionMode = "wifi"
+			current.DeviceTransports = append(
+				[]string(nil),
+				hello.Normalize().Capabilities.Transport.Supported...,
+			)
 		}); err != nil {
 			return deviceInfo{}, &repairStageError{stage: "config", err: err}
 		}
@@ -3735,6 +3764,10 @@ func (s *Server) repairDeviceOnceLocked(
 			DeviceToken: token,
 		})
 		current.ConnectionMode = "wifi"
+		current.DeviceTransports = append(
+			[]string(nil),
+			hello.Normalize().Capabilities.Transport.Supported...,
+		)
 	}); err != nil {
 		return deviceInfo{}, &repairStageError{stage: "config", err: err}
 	}

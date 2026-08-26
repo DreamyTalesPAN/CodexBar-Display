@@ -100,6 +100,32 @@ func (s *Sender) ReadCapabilities(path string) (protocol.DeviceCapabilities, err
 	return s.DeviceCapabilities(path)
 }
 
+func (s *Sender) CurrentHello() (protocol.DeviceHello, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.helloSeen {
+		return protocol.DeviceHello{}, false
+	}
+	return cloneDeviceHello(s.hello), true
+}
+
+func cloneDeviceHello(hello protocol.DeviceHello) protocol.DeviceHello {
+	hello.SupportedProtocolVersions = append([]int(nil), hello.SupportedProtocolVersions...)
+	hello.Features = append([]string(nil), hello.Features...)
+	hello.Capabilities.Theme.SupportedPrimitiveTypes = append(
+		[]string(nil),
+		hello.Capabilities.Theme.SupportedPrimitiveTypes...,
+	)
+	hello.Capabilities.Theme.BuiltinThemes = append([]string(nil), hello.Capabilities.Theme.BuiltinThemes...)
+	hello.Capabilities.Transport.Supported = append([]string(nil), hello.Capabilities.Transport.Supported...)
+	if hello.Capabilities.Auth != nil {
+		auth := *hello.Capabilities.Auth
+		hello.Capabilities.Auth = &auth
+	}
+	return hello
+}
+
 func (s *Sender) DeviceHello(path string) (protocol.DeviceHello, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

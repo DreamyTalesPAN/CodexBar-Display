@@ -84,6 +84,22 @@ func TestConfiguredConnectionModePreservesLegacyWiFiConfig(t *testing.T) {
 	}
 }
 
+func TestConfiguredConnectionModeKeepsPendingWiFiTransitionOnCableWorker(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		DeviceTarget:          "http://192.168.178.72",
+		DeviceToken:           "pair-token",
+		DeviceID:              "transitioning-vibetv",
+		CableAutoBindDisabled: true,
+	}); err != nil {
+		t.Fatalf("save transitional runtime config: %v", err)
+	}
+	if got := configuredConnectionMode("wifi"); got != "usb" {
+		t.Fatalf("pending WiFi transition must stay on Cable worker, got %q", got)
+	}
+}
+
 func TestResolveCycleDevicePersistsFreshCableIdentity(t *testing.T) {
 	cfg := runtimeconfig.Config{}
 	port, _, _, err := resolveCycleDevice("", nil, runtimeDeps{

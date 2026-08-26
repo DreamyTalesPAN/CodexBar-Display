@@ -73,6 +73,12 @@ func GetDeviceCapabilities(port string) (protocol.DeviceCapabilities, error) {
 	return defaultSender.ReadCapabilities(port)
 }
 
+// CurrentDeviceHello returns the identity already collected by the running
+// Cable worker. It never opens or writes to the serial port.
+func CurrentDeviceHello() (protocol.DeviceHello, bool) {
+	return defaultSender.CurrentHello()
+}
+
 func SetConnectionMode(port, deviceID, mode string) error {
 	return defaultSender.SetConnectionMode(port, deviceID, mode)
 }
