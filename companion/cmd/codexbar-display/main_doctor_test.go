@@ -14,29 +14,6 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
-func TestParsePinnedPortFromLaunchAgentPlist(t *testing.T) {
-	t.Run("unpinned", func(t *testing.T) {
-		plist := `<plist><dict><key>ProgramArguments</key><array><string>codexbar-display</string></array></dict></plist>`
-		if got := parsePinnedPortFromLaunchAgentPlist(plist); got != "" {
-			t.Fatalf("expected no pinned port, got %q", got)
-		}
-	})
-
-	t.Run("pinned", func(t *testing.T) {
-		plist := `<plist><dict><array><string>daemon</string><string>--port</string><string>/dev/cu.usbserial-10</string></array></dict></plist>`
-		if got := parsePinnedPortFromLaunchAgentPlist(plist); got != "/dev/cu.usbserial-10" {
-			t.Fatalf("expected pinned port, got %q", got)
-		}
-	})
-
-	t.Run("malformed", func(t *testing.T) {
-		plist := `<plist><dict><array><string>daemon</string><string>--port</string></array></dict></plist>`
-		if got := parsePinnedPortFromLaunchAgentPlist(plist); got != "" {
-			t.Fatalf("expected no pinned port for malformed plist, got %q", got)
-		}
-	})
-}
-
 func TestParseLaunchAgentArgument(t *testing.T) {
 	plist := `<plist><dict><array><string>daemon</string><string>--transport</string><string>wifi</string><string>--target</string><string>http://192.0.2.10?mode=x&amp;token=secret</string></array></dict></plist>`
 	if got := parseLaunchAgentArgument(plist, "--transport"); got != "wifi" {
@@ -255,16 +232,6 @@ func TestDoctorCompanionHealthRequiresAppRuntimeOwner(t *testing.T) {
 	}
 }
 
-func TestContainsPort(t *testing.T) {
-	ports := []string{"/dev/cu.usbmodem101", "/dev/cu.usbserial-10"}
-	if !containsPort(ports, "/dev/cu.usbserial-10") {
-		t.Fatalf("expected exact port match")
-	}
-	if containsPort(ports, "/dev/cu.usbserial-11") {
-		t.Fatalf("did not expect unknown port to match")
-	}
-}
-
 func TestDoctorWiFiSkipsSerialChecks(t *testing.T) {
 	for _, ports := range [][]string{
 		{},
@@ -352,7 +319,7 @@ func TestDoctorWiFiRejectsUnknownCapabilities(t *testing.T) {
 	}
 }
 
-func TestDoctorUSBStillRejectsAmbiguousUnpinnedPorts(t *testing.T) {
+func TestDoctorUSBUsesIdentityResolverAcrossSeveralPortNames(t *testing.T) {
 	restoreDoctorTestDeps(t)
 	doctorListPortsFn = func() ([]string, error) {
 		return []string{"/dev/cu.usbserial-1", "/dev/cu.usbserial-2"}, nil
@@ -360,23 +327,30 @@ func TestDoctorUSBStillRejectsAmbiguousUnpinnedPorts(t *testing.T) {
 	doctorResolvePortFn = func(string) (string, error) { return "/dev/cu.usbserial-1", nil }
 	doctorProbePortFn = func(string) error { return nil }
 	doctorReadDeviceHelloFn = func(string) (protocol.DeviceHello, error) {
-		return protocol.DeviceHello{}, errors.New("must not reach device hello")
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			Board:    "esp8266-smalltv-st7789",
+			Features: []string{protocol.FeatureTheme},
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"},
+			},
+		}, nil
 	}
 
 	err := runDoctorTransportChecks(doctorRuntimeConfig{configured: true, transport: "usb"})
-	if err == nil || !strings.Contains(err.Error(), "2 serial ports detected") {
-		t.Fatalf("expected USB ambiguity error, got %v", err)
+	if err != nil {
+		t.Fatalf("port names must not create ambiguity after identity resolution: %v", err)
 	}
 }
 
-func TestDoctorUSBResolvesConfiguredPort(t *testing.T) {
+func TestDoctorUSBResolvesFreshIdentity(t *testing.T) {
 	restoreDoctorTestDeps(t)
 	const configuredPort = "/dev/cu.usbserial-pinned"
 	doctorResolvePortFn = func(requested string) (string, error) {
-		if requested != configuredPort {
-			t.Fatalf("expected configured port %q, got %q", configuredPort, requested)
+		if requested != "" {
+			t.Fatalf("doctor must not reuse a stored port, got %q", requested)
 		}
-		return requested, nil
+		return configuredPort, nil
 	}
 	doctorProbePortFn = func(port string) error {
 		if port != configuredPort {
@@ -391,7 +365,7 @@ func TestDoctorUSBResolvesConfiguredPort(t *testing.T) {
 		return protocol.DeviceHello{}, errors.New("handshake unavailable")
 	}
 
-	err := runDoctorUSBRuntimeChecks(doctorRuntimeConfig{port: configuredPort}, []string{configuredPort})
+	err := runDoctorUSBRuntimeChecks(doctorRuntimeConfig{}, []string{configuredPort})
 	if err != nil {
 		t.Fatalf("expected configured USB port check to pass, got %v", err)
 	}

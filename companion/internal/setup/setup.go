@@ -1,7 +1,6 @@
 package setup
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/xml"
@@ -12,8 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -37,16 +34,15 @@ const (
 )
 
 type Options struct {
-	Port          string
-	Transport     string
-	Target        string
-	AssumeYes     bool
-	SkipFlash     bool
-	PinDaemonPort bool
-	FirmwareEnv   string
-	Theme         string
-	ValidateOnly  bool
-	DryRun        bool
+	Port         string
+	Transport    string
+	Target       string
+	AssumeYes    bool
+	SkipFlash    bool
+	FirmwareEnv  string
+	Theme        string
+	ValidateOnly bool
+	DryRun       bool
 }
 
 func DefaultTransport() string {
@@ -60,13 +56,11 @@ func DefaultWiFiTarget() string {
 type commandRunner func(ctx context.Context, dir string, name string, args ...string) (string, error)
 
 type deps struct {
-	stdin           io.Reader
 	stdout          io.Writer
 	cwd             func() (string, error)
 	executablePath  func() (string, error)
 	homeDir         func() (string, error)
 	uid             func() int
-	listPorts       func() ([]string, error)
 	resolvePort     func(string) (string, error)
 	probePort       func(string) error
 	readDeviceHello func(string) (protocol.DeviceHello, error)
@@ -74,13 +68,9 @@ type deps struct {
 	findCodexbar    func() (string, error)
 	lookPath        func(string) (string, error)
 	runCommand      commandRunner
-	isInteractive   func() bool
 }
 
 func (d deps) withDefaults() deps {
-	if d.stdin == nil {
-		d.stdin = os.Stdin
-	}
 	if d.stdout == nil {
 		d.stdout = os.Stdout
 	}
@@ -96,11 +86,10 @@ func (d deps) withDefaults() deps {
 	if d.uid == nil {
 		d.uid = os.Getuid
 	}
-	if d.listPorts == nil {
-		d.listPorts = usb.ListPorts
-	}
 	if d.resolvePort == nil {
-		d.resolvePort = usb.ResolvePort
+		d.resolvePort = func(explicit string) (string, error) {
+			return usb.ResolveVibeTVPort(explicit, "")
+		}
 	}
 	if d.probePort == nil {
 		d.probePort = usb.ProbePort
@@ -124,9 +113,6 @@ func (d deps) withDefaults() deps {
 	}
 	if d.runCommand == nil {
 		d.runCommand = runSystemCommand
-	}
-	if d.isInteractive == nil {
-		d.isInteractive = stdinIsInteractive
 	}
 	return d
 }
@@ -420,10 +406,8 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		}
 		if transportName == "wifi" {
 			fmt.Fprintf(d.stdout, "Dry-run: would configure LaunchAgent for WiFi target %s\n", target)
-		} else if opts.PinDaemonPort {
-			fmt.Fprintf(d.stdout, "Dry-run: would pin LaunchAgent to port %s\n", port)
 		} else {
-			fmt.Fprintln(d.stdout, "Dry-run: would configure LaunchAgent in auto-detect mode")
+			fmt.Fprintln(d.stdout, "Dry-run: would configure identity-resolved Cable mode")
 		}
 		fmt.Fprintf(d.stdout, "Dry-run: would write LaunchAgent plist %s\n", plistPath)
 		fmt.Fprintln(d.stdout, "Dry-run complete. No changes applied.")
@@ -470,11 +454,8 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	if transportName == "wifi" {
 		daemonTarget = target
 		fmt.Fprintf(d.stdout, "Launch agent WiFi target: %s\n", daemonTarget)
-	} else if opts.PinDaemonPort {
-		daemonPort = port
-		fmt.Fprintf(d.stdout, "Launch agent serial mode: pinned (%s)\n", daemonPort)
 	} else {
-		fmt.Fprintln(d.stdout, "Launch agent serial mode: auto-detect")
+		fmt.Fprintln(d.stdout, "Launch agent serial mode: identity-resolved")
 	}
 
 	plistPath, err := writeLaunchAgentPlist(home, installPath, daemonTransport, daemonTarget, daemonPort)
@@ -499,61 +480,22 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 
 func choosePort(opts Options, d deps) (string, error) {
 	explicit := strings.TrimSpace(opts.Port)
-	if explicit != "" {
-		port, err := d.resolvePort(explicit)
-		if err != nil {
-			return "", &StepError{
-				Step: "select-port",
-				Err:  err,
-				Hint: "run `ls /dev/cu.usb*` and pass an existing path via --port",
-			}
-		}
-		return port, nil
-	}
-
-	ports, err := d.listPorts()
+	port, err := d.resolvePort(explicit)
 	if err != nil {
 		return "", &StepError{
-			Step: "list-ports",
+			Step: "select-port",
 			Err:  err,
-			Hint: "disconnect and reconnect the board, then rerun setup",
+			Hint: "connect exactly one Cable VibeTV or pass its explicit path via --port",
 		}
 	}
-	if len(ports) == 0 {
+	if strings.TrimSpace(port) == "" {
 		return "", &StepError{
-			Step: "list-ports",
-			Err:  errors.New("no serial ports found"),
-			Hint: "connect the board with a data-capable USB cable and run `ls /dev/cu.usb*`",
+			Step: "select-port",
+			Err:  errors.New("identity resolver returned an empty serial port"),
+			Hint: "connect exactly one Cable VibeTV and retry",
 		}
 	}
-
-	sorted := sortPreferredPorts(ports)
-	if !containsUSBSerialPort(sorted) {
-		return "", &StepError{
-			Step: "list-ports",
-			Err:  errors.New("no usb serial ports found"),
-			Hint: "connect the board with a data-capable USB cable and run `ls /dev/cu.usb*`",
-		}
-	}
-	if len(sorted) == 1 {
-		return sorted[0], nil
-	}
-
-	if opts.AssumeYes || !d.isInteractive() {
-		fmt.Fprintf(d.stdout, "Multiple serial ports detected; choosing preferred port %s (--yes/non-interactive)\n", sorted[0])
-		return sorted[0], nil
-	}
-
-	return promptForPortSelection(d.stdin, d.stdout, sorted)
-}
-
-func containsUSBSerialPort(ports []string) bool {
-	for _, port := range ports {
-		if portRank(port) < 2 {
-			return true
-		}
-	}
-	return false
+	return port, nil
 }
 
 func normalizeSetupTransport(value string) string {
@@ -659,83 +601,6 @@ func openCodexbarInstallPage(ctx context.Context, d deps) {
 		return
 	}
 	_, _ = d.runCommand(ctx, "", "open", codexbarInstallURL)
-}
-
-func sortPreferredPorts(ports []string) []string {
-	seen := make(map[string]struct{}, len(ports))
-	clean := make([]string, 0, len(ports))
-	for _, p := range ports {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		if _, ok := seen[p]; ok {
-			continue
-		}
-		seen[p] = struct{}{}
-		clean = append(clean, p)
-	}
-
-	sort.Slice(clean, func(i, j int) bool {
-		pi := clean[i]
-		pj := clean[j]
-		ri := portRank(pi)
-		rj := portRank(pj)
-		if ri != rj {
-			return ri < rj
-		}
-		return pi < pj
-	})
-	return clean
-}
-
-func portRank(port string) int {
-	switch {
-	case strings.Contains(port, "usbmodem"):
-		return 0
-	case strings.Contains(port, "usbserial"):
-		return 1
-	default:
-		return 2
-	}
-}
-
-func promptForPortSelection(stdin io.Reader, stdout io.Writer, ports []string) (string, error) {
-	fmt.Fprintln(stdout, "Multiple serial ports detected:")
-	for idx, port := range ports {
-		suffix := ""
-		if idx == 0 {
-			suffix = " (recommended)"
-		}
-		fmt.Fprintf(stdout, "  %d) %s%s\n", idx+1, port, suffix)
-	}
-	fmt.Fprintf(stdout, "Select a port [1-%d] (Enter=1): ", len(ports))
-
-	reader := bufio.NewReader(stdin)
-	line, err := reader.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", &StepError{
-			Step: "select-port",
-			Err:  err,
-			Hint: "rerun setup with --yes to auto-select the recommended port",
-		}
-	}
-
-	trimmed := strings.TrimSpace(line)
-	if trimmed == "" {
-		return ports[0], nil
-	}
-
-	selected, convErr := strconv.Atoi(trimmed)
-	if convErr != nil || selected < 1 || selected > len(ports) {
-		return "", &StepError{
-			Step: "select-port",
-			Err:  fmt.Errorf("invalid selection %q", trimmed),
-			Hint: "rerun setup and enter a number from the list, or use --yes",
-		}
-	}
-
-	return ports[selected-1], nil
 }
 
 func locateRepository(d deps) (string, error) {
@@ -1356,12 +1221,4 @@ func splitDeviceTargetToken(raw string) (target, token string) {
 	parsed.RawQuery = query.Encode()
 	parsed.Fragment = ""
 	return strings.TrimRight(parsed.String(), "/"), token
-}
-
-func stdinIsInteractive() bool {
-	info, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return (info.Mode() & os.ModeCharDevice) != 0
 }

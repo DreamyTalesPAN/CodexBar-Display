@@ -87,3 +87,22 @@ func TestResolveVibeTVCandidatesRejectsWiFiModeOnSerial(t *testing.T) {
 		t.Fatalf("expected WiFi-mode serial device to be ignored, got %v", err)
 	}
 }
+
+func TestCableSerialCandidatesDropsMacOSTTYAliasOnly(t *testing.T) {
+	ports := []string{
+		"/dev/cu.usbserial-11230",
+		"/dev/tty.usbserial-11230",
+		"/dev/cu.usbserial-other",
+		"/dev/cu.Bluetooth-Incoming-Port",
+	}
+	got := cableSerialCandidates(ports, "darwin")
+	want := []string{"/dev/cu.usbserial-11230", "/dev/cu.usbserial-other"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("unexpected macOS Cable candidates: got=%v want=%v", got, want)
+	}
+
+	linux := cableSerialCandidates([]string{"/dev/ttyUSB0"}, "linux")
+	if len(linux) != 1 || linux[0] != "/dev/ttyUSB0" {
+		t.Fatalf("Linux ttyUSB candidate must remain available: %v", linux)
+	}
+}

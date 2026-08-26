@@ -278,7 +278,7 @@ func runVersion(args []string) error {
 
 func runUpgrade(args []string) (retErr error) {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
-	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	port := fs.String("port", "", "required explicit serial recovery port")
 	firmwareEnv := fs.String("firmware-env", setup.DefaultFirmwareEnvironment(), "PlatformIO environment to flash")
 	targetFirmwareVersion := fs.String("target-firmware-version", "", "target firmware semver/release version (default: latest firmware manifest)")
 	repo := fs.String("repo", defaultReleaseRepo, "GitHub repository for release firmware assets")
@@ -2132,7 +2132,7 @@ func flashReleaseFirmwareImage(ctx context.Context, port string, artifact releas
 
 func runRollback(args []string) error {
 	fs := flag.NewFlagSet("rollback", flag.ContinueOnError)
-	port := fs.String("port", "", "serial port for firmware rollback (auto-detect when empty)")
+	port := fs.String("port", "", "required explicit serial port for firmware rollback")
 	image := fs.String("image", "", "firmware image path (default from last-known-good state)")
 	manifest := fs.String("manifest", "", "manifest path (default from last-known-good state)")
 	scriptPath := fs.String("script-path", "", "path to esp8266-restore.sh (auto-detect when empty)")

@@ -48,7 +48,9 @@ func (d deps) withDefaults() deps {
 		d.runCommand = runSystemCommand
 	}
 	if d.resolvePort == nil {
-		d.resolvePort = usb.ResolvePort
+		d.resolvePort = func(explicit string) (string, error) {
+			return usb.ResolveVibeTVPort(explicit, "")
+		}
 	}
 	if d.readFile == nil {
 		d.readFile = os.ReadFile
