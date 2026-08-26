@@ -40,12 +40,13 @@ type permissionMigrationCache struct {
 var processPermissionMigrations permissionMigrationCache
 
 type Config struct {
-	Theme          string        `json:"theme,omitempty"`
-	ConnectionMode string        `json:"connectionMode,omitempty"`
-	DeviceTarget   string        `json:"deviceTarget,omitempty"`
-	DeviceToken    string        `json:"deviceToken,omitempty"`
-	DeviceID       string        `json:"deviceId,omitempty"`
-	KnownDevices   []KnownDevice `json:"knownDevices,omitempty"`
+	Theme                 string        `json:"theme,omitempty"`
+	ConnectionMode        string        `json:"connectionMode,omitempty"`
+	DeviceTarget          string        `json:"deviceTarget,omitempty"`
+	DeviceToken           string        `json:"deviceToken,omitempty"`
+	DeviceID              string        `json:"deviceId,omitempty"`
+	KnownDevices          []KnownDevice `json:"knownDevices,omitempty"`
+	CableAutoBindDisabled bool          `json:"cableAutoBindDisabled,omitempty"`
 }
 
 type KnownDevice struct {
@@ -333,6 +334,7 @@ func (cfg *Config) Normalize() {
 
 func (cfg *Config) SetActiveDevice(device KnownDevice) {
 	device = normalizeKnownDevice(device)
+	cfg.CableAutoBindDisabled = false
 	cfg.DeviceID = device.DeviceID
 	cfg.DeviceTarget = device.Target
 	cfg.DeviceToken = device.DeviceToken
@@ -344,6 +346,7 @@ func (cfg *Config) RememberDevice(device KnownDevice) {
 }
 
 func (cfg *Config) ClearDevices() {
+	cfg.CableAutoBindDisabled = true
 	cfg.DeviceTarget = ""
 	cfg.DeviceToken = ""
 	cfg.DeviceID = ""

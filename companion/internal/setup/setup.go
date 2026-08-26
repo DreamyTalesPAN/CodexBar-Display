@@ -1150,14 +1150,20 @@ func applyRuntimeConfig(
 		changed = true
 	}
 	deviceID := strings.TrimSpace(rawDeviceID)
-	if connectionMode == "cable" && deviceID != "" && !strings.EqualFold(cfg.DeviceID, deviceID) {
-		cfg.DeviceID = deviceID
-		// A target and token belong to the previously selected identity. Never
-		// attach them to a different VibeTV merely because Cable setup replaced
-		// the active device ID.
-		cfg.DeviceTarget = ""
-		cfg.DeviceToken = ""
-		changed = true
+	if connectionMode == "cable" && deviceID != "" {
+		if cfg.CableAutoBindDisabled {
+			cfg.CableAutoBindDisabled = false
+			changed = true
+		}
+		if !strings.EqualFold(cfg.DeviceID, deviceID) {
+			cfg.DeviceID = deviceID
+			// A target and token belong to the previously selected identity. Never
+			// attach them to a different VibeTV merely because Cable setup replaced
+			// the active device ID.
+			cfg.DeviceTarget = ""
+			cfg.DeviceToken = ""
+			changed = true
+		}
 	}
 
 	themeInput := strings.TrimSpace(rawTheme)
