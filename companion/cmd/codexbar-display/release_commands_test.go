@@ -2882,24 +2882,20 @@ func TestDeviceHelloPreflightSendsTokenOnlyInHeader(t *testing.T) {
 	}
 }
 
-// pinNoOtherRuntimeWriter points the writer-quiesce probe at a closed port so
-// the test never sees whatever runtime happens to run on the machine executing
-// it. Without this, every runInstallUpdate test fails on a developer Mac with
-// VibeTV Control Center installed and passes on CI, which is exactly backwards
-// from where the hardware work happens.
+// pinNoOtherRuntimeWriter points the writer-quiesce probe at a stable
+// non-writer endpoint so tests never depend on local runtime state or port
+// reuse timing.
 func pinNoOtherRuntimeWriter(t *testing.T) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserve closed port: %v", err)
-	}
-	origin := "http://" + listener.Addr().String()
-	if err := listener.Close(); err != nil {
-		t.Fatalf("close reserved port: %v", err)
-	}
+	nonWriter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"displayWriter":false}`))
+	}))
 	previous := firmwareUpdateRuntimeHealthOrigin
-	t.Cleanup(func() { firmwareUpdateRuntimeHealthOrigin = previous })
-	firmwareUpdateRuntimeHealthOrigin = origin
+	t.Cleanup(func() {
+		firmwareUpdateRuntimeHealthOrigin = previous
+		nonWriter.Close()
+	})
+	firmwareUpdateRuntimeHealthOrigin = nonWriter.URL
 }
 
 // Hardware, esp8266-smalltv-st7789, 2026-08-07: after a stalled upload the
