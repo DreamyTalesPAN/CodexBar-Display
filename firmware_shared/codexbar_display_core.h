@@ -964,9 +964,17 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   const DeserializationError err = deserializeJson(doc, line);
   if (err) {
     out = {};
-    out.hasError = true;
-    out.error = String("bad json: ") + err.c_str();
-    return true;
+    return false;
+  }
+
+  if (!doc["v"].is<int>()) {
+    out = {};
+    return false;
+  }
+  const int protocolVersion = doc["v"].as<int>();
+  if (protocolVersion != 1 && protocolVersion != 2) {
+    out = {};
+    return false;
   }
 
   bool hasThemeSpec = false;
@@ -1462,18 +1470,14 @@ inline bool ConsumeFrameLine(
   return true;
 }
 
-inline bool ConsumeSerialByte(
+inline bool ConsumeLineByte(
     LineReaderState& lineState,
-    RuntimeState& runtimeState,
     char c,
-    unsigned long nowMillis,
-    SerialConsumeEvent& outEvent) {
-  outEvent = {};
-
+    const char*& outLine) {
+  outLine = nullptr;
   if (c == '\r') {
     return false;
   }
-
   if (c != '\n') {
     if (!lineState.overflowed && lineState.len + 1 < sizeof(lineState.buffer)) {
       lineState.buffer[lineState.len++] = c;
@@ -1484,13 +1488,28 @@ inline bool ConsumeSerialByte(
   }
 
   lineState.buffer[lineState.len] = '\0';
-  if (!lineState.overflowed && lineState.len > 0) {
-    (void)ConsumeFrameLine(runtimeState, lineState.buffer, nowMillis, outEvent);
+  const bool complete = !lineState.overflowed && lineState.len > 0;
+  if (complete) {
+    outLine = lineState.buffer;
   }
-
   lineState.len = 0;
   lineState.overflowed = false;
-  return outEvent.frameAccepted;
+  return complete;
+}
+
+inline bool ConsumeSerialByte(
+    LineReaderState& lineState,
+    RuntimeState& runtimeState,
+    char c,
+    unsigned long nowMillis,
+    SerialConsumeEvent& outEvent) {
+  outEvent = {};
+  const char* line = nullptr;
+  if (!ConsumeLineByte(lineState, c, line)) {
+    return false;
+  }
+  return ConsumeFrameLine(runtimeState, line, nowMillis, outEvent) &&
+         outEvent.frameAccepted;
 }
 
 }  // namespace core

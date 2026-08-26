@@ -10,6 +10,8 @@ const (
 	TransportSerialPortNotFound Code = "transport/serial-port-not-found"
 	TransportNoSerialPorts      Code = "transport/no-serial-ports"
 	TransportNoUSBSerialPorts   Code = "transport/no-usb-serial-ports"
+	TransportNoMatchingDevice   Code = "transport/no-matching-vibetv"
+	TransportMultipleDevices    Code = "transport/multiple-vibetvs"
 	TransportSerialOpen         Code = "transport/serial-open"
 	TransportSerialWrite        Code = "transport/serial-write"
 	TransportSerialProbe        Code = "transport/serial-probe"
@@ -104,6 +106,10 @@ func DefaultRecovery(code Code) string {
 		return "Check `ls /dev/cu.usb*`, reconnect the device, then retry with a valid `--port`."
 	case TransportNoSerialPorts, TransportNoUSBSerialPorts:
 		return "Reconnect the board with a data-capable USB cable and retry."
+	case TransportNoMatchingDevice:
+		return "Connect the expected VibeTV by Cable and retry. Foreign serial devices are ignored."
+	case TransportMultipleDevices:
+		return "Leave exactly one matching VibeTV connected and retry."
 	case TransportSerialOpen:
 		return "Release the port (`lsof <port>`), reconnect device, then retry."
 	case TransportSerialWrite:

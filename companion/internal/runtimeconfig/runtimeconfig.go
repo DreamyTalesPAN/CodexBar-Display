@@ -41,6 +41,7 @@ var processPermissionMigrations permissionMigrationCache
 
 type Config struct {
 	Theme                          string                 `json:"theme,omitempty"`
+	ConnectionMode                 string                 `json:"connectionMode,omitempty"`
 	DeviceTarget                   string                 `json:"deviceTarget,omitempty"`
 	DeviceToken                    string                 `json:"deviceToken,omitempty"`
 	DeviceID                       string                 `json:"deviceId,omitempty"`
@@ -66,6 +67,17 @@ func NormalizeTheme(raw string) string {
 
 func DefaultTheme() string {
 	return defaultTheme
+}
+
+func NormalizeConnectionMode(raw string) string {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "cable":
+		return "cable"
+	case "wifi":
+		return "wifi"
+	default:
+		return ""
+	}
 }
 
 func ClearThemeValue(raw string) bool {
@@ -319,6 +331,7 @@ func (cfg Config) KnownDevice(deviceID string) (KnownDevice, bool) {
 
 func (cfg *Config) Normalize() {
 	cfg.Theme = NormalizeTheme(cfg.Theme)
+	cfg.ConnectionMode = NormalizeConnectionMode(cfg.ConnectionMode)
 	cfg.DeviceTarget = strings.TrimSpace(cfg.DeviceTarget)
 	cfg.DeviceToken = strings.TrimSpace(cfg.DeviceToken)
 	cfg.DeviceID = strings.TrimSpace(cfg.DeviceID)

@@ -3,8 +3,11 @@
 The payload protocol is line-delimited JSON. Each frame must be a single JSON object followed by `\n`.
 
 Supported transports:
-- USB CDC serial at `115200` baud for development/support.
-- HTTP over device WiFi for the VibeTV runtime path.
+- CH340 USB-UART serial at `115200` baud in Cable mode.
+- HTTP over device WiFi in WiFi mode.
+
+Cable and WiFi are exclusive. Cable mode never starts the radio or HTTP
+server. WiFi mode ignores serial application data.
 
 Status:
 - v1 usage/error/theme frames remain supported.
@@ -190,7 +193,7 @@ Design constraints:
 
 When the ESP8266 is connected to WiFi, it serves:
 
-- `GET /hello`: returns the same Device Hello JSON shape as USB Serial. For WiFi, `capabilities.transport.active` is `wifi` and `supported` includes both `usb` and `wifi`.
+- `GET /hello`: returns the same Device Hello JSON shape as Cable Serial. For WiFi, `capabilities.transport.active` is `wifi`. `supported` contains both `usb` and `wifi` only on cutover-capable devices; a migrated legacy device contains only `wifi`.
 - `GET /health`: returns current WiFi/filesystem/display diagnostics plus `system.freeHeap`, `system.bootId`, `system.uptimeMs`, `system.resetCount`, `system.resetReason`, and ThemeSpec render status fields (`renderOk`, `renderError`, `renderFailures`). A changed `bootId` proves a reboot; `uptimeMs` lets the Companion calculate the reset timestamp using the Mac clock. The `clock` object reports the device wall clock: `synced` (SNTP delivered a plausible epoch), `source` (`device`, `companion` or `unknown` — which source the rendered time actually came from), `epoch` (device UTC, `0` when unsynced), `utcOffsetMinutes` (learned local offset or `null`), `lastSyncAgeMs`, `syncCount`, and the resolved `time`/`date` texts. The `settings.standby` object reports the persisted standby configuration: `enabled`, `timeoutMinutes`, `brightnessPercent`, and `screensaverPath` (the selected slot reference, or `null` when nothing is selected). All of it survives a reboot. The top-level `standby` object reports live state instead of configuration: `active` (the screensaver is on screen right now) and `idleSecs` (seconds since the last frame that moved the usage numbers). Live state never appears in `/hello`, which is a boot snapshot.
 - `POST /frame`: accepts one newline-delimited JSON frame as the request body and feeds it into the same firmware parser used by USB Serial.
 - Frame payloads may include a local `update` object (`available`, `latestVersion`, `status`, `lastError`). This updates the cached display/diagnostic update state. On built-in themes, `available=true` renders a firmware-level notice that cycles through the provider, `Update available`, and `app.vibetv.shop`. ThemeSpec themes receive the same values through the existing `{label}` / `label` binding. The ESP8266 firmware must not fetch public HTTPS manifests directly.
@@ -241,9 +244,28 @@ printf '{"v":2,"provider":"codex","label":"Codex","session":17,"weekly":42,"rese
   | curl -X POST -H "X-VibeTV-Token: $TOKEN" --data-binary @- http://192.168.178.123/frame
 ```
 
+## Cable Control Messages
+
+Control messages and frames share newline-delimited JSON framing but use
+different discriminators. A control request never enters the frame parser and
+never changes the display.
+
+```json
+{"kind":"request","op":"hello"}
+{"kind":"request","op":"status"}
+```
+
+`hello` returns the Device Hello below. `status` returns stable `deviceId`,
+board, firmware, `connectionMode`, active transport, and whether a real frame
+has been accepted. Unknown requests receive a structured `kind:error` line.
+Malformed JSON, partial lines, debug chatter, control messages, and objects
+without `v:1|2` are rejected without replacing the last rendered frame.
+
 ## Device Hello (Firmware -> Host)
 
-On boot or after serial reconnect, firmware emits a capability line over USB. `GET /hello` returns the equivalent JSON over WiFi:
+In Cable mode firmware emits a capability line on boot and answers an explicit
+hello request without resetting. `GET /hello` returns the equivalent JSON over
+WiFi:
 
 ```json
 {
@@ -253,6 +275,8 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
   "preferredProtocolVersion": 2,
   "board": "esp8266-smalltv-st7789",
   "firmware": "1.0.0",
+  "deviceId": "14799300",
+  "networkMode": "off",
   "features": ["theme", "theme-spec-v1"],
   "maxFrameBytes": 2048,
   "capabilities": {
@@ -288,7 +312,7 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
       "paired": false,
       "tokenHeader": "X-VibeTV-Token"
     },
-    "transport": {"active": "wifi", "supported": ["usb", "wifi"]}
+    "transport": {"active": "usb", "supported": ["usb", "wifi"], "mode": "cable"}
   }
 }
 ```
@@ -313,6 +337,9 @@ Fields:
   - `auth.paired` tells hosts whether write APIs currently require a pairing token.
   - `auth.tokenHeader` names the HTTP header hosts should use for write auth.
   - `transport.maxFrameBytes` or top-level `maxFrameBytes` is the live frame payload limit. Hosts should use the stricter known value when both are present.
+  - `transport.active` is the wire channel (`usb` or `wifi`).
+  - `transport.mode` is the persisted customer mode (`cable`, `wifi`, or
+    `legacy-wifi-only`). A legacy device never advertises `usb` in `supported`.
 
 Firmware may emit plain readiness lines (`codexbar_display_ready*`) instead of JSON hello.
 Companion treats missing hello as unknown capabilities.
@@ -337,7 +364,8 @@ Result:
 - `theme` is optional.
 - Token stats are optional and additive; existing percentage/quota rendering remains valid when they are absent.
 - If device capabilities are explicitly known and `theme` is unsupported, host must omit `theme`.
-- If hello is missing (unknown capabilities), host may send `theme` on MVP USB path and rely on device-side ignore/fallback behavior.
+- Cable resolution requires a requestable hello with stable `deviceId`; the
+  host never sends a frame to an unknown or foreign serial device.
 - WiFi Companion usage: `codexbar-display daemon --transport wifi --target http://<device-ip>`.
 - Unknown `theme` values should be ignored by firmware.
 - Host should send at least every 60 seconds.

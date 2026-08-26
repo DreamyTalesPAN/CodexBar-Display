@@ -8,9 +8,9 @@ const (
 	FeatureUsageSlotsV1    = "usage-slots-v1"
 	FeatureUsageWindowsV1  = "usage-windows-v1"
 	FeatureProviderSlotsV1 = "provider-slots-v1"
-	DefaultMaxFrameBytes  = 512
-	DefaultMinBrightness  = 10
-	DefaultMaxBrightness  = 100
+	DefaultMaxFrameBytes   = 512
+	DefaultMinBrightness   = 10
+	DefaultMaxBrightness   = 100
 )
 
 type DisplayBrightnessCapabilities struct {
@@ -145,6 +145,8 @@ func (h DeviceHello) HasFeature(feature string) bool {
 
 type DeviceCapabilities struct {
 	Known                      bool
+	DeviceID                   string
+	ConnectionMode             string
 	ProtocolVersion            int
 	SupportedProtocolVersions  []int
 	PreferredProtocolVersion   int
@@ -209,6 +211,8 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 	}
 
 	caps := DeviceCapabilities{
+		DeviceID:                   h.DeviceID,
+		ConnectionMode:             h.Capabilities.Transport.Mode,
 		ProtocolVersion:            h.ProtocolVersion,
 		SupportedProtocolVersions:  supportedProtocols,
 		PreferredProtocolVersion:   h.PreferredProtocolVersion,
