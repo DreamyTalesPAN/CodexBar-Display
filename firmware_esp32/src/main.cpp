@@ -62,15 +62,7 @@ void recordBench(unsigned long loopStartUs, bool rendered, unsigned long renderU
 }
 #endif
 
-}  // namespace
-
-void setup() {
-  Serial.begin(115200);
-  delay(200);
-
-  renderer.Setup(runtimeCtx);
-  renderer.DrawSplash(runtimeCtx);
-
+void emitDeviceHello() {
   codexbar_display::app::TransportConfig transportConfig;
   const uint64_t chipID = ESP.getEfuseMac();
   char deviceID[17];
@@ -90,6 +82,18 @@ void setup() {
       "\"transport\":{\"active\":\"usb\",\"mode\":\"cable\",\"supported\":[\"usb\"]}}";
   transportConfig.maxFrameBytes = 1024;
   codexbar_display::app::EmitDeviceHello(transportConfig);
+}
+
+}  // namespace
+
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+
+  renderer.Setup(runtimeCtx);
+  renderer.DrawSplash(runtimeCtx);
+
+  emitDeviceHello();
 
   Serial.println("codexbar_display_ready");
 }
@@ -99,10 +103,19 @@ void loop() {
   bool rendered = false;
   unsigned long renderDurationUs = 0;
 
-  codexbar_display::core::SerialConsumeEvent event;
-  if (codexbar_display::app::ConsumeSerial(runtimeCtx, millis(), event)) {
-    renderer.OnFrameAccepted(runtimeCtx, event);
-    Serial.println("frame_received");
+  String serialLine;
+  if (codexbar_display::app::ReadSerialLine(runtimeCtx, serialLine)) {
+    if (serialLine == "{\"kind\":\"request\",\"op\":\"hello\"}") {
+      emitDeviceHello();
+    } else {
+      codexbar_display::core::SerialConsumeEvent event;
+      if (codexbar_display::core::ConsumeFrameLine(
+              runtimeCtx.runtime, serialLine.c_str(), millis(), event) &&
+          event.frameAccepted) {
+        renderer.OnFrameAccepted(runtimeCtx, event);
+        Serial.println("frame_received");
+      }
+    }
   }
 
   if (codexbar_display::app::HasFrame(runtimeCtx) &&
