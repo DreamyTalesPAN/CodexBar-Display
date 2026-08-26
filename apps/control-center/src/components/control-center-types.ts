@@ -286,6 +286,8 @@ export type DeviceInfo = {
     };
     transport?: {
       active?: string;
+      mode?: string;
+      supported?: string[];
     };
   };
 };

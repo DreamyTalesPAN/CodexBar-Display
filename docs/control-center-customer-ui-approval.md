@@ -1906,3 +1906,22 @@ issue scope, or release permission never implies UI permission.
   `device-startup-screen.test.tsx`, `scripts/test-customer-flows.mjs`, the
   matching Companion setup endpoint and Cable transport tests, and this approval
   record.
+
+## 2026-08-26 — Keep unsupported WiFi out of the approved chooser
+
+- User approval: Continuation of the user's explicit instruction to fix every
+  automated review finding on PR #407 and repeat the review loop. The user also
+  explicitly approved the final neutral Cable/WiFi card design with "jo so gebe
+  ich es frei". The automated review then found that one supported VibeTV board
+  only implements Cable, so offering the approved WiFi action on that board
+  would create a button that cannot work.
+- Approved customer-visible result: WiFi-capable VibeTVs keep exactly the two
+  neutral side-by-side cards approved above. On the USB-only LilyGO VibeTV, the
+  same setup gate shows only the neutral `Use Cable` card with its large icon,
+  helper text, and `Recommended` badge; it does not show a non-functional WiFi
+  choice. The backend also rejects a WiFi switch for a board that does not
+  advertise WiFi support.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`,
+  `device-startup-screen.tsx`, `device-startup-screen.test.tsx`,
+  `scripts/test-customer-flows.mjs`, the Companion status/setup endpoint and
+  tests, and this approval record.

@@ -1058,6 +1058,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         const payload = await runCompanion<{
           companion?: CompanionInfo;
           device?: DeviceInfo;
+          connectionModeChoiceRequired?: boolean;
           themeInstall?: ThemeInstallJob;
           firmwareUpdate?: FirmwareUpdateJob;
           providerSetup?: ProviderSetupInfo;
@@ -1073,9 +1074,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (!connectionModeChoiceResolved.current) {
           connectionModeChoiceResolved.current = true;
           setConnectionModeChoiceRequired(
-            payload.device?.active !== true &&
-              !payload.device?.target &&
-              !payload.device?.deviceId,
+            payload.connectionModeChoiceRequired ??
+              (payload.device?.active !== true &&
+                !payload.device?.target &&
+                !payload.device?.deviceId),
           );
         }
         const pairingRejection = pairingRejectionForDevice(payload.device);
@@ -3942,6 +3944,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     !requiresMacAppMigration &&
     !firmwareUpdateInProgress &&
     (providerRecoveryRequired ||
+      connectionModeChoiceRequired ||
       !hasActiveDevice ||
       recoveryPickerOpen ||
       connectionRecoveryRequired ||
@@ -3952,6 +3955,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       <DeviceStartupScreen
         busyAction={busyAction}
         connectionModeChoiceRequired={connectionModeChoiceRequired}
+        wifiConnectionSupported={
+          !device?.capabilities?.transport?.supported ||
+          device.capabilities.transport.supported.includes("wifi")
+        }
         diagnostics={supportDiagnostics}
         deviceCandidates={startupDeviceCandidates}
         deviceSearchState={startupDeviceSearchState}

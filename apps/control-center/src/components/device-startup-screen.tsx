@@ -54,6 +54,7 @@ type Props = {
   providerSetup?: ProviderSetupInfo | null;
   selectingDeviceTarget?: string;
   supportReportBusy?: boolean;
+  wifiConnectionSupported?: boolean;
 };
 
 export function DeviceStartupScreen({
@@ -75,6 +76,7 @@ export function DeviceStartupScreen({
   onSelect,
   selectingDeviceTarget,
   supportReportBusy = false,
+  wifiConnectionSupported = true,
   providerRecovery = false,
   showCodexBarFallback = false,
   providerSetup,
@@ -161,8 +163,12 @@ export function DeviceStartupScreen({
   let detail = "Choose a VibeTV on your WiFi.";
 
   if (choosingConnectionMode) {
-    title = "Choose how VibeTV connects";
-    detail = "Choose the connection that fits your setup.";
+    title = wifiConnectionSupported
+      ? "Choose how VibeTV connects"
+      : "Connect VibeTV";
+    detail = wifiConnectionSupported
+      ? "Choose the connection that fits your setup."
+      : "This VibeTV connects to this Mac by Cable.";
   } else if (wifiConnectionModeSelected && deviceSearchState === "idle") {
     title = "Connect VibeTV to WiFi";
     detail = "Set up WiFi on VibeTV, then scan for it again.";
@@ -347,7 +353,9 @@ export function DeviceStartupScreen({
     >
       <div className="grid gap-5">
         {choosingConnectionMode ? (
-          <div className="grid grid-cols-2 gap-3">
+          <div
+            className={`grid gap-3 ${wifiConnectionSupported ? "grid-cols-2" : "grid-cols-1"}`}
+          >
             <Button
               className="h-auto min-h-44 w-full flex-col items-start justify-between gap-5 whitespace-normal p-5 text-left"
               disabled={Boolean(busyAction)}
@@ -370,23 +378,25 @@ export function DeviceStartupScreen({
                 </span>
               </span>
             </Button>
-            <Button
-              className="h-auto min-h-44 w-full flex-col items-start justify-between gap-5 whitespace-normal p-5 text-left"
-              disabled={Boolean(busyAction)}
-              onClick={() => void selectConnectionMode("wifi")}
-              size="lg"
-              variant="outline"
-            >
-              <span className="flex size-14 items-center justify-center rounded-2xl bg-muted">
-                <Wifi className="size-9" aria-hidden />
-              </span>
-              <span className="grid gap-1.5">
-                <span className="text-lg font-black">Use WiFi</span>
-                <span className="text-sm font-medium leading-5 text-muted-foreground">
-                  No data Cable to this Mac
+            {wifiConnectionSupported ? (
+              <Button
+                className="h-auto min-h-44 w-full flex-col items-start justify-between gap-5 whitespace-normal p-5 text-left"
+                disabled={Boolean(busyAction)}
+                onClick={() => void selectConnectionMode("wifi")}
+                size="lg"
+                variant="outline"
+              >
+                <span className="flex size-14 items-center justify-center rounded-2xl bg-muted">
+                  <Wifi className="size-9" aria-hidden />
                 </span>
-              </span>
-            </Button>
+                <span className="grid gap-1.5">
+                  <span className="text-lg font-black">Use WiFi</span>
+                  <span className="text-sm font-medium leading-5 text-muted-foreground">
+                    No data Cable to this Mac
+                  </span>
+                </span>
+              </Button>
+            ) : null}
           </div>
         ) : null}
 

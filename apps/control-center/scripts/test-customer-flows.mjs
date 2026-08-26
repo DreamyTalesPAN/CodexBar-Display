@@ -502,6 +502,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testFreshCableAutoBindingStillChoosesConnection(
+        browser,
+        appContext.appUrl,
+      );
       await testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
         browser,
         appContext.appUrl,
@@ -629,6 +633,10 @@ async function main() {
       { expectDmg: true },
     );
     await testLocalFreshAppChoosesConnectionBeforeWifiSetup(
+      browser,
+      appContext.appUrl,
+    );
+    await testFreshCableAutoBindingStillChoosesConnection(
       browser,
       appContext.appUrl,
     );
@@ -3320,6 +3328,42 @@ async function testLocalFreshAppChoosesConnectionBeforeWifiSetup(
   assert(searchRequests === 2, "WiFi confirmation must start another scan");
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testFreshCableAutoBindingStillChoosesConnection(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  let searchRequests = 0;
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    connectionModeChoiceRequired: true,
+    device: {
+      ...companionDevice,
+      target: "Cable",
+      capabilities: {
+        transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
+      },
+    },
+    onSearch: () => {
+      searchRequests += 1;
+      return [];
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "Choose how VibeTV connects" })
+    .waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Use Cable" }).waitFor();
+  await page.getByRole("button", { name: "Use WiFi" }).waitFor();
+  assert(
+    searchRequests === 0,
+    "Fresh Cable auto-binding must preserve the explicit connection choice",
+  );
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
@@ -9071,6 +9115,7 @@ async function routeCompanionOnline(
     statusFirmwareUpdateJob,
     statusFailuresAfter = 0,
     providerSetup = readyProviderSetup(),
+    connectionModeChoiceRequired,
     onProviderRetry,
     onStatusProviderSetup,
   } = {},
@@ -9804,6 +9849,7 @@ async function routeCompanionOnline(
           ),
           providerSetup: currentProviderSetup,
           device: responseDevice,
+          connectionModeChoiceRequired,
           ...(statusFirmwareUpdateJob
             ? { firmwareUpdate: statusFirmwareUpdateJob }
             : {}),

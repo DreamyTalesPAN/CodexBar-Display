@@ -224,6 +224,10 @@ func (s *Sender) ResolvePort(explicit, expectedDeviceID string) (string, error) 
 	return path, nil
 }
 
+func (s *Sender) ResolveControlPort(explicit, expectedDeviceID string) (string, error) {
+	return resolveVibeTVPortForControl(explicit, expectedDeviceID, s.DeviceHello, true)
+}
+
 // ConfirmConnectionMode commits a pending Cable transition only after the
 // resolver has selected exactly one matching device identity.
 func (s *Sender) ConfirmConnectionMode(path, deviceID string) error {

@@ -67,10 +67,26 @@ func ResolveVibeTVPort(explicit, expectedDeviceID string) (string, error) {
 	return defaultSender.ResolvePort(explicit, expectedDeviceID)
 }
 
+// ResolveVibeTVControlPort resolves a supported VibeTV that is physically
+// connected over USB. Unlike ResolveVibeTVPort, it also accepts a device whose
+// selected connection mode is WiFi so the control API can switch it to Cable.
+func ResolveVibeTVControlPort(explicit, expectedDeviceID string) (string, error) {
+	return defaultSender.ResolveControlPort(explicit, expectedDeviceID)
+}
+
 func resolveVibeTVPort(
 	explicit,
 	expectedDeviceID string,
 	readHello func(string) (protocol.DeviceHello, error),
+) (string, error) {
+	return resolveVibeTVPortForControl(explicit, expectedDeviceID, readHello, false)
+}
+
+func resolveVibeTVPortForControl(
+	explicit,
+	expectedDeviceID string,
+	readHello func(string) (protocol.DeviceHello, error),
+	allowWiFiMode bool,
 ) (string, error) {
 	explicit = strings.TrimSpace(explicit)
 	expectedDeviceID = strings.TrimSpace(expectedDeviceID)
@@ -102,7 +118,13 @@ func resolveVibeTVPort(
 		)
 	}
 
-	return resolveVibeTVCandidates(candidates, explicit, expectedDeviceID, readHello)
+	return resolveVibeTVCandidatesForControl(
+		candidates,
+		explicit,
+		expectedDeviceID,
+		readHello,
+		allowWiFiMode,
+	)
 }
 
 func cableSerialCandidates(ports []string, goos string) []string {
@@ -130,6 +152,22 @@ func resolveVibeTVCandidates(
 	expectedDeviceID string,
 	readHello func(string) (protocol.DeviceHello, error),
 ) (string, error) {
+	return resolveVibeTVCandidatesForControl(
+		candidates,
+		explicit,
+		expectedDeviceID,
+		readHello,
+		false,
+	)
+}
+
+func resolveVibeTVCandidatesForControl(
+	candidates []string,
+	explicit,
+	expectedDeviceID string,
+	readHello func(string) (protocol.DeviceHello, error),
+	allowWiFiMode bool,
+) (string, error) {
 	matches := make([]string, 0, 1)
 	for _, candidate := range candidates {
 		hello, err := readHello(candidate)
@@ -137,11 +175,12 @@ func resolveVibeTVCandidates(
 			continue
 		}
 		hello = hello.Normalize()
+		mode := hello.Capabilities.Transport.Mode
 		if hello.Kind != "hello" ||
 			!isSupportedCableBoard(hello.Board) ||
 			hello.DeviceID == "" ||
 			hello.Capabilities.Transport.Active != "usb" ||
-			hello.Capabilities.Transport.Mode != "cable" {
+			(mode != "cable" && (!allowWiFiMode || mode != "wifi")) {
 			continue
 		}
 		if expectedDeviceID != "" && !strings.EqualFold(hello.DeviceID, expectedDeviceID) {
