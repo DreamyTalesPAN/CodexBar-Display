@@ -96,9 +96,11 @@ const char kDeviceSettingsTemporaryPath[] = "/s.tmp";
 constexpr size_t kStandbyRecordOffset = 1 + codexbar_display::deviceclock::kUtcOffsetRecordBytes;
 constexpr size_t kClockTransitionRecordOffset =
     kStandbyRecordOffset + codexbar_display::esp8266::standby::kRecordBytes;
-constexpr size_t kDeviceSettingsRecordBytes =
+constexpr size_t kConnectionModeRecordOffset =
     kClockTransitionRecordOffset +
     codexbar_display::deviceclock::kUtcOffsetTransitionRecordBytes;
+constexpr size_t kDeviceSettingsRecordBytes =
+    kConnectionModeRecordOffset + 1;
 const char kResetTrustHandoverPath[] = "/rt";
 const char kDeviceAuthTokenPath[] = "/auth";
 const char kActiveThemeSpecPathFile[] = "/theme-active";
@@ -174,6 +176,8 @@ namespace screensaver_preview = codexbar_display::esp8266::screensaver_preview;
 struct DeviceSettings {
   uint8_t brightnessPercent = kDefaultBrightnessPercent;
   standby::Settings standby;
+  codexbar_display::esp8266::device_settings::ConnectionMode connectionMode =
+      codexbar_display::esp8266::device_settings::ConnectionMode::kUnspecified;
 };
 
 namespace deviceclock = codexbar_display::deviceclock;
@@ -228,7 +232,9 @@ FirmwareUpdateState firmwareUpdate;
 bool firmwareUpdateNoticeDirty = false;
 RuntimeRenderDiagnostics renderDiagnostics;
 DeviceSettings deviceSettings;
+bool deviceSettingsRecordAvailable = false;
 String deviceAuthToken;
+String deviceID;
 String bootID;
 String bootResetReasonJSON;
 uint32_t bootResetCounter = 0;
@@ -374,8 +380,13 @@ bool loadDeviceSettings() {
           followingTransitionOffsetMinutes);
     }
   }
+  if (readBytes > static_cast<int>(kConnectionModeRecordOffset)) {
+    deviceSettings.connectionMode =
+        codexbar_display::esp8266::device_settings::DecodeConnectionMode(
+            record[kConnectionModeRecordOffset]);
+  }
   applyDeviceSettings();
-  return brightness > 0;
+  return readBytes > 0;
 }
 
 bool saveDeviceSettings() {
@@ -392,6 +403,8 @@ bool saveDeviceSettings() {
   standby::Encode(deviceSettings.standby, record + kStandbyRecordOffset);
   deviceclock::EncodeUtcOffsetTransition(
       runtimeCtx.clock, record + kClockTransitionRecordOffset);
+  record[kConnectionModeRecordOffset] =
+      static_cast<uint8_t>(deviceSettings.connectionMode);
   const size_t written = file.write(record, sizeof(record));
   file.close();
   if (written != sizeof(record)) {
@@ -402,6 +415,29 @@ bool saveDeviceSettings() {
     LittleFS.remove(kDeviceSettingsTemporaryPath);
     return false;
   }
+  return true;
+}
+
+bool resolveInitialConnectionMode(bool hasLegacyState) {
+  using codexbar_display::esp8266::device_settings::ConnectionMode;
+  using codexbar_display::esp8266::device_settings::ResolveInitialConnectionMode;
+
+  const ConnectionMode resolved =
+      ResolveInitialConnectionMode(deviceSettings.connectionMode, hasLegacyState);
+  if (resolved == deviceSettings.connectionMode) {
+    return true;
+  }
+  deviceSettings.connectionMode = resolved;
+  if (!saveDeviceSettings()) {
+    Serial.printf(
+        "connection_mode_persist_failed mode=%s\n",
+        codexbar_display::esp8266::device_settings::ConnectionModeName(resolved));
+    return false;
+  }
+  Serial.printf(
+      "connection_mode_migrated mode=%s legacy_state=%d\n",
+      codexbar_display::esp8266::device_settings::ConnectionModeName(resolved),
+      hasLegacyState ? 1 : 0);
   return true;
 }
 
@@ -1143,6 +1179,9 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
 
 const char* transportCapabilitiesJSON(const char* activeTransport, bool compact = false) {
   const bool isUsb = activeTransport != nullptr && strcmp(activeTransport, "usb") == 0;
+  const bool supportsCable =
+      codexbar_display::esp8266::device_settings::SupportsCable(
+          deviceSettings.connectionMode);
   static String json;
   json = "{\"display\":{";
   if (!compact) {
@@ -1166,7 +1205,14 @@ const char* transportCapabilitiesJSON(const char* activeTransport, bool compact 
   appendAuthStatusJSON(json);
   json += ",\"transport\":{\"active\":\"";
   json += isUsb ? "usb" : "wifi";
-  json += "\",\"supported\":[\"usb\",\"wifi\"]}}";
+  json += "\",\"supported\":[";
+  if (supportsCable) {
+    json += "\"usb\",";
+  }
+  json += "\"wifi\"],\"mode\":\"";
+  json += codexbar_display::esp8266::device_settings::ConnectionModeName(
+      deviceSettings.connectionMode);
+  json += "\"}}";
   return json.c_str();
 }
 
@@ -1174,6 +1220,12 @@ codexbar_display::app::TransportConfig makeTransportConfig(const char* activeTra
   codexbar_display::app::TransportConfig config;
   config.boardId = CODEXBAR_DISPLAY_BOARD_ID;
   config.firmwareVersion = CODEXBAR_DISPLAY_FW_VERSION;
+  config.deviceId = deviceID.c_str();
+  config.networkMode =
+      codexbar_display::esp8266::device_settings::UsesWifi(
+          deviceSettings.connectionMode)
+          ? (setupMode ? "setup" : "station")
+          : "off";
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
   config.featuresJSON = "[]";
 #else
@@ -1344,41 +1396,6 @@ bool connectToSavedWifi(const WifiCredentials& creds) {
   }
 
   Serial.printf("wifi_connected ssid=%s ip=%s\n", creds.ssid, WiFi.localIP().toString().c_str());
-  drawWaitingForCompanionStatus();
-  return true;
-}
-
-bool connectToSdkWifiConfig() {
-  WiFi.mode(WIFI_STA);
-  applyWifiInteropPhyMode();
-  const String ssid = WiFi.SSID();
-  if (ssid.length() == 0) {
-    Serial.println("wifi_sdk_config_missing");
-    return false;
-  }
-  Serial.printf("wifi_sdk_connect ssid=%s\n", ssid.c_str());
-  drawWifiConnectingStatus(ssid);
-  WiFi.begin();
-
-  const unsigned long startedAt = millis();
-  while (WiFi.status() != WL_CONNECTED && (millis() - startedAt) < kWifiConnectTimeoutMs) {
-    delay(250);
-    Serial.print(".");
-  }
-  Serial.println();
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.printf("wifi_sdk_connect_failed status=%d\n", static_cast<int>(WiFi.status()));
-    return false;
-  }
-
-  const String password = WiFi.psk();
-  if (ssid.length() < kWifiSsidBytes && password.length() < kWifiPasswordBytes) {
-    if (saveWifiCredentials(ssid, password)) {
-      Serial.printf("wifi_sdk_credentials_imported ssid=%s\n", ssid.c_str());
-    }
-  }
-
-  Serial.printf("wifi_connected source=sdk ssid=%s ip=%s\n", ssid.c_str(), WiFi.localIP().toString().c_str());
   drawWaitingForCompanionStatus();
   return true;
 }
@@ -1599,36 +1616,76 @@ void handleHello() {
     return;
   }
 
+  const String out = codexbar_display::app::BuildDeviceHelloJSON(
+      makeTransportConfig("wifi"));
+  webServer.send(200, "application/json", out);
+}
+
+void emitSerialStatus() {
   String out;
-  out.reserve(900);
-  out += "{\"kind\":\"hello\",\"protocolVersion\":2,\"board\":\"";
+  out.reserve(240);
+  out += "{\"kind\":\"status\",\"deviceId\":\"";
+  out += deviceID;
+  out += "\",\"board\":\"";
   out += CODEXBAR_DISPLAY_BOARD_ID;
-  out += "\",\"deviceId\":\"";
-  out += ESP.getChipId();
-  out += "\",\"networkMode\":\"";
-  out += setupMode ? "setup" : "station";
   out += "\",\"firmware\":\"";
   out += CODEXBAR_DISPLAY_FW_VERSION;
-  out += "\",\"maxFrameBytes\":";
-  out += String(kMaxFrameBytes);
-  out += ",\"capabilities\":{\"display\":{\"brightness\":";
-  appendBrightnessCapabilityJSON(out);
-  out += "},\"standby\":";
-  appendStandbyCapabilityJSON(out);
-  out += ",\"theme\":";
-#ifdef CODEXBAR_DISPLAY_PROBE_ONLY
-  out += themeCapabilitiesJSON(false, true);
-#else
-#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  out += themeCapabilitiesJSON(true, true);
-#else
-  out += themeCapabilitiesJSON(false, true);
-#endif
-#endif
-  out += ",";
-  appendAuthStatusJSON(out);
-  out += ",\"transport\":{\"active\":\"wifi\"}}}";
-  webServer.send(200, "application/json", out);
+  out += "\",\"connectionMode\":\"";
+  out += codexbar_display::esp8266::device_settings::ConnectionModeName(
+      deviceSettings.connectionMode);
+  out += "\",\"transport\":\"usb\",\"hasFrame\":";
+  out += codexbar_display::app::HasFrame(runtimeCtx) ? "true" : "false";
+  out += "}";
+  Serial.println(out);
+}
+
+bool handleSerialControlLine(const String& line) {
+  JsonDocument doc;
+  if (deserializeJson(doc, line)) {
+    return false;
+  }
+  const String kind = String(doc["kind"] | "");
+  if (kind != "request") {
+    return false;
+  }
+
+  const String op = String(doc["op"] | "");
+  if (op == "hello") {
+    codexbar_display::app::EmitDeviceHello(makeTransportConfig("usb"));
+  } else if (op == "status") {
+    emitSerialStatus();
+  } else {
+    String out;
+    out.reserve(100);
+    out += "{\"kind\":\"error\",\"code\":\"unsupported-request\",\"op\":\"";
+    out += jsonEscape(op);
+    out += "\"}";
+    Serial.println(out);
+  }
+  return true;
+}
+
+void handleSerialInput() {
+  String line;
+  if (!codexbar_display::app::ReadSerialLine(runtimeCtx, line)) {
+    return;
+  }
+  if (!codexbar_display::esp8266::device_settings::SupportsCable(
+          deviceSettings.connectionMode) ||
+      deviceSettings.connectionMode !=
+          codexbar_display::esp8266::device_settings::ConnectionMode::kCable) {
+    return;
+  }
+  if (handleSerialControlLine(line)) {
+    return;
+  }
+
+  codexbar_display::core::SerialConsumeEvent event;
+  if (codexbar_display::core::ConsumeFrameLine(
+          runtimeCtx.runtime, line.c_str(), millis(), event) &&
+      event.frameAccepted) {
+    markFrameAccepted(event, "usb");
+  }
 }
 
 bool isSafeAssetPath(const String& path) {
@@ -3266,6 +3323,10 @@ void startSetupAccessPoint() {
 }
 
 void maintainWifiConnection() {
+  if (!codexbar_display::esp8266::device_settings::UsesWifi(
+          deviceSettings.connectionMode)) {
+    return;
+  }
   if (setupMode) {
     maintainWifiSetupRecovery();
     return;
@@ -3375,14 +3436,28 @@ void setup() {
   bootResetReasonJSON += jsonEscape(ESP.getResetReason());
   bootResetReasonJSON += "\"";
   bootResetCounter = incrementBootResetCounter();
+  deviceID = String(ESP.getChipId());
   bootID = String(ESP.getChipId(), HEX);
   bootID += "-";
   bootID += String(bootResetCounter);
   bootID += "-";
   bootID += String(ESP.getCycleCount(), HEX);
   renderer.Setup(runtimeCtx);
-  loadDeviceSettings();
+  deviceSettingsRecordAvailable = loadDeviceSettings();
   loadDeviceAuthToken();
+  const bool hasSavedWifi = readWifiCredentials(savedWifiCredentials);
+  savedWifiCredentialsAvailable = hasSavedWifi;
+  const bool hasLegacyState =
+      deviceSettingsRecordAvailable || hasSavedWifi || deviceAuthConfigured();
+  (void)resolveInitialConnectionMode(hasLegacyState);
+  Serial.printf(
+      "connection_mode_loaded mode=%s cable_supported=%d\n",
+      codexbar_display::esp8266::device_settings::ConnectionModeName(
+          deviceSettings.connectionMode),
+      codexbar_display::esp8266::device_settings::SupportsCable(
+          deviceSettings.connectionMode)
+          ? 1
+          : 0);
   restoreResetTrustAfterRestart();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   loadActiveStoredThemeSpecCache();
@@ -3390,7 +3465,10 @@ void setup() {
   const unsigned long startupRenderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV", "Starting", "Please wait");
   recordRenderFull("status", micros() - startupRenderStartUs);
-  codexbar_display::app::EmitDeviceHello(makeTransportConfig("usb"));
+  if (deviceSettings.connectionMode ==
+      codexbar_display::esp8266::device_settings::ConnectionMode::kCable) {
+    codexbar_display::app::EmitDeviceHello(makeTransportConfig("usb"));
+  }
 
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
   Serial.println("codexbar_display_ready_probe");
@@ -3398,23 +3476,23 @@ void setup() {
   Serial.println("codexbar_display_ready_display");
 #endif
 
-  bool wifiConnected = false;
-  const bool hasSavedWifi = readWifiCredentials(savedWifiCredentials);
-  savedWifiCredentialsAvailable = hasSavedWifi;
-  if (hasSavedWifi) {
-    wifiConnected = connectToSavedWifi(savedWifiCredentials);
+  if (!codexbar_display::esp8266::device_settings::UsesWifi(
+          deviceSettings.connectionMode)) {
+    setupMode = false;
+    WiFi.persistent(false);
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(false);
+    WiFi.mode(WIFI_OFF);
+    const unsigned long renderStartUs = micros();
+    renderer.DrawStatus(runtimeCtx, "VIBE TV", "Cable connected", "Open VibeTV App");
+    recordRenderFull("cable_setup", micros() - renderStartUs);
+    waitStatusRendered = true;
+    Serial.println("connection_mode_ready mode=cable radio=off");
+    return;
   }
 
-  // SDK credentials are a one-time legacy import only. Never let stale SDK
-  // credentials replace a failed explicit VibeTV Wi-Fi configuration.
-  if (!wifiConnected && !hasSavedWifi) {
-    wifiConnected = connectToSdkWifiConfig();
-  }
-
-  if (wifiConnected && !hasSavedWifi) {
-    savedWifiCredentialsAvailable = readWifiCredentials(savedWifiCredentials);
-  }
-
+  const bool wifiConnected =
+      hasSavedWifi && connectToSavedWifi(savedWifiCredentials);
   if (wifiConnected) {
     setupMode = false;
     // SNTP over UDP/123 in UTC. The local offset is applied by the device
@@ -3438,10 +3516,7 @@ void loop() {
     renderAcceptedFrame(event);
   }
 
-  codexbar_display::core::SerialConsumeEvent event;
-  if (codexbar_display::app::ConsumeSerial(runtimeCtx, millis(), event)) {
-    markFrameAccepted(event, "usb");
-  }
+  handleSerialInput();
 
   if (httpServerStarted) {
     webServer.handleClient();

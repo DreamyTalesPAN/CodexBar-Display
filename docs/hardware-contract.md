@@ -1,12 +1,15 @@
-# Hardware Contract (WiFi runtime MVP)
+# Hardware Contract (Cable and WiFi)
 
-This document defines the required hardware/runtime contract for codexbar-display on the VibeTV WiFi runtime path.
+This document defines the required hardware/runtime contract for the two
+exclusive VibeTV connection modes.
 
 ## Scope and Release Policy
 - Release-gated MVP target: `esp8266_smalltv_st7789`
 - Experimental fallback (non-blocking): `lilygo_t_display_s3`
-- MVP runtime transport: WiFi HTTP (`transport.active=wifi`)
-- USB CDC serial remains optional for development, flashing, logs, and support (`supported=["usb","wifi"]`)
+- New cutover hardware defaults to Cable (`transport.active=usb`, `transport.mode=cable`).
+- WiFi remains a complete customer-selectable runtime (`transport.active=wifi`, `transport.mode=wifi`).
+- The physical Cable data link is a CH340 USB-UART bridge, not native USB CDC.
+- Updated legacy devices persist `legacy-wifi-only` and advertise only WiFi.
 
 ## Firmware Environment -> Board Identity
 
@@ -20,21 +23,66 @@ The firmware `hello.board` value must match the selected firmware environment:
 Companion setup enforces this mapping when a device hello is available.
 
 ## Transport and Protocol Contract
-- USB CDC serial at `115200` baud.
+- CH340 USB-UART serial at `115200` baud.
 - WiFi HTTP on port 80 after the device joins the customer WiFi network.
-- Host sends newline-delimited JSON frames either over USB Serial or as the body of `POST /frame`.
+- Cable and WiFi are exclusive stable modes. Cable turns the radio, AP, captive
+  DNS, and HTTP server off. WiFi ignores serial application data.
+- Host sends newline-delimited JSON frames over Cable or as the body of
+  `POST /frame` in WiFi mode.
 - Firmware exposes `GET /hello` over WiFi with the same hello shape as USB.
-- Firmware emits JSON `hello` on boot/reconnect with:
+- Cable identity is requested with
+  `{"kind":"request","op":"hello"}`. Opening a port must not reset the
+  ESP8266 merely to obtain identity.
+- Firmware emits JSON `hello` in Cable mode with:
   - `supportedProtocolVersions: [2,1]`
   - `preferredProtocolVersion: 2`
   - `protocolVersion` (legacy single-value signal)
-  - `board`, `firmware`, `features`, `maxFrameBytes`
+  - stable `deviceId`, `board`, `firmware`, `features`, `maxFrameBytes`
   - `capabilities` block (`display`, `theme`, `transport`)
   - `capabilities.display.brightness` when browser-adjustable backlight control is supported, including `minPercent` and `maxPercent` (1-100 on the current ESP8266 firmware)
 
 Companion negotiation:
 - prefers v2 when available.
 - falls back to v1 when negotiation data is missing/legacy.
+- probes every USB candidate and accepts exactly one hello whose board, Cable
+  mode, and `deviceId` match. Port names, alphabetical order, and CH340
+  enumeration are never identity. Zero or several matches stop explicitly.
+
+## Cutover Migration Contract
+
+The connection-mode byte is appended to the existing `/s` record. Shorter
+records remain readable.
+
+- No stored mode plus any preserved settings record, VibeTV WiFi credentials,
+  or pairing token becomes `legacy-wifi-only` once.
+- No stored mode and no legacy state becomes `cable` once.
+- A stored mode is never reinterpreted by later firmware.
+- WiFi credentials, pairing, brightness, standby, themes, and assets are not
+  deleted by this migration.
+- The exact cutover firmware version remains unassigned until the immutable
+  release candidate exists.
+
+## Supplier CH340 Bench Limits
+
+The supplier sample on `/dev/cu.usbserial-11230` behind the D6000 dock proved
+bit-exact paced writes and recovery at `115200` baud. A 475,728-byte firmware
+write completed in 38.2 seconds and passed the device-side hash check.
+Sustained reads at `230400` and `460800` lost bytes behind that dock, so
+customer Cable traffic and support flashing stay at `115200` until a
+direct-Mac measurement proves otherwise.
+
+`115200` is not by itself a flow-control guarantee. A single 4 MB esptool read
+failed around 1.36 MB with a short 4 KB response. Splitting it into separate
+128 KB esptool sessions let three segments pass, but the fourth still failed
+around 53 KB. Do not treat 128 KB as a safe application chunk or accept a
+transfer merely because its baud rate is 115200; the Cable protocol needs its
+own bounded chunks, acknowledgements, retry boundary, and whole-payload hash.
+
+The ESP8266 UART has no flow control. Six back-to-back frames overflowed the
+current receive path while six frames spaced by 100 ms passed. Normal runtime
+frames therefore remain paced; #302's bulk protocol must use bounded
+stop-and-wait chunks and acknowledgements rather than copying an HTTP chunk
+size onto serial.
 
 ### WiFi PHY mode: always 802.11g, on every radio bring-up
 

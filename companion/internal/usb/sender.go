@@ -72,12 +72,9 @@ func (s *Sender) Send(path string, line []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	opened, err := s.ensurePort(path)
+	_, err := s.ensurePort(path)
 	if err != nil {
 		return err
-	}
-	if opened {
-		s.captureHelloAfterOpenLocked()
 	}
 
 	if err := writeWithTimeout(s.port, line, s.writeTimeout); err != nil {
@@ -111,8 +108,8 @@ func (s *Sender) DeviceHello(path string) (protocol.DeviceHello, error) {
 	}
 	if opened {
 		s.captureHelloAfterOpenLocked()
-	} else if !s.capsCollected {
-		s.captureHelloLocked()
+	} else if !s.helloSeen {
+		s.captureHelloAfterOpenLocked()
 	}
 
 	if !s.helloSeen {
@@ -137,8 +134,8 @@ func (s *Sender) DeviceCapabilities(path string) (protocol.DeviceCapabilities, e
 	}
 	if opened {
 		s.captureHelloAfterOpenLocked()
-	} else if !s.capsCollected {
-		s.captureHelloLocked()
+	} else if !s.helloSeen {
+		s.captureHelloAfterOpenLocked()
 	}
 
 	return s.capabilities, nil
@@ -173,11 +170,17 @@ func (s *Sender) ensurePort(path string) (bool, error) {
 }
 
 func (s *Sender) captureHelloAfterOpenLocked() {
-	// Some ESP8266 USB bridges pulse reset/boot lines when a serial port is opened.
-	// Give the MCU a short settle window and capture boot hello before first write.
-	pulseControlLines(s.port, s.sleep, resetPulseDuration)
+	// Identity is a normal control request. Never reset the ESP8266 just to
+	// learn which device owns a serial port.
 	_ = s.port.ResetInputBuffer()
 	s.sleep(s.settleDuration)
+	if err := writeWithTimeout(s.port, helloRequestLine, s.writeTimeout); err != nil {
+		s.hello = protocol.DeviceHello{}
+		s.helloSeen = false
+		s.capabilities = protocol.UnknownDeviceCapabilities()
+		s.capsCollected = true
+		return
+	}
 	s.captureHelloLocked()
 	_ = s.port.ResetInputBuffer()
 }
@@ -199,6 +202,10 @@ func (s *Sender) captureHelloLocked() {
 	s.helloSeen = true
 	s.capabilities = protocol.CapabilitiesFromHello(hello)
 	s.capsCollected = true
+}
+
+func (s *Sender) ResolvePort(explicit, expectedDeviceID string) (string, error) {
+	return resolveVibeTVPort(explicit, expectedDeviceID, s.DeviceHello)
 }
 
 func (s *Sender) closeCurrentLocked() {

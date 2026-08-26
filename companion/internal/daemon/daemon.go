@@ -130,6 +130,7 @@ type runtimeDeps struct {
 	now                   func() time.Time
 	after                 func(time.Duration) <-chan time.Time
 	resolvePort           func(string) (string, error)
+	resolveUSBDevice      func(string, string) (string, error)
 	deviceCaps            func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
 	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error)
@@ -326,6 +327,7 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 	defer sender.Close()
 	return runWithDeps(ctx, opts, runtimeDeps{
 		deviceCaps:        sender.DeviceCapabilities,
+		resolveUSBDevice:  sender.ResolvePort,
 		sendLine:          sender.Send,
 		transportName:     "usb",
 		usageBarsShowUsed: codexbar.UsageBarsShowUsed,
@@ -691,7 +693,17 @@ func resolveCycleDevice(requestedPort string, state *runtimeState, deps runtimeD
 			return recoveredPort, recoveredCaps, maxFrameBytesForCaps(recoveredCaps), nil
 		}
 	}
-	port, err := resolvePortWithFallback(requestedPort, deps)
+	var port string
+	var err error
+	if deps.transportName == "usb" && deps.resolveUSBDevice != nil {
+		expectedDeviceID := ""
+		if cfg, ok := loadRuntimeConfig(deps); ok {
+			expectedDeviceID = strings.TrimSpace(cfg.DeviceID)
+		}
+		port, err = deps.resolveUSBDevice(requestedPort, expectedDeviceID)
+	} else {
+		port, err = resolvePortWithFallback(requestedPort, deps)
+	}
 	if err != nil {
 		hint := errcode.DefaultRecovery(errcode.RuntimeSerialResolve)
 		if deps.transportName == "wifi" {

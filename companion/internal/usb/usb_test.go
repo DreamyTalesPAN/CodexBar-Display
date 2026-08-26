@@ -225,6 +225,29 @@ func TestDeviceHelloUnavailableReturnsProtocolCode(t *testing.T) {
 	}
 }
 
+func TestDeviceHelloUsesRequestWithoutResetProbe(t *testing.T) {
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{[]byte(
+		`{"kind":"hello","deviceId":"14799300"}` + "\n",
+	)}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener: &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:  func(time.Duration) {},
+	})
+	defer sender.Close()
+
+	hello, err := sender.DeviceHello("/dev/mock")
+	if err != nil {
+		t.Fatalf("read requested hello: %v", err)
+	}
+	if hello.DeviceID != "14799300" {
+		t.Fatalf("unexpected device id %q", hello.DeviceID)
+	}
+	if len(port.writePayloads) != 1 || string(port.writePayloads[0]) != string(helloRequestLine) {
+		t.Fatalf("expected one hello request, got %#v", port.writePayloads)
+	}
+}
+
 type mockOpener struct {
 	mu          sync.Mutex
 	portsByPath map[string]SerialPort
@@ -258,11 +281,12 @@ func (m *mockOpener) openCount(path string) int {
 type mockSerialPort struct {
 	mu sync.Mutex
 
-	readQueue  [][]byte
-	writeCalls int
-	writeErr   error
-	writeDelay time.Duration
-	closeCalls int
+	readQueue     [][]byte
+	writeCalls    int
+	writePayloads [][]byte
+	writeErr      error
+	writeDelay    time.Duration
+	closeCalls    int
 }
 
 func newMockSerialPort() *mockSerialPort {
@@ -284,6 +308,7 @@ func (m *mockSerialPort) Read(p []byte) (int, error) {
 func (m *mockSerialPort) Write(p []byte) (int, error) {
 	m.mu.Lock()
 	m.writeCalls++
+	m.writePayloads = append(m.writePayloads, append([]byte(nil), p...))
 	writeDelay := m.writeDelay
 	writeErr := m.writeErr
 	m.mu.Unlock()

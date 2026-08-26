@@ -10,6 +10,26 @@ import (
 	"testing"
 )
 
+func TestConnectionModeNormalizationKeepsOnlyCustomerChoices(t *testing.T) {
+	for input, want := range map[string]string{
+		" Cable ": "cable",
+		"WIFI":    "wifi",
+		"":        "",
+		"serial":  "",
+		"auto":    "",
+	} {
+		if got := NormalizeConnectionMode(input); got != want {
+			t.Fatalf("NormalizeConnectionMode(%q)=%q, expected %q", input, got, want)
+		}
+	}
+
+	cfg := Config{ConnectionMode: " CABLE "}
+	cfg.Normalize()
+	if cfg.ConnectionMode != "cable" {
+		t.Fatalf("unexpected normalized config mode %q", cfg.ConnectionMode)
+	}
+}
+
 func TestLoadMigratesActiveDeviceIntoKnownDevices(t *testing.T) {
 	home := t.TempDir()
 	path := ConfigPath(home)

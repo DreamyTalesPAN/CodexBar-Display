@@ -16,7 +16,7 @@ func (USBTransport) Name() string {
 }
 
 func (USBTransport) ResolvePort(requested string) (string, error) {
-	return usb.ResolvePort(requested)
+	return usb.ResolveVibeTVPort(requested, "")
 }
 
 func (USBTransport) DeviceCapabilities(port string) (protocol.DeviceCapabilities, error) {

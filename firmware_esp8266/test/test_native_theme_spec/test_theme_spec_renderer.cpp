@@ -2792,6 +2792,32 @@ void testStaleResetRendersUnavailableWhateverTheThemeBinds() {
   TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[2].text.c_str());
 }
 
+void testMalformedAndControlLinesNeverBecomeFrames() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  TEST_ASSERT_FALSE(ConsumeFrameLine(state, "{broken", 1000, event));
+  TEST_ASSERT_FALSE(state.hasFrame);
+  TEST_ASSERT_FALSE(event.frameAccepted);
+
+  TEST_ASSERT_FALSE(
+      ConsumeFrameLine(
+          state,
+          R"JSON({"kind":"request","op":"hello"})JSON",
+          1001,
+          event));
+  TEST_ASSERT_FALSE(state.hasFrame);
+  TEST_ASSERT_FALSE(event.frameAccepted);
+
+  TEST_ASSERT_TRUE(
+      ConsumeFrameLine(
+          state,
+          R"JSON({"v":2,"provider":"codex","session":12,"weekly":34})JSON",
+          1002,
+          event));
+  TEST_ASSERT_TRUE(state.hasFrame);
+  TEST_ASSERT_TRUE(event.frameAccepted);
+}
+
 // The selected provider can lack a reset while another fresh provider has one.
 // providerResetSlots still ships that countdown, so trust must not hinge on the
 // legacy root projection being positive.
@@ -2946,5 +2972,6 @@ int main() {
   RUN_TEST(testResetTrustLegacyFrameKeepsUnboundedLocalCountdown);
   RUN_TEST(testResetTrustIsUntouchedByFramesWithoutResetFields);
   RUN_TEST(testStaleResetRendersUnavailableWhateverTheThemeBinds);
+  RUN_TEST(testMalformedAndControlLinesNeverBecomeFrames);
   return UNITY_END();
 }
