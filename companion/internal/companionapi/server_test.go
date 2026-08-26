@@ -35,6 +35,52 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 )
 
+func TestDiscoverConfirmsPendingWiFiTransitionForExpectedDevice(t *testing.T) {
+	var confirmCalls int
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = io.WriteString(w, `{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"device-390","networkMode":"station","capabilities":{"transport":{"active":"wifi","mode":"wifi","transitionPending":true,"transitionFrom":"cable","transitionTo":"wifi"}}}`)
+		case "/api/connection-mode/confirm":
+			confirmCalls++
+			if r.Method != http.MethodPost {
+				t.Fatalf("expected POST confirmation, got %s", r.Method)
+			}
+			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+				t.Fatalf("expected pairing token, got %q", got)
+			}
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode confirmation: %v", err)
+			}
+			if body["deviceId"] != "device-390" {
+				t.Fatalf("unexpected confirmation body: %#v", body)
+			}
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "device-390",
+		DeviceToken:  "pair-token",
+	}
+	server := newTestServer(t, cfg)
+	target, hello, err := server.discover(context.Background(), cfg, "")
+	if err != nil {
+		t.Fatalf("discover pending WiFi transition: %v", err)
+	}
+	if target != device.URL || hello.DeviceID != cfg.DeviceID {
+		t.Fatalf("unexpected discovery result target=%q hello=%+v", target, hello)
+	}
+	if confirmCalls != 1 {
+		t.Fatalf("expected one WiFi confirmation, got %d", confirmCalls)
+	}
+}
+
 func TestStatusWorksWithoutDevice(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	rec := httptest.NewRecorder()

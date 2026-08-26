@@ -6116,6 +6116,12 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 		writeDeviceNotFound(w)
 		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
 	}
+	if err := s.confirmPendingWiFiTransition(
+		r.Context(), cfg.DeviceTarget, cfg.DeviceToken, cfg.DeviceID, hello,
+	); err != nil {
+		writeDeviceNotFound(w)
+		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
+	}
 	return cfg, hello, true
 }
 
@@ -6148,6 +6154,11 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 		} else if !deviceIDMatchesExpected(hello, expectedDeviceID) {
 			return "", protocol.DeviceHello{}, errDeviceIdentityChanged
 		} else {
+			if err := s.confirmPendingWiFiTransition(
+				ctx, target, cfg.DeviceToken, cfg.DeviceID, hello,
+			); err != nil {
+				return "", protocol.DeviceHello{}, err
+			}
 			return target, hello, nil
 		}
 	} else {
@@ -6159,12 +6170,23 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 					lastErr = errDeviceIdentityChanged
 					continue
 				}
+				if err := s.confirmPendingWiFiTransition(
+					ctx, candidate, cfg.DeviceToken, cfg.DeviceID, hello,
+				); err != nil {
+					lastErr = err
+					continue
+				}
 				return normalizeTarget(candidate), hello, nil
 			}
 			lastErr = err
 		}
 	}
 	if target, hello, err := s.discoverSubnet(ctx, cfg); err == nil {
+		if err := s.confirmPendingWiFiTransition(
+			ctx, target, cfg.DeviceToken, cfg.DeviceID, hello,
+		); err != nil {
+			return "", protocol.DeviceHello{}, err
+		}
 		return target, hello, nil
 	} else if err != nil {
 		lastErr = err
@@ -6559,6 +6581,37 @@ func deviceIdentityIsKnown(cfg runtimeconfig.Config, hello protocol.DeviceHello)
 	}
 	_, ok := cfg.KnownDevice(deviceID)
 	return ok
+}
+
+func (s *Server) confirmPendingWiFiTransition(
+	ctx context.Context,
+	target string,
+	token string,
+	expectedDeviceID string,
+	hello protocol.DeviceHello,
+) error {
+	hello = hello.Normalize()
+	transport := hello.Capabilities.Transport
+	if !transport.TransitionPending {
+		return nil
+	}
+	expectedDeviceID = strings.TrimSpace(expectedDeviceID)
+	if expectedDeviceID == "" ||
+		!strings.EqualFold(expectedDeviceID, hello.DeviceID) ||
+		transport.Active != "wifi" ||
+		transport.Mode != "wifi" ||
+		transport.TransitionTo != "wifi" {
+		return errors.New("pending WiFi transition did not rediscover the expected VibeTV identity")
+	}
+	return s.doJSON(
+		ctx,
+		http.MethodPost,
+		target,
+		"/api/connection-mode/confirm",
+		token,
+		map[string]string{"deviceId": hello.DeviceID},
+		nil,
+	)
 }
 
 func validateRepairIdentity(

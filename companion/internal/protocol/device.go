@@ -59,9 +59,12 @@ type ThemeCapabilities struct {
 }
 
 type TransportCapabilities struct {
-	Active    string   `json:"active,omitempty"`
-	Supported []string `json:"supported,omitempty"`
-	Mode      string   `json:"mode,omitempty"`
+	Active            string   `json:"active,omitempty"`
+	Supported         []string `json:"supported,omitempty"`
+	Mode              string   `json:"mode,omitempty"`
+	TransitionPending bool     `json:"transitionPending,omitempty"`
+	TransitionFrom    string   `json:"transitionFrom,omitempty"`
+	TransitionTo      string   `json:"transitionTo,omitempty"`
 }
 
 type AuthCapabilities struct {
@@ -121,6 +124,8 @@ func (h DeviceHello) Normalize() DeviceHello {
 	}
 	h.Capabilities.Transport.Active = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Active))
 	h.Capabilities.Transport.Mode = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Mode))
+	h.Capabilities.Transport.TransitionFrom = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.TransitionFrom))
+	h.Capabilities.Transport.TransitionTo = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.TransitionTo))
 	for i := range h.Capabilities.Transport.Supported {
 		h.Capabilities.Transport.Supported[i] = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Supported[i]))
 	}

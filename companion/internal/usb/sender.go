@@ -1,6 +1,7 @@
 package usb
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -205,7 +206,50 @@ func (s *Sender) captureHelloLocked() {
 }
 
 func (s *Sender) ResolvePort(explicit, expectedDeviceID string) (string, error) {
-	return resolveVibeTVPort(explicit, expectedDeviceID, s.DeviceHello)
+	path, err := resolveVibeTVPort(explicit, expectedDeviceID, s.DeviceHello)
+	if err != nil {
+		return "", err
+	}
+	hello, err := s.DeviceHello(path)
+	if err != nil {
+		return "", err
+	}
+	if hello.Capabilities.Transport.TransitionPending &&
+		hello.Capabilities.Transport.TransitionTo == "cable" {
+		if err := s.ConfirmConnectionMode(path, hello.DeviceID); err != nil {
+			return "", err
+		}
+	}
+	return path, nil
+}
+
+// ConfirmConnectionMode commits a pending Cable transition only after the
+// resolver has selected exactly one matching device identity.
+func (s *Sender) ConfirmConnectionMode(path, deviceID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, err := s.ensurePort(path); err != nil {
+		return err
+	}
+	line := []byte(fmt.Sprintf(
+		"{\"kind\":\"request\",\"op\":\"confirm-connection-mode\",\"deviceId\":%q}\n",
+		deviceID,
+	))
+	if err := writeWithTimeout(s.port, line, s.writeTimeout); err != nil {
+		s.closeCurrentLocked()
+		return wrapTransportError(
+			errcode.TransportSerialWrite,
+			"confirm-connection-mode",
+			path,
+			"Keep the expected VibeTV connected by Cable and retry before rollback.",
+			err,
+		)
+	}
+	s.hello.Capabilities.Transport.TransitionPending = false
+	s.hello.Capabilities.Transport.TransitionFrom = ""
+	s.hello.Capabilities.Transport.TransitionTo = ""
+	return nil
 }
 
 func (s *Sender) closeCurrentLocked() {
