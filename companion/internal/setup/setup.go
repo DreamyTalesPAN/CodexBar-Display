@@ -440,7 +440,9 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	}
 	fmt.Fprintf(d.stdout, "Recovery backup dir: %s\n", backupDir)
 
-	if err := applyRuntimeConfig(home, opts.Theme, runtimeConfigTarget, d.stdout); err != nil {
+	if err := applyRuntimeConfig(
+		home, opts.Theme, transportName, runtimeConfigTarget, d.stdout,
+	); err != nil {
 		return &StepError{
 			Step: "write-runtime-config",
 			Err:  err,
@@ -1081,13 +1083,30 @@ func installRecoveryAssets(repoRoot, home string) (string, string, error) {
 	return restoreTarget, backupDir, nil
 }
 
-func applyRuntimeConfig(home, rawTheme, rawDeviceTarget string, stdout io.Writer) error {
+func applyRuntimeConfig(
+	home,
+	rawTheme,
+	rawConnectionMode,
+	rawDeviceTarget string,
+	stdout io.Writer,
+) error {
 	cfg, err := runtimeconfig.Load(home)
 	if err != nil {
 		return err
 	}
 
 	changed := false
+	connectionMode := runtimeconfig.NormalizeConnectionMode(rawConnectionMode)
+	if normalizeSetupTransport(rawConnectionMode) == "usb" {
+		connectionMode = "cable"
+	}
+	if connectionMode != "" && cfg.ConnectionMode != connectionMode {
+		cfg.ConnectionMode = connectionMode
+		changed = true
+		if stdout != nil {
+			fmt.Fprintf(stdout, "Runtime config: connectionMode=%s\n", connectionMode)
+		}
+	}
 	deviceTarget, deviceToken := splitDeviceTargetToken(rawDeviceTarget)
 	if deviceTarget != "" && cfg.DeviceTarget != deviceTarget {
 		cfg.DeviceTarget = deviceTarget

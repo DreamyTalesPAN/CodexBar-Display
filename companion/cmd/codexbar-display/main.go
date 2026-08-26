@@ -849,6 +849,9 @@ func superviseDisplayWorker(ctx context.Context, opts daemon.Options, run displa
 				return
 			}
 			logf("VibeTV display worker exited; restarting in %s\n", displayWorkerRestartDelay)
+		} else if errors.Is(err, daemon.ErrConnectionModeChanged) {
+			logf("VibeTV connection mode changed; restarting display worker now\n")
+			continue
 		} else {
 			logf("VibeTV display worker stopped; restarting in %s: %v\n", displayWorkerRestartDelay, err)
 		}

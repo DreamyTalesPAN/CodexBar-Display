@@ -50,6 +50,11 @@ Companion negotiation:
 - On macOS, `/dev/cu.usb*` and `/dev/tty.usb*` are callout/tty aliases for the
   same USB-UART. The resolver probes the `cu` endpoint and ignores only its
   `tty` alias; two matching `cu` devices still stop as several VibeTVs.
+- Runtime config stores the customer choice as `connectionMode=cable|wifi`.
+  The display worker maps `cable` to its internal USB transport in one place,
+  reloads the value on worker start, and stops the current cycle before its
+  device write if the stored mode changed. Legacy configs without the field
+  keep their existing launch transport until the customer selects a mode.
 
 ### Safe connection-mode transition
 

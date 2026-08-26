@@ -65,6 +65,7 @@ const (
 )
 
 var errMarshalFrameTooLarge = errors.New("frame exceeds max bytes")
+var ErrConnectionModeChanged = errors.New("VibeTV connection mode changed")
 
 type runtimeErrorKind errcode.Code
 
@@ -306,13 +307,14 @@ func Run(ctx context.Context, opts Options) error {
 // RunWithLogger runs the display worker with an optional injected logger. A
 // nil logger preserves the legacy stdout behavior used by standalone daemons.
 func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any)) error {
-	transportName := normalizeTransportName(opts.Transport)
+	transportName := configuredConnectionMode(opts.Transport)
 	if transportName == "" {
 		transportName = "usb"
 	}
 	if transportName != "usb" && transportName != "wifi" {
 		return fmt.Errorf("unsupported transport %q", opts.Transport)
 	}
+	opts.Transport = transportName
 	if transportName == "wifi" {
 		return runWithDeps(ctx, opts, runtimeDeps{
 			transport:         transportlayer.NewWiFiTransport(),
@@ -638,6 +640,42 @@ func configuredTheme(cliTheme string) string {
 
 func normalizeTransportName(raw string) string {
 	return strings.TrimSpace(strings.ToLower(raw))
+}
+
+func configuredConnectionMode(fallback string) string {
+	fallback = normalizeTransportName(fallback)
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return fallback
+	}
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		return fallback
+	}
+	if transport := transportForConnectionMode(cfg.ConnectionMode); transport != "" {
+		return transport
+	}
+	return fallback
+}
+
+func transportForConnectionMode(mode string) string {
+	switch runtimeconfig.NormalizeConnectionMode(mode) {
+	case "cable":
+		return "usb"
+	case "wifi":
+		return "wifi"
+	default:
+		return ""
+	}
+}
+
+func connectionModeChanged(deps runtimeDeps) bool {
+	cfg, ok := loadRuntimeConfig(deps)
+	if !ok {
+		return false
+	}
+	transport := transportForConnectionMode(cfg.ConnectionMode)
+	return transport != "" && transport != deps.transportName
 }
 
 func requestedDeviceTarget(opts Options) string {
@@ -1299,6 +1337,12 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		}
 	}
 	frame = marshaledFrame
+	// A mode change can arrive while provider collection is running. Recheck
+	// before the only device write so an old transport never sends application
+	// data after the new customer choice was committed.
+	if connectionModeChanged(deps) {
+		return ErrConnectionModeChanged
+	}
 
 	sendTarget, authErr := sendTargetWithRuntimeAuth(port, deps)
 	if authErr != nil {
@@ -1505,6 +1549,9 @@ func nextClockTransition(now time.Time) *protocol.ClockSchedule {
 
 func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeState, deps runtimeDeps) error {
 	deps = deps.withDefaults()
+	if connectionModeChanged(deps) {
+		return ErrConnectionModeChanged
+	}
 	state = ensureCycleState(state, deps)
 
 	port, caps, maxFrameBytes, err := resolveCycleDevice(requestedPort, state, deps)
