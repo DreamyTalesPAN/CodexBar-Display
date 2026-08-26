@@ -70,8 +70,11 @@ its new transport:
 
 Cable starts a switch with the serial request `set-connection-mode`; WiFi uses
 authenticated `POST /api/connection-mode`. A confirmation removes `/cm` and
-makes the target stable. Missing WiFi credentials, failed WiFi association, or
-an expired confirmation window restores the previous mode and reboots once.
+makes the target stable. A Cable-to-WiFi switch without credentials keeps the
+existing `VibeTV-Setup` portal open for a bounded ten-minute customer-entry
+window. Saving credentials reboots into the normal 60-second association and
+identity-confirmation window. A failed WiFi association or expired setup or
+confirmation window restores the previous mode and reboots once.
 An incomplete power-loss write is discarded on boot when `/cm` does not match
 the mode in `/s`. `legacy-wifi-only` can never start a Cable transition.
 

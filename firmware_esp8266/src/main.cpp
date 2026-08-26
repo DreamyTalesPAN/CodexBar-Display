@@ -91,7 +91,6 @@ const char kDeviceSettingsPath[] = "/s";
 const char kDeviceSettingsTemporaryPath[] = "/s.tmp";
 const char kConnectionTransitionPath[] = "/cm";
 const char kConnectionTransitionTemporaryPath[] = "/cm.tmp";
-constexpr unsigned long kConnectionTransitionConfirmationMs = 60000UL;
 // The device settings record stays append-only: brightness byte, learned UTC
 // offset, standby, then optional next UTC-offset transitions. A shorter file is
 // an older record, so every reader must length-check its own section instead of
@@ -493,7 +492,7 @@ bool loadConnectionTransition() {
       "connection_mode_transition_loaded from=%s to=%s confirmation_ms=%lu\n",
       device_settings::ConnectionModeName(connectionTransition.previous),
       device_settings::ConnectionModeName(connectionTransition.target),
-      kConnectionTransitionConfirmationMs);
+      device_settings::kConnectionTransitionConfirmationMs);
   return true;
 }
 
@@ -591,7 +590,7 @@ void maintainConnectionTransition() {
     return;
   }
   if ((millis() - connectionTransitionStartedAtMs) >=
-      kConnectionTransitionConfirmationMs) {
+      device_settings::ConnectionTransitionTimeoutMs(setupMode)) {
     (void)rollbackConnectionTransition("confirmation_timeout");
   }
 }
@@ -3808,6 +3807,12 @@ void setup() {
     // lwIP keeps the system clock corrected without any retry code here.
     configTime(0, 0, "pool.ntp.org");
     startHttpServer();
+  } else if (connectionTransitionPending && !hasSavedWifi) {
+    connectionTransitionStartedAtMs = millis();
+    Serial.printf(
+        "connection_mode_transition_setup mode=wifi timeout_ms=%lu\n",
+        device_settings::kConnectionTransitionSetupMs);
+    startSetupAccessPoint();
   } else if (connectionTransitionPending) {
     const unsigned long renderStartUs = micros();
     renderer.DrawStatus(runtimeCtx, "VIBE TV", "WiFi unavailable", "Returning to Cable");
