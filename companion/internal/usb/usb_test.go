@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,27 +15,21 @@ import (
 	serial "go.bug.st/serial"
 )
 
-func TestChooseAutoPortPrefersUSBModem(t *testing.T) {
-	port, err := chooseAutoPort([]string{
-		"/dev/cu.Bluetooth-Incoming-Port",
-		"/dev/cu.usbmodem1101",
-		"/dev/cu.usbserial1420",
-	})
-	if err != nil {
-		t.Fatalf("expected a selected port, got error: %v", err)
-	}
-	if port != "/dev/cu.usbmodem1101" {
-		t.Fatalf("expected usbmodem port, got %q", port)
+func TestResolvePortRequiresExplicitRecoveryTarget(t *testing.T) {
+	_, err := ResolvePort("")
+	if errcode.Of(err) != errcode.TransportSerialPortNotFound {
+		t.Fatalf("expected explicit recovery-port error, got %v", err)
 	}
 }
 
-func TestChooseAutoPortSkipsBluetoothOnlySet(t *testing.T) {
-	_, err := chooseAutoPort([]string{
-		"/dev/cu.Bluetooth-Incoming-Port",
-		"/dev/cu.iPhone-WirelessiAP",
-	})
-	if err == nil {
-		t.Fatalf("expected error when no usb serial device is present")
+func TestResolvePortAcceptsExistingExplicitRecoveryTarget(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cu.usbserial-recovery")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatalf("create recovery target: %v", err)
+	}
+	got, err := ResolvePort(path)
+	if err != nil || got != path {
+		t.Fatalf("resolve explicit recovery target: got=%q err=%v", got, err)
 	}
 }
 
@@ -74,6 +69,30 @@ func TestParseDeviceHelloLineLegacyReady(t *testing.T) {
 func TestParseDeviceHelloLineRejectsNoise(t *testing.T) {
 	if _, ok := parseDeviceHelloLine("frame_received"); ok {
 		t.Fatalf("unexpected parse success for non-hello line")
+	}
+}
+
+func TestReadHelloKeepsFullSupplierCapabilityLine(t *testing.T) {
+	line := []byte(
+		`{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"16199051","capabilities":{"transport":{"active":"usb","mode":"cable"}},"padding":"` +
+			strings.Repeat("x", 1024) + `"}` + "\n",
+	)
+	if len(line) <= 1024 {
+		t.Fatalf("fixture must exceed the old reader limit, got %d bytes", len(line))
+	}
+	port := newMockSerialPort()
+	for len(line) > 0 {
+		n := 128
+		if len(line) < n {
+			n = len(line)
+		}
+		port.readQueue = append(port.readQueue, append([]byte(nil), line[:n]...))
+		line = line[n:]
+	}
+
+	hello, ok := readHelloFromPort(port, 100*time.Millisecond)
+	if !ok || hello.DeviceID != "16199051" {
+		t.Fatalf("expected full supplier-sized hello, got ok=%t hello=%+v", ok, hello)
 	}
 }
 

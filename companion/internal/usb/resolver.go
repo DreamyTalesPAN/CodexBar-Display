@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -37,24 +38,25 @@ func ListPorts() ([]string, error) {
 
 func ResolvePort(explicit string) (string, error) {
 	explicit = strings.TrimSpace(explicit)
-	if explicit != "" {
-		if _, err := os.Stat(explicit); err != nil {
-			return "", wrapTransportError(
-				errcode.TransportSerialPortNotFound,
-				"resolve-explicit-port",
-				explicit,
-				"Run `ls /dev/cu.usb*` and pass an existing port path.",
-				err,
-			)
-		}
-		return explicit, nil
+	if explicit == "" {
+		return "", wrapTransportError(
+			errcode.TransportSerialPortNotFound,
+			"resolve-explicit-port",
+			"",
+			"Pass the exact recovery port from `ls /dev/cu.usb*`.",
+			errors.New("an explicit serial port is required for recovery"),
+		)
 	}
-
-	ports, err := ListPorts()
-	if err != nil {
-		return "", err
+	if _, err := os.Stat(explicit); err != nil {
+		return "", wrapTransportError(
+			errcode.TransportSerialPortNotFound,
+			"resolve-explicit-port",
+			explicit,
+			"Run `ls /dev/cu.usb*` and pass an existing port path.",
+			err,
+		)
 	}
-	return chooseAutoPort(ports)
+	return explicit, nil
 }
 
 // ResolveVibeTVPort resolves a Cable device by its protocol identity. Port
@@ -87,13 +89,7 @@ func resolveVibeTVPort(
 		if err != nil {
 			return "", err
 		}
-		for _, candidate := range ports {
-			candidate = strings.TrimSpace(candidate)
-			lower := strings.ToLower(candidate)
-			if candidate != "" && strings.Contains(lower, "usb") {
-				candidates = append(candidates, candidate)
-			}
-		}
+		candidates = cableSerialCandidates(ports, runtime.GOOS)
 	}
 	if len(candidates) == 0 {
 		return "", wrapTransportError(
@@ -106,6 +102,25 @@ func resolveVibeTVPort(
 	}
 
 	return resolveVibeTVCandidates(candidates, explicit, expectedDeviceID, readHello)
+}
+
+func cableSerialCandidates(ports []string, goos string) []string {
+	candidates := make([]string, 0, len(ports))
+	for _, candidate := range ports {
+		candidate = strings.TrimSpace(candidate)
+		lower := strings.ToLower(candidate)
+		if candidate == "" || !strings.Contains(lower, "usb") {
+			continue
+		}
+		// macOS exposes one USB-UART twice. /dev/cu.* is the callout endpoint
+		// intended for initiating a connection; /dev/tty.* is its waiting alias,
+		// not a second physical VibeTV.
+		if goos == "darwin" && strings.HasPrefix(lower, "/dev/tty.") {
+			continue
+		}
+		candidates = append(candidates, candidate)
+	}
+	return candidates
 }
 
 func resolveVibeTVCandidates(
@@ -158,58 +173,4 @@ func resolveVibeTVCandidates(
 			fmt.Errorf("multiple matching VibeTVs: %s", strings.Join(matches, ", ")),
 		)
 	}
-}
-
-func chooseAutoPort(ports []string) (string, error) {
-	if len(ports) == 0 {
-		return "", wrapTransportError(
-			errcode.TransportNoSerialPorts,
-			"choose-auto-port",
-			"",
-			"Connect a board with USB data cable, then rerun command.",
-			errors.New("no serial ports found"),
-		)
-	}
-
-	normalized := make([]string, 0, len(ports))
-	for _, p := range ports {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		normalized = append(normalized, p)
-	}
-	if len(normalized) == 0 {
-		return "", wrapTransportError(
-			errcode.TransportNoSerialPorts,
-			"choose-auto-port",
-			"",
-			"Connect a board with USB data cable, then rerun command.",
-			errors.New("no serial ports found"),
-		)
-	}
-
-	for _, p := range normalized {
-		if strings.Contains(strings.ToLower(p), "usbmodem") {
-			return p, nil
-		}
-	}
-	for _, p := range normalized {
-		if strings.Contains(strings.ToLower(p), "usbserial") {
-			return p, nil
-		}
-	}
-	for _, p := range normalized {
-		if strings.Contains(strings.ToLower(p), "usb") {
-			return p, nil
-		}
-	}
-
-	return "", wrapTransportError(
-		errcode.TransportNoUSBSerialPorts,
-		"choose-auto-port",
-		"",
-		"Reconnect the board and verify that a `/dev/cu.usb*` device appears.",
-		errors.New("no usb serial ports found"),
-	)
 }

@@ -47,6 +47,9 @@ Companion negotiation:
 - probes every USB candidate and accepts exactly one hello whose board, Cable
   mode, and `deviceId` match. Port names, alphabetical order, and CH340
   enumeration are never identity. Zero or several matches stop explicitly.
+- On macOS, `/dev/cu.usb*` and `/dev/tty.usb*` are callout/tty aliases for the
+  same USB-UART. The resolver probes the `cu` endpoint and ignores only its
+  `tty` alias; two matching `cu` devices still stop as several VibeTVs.
 
 ### Safe connection-mode transition
 
@@ -120,6 +123,13 @@ current receive path while six frames spaced by 100 ms passed. Normal runtime
 frames therefore remain paced; #302's bulk protocol must use bounded
 stop-and-wait chunks and acknowledgements rather than copying an HTTP chunk
 size onto serial.
+
+The full Cable hello on the branch firmware is 1,161 bytes including newline.
+After opening the CH340 behind the D6000 dock, the first requested hello took
+1,103 ms; four later requests took 111-162 ms. The Companion therefore keeps a
+2,048-byte hello buffer and a bounded two-second identity window. The older
+1,024-byte/300-ms reader both truncated the real capability line and expired
+before the first response, so it could not resolve the supplier hardware.
 
 ### WiFi PHY mode: always 802.11g, on every radio bring-up
 

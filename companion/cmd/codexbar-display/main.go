@@ -50,7 +50,9 @@ var openControlCenterStartLaunchAgentFn = startLaunchAgent
 var openControlCenterOpenURLFn = openURLWithMacOpen
 var openControlCenterHTTPClient = &http.Client{}
 var doctorListPortsFn = usb.ListPorts
-var doctorResolvePortFn = usb.ResolvePort
+var doctorResolvePortFn = func(explicit string) (string, error) {
+	return usb.ResolveVibeTVPort(explicit, "")
+}
 var doctorProbePortFn = usb.ProbePort
 var doctorReadDeviceHelloFn = usb.ReadDeviceHello
 var doctorReadWiFiCapabilitiesFn = func(target string) (protocol.DeviceCapabilities, error) {
@@ -163,7 +165,7 @@ func printUsage() {
 	fmt.Printf("  codexbar-display theme-pack catalog [--catalog %s]\n", defaultThemeCatalogURL)
 	fmt.Println("  codexbar-display theme-pack validate --pack path/to/theme-pack-dir-or.zip-or-url [--pack-sha256 hex --pack-size-bytes n]")
 	fmt.Println("  codexbar-display theme-pack install (--pack path/to/theme-pack-dir-or.zip-or-url [--pack-sha256 hex --pack-size-bytes n] | --catalog url --theme theme-id) [--target http://<device-ip>] [--firmware-manifest-url url] [--skip-firmware-update] [--allow-unknown-capabilities] [--verbose]")
-	fmt.Println("  codexbar-display setup [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
+	fmt.Println("  codexbar-display setup [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
 }
 
 func launchedFromAppBundle() bool {
@@ -302,7 +304,7 @@ func parseDaemonOptions(args []string) (daemon.Options, error) {
 
 func parseDaemonCommandOptions(args []string) (daemonCommandOptions, error) {
 	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
-	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	port := fs.String("port", "", "legacy option; Cable runtime always resolves by device identity")
 	transportName := fs.String("transport", setup.DefaultTransport(), "device transport: wifi|usb")
 	target := fs.String("target", "", "WiFi target base URL, for example http://192.168.178.163")
 	interval := fs.Duration("interval", 0, "poll interval")
@@ -925,7 +927,6 @@ type doctorRuntimeConfig struct {
 	target      string
 	probeTarget string
 	authReady   bool
-	port        string
 }
 
 func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
@@ -986,7 +987,6 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 		target:      target,
 		probeTarget: probeTarget,
 		authReady:   transportName != "wifi" || deviceTokenFromCommandTarget(probeTarget) != "",
-		port:        parseLaunchAgentArgument(plist, "--port"),
 	}, nil
 }
 
@@ -1088,9 +1088,9 @@ func printDoctorRuntimeDefaults() {
 	fmt.Printf("  sleep/wake threshold (@60s interval): %s\n", daemon.SleepWakeGapThreshold(60*time.Second))
 }
 
-func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, ports []string) error {
+func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, _ []string) error {
 	printDoctorRuntimeDefaults()
-	port, err := doctorResolvePortFn(config.port)
+	port, err := doctorResolvePortFn("")
 	if err != nil {
 		fmt.Printf("  serial resolve: failed (%v)\n", err)
 		return fmt.Errorf("runtime serial resolve failed: %w", err)
@@ -1108,24 +1108,7 @@ func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, ports []string) error
 		fmt.Printf("  serial probe: ok (%s)\n", port)
 	}
 
-	pinnedPort := config.port
-	if pinnedPort == "" {
-		fmt.Println("  launchagent port affinity: auto-detect")
-		if len(ports) > 1 {
-			return fmt.Errorf(
-				"runtime port affinity check failed: %d serial ports detected while LaunchAgent is unpinned; rerun setup with --pin-port",
-				len(ports),
-			)
-		}
-	} else {
-		fmt.Printf("  launchagent port affinity: pinned (%s)\n", pinnedPort)
-		if len(ports) > 0 && !containsPort(ports, pinnedPort) {
-			return fmt.Errorf(
-				"runtime port affinity check failed: pinned LaunchAgent port %q is not currently available",
-				pinnedPort,
-			)
-		}
-	}
+	fmt.Println("  Cable identity: resolved from device hello")
 
 	hello, err := doctorReadDeviceHelloFn(port)
 	if err != nil {
@@ -1140,7 +1123,7 @@ func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, ports []string) error
 func runDoctorWiFiRuntimeChecks(config doctorRuntimeConfig) error {
 	printDoctorRuntimeDefaults()
 	target := strings.TrimSpace(config.target)
-	fmt.Println("  launchagent port affinity: not applicable (active transport is WiFi)")
+	fmt.Println("  Cable identity: not applicable (active transport is WiFi)")
 	if target == "" {
 		fmt.Println("  WiFi device target: unavailable (connect VibeTV in Control Center)")
 		return errors.New("runtime WiFi target unavailable: connect VibeTV in Control Center")
@@ -1282,12 +1265,11 @@ func checkDoctorCompanionHealthOrigins(origins []string, expectedOwner string) e
 
 func runSetup(args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
-	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	port := fs.String("port", "", "optional serial candidate path (identity-resolved when empty)")
 	transportName := fs.String("transport", setup.DefaultTransport(), "device transport for LaunchAgent: wifi|usb")
 	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://192.168.1.42")
 	yes := fs.Bool("yes", false, "auto-select defaults without prompts")
 	skipFlash := fs.Bool("skip-flash", false, "skip firmware flashing")
-	pinPort := fs.Bool("pin-port", false, "pin daemon to selected --port in LaunchAgent (default: auto-detect)")
 	firmwareEnv := fs.String("firmware-env", setup.DefaultFirmwareEnvironment(), "release firmware environment to flash (examples: esp8266_smalltv_st7789, lilygo_t_display_s3)")
 	theme := fs.String("theme", "", "optional runtime theme override: classic|crt|mini|none (empty keeps existing setting, defaults new installs to mini)")
 	validateOnly := fs.Bool("validate-only", false, "validate setup prerequisites only; do not change system state")
@@ -1297,16 +1279,15 @@ func runSetup(args []string) error {
 	}
 
 	return setup.Run(context.Background(), setup.Options{
-		Port:          strings.TrimSpace(*port),
-		Transport:     strings.TrimSpace(*transportName),
-		Target:        strings.TrimSpace(*target),
-		AssumeYes:     *yes,
-		SkipFlash:     *skipFlash,
-		PinDaemonPort: *pinPort,
-		FirmwareEnv:   strings.TrimSpace(*firmwareEnv),
-		Theme:         strings.TrimSpace(*theme),
-		ValidateOnly:  *validateOnly,
-		DryRun:        *dryRun,
+		Port:         strings.TrimSpace(*port),
+		Transport:    strings.TrimSpace(*transportName),
+		Target:       strings.TrimSpace(*target),
+		AssumeYes:    *yes,
+		SkipFlash:    *skipFlash,
+		FirmwareEnv:  strings.TrimSpace(*firmwareEnv),
+		Theme:        strings.TrimSpace(*theme),
+		ValidateOnly: *validateOnly,
+		DryRun:       *dryRun,
 	})
 }
 
@@ -1358,7 +1339,7 @@ func runService(args []string) error {
 func runThemeValidate(args []string) error {
 	fs := flag.NewFlagSet("theme-validate", flag.ContinueOnError)
 	specPath := fs.String("spec", "", "path to ThemeSpec v1 JSON")
-	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	port := fs.String("port", "", "optional serial candidate path (identity-resolved when empty)")
 	transportName := fs.String("transport", setup.DefaultTransport(), "device transport: wifi|usb")
 	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://192.168.1.42")
 	allowUnknown := fs.Bool(
@@ -1404,7 +1385,7 @@ func runThemeValidate(args []string) error {
 func runThemeApply(args []string) error {
 	fs := flag.NewFlagSet("theme-apply", flag.ContinueOnError)
 	specPath := fs.String("spec", "", "path to ThemeSpec v1 JSON")
-	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	port := fs.String("port", "", "optional serial candidate path (identity-resolved when empty)")
 	transportName := fs.String("transport", setup.DefaultTransport(), "device transport: wifi|usb")
 	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://192.168.1.42")
 	allowUnknown := fs.Bool(
@@ -1875,7 +1856,7 @@ func fallbackThemeSpecCapabilities() protocol.DeviceCapabilities {
 
 func runRestoreKnownGood(args []string) error {
 	fs := flag.NewFlagSet("restore-known-good", flag.ContinueOnError)
-	port := fs.String("port", "", "serial port (auto-detect when empty)")
+	port := fs.String("port", "", "required explicit serial recovery port")
 	image := fs.String("image", "", "backup image path (auto-select newest known-good backup when empty)")
 	baud := fs.Int("baud", 460800, "esptool serial baud rate")
 	scriptPath := fs.String("script-path", "", "path to esp8266-restore.sh (auto-detect when empty)")
@@ -2181,23 +2162,6 @@ func fileExists(path string) bool {
 		return false
 	}
 	return !info.IsDir()
-}
-
-func containsPort(ports []string, target string) bool {
-	target = strings.TrimSpace(target)
-	if target == "" {
-		return false
-	}
-	for _, port := range ports {
-		if strings.TrimSpace(port) == target {
-			return true
-		}
-	}
-	return false
-}
-
-func parsePinnedPortFromLaunchAgentPlist(plist string) string {
-	return parseLaunchAgentArgument(plist, "--port")
 }
 
 func parseLaunchAgentArgument(plist, name string) string {

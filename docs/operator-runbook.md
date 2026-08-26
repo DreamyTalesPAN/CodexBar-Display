@@ -151,7 +151,7 @@ cd companion
 
 Useful flags:
 - `--skip-flash`: install/update runtime only
-- `--pin-port`: pin LaunchAgent to one explicit serial path (recommended when multiple USB serial devices are present)
+- `--port <path>`: limit this setup/recovery action to one candidate; the path is never persisted
 - `--firmware-env <env>`: select PlatformIO environment
 - `--theme <classic|crt|mini|none>`: persist runtime theme override in companion config
 - `--validate-only`: run setup prerequisite checks only
@@ -353,14 +353,14 @@ cd companion
 
 `health` reports in one output:
 - LaunchAgent state + PID
-- auto-detected serial port
+- identity-resolved Cable device and its current serial port
 - last successful `sent frame` timestamp + port
 - last runtime error (if any)
 
 `doctor` runtime checks are transport-aware:
 - active runtime service and configured transport
-- WiFi: configured target, local Mac App health, and read-only device reachability; USB/serial affinity is not applicable
-- USB: board/protocol/theme capability contract, serial probe, and LaunchAgent port affinity safety (fails when multiple serial ports are present and daemon is unpinned)
+- WiFi: configured target, local Mac App health, and read-only device reachability
+- USB: identity-matched board/protocol/theme capability contract and serial probe; unrelated port names are ignored
 - no active runtime: clear setup-required result without treating unrelated serial inventory as fatal
 
 Runtime error logs use:
