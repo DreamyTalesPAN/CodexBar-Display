@@ -44,6 +44,25 @@ describe("DeviceStartupScreen", () => {
     expect(html).not.toContain("Use WiFi</span>");
   });
 
+  it("does not offer Cable on a legacy WiFi-only VibeTV", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        cableConnectionSupported={false}
+        connectionModeChoiceRequired
+        deviceCandidates={[]}
+        deviceSearchState="idle"
+        onPair={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        onSelectConnectionMode={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Use WiFi</span>");
+    expect(html).not.toContain("Use Cable</span>");
+    expect(html).not.toContain("Recommended</span>");
+  });
+
   it("keeps searching as an accessible heading and one focused status", () => {
     const html = renderToStaticMarkup(
       <DeviceStartupScreen

@@ -1982,3 +1982,17 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-app.tsx`,
   `scripts/test-customer-flows.mjs`, the runtime configuration and Companion
   setup-reset endpoint and tests, and this approval record.
+
+## 2026-08-27 — Legacy WiFi-only devices show only their working choice
+
+- User approval: Continuation of the user's explicit instruction to fix every
+  automated review finding on PR #407 and repeat the review loop. This applies
+  the already approved rule that the chooser must not offer a connection the
+  attached VibeTV cannot use.
+- Approved customer-visible result: After setup reset, a warm-upgraded legacy
+  ESP8266 that supports only WiFi shows the same neutral `Use WiFi` card and no
+  non-functional Cable card or `Recommended` badge. Normal ESP8266 devices keep
+  both approved cards, and USB-only LilyGO devices keep only `Use Cable`.
+- Approved files: `control-center-app.tsx`, `device-startup-screen.tsx`,
+  `device-startup-screen.test.tsx`, the Companion connection-mode endpoint and
+  tests, and this approval record.

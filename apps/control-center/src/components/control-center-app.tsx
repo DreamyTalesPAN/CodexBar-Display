@@ -4002,6 +4002,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       <DeviceStartupScreen
         key={connectionModeChoiceRevision}
         busyAction={busyAction}
+        cableConnectionSupported={
+          !device?.capabilities?.transport?.supported ||
+          device.capabilities.transport.supported.includes("usb")
+        }
         connectionModeChoiceRequired={connectionModeChoiceRequired}
         wifiConnectionSupported={
           !device?.capabilities?.transport?.supported ||

@@ -180,7 +180,7 @@ func resolveVibeTVCandidatesForControl(
 			!isSupportedCableBoard(hello.Board) ||
 			hello.DeviceID == "" ||
 			hello.Capabilities.Transport.Active != "usb" ||
-			(mode != "cable" && (!allowWiFiMode || mode != "wifi")) {
+			(mode != "cable" && (!allowWiFiMode || (mode != "wifi" && mode != "legacy-wifi-only"))) {
 			continue
 		}
 		if expectedDeviceID != "" && !strings.EqualFold(hello.DeviceID, expectedDeviceID) {

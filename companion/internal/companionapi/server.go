@@ -3328,7 +3328,14 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusConflict, "connection_mode_unsupported", "This VibeTV does not support WiFi.", "Keep this VibeTV connected by Cable.")
 		return
 	}
-	if runtimeconfig.NormalizeConnectionMode(hello.Capabilities.Transport.Mode) != mode {
+	if mode == "cable" && !supportsTransport(hello, "usb") {
+		writeError(w, http.StatusConflict, "connection_mode_unsupported", "This VibeTV does not support Cable mode.", "Choose WiFi for this VibeTV.")
+		return
+	}
+	deviceMode := strings.TrimSpace(strings.ToLower(hello.Capabilities.Transport.Mode))
+	modeAlreadySelected := runtimeconfig.NormalizeConnectionMode(deviceMode) == mode ||
+		(deviceMode == "legacy-wifi-only" && mode == "wifi")
+	if !modeAlreadySelected {
 		if err := s.setCableConnectionMode(port, hello.DeviceID, mode); err != nil {
 			writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not change its connection.", "Keep VibeTV connected by Cable, then try again.")
 			return

@@ -54,6 +54,7 @@ type Props = {
   providerSetup?: ProviderSetupInfo | null;
   selectingDeviceTarget?: string;
   supportReportBusy?: boolean;
+  cableConnectionSupported?: boolean;
   wifiConnectionSupported?: boolean;
 };
 
@@ -76,6 +77,7 @@ export function DeviceStartupScreen({
   onSelect,
   selectingDeviceTarget,
   supportReportBusy = false,
+  cableConnectionSupported = true,
   wifiConnectionSupported = true,
   providerRecovery = false,
   showCodexBarFallback = false,
@@ -354,30 +356,32 @@ export function DeviceStartupScreen({
       <div className="grid gap-5">
         {choosingConnectionMode ? (
           <div
-            className={`grid gap-3 ${wifiConnectionSupported ? "grid-cols-2" : "grid-cols-1"}`}
+            className={`grid gap-3 ${cableConnectionSupported && wifiConnectionSupported ? "grid-cols-2" : "grid-cols-1"}`}
           >
-            <Button
-              className="h-auto min-h-44 w-full flex-col items-start justify-between gap-5 whitespace-normal p-5 text-left"
-              disabled={Boolean(busyAction)}
-              onClick={() => void selectConnectionMode("cable")}
-              size="lg"
-              variant="outline"
-            >
-              <span className="flex w-full items-start justify-between gap-2">
-                <span className="flex size-14 items-center justify-center rounded-2xl bg-muted">
-                  <Cable className="size-9" aria-hidden />
+            {cableConnectionSupported ? (
+              <Button
+                className="h-auto min-h-44 w-full flex-col items-start justify-between gap-5 whitespace-normal p-5 text-left"
+                disabled={Boolean(busyAction)}
+                onClick={() => void selectConnectionMode("cable")}
+                size="lg"
+                variant="outline"
+              >
+                <span className="flex w-full items-start justify-between gap-2">
+                  <span className="flex size-14 items-center justify-center rounded-2xl bg-muted">
+                    <Cable className="size-9" aria-hidden />
+                  </span>
+                  <span className="rounded-full bg-primary px-2.5 py-1 text-xs font-bold text-primary-foreground">
+                    Recommended
+                  </span>
                 </span>
-                <span className="rounded-full bg-primary px-2.5 py-1 text-xs font-bold text-primary-foreground">
-                  Recommended
+                <span className="grid gap-1.5">
+                  <span className="text-lg font-black">Use Cable</span>
+                  <span className="text-sm font-medium leading-5 text-muted-foreground">
+                    Most reliable connection
+                  </span>
                 </span>
-              </span>
-              <span className="grid gap-1.5">
-                <span className="text-lg font-black">Use Cable</span>
-                <span className="text-sm font-medium leading-5 text-muted-foreground">
-                  Most reliable connection
-                </span>
-              </span>
-            </Button>
+              </Button>
+            ) : null}
             {wifiConnectionSupported ? (
               <Button
                 className="h-auto min-h-44 w-full flex-col items-start justify-between gap-5 whitespace-normal p-5 text-left"

@@ -256,6 +256,20 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 			Hint: "use --transport wifi or --transport usb",
 		}
 	}
+	home, err := d.homeDir()
+	if err != nil {
+		return &StepError{
+			Step: "resolve-home",
+			Err:  err,
+		}
+	}
+	if err := validateRuntimeConnectionMode(home, transportName); err != nil {
+		return &StepError{
+			Step: "validate-connection-mode",
+			Err:  err,
+			Hint: "switch connection mode in VibeTV Control Center before running setup",
+		}
+	}
 	target := normalizeSetupTarget(opts.Target)
 	runtimeConfigTarget := ""
 	if transportName == "wifi" {
@@ -328,14 +342,6 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	if err != nil {
 		return &StepError{
 			Step: "resolve-executable",
-			Err:  err,
-		}
-	}
-
-	home, err := d.homeDir()
-	if err != nil {
-		return &StepError{
-			Step: "resolve-home",
 			Err:  err,
 		}
 	}
@@ -1129,13 +1135,9 @@ func applyRuntimeConfig(
 	}
 
 	changed := false
-	connectionMode := runtimeconfig.NormalizeConnectionMode(rawConnectionMode)
-	if normalizeSetupTransport(rawConnectionMode) == "usb" {
-		connectionMode = "cable"
-	}
-	if connectionMode == "wifi" &&
-		(runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" || cfg.CableAutoBindDisabled) {
-		return errors.New("VibeTV must confirm the Cable-to-WiFi transition before the host switches to WiFi")
+	connectionMode := setupConnectionMode(rawConnectionMode)
+	if err := validateRuntimeConnectionModeConfig(cfg, connectionMode); err != nil {
+		return err
 	}
 	if connectionMode != "" && cfg.ConnectionMode != connectionMode {
 		cfg.ConnectionMode = connectionMode
@@ -1209,6 +1211,29 @@ func applyRuntimeConfig(
 		return nil
 	}
 	return runtimeconfig.Save(home, cfg)
+}
+
+func validateRuntimeConnectionMode(home, rawConnectionMode string) error {
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		return err
+	}
+	return validateRuntimeConnectionModeConfig(cfg, setupConnectionMode(rawConnectionMode))
+}
+
+func setupConnectionMode(rawConnectionMode string) string {
+	if normalizeSetupTransport(rawConnectionMode) == "usb" {
+		return "cable"
+	}
+	return runtimeconfig.NormalizeConnectionMode(rawConnectionMode)
+}
+
+func validateRuntimeConnectionModeConfig(cfg runtimeconfig.Config, connectionMode string) error {
+	if connectionMode == "wifi" &&
+		(runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" || cfg.CableAutoBindDisabled) {
+		return errors.New("VibeTV must confirm the Cable-to-WiFi transition before the host switches to WiFi")
+	}
+	return nil
 }
 
 func discoverSetupWiFiTarget(ctx context.Context, d deps, target, rawRuntimeTarget string) (string, string) {
