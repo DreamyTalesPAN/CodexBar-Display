@@ -1133,6 +1133,10 @@ func applyRuntimeConfig(
 	if normalizeSetupTransport(rawConnectionMode) == "usb" {
 		connectionMode = "cable"
 	}
+	if connectionMode == "wifi" &&
+		(runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" || cfg.CableAutoBindDisabled) {
+		return errors.New("VibeTV must confirm the Cable-to-WiFi transition before the host switches to WiFi")
+	}
 	if connectionMode != "" && cfg.ConnectionMode != connectionMode {
 		cfg.ConnectionMode = connectionMode
 		changed = true

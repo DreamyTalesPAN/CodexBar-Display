@@ -3,6 +3,7 @@ package usb
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -61,6 +62,47 @@ func readConnectionModeConfirmationFromPort(port SerialPort, window time.Duratio
 	}
 	if !seen {
 		return fmt.Errorf("device did not acknowledge Cable mode confirmation")
+	}
+	return nil
+}
+
+func readConnectionModeSwitchFromPort(port SerialPort, window time.Duration, deviceID, mode string) error {
+	var responseErr error
+	seen := readPortLines(port, window, func(line string) bool {
+		if !strings.HasPrefix(strings.TrimSpace(line), "{") {
+			return false
+		}
+		var reply struct {
+			Kind     string `json:"kind"`
+			Status   string `json:"status"`
+			DeviceID string `json:"deviceId"`
+			Mode     string `json:"mode"`
+			Code     string `json:"code"`
+			Message  string `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(line), &reply); err != nil {
+			return false
+		}
+		switch strings.TrimSpace(reply.Kind) {
+		case "error":
+			responseErr = fmt.Errorf("device rejected connection mode switch: %s: %s", strings.TrimSpace(reply.Code), strings.TrimSpace(reply.Message))
+			return true
+		case "connection-mode":
+			if !strings.EqualFold(strings.TrimSpace(reply.DeviceID), strings.TrimSpace(deviceID)) ||
+				!strings.EqualFold(strings.TrimSpace(reply.Mode), strings.TrimSpace(mode)) ||
+				!strings.EqualFold(strings.TrimSpace(reply.Status), "switching") {
+				responseErr = errors.New("device acknowledged a different identity, mode, or status")
+			}
+			return true
+		default:
+			return false
+		}
+	})
+	if responseErr != nil {
+		return responseErr
+	}
+	if !seen {
+		return fmt.Errorf("device did not acknowledge %s mode switch", mode)
 	}
 	return nil
 }

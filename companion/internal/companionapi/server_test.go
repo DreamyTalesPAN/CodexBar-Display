@@ -7250,6 +7250,95 @@ func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
 	}
 }
 
+func TestSetupConnectionModeStartsWiFiTransitionBeforeChangingHostMode(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-cable",
+	})
+	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
+		if explicit != "" || expectedDeviceID != "device-cable" {
+			t.Fatalf("unexpected Cable resolution explicit=%q expected=%q", explicit, expectedDeviceID)
+		}
+		return "/dev/cu.usbserial-vibetv", nil
+	}
+	server.readCableHello = func(port string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{Kind: "hello", DeviceID: "device-cable"}, nil
+	}
+	switchCalls := 0
+	server.setCableConnectionMode = func(port, deviceID, mode string) error {
+		switchCalls++
+		if port != "/dev/cu.usbserial-vibetv" || deviceID != "device-cable" || mode != "wifi" {
+			t.Fatalf("unexpected switch port=%q device=%q mode=%q", port, deviceID, mode)
+		}
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if switchCalls != 1 {
+		t.Fatalf("expected one device transition, got %d", switchCalls)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "" || !cfg.CableAutoBindDisabled || cfg.DeviceID != "device-cable" {
+		t.Fatalf("host mode changed before WiFi confirmation: %+v", cfg)
+	}
+}
+
+func TestSetupConnectionModeExplicitlySelectsCableAfterReset(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:        "cable",
+		CableAutoBindDisabled: true,
+	})
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/cu.usbserial-vibetv", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{Kind: "hello", DeviceID: "new-cable-vibetv"}, nil
+	}
+	server.setCableConnectionMode = func(port, deviceID, mode string) error {
+		if port != "/dev/cu.usbserial-vibetv" || deviceID != "new-cable-vibetv" || mode != "cable" {
+			t.Fatalf("unexpected switch port=%q device=%q mode=%q", port, deviceID, mode)
+		}
+		return nil
+	}
+	server.streamStatus = func(_ context.Context, target string) displayStreamInfo {
+		if target != cableDeviceTarget {
+			t.Fatalf("unexpected stream target %q", target)
+		}
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.CableAutoBindDisabled || cfg.DeviceID != "new-cable-vibetv" {
+		t.Fatalf("Cable selection did not replace reset state: %+v", cfg)
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Device.Active || !got.Device.Paired || !got.Device.Ready || got.Device.Target != cableDeviceTarget {
+		t.Fatalf("Cable selection response is not ready: %+v", got.Device)
+	}
+}
+
 func TestSetupResetRejectsActiveFirmwareUpdate(t *testing.T) {
 	initial := runtimeconfig.Config{
 		DeviceTarget: "http://192.168.178.72",
