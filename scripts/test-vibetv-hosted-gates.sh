@@ -414,6 +414,8 @@ main() {
     'public guest states must drive the firmware update through the installed runtime API, not a direct CLI flash'
   assert_contains "$GUEST_TEST" '/v1/updates/install/status?jobId=' \
     'guest test must wait for the runtime firmware update job to finish'
+  assert_contains "$GUEST_TEST" 'mac_app_restarting' \
+    'guest test must retry only the documented transient runtime-restart conflict'
   assert_before "$GUEST_TEST" '/v1/device/repair' 'api_firmware_update "$OUTPUT/candidate-install-update.json"' \
     'the runtime must own the paired device before the API firmware update starts'
   assert_contains "$GUEST_TEST" 'api_firmware_update "$OUTPUT/candidate-already-current.json" already_current' \
@@ -430,6 +432,10 @@ main() {
     'guest test must bound each installed-runtime status request'
   assert_contains "$GUEST_TEST" 'if runtime_pid="$(python3 - "$status_output"' \
     'guest test must keep polling until the candidate runtime status itself validates'
+  assert_contains "$GUEST_TEST" 'shop.vibetv.control-center.runtime.registered-bundle-version' \
+    'guest test must wait for native app preparation to finish before driving the runtime update API'
+  assert_contains "$GUEST_TEST" 'deadline=$((SECONDS + 120))' \
+    'guest test must preserve the full native preparation and recovery timeout'
   assert_not_contains "$GUEST_TEST" 'validate-macos-control-center-runtime.sh' \
     'stateful guest checks must not invoke the clean-host runtime validator'
   assert_not_contains "$GUEST_TEST" '--once --api-addr' \
