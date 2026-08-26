@@ -236,6 +236,7 @@ func (s *Sender) ConfirmConnectionMode(path, deviceID string) error {
 		"{\"kind\":\"request\",\"op\":\"confirm-connection-mode\",\"deviceId\":%q}\n",
 		deviceID,
 	))
+	_ = s.port.ResetInputBuffer()
 	if err := writeWithTimeout(s.port, line, s.writeTimeout); err != nil {
 		s.closeCurrentLocked()
 		return wrapTransportError(
@@ -245,6 +246,9 @@ func (s *Sender) ConfirmConnectionMode(path, deviceID string) error {
 			"Keep the expected VibeTV connected by Cable and retry before rollback.",
 			err,
 		)
+	}
+	if err := readConnectionModeConfirmationFromPort(s.port, s.helloWindow, deviceID); err != nil {
+		return fmt.Errorf("confirm connection mode on %s: %w", path, err)
 	}
 	s.hello.Capabilities.Transport.TransitionPending = false
 	s.hello.Capabilities.Transport.TransitionFrom = ""

@@ -3,6 +3,7 @@ package usb
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -10,24 +11,70 @@ import (
 )
 
 func readHelloFromPort(port SerialPort, window time.Duration) (protocol.DeviceHello, bool) {
-	if port == nil {
-		return protocol.DeviceHello{}, false
-	}
-	if window <= 0 {
-		return protocol.DeviceHello{}, false
-	}
+	var hello protocol.DeviceHello
+	seen := readPortLines(port, window, func(line string) bool {
+		var ok bool
+		hello, ok = parseDeviceHelloLine(line)
+		return ok
+	})
+	return hello, seen
+}
 
+func readConnectionModeConfirmationFromPort(port SerialPort, window time.Duration, deviceID string) error {
+	var responseErr error
+	seen := readPortLines(port, window, func(line string) bool {
+		if !strings.HasPrefix(strings.TrimSpace(line), "{") {
+			return false
+		}
+		var reply struct {
+			Kind     string `json:"kind"`
+			Status   string `json:"status"`
+			DeviceID string `json:"deviceId"`
+			Mode     string `json:"mode"`
+			Code     string `json:"code"`
+			Message  string `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(line), &reply); err != nil {
+			return false
+		}
+		switch strings.TrimSpace(reply.Kind) {
+		case "error":
+			responseErr = fmt.Errorf("device rejected confirmation: %s: %s", strings.TrimSpace(reply.Code), strings.TrimSpace(reply.Message))
+			return true
+		case "connection-mode":
+			if !strings.EqualFold(strings.TrimSpace(reply.DeviceID), strings.TrimSpace(deviceID)) ||
+				!strings.EqualFold(strings.TrimSpace(reply.Mode), "cable") {
+				responseErr = fmt.Errorf("device acknowledged a different identity or mode")
+				return true
+			}
+			status := strings.ToLower(strings.TrimSpace(reply.Status))
+			if status != "confirmed" && status != "stable" {
+				responseErr = fmt.Errorf("device returned unexpected confirmation status %q", reply.Status)
+			}
+			return true
+		default:
+			return false
+		}
+	})
+	if responseErr != nil {
+		return responseErr
+	}
+	if !seen {
+		return fmt.Errorf("device did not acknowledge Cable mode confirmation")
+	}
+	return nil
+}
+
+func readPortLines(port SerialPort, window time.Duration, accept func(string) bool) bool {
+	if port == nil || window <= 0 || accept == nil {
+		return false
+	}
 	_ = port.SetReadTimeout(helloReadStepTimeout)
-
 	deadline := time.Now().Add(window)
 	chunk := make([]byte, 128)
 	buffer := make([]byte, 0, helloReadBufferBytes)
-
 	for time.Now().Before(deadline) {
-		n, err := port.Read(chunk)
-		if err != nil {
-			continue
-		}
+		n, _ := port.Read(chunk)
 		if n <= 0 {
 			continue
 		}
@@ -35,27 +82,19 @@ func readHelloFromPort(port SerialPort, window time.Duration) (protocol.DeviceHe
 		if len(buffer) > helloReadBufferBytes {
 			buffer = buffer[len(buffer)-helloReadBufferBytes:]
 		}
-
 		for {
 			idx := bytes.IndexByte(buffer, '\n')
 			if idx < 0 {
 				break
 			}
-			line := bytes.TrimSpace(buffer[:idx])
+			line := strings.TrimSpace(string(bytes.TrimSpace(buffer[:idx])))
 			buffer = buffer[idx+1:]
-
-			if hello, ok := parseDeviceHelloLine(string(line)); ok {
-				return hello, true
+			if accept(line) {
+				return true
 			}
 		}
 	}
-
-	line := strings.TrimSpace(string(bytes.TrimSpace(buffer)))
-	if hello, ok := parseDeviceHelloLine(line); ok {
-		return hello, true
-	}
-
-	return protocol.DeviceHello{}, false
+	return accept(strings.TrimSpace(string(bytes.TrimSpace(buffer))))
 }
 
 func parseDeviceHelloLine(line string) (protocol.DeviceHello, bool) {

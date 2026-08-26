@@ -41,6 +41,19 @@ func TestDaemonIntervalForSetupTransport(t *testing.T) {
 	}
 }
 
+func TestChoosePortKeepsExplicitRecoveryTargetWithoutIdentityHandshake(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cu.usbserial-recovery")
+	mustWriteFile(t, path, nil, 0o600)
+
+	got, err := choosePort(Options{Port: path}, deps{}.withDefaults())
+	if err != nil {
+		t.Fatalf("choose explicit recovery port: %v", err)
+	}
+	if got != path {
+		t.Fatalf("choosePort=%q, expected %q", got, path)
+	}
+}
+
 func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
@@ -1263,6 +1276,7 @@ func TestRunWithDepsSkipsSerialProbeOnFlashPath(t *testing.T) {
 	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
 
 	probeCalled := false
+	resolveRecoveryCalled := false
 
 	err := runWithDeps(context.Background(), Options{
 		Transport: "usb",
@@ -1281,6 +1295,10 @@ func TestRunWithDepsSkipsSerialProbeOnFlashPath(t *testing.T) {
 		},
 		uid: func() int { return 501 },
 		resolvePort: func(p string) (string, error) {
+			return p, nil
+		},
+		resolveRecoveryPort: func(p string) (string, error) {
+			resolveRecoveryCalled = true
 			return p, nil
 		},
 		probePort: func(string) error {
@@ -1310,6 +1328,9 @@ func TestRunWithDepsSkipsSerialProbeOnFlashPath(t *testing.T) {
 	}
 	if probeCalled {
 		t.Fatalf("expected serial probe to be skipped on flash path")
+	}
+	if !resolveRecoveryCalled {
+		t.Fatalf("expected flash path to preserve the explicit recovery target")
 	}
 }
 

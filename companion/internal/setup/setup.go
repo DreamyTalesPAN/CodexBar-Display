@@ -56,18 +56,19 @@ func DefaultWiFiTarget() string {
 type commandRunner func(ctx context.Context, dir string, name string, args ...string) (string, error)
 
 type deps struct {
-	stdout          io.Writer
-	cwd             func() (string, error)
-	executablePath  func() (string, error)
-	homeDir         func() (string, error)
-	uid             func() int
-	resolvePort     func(string) (string, error)
-	probePort       func(string) error
-	readDeviceHello func(string) (protocol.DeviceHello, error)
-	discoverWiFi    func(context.Context, []string) (transportlayer.WiFiDiscoveryResult, error)
-	findCodexbar    func() (string, error)
-	lookPath        func(string) (string, error)
-	runCommand      commandRunner
+	stdout              io.Writer
+	cwd                 func() (string, error)
+	executablePath      func() (string, error)
+	homeDir             func() (string, error)
+	uid                 func() int
+	resolvePort         func(string) (string, error)
+	resolveRecoveryPort func(string) (string, error)
+	probePort           func(string) error
+	readDeviceHello     func(string) (protocol.DeviceHello, error)
+	discoverWiFi        func(context.Context, []string) (transportlayer.WiFiDiscoveryResult, error)
+	findCodexbar        func() (string, error)
+	lookPath            func(string) (string, error)
+	runCommand          commandRunner
 }
 
 func (d deps) withDefaults() deps {
@@ -90,6 +91,9 @@ func (d deps) withDefaults() deps {
 		d.resolvePort = func(explicit string) (string, error) {
 			return usb.ResolveVibeTVPort(explicit, "")
 		}
+	}
+	if d.resolveRecoveryPort == nil {
+		d.resolveRecoveryPort = usb.ResolvePort
 	}
 	if d.probePort == nil {
 		d.probePort = usb.ProbePort
@@ -482,7 +486,15 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 
 func choosePort(opts Options, d deps) (string, error) {
 	explicit := strings.TrimSpace(opts.Port)
-	port, err := d.resolvePort(explicit)
+	resolve := d.resolvePort
+	// Flashing is the recovery path for devices whose current firmware cannot
+	// answer the runtime identity handshake. An explicitly supplied port is the
+	// operator's bounded recovery target, so only verify that path exists before
+	// handing it to the authoritative upgrade command.
+	if explicit != "" && !opts.SkipFlash && !opts.ValidateOnly && !opts.DryRun {
+		resolve = d.resolveRecoveryPort
+	}
+	port, err := resolve(explicit)
 	if err != nil {
 		return "", &StepError{
 			Step: "select-port",
