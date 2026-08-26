@@ -432,6 +432,8 @@ main() {
     'guest test must keep polling until the candidate runtime status itself validates'
   assert_contains "$GUEST_TEST" 'shop.vibetv.control-center.runtime.registered-bundle-version' \
     'guest test must wait for native app preparation to finish before driving the runtime update API'
+  assert_contains "$GUEST_TEST" 'deadline=$((SECONDS + 120))' \
+    'guest test must preserve the full native preparation and recovery timeout'
   assert_not_contains "$GUEST_TEST" 'validate-macos-control-center-runtime.sh' \
     'stateful guest checks must not invoke the clean-host runtime validator'
   assert_not_contains "$GUEST_TEST" '--once --api-addr' \

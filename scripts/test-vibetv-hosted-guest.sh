@@ -74,7 +74,8 @@ validate_installed_runtime() {
   build_version="$(plutil -extract CFBundleVersion raw -o - "$INSTALL_APP/Contents/Info.plist")"
   expected_bundle_version="${VERSION}+${build_version}"
   rm -f "$status_output"
-  for _ in $(seq 1 30); do
+  local deadline=$((SECONDS + 120))
+  while (( SECONDS < deadline )); do
     registered_bundle_version="$(
       defaults read shop.vibetv.control-center \
         shop.vibetv.control-center.runtime.registered-bundle-version 2>/dev/null || true
