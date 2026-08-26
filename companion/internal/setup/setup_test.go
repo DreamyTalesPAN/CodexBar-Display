@@ -21,6 +21,14 @@ type commandCall struct {
 	args []string
 }
 
+func setupCableHello(string) (protocol.DeviceHello, error) {
+	return protocol.DeviceHello{
+		Kind:     "hello",
+		Board:    "esp8266-smalltv-st7789",
+		DeviceID: "vibetv-test",
+	}, nil
+}
+
 func TestDaemonIntervalForSetupTransport(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -84,7 +92,8 @@ func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 		resolvePort: func(port string) (string, error) {
 			return "/dev/cu.usbserial42", nil
 		},
-		probePort: func(string) error { return nil },
+		probePort:       func(string) error { return nil },
+		readDeviceHello: setupCableHello,
 		findCodexbar: func() (string, error) {
 			findCount++
 			if findCount == 1 {
@@ -120,7 +129,7 @@ func TestRunWithDepsInstallsCodexbarAndCompletesSetup(t *testing.T) {
 		t.Fatalf("expected setup completion output, got:\n%s", stdout.String())
 	}
 	cfg, err := runtimeconfig.Load(home)
-	if err != nil || cfg.ConnectionMode != "cable" {
+	if err != nil || cfg.ConnectionMode != "cable" || cfg.DeviceID != "vibetv-test" {
 		t.Fatalf("expected Cable as the authoritative runtime mode, cfg=%+v err=%v", cfg, err)
 	}
 
@@ -183,7 +192,8 @@ func TestRunWithDepsNeverPersistsExplicitSetupPort(t *testing.T) {
 		resolvePort: func(string) (string, error) {
 			return "/dev/cu.usbserial42", nil
 		},
-		probePort: func(string) error { return nil },
+		probePort:       func(string) error { return nil },
+		readDeviceHello: setupCableHello,
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -509,7 +519,8 @@ func TestRunWithDepsWritesRuntimeThemeConfig(t *testing.T) {
 		resolvePort: func(string) (string, error) {
 			return "/dev/cu.usbserial42", nil
 		},
-		probePort: func(string) error { return nil },
+		probePort:       func(string) error { return nil },
+		readDeviceHello: setupCableHello,
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -560,7 +571,8 @@ func TestRunWithDepsWritesDefaultMiniThemeConfigWhenUnset(t *testing.T) {
 		resolvePort: func(p string) (string, error) {
 			return p, nil
 		},
-		probePort: func(string) error { return nil },
+		probePort:       func(string) error { return nil },
+		readDeviceHello: setupCableHello,
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -659,7 +671,8 @@ func TestRunWithDepsKeepsExistingThemeWhenUnset(t *testing.T) {
 		resolvePort: func(p string) (string, error) {
 			return "/dev/cu.usbserial42", nil
 		},
-		probePort: func(string) error { return nil },
+		probePort:       func(string) error { return nil },
+		readDeviceHello: setupCableHello,
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -786,6 +799,7 @@ func TestRunWithDepsContinuesWhenSkipFlashAndProbeFails(t *testing.T) {
 		probePort: func(string) error {
 			return errors.New("serial close timeout")
 		},
+		readDeviceHello: setupCableHello,
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -1047,9 +1061,10 @@ func TestRunWithDepsWaitsForLaunchAgentToBecomeRunning(t *testing.T) {
 		homeDir: func() (string, error) {
 			return home, nil
 		},
-		uid:         func() int { return 501 },
-		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem101", nil },
-		probePort:   func(string) error { return nil },
+		uid:             func() int { return 501 },
+		resolvePort:     func(string) (string, error) { return "/dev/cu.usbmodem101", nil },
+		probePort:       func(string) error { return nil },
+		readDeviceHello: setupCableHello,
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -1110,7 +1125,8 @@ func TestRunWithDepsRetriesLaunchAgentBootstrapRace(t *testing.T) {
 			}
 			return "/dev/cu.usbserial10", nil
 		},
-		probePort: func(string) error { return nil },
+		probePort:       func(string) error { return nil },
+		readDeviceHello: setupCableHello,
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -1178,7 +1194,8 @@ func TestRunWithDepsFallsBackToKickstartWhenLaunchAgentAlreadyLoaded(t *testing.
 			}
 			return "/dev/cu.usbserial10", nil
 		},
-		probePort: func(string) error { return nil },
+		probePort:       func(string) error { return nil },
+		readDeviceHello: setupCableHello,
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -1238,6 +1255,7 @@ func TestRunWithDepsStopsLaunchAgentBeforeSerialProbe(t *testing.T) {
 			}
 			return nil
 		},
+		readDeviceHello: setupCableHello,
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -1277,6 +1295,7 @@ func TestRunWithDepsSkipsSerialProbeOnFlashPath(t *testing.T) {
 
 	probeCalled := false
 	resolveRecoveryCalled := false
+	helloReads := 0
 
 	err := runWithDeps(context.Background(), Options{
 		Transport: "usb",
@@ -1305,6 +1324,13 @@ func TestRunWithDepsSkipsSerialProbeOnFlashPath(t *testing.T) {
 			probeCalled = true
 			return nil
 		},
+		readDeviceHello: func(port string) (protocol.DeviceHello, error) {
+			helloReads++
+			if helloReads == 1 {
+				return protocol.DeviceHello{}, errors.New("pre-cutover firmware has no hello")
+			}
+			return setupCableHello(port)
+		},
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},
@@ -1331,6 +1357,13 @@ func TestRunWithDepsSkipsSerialProbeOnFlashPath(t *testing.T) {
 	}
 	if !resolveRecoveryCalled {
 		t.Fatalf("expected flash path to preserve the explicit recovery target")
+	}
+	if helloReads != 2 {
+		t.Fatalf("expected identity retry after recovery flash, got %d hello reads", helloReads)
+	}
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil || cfg.DeviceID != "vibetv-test" {
+		t.Fatalf("expected post-flash Cable identity to be persisted, cfg=%+v err=%v", cfg, err)
 	}
 }
 
@@ -1365,7 +1398,8 @@ func TestRunWithDepsUsesReleaseUpgradeForEsp8266FirmwareEnvironment(t *testing.T
 		resolvePort: func(string) (string, error) {
 			return "/dev/cu.usbserial42", nil
 		},
-		probePort: func(string) error { return nil },
+		probePort:       func(string) error { return nil },
+		readDeviceHello: setupCableHello,
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
 		},

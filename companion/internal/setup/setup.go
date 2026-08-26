@@ -287,6 +287,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	fmt.Fprintf(d.stdout, "CodexBar CLI: %s\n", codexbarBin)
 
 	port := ""
+	cableDeviceID := ""
 	if transportName == "usb" {
 		port, err = choosePort(opts, d)
 		if err != nil {
@@ -355,6 +356,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		hello, helloErr := d.readDeviceHello(port)
 		usb.CloseDefaultSender()
 		if helloErr == nil {
+			cableDeviceID = strings.TrimSpace(hello.DeviceID)
 			detectedBoard := strings.TrimSpace(strings.ToLower(hello.Board))
 			if detectedBoard != "" && !containsString(targetBoardIDs, detectedBoard) {
 				return &StepError{
@@ -392,6 +394,21 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		}
 	} else {
 		fmt.Fprintln(d.stdout, "Firmware flash: skipped (--skip-flash)")
+	}
+	if transportName == "usb" && !opts.ValidateOnly && !opts.DryRun && cableDeviceID == "" {
+		hello, helloErr := d.readDeviceHello(port)
+		usb.CloseDefaultSender()
+		if helloErr != nil || strings.TrimSpace(hello.DeviceID) == "" {
+			if helloErr == nil {
+				helloErr = errors.New("device hello did not include deviceId")
+			}
+			return &StepError{
+				Step: "read-cable-identity",
+				Err:  helloErr,
+				Hint: "keep the flashed VibeTV connected by Cable and rerun setup",
+			}
+		}
+		cableDeviceID = strings.TrimSpace(hello.DeviceID)
 	}
 
 	if opts.ValidateOnly {
@@ -445,7 +462,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	fmt.Fprintf(d.stdout, "Recovery backup dir: %s\n", backupDir)
 
 	if err := applyRuntimeConfig(
-		home, opts.Theme, transportName, runtimeConfigTarget, d.stdout,
+		home, opts.Theme, transportName, runtimeConfigTarget, cableDeviceID, d.stdout,
 	); err != nil {
 		return &StepError{
 			Step: "write-runtime-config",
@@ -1099,7 +1116,8 @@ func applyRuntimeConfig(
 	home,
 	rawTheme,
 	rawConnectionMode,
-	rawDeviceTarget string,
+	rawDeviceTarget,
+	rawDeviceID string,
 	stdout io.Writer,
 ) error {
 	cfg, err := runtimeconfig.Load(home)
@@ -1126,6 +1144,16 @@ func applyRuntimeConfig(
 	}
 	if deviceToken != "" && cfg.DeviceToken != deviceToken {
 		cfg.DeviceToken = deviceToken
+		changed = true
+	}
+	deviceID := strings.TrimSpace(rawDeviceID)
+	if connectionMode == "cable" && deviceID != "" && !strings.EqualFold(cfg.DeviceID, deviceID) {
+		cfg.DeviceID = deviceID
+		// A target and token belong to the previously selected identity. Never
+		// attach them to a different VibeTV merely because Cable setup replaced
+		// the active device ID.
+		cfg.DeviceTarget = ""
+		cfg.DeviceToken = ""
 		changed = true
 	}
 
@@ -1160,6 +1188,9 @@ func applyRuntimeConfig(
 
 	if deviceTarget != "" && stdout != nil {
 		fmt.Fprintf(stdout, "Runtime config: deviceTarget=%s\n", deviceTarget)
+	}
+	if connectionMode == "cable" && deviceID != "" && stdout != nil {
+		fmt.Fprintf(stdout, "Runtime config: deviceId=%s\n", deviceID)
 	}
 	if !changed {
 		return nil
