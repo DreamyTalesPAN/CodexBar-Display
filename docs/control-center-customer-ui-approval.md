@@ -1969,3 +1969,16 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-app.tsx`,
   `scripts/test-customer-flows.mjs`, the Companion Cable rollback logic and
   tests, and this approval record.
+
+## 2026-08-27 — Setup reset keeps the verified connection choices
+
+- User approval: Continuation of the user's explicit instruction to fix every
+  automated review finding on PR #407 and repeat the review loop. This is a
+  defect fix for the already approved USB-only chooser behavior.
+- Approved customer-visible result: After setup reset, a USB-only LilyGO VibeTV
+  still shows only the neutral `Use Cable` card. A WiFi-capable VibeTV still
+  shows both approved cards. Selecting a different VibeTV refreshes these
+  choices from that device's verified capabilities.
+- Approved files: `control-center-app.tsx`,
+  `scripts/test-customer-flows.mjs`, the runtime configuration and Companion
+  setup-reset endpoint and tests, and this approval record.

@@ -50,10 +50,7 @@ var openControlCenterStartLaunchAgentFn = startLaunchAgent
 var openControlCenterOpenURLFn = openURLWithMacOpen
 var openControlCenterHTTPClient = &http.Client{}
 var doctorListPortsFn = usb.ListPorts
-var doctorResolvePortFn = func(explicit string) (string, error) {
-	return usb.ResolveVibeTVPort(explicit, "")
-}
-var doctorReadDeviceHelloFn = usb.ReadDeviceHello
+var doctorReadCableCapabilitiesFn = readDoctorCableCapabilities
 var doctorReadWiFiCapabilitiesFn = func(target string) (protocol.DeviceCapabilities, error) {
 	client := &http.Client{
 		Timeout:   5 * time.Second,
@@ -1097,7 +1094,7 @@ func runDoctorTransportChecks(config doctorRuntimeConfig) error {
 				fmt.Printf("  %s\n", port)
 			}
 		}
-		return runDoctorUSBRuntimeChecks(config, ports)
+		return runDoctorUSBRuntimeChecks(config)
 	default:
 		return fmt.Errorf("runtime setup required: unsupported active transport %q", config.transport)
 	}
@@ -1110,25 +1107,16 @@ func printDoctorRuntimeDefaults() {
 	fmt.Printf("  sleep/wake threshold (@60s interval): %s\n", daemon.SleepWakeGapThreshold(60*time.Second))
 }
 
-func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, _ []string) error {
+func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig) error {
 	printDoctorRuntimeDefaults()
-	port, err := doctorResolvePortFn("")
+	caps, err := doctorReadCableCapabilitiesFn(config.label)
 	if err != nil {
-		fmt.Printf("  serial resolve: failed (%v)\n", err)
-		return fmt.Errorf("runtime serial resolve failed: %w", err)
+		fmt.Printf("  Companion Cable status: failed (%v)\n", err)
+		return fmt.Errorf("runtime Companion Cable status failed: %w", err)
 	}
-	fmt.Printf("  serial resolve: ok (%s)\n", port)
-
-	fmt.Println("  Cable identity: resolved from device hello")
-
-	hello, err := doctorReadDeviceHelloFn(port)
-	if err != nil {
-		fmt.Printf("  device hello: warning (%v)\n", err)
-		fmt.Println("  warning: capability handshake unavailable; runtime will use optimistic theme send fallback")
-		return nil
-	}
-
-	return reportDoctorCapabilities("device hello", protocol.CapabilitiesFromHello(hello))
+	fmt.Println("  Companion Cable status: ok")
+	fmt.Println("  Cable identity: resolved by running Companion")
+	return reportDoctorCapabilities("Cable device", caps)
 }
 
 func runDoctorWiFiRuntimeChecks(config doctorRuntimeConfig) error {
@@ -1209,6 +1197,10 @@ func reportDoctorCapabilities(label string, caps protocol.DeviceCapabilities) er
 }
 
 func checkDoctorCompanionHealth(expectedOwner string) error {
+	return checkDoctorCompanionHealthOrigins(doctorCompanionOrigins(), expectedOwner)
+}
+
+func doctorCompanionOrigins() []string {
 	defaultOrigin := "http://" + companionapi.DefaultAddr
 	origins := []string{defaultOrigin}
 	if home, err := os.UserHomeDir(); err == nil {
@@ -1221,7 +1213,86 @@ func checkDoctorCompanionHealth(expectedOwner string) error {
 			}
 		}
 	}
-	return checkDoctorCompanionHealthOrigins(origins, expectedOwner)
+	return origins
+}
+
+func readDoctorCableCapabilities(expectedOwner string) (protocol.DeviceCapabilities, error) {
+	return readDoctorCableCapabilitiesOrigins(doctorCompanionOrigins(), expectedOwner)
+}
+
+func readDoctorCableCapabilitiesOrigins(origins []string, expectedOwner string) (protocol.DeviceCapabilities, error) {
+	client := &http.Client{Timeout: 3 * time.Second}
+	var lastErr error
+	for _, origin := range origins {
+		response, err := client.Get(strings.TrimRight(origin, "/") + "/v1/status")
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		var result struct {
+			OK        bool `json:"ok"`
+			Companion struct {
+				Runtime struct {
+					ListenerOwner string `json:"listenerOwner"`
+				} `json:"runtime"`
+			} `json:"companion"`
+			Device struct {
+				DeviceID     string                    `json:"deviceId"`
+				NetworkMode  string                    `json:"networkMode"`
+				Board        string                    `json:"board"`
+				Firmware     string                    `json:"firmware"`
+				Capabilities *protocol.CapabilityBlock `json:"capabilities"`
+			} `json:"device"`
+		}
+		decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&result)
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("HTTP %d", response.StatusCode)
+			continue
+		}
+		if decodeErr != nil {
+			lastErr = decodeErr
+			continue
+		}
+		if !result.OK {
+			lastErr = errors.New("Companion status reported not ok")
+			continue
+		}
+		owner := strings.TrimSpace(result.Companion.Runtime.ListenerOwner)
+		if owner == "" && expectedOwner != "" && expectedOwner != runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
+			lastErr = errors.New("Companion status did not identify its listener owner")
+			continue
+		}
+		if owner != "" && expectedOwner != "" && owner != expectedOwner {
+			lastErr = fmt.Errorf("Companion status belongs to %q, expected %q", owner, expectedOwner)
+			continue
+		}
+		if result.Device.Capabilities == nil {
+			lastErr = errors.New("Companion status did not provide Cable capabilities")
+			continue
+		}
+		caps := protocol.CapabilitiesFromHello(protocol.DeviceHello{
+			Kind:         "hello",
+			DeviceID:     result.Device.DeviceID,
+			NetworkMode:  result.Device.NetworkMode,
+			Board:        result.Device.Board,
+			Firmware:     result.Device.Firmware,
+			Capabilities: *result.Device.Capabilities,
+		})
+		if !caps.Known {
+			lastErr = errors.New("Companion status reported unknown Cable capabilities")
+			continue
+		}
+		if !strings.EqualFold(caps.ActiveTransport, "usb") || !strings.EqualFold(caps.ConnectionMode, "cable") {
+			lastErr = fmt.Errorf("Companion status reported transport active=%q mode=%q", caps.ActiveTransport, caps.ConnectionMode)
+			continue
+		}
+		return caps, nil
+	}
+	if lastErr == nil {
+		lastErr = errors.New("Companion status unavailable")
+	}
+	return protocol.DeviceCapabilities{}, lastErr
 }
 
 func checkDoctorCompanionHealthOrigins(origins []string, expectedOwner string) error {

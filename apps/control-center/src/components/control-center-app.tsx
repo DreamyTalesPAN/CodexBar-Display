@@ -1959,7 +1959,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
       setHasEnteredControlCenter(false);
       if (payload.device) {
-        setDevice(payload.device.connected ? payload.device : null);
+        setDevice(payload.device);
       }
       addEvent({
         label: "Setup restarted",

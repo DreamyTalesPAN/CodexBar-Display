@@ -96,6 +96,41 @@ func TestReadHelloKeepsFullSupplierCapabilityLine(t *testing.T) {
 	}
 }
 
+func TestCurrentHelloReturnsCachedCopyWithoutSerialIO(t *testing.T) {
+	path := "/dev/mock"
+	port := newMockSerialPort()
+	line := []byte(`{"kind":"hello","deviceId":"vibetv-cable","features":["theme"],"capabilities":{"theme":{"builtinThemes":["default"]},"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}}` + "\n")
+	for len(line) > 0 {
+		n := min(64, len(line))
+		port.readQueue = append(port.readQueue, append([]byte(nil), line[:n]...))
+		line = line[n:]
+	}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:         &mockOpener{portsByPath: map[string]SerialPort{path: port}},
+		Sleep:          func(time.Duration) {},
+		SettleDuration: time.Nanosecond,
+		HelloWindow:    100 * time.Millisecond,
+	})
+	if _, err := sender.DeviceHello(path); err != nil {
+		t.Fatal(err)
+	}
+	writesBefore := port.writeCalls
+	hello, ok := sender.CurrentHello()
+	if !ok || hello.DeviceID != "vibetv-cable" {
+		t.Fatalf("unexpected cached hello: ok=%t hello=%+v", ok, hello)
+	}
+	hello.Features[0] = "mutated"
+	hello.Capabilities.Theme.BuiltinThemes[0] = "mutated"
+	hello.Capabilities.Transport.Supported[0] = "mutated"
+	again, ok := sender.CurrentHello()
+	if !ok || again.Features[0] != "theme" || again.Capabilities.Theme.BuiltinThemes[0] != "default" || again.Capabilities.Transport.Supported[0] != "usb" {
+		t.Fatalf("cached hello was aliased: %+v", again)
+	}
+	if port.writeCalls != writesBefore {
+		t.Fatalf("cached hello performed serial IO: writes=%d want=%d", port.writeCalls, writesBefore)
+	}
+}
+
 func TestSenderReopensWhenPathChanges(t *testing.T) {
 	portA := newMockSerialPort()
 	portB := newMockSerialPort()

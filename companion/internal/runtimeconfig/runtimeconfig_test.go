@@ -250,10 +250,11 @@ func TestSetActiveDeviceKeepsPreviousDeviceKnown(t *testing.T) {
 
 func TestClearDevicesRemovesActiveAndKnownProfiles(t *testing.T) {
 	cfg := Config{
-		DeviceID:     "device-a",
-		DeviceTarget: "192.168.1.20",
-		DeviceToken:  "token-a",
-		KnownDevices: []KnownDevice{{DeviceID: "device-b", Target: "192.168.2.30", DeviceToken: "token-b"}},
+		DeviceID:         "device-a",
+		DeviceTarget:     "192.168.1.20",
+		DeviceToken:      "token-a",
+		DeviceTransports: []string{"usb"},
+		KnownDevices:     []KnownDevice{{DeviceID: "device-b", Target: "192.168.2.30", DeviceToken: "token-b"}},
 	}
 	cfg.ClearDevices()
 
@@ -265,6 +266,28 @@ func TestClearDevicesRemovesActiveAndKnownProfiles(t *testing.T) {
 	}
 	if !cfg.ConnectionModeChoiceRequired {
 		t.Fatal("device reset must require a new connection choice")
+	}
+	if len(cfg.DeviceTransports) != 1 || cfg.DeviceTransports[0] != "usb" {
+		t.Fatalf("device reset discarded verified transport support: %+v", cfg.DeviceTransports)
+	}
+}
+
+func TestWiFiTransitionPendingDistinguishesResetAndLegacyWiFi(t *testing.T) {
+	pending := Config{
+		DeviceID:              "device-a",
+		DeviceTarget:          "http://192.168.178.72",
+		CableAutoBindDisabled: true,
+	}
+	if !pending.WiFiTransitionPending() {
+		t.Fatal("expected transitional Cable-to-WiFi config")
+	}
+	pending.ConnectionModeChoiceRequired = true
+	if pending.WiFiTransitionPending() {
+		t.Fatal("explicit setup reset must not be a pending WiFi transition")
+	}
+	pending = Config{DeviceID: "legacy", DeviceTarget: "http://192.168.178.72"}
+	if pending.WiFiTransitionPending() {
+		t.Fatal("legacy WiFi config must not be a pending transition")
 	}
 }
 

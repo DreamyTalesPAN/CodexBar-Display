@@ -4487,6 +4487,21 @@ func TestStatusUsesAuthoritativeCableStreamWithoutHTTPProbe(t *testing.T) {
 		DeviceTarget:   staleWiFiTarget.URL,
 		DeviceID:       "vibetv-cable",
 	})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{
+			Kind:                      "hello",
+			ProtocolVersion:           2,
+			SupportedProtocolVersions: []int{2, 1},
+			PreferredProtocolVersion:  2,
+			Board:                     "esp8266-smalltv-st7789",
+			Firmware:                  "1.0.44",
+			DeviceID:                  "vibetv-cable",
+			Features:                  []string{protocol.FeatureTheme, protocol.FeatureThemeSpecV1},
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"}},
+			},
+		}, true
+	}
 	server.streamStatus = func(_ context.Context, target string) displayStreamInfo {
 		if target != cableDeviceTarget {
 			t.Fatalf("Cable status target=%q, expected %q", target, cableDeviceTarget)
@@ -4517,6 +4532,12 @@ func TestStatusUsesAuthoritativeCableStreamWithoutHTTPProbe(t *testing.T) {
 	}
 	if got.Device.Target != cableDeviceTarget {
 		t.Fatalf("Cable status exposed stale WiFi target: %+v", got.Device)
+	}
+	if got.Device.Board != "esp8266-smalltv-st7789" || got.Device.Firmware != "1.0.44" || got.Device.Capabilities == nil {
+		t.Fatalf("Cable status omitted the running worker's identity: %+v", got.Device)
+	}
+	if got.Device.Capabilities.Transport.Active != "usb" || got.Device.Capabilities.Transport.Mode != "cable" {
+		t.Fatalf("Cable status omitted the running worker's transport: %+v", got.Device.Capabilities)
 	}
 }
 
@@ -5561,6 +5582,11 @@ func TestDiagnosticsUsesHealthyCableStreamWithoutWiFiTarget(t *testing.T) {
 		ConnectionMode: "cable",
 		DeviceID:       "vibetv-cable",
 	})
+	wifiDiscoveryCalls := 0
+	server.subnetTargets = func() []string {
+		wifiDiscoveryCalls++
+		return nil
+	}
 	server.streamStatus = func(_ context.Context, target string) displayStreamInfo {
 		if target != cableDeviceTarget {
 			t.Fatalf("Cable diagnostics target=%q, expected %q", target, cableDeviceTarget)
@@ -5593,6 +5619,10 @@ func TestDiagnosticsUsesHealthyCableStreamWithoutWiFiTarget(t *testing.T) {
 		!hasDiagnosticCheck(got.Checks, "device_target", "pass") ||
 		!hasDiagnosticCheck(got.Checks, "display_stream", "pass") {
 		t.Fatalf("Cable diagnostics checks are inconsistent: %+v", got.Checks)
+	}
+	if wifiDiscoveryCalls != 0 || got.NetworkDiscovery.Attempted ||
+		hasDiagnosticCheck(got.Checks, "network_discovery", "attention") {
+		t.Fatalf("Cable diagnostics must skip WiFi discovery: discovery=%+v checks=%+v calls=%d", got.NetworkDiscovery, got.Checks, wifiDiscoveryCalls)
 	}
 }
 
@@ -7247,6 +7277,34 @@ func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
 	}
 	if !cfg.CableAutoBindDisabled {
 		t.Fatal("setup reset must prevent automatic Cable rebinding")
+	}
+}
+
+func TestSetupResetRetainsVerifiedCableTransportSupport(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:   "cable",
+		DeviceID:         "lilygo",
+		DeviceTransports: []string{"usb"},
+	})
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Device.Capabilities == nil || len(got.Device.Capabilities.Transport.Supported) != 1 || got.Device.Capabilities.Transport.Supported[0] != "usb" {
+		t.Fatalf("reset response discarded USB-only support: %+v", got.Device.Capabilities)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.DeviceTransports) != 1 || cfg.DeviceTransports[0] != "usb" {
+		t.Fatalf("reset config discarded USB-only support: %+v", cfg.DeviceTransports)
 	}
 }
 

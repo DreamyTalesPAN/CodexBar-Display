@@ -9827,7 +9827,10 @@ async function routeCompanionOnline(
         });
         return;
       }
-      currentDevice = { connected: false };
+      currentDevice = {
+        connected: false,
+        capabilities: currentDevice?.capabilities,
+      };
       await route.fulfill({
         status: 200,
         contentType: "application/json",

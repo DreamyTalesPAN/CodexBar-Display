@@ -347,6 +347,13 @@ func (cfg *Config) SetActiveDevice(device KnownDevice) {
 	cfg.upsertKnownDevice(device)
 }
 
+func (cfg Config) WiFiTransitionPending() bool {
+	return NormalizeConnectionMode(cfg.ConnectionMode) == "" &&
+		cfg.CableAutoBindDisabled &&
+		!cfg.ConnectionModeChoiceRequired &&
+		strings.TrimSpace(cfg.DeviceID) != ""
+}
+
 func (cfg *Config) RememberDevice(device KnownDevice) {
 	cfg.upsertKnownDevice(device)
 }
@@ -357,7 +364,6 @@ func (cfg *Config) ClearDevices() {
 	cfg.DeviceTarget = ""
 	cfg.DeviceToken = ""
 	cfg.DeviceID = ""
-	cfg.DeviceTransports = nil
 	cfg.KnownDevices = nil
 }
 

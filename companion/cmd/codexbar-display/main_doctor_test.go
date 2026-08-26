@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -252,6 +251,64 @@ func TestDoctorCompanionHealthRequiresAppRuntimeOwner(t *testing.T) {
 	}
 }
 
+func TestDoctorCableReadsCapabilitiesFromRunningCompanion(t *testing.T) {
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/status" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"ok":true,
+			"companion":{"runtime":{"listenerOwner":"shop.vibetv.control-center.runtime"}},
+			"device":{
+				"deviceId":"vibetv-cable",
+				"board":"esp8266-smalltv-st7789",
+				"firmware":"1.0.55",
+				"capabilities":{
+					"theme":{"supportsThemeSpecV1":true},
+					"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}
+				}
+			}
+		}`))
+	}))
+	defer companion.Close()
+
+	caps, err := readDoctorCableCapabilitiesOrigins(
+		[]string{companion.URL},
+		"shop.vibetv.control-center.runtime",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !caps.Known || caps.DeviceID != "vibetv-cable" || caps.Board != "esp8266-smalltv-st7789" ||
+		caps.ActiveTransport != "usb" || caps.ConnectionMode != "cable" || !caps.SupportsThemeSpecV1 {
+		t.Fatalf("unexpected Cable capabilities: %+v", caps)
+	}
+}
+
+func TestDoctorCableRejectsDifferentCompanionOwner(t *testing.T) {
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"ok":true,
+			"companion":{"runtime":{"listenerOwner":"com.codexbar-display.daemon"}},
+			"device":{
+				"board":"esp8266-smalltv-st7789",
+				"capabilities":{"transport":{"active":"usb","mode":"cable"}}
+			}
+		}`))
+	}))
+	defer companion.Close()
+
+	_, err := readDoctorCableCapabilitiesOrigins(
+		[]string{companion.URL},
+		"shop.vibetv.control-center.runtime",
+	)
+	if err == nil || !strings.Contains(err.Error(), "belongs to") {
+		t.Fatalf("expected mismatched runtime owner to fail, got %v", err)
+	}
+}
+
 func TestDoctorWiFiSkipsSerialChecks(t *testing.T) {
 	for _, ports := range [][]string{
 		{},
@@ -339,20 +396,19 @@ func TestDoctorWiFiRejectsUnknownCapabilities(t *testing.T) {
 	}
 }
 
-func TestDoctorUSBUsesIdentityResolverAcrossSeveralPortNames(t *testing.T) {
+func TestDoctorUSBUsesCompanionAcrossSeveralPortNames(t *testing.T) {
 	restoreDoctorTestDeps(t)
 	doctorListPortsFn = func() ([]string, error) {
 		return []string{"/dev/cu.usbserial-1", "/dev/cu.usbserial-2"}, nil
 	}
-	doctorResolvePortFn = func(string) (string, error) { return "/dev/cu.usbserial-1", nil }
-	doctorReadDeviceHelloFn = func(string) (protocol.DeviceHello, error) {
-		return protocol.DeviceHello{
-			Kind:     "hello",
-			Board:    "esp8266-smalltv-st7789",
-			Features: []string{protocol.FeatureTheme},
-			Capabilities: protocol.CapabilityBlock{
-				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"},
-			},
+	doctorReadCableCapabilitiesFn = func(string) (protocol.DeviceCapabilities, error) {
+		return protocol.DeviceCapabilities{
+			Known:                     true,
+			Board:                     "esp8266-smalltv-st7789",
+			SupportsTheme:             true,
+			NegotiatedProtocolVersion: protocol.ProtocolVersionV1,
+			ActiveTransport:           "usb",
+			ConnectionMode:            "cable",
 		}, nil
 	}
 
@@ -362,25 +418,28 @@ func TestDoctorUSBUsesIdentityResolverAcrossSeveralPortNames(t *testing.T) {
 	}
 }
 
-func TestDoctorUSBResolvesFreshIdentity(t *testing.T) {
+func TestDoctorUSBUsesCompanionWithoutOpeningSerialPort(t *testing.T) {
 	restoreDoctorTestDeps(t)
-	const configuredPort = "/dev/cu.usbserial-pinned"
-	doctorResolvePortFn = func(requested string) (string, error) {
-		if requested != "" {
-			t.Fatalf("doctor must not reuse a stored port, got %q", requested)
+	doctorReadCableCapabilitiesFn = func(owner string) (protocol.DeviceCapabilities, error) {
+		if owner != "shop.vibetv.control-center.runtime" {
+			t.Fatalf("unexpected runtime owner %q", owner)
 		}
-		return configuredPort, nil
-	}
-	doctorReadDeviceHelloFn = func(port string) (protocol.DeviceHello, error) {
-		if port != configuredPort {
-			t.Fatalf("expected hello on %q, got %q", configuredPort, port)
-		}
-		return protocol.DeviceHello{}, errors.New("handshake unavailable")
+		return protocol.DeviceCapabilities{
+			Known:                     true,
+			Board:                     "esp8266-smalltv-st7789",
+			SupportsTheme:             true,
+			NegotiatedProtocolVersion: protocol.ProtocolVersionV1,
+			ActiveTransport:           "usb",
+			ConnectionMode:            "cable",
+		}, nil
 	}
 
-	err := runDoctorUSBRuntimeChecks(doctorRuntimeConfig{}, []string{configuredPort})
+	err := runDoctorUSBRuntimeChecks(doctorRuntimeConfig{
+		label:     "shop.vibetv.control-center.runtime",
+		transport: "usb",
+	})
 	if err != nil {
-		t.Fatalf("expected configured USB port check to pass, got %v", err)
+		t.Fatalf("expected Companion-owned Cable check to pass, got %v", err)
 	}
 }
 
@@ -400,14 +459,12 @@ func TestDoctorWithoutRuntimeRequestsSetupWithoutListingPorts(t *testing.T) {
 func restoreDoctorTestDeps(t *testing.T) {
 	t.Helper()
 	listPorts := doctorListPortsFn
-	resolvePort := doctorResolvePortFn
-	readHello := doctorReadDeviceHelloFn
+	readCableCapabilities := doctorReadCableCapabilitiesFn
 	readWiFiCapabilities := doctorReadWiFiCapabilitiesFn
 	checkCompanionHealth := doctorCheckCompanionHealthFn
 	t.Cleanup(func() {
 		doctorListPortsFn = listPorts
-		doctorResolvePortFn = resolvePort
-		doctorReadDeviceHelloFn = readHello
+		doctorReadCableCapabilitiesFn = readCableCapabilities
 		doctorReadWiFiCapabilitiesFn = readWiFiCapabilities
 		doctorCheckCompanionHealthFn = checkCompanionHealth
 	})

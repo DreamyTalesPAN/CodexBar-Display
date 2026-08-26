@@ -662,6 +662,9 @@ func configuredConnectionMode(fallback string) string {
 	if transport := transportForConnectionMode(cfg.ConnectionMode); transport != "" {
 		return transport
 	}
+	if cfg.WiFiTransitionPending() {
+		return "usb"
+	}
 	// Configs written before connectionMode existed could only describe WiFi.
 	// Preserve that proven customer choice instead of applying a newer Cable
 	// launch fallback to an upgraded legacy installation.
@@ -815,9 +818,7 @@ func persistActiveCableIdentity(caps protocol.DeviceCapabilities, deps runtimeDe
 	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "wifi" {
 		return
 	}
-	rolledBackFromWiFi := cfg.CableAutoBindDisabled &&
-		runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "" &&
-		!cfg.ConnectionModeChoiceRequired &&
+	rolledBackFromWiFi := cfg.WiFiTransitionPending() &&
 		strings.EqualFold(cfg.DeviceID, deviceID)
 	if cfg.CableAutoBindDisabled && !rolledBackFromWiFi {
 		return
