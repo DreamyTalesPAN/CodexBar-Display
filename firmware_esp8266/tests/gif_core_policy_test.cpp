@@ -223,16 +223,26 @@ bool testWifiHelloReportsPairingStateWithoutSecrets(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   const std::size_t handler = mainSource.find("void handleHello()");
   const std::size_t handlerEnd = mainSource.find("bool isSafeAssetPath", handler);
+  const std::size_t transportCapabilities =
+      mainSource.find("const char* transportCapabilitiesJSON");
+  const std::size_t transportCapabilitiesEnd =
+      mainSource.find("codexbar_display::app::TransportConfig makeTransportConfig", transportCapabilities);
   const std::size_t authStatus = mainSource.find("void appendAuthStatusJSON(String& out)");
   const std::size_t authStatusEnd = mainSource.find("void appendBrightnessJSON", authStatus);
-  if (handler == std::string::npos || handlerEnd == std::string::npos) {
+  if (handler == std::string::npos || handlerEnd == std::string::npos ||
+      transportCapabilities == std::string::npos ||
+      transportCapabilitiesEnd == std::string::npos) {
     return false;
   }
   const std::string helloHandler = mainSource.substr(handler, handlerEnd - handler);
+  const std::string capabilitiesBody = mainSource.substr(
+      transportCapabilities, transportCapabilitiesEnd - transportCapabilities);
   const std::string authStatusBody = mainSource.substr(authStatus, authStatusEnd - authStatus);
   return expect(
-      helloHandler.find("appendAuthStatusJSON(out)") != std::string::npos &&
-          helloHandler.find("deviceAuthToken") == std::string::npos &&
+      helloHandler.find("BuildDeviceHelloJSON") != std::string::npos &&
+          helloHandler.find("makeTransportConfig(\"wifi\")") != std::string::npos &&
+          capabilitiesBody.find("appendAuthStatusJSON(json)") != std::string::npos &&
+          capabilitiesBody.find("deviceAuthToken") == std::string::npos &&
           authStatusBody.find("\\\"paired\\\"") != std::string::npos &&
           authStatusBody.find("\\\"tokenHeader\\\"") != std::string::npos &&
           authStatusBody.find("pairingWindow") == std::string::npos,
@@ -474,8 +484,7 @@ bool testWifiSavePreservesDeviceStateAndRetiresStaleSdkCredentials(const char* m
   const std::size_t successResponse = mainSource.find(
       "webServer.send(200, \"text/html; charset=utf-8\"",
       handler);
-  const std::size_t legacyImportGate = mainSource.find(
-      "if (!wifiConnected && !hasSavedWifi)");
+  const std::size_t sdkCredentialImport = mainSource.find("WiFi.SSID()");
   if (handler == std::string::npos || handlerEnd == std::string::npos) {
     return false;
   }
@@ -483,7 +492,7 @@ bool testWifiSavePreservesDeviceStateAndRetiresStaleSdkCredentials(const char* m
   return expect(
       save != std::string::npos && saveFailure != std::string::npos &&
           successResponse != std::string::npos && clearSdk > successResponse &&
-          clearSdk < handlerEnd && legacyImportGate != std::string::npos &&
+          clearSdk < handlerEnd && sdkCredentialImport == std::string::npos &&
           body.find("saveDeviceAuthToken") == std::string::npos &&
           body.find("LittleFS") == std::string::npos &&
           body.find("saveDeviceSettings") == std::string::npos &&
