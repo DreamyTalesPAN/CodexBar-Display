@@ -73,6 +73,10 @@ func GetDeviceCapabilities(port string) (protocol.DeviceCapabilities, error) {
 	return defaultSender.ReadCapabilities(port)
 }
 
+func SetConnectionMode(port, deviceID, mode string) error {
+	return defaultSender.SetConnectionMode(port, deviceID, mode)
+}
+
 func CloseDefaultSender() {
 	defaultSender.Close()
 }

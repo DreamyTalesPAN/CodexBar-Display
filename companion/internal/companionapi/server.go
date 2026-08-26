@@ -41,6 +41,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
 )
 
@@ -185,6 +186,9 @@ type Server struct {
 	saveConfig             func(string, runtimeconfig.Config) error
 	installTheme           func(context.Context, themeinstall.Options) (themeinstall.Result, error)
 	runSetup               func(context.Context, setup.Options) error
+	resolveCablePort       func(string, string) (string, error)
+	readCableHello         func(string) (protocol.DeviceHello, error)
+	setCableConnectionMode func(string, string, string) error
 	subnetTargets          func() []string
 	defaultWiFiTarget      func() string
 	streamStatus           func(context.Context, string) displayStreamInfo
@@ -919,40 +923,43 @@ func New(opts Options) (*Server, error) {
 		}
 	}
 	server := &Server{
-		addr:                  addr,
-		home:                  home,
-		allowedOrigins:        origins,
-		controlCenterFS:       controlCenterFS,
-		client:                client,
-		loadConfig:            runtimeconfig.Load,
-		saveConfig:            runtimeconfig.Save,
-		installTheme:          themeinstall.Install,
-		runSetup:              setup.Run,
-		subnetTargets:         localSubnetTargets,
-		defaultWiFiTarget:     setup.DefaultWiFiTarget,
-		streamStatus:          inspectDisplayStream,
-		waitRender:            nil,
-		refreshStream:         opts.RefreshDisplayStream,
-		pauseDisplayStream:    opts.PauseDisplayStream,
-		wakeDisplayStream:     opts.WakeDisplayStream,
-		pairAttempts:          defaultPairAttempts,
-		pairAttemptTimeout:    defaultPairAttemptTimeout,
-		pairRetryGap:          defaultPairRetryGap,
-		repairFlights:         make(map[string]*deviceRepairFlight),
-		helloProbeCache:       make(map[string]helloProbeSnapshot),
-		helloProbeFlights:     make(map[string]*helloProbeFlight),
-		healthProbeCache:      make(map[string]healthProbeSnapshot),
-		healthProbeFlights:    make(map[string]*healthProbeFlight),
-		probeCacheTime:        deviceProbeCacheTime,
-		connectionStates:      make(map[string]*configuredDeviceConnection),
-		now:                   time.Now,
-		displayVerifications:  make(map[string]displayVerification),
-		allowMacAppSelfUpdate: false,
-		installationMode:      macAppInstallationMode(),
-		loadUsage:             daemon.LoadPersistedUsage,
-		probeProviderSetup:    codexbar.ProbeProviderSetup,
-		probeExactProvider:    codexbar.ProbeProviderSetupForProvider,
-		exactProviderProbes:   make(map[string]*exactProviderProbeFlight),
+		addr:                   addr,
+		home:                   home,
+		allowedOrigins:         origins,
+		controlCenterFS:        controlCenterFS,
+		client:                 client,
+		loadConfig:             runtimeconfig.Load,
+		saveConfig:             runtimeconfig.Save,
+		installTheme:           themeinstall.Install,
+		runSetup:               setup.Run,
+		resolveCablePort:       usb.ResolveVibeTVPort,
+		readCableHello:         usb.ReadDeviceHello,
+		setCableConnectionMode: usb.SetConnectionMode,
+		subnetTargets:          localSubnetTargets,
+		defaultWiFiTarget:      setup.DefaultWiFiTarget,
+		streamStatus:           inspectDisplayStream,
+		waitRender:             nil,
+		refreshStream:          opts.RefreshDisplayStream,
+		pauseDisplayStream:     opts.PauseDisplayStream,
+		wakeDisplayStream:      opts.WakeDisplayStream,
+		pairAttempts:           defaultPairAttempts,
+		pairAttemptTimeout:     defaultPairAttemptTimeout,
+		pairRetryGap:           defaultPairRetryGap,
+		repairFlights:          make(map[string]*deviceRepairFlight),
+		helloProbeCache:        make(map[string]helloProbeSnapshot),
+		helloProbeFlights:      make(map[string]*helloProbeFlight),
+		healthProbeCache:       make(map[string]healthProbeSnapshot),
+		healthProbeFlights:     make(map[string]*healthProbeFlight),
+		probeCacheTime:         deviceProbeCacheTime,
+		connectionStates:       make(map[string]*configuredDeviceConnection),
+		now:                    time.Now,
+		displayVerifications:   make(map[string]displayVerification),
+		allowMacAppSelfUpdate:  false,
+		installationMode:       macAppInstallationMode(),
+		loadUsage:              daemon.LoadPersistedUsage,
+		probeProviderSetup:     codexbar.ProbeProviderSetup,
+		probeExactProvider:     codexbar.ProbeProviderSetupForProvider,
+		exactProviderProbes:    make(map[string]*exactProviderProbeFlight),
 		providerPreferences: providerPreferencesState{
 			load:          codexbar.FetchProviderSettings,
 			set:           codexbar.SetProviderEnabled,
@@ -1030,6 +1037,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/device/reload-display", s.handleDeviceReloadDisplay)
 	mux.HandleFunc("/v1/device", s.handleDevice)
 	mux.HandleFunc("/v1/device/pair", s.handleDevicePair)
+	mux.HandleFunc("/v1/setup/connection-mode", s.handleSetupConnectionMode)
 	mux.HandleFunc("/v1/setup/reset", s.handleSetupReset)
 	mux.HandleFunc("/v1/settings", s.handleSettings)
 	mux.HandleFunc("/v1/themes/install", s.handleThemeInstall)
@@ -3225,6 +3233,120 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var req struct {
+		Mode string `json:"mode"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	mode := runtimeconfig.NormalizeConnectionMode(req.Mode)
+	if mode == "" {
+		writeError(w, http.StatusBadRequest, "connection_mode_invalid", "Choose Cable or WiFi.", "Choose how this VibeTV should connect, then try again.")
+		return
+	}
+	if s.firmwareUpdateActive.Load() {
+		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then choose the connection again.")
+		return
+	}
+
+	s.deviceMaintenanceMu.Lock()
+	defer s.deviceMaintenanceMu.Unlock()
+	s.repairMu.Lock()
+	defer s.repairMu.Unlock()
+	if s.pauseDisplayStream != nil {
+		s.pauseDisplayStream(true)
+		defer s.pauseDisplayStream(false)
+	}
+	cfg, err := s.configForMaintenance()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	port, err := s.resolveCablePort("", strings.TrimSpace(cfg.DeviceID))
+	if err != nil {
+		writeError(w, http.StatusConflict, "cable_device_not_found", "No single Cable VibeTV could be selected.", "Connect exactly one VibeTV with a data-capable Cable, then try again.")
+		return
+	}
+	hello, err := s.readCableHello(port)
+	if err != nil || strings.TrimSpace(hello.DeviceID) == "" {
+		writeError(w, http.StatusBadGateway, "cable_identity_unavailable", "The connected Cable VibeTV did not provide its identity.", "Reconnect the Cable, wait for VibeTV to start, then try again.")
+		return
+	}
+	hello = hello.Normalize()
+	if expected := strings.TrimSpace(cfg.DeviceID); expected != "" && !strings.EqualFold(expected, hello.DeviceID) {
+		writeError(w, http.StatusConflict, "device_identity_changed", "A different VibeTV answered on Cable.", "Connect the VibeTV you selected, then try again.")
+		return
+	}
+	if runtimeconfig.NormalizeConnectionMode(hello.Capabilities.Transport.Mode) != mode {
+		if err := s.setCableConnectionMode(port, hello.DeviceID, mode); err != nil {
+			writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not change its connection.", "Keep VibeTV connected by Cable, then try again.")
+			return
+		}
+	}
+
+	if mode == "wifi" {
+		if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
+			current.ConnectionMode = ""
+			current.DeviceID = strings.TrimSpace(hello.DeviceID)
+			current.CableAutoBindDisabled = true
+		}); err != nil {
+			writeInternalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, struct {
+			OK             bool       `json:"ok"`
+			ConnectionMode string     `json:"connectionMode"`
+			Status         string     `json:"status"`
+			Device         deviceInfo `json:"device"`
+		}{
+			OK:             true,
+			ConnectionMode: "wifi",
+			Status:         "waiting_for_wifi",
+			Device: deviceInfo{
+				Target:   cableDeviceTarget,
+				DeviceID: hello.DeviceID,
+				Active:   true,
+				Paired:   true,
+			},
+		})
+		return
+	}
+
+	cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
+		current.ConnectionMode = "cable"
+		current.CableAutoBindDisabled = false
+		current.DeviceID = strings.TrimSpace(hello.DeviceID)
+		current.DeviceTarget = ""
+		current.DeviceToken = ""
+	})
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	s.clearConfiguredDeviceState()
+	if s.wakeDisplayStream != nil {
+		s.wakeDisplayStream()
+	}
+	stream := s.streamStatus(r.Context(), cableDeviceTarget)
+	device := s.withConfiguredConnectionState(cfg, deviceInfo{
+		Target:   cableDeviceTarget,
+		DeviceID: strings.TrimSpace(hello.DeviceID),
+		Paired:   true,
+		Active:   true,
+		Stream:   streamPointer(stream),
+	}, providerSetupStreamForTarget(streamPointer(stream), cableDeviceTarget), false)
+	writeJSON(w, http.StatusOK, struct {
+		OK             bool       `json:"ok"`
+		ConnectionMode string     `json:"connectionMode"`
+		Status         string     `json:"status"`
+		Device         deviceInfo `json:"device"`
+	}{OK: true, ConnectionMode: "cable", Status: "selected", Device: device})
+}
+
 func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
@@ -3466,6 +3588,7 @@ func (s *Server) repairDeviceOnceLocked(
 				Target:      target,
 				DeviceToken: token,
 			})
+			current.ConnectionMode = "wifi"
 		}); err != nil {
 			return deviceInfo{}, &repairStageError{stage: "config", err: err}
 		}
@@ -3566,6 +3689,7 @@ func (s *Server) repairDeviceOnceLocked(
 			Target:      target,
 			DeviceToken: token,
 		})
+		current.ConnectionMode = "wifi"
 	}); err != nil {
 		return deviceInfo{}, &repairStageError{stage: "config", err: err}
 	}

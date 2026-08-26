@@ -2,6 +2,7 @@ package usb
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -253,6 +254,42 @@ func (s *Sender) ConfirmConnectionMode(path, deviceID string) error {
 	s.hello.Capabilities.Transport.TransitionPending = false
 	s.hello.Capabilities.Transport.TransitionFrom = ""
 	s.hello.Capabilities.Transport.TransitionTo = ""
+	return nil
+}
+
+func (s *Sender) SetConnectionMode(path, deviceID, mode string) error {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode != "cable" && mode != "wifi" {
+		return fmt.Errorf("unsupported connection mode %q", mode)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, err := s.ensurePort(path); err != nil {
+		return err
+	}
+	line := []byte(fmt.Sprintf(
+		"{\"kind\":\"request\",\"op\":\"set-connection-mode\",\"deviceId\":%q,\"mode\":%q}\n",
+		strings.TrimSpace(deviceID),
+		mode,
+	))
+	_ = s.port.ResetInputBuffer()
+	if err := writeWithTimeout(s.port, line, s.writeTimeout); err != nil {
+		s.closeCurrentLocked()
+		return wrapTransportError(
+			errcode.TransportSerialWrite,
+			"set-connection-mode",
+			path,
+			"Keep the selected VibeTV connected by Cable and retry.",
+			err,
+		)
+	}
+	if err := readConnectionModeSwitchFromPort(s.port, s.helloWindow, deviceID, mode); err != nil {
+		return fmt.Errorf("set connection mode on %s: %w", path, err)
+	}
+	// The acknowledged switch schedules a reboot, so the old serial handle is
+	// no longer authoritative.
+	s.closeCurrentLocked()
 	return nil
 }
 

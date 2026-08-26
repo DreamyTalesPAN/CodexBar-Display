@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Cable,
   CircleAlert,
   Download,
   ExternalLink,
@@ -9,6 +10,7 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
+import { useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +33,7 @@ import { SetupStatusScreen } from "./setup-status-screen";
 
 type Props = {
   busyAction?: string | null;
+  connectionModeChoiceRequired?: boolean;
   deviceCandidates: DeviceCandidate[];
   deviceSearchState: DeviceSearchState;
   deviceTarget?: string;
@@ -41,6 +44,7 @@ type Props = {
   onRepairUsageService?: () => void;
   onDeviceTargetChange?: (target: string) => void;
   onManualTarget?: (target: string) => void;
+  onSelectConnectionMode?: (mode: "cable" | "wifi") => Promise<boolean>;
   onPair: () => void;
   onSearch: () => void;
   onSelect: (candidate: DeviceCandidate) => void;
@@ -53,6 +57,7 @@ type Props = {
 
 export function DeviceStartupScreen({
   busyAction,
+  connectionModeChoiceRequired = false,
   deviceCandidates,
   deviceSearchState,
   deviceTarget = "",
@@ -63,6 +68,7 @@ export function DeviceStartupScreen({
   onRepairUsageService,
   onDeviceTargetChange,
   onManualTarget,
+  onSelectConnectionMode,
   onPair,
   onSearch,
   onSelect,
@@ -72,6 +78,9 @@ export function DeviceStartupScreen({
   showCodexBarFallback = false,
   providerSetup,
 }: Props) {
+  const [connectionModeChoice, setConnectionModeChoice] = useState<
+    "cable" | "wifi" | null
+  >(null);
   const selecting = busyAction === "select";
   const manualConnecting = busyAction === "manual-target";
   const reconnecting = busyAction === "repair";
@@ -123,11 +132,28 @@ export function DeviceStartupScreen({
     !providerRecoveryView &&
     (searching || choosing || wifiSetupNeeded || searchFailed || repairFailed) &&
     !legacyRecovery;
+  const choosingConnectionMode =
+    connectionModeChoiceRequired && connectionModeChoice === null;
+  const wifiConnectionModeSelected =
+    connectionModeChoiceRequired && connectionModeChoice === "wifi";
+  const connectionModeBusy = busyAction === "connection-mode";
+
+  async function selectConnectionMode(mode: "cable" | "wifi") {
+    if (await onSelectConnectionMode?.(mode)) {
+      setConnectionModeChoice(mode);
+    }
+  }
 
   let title = "Set up your VibeTV";
   let detail = "Choose a VibeTV on your WiFi.";
 
-  if (providerRecoveryView) {
+  if (choosingConnectionMode) {
+    title = "Choose how VibeTV connects";
+    detail = "Choose the connection that fits your setup.";
+  } else if (wifiConnectionModeSelected && deviceSearchState === "idle") {
+    title = "Connect VibeTV to WiFi";
+    detail = "Set up WiFi on VibeTV, then scan for it again.";
+  } else if (providerRecoveryView) {
     title = providerRecoveryView.title;
     detail = providerRecoveryView.detail;
   } else if (searching) {
@@ -163,19 +189,25 @@ export function DeviceStartupScreen({
     detail = "Check the Mac App and your WiFi, then search again.";
   }
 
-  const statusLabel = providerRecoveryView?.checking
-    ? "Checking AI setup…"
-    : providerRecoveryView
-      ? undefined
-      : reconnecting
-      ? "Reconnecting…"
-      : waiting
-        ? "Waiting for live preview…"
-        : searching
-          ? "Searching…"
-          : undefined;
+  const statusLabel = connectionModeBusy
+    ? "Changing connection…"
+    : providerRecoveryView?.checking
+      ? "Checking AI setup…"
+      : providerRecoveryView
+        ? undefined
+        : reconnecting
+          ? "Reconnecting…"
+          : waiting
+            ? "Waiting for live preview…"
+            : searching
+              ? "Searching…"
+              : undefined;
 
-  const visual = providerRecoveryView && !providerRecoveryView.checking ? (
+  const visual = choosingConnectionMode ? (
+    <Cable aria-hidden />
+  ) : wifiConnectionModeSelected && deviceSearchState === "idle" ? (
+    <Wifi aria-hidden />
+  ) : providerRecoveryView && !providerRecoveryView.checking ? (
     <CircleAlert aria-hidden />
   ) : choosing ? (
     <Monitor aria-hidden />
@@ -239,11 +271,12 @@ export function DeviceStartupScreen({
     />
   ) : null;
 
-  const manualEntryPrompt = searching || choosing
-    ? "Or enter the IP address shown on your VibeTV screen:"
-    : wifiSetupNeeded
+  const manualEntryPrompt =
+    searching || choosing
       ? "Or enter the IP address shown on your VibeTV screen:"
-      : "Enter the IP address shown on your VibeTV screen:";
+      : wifiSetupNeeded
+        ? "Or enter the IP address shown on your VibeTV screen:"
+        : "Enter the IP address shown on your VibeTV screen:";
 
   const manualTargetForm = manualEntryAvailable ? (
     <div className="grid gap-3">
@@ -276,6 +309,7 @@ export function DeviceStartupScreen({
         manualConnecting ||
         reconnecting ||
         (waiting && !providerRecoveryView) ||
+        connectionModeBusy ||
         providerRecoveryBusy
       }
       description={detail}
@@ -299,6 +333,60 @@ export function DeviceStartupScreen({
       visual={visual}
     >
       <div className="grid gap-5">
+        {choosingConnectionMode ? (
+          <div className="grid grid-cols-2 gap-3">
+            <Button
+              className="h-auto min-h-44 w-full flex-col items-start justify-between gap-5 whitespace-normal p-5 text-left"
+              disabled={Boolean(busyAction)}
+              onClick={() => void selectConnectionMode("cable")}
+              size="lg"
+              variant="outline"
+            >
+              <span className="flex w-full items-start justify-between gap-2">
+                <span className="flex size-14 items-center justify-center rounded-2xl bg-muted">
+                  <Cable className="size-9" aria-hidden />
+                </span>
+                <span className="rounded-full bg-primary px-2.5 py-1 text-xs font-bold text-primary-foreground">
+                  Recommended
+                </span>
+              </span>
+              <span className="grid gap-1.5">
+                <span className="text-lg font-black">Use Cable</span>
+                <span className="text-sm font-medium leading-5 text-muted-foreground">
+                  Most reliable connection
+                </span>
+              </span>
+            </Button>
+            <Button
+              className="h-auto min-h-44 w-full flex-col items-start justify-between gap-5 whitespace-normal p-5 text-left"
+              disabled={Boolean(busyAction)}
+              onClick={() => void selectConnectionMode("wifi")}
+              size="lg"
+              variant="outline"
+            >
+              <span className="flex size-14 items-center justify-center rounded-2xl bg-muted">
+                <Wifi className="size-9" aria-hidden />
+              </span>
+              <span className="grid gap-1.5">
+                <span className="text-lg font-black">Use WiFi</span>
+                <span className="text-sm font-medium leading-5 text-muted-foreground">
+                  No data Cable to this Mac
+                </span>
+              </span>
+            </Button>
+          </div>
+        ) : null}
+
+        {wifiConnectionModeSelected && deviceSearchState === "idle" ? (
+          <>
+            <WifiSetupInstructions />
+            <Button className="w-full" onClick={onSearch} size="lg">
+              <RefreshCw data-icon="inline-start" aria-hidden />
+              <span>Scan WiFi again</span>
+            </Button>
+          </>
+        ) : null}
+
         {!providerRecoveryView && choosing ? (
           <DeviceCandidateList
             busy={Boolean(busyAction) && !selecting}

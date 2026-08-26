@@ -1832,3 +1832,21 @@ issue scope, or release permission never implies UI permission.
   readiness status above the list are unchanged.
 - Approved files: `theme-library-screen.tsx`, `theme-library-screen.test.tsx`,
   `scripts/test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-26 — Choose Cable or WiFi with neutral cards
+
+- User approval: After reviewing both desktop and mobile screenshots, the user
+  explicitly approved the final design with "jo so gebe ich es frei". He had
+  specified that both choices use the same neutral card surface and only Cable
+  carries a `Recommended` badge.
+- Approved customer-visible result: On genuine first setup and after an explicit
+  setup reset, the startup screen shows two equal neutral cards side by side:
+  `Use Cable` with a large Cable icon, `Most reliable connection`, and a small
+  green `Recommended` badge; and `Use WiFi` with a large WiFi icon and `No data
+  Cable to this Mac`. Choosing WiFi opens the existing WiFi instructions and
+  scan action. Choosing Cable selects the connected Cable VibeTV. Existing saved
+  VibeTV recovery does not show this choice.
+- Approved files: `control-center-app.tsx`, `device-startup-screen.tsx`,
+  `device-startup-screen.test.tsx`, `scripts/test-customer-flows.mjs`, the
+  matching Companion setup endpoint and Cable transport tests, and this approval
+  record.

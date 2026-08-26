@@ -329,6 +329,27 @@ func TestResolverKeepsPendingCableTransitionWhenConfirmationIsRejected(t *testin
 	}
 }
 
+func TestSenderStartsWiFiConnectionModeTransition(t *testing.T) {
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{[]byte(`{"kind":"connection-mode","status":"switching","deviceId":"14799300","mode":"wifi"}` + "\n")}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+
+	if err := sender.SetConnectionMode("/dev/mock", "14799300", "wifi"); err != nil {
+		t.Fatalf("start WiFi transition: %v", err)
+	}
+	want := "{\"kind\":\"request\",\"op\":\"set-connection-mode\",\"deviceId\":\"14799300\",\"mode\":\"wifi\"}\n"
+	if len(port.writePayloads) != 1 || string(port.writePayloads[0]) != want {
+		t.Fatalf("unexpected connection mode request %#v", port.writePayloads)
+	}
+	if port.closeCalls != 1 {
+		t.Fatal("acknowledged mode switch must release the rebooting device port")
+	}
+}
+
 type mockOpener struct {
 	mu          sync.Mutex
 	portsByPath map[string]SerialPort

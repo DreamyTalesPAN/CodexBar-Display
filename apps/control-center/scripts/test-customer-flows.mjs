@@ -494,7 +494,7 @@ async function main() {
         appContext.appUrl,
         { expectDmg: false },
       );
-      await testLocalFreshAppSearchesBeforeWifiSetup(
+      await testLocalFreshAppChoosesConnectionBeforeWifiSetup(
         browser,
         appContext.appUrl,
       );
@@ -620,7 +620,10 @@ async function main() {
       appContext.appUrl,
       { expectDmg: true },
     );
-    await testLocalFreshAppSearchesBeforeWifiSetup(browser, appContext.appUrl);
+    await testLocalFreshAppChoosesConnectionBeforeWifiSetup(
+      browser,
+      appContext.appUrl,
+    );
     await testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
       browser,
       appContext.appUrl,
@@ -1154,6 +1157,8 @@ async function testLocalWifiVerificationOpensOverview(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
@@ -1195,6 +1200,8 @@ async function testLocalWifiVerificationFailureStaysInSetup(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
@@ -1266,6 +1273,8 @@ async function testLocalWifiVerificationReconcilesCompletedSelection(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
@@ -1353,6 +1362,8 @@ async function testLocalWifiVerificationWithoutFrameWaitsForUsage(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
@@ -1415,6 +1426,8 @@ async function testThemeMissingDeviceNeverFlashesOverviewAfterConnect(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
@@ -1494,6 +1507,8 @@ async function testLocalWifiSetupRescansAfterNoResults(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page
     .getByRole("heading", { name: "We couldn't find your VibeTV" })
     .waitFor();
@@ -1501,7 +1516,7 @@ async function testLocalWifiSetupRescansAfterNoResults(browser, appUrl) {
     (await page.getByLabel("VibeTV address").count()) === 1,
     "No-result setup must show the manual VibeTV address immediately",
   );
-  assert(searchRequests === 1, "Fresh setup should search automatically once");
+  assert(searchRequests === 1, "The requested WiFi scan should run once");
   await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
@@ -1546,6 +1561,8 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 15_000,
   });
@@ -1614,6 +1631,8 @@ async function testMultipleVibeTVsRequireAChoice(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
@@ -1656,6 +1675,8 @@ async function testMissingVibeTVOffersRetry(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page
     .getByRole("heading", { name: "We couldn't find your VibeTV" })
     .waitFor({ timeout: 10_000 });
@@ -1731,6 +1752,8 @@ async function testDeniedLocalNetworkShowsRecovery(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page
     .getByText("Local Network access is off for VibeTV Control Center.", {
       exact: true,
@@ -1973,6 +1996,8 @@ async function testLocalWifiSearchOffersImmediateManualEntry(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByRole("heading", { name: "Looking for your VibeTV" }).waitFor({
     timeout: 10_000,
   });
@@ -1996,7 +2021,7 @@ async function testLocalWifiSearchOffersImmediateManualEntry(browser, appUrl) {
   });
   assert(
     searchStatusPrecedesInput,
-    "The automatic-search spinner must appear before manual IP entry",
+    "The WiFi-search spinner must appear before manual IP entry",
   );
   const createReportButton = page.getByRole("button", {
     name: "Create report",
@@ -2045,6 +2070,8 @@ async function testManualVibeTVTargetValidationErrors(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByLabel("VibeTV address").fill("172.30.12.999");
   await manualConnectButton(page).click();
   await page.locator("#startup-device-target-error").waitFor();
@@ -2068,6 +2095,8 @@ async function testManualVibeTVTargetRejectsUnreachableAddress(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByLabel("VibeTV address").fill("172.30.12.99");
   await manualConnectButton(page).click();
   await page
@@ -2105,6 +2134,8 @@ async function testManualVibeTVTargetRejectsIdentityChange(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByLabel("VibeTV address").fill("172.30.12.34");
   await manualConnectButton(page).click();
   await page
@@ -2147,6 +2178,8 @@ async function testManualVibeTVTargetShowsPairingRecovery(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByLabel("VibeTV address").fill("172.30.12.34");
   await manualConnectButton(page).click();
   await page
@@ -2248,6 +2281,8 @@ async function testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
@@ -2325,9 +2360,16 @@ async function testOfflineActiveDeviceOpensReadOnlyPicker(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
-    timeout: 10_000,
-  });
+  try {
+    await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
+      timeout: 10_000,
+    });
+  } catch (error) {
+    throw new Error(
+      `An unavailable saved VibeTV did not open the picker. Visible UI:\n${await page.locator("body").innerText()}`,
+      { cause: error },
+    );
+  }
   assert(
     (await page.getByTestId("device-startup-screen").count()) === 1,
     "An unavailable saved VibeTV must open the device picker",
@@ -3189,7 +3231,10 @@ async function testHostedPriorVisitStillShowsMacAppDownload(
   await page.close();
 }
 
-async function testLocalFreshAppSearchesBeforeWifiSetup(browser, appUrl) {
+async function testLocalFreshAppChoosesConnectionBeforeWifiSetup(
+  browser,
+  appUrl,
+) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   const repairRequests = [];
@@ -3208,12 +3253,24 @@ async function testLocalFreshAppSearchesBeforeWifiSetup(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "Choose how VibeTV connects" })
+    .waitFor({ timeout: 10_000 });
   assert(
     (await page
       .getByRole("heading", { name: "Set up your VibeTV" })
       .count()) === 0,
     "Fresh local onboarding must never show the old Setup screen",
   );
+  assert(
+    searchRequests === 0,
+    "Fresh local onboarding must wait for the connection choice",
+  );
+  await page.getByRole("button", { name: "Use WiFi" }).click();
+  await page
+    .getByRole("heading", { name: "Connect VibeTV to WiFi" })
+    .waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page
     .getByRole("heading", { name: "We couldn't find your VibeTV" })
     .waitFor({
@@ -3233,10 +3290,7 @@ async function testLocalFreshAppSearchesBeforeWifiSetup(browser, appUrl) {
     repairRequests.length === 0,
     `A scan without results must not repair or pair, got ${JSON.stringify(repairRequests)}`,
   );
-  assert(
-    searchRequests === 1,
-    "Fresh local onboarding must search automatically",
-  );
+  assert(searchRequests === 1, "The explicit WiFi scan must search once");
   await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByRole("heading", { name: "Looking for your VibeTV" }).waitFor({
     timeout: 10_000,
@@ -8411,6 +8465,8 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
   await page.goto(`${appUrl}/install/synthwave`, {
     waitUntil: "domcontentloaded",
   });
+  await chooseWiFiConnection(page);
+  await page.getByRole("button", { name: "Scan WiFi again" }).click();
   await page.getByRole("heading", { name: "Choose a VibeTV" }).waitFor({
     timeout: 10_000,
   });
@@ -9017,6 +9073,15 @@ async function routeCompanionOnline(
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ ok: true, providerSetup: currentProviderSetup }),
+      });
+      return;
+    }
+    if (pathname === "/v1/setup/connection-mode") {
+      const request = parseJSON(route.request().postData() || "") || {};
+      await route.fulfill({
+        status: request.mode === "wifi" ? 202 : 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, mode: request.mode }),
       });
       return;
     }
@@ -10571,6 +10636,13 @@ function discoveredConnectButtons(page) {
   return page
     .getByRole("list")
     .getByRole("button", { name: "Connect", exact: true });
+}
+
+async function chooseWiFiConnection(page) {
+  await page
+    .getByRole("heading", { name: "Choose how VibeTV connects" })
+    .waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Use WiFi" }).click();
 }
 
 function manualConnectButton(page) {

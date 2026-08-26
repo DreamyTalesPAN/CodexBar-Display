@@ -3,6 +3,28 @@ import { describe, expect, it, vi } from "vitest";
 import { DeviceStartupScreen } from "./device-startup-screen";
 
 describe("DeviceStartupScreen", () => {
+  it("offers Cable before the optional WiFi setup", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        connectionModeChoiceRequired
+        deviceCandidates={[]}
+        deviceSearchState="idle"
+        onPair={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        onSelectConnectionMode={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Choose how VibeTV connects</h1>");
+    expect(html).toContain("Use Cable</span>");
+    expect(html).toContain("Recommended</span>");
+    expect(html).toContain("Most reliable connection");
+    expect(html).toContain("Use WiFi</span>");
+    expect(html).toContain("No data Cable to this Mac");
+    expect(html).not.toContain("Scan WiFi again");
+  });
+
   it("keeps searching as an accessible heading and one focused status", () => {
     const html = renderToStaticMarkup(
       <DeviceStartupScreen

@@ -1587,6 +1587,27 @@ func TestApplyRuntimeConfigReenablesCableBindingAfterReset(t *testing.T) {
 	}
 }
 
+func TestApplyRuntimeConfigRefusesUnconfirmedCableToWiFiSwitch(t *testing.T) {
+	home := t.TempDir()
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "cable-vibetv",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyRuntimeConfig(home, "", "wifi", "http://192.0.2.10", "", nil); err == nil ||
+		!strings.Contains(err.Error(), "must confirm") {
+		t.Fatalf("expected unconfirmed transition rejection, got %v", err)
+	}
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "cable" {
+		t.Fatalf("host mode changed without device confirmation: %+v", cfg)
+	}
+}
+
 func TestResolveFirmwareEnvironmentRejectsUnsupported(t *testing.T) {
 	if _, ok := ResolveFirmwareEnvironment("esp8266_smalltv_st7789_crt"); ok {
 		t.Fatalf("expected legacy compile-theme env to be rejected")

@@ -370,6 +370,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     readLocalSetupPreviewStep,
   );
   const [setupResetVersion, setSetupResetVersion] = useState(0);
+  const [connectionModeChoiceRequired, setConnectionModeChoiceRequired] =
+    useState(false);
   const [runtimeRecoveryPhase, setRuntimeRecoveryPhase] = useState<
     "repairing" | "failed"
   >("repairing");
@@ -384,6 +386,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // save rolls back to this, never to the in-flight slider value.
   const lastSavedStandbyRef = useRef<StandbySettings | null>(null);
   const setupGenerationRef = useRef(0);
+  const connectionModeChoiceResolved = useRef(false);
   const deviceSearchAttemptRef = useRef(0);
   const didRunInitialConnectionCheck = useRef(false);
   const didRunAutomaticDeviceSearch = useRef(false);
@@ -512,6 +515,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const acceptDeviceSnapshot = useCallback(
     (next: DeviceInfo) => {
+      if (next.active === true) {
+        setConnectionModeChoiceRequired(false);
+      }
       setDeviceRecoveryGate(
         selectRecoveryDevice(deviceRecoveryGateRef.current, next),
       );
@@ -1063,6 +1069,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setCompanionStatus("online");
         setCompanionInfo(payload.companion || null);
         setProviderSetup(payload.providerSetup || null);
+        if (!connectionModeChoiceResolved.current) {
+          connectionModeChoiceResolved.current = true;
+          setConnectionModeChoiceRequired(
+            payload.device?.active !== true &&
+              !payload.device?.target &&
+              !payload.device?.deviceId,
+          );
+        }
         const pairingRejection = pairingRejectionForDevice(payload.device);
         if (pairingRejection) {
           setLastError(pairingRejection);
@@ -1526,6 +1540,58 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, [handleCompanionUnavailableForRepair, runCompanion]);
 
+  const selectSetupConnectionMode = useCallback(
+    async (mode: "cable" | "wifi"): Promise<boolean> => {
+      const setupGeneration = setupGenerationRef.current;
+      setBusyAction("connection-mode");
+      setLastError(null);
+      try {
+        const payload = await runCompanion<{ device?: DeviceInfo }>(
+          "/v1/setup/connection-mode",
+          {
+            method: "POST",
+            body: JSON.stringify({ mode }),
+          },
+        );
+        if (setupGeneration !== setupGenerationRef.current) {
+          return false;
+        }
+        if (mode === "cable" && payload.device) {
+          acceptDeviceSnapshot(payload.device);
+        }
+        addEvent({
+          label: mode === "cable" ? "Cable selected" : "WiFi setup started",
+          detail:
+            mode === "cable"
+              ? "VibeTV is connected through the data Cable."
+              : "VibeTV is restarting into WiFi setup. Keep the Cable connected until the setup screen appears.",
+          tone: mode === "cable" ? "ready" : "unknown",
+        });
+        return true;
+      } catch (error) {
+        if (setupGeneration !== setupGenerationRef.current) {
+          return false;
+        }
+        const normalized = normalizeCaughtError(
+          error,
+          "VibeTV could not change its connection.",
+        );
+        setLastError(normalized);
+        addEvent({
+          label: "Connection choice failed",
+          detail: normalized.nextAction,
+          tone: "attention",
+        });
+        return false;
+      } finally {
+        if (setupGeneration === setupGenerationRef.current) {
+          setBusyAction(null);
+        }
+      }
+    },
+    [acceptDeviceSnapshot, addEvent, runCompanion],
+  );
+
   useEffect(() => {
     if (deviceRecoveryPickerReason !== "confirmed-loss") {
       recoverySearchStartedRef.current = false;
@@ -1824,6 +1890,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setDeviceState("unknown");
       setDeviceCandidates([]);
       setDeviceSearchState("idle");
+      connectionModeChoiceResolved.current = true;
+      setConnectionModeChoiceRequired(true);
       brightnessDirtyRef.current = false;
       setBrightness(null);
       standbyDirtyRef.current = false;
@@ -2294,6 +2362,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       connectionRecoveryRequired ||
       !initialCompanionCheckComplete ||
       companionStatus !== "online" ||
+      connectionModeChoiceRequired ||
       deviceIsCustomerConnected(device) ||
       busyAction ||
       deviceSearchState !== "idle" ||
@@ -2306,6 +2375,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [
     busyAction,
     companionStatus,
+    connectionModeChoiceRequired,
     connectionRecoveryRequired,
     device,
     deviceSearchState,
@@ -3875,6 +3945,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return (
       <DeviceStartupScreen
         busyAction={busyAction}
+        connectionModeChoiceRequired={connectionModeChoiceRequired}
         diagnostics={supportDiagnostics}
         deviceCandidates={startupDeviceCandidates}
         deviceSearchState={startupDeviceSearchState}
@@ -3896,6 +3967,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             forcePair: true,
           });
         }}
+        onSelectConnectionMode={selectSetupConnectionMode}
         onSearch={() => {
           if (deviceRecoveryPickerReason === "confirmed-loss") {
             setDeviceRecoveryGate(
