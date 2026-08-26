@@ -506,6 +506,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testWiFiRollbackReturnsToConnectionChoice(
+        browser,
+        appContext.appUrl,
+      );
       await testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
         browser,
         appContext.appUrl,
@@ -637,6 +641,10 @@ async function main() {
       appContext.appUrl,
     );
     await testFreshCableAutoBindingStillChoosesConnection(
+      browser,
+      appContext.appUrl,
+    );
+    await testWiFiRollbackReturnsToConnectionChoice(
       browser,
       appContext.appUrl,
     );
@@ -3338,6 +3346,7 @@ async function testFreshCableAutoBindingStillChoosesConnection(
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
   let searchRequests = 0;
+  let resetRequests = 0;
   await routeCompanionOnline(page, installRequests, () => {}, {
     connectionModeChoiceRequired: true,
     device: {
@@ -3351,6 +3360,9 @@ async function testFreshCableAutoBindingStillChoosesConnection(
       searchRequests += 1;
       return [];
     },
+    onReset: () => {
+      resetRequests += 1;
+    },
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
@@ -3363,6 +3375,58 @@ async function testFreshCableAutoBindingStillChoosesConnection(
     searchRequests === 0,
     "Fresh Cable auto-binding must preserve the explicit connection choice",
   );
+  await page.getByRole("button", { name: "Use Cable" }).click();
+  await page.getByText("Connected by Cable", { exact: true }).waitFor({
+    timeout: 10_000,
+  });
+  for (const hiddenControl of ["Settings", "Appearance", "Updates"]) {
+    assert(
+      (await page.getByRole("button", { name: hiddenControl }).count()) === 0,
+      `Cable mode must hide HTTP-only ${hiddenControl}`,
+    );
+  }
+  await page.getByRole("button", { name: "Change connection" }).click();
+  await page
+    .getByRole("heading", { name: "Choose how VibeTV connects" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    resetRequests === 0,
+    "Changing the connection for the same VibeTV must preserve its pairing",
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testWiFiRollbackReturnsToConnectionChoice(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  const rolledBackCable = {
+    ...companionDevice,
+    target: "cable://vibetv",
+    capabilities: {
+      transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
+    },
+  };
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: { connected: false },
+    onStatusConnectionModeChoiceRequired: (statusRequestCount) =>
+      statusRequestCount > 1,
+    statusDeviceSequence: [{ connected: false }, rolledBackCable],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "Choose how VibeTV connects" })
+    .waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Use WiFi" }).click();
+  await page
+    .getByRole("heading", { name: "Connect VibeTV to WiFi" })
+    .waitFor({ timeout: 10_000 });
+  await page
+    .getByRole("heading", { name: "Choose how VibeTV connects" })
+    .waitFor({ timeout: 12_000 });
+  await page.getByRole("button", { name: "Use Cable" }).waitFor();
+  await page.getByRole("button", { name: "Use WiFi" }).waitFor();
   assertNoInstallRequests(installRequests);
   await page.close();
 }
@@ -9116,6 +9180,7 @@ async function routeCompanionOnline(
     statusFailuresAfter = 0,
     providerSetup = readyProviderSetup(),
     connectionModeChoiceRequired,
+    onStatusConnectionModeChoiceRequired,
     onProviderRetry,
     onStatusProviderSetup,
   } = {},
@@ -9189,7 +9254,11 @@ async function routeCompanionOnline(
       await route.fulfill({
         status: request.mode === "wifi" ? 202 : 200,
         contentType: "application/json",
-        body: JSON.stringify({ ok: true, mode: request.mode }),
+        body: JSON.stringify({
+          ok: true,
+          mode: request.mode,
+          ...(request.mode === "cable" ? { device: currentDevice } : {}),
+        }),
       });
       return;
     }
@@ -9827,6 +9896,9 @@ async function routeCompanionOnline(
         firmwareStatusIndex += 1;
       }
       const responseDevice = currentDevice;
+      const responseConnectionModeChoiceRequired =
+        onStatusConnectionModeChoiceRequired?.(statusRequestCount) ??
+        connectionModeChoiceRequired;
       if (statusRequestCount === 1 && firstStatusDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, firstStatusDelayMs));
       } else if (statusRequestCount > 1 && statusDelayAfterFirstMs > 0) {
@@ -9849,7 +9921,8 @@ async function routeCompanionOnline(
           ),
           providerSetup: currentProviderSetup,
           device: responseDevice,
-          connectionModeChoiceRequired,
+          connectionModeChoiceRequired:
+            responseConnectionModeChoiceRequired,
           ...(statusFirmwareUpdateJob
             ? { firmwareUpdate: statusFirmwareUpdateJob }
             : {}),

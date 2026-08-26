@@ -1938,3 +1938,34 @@ issue scope, or release permission never implies UI permission.
   choice still ends the decision exactly once.
 - Approved files: `control-center-app.tsx`, `control-center-app.test.ts`, and
   this approval record.
+
+## 2026-08-27 — Cable shows only controls that work over Cable
+
+- User approval: Continuation of the user's explicit instruction to fix every
+  automated review finding on PR #407 and repeat the review loop. The review
+  found that the approved recommended Cable choice exposed device controls that
+  still require WiFi, so those controls could only fail.
+- Approved customer-visible result: With VibeTV connected by Cable, Overview
+  and Usage remain available and the live usage picture keeps working. Settings,
+  Appearance, and Updates are hidden because their device actions require WiFi.
+  Overview shows one compact `Connected by Cable` notice explaining this and one
+  secondary `Change connection` button that returns to the approved Cable/WiFi
+  cards. WiFi mode keeps the full navigation unchanged.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`,
+  `control-center-shell.tsx`, `overview-screen.tsx`, their tests,
+  `scripts/test-customer-flows.mjs`, the Companion Cable status response and
+  tests, and this approval record.
+
+## 2026-08-27 — Failed WiFi setup returns to the connection cards
+
+- User approval: Continuation of the user's explicit instruction to fix every
+  automated review finding on PR #407 and repeat the review loop. This restores
+  the already approved connection choice after the firmware's safe rollback.
+- Approved customer-visible result: If WiFi setup cannot finish and VibeTV
+  returns itself to Cable, the WiFi instructions do not remain stuck on screen.
+  The startup gate returns to the approved neutral Cable/WiFi cards, with Cable
+  still recommended, so the customer can choose again. Existing pairing details
+  remain saved.
+- Approved files: `control-center-app.tsx`,
+  `scripts/test-customer-flows.mjs`, the Companion Cable rollback logic and
+  tests, and this approval record.

@@ -42,6 +42,7 @@ import {
   deviceIsCustomerConnected,
   deviceImageIsStuck,
   deviceIsReady,
+  deviceUsesCable,
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
   providerSetupIsChecking,
@@ -391,6 +392,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [setupResetVersion, setSetupResetVersion] = useState(0);
   const [connectionModeChoiceRequired, setConnectionModeChoiceRequired] =
     useState(false);
+  const [connectionModeChoiceRevision, setConnectionModeChoiceRevision] =
+    useState(0);
   const [runtimeRecoveryPhase, setRuntimeRecoveryPhase] = useState<
     "repairing" | "failed"
   >("repairing");
@@ -406,6 +409,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const lastSavedStandbyRef = useRef<StandbySettings | null>(null);
   const setupGenerationRef = useRef(0);
   const connectionModeChoiceResolved = useRef(false);
+  const connectionModeChoiceSubmitted = useRef(false);
   const deviceSearchAttemptRef = useRef(0);
   const didRunInitialConnectionCheck = useRef(false);
   const didRunAutomaticDeviceSearch = useRef(false);
@@ -535,6 +539,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const acceptDeviceSnapshot = useCallback(
     (next: DeviceInfo) => {
       if (next.active === true) {
+        connectionModeChoiceSubmitted.current = false;
         setConnectionModeChoiceRequired(false);
       }
       setDeviceRecoveryGate(
@@ -924,7 +929,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runCompanion,
   ]);
 
-  const deviceConnectedForSettings = deviceIsCustomerConnected(device);
+  const deviceConnectedForSettings =
+    deviceIsCustomerConnected(device) && !deviceUsesCable(device);
 
   useEffect(() => {
     if (activeTab !== "settings" || !deviceConnectedForSettings) {
@@ -1089,7 +1095,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setCompanionStatus("online");
         setCompanionInfo(payload.companion || null);
         setProviderSetup(payload.providerSetup || null);
-        if (!connectionModeChoiceResolved.current) {
+        if (payload.connectionModeChoiceRequired === true) {
+          if (connectionModeChoiceSubmitted.current) {
+            connectionModeChoiceSubmitted.current = false;
+            setConnectionModeChoiceRevision((current) => current + 1);
+          }
+          connectionModeChoiceResolved.current = true;
+          setConnectionModeChoiceRequired(true);
+        } else if (!connectionModeChoiceResolved.current) {
           const choice = connectionModeChoiceStatus(payload);
           connectionModeChoiceResolved.current = choice.resolved;
           setConnectionModeChoiceRequired(choice.required);
@@ -1175,7 +1188,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           "/v1/status",
         );
         if (acceptedDevice && payload.device) {
-          if (deviceIsReady(payload.device)) {
+          if (deviceIsReady(payload.device) && !deviceUsesCable(payload.device)) {
             void loadSettings();
           }
         }
@@ -1573,6 +1586,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (setupGeneration !== setupGenerationRef.current) {
           return false;
         }
+        connectionModeChoiceSubmitted.current = true;
         connectionModeChoiceResolved.current = true;
         if (mode === "cable" && payload.device) {
           acceptDeviceSnapshot(payload.device);
@@ -1609,6 +1623,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [acceptDeviceSnapshot, addEvent, runCompanion],
   );
+
+  const reopenConnectionModeChoice = useCallback(() => {
+    connectionModeChoiceSubmitted.current = false;
+    connectionModeChoiceResolved.current = true;
+    setConnectionModeChoiceRevision((current) => current + 1);
+    setConnectionModeChoiceRequired(true);
+  }, []);
 
   useEffect(() => {
     if (deviceRecoveryPickerReason !== "confirmed-loss") {
@@ -1909,6 +1930,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setDeviceCandidates([]);
       setDeviceSearchState("idle");
       connectionModeChoiceResolved.current = true;
+      connectionModeChoiceSubmitted.current = false;
+      setConnectionModeChoiceRevision((current) => current + 1);
       setConnectionModeChoiceRequired(true);
       brightnessDirtyRef.current = false;
       setBrightness(null);
@@ -2491,7 +2514,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     if (hostedSetup) {
       return;
     }
-    if (!deviceIsReady(device) || !deviceImageIsStuck(device)) {
+    if (
+      !deviceIsReady(device) ||
+      deviceUsesCable(device) ||
+      !deviceImageIsStuck(device)
+    ) {
       didRunAutoDisplayReload.current = false;
       return;
     }
@@ -3523,6 +3550,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       !themeInstallEnabled ||
       companionStatus !== "online" ||
       !deviceIsReady(device) ||
+      deviceUsesCable(device) ||
       busyAction ||
       firmwareUpdateInProgress ||
       !theme ||
@@ -3584,6 +3612,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, []);
   const hasActiveDevice = deviceIsActive(device);
+  const cableConnectionActive = deviceUsesCable(device);
   const displaySessionActive = Boolean(
     deviceConnected ||
       (hasEnteredControlCenter && hasActiveDevice && device?.paired !== false),
@@ -3724,7 +3753,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const disabledTabs: ActiveTab[] = hasEnteredControlCenter
     ? []
     : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
-  const activeShellTab = disabledTabs.includes(activeTab)
+  const hiddenTabs: ActiveTab[] = cableConnectionActive
+    ? ["settings", "theme-library", "updates"]
+    : [];
+  const activeShellTab = [...disabledTabs, ...hiddenTabs].includes(activeTab)
     ? "overview"
     : activeTab;
 
@@ -3968,6 +4000,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   ) {
     return (
       <DeviceStartupScreen
+        key={connectionModeChoiceRevision}
         busyAction={busyAction}
         connectionModeChoiceRequired={connectionModeChoiceRequired}
         wifiConnectionSupported={
@@ -4054,6 +4087,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       activeTab={activeShellTab}
       activeAppearanceSection={appearanceSection}
       disabledTabs={disabledTabs}
+      hiddenTabs={hiddenTabs}
       device={device}
       updateAvailable={anyUpdateAvailable}
       onAppearanceSectionChange={setAppearanceSection}
@@ -4071,6 +4105,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           device={device}
           displayFrame={displayFrame}
           firmwareUpdateStatus={firmwareUpdateStatus}
+          onChangeConnection={
+            cableConnectionActive ? reopenConnectionModeChoice : undefined
+          }
           usage={usage}
         />
       ) : null}

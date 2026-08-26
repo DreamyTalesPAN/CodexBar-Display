@@ -3,6 +3,7 @@
 import {
   AppWindow,
   ArrowUpFromLine,
+  Cable,
   Check,
   CircleHelp,
   Monitor,
@@ -11,6 +12,7 @@ import {
 import type { ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Item,
   ItemContent,
@@ -44,6 +46,7 @@ type OverviewScreenProps = {
     phase?: string;
     stage?: string;
   } | null;
+  onChangeConnection?: () => void;
   usage?: UsageSnapshot | null;
 };
 
@@ -53,6 +56,7 @@ export function OverviewScreen({
   device,
   displayFrame = null,
   firmwareUpdateStatus = null,
+  onChangeConnection,
   usage,
 }: OverviewScreenProps) {
   const pairingRejected = device?.paired === false;
@@ -98,6 +102,26 @@ export function OverviewScreen({
               usage={usage || null}
             />
           </div>
+
+          {onChangeConnection ? (
+            <Alert className="w-full max-w-[1040px]">
+              <Cable aria-hidden />
+              <AlertTitle>Connected by Cable</AlertTitle>
+              <AlertDescription className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <span>
+                  Usage stays live. Switch to WiFi for settings, appearance,
+                  and VibeTV updates.
+                </span>
+                <Button
+                  className="shrink-0"
+                  onClick={onChangeConnection}
+                  variant="outline"
+                >
+                  Change connection
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
           <ItemGroup className="grid w-full gap-3 lg:grid-cols-4">
             <StatusItem

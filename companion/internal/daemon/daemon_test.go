@@ -164,6 +164,47 @@ func TestResolveCycleDeviceDoesNotRebindCableAfterSetupReset(t *testing.T) {
 	}
 }
 
+func TestResolveCycleDeviceReconcilesWiFiRollbackToCable(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: false,
+		DeviceID:                     "returning-vibetv",
+		DeviceTarget:                 "http://192.168.178.72",
+		DeviceToken:                  "pair-token",
+	}
+	_, _, _, err := resolveCycleDevice("", nil, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig:    func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		saveConfig: func(_ string, next runtimeconfig.Config) error {
+			cfg = next
+			return nil
+		},
+		resolveUSBDevice: func(string, string) (string, error) {
+			return "/dev/cu.usbserial-vibetv", nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:                      true,
+				DeviceID:                   "returning-vibetv",
+				ConnectionMode:             "cable",
+				ActiveTransport:            "usb",
+				SupportedTransportChannels: []string{"usb", "wifi"},
+			}, nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("resolve rolled-back Cable device: %v", err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.CableAutoBindDisabled || !cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("WiFi rollback was not reconciled to an explicit Cable choice: %+v", cfg)
+	}
+	if cfg.DeviceTarget != "http://192.168.178.72" || cfg.DeviceToken != "pair-token" {
+		t.Fatalf("WiFi rollback discarded the saved pairing: %+v", cfg)
+	}
+}
+
 func TestConnectionModeChangeStopsCurrentTransportCycle(t *testing.T) {
 	err := runCycleWithDeps(context.Background(), "", nil, runtimeDeps{
 		transportName: "usb",
