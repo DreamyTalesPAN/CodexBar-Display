@@ -85,6 +85,7 @@ case "$*" in
     cat > "$out" <<'BIN'
 #!/usr/bin/env bash
 set -euo pipefail
+printf 'release binary called: %s\n' "$*" >> "${FAKE_CODEXBAR_DISPLAY_LOG:?}"
 case "${1:-}" in
   setup)
     bin="${HOME}/Library/Application Support/codexbar-display/bin/codexbar-display"
@@ -269,6 +270,7 @@ run_fresh_install_starts_without_theme_pack() {
   }
 
   app_log="$(cat "${root}/codexbar-display.log")"
+  assert_contains "$app_log" "release binary called: setup --yes --skip-flash --transport wifi --target http://192.0.2.10"
   assert_not_contains "$app_log" "theme-pack install"
   assert_contains "$output" "no theme selected; install one in the Mac App"
   grep -F '"future-provider"' "${root}/home/.codexbar/config.json" >/dev/null \
