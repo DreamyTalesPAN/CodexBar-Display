@@ -1592,7 +1592,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setBusyAction("connection-mode");
       setLastError(null);
       try {
-        const payload = await runCompanion<{ device?: DeviceInfo }>(
+        const payload = await runCompanion<{
+          device?: DeviceInfo;
+          status?: "selected" | "waiting_for_wifi";
+        }>(
           "/v1/setup/connection-mode",
           {
             method: "POST",
@@ -1605,8 +1608,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         connectionModeChoiceSubmitted.current = true;
         connectionModeChoiceResolved.current = true;
         const knownWiFiReselected =
-          mode === "wifi" && payload.device?.active === true;
-        if (payload.device?.active) {
+          mode === "wifi" &&
+          payload.status === "selected" &&
+          payload.device?.active === true;
+        if (
+          payload.device &&
+          (mode === "cable" || knownWiFiReselected)
+        ) {
           acceptDeviceSnapshot(payload.device);
         }
         addEvent({

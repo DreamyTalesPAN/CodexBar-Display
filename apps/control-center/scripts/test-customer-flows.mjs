@@ -9298,6 +9298,10 @@ async function routeCompanionOnline(
         body: JSON.stringify({
           ok: true,
           mode: request.mode,
+          status:
+            request.mode === "wifi" && !selectedDevice
+              ? "waiting_for_wifi"
+              : "selected",
           ...(request.mode === "cable" || selectedDevice
             ? { device: currentDevice }
             : {}),

@@ -2022,3 +2022,15 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-app.tsx`,
   `scripts/test-customer-flows.mjs`, the Companion connection-mode endpoint and
   tests, and this approval record.
+
+## 2026-08-27 — Pending WiFi setup keeps its instructions visible
+
+- User approval: Continuation of the user's explicit instruction to fix every
+  automated review finding on PR #407 and repeat the review loop. This corrects
+  the success detection behind the already approved WiFi card.
+- Approved customer-visible result: A known WiFi device with backend status
+  `selected` reconnects directly. A new Cable-to-WiFi transition with status
+  `waiting_for_wifi` keeps the WiFi setup instructions and `Scan WiFi again`
+  action visible until setup actually completes.
+- Approved files: `control-center-app.tsx`,
+  `scripts/test-customer-flows.mjs`, and this approval record.
