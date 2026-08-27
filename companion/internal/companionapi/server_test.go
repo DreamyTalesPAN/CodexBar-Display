@@ -7254,8 +7254,12 @@ func TestSetupResetClearsActiveBindingAndPreservesAuthenticationProfiles(t *test
 		KnownDevices: []runtimeconfig.KnownDevice{{DeviceID: "device-b", Target: "http://192.168.178.73", DeviceToken: "pair-token-b"}},
 	})
 	var pauseEvents []bool
+	resetCableSenderCalls := 0
 	server.pauseDisplayStream = func(paused bool) {
 		pauseEvents = append(pauseEvents, paused)
+	}
+	server.resetCableSender = func() {
+		resetCableSenderCalls++
 	}
 
 	rec := httptest.NewRecorder()
@@ -7301,6 +7305,42 @@ func TestSetupResetClearsActiveBindingAndPreservesAuthenticationProfiles(t *test
 	}
 	if !reflect.DeepEqual(pauseEvents, []bool{true, false}) {
 		t.Fatalf("setup reset did not serialize the write gate: %v", pauseEvents)
+	}
+	if resetCableSenderCalls != 1 {
+		t.Fatalf("setup reset invalidated the Cable sender %d times, want 1", resetCableSenderCalls)
+	}
+}
+
+func TestSetupResetUsesSavedWiFiOnlyTransportSupport(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:   "wifi",
+		DeviceID:         "legacy-wifi-only",
+		DeviceTarget:     "http://192.168.178.72",
+		DeviceTransports: []string{"wifi"},
+	})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{}, false
+	}
+	server.resetCableSender = func() {}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Device.Capabilities == nil || !reflect.DeepEqual(got.Device.Capabilities.Transport.Supported, []string{"wifi"}) {
+		t.Fatalf("reset response lost saved WiFi-only support: %+v", got.Device.Capabilities)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.DeviceTransports) != 0 {
+		t.Fatalf("reset persisted stale transport support: %+v", cfg.DeviceTransports)
 	}
 }
 
@@ -10152,6 +10192,7 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	server.runSetup = func(context.Context, setup.Options) error {
 		return nil
 	}
+	server.resetCableSender = func() {}
 	server.defaultWiFiTarget = func() string { return "http://127.0.0.1:1" }
 	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
 		return nil
