@@ -1164,6 +1164,73 @@ func TestDeviceSelectCommitsBeforeFirstFrame(t *testing.T) {
 	}
 }
 
+func TestDeviceSelectPairsBeforeConfirmingCableTransitionOnNewMac(t *testing.T) {
+	const deviceID = "moved-cable-device"
+	const pairedToken = "new-mac-token"
+	var pairCalls atomic.Int32
+	var confirmCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimSpace(r.Header.Get("X-VibeTV-Token"))
+		switch r.URL.Path {
+		case "/hello":
+			if token != "" && token != pairedToken {
+				http.Error(w, "invalid token", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.44","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi","mode":"wifi","supported":["usb","wifi"],"transitionPending":true,"transitionFrom":"cable","transitionTo":"wifi"},"auth":{"paired":true,"tokenHeader":"X-VibeTV-Token"}}}`, deviceID)
+		case "/api/pair":
+			pairCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"ok":true,"token":%q}`, pairedToken)
+		case "/api/connection-mode/confirm":
+			confirmCalls.Add(1)
+			if token != pairedToken {
+				http.Error(w, "pairing token required", http.StatusUnauthorized)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/health":
+			if token != pairedToken {
+				http.Error(w, "pairing token required", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":1,"partialCount":0,"lastKind":"usage"}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceID:              deviceID,
+		CableAutoBindDisabled: true,
+		DeviceTransports:      []string{"usb", "wifi"},
+	})
+	selected, err := server.selectDevice(context.Background(), device.URL, deviceID)
+	if err != nil {
+		t.Fatalf("select moved Cable device: %v", err)
+	}
+	if !selected.Active || !selected.Paired || selected.DeviceID != deviceID {
+		t.Fatalf("unexpected selected device: %+v", selected)
+	}
+	if pairCalls.Load() != 1 || confirmCalls.Load() != 1 {
+		t.Fatalf("pair/confirm calls=%d/%d, want 1/1", pairCalls.Load(), confirmCalls.Load())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "wifi" || cfg.DeviceTarget != device.URL || cfg.DeviceToken != pairedToken {
+		t.Fatalf("new Mac did not retain confirmed WiFi authentication: %+v", cfg)
+	}
+	known, ok := cfg.KnownDevice(deviceID)
+	if !ok || known.DeviceToken != pairedToken || known.Target != device.URL {
+		t.Fatalf("new Mac did not remember moved VibeTV authentication: %+v", cfg.KnownDevices)
+	}
+}
+
 func TestPairingStreamErrorClearsPairedState(t *testing.T) {
 	got := withDisplayStreamInfo(
 		deviceInfo{Connected: true, Paired: true},
