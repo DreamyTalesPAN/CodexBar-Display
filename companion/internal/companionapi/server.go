@@ -197,6 +197,7 @@ type Server struct {
 	readCableSettings      func(string, string) (protocol.DeviceSettings, error)
 	writeCableSettings     func(string, string, protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error)
 	configureCableWiFi     func(string, string, string, string) error
+	transferCableAsset     func(context.Context, string, string, string, string, string, []byte) error
 	subnetTargets          func() []string
 	defaultWiFiTarget      func() string
 	streamStatus           func(context.Context, string) displayStreamInfo
@@ -951,6 +952,7 @@ func New(opts Options) (*Server, error) {
 		readCableSettings:      usb.ReadSettings,
 		writeCableSettings:     usb.WriteSettings,
 		configureCableWiFi:     usb.ConfigureWiFi,
+		transferCableAsset:     usb.TransferAsset,
 		subnetTargets:          localSubnetTargets,
 		defaultWiFiTarget:      setup.DefaultWiFiTarget,
 		streamStatus:           inspectDisplayStream,
@@ -4292,23 +4294,44 @@ func (s *Server) requireCableControlDevice(
 	w http.ResponseWriter,
 	cfg runtimeconfig.Config,
 ) (string, protocol.DeviceHello, bool) {
-	expectedDeviceID := strings.TrimSpace(cfg.DeviceID)
-	if expectedDeviceID == "" {
+	if s.firmwareUpdateActive.Load() {
+		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then try again.")
+		return "", protocol.DeviceHello{}, false
+	}
+	port, hello, err := s.cableControlDevice(cfg)
+	if err == nil {
+		return port, hello, true
+	}
+	if strings.TrimSpace(cfg.DeviceID) == "" {
 		writeDeviceNotFound(w)
 		return "", protocol.DeviceHello{}, false
 	}
-	port, err := s.resolveCablePort("", expectedDeviceID)
-	if err != nil {
+	if errcode.Of(err) != "" {
 		writeCableResolutionError(w, err)
 		return "", protocol.DeviceHello{}, false
+	}
+	writeError(w, http.StatusConflict, "cable_identity_unavailable", "The selected Cable VibeTV did not provide its current identity.", "Reconnect the Cable, wait for VibeTV to start, then retry.")
+	return "", protocol.DeviceHello{}, false
+}
+
+func (s *Server) cableControlDevice(cfg runtimeconfig.Config) (string, protocol.DeviceHello, error) {
+	expectedDeviceID := strings.TrimSpace(cfg.DeviceID)
+	if expectedDeviceID == "" {
+		return "", protocol.DeviceHello{}, errors.New("cable device identity is unavailable")
+	}
+	port, err := s.resolveCablePort("", expectedDeviceID)
+	if err != nil {
+		return "", protocol.DeviceHello{}, err
 	}
 	hello, err := s.readCableHello(port)
 	hello = hello.Normalize()
 	if err != nil || !cableHelloMatchesConfig(hello, expectedDeviceID) {
-		writeError(w, http.StatusConflict, "cable_identity_unavailable", "The selected Cable VibeTV did not provide its current identity.", "Reconnect the Cable, wait for VibeTV to start, then retry.")
-		return "", protocol.DeviceHello{}, false
+		if err == nil {
+			err = errors.New("cable device identity changed")
+		}
+		return "", protocol.DeviceHello{}, err
 	}
-	return port, hello, true
+	return port, hello, nil
 }
 
 func writeCableResolutionError(w http.ResponseWriter, err error) {
@@ -4481,6 +4504,9 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	case "mac_app_restarting":
 		writeError(w, http.StatusConflict, refusal, "Mac App is restarting.", "Wait a moment, then start the theme install again.")
 		return
+	case "firmware_update_in_progress":
+		writeError(w, http.StatusConflict, refusal, "VibeTV update is still running.", "Wait for the update to finish, then install the theme again.")
+		return
 	default:
 		writeError(w, http.StatusConflict, refusal, "Another theme install is already running.", "Wait for the current theme install to finish, then retry.")
 		return
@@ -4542,7 +4568,16 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	} else {
 		var hello protocol.DeviceHello
 		var ok bool
-		cfg, hello, ok = s.requireDevice(w, r)
+		cfg, err = s.config()
+		if err != nil {
+			writeInternalError(w, err)
+			return
+		}
+		if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
+			_, hello, ok = s.requireCableControlDevice(w, cfg)
+		} else {
+			cfg, hello, ok = s.requireDevice(w, r)
+		}
 		if !ok {
 			return
 		}
@@ -4825,7 +4860,18 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 		)
 		return
 	}
-	cfg, hello, ok := s.requireDevice(w, r)
+	cfg, err := s.config()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	var hello protocol.DeviceHello
+	var ok bool
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
+		_, hello, ok = s.requireCableControlDevice(w, cfg)
+	} else {
+		cfg, hello, ok = s.requireDevice(w, r)
+	}
 	if !ok {
 		return
 	}
@@ -4986,7 +5032,10 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		return themeinstall.Result{}, err
 	}
 	cfg = latestCfg
-	if strings.TrimSpace(cfg.DeviceTarget) == "" || strings.TrimSpace(cfg.DeviceToken) == "" {
+	cableMode := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable"
+	if strings.TrimSpace(cfg.DeviceToken) == "" ||
+		(cableMode && strings.TrimSpace(cfg.DeviceID) == "") ||
+		(!cableMode && strings.TrimSpace(cfg.DeviceTarget) == "") {
 		return themeinstall.Result{}, &statusAPIError{
 			status: http.StatusForbidden,
 			api: apiError{
@@ -5000,7 +5049,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	// render to baseline and verify against afterwards.
 	live := req.Slot != themepack.UsageScreensaver
 	var baseline deviceHealth
-	if live {
+	if live && !cableMode {
 		s.clearDisplayVerification(cfg.DeviceTarget)
 		baseline, err = s.captureDisplayRenderBaseline(ctx, cfg.DeviceTarget, cfg.DeviceToken)
 		if err != nil {
@@ -5021,6 +5070,19 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		skipFirmwareUpdate = *req.SkipFirmwareUpdate
 	}
 	pairedDuringThemeInstall := false
+	var cableInstall *themeinstall.CableInstallOptions
+	if cableMode {
+		port, hello, cableErr := s.cableControlDevice(cfg)
+		if cableErr != nil {
+			return themeinstall.Result{}, cableErr
+		}
+		cableInstall = &themeinstall.CableInstallOptions{
+			Capabilities: protocol.CapabilitiesFromHello(hello),
+			Upload: func(ctx context.Context, devicePath string, payload []byte, activation string) error {
+				return s.transferCableAsset(ctx, port, hello.DeviceID, cfg.DeviceToken, devicePath, activation, payload)
+			},
+		}
+	}
 	deviceInstallStartedAt := time.Now()
 	result, err := s.installTheme(ctx, themeinstall.Options{
 		Slot:               req.Slot,
@@ -5035,6 +5097,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		Verbose:            true,
 		Out:                out,
 		HTTPClient:         s.client,
+		Cable:              cableInstall,
 		PairTokenStore: func(target, token string) error {
 			pairedDuringThemeInstall = true
 			target = normalizeTarget(target)
@@ -5060,6 +5123,10 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		} else {
 			fmt.Fprintln(out, "Preview cache: ready")
 		}
+	}
+	if cableMode {
+		resumeStream()
+		return result, nil
 	}
 	if !live {
 		// The live theme rendered throughout, so there is no new image to wait
@@ -5385,6 +5452,9 @@ func (s *Server) tryStartThemeInstall() string {
 	if s.updateHoldActive() {
 		return "mac_app_restarting"
 	}
+	if _, running := s.activeFirmwareUpdateJob(); running {
+		return "firmware_update_in_progress"
+	}
 	s.installJobsMu.Lock()
 	defer s.installJobsMu.Unlock()
 	if s.themeInstallActive {
@@ -5673,6 +5743,11 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 			s.pauseDisplayStream(true)
 			streamPaused = true
 		}
+		if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" && s.resetCableSender != nil {
+			// The updater is a child process. Release the parent's exclusive
+			// serial handle after pausing its writer so the child can open it.
+			s.resetCableSender()
+		}
 		resumeStream := func() {
 			if !streamPaused {
 				return
@@ -5693,6 +5768,22 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 
 		snapshot, _ := s.firmwareUpdateJobSnapshot(jobID)
 		shouldVerify := err == nil || (snapshot.Result != nil && snapshot.Result.UploadAccepted)
+		if shouldVerify && runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
+			finishedAt := time.Now().UTC()
+			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
+				outcome := strings.TrimSpace(job.Outcome)
+				if outcome == "" {
+					outcome = "updated"
+				}
+				job.Phase = "complete"
+				job.Progress = 100
+				job.FinishedAt = &finishedAt
+				job.Outcome = outcome
+				job.Message = "Update complete."
+				appendFirmwareUpdateJobLog(job, "Update complete.")
+			})
+			return
+		}
 		if shouldVerify {
 			outcome, attentionMessage, verifyErr := s.verifyFirmwareUpdateResult(ctx, jobID, cfg)
 			if verifyErr == nil {
@@ -6486,6 +6577,13 @@ func firmwareUpdateErrorPayload(err error, retryPolicy string) apiError {
 			NextAction: "Disconnect VibeTV from power for 10 seconds, reconnect it, and wait until the picture returns before trying again.",
 		}
 	}
+	if strings.TrimSpace(retryPolicy) == "reconnect_cable" {
+		return apiError{
+			Code:       "firmware_update_cable_interrupted",
+			Message:    "Cable update was interrupted.",
+			NextAction: "Reconnect VibeTV with a data-capable Cable, wait for it to start, then try the update once.",
+		}
+	}
 	return apiError{
 		Code:       "firmware_update_failed",
 		Message:    "VibeTV update failed.",
@@ -6589,6 +6687,9 @@ func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfi
 		return err
 	}
 	target := publicTarget(cfg.DeviceTarget)
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
+		target = cableDeviceTarget
+	}
 	if target == "" {
 		return errors.New("device target is empty")
 	}
@@ -6675,6 +6776,9 @@ func (s *Server) requireThemeInstallPreflight(w http.ResponseWriter, r *http.Req
 			"Update VibeTV firmware or use a device that supports ThemeSpec v1.",
 		)
 		return false
+	}
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
+		return true
 	}
 
 	if _, err := s.getHealth(r.Context(), cfg.DeviceTarget, cfg.DeviceToken); err != nil {

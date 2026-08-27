@@ -38,6 +38,35 @@ the frame parser.
 - `set-connection-mode` and `confirm-connection-mode` start and confirm the
   bounded mode transactions defined in the hardware contract.
 
+### Cable bulk transfer v1
+
+Assets, stored ThemeSpecs, screensavers and firmware use one stop-and-wait
+transfer on the same newline-delimited control stream. Only one transfer and
+one 128-byte candidate chunk may be in flight. The final chunk may be shorter.
+The exact production chunk size remains gated on the direct-Mac and dock-path
+hardware measurements required by #302.
+
+1. `transfer-start` carries the expected `deviceId`, pairing `token`, sink
+   (`asset` or `firmware`), byte count, whole-payload MD5 hash and, for assets,
+   the destination path plus optional `activate` value (`theme` or
+   `screensaver`). The device answers `status:"ready",next:0` only after the
+   inactive sink is open.
+2. Each `transfer-chunk` carries its zero-based `seq`, lowercase hex payload
+   and the first eight hex characters of that chunk's MD5. The device validates
+   the checksum before writing, then answers `status:"chunk",next:N` only after
+   the sink write returns. A duplicate of the last acknowledged sequence and
+   checksum is acknowledged without a second write.
+3. `transfer-finish` succeeds only when the byte count and complete MD5 match.
+   Assets are atomically promoted before optional activation; firmware calls
+   `Update.end()` only after the match. `transfer-abort`, a write error or the
+   15-second inactivity bound discards the temporary asset or ends the inactive
+   firmware update without changing the bootable image.
+
+Transfer JSON is consumed before the normal frame parser. Firmware never logs
+the pairing token or payload bytes, and transfer replies are JSON objects with
+`kind:"transfer"`; ordinary debug lines remain non-JSON and are ignored by the
+Mac transfer reader.
+
 ## Host -> Device Frame
 
 Usage frame (v1 or v2, negotiated):
@@ -242,7 +271,9 @@ Standby behavior:
 Pairing/auth:
 - Firmware `1.0.39` accepts every local-WiFi `/api/pair` request and immediately replaces the previous token. It has no physical pairing gesture or pairing window.
 - Firmware `1.0.38` remains compatible with its legacy first-pair and three-power-cycle 30-minute recovery window.
-- Protected write APIs require `X-VibeTV-Token: <token>` or the documented query fallback used by native tooling and raw OTA.
+- Protected WiFi write APIs require `X-VibeTV-Token: <token>`. The legacy RAW
+  compatibility sender is not a current WiFi API fallback; see
+  `docs/firmware-ota-contract.md`.
 - Protected write APIs include `POST /frame`, `POST /api/settings`, WiFi credential writes, `POST /assets`, `DELETE /assets`, `POST /theme/active`, `POST /screensaver/active`, and firmware/filesystem OTA upload paths. OTA upload always requires a configured device and its current token.
 - Read APIs such as `GET /hello`, `GET /health`, and `GET /assets` stay open for diagnostics.
 - The unauthenticated device page never renders the pairing token. Firmware `1.0.39` WiFi `/hello` reports `capabilities.auth.paired` and `tokenHeader`; legacy firmware may additionally report pairing-window fields. No firmware reports the token value.

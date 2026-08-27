@@ -119,6 +119,13 @@ release-gated ESP8266 build and native suites, but was not flashed to hardware;
 real-screen rehearsal still requires a separate current hardware-write
 approval.
 
+The local #302 Cable-transfer development build uses 476,023 bytes flash and
+46,832 bytes RAM; its 480,176-byte `firmware.bin` is below the 482,000-byte
+image limit. It has not been flashed. The 128-byte Cable chunk is a candidate,
+not a hardware-proven production limit: direct-Mac and dock measurements still
+must cover maximum theme, screensaver, and firmware transfers, unplug/timeout
+recovery, and transfer timing before #302 can close.
+
 ## Cutover Migration Contract
 
 The connection-mode byte is appended to the existing `/s` record. Shorter
@@ -151,9 +158,10 @@ own bounded chunks, acknowledgements, retry boundary, and whole-payload hash.
 
 The ESP8266 UART has no flow control. Six back-to-back frames overflowed the
 current receive path while six frames spaced by 100 ms passed. Normal runtime
-frames therefore remain paced; #302's bulk protocol must use bounded
-stop-and-wait chunks and acknowledgements rather than copying an HTTP chunk
-size onto serial.
+frames therefore remain paced. #302 now uses one 128-byte candidate chunk at a
+time, with a device acknowledgement after its MD5 prefix is verified and the
+chunk is written; the final full-payload MD5 gates commit. That implementation
+still needs the direct-Mac and dock measurement gate above.
 
 The full Cable hello on the branch firmware is 1,161 bytes including newline.
 After opening the CH340 behind the D6000 dock, the first requested hello took
@@ -193,20 +201,24 @@ black hole. Support guidance for a stalling first update: power-cycle the
 VibeTV immediately before retrying (a fresh association starts without
 aggregation state).
 
-Forcing 11g removes the A-MSDU black hole, but it is not the only OTA stall
-mechanism. A rarer RAW-OTA acknowledgement stall still occurs intermittently
-even on 11g with healthy heap (roughly one leg in 5–10; the receive window
-closes at a 1024-byte block boundary, most likely while the ESP8266 erases a
-flash sector). This is the case the paced RAW upload and the "restart before
-another firmware upload" recovery below exist for: power-cycle and retry once.
+Forcing 11g removes the A-MSDU black hole, but it is not the only historical
+OTA stall mechanism. A rarer legacy RAW-OTA acknowledgement stall occurred
+intermittently even on 11g with healthy heap (roughly one leg in 5–10; the
+receive window closed at a 1024-byte block boundary, most likely while the
+ESP8266 erased a flash sector). The paced RAW bridge and the "restart before
+another firmware upload" recovery below apply only while upgrading installed
+1.0.36 devices.
 `scripts/vibetv-hw-selftest.sh` performs that recovery after the operator
 approves it on the terminal (a failed hardware write is never retried
 unattended).
 
-### RAW OTA sender pacing: always paced, and never concurrent
+### Legacy RAW OTA sender pacing: compatibility evidence
 
-The RAW OTA sender keeps a 10 ms pause between 64-byte chunks for **every**
-firmware version, and waits for a block acknowledgement every 1024 bytes.
+The Mac keeps the RAW sender only to bridge installed 1.0.36 devices. That
+legacy sender keeps a 10 ms pause between 64-byte chunks and waits for a block
+acknowledgement every 1024 bytes. Current firmware no longer runs the duplicate
+RAW receiver on TCP port 8081: WiFi receives multipart updates, Cable receives
+the serial bulk protocol.
 
 The pause used to be skipped for released firmware >= 1.0.37, on the assumption
 that the receiver fix in that version made it unnecessary. Measured on
@@ -227,9 +239,9 @@ runtime was still polling: 0/1.
 
 Two independent requirements follow, and both are needed:
 
-1. **Pace every upload.** No firmware version is exempt. Locked by
+1. **Pace every legacy RAW upload.** No compatibility upload is exempt. Locked by
    `TestFirmwareRawWritePauseIsConservativeForEveryFirmware`, `DO NOT weaken`.
-2. **Quiesce every other writer first.** A paced upload still stalls if anything
+2. **Quiesce every other writer first.** A paced legacy upload still stalls if anything
    else is holding a connection to the device. Nothing may talk to port 80 while
    firmware bytes are on port 8081 -- not health polls, not display frames.
 
@@ -313,7 +325,7 @@ unexplained transport error instead of an authentication failure.
 - Connected devices expose their current IP in `/hello` discovery, show `WiFi connected!` plus `app.vibetv.shop`, serve the local setup hub on that IP, and wait for the Mac App.
 - Connected devices expose read-only status on their current IP. Customer-facing writes are performed by the authenticated Control Center.
 - `POST /api/settings` accepts form field `b` as a brightness percentage and updates supported settings without reflashing firmware. Include `api=1` for a JSON/CORS response; omit it for the built-in IP-based form redirect. `GET /health` is the readback and support-diagnostics path.
-- Starting with firmware `1.0.39`, connected devices accept an explicit local-WiFi `POST /api/pair` without the previous token; the latest Mac wins. Other write APIs require `X-VibeTV-Token` or the native-tool/raw-OTA query fallback. Read-only diagnostics (`/hello`, `/health`, `GET /assets`) remain open.
+- Starting with firmware `1.0.39`, connected devices accept an explicit local-WiFi `POST /api/pair` without the previous token; the latest Mac wins. Other WiFi write APIs require `X-VibeTV-Token`. Read-only diagnostics (`/hello`, `/health`, `GET /assets`) remain open.
 - Firmware and filesystem uploads always require the current pairing token,
   including on fresh devices and while `VibeTV-Setup` is active. The public
   `/update` page never embeds that token or exposes a direct upload form.

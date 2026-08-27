@@ -482,6 +482,8 @@ type mockSerialPort struct {
 	mu sync.Mutex
 
 	readQueue     [][]byte
+	readCalls     int
+	readHook      func(int)
 	writeCalls    int
 	writePayloads [][]byte
 	writeErr      error
@@ -495,13 +497,27 @@ func newMockSerialPort() *mockSerialPort {
 
 func (m *mockSerialPort) Read(p []byte) (int, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.readCalls++
+	readCall := m.readCalls
+	hook := m.readHook
 	if len(m.readQueue) == 0 {
+		m.mu.Unlock()
+		if hook != nil {
+			hook(readCall)
+		}
 		return 0, io.EOF
 	}
 	next := m.readQueue[0]
-	m.readQueue = m.readQueue[1:]
 	n := copy(p, next)
+	if n == len(next) {
+		m.readQueue = m.readQueue[1:]
+	} else {
+		m.readQueue[0] = next[n:]
+	}
+	m.mu.Unlock()
+	if hook != nil {
+		hook(readCall)
+	}
 	return n, nil
 }
 

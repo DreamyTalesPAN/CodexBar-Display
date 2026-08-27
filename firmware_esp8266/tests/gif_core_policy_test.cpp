@@ -316,13 +316,31 @@ bool testNetworkWorkPrecedesWifiRecovery(const char* mainPath) {
   }
   const std::string loop = mainSource.substr(loopStart);
   const std::size_t http = loop.find("webServer.handleClient();");
-  const std::size_t rawOta = loop.find("handleRawOtaClient();");
   const std::size_t recovery = loop.find("maintainWifiConnection();");
   return expect(
-      http != std::string::npos && rawOta != std::string::npos && recovery != std::string::npos &&
-          http < recovery && rawOta < recovery && countOccurrences(loop, "webServer.handleClient();") == 1 &&
-          countOccurrences(loop, "handleRawOtaClient();") == 1,
-      "setup HTTP and raw OTA work must run once before WiFi recovery decides busy state");
+      http != std::string::npos && recovery != std::string::npos &&
+          http < recovery && countOccurrences(loop, "webServer.handleClient();") == 1 &&
+          loop.find("handleRawOtaClient();") == std::string::npos,
+      "setup HTTP work must run once before WiFi recovery and duplicate raw OTA must stay removed");
+}
+
+bool testCableTransferOwnsSerialParserUntilCompletion(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t start = mainSource.find("void handleSerialInput()");
+  const std::size_t end = mainSource.find("bool isSafeAssetPath", start);
+  if (!expect(
+          start != std::string::npos && end != std::string::npos,
+          "serial input handler must remain discoverable")) {
+    return false;
+  }
+  const std::string body = mainSource.substr(start, end - start);
+  const std::size_t control = body.find("handleSerialControlLine(line)");
+  const std::size_t active = body.find("cableTransfer.flow.active");
+  const std::size_t frame = body.find("ConsumeFrameLine(");
+  return expect(
+      control != std::string::npos && active != std::string::npos &&
+          frame != std::string::npos && control < active && active < frame,
+      "transfer control must be consumed before normal frames and an active transfer must block the frame parser");
 }
 
 bool testWifiRecoveryFirmwareWiring(const char* mainPath) {
@@ -372,20 +390,20 @@ bool testWifiRecoveryFirmwareWiring(const char* mainPath) {
 
 bool testUploadMutualExclusionPolicy(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
-  const std::size_t rawStart = mainSource.find("void handleRawOtaClient()");
-  const std::size_t rawAccept = mainSource.find("WiFiClient client = rawOtaServer.accept();", rawStart);
+  const std::size_t cableStart = mainSource.find("bool startCableTransfer(");
+  const std::size_t cableEnd = mainSource.find("bool writeCableTransferChunk(", cableStart);
   const std::size_t assetStart = mainSource.find("void handleAssetUpload()");
   const std::size_t assetEnd = mainSource.find("void handleAssetUploadResult()", assetStart);
   const std::size_t otaStart = mainSource.find("void handleOtaUpload(int command, const char* target)");
   const std::size_t otaEnd = mainSource.find("void scheduleReboot(", otaStart);
   if (!expect(
-          rawStart != std::string::npos && rawAccept != std::string::npos && assetStart != std::string::npos &&
+          cableStart != std::string::npos && cableEnd != std::string::npos && assetStart != std::string::npos &&
               assetEnd != std::string::npos && otaStart != std::string::npos && otaEnd != std::string::npos,
           "all upload handlers must remain discoverable")) {
     return false;
   }
 
-  const std::string rawGuard = mainSource.substr(rawStart, rawAccept - rawStart);
+  const std::string cableHandler = mainSource.substr(cableStart, cableEnd - cableStart);
   const std::string assetHandler = mainSource.substr(assetStart, assetEnd - assetStart);
   const std::string otaHandler = mainSource.substr(otaStart, otaEnd - otaStart);
   const std::size_t assetStartEvent = assetHandler.find("if (upload.status == UPLOAD_FILE_START)");
@@ -397,13 +415,13 @@ bool testUploadMutualExclusionPolicy(const char* mainPath) {
       otaHandler.find("if (assetUploadInProgress || otaUploadInProgress || rebootPending)", otaStartEvent);
   const std::size_t otaSafeMode = otaHandler.find("enterOtaSafeMode(", otaStartEvent);
   return expect(
-      rawGuard.find("assetUploadInProgress") != std::string::npos &&
-          rawGuard.find("otaUploadInProgress") != std::string::npos &&
-          rawGuard.find("rebootPending") != std::string::npos && assetStartEvent != std::string::npos &&
+      cableHandler.find("assetUploadInProgress") != std::string::npos &&
+          cableHandler.find("otaUploadInProgress") != std::string::npos &&
+          cableHandler.find("rebootPending") != std::string::npos && assetStartEvent != std::string::npos &&
           assetBusy != std::string::npos && assetSafeMode != std::string::npos && assetBusy < assetSafeMode &&
           otaStartEvent != std::string::npos && otaBusy != std::string::npos && otaSafeMode != std::string::npos &&
           otaBusy < otaSafeMode,
-      "raw OTA and HTTP asset/filesystem/firmware uploads must exclude each other before safe mode");
+      "Cable and HTTP asset/filesystem/firmware uploads must exclude each other before safe mode");
 }
 
 bool testCaptiveFirstResponseNeverBlocksOnWifiScan(const char* mainPath) {
@@ -514,33 +532,34 @@ bool testWifiSavePreservesDeviceStateAndRetiresStaleSdkCredentials(const char* m
 
 bool testRegisteredOtaEndpointsMatchAuthenticatedPolicy(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
-  const std::size_t pageStart = mainSource.find("String updatePageHTML()");
-  const std::size_t pageEnd = mainSource.find("void handleUpdatePage()", pageStart);
+  const std::size_t pageStart = mainSource.find("void handleUpdatePage()");
+  const std::size_t pageEnd = mainSource.find("void setOtaError(", pageStart);
   const std::size_t multipart = mainSource.find("void handleOtaUpload(");
   const std::size_t multipartEnd = mainSource.find("void scheduleReboot(", multipart);
   const std::size_t multipartAuth = mainSource.find("requestHasValidOtaAuth()", multipart);
   const std::size_t multipartBegin = mainSource.find("Update.begin(", multipart);
-  const std::size_t raw = mainSource.find("void handleRawOtaClient()");
-  const std::size_t rawEnd = mainSource.find("void handleFrame()", raw);
-  const std::size_t rawAuth = mainSource.find("WifiSecurityPolicy::AllowsFirmwareUpload", raw);
-  const std::size_t rawBegin = mainSource.find("Update.begin(", raw);
+  const std::size_t cable = mainSource.find("bool startCableTransfer(");
+  const std::size_t cableEnd = mainSource.find("bool writeCableTransferChunk(", cable);
+  const std::size_t cableAuth = mainSource.find("deviceAuthConfigured()", cable);
+  const std::size_t cableBegin = mainSource.find("Update.begin(", cable);
   const std::size_t server = mainSource.find("void startHttpServer()");
   if (pageStart == std::string::npos || pageEnd == std::string::npos ||
       multipart == std::string::npos || multipartEnd == std::string::npos ||
-      raw == std::string::npos || rawEnd == std::string::npos || server == std::string::npos) {
+      cable == std::string::npos || cableEnd == std::string::npos || server == std::string::npos) {
     return false;
   }
   const std::string page = mainSource.substr(pageStart, pageEnd - pageStart);
   const std::string registrations = mainSource.substr(server);
   return expect(
       multipartAuth > multipart && multipartAuth < multipartBegin && multipartBegin < multipartEnd &&
-          rawAuth > raw && rawAuth < rawBegin && rawBegin < rawEnd &&
+          cableAuth > cable && cableAuth < cableBegin && cableBegin < cableEnd &&
           registrations.find("webServer.on(\"/update\", HTTP_GET, handleUpdatePage)") != std::string::npos &&
           registrations.find("\"/update/firmware\"") != std::string::npos &&
           registrations.find("handleOtaUpload(U_FLASH, \"firmware\")") != std::string::npos &&
           registrations.find("\"/update/filesystem\"") != std::string::npos &&
           registrations.find("handleOtaUpload(U_FS, \"filesystem\")") != std::string::npos &&
-          registrations.find("raw_ota_server_started port=8081 path=/update/firmware.raw") != std::string::npos &&
+          mainSource.find("raw_ota_server_started") == std::string::npos &&
+          mainSource.find("handleRawOtaClient") == std::string::npos &&
           page.find("deviceAuthToken") == std::string::npos &&
           page.find("tokenQuery") == std::string::npos &&
           page.find("Manual upload") == std::string::npos &&
@@ -1020,6 +1039,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testNetworkWorkPrecedesWifiRecovery(argv[3])) {
+    return 1;
+  }
+  if (!testCableTransferOwnsSerialParserUntilCompletion(argv[3])) {
     return 1;
   }
   if (!testWifiRecoveryFirmwareWiring(argv[3])) {

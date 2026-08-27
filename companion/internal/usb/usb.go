@@ -1,6 +1,7 @@
 package usb
 
 import (
+	"context"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
@@ -97,6 +98,14 @@ func WriteSettings(port, deviceID string, patch protocol.DeviceSettingsPatch) (p
 
 func ConfigureWiFi(port, deviceID, ssid, password string) error {
 	return defaultSender.ConfigureWiFi(port, deviceID, ssid, password)
+}
+
+func TransferAsset(ctx context.Context, port, deviceID, token, destination, activation string, payload []byte) error {
+	return defaultSender.Transfer(ctx, port, deviceID, token, TransferSinkAsset, destination, activation, payload)
+}
+
+func TransferFirmware(ctx context.Context, port, deviceID, token string, payload []byte) error {
+	return defaultSender.Transfer(ctx, port, deviceID, token, TransferSinkFirmware, "", "", payload)
 }
 
 func CloseDefaultSender() {

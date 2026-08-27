@@ -8,7 +8,7 @@ handlers.
 
 - The radio must run 802.11g (`docs/hardware-contract.md`, "WiFi PHY mode").
   Under 802.11n the AP can aggregate frames the ESP8266 silently drops, which
-  stalls the RAW OTA at the TCP level while `/hello` still answers. Devices on
+  stalls a WiFi firmware upload at the TCP level while `/hello` still answers. Devices on
   firmware `< 1.0.40` still run 11n, so their first update can hit this; a
   power cycle immediately before the update starts a fresh, unaggregated
   association. Run `codexbar-display net-probe --target http://<ip>` when an
@@ -23,9 +23,11 @@ handlers.
 - Treat device URL, `deviceId`, and pairing token as one identity tuple. When a
   target changes, update all three together; never reuse an unverified token
   from the previous target.
-- Validate the selected token with an authenticated `GET /hello` against the
-  pinned device before opening the RAW OTA connection. A `401`/`403` must repair
-  pairing and repeat identity validation before any firmware body is sent.
+- On WiFi, validate the selected token with an authenticated `GET /hello`
+  against the pinned device before opening the multipart upload. A `401`/`403`
+  must repair pairing and repeat identity validation before any firmware body is
+  sent. On Cable, validate the same `deviceId` in the serial hello before the
+  authenticated transfer starts.
 - Validate the selected manifest artifact and SHA-256 before opening the OTA
   connection.
 - Pause the display stream for the complete upload. The Control Center uses its
@@ -33,8 +35,8 @@ handlers.
   display-stream launch service.
 - Do not run discovery, health polling, frame writes, theme installs, or asset
   uploads while firmware bytes are being sent.
-- A failed upload is never followed by a different transport or a second upload
-  in the same device boot once firmware bytes may have been sent.
+- A failed upload is never retried or moved to a different transport in the
+  same device boot once firmware bytes may have been sent.
 - A successful update is complete only after the same `deviceId` returns with
   the target firmware and healthy rendering.
 
@@ -54,10 +56,23 @@ device. Manifest SHA-256 validation therefore remains a sender-side release
 check, while the current pairing token is the mandatory receiver-side upload
 authorization. Open pairing never authorizes a firmware upload directly.
 
-## Firmware 1.0.36 compatibility transport
+## Current transports
+
+- **WiFi:** authenticated multipart `POST /update/firmware` is the current
+  firmware receiver path.
+- **Cable:** the newline-delimited serial bulk-transfer protocol in
+  `protocol/PROTOCOL.md` is the current Cable path. It is stop-and-wait, uses a
+  128-byte candidate chunk, validates a per-chunk MD5 prefix and a complete MD5,
+  and commits firmware only after `transfer-finish` verifies the full payload.
+- **Installed firmware 1.0.36 only:** the Mac keeps the legacy RAW sender below
+  as a bridge to a receiver that predates the current multipart path. Current
+  firmware no longer starts a duplicate RAW receiver on TCP port `8081`.
+
+## Legacy 1.0.36 RAW compatibility sender
 
 Firmware `1.0.36` has a fragile ESP8266 receive path. The supported bridge to
-`1.0.37` is the RAW HTTP endpoint on TCP port `8081`:
+`1.0.37` remains the Mac's RAW HTTP sender to the old device receiver on TCP
+port `8081`:
 
 - request: `POST /update/firmware.raw`
 - body: exact firmware binary with an explicit `Content-Length`
@@ -70,12 +85,13 @@ Firmware `1.0.36` has a fragile ESP8266 receive path. The supported bridge to
 - acknowledgment timeout: `30 s`
 - total connection deadline: `5 min`
 
-These values are a compatibility requirement, not a performance preference.
-Do not increase them without repeating the `1.0.36 -> 1.0.37` hardware gate.
+These historical values are a legacy-device compatibility requirement, not a
+preference for current firmware. Do not increase them without repeating the
+`1.0.36 -> 1.0.37` hardware gate.
 
-The `10 ms` body-write pacing applies to every firmware version, not only to
-`1.0.36`. The sender briefly had an unpaced fast path for released firmware
-`>= 1.0.37`; it was removed after hardware measurement (2026-08-07,
+The sender's `10 ms` body-write pacing applies when the legacy RAW bridge is
+used. The sender briefly had an unpaced fast path for released firmware
+`>= 1.0.37`; it was removed after historical hardware measurement (2026-08-07,
 esp8266-smalltv-st7789, firmware 1.0.39):
 
 | RAW upload mode | Concurrent device traffic | Installed |
@@ -84,44 +100,50 @@ esp8266-smalltv-st7789, firmware 1.0.39):
 | paced (10 ms) | none | 2/2 |
 | paced (10 ms) | Mac App runtime polling port 80 | 0/1 |
 
-Rule: `10 ms` pacing for all firmware versions, fast path removed. Pacing is
-necessary but only sufficient when no other client is talking to the device,
-which is why every writer must be quiesced before the upload starts.
+Rule for the legacy bridge: `10 ms` pacing, no fast path. Pacing is necessary
+but only sufficient when no other client is talking to the device, which is why
+every writer must be quiesced before the upload starts.
 
-Multipart is allowed only when the RAW endpoint is provably unavailable before
-an upload starts, for example `connection refused`, `no route to host`, or an
-HTTP `404`. A timeout is not proof that no firmware bytes reached the device.
+RAW is not a current-firmware fallback. The updater selects it only for the
+known installed `1.0.36` compatibility case; otherwise WiFi uses multipart and
+Cable uses the serial bulk transfer.
 
 ## Failure and retry state machine
 
-1. A connection refusal before RAW is available may fall back to multipart.
-2. An authentication rejection during the mandatory preflight repairs pairing
-   and repeats authenticated identity validation before opening RAW OTA.
-3. A broken pipe, reset, EOF, or other interrupted RAW upload first waits for
+1. An authentication rejection during the mandatory preflight repairs pairing
+   and repeats authenticated identity validation before opening the selected
+   upload path.
+2. A broken pipe, reset, EOF, or other interrupted legacy RAW upload first waits for
    the target version to return. This covers a successful flash whose response
    was lost.
-4. If the same device returns on the old version, stop. Ask the customer to
+3. If the same device returns on the old version, stop. Ask the customer to
    disconnect power for 10 seconds and retry only after the picture returns.
-5. Never switch to multipart or automatically resend in the same boot after an
-   interrupted RAW upload.
+4. Never automatically resend or switch transports in the same boot after an
+   interrupted upload.
 
 The firmware validates OTA authentication immediately after reading the request
 headers and closes the connection before `Update.begin()` when the token is
 wrong. A sender that reads the HTTP response only after writing the complete
 body can therefore surface the early `401` merely as `EPIPE`/`broken pipe`.
-This is why authenticated `/hello` is a required preflight rather than an
-upload-error recovery optimization.
+This is why authenticated identity validation is a required preflight rather
+than an upload-error recovery optimization.
 
-## Firmware receiver requirements from 1.0.37 onward
+## Current firmware receiver requirements
 
 - Release renderer, filesystem, UDP, and unrelated TCP resources before
-  `Update.begin()` while preserving the active OTA socket.
-- Reject an empty or oversized RAW body before entering update mode.
-- Use the exact RAW `Content-Length` as the update size.
+  `Update.begin()` while preserving the active multipart HTTP request or Cable
+  transfer state.
+- Reject an empty or oversized multipart body or Cable `transfer-start` byte
+  count before entering update mode.
+- For WiFi, begin with the board's bounded maximum update size and let the
+  multipart upload's actual firmware bytes determine the final image length.
+  For Cable, use the declared transfer byte count and do not call `Update.end()`
+  until the complete MD5 matches at `transfer-finish`.
 - Read only bytes currently available from the socket, in buffers no larger
   than `512` bytes. Do not block waiting to fill a larger buffer.
 - Reset the ESP8266 `Update` object on every failed begin, write, timeout,
-  disconnect, abort, or final validation.
+  disconnect, abort, or final validation. A Cable transfer inactivity timeout
+  is 15 seconds and must discard the inactive update.
 - After a failure that entered update mode, return the error and perform a
   controlled restart. Do not accept another OTA attempt in that boot.
 - Firmware `1.0.39` has no physical pairing recovery counter. Its legacy EEPROM
@@ -141,3 +163,12 @@ available production-representative device:
 5. Confirm health, rendering, WiFi credentials, and theme assets remain intact.
 
 Any unexplained failure resets the consecutive-run count.
+
+## #302 hardware gate
+
+The Cable bulk-transfer implementation is not release-proven yet. The current
+development ESP8266 build uses 46,832 bytes RAM, 476,023 bytes flash, and a
+480,176-byte `firmware.bin` (below the 482,000-byte image limit); it has not
+been flashed. #302 remains open until direct-Mac and dock measurements cover
+maximum theme, screensaver, and firmware transfers, unplug/timeout recovery,
+and timing for the final production chunk size.
