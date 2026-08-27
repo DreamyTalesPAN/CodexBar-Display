@@ -1604,16 +1604,25 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         connectionModeChoiceSubmitted.current = true;
         connectionModeChoiceResolved.current = true;
-        if (mode === "cable" && payload.device) {
+        const knownWiFiReselected =
+          mode === "wifi" && payload.device?.active === true;
+        if (payload.device?.active) {
           acceptDeviceSnapshot(payload.device);
         }
         addEvent({
-          label: mode === "cable" ? "Cable selected" : "WiFi setup started",
+          label:
+            mode === "cable"
+              ? "Cable selected"
+              : knownWiFiReselected
+                ? "WiFi selected"
+                : "WiFi setup started",
           detail:
             mode === "cable"
               ? "VibeTV is connected through the data Cable."
+              : knownWiFiReselected
+                ? "VibeTV reconnected through its saved WiFi connection."
               : "VibeTV is restarting into WiFi setup. Keep the Cable connected until the setup screen appears.",
-          tone: mode === "cable" ? "ready" : "unknown",
+          tone: mode === "cable" || knownWiFiReselected ? "ready" : "unknown",
         });
         return true;
       } catch (error) {

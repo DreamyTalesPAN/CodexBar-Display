@@ -648,6 +648,10 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testKnownWiFiReselectionDoesNotRequireCable(
+      browser,
+      appContext.appUrl,
+    );
     await testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
       browser,
       appContext.appUrl,
@@ -3426,6 +3430,41 @@ async function testWiFiRollbackReturnsToConnectionChoice(browser, appUrl) {
     .waitFor({ timeout: 12_000 });
   await page.getByRole("button", { name: "Use Cable" }).waitFor();
   await page.getByRole("button", { name: "Use WiFi" }).waitFor();
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testKnownWiFiReselectionDoesNotRequireCable(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const installRequests = [];
+  let connectionChoiceRequired = true;
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      connected: false,
+      capabilities: {
+        transport: { supported: ["usb", "wifi"] },
+      },
+    },
+    onConnectionMode: (mode) => {
+      if (mode !== "wifi") return undefined;
+      connectionChoiceRequired = false;
+      return companionDevice;
+    },
+    onStatusConnectionModeChoiceRequired: () => connectionChoiceRequired,
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("heading", { name: "Choose how VibeTV connects" })
+    .waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Use WiFi" }).click();
+  await getNavigationButton(page, "Overview");
+  assert(
+    (await page
+      .getByRole("heading", { name: "Connect VibeTV to WiFi" })
+      .count()) === 0,
+    "Authenticated known WiFi reselection must not show Cable-based WiFi setup instructions",
+  );
   assertNoInstallRequests(installRequests);
   await page.close();
 }
@@ -9251,14 +9290,17 @@ async function routeCompanionOnline(
     }
     if (pathname === "/v1/setup/connection-mode") {
       const request = parseJSON(route.request().postData() || "") || {};
-      onConnectionMode(request.mode);
+      const selectedDevice = onConnectionMode(request.mode);
+      if (selectedDevice) currentDevice = selectedDevice;
       await route.fulfill({
-        status: request.mode === "wifi" ? 202 : 200,
+        status: request.mode === "wifi" && !selectedDevice ? 202 : 200,
         contentType: "application/json",
         body: JSON.stringify({
           ok: true,
           mode: request.mode,
-          ...(request.mode === "cable" ? { device: currentDevice } : {}),
+          ...(request.mode === "cable" || selectedDevice
+            ? { device: currentDevice }
+            : {}),
         }),
       });
       return;

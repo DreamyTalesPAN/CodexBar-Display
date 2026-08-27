@@ -2008,3 +2008,17 @@ issue scope, or release permission never implies UI permission.
   neither card gains a filled primary-color background.
 - Approved files: `control-center-app.tsx`,
   `scripts/test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-27 — Known WiFi can be reselected without a data Cable
+
+- User approval: Continuation of the user's explicit instruction to fix every
+  automated review finding on PR #407 and repeat the review loop. This fixes a
+  dead end behind the already approved neutral WiFi card.
+- Approved customer-visible result: After `Run setup again`, choosing the
+  neutral `Use WiFi` card reconnects directly when exactly one saved VibeTV can
+  prove its identity with its stored token over WiFi. The Cable setup
+  instructions are not shown in that case. A fresh or ambiguous device still
+  requires the safe Cable setup path.
+- Approved files: `control-center-app.tsx`,
+  `scripts/test-customer-flows.mjs`, the Companion connection-mode endpoint and
+  tests, and this approval record.
