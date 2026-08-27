@@ -96,6 +96,31 @@ type DeviceHello struct {
 	Capabilities              CapabilityBlock `json:"capabilities,omitempty"`
 }
 
+// DeviceSettings is the shared settings payload returned by both the WiFi
+// HTTP API and the Cable control protocol.
+type DeviceSettings struct {
+	Display DeviceDisplaySettings  `json:"display"`
+	Standby *DeviceStandbySettings `json:"standby,omitempty"`
+}
+
+type DeviceDisplaySettings struct {
+	BrightnessPercent int `json:"brightnessPercent"`
+}
+
+type DeviceStandbySettings struct {
+	Enabled           bool    `json:"enabled"`
+	TimeoutMinutes    int     `json:"timeoutMinutes"`
+	BrightnessPercent int     `json:"brightnessPercent"`
+	ScreensaverPath   *string `json:"screensaverPath"`
+}
+
+// DeviceSettingsPatch keeps omitted fields distinct from explicit zero/empty
+// values so Cable and WiFi apply exactly the same partial-update semantics.
+type DeviceSettingsPatch struct {
+	BrightnessPercent *int                   `json:"brightnessPercent,omitempty"`
+	Standby           *DeviceStandbySettings `json:"standby,omitempty"`
+}
+
 func (h DeviceHello) Normalize() DeviceHello {
 	h.Kind = strings.TrimSpace(strings.ToLower(h.Kind))
 	h.Board = strings.TrimSpace(strings.ToLower(h.Board))

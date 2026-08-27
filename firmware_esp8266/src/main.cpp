@@ -1935,6 +1935,21 @@ void emitSerialStatus() {
   Serial.println(out);
 }
 
+struct DeviceSettingsPatch {
+  bool hasBrightness = false;
+  int brightnessPercent = 0;
+  bool hasStandbyEnabled = false;
+  bool standbyEnabled = false;
+  bool hasStandbyTimeout = false;
+  int standbyTimeoutMinutes = 0;
+  bool hasStandbyBrightness = false;
+  int standbyBrightnessPercent = 0;
+  bool hasScreensaverPath = false;
+  String screensaverPath;
+};
+
+bool applyDeviceSettingsPatch(const DeviceSettingsPatch& patch, String& error);
+
 bool handleSerialControlLine(const String& line) {
   JsonDocument doc;
   if (deserializeJson(doc, line)) {
@@ -1990,6 +2005,86 @@ bool handleSerialControlLine(const String& line) {
       out += device_settings::ConnectionModeName(deviceSettings.connectionMode);
       out += "\"}";
       Serial.println(out);
+    }
+  } else if (op == "settings") {
+    const String expectedDeviceID = String(doc["deviceId"] | "");
+    String error;
+    if (expectedDeviceID != deviceID) {
+      error = "deviceId does not match";
+    } else if (!doc["settings"].isNull()) {
+      const JsonVariantConst settings = doc["settings"];
+      DeviceSettingsPatch patch;
+      if (!settings["brightnessPercent"].isNull()) {
+        patch.hasBrightness = true;
+        patch.brightnessPercent = settings["brightnessPercent"].as<int>();
+      }
+      if (!settings["standby"].isNull()) {
+        const JsonVariantConst standbyPatch = settings["standby"];
+        if (!standbyPatch["enabled"].isNull()) {
+          patch.hasStandbyEnabled = true;
+          patch.standbyEnabled = standbyPatch["enabled"].as<bool>();
+        }
+        if (!standbyPatch["timeoutMinutes"].isNull()) {
+          patch.hasStandbyTimeout = true;
+          patch.standbyTimeoutMinutes = standbyPatch["timeoutMinutes"].as<int>();
+        }
+        if (!standbyPatch["brightnessPercent"].isNull()) {
+          patch.hasStandbyBrightness = true;
+          patch.standbyBrightnessPercent = standbyPatch["brightnessPercent"].as<int>();
+        }
+        if (!standbyPatch["screensaverPath"].isNull()) {
+          patch.hasScreensaverPath = true;
+          patch.screensaverPath = String(standbyPatch["screensaverPath"] | "");
+        }
+      }
+      applyDeviceSettingsPatch(patch, error);
+    }
+    if (error.length() > 0) {
+      String out = "{\"kind\":\"error\",\"code\":\"settings-rejected\",\"message\":\"";
+      out += jsonEscape(error);
+      out += "\"}";
+      Serial.println(out);
+    } else {
+      String out = "{\"kind\":\"settings\",\"deviceId\":\"";
+      out += deviceID;
+      out += "\",";
+      appendSettingsJSON(out);
+      out += "}";
+      Serial.println(out);
+    }
+  } else if (op == "configure-wifi") {
+    const String expectedDeviceID = String(doc["deviceId"] | "");
+    String ssid = String(doc["ssid"] | "");
+    const String password = String(doc["password"] | "");
+    ssid.trim();
+    String error;
+    const device_settings::ConnectionMode target =
+        device_settings::ConnectionMode::kWifi;
+    if (expectedDeviceID != deviceID) {
+      error = "deviceId does not match";
+    } else if (ssid.length() == 0) {
+      error = "WiFi name is required";
+    } else if (ssid.length() >= kWifiSsidBytes || password.length() >= kWifiPasswordBytes) {
+      error = "WiFi credentials are too long";
+    } else if (!device_settings::CanBeginConnectionTransition(
+                   deviceSettings.connectionMode, target)) {
+      error = "WiFi is not supported in the current connection mode";
+    } else if (!saveWifiCredentials(ssid, password)) {
+      error = "WiFi settings could not be saved";
+    } else if (!beginConnectionTransition(target, error)) {
+      // beginConnectionTransition supplies the customer-safe reason.
+    }
+    if (error.length() > 0) {
+      String out = "{\"kind\":\"error\",\"code\":\"wifi-configuration-rejected\",\"message\":\"";
+      out += jsonEscape(error);
+      out += "\"}";
+      Serial.println(out);
+    } else {
+      String out = "{\"kind\":\"connection-mode\",\"status\":\"switching\",\"deviceId\":\"";
+      out += deviceID;
+      out += "\",\"mode\":\"wifi\",\"confirmationRequired\":true}";
+      Serial.println(out);
+      scheduleReboot("wifi_credentials_saved");
     }
   } else {
     String out;
@@ -2294,45 +2389,73 @@ bool persistDeviceSettings(const DeviceSettings& next) {
   return true;
 }
 
+bool applyDeviceSettingsPatch(const DeviceSettingsPatch& patch, String& error) {
+  DeviceSettings next = deviceSettings;
+  bool changed = false;
+  if (patch.hasBrightness) {
+    next.brightnessPercent = clampBrightnessPercent(patch.brightnessPercent);
+    changed = true;
+  }
+  if (patch.hasStandbyEnabled) {
+    next.standby.enabled = patch.standbyEnabled;
+    changed = true;
+  }
+  if (patch.hasStandbyTimeout) {
+    next.standby.timeoutMinutes = standby::ClampTimeoutMinutes(patch.standbyTimeoutMinutes);
+    changed = true;
+  }
+  if (patch.hasStandbyBrightness) {
+    next.standby.brightnessPercent =
+        standby::ClampBrightnessPercent(patch.standbyBrightnessPercent);
+    changed = true;
+  }
+  if (patch.hasScreensaverPath) {
+    if (!setStandbyScreensaverPath(next.standby, patch.screensaverPath, error)) {
+      return false;
+    }
+    changed = true;
+  }
+  if (!changed) {
+    error = "no settings supplied";
+    return false;
+  }
+  if (!persistDeviceSettings(next)) {
+    error = "save failed";
+    return false;
+  }
+  return true;
+}
+
 void handleSettingsAPI() {
   addCorsHeaders();
   if (!requireWriteAuth()) {
     return;
   }
-  DeviceSettings next = deviceSettings;
   const bool apiResponse = webServer.hasArg("api");
-  bool changed = false;
+  DeviceSettingsPatch patch;
   if (webServer.hasArg("b")) {
-    next.brightnessPercent = clampBrightnessPercent(webServer.arg("b").toInt());
-    changed = true;
+    patch.hasBrightness = true;
+    patch.brightnessPercent = webServer.arg("b").toInt();
   }
   if (webServer.hasArg("sb")) {
-    next.standby.enabled = webServer.arg("sb").toInt() != 0;
-    changed = true;
+    patch.hasStandbyEnabled = true;
+    patch.standbyEnabled = webServer.arg("sb").toInt() != 0;
   }
   if (webServer.hasArg("st")) {
-    next.standby.timeoutMinutes = standby::ClampTimeoutMinutes(webServer.arg("st").toInt());
-    changed = true;
+    patch.hasStandbyTimeout = true;
+    patch.standbyTimeoutMinutes = webServer.arg("st").toInt();
   }
   if (webServer.hasArg("sbr")) {
-    next.standby.brightnessPercent =
-        standby::ClampBrightnessPercent(webServer.arg("sbr").toInt());
-    changed = true;
+    patch.hasStandbyBrightness = true;
+    patch.standbyBrightnessPercent = webServer.arg("sbr").toInt();
   }
   if (webServer.hasArg("ss")) {
-    String error;
-    if (!setStandbyScreensaverPath(next.standby, webServer.arg("ss"), error)) {
-      webServer.send(400, "text/plain; charset=utf-8", error);
-      return;
-    }
-    changed = true;
+    patch.hasScreensaverPath = true;
+    patch.screensaverPath = webServer.arg("ss");
   }
-  if (!changed) {
-    webServer.send(400, "text/plain; charset=utf-8", "bad");
-    return;
-  }
-  if (!persistDeviceSettings(next)) {
-    webServer.send(500, "text/plain; charset=utf-8", "save failed");
+  String error;
+  if (!applyDeviceSettingsPatch(patch, error)) {
+    webServer.send(error == "save failed" ? 500 : 400, "text/plain; charset=utf-8", error);
     return;
   }
   if (!apiResponse && webServer.hasArg("b")) {

@@ -54,7 +54,7 @@ func TestResolveVibeTVCandidatesAcceptsLilygoCableIdentity(t *testing.T) {
 	}
 }
 
-func TestResolveVibeTVCandidatesIgnoresForeignAndUnresponsivePorts(t *testing.T) {
+func TestResolveVibeTVCandidatesReportsAResponsiveForeignDevice(t *testing.T) {
 	ports := []string{"/dev/cu.usbserial-foreign", "/dev/cu.usbserial-offline"}
 	_, err := resolveVibeTVCandidates(
 		ports,
@@ -67,8 +67,8 @@ func TestResolveVibeTVCandidatesIgnoresForeignAndUnresponsivePorts(t *testing.T)
 			return protocol.DeviceHello{}, errors.New("no response")
 		},
 	)
-	if errcode.Of(err) != errcode.TransportNoMatchingDevice {
-		t.Fatalf("expected no matching device, got %v", err)
+	if errcode.Of(err) != errcode.TransportForeignDevice {
+		t.Fatalf("expected foreign serial device, got %v", err)
 	}
 }
 

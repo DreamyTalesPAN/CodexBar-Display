@@ -78,6 +78,15 @@ existing `VibeTV-Setup` portal open for a bounded ten-minute customer-entry
 window. Saving credentials reboots into the normal 60-second association and
 identity-confirmation window. A failed WiFi association or expired setup or
 confirmation window restores the previous mode and reboots once.
+
+The Mac App customer path uses the narrower serial `configure-wifi` request:
+it validates and stores the entered SSID/key through the same credential owner,
+then begins the existing Cable-to-WiFi transaction. The secret is never echoed
+or logged. WiFi-to-Cable starts on the active authenticated HTTP path, then the
+Companion resolves and confirms the same `deviceId` over Cable. Brightness and
+standby use one serial `settings` request in Cable mode and the existing HTTP
+settings endpoint in WiFi mode; both finish in the same firmware validation,
+persistence, apply, and complete readback owner.
 An incomplete power-loss write is discarded on boot when `/cm` does not match
 the mode in `/s`. `legacy-wifi-only` can never start a Cable transition.
 
@@ -102,6 +111,12 @@ That exact image was subsequently flashed at 115200 baud and passed the
 device-side hash check. A final live identity lookup without a supplied port
 resolved `/dev/cu.usbserial-11230`, protocol 2, and the expected board and
 theme limits.
+
+The local #395 customer-flow development build on 2026-08-27 uses 478,451 bytes
+flash and 47,328 bytes RAM and remains below the release gates. It passed the
+release-gated ESP8266 build and native suites, but was not flashed to hardware;
+real-screen rehearsal still requires a separate current hardware-write
+approval.
 
 ## Cutover Migration Contract
 

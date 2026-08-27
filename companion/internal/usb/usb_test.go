@@ -385,6 +385,69 @@ func TestSenderStartsWiFiConnectionModeTransition(t *testing.T) {
 	}
 }
 
+func TestSenderReadsAndWritesConfirmedCableSettings(t *testing.T) {
+	path := "/dev/mock"
+	port := newMockSerialPort()
+	readReply := []byte(`{"kind":"settings","deviceId":"14799300","settings":{"display":{"brightnessPercent":35},"standby":{"enabled":true,"timeoutMinutes":15,"brightnessPercent":10,"screensaverPath":"/themes/s/night-clock.json"}}}` + "\n")
+	writeReply := []byte(`{"kind":"settings","deviceId":"14799300","settings":{"display":{"brightnessPercent":60},"standby":{"enabled":true,"timeoutMinutes":15,"brightnessPercent":10,"screensaverPath":"/themes/s/night-clock.json"}}}` + "\n")
+	port.readQueue = [][]byte{
+		readReply[:100], readReply[100:],
+		writeReply[:100], writeReply[100:],
+	}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{path: port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+	defer sender.Close()
+
+	settings, err := sender.ReadSettings(path, "14799300")
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	if settings.Display.BrightnessPercent != 35 || settings.Standby == nil || settings.Standby.TimeoutMinutes != 15 {
+		t.Fatalf("unexpected settings: %+v", settings)
+	}
+	brightness := 60
+	settings, err = sender.WriteSettings(path, "14799300", protocol.DeviceSettingsPatch{BrightnessPercent: &brightness})
+	if err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+	if settings.Display.BrightnessPercent != 60 {
+		t.Fatalf("write did not return confirmed brightness: %+v", settings)
+	}
+	if len(port.writePayloads) != 2 {
+		t.Fatalf("expected two settings requests, got %#v", port.writePayloads)
+	}
+	if got := string(port.writePayloads[0]); got != `{"kind":"request","op":"settings","deviceId":"14799300"}`+"\n" {
+		t.Fatalf("unexpected read request %q", got)
+	}
+	if got := string(port.writePayloads[1]); got != `{"kind":"request","op":"settings","deviceId":"14799300","settings":{"brightnessPercent":60}}`+"\n" {
+		t.Fatalf("unexpected write request %q", got)
+	}
+}
+
+func TestSenderConfiguresWiFiWithoutLoggingOrReusingTheSecret(t *testing.T) {
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{[]byte(`{"kind":"connection-mode","status":"switching","deviceId":"14799300","mode":"wifi"}` + "\n")}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+
+	if err := sender.ConfigureWiFi("/dev/mock", "14799300", "Home WiFi", "secret pass"); err != nil {
+		t.Fatalf("configure WiFi: %v", err)
+	}
+	want := `{"kind":"request","op":"configure-wifi","deviceId":"14799300","ssid":"Home WiFi","password":"secret pass"}` + "\n"
+	if len(port.writePayloads) != 1 || string(port.writePayloads[0]) != want {
+		t.Fatalf("unexpected WiFi configuration request %#v", port.writePayloads)
+	}
+	if port.closeCalls != 1 {
+		t.Fatal("acknowledged WiFi switch must release the rebooting device port")
+	}
+}
+
 type mockOpener struct {
 	mu          sync.Mutex
 	portsByPath map[string]SerialPort

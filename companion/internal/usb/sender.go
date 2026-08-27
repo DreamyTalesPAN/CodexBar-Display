@@ -1,6 +1,7 @@
 package usb
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -319,6 +320,93 @@ func (s *Sender) SetConnectionMode(path, deviceID, mode string) error {
 	}
 	// The acknowledged switch schedules a reboot, so the old serial handle is
 	// no longer authoritative.
+	s.closeCurrentLocked()
+	return nil
+}
+
+func (s *Sender) ReadSettings(path, deviceID string) (protocol.DeviceSettings, error) {
+	return s.requestSettings(path, deviceID, nil)
+}
+
+func (s *Sender) WriteSettings(path, deviceID string, patch protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error) {
+	return s.requestSettings(path, deviceID, &patch)
+}
+
+func (s *Sender) requestSettings(path, deviceID string, patch *protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, err := s.ensurePort(path); err != nil {
+		return protocol.DeviceSettings{}, err
+	}
+	request := struct {
+		Kind     string                        `json:"kind"`
+		Op       string                        `json:"op"`
+		DeviceID string                        `json:"deviceId"`
+		Settings *protocol.DeviceSettingsPatch `json:"settings,omitempty"`
+	}{Kind: "request", Op: "settings", DeviceID: strings.TrimSpace(deviceID), Settings: patch}
+	line, err := json.Marshal(request)
+	if err != nil {
+		return protocol.DeviceSettings{}, err
+	}
+	line = append(line, '\n')
+	_ = s.port.ResetInputBuffer()
+	if err := writeWithTimeout(s.port, line, s.writeTimeout); err != nil {
+		s.closeCurrentLocked()
+		return protocol.DeviceSettings{}, wrapTransportError(
+			errcode.TransportSerialWrite,
+			"settings",
+			path,
+			"Keep the selected VibeTV connected by Cable and retry.",
+			err,
+		)
+	}
+	settings, err := readSettingsFromPort(s.port, s.helloWindow, deviceID)
+	if err != nil {
+		return protocol.DeviceSettings{}, fmt.Errorf("settings on %s: %w", path, err)
+	}
+	return settings, nil
+}
+
+func (s *Sender) ConfigureWiFi(path, deviceID, ssid, password string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, err := s.ensurePort(path); err != nil {
+		return err
+	}
+	request := struct {
+		Kind     string `json:"kind"`
+		Op       string `json:"op"`
+		DeviceID string `json:"deviceId"`
+		SSID     string `json:"ssid"`
+		Password string `json:"password"`
+	}{
+		Kind:     "request",
+		Op:       "configure-wifi",
+		DeviceID: strings.TrimSpace(deviceID),
+		SSID:     ssid,
+		Password: password,
+	}
+	line, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+	line = append(line, '\n')
+	_ = s.port.ResetInputBuffer()
+	if err := writeWithTimeout(s.port, line, s.writeTimeout); err != nil {
+		s.closeCurrentLocked()
+		return wrapTransportError(
+			errcode.TransportSerialWrite,
+			"configure-wifi",
+			path,
+			"Keep the selected VibeTV connected by Cable and retry.",
+			err,
+		)
+	}
+	if err := readConnectionModeSwitchFromPort(s.port, s.helloWindow, deviceID, "wifi"); err != nil {
+		return fmt.Errorf("configure WiFi on %s: %w", path, err)
+	}
 	s.closeCurrentLocked()
 	return nil
 }

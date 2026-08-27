@@ -83,6 +83,22 @@ func SetConnectionMode(port, deviceID, mode string) error {
 	return defaultSender.SetConnectionMode(port, deviceID, mode)
 }
 
+func ConfirmConnectionMode(port, deviceID string) error {
+	return defaultSender.ConfirmConnectionMode(port, deviceID)
+}
+
+func ReadSettings(port, deviceID string) (protocol.DeviceSettings, error) {
+	return defaultSender.ReadSettings(port, deviceID)
+}
+
+func WriteSettings(port, deviceID string, patch protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error) {
+	return defaultSender.WriteSettings(port, deviceID, patch)
+}
+
+func ConfigureWiFi(port, deviceID, ssid, password string) error {
+	return defaultSender.ConfigureWiFi(port, deviceID, ssid, password)
+}
+
 func CloseDefaultSender() {
 	defaultSender.Close()
 }
