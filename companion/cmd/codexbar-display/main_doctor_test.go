@@ -101,6 +101,27 @@ func TestDoctorLaunchAgentStateMustBeActive(t *testing.T) {
 	}
 }
 
+func TestHealthRuntimeOwnerUsesRunningBundledRuntime(t *testing.T) {
+	for _, want := range []string{
+		"shop.vibetv.control-center.runtime",
+		"shop.vibetv.control-center.preview-runtime",
+	} {
+		t.Run(want, func(t *testing.T) {
+			restoreDoctorTestDeps(t)
+			t.Setenv("HOME", t.TempDir())
+			doctorLaunchAgentPrintFn = func(label string) ([]byte, error) {
+				if label == want {
+					return []byte("state = running"), nil
+				}
+				return nil, os.ErrNotExist
+			}
+			if got := healthRuntimeOwner(); got != want {
+				t.Fatalf("health runtime owner=%q, expected %q", got, want)
+			}
+		})
+	}
+}
+
 func TestReadDoctorLegacyLaunchAgentPlistFallsBackToSystemPath(t *testing.T) {
 	home := "/Users/test"
 	systemPath := filepath.Join("/Library", "LaunchAgents", "com.codexbar-display.daemon.plist")
@@ -462,11 +483,13 @@ func restoreDoctorTestDeps(t *testing.T) {
 	readCableCapabilities := doctorReadCableCapabilitiesFn
 	readWiFiCapabilities := doctorReadWiFiCapabilitiesFn
 	checkCompanionHealth := doctorCheckCompanionHealthFn
+	launchAgentPrint := doctorLaunchAgentPrintFn
 	t.Cleanup(func() {
 		doctorListPortsFn = listPorts
 		doctorReadCableCapabilitiesFn = readCableCapabilities
 		doctorReadWiFiCapabilitiesFn = readWiFiCapabilities
 		doctorCheckCompanionHealthFn = checkCompanionHealth
+		doctorLaunchAgentPrintFn = launchAgentPrint
 	})
 }
 
