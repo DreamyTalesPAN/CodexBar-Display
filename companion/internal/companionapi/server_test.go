@@ -7253,6 +7253,10 @@ func TestSetupResetClearsActiveBindingAndPreservesAuthenticationProfiles(t *test
 		DeviceID:     "device-a",
 		KnownDevices: []runtimeconfig.KnownDevice{{DeviceID: "device-b", Target: "http://192.168.178.73", DeviceToken: "pair-token-b"}},
 	})
+	var pauseEvents []bool
+	server.pauseDisplayStream = func(paused bool) {
+		pauseEvents = append(pauseEvents, paused)
+	}
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil)
@@ -7294,6 +7298,9 @@ func TestSetupResetClearsActiveBindingAndPreservesAuthenticationProfiles(t *test
 	}
 	if !cfg.CableAutoBindDisabled {
 		t.Fatal("setup reset must prevent automatic Cable rebinding")
+	}
+	if !reflect.DeepEqual(pauseEvents, []bool{true, false}) {
+		t.Fatalf("setup reset did not serialize the write gate: %v", pauseEvents)
 	}
 }
 

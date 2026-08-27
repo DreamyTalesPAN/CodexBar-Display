@@ -694,6 +694,14 @@ func connectionModeChanged(deps runtimeDeps) bool {
 	return transport != "" && transport != deps.transportName
 }
 
+func cableWriteBlocked(deps runtimeDeps) bool {
+	if deps.transportName != "usb" {
+		return false
+	}
+	cfg, ok := loadRuntimeConfig(deps)
+	return ok && cfg.CableAutoBindDisabled
+}
+
 func requestedDeviceTarget(opts Options) string {
 	if normalizeTransportName(opts.Transport) == "wifi" {
 		if target := strings.TrimSpace(opts.Target); target != "" {
@@ -1513,6 +1521,11 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		if release := deps.beginDeviceWrite(); release != nil {
 			releaseDeviceWrite = release
 		}
+	}
+	if cableWriteBlocked(deps) {
+		releaseDeviceWrite()
+		deps.logf("runtime event=cable-frame-skipped reason=connection-choice-required\n")
+		return nil
 	}
 	sendErr := deps.sendLine(sendTarget, line)
 	releaseDeviceWrite()
