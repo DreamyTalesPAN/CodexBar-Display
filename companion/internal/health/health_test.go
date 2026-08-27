@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
 func TestParseLaunchctlStatus(t *testing.T) {
@@ -87,7 +89,7 @@ func TestRunWithDepsReportsWiFiLaunchAgentWithoutUSBPortError(t *testing.T) {
 </plist>`)
 
 	var output strings.Builder
-	resolvePortCalled := false
+	readCableStatusCalled := false
 	err := runWithDeps(context.Background(), deps{
 		stdout:  &output,
 		uid:     func() int { return 501 },
@@ -95,9 +97,9 @@ func TestRunWithDepsReportsWiFiLaunchAgentWithoutUSBPortError(t *testing.T) {
 		runCommand: func(context.Context, string, ...string) (string, error) {
 			return "state = running\npid = 54146", nil
 		},
-		resolvePort: func(string) (string, error) {
-			resolvePortCalled = true
-			return "", errors.New("no usb serial ports found")
+		readCableCapabilities: func() (protocol.DeviceCapabilities, error) {
+			readCableStatusCalled = true
+			return protocol.DeviceCapabilities{}, errors.New("no Cable status")
 		},
 		readFile: func(path string) ([]byte, error) {
 			switch path {
@@ -115,7 +117,7 @@ func TestRunWithDepsReportsWiFiLaunchAgentWithoutUSBPortError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runWithDeps returned error: %v", err)
 	}
-	if resolvePortCalled {
+	if readCableStatusCalled {
 		t.Fatalf("expected WiFi health to skip USB port resolution")
 	}
 
@@ -134,6 +136,45 @@ func TestRunWithDepsReportsWiFiLaunchAgentWithoutUSBPortError(t *testing.T) {
 		if strings.Contains(got, unwanted) {
 			t.Fatalf("expected output not to contain %q, got:\n%s", unwanted, got)
 		}
+	}
+}
+
+func TestRunWithDepsReadsCableIdentityFromRunningCompanion(t *testing.T) {
+	home := t.TempDir()
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	var output strings.Builder
+	err := runWithDeps(context.Background(), deps{
+		stdout:  &output,
+		uid:     func() int { return 501 },
+		homeDir: func() (string, error) { return home, nil },
+		runCommand: func(context.Context, string, ...string) (string, error) {
+			return "state = running\npid = 54146", nil
+		},
+		readCableCapabilities: func() (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				DeviceID:        "vibetv-cable",
+				Board:           "esp8266-smalltv-st7789",
+				Firmware:        "1.0.55",
+				ActiveTransport: "usb",
+				ConnectionMode:  "cable",
+			}, nil
+		},
+		readFile: func(path string) ([]byte, error) {
+			if path == plistPath {
+				return []byte(`<plist><dict><key>ProgramArguments</key><array><string>codexbar-display</string><string>daemon</string><string>--transport</string><string>usb</string></array></dict></plist>`), nil
+			}
+			return nil, errors.New("missing")
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := output.String()
+	if !strings.Contains(got, "Cable device: vibetv-cable board=esp8266-smalltv-st7789 firmware=1.0.55") {
+		t.Fatalf("running Companion identity missing from health output:\n%s", got)
+	}
+	if strings.Contains(got, "detected port") {
+		t.Fatalf("health still reports a separately opened serial port:\n%s", got)
 	}
 }
 

@@ -49,6 +49,12 @@ inline ConnectionMode ResolveInitialConnectionMode(
   return hasLegacyState ? ConnectionMode::kLegacyWifiOnly : ConnectionMode::kCable;
 }
 
+inline bool ShouldImportLegacySdkWifi(
+    ConnectionMode stored,
+    bool hasSavedWifi) {
+  return stored == ConnectionMode::kUnspecified && !hasSavedWifi;
+}
+
 inline bool UsesWifi(ConnectionMode mode) {
   return mode == ConnectionMode::kWifi || mode == ConnectionMode::kLegacyWifiOnly;
 }

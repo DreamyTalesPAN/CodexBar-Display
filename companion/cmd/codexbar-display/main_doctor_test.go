@@ -273,7 +273,7 @@ func TestDoctorCableReadsCapabilitiesFromRunningCompanion(t *testing.T) {
 	}))
 	defer companion.Close()
 
-	caps, err := readDoctorCableCapabilitiesOrigins(
+	caps, err := readLocalCableCapabilitiesOrigins(
 		[]string{companion.URL},
 		"shop.vibetv.control-center.runtime",
 	)
@@ -300,7 +300,7 @@ func TestDoctorCableRejectsDifferentCompanionOwner(t *testing.T) {
 	}))
 	defer companion.Close()
 
-	_, err := readDoctorCableCapabilitiesOrigins(
+	_, err := readLocalCableCapabilitiesOrigins(
 		[]string{companion.URL},
 		"shop.vibetv.control-center.runtime",
 	)
