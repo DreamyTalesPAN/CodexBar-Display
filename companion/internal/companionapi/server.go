@@ -3323,6 +3323,45 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		writeInternalError(w, err)
 		return
 	}
+	if mode == "wifi" && strings.TrimSpace(cfg.DeviceID) == "" && cfg.ConnectionModeChoiceRequired {
+		knownDevice, hello, found, authErr := s.authenticatedKnownWiFiDevice(r.Context(), cfg)
+		if authErr != nil {
+			writeError(w, http.StatusConflict, "multiple_devices_found", "Multiple known VibeTV devices are available on WiFi.", "Connect the VibeTV you want with a data Cable, then choose WiFi again.")
+			return
+		}
+		if found {
+			if err := s.confirmPendingWiFiTransition(r.Context(), knownDevice.Target, knownDevice.DeviceToken, knownDevice.DeviceID, hello); err != nil {
+				writeError(w, http.StatusBadGateway, "connection_mode_confirmation_failed", "VibeTV could not confirm its WiFi connection.", "Connect VibeTV with a data Cable, then choose WiFi again.")
+				return
+			}
+			supportedTransports := append([]string(nil), hello.Capabilities.Transport.Supported...)
+			cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
+				current.SetActiveDevice(knownDevice)
+				current.ConnectionMode = "wifi"
+				if len(supportedTransports) > 0 {
+					current.DeviceTransports = supportedTransports
+				}
+			})
+			if err != nil {
+				writeInternalError(w, err)
+				return
+			}
+			s.clearConfiguredDeviceState()
+			s.clearAmbiguousDeviceSelection()
+			if s.wakeDisplayStream != nil {
+				s.wakeDisplayStream()
+			}
+			device := s.withDisplayStream(r.Context(), knownDevice.Target, deviceFromHello(knownDevice.Target, knownDevice.DeviceToken, hello))
+			device.Active = true
+			writeJSON(w, http.StatusOK, struct {
+				OK             bool       `json:"ok"`
+				ConnectionMode string     `json:"connectionMode"`
+				Status         string     `json:"status"`
+				Device         deviceInfo `json:"device"`
+			}{OK: true, ConnectionMode: "wifi", Status: "selected", Device: device})
+			return
+		}
+	}
 	port, err := s.resolveCablePort("", strings.TrimSpace(cfg.DeviceID))
 	if err != nil {
 		writeError(w, http.StatusConflict, "cable_device_not_found", "No single Cable VibeTV could be selected.", "Connect exactly one VibeTV with a data-capable Cable, then try again.")
@@ -3430,6 +3469,41 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		Status         string     `json:"status"`
 		Device         deviceInfo `json:"device"`
 	}{OK: true, ConnectionMode: "cable", Status: "selected", Device: device})
+}
+
+func (s *Server) authenticatedKnownWiFiDevice(
+	ctx context.Context,
+	cfg runtimeconfig.Config,
+) (runtimeconfig.KnownDevice, protocol.DeviceHello, bool, error) {
+	var matched runtimeconfig.KnownDevice
+	var matchedHello protocol.DeviceHello
+	matchedTargets := []string{}
+	for _, known := range cfg.KnownDevices {
+		known.DeviceID = strings.TrimSpace(known.DeviceID)
+		known.Target = normalizeTarget(known.Target)
+		known.DeviceToken = strings.TrimSpace(known.DeviceToken)
+		if known.DeviceID == "" || known.Target == "" || known.DeviceToken == "" {
+			continue
+		}
+		hello, err := s.getHelloProbe(ctx, known.Target, known.DeviceToken, subnetProbeTime)
+		if err != nil {
+			continue
+		}
+		hello = hello.Normalize()
+		transport := hello.Capabilities.Transport
+		wifiActive := transport.Active == "wifi" || transport.Mode == "wifi" ||
+			transport.Mode == "legacy-wifi-only" || strings.EqualFold(hello.NetworkMode, "station")
+		if !wifiActive || !strings.EqualFold(known.DeviceID, hello.DeviceID) {
+			continue
+		}
+		matchedTargets = append(matchedTargets, known.Target)
+		matched = known
+		matchedHello = hello
+	}
+	if len(matchedTargets) > 1 {
+		return runtimeconfig.KnownDevice{}, protocol.DeviceHello{}, false, &multipleDevicesError{targets: matchedTargets}
+	}
+	return matched, matchedHello, len(matchedTargets) == 1, nil
 }
 
 func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {

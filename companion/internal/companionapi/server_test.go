@@ -7589,6 +7589,61 @@ func TestSetupResetPreservesSameDeviceAuthenticationThroughCableAndWiFiChoice(t 
 	}
 }
 
+func TestSetupResetReselectsAuthenticatedKnownWiFiWithoutCable(t *testing.T) {
+	const token = "pair-token"
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.Header.Get("X-VibeTV-Token"); got != token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"known-wifi","board":"esp8266-smalltv-st7789","firmware":"1.0.40","networkMode":"station","capabilities":{"transport":{"active":"wifi","mode":"wifi","supported":["usb","wifi"]}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "wifi",
+		DeviceID:       "known-wifi",
+		DeviceTarget:   device.URL,
+		DeviceToken:    token,
+	})
+	reset := httptest.NewRecorder()
+	server.Handler().ServeHTTP(reset, httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil))
+	if reset.Code != http.StatusOK {
+		t.Fatalf("reset status=%d body=%s", reset.Code, reset.Body.String())
+	}
+	server.resolveCablePort = func(string, string) (string, error) {
+		t.Fatal("authenticated WiFi reselection must not require a data Cable")
+		return "", errors.New("must not resolve Cable")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("WiFi status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "wifi" || cfg.DeviceID != "known-wifi" || cfg.DeviceTarget != device.URL || cfg.DeviceToken != token || cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("authenticated WiFi profile was not restored: %+v", cfg)
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Device.Active || !got.Device.Paired || !got.Device.Connected || got.Device.Target != device.URL {
+		t.Fatalf("authenticated WiFi response is not active: %+v", got.Device)
+	}
+}
+
 func TestSetupResetRejectsActiveFirmwareUpdate(t *testing.T) {
 	initial := runtimeconfig.Config{
 		DeviceTarget: "http://192.168.178.72",
