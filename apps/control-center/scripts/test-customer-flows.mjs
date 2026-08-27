@@ -5671,7 +5671,7 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
         providerId,
         providerId === "claude"
           ? "auth_required"
-          : codexProviderRetries <= 2
+          : codexProviderRetries <= 1
             ? "no_usage_available"
             : "ready",
       );
@@ -5708,7 +5708,7 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
   await waitForCondition(
     () =>
       requests.filter((request) => request.path === "/v1/providers/retry")
-        .length >= 4,
+        .length >= 2,
     `setup did not start exact checks for every enabled provider: ${JSON.stringify(requests)}`,
     30_000,
   );
@@ -5717,8 +5717,8 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
     `setup must check enabled providers one at a time, saw ${maxConcurrentProviderRetries} concurrent checks`,
   );
   assert(
-    codexProviderRetries === 3,
-    `setup must automatically retry a cold no-usage result twice, saw ${codexProviderRetries} Codex checks`,
+    codexProviderRetries === 1,
+    `startup must check each enabled provider exactly once without hidden retries, saw ${codexProviderRetries} Codex checks`,
   );
   try {
     await page.getByText("Sign-in needed").waitFor({ timeout: 10_000 });
@@ -5797,9 +5797,10 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
     ),
     "an Automatic save must remove provider IDs that are no longer in the inventory",
   );
+  await page.getByRole("button", { name: "Check again" }).last().click();
   await waitForCondition(
     async () => (await finish.count()) === 1 && !(await finish.isDisabled()),
-    "setup did not unlock after the broken provider was removed and disabled",
+    "setup did not unlock after the cold provider was rechecked",
   );
   await finish.click();
   await page.getByRole("heading", { name: "Overview" }).waitFor({

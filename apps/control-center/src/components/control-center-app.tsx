@@ -114,8 +114,6 @@ const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
 const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
-const PROVIDER_COLD_RETRY_COUNT = 2;
-const PROVIDER_COLD_RETRY_DELAY_MS = 1_500;
 const LAUNCHD_RECOVERY_GRACE_MS = 12_000;
 // Only a safety net for a native side that never answers at all, so it has to
 // outlast the repair's own bounded worst case: 8s initial health gate + 20s
@@ -3021,10 +3019,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const checkProvider = useCallback(
-    (
-      item: PreferenceDescriptor,
-      options?: { retryColdNoUsage?: boolean },
-    ) => {
+    (item: PreferenceDescriptor) => {
       const providerId = item.providerId?.trim().toLowerCase();
       if (!providerId) {
         return Promise.resolve();
@@ -3034,36 +3029,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
       const runCheck = async () => {
         try {
-          const check = () =>
-            runCompanion<{
-              providerSetup?: {
-                providers?: Array<{ id: string; status: string }>;
-              };
-            }>(
-              `/v1/providers/retry?provider=${encodeURIComponent(providerId)}`,
-              { method: "POST" },
-            );
-          let result = await check();
-          for (
-            let retry = 0;
-            options?.retryColdNoUsage &&
-            retry < PROVIDER_COLD_RETRY_COUNT;
-            retry += 1
-          ) {
-            const readiness = result.providerSetup?.providers?.find(
-              (provider) => provider.id === providerId,
-            );
-            if (readiness?.status !== "no_usage_available") {
-              break;
-            }
-            await new Promise((resolve) =>
-              window.setTimeout(
-                resolve,
-                PROVIDER_COLD_RETRY_DELAY_MS * (retry + 1),
-              ),
-            );
-            result = await check();
-          }
+          await runCompanion(
+            `/v1/providers/retry?provider=${encodeURIComponent(providerId)}`,
+            { method: "POST" },
+          );
           await refreshProviderPreferences({ quiet: true });
           setProviderPreferencesError(null);
         } catch (error) {
@@ -3157,7 +3126,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         continue;
       }
       providerAutoCheckIdsRef.current.add(providerId);
-      void checkProvider(item, { retryColdNoUsage: true });
+      void checkProvider(item);
     }
   }, [checkProvider, providerPreferences, providerSelectionSetup]);
 
