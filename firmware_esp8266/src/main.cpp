@@ -1935,6 +1935,31 @@ void emitSerialStatus() {
   Serial.println(out);
 }
 
+void emitSerialError(const char* code) {
+  String out = "{\"kind\":\"error\",\"code\":\"";
+  out += code;
+  out += "\"}";
+  Serial.println(out);
+}
+
+void emitSerialConnectionMode(
+    const String& status,
+    device_settings::ConnectionMode mode,
+    bool confirmationRequired) {
+  String out = "{\"kind\":\"connection-mode\",\"status\":\"";
+  out += status;
+  out += "\",\"deviceId\":\"";
+  out += deviceID;
+  out += "\",\"mode\":\"";
+  out += device_settings::ConnectionModeName(mode);
+  if (confirmationRequired) {
+    out += "\",\"confirmationRequired\":true}";
+  } else {
+    out += "\"}";
+  }
+  Serial.println(out);
+}
+
 struct DeviceSettingsPatch {
   bool hasBrightness = false;
   int brightnessPercent = 0;
@@ -1955,95 +1980,84 @@ bool handleSerialControlLine(const String& line) {
   if (deserializeJson(doc, line)) {
     return false;
   }
-  const String kind = String(doc["kind"] | "");
-  if (kind != "request") {
+  const char* kind = doc["kind"] | "";
+  if (strcmp(kind, "request") != 0) {
     return false;
   }
 
-  const String op = String(doc["op"] | "");
-  if (op == "hello") {
+  const char* op = doc["op"] | "";
+  if (strcmp(op, "hello") == 0) {
     codexbar_display::app::EmitDeviceHello(makeTransportConfig("usb"));
-  } else if (op == "status") {
+  } else if (strcmp(op, "status") == 0) {
     emitSerialStatus();
-  } else if (op == "set-connection-mode") {
-    const String expectedDeviceID = String(doc["deviceId"] | "");
+  } else if (strcmp(op, "set-connection-mode") == 0) {
+    const char* expectedDeviceID = doc["deviceId"] | "";
     const device_settings::ConnectionMode target =
         requestedConnectionMode(String(doc["mode"] | ""));
     String error;
-    if (expectedDeviceID != deviceID) {
+    if (strcmp(expectedDeviceID, deviceID.c_str()) != 0) {
       error = "deviceId does not match";
     } else if (!beginConnectionTransition(target, error)) {
       // beginConnectionTransition supplies the customer-safe reason.
     }
     if (error.length() > 0) {
-      String out = "{\"kind\":\"error\",\"code\":\"connection-mode-rejected\",\"message\":\"";
-      out += jsonEscape(error);
-      out += "\"}";
-      Serial.println(out);
+      emitSerialError("connection-mode-rejected");
     } else {
-      String out = "{\"kind\":\"connection-mode\",\"status\":\"switching\",\"deviceId\":\"";
-      out += deviceID;
-      out += "\",\"mode\":\"";
-      out += device_settings::ConnectionModeName(target);
-      out += "\",\"confirmationRequired\":true}";
-      Serial.println(out);
+      emitSerialConnectionMode("switching", target, true);
       scheduleReboot("connection_mode_switch");
     }
-  } else if (op == "confirm-connection-mode") {
+  } else if (strcmp(op, "confirm-connection-mode") == 0) {
     String status;
     if (!confirmConnectionTransition(String(doc["deviceId"] | ""), status)) {
-      String out = "{\"kind\":\"error\",\"code\":\"connection-mode-confirmation-rejected\",\"message\":\"";
-      out += jsonEscape(status);
-      out += "\"}";
-      Serial.println(out);
+      emitSerialError("connection-mode-confirmation-rejected");
     } else {
-      String out = "{\"kind\":\"connection-mode\",\"status\":\"";
-      out += status;
-      out += "\",\"deviceId\":\"";
-      out += deviceID;
-      out += "\",\"mode\":\"";
-      out += device_settings::ConnectionModeName(deviceSettings.connectionMode);
-      out += "\"}";
-      Serial.println(out);
+      emitSerialConnectionMode(status, deviceSettings.connectionMode, false);
     }
-  } else if (op == "settings") {
-    const String expectedDeviceID = String(doc["deviceId"] | "");
+  } else if (strcmp(op, "settings") == 0) {
+    const char* expectedDeviceID = doc["deviceId"] | "";
     String error;
-    if (expectedDeviceID != deviceID) {
-      error = "deviceId does not match";
-    } else if (!doc["settings"].isNull()) {
-      const JsonVariantConst settings = doc["settings"];
+    bool rejected = strcmp(expectedDeviceID, deviceID.c_str()) != 0;
+    const char* settingsKey = "settings";
+    const JsonVariantConst settings = doc[settingsKey];
+    if (!rejected && !settings.isNull()) {
       DeviceSettingsPatch patch;
-      if (!settings["brightnessPercent"].isNull()) {
+      const char* brightnessPercent = "brightnessPercent";
+      const JsonVariantConst brightness = settings[brightnessPercent];
+      if (!brightness.isNull()) {
         patch.hasBrightness = true;
-        patch.brightnessPercent = settings["brightnessPercent"].as<int>();
+        patch.brightnessPercent = brightness.as<int>();
       }
-      if (!settings["standby"].isNull()) {
-        const JsonVariantConst standbyPatch = settings["standby"];
-        if (!standbyPatch["enabled"].isNull()) {
+      const char* standby = "standby";
+      const JsonVariantConst standbyPatch = settings[standby];
+      if (!standbyPatch.isNull()) {
+        const char* enabled = "enabled";
+        const JsonVariantConst standbyEnabled = standbyPatch[enabled];
+        if (!standbyEnabled.isNull()) {
           patch.hasStandbyEnabled = true;
-          patch.standbyEnabled = standbyPatch["enabled"].as<bool>();
+          patch.standbyEnabled = standbyEnabled.as<bool>();
         }
-        if (!standbyPatch["timeoutMinutes"].isNull()) {
+        const char* timeoutMinutes = "timeoutMinutes";
+        const JsonVariantConst standbyTimeout = standbyPatch[timeoutMinutes];
+        if (!standbyTimeout.isNull()) {
           patch.hasStandbyTimeout = true;
-          patch.standbyTimeoutMinutes = standbyPatch["timeoutMinutes"].as<int>();
+          patch.standbyTimeoutMinutes = standbyTimeout.as<int>();
         }
-        if (!standbyPatch["brightnessPercent"].isNull()) {
+        const JsonVariantConst standbyBrightness = standbyPatch[brightnessPercent];
+        if (!standbyBrightness.isNull()) {
           patch.hasStandbyBrightness = true;
-          patch.standbyBrightnessPercent = standbyPatch["brightnessPercent"].as<int>();
+          patch.standbyBrightnessPercent = standbyBrightness.as<int>();
         }
-        if (!standbyPatch["screensaverPath"].isNull()) {
+        const char* screensaverPath = "screensaverPath";
+        const JsonVariantConst standbyScreensaver = standbyPatch[screensaverPath];
+        if (!standbyScreensaver.isNull()) {
           patch.hasScreensaverPath = true;
-          patch.screensaverPath = String(standbyPatch["screensaverPath"] | "");
+          patch.screensaverPath = String(standbyScreensaver | "");
         }
       }
-      applyDeviceSettingsPatch(patch, error);
+      rejected = !applyDeviceSettingsPatch(patch, error);
     }
-    if (error.length() > 0) {
-      String out = "{\"kind\":\"error\",\"code\":\"settings-rejected\",\"message\":\"";
-      out += jsonEscape(error);
-      out += "\"}";
-      Serial.println(out);
+    if (rejected) {
+      emitSerialError("settings-rejected");
     } else {
       String out = "{\"kind\":\"settings\",\"deviceId\":\"";
       out += deviceID;
@@ -2052,47 +2066,34 @@ bool handleSerialControlLine(const String& line) {
       out += "}";
       Serial.println(out);
     }
-  } else if (op == "configure-wifi") {
-    const String expectedDeviceID = String(doc["deviceId"] | "");
+  } else if (strcmp(op, "configure-wifi") == 0) {
+    const char* expectedDeviceID = doc["deviceId"] | "";
     String ssid = String(doc["ssid"] | "");
     const String password = String(doc["password"] | "");
     ssid.trim();
     String error;
     const device_settings::ConnectionMode target =
         device_settings::ConnectionMode::kWifi;
-    if (expectedDeviceID != deviceID) {
-      error = "deviceId does not match";
-    } else if (ssid.length() == 0) {
-      error = "WiFi name is required";
-    } else if (ssid.length() >= kWifiSsidBytes || password.length() >= kWifiPasswordBytes) {
-      error = "WiFi credentials are too long";
-    } else if (!device_settings::CanBeginConnectionTransition(
-                   deviceSettings.connectionMode, target)) {
-      error = "WiFi is not supported in the current connection mode";
-    } else if (!saveWifiCredentials(ssid, password)) {
-      error = "WiFi settings could not be saved";
-    } else if (!beginConnectionTransition(target, error)) {
-      // beginConnectionTransition supplies the customer-safe reason.
+    bool rejected = strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
+                    ssid.length() == 0 ||
+                    ssid.length() >= kWifiSsidBytes ||
+                    password.length() >= kWifiPasswordBytes ||
+                    deviceSettings.connectionMode !=
+                        device_settings::ConnectionMode::kCable;
+    if (!rejected && !saveWifiCredentials(ssid, password)) {
+      rejected = true;
     }
-    if (error.length() > 0) {
-      String out = "{\"kind\":\"error\",\"code\":\"wifi-configuration-rejected\",\"message\":\"";
-      out += jsonEscape(error);
-      out += "\"}";
-      Serial.println(out);
+    if (!rejected && !beginConnectionTransition(target, error)) {
+      rejected = true;
+    }
+    if (rejected) {
+      emitSerialError("wifi-configuration-rejected");
     } else {
-      String out = "{\"kind\":\"connection-mode\",\"status\":\"switching\",\"deviceId\":\"";
-      out += deviceID;
-      out += "\",\"mode\":\"wifi\",\"confirmationRequired\":true}";
-      Serial.println(out);
+      emitSerialConnectionMode("switching", target, true);
       scheduleReboot("wifi_credentials_saved");
     }
   } else {
-    String out;
-    out.reserve(100);
-    out += "{\"kind\":\"error\",\"code\":\"unsupported-request\",\"op\":\"";
-    out += jsonEscape(op);
-    out += "\"}";
-    Serial.println(out);
+    emitSerialError("unsupported-request");
   }
   return true;
 }
