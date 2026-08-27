@@ -189,6 +189,7 @@ type Server struct {
 	resolveCablePort       func(string, string) (string, error)
 	readCableHello         func(string) (protocol.DeviceHello, error)
 	currentCableHello      func() (protocol.DeviceHello, bool)
+	refreshCableHello      func() (protocol.DeviceHello, bool)
 	resetCableSender       func()
 	setCableConnectionMode func(string, string, string) error
 	subnetTargets          func() []string
@@ -941,6 +942,7 @@ func New(opts Options) (*Server, error) {
 		resolveCablePort:       usb.ResolveVibeTVControlPort,
 		readCableHello:         usb.ReadDeviceHello,
 		currentCableHello:      usb.CurrentDeviceHello,
+		refreshCableHello:      refreshDefaultCableHello,
 		resetCableSender:       usb.CloseDefaultSender,
 		setCableConnectionMode: usb.SetConnectionMode,
 		subnetTargets:          localSubnetTargets,
@@ -1452,7 +1454,14 @@ func cableCapabilityBlock(supported []string) *protocol.CapabilityBlock {
 }
 
 func (s *Server) currentCableConnectionChoiceDevice() deviceInfo {
-	hello, ok := s.currentCableHello()
+	return cableConnectionChoiceDevice(s.currentCableHello())
+}
+
+func (s *Server) refreshedCableConnectionChoiceDevice() deviceInfo {
+	return cableConnectionChoiceDevice(s.refreshCableHello())
+}
+
+func cableConnectionChoiceDevice(hello protocol.DeviceHello, ok bool) deviceInfo {
 	if !ok {
 		return deviceInfo{Connected: false}
 	}
@@ -1470,6 +1479,15 @@ func (s *Server) currentCableConnectionChoiceDevice() deviceInfo {
 		Firmware:     observed.Firmware,
 		Capabilities: observed.Capabilities,
 	}
+}
+
+func refreshDefaultCableHello() (protocol.DeviceHello, bool) {
+	port, err := usb.ResolveVibeTVControlPort("", "")
+	if err != nil {
+		return protocol.DeviceHello{}, false
+	}
+	hello, err := usb.ReadDeviceHello(port)
+	return hello, err == nil
 }
 
 func savedPairingRemainsValid(savedToken string, tokenRejected bool, streamError string) bool {
@@ -3302,7 +3320,6 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 		s.pauseDisplayStream(true)
 		defer s.pauseDisplayStream(false)
 	}
-	device := s.currentCableConnectionChoiceDevice()
 	var savedTransports []string
 	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
 		savedTransports = append([]string(nil), cfg.DeviceTransports...)
@@ -3323,6 +3340,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	if s.resetCableSender != nil {
 		s.resetCableSender()
 	}
+	device := s.refreshedCableConnectionChoiceDevice()
 	if device.Capabilities == nil && len(savedTransports) > 0 {
 		device.Capabilities = &protocol.CapabilityBlock{
 			Transport: protocol.TransportCapabilities{Supported: savedTransports},
