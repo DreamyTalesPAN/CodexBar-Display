@@ -2062,3 +2062,16 @@ issue scope, or release permission never implies UI permission.
   available until the device is identified; Cable stays recommended.
 - Approved files: the Companion reset/status endpoints and tests, runtime
   configuration transaction and reset logic, and this approval record.
+
+## 2026-08-27 — Interrupted Cable update keeps a manual retry
+
+- User approval: After reviewing the exact Cable-interruption message and
+  pointing out that a customer cannot retry without a button, the user approved
+  the corrected visible result with `ok ist so freigegeben, mach`.
+- Approved customer-visible result: If a Cable firmware transfer is
+  interrupted, the update card shows `Update failed` and `Reconnect VibeTV with
+  a data-capable Cable, wait for it to start, then try the update once.` The
+  customer can then click `Try again` manually. The app never retries the
+  firmware transfer automatically. `Create report` remains available.
+- Approved files: `control-center-app.tsx`, `updates-screen.test.tsx`, the
+  Companion Cable-interruption error and tests, and this approval record.
