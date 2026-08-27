@@ -271,7 +271,7 @@ describe("UpdatesScreen VibeTV update card", () => {
     expect(html).toContain("Update failed");
   });
 
-  it("shows Cable reconnect recovery without an immediate retry button", () => {
+  it("shows Cable reconnect recovery with a manual retry button", () => {
     const html = renderToStaticMarkup(
       <UpdatesScreen
         companionStatus="online"
@@ -290,7 +290,7 @@ describe("UpdatesScreen VibeTV update card", () => {
           stage: "uploading",
           startedAt: "2026-08-27T10:00:00Z",
           finishedAt: "2026-08-27T10:01:00Z",
-          retryAllowed: false,
+          retryAllowed: true,
           error: "Reconnect VibeTV with a data-capable Cable, wait for it to start, then try the update once.",
           logs: [],
         }}
@@ -298,7 +298,7 @@ describe("UpdatesScreen VibeTV update card", () => {
     );
 
     expect(html).toContain("Reconnect VibeTV with a data-capable Cable");
-    expect(html).not.toContain("Try again");
+    expect(html).toContain("Try again");
     expect(html).toContain("Create report");
   });
 });
