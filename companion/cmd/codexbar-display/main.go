@@ -99,8 +99,9 @@ func main() {
 	case "doctor":
 		err = runDoctor()
 	case "health":
+		expectedOwner := healthRuntimeOwner()
 		err = health.Run(context.Background(), func() (protocol.DeviceCapabilities, error) {
-			return readLocalCableCapabilities(runtimepaths.LegacyDisplayStreamLaunchAgentLabel)
+			return readLocalCableCapabilities(expectedOwner)
 		})
 	case "open-control-center":
 		err = runOpenControlCenter(args[1:])
@@ -142,6 +143,15 @@ func main() {
 		}
 		os.Exit(1)
 	}
+}
+
+func healthRuntimeOwner() string {
+	if cfg, err := readDoctorRuntimeConfig(); err == nil && cfg.configured {
+		if label := strings.TrimSpace(cfg.label); label != "" {
+			return label
+		}
+	}
+	return runtimepaths.DisplayStreamLaunchAgentLabel()
 }
 
 func printUsage() {
