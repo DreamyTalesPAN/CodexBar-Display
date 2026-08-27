@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 )
 
 const (
@@ -26,12 +26,12 @@ const (
 )
 
 type deps struct {
-	stdout      io.Writer
-	uid         func() int
-	homeDir     func() (string, error)
-	runCommand  func(context.Context, string, ...string) (string, error)
-	resolvePort func(string) (string, error)
-	readFile    func(string) ([]byte, error)
+	stdout                io.Writer
+	uid                   func() int
+	homeDir               func() (string, error)
+	runCommand            func(context.Context, string, ...string) (string, error)
+	readCableCapabilities func() (protocol.DeviceCapabilities, error)
+	readFile              func(string) ([]byte, error)
 }
 
 func (d deps) withDefaults() deps {
@@ -47,9 +47,9 @@ func (d deps) withDefaults() deps {
 	if d.runCommand == nil {
 		d.runCommand = runSystemCommand
 	}
-	if d.resolvePort == nil {
-		d.resolvePort = func(explicit string) (string, error) {
-			return usb.ResolveVibeTVPort(explicit, "")
+	if d.readCableCapabilities == nil {
+		d.readCableCapabilities = func() (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{}, fmt.Errorf("running Companion Cable status reader is required")
 		}
 	}
 	if d.readFile == nil {
@@ -69,8 +69,8 @@ type launchAgentConfig struct {
 	Port      string
 }
 
-func Run(ctx context.Context) error {
-	return runWithDeps(ctx, deps{})
+func Run(ctx context.Context, readCableCapabilities func() (protocol.DeviceCapabilities, error)) error {
+	return runWithDeps(ctx, deps{readCableCapabilities: readCableCapabilities})
 }
 
 func runWithDeps(ctx context.Context, d deps) error {
@@ -113,12 +113,12 @@ func runWithDeps(ctx context.Context, d deps) error {
 			fmt.Fprintf(d.stdout, "device target: %s\n", config.Target)
 		}
 	} else {
-		detectedPort, portErr := d.resolvePort("")
+		caps, statusErr := d.readCableCapabilities()
 		fmt.Fprintln(d.stdout, "transport: usb")
-		if portErr != nil {
-			fmt.Fprintf(d.stdout, "detected port: unavailable (%v)\n", portErr)
+		if statusErr != nil {
+			fmt.Fprintf(d.stdout, "Cable device: unavailable (%v)\n", statusErr)
 		} else {
-			fmt.Fprintf(d.stdout, "detected port: %s\n", detectedPort)
+			fmt.Fprintf(d.stdout, "Cable device: %s board=%s firmware=%s\n", caps.DeviceID, caps.Board, caps.Firmware)
 		}
 	}
 

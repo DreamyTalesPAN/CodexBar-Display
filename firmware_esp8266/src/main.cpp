@@ -1586,6 +1586,42 @@ bool connectToSavedWifi(const WifiCredentials& creds) {
   return true;
 }
 
+bool connectToSdkWifiConfig() {
+  WiFi.mode(WIFI_STA);
+  applyWifiInteropPhyMode();
+  const String ssid = WiFi.SSID();
+  if (ssid.length() == 0) {
+    Serial.println("wifi_sdk_config_missing");
+    return false;
+  }
+  Serial.printf("wifi_sdk_connect ssid=%s\n", ssid.c_str());
+  drawWifiConnectingStatus(ssid);
+  WiFi.begin();
+
+  const unsigned long startedAt = millis();
+  while (WiFi.status() != WL_CONNECTED && (millis() - startedAt) < kWifiConnectTimeoutMs) {
+    delay(250);
+    Serial.print(".");
+  }
+  Serial.println();
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.printf("wifi_sdk_connect_failed status=%d\n", static_cast<int>(WiFi.status()));
+    return false;
+  }
+
+  const String password = WiFi.psk();
+  if (ssid.length() < kWifiSsidBytes && password.length() < kWifiPasswordBytes &&
+      saveWifiCredentials(ssid, password)) {
+    Serial.printf("wifi_sdk_credentials_imported ssid=%s\n", ssid.c_str());
+  }
+  Serial.printf(
+      "wifi_connected source=sdk ssid=%s ip=%s\n",
+      ssid.c_str(),
+      WiFi.localIP().toString().c_str());
+  drawWaitingForCompanionStatus();
+  return true;
+}
+
 bool scanSetupNetworks(bool automatic) {
   using namespace codexbar_display::esp8266::wifi_setup;
   const bool started = automatic ? BeginAutomaticScan(setupWifiState) : BeginScan(setupWifiState);
@@ -3751,10 +3787,19 @@ void setup() {
   renderer.Setup(runtimeCtx);
   deviceSettingsRecordAvailable = loadDeviceSettings();
   loadDeviceAuthToken();
-  const bool hasSavedWifi = readWifiCredentials(savedWifiCredentials);
+  bool hasSavedWifi = readWifiCredentials(savedWifiCredentials);
+  bool wifiConnected = false;
+  if (codexbar_display::esp8266::device_settings::ShouldImportLegacySdkWifi(
+          deviceSettings.connectionMode, hasSavedWifi)) {
+    wifiConnected = connectToSdkWifiConfig();
+    if (wifiConnected) {
+      hasSavedWifi = readWifiCredentials(savedWifiCredentials);
+    }
+  }
   savedWifiCredentialsAvailable = hasSavedWifi;
   const bool hasLegacyState =
-      deviceSettingsRecordAvailable || hasSavedWifi || deviceAuthConfigured();
+      deviceSettingsRecordAvailable || hasSavedWifi || wifiConnected ||
+      deviceAuthConfigured();
   (void)resolveInitialConnectionMode(hasLegacyState);
   (void)loadConnectionTransition();
   Serial.printf(
@@ -3798,8 +3843,9 @@ void setup() {
     return;
   }
 
-  const bool wifiConnected =
-      hasSavedWifi && connectToSavedWifi(savedWifiCredentials);
+  if (!wifiConnected && hasSavedWifi) {
+    wifiConnected = connectToSavedWifi(savedWifiCredentials);
+  }
   if (wifiConnected) {
     setupMode = false;
     // SNTP over UDP/123 in UTC. The local offset is applied by the device

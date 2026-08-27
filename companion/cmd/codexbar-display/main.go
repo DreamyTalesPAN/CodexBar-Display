@@ -50,7 +50,7 @@ var openControlCenterStartLaunchAgentFn = startLaunchAgent
 var openControlCenterOpenURLFn = openURLWithMacOpen
 var openControlCenterHTTPClient = &http.Client{}
 var doctorListPortsFn = usb.ListPorts
-var doctorReadCableCapabilitiesFn = readDoctorCableCapabilities
+var doctorReadCableCapabilitiesFn = readLocalCableCapabilities
 var doctorReadWiFiCapabilitiesFn = func(target string) (protocol.DeviceCapabilities, error) {
 	client := &http.Client{
 		Timeout:   5 * time.Second,
@@ -99,7 +99,9 @@ func main() {
 	case "doctor":
 		err = runDoctor()
 	case "health":
-		err = health.Run(context.Background())
+		err = health.Run(context.Background(), func() (protocol.DeviceCapabilities, error) {
+			return readLocalCableCapabilities(runtimepaths.LegacyDisplayStreamLaunchAgentLabel)
+		})
 	case "open-control-center":
 		err = runOpenControlCenter(args[1:])
 	case "service":
@@ -1216,11 +1218,11 @@ func doctorCompanionOrigins() []string {
 	return origins
 }
 
-func readDoctorCableCapabilities(expectedOwner string) (protocol.DeviceCapabilities, error) {
-	return readDoctorCableCapabilitiesOrigins(doctorCompanionOrigins(), expectedOwner)
+func readLocalCableCapabilities(expectedOwner string) (protocol.DeviceCapabilities, error) {
+	return readLocalCableCapabilitiesOrigins(doctorCompanionOrigins(), expectedOwner)
 }
 
-func readDoctorCableCapabilitiesOrigins(origins []string, expectedOwner string) (protocol.DeviceCapabilities, error) {
+func readLocalCableCapabilitiesOrigins(origins []string, expectedOwner string) (protocol.DeviceCapabilities, error) {
 	client := &http.Client{Timeout: 3 * time.Second}
 	var lastErr error
 	for _, origin := range origins {
@@ -1279,6 +1281,10 @@ func readDoctorCableCapabilitiesOrigins(origins []string, expectedOwner string) 
 			Firmware:     result.Device.Firmware,
 			Capabilities: *result.Device.Capabilities,
 		})
+		if strings.TrimSpace(caps.DeviceID) == "" {
+			lastErr = errors.New("companion status did not provide a Cable device identity")
+			continue
+		}
 		if !caps.Known {
 			lastErr = errors.New("companion status reported unknown Cable capabilities")
 			continue

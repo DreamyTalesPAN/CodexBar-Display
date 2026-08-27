@@ -74,6 +74,19 @@ void test_factory_fresh_cutover_device_starts_in_cable() {
   TEST_ASSERT_FALSE(UsesWifi(ConnectionMode::kCable));
 }
 
+void test_sdk_wifi_import_is_only_for_unmigrated_credentials() {
+  TEST_ASSERT_TRUE(ShouldImportLegacySdkWifi(
+      ConnectionMode::kUnspecified, false));
+  TEST_ASSERT_FALSE(ShouldImportLegacySdkWifi(
+      ConnectionMode::kUnspecified, true));
+  TEST_ASSERT_FALSE(ShouldImportLegacySdkWifi(
+      ConnectionMode::kCable, false));
+  TEST_ASSERT_FALSE(ShouldImportLegacySdkWifi(
+      ConnectionMode::kWifi, false));
+  TEST_ASSERT_FALSE(ShouldImportLegacySdkWifi(
+      ConnectionMode::kLegacyWifiOnly, false));
+}
+
 void test_stored_mode_is_never_reinterpreted() {
   TEST_ASSERT_EQUAL(
       static_cast<int>(ConnectionMode::kCable),
@@ -154,6 +167,7 @@ int main(int, char**) {
   RUN_TEST(test_connection_mode_bytes_decode_without_guessing);
   RUN_TEST(test_cutover_migrates_legacy_state_once);
   RUN_TEST(test_factory_fresh_cutover_device_starts_in_cable);
+  RUN_TEST(test_sdk_wifi_import_is_only_for_unmigrated_credentials);
   RUN_TEST(test_stored_mode_is_never_reinterpreted);
   RUN_TEST(test_connection_transition_round_trips_both_directions);
   RUN_TEST(test_connection_transition_rejects_unsafe_modes_and_corruption);
