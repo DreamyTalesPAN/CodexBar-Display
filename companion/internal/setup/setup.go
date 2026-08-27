@@ -1166,6 +1166,10 @@ func applyRuntimeConfig(
 			cfg.CableAutoBindDisabled = false
 			changed = true
 		}
+		if cfg.ConnectionModeChoiceRequired {
+			cfg.ConnectionModeChoiceRequired = false
+			changed = true
+		}
 		if !strings.EqualFold(cfg.DeviceID, deviceID) {
 			cfg.DeviceID = deviceID
 			// A target and token belong to the previously selected identity. Never
