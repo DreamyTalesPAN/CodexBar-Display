@@ -1611,7 +1611,6 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	}
 	now := deps.now()
 	allProviders := collector.providerFrames(now)
-	allProviders = applyProviderDisplaySelection(state, allProviders, deps)
 	result := selectCycleFrameFromProviders(
 		state,
 		allProviders,
