@@ -484,7 +484,9 @@ bool testWifiSavePreservesDeviceStateAndRetiresStaleSdkCredentials(const char* m
   const std::size_t successResponse = mainSource.find(
       "webServer.send(200, \"text/html; charset=utf-8\"",
       handler);
-  const std::size_t sdkCredentialImport = mainSource.find("WiFi.SSID()");
+  const std::size_t sdkImport = mainSource.find("bool connectToSdkWifiConfig()");
+  const std::size_t sdkImportEnd = mainSource.find("bool scanSetupNetworks(", sdkImport);
+  const std::size_t sdkCredentialImport = mainSource.find("WiFi.SSID()", sdkImport);
   if (handler == std::string::npos || handlerEnd == std::string::npos) {
     return false;
   }
@@ -492,7 +494,9 @@ bool testWifiSavePreservesDeviceStateAndRetiresStaleSdkCredentials(const char* m
   return expect(
       save != std::string::npos && saveFailure != std::string::npos &&
           successResponse != std::string::npos && clearSdk > successResponse &&
-          clearSdk < handlerEnd && sdkCredentialImport == std::string::npos &&
+          clearSdk < handlerEnd && sdkImport != std::string::npos &&
+          sdkCredentialImport > sdkImport && sdkCredentialImport < sdkImportEnd &&
+          body.find("WiFi.SSID()") == std::string::npos &&
           body.find("saveDeviceAuthToken") == std::string::npos &&
           body.find("LittleFS") == std::string::npos &&
           body.find("saveDeviceSettings") == std::string::npos &&
