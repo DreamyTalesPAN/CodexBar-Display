@@ -10,9 +10,11 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import {
   normalizedProviderStatus,
   providerRecoveryStatusRows,
@@ -45,6 +47,7 @@ type Props = {
   onRepairUsageService?: () => void;
   onDeviceTargetChange?: (target: string) => void;
   onManualTarget?: (target: string) => void;
+  onConfigureWiFi?: (ssid: string, password: string) => Promise<boolean>;
   onSelectConnectionMode?: (mode: "cable" | "wifi") => Promise<boolean>;
   onPair: () => void;
   onSearch: () => void;
@@ -56,6 +59,8 @@ type Props = {
   supportReportBusy?: boolean;
   cableConnectionSupported?: boolean;
   wifiConnectionSupported?: boolean;
+  wifiCredentialsRequired?: boolean;
+  wifiConnectionInProgress?: boolean;
 };
 
 export function DeviceStartupScreen({
@@ -71,6 +76,7 @@ export function DeviceStartupScreen({
   onRepairUsageService,
   onDeviceTargetChange,
   onManualTarget,
+  onConfigureWiFi,
   onSelectConnectionMode,
   onPair,
   onSearch,
@@ -79,6 +85,8 @@ export function DeviceStartupScreen({
   supportReportBusy = false,
   cableConnectionSupported = true,
   wifiConnectionSupported = true,
+  wifiCredentialsRequired = false,
+  wifiConnectionInProgress = false,
   providerRecovery = false,
   showCodexBarFallback = false,
   providerSetup,
@@ -86,6 +94,9 @@ export function DeviceStartupScreen({
   const [connectionModeChoice, setConnectionModeChoice] = useState<
     "cable" | "wifi" | null
   >(null);
+  const [wifiName, setWifiName] = useState("");
+  const [wifiPassword, setWifiPassword] = useState("");
+  const [wifiValidationError, setWifiValidationError] = useState("");
   const selecting = busyAction === "select";
   const manualConnecting = busyAction === "manual-target";
   const reconnecting = busyAction === "repair";
@@ -150,14 +161,33 @@ export function DeviceStartupScreen({
     (searching || choosing || wifiSetupNeeded || searchFailed || repairFailed) &&
     !legacyRecovery;
   const choosingConnectionMode =
-    connectionModeChoiceRequired && connectionModeChoice === null;
+    connectionModeChoiceRequired &&
+    connectionModeChoice === null &&
+    !wifiCredentialsRequired &&
+    !wifiConnectionInProgress;
   const wifiConnectionModeSelected =
-    connectionModeChoiceRequired && connectionModeChoice === "wifi";
+    wifiCredentialsRequired ||
+    wifiConnectionInProgress ||
+    (connectionModeChoiceRequired && connectionModeChoice === "wifi");
   const connectionModeBusy = busyAction === "connection-mode";
+  const wifiCredentialsBusy = busyAction === "wifi-credentials";
 
   async function selectConnectionMode(mode: "cable" | "wifi") {
     if (await onSelectConnectionMode?.(mode)) {
       setConnectionModeChoice(mode);
+    }
+  }
+
+  async function submitWiFiCredentials(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const ssid = wifiName.trim();
+    if (!ssid) {
+      setWifiValidationError("Enter your WiFi name.");
+      return;
+    }
+    setWifiValidationError("");
+    if (await onConfigureWiFi?.(ssid, wifiPassword)) {
+      setWifiPassword("");
     }
   }
 
@@ -173,7 +203,9 @@ export function DeviceStartupScreen({
       : "This VibeTV connects to this Mac by Cable.";
   } else if (wifiConnectionModeSelected && deviceSearchState === "idle") {
     title = "Connect VibeTV to WiFi";
-    detail = "Set up WiFi on VibeTV, then scan for it again.";
+    detail = wifiCredentialsRequired
+      ? "Enter the same WiFi details this Mac uses."
+      : "VibeTV is connecting. Scan again when it shows WiFi connected.";
   } else if (providerRecoveryView) {
     title = providerRecoveryView.title;
     detail = providerRecoveryView.detail;
@@ -212,17 +244,19 @@ export function DeviceStartupScreen({
 
   const statusLabel = connectionModeBusy
     ? "Changing connection…"
-    : providerRecoveryView?.checking
-      ? "Checking AI setup…"
-      : providerRecoveryView
-        ? undefined
-        : reconnecting
-          ? "Reconnecting…"
-          : waiting
-            ? "Waiting for live preview…"
-            : searching
-              ? "Searching…"
-              : undefined;
+    : wifiCredentialsBusy
+      ? "Saving WiFi details…"
+      : providerRecoveryView?.checking
+        ? "Checking AI setup…"
+        : providerRecoveryView
+          ? undefined
+          : reconnecting
+            ? "Reconnecting…"
+            : waiting
+              ? "Waiting for live preview…"
+              : searching
+                ? "Searching…"
+                : undefined;
 
   const visual = choosingConnectionMode ? (
     <Cable aria-hidden />
@@ -331,6 +365,7 @@ export function DeviceStartupScreen({
         reconnecting ||
         (waiting && !providerRecoveryView) ||
         connectionModeBusy ||
+        wifiCredentialsBusy ||
         providerRecoveryBusy
       }
       description={detail}
@@ -404,9 +439,62 @@ export function DeviceStartupScreen({
           </div>
         ) : null}
 
-        {wifiConnectionModeSelected && deviceSearchState === "idle" ? (
+        {wifiConnectionModeSelected &&
+        wifiCredentialsRequired &&
+        deviceSearchState === "idle" ? (
+          <form className="grid gap-4 text-left" onSubmit={submitWiFiCredentials}>
+            <FieldGroup className="grid gap-4">
+              <Field data-invalid={Boolean(wifiValidationError)}>
+                <FieldLabel htmlFor="startup-wifi-name">WiFi name</FieldLabel>
+                <Input
+                  autoComplete="off"
+                  disabled={wifiCredentialsBusy}
+                  id="startup-wifi-name"
+                  onChange={(event) => {
+                    setWifiName(event.target.value);
+                    setWifiValidationError("");
+                  }}
+                  placeholder="Home WiFi"
+                  value={wifiName}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="startup-wifi-password">
+                  WiFi code
+                </FieldLabel>
+                <Input
+                  autoComplete="off"
+                  disabled={wifiCredentialsBusy}
+                  id="startup-wifi-password"
+                  onChange={(event) => setWifiPassword(event.target.value)}
+                  type="password"
+                  value={wifiPassword}
+                />
+              </Field>
+            </FieldGroup>
+            {wifiValidationError ? (
+              <p className="text-sm font-medium text-destructive" role="alert">
+                {wifiValidationError}
+              </p>
+            ) : null}
+            <Button disabled={wifiCredentialsBusy} size="lg" type="submit">
+              <span>{wifiCredentialsBusy ? "Saving…" : "Connect to WiFi"}</span>
+            </Button>
+          </form>
+        ) : null}
+
+        {wifiConnectionModeSelected &&
+        !wifiCredentialsRequired &&
+        deviceSearchState === "idle" ? (
           <>
-            <WifiSetupInstructions />
+            <Alert>
+              <Wifi aria-hidden />
+              <AlertTitle>VibeTV is connecting</AlertTitle>
+              <AlertDescription>
+                Keep VibeTV powered on. Continue when its screen says WiFi is
+                connected.
+              </AlertDescription>
+            </Alert>
             <Button className="w-full" onClick={onSearch} size="lg">
               <RefreshCw data-icon="inline-start" aria-hidden />
               <span>Scan WiFi again</span>

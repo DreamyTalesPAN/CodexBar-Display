@@ -394,6 +394,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState(false);
   const [connectionModeChoiceRevision, setConnectionModeChoiceRevision] =
     useState(0);
+  const [wifiCredentialsRequired, setWifiCredentialsRequired] =
+    useState(false);
+  const [wifiConnectionInProgress, setWifiConnectionInProgress] =
+    useState(false);
   const [runtimeRecoveryPhase, setRuntimeRecoveryPhase] = useState<
     "repairing" | "failed"
   >("repairing");
@@ -1073,8 +1077,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       device?: DeviceInfo;
     }) => {
       if (payload.connectionModeChoiceRequired === true) {
-        if (connectionModeChoiceSubmitted.current) {
+        if (
+          connectionModeChoiceSubmitted.current &&
+          !wifiCredentialsRequired
+        ) {
           connectionModeChoiceSubmitted.current = false;
+          setWifiConnectionInProgress(false);
           setConnectionModeChoiceRevision((current) => current + 1);
         }
         connectionModeChoiceResolved.current = true;
@@ -1087,7 +1095,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setConnectionModeChoiceRequired(choice.required);
       }
     },
-    [],
+    [wifiCredentialsRequired],
   );
 
   const checkCompanion = useCallback(
@@ -1594,7 +1602,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       try {
         const payload = await runCompanion<{
           device?: DeviceInfo;
-          status?: "selected" | "waiting_for_wifi";
+          status?:
+            | "selected"
+            | "waiting_for_wifi"
+            | "wifi_credentials_required";
         }>(
           "/v1/setup/connection-mode",
           {
@@ -1607,10 +1618,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         connectionModeChoiceSubmitted.current = true;
         connectionModeChoiceResolved.current = true;
+        setWifiCredentialsRequired(
+          payload.status === "wifi_credentials_required",
+        );
         const knownWiFiReselected =
           mode === "wifi" &&
           payload.status === "selected" &&
           payload.device?.active === true;
+        setWifiConnectionInProgress(
+          mode === "wifi" && !knownWiFiReselected,
+        );
         if (
           payload.device &&
           (mode === "cable" || knownWiFiReselected)
@@ -1629,7 +1646,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               ? "VibeTV is connected through the data Cable."
               : knownWiFiReselected
                 ? "VibeTV reconnected through its saved WiFi connection."
-              : "VibeTV is restarting into WiFi setup. Keep the Cable connected until the setup screen appears.",
+              : payload.status === "wifi_credentials_required"
+                ? "Enter the WiFi details in this app. The WiFi code stays between this Mac and VibeTV."
+                : "VibeTV is restarting into WiFi setup. Keep the Cable connected until the setup screen appears.",
           tone: mode === "cable" || knownWiFiReselected ? "ready" : "unknown",
         });
         return true;
@@ -1657,11 +1676,54 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [acceptDeviceSnapshot, addEvent, runCompanion],
   );
 
+  const configureSetupWiFi = useCallback(
+    async (ssid: string, password: string): Promise<boolean> => {
+      const setupGeneration = setupGenerationRef.current;
+      setBusyAction("wifi-credentials");
+      setLastError(null);
+      try {
+        await runCompanion("/v1/setup/wifi", {
+          method: "POST",
+          body: JSON.stringify({ ssid, password }),
+        });
+        if (setupGeneration !== setupGenerationRef.current) {
+          return false;
+        }
+        setWifiCredentialsRequired(false);
+        setWifiConnectionInProgress(true);
+        addEvent({
+          label: "WiFi details saved",
+          detail:
+            "VibeTV is connecting to WiFi. The app will only continue after the same VibeTV is confirmed.",
+          tone: "unknown",
+        });
+        return true;
+      } catch (error) {
+        if (setupGeneration !== setupGenerationRef.current) {
+          return false;
+        }
+        const normalized = normalizeCaughtError(
+          error,
+          "VibeTV could not save these WiFi details.",
+        );
+        setLastError(normalized);
+        return false;
+      } finally {
+        if (setupGeneration === setupGenerationRef.current) {
+          setBusyAction(null);
+        }
+      }
+    },
+    [addEvent, runCompanion],
+  );
+
   const reopenConnectionModeChoice = useCallback(() => {
     connectionModeChoiceSubmitted.current = false;
     connectionModeChoiceResolved.current = true;
     setConnectionModeChoiceRevision((current) => current + 1);
     setConnectionModeChoiceRequired(true);
+    setWifiCredentialsRequired(false);
+    setWifiConnectionInProgress(false);
   }, []);
 
   useEffect(() => {
@@ -4036,6 +4098,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           device.capabilities.transport.supported.includes("usb")
         }
         connectionModeChoiceRequired={connectionModeChoiceRequired}
+        wifiCredentialsRequired={wifiCredentialsRequired}
+        wifiConnectionInProgress={wifiConnectionInProgress}
         wifiConnectionSupported={
           !device?.capabilities?.transport?.supported ||
           device.capabilities.transport.supported.includes("wifi")
@@ -4062,6 +4126,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           });
         }}
         onSelectConnectionMode={selectSetupConnectionMode}
+        onConfigureWiFi={configureSetupWiFi}
         onSearch={() => {
           if (deviceRecoveryPickerReason === "confirmed-loss") {
             setDeviceRecoveryGate(

@@ -169,6 +169,7 @@ func resolveVibeTVCandidatesForControl(
 	allowWiFiMode bool,
 ) (string, error) {
 	matches := make([]string, 0, 1)
+	foreignDeviceAnswered := false
 	for _, candidate := range candidates {
 		hello, err := readHello(candidate)
 		if err != nil {
@@ -176,8 +177,11 @@ func resolveVibeTVCandidatesForControl(
 		}
 		hello = hello.Normalize()
 		mode := hello.Capabilities.Transport.Mode
-		if hello.Kind != "hello" ||
-			!isSupportedCableBoard(hello.Board) ||
+		if hello.Kind == "hello" && strings.TrimSpace(hello.Board) != "" &&
+			!isSupportedCableBoard(hello.Board) {
+			foreignDeviceAnswered = true
+		}
+		if hello.Kind != "hello" || !isSupportedCableBoard(hello.Board) ||
 			hello.DeviceID == "" ||
 			hello.Capabilities.Transport.Active != "usb" ||
 			(mode != "cable" && (!allowWiFiMode || (mode != "wifi" && mode != "legacy-wifi-only"))) {
@@ -193,6 +197,15 @@ func resolveVibeTVCandidatesForControl(
 	case 1:
 		return matches[0], nil
 	case 0:
+		if foreignDeviceAnswered {
+			return "", wrapTransportError(
+				errcode.TransportForeignDevice,
+				"resolve-vibetv",
+				explicit,
+				"Disconnect the other serial device and connect VibeTV with a data-capable Cable.",
+				errors.New("a non-VibeTV serial device answered hello"),
+			)
+		}
 		detail := "no matching Cable VibeTV answered hello"
 		if expectedDeviceID != "" {
 			detail = fmt.Sprintf("VibeTV deviceId %q was not found", expectedDeviceID)

@@ -61,6 +61,7 @@ const (
 	cableDeviceTarget        = "cable://vibetv"
 	deviceTimeout            = 15 * time.Second
 	deviceSearchWindow       = 30 * time.Second
+	cableTransitionWait      = 55 * time.Second
 	repairRequestTimeout     = 110 * time.Second
 	// Device requests are serialized because the ESP8266 serves one request at
 	// a time. A read-only probe can therefore wait behind a frame render before
@@ -192,6 +193,10 @@ type Server struct {
 	refreshCableHello      func() (protocol.DeviceHello, bool)
 	resetCableSender       func()
 	setCableConnectionMode func(string, string, string) error
+	confirmCableMode       func(string, string) error
+	readCableSettings      func(string, string) (protocol.DeviceSettings, error)
+	writeCableSettings     func(string, string, protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error)
+	configureCableWiFi     func(string, string, string, string) error
 	subnetTargets          func() []string
 	defaultWiFiTarget      func() string
 	streamStatus           func(context.Context, string) displayStreamInfo
@@ -942,6 +947,10 @@ func New(opts Options) (*Server, error) {
 		refreshCableHello:      refreshDefaultCableHello,
 		resetCableSender:       usb.CloseDefaultSender,
 		setCableConnectionMode: usb.SetConnectionMode,
+		confirmCableMode:       usb.ConfirmConnectionMode,
+		readCableSettings:      usb.ReadSettings,
+		writeCableSettings:     usb.WriteSettings,
+		configureCableWiFi:     usb.ConfigureWiFi,
 		subnetTargets:          localSubnetTargets,
 		defaultWiFiTarget:      setup.DefaultWiFiTarget,
 		streamStatus:           inspectDisplayStream,
@@ -1045,6 +1054,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/device", s.handleDevice)
 	mux.HandleFunc("/v1/device/pair", s.handleDevicePair)
 	mux.HandleFunc("/v1/setup/connection-mode", s.handleSetupConnectionMode)
+	mux.HandleFunc("/v1/setup/wifi", s.handleSetupWiFi)
 	mux.HandleFunc("/v1/setup/reset", s.handleSetupReset)
 	mux.HandleFunc("/v1/settings", s.handleSettings)
 	mux.HandleFunc("/v1/themes/install", s.handleThemeInstall)
@@ -3414,9 +3424,45 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
+	transitioningFromWiFi := mode == "cable" &&
+		runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "wifi" &&
+		strings.TrimSpace(cfg.DeviceTarget) != "" && strings.TrimSpace(cfg.DeviceID) != ""
+	if transitioningFromWiFi {
+		hello, helloErr := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
+		if helloErr != nil || !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(cfg.DeviceID)) {
+			writeError(w, http.StatusConflict, "wifi_device_not_found", "The selected WiFi VibeTV is not available.", "Keep VibeTV powered on and retry.")
+			return
+		}
+		if !supportsTransport(hello, "usb") {
+			writeError(w, http.StatusConflict, "connection_mode_unsupported", "This VibeTV does not support Cable mode.", "Keep this VibeTV connected through WiFi.")
+			return
+		}
+		var response struct {
+			OK bool `json:"ok"`
+		}
+		if err := s.doJSON(r.Context(), http.MethodPost, cfg.DeviceTarget, "/api/connection-mode", cfg.DeviceToken, struct {
+			DeviceID string `json:"deviceId"`
+			Mode     string `json:"mode"`
+		}{DeviceID: cfg.DeviceID, Mode: "cable"}, &response); err != nil {
+			writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not change its connection.", "Keep VibeTV powered on and retry.")
+			return
+		}
+	}
 	port, err := s.resolveCablePort("", strings.TrimSpace(cfg.DeviceID))
+	if err != nil && transitioningFromWiFi {
+		deadline := time.Now().Add(cableTransitionWait)
+		for err != nil && time.Now().Before(deadline) {
+			select {
+			case <-r.Context().Done():
+				writeError(w, http.StatusRequestTimeout, "connection_mode_switch_cancelled", "The connection change was cancelled.", "Keep VibeTV connected by Cable and try again.")
+				return
+			case <-time.After(500 * time.Millisecond):
+			}
+			port, err = s.resolveCablePort("", strings.TrimSpace(cfg.DeviceID))
+		}
+	}
 	if err != nil {
-		writeError(w, http.StatusConflict, "cable_device_not_found", "No single Cable VibeTV could be selected.", "Connect exactly one VibeTV with a data-capable Cable, then try again.")
+		writeCableResolutionError(w, err)
 		return
 	}
 	hello, err := s.readCableHello(port)
@@ -3425,6 +3471,16 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	hello = hello.Normalize()
+	if mode == "cable" && hello.Capabilities.Transport.TransitionPending &&
+		strings.EqualFold(hello.Capabilities.Transport.TransitionTo, "cable") {
+		if err := s.confirmCableMode(port, hello.DeviceID); err != nil {
+			writeError(w, http.StatusBadGateway, "connection_mode_confirmation_failed", "VibeTV could not confirm its Cable connection.", "Keep VibeTV connected by Cable and try again before it returns to WiFi.")
+			return
+		}
+		hello.Capabilities.Transport.TransitionPending = false
+		hello.Capabilities.Transport.TransitionFrom = ""
+		hello.Capabilities.Transport.TransitionTo = ""
+	}
 	supportedTransports := append([]string(nil), hello.Capabilities.Transport.Supported...)
 	if expected := strings.TrimSpace(cfg.DeviceID); expected != "" && !strings.EqualFold(expected, hello.DeviceID) {
 		writeError(w, http.StatusConflict, "device_identity_changed", "A different VibeTV answered on Cable.", "Connect the VibeTV you selected, then try again.")
@@ -3441,14 +3497,33 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	deviceMode := strings.TrimSpace(strings.ToLower(hello.Capabilities.Transport.Mode))
 	modeAlreadySelected := runtimeconfig.NormalizeConnectionMode(deviceMode) == mode ||
 		(deviceMode == "legacy-wifi-only" && mode == "wifi")
+	knownDevice, known := cfg.KnownDevice(hello.DeviceID)
+	if mode == "wifi" && !modeAlreadySelected && (!known || strings.TrimSpace(knownDevice.Target) == "") {
+		writeJSON(w, http.StatusOK, struct {
+			OK             bool       `json:"ok"`
+			ConnectionMode string     `json:"connectionMode"`
+			Status         string     `json:"status"`
+			Device         deviceInfo `json:"device"`
+		}{
+			OK:             true,
+			ConnectionMode: "wifi",
+			Status:         "wifi_credentials_required",
+			Device: deviceInfo{
+				Target:       cableDeviceTarget,
+				DeviceID:     hello.DeviceID,
+				Active:       true,
+				Paired:       true,
+				Capabilities: &hello.Capabilities,
+			},
+		})
+		return
+	}
 	if !modeAlreadySelected {
 		if err := s.setCableConnectionMode(port, hello.DeviceID, mode); err != nil {
 			writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not change its connection.", "Keep VibeTV connected by Cable, then try again.")
 			return
 		}
 	}
-	knownDevice, known := cfg.KnownDevice(hello.DeviceID)
-
 	if mode == "wifi" {
 		if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
 			current.ConnectionMode = ""
@@ -3521,6 +3596,95 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		Status         string     `json:"status"`
 		Device         deviceInfo `json:"device"`
 	}{OK: true, ConnectionMode: "cable", Status: "selected", Device: device})
+}
+
+func (s *Server) handleSetupWiFi(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var req struct {
+		SSID     string `json:"ssid"`
+		Password string `json:"password"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	req.SSID = strings.TrimSpace(req.SSID)
+	if req.SSID == "" {
+		writeError(w, http.StatusBadRequest, "wifi_name_required", "Enter your WiFi name.", "Enter the WiFi name exactly as it appears on your other devices.")
+		return
+	}
+	if len(req.SSID) >= 33 || len(req.Password) >= 65 {
+		writeError(w, http.StatusBadRequest, "wifi_credentials_too_long", "The WiFi name or password is too long.", "Check the WiFi details and try again.")
+		return
+	}
+	if s.firmwareUpdateActive.Load() {
+		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then try again.")
+		return
+	}
+
+	s.deviceMaintenanceMu.Lock()
+	defer s.deviceMaintenanceMu.Unlock()
+	s.repairMu.Lock()
+	defer s.repairMu.Unlock()
+	if s.pauseDisplayStream != nil {
+		s.pauseDisplayStream(true)
+		defer s.pauseDisplayStream(false)
+	}
+	cfg, err := s.configForMaintenance()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" || strings.TrimSpace(cfg.DeviceID) == "" {
+		writeError(w, http.StatusConflict, "cable_setup_required", "VibeTV is not ready to receive WiFi details by Cable.", "Choose Cable first, then choose WiFi again.")
+		return
+	}
+	port, hello, ok := s.requireCableControlDevice(w, cfg)
+	if !ok {
+		return
+	}
+	if !supportsTransport(hello, "wifi") {
+		writeError(w, http.StatusConflict, "connection_mode_unsupported", "This VibeTV does not support WiFi.", "Keep this VibeTV connected by Cable.")
+		return
+	}
+	if err := s.configureCableWiFi(port, hello.DeviceID, req.SSID, req.Password); err != nil {
+		writeError(w, http.StatusBadGateway, "wifi_configuration_failed", "VibeTV could not save these WiFi details.", "Check the WiFi name and password, keep the Cable connected, then try again.")
+		return
+	}
+	supportedTransports := append([]string(nil), hello.Capabilities.Transport.Supported...)
+	knownDevice, known := cfg.KnownDevice(hello.DeviceID)
+	if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
+		current.ConnectionMode = ""
+		current.DeviceID = strings.TrimSpace(hello.DeviceID)
+		current.CableAutoBindDisabled = true
+		current.ConnectionModeChoiceRequired = false
+		current.DeviceTransports = supportedTransports
+		if known {
+			current.DeviceTarget = knownDevice.Target
+			current.DeviceToken = knownDevice.DeviceToken
+		}
+	}); err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, struct {
+		OK             bool       `json:"ok"`
+		ConnectionMode string     `json:"connectionMode"`
+		Status         string     `json:"status"`
+		Device         deviceInfo `json:"device"`
+	}{
+		OK:             true,
+		ConnectionMode: "wifi",
+		Status:         "waiting_for_wifi",
+		Device: deviceInfo{
+			Target:       cableDeviceTarget,
+			DeviceID:     hello.DeviceID,
+			Active:       true,
+			Paired:       true,
+			Capabilities: &hello.Capabilities,
+		},
+	})
 }
 
 func (s *Server) authenticatedKnownWiFiDevice(
@@ -4068,6 +4232,109 @@ func repairDiscoveryErrorIsRetryable(err error) bool {
 	return !errors.As(err, &multiple)
 }
 
+func deviceSettingsFromProtocol(settings protocol.DeviceSettings) deviceSettings {
+	result := deviceSettings{
+		Display: displaySettings{BrightnessPercent: settings.Display.BrightnessPercent},
+	}
+	if settings.Standby != nil {
+		result.Standby = &standbySettings{
+			Enabled:           settings.Standby.Enabled,
+			TimeoutMinutes:    settings.Standby.TimeoutMinutes,
+			BrightnessPercent: settings.Standby.BrightnessPercent,
+			ScreensaverPath:   settings.Standby.ScreensaverPath,
+		}
+	}
+	return result
+}
+
+func settingsPatchForRequest(
+	w http.ResponseWriter,
+	hello protocol.DeviceHello,
+	brightnessPercent int,
+	displayBrightnessPercent int,
+	standbyValue *standbySettings,
+) (protocol.DeviceSettingsPatch, bool) {
+	caps := protocol.CapabilitiesFromHello(hello)
+	if standbyValue != nil {
+		if caps.Known && !caps.SupportsStandby {
+			writeError(w, http.StatusBadRequest, "standby_unsupported", "This VibeTV cannot show a screensaver.", "Update VibeTV, then try again.")
+			return protocol.DeviceSettingsPatch{}, false
+		}
+		return protocol.DeviceSettingsPatch{Standby: &protocol.DeviceStandbySettings{
+			Enabled:           standbyValue.Enabled,
+			TimeoutMinutes:    standbyValue.TimeoutMinutes,
+			BrightnessPercent: standbyValue.BrightnessPercent,
+			ScreensaverPath:   standbyValue.ScreensaverPath,
+		}}, true
+	}
+	brightness := brightnessPercent
+	if brightness == 0 {
+		brightness = displayBrightnessPercent
+	}
+	if caps.Known && !caps.SupportsBrightness {
+		writeError(w, http.StatusBadRequest, "brightness_unsupported", "This VibeTV does not advertise brightness control.", "Update firmware or use a device with brightness support.")
+		return protocol.DeviceSettingsPatch{}, false
+	}
+	minBrightness := protocol.DefaultMinBrightness
+	maxBrightness := protocol.DefaultMaxBrightness
+	if caps.SupportsBrightness {
+		minBrightness = caps.MinBrightnessPercent
+		maxBrightness = caps.MaxBrightnessPercent
+	}
+	if brightness < minBrightness || brightness > maxBrightness {
+		writeError(w, http.StatusBadRequest, "invalid_brightness", fmt.Sprintf("Brightness must be between %d and %d.", minBrightness, maxBrightness), "Choose a supported brightness value and retry.")
+		return protocol.DeviceSettingsPatch{}, false
+	}
+	return protocol.DeviceSettingsPatch{BrightnessPercent: &brightness}, true
+}
+
+func (s *Server) requireCableControlDevice(
+	w http.ResponseWriter,
+	cfg runtimeconfig.Config,
+) (string, protocol.DeviceHello, bool) {
+	expectedDeviceID := strings.TrimSpace(cfg.DeviceID)
+	if expectedDeviceID == "" {
+		writeDeviceNotFound(w)
+		return "", protocol.DeviceHello{}, false
+	}
+	port, err := s.resolveCablePort("", expectedDeviceID)
+	if err != nil {
+		writeCableResolutionError(w, err)
+		return "", protocol.DeviceHello{}, false
+	}
+	hello, err := s.readCableHello(port)
+	hello = hello.Normalize()
+	if err != nil || !cableHelloMatchesConfig(hello, expectedDeviceID) {
+		writeError(w, http.StatusConflict, "cable_identity_unavailable", "The selected Cable VibeTV did not provide its current identity.", "Reconnect the Cable, wait for VibeTV to start, then retry.")
+		return "", protocol.DeviceHello{}, false
+	}
+	return port, hello, true
+}
+
+func writeCableResolutionError(w http.ResponseWriter, err error) {
+	switch errcode.Of(err) {
+	case errcode.TransportMultipleDevices:
+		writeError(w, http.StatusConflict, "multiple_cable_devices", "More than one VibeTV is connected by Cable.", "Leave only the VibeTV you want connected, then try again.")
+	case errcode.TransportForeignDevice:
+		writeError(w, http.StatusConflict, "foreign_serial_device", "The connected USB device is not a VibeTV.", "Disconnect it and connect VibeTV with a data-capable Cable.")
+	default:
+		writeError(w, http.StatusConflict, "cable_device_not_found", "The selected Cable VibeTV is not available.", "Connect that VibeTV with a data-capable Cable and retry.")
+	}
+}
+
+func (s *Server) cableDeviceInfo(ctx context.Context, cfg runtimeconfig.Config, hello protocol.DeviceHello) deviceInfo {
+	stream := s.streamStatus(ctx, cableDeviceTarget)
+	return s.withConfiguredConnectionState(cfg, withDisplayStreamInfo(deviceInfo{
+		Target:       cableDeviceTarget,
+		DeviceID:     hello.DeviceID,
+		Board:        hello.Board,
+		Firmware:     hello.Firmware,
+		Active:       true,
+		Paired:       true,
+		Capabilities: &hello.Capabilities,
+	}, stream), providerSetupStreamForTarget(streamPointer(stream), cableDeviceTarget), false)
+}
+
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -4080,6 +4347,26 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
+	if cfg, err := s.config(); err != nil {
+		writeInternalError(w, err)
+		return
+	} else if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
+		port, hello, ok := s.requireCableControlDevice(w, cfg)
+		if !ok {
+			return
+		}
+		settings, err := s.readCableSettings(port, hello.DeviceID)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "settings_read_failed", "Could not read VibeTV settings.", "Keep VibeTV connected by Cable and retry.")
+			return
+		}
+		writeJSON(w, http.StatusOK, settingsResponse{
+			OK:       true,
+			Settings: deviceSettingsFromProtocol(settings),
+			Device:   s.cableDeviceInfo(r.Context(), cfg, hello),
+		})
+		return
+	}
 	cfg, hello, ok := s.requireDevice(w, r)
 	if !ok {
 		return
@@ -4104,10 +4391,6 @@ func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
-	cfg, hello, ok := s.requireDevice(w, r)
-	if !ok {
-		return
-	}
 	var req struct {
 		BrightnessPercent int `json:"brightnessPercent"`
 		Display           struct {
@@ -4118,48 +4401,60 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	caps := protocol.CapabilitiesFromHello(hello)
-	form := url.Values{}
-	form.Set("api", "1")
-	if req.Standby != nil {
-		if caps.Known && !caps.SupportsStandby {
-			writeError(w, http.StatusBadRequest, "standby_unsupported", "This VibeTV cannot show a screensaver.", "Update VibeTV, then try again.")
+	cfg, err := s.config()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
+		port, hello, ok := s.requireCableControlDevice(w, cfg)
+		if !ok {
 			return
 		}
+		patch, ok := settingsPatchForRequest(w, hello, req.BrightnessPercent, req.Display.BrightnessPercent, req.Standby)
+		if !ok {
+			return
+		}
+		settings, err := s.writeCableSettings(port, hello.DeviceID, patch)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "settings_write_failed", "Could not update VibeTV settings.", "Keep VibeTV connected by Cable and retry.")
+			return
+		}
+		writeJSON(w, http.StatusOK, settingsResponse{
+			OK:       true,
+			Settings: deviceSettingsFromProtocol(settings),
+			Device:   s.cableDeviceInfo(r.Context(), cfg, hello),
+		})
+		return
+	}
+	wifiCfg, hello, ok := s.requireDevice(w, r)
+	if !ok {
+		return
+	}
+	cfg = wifiCfg
+	patch, ok := settingsPatchForRequest(w, hello, req.BrightnessPercent, req.Display.BrightnessPercent, req.Standby)
+	if !ok {
+		return
+	}
+	form := url.Values{}
+	form.Set("api", "1")
+	if patch.Standby != nil {
 		enabled := "0"
-		if req.Standby.Enabled {
+		if patch.Standby.Enabled {
 			enabled = "1"
 		}
 		// The device clamps timeout and screensaver brightness and answers with
 		// the stored values, so the Companion does not repeat that arithmetic.
 		form.Set("sb", enabled)
-		form.Set("st", strconv.Itoa(req.Standby.TimeoutMinutes))
-		form.Set("sbr", strconv.Itoa(req.Standby.BrightnessPercent))
+		form.Set("st", strconv.Itoa(patch.Standby.TimeoutMinutes))
+		form.Set("sbr", strconv.Itoa(patch.Standby.BrightnessPercent))
 		// Omitting screensaverPath leaves the slot as it is; an empty string
 		// clears it. The device rejects a path it has no file for.
-		if req.Standby.ScreensaverPath != nil {
-			form.Set("ss", strings.TrimSpace(*req.Standby.ScreensaverPath))
+		if patch.Standby.ScreensaverPath != nil {
+			form.Set("ss", strings.TrimSpace(*patch.Standby.ScreensaverPath))
 		}
 	} else {
-		brightness := req.BrightnessPercent
-		if brightness == 0 {
-			brightness = req.Display.BrightnessPercent
-		}
-		if caps.Known && !caps.SupportsBrightness {
-			writeError(w, http.StatusBadRequest, "brightness_unsupported", "This VibeTV does not advertise brightness control.", "Update firmware or use a device with brightness support.")
-			return
-		}
-		minBrightness := protocol.DefaultMinBrightness
-		maxBrightness := protocol.DefaultMaxBrightness
-		if caps.SupportsBrightness {
-			minBrightness = caps.MinBrightnessPercent
-			maxBrightness = caps.MaxBrightnessPercent
-		}
-		if brightness < minBrightness || brightness > maxBrightness {
-			writeError(w, http.StatusBadRequest, "invalid_brightness", fmt.Sprintf("Brightness must be between %d and %d.", minBrightness, maxBrightness), "Choose a supported brightness value and retry.")
-			return
-		}
-		form.Set("b", strconv.Itoa(brightness))
+		form.Set("b", strconv.Itoa(*patch.BrightnessPercent))
 	}
 	settings, err := s.updateDeviceSettings(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, form)
 	if err != nil {

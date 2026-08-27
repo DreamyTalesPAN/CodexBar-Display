@@ -63,6 +63,49 @@ describe("DeviceStartupScreen", () => {
     expect(html).not.toContain("Recommended</span>");
   });
 
+  it("collects WiFi details in the Mac App after Cable selection", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        connectionModeChoiceRequired
+        deviceCandidates={[]}
+        deviceSearchState="idle"
+        onConfigureWiFi={vi.fn()}
+        onPair={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        onSelectConnectionMode={vi.fn()}
+        wifiCredentialsRequired
+      />,
+    );
+
+    expect(html).toContain("Enter the same WiFi details this Mac uses.");
+    expect(html).toContain('id="startup-wifi-name"');
+    expect(html).toContain('id="startup-wifi-password"');
+    expect(html).toContain("Connect to WiFi</span>");
+    expect(html).not.toContain("VibeTV-Setup");
+    expect(html).not.toContain("192.168.4.1");
+    expect(html).not.toContain("phone");
+  });
+
+  it("keeps the WiFi transition visible after the server clears the chooser", () => {
+    const html = renderToStaticMarkup(
+      <DeviceStartupScreen
+        deviceCandidates={[]}
+        deviceSearchState="idle"
+        onPair={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        wifiConnectionInProgress
+      />,
+    );
+
+    expect(html).toContain("Connect VibeTV to WiFi</h1>");
+    expect(html).toContain("VibeTV is connecting</div>");
+    expect(html).toContain("Scan WiFi again</span>");
+    expect(html).not.toContain("Choose how VibeTV connects");
+    expect(html).not.toContain("VibeTV-Setup");
+  });
+
   it("keeps searching as an accessible heading and one focused status", () => {
     const html = renderToStaticMarkup(
       <DeviceStartupScreen

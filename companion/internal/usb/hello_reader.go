@@ -107,6 +107,47 @@ func readConnectionModeSwitchFromPort(port SerialPort, window time.Duration, dev
 	return nil
 }
 
+func readSettingsFromPort(port SerialPort, window time.Duration, deviceID string) (protocol.DeviceSettings, error) {
+	var settings protocol.DeviceSettings
+	var responseErr error
+	seen := readPortLines(port, window, func(line string) bool {
+		if !strings.HasPrefix(strings.TrimSpace(line), "{") {
+			return false
+		}
+		var reply struct {
+			Kind     string                  `json:"kind"`
+			DeviceID string                  `json:"deviceId"`
+			Settings protocol.DeviceSettings `json:"settings"`
+			Code     string                  `json:"code"`
+			Message  string                  `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(line), &reply); err != nil {
+			return false
+		}
+		switch strings.TrimSpace(reply.Kind) {
+		case "error":
+			responseErr = fmt.Errorf("device rejected settings request: %s: %s", strings.TrimSpace(reply.Code), strings.TrimSpace(reply.Message))
+			return true
+		case "settings":
+			if !strings.EqualFold(strings.TrimSpace(reply.DeviceID), strings.TrimSpace(deviceID)) {
+				responseErr = errors.New("device returned settings for a different identity")
+				return true
+			}
+			settings = reply.Settings
+			return true
+		default:
+			return false
+		}
+	})
+	if responseErr != nil {
+		return protocol.DeviceSettings{}, responseErr
+	}
+	if !seen {
+		return protocol.DeviceSettings{}, errors.New("device did not acknowledge settings request")
+	}
+	return settings, nil
+}
+
 func readPortLines(port SerialPort, window time.Duration, accept func(string) bool) bool {
 	if port == nil || window <= 0 || accept == nil {
 		return false

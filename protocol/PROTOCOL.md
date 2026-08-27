@@ -14,6 +14,30 @@ Status:
 - v2 handshake negotiation and ThemeSpec v1 payload support are available on supported firmware.
 - Negotiation prefers v2 and falls back to v1.
 
+## Cable control requests
+
+Cable control uses the same newline-delimited JSON stream as frames. Every
+request that can read or change customer state carries the expected `deviceId`;
+the firmware rejects a different identity. Control replies are never passed to
+the frame parser.
+
+- `{"kind":"request","op":"hello"}` returns the normal Device Hello.
+- `{"kind":"request","op":"status"}` returns the current Cable mode and
+  transition state.
+- `{"kind":"request","op":"settings","deviceId":"14799300"}` returns a
+  `kind:"settings"` reply containing the persisted display and standby values.
+- The same `settings` request may include a partial `settings` object. The
+  firmware applies it through the same validation, persistence and readback
+  owner as `POST /api/settings`, then returns the complete stored values.
+- `{"kind":"request","op":"configure-wifi","deviceId":"14799300","ssid":"Home WiFi","password":"..."}`
+  stores the credentials through the existing credential owner and begins the
+  bounded Cable-to-WiFi transition. The secret is never echoed or logged. A
+  `kind:"connection-mode",status:"switching"` reply only acknowledges that the
+  transition started; the Mac must still rediscover and confirm the same
+  `deviceId` over WiFi.
+- `set-connection-mode` and `confirm-connection-mode` start and confirm the
+  bounded mode transactions defined in the hardware contract.
+
 ## Host -> Device Frame
 
 Usage frame (v1 or v2, negotiated):

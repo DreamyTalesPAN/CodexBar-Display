@@ -7520,7 +7520,7 @@ func TestStatusPreservesFreshCableChoiceAndReportsTransportSupport(t *testing.T)
 	}
 }
 
-func TestSetupConnectionModeStartsWiFiTransitionBeforeChangingHostMode(t *testing.T) {
+func TestSetupConnectionModeCollectsWiFiCredentialsBeforeChangingHostMode(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		ConnectionMode: "cable",
 		DeviceID:       "device-cable",
@@ -7536,7 +7536,7 @@ func TestSetupConnectionModeStartsWiFiTransitionBeforeChangingHostMode(t *testin
 			Kind:     "hello",
 			DeviceID: "device-cable",
 			Capabilities: protocol.CapabilityBlock{
-				Transport: protocol.TransportCapabilities{Supported: []string{"usb", "wifi"}},
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"}},
 			},
 		}, nil
 	}
@@ -7553,21 +7553,46 @@ func TestSetupConnectionModeStartsWiFiTransitionBeforeChangingHostMode(t *testin
 	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
 	req.Header.Set("Content-Type", "application/json")
 	server.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusAccepted {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "wifi_credentials_required") {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if switchCalls != 1 {
-		t.Fatalf("expected one device transition, got %d", switchCalls)
+	if switchCalls != 0 {
+		t.Fatalf("WiFi transition started before credentials were supplied: %d", switchCalls)
 	}
 	cfg, err := server.config()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ConnectionMode != "" || !cfg.CableAutoBindDisabled || cfg.DeviceID != "device-cable" {
-		t.Fatalf("host mode changed before WiFi confirmation: %+v", cfg)
+	if cfg.ConnectionMode != "cable" || cfg.CableAutoBindDisabled || cfg.DeviceID != "device-cable" {
+		t.Fatalf("host mode changed before WiFi credentials: %+v", cfg)
 	}
-	if cfg.ConnectionModeChoiceRequired {
-		t.Fatal("explicit WiFi selection must clear the connection chooser")
+
+	configuredSSID := ""
+	configuredPassword := ""
+	server.configureCableWiFi = func(port, deviceID, ssid, password string) error {
+		if port != "/dev/cu.usbserial-vibetv" || deviceID != "device-cable" {
+			t.Fatalf("unexpected Cable WiFi target port=%q device=%q", port, deviceID)
+		}
+		configuredSSID = ssid
+		configuredPassword = password
+		return nil
+	}
+	wifi := httptest.NewRecorder()
+	wifiReq := httptest.NewRequest(http.MethodPost, "/v1/setup/wifi", strings.NewReader(`{"ssid":"Home WiFi","password":"secret pass"}`))
+	wifiReq.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(wifi, wifiReq)
+	if wifi.Code != http.StatusAccepted || !strings.Contains(wifi.Body.String(), "waiting_for_wifi") {
+		t.Fatalf("WiFi credentials status=%d body=%s", wifi.Code, wifi.Body.String())
+	}
+	if configuredSSID != "Home WiFi" || configuredPassword != "secret pass" {
+		t.Fatalf("WiFi credentials were not forwarded exactly")
+	}
+	cfg, err = server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "" || !cfg.CableAutoBindDisabled || cfg.DeviceID != "device-cable" || cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("host did not retain a pending WiFi transition: %+v", cfg)
 	}
 }
 
@@ -7597,6 +7622,81 @@ func TestSetupConnectionModeRejectsWiFiForCableOnlyBoard(t *testing.T) {
 	server.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "connection_mode_unsupported") {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSetupConnectionModeSwitchesFromWiFiThroughTheActiveHTTPPath(t *testing.T) {
+	const token = "pair-token"
+	var switchCalls int
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			if r.Header.Get("X-VibeTV-Token") != token {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			_, _ = io.WriteString(w, `{"kind":"hello","deviceId":"wifi-to-cable","board":"esp8266-smalltv-st7789","capabilities":{"transport":{"active":"wifi","mode":"wifi","supported":["usb","wifi"]}}}`)
+		case "/api/connection-mode":
+			switchCalls++
+			if r.Method != http.MethodPost || r.Header.Get("X-VibeTV-Token") != token {
+				t.Fatalf("unexpected WiFi switch request method=%s token=%q", r.Method, r.Header.Get("X-VibeTV-Token"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"ok":true}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "wifi",
+		DeviceID:       "wifi-to-cable",
+		DeviceTarget:   device.URL,
+		DeviceToken:    token,
+	})
+	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
+		if explicit != "" || expectedDeviceID != "wifi-to-cable" {
+			t.Fatalf("unexpected Cable confirmation resolution explicit=%q expected=%q", explicit, expectedDeviceID)
+		}
+		return "/dev/cu.usbserial-transition", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			Board:    "esp8266-smalltv-st7789",
+			DeviceID: "wifi-to-cable",
+			Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{
+				Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"},
+				TransitionPending: true, TransitionFrom: "wifi", TransitionTo: "cable",
+			}},
+		}, nil
+	}
+	confirmCalls := 0
+	server.confirmCableMode = func(port, deviceID string) error {
+		confirmCalls++
+		if port != "/dev/cu.usbserial-transition" || deviceID != "wifi-to-cable" {
+			t.Fatalf("unexpected Cable confirmation port=%q device=%q", port, deviceID)
+		}
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if switchCalls != 1 || confirmCalls != 1 {
+		t.Fatalf("expected one WiFi switch and one Cable confirmation, got switch=%d confirm=%d", switchCalls, confirmCalls)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.DeviceID != "wifi-to-cable" || cfg.DeviceTarget != device.URL || cfg.DeviceToken != token {
+		t.Fatalf("Cable mode did not preserve the authenticated WiFi profile: %+v", cfg)
 	}
 }
 
@@ -9980,6 +10080,67 @@ func TestThemeInstallCanBeDisabledByLocalEnv(t *testing.T) {
 	}
 	if got.OK || got.Error.Code != "theme_install_disabled" {
 		t.Fatalf("unexpected disabled response: %+v", got)
+	}
+}
+
+func TestCableSettingsUseSerialReadbackWithoutAnHTTPProbe(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "cable-settings",
+	})
+	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
+		if explicit != "" || expectedDeviceID != "cable-settings" {
+			t.Fatalf("unexpected Cable settings resolution explicit=%q expected=%q", explicit, expectedDeviceID)
+		}
+		return "/dev/cu.usbserial-settings", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			Board:    "esp8266-smalltv-st7789",
+			DeviceID: "cable-settings",
+			Capabilities: protocol.CapabilityBlock{
+				Display: protocol.DisplayCapabilities{
+					Brightness: protocol.DisplayBrightnessCapabilities{Supported: true, MinPercent: 10, MaxPercent: 100},
+				},
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"}},
+			},
+		}, nil
+	}
+	confirmed := protocol.DeviceSettings{
+		Display: protocol.DeviceDisplaySettings{BrightnessPercent: 35},
+		Standby: &protocol.DeviceStandbySettings{Enabled: true, TimeoutMinutes: 15, BrightnessPercent: 10},
+	}
+	server.readCableSettings = func(port, deviceID string) (protocol.DeviceSettings, error) {
+		if port != "/dev/cu.usbserial-settings" || deviceID != "cable-settings" {
+			t.Fatalf("unexpected Cable settings read port=%q device=%q", port, deviceID)
+		}
+		return confirmed, nil
+	}
+	server.writeCableSettings = func(port, deviceID string, patch protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error) {
+		if port != "/dev/cu.usbserial-settings" || deviceID != "cable-settings" || patch.BrightnessPercent == nil || *patch.BrightnessPercent != 60 {
+			t.Fatalf("unexpected Cable settings write port=%q device=%q patch=%+v", port, deviceID, patch)
+		}
+		confirmed.Display.BrightnessPercent = 60
+		return confirmed, nil
+	}
+	server.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("Cable settings must not probe HTTP")
+		return nil, errors.New("unexpected HTTP request")
+	})
+
+	get := httptest.NewRecorder()
+	server.Handler().ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/v1/settings", nil))
+	if get.Code != http.StatusOK || !strings.Contains(get.Body.String(), `"brightnessPercent":35`) {
+		t.Fatalf("Cable settings read status=%d body=%s", get.Code, get.Body.String())
+	}
+
+	post := httptest.NewRecorder()
+	postReq := httptest.NewRequest(http.MethodPost, "/v1/settings", strings.NewReader(`{"brightnessPercent":60}`))
+	postReq.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(post, postReq)
+	if post.Code != http.StatusOK || !strings.Contains(post.Body.String(), `"brightnessPercent":60`) {
+		t.Fatalf("Cable settings write status=%d body=%s", post.Code, post.Body.String())
 	}
 }
 
