@@ -4,6 +4,9 @@ export const RESTART_CONTROL_CENTER_URL =
 export const REPAIR_CONTROL_CENTER_RUNTIME_URL =
   "vibetv://repair-runtime";
 export const REPAIR_CODEXBAR_URL = "vibetv://repair-codexbar";
+export const FINISH_CODEXBAR_RECOVERY_URL =
+  "vibetv://finish-codexbar-recovery";
+export const OPEN_CODEXBAR_URL = "vibetv://open-codexbar";
 const NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX = "VibeTVControlCenter/";
 
 export function restartLocalControlCenterApp(): void {
@@ -18,6 +21,20 @@ export function isNativeControlCenterUserAgent(userAgent: string): boolean {
   return userAgent.startsWith(NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX);
 }
 
+export function nativeControlCenterAppBuild(userAgent: string): {
+  version?: string;
+  build?: string;
+} {
+  if (!isNativeControlCenterUserAgent(userAgent)) {
+    return {};
+  }
+  const [version, build] = userAgent
+    .slice(NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX.length)
+    .trim()
+    .split("+");
+  return { version: version || undefined, build: build || undefined };
+}
+
 export function isNativeControlCenterApp(): boolean {
   return (
     typeof navigator !== "undefined" &&
@@ -27,6 +44,14 @@ export function isNativeControlCenterApp(): boolean {
 
 export function launchCodexBarRepair(): void {
   launchNativeControlCenterAction(REPAIR_CODEXBAR_URL);
+}
+
+export function finishCodexBarRecovery(): void {
+  launchNativeControlCenterAction(FINISH_CODEXBAR_RECOVERY_URL);
+}
+
+export function openCodexBarApp(): void {
+  launchNativeControlCenterAction(OPEN_CODEXBAR_URL);
 }
 
 function launchNativeControlCenterAction(url: string): void {
@@ -138,13 +163,46 @@ export function localizeCompanionAssetUrl(
   return rawUrl;
 }
 
-export function localThemeRenderPackUrl(themeId: string): string {
-  return `/theme-packs/render/${encodeURIComponent(themeId)}.json`;
+export function localThemeRenderPackUrl(
+  themeId: string,
+  themeSpecPath?: string,
+  themeSpecHash?: string,
+): string {
+  const encodedThemeId = encodeURIComponent(themeId);
+  const specFile = themeSpecFileName(themeSpecPath);
+  const path = specFile
+    ? `/theme-packs/render/${encodedThemeId}/${encodeURIComponent(specFile)}`
+    : `/theme-packs/render/${encodedThemeId}.json`;
+  const specHash = normalizeThemeSpecHash(themeSpecHash);
+  return specHash ? `${path}?specHash=${specHash}` : path;
 }
 
-export function themeRenderPackUrl(themeId: string): string {
+export function themeRenderPackUrl(
+  themeId: string,
+  themeSpecPath?: string,
+  themeSpecHash?: string,
+): string {
   if (isLocalCompanionOrigin()) {
-    return localThemeRenderPackUrl(themeId);
+    return localThemeRenderPackUrl(themeId, themeSpecPath, themeSpecHash);
   }
-  return `/api/theme-pack/${encodeURIComponent(themeId)}`;
+  const url = `/api/theme-pack/${encodeURIComponent(themeId)}`;
+  const query = new URLSearchParams();
+  if (themeSpecPath) {
+    query.set("specPath", themeSpecPath);
+  }
+  const specHash = normalizeThemeSpecHash(themeSpecHash);
+  if (specHash) {
+    query.set("specHash", specHash);
+  }
+  return query.size > 0 ? `${url}?${query}` : url;
+}
+
+function themeSpecFileName(themeSpecPath: string | undefined): string {
+  const file = (themeSpecPath || "").trim().split("/").pop() || "";
+  return /^[a-zA-Z0-9._-]+\.json$/.test(file) ? file : "";
+}
+
+function normalizeThemeSpecHash(value: string | undefined): string {
+  const hash = (value || "").trim().toLowerCase();
+  return /^[a-f0-9]{8}$/.test(hash) ? hash : "";
 }

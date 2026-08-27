@@ -43,9 +43,9 @@ const (
 	defaultWiFiInterval        = 30 * time.Second
 	defaultCycleTimeout        = 180 * time.Second
 	startupFastPollWindow      = 2 * time.Minute
-	startupFastPollInterval    = 30 * time.Second
+	startupFastPollInterval    = 5 * time.Second
+	failureRetryInterval       = 5 * time.Second
 	lastGoodPersistInterval    = 1 * time.Minute
-	directProviderProbeMax     = 3
 	themeEnvVar                = "CODEXBAR_DISPLAY_THEME"
 	coldStartTimeoutEnvVar     = "CODEXBAR_DISPLAY_COLDSTART_TIMEOUT_SECS"
 	cycleTimeoutEnvVar         = "CODEXBAR_DISPLAY_CYCLE_TIMEOUT_SECS"
@@ -57,6 +57,8 @@ const (
 	collectorTimeoutEnvVar     = "CODEXBAR_DISPLAY_FETCH_TIMEOUT_SECS"
 	collectorOrderEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_ORDER"
 	providerMaxAgeEnvVar       = "CODEXBAR_DISPLAY_PROVIDER_LAST_GOOD_MAX_AGE"
+	collectorWarmupEnvVar      = "CODEXBAR_DISPLAY_COLLECTOR_WARMUP_MAX_AGE"
+	defaultProviderMaxAge      = 10 * time.Minute
 	firmwareManifestEnvVar     = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
 	firmwareManifestURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json"
 	firmwareUpdateCheckGap     = 6 * time.Hour
@@ -125,25 +127,31 @@ func (e *RuntimeError) RecoveryAction() string {
 }
 
 type runtimeDeps struct {
-	transport         transportlayer.DeviceTransport
-	now               func() time.Time
-	after             func(time.Duration) <-chan time.Time
-	resolvePort       func(string) (string, error)
-	deviceCaps        func(string) (protocol.DeviceCapabilities, error)
-	fetchProviders    func(context.Context) ([]codexbar.ParsedFrame, error)
-	fetchProvider     func(context.Context, string) (codexbar.ParsedFrame, error)
-	fetchInventory    func(context.Context) ([]codexbar.ProviderSetting, error)
-	fetchTokenStats   func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
-	usageBarsShowUsed func() bool
-	sendLine          func(string, []byte) error
-	fetchUpdateState  func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
-	newSelector       func() *codexbar.ProviderSelector
-	logf              func(string, ...any)
-	homeDir           func() (string, error)
-	loadConfig        func(string) (runtimeconfig.Config, error)
-	saveConfig        func(string, runtimeconfig.Config) error
-	discoverWiFi      func([]string) (transportlayer.WiFiDiscoveryResult, error)
-	transportName     string
+	transport             transportlayer.DeviceTransport
+	now                   func() time.Time
+	after                 func(time.Duration) <-chan time.Time
+	resolvePort           func(string) (string, error)
+	deviceCaps            func(string) (protocol.DeviceCapabilities, error)
+	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
+	firstRunSetupPending  func() bool
+	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error)
+	fetchProvider         func(context.Context, string) (codexbar.ParsedFrame, error)
+	fetchInventory        func(context.Context) ([]codexbar.ProviderSetting, error)
+	fetchTokenStats       func(context.Context) (map[string]codexbar.ProviderTokenStats, bool)
+	fetchTokenStatsReport func(context.Context) (map[string]codexbar.ProviderTokenStats, codexbar.ProviderTokenStatsReport)
+	startDashboard        func(context.Context, func(string, ...any)) codexbar.DashboardServe
+	dashboard             codexbar.DashboardServe
+	usageBarsShowUsed     func() bool
+	beginDeviceWrite      func() func()
+	sendLine              func(string, []byte) error
+	fetchUpdateState      func(context.Context, protocol.DeviceCapabilities) (protocol.UpdateState, error)
+	newSelector           func() *codexbar.ProviderSelector
+	logf                  func(string, ...any)
+	homeDir               func() (string, error)
+	loadConfig            func(string) (runtimeconfig.Config, error)
+	saveConfig            func(string, runtimeconfig.Config) error
+	discoverWiFi          func([]string) (transportlayer.WiFiDiscoveryResult, error)
+	transportName         string
 }
 
 func (d runtimeDeps) withDefaults() runtimeDeps {
@@ -168,6 +176,12 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	if d.fetchProviders == nil {
 		d.fetchProviders = codexbar.FetchAllProviders
 	}
+	if d.firstRunSetupPending == nil {
+		d.firstRunSetupPending = codexbar.FirstRunProviderSetupPending
+	}
+	if d.fetchDashboard == nil {
+		d.fetchDashboard = codexbar.FetchDashboardProviders
+	}
 	if d.fetchProvider == nil {
 		d.fetchProvider = codexbar.FetchProvider
 	}
@@ -176,6 +190,9 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.fetchTokenStats == nil {
 		d.fetchTokenStats = codexbar.FetchProviderTokenStats
+		if d.fetchTokenStatsReport == nil {
+			d.fetchTokenStatsReport = codexbar.FetchProviderTokenStatsWithReport
+		}
 	}
 	if d.usageBarsShowUsed == nil {
 		d.usageBarsShowUsed = func() bool { return true }
@@ -245,6 +262,7 @@ type runtimeState struct {
 
 type cycleResult struct {
 	frame           protocol.Frame
+	collectedAt     time.Time
 	selectionReason string
 	selectionDetail string
 	failureKind     runtimeErrorKind
@@ -255,6 +273,9 @@ type cycleResult struct {
 	usageSource     string
 	usageFresh      bool
 	activityDetail  string
+	// resetBasisAt is when the reset deadline in frame was collected. It is the
+	// anchor the device-facing freshness fields are derived from.
+	resetBasisAt time.Time
 }
 
 type persistedLastGood struct {
@@ -269,13 +290,17 @@ type PersistedUsage struct {
 }
 
 type ProviderUsageSnapshot struct {
-	Provider           string
-	Frame              protocol.Frame
-	Source             string
-	Meta               codexbar.ProviderUsageMeta
-	CollectedAt        time.Time
-	ActivityObservedAt time.Time
-	Stale              bool
+	Provider              string
+	Frame                 protocol.Frame
+	Source                string
+	Meta                  codexbar.ProviderUsageMeta
+	CollectedAt           time.Time
+	TokenStatsCollectedAt time.Time
+	TokenHistorySettled   bool
+	ActivityObservedAt    time.Time
+	RateLimited           bool
+	RateLimitedUntil      time.Time
+	Stale                 bool
 }
 
 func Run(ctx context.Context, opts Options) error {
@@ -297,6 +322,7 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 			transport:         transportlayer.NewWiFiTransport(),
 			transportName:     "wifi",
 			usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+			startDashboard:    codexbar.StartDashboardServe,
 			logf:              logf,
 		})
 	}
@@ -308,6 +334,7 @@ func RunWithLogger(ctx context.Context, opts Options, logf func(string, ...any))
 		sendLine:          sender.Send,
 		transportName:     "usb",
 		usageBarsShowUsed: codexbar.UsageBarsShowUsed,
+		startDashboard:    codexbar.StartDashboardServe,
 		logf:              logf,
 	})
 }
@@ -316,11 +343,31 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	if opts.Interval <= 0 {
 		opts.Interval = defaultIntervalForTransport(deps.transportName)
 	}
+	deps.beginDeviceWrite = opts.BeginDeviceWrite
 	syncCycleMode := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()
 
 	state := initializeRuntimeState(deps.now(), opts, deps)
-	collector, collectorCancel := startProviderCollector(ctx, opts, deps, syncCycleMode)
+	if !opts.Once && deps.startDashboard != nil {
+		deps.dashboard = deps.startDashboard(ctx, deps.logf)
+		if deps.dashboard != nil {
+			info := deps.dashboard.Info()
+			deps.logf("codexbar-dashboard event=supervisor-started refreshInterval=%s\n", info.RefreshInterval)
+		}
+	}
+	var collectorWake <-chan struct{}
+	var wakeAfterCollect func()
+	if !syncCycleMode && opts.Wake != nil {
+		collectorWakeCh := make(chan struct{}, 1)
+		cycleWakeCh := make(chan struct{}, 1)
+		go forwardWake(ctx, opts.Wake, collectorWakeCh)
+		collectorWake = collectorWakeCh
+		wakeAfterCollect = func() {
+			signalWake(cycleWakeCh)
+		}
+		opts.Wake = cycleWakeCh
+	}
+	collector, collectorCancel := startProviderCollector(ctx, opts, deps, syncCycleMode, collectorWake, wakeAfterCollect)
 	if collectorCancel != nil {
 		defer collectorCancel()
 	}
@@ -337,6 +384,30 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	}
 
 	return runDaemonLoop(ctx, opts, deps, runCycle)
+}
+
+func forwardWake(ctx context.Context, input <-chan struct{}, output chan<- struct{}) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case _, ok := <-input:
+			if !ok {
+				return
+			}
+			signalWake(output)
+		}
+	}
+}
+
+func signalWake(output chan<- struct{}) {
+	if output == nil {
+		return
+	}
+	select {
+	case output <- struct{}{}:
+	default:
+	}
 }
 
 func initializeRuntimeState(now time.Time, opts Options, deps runtimeDeps) *runtimeState {
@@ -383,7 +454,7 @@ func bootstrapStateFromPersistedLastGood(state *runtimeState, now time.Time, dep
 	}
 }
 
-func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps, syncCycleMode bool) (*providerCollector, context.CancelFunc) {
+func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps, syncCycleMode bool, wake <-chan struct{}, afterWakeCollect func()) (*providerCollector, context.CancelFunc) {
 	if syncCycleMode {
 		// Deterministic unit tests can run synchronous cycle fetches without a
 		// background collector goroutine by injecting only fetchProviders.
@@ -391,6 +462,8 @@ func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps,
 	}
 
 	collector := newProviderCollector(deps, opts)
+	collector.wake = wake
+	collector.afterWakeCollect = afterWakeCollect
 	collectorCtx, cancel := context.WithCancel(ctx)
 	collector.start(collectorCtx)
 	deps.logf("collector started transport=%s interval=%s timeout=%s providers=%s mode=fetch-all\n",
@@ -403,7 +476,6 @@ func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps,
 }
 
 func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle func(context.Context) error) error {
-	backoff := newRetryBackoff(opts.Interval)
 	cycleTimeout := cycleRunTimeout()
 	var lastCycleStart time.Time
 	var startedAt time.Time
@@ -412,7 +484,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 	for {
 		if opts.PauseDeviceWrites != nil && opts.PauseDeviceWrites() {
 			if !deviceWritesPaused {
-				deps.logf("runtime event=device-writes-paused reason=firmware-update\n")
+				deps.logf("runtime event=device-writes-paused reason=device-maintenance\n")
 				deviceWritesPaused = true
 			}
 			select {
@@ -424,7 +496,7 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 			continue
 		}
 		if deviceWritesPaused {
-			deps.logf("runtime event=device-writes-resumed reason=firmware-update-complete\n")
+			deps.logf("runtime event=device-writes-resumed reason=device-maintenance-complete\n")
 			deviceWritesPaused = false
 		}
 		cycleStart := deps.now()
@@ -432,23 +504,14 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 			startedAt = cycleStart
 		}
 		if detectSleepWakeGap(lastCycleStart, cycleStart, opts.Interval) {
-			deps.logf("runtime event=sleep-wake gap=%s threshold=%s action=reset-retry\n",
+			deps.logf("runtime event=sleep-wake gap=%s threshold=%s\n",
 				cycleStart.Sub(lastCycleStart),
 				sleepWakeGapThreshold(opts.Interval),
 			)
-			backoff.Reset()
 		}
 		lastCycleStart = cycleStart
 
-		runDeviceCycle := runCycle
-		if opts.BeginDeviceWrite != nil {
-			runDeviceCycle = func(cycleCtx context.Context) error {
-				release := opts.BeginDeviceWrite()
-				defer release()
-				return runCycle(cycleCtx)
-			}
-		}
-		err := runCycleWithTimeout(ctx, cycleTimeout, runDeviceCycle)
+		err := runCycleWithTimeout(ctx, cycleTimeout, runCycle)
 		if opts.Once {
 			return err
 		}
@@ -456,8 +519,17 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		waitFor := opts.Interval
 		if err != nil {
 			runtimeErr := asRuntimeError(err)
+			// A device-unreachable cycle must not wait a full WiFi interval
+			// before the next attempt: after a device cold start or Mac wake
+			// this turns into 30-90s of "reconnecting" although everything is
+			// healthy again. While the device is down these quick probes are
+			// cheap; the first successful cycle returns to the normal cadence.
+			// Non-device errors (provider fetch, frame encoding, timeouts)
+			// keep the normal interval - retrying those faster fixes nothing.
+			if deviceUnreachableError(runtimeErr) && failureRetryInterval < waitFor {
+				waitFor = failureRetryInterval
+			}
 			if runtimeErr.Kind == runtimeErrorCycleTimeout {
-				waitFor = backoff.Next()
 				deps.logf("cycle timeout: code=%s op=%s retry=%s recovery=%q err=%v\n",
 					runtimeErr.ErrorCode(),
 					runtimeErr.Op,
@@ -466,7 +538,6 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 					err,
 				)
 			} else {
-				waitFor = backoff.Next()
 				deps.logf("cycle error: code=%s op=%s retry=%s recovery=%q err=%v\n",
 					runtimeErr.ErrorCode(),
 					runtimeErr.Op,
@@ -476,7 +547,6 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 				)
 			}
 		} else {
-			backoff.Reset()
 			uptime := cycleStart.Sub(startedAt)
 			if !opts.DisableStartupFastPoll {
 				waitFor = startupInterval(waitFor, uptime)
@@ -952,6 +1022,23 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	}
 
 	result.frame = decision.Selected.Frame
+	if result.frame.UsageUnavailable && (state == nil || !state.hasLastGood) &&
+		!decision.Selected.RateLimited {
+		// Providers are enumerated but none has ever delivered usage: for the
+		// runtime that is the same customer state as having no providers at
+		// all. Reusing the genuine no-providers failure sends the device the
+		// honest error frame and gives the stream parser its
+		// provider_setup_required classification, instead of the silent
+		// unexplained wait behind the guest-matrix
+		// firmware_current_stream_attention flake. A rate-limited selection is
+		// the one explicit signal of a configured, live provider in a
+		// temporary condition — that state keeps its own unavailable
+		// semantics and simply waits.
+		result.failureKind = runtimeErrorNoProviders
+		result.failureOp = "collect-usage"
+		result.failureErr = codexbar.ErrNoProviders
+		return finalizeCycleResult(state, result, now)
+	}
 	result.selectionReason = string(decision.Reason)
 	result.selectionDetail = decision.Detail
 	result.usageSource = usageSourceOrDefault(decision.Selected.Source, "codexbar")
@@ -961,9 +1048,9 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 		collectedAt = now
 		decision.Selected.CollectedAt = collectedAt
 	}
-	if !result.frame.UsageUnavailable {
-		updateLastGoodState(state, result.frame, collectedAt, deps)
-	}
+	result.collectedAt = collectedAt
+	result.resetBasisAt = collectedAt
+	result.frame.ProviderSlots = providerResetSlots(allProviders, collectedAt)
 	result.frame, result.activityDetail = applySelectionActivity(result.frame, decision, state, now)
 	return result
 }
@@ -1018,6 +1105,57 @@ func preferAvailableProviders(providers []codexbar.ParsedFrame) []codexbar.Parse
 	return providers
 }
 
+// providerResetSlots turns every provider with a live usage countdown into one
+// cross-provider row: label plus that provider's soonest window reset. Each
+// snapshot was collected at its own time, so every reset is first expressed as
+// of resetBasisAt — the selected frame's basis — because ApplyResetTrust later
+// re-anchors the whole frame from exactly that instant. Stale or unavailable
+// providers stay out: a countdown the collector cannot vouch for must not tick
+// on the customer's screen.
+func providerResetSlots(allProviders []codexbar.ParsedFrame, resetBasisAt time.Time) []protocol.UsageSlot {
+	var slots []protocol.UsageSlot
+	for _, provider := range allProviders {
+		if provider.Stale || provider.Frame.UsageUnavailable {
+			continue
+		}
+		var soonest int64
+		var percent int
+		for _, window := range provider.Frame.UsageWindows {
+			reset := window.ResetSec
+			if reset > 0 && !provider.CollectedAt.IsZero() && !resetBasisAt.IsZero() {
+				reset -= int64(resetBasisAt.Sub(provider.CollectedAt) / time.Second)
+			}
+			if reset > 0 && (soonest == 0 || reset < soonest) {
+				soonest = reset
+			}
+			if window.Percent > percent {
+				percent = window.Percent
+			}
+		}
+		if soonest <= 0 {
+			continue
+		}
+		label := strings.TrimSpace(provider.Frame.Label)
+		if label == "" {
+			label = provider.Provider
+		}
+		id := strings.TrimSpace(provider.Frame.Provider)
+		if id == "" {
+			id = provider.Provider
+		}
+		slots = append(slots, protocol.UsageSlot{
+			ID:       id,
+			Label:    label,
+			Percent:  percent,
+			ResetSec: soonest,
+		})
+		if len(slots) == protocol.MaxProviderSlots {
+			break
+		}
+	}
+	return slots
+}
+
 func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time) cycleResult {
 	if result.failureErr == nil {
 		return result
@@ -1028,6 +1166,7 @@ func finalizeCycleResult(state *runtimeState, result cycleResult, now time.Time)
 		if !isLastGoodFreshAt(state.lastGoodAt, now, lastGoodMaxAge()) {
 			result.frame.UsageUnavailable = true
 		}
+		result.resetBasisAt = state.lastGoodAt
 		result.usedLastGood = true
 		result.selectionReason = "stale-last-good"
 		result.selectionDetail = fmt.Sprintf("kind=%s", result.failureKind)
@@ -1159,9 +1298,25 @@ func codingMaxAgeExpired(lastCodingAt time.Time, now time.Time) bool {
 
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
-	frame := applyUsageBarsPreference(result.frame, deps.usageBarsShowUsed())
+	authoritativeFrame := result.frame
+	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
+	if !result.usageFresh && result.failureErr == nil {
+		expiredLastGood := state != nil && state.hasLastGood && !isLastGoodFreshAt(state.lastGoodAt, deps.now(), providerSnapshotMaxAge())
+		if !frame.UsageUnavailable || !expiredLastGood {
+			deps.logf("runtime event=usage-waiting port=%s provider=%s reason=usage-not-fresh\n", publicPort, frame.Provider)
+			return nil
+		}
+	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
-	frame = attachClockFields(frame, deps.now())
+	frame = applyDeviceUsageWindowLimit(frame, caps)
+	if !caps.SupportsProviderSlotsV1 {
+		// Firmware without provider-slots-v1 would carry these rows as dead
+		// wire bytes against its frame budget.
+		frame.ProviderSlots = nil
+	}
+	now := deps.now()
+	frame = attachClockFields(frame, now)
+	frame = frame.ApplyResetTrust(result.resetBasisAt, now, result.usageFresh)
 
 	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
 		var applied bool
@@ -1206,18 +1361,42 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}
-	if err := deps.sendLine(sendTarget, line); err != nil {
+	releaseDeviceWrite := func() {}
+	if deps.beginDeviceWrite != nil {
+		if release := deps.beginDeviceWrite(); release != nil {
+			releaseDeviceWrite = release
+		}
+	}
+	sendErr := deps.sendLine(sendTarget, line)
+	releaseDeviceWrite()
+	if sendErr != nil {
 		return &RuntimeError{
 			Kind: runtimeErrorSerialWrite,
 			Op:   "send-line",
-			Err:  err,
+			Err:  sendErr,
 			Hint: errcode.DefaultRecovery(errcode.RuntimeSerialWrite),
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	persistActiveWiFiTarget(port, deps)
+	// A sent unavailable frame keeps the persisted last-good: that file is the
+	// only evidence after a restart that this Mac ever delivered usage, and
+	// deleting it turned every restart during a hiccup into the no-providers
+	// classification. Loading already marks an expired frame unavailable, and
+	// a provider switched off in inventory still clears it deliberately
+	// (invalidateLastGoodDisabledByInventory).
+	if !frame.UsageUnavailable && result.failureErr == nil {
+		collectedAt := result.collectedAt
+		if collectedAt.IsZero() {
+			collectedAt = deps.now()
+		}
+		updateLastGoodState(state, authoritativeFrame, collectedAt, deps)
+	}
 
-	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionUnavailable=%t weeklyUnavailable=%t reset=%ds activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
-		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
+	deps.logf("sent frame -> %s transport=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionTokens=%d weekTokens=%d totalTokens=%d tokenTotalsKnown=%t sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s providerSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q\n",
+		publicPort, deps.transportName, usageSourceOrDefault(result.usageSource, "unknown"), result.usageFresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionTokens, frame.WeekTokens, frame.TotalTokens, frame.TokenTotalsKnown, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), usageSlotsLogValue(frame.ProviderSlots), frame.Activity, frame.Time, frame.Date, frame.Error, result.selectionReason, result.selectionDetail, result.activityDetail)
 
 	if result.failureErr != nil {
 		if result.usedLastGood {
@@ -1232,6 +1411,28 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 
 	return nil
+}
+
+func usageSlotsLogValue(slots []protocol.UsageSlot) string {
+	if len(slots) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(slots)
+	if err != nil {
+		return ""
+	}
+	return url.QueryEscape(string(raw))
+}
+
+func usageWindowsLogValue(windows []protocol.UsageWindow) string {
+	if len(windows) == 0 {
+		return "-"
+	}
+	raw, err := json.Marshal(windows)
+	if err != nil {
+		return "-"
+	}
+	return url.QueryEscape(string(raw))
 }
 
 func sendTargetWithRuntimeAuth(target string, deps runtimeDeps) (string, error) {
@@ -1301,7 +1502,51 @@ func attachClockFields(frame protocol.Frame, now time.Time) protocol.Frame {
 	}
 	frame.Time = now.Format("15:04")
 	frame.Date = now.Format("02.01.2006")
+	frame.NextClockTransition = nextClockTransition(now)
 	return frame
+}
+
+func nextClockTransition(now time.Time) *protocol.ClockSchedule {
+	if now.IsZero() {
+		return nil
+	}
+	location := now.Location()
+	if location == nil {
+		location = time.Local
+	}
+	localNow := now.In(location)
+	_, currentOffset := localNow.Zone()
+	schedule := &protocol.ClockSchedule{CurrentOffsetMinutes: currentOffset / 60}
+	nowEpoch := now.UTC().Unix()
+	transitionsFound := 0
+	for transitionsFound < 2 {
+		_, end := localNow.ZoneBounds()
+		if end.IsZero() {
+			break
+		}
+		transitionEpoch := end.UTC().Unix()
+		if transitionEpoch <= nowEpoch {
+			localNow = end.Add(time.Nanosecond).In(location)
+			continue
+		}
+		afterTransition := end.Add(time.Nanosecond).In(location)
+		_, nextOffset := afterTransition.Zone()
+		if nextOffset == currentOffset {
+			localNow = afterTransition
+			continue
+		}
+		if transitionsFound == 0 {
+			schedule.TransitionEpoch = transitionEpoch
+			schedule.OffsetMinutes = nextOffset / 60
+		} else {
+			schedule.FollowingTransitionEpoch = transitionEpoch
+			schedule.FollowingOffsetMinutes = nextOffset / 60
+		}
+		currentOffset = nextOffset
+		localNow = afterTransition
+		transitionsFound++
+	}
+	return schedule
 }
 
 func runCycleWithDeps(ctx context.Context, requestedPort string, state *runtimeState, deps runtimeDeps) error {
@@ -1367,9 +1612,6 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	now := deps.now()
 	allProviders := collector.providerFrames(now)
 	allProviders = applyProviderDisplaySelection(state, allProviders, deps)
-	if len(allProviders) == 0 {
-		allProviders = probeProvidersDirectly(ctx, collector.order, deps)
-	}
 	result := selectCycleFrameFromProviders(
 		state,
 		allProviders,
@@ -1380,6 +1622,43 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 		fmt.Sprintf("snapshot_max_age=%s", collector.snapshotMaxAge),
 		"collector",
 	)
+
+	// Before the first collection since runtime start completes, a no-providers
+	// verdict is warm-up, not an answer about this Mac: the collector simply
+	// has not asked CodexBar yet. Wait for it, bounded in time; past the bound
+	// a failed fetch keeps its own error kind instead of flattening into
+	// no-providers. Once CodexBar has answered -- including with zero
+	// providers -- the verdict stands.
+	// `daemon --once` runs without a warm-up window (first.bounded == false)
+	// and keeps the immediate no-providers verdict: the hosted guest matrix
+	// greps exactly that code from a provider-less one-shot run.
+	if result.failureKind == runtimeErrorNoProviders && !state.hasLastGood {
+		if first := collector.firstCollectState(now); first.bounded && !first.settled {
+			if first.warming || !first.started {
+				// Warm-up, or the device gate has not let the collector ask
+				// CodexBar even once (pairing can happen long after runtime
+				// start; the next tick or wake starts the collection and
+				// re-anchors the window). Neither is an answer about this Mac.
+				deps.logf("runtime event=usage-waiting port=%s reason=collector-warming\n", publicDeviceTarget(port))
+				return nil
+			}
+			fetchErr := first.fetchErr
+			failureKind := runtimeErrorKindFromFetchErr(fetchErr)
+			if fetchErr == nil {
+				fetchErr = errors.New("first provider collection exceeded the warm-up window")
+				failureKind = runtimeErrorCodexbarCmd
+			}
+			if codexbar.FetchErrorKindOf(fetchErr) != codexbar.FetchErrorNoProviders {
+				result = finalizeCycleResult(state, cycleResult{
+					selectionReason: "collector-warming-failed",
+					errorSource:     "collector",
+					failureKind:     failureKind,
+					failureOp:       "collect-usage",
+					failureErr:      fetchErr,
+				}, now)
+			}
+		}
+	}
 
 	attachFirmwareUpdateState(ctx, state, deps, caps, &result)
 	return sendCycleResult(ctx, port, caps, maxFrameBytes, state, deps, result)
@@ -1398,13 +1677,10 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 	state.lastGood = protocol.Frame{}
 	state.lastGoodAt = time.Time{}
 	state.hasLastGood = false
-	state.lastPersistedGood = protocol.Frame{}
-	state.lastPersistedAt = time.Time{}
-	state.hasPersistedGood = false
 	if state.selector != nil {
 		state.selector.SetCurrentProvider("")
 	}
-	if err := clearPersistedLastGood(); err != nil {
+	if err := clearPersistedDisplayFrame(state); err != nil {
 		deps.logf("runtime event=last-good-clear-failed provider=%s err=%v\n", provider, err)
 		return
 	}
@@ -1442,70 +1718,13 @@ func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeD
 	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-display-selection\n", provider)
 }
 
-func probeProvidersDirectly(parent context.Context, order []string, deps runtimeDeps) []codexbar.ParsedFrame {
-	if deps.fetchProvider == nil {
-		return nil
+func clearPersistedDisplayFrame(state *runtimeState) error {
+	if state != nil {
+		state.lastPersistedGood = protocol.Frame{}
+		state.lastPersistedAt = time.Time{}
+		state.hasPersistedGood = false
 	}
-
-	ctx := parent
-	cancel := func() {}
-	if deadline, ok := parent.Deadline(); !ok || time.Until(deadline) > 20*time.Second {
-		ctx, cancel = context.WithTimeout(parent, 20*time.Second)
-	}
-	defer cancel()
-
-	providers := directProviderProbeOrder(order, deps)
-	if len(providers) > directProviderProbeMax {
-		providers = providers[:directProviderProbeMax]
-	}
-
-	seen := make(map[string]struct{}, len(providers))
-	result := make([]codexbar.ParsedFrame, 0, len(providers))
-	for _, provider := range providers {
-		key := normalizeProviderKey(provider)
-		if key == "" {
-			continue
-		}
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-
-		parsed, err := deps.fetchProvider(ctx, key)
-		if err != nil {
-			continue
-		}
-		if strings.TrimSpace(parsed.Frame.Error) != "" {
-			continue
-		}
-		result = append(result, parsed)
-	}
-
-	return result
-}
-
-func directProviderProbeOrder(order []string, deps runtimeDeps) []string {
-	cfg, ok := loadRuntimeConfig(deps)
-	if !ok || cfg.ProviderDisplay == nil || len(cfg.ProviderDisplay.ProviderIDs) == 0 {
-		return order
-	}
-	if len(order) == 0 {
-		return cfg.ProviderDisplay.ProviderIDs
-	}
-	enabled := make(map[string]struct{}, len(order))
-	for _, providerID := range order {
-		if providerID = normalizeProviderKey(providerID); providerID != "" {
-			enabled[providerID] = struct{}{}
-		}
-	}
-	providers := make([]string, 0, len(cfg.ProviderDisplay.ProviderIDs))
-	for _, providerID := range cfg.ProviderDisplay.ProviderIDs {
-		providerID = normalizeProviderKey(providerID)
-		if _, ok := enabled[providerID]; ok {
-			providers = append(providers, providerID)
-		}
-	}
-	return providers
+	return clearPersistedLastGood()
 }
 
 func updateLastGoodState(state *runtimeState, frame protocol.Frame, now time.Time, deps runtimeDeps) {
@@ -1578,6 +1797,14 @@ func applyThemeToFrame(frame protocol.Frame, selectedTheme string, caps protocol
 	return frame, true
 }
 
+func applyDeviceUsageWindowLimit(frame protocol.Frame, caps protocol.DeviceCapabilities) protocol.Frame {
+	if caps.MaxUsageWindows <= 0 || len(frame.UsageWindows) <= caps.MaxUsageWindows {
+		return frame
+	}
+	frame.UsageWindows = append([]protocol.UsageWindow(nil), frame.UsageWindows[:caps.MaxUsageWindows]...)
+	return frame.Normalize()
+}
+
 func applyUsageBarsPreference(frame protocol.Frame, showUsed bool) protocol.Frame {
 	if strings.TrimSpace(frame.Error) != "" {
 		return frame
@@ -1587,9 +1814,20 @@ func applyUsageBarsPreference(frame protocol.Frame, showUsed bool) protocol.Fram
 		frame.UsageMode = "used"
 		return frame
 	}
+	if frame.UsageUnavailable {
+		frame.UsageMode = "remaining"
+		return frame
+	}
 
-	frame.Session = 100 - clampPercent(frame.Session)
-	frame.Weekly = 100 - clampPercent(frame.Weekly)
+	if len(frame.UsageWindows) == 0 {
+		frame.Session = 100 - clampPercent(frame.Session)
+		frame.Weekly = 100 - clampPercent(frame.Weekly)
+	} else {
+		for i := range frame.UsageWindows {
+			frame.UsageWindows[i].Percent = 100 - clampPercent(frame.UsageWindows[i].Percent)
+		}
+		frame = frame.Normalize()
+	}
 	frame.UsageMode = "remaining"
 	return frame
 }
@@ -1857,14 +2095,31 @@ func collectorProviderOrder() []string {
 
 func providerSnapshotMaxAge() time.Duration {
 	// Keep per-provider snapshots alive for stale-while-revalidate rendering.
-	d := lastGoodMaxAge()
 	raw := strings.TrimSpace(os.Getenv(providerMaxAgeEnvVar))
 	if raw == "" {
-		return d
+		return defaultProviderMaxAge
 	}
 	parsed, err := time.ParseDuration(raw)
 	if err != nil || parsed <= 0 {
-		return d
+		return defaultProviderMaxAge
+	}
+	return parsed
+}
+
+func collectorWarmupMaxAge() time.Duration {
+	// Bound the warm-up window in which a cycle waits for the first collection
+	// instead of settling on a provider verdict. The bound must outlast the
+	// synchronous first-run provider detection (a ~90s-4min probe holds the
+	// config bootstrap, and the dashboard serve starts only after it), or a
+	// fresh Mac reports a fabricated collection error mid-setup.
+	const fallback = 5 * time.Minute
+	raw := strings.TrimSpace(os.Getenv(collectorWarmupEnvVar))
+	if raw == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil || parsed <= 0 {
+		return fallback
 	}
 	return parsed
 }
@@ -1959,6 +2214,13 @@ func loadPersistedProviderSnapshotsAnyAge() (map[string]providerSnapshot, time.T
 		if strings.TrimSpace(snapshot.Frame.Error) != "" {
 			continue
 		}
+		if snapshotHasTokenStats(snapshot) && snapshot.TokenStatsCollected.IsZero() {
+			if !snapshot.ActivityObservedAt.IsZero() {
+				snapshot.TokenStatsCollected = snapshot.ActivityObservedAt.UTC()
+			} else {
+				snapshot.TokenStatsCollected = snapshot.Collected.UTC()
+			}
+		}
 		out[key] = snapshot
 	}
 	if len(out) == 0 {
@@ -1996,14 +2258,28 @@ func LoadPersistedUsage(now time.Time) (PersistedUsage, bool) {
 		if frame.UsageMode == "" {
 			frame.UsageMode = "used"
 		}
+		snapshot = snapshotWithFreshTokenStats(snapshot, now, providerSnapshotMaxAge())
+		snapshot = snapshotWithExpiredUsageCleared(snapshot, now, providerSnapshotMaxAge())
+		frame = snapshot.Frame.Normalize()
+		frame.Provider = normalizeProviderKey(frame.Provider)
+		if frame.Provider == "" {
+			frame.Provider = key
+		}
+		if frame.UsageMode == "" {
+			frame.UsageMode = "used"
+		}
 		usage.Providers = append(usage.Providers, ProviderUsageSnapshot{
-			Provider:           key,
-			Frame:              frame,
-			Source:             strings.TrimSpace(snapshot.Source),
-			Meta:               snapshot.Meta,
-			CollectedAt:        snapshot.Collected.UTC(),
-			ActivityObservedAt: snapshot.ActivityObservedAt.UTC(),
-			Stale:              providerUsageSnapshotIsStale(snapshot, now),
+			Provider:              key,
+			Frame:                 frame,
+			Source:                strings.TrimSpace(snapshot.Source),
+			Meta:                  snapshot.Meta,
+			CollectedAt:           snapshot.Collected.UTC(),
+			TokenStatsCollectedAt: snapshot.TokenStatsCollected.UTC(),
+			TokenHistorySettled:   snapshot.TokenHistorySettled,
+			ActivityObservedAt:    snapshot.ActivityObservedAt.UTC(),
+			RateLimited:           snapshot.RateLimited,
+			RateLimitedUntil:      snapshot.RateLimitedUntil.UTC(),
+			Stale:                 providerUsageSnapshotIsStale(snapshot, now),
 		})
 	}
 	if len(usage.Providers) == 0 {
@@ -2044,15 +2320,7 @@ func orderedProviderUsageKeys(snapshots map[string]providerSnapshot) []string {
 }
 
 func providerUsageSnapshotIsStale(snapshot providerSnapshot, now time.Time) bool {
-	if snapshot.Collected.IsZero() || now.IsZero() {
-		return true
-	}
-	age := now.Sub(snapshot.Collected)
-	if age < 0 {
-		return false
-	}
-	freshFor := collectorInterval(0) + 5*time.Second
-	return age > freshFor
+	return !providerSnapshotIsFresh(snapshot, now, providerSnapshotMaxAge())
 }
 
 func encodeProviderSnapshotsForCompare(snapshots map[string]providerSnapshot) string {
@@ -2095,6 +2363,20 @@ func asRuntimeError(err error) *RuntimeError {
 		Op:   "unknown",
 		Err:  err,
 	}
+}
+
+// deviceUnreachableError reports whether the cycle failed because the VibeTV
+// itself was not reachable over its transport. Only these failures earn the
+// short reconnect retry; everything else keeps the normal interval.
+func deviceUnreachableError(runtimeErr *RuntimeError) bool {
+	if runtimeErr == nil {
+		return false
+	}
+	switch runtimeErr.Kind {
+	case runtimeErrorDeviceHello, runtimeErrorSerialResolve, runtimeErrorSerialWrite:
+		return true
+	}
+	return false
 }
 
 func runtimeErrorKindFromFetchErr(err error) runtimeErrorKind {
@@ -2206,7 +2488,8 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		maxBytes = protocol.DefaultMaxFrameBytes
 	}
 
-	line, err := frame.MarshalLine()
+	frame = frame.Normalize()
+	line, err := frame.MarshalNormalizedLine()
 	if err != nil {
 		return nil, protocol.Frame{}, err
 	}
@@ -2218,7 +2501,7 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		compactUpdate := frame
 		compactUpdate.Update = compactFrameUpdate(frame.Update)
 		for _, candidate := range compactUpdateCandidates(compactUpdate) {
-			line, err = candidate.MarshalLine()
+			line, err = candidate.MarshalNormalizedLine()
 			if err != nil {
 				return nil, protocol.Frame{}, err
 			}
@@ -2229,25 +2512,27 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 
 		noUpdate := frame
 		noUpdate.Update = nil
-		line, err = noUpdate.MarshalLine()
+		line, err = noUpdate.MarshalNormalizedLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
 			return line, noUpdate, nil
 		}
+		frame = noUpdate
 	}
 
 	if frame.Theme != "" {
 		noTheme := frame
 		noTheme.Theme = ""
-		line, err = noTheme.MarshalLine()
+		line, err = noTheme.MarshalNormalizedLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
 			return line, noTheme, nil
 		}
+		frame = noTheme
 	}
 
 	if frame.SessionTokens > 0 || frame.WeekTokens > 0 || frame.TotalTokens > 0 {
@@ -2255,30 +2540,75 @@ func marshalFrameWithinLimit(frame protocol.Frame, maxBytes int) ([]byte, protoc
 		noTokens.SessionTokens = 0
 		noTokens.WeekTokens = 0
 		noTokens.TotalTokens = 0
-		line, err = noTokens.MarshalLine()
+		noTokens.TokenTotalsKnown = false
+		line, err = noTokens.MarshalNormalizedLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
 			return line, noTokens, nil
 		}
+		frame = noTokens
 	}
 
 	if frame.Time != "" || frame.Date != "" {
 		noClock := frame
 		noClock.Time = ""
 		noClock.Date = ""
-		line, err = noClock.MarshalLine()
+		line, err = noClock.MarshalNormalizedLine()
 		if err != nil {
 			return nil, protocol.Frame{}, err
 		}
 		if len(line) <= maxBytes {
 			return line, noClock, nil
 		}
+		frame = noClock
 	}
 
-	fallback := protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorFrameTooLarge))
-	line, err = fallback.MarshalLine()
+	// Provider rows are an overview extra; the selected provider's own usage
+	// windows are the core customer data and must outlive them in the trim.
+	if len(frame.ProviderSlots) > 0 {
+		for limit := len(frame.ProviderSlots) - 1; limit >= 0; limit-- {
+			trimmed := frame
+			trimmed.ProviderSlots = append([]protocol.UsageSlot(nil), frame.ProviderSlots[:limit]...)
+			normalized := trimmed.Normalize()
+			line, err = normalized.MarshalNormalizedLine()
+			if err != nil {
+				return nil, protocol.Frame{}, err
+			}
+			if len(line) <= maxBytes {
+				return line, normalized, nil
+			}
+		}
+		frame.ProviderSlots = nil
+	}
+
+	usageWindowsActive := len(frame.UsageWindows) > 0
+	usageCount := len(frame.UsageWindows)
+	if !usageWindowsActive {
+		usageCount = len(frame.UsageSlots)
+	}
+	if usageCount > 0 {
+		for limit := usageCount - 1; limit >= 0; limit-- {
+			trimmed := frame
+			if usageWindowsActive {
+				trimmed.UsageWindows = append([]protocol.UsageWindow(nil), frame.UsageWindows[:limit]...)
+			} else {
+				trimmed.UsageSlots = append([]protocol.UsageSlot(nil), frame.UsageSlots[:limit]...)
+			}
+			normalized := trimmed.Normalize()
+			line, err = normalized.MarshalNormalizedLine()
+			if err != nil {
+				return nil, protocol.Frame{}, err
+			}
+			if len(line) <= maxBytes {
+				return line, normalized, nil
+			}
+		}
+	}
+
+	fallback := protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorFrameTooLarge)).Normalize()
+	line, err = fallback.MarshalNormalizedLine()
 	if err != nil {
 		return nil, protocol.Frame{}, err
 	}
@@ -2304,10 +2634,14 @@ func compactFrameUpdate(update *protocol.UpdateState) *protocol.UpdateState {
 func compactUpdateCandidates(frame protocol.Frame) []protocol.Frame {
 	candidates := []protocol.Frame{frame}
 
+	// Dropping the totals drops the claim with them: leaving the marker set
+	// would let the device read the omitted fields as a completed all-zero
+	// history and render fabricated zeroes.
 	withoutTokens := frame
 	withoutTokens.SessionTokens = 0
 	withoutTokens.WeekTokens = 0
 	withoutTokens.TotalTokens = 0
+	withoutTokens.TokenTotalsKnown = false
 	candidates = append(candidates, withoutTokens)
 
 	withoutClock := withoutTokens

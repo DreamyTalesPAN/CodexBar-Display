@@ -26,6 +26,17 @@ describe("SupportReportActions", () => {
     expect(html).toContain("sm:justify-center");
   });
 
+  it("allows setup recovery to name the support action explicitly", () => {
+    const html = renderToStaticMarkup(
+      <SupportReportActions
+        createLabel="Create support report"
+        onCreate={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Create support report");
+  });
+
   it("only disables creation while a report itself is being created", () => {
     const available = renderToStaticMarkup(
       <SupportReportActions onCreate={vi.fn()} />,

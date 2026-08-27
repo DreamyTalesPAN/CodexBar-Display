@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"flag"
 	"fmt"
@@ -48,9 +49,38 @@ var displayWorkerRestartDelay = 5 * time.Second
 var openControlCenterStartLaunchAgentFn = startLaunchAgent
 var openControlCenterOpenURLFn = openURLWithMacOpen
 var openControlCenterHTTPClient = &http.Client{}
+var doctorListPortsFn = usb.ListPorts
+var doctorResolvePortFn = usb.ResolvePort
+var doctorProbePortFn = usb.ProbePort
+var doctorReadDeviceHelloFn = usb.ReadDeviceHello
+var doctorReadWiFiCapabilitiesFn = func(target string) (protocol.DeviceCapabilities, error) {
+	client := &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: doctorAuthRoundTripper{token: deviceTokenFromCommandTarget(target)},
+	}
+	return transportlayer.NewWiFiTransportWithClient(client).DeviceCapabilities(target)
+}
+var doctorCheckCompanionHealthFn = checkDoctorCompanionHealth
+var doctorLaunchAgentPrintFn = func(label string) ([]byte, error) {
+	service := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
+	return exec.Command("launchctl", "print", service).CombinedOutput()
+}
 
 var displayStreamSensitiveQueryPattern = regexp.MustCompile(`(?i)([?&](?:token|auth|key|secret)=)[^&\s"]+`)
 var displayStreamSensitiveUserInfoPattern = regexp.MustCompile(`(?i)(https?://)[^/@\s]+@`)
+
+type doctorAuthRoundTripper struct {
+	token string
+}
+
+func (t doctorAuthRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	request = request.Clone(request.Context())
+	request.Header.Del("X-VibeTV-Token")
+	if token := strings.TrimSpace(t.token); token != "" {
+		request.Header.Set("X-VibeTV-Token", token)
+	}
+	return http.DefaultTransport.RoundTrip(request)
+}
 
 func main() {
 	args := os.Args[1:]
@@ -82,6 +112,8 @@ func main() {
 		err = runUpgrade(args[1:])
 	case "install-update":
 		err = runInstallUpdate(args[1:])
+	case "net-probe":
+		err = runNetProbe(args[1:])
 	case "rollback":
 		err = runRollback(args[1:])
 	case "restore-known-good":
@@ -123,11 +155,12 @@ func printUsage() {
 	fmt.Println("  codexbar-display version [--short] [--json]")
 	fmt.Println("  codexbar-display upgrade [--port /dev/cu.usbserial-10] [--firmware-env env] [--target-firmware-version x.y.z] [--repo owner/name] [--skip-version-guard]")
 	fmt.Println("  codexbar-display install-update [--target http://<device-ip>] [--manifest-url url] [--confirm-live-update] [--force] [--verbose]")
+	fmt.Println("  codexbar-display net-probe --target http://<device-ip>")
 	fmt.Println("  codexbar-display rollback [--port /dev/cu.usbserial-10] [--skip-companion] [--skip-firmware] [--image path/to/backup.bin] [--manifest path/to/backup.manifest] [--backup-dir <dir>] [--script-path <path>] [--skip-verify]")
 	fmt.Println("  codexbar-display restore-known-good [--port /dev/cu.usbserial-10] [--image path/to/backup.bin] [--backup-dir <dir>] [--script-path <path>] [--manifest <path>] [--skip-verify]")
 	fmt.Println("  codexbar-display theme-validate --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
 	fmt.Println("  codexbar-display theme-apply --spec path/to/theme-spec.json [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--allow-unknown-capabilities]")
-	fmt.Println("  codexbar-display theme-pack catalog [--catalog https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/theme-packs/vibetv-theme-packs.json]")
+	fmt.Printf("  codexbar-display theme-pack catalog [--catalog %s]\n", defaultThemeCatalogURL)
 	fmt.Println("  codexbar-display theme-pack validate --pack path/to/theme-pack-dir-or.zip-or-url [--pack-sha256 hex --pack-size-bytes n]")
 	fmt.Println("  codexbar-display theme-pack install (--pack path/to/theme-pack-dir-or.zip-or-url [--pack-sha256 hex --pack-size-bytes n] | --catalog url --theme theme-id) [--target http://<device-ip>] [--firmware-manifest-url url] [--skip-firmware-update] [--allow-unknown-capabilities] [--verbose]")
 	fmt.Println("  codexbar-display setup [--transport wifi|usb] [--target http://<device-ip>] [--port /dev/cu.usbserial-10] [--yes] [--skip-flash] [--pin-port] [--firmware-env env] [--theme classic|crt|mini|none] [--validate-only] [--dry-run]")
@@ -857,21 +890,11 @@ func runDoctor() error {
 		}
 	}
 
-	ports, err := usb.ListPorts()
-	if err != nil {
-		return fmt.Errorf("list serial ports: %w", err)
-	}
-
-	fmt.Println("Serial ports:")
-	if len(ports) == 0 {
-		fmt.Println("  (none)")
-	} else {
-		for _, p := range ports {
-			fmt.Printf("  %s\n", p)
-		}
-	}
-
-	if runtimeErr := runDoctorRuntimeChecks(ports); runtimeErr != nil {
+	runtimeConfig, configErr := readDoctorRuntimeConfig()
+	if configErr != nil {
+		fmt.Printf("Active runtime: unavailable (%v)\n", configErr)
+		doctorErrs = append(doctorErrs, fmt.Errorf("read active runtime configuration failed: %w", configErr))
+	} else if runtimeErr := runDoctorTransportChecks(runtimeConfig); runtimeErr != nil {
 		doctorErrs = append(doctorErrs, runtimeErr)
 	}
 
@@ -895,20 +918,186 @@ func runDoctor() error {
 	return nil
 }
 
-func runDoctorRuntimeChecks(ports []string) error {
+type doctorRuntimeConfig struct {
+	configured  bool
+	label       string
+	transport   string
+	target      string
+	probeTarget string
+	authReady   bool
+	port        string
+}
+
+func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return doctorRuntimeConfig{}, err
+	}
+
+	for _, label := range []string{"shop.vibetv.control-center.runtime", "shop.vibetv.control-center.preview-runtime"} {
+		if output, err := doctorLaunchAgentPrintFn(label); err == nil && doctorLaunchAgentStateHealthy(string(output)) {
+			cfg, err := runtimeconfig.Load(home)
+			if err != nil {
+				return doctorRuntimeConfig{}, err
+			}
+			probeTarget := doctorWiFiProbeTarget(cfg.DeviceTarget, cfg, false)
+			return doctorRuntimeConfig{
+				configured:  true,
+				label:       label,
+				transport:   "wifi",
+				target:      cfg.DeviceTarget,
+				probeTarget: probeTarget,
+				authReady:   deviceTokenFromCommandTarget(probeTarget) != "",
+			}, nil
+		}
+	}
+
+	launchctlOutput, err := doctorLaunchAgentPrintFn("com.codexbar-display.daemon")
+	if err != nil || !doctorLaunchAgentStateHealthy(string(launchctlOutput)) {
+		return doctorRuntimeConfig{}, nil
+	}
+	data, err := readDoctorLegacyLaunchAgentPlist(home, string(launchctlOutput), os.ReadFile)
+	if err != nil {
+		return doctorRuntimeConfig{}, err
+	}
+	plist := string(data)
+	transportName := strings.ToLower(parseLaunchAgentArgument(plist, "--transport"))
+	if transportName == "" {
+		if parseLaunchAgentArgument(plist, "--target") != "" {
+			transportName = "wifi"
+		} else {
+			transportName = "usb"
+		}
+	}
+	target := ""
+	probeTarget := ""
+	if transportName == "wifi" {
+		cfg, err := runtimeconfig.Load(home)
+		if err != nil {
+			return doctorRuntimeConfig{}, err
+		}
+		target = doctorWiFiTarget(cfg.DeviceTarget, parseLaunchAgentArgument(plist, "--target"))
+		probeTarget = doctorWiFiProbeTarget(target, cfg, true)
+	}
+	return doctorRuntimeConfig{
+		configured:  true,
+		label:       "com.codexbar-display.daemon",
+		transport:   transportName,
+		target:      target,
+		probeTarget: probeTarget,
+		authReady:   transportName != "wifi" || deviceTokenFromCommandTarget(probeTarget) != "",
+		port:        parseLaunchAgentArgument(plist, "--port"),
+	}, nil
+}
+
+func readDoctorLegacyLaunchAgentPlist(home, launchctlOutput string, readFile func(string) ([]byte, error)) ([]byte, error) {
+	name := "com.codexbar-display.daemon.plist"
+	paths := []string{parseDoctorLaunchAgentPath(launchctlOutput)}
+	paths = append(paths,
+		filepath.Join(home, "Library", "LaunchAgents", name),
+		filepath.Join("/Library", "LaunchAgents", name),
+	)
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		data, err := readFile(path)
+		if err == nil {
+			return data, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
+	return nil, os.ErrNotExist
+}
+
+func parseDoctorLaunchAgentPath(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "path = ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "path = "))
+		}
+	}
+	return ""
+}
+
+func doctorLaunchAgentStateHealthy(output string) bool {
+	return strings.Contains(output, "state = running") ||
+		strings.Contains(output, "state = waiting") ||
+		strings.Contains(output, "state = spawn scheduled")
+}
+
+func doctorWiFiTarget(configTarget, plistTarget string) string {
+	if target := strings.TrimSpace(configTarget); target != "" {
+		return target
+	}
+	return strings.TrimSpace(plistTarget)
+}
+
+func doctorWiFiProbeTarget(target string, cfg runtimeconfig.Config, allowInlineToken bool) string {
+	publicTarget := publicDeviceTargetForConfig(target)
+	if publicTarget == "" {
+		return strings.TrimSpace(target)
+	}
+	if strings.TrimSpace(cfg.DeviceToken) != "" &&
+		(strings.TrimSpace(cfg.DeviceTarget) == "" || sameCommandDeviceTarget(publicTarget, cfg.DeviceTarget)) {
+		return targetWithRequiredQueryToken(publicTarget, cfg.DeviceToken)
+	}
+	if allowInlineToken {
+		return strings.TrimSpace(target)
+	}
+	return publicTarget
+}
+
+func runDoctorTransportChecks(config doctorRuntimeConfig) error {
+	if !config.configured {
+		fmt.Println("Active runtime: not configured (run `codexbar-display setup`)")
+		fmt.Println("  available transports: wifi, usb")
+		return errors.New("runtime setup required: no active runtime configuration")
+	}
+
+	fmt.Printf("Active runtime: transport=%s\n", config.transport)
+	switch config.transport {
+	case "wifi":
+		fmt.Println("Serial ports: not applicable (active transport is WiFi)")
+		return runDoctorWiFiRuntimeChecks(config)
+	case "usb":
+		ports, err := doctorListPortsFn()
+		if err != nil {
+			return fmt.Errorf("list serial ports: %w", err)
+		}
+		fmt.Println("Serial ports:")
+		if len(ports) == 0 {
+			fmt.Println("  (none)")
+		} else {
+			for _, port := range ports {
+				fmt.Printf("  %s\n", port)
+			}
+		}
+		return runDoctorUSBRuntimeChecks(config, ports)
+	default:
+		return fmt.Errorf("runtime setup required: unsupported active transport %q", config.transport)
+	}
+}
+
+func printDoctorRuntimeDefaults() {
 	fmt.Println("Runtime checks:")
 	fmt.Printf("  codexbar timeout: %s\n", codexbar.CommandTimeout())
 	fmt.Printf("  last-good max age: %s\n", daemon.LastGoodMaxAge())
 	fmt.Printf("  sleep/wake threshold (@60s interval): %s\n", daemon.SleepWakeGapThreshold(60*time.Second))
+}
 
-	port, err := usb.ResolvePort("")
+func runDoctorUSBRuntimeChecks(config doctorRuntimeConfig, ports []string) error {
+	printDoctorRuntimeDefaults()
+	port, err := doctorResolvePortFn(config.port)
 	if err != nil {
 		fmt.Printf("  serial resolve: failed (%v)\n", err)
 		return fmt.Errorf("runtime serial resolve failed: %w", err)
 	}
 	fmt.Printf("  serial resolve: ok (%s)\n", port)
 
-	if err := usb.ProbePort(port); err != nil {
+	if err := doctorProbePortFn(port); err != nil {
 		if errcode.Of(err) == errcode.TransportSerialCloseTimeout {
 			fmt.Printf("  serial probe: warning (%v)\n", err)
 		} else {
@@ -919,11 +1108,7 @@ func runDoctorRuntimeChecks(ports []string) error {
 		fmt.Printf("  serial probe: ok (%s)\n", port)
 	}
 
-	pinnedPort, err := doctorPinnedLaunchAgentPort()
-	if err != nil {
-		fmt.Printf("  launchagent port affinity: failed (%v)\n", err)
-		return fmt.Errorf("runtime launchagent affinity check failed: %w", err)
-	}
+	pinnedPort := config.port
 	if pinnedPort == "" {
 		fmt.Println("  launchagent port affinity: auto-detect")
 		if len(ports) > 1 {
@@ -942,24 +1127,66 @@ func runDoctorRuntimeChecks(ports []string) error {
 		}
 	}
 
-	hello, err := usb.ReadDeviceHello(port)
+	hello, err := doctorReadDeviceHelloFn(port)
 	if err != nil {
 		fmt.Printf("  device hello: warning (%v)\n", err)
 		fmt.Println("  warning: capability handshake unavailable; runtime will use optimistic theme send fallback")
 		return nil
 	}
 
-	caps := protocol.CapabilitiesFromHello(hello)
-	fmt.Printf("  device hello: ok board=%s protocol=%d negotiated=%d firmware=%s theme=%t themeSpecV1=%t maxFrameBytes=%d\n",
+	return reportDoctorCapabilities("device hello", protocol.CapabilitiesFromHello(hello))
+}
+
+func runDoctorWiFiRuntimeChecks(config doctorRuntimeConfig) error {
+	printDoctorRuntimeDefaults()
+	target := strings.TrimSpace(config.target)
+	fmt.Println("  launchagent port affinity: not applicable (active transport is WiFi)")
+	if target == "" {
+		fmt.Println("  WiFi device target: unavailable (connect VibeTV in Control Center)")
+		return errors.New("runtime WiFi target unavailable: connect VibeTV in Control Center")
+	}
+	fmt.Printf("  WiFi device target: %s\n", doctorPublicWiFiTarget(target))
+	if !config.authReady {
+		fmt.Println("  WiFi device credential: unavailable (reconnect VibeTV in Control Center)")
+		return errors.New("runtime WiFi credential unavailable: reconnect VibeTV in Control Center")
+	}
+	if err := doctorCheckCompanionHealthFn(config.label); err != nil {
+		fmt.Printf("  Companion health: failed (%v)\n", err)
+		return fmt.Errorf("runtime Companion health failed: %w", err)
+	}
+	fmt.Println("  Companion health: ok")
+	probeTarget := strings.TrimSpace(config.probeTarget)
+	if probeTarget == "" {
+		probeTarget = target
+	}
+	caps, err := doctorReadWiFiCapabilitiesFn(probeTarget)
+	if err != nil {
+		fmt.Printf("  WiFi device reachability: failed (%v)\n", err)
+		return fmt.Errorf("runtime WiFi device reachability failed: %w", err)
+	}
+	if !caps.Known {
+		fmt.Println("  WiFi device reachability: failed (device capabilities unknown)")
+		return errors.New("runtime WiFi device reachability failed: device capabilities unknown")
+	}
+	return reportDoctorCapabilities("WiFi device reachability", caps)
+}
+
+func doctorPublicWiFiTarget(target string) string {
+	return sanitizeDisplayStreamLogMessage(publicDeviceTargetForConfig(target))
+}
+
+func reportDoctorCapabilities(label string, caps protocol.DeviceCapabilities) error {
+	fmt.Printf("  %s: ok board=%s protocol=%d negotiated=%d firmware=%s theme=%t themeSpecV1=%t maxFrameBytes=%d\n",
+		label,
 		caps.Board,
 		caps.ProtocolVersion,
 		caps.NegotiatedProtocolVersion,
-		hello.Firmware,
+		caps.Firmware,
 		caps.SupportsTheme,
 		caps.SupportsThemeSpecV1,
 		caps.MaxFrameBytes)
 	if len(caps.SupportedProtocolVersions) > 0 {
-		fmt.Printf("  device hello protocols: %v (preferred=%d)\n", caps.SupportedProtocolVersions, caps.PreferredProtocolVersion)
+		fmt.Printf("  %s protocols: %v (preferred=%d)\n", label, caps.SupportedProtocolVersions, caps.PreferredProtocolVersion)
 	}
 	if !caps.Known {
 		fmt.Println("  warning: device capabilities are unknown; skipping strict hardware/theme contract checks")
@@ -985,6 +1212,72 @@ func runDoctorRuntimeChecks(ports []string) error {
 	}
 
 	return nil
+}
+
+func checkDoctorCompanionHealth(expectedOwner string) error {
+	defaultOrigin := "http://" + companionapi.DefaultAddr
+	origins := []string{defaultOrigin}
+	if home, err := os.UserHomeDir(); err == nil {
+		if data, err := os.ReadFile(runtimeEndpointPath(home)); err == nil {
+			var endpoint runtimeEndpoint
+			if json.Unmarshal(data, &endpoint) == nil {
+				if published := strings.TrimSpace(endpoint.Origin); published != "" && published != defaultOrigin {
+					origins = append([]string{published}, origins...)
+				}
+			}
+		}
+	}
+	return checkDoctorCompanionHealthOrigins(origins, expectedOwner)
+}
+
+func checkDoctorCompanionHealthOrigins(origins []string, expectedOwner string) error {
+	client := &http.Client{Timeout: 3 * time.Second}
+	var lastErr error
+	for _, origin := range origins {
+		response, err := client.Get(strings.TrimRight(origin, "/") + "/v1/runtime-health")
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		var result struct {
+			OK            bool  `json:"ok"`
+			DisplayWriter *bool `json:"displayWriter"`
+			Companion     struct {
+				Runtime struct {
+					ListenerOwner string `json:"listenerOwner"`
+				} `json:"runtime"`
+			} `json:"companion"`
+		}
+		decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&result)
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("HTTP %d", response.StatusCode)
+			continue
+		}
+		if decodeErr != nil {
+			lastErr = decodeErr
+			continue
+		}
+		if !result.OK {
+			lastErr = errors.New("runtime health reported not ok")
+			continue
+		}
+		if result.DisplayWriter != nil && !*result.DisplayWriter {
+			lastErr = errors.New("runtime health reported no display writer")
+			continue
+		}
+		owner := strings.TrimSpace(result.Companion.Runtime.ListenerOwner)
+		if owner == "" && expectedOwner != "" && expectedOwner != runtimepaths.LegacyDisplayStreamLaunchAgentLabel {
+			lastErr = errors.New("runtime health did not identify its listener owner")
+			continue
+		}
+		if owner != "" && expectedOwner != "" && owner != expectedOwner {
+			lastErr = fmt.Errorf("runtime health belongs to %q, expected %q", owner, expectedOwner)
+			continue
+		}
+		return nil
+	}
+	return lastErr
 }
 
 func runSetup(args []string) error {
@@ -1131,6 +1424,9 @@ func runThemeApply(args []string) error {
 	if err != nil {
 		return err
 	}
+	if selectedTransport.Name() == "wifi" {
+		requestedTarget = resolveThemeSpecWiFiTarget(requestedTarget, flagWasSet(fs, "target"))
+	}
 
 	spec, raw, resolvedTarget, caps, err := loadAndValidateThemeSpec(
 		strings.TrimSpace(*specPath),
@@ -1179,7 +1475,7 @@ func runThemeApply(args []string) error {
 		selectedTransport.Name(),
 		frame.V,
 		caps.Board,
-		resolvedTarget,
+		publicDeviceTargetForConfig(resolvedTarget),
 	)
 	return nil
 }
@@ -1217,6 +1513,9 @@ func runThemePackCatalog(args []string) error {
 			title = theme.ID
 		}
 		fmt.Printf("- %s: %s", theme.ID, title)
+		if usage := strings.TrimSpace(theme.Usage); usage != "" {
+			fmt.Printf(" usage=%s", usage)
+		}
 		if theme.ThemeRev > 0 {
 			fmt.Printf(" rev=%d", theme.ThemeRev)
 		}
@@ -1248,9 +1547,10 @@ func runThemePackValidate(args []string) error {
 		return err
 	}
 	fmt.Printf(
-		"theme-pack valid: id=%s name=%q themeId=%s rev=%d assets=%d themeSpecBytes=%d\n",
+		"theme-pack valid: id=%s name=%q usage=%s themeId=%s rev=%d assets=%d themeSpecBytes=%d\n",
 		pack.Manifest.ID,
 		pack.Manifest.Name,
+		pack.Manifest.PackUsage(),
 		pack.ThemeSpec.ThemeID,
 		pack.ThemeSpec.ThemeRev,
 		len(pack.Assets),
@@ -1261,6 +1561,7 @@ func runThemePackValidate(args []string) error {
 
 func runThemePackInstall(args []string) error {
 	fs := flag.NewFlagSet("theme-pack install", flag.ContinueOnError)
+	slot := fs.String("slot", themepack.UsageLive, "device slot to install into: live or screensaver")
 	packPath := fs.String("pack", "", "path or HTTP(S) URL to VibeTV theme pack directory or zip")
 	packSHA256 := fs.String("pack-sha256", "", "expected SHA-256 for a remote theme pack")
 	packSizeBytes := fs.Int64("pack-size-bytes", 0, "expected byte size for a remote theme pack")
@@ -1278,8 +1579,13 @@ func runThemePackInstall(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	installSlot := strings.TrimSpace(*slot)
+	if installSlot != themepack.UsageLive && installSlot != themepack.UsageScreensaver {
+		return fmt.Errorf("unknown slot %q (expected %q or %q)", installSlot, themepack.UsageLive, themepack.UsageScreensaver)
+	}
 	installTarget := resolveThemePackInstallTarget(fs, strings.TrimSpace(*target))
 	_, err := themeinstall.Install(context.Background(), themeinstall.Options{
+		Slot:                installSlot,
 		PackURL:             strings.TrimSpace(*packPath),
 		PackSHA256:          strings.TrimSpace(*packSHA256),
 		PackSizeBytes:       *packSizeBytes,
@@ -1344,6 +1650,45 @@ func loadRuntimeConfigForCommand() (runtimeconfig.Config, bool) {
 	return cfg, true
 }
 
+func resolveThemeSpecWiFiTarget(requested string, targetExplicit bool) string {
+	requested = strings.TrimSpace(requested)
+	cfg, ok := loadRuntimeConfigForCommand()
+	if !ok {
+		return requested
+	}
+
+	if !targetExplicit && strings.TrimSpace(cfg.DeviceTarget) != "" {
+		requested = strings.TrimSpace(cfg.DeviceTarget)
+	}
+	publicRequested := publicDeviceTargetForConfig(requested)
+	if publicRequested == "" {
+		return requested
+	}
+
+	token := ""
+	if sameCommandDeviceTarget(publicRequested, cfg.DeviceTarget) {
+		token = strings.TrimSpace(cfg.DeviceToken)
+	}
+	if token == "" {
+		for _, known := range cfg.KnownDevices {
+			if sameCommandDeviceTarget(publicRequested, known.Target) {
+				token = strings.TrimSpace(known.DeviceToken)
+				break
+			}
+		}
+	}
+	if token == "" {
+		return requested
+	}
+	return targetWithQueryToken(publicRequested, token)
+}
+
+func sameCommandDeviceTarget(left, right string) bool {
+	left = publicDeviceTargetForConfig(left)
+	right = publicDeviceTargetForConfig(right)
+	return left != "" && right != "" && strings.EqualFold(left, right)
+}
+
 func targetWithQueryToken(target, token string) string {
 	token = strings.TrimSpace(token)
 	if token == "" {
@@ -1357,6 +1702,21 @@ func targetWithQueryToken(target, token string) string {
 	if strings.TrimSpace(query.Get("token")) != "" {
 		return parsed.String()
 	}
+	query.Set("token", token)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func targetWithRequiredQueryToken(target, token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return strings.TrimSpace(target)
+	}
+	parsed, ok := parseCommandDeviceTarget(target)
+	if !ok {
+		return strings.TrimSpace(target)
+	}
+	query := parsed.Query()
 	query.Set("token", token)
 	parsed.RawQuery = query.Encode()
 	return parsed.String()
@@ -1387,6 +1747,14 @@ func parseCommandDeviceTarget(target string) (*url.URL, bool) {
 		return nil, false
 	}
 	return parsed, true
+}
+
+func deviceTokenFromCommandTarget(target string) string {
+	parsed, ok := parseCommandDeviceTarget(target)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(parsed.Query().Get("token"))
 }
 
 var themePackInstallFirmwareUpdateFn = runThemePackInstallFirmwareUpdate
@@ -1828,24 +2196,12 @@ func containsPort(ports []string, target string) bool {
 	return false
 }
 
-func doctorPinnedLaunchAgentPort() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	plistPath := filepath.Join(home, "Library", "LaunchAgents", "com.codexbar-display.daemon.plist")
-	data, err := os.ReadFile(plistPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil
-		}
-		return "", err
-	}
-	return parsePinnedPortFromLaunchAgentPlist(string(data)), nil
+func parsePinnedPortFromLaunchAgentPlist(plist string) string {
+	return parseLaunchAgentArgument(plist, "--port")
 }
 
-func parsePinnedPortFromLaunchAgentPlist(plist string) string {
-	const marker = "<string>--port</string>"
+func parseLaunchAgentArgument(plist, name string) string {
+	marker := "<string>" + name + "</string>"
 	idx := strings.Index(plist, marker)
 	if idx < 0 {
 		return ""
@@ -1860,5 +2216,13 @@ func parsePinnedPortFromLaunchAgentPlist(plist string) string {
 	if end < 0 {
 		return ""
 	}
-	return strings.TrimSpace(rest[:end])
+	return strings.TrimSpace(xmlUnescape(rest[:end]))
+}
+
+func xmlUnescape(value string) string {
+	var decoded string
+	if err := xml.Unmarshal([]byte("<string>"+value+"</string>"), &decoded); err != nil {
+		return value
+	}
+	return decoded
 }

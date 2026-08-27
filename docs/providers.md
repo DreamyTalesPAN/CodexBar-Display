@@ -99,6 +99,11 @@ matters right now. It uses signals such as:
 - sticky current provider
 - CodexBar provider order
 
+These inputs are provider-neutral. Selection code must not branch on provider
+IDs or add provider-specific activity heuristics. CodexBar remains responsible
+for obtaining and interpreting each provider's data; VibeTV only chooses which
+already-normalized provider frame to display.
+
 This is why VibeTV can stay useful even when a user moves between Codex, Claude,
 Cursor, Gemini, and other tools during the same day.
 
@@ -107,7 +112,7 @@ Cursor, Gemini, and other tools during the same day.
 Token stats are read through:
 
 ```bash
-codexbar cost --json
+codexbar cost --refresh --days 30 --json
 ```
 
 VibeTV maps reliable token stats to:
@@ -122,7 +127,9 @@ details.
 ## Source Of Truth
 
 The provider list changes as CodexBar changes. For implementation-level provider
-details, use the upstream CodexBar docs:
+details, first identify the exact CodexBar version bundled by this repository,
+then inspect that version's output and source. The moving upstream documentation
+is useful background, but it is not the runtime contract for a pinned release:
 
 - [CodexBar provider docs](https://github.com/steipete/CodexBar/blob/main/docs/providers.md)
 

@@ -26,7 +26,89 @@ describe("OverviewScreen", () => {
     expect(html).not.toContain("Start using any AI provider.");
   });
 
-  it("keeps an active VibeTV in Overview while it reconnects", () => {
+  it("keeps a genuinely disconnected selected VibeTV not connected", () => {
+    const html = renderToStaticMarkup(
+      <OverviewScreen
+        companionStatus="online"
+        device={{
+          active: true,
+          connected: false,
+          deviceId: "14799300",
+          paired: true,
+          ready: false,
+          connectionState: "reconnecting",
+        }}
+        firmwareUpdateStatus={{
+          phase: "error",
+          stage: "rediscovering",
+        }}
+      />,
+    );
+
+    expect(html).toContain("VibeTV status");
+    expect(html).toContain("Not connected");
+    expect(html).toContain("Reconnect VibeTV to continue");
+    expect(html).not.toContain("VibeTV is restarting");
+    expect(html).not.toContain("VibeTV is connected");
+  });
+
+  it("keeps an update-owned reboot distinct from a real disconnect", () => {
+    const html = renderToStaticMarkup(
+      <OverviewScreen
+        companionStatus="online"
+        device={{
+          active: true,
+          connected: false,
+          deviceId: "14799300",
+          paired: true,
+          ready: false,
+          connectionState: "reconnecting",
+        }}
+        firmwareUpdateStatus={{
+          phase: "installing",
+          stage: "rebooting",
+        }}
+      />,
+    );
+
+    expect(html).toContain("VibeTV is restarting");
+    expect(html).toContain("Keep VibeTV connected to power and wait");
+    expect(html).toContain("No action is required");
+    expect(html).not.toContain("Not connected");
+    expect(html).not.toContain("Reconnect VibeTV to continue");
+  });
+
+  it("does not treat a cached frame as a live connection or display", () => {
+    const html = renderToStaticMarkup(
+      <OverviewScreen
+        companionStatus="online"
+        device={{
+          active: true,
+          connected: false,
+          paired: true,
+          ready: false,
+          connectionState: "reconnecting",
+        }}
+        displayFrame={{
+          ok: true,
+          savedAt: "2026-08-05T08:00:00Z",
+          frame: {
+            v: 1,
+            provider: "codex",
+            label: "Codex",
+            session: 12,
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Not connected");
+    expect(html).toContain("Waiting for first image");
+    expect(html).not.toContain("VibeTV is connected");
+    expect(html).not.toContain(">Live<");
+  });
+
+  it("does not show reconnect instructions inside an available Overview", () => {
     const html = renderToStaticMarkup(
       <OverviewScreen
         companionStatus="online"
@@ -41,21 +123,32 @@ describe("OverviewScreen", () => {
       />,
     );
 
-    expect(html).toContain("Reconnecting to VibeTV");
-    expect(html).toContain("VibeTV-Setup");
-    expect(html).toContain("Your pairing and settings stay saved.");
+    expect(html).not.toContain("Reconnecting to VibeTV");
+    expect(html).not.toContain("VibeTV-Setup");
     expect(html).not.toContain("Pair VibeTV again");
   });
 
-  it("only shows Connected for ready=true", () => {
+  it("keeps a reachable VibeTV connected while usage is loading", () => {
     const html = renderToStaticMarkup(
       <OverviewScreen
         companionStatus="online"
-        device={{ connected: true, paired: true, ready: false }}
+        device={{
+          active: true,
+          connected: true,
+          paired: true,
+          ready: false,
+          stream: {
+            healthy: false,
+            running: true,
+          },
+        }}
       />,
     );
 
-    expect(html).toContain("Not connected");
-    expect(html).not.toContain("VibeTV is connected");
+    expect(html).toContain("VibeTV is connected");
+    expect(html).toContain("Waiting for usage");
+    expect(html).toContain("This can take up to 60 seconds.");
+    expect(html).not.toContain("Reconnect VibeTV to continue");
+    expect(html).not.toContain("Reconnecting to VibeTV");
   });
 });

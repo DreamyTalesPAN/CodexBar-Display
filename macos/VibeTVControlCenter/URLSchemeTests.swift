@@ -159,22 +159,21 @@ func runURLSchemeTests() {
             && !redactedLog.contains("raw-userinfo"),
         "support report must redact secrets embedded in log strings"
     )
-    require(
-        isCompatibleCodexBarVersion("0.23.0"),
-        "the minimum supported CodexBar version must be compatible"
+    let appSupportURL = URL(
+        fileURLWithPath: "/Users/customer/Library/Application Support/codexbar-display",
+        isDirectory: true
     )
     require(
-        isCompatibleCodexBarVersion("0.45.0"),
-        "a newer CodexBar version must be reusable"
+        appManagedCodexBarAppURL(applicationSupportURL: appSupportURL).path
+            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.46.0/CodexBar.app",
+        "VibeTV must publish CodexBar only into its private versioned app support directory"
     )
     require(
-        isCompatibleCodexBarVersion("0.43.0"),
-        "an existing CodexBar 0.43 installation must remain reusable"
+        appManagedCodexBarCLIURL(applicationSupportURL: appSupportURL).path
+            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.46.0/CodexBar.app/Contents/Helpers/CodexBarCLI",
+        "the Companion must use the exact private CodexBarCLI path"
     )
-    require(
-        !isCompatibleCodexBarVersion("0.22.0"),
-        "an unsupported CodexBar version must not replace the pinned bootstrap"
-    )
+    testPrivateCodexBarTargetRejectsSymlinks()
     let commandFixtureDirectory = FileManager.default.temporaryDirectory
         .appendingPathComponent("vibetv-command-\(UUID().uuidString)")
     try! FileManager.default.createDirectory(
@@ -200,72 +199,6 @@ func runURLSchemeTests() {
     require(
         verboseResult?.exitCode == 0 && verboseResult?.output.count == 200000,
         "command output must be drained while a verbose child process is running"
-    )
-    let codexBarCandidates = codexBarInstalledAppCandidates(
-        homeDirectory: URL(fileURLWithPath: "/Users/customer", isDirectory: true)
-    )
-    require(
-        codexBarCandidates.map(\.path) == [
-            "/Applications/CodexBar.app",
-            "/Users/customer/Applications/CodexBar.app",
-        ],
-        "CodexBar discovery must prefer the shared app and then the user app"
-    )
-    let configFixtureDirectory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("vibetv-codexbar-config-\(UUID().uuidString)")
-    try! FileManager.default.createDirectory(
-        at: configFixtureDirectory,
-        withIntermediateDirectories: false
-    )
-    defer { try? FileManager.default.removeItem(at: configFixtureDirectory) }
-    let fakeCodexBarCLI = configFixtureDirectory.appendingPathComponent("CodexBarCLI")
-    try! Data(
-        """
-        #!/bin/sh
-        case "${1:-} ${2:-}" in
-          "config dump")
-            printf '{"version":42,"providers":[{"id":"future-provider","enabled":true}]}'
-            ;;
-          "config validate")
-            printf '[]'
-            ;;
-          *)
-            exit 64
-            ;;
-        esac
-        """.utf8
-    ).write(to: fakeCodexBarCLI)
-    try! FileManager.default.setAttributes(
-        [.posixPermissions: 0o700],
-        ofItemAtPath: fakeCodexBarCLI.path
-    )
-    let generatedConfigURL = configFixtureDirectory.appendingPathComponent("config.json")
-    require(
-        writeCodexBarOwnedDefaultConfig(
-            executableURL: fakeCodexBarCLI,
-            targetURL: generatedConfigURL
-        ),
-        "fresh installs must ask CodexBar to render and validate its own defaults"
-    )
-    let generatedConfigData = try! Data(contentsOf: generatedConfigURL)
-    let config = try! JSONSerialization.jsonObject(
-        with: generatedConfigData
-    ) as! [String: Any]
-    let generatedProviders = config["providers"] as? [[String: Any]]
-    require(
-        config["version"] as? Int == 42
-            && generatedProviders?.first?["id"] as? String == "future-provider",
-        "VibeTV must preserve CodexBar's dynamic provider inventory and defaults"
-    )
-    let existingConfigData = Data(#"{"existing":true}"#.utf8)
-    try! existingConfigData.write(to: generatedConfigURL, options: .atomic)
-    require(
-        writeCodexBarOwnedDefaultConfig(
-            executableURL: fakeCodexBarCLI,
-            targetURL: generatedConfigURL
-        )
-            && (try! Data(contentsOf: generatedConfigURL)) == existingConfigData,
-        "an existing CodexBar config must remain untouched"
     )
     require(
         RuntimePreparationOutcome.nativeRuntimeReady.shouldReloadControlCenter,
@@ -383,6 +316,40 @@ func runURLSchemeTests() {
         "the WebView repair URL must route to the native CodexBar repair action"
     )
     require(
+        isFinishCodexBarRecoveryURL(
+            URL(string: "vibetv://finish-codexbar-recovery")!
+        ),
+        "the exact temporary CodexBar stop action must be accepted"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://finish-codexbar-recovery")!
+        ) == .finishCodexBarRecovery,
+        "the WebView finish URL must stop only the temporary CodexBar app"
+    )
+    require(
+        isOpenCodexBarURL(URL(string: "vibetv://open-codexbar")!),
+        "the exact open-CodexBar action must be accepted"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://open-codexbar")!
+        ) == .openCodexBar,
+        "the WebView open URL must bring CodexBar to the front"
+    )
+    for rejectedOpenURL in [
+        "vibetv://open-codexbar/extra",
+        "vibetv://open-codexbar?activate=true",
+        "vibetv://open-codexbar#now",
+        "vibetv://user@open-codexbar",
+        "https://open-codexbar",
+    ] {
+        require(
+            !isOpenCodexBarURL(URL(string: rejectedOpenURL)!),
+            "unexpected open-CodexBar action must be rejected: \(rejectedOpenURL)"
+        )
+    }
+    require(
         nativeControlCenterAction(
             for: URL(string: "vibetv://check-for-updates")!
         ) == .checkForUpdates,
@@ -424,6 +391,16 @@ func runURLSchemeTests() {
             "unexpected CodexBar repair action must be rejected: \(rejectedRepairURL)"
         )
     }
+    for rejectedFinishURL in [
+        "vibetv://finish-codexbar-recovery/extra",
+        "vibetv://finish-codexbar-recovery?force=true",
+        "https://finish-codexbar-recovery",
+    ] {
+        require(
+            !isFinishCodexBarRecoveryURL(URL(string: rejectedFinishURL)!),
+            "unexpected CodexBar finish action must be rejected: \(rejectedFinishURL)"
+        )
+    }
     require(
         nativeControlCenterAction(
             for: URL(string: "https://app.vibetv.shop/control-center")!
@@ -457,6 +434,23 @@ func runURLSchemeTests() {
         require(
             !isApprovedDMGDownloadURL(URL(string: rejectedURL)!),
             "unverified DMG URL must stay inside the WebView policy: \(rejectedURL)"
+        )
+    }
+    require(
+        isApprovedCodexBarDownloadURL(
+            URL(string: "https://github.com/steipete/CodexBar/releases/latest")!
+        ),
+        "the official CodexBar releases page must open externally"
+    )
+    for rejectedURL in [
+        "http://github.com/steipete/CodexBar/releases/latest",
+        "https://github.com/other/CodexBar/releases/latest",
+        "https://github.com/steipete/CodexBar/releases/latest?download=1",
+        "https://github.com/steipete/CodexBar/releases/download/v0.46.0/CodexBar.zip",
+    ] {
+        require(
+            !isApprovedCodexBarDownloadURL(URL(string: rejectedURL)!),
+            "unapproved CodexBar download URL must stay inside the WebView policy: \(rejectedURL)"
         )
     }
 
@@ -1017,6 +1011,82 @@ private func testLegacyTerminalAppDetection() {
             expectedBundleIdentifier: "shop.vibetv.control-center"
         ),
         "the currently running app must never migrate itself"
+    )
+}
+
+private func testPrivateCodexBarTargetRejectsSymlinks() {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory
+        .appendingPathComponent("vibetv-private-codexbar-\(UUID().uuidString)", isDirectory: true)
+    let home = root.appendingPathComponent("home", isDirectory: true)
+    let realAppSupport = home
+        .appendingPathComponent("Library/Application Support/codexbar-display", isDirectory: true)
+    defer {
+        try? fileManager.removeItem(at: root)
+    }
+    do {
+        try fileManager.createDirectory(at: realAppSupport, withIntermediateDirectories: true)
+    } catch {
+        require(false, "could not prepare private CodexBar symlink test: \(error)")
+        return
+    }
+    let targetApp = appManagedCodexBarAppURL(applicationSupportURL: realAppSupport)
+    require(
+        privateCodexBarTargetIsSafe(
+            applicationSupportURL: realAppSupport,
+            homeURL: home,
+            targetAppURL: targetApp
+        ),
+        "private CodexBar target must allow a direct app support path"
+    )
+
+    let linkedTargetRoot = root.appendingPathComponent("linked-target", isDirectory: true)
+    let linkedTarget = linkedTargetRoot.appendingPathComponent("CodexBar.app", isDirectory: true)
+    do {
+        try fileManager.createDirectory(at: linkedTarget, withIntermediateDirectories: true)
+        try fileManager.createDirectory(
+            at: targetApp.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try fileManager.createSymbolicLink(
+            at: targetApp,
+            withDestinationURL: linkedTarget
+        )
+    } catch {
+        require(false, "could not prepare private target symlink: \(error)")
+        return
+    }
+    require(
+        !privateCodexBarTargetIsSafe(
+            applicationSupportURL: realAppSupport,
+            homeURL: home,
+            targetAppURL: targetApp
+        ),
+        "private CodexBar target must reject CodexBar.app symlinks"
+    )
+
+    let symlinkHome = root.appendingPathComponent("symlink-home", isDirectory: true)
+    let symlinkLibraryTarget = root.appendingPathComponent("real-library", isDirectory: true)
+    let symlinkAppSupport = symlinkHome
+        .appendingPathComponent("Library/Application Support/codexbar-display", isDirectory: true)
+    do {
+        try fileManager.createDirectory(at: symlinkHome, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: symlinkLibraryTarget, withIntermediateDirectories: true)
+        try fileManager.createSymbolicLink(
+            at: symlinkHome.appendingPathComponent("Library", isDirectory: true),
+            withDestinationURL: symlinkLibraryTarget
+        )
+    } catch {
+        require(false, "could not prepare private ancestor symlink: \(error)")
+        return
+    }
+    require(
+        !privateCodexBarTargetIsSafe(
+            applicationSupportURL: symlinkAppSupport,
+            homeURL: symlinkHome,
+            targetAppURL: appManagedCodexBarAppURL(applicationSupportURL: symlinkAppSupport)
+        ),
+        "private CodexBar target must reject symlinks in parent segments"
     )
 }
 #endif

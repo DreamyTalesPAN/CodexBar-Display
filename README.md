@@ -104,22 +104,21 @@ The normal customer path does not require USB flashing. USB-C powers the device.
 1. Buy the hardware from [vibetv.shop](https://vibetv.shop/products/vibe-tv).
 2. Power VibeTV with USB-C.
 3. Join the `VibeTV-Setup` WiFi hotspot and connect VibeTV to your home WiFi.
-4. Open [`app.vibetv.shop`](https://app.vibetv.shop) on your Mac.
-5. Follow the hosted setup steps.
-6. Install the Mac App through the Agentic setup prompt or the shown Terminal
-   command.
-7. The Mac App opens the local Control Center, then connect VibeTV there.
+4. Open [`app.vibetv.shop`](https://app.vibetv.shop) on your Mac and download the
+   Mac App.
+5. Drag `VibeTV Control Center` into Applications and open it.
+6. The app opens the local Control Center, then connect VibeTV there.
 
 The customer setup guide is [docs/customer-setup.md](docs/customer-setup.md).
 
 Useful support commands:
 
 ```bash
-# install or update the Mac App from Control Center
-curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash
-
 # check whether the Mac App is running
 curl -fsS http://127.0.0.1:47832/v1/status
+
+# reinstall the Mac App without the download (support fallback)
+curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash
 
 # stop the Mac App
 curl -fsSL https://app.vibetv.shop/install-control-center-companion.sh | bash -s -- --uninstall
@@ -203,4 +202,12 @@ that exact hardware test.
 
 ## License
 
-Released under the MIT License. See [LICENSE](LICENSE).
+Source available under the Functional Source License 1.1 with the MIT future
+license (FSL-1.1-MIT). The source may be inspected, used, modified, and
+redistributed for permitted purposes, but not made available to others in a
+competing commercial product or service. Each version becomes available under
+the MIT License two years after it is published.
+
+Versions published previously under the MIT License remain available under
+the license terms distributed with those versions. See [LICENSE](LICENSE) for
+the current terms.

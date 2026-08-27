@@ -59,7 +59,7 @@ cd companion
 ../codexbar-display setup --yes
 ```
 
-This installs the companion runtime, persists the Mini theme on fresh installs, and writes a WiFi LaunchAgent.
+This installs the companion runtime and writes a WiFi LaunchAgent. Fresh devices intentionally start in the `theme-missing` state until a theme is installed through the Mac App.
 It does not require USB serial.
 
 ### WiFi firmware update path
@@ -335,6 +335,11 @@ If hello negotiation is temporarily unavailable, you can opt into local USB fall
 ../codexbar-display theme-apply --allow-unknown-capabilities --spec ../protocol/fixtures/v2/theme_spec_mini_transport.json
 ```
 
+For WiFi, `theme-apply` uses the saved pairing token only when the requested
+target exactly matches that saved device. It authenticates `/hello` before
+sending `/frame`, never reuses a token for a different target, and does not
+print the token in command output.
+
 Validation checks:
 - ThemeSpec schema/field rules (`protocol/theme_spec_v1.schema.json`)
 - capability compatibility (`maxThemeSpecBytes`, `maxThemePrimitives`, `builtinThemes`)
@@ -352,9 +357,11 @@ cd companion
 - last successful `sent frame` timestamp + port
 - last runtime error (if any)
 
-`doctor` runtime checks additionally validate:
-- board/protocol/theme capability contract from device hello
-- LaunchAgent port affinity safety (fails when multiple serial ports are present and daemon is unpinned)
+`doctor` runtime checks are transport-aware:
+- active runtime service and configured transport
+- WiFi: configured target, local Mac App health, and read-only device reachability; USB/serial affinity is not applicable
+- USB: board/protocol/theme capability contract, serial probe, and LaunchAgent port affinity safety (fails when multiple serial ports are present and daemon is unpinned)
+- no active runtime: clear setup-required result without treating unrelated serial inventory as fatal
 
 Runtime error logs use:
 - stable `code=<category/item>` (`transport/*`, `protocol/*`, `runtime/*`, `setup/*`)
@@ -473,13 +480,17 @@ Run this list before every v0 release decision.
 - [ ] GO: all checklist items done, no open P0/P1 blockers.
 - [ ] NO-GO: at least one blocker open (record blocker, owner, next check time).
 
-## RC -> Soak -> Final Flow
+## Candidate -> Production Approval Flow
 
-1. Cut RC tag (for example `v1.0.0-rc.1`) and publish artifacts.
-2. Run checklist above + soak gate + setup/upgrade/rollback validation.
-3. Soak in realistic operator mode; monitor daemon logs and fix regressions via new RC tags.
-4. Promote to final tag (for example `v1.0.0`) only after soak passes with no blockers.
-5. Keep prior known-good artifact set available for rollback/hotfix RC.
+1. Run `CODEX Prepare and Release VibeTV` from the intended `main` SHA with the
+   final Mac App version and `firmware=unchanged` or `firmware=bump`.
+2. Wait for signing, notarization, and the hosted guest matrix. The same run
+   then pauses at the `Production` environment for up to 30 days.
+3. Test the immutable candidate bundle. After approval, the waiting job
+   publishes those exact bytes without rebuilding or requiring the original
+   chat context.
+4. Keep the previous known-good release available. A correction requires a
+   new candidate and version; never replace an immutable tag or release.
 
 ## Quick Troubleshooting
 
@@ -506,10 +517,78 @@ tail -n 100 /tmp/codexbar-display-daemon.err.log
 
 ### `runtime/codexbar-command`
 
+First verify the bundled CodexBar version and inspect the Mac App's dashboard
+supervisor and collector logs. The normal Mac App runtime uses its single
+private CodexBar serve path; the direct command below is an upstream diagnostic,
+not a runtime fallback:
+
 ```bash
-codexbar usage --json --provider codex --source cli
+codexbar --version
 codexbar usage --json --web-timeout 8
 ```
+
+Do not add a provider-specific probe or alternate CLI path because this
+diagnostic succeeds while the runtime path fails. Trace the first disagreement
+through CodexBar serve, the collector, persisted usage, `/v1/usage`, and the
+last sent frame.
+
+## Network Diagnosis (WiFi-only field devices)
+
+When a device answers `/hello` and `/health` but uploads, theme installs, or
+OTA stall, run the link probe first — it detects the frame-size-selective
+receive failure class (docs/hardware-contract.md, "WiFi PHY mode") in
+seconds, over pure WiFi, against every firmware version:
+
+```bash
+codexbar-display net-probe --target http://<device-ip>
+```
+
+- `LARGE-FRAME BLACK HOLE` verdict: small requests answer while larger bodies
+  vanish. Power-cycle the VibeTV and retry; update to firmware >= 1.0.40,
+  which forces 802.11g and removes the failure class.
+- A clean pass does not rule the failure out for later — it is intermittent
+  by nature (the AP decides when to aggregate).
+
+`GET /health` on firmware >= 1.0.40 carries a `wifi` block (`rssi`,
+`channel`, `phyMode`, `sleepMode`). `phyMode` must read `11g`; support
+reports should always quote this block for connectivity complaints.
+
+## Fast Hardware Self-Test (bench device)
+
+One command exercises the firmware + Companion OTA/recovery matrix against a
+connected VibeTV, over WiFi, using a local firmware build as the candidate and
+the current public release as the baseline. No signed DMG or Apple
+notarization is involved, so it runs in minutes whenever a device is on the
+bench. It does not purge the Mac or touch the installed app; it stops the
+streaming runtime only for the duration of each OTA and restarts it at the end.
+
+```bash
+./scripts/vibetv-hw-selftest.sh                  # all phases, 2 cycles
+./scripts/vibetv-hw-selftest.sh --cycles 5
+./scripts/vibetv-hw-selftest.sh --phases link,coldstart
+./scripts/vibetv-hw-selftest.sh --target http://<ip> --port /dev/cu.usbserial-10
+```
+
+Phases: `link` (net-probe large-frame delivery), `update` (OTA public →
+candidate + themed render), `downgrade`, `cycles` (N update/downgrade round
+trips with heap logging), `coldstart` (serial reset → boot markers + link +
+render), `abort` (reset mid-upload → theme recovery + retry). `coldstart` and
+`abort` need the USB serial cable; the rest run over WiFi only. Per-run
+artifacts and logs land in `~/.vibetv-selftest/runs/<timestamp>/`.
+
+This is the firmware/Companion tool. For the full **customer** rehearsal that
+also drives the Mac App update through Sparkle, use
+`scripts/vibetv-rehearse-warm-start.sh` / `vibetv-rehearse-cold-start.sh`;
+those need a signed candidate and one manual Sparkle "Install Update" click (a
+native macOS dialog that cannot be scripted headlessly).
+
+Pass `--main` to rehearse what a release would ship: it resolves the release
+candidate built from the current `main` tip and refuses to run when there is
+none, rather than falling back to some other candidate. `--pr <number>` uses the
+merge-gate candidate for an open pull request. Either way the candidate's
+`sourceSha` is compared against what was asked for before anything is installed
+— a merge-gate run reports `main` as its head branch even though it builds a
+pull request head, so run metadata cannot be used to identify a candidate.
 
 ## Error Code Recovery Map
 
@@ -541,12 +620,64 @@ Firmware bench envs:
 - ESP8266: `esp8266_smalltv_st7789_bench`
 - ESP32 fallback: `lilygo_t_display_s3_bench`
 
+## Immutable Candidate Promotion (Issues #353 and #387)
+
+`CODEX Prepare and Release VibeTV` is the only release entrypoint. Dispatch it
+from the intended `main` SHA with the final Mac App version. `firmware=bump`
+increments every board one patch above the current public manifest;
+`firmware=unchanged` keeps the public firmware versions. Those choices are
+frozen before the first build, so the tested candidate is already the final
+release payload.
+
+One-time repository setup: the GitHub `Production` environment must have Paul
+as a required reviewer and must allow that reviewer to approve a run they
+started. Candidate preparation fails before building if the environment has no
+required-reviewer protection, preventing an accidental immediate release.
+
+The workflow builds, signs, notarizes, hashes, and exercises the candidate
+once. `candidate-manifest.json` binds `sourceSha`, version, run ID, every
+artifact, and every SHA-256. Candidate and test evidence are retained for 30
+days. After the automated matrix succeeds, the same workflow run waits at the
+`Production` environment. GitHub's waiting deployment is the durable handoff:
+a later Codex chat can discover the run and version without relying on chat
+memory.
+
+Approving `Production` validates and copies only `publish=true` files, creates
+the tag on the candidate's recorded `sourceSha`, and publishes without a
+second dispatch, a separate hardware-canary run, a current-`main` comparison,
+or any rebuild. If `main` moves while the candidate is tested, the approved
+candidate remains publishable because its exact source and bytes are already
+bound by the manifest.
+
+A fresh Codex chat finds the waiting handoff in GitHub rather than chat memory:
+
+```bash
+gh run list \
+  --repo DreamyTalesPAN/CodexBar-Display \
+  --workflow vibetv-release-candidate.yml \
+  --limit 20 \
+  --json databaseId,displayTitle,status,headSha,url
+gh api \
+  repos/DreamyTalesPAN/CodexBar-Display/actions/runs/<run-id>/pending_deployments
+```
+
+The pending deployment response supplies the `Production` environment ID and
+whether the current user may approve it. Approving that deployment is the
+release action, so the merge/release guardrails still require the exact version
+and risk to be stated in chat before approval.
+
+Post-publish verification downloads every public release asset and compares its
+SHA-256 with the validated candidate payload before running the existing
+release canary. If any gate fails, do not overwrite or rerun the same tag or
+release. Keep the previous known-good release for rollback and create a new
+candidate/version for a correction.
+
 ## Versioning and Release Notes
 
 - Companion and firmware releases use SemVer `1.x`.
 - Release go/no-go for MVP is gated by `esp8266_smalltv_st7789`.
 - `codexbar-display upgrade` enforces companion/firmware compatibility with a version guard.
-- Release firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the release tag version.
+- Candidate firmware builds stamp `CODEXBAR_DISPLAY_FW_VERSION` from the final frozen firmware manifest.
 - GitHub release artifacts include companion binaries, firmware binaries, checksums, manifests, and `install-control-center-companion.sh`.
 - The customer Mac App target is a signed/notarized DMG containing `VibeTV Control Center.app`. Keep its hosted download feature flag disabled until the latest release contains the verified DMG asset; the setup prompt remains the support fallback.
 - Current customer releases must not publish Mac App `.pkg` assets.

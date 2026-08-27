@@ -436,8 +436,8 @@ main() {
   [[ ! -e "${app}/Contents/Resources/companion" ]] \
     || die "Mach-O helpers must not be stored in the Resources directory"
   assert_file "${app}/Contents/Resources/VibeTVControlCenter.icns"
-  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-macos-universal-0.44.0.zip"
-  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-v0.44.0.manifest.json"
+  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-macos-universal-0.46.0.zip"
+  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-v0.46.0.manifest.json"
   assert_file "${app}/Contents/Resources/CodexBar/CodexBar-LICENSE.txt"
   assert_file "${app}/Contents/Library/LaunchAgents/shop.vibetv.control-center.runtime.plist"
   assert_file "${app}/Contents/Frameworks/Sparkle.framework/README.txt"
@@ -518,7 +518,7 @@ expected_arguments = [
     "--transport",
     "wifi",
     "--interval",
-    "5s",
+    "30s",
     "--api-addr",
     "127.0.0.1:47832",
     "--api-dev-origin",
@@ -534,6 +534,10 @@ environment = agent.get("EnvironmentVariables", {})
 if environment.get("CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL") != agent.get("Label"):
     raise SystemExit(
         "DMG runtime must expose its LaunchAgent label to the Companion API"
+    )
+if environment.get("VIBETV_CODEXBAR_PINNED_VERSION") != "0.46.0":
+    raise SystemExit(
+        "DMG runtime must force the Companion to use VibeTV's pinned CodexBar"
     )
 if environment.get("VIBETV_DISABLE_MAC_APP_SELF_UPDATE") != "1":
     raise SystemExit(
@@ -560,6 +564,19 @@ if stop_legacy > register_runtime:
         "native app must stop legacy display writers before registering the new LaunchAgent"
     )
 
+preview_runtime_start = source.index(
+    "private func registerLocalPreviewRuntimeService()"
+)
+preview_runtime_end = source.index(
+    "private func unregisterLocalPreviewRuntimeService()",
+    preview_runtime_start,
+)
+preview_runtime_source = source[preview_runtime_start:preview_runtime_end]
+if '"--interval",\n                "30s"' not in preview_runtime_source:
+    raise SystemExit("local preview runtime must use the stable 30s interval")
+if '"--interval",\n                "5s"' in preview_runtime_source:
+    raise SystemExit("local preview runtime must not restore the overloaded 5s interval")
+
 required_source = [
     "import ServiceManagement",
     "import CryptoKit",
@@ -571,6 +588,9 @@ required_source = [
     "SMAppService.agent(plistName: runtimeLaunchAgentPlistName)",
     "try runtimeService.register()",
     "runtimeService.unregister(completionHandler:",
+    "shouldPostponeRelaunchForUpdate item: SUAppcastItem",
+    "await unregisterBundledRuntimeService()",
+    "installHandler()",
     "runtimeServiceNeedsRefresh(",
     'previewRuntimeLaunchAgentLabel =',
     'localPreviewRuntimeInfoKey = "VibeTVLocalPreviewRuntime"',
@@ -582,6 +602,59 @@ required_source = [
     'runtimeEndpointFileName = "runtime-endpoint.json"',
     "validatedRuntimeEndpointOrigin(",
     "runtimeOriginCandidates()",
+    # The managed runtime runs with --api-fallback, so the quiesce wait after an
+    # unregister must watch the origin it actually published, not 47832.
+    # Quiesce against the origin that answered and was proven owned, not the
+    # first candidate: the endpoint file can hold a stale but valid URL.
+    # The unregister wait must cover every candidate, not one: the published
+    # origin can be stale, and this build's verified origin is not the origin of
+    # whatever is running during an upgrade from a public release.
+    # Ownership narrowing must happen where the candidates are captured, before
+    # the unregister: afterwards launchctl no longer knows the label and every
+    # candidate would be discarded, including the runtime still exiting.
+    "var candidateOrigins = runtimeOriginCandidates()",
+    "let managedOrigins = candidateOrigins.filter { origin in",
+    "waitForRuntimeAPIToStop(managedOrigins)",
+    # The claim must verify listener ownership before trusting an answer: a
+    # stale port from runtime-endpoint.json can be held by anything, and it runs
+    # before the unregister, where ownership is still knowable.
+    "            guard case .owned = verifyRuntimeListenerOwnership(\n                port: origin.port ?? defaultRuntimePort\n            ) else {\n                continue\n            }\n            if http.statusCode == 409 {",
+    # The release must NOT, and must not stop at the first answer. It runs after
+    # the unregister, where launchctl no longer knows the label: every candidate
+    # reads .serviceUnavailable, so the check skipped all of them and released
+    # nothing, leaving updates and theme installs refused with "Mac App is
+    # restarting" for the rest of the window after a restart that never happened.
+    "    private func runtimeReleaseUpdateHold() async {\n        for origin in runtimeOriginCandidates() {\n            _ = await runtimeUpdateHoldRequest(origin, release: true)\n        }\n    }",
+    # Open CodexBar is reached from outside the WKWebView too, and macOS then
+    # delivers it through application(_:open:), which urlRouter.receive rejects.
+    "if urls.contains(where: isOpenCodexBarURL) {",
+    # A repair delivered as a URL has no page waiting for the result, so the
+    # page's handler drops the event and never sends the finish action. The
+    # native side has to release its temporary CodexBar itself in that case.
+    # The no-WebView repair must not go through retryRuntimePreparation: that
+    # wrapper clears codexBarRepairRequired, and prepareCompanion starts the
+    # verified CodexBar only while that flag is set. And when a cold launch's
+    # own preparation is already running, the repair is queued instead of
+    # dropped: that task read the flag before the request existed, so its
+    # completion must rerun preparation rather than answer the repair.
+    "        discardMismatchedPendingNativeUpdate()\n        if preparationTask != nil {",
+    "            pendingCodexBarRepairRerun = true\n            return\n        }\n        startRuntimePreparation()\n    }",
+    "            if self.pendingCodexBarRepairRerun {",
+    "                self.pendingCodexBarRepairRerun = false\n                self.codexBarRepairRequired = true\n                self.startRuntimePreparation()\n                return\n            }",
+    # The "Repair usage service" button must reach the repair entry point, not
+    # the generic retry: that wrapper clears codexBarRepairRequired, and the
+    # launch this screen exists to trigger happens only while it is set.
+    "action: #selector(repairCodexBarFromNativeStatus),",
+    "kind: .codexBarRepair",
+    "beginCodexBarRepair(hasJavaScriptOwner: false)",
+    "beginCodexBarRepair(hasJavaScriptOwner: true)",
+    # ... and also when the page that owned it is gone: the window cleanup runs
+    # before this task launches CodexBar, so it releases nothing, and the launch
+    # then records an app nobody is left to finish.
+    "            if !hasJavaScriptOwner || self.webView == nil {\n                self.finishControlCenterCodexBarRecovery()\n            }",
+    # .ready only means the registration was accepted; the health gate below can
+    # still fail and unregister it. The repair's restoration must survive that.
+    "        runtimeStoppedForCodexBarRepair = false\n        clearPendingNativeUpdate()",
     "rediscoverRuntimeOriginForNavigationRetry()",
     'nativeControlCenterUserAgentPrefix = "VibeTVControlCenter/"',
     "webView.customUserAgent = nativeControlCenterUserAgent(",
@@ -670,19 +743,23 @@ required_source = [
     "button.intrinsicContentSize.width + 32",
     "button.widthAnchor.constraint(equalToConstant: shadcnButtonWidth)",
     'codexBarBundleIdentifier = "com.steipete.codexbar"',
-    'codexBarPinnedVersion = "0.44.0"',
-    'codexBarMinimumCompatibleVersion = "0.23.0"',
+    'codexBarPinnedVersion = "0.46.0"',
     'codexBarPinnedTeamIdentifier = "Y5PE65HELJ"',
-    'CodexBar-macos-universal-0.44.0.zip',
+    'CodexBar-macos-universal-0.46.0.zip',
     'bootstrapCodexBar()',
     'arguments: ["--verify", "--deep", "--strict", "--verbose=2", appURL.path]',
     'arguments: ["--assess", "--type", "execute", "--verbose=4", appURL.path]',
     'arguments: ["-x", "-k", archiveURL.path, stagingURL.path]',
-    'try fileManager.moveItem(at: stagedAppURL, to: targetURL)',
-    'configuration.activates = false',
-    'environment["CODEXBAR_CONFIG"] = configURL.path',
+    'codexBarDisallowedSigningXattrs = [',
+    'removexattr(url.path, $0, XATTR_NOFOLLOW)',
+    'normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)',
+    'privateCodexBarTargetIsSafe(',
+    'appManagedCodexBarAppURL(',
+    'applicationSupportURL: applicationSupportURL()',
+    'replaceItemAt(',
+    'withItemAt: stagedAppURL',
+    '"VIBETV_CODEXBAR_PINNED_VERSION": codexBarPinnedVersion',
     '[.posixPermissions: 0o700]',
-    '[.posixPermissions: 0o600]',
     '"VibeTV couldn’t start"',
     "runtimePortConflictDetail()",
     "parseLsofListenerProcesses(",
@@ -727,7 +804,7 @@ status_start = preparation_method.find("presentInstallationStatus(")
 preflight_call = preparation_method.find("await self?.performLocalNetworkPrivacyPreflight()")
 preparation_task = preparation_method.find("preparationTask = Task")
 prepare_runtime = preparation_method.find(
-    "let outcome = await self.prepareCompanionWithAutomaticCodexBarRepair()"
+    "let outcome = await self.prepareCompanion()"
 )
 native_case = preparation_method.find("case .nativeRuntimeReady:", prepare_runtime)
 webview_after_verify = preparation_method.find("self.presentControlCenter()", native_case)
@@ -810,6 +887,128 @@ prepare_method = source[prepare_start:prepare_end]
 if "/v1/device/repair" in prepare_method or "prepareExistingDeviceConnection" in prepare_method:
     raise SystemExit(
         "native installation must not probe, pair, or repair a VibeTV"
+    )
+for forbidden_codexbar_bootstrap in [
+    "codexBarInstalledAppCandidates",
+    "existingCodexBarApp",
+    "repairCodexBarInstallation",
+    "homeDirectoryForCurrentUser\n            .appendingPathComponent(\"Applications\"",
+    "URL(fileURLWithPath: \"/Applications/CodexBar.app\"",
+    "for requirePinnedVersion in [true, false]",
+    "isCompatibleCodexBarVersion",
+    "writeCodexBarOwnedDefaultConfig",
+]:
+    if forbidden_codexbar_bootstrap in source:
+        raise SystemExit(
+            f"native CodexBar bootstrap must not use public app candidates or repair paths: {forbidden_codexbar_bootstrap}"
+        )
+bootstrap_start = source.find("private func bootstrapCodexBar()")
+bootstrap_end = source.find(
+    "private func launchBundledCodexBarInBackground() async", bootstrap_start
+)
+bootstrap_method = source[bootstrap_start:bootstrap_end]
+if (
+    "prepareBundledCodexBarCLI()" not in bootstrap_method
+    or "return true" not in bootstrap_method
+    or "openApplication(" in bootstrap_method
+):
+    raise SystemExit(
+        "native CodexBar bootstrap must prepare only the private pinned CLI"
+    )
+launch_start = bootstrap_end
+launch_end = source.find("private func prepareCompanion() async", launch_start)
+launch_method = source[launch_start:launch_end]
+for required_launch_behavior in [
+    "withBundleIdentifier: codexBarBundleIdentifier",
+    "appManagedCodexBarAppURL(",
+    "validatedPinnedCodexBarCLI(at: appURL)",
+    "NSWorkspace.OpenConfiguration()",
+    "configuration.activates = false",
+    "configuration.addsToRecentItems = false",
+    "NSWorkspace.shared.openApplication(",
+    "codexBarRecoveryApplication = application",
+]:
+    if required_launch_behavior not in launch_method:
+        raise SystemExit(
+            f"native CodexBar background launch is missing: {required_launch_behavior}"
+        )
+if "private func finishControlCenterCodexBarRecovery()" not in source or "application.terminate()" not in source:
+    raise SystemExit("native app must stop only its temporary CodexBar app after provider recovery")
+prepare_payload_start = source.find("private func prepareBundledCodexBarCLI()")
+prepare_payload_end = source.find("private func bootstrapCodexBar()", prepare_payload_start)
+prepare_payload = source[prepare_payload_start:prepare_payload_end]
+if (
+    'appManagedCodexBarAppURL(' not in prepare_payload
+    or 'let appSupportURL = applicationSupportURL()' not in prepare_payload
+    or 'guard privateCodexBarTargetIsSafe(' not in prepare_payload
+    or 'if let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL)' in prepare_payload
+    or 'withBundleIdentifier: codexBarBundleIdentifier' not in prepare_payload
+    or 'let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL)' not in prepare_payload
+    or 'return cliURL' not in prepare_payload
+    or 'normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)' not in prepare_payload
+    or 'validatedPinnedCodexBarCLI(at: stagedAppURL)' not in prepare_payload
+    or 'return validatedPinnedCodexBarCLI(at: targetAppURL)' not in prepare_payload
+    or 'replaceItemAt(' not in prepare_payload
+    or prepare_payload.find('normalizeStagedCodexBarSigningXattrs(at: stagedAppURL)')
+        > prepare_payload.find('validatedPinnedCodexBarCLI(at: stagedAppURL)')
+    or prepare_payload.find('validatedPinnedCodexBarCLI(at: stagedAppURL)')
+        > prepare_payload.find('replaceItemAt(')
+    or prepare_payload.find('replaceItemAt(')
+        > prepare_payload.find('return validatedPinnedCodexBarCLI(at: targetAppURL)')
+):
+    raise SystemExit(
+        "native CodexBar payload may reuse only its running verified app; otherwise it must stage the bundled ZIP, normalize xattrs, validate, publish, then revalidate"
+    )
+repair_start = source.find("private func beginCodexBarRepair(hasJavaScriptOwner: Bool)")
+repair_end = source.find("@objc private func openSupportLog()", repair_start)
+repair_method = source[repair_start:repair_end]
+if (
+    "beginControlCenterCodexBarRepair(hasJavaScriptOwner: hasJavaScriptOwner)" not in repair_method
+    or "codexBarRepairRestartRequired = true" not in repair_method
+    or "notifyCodexBarRepairResult(success: true)" not in repair_method
+    or "notifyCodexBarRepairResult(success: false)" not in repair_method
+):
+    raise SystemExit(
+        "native CodexBar repair must restart the runtime and report its result to the existing setup screen"
+    )
+repair_restart = prepare_method.find("if codexBarRepairRestartRequired")
+repair_stop = prepare_method.find("await unregisterBundledRuntimeService()", repair_restart)
+codexbar_publish = prepare_method.find("guard bootstrapCodexBar()")
+if not (0 <= repair_restart < repair_stop < codexbar_publish):
+    raise SystemExit(
+        "native CodexBar repair must stop the managed runtime before replacing its private payload"
+    )
+codexbar_launch = prepare_method.find(
+    "await launchBundledCodexBarInBackground()", codexbar_publish
+)
+if not (codexbar_publish < codexbar_launch):
+    raise SystemExit(
+        "native CodexBar repair must publish the verified payload before launching it"
+    )
+codexbar_stopped_runtime = prepare_method.find("runtimeStoppedForCodexBarRepair = true")
+codexbar_restore = prepare_method.find(
+    "if runtimeStoppedForCodexBarRepair,", codexbar_stopped_runtime
+)
+codexbar_registration = prepare_method.find(
+    "switch await ensureBundledRuntimeServiceRegistered()", codexbar_restore
+)
+# The handoff belongs AFTER the registration, not before it. Registration can
+# still come back needing approval or failing outright, and disarming the
+# restoration first leaves a previously healthy Companion stopped.
+codexbar_restore_handoff = prepare_method.find(
+    "runtimeStoppedForCodexBarRepair = false", codexbar_registration
+)
+if (
+    "registerBundledRuntimeService() != .ready" not in prepare_method
+    or "defer {" not in prepare_method[codexbar_stopped_runtime:codexbar_restore]
+    or not (
+        0 <= codexbar_stopped_runtime < codexbar_restore
+        < codexbar_registration < codexbar_restore_handoff
+    )
+):
+    raise SystemExit(
+        "an unfinished native CodexBar repair must restart the managed runtime it stopped on every early return, "
+        "and must stay armed until registration reports ready"
     )
 native_ready = prepare_method.find("return .nativeRuntimeReady")
 if not (0 <= prepare_method.find("var health = await waitForHealthyRuntime") < native_ready):
@@ -926,6 +1125,80 @@ if "recordCurrentRuntimeBundleVersion" in register_method:
         "SMAppService enabled status must not persist a version before the HTTP health gate"
     )
 
+ensure_method = source[
+    source.find("private func ensureBundledRuntimeServiceRegistered()"):
+    source.find("private func registerBundledRuntimeService()")
+]
+missing_registration = ensure_method.find("case .notRegistered, .notFound:")
+stop_stale_runtime = ensure_method.find(
+    "await unregisterBundledRuntimeService()",
+    missing_registration,
+)
+register_replacement = ensure_method.find(
+    "return registerBundledRuntimeService()",
+    missing_registration,
+)
+if not (0 <= missing_registration < stop_stale_runtime < register_replacement):
+    raise SystemExit(
+        "a new app must stop an exact-label old runtime before registering its replacement"
+    )
+
+unregister_method = source[
+    source.find("private func unregisterBundledRuntimeService()"):
+    source.find("private func bundledRuntimeServiceIsEnabled()")
+]
+sm_unregister = unregister_method.find("runtimeService.unregister")
+stop_loaded_runtime = unregister_method.find(
+    "stopLoadedLaunchAgent(label: runtimeLaunchAgentLabel)",
+    sm_unregister,
+)
+successful_unregister = unregister_method.rfind("return true")
+if not (
+    0 <= sm_unregister
+    < stop_loaded_runtime
+    < successful_unregister
+):
+    raise SystemExit(
+        "runtime unregister must stop and verify the exact-label LaunchAgent after SMAppService unregister"
+    )
+
+validation_unregister = source[
+    source.find("private func runRuntimeValidationUnregister()"):
+    source.find("private struct RuntimeStatusPayload")
+]
+validation_stop_loaded = validation_unregister.find(
+    "stopLoadedLaunchAgent(label: runtimeLaunchAgentLabel)"
+)
+validation_success = validation_unregister.rfind("return 0")
+if not (0 <= validation_stop_loaded < validation_success):
+    raise SystemExit(
+        "runtime validation unregister must stop the exact-label LaunchAgent before reporting success"
+    )
+
+stop_loaded_helper = source[
+    source.find("private func stopLoadedLaunchAgent(label: String)"):
+    source.find("func canSafelyStopLegacyLaunchAgent(")
+]
+if (
+    '["bootout", target]' not in stop_loaded_helper
+    or '["print", target]' not in stop_loaded_helper
+    or ".exitStatus != 0" not in stop_loaded_helper
+):
+    raise SystemExit(
+        "exact-label LaunchAgent stop must boot out and verify the loaded job"
+    )
+
+update_handoff = source[
+    source.find("shouldPostponeRelaunchForUpdate item: SUAppcastItem"):
+    source.find("#endif", source.find("shouldPostponeRelaunchForUpdate item: SUAppcastItem"))
+]
+stop_runtime = update_handoff.find("await unregisterBundledRuntimeService()")
+continue_install = update_handoff.find("installHandler()")
+if not (0 <= stop_runtime < continue_install):
+    raise SystemExit(
+        "Sparkle must stop the runtime before continuing update installation"
+    )
+
 for forbidden in [
     "companionProcess",
     "Darwin.kill",
@@ -1018,18 +1291,16 @@ PY
     || die "Sparkle distribution version must stay pinned"
   grep -qF 'SHA256="1cb340cbbef04c6c0d162078610c25e2221031d794a3449d89f2f56f4df77c95"' "${ROOT}/scripts/fetch-sparkle.sh" \
     || die "Sparkle distribution checksum must stay pinned"
-  grep -qF 'VERSION="0.44.0"' "${ROOT}/scripts/fetch-codexbar.sh" \
+  grep -qF 'VERSION="0.46.0"' "${ROOT}/scripts/fetch-codexbar.sh" \
     || die "CodexBar distribution version must stay pinned"
-  grep -qF 'SHA256="958c4b3fc64367d833b6e26df98d262b16384a52dcf6b8181f9b98091505671f"' "${ROOT}/scripts/fetch-codexbar.sh" \
+  grep -qF 'SHA256="8fe3e93b84151d682c7b80a10e2878c72cbf2e59ff78dd616c26e8cc197a79a0"' "${ROOT}/scripts/fetch-codexbar.sh" \
     || die "CodexBar distribution checksum must stay pinned"
-  grep -qF 'verify-bundled-codexbar.sh' "${ROOT}/.github/workflows/release.yml" \
-    || die "release workflow must verify the bundled CodexBar payload"
-  grep -qF 'generate_appcast' "${ROOT}/.github/workflows/release.yml" \
-    || die "release workflow must generate a Sparkle appcast"
-  grep -qF 'sparkle:edSignature=' "${ROOT}/.github/workflows/release.yml" \
-    || die "release workflow must verify the appcast signature"
-  grep -qF 'SPARKLE_ED25519_PRIVATE_KEY' "${ROOT}/.github/workflows/release.yml" \
-    || die "release workflow must source the Sparkle private key from Actions secrets"
+  grep -qF 'verify-bundled-codexbar.sh' "${ROOT}/.github/workflows/validate-macos-dmg.yml" \
+    || die "the signed DMG workflow must verify the bundled CodexBar payload"
+  ! grep -Eq \
+    'APPLE_SIGNING_CERTIFICATE|APPLE_NOTARY|SPARKLE_ED25519_PRIVATE_KEY|generate_appcast' \
+    "${ROOT}/.github/workflows/release.yml" \
+    || die "publish workflow must consume signed candidate assets without signing or appcast secrets"
 
   grep -qF "com.codexbar-display.daemon" "${ROOT}/macos/VibeTVControlCenter/main.swift" \
     || die "native app shell must detect the old LaunchAgent"

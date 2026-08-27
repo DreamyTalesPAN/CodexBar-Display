@@ -48,49 +48,10 @@ void RendererESP8266::Setup(app::RuntimeContext& ctx) {
 RendererDebugSnapshot RendererESP8266::DebugSnapshot() const {
   RendererDebugSnapshot snapshot;
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
-  snapshot.themeSpecActive = display::HasFrame() && display::CurrentFrame().hasThemeSpec;
-  if (snapshot.themeSpecActive) {
-    snapshot.themeSpecId = display::CurrentFrame().themeSpecId;
-    snapshot.themeSpecRev = display::CurrentFrame().themeSpecRev;
-    snapshot.activeTheme = snapshot.themeSpecId.length() > 0 ? snapshot.themeSpecId : "theme-spec";
-  } else {
-    snapshot.activeTheme = "theme-missing";
-  }
-  snapshot.themeSpecRenderOk = !snapshot.themeSpecActive || display::ThemeSpecRenderOk();
-  snapshot.themeSpecRenderError = snapshot.themeSpecActive ? display::ThemeSpecRenderError() : "";
-  snapshot.themeSpecRenderFailures = display::ThemeSpecRenderFailures();
+  const bool themeSpecActive = display::HasFrame() && display::CurrentFrame().hasThemeSpec;
+  snapshot.themeSpecRenderOk = !themeSpecActive || display::ThemeSpecRenderOk();
   const display::ThemeSpecRuntimeStats themeSpecStats = display::ThemeSpecRuntimeStatsSnapshot();
-  snapshot.themeSpecCompiled = themeSpecStats.compiled;
-  snapshot.themeSpecPrimitiveCount = themeSpecStats.primitiveCount;
-  snapshot.themeSpecPrimitiveCapacity = themeSpecStats.primitiveCapacity;
-  snapshot.themeSpecStringBytes = themeSpecStats.stringBytes;
-  snapshot.themeSpecStringCapacity = themeSpecStats.stringCapacity;
-  snapshot.themeSpecKeepsJsonDocument = themeSpecStats.keepsJsonDocument;
-  snapshot.themeSpecHasAnimatedAssets = themeSpecStats.hasAnimatedAssets;
-  snapshot.cbaCompletedFrames = themeSpecStats.cbaCompletedFrames;
-  snapshot.cbaLastFrameDurationMs = themeSpecStats.cbaLastFrameDurationMs;
-  snapshot.cbaBufferBytes = themeSpecStats.cbaBufferBytes;
-  snapshot.cbaBufferAllocationFailures = themeSpecStats.cbaBufferAllocationFailures;
-  snapshot.cbaLastPushDurationUs = themeSpecStats.cbaLastPushDurationUs;
   snapshot.themeSpecPartialSuccesses = themeSpecStats.partialSuccesses;
-  snapshot.themeSpecPartialFailures = themeSpecStats.partialFailures;
-  snapshot.themeSpecLastPartialChangedFields = themeSpecStats.lastPartialChangedFields;
-  snapshot.themeSpecLastPartialError = themeSpecStats.lastPartialError;
-  const GifCoreStatusSnapshot gif = display::GifCore().StatusSnapshot();
-  snapshot.gifActivePath = gif.activePath;
-  snapshot.gifFilePresent = gif.filePresent;
-  snapshot.gifFileOpen = gif.fileOpen;
-  snapshot.gifDecoderAllocated = gif.decoderAllocated;
-  snapshot.gifDecoderOpen = gif.decoderOpen;
-  snapshot.gifBlocked = gif.blocked;
-  snapshot.gifConsecutiveFailures = gif.consecutiveFailures;
-  snapshot.gifBackoffRemainingMs = gif.backoffRemainingMs;
-  snapshot.gifLastErrorPath = gif.lastErrorPath;
-  snapshot.gifLastErrorStage = gif.lastErrorStage;
-  snapshot.gifLastErrorFailures = gif.lastErrorFailures;
-  snapshot.gifLastErrorAgeMs = gif.lastErrorAgeMs;
-#else
-  snapshot.activeTheme = "probe";
 #endif
   return snapshot;
 }
@@ -568,21 +529,52 @@ void RendererESP8266::DrawUsage(app::RuntimeContext& ctx) {
 #endif
 }
 
+bool RendererESP8266::DrawClock(app::RuntimeContext& ctx) {
+#if !defined(CODEXBAR_DISPLAY_PROBE_ONLY) && CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  display::AttachContext(ctx);
+  if (!display::CurrentFrame().hasThemeSpec || !display::CurrentThemeSpecRenderedSuccessfully()) {
+    return false;
+  }
+  const String& raw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
+  uint32_t fields = 0;
+  if (core::ThemeSpecUsesBinding(raw, "time", "tm")) {
+    fields |= codexbar_display::themespec::kThemeSpecFieldTime;
+  }
+  if (core::ThemeSpecUsesBinding(raw, "date", "dt")) {
+    fields |= codexbar_display::themespec::kThemeSpecFieldDate;
+  }
+  if (fields == 0) {
+    return false;
+  }
+  return display::RenderThemeSpecPartial(fields);
+#else
+  (void)ctx;
+  return false;
+#endif
+}
+
 void RendererESP8266::DrawReset(app::RuntimeContext& ctx, int64_t remainSecs) {
 #ifndef CODEXBAR_DISPLAY_PROBE_ONLY
   display::AttachContext(ctx);
   if (display::CurrentFrame().hasThemeSpec) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
     const String& themeSpecRaw = core::ThemeSpecRawForFrame(display::RuntimeState(), display::CurrentFrame());
+    uint32_t countdownFields = 0;
+    if (core::ThemeSpecUsesBinding(themeSpecRaw, "reset", "r")) {
+      countdownFields |= codexbar_display::themespec::kThemeSpecFieldReset;
+    }
+    for (size_t i = 0; i < core::kMaxUsageWindows; ++i) {
+      if (core::ThemeSpecUsesUsageWindowResetBinding(themeSpecRaw, i)) {
+        countdownFields |= core::ThemeSpecUsageWindowField(i);
+      }
+    }
     if (display::CurrentThemeSpecRenderedSuccessfully() &&
-        core::ThemeSpecUsesBinding(themeSpecRaw, "reset", "r") &&
-        display::RenderThemeSpecPartial(codexbar_display::themespec::kThemeSpecFieldReset)) {
+        countdownFields != 0 &&
+        display::RenderThemeSpecPartial(countdownFields)) {
       return;
     }
 #endif
-    const int64_t remain = display::CurrentRemainingSecs();
-    display::LastRenderedSecs() = remain;
-    display::LastRenderedMinuteBucket() = remain / 60;
+    display::MarkThemeSpecCountdownsRendered();
     return;
   }
   (void)remainSecs;

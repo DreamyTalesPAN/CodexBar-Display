@@ -5,6 +5,9 @@ Goal: keep firmware transport/theme evolution modular and prevent monolith regre
 ## Module Boundaries
 - `firmware_shared/codexbar_display_core.h`: protocol frame parsing, runtime state, countdown math.
 - `firmware_shared/app_transport.h`: transport hello emission + serial consume bridge.
+- `firmware_shared/device_clock.h`: device wall clock state math (SNTP epoch, Companion offset/transition, resolved `time`/`date` text). Pure state, no board calls, natively tested.
+- `firmware_esp8266/src/standby_settings.h`: standby configuration state — clamping, screensaver slot reference, and the persisted record encoding. Pure state, no board calls, natively tested. Deciding when the device is idle and what it renders does not belong here.
+- `firmware_esp8266/src/standby_state.h`: when the device is idle and when it wakes. Pure state math, no board calls, natively tested. It reports transitions; loading a spec, repainting, and brightness stay with the caller.
 - `firmware_shared/app_runtime.h`: runtime context wrapper.
 - `firmware_shared/app_renderer.h`: renderer lifecycle contract.
 - `firmware_esp8266/src/renderer_esp8266_*`: board-specific theme rendering details.
@@ -14,11 +17,25 @@ Rules:
 - transport logic must not import board-specific renderer internals.
 - renderer modules must not parse raw JSON directly (only consume `core::Frame`).
 - theme behavior changes should remain inside theme modules, not in transport loop.
+- the firmware may open outbound SNTP (UDP/123) for its own clock. It must not
+  fetch public HTTPS manifests. No other firmware-initiated outbound traffic.
+- `{time}`/`{date}` must resolve through the device clock first and fall back to
+  the Companion string only while that string is still current. A stale clock
+  value must never be rendered as the current time.
+- Device clock code must not add a timezone database, POSIX TZ string, `setTZ`,
+  `localtime_r`, or a string rule parser; Companion sends only the current
+  offset and the next two transitions needed by the device.
 
 ## Protocol/Theme Rules
 - Companion->device frame `v` is negotiated (prefer v2, fallback v1).
 - ThemeSpec is declarative data only. Never execute scripts on device.
 - ThemeSpec update notices prefer the existing label binding (permanent rotating text swap). Themes without a label binding get a bounded edge overlay bar in timed visible/hidden windows, placed where no animated primitive repaints and removed with a region repaint — never a full-screen redraw. Update copy points to the VibeTV Mac App only; no hosted URLs. Showing the notice must never trigger a firmware write.
+- Reset-countdown trust is firmware-enforced, never delegated to a theme. Every
+  rendering path must read the countdown through `core::CurrentRemainingSecs`,
+  which yields `0` for a stale basis. Do not read `Frame::resetSecs` for display.
+- The reset deadline is persisted only on a self-initiated restart, never per
+  frame (flash wear), and a cold start drops the record because the device has
+  no wall clock. See `protocol/PROTOCOL.md`, Firmware enforcement.
 - `themeId/themeRev` cache keys are required to detect unchanged ThemeSpec payloads.
 - Live theme removal is destructive. Firmware must ignore `themeSpec:null` unless the same frame also sets `confirmClearThemeSpec:true`.
 - Companion code must not emit `themeSpec:null` unless the caller explicitly marks that clear as confirmed. Normal recovery paths should reactivate a stored ThemeSpec or repair assets instead of clearing the live theme.
@@ -26,9 +43,20 @@ Rules:
 ## ESP8266 WiFi Upload Guardrails
 - The protocol, compatibility pacing, retry rules, and release gate in
   `docs/firmware-ota-contract.md` are mandatory for firmware OTA changes.
-- Asset upload crashes are usually RAM pressure first. Do not start by adding retries or longer timeouts.
-- `/assets` uploads must remain rate-limited from the Companion. Fast multipart writes can reset the ESP8266 even for small files.
-- If an upload returns `connection reset by peer`, EOF, or timeout, stop the upload attempt and check `/health`. Do not immediately resend the same asset.
+- **First suspect for any "upload/OTA stalls but small requests answer" report
+  is the 802.11n A-MSDU black hole, not RAM.** The device must run 802.11g
+  (`docs/hardware-contract.md`, "WiFi PHY mode"); confirm with
+  `codexbar-display net-probe --target http://<ip>` and the `phyMode` field in
+  `/health`. RAM pressure is a real but secondary cause — check `freeHeap`/
+  `heapFragmentationPercent` from `/health` before every upload when
+  diagnosing.
+- `/assets` uploads are paced from the Companion (8 KB/s). The pace exists to
+  stay inside the firmware's ~5 s per-read HTTP wait, not because faster writes
+  crash the device; do not lower it below that safety margin (pinned by
+  `TestAssetUploadPaceStaysInsideFirmwareReadWait`).
+- If an upload returns `connection reset by peer`, EOF, or timeout, stop the
+  upload attempt and check `/health`. Do not immediately resend the same asset;
+  run `net-probe` first to tell a link black hole apart from a device fault.
 - Firmware must mark firmware/filesystem/theme asset uploads so upload-related restarts do not count toward the WiFi setup reset counter.
 - Firmware must release GIF decoder, sprite caches, and open filesystem handles before asset upload, OTA, and stored ThemeSpec activation.
 - A firmware upload that may have written bytes must never fall back to another

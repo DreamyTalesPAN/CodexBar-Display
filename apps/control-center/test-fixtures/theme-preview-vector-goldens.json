@@ -1,0 +1,37 @@
+{
+  "claude-creature": {
+    "svgSha256": "dfb5765adefd6c37ecd5780c11e959768676720e60b12405321519c25237a15f",
+    "cardSize": [
+      140,
+      142
+    ]
+  },
+  "clippy": {
+    "svgSha256": "f10e840b4dd6ef476aeea99ce6060ada721fe1c24ec110890d7a806eda3f1548",
+    "cardSize": [
+      140,
+      142
+    ]
+  },
+  "cozy-meadow": {
+    "svgSha256": "e41da361fe6e5339e8f8c12e179c7eb648f2f73e2bdb390345f89ea3d76a6804",
+    "cardSize": [
+      140,
+      142
+    ]
+  },
+  "mini-classic": {
+    "svgSha256": "7b7f3469e8d6969e894f9b37551a6454b2de3697ec0f4687a7bea0cdb77de86b",
+    "cardSize": [
+      140,
+      142
+    ]
+  },
+  "synthwave": {
+    "svgSha256": "b11322cd6752c6445405561d6a67578e82d82301af8373c397624eba5ff15df1",
+    "cardSize": [
+      140,
+      142
+    ]
+  }
+}

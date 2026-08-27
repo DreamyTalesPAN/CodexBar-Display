@@ -5,72 +5,69 @@ import {
   ArrowUpFromLine,
   Check,
   CircleHelp,
-  Download,
   Monitor,
   WifiOff,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Item,
-  ItemActions,
   ItemContent,
   ItemDescription,
   ItemGroup,
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
-import {
-  availableMacAppDmgDownloadUrl,
-  type CompanionReleaseInfo,
-} from "@/lib/companion-release";
-import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import type {
   CompanionStatus,
   DeviceInfo,
   UsageSnapshot,
 } from "./control-center-types";
-import { deviceIsActive, deviceIsReady } from "./control-center-types";
-import { LiveVibeTVPreview } from "./live-vibetv-preview";
+import {
+  deviceIsActive,
+  deviceIsCustomerConnected,
+  deviceIsReady,
+  deviceIsWaitingForUsage,
+} from "./control-center-types";
+import {
+  LiveVibeTVPreview,
+  type DisplayFrameSnapshot,
+} from "./live-vibetv-preview";
 
 type OverviewScreenProps = {
   companionVersion?: string;
-  companionRelease?: CompanionReleaseInfo | null;
   companionStatus: CompanionStatus;
   device: DeviceInfo | null;
-  firmwareUpdate?: FirmwareUpdateInfo | null;
+  displayFrame?: DisplayFrameSnapshot | null;
+  firmwareUpdateStatus?: {
+    phase?: string;
+    stage?: string;
+  } | null;
   usage?: UsageSnapshot | null;
-  requiresMacAppMigration?: boolean;
 };
 
 export function OverviewScreen({
   companionVersion,
-  companionRelease,
   companionStatus,
   device,
-  firmwareUpdate,
+  displayFrame = null,
+  firmwareUpdateStatus = null,
   usage,
-  requiresMacAppMigration = false,
 }: OverviewScreenProps) {
   const pairingRejected = device?.paired === false;
-  const connected = deviceIsReady(device);
-  const displayReady = connected;
-  const reconnecting = deviceIsActive(device) && !connected && !pairingRejected;
-  const hero = buildHeroCopy(companionStatus, connected);
-  const firmwareUpdateAvailable = hasFirmwareUpdate(firmwareUpdate);
-  const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
-  const macAppMigrationUrl = requiresMacAppMigration
-    ? availableMacAppDmgDownloadUrl(companionRelease)
-    : undefined;
+  const connected = deviceIsCustomerConnected(device);
+  const displayReady = deviceIsReady(device);
+  const waitingForUsage = deviceIsWaitingForUsage(device);
+  const reconnecting =
+    deviceIsActive(device) &&
+    !deviceIsReady(device) &&
+    !pairingRejected &&
+    !waitingForUsage;
+  const updateOwnedDisconnect = Boolean(
+    !connected && firmwareUpdateStatus?.phase === "installing",
+  );
+  const hero = buildHeroCopy(companionStatus, connected, updateOwnedDisconnect);
 
   return (
     <div className="mx-auto max-w-[1180px] py-4">
@@ -85,56 +82,69 @@ export function OverviewScreen({
               className="text-4xl font-black tracking-tight md:text-5xl"
               id="vibetv-overview-title"
             >
-              {connected ? "VibeTV is connected" : "VibeTV status"}
+              {connected
+                ? "VibeTV is connected"
+                : updateOwnedDisconnect
+                  ? "VibeTV is restarting"
+                  : "VibeTV status"}
             </h2>
           </div>
 
-          {reconnecting ? <ReconnectNotice device={device} /> : null}
-
           <div className="flex w-full justify-center">
-            <LiveVibeTVPreview device={device} usage={usage || null} />
+            <LiveVibeTVPreview
+              device={device}
+              displayFrame={displayFrame}
+              updateOwnedDisconnect={updateOwnedDisconnect}
+              usage={usage || null}
+            />
           </div>
 
           <ItemGroup className="grid w-full gap-3 lg:grid-cols-4">
             <StatusItem
-              badge={
-                requiresMacAppMigration
-                  ? "New App"
-                  : macAppUpdateAvailable
-                    ? "Update"
-                    : undefined
-              }
               icon={<AppWindow aria-hidden />}
               label="Mac App"
               value={labelForCompanion(companionStatus, companionVersion)}
             />
             <StatusItem
-              icon={<Monitor aria-hidden />}
+              icon={<ArrowUpFromLine aria-hidden />}
               label="VibeTV"
-              value={connected ? "Connected" : "Not connected"}
+              value={
+                connected
+                  ? "Connected"
+                  : updateOwnedDisconnect
+                    ? "Restarting"
+                    : "Not connected"
+              }
             />
             <StatusItem
               detail={
                 displayReady
                   ? undefined
-                  : "Waiting for a fresh image from VibeTV."
+                  : updateOwnedDisconnect
+                    ? "No action is required. Keep VibeTV connected to power and wait."
+                  : waitingForUsage
+                    ? "This can take up to 60 seconds."
+                    : "Waiting for a fresh image from VibeTV."
               }
               icon={<Monitor aria-hidden />}
               label="Display"
-              value={displayReady ? "Live" : "Waiting for first image"}
+              value={
+                displayReady
+                  ? "Live"
+                  : updateOwnedDisconnect
+                    ? "Update running"
+                  : waitingForUsage
+                    ? "Waiting for usage"
+                    : "Waiting for first image"
+              }
             />
             <StatusItem
-              badge={firmwareUpdateAvailable ? "Update" : undefined}
-              icon={<ArrowUpFromLine aria-hidden />}
+              icon={<Monitor aria-hidden />}
               label="VibeTV firmware"
               value={device?.firmware || "Waiting for VibeTV"}
             />
           </ItemGroup>
         </div>
-
-        {requiresMacAppMigration ? (
-          <MacAppMigrationCard downloadUrl={macAppMigrationUrl} />
-        ) : null}
       </section>
     </div>
   );
@@ -156,42 +166,12 @@ function ReconnectNotice({ device }: { device: DeviceInfo | null }) {
   );
 }
 
-function MacAppMigrationCard({ downloadUrl }: { downloadUrl?: string }) {
-  return (
-    <Card
-      aria-labelledby="mac-app-migration-title"
-      className="mx-auto mt-4 max-w-[1040px]"
-    >
-      <CardHeader>
-        <CardTitle id="mac-app-migration-title">
-          {downloadUrl ? "Update available" : "Mac App update not ready"}
-        </CardTitle>
-        <CardDescription>
-          Keep the Control Center and VibeTV connection on the latest version.
-        </CardDescription>
-      </CardHeader>
-      {downloadUrl ? (
-        <CardFooter>
-          <Button asChild size="lg">
-            <a href={downloadUrl}>
-              <Download data-icon="inline-start" />
-              <span>Update</span>
-            </a>
-          </Button>
-        </CardFooter>
-      ) : null}
-    </Card>
-  );
-}
-
 function StatusItem({
-  badge,
   detail,
   icon,
   label,
   value,
 }: {
-  badge?: string;
   detail?: string;
   icon: ReactNode;
   label: string;
@@ -205,9 +185,6 @@ function StatusItem({
         <ItemTitle>{value}</ItemTitle>
         {detail ? <ItemDescription>{detail}</ItemDescription> : null}
       </ItemContent>
-      <ItemActions className="flex-wrap justify-end">
-        {badge ? <Badge>{badge}</Badge> : null}
-      </ItemActions>
     </Item>
   );
 }
@@ -215,12 +192,20 @@ function StatusItem({
 function buildHeroCopy(
   companionStatus: CompanionStatus,
   connected: boolean,
+  updateOwnedDisconnect = false,
 ) {
   if (connected) {
     return {
       badge: "Connected",
       badgeVariant: "default" as const,
       icon: <Check data-icon="inline-start" aria-hidden />,
+    };
+  }
+  if (updateOwnedDisconnect) {
+    return {
+      badge: "Updating",
+      badgeVariant: "default" as const,
+      icon: <ArrowUpFromLine data-icon="inline-start" aria-hidden />,
     };
   }
   return {

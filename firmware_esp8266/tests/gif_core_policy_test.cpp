@@ -282,7 +282,7 @@ bool testSetupPortalIsReadyBeforeJoinInstructions(const char* mainPath) {
     return false;
   }
   const std::string body = mainSource.substr(start, end - start);
-  const std::size_t clearError = body.find("ClearConnectionError(setupWifiState)");
+  const std::size_t resetPortal = body.find("ResetPortalState(setupWifiState)");
   const std::size_t stopReconnect = body.find("WiFi.setAutoReconnect(false)");
   const std::size_t disconnect = body.find("WiFi.disconnect(false)");
   const std::size_t apSta = body.find("WiFi.mode(WIFI_AP_STA)");
@@ -291,10 +291,10 @@ bool testSetupPortalIsReadyBeforeJoinInstructions(const char* mainPath) {
   const std::size_t http = body.find("startHttpServer()");
   const std::size_t joinInstructions = body.find("renderer.DrawSetupInstructions(");
   return expect(
-      clearError < stopReconnect && stopReconnect < disconnect && disconnect < apSta &&
+      resetPortal < stopReconnect && stopReconnect < disconnect && disconnect < apSta &&
           apSta < accessPoint && accessPoint < dns && dns < http &&
           http < joinInstructions && body.find("WiFi.mode(WIFI_AP)") == std::string::npos &&
-          body.find("scanSetupNetworks()") == std::string::npos,
+          body.find("scanSetupNetworks(") == std::string::npos,
       "setup display may invite joining only after the old STA attempt is stopped and AP_STA, DNS, and HTTP are ready");
 }
 
@@ -415,10 +415,32 @@ bool testCaptiveFirstResponseNeverBlocksOnWifiScan(const char* mainPath) {
   return expect(
       root.find("SendSetupPage(") != std::string::npos &&
           probe.find("SendSetupPage(") != std::string::npos &&
-          root.find("scanSetupNetworks()") == std::string::npos &&
-          probe.find("scanSetupNetworks()") == std::string::npos &&
-          scan.find("scanSetupNetworks()") != std::string::npos,
-      "iOS and other captive probes must get the normal setup form without a blocking scan; only Search again scans");
+          root.find("scanSetupNetworks(") == std::string::npos &&
+          probe.find("scanSetupNetworks(") == std::string::npos &&
+          scan.find("webServer.arg(\"automatic\")") != std::string::npos &&
+          scan.find("scanSetupNetworks(automatic)") != std::string::npos,
+      "captive probes must render before the browser starts the guarded automatic scan");
+}
+
+bool testAutomaticScanReschedulesInterruptedWifiRecovery(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t scanStart = mainSource.find("bool scanSetupNetworks(bool automatic)");
+  const std::size_t scanEnd = mainSource.find("String connectedPageHTML()", scanStart);
+  if (scanStart == std::string::npos || scanEnd == std::string::npos) {
+    return false;
+  }
+  const std::string scan = mainSource.substr(scanStart, scanEnd - scanStart);
+  const std::size_t interruption = scan.find("wifiSetupRecoveryState.attemptInProgress");
+  const std::size_t disconnect = scan.find("WiFi.disconnect(false)");
+  const std::size_t finish = scan.find("FinishScan(setupWifiState, networks)");
+  const std::size_t reschedule = scan.find("RescheduleAfterInterruption(");
+  const std::size_t rescheduledState = scan.find("wifiSetupRecoveryState", reschedule);
+  return expect(
+      interruption != std::string::npos && disconnect != std::string::npos &&
+          finish != std::string::npos && reschedule != std::string::npos &&
+          rescheduledState != std::string::npos && interruption < disconnect &&
+          finish < reschedule && reschedule < rescheduledState,
+      "an automatic scan that interrupts WiFi recovery must reschedule it immediately");
 }
 
 bool testAutomaticWifiFallbackNeverCarriesTheFailedSsid(const char* mainPath) {
@@ -631,15 +653,17 @@ bool testEsp8266CbaCooperativeAnimationPolicy() {
     return false;
   }
   return expect(
-      ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(0) &&
-          !ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(1) &&
-          !ThemeSpecRuntimePolicy::CanYieldAtDisplayTransactionDepth(2),
-      "yield boundaries must require display transaction depth zero");
+      ThemeSpecRuntimePolicy::CanCooperativelyYield(0, true) &&
+          !ThemeSpecRuntimePolicy::CanCooperativelyYield(0, false) &&
+          !ThemeSpecRuntimePolicy::CanCooperativelyYield(1, true) &&
+          !ThemeSpecRuntimePolicy::CanCooperativelyYield(1, false),
+      "yield boundaries must require transaction depth zero and a suspendable continuation");
 }
 
 bool testRendererUsesResumableCbaAnimation(
     const char* themeSpecRendererPath,
-    const char* displayRendererPath) {
+    const char* displayRendererPath,
+    const char* sharedRendererPath) {
   const std::string renderer = readFile(themeSpecRendererPath);
   const std::size_t loadStart = renderer.find("bool loadAnimatedSpriteCache(");
   const std::size_t drawStart = renderer.find("bool drawAnimatedSpriteAsset(", loadStart);
@@ -692,8 +716,16 @@ bool testRendererUsesResumableCbaAnimation(
     return false;
   }
   if (!expect(
-          renderer.find("CanYieldAtDisplayTransactionDepth") != std::string::npos,
-          "all explicit theme-renderer yields must be guarded by transaction depth")) {
+          renderer.find("CanCooperativelyYield") != std::string::npos &&
+              renderer.find("can_yield()") != std::string::npos,
+          "explicit theme-renderer yields must require a suspendable continuation")) {
+    return false;
+  }
+  const std::string sharedRenderer = readFile(sharedRendererPath);
+  if (!expect(
+          sharedRenderer.find("inline void RenderYield()") != std::string::npos &&
+              sharedRenderer.find("if (can_yield())") != std::string::npos,
+          "shared ESP8266 render yields must require a suspendable continuation")) {
     return false;
   }
   const std::size_t pushImage = renderer.find("Tft().pushImage(");
@@ -812,34 +844,33 @@ bool testGifLoopResetStaysAtomic(const char* gifCorePath) {
       "GIF loop clear must be conditional while reset and first frame stay in one transaction");
 }
 
-bool testLegacyMiniThemeUsesLiveUsageMode(const char* mainPath) {
+bool testFirmwareLoadsOnlyExplicitActiveTheme(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   if (!expect(
-      mainSource.find("kLegacyDefaultThemeSpecPath = \"/themes/u/mini-cl-1-410a37.json\"") !=
+      mainSource.find("kLegacyMiniThemeSpecPath = \"/themes/u/mini-cl-1-410a37.json\"") !=
               std::string::npos &&
           mainSource.find("raw.replace(\"\\\"v\\\":\\\"left\\\"\", \"\\\"v\\\":\\\"{usageMode}\\\"\")") !=
               std::string::npos,
-      "legacy factory Mini specs must render the live usage mode after OTA")) {
+      "explicitly active legacy Mini specs must render the live usage mode after OTA")) {
     return false;
   }
 
-  const std::size_t loadStart = mainSource.find("void loadDefaultStoredThemeSpecCache()");
+  const std::size_t loadStart = mainSource.find("void loadActiveStoredThemeSpecCache()");
   const std::size_t loadEnd = mainSource.find("#endif", loadStart);
   if (!expect(
           loadStart != std::string::npos && loadEnd != std::string::npos,
-          "default ThemeSpec cache loader must remain discoverable")) {
+          "active ThemeSpec cache loader must remain discoverable")) {
     return false;
   }
   const std::string loader = mainSource.substr(loadStart, loadEnd - loadStart);
   const std::size_t active = loader.find("readActiveThemeSpecPath(activePath)");
-  const std::size_t currentDefault = loader.find("loadStoredThemeSpecCacheFromPath(kDefaultThemeSpecPath)");
-  const std::size_t previousDefault = loader.find("loadStoredThemeSpecCacheFromPath(kPreviousDefaultThemeSpecPath)");
-  const std::size_t legacyDefault = loader.find("loadStoredThemeSpecCacheFromPath(kLegacyDefaultThemeSpecPath)");
   return expect(
-      active != std::string::npos && currentDefault != std::string::npos &&
-          previousDefault != std::string::npos && legacyDefault != std::string::npos &&
-          active < currentDefault && currentDefault < previousDefault && previousDefault < legacyDefault,
-      "OTA filesystems must fall back through current, 1.0.37, then 1.0.36 Mini specs");
+      active != std::string::npos &&
+          loader.find("loadStoredThemeSpecCacheFromPath(activePath)") != std::string::npos &&
+          loader.find("kDefaultThemeSpecPath") == std::string::npos &&
+          loader.find("kPreviousDefaultThemeSpecPath") == std::string::npos &&
+          loader.find("kLegacyDefaultThemeSpecPath") == std::string::npos,
+      "firmware must load only the explicitly active ThemeSpec and otherwise show theme-missing");
 }
 
 bool testAssetHandlersUseThemeNamespacePolicy(const char* mainPath) {
@@ -928,10 +959,10 @@ int main(int argc, char** argv) {
   if (!testEsp8266CbaCooperativeAnimationPolicy()) {
     return 1;
   }
-  if (!expect(argc == 6, "source paths are required for firmware policy tests")) {
+  if (!expect(argc == 7, "source paths are required for firmware policy tests")) {
     return 1;
   }
-  if (!testRendererUsesResumableCbaAnimation(argv[1], argv[4])) {
+  if (!testRendererUsesResumableCbaAnimation(argv[1], argv[4], argv[6])) {
     return 1;
   }
   if (!testDecoderAllocationStaysInsideRealPlayback(argv[1], argv[2])) {
@@ -940,7 +971,7 @@ int main(int argc, char** argv) {
   if (!testGifLoopResetStaysAtomic(argv[2])) {
     return 1;
   }
-  if (!testLegacyMiniThemeUsesLiveUsageMode(argv[3])) {
+  if (!testFirmwareLoadsOnlyExplicitActiveTheme(argv[3])) {
     return 1;
   }
   if (!testAssetHandlersUseThemeNamespacePolicy(argv[3])) {
@@ -977,6 +1008,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testCaptiveFirstResponseNeverBlocksOnWifiScan(argv[3])) {
+    return 1;
+  }
+  if (!testAutomaticScanReschedulesInterruptedWifiRecovery(argv[3])) {
     return 1;
   }
   if (!testAutomaticWifiFallbackNeverCarriesTheFailedSsid(argv[3])) {

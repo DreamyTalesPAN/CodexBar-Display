@@ -37,6 +37,12 @@ type Primitive struct {
 	ShortWidth       int               `json:"w,omitempty"`
 	Height           int               `json:"height,omitempty"`
 	ShortHeight      int               `json:"h,omitempty"`
+	Slot             int               `json:"slot,omitempty"`
+	ShortSlot        int               `json:"sl,omitempty"`
+	ProviderSlot     int               `json:"providerSlot,omitempty"`
+	ShortProvSlot    int               `json:"pl,omitempty"`
+	UsageIndex       *int              `json:"usageIndex,omitempty"`
+	ShortUsageIndex  *int              `json:"ui,omitempty"`
 	Text             string            `json:"text,omitempty"`
 	ShortText        string            `json:"v,omitempty"`
 	Binding          string            `json:"binding,omitempty"`
@@ -139,6 +145,18 @@ func validateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 	if !caps.SupportsThemeSpecV1 {
 		return errors.New("device does not advertise theme-spec-v1 support")
 	}
+	if specUsesLegacyUsageSlots(spec) && !caps.SupportsUsageSlotsV1 {
+		return errors.New("device does not advertise usage-slots-v1 support")
+	}
+	if specUsesUsageWindows(spec) && !caps.SupportsUsageWindowsV1 {
+		return errors.New("device does not advertise usage-windows-v1 support")
+	}
+	if specUsesProviderSlots(spec) && !caps.SupportsProviderSlotsV1 {
+		return errors.New("device does not advertise provider-slots-v1 support")
+	}
+	if maxIndex := maxUsageWindowIndex(spec); maxIndex >= 0 && caps.MaxUsageWindows > 0 && maxIndex >= caps.MaxUsageWindows {
+		return fmt.Errorf("theme usage window index exceeds device limit: index=%d limit=%d", maxIndex, caps.MaxUsageWindows)
+	}
 	if maxSpecBytes > 0 && len(raw) > maxSpecBytes {
 		return fmt.Errorf("theme spec payload exceeds device limit: size=%d limit=%d", len(raw), maxSpecBytes)
 	}
@@ -184,6 +202,75 @@ func validateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 		}
 	}
 	return nil
+}
+
+func specUsesLegacyUsageSlots(spec Spec) bool {
+	for _, primitive := range spec.Primitives {
+		if primitive.Slot > 0 ||
+			strings.Contains(primitive.Binding, "usageSlot") ||
+			strings.Contains(primitive.Text, "{usageSlot") ||
+			strings.Contains(primitive.Text, "{us1") ||
+			strings.Contains(primitive.Text, "{us2") {
+			return true
+		}
+	}
+	return false
+}
+
+func specUsesProviderSlots(spec Spec) bool {
+	for _, primitive := range spec.Primitives {
+		if primitive.ProviderSlot > 0 ||
+			strings.Contains(primitive.Binding, "providerSlot") ||
+			strings.Contains(primitive.Text, "{providerSlot") ||
+			strings.Contains(primitive.Text, "{pv1") ||
+			strings.Contains(primitive.Text, "{pv2") {
+			return true
+		}
+	}
+	return false
+}
+
+func specUsesUsageWindows(spec Spec) bool {
+	for _, primitive := range spec.Primitives {
+		if primitive.UsageIndex != nil ||
+			strings.Contains(primitive.Binding, "usage.") ||
+			strings.Contains(primitive.Text, "{usage.") {
+			return true
+		}
+	}
+	return false
+}
+
+func maxUsageWindowIndex(spec Spec) int {
+	maxIndex := -1
+	for _, primitive := range spec.Primitives {
+		if primitive.UsageIndex != nil && *primitive.UsageIndex > maxIndex {
+			maxIndex = *primitive.UsageIndex
+		}
+		for _, value := range []string{primitive.Binding, primitive.Text} {
+			for _, index := range usageBindingIndexes(value) {
+				if index > maxIndex {
+					maxIndex = index
+				}
+			}
+		}
+	}
+	return maxIndex
+}
+
+func usageBindingIndexes(value string) []int {
+	matches := regexp.MustCompile(`usage\.([0-9]+)\.`).FindAllStringSubmatch(value, -1)
+	out := make([]int, 0, len(matches))
+	for _, match := range matches {
+		if len(match) != 2 {
+			continue
+		}
+		var index int
+		if _, err := fmt.Sscanf(match[1], "%d", &index); err == nil {
+			out = append(out, index)
+		}
+	}
+	return out
 }
 
 func normalizeSpec(spec Spec) Spec {
@@ -234,12 +321,22 @@ func normalizePrimitive(p Primitive) Primitive {
 	if p.Height == 0 {
 		p.Height = p.ShortHeight
 	}
+	if p.Slot == 0 {
+		p.Slot = p.ShortSlot
+	}
+	if p.ProviderSlot == 0 {
+		p.ProviderSlot = p.ShortProvSlot
+	}
+	if p.UsageIndex == nil {
+		p.UsageIndex = p.ShortUsageIndex
+	}
 	if p.Text == "" {
 		p.Text = p.ShortText
 	}
 	if p.Binding == "" {
-		p.Binding = expandBinding(p.ShortBinding)
+		p.Binding = p.ShortBinding
 	}
+	p.Binding = expandBinding(p.Binding)
 	if p.FontSize == 0 {
 		p.FontSize = p.ShortSize
 	}
@@ -309,6 +406,38 @@ func expandBinding(value string) string {
 		return "weekly"
 	case "r":
 		return "reset"
+	case "us1l":
+		return "usageSlot1Label"
+	case "us1p":
+		return "usageSlot1Percent"
+	case "us1r":
+		return "usageSlot1Reset"
+	case "us1a":
+		return "usageSlot1Available"
+	case "us2l":
+		return "usageSlot2Label"
+	case "us2p":
+		return "usageSlot2Percent"
+	case "us2r":
+		return "usageSlot2Reset"
+	case "us2a":
+		return "usageSlot2Available"
+	case "pv1l":
+		return "providerSlot1Label"
+	case "pv1p":
+		return "providerSlot1Percent"
+	case "pv1r":
+		return "providerSlot1Reset"
+	case "pv1a":
+		return "providerSlot1Available"
+	case "pv2l":
+		return "providerSlot2Label"
+	case "pv2p":
+		return "providerSlot2Percent"
+	case "pv2r":
+		return "providerSlot2Reset"
+	case "pv2a":
+		return "providerSlot2Available"
 	case "u":
 		return "usageMode"
 	case "act":
@@ -325,6 +454,15 @@ func expandBinding(value string) string {
 }
 
 func validatePrimitive(p Primitive) error {
+	if p.Slot < 0 || p.Slot > 2 {
+		return errors.New("slot must be 1 or 2 when set")
+	}
+	if p.ProviderSlot < 0 || p.ProviderSlot > 2 {
+		return errors.New("providerSlot must be 1 or 2 when set")
+	}
+	if p.UsageIndex != nil && *p.UsageIndex < 0 {
+		return errors.New("usageIndex must be >= 0 when set")
+	}
 	switch p.Type {
 	case "text":
 		if strings.TrimSpace(p.Text) == "" && strings.TrimSpace(p.Binding) == "" {

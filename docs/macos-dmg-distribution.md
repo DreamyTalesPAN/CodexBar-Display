@@ -83,11 +83,13 @@ The embedded LaunchAgent runs the integrated display daemon and local API:
 ```bash
 codexbar-display daemon \
   --transport wifi \
-  --target http://<device-ip> \
   --interval 30s \
   --api-addr 127.0.0.1:47832 \
   --api-dev-origin http://127.0.0.1:47832
 ```
+
+The app-managed native plist intentionally does not contain `--target`; the
+Mac App loads the active VibeTV target from its local runtime configuration.
 
 This keeps normal VibeTV usage frames updating in the background. App install
 and migration do not trigger firmware updates, theme installs, asset uploads,

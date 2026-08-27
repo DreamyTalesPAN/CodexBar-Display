@@ -36,18 +36,39 @@ const (
 	maxZipEntries      = 256
 )
 
+// Pack categories. `kind` marks the file format; `usage` marks what the pack is
+// for. Packs written before this field exist are live themes.
+//
+// There is no category covering both slots: the two slots own separate device
+// directories, so one pack cannot sit in both at once.
+const (
+	UsageLive        = "live"
+	UsageScreensaver = "screensaver"
+)
+
+// ScreensaverPathPrefix is the device directory the screensaver slot owns.
+// Keeping the slots in separate directories is what makes installing into one
+// of them unable to delete the other one's files.
+const ScreensaverPathPrefix = "/themes/s/"
+
+// LivePathPrefix is the device directory the live slot owns. Live packs may
+// also ship files outside it — the bundled theme directories are not swept.
+const LivePathPrefix = "/themes/u/"
+
 var packIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9\-_]{2,63}$`)
 var spriteColorPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 type Manifest struct {
-	Kind        string      `json:"kind"`
-	Schema      int         `json:"schemaVersion"`
-	ID          string      `json:"id"`
-	Name        string      `json:"name"`
-	Version     string      `json:"version,omitempty"`
-	MinFirmware string      `json:"minFirmware,omitempty"`
-	ThemeSpec   FileEntry   `json:"themeSpec"`
-	Assets      []FileEntry `json:"assets,omitempty"`
+	Kind                 string      `json:"kind"`
+	Schema               int         `json:"schemaVersion"`
+	ID                   string      `json:"id"`
+	Name                 string      `json:"name"`
+	Version              string      `json:"version,omitempty"`
+	MinFirmware          string      `json:"minFirmware,omitempty"`
+	Usage                string      `json:"usage,omitempty"`
+	RequiredCapabilities []string    `json:"requiredCapabilities,omitempty"`
+	ThemeSpec            FileEntry   `json:"themeSpec"`
+	Assets               []FileEntry `json:"assets,omitempty"`
 }
 
 type FileEntry struct {
@@ -77,6 +98,24 @@ func (p *Pack) ValidateAgainstCapabilities(caps protocol.DeviceCapabilities) err
 	}
 	if err := themespec.ValidateStoredAgainstCapabilities(p.ThemeSpec, p.ThemeSpecRaw, caps); err != nil {
 		return err
+	}
+	for _, capability := range p.Manifest.RequiredCapabilities {
+		switch strings.TrimSpace(strings.ToLower(capability)) {
+		case protocol.FeatureUsageSlotsV1:
+			if !caps.SupportsUsageSlotsV1 {
+				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureUsageSlotsV1)
+			}
+		case protocol.FeatureUsageWindowsV1:
+			if !caps.SupportsUsageWindowsV1 {
+				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureUsageWindowsV1)
+			}
+		case protocol.FeatureProviderSlotsV1:
+			if !caps.SupportsProviderSlotsV1 {
+				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureProviderSlotsV1)
+			}
+		default:
+			return fmt.Errorf("theme pack requires unsupported capability %q", capability)
+		}
 	}
 	gifRefs := referencedGIFAssets(p.ThemeSpec)
 	assetsByPath := make(map[string]File, len(p.Assets))
@@ -319,6 +358,7 @@ func loadFromReader(readFile func(string) ([]byte, error)) (*Pack, error) {
 	}
 
 	assets := make([]File, 0, len(manifest.Assets))
+	devicePaths := []string{themeSpecFile.Entry.Path}
 	seenDevicePaths := map[string]struct{}{themeSpecFile.Entry.Path: {}}
 	for index, entry := range manifest.Assets {
 		file, err := loadEntry(readFile, entry)
@@ -329,7 +369,11 @@ func loadFromReader(readFile func(string) ([]byte, error)) (*Pack, error) {
 			return nil, fmt.Errorf("assets[%d]: duplicate device path %s", index, file.Entry.Path)
 		}
 		seenDevicePaths[file.Entry.Path] = struct{}{}
+		devicePaths = append(devicePaths, file.Entry.Path)
 		assets = append(assets, file)
+	}
+	if err := validateSlotPaths(manifest.PackUsage(), devicePaths); err != nil {
+		return nil, err
 	}
 	if err := validateReferencedAssets(spec, assets); err != nil {
 		return nil, err
@@ -359,6 +403,59 @@ func validateManifestFields(manifest Manifest) error {
 	}
 	if strings.TrimSpace(manifest.Name) == "" {
 		return errors.New("name is required")
+	}
+	for _, capability := range manifest.RequiredCapabilities {
+		switch strings.TrimSpace(strings.ToLower(capability)) {
+		case protocol.FeatureUsageSlotsV1, protocol.FeatureUsageWindowsV1, protocol.FeatureProviderSlotsV1:
+		default:
+			return fmt.Errorf("required capability %q is unsupported", capability)
+		}
+	}
+	return validateUsage(manifest.Usage)
+}
+
+func validateUsage(usage string) error {
+	switch strings.TrimSpace(usage) {
+	case "", UsageLive, UsageScreensaver:
+		return nil
+	}
+	return fmt.Errorf("usage %q unsupported (expected %q or %q)", usage, UsageLive, UsageScreensaver)
+}
+
+func SlotPathPrefix(slot string) string {
+	if slot == UsageScreensaver {
+		return ScreensaverPathPrefix
+	}
+	return LivePathPrefix
+}
+
+func validateSlotPaths(usage string, devicePaths []string) error {
+	screensaver := usage == UsageScreensaver
+	for _, devicePath := range devicePaths {
+		if strings.HasPrefix(devicePath, ScreensaverPathPrefix) == screensaver {
+			continue
+		}
+		if screensaver {
+			return fmt.Errorf("device path %s must start with %s in a screensaver pack", devicePath, ScreensaverPathPrefix)
+		}
+		return fmt.Errorf("device path %s is reserved for screensaver packs", devicePath)
+	}
+	return nil
+}
+
+func (m Manifest) PackUsage() string {
+	if usage := strings.TrimSpace(m.Usage); usage != "" {
+		return usage
+	}
+	return UsageLive
+}
+
+func (m Manifest) CheckSlot(slot string) error {
+	if slot != UsageLive && slot != UsageScreensaver {
+		return fmt.Errorf("unknown install slot %q", slot)
+	}
+	if usage := m.PackUsage(); usage != slot {
+		return fmt.Errorf("theme pack %q is a %s pack and cannot be installed into the %s slot", m.ID, usage, slot)
 	}
 	return nil
 }

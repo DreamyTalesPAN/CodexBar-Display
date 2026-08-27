@@ -1,5 +1,6 @@
 import Cocoa
 import CryptoKit
+import Darwin
 import Foundation
 import ServiceManagement
 import UniformTypeIdentifiers
@@ -18,6 +19,8 @@ private let restartControlCenterURLHost = "restart-control-center"
 private let repairRuntimeURLHost = "repair-runtime"
 private let checkForUpdatesURLHost = "check-for-updates"
 private let repairCodexBarURLHost = "repair-codexbar"
+private let finishCodexBarRecoveryURLHost = "finish-codexbar-recovery"
+private let openCodexBarURLHost = "open-codexbar"
 private let controlCenterBundleIdentifier = "shop.vibetv.control-center"
 private let runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"
 private let previewRuntimeLaunchAgentLabel =
@@ -37,17 +40,24 @@ private let runtimeHealthRequestTimeout: TimeInterval = 5
 private let localNetworkPrivacyProbeURLString = "http://192.168.4.1/hello"
 private let localNetworkPrivacyProbeTimeout: TimeInterval = 15
 private let runtimeUnregistrationSettleDelay: Duration = .seconds(2)
+private let runtimeUnregistrationQuiesceTimeout: TimeInterval = 20
+private let runtimeUnregistrationQuiescePollDelay: Duration = .milliseconds(250)
+private let runtimeUpdateProbeAttempts = 3
+private let runtimeUpdateProbeRetryDelay: Duration = .seconds(2)
 private let runtimeValidationUnregisterArgument =
     "--vibetv-validation-unregister-runtime"
 private let runtimeValidationUnregisterEnvironmentKey =
     "VIBETV_RUNTIME_VALIDATION_UNREGISTER"
 private let codexBarBundleIdentifier = "com.steipete.codexbar"
-private let codexBarPinnedVersion = "0.44.0"
-private let codexBarMinimumCompatibleVersion = "0.23.0"
+private let codexBarPinnedVersion = "0.46.0"
 private let codexBarPinnedTeamIdentifier = "Y5PE65HELJ"
-private let codexBarArchiveName = "CodexBar-macos-universal-0.44.0.zip"
+private let codexBarArchiveName = "CodexBar-macos-universal-0.46.0.zip"
 private let codexBarArchiveSHA256 =
-    "958c4b3fc64367d833b6e26df98d262b16384a52dcf6b8181f9b98091505671f"
+    "8fe3e93b84151d682c7b80a10e2878c72cbf2e59ff78dd616c26e8cc197a79a0"
+private let codexBarDisallowedSigningXattrs = [
+    "com.apple.FinderInfo",
+    "com.apple.ResourceFork",
+]
 private let legacyLaunchAgents = [
     ("com.codexbar-display.daemon", "com.codexbar-display.daemon.plist"),
     ("com.codexbar-display.companion-api", "com.codexbar-display.companion-api.plist"),
@@ -128,11 +138,43 @@ func isRepairCodexBarURL(_ url: URL) -> Bool {
     return true
 }
 
+func isFinishCodexBarRecoveryURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == finishCodexBarRecoveryURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/" else {
+        return false
+    }
+    return true
+}
+
+func isOpenCodexBarURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == controlCenterURLScheme,
+          components.host?.lowercased() == openCodexBarURLHost,
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil,
+          components.path.isEmpty || components.path == "/" else {
+        return false
+    }
+    return true
+}
+
 enum NativeControlCenterAction: Equatable {
     case restartControlCenter
     case repairRuntime
     case checkForUpdates
     case repairCodexBar
+    case finishCodexBarRecovery
+    case openCodexBar
 }
 
 func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
@@ -147,6 +189,12 @@ func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
     }
     if isRepairCodexBarURL(url) {
         return .repairCodexBar
+    }
+    if isFinishCodexBarRecoveryURL(url) {
+        return .finishCodexBarRecovery
+    }
+    if isOpenCodexBarURL(url) {
+        return .openCodexBar
     }
     return nil
 }
@@ -184,6 +232,20 @@ func isApprovedDMGDownloadURL(_ url: URL) -> Bool {
         of: #"^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"#,
         options: .regularExpression
     ) != nil
+}
+
+func isApprovedCodexBarDownloadURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.scheme?.lowercased() == "https",
+          components.host?.lowercased() == "github.com",
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.query == nil,
+          components.fragment == nil else {
+        return false
+    }
+    return components.percentEncodedPath == "/steipete/CodexBar/releases/latest"
 }
 
 struct ControlCenterURLRouter {
@@ -280,25 +342,76 @@ func shouldRunRuntimeValidationUnregister(
         && environment[runtimeValidationUnregisterEnvironmentKey] == "1"
 }
 
-func isCompatibleCodexBarVersion(
-    _ version: String,
-    minimumVersion: String = codexBarMinimumCompatibleVersion
-) -> Bool {
-    let candidate = version.trimmingCharacters(in: .whitespacesAndNewlines)
-    let minimum = minimumVersion.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !candidate.isEmpty, !minimum.isEmpty else {
-        return false
-    }
-    return candidate.compare(minimum, options: .numeric) != .orderedAscending
+func appManagedCodexBarAppURL(
+    applicationSupportURL: URL,
+    version: String = codexBarPinnedVersion
+) -> URL {
+    applicationSupportURL
+        .appendingPathComponent("CodexBar", isDirectory: true)
+        .appendingPathComponent(version, isDirectory: true)
+        .appendingPathComponent("CodexBar.app", isDirectory: true)
 }
 
-func codexBarInstalledAppCandidates(homeDirectory: URL) -> [URL] {
-    [
-        URL(fileURLWithPath: "/Applications/CodexBar.app", isDirectory: true),
-        homeDirectory
-            .appendingPathComponent("Applications", isDirectory: true)
-            .appendingPathComponent("CodexBar.app", isDirectory: true),
-    ]
+func appManagedCodexBarCLIURL(
+    applicationSupportURL: URL,
+    version: String = codexBarPinnedVersion
+) -> URL {
+    appManagedCodexBarAppURL(
+        applicationSupportURL: applicationSupportURL,
+        version: version
+    )
+    .appendingPathComponent("Contents/Helpers", isDirectory: true)
+    .appendingPathComponent("CodexBarCLI")
+}
+
+func pathIsDescendant(_ candidateURL: URL, of rootURL: URL) -> Bool {
+    let rootPath = rootURL.standardizedFileURL.path
+    let candidatePath = candidateURL.standardizedFileURL.path
+    return candidatePath == rootPath || candidatePath.hasPrefix(rootPath + "/")
+}
+
+func pathContainsSymlink(
+    _ candidateURL: URL,
+    under rootURL: URL,
+    fileManager: FileManager = .default
+) -> Bool {
+    let root = rootURL.standardizedFileURL
+    let candidate = candidateURL.standardizedFileURL
+    guard pathIsDescendant(candidate, of: root) else {
+        return true
+    }
+    let relativePath = String(candidate.path.dropFirst(root.path.count))
+        .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    guard !relativePath.isEmpty else {
+        return false
+    }
+
+    var current = root
+    for component in relativePath.split(separator: "/") {
+        current.appendPathComponent(String(component))
+        if (try? fileManager.destinationOfSymbolicLink(atPath: current.path)) != nil {
+            return true
+        }
+    }
+    return false
+}
+
+func privateCodexBarTargetIsSafe(
+    applicationSupportURL: URL,
+    homeURL: URL,
+    targetAppURL: URL,
+    fileManager: FileManager = .default
+) -> Bool {
+    guard pathIsDescendant(applicationSupportURL, of: homeURL),
+          pathIsDescendant(targetAppURL, of: applicationSupportURL),
+          (try? fileManager.destinationOfSymbolicLink(atPath: homeURL.standardizedFileURL.path)) == nil,
+          !pathContainsSymlink(applicationSupportURL, under: homeURL, fileManager: fileManager),
+          !pathContainsSymlink(targetAppURL, under: applicationSupportURL, fileManager: fileManager) else {
+        return false
+    }
+    let canonicalRoot = applicationSupportURL.standardizedFileURL.resolvingSymlinksInPath()
+    let canonicalTarget = targetAppURL.standardizedFileURL.resolvingSymlinksInPath()
+    return pathIsDescendant(canonicalTarget, of: canonicalRoot)
 }
 
 struct CodexBarCommandResult {
@@ -334,78 +447,6 @@ func runCodexBarCommand(
     )
 }
 
-func writeCodexBarOwnedDefaultConfig(
-    executableURL: URL,
-    targetURL: URL,
-    fileManager: FileManager = .default
-) -> Bool {
-    let directoryURL = targetURL.deletingLastPathComponent()
-    do {
-        try fileManager.createDirectory(
-            at: directoryURL,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
-        )
-        try fileManager.setAttributes(
-            [.posixPermissions: 0o700],
-            ofItemAtPath: directoryURL.path
-        )
-    } catch {
-        return false
-    }
-
-    if fileManager.fileExists(atPath: targetURL.path) {
-        return fileManager.isWritableFile(atPath: targetURL.path)
-    }
-
-    let stagedURL = directoryURL.appendingPathComponent(
-        ".vibetv-codexbar-default-\(UUID().uuidString).json"
-    )
-    defer { try? fileManager.removeItem(at: stagedURL) }
-
-    var environment = ProcessInfo.processInfo.environment
-    environment["CODEXBAR_CONFIG"] = stagedURL.path
-    guard let dump = runCodexBarCommand(
-        executableURL: executableURL,
-        arguments: ["config", "dump", "--format", "json"],
-        environment: environment,
-        mergeStandardError: false
-    ), dump.exitCode == 0,
-       let data = dump.output.data(using: .utf8),
-       (try? JSONSerialization.jsonObject(with: data)) is [String: Any] else {
-        return false
-    }
-
-    do {
-        try data.write(to: stagedURL, options: .atomic)
-        try fileManager.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: stagedURL.path
-        )
-    } catch {
-        return false
-    }
-
-    guard let validation = runCodexBarCommand(
-        executableURL: executableURL,
-        arguments: ["config", "validate", "--format", "json"],
-        environment: environment,
-        mergeStandardError: false
-    ), validation.exitCode == 0 else {
-        return false
-    }
-
-    if fileManager.fileExists(atPath: targetURL.path) {
-        return fileManager.isWritableFile(atPath: targetURL.path)
-    }
-    do {
-        try fileManager.moveItem(at: stagedURL, to: targetURL)
-        return true
-    } catch {
-        return false
-    }
-}
-
 private func sha256Hex(of fileURL: URL) -> String? {
     guard let handle = try? FileHandle(forReadingFrom: fileURL) else {
         return nil
@@ -437,14 +478,33 @@ private func runRuntimeValidationUnregister() async -> Int32 {
     let service = SMAppService.agent(plistName: runtimeLaunchAgentPlistName)
     switch service.status {
     case .notRegistered, .notFound:
-        FileHandle.standardOutput.write(
-            Data(
-                "CODEX_RUNTIME_UNREGISTER_OK label=\(runtimeLaunchAgentLabel) status=already-unregistered\n".utf8
-            )
-        )
-        return 0
-    case .enabled, .requiresApproval:
         break
+    case .enabled, .requiresApproval:
+        let errorDescription: String? = await withCheckedContinuation { continuation in
+            service.unregister(completionHandler: { error in
+                continuation.resume(
+                    returning: error.map { ($0 as NSError).localizedDescription }
+                )
+            })
+        }
+        if let errorDescription {
+            FileHandle.standardError.write(
+                Data(
+                    "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=unregister-failed detail=\(errorDescription)\n".utf8
+                )
+            )
+            return 70
+        }
+
+        try? await Task<Never, Never>.sleep(for: runtimeUnregistrationSettleDelay)
+        guard service.status == .notRegistered || service.status == .notFound else {
+            FileHandle.standardError.write(
+                Data(
+                    "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=service-remained-registered\n".utf8
+                )
+            )
+            return 70
+        }
     @unknown default:
         FileHandle.standardError.write(
             Data(
@@ -454,46 +514,20 @@ private func runRuntimeValidationUnregister() async -> Int32 {
         return 70
     }
 
-    let errorDescription: String? = await withCheckedContinuation { continuation in
-        service.unregister(completionHandler: { error in
-            continuation.resume(
-                returning: error.map { ($0 as NSError).localizedDescription }
-            )
-        })
-    }
-    if let errorDescription {
+    guard stopLoadedLaunchAgent(label: runtimeLaunchAgentLabel) else {
         FileHandle.standardError.write(
             Data(
-                "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=unregister-failed detail=\(errorDescription)\n".utf8
+                "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=service-remained-loaded\n".utf8
             )
         )
         return 70
     }
-
-    try? await Task<Never, Never>.sleep(for: runtimeUnregistrationSettleDelay)
-    switch service.status {
-    case .notRegistered, .notFound:
-        FileHandle.standardOutput.write(
-            Data(
-                "CODEX_RUNTIME_UNREGISTER_OK label=\(runtimeLaunchAgentLabel) status=unregistered\n".utf8
-            )
+    FileHandle.standardOutput.write(
+        Data(
+            "CODEX_RUNTIME_UNREGISTER_OK label=\(runtimeLaunchAgentLabel) status=unregistered\n".utf8
         )
-        return 0
-    case .enabled, .requiresApproval:
-        FileHandle.standardError.write(
-            Data(
-                "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=service-remained-registered\n".utf8
-            )
-        )
-        return 70
-    @unknown default:
-        FileHandle.standardError.write(
-            Data(
-                "CODEX_RUNTIME_UNREGISTER_ERROR label=\(runtimeLaunchAgentLabel) reason=unknown-status-after-unregister\n".utf8
-            )
-        )
-        return 70
-    }
+    )
+    return 0
 }
 
 private struct RuntimeStatusPayload: Decodable {
@@ -855,6 +889,24 @@ func launchctlServiceTarget(uid: uid_t, label: String) -> String {
     "gui/\(uid)/\(label)"
 }
 
+private func stopLoadedLaunchAgent(label: String) -> Bool {
+    let target = launchctlServiceTarget(uid: getuid(), label: label)
+    guard captureProcessOutput(
+        executable: "/bin/launchctl",
+        arguments: ["print", target]
+    ).exitStatus == 0 else {
+        return true
+    }
+    _ = captureProcessOutput(
+        executable: "/bin/launchctl",
+        arguments: ["bootout", target]
+    )
+    return captureProcessOutput(
+        executable: "/bin/launchctl",
+        arguments: ["print", target]
+    ).exitStatus != 0
+}
+
 func canSafelyStopLegacyLaunchAgent(
     isLoaded: Bool,
     restartPlistURL: URL?
@@ -1116,6 +1168,10 @@ enum InstallationStatusKind: Equatable {
     case updateMismatch
     case applicationIncomplete
     case legacyRepair
+    // Its button must not go through retryRuntimePreparation: that wrapper
+    // clears codexBarRepairRequired, and the launch this screen exists to
+    // trigger happens only while that flag is set.
+    case codexBarRepair
 }
 
 struct InstallationStatus {
@@ -1271,7 +1327,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var installationReady = false
     private var installationStatus: InstallationStatus?
     private var codexBarRepairRequired = false
-    private var codexBarAutoRepairAttempted = false
+    private var codexBarRepairRestartRequired = false
+    // A repair that arrived while another preparation already owned the
+    // runtime. That task read codexBarRepairRequired before the request
+    // existed, so its outcome must not answer the repair -- the completion
+    // reruns preparation with the flag still set instead.
+    private var pendingCodexBarRepairRerun = false
+    private var codexBarRecoveryApplication: NSRunningApplication?
     private var installationStatusTitle = "Starting Control Center"
     private var installationStatusDetail = "Preparing the Mac App."
     private var installationStatusFailed = false
@@ -1332,7 +1394,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
         if urls.contains(where: isRepairCodexBarURL) {
-            beginCodexBarRepair()
+            beginCodexBarRepair(hasJavaScriptOwner: false)
+            return
+        }
+        // Same reason the repair above is routed here: the recovery screen also
+        // reaches Open CodexBar from a context that is not the WKWebView, and
+        // macOS then delivers the URL through this handler. urlRouter.receive
+        // only accepts open-control-center, so without this the button is dead.
+        if urls.contains(where: isOpenCodexBarURL) {
+            openManagedCodexBar()
             return
         }
         if urlRouter.receive(urls) {
@@ -1384,12 +1454,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             guard let self else {
                 return
             }
-            let outcome = await self.prepareCompanionWithAutomaticCodexBarRepair()
+            let outcome = await self.prepareCompanion()
             self.preparationTask = nil
+            if self.pendingCodexBarRepairRerun {
+                // This outcome belongs to a preparation that never saw the
+                // repair request; answering with it would clear the repair
+                // flags without launching CodexBar. Rerun with the flags set.
+                self.pendingCodexBarRepairRerun = false
+                self.codexBarRepairRequired = true
+                self.startRuntimePreparation()
+                return
+            }
+            // Deliberately does not release the temporary CodexBar here. Doing
+            // so would end it before anything checked that it produced usable
+            // usage: this route never calls the authoritative provider retry,
+            // which is what owns that app's lifetime on the WebView side. The
+            // app therefore lives until the window closes on this route, which
+            // is the lesser of the two faults and the one that was already
+            // there. Closing it properly means giving this path its own
+            // verification -- new behaviour, tracked separately.
             switch outcome {
             case .nativeRuntimeReady:
                 self.codexBarRepairRequired = false
-                self.codexBarAutoRepairAttempted = false
                 self.installationReady = true
                 self.installationStatus = nil
                 _ = self.urlRouter.markReady()
@@ -1400,7 +1486,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                     title: "Usage service needs repair",
                     detail: "Repair the usage service to install and start the verified copy included with VibeTV Control Center.",
                     failed: true,
-                    retryTitle: "Repair usage service"
+                    retryTitle: "Repair usage service",
+                    kind: .codexBarRepair
                 )
             case .failure(let failure):
                 self.codexBarRepairRequired = false
@@ -1420,30 +1507,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         )
     }
 
-    private func prepareCompanionWithAutomaticCodexBarRepair() async -> RuntimePreparationOutcome {
-        let outcome = await prepareCompanion()
-        guard outcome == .codexBarRepairRequired,
-              !codexBarAutoRepairAttempted else {
-            return outcome
-        }
-        codexBarAutoRepairAttempted = true
-        guard repairCodexBarInstallation() else {
-            return outcome
-        }
-        return await prepareCompanion()
-    }
-
     @objc private func retryRuntimePreparation() {
         discardMismatchedPendingNativeUpdate()
-        if codexBarRepairRequired && !repairCodexBarInstallation() {
-            presentInstallationStatus(
-                title: "Usage service repair failed",
-                detail: "The usage service could not be backed up or reinstalled. Open the support log for details.",
-                failed: true,
-                retryTitle: "Repair usage service"
-            )
-            return
-        }
         codexBarRepairRequired = false
         startRuntimePreparation()
     }
@@ -1464,17 +1529,138 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         restartControlCenter()
     }
 
-    private func beginCodexBarRepair() {
+    // The button on the native "Usage service needs repair" screen. It reuses
+    // the repair entry point rather than the generic retry so the flag survives.
+    @objc private func repairCodexBarFromNativeStatus() {
+        beginCodexBarRepair(hasJavaScriptOwner: false)
+    }
+
+    private func beginCodexBarRepair(hasJavaScriptOwner: Bool) {
+        if webView != nil {
+            beginControlCenterCodexBarRepair(hasJavaScriptOwner: hasJavaScriptOwner)
+            return
+        }
         installationReady = false
         codexBarRepairRequired = true
+        codexBarRepairRestartRequired = true
         activeNavigation = nil
         webView = nil
         presentInstallationStatus(
             title: "Repairing usage service…",
-            detail: "Backing up an incompatible copy before installing the verified version.",
+            detail: "Preparing the verified version included with VibeTV Control Center.",
             failed: false
         )
-        retryRuntimePreparation()
+        // Deliberately not retryRuntimePreparation(): that entry point clears
+        // codexBarRepairRequired, because a customer retrying an ordinary
+        // preparation is not asking for a repair. prepareCompanion now starts
+        // the verified CodexBar only while that flag is set, so going through
+        // the retry wrapper would clear the very thing this repair just asked
+        // for and report success without ever launching CodexBar.
+        discardMismatchedPendingNativeUpdate()
+        if preparationTask != nil {
+            // A cold launch's own preparation is already running and read the
+            // repair flag before this request existed. Starting nothing here
+            // used to drop the repair silently; the running task's completion
+            // now reruns preparation with the flag still set.
+            pendingCodexBarRepairRerun = true
+            return
+        }
+        startRuntimePreparation()
+    }
+
+    private func beginControlCenterCodexBarRepair(hasJavaScriptOwner: Bool) {
+        guard preparationTask == nil else {
+            // Another preparation already owns the runtime. Say so instead of
+            // dropping the request: the setup screen waits on this answer and
+            // would otherwise sit inert until its own timeout expires.
+            notifyCodexBarRepairResult(success: false)
+            return
+        }
+        codexBarRepairRequired = true
+        codexBarRepairRestartRequired = true
+        preparationTask = Task { [weak self] in
+            guard let self else {
+                return
+            }
+            let outcome = await self.prepareCompanion()
+            self.preparationTask = nil
+            guard outcome == .nativeRuntimeReady else {
+                self.finishControlCenterCodexBarRecovery()
+                self.notifyCodexBarRepairResult(success: false)
+                return
+            }
+            self.codexBarRepairRequired = false
+            self.installationReady = true
+            self.notifyCodexBarRepairResult(success: true)
+            // Only a repair the page started sends the finish action back: its
+            // result handler returns early unless it has an outstanding repair
+            // of its own. An externally delivered vibetv://repair-codexbar has
+            // no such owner, so the temporary CodexBar this recovery started
+            // would keep running until the window closes. Release it here.
+            //
+            // A page that owned the repair can also be gone by now. The window
+            // cleanup runs finishControlCenterCodexBarRecovery before this task
+            // launches CodexBar, so it releases nothing, and the launch then
+            // records an app nobody is left to finish -- it outlived the window
+            // that started it. The cleanup nils the WebView, so that is the
+            // signal the owner has gone.
+            if !hasJavaScriptOwner || self.webView == nil {
+                self.finishControlCenterCodexBarRecovery()
+            }
+        }
+    }
+
+    // The recovery screen has no sidebar, so the provider list in Usage cannot
+    // be reached from there. CodexBar owns the switches, so send the customer
+    // into CodexBar rather than after a download they already have.
+    // Stopgap until #245 moves provider selection into setup and settings.
+    private func openManagedCodexBar() {
+        let running = NSRunningApplication.runningApplications(
+            withBundleIdentifier: codexBarBundleIdentifier
+        )
+        let appURL: URL
+        if let bundleURL = running.first?.bundleURL {
+            appURL = bundleURL
+        } else {
+            let managed = appManagedCodexBarAppURL(
+                applicationSupportURL: applicationSupportURL()
+            )
+            guard validatedPinnedCodexBarCLI(at: managed) != nil else {
+                NSLog("VibeTV Control Center refused to open an unverified CodexBar app")
+                return
+            }
+            appURL = managed
+        }
+        // From here the app is the customer's to use. Recovery cleanup must not
+        // terminate it under them, so drop our claim on it.
+        codexBarRecoveryApplication = nil
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.addsToRecentItems = false
+        NSWorkspace.shared.openApplication(
+            at: appURL,
+            configuration: configuration
+        ) { _, error in
+            if let error {
+                NSLog(
+                    "VibeTV Control Center could not open CodexBar: \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
+    private func finishControlCenterCodexBarRecovery() {
+        defer { codexBarRecoveryApplication = nil }
+        guard let application = codexBarRecoveryApplication,
+              application.bundleURL?.standardizedFileURL == appManagedCodexBarAppURL(
+                  applicationSupportURL: applicationSupportURL()
+              ).standardizedFileURL else {
+            return
+        }
+        if !application.terminate() {
+            NSLog("VibeTV Control Center could not stop its temporary CodexBar app")
+        }
     }
 
     @objc private func openSupportLog() {
@@ -1545,6 +1731,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let helperURL = Bundle.main.bundleURL
             .appendingPathComponent("Contents/Helpers", isDirectory: true)
             .appendingPathComponent("codexbar-display")
+        let codexBarURL = appManagedCodexBarAppURL(
+            applicationSupportURL: applicationSupportURL()
+        )
         return NativeSupportReportSnapshot(
             generatedAt: ISO8601DateFormatter().string(from: Date()),
             setupTitle: installationStatusTitle,
@@ -1570,7 +1759,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             runtimeLabel: activeRuntimeLaunchAgentLabel,
             runtimeOrigin: activeRuntimeOrigin.absoluteString,
             runtimeRegistrationStatus: runtimeRegistrationStatusDescription(),
-            codexBarPath: existingCodexBarApp()?.path,
+            codexBarPath: FileManager.default.fileExists(atPath: codexBarURL.path)
+                ? codexBarURL.path
+                : nil,
             supportDirectoryPath: applicationSupportURL().path,
             crashDirectoryPath: FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Logs/DiagnosticReports", isDirectory: true)
@@ -1973,14 +2164,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             guard let self else {
                 return
             }
-            let outcome = await self.prepareCompanionWithAutomaticCodexBarRepair()
+            let outcome = await self.prepareCompanion()
             self.preparationTask = nil
             guard outcome == .nativeRuntimeReady else {
                 self.notifyRuntimeRepairResult(success: false)
                 return
             }
             self.codexBarRepairRequired = false
-            self.codexBarAutoRepairAttempted = false
             self.installationReady = true
             self.installationStatus = nil
             self.notifyRuntimeRepairResult(success: true)
@@ -1995,6 +2185,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             if let error {
                 NSLog(
                     "VibeTV Control Center could not report runtime repair result: \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
+    private func notifyCodexBarRepairResult(success: Bool) {
+        let value = success ? "true" : "false"
+        let script = "window.dispatchEvent(new CustomEvent('vibetv:codexbar-repair-result', { detail: { success: \(value) } })); true"
+        webView?.evaluateJavaScript(script) { _, error in
+            if let error {
+                NSLog(
+                    "VibeTV Control Center could not report CodexBar repair result: \(error.localizedDescription)"
                 )
             }
         }
@@ -2075,7 +2277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
     private func makeMainWindow() -> NSWindow {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1180, height: 820),
+            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 900),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -2274,6 +2476,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                         variant: .primary
                     ),
                 ]
+            case .codexBarRepair:
+                recoveryButtons = [
+                    makeNativeSetupButton(
+                        title: retryTitle,
+                        action: #selector(repairCodexBarFromNativeStatus),
+                        symbolName: "wrench.and.screwdriver",
+                        variant: .primary
+                    ),
+                ]
             case .legacyRepair:
                 recoveryButtons = [
                     makeNativeSetupButton(
@@ -2361,6 +2572,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         allowPreparedWindowClose = false
         scheduledCloseFallback?.cancel()
         scheduledCloseFallback = nil
+        finishControlCenterCodexBarRecovery()
         activeNavigation = nil
         webView?.stopLoading()
         webView?.navigationDelegate = nil
@@ -2440,10 +2652,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             : nil
     }
 
-    private func validatedCodexBarApp(
-        at appURL: URL,
-        requirePinnedVersion: Bool = false
-    ) -> URL? {
+    private func validatedCodexBarApp(at appURL: URL) -> URL? {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: appURL.path),
               let bundle = Bundle(url: appURL),
@@ -2451,9 +2660,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
               let version = bundle.object(
                   forInfoDictionaryKey: "CFBundleShortVersionString"
               ) as? String,
-              (requirePinnedVersion
-                  ? version == codexBarPinnedVersion
-                  : isCompatibleCodexBarVersion(version)),
+              version == codexBarPinnedVersion,
               codexBarCLIURL(in: appURL) != nil else {
             return nil
         }
@@ -2485,29 +2692,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         return appURL
     }
 
-    private func existingCodexBarApp() -> URL? {
-        let running = NSWorkspace.shared.runningApplications.compactMap(\.bundleURL)
-        let installed = codexBarInstalledAppCandidates(
-            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
-        )
-        var seen = Set<String>()
-        let candidates = (running + installed).filter { candidate in
-            seen.insert(candidate.standardizedFileURL.path).inserted
+    private func validatedPinnedCodexBarCLI(at appURL: URL) -> URL? {
+        guard validatedCodexBarApp(at: appURL) != nil else {
+            return nil
         }
-        for requirePinnedVersion in [true, false] {
-            if let candidate = candidates.first(where: {
-                validatedCodexBarApp(
-                    at: $0,
-                    requirePinnedVersion: requirePinnedVersion
-                ) != nil
-            }) {
-                return candidate
-            }
-        }
-        return nil
+        return codexBarCLIURL(in: appURL)
     }
 
-    private func installBundledCodexBarApp() -> URL? {
+    private func normalizeStagedCodexBarSigningXattrs(at appURL: URL) -> Bool {
+        let fileManager = FileManager.default
+        var urls = [appURL]
+        if let enumerator = fileManager.enumerator(
+            at: appURL,
+            includingPropertiesForKeys: nil,
+            options: [],
+            errorHandler: { url, error in
+                NSLog("VibeTV Control Center could not inspect CodexBar xattrs at \(url.path): \(error)")
+                return false
+            }
+        ) {
+            for case let url as URL in enumerator {
+                urls.append(url)
+            }
+        }
+
+        for url in urls {
+            for attr in codexBarDisallowedSigningXattrs {
+                let removed = attr.withCString { removexattr(url.path, $0, XATTR_NOFOLLOW) }
+                if removed != 0 && errno != ENOATTR {
+                    NSLog("VibeTV Control Center could not remove \(attr) from staged CodexBar path \(url.path): errno=\(errno)")
+                    return false
+                }
+            }
+        }
+        return true
+    }
+
+    private func bundledCodexBarArchiveURL() -> URL? {
         let fileManager = FileManager.default
         let resourcesURL = Bundle.main.resourceURL?
             .appendingPathComponent("CodexBar", isDirectory: true)
@@ -2517,43 +2738,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             NSLog("VibeTV Control Center bundled CodexBar archive is missing or failed its checksum")
             return nil
         }
+        return archiveURL
+    }
 
-        let applicationsURL = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent("Applications", isDirectory: true)
-        let targetURL = applicationsURL
-            .appendingPathComponent("CodexBar.app", isDirectory: true)
-        do {
-            try fileManager.createDirectory(
-                at: applicationsURL,
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
-        } catch {
-            NSLog("VibeTV Control Center could not create ~/Applications for CodexBar: \(error)")
+    private func prepareBundledCodexBarCLI() -> URL? {
+        let fileManager = FileManager.default
+        let appSupportURL = applicationSupportURL()
+        let targetAppURL = appManagedCodexBarAppURL(applicationSupportURL: appSupportURL)
+        guard privateCodexBarTargetIsSafe(
+            applicationSupportURL: appSupportURL,
+            homeURL: fileManager.homeDirectoryForCurrentUser,
+            targetAppURL: targetAppURL,
+            fileManager: fileManager
+        ) else {
+            NSLog("VibeTV Control Center rejected an unsafe private CodexBar path: \(targetAppURL.path)")
             return nil
         }
 
-        // Never replace another CodexBar installation. A compatible app at
-        // this location was already selected above; any remaining item needs
-        // an explicit user-controlled update instead of an implicit overwrite.
-        guard !fileManager.fileExists(atPath: targetURL.path) else {
-            NSLog("VibeTV Control Center kept the existing ~/Applications/CodexBar.app unchanged")
+        if NSRunningApplication.runningApplications(
+            withBundleIdentifier: codexBarBundleIdentifier
+        ).contains(where: {
+            $0.bundleURL?.standardizedFileURL == targetAppURL.standardizedFileURL
+        }), let cliURL = validatedPinnedCodexBarCLI(at: targetAppURL) {
+            return cliURL
+        }
+
+        guard let archiveURL = bundledCodexBarArchiveURL() else {
             return nil
         }
 
-        let stagingURL = applicationsURL.appendingPathComponent(
-            ".vibetv-codexbar-install-\(UUID().uuidString)",
+        let versionDirectoryURL = targetAppURL.deletingLastPathComponent()
+        let codexBarDirectoryURL = versionDirectoryURL.deletingLastPathComponent()
+        let stagingURL = codexBarDirectoryURL.appendingPathComponent(
+            ".extract-\(codexBarPinnedVersion)-\(UUID().uuidString)",
             isDirectory: true
         )
         defer { try? fileManager.removeItem(at: stagingURL) }
         do {
+            try fileManager.createDirectory(
+                at: codexBarDirectoryURL,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
             try fileManager.createDirectory(
                 at: stagingURL,
                 withIntermediateDirectories: false,
                 attributes: [.posixPermissions: 0o700]
             )
         } catch {
-            NSLog("VibeTV Control Center could not create CodexBar staging directory: \(error)")
+            NSLog("VibeTV Control Center could not create private CodexBar staging directory: \(error)")
             return nil
         }
 
@@ -2566,144 +2799,103 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
         let stagedAppURL = stagingURL
             .appendingPathComponent("CodexBar.app", isDirectory: true)
-        guard validatedCodexBarApp(
-            at: stagedAppURL,
-            requirePinnedVersion: true
-        ) != nil else {
+        guard normalizeStagedCodexBarSigningXattrs(at: stagedAppURL) else {
+            NSLog("VibeTV Control Center could not normalize the extracted CodexBar app")
+            return nil
+        }
+        guard validatedPinnedCodexBarCLI(at: stagedAppURL) != nil else {
             NSLog("VibeTV Control Center rejected the extracted CodexBar app")
             return nil
         }
 
-        do {
-            // stagingURL and targetURL share the same filesystem, so this is
-            // an atomic publish after every identity check has passed.
-            try fileManager.moveItem(at: stagedAppURL, to: targetURL)
-        } catch {
-            NSLog("VibeTV Control Center could not publish CodexBar atomically: \(error)")
+        guard privateCodexBarTargetIsSafe(
+            applicationSupportURL: appSupportURL,
+            homeURL: fileManager.homeDirectoryForCurrentUser,
+            targetAppURL: targetAppURL,
+            fileManager: fileManager
+        ) else {
+            NSLog("VibeTV Control Center rejected an unsafe private CodexBar path before publish: \(targetAppURL.path)")
             return nil
         }
-        return validatedCodexBarApp(at: targetURL, requirePinnedVersion: true)
-    }
 
-    private func repairCodexBarInstallation() -> Bool {
-        let fileManager = FileManager.default
-        let targetURL = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent("Applications", isDirectory: true)
-            .appendingPathComponent("CodexBar.app", isDirectory: true)
-        if validatedCodexBarApp(
-            at: targetURL,
-            requirePinnedVersion: true
-        ) != nil {
-            return true
-        }
-        if fileManager.fileExists(atPath: targetURL.path) {
-            let backupURL = applicationSupportURL()
-                .appendingPathComponent("codexbar-backups", isDirectory: true)
-                .appendingPathComponent(
-                    "\(timestampForBackup())-\(UUID().uuidString.prefix(8))",
-                    isDirectory: true
+        do {
+            if fileManager.fileExists(atPath: targetAppURL.path) {
+                _ = try fileManager.replaceItemAt(
+                    targetAppURL,
+                    withItemAt: stagedAppURL,
+                    backupItemName: nil,
+                    options: [.usingNewMetadataOnly]
                 )
-                .appendingPathComponent("CodexBar.app", isDirectory: true)
-            do {
+            } else {
                 try fileManager.createDirectory(
-                    at: backupURL.deletingLastPathComponent(),
+                    at: versionDirectoryURL,
                     withIntermediateDirectories: true,
                     attributes: [.posixPermissions: 0o700]
                 )
-                try fileManager.moveItem(at: targetURL, to: backupURL)
-                NSLog("VibeTV Control Center backed up incompatible CodexBar at \(backupURL.path)")
-            } catch {
-                NSLog("VibeTV Control Center could not back up incompatible CodexBar: \(error)")
-                return false
+                try fileManager.moveItem(at: stagedAppURL, to: targetAppURL)
             }
+        } catch {
+            NSLog("VibeTV Control Center could not publish private CodexBar atomically: \(error)")
+            return nil
         }
-        guard let installed = installBundledCodexBarApp() else {
+        return validatedPinnedCodexBarCLI(at: targetAppURL)
+    }
+
+    private func bootstrapCodexBar() -> Bool {
+        guard let cliURL = prepareBundledCodexBarCLI() else {
+            NSLog("VibeTV Control Center could not provision its private CodexBar; native setup remains blocked")
             return false
         }
-        NSLog("VibeTV Control Center repaired CodexBar at \(installed.path)")
+        NSLog("VibeTV Control Center prepared verified CodexBar \(codexBarPinnedVersion) CLI at \(cliURL.path)")
         return true
     }
 
-    private func preparedCodexBarConfigURL(for appURL: URL) -> URL? {
-        let fileManager = FileManager.default
-        let homeURL = fileManager.homeDirectoryForCurrentUser
-        let existingCandidates = [
-            homeURL
-                .appendingPathComponent(".config/codexbar", isDirectory: true)
-                .appendingPathComponent("config.json"),
-            homeURL
-                .appendingPathComponent(".codexbar", isDirectory: true)
-                .appendingPathComponent("config.json"),
-        ]
-        for candidate in existingCandidates
-        where fileManager.fileExists(atPath: candidate.path) {
-            if fileManager.isWritableFile(atPath: candidate.path) {
-                return candidate
-            }
-            NSLog("VibeTV Control Center kept an existing non-writable CodexBar config unchanged: \(candidate.path)")
-            return nil
-        }
-
-        let configDirectoryURL = homeURL
-            .appendingPathComponent(".codexbar", isDirectory: true)
-        let configURL = configDirectoryURL.appendingPathComponent("config.json")
-        guard let executableURL = codexBarCLIURL(in: appURL) else {
-            return nil
-        }
-        if writeCodexBarOwnedDefaultConfig(
-            executableURL: executableURL,
-            targetURL: configURL,
-            fileManager: fileManager
-        ) {
-            return configURL
-        }
-        NSLog("VibeTV Control Center could not prepare its private CodexBar config")
-        return nil
-    }
-
-    private func launchCodexBar(_ appURL: URL) async -> Bool {
-        if NSWorkspace.shared.runningApplications.contains(where: {
-            $0.bundleIdentifier == codexBarBundleIdentifier
-                && $0.bundleURL?.standardizedFileURL == appURL.standardizedFileURL
+    private func launchBundledCodexBarInBackground() async -> Bool {
+        let appURL = appManagedCodexBarAppURL(
+            applicationSupportURL: applicationSupportURL()
+        )
+        let runningApplications = NSRunningApplication.runningApplications(
+            withBundleIdentifier: codexBarBundleIdentifier
+        )
+        if runningApplications.contains(where: {
+            $0.bundleURL?.standardizedFileURL == appURL.standardizedFileURL
         }) {
+            // Deliberately not recorded as ours. The customer may have opened it
+            // from the recovery screen, and the finish action would then close
+            // the app under them.
+            NSLog("VibeTV Control Center found the app-managed CodexBar already running")
             return true
         }
+        if !runningApplications.isEmpty {
+            NSLog("VibeTV Control Center found the customer's CodexBar app already running")
+            return true
+        }
+
+        guard validatedPinnedCodexBarCLI(at: appURL) != nil else {
+            NSLog("VibeTV Control Center refused to launch an unverified CodexBar app")
+            return false
+        }
+
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
         configuration.addsToRecentItems = false
-        if let configURL = preparedCodexBarConfigURL(for: appURL) {
-            var environment = ProcessInfo.processInfo.environment
-            environment["CODEXBAR_CONFIG"] = configURL.path
-            configuration.environment = environment
-        }
-        return await withCheckedContinuation { continuation in
+        let application: NSRunningApplication? = await withCheckedContinuation { continuation in
             NSWorkspace.shared.openApplication(
                 at: appURL,
                 configuration: configuration
             ) { application, error in
                 if let error {
-                    NSLog("VibeTV Control Center could not launch CodexBar: \(error)")
+                    NSLog(
+                        "VibeTV Control Center could not start CodexBar in the background: \(error.localizedDescription)"
+                    )
                 }
-                let launchedExpectedApp = application?.bundleURL?.standardizedFileURL
-                    == appURL.standardizedFileURL
-                if application != nil && !launchedExpectedApp {
-                    NSLog("VibeTV Control Center opened a different CodexBar copy than \(appURL.path)")
-                }
-                continuation.resume(returning: launchedExpectedApp && error == nil)
+                continuation.resume(returning: error == nil ? application : nil)
             }
         }
-    }
-
-    private func bootstrapCodexBar() async -> Bool {
-        if let existing = existingCodexBarApp() {
-            return await launchCodexBar(existing)
+        if application?.bundleURL?.standardizedFileURL == appURL.standardizedFileURL {
+            codexBarRecoveryApplication = application
         }
-        guard let installed = installBundledCodexBarApp() else {
-            NSLog("VibeTV Control Center could not provision CodexBar; native setup remains blocked")
-            return false
-        }
-        NSLog("VibeTV Control Center installed verified CodexBar \(codexBarPinnedVersion) at \(installed.path)")
-        return await launchCodexBar(installed)
+        return application != nil
     }
 
     private func prepareCompanion() async -> RuntimePreparationOutcome {
@@ -2746,7 +2938,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return .failure(.applicationIncomplete)
         }
 
-        guard await bootstrapCodexBar() else {
+        var runtimeStoppedForCodexBarRepair = false
+        if codexBarRepairRestartRequired {
+            // A firmware update job lives inside the runtime process and dies
+            // with it. Restarting the runtime under a running update leaves the
+            // customer with a half-written VibeTV and a progress screen that
+            // never answers again. Provider recovery is the one that can wait.
+            if await runtimeShouldDeferRepairForUpdate() {
+                NSLog(
+                    "VibeTV Control Center held back its CodexBar repair while a VibeTV update is running"
+                )
+                return .codexBarRepairRequired
+            }
+            guard await unregisterBundledRuntimeService() else {
+                // The runtime is still alive and still holding updates back for
+                // a shutdown that did not happen. Give it back.
+                await runtimeReleaseUpdateHold()
+                NSLog("VibeTV Control Center could not stop its runtime before repairing CodexBar")
+                return .failure(.serviceStart)
+            }
+            codexBarRepairRestartRequired = false
+            runtimeStoppedForCodexBarRepair = true
+        }
+
+        // The repair stops the managed runtime so the private CodexBar payload
+        // can be replaced underneath it. Every early return between here and
+        // the registration below would otherwise leave the customer with no
+        // Companion at all, turning a missing AI provider into a Mac App
+        // outage. Put back exactly the registration this repair tore down;
+        // legacy migration already ran for the runtime that was healthy a
+        // moment ago, so this must not repeat it.
+        defer {
+            if runtimeStoppedForCodexBarRepair,
+               registerBundledRuntimeService() != .ready {
+                NSLog(
+                    "VibeTV Control Center could not restart its runtime after the unfinished CodexBar repair"
+                )
+            }
+        }
+
+        guard bootstrapCodexBar() else {
+            return .codexBarRepairRequired
+        }
+
+        if codexBarRepairRequired,
+           !(await launchBundledCodexBarInBackground()) {
             return .codexBarRepairRequired
         }
 
@@ -2785,6 +3021,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         // SMAppService.register() bootstraps a LaunchAgent immediately. Stop
         // every legacy writer first so migration never overlaps two streams.
+        // The repair's restoration stays armed across this switch and past it:
+        // .ready only means Service Management accepted the registration, and
+        // the health gate below can still fail and unregister what it just
+        // registered. Disarming here left the Mac with no Companion at all.
         switch await ensureBundledRuntimeServiceRegistered() {
         case .ready:
             break
@@ -2866,6 +3106,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             }
             return .failure(failure)
         }
+        // A healthy runtime is established. Only now is there nothing left for
+        // the repair's restoration to put back.
+        runtimeStoppedForCodexBarRepair = false
         clearPendingNativeUpdate()
 
         if legacyStates.isEmpty {
@@ -2971,6 +3214,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             )
             return .requiresApproval
         case .notRegistered, .notFound:
+            guard await unregisterBundledRuntimeService() else {
+                return .failed
+            }
             return registerBundledRuntimeService()
         @unknown default:
             NSLog("VibeTV Control Center runtime has an unknown Service Management status")
@@ -3006,40 +3252,236 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
     }
 
+    // SMAppService reports .notRegistered as soon as launchd accepted the
+    // unregister, not when the daemon has exited. Registering inside that
+    // window puts two processes on the API port: the old one still holds the
+    // listener while the new one binds it. A fixed delay only guesses when
+    // that is over, so wait for the port itself to go quiet.
+    // Returns true when the CodexBar repair must stand down. Only a runtime that
+    // answers and explicitly says no update is running clears the way: a probe
+    // that fails while an update is in flight, or an older runtime that does not
+    // report the field at all, is exactly the case this guard exists for. A
+    // runtime that never answers after several tries is not running an update
+    // either -- the job lives inside that process -- so that case proceeds,
+    // otherwise a dead runtime could never be registered again.
+    private func runtimeShouldDeferRepairForUpdate() async -> Bool {
+        for _ in 0..<runtimeUpdateProbeAttempts {
+            switch await runtimeClaimUpdateHold() {
+            case .noUpdate:
+                return false
+            case .updateRunning, .answeredWithoutField:
+                return true
+            case .noAnswer:
+                try? await Task<Never, Never>.sleep(for: runtimeUpdateProbeRetryDelay)
+            }
+        }
+        NSLog("VibeTV Control Center got no runtime answer about a running update; assuming none")
+        return false
+    }
+
+    private enum RuntimeUpdateProbe {
+        case noAnswer
+        case answeredWithoutField
+        case noUpdate
+        case updateRunning
+    }
+
+    // Asking whether an update runs and then killing the runtime are two steps,
+    // and an update that starts between them dies with the process that owns its
+    // job. So do not ask -- claim: the runtime refuses new update jobs from here
+    // on, under the same lock that starts them. A 409 means an update already
+    // owns the runtime and the repair waits, exactly as before.
+    private func runtimeClaimUpdateHold() async -> RuntimeUpdateProbe {
+        for origin in runtimeOriginCandidates() {
+            guard let http = await runtimeUpdateHoldRequest(origin, release: false) else {
+                continue
+            }
+            // runtime-endpoint.json can be stale, and any process may reuse the
+            // port it names. Such a listener answering 404 would read as
+            // "answered without the field" and refuse the repair without the
+            // real runtime on the default port ever being asked. Only an answer
+            // from a listener this label owns is authoritative -- the same test
+            // waitForHealthyRuntime applies before recording an origin.
+            guard case .owned = verifyRuntimeListenerOwnership(
+                port: origin.port ?? defaultRuntimePort
+            ) else {
+                continue
+            }
+            if http.statusCode == 409 {
+                return .updateRunning
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                // An older runtime has no hold endpoint. It also has no atomic
+                // answer to give, so treat it the way the missing field is
+                // treated: hold back rather than strand an update.
+                return .answeredWithoutField
+            }
+            return .noUpdate
+        }
+        return .noAnswer
+    }
+
+    // The hold outlives a repair that never stopped the runtime, so release it
+    // whenever the shutdown does not happen.
+    //
+    // Deliberately without the claim's ownership check, and without stopping at
+    // the first origin that answers. This runs after SMAppService.unregister,
+    // where launchctl no longer knows the label: every candidate reads
+    // .serviceUnavailable, so the check skipped all of them and released
+    // nothing, leaving firmware updates and theme installs refused with
+    // "Mac App is restarting" for the rest of the 60s window after a restart
+    // that never happened. Releasing is idempotent and a stranger on a stale
+    // port simply refuses it, so send it to every candidate the claim could
+    // have used.
+    private func runtimeReleaseUpdateHold() async {
+        for origin in runtimeOriginCandidates() {
+            _ = await runtimeUpdateHoldRequest(origin, release: true)
+        }
+    }
+
+    private func runtimeUpdateHoldRequest(
+        _ origin: URL,
+        release: Bool
+    ) async -> HTTPURLResponse? {
+        var request = URLRequest(
+            url: origin.appendingPathComponent("v1/runtime-health/update-hold"),
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: runtimeHealthRequestTimeout
+        )
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = release ? Data("{\"release\":true}".utf8) : Data("{}".utf8)
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse else {
+            return nil
+        }
+        return http
+    }
+
+    // The managed runtime runs with --api-fallback, so when 47832 is taken it
+    // serves from a free port and publishes it in runtime-endpoint.json. Waiting
+    // on the default origin then watches the wrong listener in both directions:
+    // whatever took 47832 keeps answering after the managed runtime is gone and
+    // the wait times out, or nothing answers there and the wait returns while
+    // the fallback runtime is still exiting -- and the caller registers a second
+    // runtime onto a port the old one still owns. Wait on the origin the runtime
+    // actually published, captured before the unregister rewrites it.
+    // Every candidate has to go quiet, not just one of them. Picking a single
+    // origin fails in both directions: the published one can be stale after a
+    // failed writeRuntimeEndpoint, and the app's own verified origin belongs to
+    // this build rather than to whatever is running -- during an upgrade from a
+    // public release that is somebody else's runtime, on the port its own
+    // endpoint file names. Waiting on all of them costs nothing, since a stale
+    // origin answers nothing and returns at once.
+    private func waitForRuntimeAPIToStop(_ managedOrigins: [URL]) async -> Bool {
+        // Exactly what the caller proved ours. Empty means nothing of ours was
+        // listening, so there is nothing to outlive; adding the default back
+        // here would park the wait on whatever stranger holds 47832.
+        guard !managedOrigins.isEmpty else {
+            return true
+        }
+        let origins = managedOrigins
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = runtimeHealthRequestTimeout
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+
+        let deadline = Date().addingTimeInterval(runtimeUnregistrationQuiesceTimeout)
+        var pending = origins
+        while Date() < deadline {
+            var stillAnswering: [URL] = []
+            for origin in pending {
+                var request = URLRequest(
+                    url: origin.appendingPathComponent("v1/runtime-health"),
+                    cachePolicy: .reloadIgnoringLocalCacheData,
+                    timeoutInterval: runtimeHealthRequestTimeout
+                )
+                request.httpMethod = "GET"
+                if (try? await session.data(for: request)) != nil {
+                    stillAnswering.append(origin)
+                }
+            }
+            if stillAnswering.isEmpty {
+                return true
+            }
+            pending = stillAnswering
+            try? await Task<Never, Never>.sleep(for: runtimeUnregistrationQuiescePollDelay)
+        }
+        // Reporting success here would let the caller register a second runtime
+        // on a port the old one still owns, which is the very collision the
+        // wait exists to prevent.
+        NSLog(
+            "VibeTV Control Center runtime still answered on \(pending.map(\.absoluteString).joined(separator: ", ")) after unregister"
+        )
+        return false
+    }
+
     private func unregisterBundledRuntimeService() async -> Bool {
         if usesLocalPreviewRuntime {
             return await unregisterLocalPreviewRuntimeService()
         }
-        switch runtimeService.status {
-        case .notRegistered, .notFound:
-            return true
-        case .enabled, .requiresApproval:
-            break
-        @unknown default:
-            break
+        // Everything that could be serving: the origin the running runtime
+        // published, this build's verified one, and the default -- narrowed to
+        // the ones whose listener actually belongs to this service. A stale port
+        // reused by some other server would otherwise answer forever and time
+        // the wait out, and the caller reports that as a failed unregister after
+        // Service Management already dropped the registration.
+        //
+        // The narrowing has to happen here, before the unregister. Afterwards
+        // launchctl no longer knows the label, ownership comes back
+        // .serviceUnavailable for every candidate, and filtering then would
+        // discard the runtime that is still exiting -- the exact race this wait
+        // exists to prevent.
+        var candidateOrigins = runtimeOriginCandidates()
+        if !candidateOrigins.contains(activeRuntimeOrigin) {
+            candidateOrigins.append(activeRuntimeOrigin)
         }
-
-        let errorDescription: String? = await withCheckedContinuation { continuation in
-            runtimeService.unregister(completionHandler: { error in
-                continuation.resume(returning: error.map { ($0 as NSError).localizedDescription })
-            })
-        }
-
-        switch runtimeService.status {
-        case .notRegistered, .notFound:
-            try? await Task<Never, Never>.sleep(for: runtimeUnregistrationSettleDelay)
-            return true
-        case .enabled, .requiresApproval:
-            NSLog(
-                "VibeTV Control Center could not unregister its runtime: \(errorDescription ?? "service remained registered")"
-            )
-            return false
-        @unknown default:
-            NSLog(
-                "VibeTV Control Center runtime has an unknown status after unregister: \(errorDescription ?? "unknown error")"
-            )
+        let managedOrigins = candidateOrigins.filter { origin in
+            if case .owned = verifyRuntimeListenerOwnership(
+                port: origin.port ?? defaultRuntimePort
+            ) {
+                return true
+            }
             return false
         }
+        switch runtimeService.status {
+        case .notRegistered, .notFound:
+            break
+        case .enabled, .requiresApproval:
+            fallthrough
+        @unknown default:
+            let errorDescription: String? = await withCheckedContinuation { continuation in
+                runtimeService.unregister(completionHandler: { error in
+                    continuation.resume(returning: error.map { ($0 as NSError).localizedDescription })
+                })
+            }
+
+            switch runtimeService.status {
+            case .notRegistered, .notFound:
+                guard await waitForRuntimeAPIToStop(managedOrigins) else {
+                    return false
+                }
+            case .enabled, .requiresApproval:
+                NSLog(
+                    "VibeTV Control Center could not unregister its runtime: \(errorDescription ?? "service remained registered")"
+                )
+                return false
+            @unknown default:
+                NSLog(
+                    "VibeTV Control Center runtime has an unknown status after unregister: \(errorDescription ?? "unknown error")"
+                )
+                return false
+            }
+        }
+
+        if legacyServiceIsLoaded(label: runtimeLaunchAgentLabel) {
+            guard stopLoadedLaunchAgent(label: runtimeLaunchAgentLabel) else {
+                NSLog("VibeTV Control Center could not stop its update runtime")
+                return false
+            }
+            try? await Task<Never, Never>.sleep(for: .milliseconds(250))
+        }
+        return true
     }
 
     private func bundledRuntimeServiceIsEnabled() -> Bool {
@@ -3066,6 +3508,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             "CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL":
                 previewRuntimeLaunchAgentLabel,
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "VIBETV_CODEXBAR_PINNED_VERSION": codexBarPinnedVersion,
             "VIBETV_DISABLE_MAC_APP_SELF_UPDATE": "1",
             "VIBETV_MAC_APP_BUILD": Bundle.main.object(
                 forInfoDictionaryKey: "CFBundleVersion"
@@ -3083,7 +3526,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 "--transport",
                 "wifi",
                 "--interval",
-                "5s",
+                "30s",
                 "--api-addr",
                 "127.0.0.1:47832",
                 "--api-dev-origin",
@@ -3781,6 +4224,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             build: item.versionString
         )
     }
+
+    func updater(
+        _ updater: SPUUpdater,
+        shouldPostponeRelaunchForUpdate item: SUAppcastItem,
+        untilInvokingBlock installHandler: @escaping () -> Void
+    ) -> Bool {
+        Task { @MainActor in
+            // The replaced app must never leave its old runtime alive and
+            // polling the device: that is the stale/duplicate-writer state
+            // the whole update handoff exists to prevent. Retry the shutdown
+            // briefly; without a confirmed stop the install does not run.
+            var stopped = await unregisterBundledRuntimeService()
+            var attempt = 0
+            while !stopped && attempt < 2 {
+                attempt += 1
+                try? await Task<Never, Never>.sleep(for: .seconds(2))
+                stopped = await unregisterBundledRuntimeService()
+            }
+            guard stopped else {
+                NSLog(
+                    "VibeTV Control Center refused to install the update: runtime shutdown failed"
+                )
+                let alert = NSAlert()
+                alert.messageText = "Update paused"
+                alert.informativeText =
+                    "VibeTV Control Center could not stop its background runtime. Quit and reopen the app, then run the update again."
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+                return
+            }
+            installHandler()
+        }
+        return true
+    }
 #endif
 
     private func timestampForBackup() -> String {
@@ -3811,7 +4288,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             case .checkForUpdates:
                 checkForUpdates()
             case .repairCodexBar:
-                beginCodexBarRepair()
+                beginCodexBarRepair(hasJavaScriptOwner: true)
+            case .finishCodexBarRecovery:
+                finishControlCenterCodexBarRecovery()
+            case .openCodexBar:
+                openManagedCodexBar()
             }
             return
         }
@@ -3829,14 +4310,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
 
-        guard isApprovedDMGDownloadURL(url) else {
+        guard isApprovedDMGDownloadURL(url) || isApprovedCodexBarDownloadURL(url) else {
             decisionHandler(.allow)
             return
         }
 
         decisionHandler(.cancel)
         if !NSWorkspace.shared.open(url) {
-            NSLog("VibeTV Control Center could not open verified DMG URL in the default browser")
+            NSLog("VibeTV Control Center could not open an approved download URL in the default browser")
         }
     }
 

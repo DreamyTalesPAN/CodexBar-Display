@@ -116,6 +116,7 @@ struct FirmwareUpdateOverlayPlacement {
 bool DrawThemeSpecUsage();
 bool TickThemeSpecGifs();
 bool ThemeSpecAnimationWorkPending();
+void MarkThemeSpecCountdownsRendered();
 bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText = nullptr);
 // Repaints one bounded display region from the cached ThemeSpec scene without
 // a full-screen redraw. Used to remove the update-notice overlay bar.
@@ -130,22 +131,12 @@ bool ThemeSpecRenderOk();
 const char* ThemeSpecRenderError();
 unsigned long ThemeSpecRenderFailures();
 struct ThemeSpecRuntimeStats {
-  bool compiled = false;
-  uint16_t primitiveCount = 0;
-  uint16_t primitiveCapacity = 0;
-  uint16_t stringBytes = 0;
-  uint16_t stringCapacity = 0;
-  bool keepsJsonDocument = false;
-  bool hasAnimatedAssets = false;
   unsigned long cbaCompletedFrames = 0;
   unsigned long cbaLastFrameDurationMs = 0;
   uint32_t cbaBufferBytes = 0;
   unsigned long cbaBufferAllocationFailures = 0;
   unsigned long cbaLastPushDurationUs = 0;
   unsigned long partialSuccesses = 0;
-  unsigned long partialFailures = 0;
-  uint32_t lastPartialChangedFields = 0;
-  const char* lastPartialError = "";
 };
 ThemeSpecRuntimeStats ThemeSpecRuntimeStatsSnapshot();
 

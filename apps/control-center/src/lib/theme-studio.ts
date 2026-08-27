@@ -12,6 +12,22 @@ export type ThemeStudioBinding =
   | "session"
   | "weekly"
   | "reset"
+  | "usageSlot1Label"
+  | "usageSlot1Percent"
+  | "usageSlot1Reset"
+  | "usageSlot1Available"
+  | "usageSlot2Label"
+  | "usageSlot2Percent"
+  | "usageSlot2Reset"
+  | "usageSlot2Available"
+  | "providerSlot1Label"
+  | "providerSlot1Percent"
+  | "providerSlot1Reset"
+  | "providerSlot1Available"
+  | "providerSlot2Label"
+  | "providerSlot2Percent"
+  | "providerSlot2Reset"
+  | "providerSlot2Available"
   | "usageMode"
   | "activity"
   | "time"
@@ -27,10 +43,14 @@ export type ThemeStudioPrimitive = {
   y: number;
   width?: number;
   height?: number;
+  slot?: 1 | 2;
+  providerSlot?: 1 | 2;
+  usageIndex?: number;
   text?: string;
   binding?: ThemeStudioBinding;
   fontSize?: number;
   font?: number;
+  fit?: "shrink";
   color?: string;
   bgColor?: string;
   borderColor?: string;
@@ -57,6 +77,8 @@ export type ThemeStudioSpec = {
   primitives: ThemeStudioPrimitive[];
 };
 
+export type ThemeStudioUsage = "live" | "screensaver";
+
 export type ThemeStudioDraft = {
   assets?: Record<string, ThemeStudioAsset>;
   savedAt: string;
@@ -74,6 +96,7 @@ export type ThemeStudioValidation = {
   errors: string[];
   warnings: string[];
   bytes: number;
+  maxBytes: number;
   primitiveCount: number;
   themeSpecPath: string;
 };
@@ -93,6 +116,8 @@ type ThemePackManifest = {
   name: string;
   version: string;
   minFirmware: string;
+  requiredCapabilities?: string[];
+  usage?: ThemeStudioUsage;
   themeSpec: {
     path: string;
     file: "theme.json";
@@ -115,6 +140,7 @@ type ZipSourceFile = {
 const DISPLAY_SIZE = 240;
 const FIXED_THEME_REV = 1;
 const MAX_STORED_THEME_SPEC_BYTES = 4096;
+const MAX_STORED_SCREENSAVER_SPEC_BYTES = 2048;
 const MAX_THEME_PRIMITIVES = 32;
 const MAX_GIF_BYTES = 24 * 1024;
 const MAX_GIF_WIDTH = 80;
@@ -129,6 +155,7 @@ const MAX_SPRITE_TOTAL_PIXELS = 32768;
 const DEFAULT_SPRITE_FPS = 8;
 const MAX_ESP8266_LITTLEFS_PATH_CHARS = 31;
 const USER_THEME_ASSET_PATH_PREFIX = "/themes/u/";
+const USER_SCREENSAVER_ASSET_PATH_PREFIX = "/themes/s/";
 const THEME_ID_RE = /^[a-z0-9][a-z0-9_-]{2,63}$/;
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const SHORT_COLOR_RE = /^#[0-9a-fA-F]{3}$/;
@@ -199,6 +226,22 @@ const SHORT_BINDINGS: Record<string, ThemeStudioBinding> = {
   weeklyusage: "weekly",
   r: "reset",
   resetcountdown: "reset",
+  us1l: "usageSlot1Label",
+  us1p: "usageSlot1Percent",
+  us1r: "usageSlot1Reset",
+  us1a: "usageSlot1Available",
+  us2l: "usageSlot2Label",
+  us2p: "usageSlot2Percent",
+  us2r: "usageSlot2Reset",
+  us2a: "usageSlot2Available",
+  pv1l: "providerSlot1Label",
+  pv1p: "providerSlot1Percent",
+  pv1r: "providerSlot1Reset",
+  pv1a: "providerSlot1Available",
+  pv2l: "providerSlot2Label",
+  pv2p: "providerSlot2Percent",
+  pv2r: "providerSlot2Reset",
+  pv2a: "providerSlot2Available",
   u: "usageMode",
   mode: "usageMode",
   act: "activity",
@@ -225,6 +268,22 @@ const COMPACT_BINDINGS: Record<string, string> = {
   weeklyPercent: "w",
   reset: "r",
   resetCountdown: "r",
+  usageSlot1Label: "us1l",
+  usageSlot1Percent: "us1p",
+  usageSlot1Reset: "us1r",
+  usageSlot1Available: "us1a",
+  usageSlot2Label: "us2l",
+  usageSlot2Percent: "us2p",
+  usageSlot2Reset: "us2r",
+  usageSlot2Available: "us2a",
+  providerSlot1Label: "pv1l",
+  providerSlot1Percent: "pv1p",
+  providerSlot1Reset: "pv1r",
+  providerSlot1Available: "pv1a",
+  providerSlot2Label: "pv2l",
+  providerSlot2Percent: "pv2p",
+  providerSlot2Reset: "pv2r",
+  providerSlot2Available: "pv2a",
   usageMode: "u",
   activity: "act",
   time: "tm",
@@ -277,7 +336,8 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         type: "text",
         x: 7,
         y: 30,
-        text: "Session",
+        text: "{usage.0.label}",
+        usageIndex: 0,
         fontSize: 2,
         color: "#999999",
       },
@@ -285,7 +345,8 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         type: "text",
         x: 7,
         y: 60,
-        text: "{session}%",
+        text: "{usage.0.percent}%",
+        usageIndex: 0,
         fontSize: 5,
         color: "#CCFF00",
       },
@@ -293,7 +354,8 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         type: "text",
         x: 153,
         y: 30,
-        text: "Weekly",
+        text: "{usage.1.label}",
+        usageIndex: 1,
         fontSize: 2,
         color: "#999999",
       },
@@ -302,25 +364,19 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         x: 144,
         y: 66,
         width: 90,
-        text: "{weekly}%",
+        text: "{usage.1.percent}%",
+        usageIndex: 1,
         align: "right",
         fontSize: 5,
         color: "#CCFF00",
-      },
-      {
-        type: "gif",
-        x: 82,
-        y: 122,
-        width: 76,
-        height: 76,
-        assetPath: "/themes/mini/mini.gif",
       },
       {
         type: "text",
         x: 24,
         y: 208,
         width: 192,
-        text: "Reset in {reset}",
+        text: "Reset in {usage.0.reset}",
+        usageIndex: 0,
         align: "center",
         fontSize: 2,
         color: "#999999",
@@ -329,6 +385,7 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         type: "text",
         x: 7,
         y: 106,
+        slot: 1,
         text: "{usageMode}",
         fontSize: 2,
         color: "#999999",
@@ -337,6 +394,7 @@ export function createStarterThemeSpec(): ThemeStudioSpec {
         type: "text",
         x: 128,
         y: 106,
+        slot: 2,
         width: 108,
         text: "{usageMode}",
         align: "right",
@@ -398,6 +456,20 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
     type: expandPrimitiveType(primitive.type),
     x: integerOrDefault(primitive.x, 0),
     y: integerOrDefault(primitive.y, 0),
+    slot:
+      primitive.slot === 1 || primitive.slot === 2
+        ? primitive.slot
+        : undefined,
+    providerSlot:
+      primitive.providerSlot === 1 || primitive.providerSlot === 2
+        ? primitive.providerSlot
+        : undefined,
+    usageIndex:
+      typeof primitive.usageIndex === "number" &&
+      Number.isInteger(primitive.usageIndex) &&
+      primitive.usageIndex >= 0
+        ? primitive.usageIndex
+        : undefined,
     color: normalizeColor(primitive.color),
     bgColor: normalizeColor(primitive.bgColor),
     borderColor: normalizeColor(primitive.borderColor),
@@ -411,6 +483,7 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
         : primitive.align === "left"
           ? "left"
           : undefined,
+    fit: primitive.fit === "shrink" ? "shrink" : undefined,
     progressStyle:
       primitive.progressStyle === "segments" ? "segments" : undefined,
     frameCount:
@@ -429,11 +502,65 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
   return next;
 }
 
+function prepareThemePackContent(
+  spec: ThemeStudioSpec,
+  assets: Record<string, ThemeStudioAsset>,
+  usage: ThemeStudioUsage,
+): {
+  assets: Record<string, ThemeStudioAsset>;
+  spec: ThemeStudioSpec;
+} {
+  const normalized = normalizeThemeSpec(spec);
+  if (usage === "live") {
+    return { assets, spec: normalized };
+  }
+
+  const preparedAssets = Object.fromEntries(
+    Object.entries(assets).map(([path, asset]) => [
+      screensaverAssetPath(path),
+      asset,
+    ]),
+  );
+  for (const primitive of normalized.primitives) {
+    if (primitive.assetPath) {
+      primitive.assetPath = screensaverAssetPath(primitive.assetPath);
+    }
+    delete primitive.stateAssets;
+  }
+  return { assets: preparedAssets, spec: normalized };
+}
+
+function storedThemeSpecByteLimit(usage: ThemeStudioUsage): number {
+  return usage === "screensaver"
+    ? MAX_STORED_SCREENSAVER_SPEC_BYTES
+    : MAX_STORED_THEME_SPEC_BYTES;
+}
+
+function screensaverAssetPath(path: string): string {
+  if (path.startsWith(USER_SCREENSAVER_ASSET_PATH_PREFIX)) {
+    return path;
+  }
+  const fileName = path.split("/").pop() || "asset";
+  const extensionIndex = fileName.lastIndexOf(".");
+  const extension = extensionIndex > 0 ? fileName.slice(extensionIndex) : "";
+  const base = extension ? fileName.slice(0, extensionIndex) : fileName;
+  const pathSuffix = `-${fnv1aHex8(path)}`;
+  const maxFileNameLength =
+    MAX_ESP8266_LITTLEFS_PATH_CHARS -
+    USER_SCREENSAVER_ASSET_PATH_PREFIX.length;
+  return `${USER_SCREENSAVER_ASSET_PATH_PREFIX}${base.slice(
+    0,
+    Math.max(1, maxFileNameLength - pathSuffix.length - extension.length),
+  )}${pathSuffix}${extension}`;
+}
+
 export function validateThemeSpec(
   spec: ThemeStudioSpec,
   assets: Record<string, ThemeStudioAsset> = {},
+  usage: ThemeStudioUsage = "live",
 ): ThemeStudioValidation {
-  const normalized = normalizeThemeSpec(spec);
+  const prepared = prepareThemePackContent(spec, assets, usage);
+  const normalized = prepared.spec;
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -456,14 +583,15 @@ export function validateThemeSpec(
   }
 
   normalized.primitives.forEach((primitive, index) => {
-    validatePrimitive(primitive, index, errors, warnings, assets);
+    validatePrimitive(primitive, index, errors, warnings, prepared.assets);
   });
 
   const themeJson = deviceThemeSpecJson(normalized);
   const bytes = new TextEncoder().encode(themeJson).byteLength;
-  if (bytes > MAX_STORED_THEME_SPEC_BYTES) {
+  const maxBytes = storedThemeSpecByteLimit(usage);
+  if (bytes > maxBytes) {
     errors.push(
-      `Theme file is too large: ${bytes}/${MAX_STORED_THEME_SPEC_BYTES} bytes.`,
+      `${usage === "screensaver" ? "Screensaver" : "Theme"} file is too large: ${bytes}/${maxBytes} bytes.`,
     );
   }
 
@@ -471,8 +599,9 @@ export function validateThemeSpec(
     errors,
     warnings,
     bytes,
+    maxBytes,
     primitiveCount: normalized.primitives.length,
-    themeSpecPath: themeSpecAssetPath(normalized),
+    themeSpecPath: themeSpecAssetPath(normalized, usage),
   };
 }
 
@@ -480,9 +609,27 @@ export function buildThemePack(
   spec: ThemeStudioSpec,
   packName: string,
   assets: Record<string, ThemeStudioAsset> = {},
+  usage: ThemeStudioUsage = "live",
 ): ThemePackBuild {
-  const normalized = normalizeThemeSpec(spec);
-  const validation = validateThemeSpec(normalized, assets);
+  const prepared = prepareThemePackContent(spec, assets, usage);
+  const normalized = prepared.spec;
+  const usesUsageWindows = themeStudioSpecUsesUsageWindows(normalized);
+  const usesUsageSlots = themeStudioSpecUsesUsageSlots(normalized);
+  const usesProviderSlots = themeStudioSpecUsesProviderSlots(normalized);
+  // What the pack declares is the only thing standing between a design and a
+  // VibeTV that cannot render it: install checks the manifest, not the spec.
+  // Provider slots arrived after usage slots, so they carry the later floor.
+  const requiredCapabilities = [
+    ...(usesUsageWindows ? ["usage-windows-v1"] : []),
+    ...(usesUsageSlots && !usesUsageWindows ? ["usage-slots-v1"] : []),
+    ...(usesProviderSlots ? ["provider-slots-v1"] : []),
+  ];
+  const minFirmware = usesProviderSlots
+    ? "1.0.41"
+    : usesUsageWindows || usesUsageSlots
+      ? "1.0.40"
+      : "1.0.24";
+  const validation = validateThemeSpec(normalized, prepared.assets, usage);
   if (validation.errors.length > 0) {
     throw new Error(validation.errors[0]);
   }
@@ -492,7 +639,7 @@ export function buildThemePack(
   const referencedAssets = referencedThemeAssetPaths(normalized);
   const usedFiles = new Set(["manifest.json", "theme.json"]);
   const assetFiles = referencedAssets.map((assetPath, index) => {
-    const asset = assets[assetPath];
+    const asset = prepared.assets[assetPath];
     const file = uniquePackAssetFile(assetPath, usedFiles, index);
     return {
       asset,
@@ -508,7 +655,9 @@ export function buildThemePack(
     id: normalized.themeId,
     name: cleanPackName(packName) || titleFromThemeId(normalized.themeId),
     version: "0.1.0",
-    minFirmware: "1.0.24",
+    minFirmware,
+    ...(usage === "screensaver" ? { usage } : {}),
+    ...(requiredCapabilities.length > 0 ? { requiredCapabilities } : {}),
     themeSpec: {
       path: validation.themeSpecPath,
       file: "theme.json",
@@ -536,6 +685,43 @@ export function buildThemePack(
     themeSpecPath: validation.themeSpecPath,
     zipBytes,
   };
+}
+
+export function themeStudioSpecUsesUsageSlots(
+  spec: ThemeStudioSpec,
+): boolean {
+  return spec.primitives.some(
+    (primitive) =>
+      primitive.slot !== undefined ||
+      primitive.binding?.startsWith("usageSlot") ||
+      primitive.text?.includes("{usageSlot") ||
+      primitive.text?.includes("{us1") ||
+      primitive.text?.includes("{us2"),
+  );
+}
+
+export function themeStudioSpecUsesProviderSlots(
+  spec: ThemeStudioSpec,
+): boolean {
+  return spec.primitives.some(
+    (primitive) =>
+      primitive.providerSlot !== undefined ||
+      primitive.binding?.startsWith("providerSlot") ||
+      primitive.text?.includes("{providerSlot") ||
+      primitive.text?.includes("{pv1") ||
+      primitive.text?.includes("{pv2"),
+  );
+}
+
+export function themeStudioSpecUsesUsageWindows(
+  spec: ThemeStudioSpec,
+): boolean {
+  return spec.primitives.some(
+    (primitive) =>
+      primitive.usageIndex !== undefined ||
+      primitive.binding?.startsWith("usage.") ||
+      primitive.text?.includes("{usage."),
+  );
 }
 
 export function deviceThemeSpecJson(spec: ThemeStudioSpec): string {
@@ -610,6 +796,26 @@ function validatePrimitive(
   }
   if (!isNonNegativeInteger(primitive.x) || !isNonNegativeInteger(primitive.y)) {
     errors.push(`${prefix}: x/y must be whole numbers starting at 0.`);
+  }
+  if (
+    primitive.slot !== undefined &&
+    primitive.slot !== 1 &&
+    primitive.slot !== 2
+  ) {
+    errors.push(`${prefix}: usage slot must be 1 or 2.`);
+  }
+  if (
+    primitive.providerSlot !== undefined &&
+    primitive.providerSlot !== 1 &&
+    primitive.providerSlot !== 2
+  ) {
+    errors.push(`${prefix}: provider slot must be 1 or 2.`);
+  }
+  if (
+    primitive.usageIndex !== undefined &&
+    (!Number.isInteger(primitive.usageIndex) || primitive.usageIndex < 0)
+  ) {
+    errors.push(`${prefix}: usage index must be a whole number starting at 0.`);
   }
   for (const key of ["color", "bgColor", "borderColor"] as const) {
     const value = primitive[key];
@@ -896,6 +1102,15 @@ function buildDevicePrimitive(
   if (primitive.height !== undefined) {
     compact.h = primitive.height;
   }
+  if (primitive.slot !== undefined) {
+    compact.sl = primitive.slot;
+  }
+  if (primitive.providerSlot !== undefined) {
+    compact.pl = primitive.providerSlot;
+  }
+  if (primitive.usageIndex !== undefined) {
+    compact.ui = primitive.usageIndex;
+  }
   if (primitive.text !== undefined) {
     compact.v = primitive.text;
   }
@@ -907,6 +1122,9 @@ function buildDevicePrimitive(
   }
   if (primitive.font !== undefined) {
     compact.f = primitive.font;
+  }
+  if (primitive.fit === "shrink") {
+    compact.ft = "shrink";
   }
   if (primitive.align && primitive.align !== "left") {
     compact.al = primitive.align;
@@ -983,6 +1201,18 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   if (height !== undefined) {
     primitive.height = height;
   }
+  const slot = numberValue(value.slot) ?? numberValue(value.sl);
+  if (slot === 1 || slot === 2) {
+    primitive.slot = slot;
+  }
+  const providerSlot = numberValue(value.providerSlot) ?? numberValue(value.pl);
+  if (providerSlot === 1 || providerSlot === 2) {
+    primitive.providerSlot = providerSlot;
+  }
+  const usageIndex = numberValue(value.usageIndex) ?? numberValue(value.ui);
+  if (usageIndex !== undefined && usageIndex >= 0) {
+    primitive.usageIndex = usageIndex;
+  }
   const text = stringValue(value.text) ?? stringValue(value.label) ?? stringValue(value.v);
   if (text !== undefined) {
     primitive.text = text;
@@ -1003,6 +1233,10 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   const font = numberValue(value.font) ?? numberValue(value.f);
   if (font !== undefined) {
     primitive.font = font;
+  }
+  const fit = stringValue(value.fit) ?? stringValue(value.ft);
+  if (fit === "shrink") {
+    primitive.fit = "shrink";
   }
   const align = stringValue(value.align) ?? stringValue(value.al);
   if (align === "left" || align === "center" || align === "right") {
@@ -1077,12 +1311,19 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   return primitive;
 }
 
-function themeSpecAssetPath(spec: ThemeStudioSpec): string {
+function themeSpecAssetPath(
+  spec: ThemeStudioSpec,
+  usage: ThemeStudioUsage = "live",
+): string {
   const extension = ".json";
+  const pathPrefix =
+    usage === "screensaver"
+      ? USER_SCREENSAVER_ASSET_PATH_PREFIX
+      : USER_THEME_ASSET_PATH_PREFIX;
   const maxSegmentLength = Math.max(
     1,
     MAX_ESP8266_LITTLEFS_PATH_CHARS -
-      USER_THEME_ASSET_PATH_PREFIX.length -
+      pathPrefix.length -
       extension.length,
   );
   const revSuffix = `-${spec.themeRev || 1}-${themeSpecHash(spec).slice(0, 6)}`;
@@ -1092,7 +1333,7 @@ function themeSpecAssetPath(spec: ThemeStudioSpec): string {
     0,
     maxSegmentLength,
   );
-  return `${USER_THEME_ASSET_PATH_PREFIX}${base}${extension}`;
+  return `${pathPrefix}${base}${extension}`;
 }
 
 function themeSpecHash(spec: ThemeStudioSpec): string {
@@ -1343,6 +1584,12 @@ function estimatePrimitiveWidth(primitive: ThemeStudioPrimitive): number {
 
 function previewTextForEstimate(value: string): string {
   return value
+    .replace(/\{usageSlot1Label\}/g, "Usage window")
+    .replace(/\{usageSlot2Label\}/g, "Usage window")
+    .replace(/\{usageSlot1Percent\}/g, "100")
+    .replace(/\{usageSlot2Percent\}/g, "100")
+    .replace(/\{usageSlot1Reset\}/g, "1h 0m")
+    .replace(/\{usageSlot2Reset\}/g, "1h 0m")
     .replace(/\{session\}/g, "100")
     .replace(/\{weekly\}/g, "100")
     .replace(/\{reset\}/g, "1h 0m")

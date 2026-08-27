@@ -6,6 +6,7 @@
 #include <WiFiUdp.h>
 #include <LittleFS.h>
 #include <Updater.h>
+#include <time.h>
 
 #include "../../firmware_shared/app_runtime.h"
 #include "../../firmware_shared/app_transport.h"
@@ -13,6 +14,9 @@
 #include "asset_path_policy.h"
 #include "connected_setup_policy.h"
 #include "device_settings.h"
+#include "standby_settings.h"
+#include "standby_state.h"
+#include "screensaver_preview.h"
 #include "wifi_security_policy.h"
 #include "gif_asset_validator_file.h"
 #include "renderer_esp8266.h"
@@ -28,7 +32,7 @@
 #endif
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-const char kThemeFeatureJSON[] = "[\"theme-spec-v1\"]";
+const char kThemeFeatureJSON[] = "[\"theme-spec-v1\",\"provider-slots-v1\"]";
 #else
 const char kThemeFeatureJSON[] = "[]";
 #endif
@@ -64,6 +68,10 @@ constexpr unsigned long kWifiReconnectRetryMs = 5000UL;
 constexpr unsigned long kWifiReconnectFallbackMs = 120000UL;
 constexpr unsigned long kRebootDelayMs = 750UL;
 constexpr unsigned long kFrameStaleWarningMs = 150000UL;
+// SNTP answers within a few seconds of the WiFi link coming up and keeps the
+// system clock corrected on its own afterwards, so this is only a sampling
+// interval, not a retry loop.
+constexpr unsigned long kDeviceClockPollMs = 2000UL;
 constexpr unsigned long kFirmwareUpdateNoticeToggleMs = 1500UL;
 constexpr unsigned long kRawOtaProgressTimeoutMs = 30000UL;
 constexpr size_t kRawOtaReadBufferBytes = 512;
@@ -80,11 +88,22 @@ const char kSetupAddress[] = "192.168.4.1";
 const char kCustomerAppHost[] = "app.vibetv.shop";
 const char kCustomerAppUrl[] = "https://app.vibetv.shop";
 const char kDeviceSettingsPath[] = "/s";
+const char kDeviceSettingsTemporaryPath[] = "/s.tmp";
+// The device settings record stays append-only: brightness byte, learned UTC
+// offset, standby, then optional next UTC-offset transitions. A shorter file is
+// an older record, so every reader must length-check its own section instead of
+// assuming the full size.
+constexpr size_t kStandbyRecordOffset = 1 + codexbar_display::deviceclock::kUtcOffsetRecordBytes;
+constexpr size_t kClockTransitionRecordOffset =
+    kStandbyRecordOffset + codexbar_display::esp8266::standby::kRecordBytes;
+constexpr size_t kDeviceSettingsRecordBytes =
+    kClockTransitionRecordOffset +
+    codexbar_display::deviceclock::kUtcOffsetTransitionRecordBytes;
+const char kResetTrustHandoverPath[] = "/rt";
 const char kDeviceAuthTokenPath[] = "/auth";
 const char kActiveThemeSpecPathFile[] = "/theme-active";
 const char kAssetUploadTemporaryPath[] = "/.asset-upload.tmp";
 const char kDeviceAuthHeader[] = "X-VibeTV-Token";
-const char kFirmwareManifestUrl[] = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/firmware-manifest.json";
 // Customer copy for the update notice. The installed VibeTV Mac App is the
 // only supported update destination; never point customers at a hosted URL.
 const char kFirmwareUpdateAvailableText[] = "Update available";
@@ -97,9 +116,11 @@ String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   String out;
   out.reserve(compact ? 180 : 260);
   if (!enabled) {
-    return "{\"supportsThemeSpecV1\":false,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
+    return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"supportsUsageWindowsV1\":false,\"supportsProviderSlotsV1\":false,\"maxUsageWindows\":0,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
   }
-  out += "{\"supportsThemeSpecV1\":true,\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
+  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"supportsProviderSlotsV1\":true,\"maxUsageWindows\":";
+  out += String(codexbar_display::core::kAdvertisedMaxUsageWindows);
+  out += ",\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
   out += String(codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives);
   if (!compact) {
     out += ",\"supportedPrimitiveTypes\":[\"text\",\"rect\",\"progress\",\"gif\",\"sprite\",\"pixels\"]";
@@ -133,8 +154,6 @@ struct FirmwareUpdateState {
   String latestVersion;
   String lastStatus = "disabled";
   String lastError;
-  unsigned long lastCheckedAtMs = 0;
-  unsigned long nextCheckAtMs = 0;
   // Frame-driven gate: true while the Mac App reports an available update.
   // Cleared when a frame arrives without update info or with a current
   // firmware, which also removes the notice.
@@ -143,37 +162,25 @@ struct FirmwareUpdateState {
   unsigned long noticeSurfaceCheckedAtMs = 0;
 };
 
-struct OtaUploadDiagnostics {
-  const char* target = "none";
-  const char* status = "idle";
-  String filename;
-  String lastError;
-  int command = -1;
-  size_t contentLength = 0;
-  size_t totalSize = 0;
-  size_t maxSize = 0;
-  size_t freeSketchSpace = 0;
-  uint8_t updateError = UPDATE_ERROR_OK;
-  unsigned long startedAtMs = 0;
-  unsigned long endedAtMs = 0;
-  unsigned long successCount = 0;
-  unsigned long failureCount = 0;
-};
-
 struct RuntimeRenderDiagnostics {
   unsigned long fullCount = 0;
   unsigned long partialCount = 0;
-  unsigned long animatedTickAttempts = 0;
   const char* lastKind = "none";
-  const char* lastFullKind = "none";
-  const char* lastPartialKind = "none";
-  unsigned long lastDurationUs = 0;
-  unsigned long lastAtMs = 0;
 };
+
+namespace standby = codexbar_display::esp8266::standby;
+namespace screensaver_preview = codexbar_display::esp8266::screensaver_preview;
 
 struct DeviceSettings {
   uint8_t brightnessPercent = kDefaultBrightnessPercent;
+  standby::Settings standby;
 };
+
+namespace deviceclock = codexbar_display::deviceclock;
+
+unsigned long nextDeviceClockPollAtMs = 0;
+char renderedClockTime[deviceclock::kTimeTextSize] = {};
+char renderedClockDate[deviceclock::kDateTextSize] = {};
 
 bool httpServerStarted = false;
 bool rawOtaServerStarted = false;
@@ -192,15 +199,26 @@ size_t assetUploadBytesSeen = 0;
 File assetUploadFile;
 String activeThemeSpecPath;
 String activeThemeSpecHash;
+standby::State standbyState;
+// Captured when standby takes the screen, so the way back is the theme that was
+// really drawn. There is no second resident ThemeSpec slot: both directions
+// reload from LittleFS, which #277 measured at 250-420 ms.
+String standbyLiveThemePath;
+screensaver_preview::State screensaverPreviewState;
+// Same contract as standbyLiveThemePath: rendering any stored spec reassigns
+// activeThemeSpecPath (commitStoredThemeSpec), so the preview captures the
+// really-drawn live theme before it takes the screen.
+String screensaverPreviewLivePath;
 codexbar_display::esp8266::wifi_setup::State setupWifiState;
 WifiCredentials savedWifiCredentials;
 bool savedWifiCredentialsAvailable = false;
 codexbar_display::esp8266::wifi_recovery::State wifiSetupRecoveryState;
 bool rebootPending = false;
+void applyWifiInteropPhyMode();
 unsigned long rebootAtMs = 0;
 unsigned long lastFrameAcceptedAtMs = 0;
-bool pendingWifiRender = false;
-codexbar_display::core::SerialConsumeEvent pendingWifiRenderEvent;
+bool pendingHttpRender = false;
+codexbar_display::core::SerialConsumeEvent pendingHttpRenderEvent;
 bool frameStaleStatusRendered = false;
 bool captiveDnsStarted = false;
 unsigned long wifiDisconnectedAtMs = 0;
@@ -208,7 +226,6 @@ unsigned long wifiReconnectAttemptAtMs = 0;
 bool wifiReconnectStatusRendered = false;
 FirmwareUpdateState firmwareUpdate;
 bool firmwareUpdateNoticeDirty = false;
-OtaUploadDiagnostics otaDiagnostics;
 RuntimeRenderDiagnostics renderDiagnostics;
 DeviceSettings deviceSettings;
 String deviceAuthToken;
@@ -221,31 +238,19 @@ void resetWifiReconnectState();
 void startHttpServer();
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-constexpr const char* kDefaultThemeSpecPath = "/themes/u/mini-cl-1-e4fe6b.json";
-constexpr const char* kPreviousDefaultThemeSpecPath = "/themes/u/mini-cl-1-b3c3f7.json";
-constexpr const char* kLegacyDefaultThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
-constexpr const char* kDefaultThemeSpecId = "mini-classic";
-constexpr int kDefaultThemeSpecRev = 1;
+constexpr const char* kLegacyMiniThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
 #endif
 
 void recordRenderFull(const char* kind, unsigned long durationUs) {
+  (void)durationUs;
   renderDiagnostics.fullCount++;
   renderDiagnostics.lastKind = kind;
-  renderDiagnostics.lastFullKind = kind;
-  renderDiagnostics.lastDurationUs = durationUs;
-  renderDiagnostics.lastAtMs = millis();
 }
 
 void recordRenderPartial(const char* kind, unsigned long durationUs) {
+  (void)durationUs;
   renderDiagnostics.partialCount++;
   renderDiagnostics.lastKind = kind;
-  renderDiagnostics.lastPartialKind = kind;
-  renderDiagnostics.lastDurationUs = durationUs;
-  renderDiagnostics.lastAtMs = millis();
-}
-
-void recordAnimatedTickAttempt() {
-  renderDiagnostics.animatedTickAttempts++;
 }
 
 String jsonEscape(const String& raw) {
@@ -308,9 +313,13 @@ uint8_t clampBrightnessPercent(int value) {
   return codexbar_display::esp8266::device_settings::ClampBrightnessPercent(value);
 }
 
+// Single place that decides how bright the panel is, so entering standby,
+// waking up and editing either brightness value all go through one path.
 void applyDeviceSettings() {
   if (renderer.SupportsBrightnessControl()) {
-    renderer.ApplyBrightnessPercent(deviceSettings.brightnessPercent);
+    renderer.ApplyBrightnessPercent(standbyState.active
+                                        ? deviceSettings.standby.brightnessPercent
+                                        : deviceSettings.brightnessPercent);
   }
 }
 
@@ -325,10 +334,46 @@ bool loadDeviceSettings() {
     applyDeviceSettings();
     return false;
   }
-  const int brightness = file.read();
+  uint8_t record[kDeviceSettingsRecordBytes] = {};
+  const int readBytes = file.read(record, sizeof(record));
   file.close();
+  const int brightness = readBytes >= 1 ? record[0] : -1;
   deviceSettings.brightnessPercent =
       codexbar_display::esp8266::device_settings::BrightnessFromPersistedByte(brightness);
+  // Records written before the device clock existed only hold the brightness
+  // byte; the clock then simply relearns the offset from the next frame.
+  int offsetMinutes = 0;
+  if (readBytes >= 1 &&
+      deviceclock::DecodeUtcOffset(record + 1, static_cast<size_t>(readBytes) - 1, offsetMinutes)) {
+    deviceclock::RestoreUtcOffset(runtimeCtx.clock, offsetMinutes);
+  }
+  // Records written before standby existed stop here, which leaves the standby
+  // factory defaults in place.
+  if (readBytes > static_cast<int>(kStandbyRecordOffset)) {
+    standby::Decode(record + kStandbyRecordOffset,
+                    static_cast<size_t>(readBytes) - kStandbyRecordOffset,
+                    deviceSettings.standby);
+  }
+  if (readBytes > static_cast<int>(kClockTransitionRecordOffset)) {
+    int64_t transitionEpoch = 0;
+    int transitionOffsetMinutes = 0;
+    int64_t followingTransitionEpoch = 0;
+    int followingTransitionOffsetMinutes = 0;
+    if (deviceclock::DecodeUtcOffsetTransition(
+            record + kClockTransitionRecordOffset,
+            static_cast<size_t>(readBytes) - kClockTransitionRecordOffset,
+            transitionEpoch,
+            transitionOffsetMinutes,
+            &followingTransitionEpoch,
+            &followingTransitionOffsetMinutes)) {
+      deviceclock::RestoreUtcOffsetTransition(
+          runtimeCtx.clock,
+          transitionEpoch,
+          transitionOffsetMinutes,
+          followingTransitionEpoch,
+          followingTransitionOffsetMinutes);
+    }
+  }
   applyDeviceSettings();
   return brightness > 0;
 }
@@ -337,13 +382,79 @@ bool saveDeviceSettings() {
   if (!LittleFS.begin()) {
     return false;
   }
-  File file = LittleFS.open(kDeviceSettingsPath, "w");
+  File file = LittleFS.open(kDeviceSettingsTemporaryPath, "w");
   if (!file) {
     return false;
   }
-  const size_t written = file.write(&deviceSettings.brightnessPercent, 1);
+  uint8_t record[kDeviceSettingsRecordBytes] = {};
+  record[0] = deviceSettings.brightnessPercent;
+  deviceclock::EncodeUtcOffset(runtimeCtx.clock, record + 1);
+  standby::Encode(deviceSettings.standby, record + kStandbyRecordOffset);
+  deviceclock::EncodeUtcOffsetTransition(
+      runtimeCtx.clock, record + kClockTransitionRecordOffset);
+  const size_t written = file.write(record, sizeof(record));
   file.close();
-  return written > 0;
+  if (written != sizeof(record)) {
+    LittleFS.remove(kDeviceSettingsTemporaryPath);
+    return false;
+  }
+  if (!LittleFS.rename(kDeviceSettingsTemporaryPath, kDeviceSettingsPath)) {
+    LittleFS.remove(kDeviceSettingsTemporaryPath);
+    return false;
+  }
+  return true;
+}
+
+// Reset-deadline handover across a self-initiated restart.
+//
+// Written only in the moment the firmware decides to reboot, and consumed once
+// on the next boot. That is two LittleFS writes per deliberate restart and none
+// per frame, so a ticking countdown never touches flash.
+//
+// Without a wall clock the device cannot measure how long it was powerless, so
+// the record is only honoured after a software restart, where the gap is the
+// firmware's own boot. Any other reset reason drops it.
+void persistResetTrustForRestart() {
+  if (!LittleFS.begin()) {
+    return;
+  }
+  const String record = codexbar_display::core::EncodeResetTrustRecord(runtimeCtx.runtime.reset, millis());
+  if (record.length() == 0) {
+    LittleFS.remove(kResetTrustHandoverPath);
+    return;
+  }
+  File file = LittleFS.open(kResetTrustHandoverPath, "w");
+  if (!file) {
+    return;
+  }
+  file.print(record);
+  file.close();
+}
+
+void restoreResetTrustAfterRestart() {
+  if (!LittleFS.begin() || !LittleFS.exists(kResetTrustHandoverPath)) {
+    return;
+  }
+  String record;
+  File file = LittleFS.open(kResetTrustHandoverPath, "r");
+  if (file) {
+    record = file.readString();
+    file.close();
+  }
+  LittleFS.remove(kResetTrustHandoverPath);
+
+  const rst_info* resetInfo = ESP.getResetInfoPtr();
+  if (resetInfo == nullptr || resetInfo->reason != REASON_SOFT_RESTART) {
+    return;
+  }
+  codexbar_display::core::ResetTrustState restored;
+  if (codexbar_display::core::DecodeResetTrustRecord(
+          record,
+          codexbar_display::core::kResetRestartDowntimeSecs,
+          millis(),
+          restored)) {
+    runtimeCtx.runtime.reset = restored;
+  }
 }
 
 bool validAuthToken(const String& value) {
@@ -491,10 +602,98 @@ void appendBrightnessCapabilityJSON(String& out) {
   out += "}";
 }
 
+// Standby needs a second ThemeSpec slot, so a build without the ThemeSpec
+// renderer cannot support it. Hosts must read this instead of assuming that a
+// given firmware version implies standby support.
+void appendStandbyCapabilityJSON(String& out) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  out += "{\"supported\":true,\"minTimeoutMinutes\":";
+  out += String(standby::kMinTimeoutMinutes);
+  out += ",\"maxTimeoutMinutes\":";
+  out += String(standby::kMaxTimeoutMinutes);
+  out += ",\"defaultTimeoutMinutes\":";
+  out += String(standby::kDefaultTimeoutMinutes);
+  out += ",\"screensaverSlot\":true}";
+#else
+  out += "{\"supported\":false}";
+#endif
+}
+
+// Live standby state, kept out of the HTTP handler so the USB status channel
+// (#301) can emit the same shape. It must never go into hello, which is a boot
+// snapshot emitted once in setup().
+void appendStandbyStateJSON(String& out) {
+  out += "\"standby\":{\"active\":";
+  out += standbyState.active ? "true" : "false";
+  out += ",\"idleSecs\":";
+  out += String((millis() - standbyState.lastActivityMs) / 1000UL);
+  // While standby draws the screensaver, display.themeSpec.path is the
+  // screensaver, not the live slot. A host that restores the live theme has to
+  // read this instead, or it would write the screensaver into the live slot.
+  // The post-install preview borrows the screen the same way and holds the same
+  // way back, so whichever of the two owns it reports it here.
+  out += ",\"liveThemePath\":";
+  appendJSONNullableString(out, standbyLiveThemePath.length() > 0
+                                    ? standbyLiveThemePath
+                                    : screensaverPreviewLivePath);
+  out += "}";
+}
+
 void appendSettingsJSON(String& out) {
   out += "\"settings\":{\"display\":{\"brightnessPercent\":";
   out += String(deviceSettings.brightnessPercent);
+  out += "},\"standby\":{\"enabled\":";
+  out += deviceSettings.standby.enabled ? "true" : "false";
+  out += ",\"timeoutMinutes\":";
+  out += String(deviceSettings.standby.timeoutMinutes);
+  out += ",\"brightnessPercent\":";
+  out += String(deviceSettings.standby.brightnessPercent);
+  out += ",\"screensaverPath\":";
+  if (standby::HasScreensaver(deviceSettings.standby)) {
+    out += "\"";
+    out += jsonEscape(String(deviceSettings.standby.screensaverPath));
+    out += "\"";
+  } else {
+    out += "null";
+  }
   out += "}}";
+}
+
+// Clock state is a diagnostic: it must show whether the displayed time is the
+// device's own, a still-current Companion string, or nothing trustworthy.
+void appendClockJSON(String& out) {
+  const unsigned long nowMs = millis();
+  char timeText[deviceclock::kTimeTextSize];
+  char dateText[deviceclock::kDateTextSize];
+  const deviceclock::Source source =
+      codexbar_display::app::ClockTimeText(runtimeCtx, nowMs, timeText, sizeof(timeText));
+  codexbar_display::app::ClockDateText(runtimeCtx, nowMs, dateText, sizeof(dateText));
+
+  out += "\"clock\":{\"synced\":";
+  out += runtimeCtx.clock.synced ? "true" : "false";
+  out += ",\"source\":\"";
+  out += deviceclock::SourceName(source);
+  out += "\",\"epoch\":";
+  out += String(static_cast<long>(deviceclock::UtcNow(runtimeCtx.clock, nowMs)));
+  out += ",\"utcOffsetMinutes\":";
+  if (runtimeCtx.clock.hasUtcOffset) {
+    out += String(static_cast<int>(runtimeCtx.clock.utcOffsetMinutes));
+  } else {
+    out += "null";
+  }
+  out += ",\"lastSyncAgeMs\":";
+  if (runtimeCtx.clock.synced) {
+    out += String(nowMs - runtimeCtx.clock.syncMillis);
+  } else {
+    out += "null";
+  }
+  out += ",\"syncCount\":";
+  out += String(runtimeCtx.clock.syncCount);
+  out += ",\"time\":\"";
+  out += timeText;
+  out += "\",\"date\":\"";
+  out += dateText;
+  out += "\"},";
 }
 
 void markFirmwareUpdateNoticeDirty() {
@@ -641,8 +840,6 @@ void applyFrameUpdateState() {
   firmwareUpdate.available = frame.updateAvailable;
   firmwareUpdate.latestVersion = frame.updateLatestVersion;
   firmwareUpdate.lastError = frame.updateLastError;
-  firmwareUpdate.lastCheckedAtMs = millis();
-  firmwareUpdate.nextCheckAtMs = 0;
   firmwareUpdate.lastStatus = nextStatus;
 
   if (!firmwareUpdate.available) {
@@ -727,12 +924,14 @@ void maintainWifiSetupRecovery() {
   switch (action) {
     case codexbar_display::esp8266::wifi_recovery::Action::StartAttempt:
       WiFi.mode(WIFI_AP_STA);
+      applyWifiInteropPhyMode();
       WiFi.begin(savedWifiCredentials.ssid, savedWifiCredentials.password);
       Serial.printf("wifi_setup_retry_started ssid=%s\n", savedWifiCredentials.ssid);
       break;
     case codexbar_display::esp8266::wifi_recovery::Action::Timeout:
       WiFi.disconnect(false);
       WiFi.mode(WIFI_AP_STA);
+      applyWifiInteropPhyMode();
       WiFi.softAP(kSetupApSsid);
       Serial.printf("wifi_setup_retry_failed status=%d next_retry_ms=%lu\n",
                     static_cast<int>(WiFi.status()),
@@ -791,6 +990,59 @@ void renderAcceptedFrame(const codexbar_display::core::SerialConsumeEvent& event
   }
 }
 
+void maintainDeviceClock() {
+  const unsigned long nowMs = millis();
+  if (static_cast<long>(nowMs - nextDeviceClockPollAtMs) < 0) {
+    return;
+  }
+  nextDeviceClockPollAtMs = nowMs + kDeviceClockPollMs;
+
+  const time_t systemEpoch = time(nullptr);
+  if (deviceclock::ObserveSystemEpoch(runtimeCtx.clock, static_cast<int64_t>(systemEpoch), nowMs)) {
+    Serial.printf("clock_synced epoch=%ld utc_offset_known=%d\n",
+                  static_cast<long>(systemEpoch),
+                  runtimeCtx.clock.hasUtcOffset ? 1 : 0);
+  }
+
+  if (deviceclock::ApplyDueUtcOffsetTransition(
+          runtimeCtx.clock, deviceclock::UtcNow(runtimeCtx.clock, nowMs))) {
+    Serial.printf("clock_utc_offset_transition_applied minutes=%d\n",
+                  static_cast<int>(runtimeCtx.clock.utcOffsetMinutes));
+    saveDeviceSettings();
+  }
+
+  char timeText[deviceclock::kTimeTextSize];
+  char dateText[deviceclock::kDateTextSize];
+  codexbar_display::app::ClockTimeText(runtimeCtx, nowMs, timeText, sizeof(timeText));
+  codexbar_display::app::ClockDateText(runtimeCtx, nowMs, dateText, sizeof(dateText));
+  if (strcmp(timeText, renderedClockTime) == 0 && strcmp(dateText, renderedClockDate) == 0) {
+    return;
+  }
+  strcpy(renderedClockTime, timeText);
+  strcpy(renderedClockDate, dateText);
+
+  if (setupMode ||
+      waitStatusRendered ||
+      frameStaleStatusRendered ||
+      runtimeCtx.screenDirty ||
+      !codexbar_display::app::HasFrame(runtimeCtx) ||
+      codexbar_display::app::CurrentFrame(runtimeCtx).hasError) {
+    return;
+  }
+  const unsigned long renderStartUs = micros();
+  if (renderer.DrawClock(runtimeCtx)) {
+    recordRenderPartial("clock", micros() - renderStartUs);
+  }
+}
+
+bool acceptedFrameRenderDeferredForTransport(const char* transport) {
+  if (transport == nullptr) {
+    return false;
+  }
+  return strcmp(transport, "wifi") == 0 ||
+         strcmp(transport, "theme") == 0;
+}
+
 void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, const char* transport) {
   if (statusScreenLocked()) {
     Serial.printf("frame_ignored transport=%s reason=status_screen_locked\n", transport);
@@ -807,6 +1059,57 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
     runtimeCtx.screenDirty = true;
   }
   lastFrameAcceptedAtMs = millis();
+  // Loading a stored ThemeSpec is an internal screen transition. In
+  // particular, entering standby must not count as fresh customer usage or the
+  // next loop immediately exits standby and restores the live theme again.
+  // Real Wi-Fi and USB usage frames still reset the idle timer as before.
+  //
+  // The activity clock reads the frame's own `activity` verdict rather than
+  // inferring one from usage percentages. Percentages are whole numbers, so a
+  // customer coding against a weekly quota can work for a long time before the
+  // value ticks over, and standby would keep the screensaver up while they
+  // type. The Companion already decides this honestly, with its own hold and
+  // idle-evidence rules; the device just uses that answer.
+  if (event.reportsWorking && strcmp(transport, "theme") != 0) {
+    standby::NoteUsageActivity(standbyState, lastFrameAcceptedAtMs);
+  }
+  // SNTP delivers UTC only. The Companion supplies the current local date/time
+  // for fallback display, its current offset, and the next two transitions;
+  // the device stores and consumes those against its own SNTP epoch.
+  const codexbar_display::core::Frame& currentFrame =
+      codexbar_display::app::CurrentFrame(runtimeCtx);
+  const bool clockOffsetChanged = deviceclock::ObserveCompanionClock(
+      runtimeCtx.clock,
+      currentFrame.timeText.c_str(),
+      currentFrame.hasClockSchedule,
+      static_cast<int>(currentFrame.clockOffsetMinutes),
+      lastFrameAcceptedAtMs);
+  bool clockScheduleChanged = false;
+  if (currentFrame.hasClockSchedule && currentFrame.clockTransitionEpoch > 0) {
+    clockScheduleChanged = deviceclock::ObserveUtcOffsetTransition(
+        runtimeCtx.clock,
+        currentFrame.clockTransitionEpoch,
+        currentFrame.clockTransitionOffsetMinutes,
+        currentFrame.clockFollowingTransitionEpoch,
+        currentFrame.clockFollowingTransitionOffsetMinutes);
+  } else if (currentFrame.hasClockSchedule) {
+    // A valid current offset without a next transition explicitly retires a
+    // previously persisted schedule (for example after leaving DST).
+    clockScheduleChanged = deviceclock::ClearUtcOffsetTransition(runtimeCtx.clock);
+  }
+  const bool clockTransitionApplied = deviceclock::ApplyDueUtcOffsetTransition(
+      runtimeCtx.clock, deviceclock::UtcNow(runtimeCtx.clock, lastFrameAcceptedAtMs));
+  if (clockTransitionApplied) {
+    Serial.printf("clock_utc_offset_transition_applied minutes=%d\n",
+                  static_cast<int>(runtimeCtx.clock.utcOffsetMinutes));
+  }
+  if (clockOffsetChanged) {
+    Serial.printf("clock_utc_offset_learned minutes=%d\n",
+                  static_cast<int>(runtimeCtx.clock.utcOffsetMinutes));
+  }
+  if (clockOffsetChanged || clockScheduleChanged || clockTransitionApplied) {
+    saveDeviceSettings();
+  }
   applyFrameUpdateState();
   if (event.themeSpecChanged) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
@@ -826,14 +1129,13 @@ void markFrameAccepted(const codexbar_display::core::SerialConsumeEvent& event, 
 #endif
   }
 
-  const bool wifiTransport = transport != nullptr && strcmp(transport, "wifi") == 0;
-  if (wifiTransport && event.visualChanged) {
-    // ESP8266WebServer invokes this from handleClient(). Keep all display work
-    // out of that callback; the event is consumed before any new frame can
-    // replace the runtime state at the start of the next loop.
-    pendingWifiRenderEvent = event;
-    pendingWifiRender = true;
-  } else if (!wifiTransport) {
+  const bool deferRender = acceptedFrameRenderDeferredForTransport(transport);
+  if (deferRender && event.visualChanged) {
+    // ESP8266WebServer invokes WiFi frame and theme activation callbacks from
+    // handleClient(). Keep display work out of those callbacks so HTTP can ACK.
+    pendingHttpRenderEvent = event;
+    pendingHttpRender = true;
+  } else if (!deferRender) {
     renderAcceptedFrame(event);
   }
   Serial.printf("frame_received transport=%s\n", transport);
@@ -848,7 +1150,9 @@ const char* transportCapabilitiesJSON(const char* activeTransport, bool compact 
   }
   json += "\"brightness\":";
   appendBrightnessCapabilityJSON(json);
-  json += "},\"theme\":";
+  json += "},\"standby\":";
+  appendStandbyCapabilityJSON(json);
+  json += ",\"theme\":";
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
   json += themeCapabilitiesJSON(false, compact);
 #else
@@ -881,29 +1185,7 @@ codexbar_display::app::TransportConfig makeTransportConfig(const char* activeTra
 }
 
 String htmlEscape(const String& raw) {
-  String escaped;
-  escaped.reserve(raw.length());
-  for (size_t i = 0; i < raw.length(); ++i) {
-    const char c = raw.charAt(i);
-    switch (c) {
-      case '&':
-        escaped += "&amp;";
-        break;
-      case '<':
-        escaped += "&lt;";
-        break;
-      case '>':
-        escaped += "&gt;";
-        break;
-      case '"':
-        escaped += "&quot;";
-        break;
-      default:
-        escaped += c;
-        break;
-    }
-  }
-  return escaped;
+  return codexbar_display::esp8266::wifi_setup::HtmlEscape(raw);
 }
 
 String macInstallerCommand() {
@@ -1031,10 +1313,23 @@ uint32_t incrementBootResetCounter() {
   return counter;
 }
 
+// The ESP8266 NONOS WiFi stack cannot receive 802.11n A-MSDU aggregates.
+// APs (hardware-proven: FRITZ!Box 7530) intermittently aggregate TCP/UDP
+// frames above ~200 bytes payload, which the device then drops wholesale:
+// HTTP bodies over one segment, asset uploads, and RAW OTA acks all stall
+// while small frames and ICMP keep working. Forcing 802.11g disables
+// aggregation entirely; verified A/B/A/B on hardware device 14799300.
+void applyWifiInteropPhyMode() {
+  if (!WiFi.setPhyMode(WIFI_PHY_MODE_11G)) {
+    Serial.println("wifi_phy_mode_11g_failed");
+  }
+}
+
 bool connectToSavedWifi(const WifiCredentials& creds) {
   Serial.printf("wifi_connect ssid=%s\n", creds.ssid);
   drawWifiConnectingStatus(creds.ssid);
   WiFi.mode(WIFI_STA);
+  applyWifiInteropPhyMode();
   WiFi.begin(creds.ssid, creds.password);
 
   const unsigned long startedAt = millis();
@@ -1055,6 +1350,7 @@ bool connectToSavedWifi(const WifiCredentials& creds) {
 
 bool connectToSdkWifiConfig() {
   WiFi.mode(WIFI_STA);
+  applyWifiInteropPhyMode();
   const String ssid = WiFi.SSID();
   if (ssid.length() == 0) {
     Serial.println("wifi_sdk_config_missing");
@@ -1087,12 +1383,16 @@ bool connectToSdkWifiConfig() {
   return true;
 }
 
-bool scanSetupNetworks() {
+bool scanSetupNetworks(bool automatic) {
   using namespace codexbar_display::esp8266::wifi_setup;
-  if (!BeginScan(setupWifiState)) {
-    Serial.println("wifi_setup_scan_ignored reason=already_running");
+  const bool started = automatic ? BeginAutomaticScan(setupWifiState) : BeginScan(setupWifiState);
+  if (!started) {
+    Serial.printf(
+        "wifi_setup_scan_ignored reason=%s\n",
+        automatic ? "automatic_already_started" : "already_running");
     return false;
   }
+  const bool recoveryAttemptInterrupted = automatic && wifiSetupRecoveryState.attemptInProgress;
 
   Serial.println("wifi_setup_scan_started");
   int networks = -2;
@@ -1117,6 +1417,12 @@ bool scanSetupNetworks() {
   }
   WiFi.scanDelete();
   FinishScan(setupWifiState, networks);
+  if (recoveryAttemptInterrupted) {
+    codexbar_display::esp8266::wifi_recovery::RescheduleAfterInterruption(
+        wifiSetupRecoveryState,
+        static_cast<uint32_t>(millis()));
+    Serial.println("wifi_setup_recovery_rescheduled reason=automatic_scan");
+  }
   if (setupMode) {
     WiFi.mode(WIFI_AP);
   }
@@ -1240,6 +1546,7 @@ void handleSaveWifi() {
   webServer.send(200, "text/html; charset=utf-8", "<!doctype html><p>Saved. Vibe TV is restarting.</p>");
   delay(500);
   clearSdkWifiCredentials();
+  persistResetTrustForRestart();
   ESP.restart();
 }
 
@@ -1251,7 +1558,8 @@ void handleSetupWifiScan() {
   }
 
   codexbar_display::esp8266::wifi_setup::ClearConnectionError(setupWifiState);
-  scanSetupNetworks();
+  const bool automatic = webServer.arg("automatic") == "1";
+  scanSetupNetworks(automatic);
   webServer.sendHeader("Location", "/", true);
   webServer.send(303, "text/plain; charset=utf-8", "");
 }
@@ -1274,6 +1582,7 @@ void handleResetWifi() {
   clearWifiCredentials();
   clearSdkWifiCredentials();
   delay(250);
+  persistResetTrustForRestart();
   ESP.restart();
 }
 
@@ -1291,7 +1600,7 @@ void handleHello() {
   }
 
   String out;
-  out.reserve(760);
+  out.reserve(900);
   out += "{\"kind\":\"hello\",\"protocolVersion\":2,\"board\":\"";
   out += CODEXBAR_DISPLAY_BOARD_ID;
   out += "\",\"deviceId\":\"";
@@ -1304,7 +1613,9 @@ void handleHello() {
   out += String(kMaxFrameBytes);
   out += ",\"capabilities\":{\"display\":{\"brightness\":";
   appendBrightnessCapabilityJSON(out);
-  out += "},\"theme\":";
+  out += "},\"standby\":";
+  appendStandbyCapabilityJSON(out);
+  out += ",\"theme\":";
 #ifdef CODEXBAR_DISPLAY_PROBE_ONLY
   out += themeCapabilitiesJSON(false, true);
 #else
@@ -1326,6 +1637,10 @@ bool isSafeAssetPath(const String& path) {
 
 bool isMutableThemeAssetPath(const String& path) {
   return codexbar_display::esp8266::AssetPathPolicy::IsMutableThemeAsset(path.c_str(), path.length());
+}
+
+bool isLiveThemeSpecPath(const String& path) {
+  return codexbar_display::esp8266::AssetPathPolicy::IsLiveThemeSpecPath(path.c_str(), path.length());
 }
 
 bool ensureAssetParentDirs(const String& path) {
@@ -1408,11 +1723,33 @@ void appendAssetListJSON(String& out) {
   out += "]";
 }
 
+// Diagnostics for the reset countdown. There is no wall clock, so "last fresh"
+// is reported as the age of the basis instead of a timestamp.
+void appendResetTrustJSON(String& out) {
+  namespace core = codexbar_display::core;
+  const core::ResetTrustState& state = runtimeCtx.runtime.reset;
+  const unsigned long now = millis();
+  out += F("\"reset\":{\"trust\":\"");
+  out += core::ResetTrustName(core::CurrentResetTrust(state, now));
+  out += F("\",\"deadlineSecs\":");
+  out += String(static_cast<long>(core::CurrentRemainingSecs(runtimeCtx.runtime, now)));
+  out += F(",\"trustSecs\":");
+  out += String(static_cast<long>(core::ResetTrustBudgetSecs(state, now)));
+  out += F(",\"basisAgeSecs\":");
+  out += String(static_cast<long>(core::ResetBasisAgeSecs(state, now)));
+  out += F(",\"source\":");
+  appendJSONNullableString(out, state.source);
+  out += F("},");
+}
+
 void handleHealth() {
   const codexbar_display::esp8266::RendererHealthSnapshot snapshot = renderer.HealthSnapshot();
 
   String out;
-  out.reserve(896);
+  // Sized for the full payload: #280 added the clock block, #279 the reset
+  // trust block and #284 the standby state, and growing this String mid-build
+  // fragments a tight heap.
+  out.reserve(1344);
   out += "{\"ok\":true,\"firmware\":\"";
   out += jsonEscape(CODEXBAR_DISPLAY_FW_VERSION);
   out += "\",\"system\":{\"freeHeap\":";
@@ -1429,7 +1766,23 @@ void handleHealth() {
   out += String(bootResetCounter);
   out += ",\"resetReason\":";
   out += bootResetReasonJSON;
-  out += "},";
+  out += "},\"wifi\":{\"rssi\":";
+  out += String(WiFi.RSSI());
+  out += ",\"channel\":";
+  out += String(WiFi.channel());
+  out += ",\"phyMode\":\"";
+  switch (WiFi.getPhyMode()) {
+    case WIFI_PHY_MODE_11B: out += "11b"; break;
+    case WIFI_PHY_MODE_11G: out += "11g"; break;
+    default: out += "11n"; break;
+  }
+  out += "\",\"sleepMode\":\"";
+  switch (WiFi.getSleepMode()) {
+    case WIFI_NONE_SLEEP: out += "none"; break;
+    case WIFI_LIGHT_SLEEP: out += "light"; break;
+    default: out += "modem"; break;
+  }
+  out += "\"},";
   const bool filesystemMounted = filesystemInfoJSON(out);
   out += ",\"display\":{\"activeTheme\":\"";
   out += jsonEscape(snapshot.activeTheme);
@@ -1472,12 +1825,67 @@ void handleHealth() {
   out += ",\"lastKind\":\"";
   out += jsonEscape(renderDiagnostics.lastKind);
   out += "\"},";
+  appendClockJSON(out);
+  appendResetTrustJSON(out);
+  appendStandbyStateJSON(out);
+  out += ",";
   appendSettingsJSON(out);
   out += "}";
 
   (void)filesystemMounted;
   addCorsHeaders();
   webServer.send(200, "application/json", out);
+}
+
+// Records which stored ThemeSpec the screensaver slot points at. Loading it
+// into the second render slot is the standby state machine's job; this only
+// validates and stores the reference. An empty path clears the selection.
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+bool readValidatedStoredThemeSpec(
+    const String& path,
+    String& raw,
+    String& themeId,
+    int& themeRev,
+    String& error);
+#endif
+
+bool setStandbyScreensaverPath(standby::Settings& target, const String& rawPath, String& error) {
+  String path = rawPath;
+  path.trim();
+  if (path.length() == 0) {
+    standby::ClearScreensaverPath(target);
+    return true;
+  }
+  if (!isSafeAssetPath(path) ||
+      !standby::ScreensaverPathValid(path.c_str(), path.length())) {
+    error = "invalid screensaver path";
+    return false;
+  }
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  String raw;
+  String themeId;
+  int themeRev = 0;
+  if (!readValidatedStoredThemeSpec(path, raw, themeId, themeRev, error)) {
+    if (error == "theme file not found") {
+      error = "screensaver file not found";
+    }
+    return false;
+  }
+#else
+  if (!LittleFS.begin()) {
+    error = "filesystem mount failed";
+    return false;
+  }
+  if (!LittleFS.exists(path)) {
+    error = "screensaver file not found";
+    return false;
+  }
+#endif
+  if (!standby::SetScreensaverPath(target, path.c_str(), path.length())) {
+    error = "invalid screensaver path";
+    return false;
+  }
+  return true;
 }
 
 bool persistDeviceSettings(const DeviceSettings& next) {
@@ -1499,9 +1907,33 @@ void handleSettingsAPI() {
   }
   DeviceSettings next = deviceSettings;
   const bool apiResponse = webServer.hasArg("api");
+  bool changed = false;
   if (webServer.hasArg("b")) {
     next.brightnessPercent = clampBrightnessPercent(webServer.arg("b").toInt());
-  } else {
+    changed = true;
+  }
+  if (webServer.hasArg("sb")) {
+    next.standby.enabled = webServer.arg("sb").toInt() != 0;
+    changed = true;
+  }
+  if (webServer.hasArg("st")) {
+    next.standby.timeoutMinutes = standby::ClampTimeoutMinutes(webServer.arg("st").toInt());
+    changed = true;
+  }
+  if (webServer.hasArg("sbr")) {
+    next.standby.brightnessPercent =
+        standby::ClampBrightnessPercent(webServer.arg("sbr").toInt());
+    changed = true;
+  }
+  if (webServer.hasArg("ss")) {
+    String error;
+    if (!setStandbyScreensaverPath(next.standby, webServer.arg("ss"), error)) {
+      webServer.send(400, "text/plain; charset=utf-8", error);
+      return;
+    }
+    changed = true;
+  }
+  if (!changed) {
     webServer.send(400, "text/plain; charset=utf-8", "bad");
     return;
   }
@@ -1774,6 +2206,8 @@ void handleAssetUploadResult() {
   webServer.send(200, "application/json", out);
 }
 
+bool storedThemeSpecReferencesAsset(const String& themeSpecPath, const String& assetPath);
+
 void handleAssetDelete() {
   if (!requireWriteAuth()) {
     return;
@@ -1795,7 +2229,20 @@ void handleAssetDelete() {
     webServer.send(404, "text/plain; charset=utf-8", "asset not found");
     return;
   }
-  if (path == activeThemeSpecPath) {
+  // Every path that owns the screen, or holds the way back to it, protects the
+  // assets its spec references and not just the spec file: a sprite deleted
+  // while standby or the post-install preview is up comes back as a silent
+  // hole on wake. Empty paths short-circuit inside
+  // storedThemeSpecReferencesAsset, so the standby and preview lookups cost
+  // nothing while neither holds the screen.
+  const String configuredScreensaverPath(deviceSettings.standby.screensaverPath);
+  if (path == activeThemeSpecPath || path == standbyLiveThemePath ||
+      path == screensaverPreviewLivePath ||
+      path == configuredScreensaverPath ||
+      storedThemeSpecReferencesAsset(configuredScreensaverPath, path) ||
+      storedThemeSpecReferencesAsset(activeThemeSpecPath, path) ||
+      storedThemeSpecReferencesAsset(standbyLiveThemePath, path) ||
+      storedThemeSpecReferencesAsset(screensaverPreviewLivePath, path)) {
     addCorsHeaders();
     webServer.send(409, "text/plain; charset=utf-8", "asset is active");
     return;
@@ -1824,11 +2271,11 @@ bool readActiveThemeSpecPath(String& path) {
   path = file.readString();
   file.close();
   path.trim();
-  return isSafeAssetPath(path) && path.startsWith("/themes/");
+  return isLiveThemeSpecPath(path);
 }
 
 bool saveActiveThemeSpecPath(const String& path) {
-  if (!isSafeAssetPath(path) || !path.startsWith("/themes/")) {
+  if (!isLiveThemeSpecPath(path)) {
     return false;
   }
   if (!LittleFS.begin()) {
@@ -1872,11 +2319,9 @@ bool readStoredThemeSpec(const String& path, String& raw, String& error) {
   file.close();
   raw.trim();
 
-  // Firmware OTA intentionally preserves LittleFS. Devices upgraded from 1.0.36
-  // therefore keep this known factory Mini spec, whose labels were hard-coded
-  // to "left". Upgrade only that immutable legacy path in memory so the live
-  // usage mode is rendered without rewriting customer storage during OTA.
-  if (path == kLegacyDefaultThemeSpecPath) {
+  // Devices upgraded from 1.0.36 can still have this explicitly active Mini
+  // spec. Keep its label compatibility without treating it as a boot fallback.
+  if (path == kLegacyMiniThemeSpecPath) {
     raw.replace("\"v\":\"left\"", "\"v\":\"{usageMode}\"");
   }
   if (raw.length() == 0 || raw.length() > kMaxStoredThemeSpecBytes) {
@@ -1924,58 +2369,123 @@ bool themeSpecMetadata(const String& raw, String& themeId, int& themeRev, String
   return true;
 }
 
-void activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev) {
+bool prepareStoredThemeSpec(
+    const String& raw,
+    const String& themeId,
+    int themeRev,
+    codexbar_display::core::RuntimeState& nextRuntime,
+    codexbar_display::core::SerialConsumeEvent& event) {
+  nextRuntime = runtimeCtx.runtime;
+  return codexbar_display::core::RestoreStoredThemeSpecFrame(
+      nextRuntime, themeId, themeRev, raw, millis(), event);
+}
+
+void commitStoredThemeSpec(
+    const String& path,
+    const String& raw,
+    const codexbar_display::core::RuntimeState& nextRuntime,
+    const codexbar_display::core::SerialConsumeEvent& event) {
+  runtimeCtx.runtime = nextRuntime;
   renderer.ResetGifStateForAssetUpdate();
-  close_all_fs();
-
-  const bool hadFrame = codexbar_display::app::HasFrame(runtimeCtx);
-  const codexbar_display::core::Frame previous = runtimeCtx.runtime.current;
-  codexbar_display::core::Frame next = hadFrame ? previous : codexbar_display::core::Frame{};
-
-  next.hasError = false;
-  next.error = "";
-  next.clearThemeSpec = false;
-  next.hasThemeSpec = true;
-  next.themeSpecId = themeId;
-  next.themeSpecRev = themeRev;
-  next.themeSpecRaw = "";
-  runtimeCtx.runtime.cachedThemeId = themeId;
-  runtimeCtx.runtime.cachedThemeRev = themeRev;
-  runtimeCtx.runtime.cachedThemeSpecRaw = raw;
-  runtimeCtx.runtime.current = next;
-  runtimeCtx.runtime.hasFrame = true;
-  runtimeCtx.runtime.resetBaseSecs = next.resetSecs;
-  runtimeCtx.runtime.resetBaseMillis = millis();
   activeThemeSpecPath = path;
   activeThemeSpecHash = hashHex8(raw);
-
-  codexbar_display::core::SerialConsumeEvent event;
-  event.frameAccepted = true;
-  event.hadFrame = hadFrame;
-  event.themeSpecChanged = true;
-  event.visualChanged = !hadFrame || codexbar_display::core::FrameVisualChanged(previous, next) || event.themeSpecChanged;
   markFrameAccepted(event, "theme");
 }
 
-bool activateStoredThemePath(const String& path, String& themeId, int& themeRev, String& error) {
-  String raw;
+bool readValidatedStoredThemeSpec(
+    const String& path,
+    String& raw,
+    String& themeId,
+    int& themeRev,
+    String& error) {
   if (!readStoredThemeSpec(path, raw, error)) {
     return false;
   }
-
   if (!themeSpecMetadata(raw, themeId, themeRev, error)) {
     return false;
   }
-  if (!saveActiveThemeSpecPath(path)) {
-    error = "save active theme failed";
+  JsonDocument doc;
+  codexbar_display::themespec::CompiledThemeSpec scene;
+  const bool renderable = codexbar_display::themespec::CompileThemeSpec(raw.c_str(), doc, scene);
+  codexbar_display::themespec::ReleaseCompiledThemeSpec(scene);
+  if (!renderable) {
+    error = "theme spec has no renderable content";
     return false;
   }
-
-  activateStoredThemeSpec(path, raw, themeId, themeRev);
   return true;
 }
 
+void activateStoredThemeSpec(const String& path, const String& raw, const String& themeId, int themeRev) {
+  codexbar_display::core::SerialConsumeEvent event;
+  if (!codexbar_display::core::RestoreStoredThemeSpecFrame(
+          runtimeCtx.runtime, themeId, themeRev, raw, millis(), event)) {
+    return;
+  }
+  renderer.ResetGifStateForAssetUpdate();
+  activeThemeSpecPath = path;
+  activeThemeSpecHash = hashHex8(raw);
+  markFrameAccepted(event, "theme");
+}
+
+// `persist` is false for standby transitions: the customer's live theme choice
+// must survive the screensaver, and a flash write per transition would be wear
+// for nothing.
+bool activateStoredThemePath(
+    const String& path, bool persist, String& themeId, int& themeRev, String& error) {
+  String raw;
+  if (!readValidatedStoredThemeSpec(path, raw, themeId, themeRev, error)) {
+    return false;
+  }
+  codexbar_display::core::RuntimeState nextRuntime;
+  codexbar_display::core::SerialConsumeEvent event;
+  if (!prepareStoredThemeSpec(raw, themeId, themeRev, nextRuntime, event)) {
+    error = "theme spec not renderable";
+    return false;
+  }
+  if (persist && !saveActiveThemeSpecPath(path)) {
+    error = "save active theme failed";
+    return false;
+  }
+  commitStoredThemeSpec(path, raw, nextRuntime, event);
+  return true;
+}
+
+bool renderStoredThemeSpecForStandby(const String& path) {
+  String themeId;
+  int themeRev = 0;
+  String error;
+  if (activateStoredThemePath(path, false, themeId, themeRev, error)) {
+    return true;
+  }
+  Serial.printf("standby_load_failed path=%s err=%s\n", path.c_str(), error.c_str());
+  return false;
+}
+
 #endif
+
+bool storedThemeSpecReferencesAsset(const String& themeSpecPath, const String& assetPath) {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  if (themeSpecPath.length() == 0 || assetPath.length() == 0) {
+    return false;
+  }
+  String raw;
+  String error;
+  if (!readStoredThemeSpec(themeSpecPath, raw, error)) {
+    return false;
+  }
+  JsonDocument doc;
+  codexbar_display::themespec::CompiledThemeSpec scene;
+  const bool compiled = codexbar_display::themespec::CompileThemeSpec(raw.c_str(), doc, scene);
+  const bool referenced = compiled &&
+      codexbar_display::themespec::CompiledThemeSpecReferencesAsset(scene, assetPath.c_str());
+  codexbar_display::themespec::ReleaseCompiledThemeSpec(scene);
+  return referenced;
+#else
+  (void)themeSpecPath;
+  (void)assetPath;
+  return false;
+#endif
+}
 
 void handleThemeActive() {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
@@ -2007,11 +2517,22 @@ void handleThemeActive() {
   String themeId;
   int themeRev = 0;
   String error;
-  if (!activateStoredThemePath(path, themeId, themeRev, error)) {
+  if (!activateStoredThemePath(path, true, themeId, themeRev, error)) {
     addCorsHeaders();
     webServer.send(error == "theme file not found" ? 404 : 400, "text/plain; charset=utf-8", error);
     return;
   }
+  // The customer just picked the live theme, so it is now the screen standby
+  // has to hand back — and standby ends here rather than dimming that choice.
+  // A running preview loses its claim with it: the newly activated theme is
+  // already on screen, so there is nothing to restore, and its deadline must
+  // not repaint the previously captured theme over this choice.
+  screensaver_preview::Cancel(screensaverPreviewState);
+  screensaverPreviewLivePath = "";
+  standbyLiveThemePath = "";
+  standbyState.active = false;
+  standby::NoteUsageActivity(standbyState, millis());
+  applyDeviceSettings();
 
   if (formMode) {
     webServer.keepAlive(false);
@@ -2040,6 +2561,73 @@ void handleThemeActive() {
 #endif
 }
 
+// Selects which stored ThemeSpec the screensaver slot points at. Mirrors the
+// /theme/active contract but touches a different, independent slot: it never
+// changes the live theme and never renders anything. Standby rendering is the
+// state machine's job.
+void handleScreensaverActive() {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  addCorsHeaders();
+  if (!requireWriteAuth()) {
+    return;
+  }
+  String body = webServer.arg("plain");
+  body.trim();
+  if (body.length() == 0 || body.length() > 160) {
+    webServer.send(400, "text/plain; charset=utf-8", "invalid screensaver activation body");
+    return;
+  }
+
+  JsonDocument doc;
+  const DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    webServer.send(400, "text/plain; charset=utf-8", "bad screensaver activation json");
+    return;
+  }
+  String path = String(doc["path"] | "");
+  path.trim();
+
+  DeviceSettings next = deviceSettings;
+  String error;
+  if (!setStandbyScreensaverPath(next.standby, path, error)) {
+    webServer.send(error == "screensaver file not found" ? 404 : 400,
+                   "text/plain; charset=utf-8", error);
+    return;
+  }
+  if (!persistDeviceSettings(next)) {
+    webServer.send(500, "text/plain; charset=utf-8", "save failed");
+    return;
+  }
+  // Never rendered here: ESP8266WebServer runs handlers inside handleClient(),
+  // where display work does not belong. The loop shows the preview.
+  //
+  // Clearing the slot is deliberately NOT cancelled here. An install clears the
+  // selection before it overwrites the pack's files, and cancelling would drop
+  // `showing` — the loop could then never hand the screen back, leaving the
+  // screensaver up while its files are rewritten. Left alone, the empty slot
+  // reads as a veto in maintainScreensaverPreview, which restores properly.
+  if (standby::HasScreensaver(deviceSettings.standby)) {
+    screensaver_preview::NoteSelection(screensaverPreviewState);
+  }
+
+  String out;
+  out.reserve(120);
+  out += "{\"ok\":true,\"path\":";
+  if (standby::HasScreensaver(deviceSettings.standby)) {
+    out += "\"";
+    out += jsonEscape(String(deviceSettings.standby.screensaverPath));
+    out += "\"";
+  } else {
+    out += "null";
+  }
+  out += "}";
+  webServer.send(200, "application/json", out);
+#else
+  addCorsHeaders();
+  webServer.send(501, "text/plain; charset=utf-8", "theme spec renderer disabled");
+#endif
+}
+
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 bool loadStoredThemeSpecCacheFromPath(const String& path) {
   String error;
@@ -2056,36 +2644,152 @@ bool loadStoredThemeSpecCacheFromPath(const String& path) {
     return false;
   }
 
-  runtimeCtx.runtime.cachedThemeId = themeId;
-  runtimeCtx.runtime.cachedThemeRev = themeRev;
-  runtimeCtx.runtime.cachedThemeSpecRaw = raw;
-  activeThemeSpecPath = path;
-  activeThemeSpecHash = hashHex8(raw);
+  activateStoredThemeSpec(path, raw, themeId, themeRev);
   Serial.printf("theme_cache_loaded path=%s id=%s rev=%d\n", path.c_str(), themeId.c_str(), themeRev);
   return true;
 }
 
-void loadDefaultStoredThemeSpecCache() {
+void loadActiveStoredThemeSpecCache() {
   String activePath;
-  if (readActiveThemeSpecPath(activePath) && loadStoredThemeSpecCacheFromPath(activePath)) {
+  if (!readActiveThemeSpecPath(activePath)) {
     return;
   }
-  if (loadStoredThemeSpecCacheFromPath(kDefaultThemeSpecPath)) {
-    runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
-    runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
-    return;
+  (void)loadStoredThemeSpecCacheFromPath(activePath);
+}
+
+// Standby only takes a screen it can hand back. Setup and error frames stay
+// where they are, and without a stored live theme there would be no way home.
+// The connected "Open App" screen is intentionally not a veto: replacing it
+// while the Mac is off is the screensaver's main job.
+bool standbyReady() {
+  return !setupMode &&
+         !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
+         activeThemeSpecPath.length() > 0;
+}
+
+// Hands the screen back to the theme a screensaver preview replaced and drops
+// the captured path. Rendering is skipped when that theme is already up.
+void restoreScreensaverPreviewLiveTheme() {
+  if (screensaverPreviewLivePath.length() > 0 &&
+      screensaverPreviewLivePath != activeThemeSpecPath) {
+    renderStoredThemeSpecForStandby(screensaverPreviewLivePath);
   }
-  if (loadStoredThemeSpecCacheFromPath(kPreviousDefaultThemeSpecPath)) {
-    runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
-    runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
-    return;
-  }
-  if (loadStoredThemeSpecCacheFromPath(kLegacyDefaultThemeSpecPath)) {
-    runtimeCtx.runtime.cachedThemeId = kDefaultThemeSpecId;
-    runtimeCtx.runtime.cachedThemeRev = kDefaultThemeSpecRev;
-  }
+  screensaverPreviewLivePath = "";
 }
 #endif
+
+// Shows a freshly selected screensaver once, for a bounded moment, then hands
+// the screen back to the live theme. Decided in the loop, never in an HTTP
+// handler, mirroring maintainStandby. The loaded spec keeps receiving live
+// field updates while it is up — same contract as standby rendering.
+void maintainScreensaverPreview() {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  const bool hasError = codexbar_display::app::HasFrame(runtimeCtx) &&
+                        codexbar_display::app::CurrentFrame(runtimeCtx).hasError;
+  const bool statusSurfaceVisible = setupMode || waitStatusRendered;
+  const String screensaverPath(deviceSettings.standby.screensaverPath);
+  // "Already on screen" only means "nothing to preview" BEFORE the preview
+  // owns the display: once it does, activeThemeSpecPath points at the
+  // screensaver itself and must not veto its own preview.
+  const bool selectionUnpreviewable =
+      screensaverPath.length() == 0 || activeThemeSpecPath.length() == 0 ||
+      (!screensaverPreviewState.showing &&
+       screensaverPath == activeThemeSpecPath);
+  // Standby, error frames, and setup/status surfaces own the display and share
+  // one deferred way back: standbyLiveThemePath, which maintainStandby paints
+  // as soon as the blocker clears. Repainting the live theme here instead
+  // would erase the screen they just took.
+  const bool blockerOwnsDisplay =
+      standbyState.active || hasError || statusSurfaceVisible;
+  // A disabled screensaver toggle is a customer promise: nothing screensaver-
+  // shaped appears, so it also vetoes (and, while showing, immediately ends)
+  // the post-install preview.
+  const bool blocked = !deviceSettings.standby.enabled || blockerOwnsDisplay ||
+                       selectionUnpreviewable;
+  const screensaver_preview::Action action = screensaver_preview::Tick(
+      screensaverPreviewState, blocked, millis());
+  if (action == screensaver_preview::Action::Show) {
+    // A reselection mid-preview keeps the first captured path: by now
+    // activeThemeSpecPath is the screensaver that is being previewed.
+    const String livePath = screensaverPreviewLivePath.length() > 0
+                                ? screensaverPreviewLivePath
+                                : activeThemeSpecPath;
+    if (renderStoredThemeSpecForStandby(screensaverPath)) {
+      screensaverPreviewLivePath = livePath;
+      Serial.printf("screensaver_preview shown path=%s\n", screensaverPath.c_str());
+    } else {
+      // Nothing new is on screen, but a preview replacing another one still
+      // holds a live theme that has to come back.
+      screensaver_preview::Cancel(screensaverPreviewState);
+      restoreScreensaverPreviewLiveTheme();
+    }
+  } else if (action == screensaver_preview::Action::Restore) {
+    Serial.printf("screensaver_preview restored path=%s\n", screensaverPreviewLivePath.c_str());
+    if (blockerOwnsDisplay) {
+      standbyLiveThemePath = screensaverPreviewLivePath;
+      screensaverPreviewLivePath = "";
+    } else {
+      restoreScreensaverPreviewLiveTheme();
+    }
+  }
+#endif
+}
+
+// Decided in the loop, never in an HTTP handler: ESP8266WebServer runs those
+// inside handleClient(), where display work does not belong.
+void maintainStandby() {
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  const unsigned long nowMs = millis();
+  const bool hasError = codexbar_display::app::HasFrame(runtimeCtx) &&
+                        codexbar_display::app::CurrentFrame(runtimeCtx).hasError;
+  // Setup instructions and status screens behave like error frames here: a
+  // customer looking at WiFi setup must never have it replaced by the saved
+  // live theme. The path is kept, so the deferred restore below runs as soon
+  // as the surface clears.
+  const bool statusSurfaceVisible = setupMode || waitStatusRendered;
+  if (!standbyState.active && !hasError && !statusSurfaceVisible &&
+      standbyLiveThemePath.length() > 0) {
+    if (standbyLiveThemePath == activeThemeSpecPath ||
+        renderStoredThemeSpecForStandby(standbyLiveThemePath)) {
+      standbyLiveThemePath = "";
+    }
+  }
+  const standby::Transition transition =
+      standby::Tick(standbyState, deviceSettings.standby, standbyReady(), nowMs);
+  if (transition == standby::Transition::None) {
+    return;
+  }
+  if (transition == standby::Transition::Enter) {
+    const String livePath = activeThemeSpecPath;
+    const String screensaverPath(deviceSettings.standby.screensaverPath);
+    // Selecting the live theme as the screensaver only changes brightness.
+    // Reloading the identical ThemeSpec would schedule a redundant full render
+    // and can starve the ESP8266 Wi-Fi stack long enough to trip its watchdog.
+    if (screensaverPath != livePath && !renderStoredThemeSpecForStandby(screensaverPath)) {
+      // A deleted screensaver must not dim the panel or reopen the file every
+      // loop. Sit out another full timeout before trying again.
+      standbyState.active = false;
+      standby::NoteUsageActivity(standbyState, nowMs);
+      return;
+    }
+    standbyLiveThemePath = livePath;
+  } else {
+    // An error frame or a setup/status surface caused this exit and must
+    // remain visible. Restoring the saved live ThemeSpec here would overwrite
+    // it before the customer has seen it.
+    if (!hasError && !statusSurfaceVisible && standbyLiveThemePath.length() > 0 &&
+        standbyLiveThemePath != activeThemeSpecPath) {
+      renderStoredThemeSpecForStandby(standbyLiveThemePath);
+    }
+    if (!hasError && !statusSurfaceVisible) {
+      standbyLiveThemePath = "";
+    }
+  }
+  applyDeviceSettings();
+  Serial.printf("standby active=%d\n", standbyState.active ? 1 : 0);
+#endif
+}
+
 
 String updatePageHTML() {
   const String installCommand = updateInstallCommand();
@@ -2111,10 +2815,6 @@ void handleUpdatePage() {
 
 void setOtaError(const String& message) {
   otaUploadError = message;
-  otaDiagnostics.status = "failed";
-  otaDiagnostics.lastError = message;
-  otaDiagnostics.updateError = Update.getError();
-  otaDiagnostics.endedAtMs = millis();
   Serial.printf("ota_error message=%s\n", otaUploadError.c_str());
   if (Update.hasError()) {
     Update.printError(Serial);
@@ -2167,25 +2867,13 @@ void handleOtaUpload(int command, const char* target) {
     otaUploadNeedsReboot = false;
     otaUploadError = "";
     const size_t maxSize = otaMaxSizeForCommand(command);
-    otaDiagnostics.target = target;
-    otaDiagnostics.status = "starting";
-    otaDiagnostics.filename = upload.filename;
-    otaDiagnostics.lastError = "";
-    otaDiagnostics.command = command;
-    otaDiagnostics.contentLength = upload.contentLength;
-    otaDiagnostics.totalSize = 0;
-    otaDiagnostics.maxSize = maxSize;
-    otaDiagnostics.freeSketchSpace = ESP.getFreeSketchSpace();
-    otaDiagnostics.updateError = UPDATE_ERROR_OK;
-    otaDiagnostics.startedAtMs = millis();
-    otaDiagnostics.endedAtMs = 0;
     Serial.printf(
         "ota_upload_start target=%s filename=%s content_length=%zu max_size=%zu free_sketch_space=%zu\n",
         target,
         upload.filename.c_str(),
         upload.contentLength,
         maxSize,
-        otaDiagnostics.freeSketchSpace);
+        ESP.getFreeSketchSpace());
     if (!requestHasValidOtaAuth()) {
       setOtaError("unauthorized");
       return;
@@ -2198,24 +2886,16 @@ void handleOtaUpload(int command, const char* target) {
     if (!Update.begin(maxSize, command)) {
       setOtaError(Update.getErrorString());
       resetOtaUpdaterAfterFailure();
-    } else {
-      otaDiagnostics.status = "writing";
     }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
-    otaDiagnostics.totalSize = upload.totalSize + upload.currentSize;
     if (otaUploadError.length() == 0 && Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
       setOtaError(Update.getErrorString());
       resetOtaUpdaterAfterFailure();
     }
     ESP.wdtFeed();
   } else if (upload.status == UPLOAD_FILE_END) {
-    otaDiagnostics.totalSize = upload.totalSize;
     if (otaUploadError.length() == 0 && Update.end(true)) {
       otaUploadSucceeded = true;
-      otaDiagnostics.status = "succeeded";
-      otaDiagnostics.updateError = UPDATE_ERROR_OK;
-      otaDiagnostics.endedAtMs = millis();
-      otaDiagnostics.successCount++;
       Serial.printf("ota_upload_success target=%s bytes=%zu\n", target, upload.totalSize);
     } else if (otaUploadError.length() == 0) {
       setOtaError(Update.getErrorString());
@@ -2224,7 +2904,6 @@ void handleOtaUpload(int command, const char* target) {
   } else if (upload.status == UPLOAD_FILE_ABORTED) {
     setOtaError("upload aborted");
     resetOtaUpdaterAfterFailure();
-    otaDiagnostics.totalSize = upload.totalSize;
     Serial.printf("ota_upload_aborted target=%s bytes=%zu\n", target, upload.totalSize);
   }
   yield();
@@ -2240,11 +2919,6 @@ void handleOtaResult(const char* target) {
   webServer.keepAlive(false);
   if (otaUploadError == "unauthorized") {
     otaUploadInProgress = false;
-    otaDiagnostics.status = "failed";
-    otaDiagnostics.lastError = otaUploadError;
-    otaDiagnostics.updateError = Update.getError();
-    otaDiagnostics.endedAtMs = millis();
-    otaDiagnostics.failureCount++;
     otaUploadNeedsReboot = false;
     addCorsHeaders();
     webServer.sendHeader("WWW-Authenticate", "VibeTV token");
@@ -2254,11 +2928,6 @@ void handleOtaResult(const char* target) {
   if (!otaUploadSucceeded || otaUploadError.length() > 0 || Update.hasError()) {
     otaUploadInProgress = false;
     const String error = otaUploadError.length() > 0 ? otaUploadError : Update.getErrorString();
-    otaDiagnostics.status = "failed";
-    otaDiagnostics.lastError = error;
-    otaDiagnostics.updateError = Update.getError();
-    otaDiagnostics.endedAtMs = millis();
-    otaDiagnostics.failureCount++;
     Serial.printf("ota_upload_failed target=%s error=%s\n", target, error.c_str());
     webServer.send(500, "text/plain; charset=utf-8", "Update failed: " + error);
     if (otaUploadNeedsReboot) {
@@ -2278,7 +2947,6 @@ void handleOtaResult(const char* target) {
   webServer.send(200, "text/html; charset=utf-8", html);
   drawUpdateStatus("Restarting");
   waitStatusRendered = true;
-  otaDiagnostics.status = "reboot_scheduled";
   scheduleReboot(target);
   otaUploadInProgress = false;
   otaUploadNeedsReboot = false;
@@ -2385,18 +3053,6 @@ void handleRawOtaClient() {
   otaUploadInProgress = true;
   otaUploadNeedsReboot = false;
   otaUploadError = "";
-  otaDiagnostics.target = "firmware_raw";
-  otaDiagnostics.status = "starting";
-  otaDiagnostics.filename = "raw";
-  otaDiagnostics.lastError = "";
-  otaDiagnostics.command = U_FLASH;
-  otaDiagnostics.contentLength = contentLength;
-  otaDiagnostics.totalSize = 0;
-  otaDiagnostics.maxSize = maxSize;
-  otaDiagnostics.freeSketchSpace = ESP.getFreeSketchSpace();
-  otaDiagnostics.updateError = UPDATE_ERROR_OK;
-  otaDiagnostics.startedAtMs = millis();
-  otaDiagnostics.endedAtMs = 0;
 
   enterOtaSafeMode(U_FLASH, &client);
   otaUploadNeedsReboot = true;
@@ -2406,8 +3062,6 @@ void handleRawOtaClient() {
   if (!Update.begin(contentLength, U_FLASH)) {
     setOtaError(Update.getErrorString());
     resetOtaUpdaterAfterFailure();
-  } else {
-    otaDiagnostics.status = "writing";
   }
 
   uint8_t buffer[kRawOtaReadBufferBytes];
@@ -2444,7 +3098,6 @@ void handleRawOtaClient() {
     const size_t got = static_cast<size_t>(readCount);
     lastProgressMs = millis();
     remaining -= got;
-    otaDiagnostics.totalSize += got;
     if (Update.write(buffer, got) != got) {
       setOtaError(Update.getErrorString());
       resetOtaUpdaterAfterFailure();
@@ -2456,14 +3109,9 @@ void handleRawOtaClient() {
 
   if (otaUploadError.length() == 0 && remaining == 0 && Update.end(false)) {
     otaUploadSucceeded = true;
-    otaDiagnostics.status = "succeeded";
-    otaDiagnostics.updateError = UPDATE_ERROR_OK;
-    otaDiagnostics.endedAtMs = millis();
-    otaDiagnostics.successCount++;
     sendRawOtaResponse(client, 200, "OK", "ok");
     drawUpdateStatus("Restarting");
     waitStatusRendered = true;
-    otaDiagnostics.status = "reboot_scheduled";
     scheduleReboot("firmware_raw");
     otaUploadNeedsReboot = false;
   } else {
@@ -2471,7 +3119,6 @@ void handleRawOtaClient() {
       setOtaError(Update.getErrorString());
       resetOtaUpdaterAfterFailure();
     }
-    otaDiagnostics.failureCount++;
     sendRawOtaResponse(client, 500, "Internal Server Error", "Update failed: " + otaUploadError);
     if (otaUploadNeedsReboot) {
       scheduleReboot("firmware_raw_failure");
@@ -2551,6 +3198,7 @@ void startHttpServer() {
       handleAssetUpload);
   webServer.on("/assets", HTTP_DELETE, handleAssetDelete);
   webServer.on("/theme/active", HTTP_POST, handleThemeActive);
+  webServer.on("/screensaver/active", HTTP_POST, handleScreensaverActive);
   webServer.on("/frame", HTTP_POST, handleFrame);
   webServer.on("/update", HTTP_GET, handleUpdatePage);
   webServer.on(
@@ -2595,14 +3243,16 @@ void startHttpServer() {
 
 void startSetupAccessPoint() {
   setupMode = true;
+  pendingHttpRender = false;
   resetWifiReconnectState();
   codexbar_display::esp8266::wifi_recovery::EnterSetup(
       wifiSetupRecoveryState,
       static_cast<uint32_t>(millis()));
-  codexbar_display::esp8266::wifi_setup::ClearConnectionError(setupWifiState);
+  codexbar_display::esp8266::wifi_setup::ResetPortalState(setupWifiState);
   WiFi.setAutoReconnect(false);
   WiFi.disconnect(false);
   WiFi.mode(WIFI_AP_STA);
+  applyWifiInteropPhyMode();
   WiFi.softAP(kSetupApSsid);
   Serial.printf("wifi_setup_ap ssid=VibeTV-Setup ip=%s\n", WiFi.softAPIP().toString().c_str());
   dnsServer.start(kDnsPort, "*", WiFi.softAPIP());
@@ -2733,8 +3383,9 @@ void setup() {
   renderer.Setup(runtimeCtx);
   loadDeviceSettings();
   loadDeviceAuthToken();
+  restoreResetTrustAfterRestart();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  loadDefaultStoredThemeSpecCache();
+  loadActiveStoredThemeSpecCache();
 #endif
   const unsigned long startupRenderStartUs = micros();
   renderer.DrawStatus(runtimeCtx, "VIBE TV", "Starting", "Please wait");
@@ -2766,6 +3417,10 @@ void setup() {
 
   if (wifiConnected) {
     setupMode = false;
+    // SNTP over UDP/123 in UTC. The local offset is applied by the device
+    // clock, not by the C library, so no timezone database is linked in.
+    // lwIP keeps the system clock corrected without any retry code here.
+    configTime(0, 0, "pool.ntp.org");
     startHttpServer();
   } else {
     startSetupAccessPoint();
@@ -2777,9 +3432,9 @@ void loop() {
   bool rendered = false;
   unsigned long renderDurationUs = 0;
 
-  if (pendingWifiRender) {
-    const codexbar_display::core::SerialConsumeEvent event = pendingWifiRenderEvent;
-    pendingWifiRender = false;
+  if (pendingHttpRender) {
+    const codexbar_display::core::SerialConsumeEvent event = pendingHttpRenderEvent;
+    pendingHttpRender = false;
     renderAcceptedFrame(event);
   }
 
@@ -2793,6 +3448,9 @@ void loop() {
   }
   handleRawOtaClient();
   maintainWifiConnection();
+  if (!otaUploadInProgress && !assetUploadInProgress) {
+    maintainDeviceClock();
+  }
   if (!otaUploadInProgress) {
     maintainFirmwareUpdateNotice();
   }
@@ -2802,28 +3460,63 @@ void loop() {
     return;
   }
 
+  maintainStandby();
+  maintainScreensaverPreview();
+
   if (!waitStatusRendered &&
       codexbar_display::app::HasFrame(runtimeCtx) &&
       !codexbar_display::app::CurrentFrame(runtimeCtx).hasError &&
       !runtimeCtx.screenDirty &&
       !frameStaleStatusRendered) {
     renderer.TickActive(runtimeCtx);
-    recordAnimatedTickAttempt();
     const int64_t remain = codexbar_display::app::CurrentRemainingSecs(runtimeCtx, millis());
+    bool countdownMinuteChanged = false;
     if (remain != runtimeCtx.lastRenderedSecs) {
-      const int64_t minuteBucket = remain / 60;
-      if (minuteBucket != runtimeCtx.lastRenderedMinuteBucket) {
-#ifdef CODEXBAR_DISPLAY_PROBE_ONLY
-        runtimeCtx.screenDirty = true;
-#else
-        const unsigned long renderStartUs = micros();
-        renderer.DrawReset(runtimeCtx, remain);
-        drawFirmwareUpdateNotice();
-        recordRenderPartial("reset", micros() - renderStartUs);
-#endif
+      if (codexbar_display::core::RemainingMinuteBucketChanged(
+              remain, runtimeCtx.lastRenderedMinuteBucket)) {
+        countdownMinuteChanged = true;
       } else {
         runtimeCtx.lastRenderedSecs = remain;
       }
+    }
+    for (size_t i = 0; i < codexbar_display::core::kMaxUsageWindows; ++i) {
+      const int64_t slotRemain =
+          codexbar_display::app::CurrentUsageWindowRemainingSecs(runtimeCtx, i, millis());
+      if (slotRemain == runtimeCtx.lastRenderedUsageWindowSecs[i]) {
+        continue;
+      }
+      if (codexbar_display::core::RemainingMinuteBucketChanged(
+              slotRemain, runtimeCtx.lastRenderedUsageWindowMinuteBuckets[i])) {
+        countdownMinuteChanged = true;
+      } else {
+        runtimeCtx.lastRenderedUsageWindowSecs[i] = slotRemain;
+      }
+    }
+    // Provider slots count down locally too. A screensaver bound to them —
+    // Night Clock does exactly that — would otherwise sit at the last received
+    // value for as long as the Mac stays away.
+    for (size_t i = 0; i < codexbar_display::core::kMaxProviderSlots; ++i) {
+      const int64_t slotRemain =
+          codexbar_display::app::CurrentProviderSlotRemainingSecs(runtimeCtx, i, millis());
+      if (slotRemain == runtimeCtx.lastRenderedProviderSlotSecs[i]) {
+        continue;
+      }
+      if (codexbar_display::core::RemainingMinuteBucketChanged(
+              slotRemain, runtimeCtx.lastRenderedProviderSlotMinuteBuckets[i])) {
+        countdownMinuteChanged = true;
+      } else {
+        runtimeCtx.lastRenderedProviderSlotSecs[i] = slotRemain;
+      }
+    }
+    if (countdownMinuteChanged) {
+#ifdef CODEXBAR_DISPLAY_PROBE_ONLY
+      runtimeCtx.screenDirty = true;
+#else
+      const unsigned long renderStartUs = micros();
+      renderer.DrawReset(runtimeCtx, remain);
+      drawFirmwareUpdateNotice();
+      recordRenderPartial("reset", micros() - renderStartUs);
+#endif
     }
   }
 
@@ -2910,6 +3603,7 @@ void loop() {
   if (rebootPending && static_cast<long>(millis() - rebootAtMs) >= 0) {
     Serial.println("reboot_now");
     delay(100);
+    persistResetTrustForRestart();
     ESP.restart();
   }
 

@@ -104,6 +104,22 @@
             "type": "integer",
             "minimum": 1
           },
+          "slot": {
+            "type": "integer",
+            "enum": [1, 2]
+          },
+          "sl": {
+            "type": "integer",
+            "enum": [1, 2]
+          },
+          "usageIndex": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ui": {
+            "type": "integer",
+            "minimum": 0
+          },
           "text": {
             "type": "string"
           },
@@ -131,6 +147,18 @@
           "f": {
             "type": "integer",
             "minimum": 1
+          },
+          "fit": {
+            "type": "string",
+            "enum": [
+              "shrink"
+            ]
+          },
+          "ft": {
+            "type": "string",
+            "enum": [
+              "shrink"
+            ]
           },
           "color": {
             "type": "string",
@@ -321,6 +349,22 @@
             "type": "integer",
             "minimum": 1
           },
+          "slot": {
+            "type": "integer",
+            "enum": [1, 2]
+          },
+          "sl": {
+            "type": "integer",
+            "enum": [1, 2]
+          },
+          "usageIndex": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ui": {
+            "type": "integer",
+            "minimum": 0
+          },
           "text": {
             "type": "string"
           },
@@ -348,6 +392,18 @@
           "f": {
             "type": "integer",
             "minimum": 1
+          },
+          "fit": {
+            "type": "string",
+            "enum": [
+              "shrink"
+            ]
+          },
+          "ft": {
+            "type": "string",
+            "enum": [
+              "shrink"
+            ]
           },
           "color": {
             "type": "string",

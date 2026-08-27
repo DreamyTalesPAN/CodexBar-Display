@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -78,6 +79,40 @@ func TestStatusSerializesFalseDeviceBooleans(t *testing.T) {
 	}
 }
 
+func TestStatusIncludesStandbyLiveThemePath(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"saved-device","capabilities":{"standby":{"supported":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"night-clock","themeSpec":{"active":true,"path":"/themes/s/night.json","renderOk":true}},"standby":{"active":true,"idleSecs":900,"liveThemePath":"/themes/u/synthwave.json"}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "saved-device",
+	})
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Device.Standby == nil || !got.Device.Standby.Active ||
+		got.Device.Standby.LiveThemePath != "/themes/u/synthwave.json" {
+		t.Fatalf("expected saved live slot in status, got %+v", got.Device.Standby)
+	}
+}
+
 func TestStatusIncludesLatestFirmwareUpdateJob(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	startedAt := time.Now().UTC().Add(-time.Minute)
@@ -133,6 +168,7 @@ func TestStatusIncludesLatestThemeInstallJob(t *testing.T) {
 		ID:        "active-theme",
 		ThemeID:   "clippy",
 		ThemeName: "Clippy",
+		Slot:      themepack.UsageScreensaver,
 		Phase:     "installing",
 		Message:   "Uploading theme files.",
 		Progress:  40,
@@ -157,6 +193,9 @@ func TestStatusIncludesLatestThemeInstallJob(t *testing.T) {
 	}
 	if got.ThemeInstall.ThemeID != "clippy" || got.ThemeInstall.ThemeName != "Clippy" {
 		t.Fatalf("expected resumable theme identity, got %+v", got.ThemeInstall)
+	}
+	if got.ThemeInstall.Slot != themepack.UsageScreensaver {
+		t.Fatalf("expected resumable theme slot, got %+v", got.ThemeInstall)
 	}
 	if got.ThemeInstall.Phase != "installing" || got.ThemeInstall.Progress != 40 {
 		t.Fatalf("unexpected theme install snapshot: %+v", got.ThemeInstall)
@@ -196,6 +235,45 @@ func TestRuntimeHealthDoesNotProbeDeviceOrRelease(t *testing.T) {
 	}
 	if !got.OK || strings.TrimSpace(got.Companion.Version) == "" {
 		t.Fatalf("unexpected runtime health response: %+v", got)
+	}
+}
+
+// The Mac App reads this flag before restarting the runtime for a CodexBar
+// repair. A restart under a running update strands the job in a dead process.
+func TestRuntimeHealthReportsARunningFirmwareUpdate(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: "http://127.0.0.1:1", DeviceToken: "pair-token"})
+
+	readUpdateInProgress := func() bool {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/runtime-health", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("runtime health status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var got struct {
+			UpdateInProgress bool `json:"updateInProgress"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode runtime health: %v", err)
+		}
+		return got.UpdateInProgress
+	}
+
+	if readUpdateInProgress() {
+		t.Fatal("an idle runtime must not claim an update is running")
+	}
+
+	server.updateJobsMu.Lock()
+	server.updateJobs["job-1"] = &firmwareUpdateJob{ID: "job-1", Phase: "installing"}
+	server.updateJobsMu.Unlock()
+	if !readUpdateInProgress() {
+		t.Fatal("a runtime installing firmware must say so")
+	}
+
+	server.updateJobsMu.Lock()
+	server.updateJobs["job-1"].Phase = "complete"
+	server.updateJobsMu.Unlock()
+	if readUpdateInProgress() {
+		t.Fatal("a finished update must not keep the restart blocked")
 	}
 }
 
@@ -272,6 +350,83 @@ func TestStatusIgnoresStaleSavedTokenForReadOnlyReachability(t *testing.T) {
 	}
 }
 
+func TestSavedPairingRemainsValidUntilExplicitlyRejected(t *testing.T) {
+	tests := []struct {
+		name          string
+		savedToken    string
+		tokenRejected bool
+		streamError   string
+		want          bool
+	}{
+		{name: "busy device fallback", savedToken: "saved-token", want: true},
+		{name: "explicit token rejection", savedToken: "saved-token", tokenRejected: true, want: false},
+		{name: "stream requests pairing", savedToken: "saved-token", streamError: "device_pairing_required", want: false},
+		{name: "no saved token", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := savedPairingRemainsValid(tt.savedToken, tt.tokenRejected, tt.streamError); got != tt.want {
+				t.Fatalf("savedPairingRemainsValid() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPairingTokenForReadinessUsesSavedTokenAfterPublicFallback(t *testing.T) {
+	if got := pairingTokenForReadiness("saved-token", "", true); got != "saved-token" {
+		t.Fatalf("paired public fallback must keep the saved token for readiness, got %q", got)
+	}
+	if got := pairingTokenForReadiness("saved-token", "verified-token", true); got != "verified-token" {
+		t.Fatalf("authenticated probe token must win, got %q", got)
+	}
+	if got := pairingTokenForReadiness("saved-token", "", false); got != "" {
+		t.Fatalf("unpaired device must not receive a saved readiness token, got %q", got)
+	}
+}
+
+func TestStatusKeepsSavedPairingWhenAuthenticatedProbeTimesOut(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			if r.Header.Get("X-VibeTV-Token") != "" {
+				<-r.Context().Done()
+				return
+			}
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.44","deviceId":"vibetv-canary","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"system":{"bootId":"boot-1","uptimeMs":1200},"render":{"fullCount":3,"partialCount":1,"lastKind":"usage"}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "vibetv-canary",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Running: true, Target: device.URL}
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if !got.Device.Active || !got.Device.Connected || !got.Device.Paired {
+		t.Fatalf("transient authenticated probe failure lost saved pairing: %+v", got.Device)
+	}
+	if got.Device.Ready {
+		t.Fatalf("tokenless fallback must not claim full readiness: %+v", got.Device)
+	}
+}
+
 func TestStatusDoesNotAdoptDifferentDeviceAtConfiguredAddress(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -318,7 +473,7 @@ func TestStatusDoesNotAdoptDifferentDeviceAtConfiguredAddress(t *testing.T) {
 	}
 }
 
-func TestApplyDeviceTokenAddsHeaderAndQueryFallback(t *testing.T) {
+func TestApplyDeviceTokenAddsHeaderWithoutDuplicatingQuery(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://192.0.2.10/hello?keep=1", nil)
 
 	applyDeviceToken(req, "pair-token")
@@ -326,8 +481,8 @@ func TestApplyDeviceTokenAddsHeaderAndQueryFallback(t *testing.T) {
 	if got := req.Header.Get("X-VibeTV-Token"); got != "pair-token" {
 		t.Fatalf("expected pairing header, got %q", got)
 	}
-	if got := req.URL.Query().Get("token"); got != "pair-token" {
-		t.Fatalf("expected pairing query fallback, got %q", got)
+	if got := req.URL.Query().Get("token"); got != "" {
+		t.Fatalf("expected no duplicate pairing query token, got %q", got)
 	}
 	if got := req.URL.Query().Get("keep"); got != "1" {
 		t.Fatalf("expected existing query to survive, got %q", got)
@@ -410,9 +565,42 @@ func TestDeviceSearchReturnsAllDevicesWithoutMutatingConfig(t *testing.T) {
 	}
 }
 
+func TestDeviceSearchSettlesFreshResultsAcrossTwoScans(t *testing.T) {
+	first := newCountedSelectableDeviceServer(t, "vibetv-a", nil, nil)
+	defer first.Close()
+	second := newCountedSelectableDeviceServer(t, "vibetv-b", nil, nil)
+	defer second.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.defaultWiFiTarget = func() string { return "" }
+	subnetCalls := 0
+	server.subnetTargets = func() []string {
+		subnetCalls++
+		if subnetCalls == 1 {
+			return []string{first.URL}
+		}
+		return []string{first.URL, second.URL}
+	}
+
+	devices, err := server.searchDevices(context.Background(), runtimeconfig.Config{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if subnetCalls != 2 {
+		t.Fatalf("expected exactly one settle scan, got %d scans", subnetCalls)
+	}
+	foundIDs := map[string]bool{}
+	for _, device := range devices {
+		foundIDs[device.DeviceID] = true
+	}
+	if len(devices) != 2 || !foundIDs["vibetv-a"] || !foundIDs["vibetv-b"] {
+		t.Fatalf("expected merged fresh results from both scans, got %+v", devices)
+	}
+}
+
 func TestDeviceSearchRetriesTransientKnownDeviceFailure(t *testing.T) {
 	var helloCalls atomic.Int32
-	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	active := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if helloCalls.Add(1) == 1 {
 			http.Error(w, "busy", http.StatusServiceUnavailable)
 			return
@@ -420,23 +608,32 @@ func TestDeviceSearchRetriesTransientKnownDeviceFailure(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.36","deviceId":"esp8266-retry","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
 	}))
-	defer device.Close()
+	defer active.Close()
+	unknown := newCountedSelectableDeviceServer(t, "esp8266-unknown", nil, nil)
+	defer unknown.Close()
 
 	server := newTestServer(t, runtimeconfig.Config{
-		DeviceTarget: device.URL,
+		DeviceTarget: active.URL,
 		DeviceID:     "esp8266-retry",
 	})
-	server.subnetTargets = func() []string { return nil }
+	server.defaultWiFiTarget = func() string { return "" }
+	server.subnetTargets = func() []string { return []string{active.URL, unknown.URL} }
 
 	devices, err := server.searchDevices(context.Background(), runtimeconfig.Config{
-		DeviceTarget: device.URL,
+		DeviceTarget: active.URL,
 		DeviceID:     "esp8266-retry",
 	}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(devices) != 1 || !devices[0].Known || devices[0].DeviceID != "esp8266-retry" {
-		t.Fatalf("expected transiently busy known VibeTV on retry, got %+v", devices)
+	if len(devices) != 2 ||
+		!devices[0].Known ||
+		!devices[0].Active ||
+		devices[0].DeviceID != "esp8266-retry" ||
+		devices[1].Known ||
+		devices[1].Active ||
+		devices[1].DeviceID != "esp8266-unknown" {
+		t.Fatalf("expected transiently busy active VibeTV first after retry, got %+v", devices)
 	}
 	if helloCalls.Load() != 2 {
 		t.Fatalf("expected exactly one bounded retry, got %d hello calls", helloCalls.Load())
@@ -604,7 +801,7 @@ func TestDeviceSearchReportsFastDarwinHostUnreachableBurstAsDeniedAccess(t *test
 	}
 }
 
-func TestDeviceSearchReturnsFirstFoundDeviceImmediatelyWithoutSavedIdentity(t *testing.T) {
+func TestDeviceSearchSettlesFirstFoundDeviceWithoutSavedIdentity(t *testing.T) {
 	var helloCalls atomic.Int32
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		helloCalls.Add(1)
@@ -623,8 +820,8 @@ func TestDeviceSearchReturnsFirstFoundDeviceImmediatelyWithoutSavedIdentity(t *t
 	if len(devices) != 1 || devices[0].DeviceID != "first-customer-device" {
 		t.Fatalf("expected first customer VibeTV, got %+v", devices)
 	}
-	if helloCalls.Load() != 1 {
-		t.Fatalf("expected first successful scan to return immediately, got %d hello calls", helloCalls.Load())
+	if helloCalls.Load() != 2 {
+		t.Fatalf("expected one settle scan after the first result, got %d hello calls", helloCalls.Load())
 	}
 }
 
@@ -650,8 +847,8 @@ func TestDeviceSearchRetriesCleanCustomerScanUntilDeviceAppears(t *testing.T) {
 	if len(devices) != 1 || devices[0].DeviceID != "late-customer-device" {
 		t.Fatalf("expected later customer scan to find VibeTV, got %+v", devices)
 	}
-	if helloCalls.Load() != 2 {
-		t.Fatalf("expected a second complete scan, got %d hello calls", helloCalls.Load())
+	if helloCalls.Load() != 3 {
+		t.Fatalf("expected discovery plus one settle scan, got %d hello calls", helloCalls.Load())
 	}
 }
 
@@ -802,8 +999,8 @@ func TestDeviceSearchActuallyProbesFarEdgeOfSlash23(t *testing.T) {
 	if len(devices) != 1 || devices[0].DeviceID != "far-edge-device" {
 		t.Fatalf("expected far-edge /23 VibeTV, got %+v", devices)
 	}
-	if got, want := int(attempts.Load()), len(targets); got != want {
-		t.Fatalf("search attempted %d targets; want every one of %d", got, want)
+	if got, want := int(attempts.Load()), 2*len(targets); got != want {
+		t.Fatalf("search attempted %d targets; want two complete scans of %d", got, len(targets))
 	}
 }
 
@@ -1056,7 +1253,14 @@ func TestDeviceSelectMapsLockedFirmware1038ToLegacyRecovery(t *testing.T) {
 	}
 }
 
-func TestDeviceSelectRotatesKnownTokenAndKeepsProfiles(t *testing.T) {
+// Adjusted 2026-08-06: this test used to require that an explicit Connect
+// ALWAYS rotates the token via POST /api/pair ("explicit Connect must rotate
+// the token once"). That cemented exactly the field bug where a healthy,
+// already-paired device with a closed pairing window could not be selected.
+// Since the honest-token fix, Connect proves the saved token via
+// authenticated /hello and reuses it without pairing; pairing only runs when
+// the device rejects the token (see TestDeviceSelectRenewsStaleKnownToken).
+func TestDeviceSelectReusesKnownTokenAndKeepsProfiles(t *testing.T) {
 	const deviceID = "device-b"
 	const savedToken = "token-b"
 	var pairCalls atomic.Int32
@@ -1101,8 +1305,8 @@ func TestDeviceSelectRotatesKnownTokenAndKeepsProfiles(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected successful selection, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if pairCalls.Load() != 1 {
-		t.Fatalf("explicit Connect must rotate the token once, got %d pair calls", pairCalls.Load())
+	if pairCalls.Load() != 0 {
+		t.Fatalf("explicit Connect with a working saved token must not pair, got %d pair calls", pairCalls.Load())
 	}
 	if strings.Contains(rec.Body.String(), savedToken) {
 		t.Fatalf("selection response leaked token: %s", rec.Body.String())
@@ -1123,7 +1327,7 @@ func TestDeviceSelectRotatesKnownTokenAndKeepsProfiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.DeviceID != deviceID || cfg.DeviceTarget != device.URL || cfg.DeviceToken != "rotated-token" {
+	if cfg.DeviceID != deviceID || cfg.DeviceTarget != device.URL || cfg.DeviceToken != savedToken {
 		t.Fatalf("unexpected active selection: %+v", cfg)
 	}
 	if len(cfg.KnownDevices) != 2 {
@@ -1196,12 +1400,97 @@ func TestDeviceSelectRenewsStaleKnownToken(t *testing.T) {
 	}
 }
 
+func TestDeviceSelectReusesSavedTokenWhenPairingWindowClosed(t *testing.T) {
+	// DO NOT weaken this test.
+	// Regression for the 2026-08-06 field bug: after a runtime restart,
+	// Connect for an ALREADY PAIRED known device (valid saved token) always
+	// forced POST /api/pair. Firmware with pairingWindowOpen=false answered
+	// 403 "pairing window closed" and the selection failed, although the
+	// saved token still worked seconds later. Select must first prove the
+	// saved token via authenticated /hello and only pair when the token is
+	// really rejected (401/403).
+	const deviceID = "14799300"
+	const savedToken = "saved-token"
+	var pairCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimSpace(r.Header.Get("X-VibeTV-Token"))
+		switch r.URL.Path {
+		case "/hello":
+			if token != "" && token != savedToken {
+				http.Error(w, "invalid token", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.39","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi"},"auth":{"pairingWindowOpen":false}}}`, deviceID)
+		case "/api/pair":
+			pairCalls.Add(1)
+			http.Error(w, "pairing window closed", http.StatusForbidden)
+		case "/health":
+			if token != savedToken {
+				http.Error(w, "pairing required", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini"},"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	initial := runtimeconfig.Config{
+		DeviceID:     deviceID,
+		DeviceTarget: device.URL,
+		DeviceToken:  savedToken,
+		KnownDevices: []runtimeconfig.KnownDevice{{DeviceID: deviceID, Target: device.URL, DeviceToken: savedToken}},
+	}
+	initial.Normalize()
+	server := newTestServer(t, initial)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/device/select",
+		strings.NewReader(`{"target":"`+device.URL+`","expectedDeviceId":"`+deviceID+`"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("select with valid saved token must succeed, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	// The success payload legitimately contains capability fields such as
+	// "pairingWindowOpen"; only pairing *errors* are forbidden here.
+	if strings.Contains(rec.Body.String(), "pairing window closed") ||
+		strings.Contains(rec.Body.String(), "pairing_window") ||
+		strings.Contains(rec.Body.String(), `"ok":false`) {
+		t.Fatalf("select with valid saved token must not surface a pairing error: %s", rec.Body.String())
+	}
+	if pairCalls.Load() != 0 {
+		t.Fatalf("select with valid saved token must not attempt pairing, got %d pair calls", pairCalls.Load())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceID != deviceID || cfg.DeviceTarget != device.URL || cfg.DeviceToken != savedToken {
+		t.Fatalf("saved token selection was not persisted: %+v", cfg)
+	}
+}
+
 func TestDeviceSelectPairFailureKeepsKnownToken(t *testing.T) {
 	const deviceID = "device-b"
 	var pairCalls atomic.Int32
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
+			// Adjusted 2026-08-06: the device rejects the saved token so that
+			// pairing is genuinely required. Since the honest-token fix,
+			// Connect only pairs when the saved token is rejected (401/403);
+			// a device that still accepts the token never reaches /api/pair.
+			if strings.TrimSpace(r.Header.Get("X-VibeTV-Token")) == "saved-token" {
+				http.Error(w, "expired token", http.StatusUnauthorized)
+				return
+			}
 			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`, deviceID)
 		case "/api/pair":
 			pairCalls.Add(1)
@@ -1601,7 +1890,7 @@ func TestStatusReportsMacAppUpdateCheckFailure(t *testing.T) {
 	}
 }
 
-func TestUsageReturnsPersistedProviderSnapshots(t *testing.T) {
+func TestUsageReturnsCollectorSnapshotsWithDynamicWindows(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	collectedAt := time.Date(2026, 6, 26, 11, 59, 0, 0, time.UTC)
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
@@ -1667,11 +1956,6 @@ func TestUsageReturnsPersistedProviderSnapshots(t *testing.T) {
 			},
 		}, true
 	}
-	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
-		t.Fatal("fetchUsage should not run when snapshots are present")
-		return nil, nil
-	}
-
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
 	server.Handler().ServeHTTP(rec, req)
@@ -1841,7 +2125,7 @@ func TestUsageHonorsCodexBarRemainingPreference(t *testing.T) {
 	}
 }
 
-func TestUsageRefreshBypassesPersistedSnapshotAndCachesFreshResult(t *testing.T) {
+func TestUsageRefreshReadsCollectorSnapshotWithoutDirectFetch(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 20, 14, 0, 0, 0, time.UTC)
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
@@ -1851,26 +2135,16 @@ func TestUsageRefreshBypassesPersistedSnapshotAndCachesFreshResult(t *testing.T)
 				Provider: "codex",
 				Frame:    protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used", SessionTokens: 1234, WeekTokens: 5678, TotalTokens: 9000},
 				Meta: codexbar.ProviderUsageMeta{
-					Windows: []codexbar.UsageWindow{{ID: "secondary", Label: "Weekly", UsedPercent: 36}},
-					Cost:    &codexbar.ProviderCostUsage{Daily: []codexbar.ProviderCostDay{{Day: "2026-07-20", TotalTokens: 1234}}},
+					Windows: []codexbar.UsageWindow{
+						{ID: "secondary", Label: "Weekly", UsedPercent: 36},
+						{ID: "codex-spark-weekly", Label: "Codex Spark Weekly", UsedPercent: 0, WindowMinutes: 10080},
+					},
+					Cost: &codexbar.ProviderCostUsage{Daily: []codexbar.ProviderCostDay{{Day: "2026-07-20", TotalTokens: 1234}}},
 				},
 				CollectedAt: now,
 			}},
 		}, true
 	}
-	fetches := 0
-	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
-		fetches++
-		return []codexbar.ParsedFrame{{
-			Provider: "codex",
-			Frame:    protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used"},
-			Meta: codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{
-				{ID: "secondary", Label: "Weekly", UsedPercent: 36},
-				{ID: "codex-spark-weekly", Label: "Codex Spark Weekly", UsedPercent: 0, WindowMinutes: 10080},
-			}},
-		}}, nil
-	}
-
 	for _, path := range []string{"/v1/usage?refresh=1", "/v1/usage"} {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -1892,12 +2166,412 @@ func TestUsageRefreshBypassesPersistedSnapshotAndCachesFreshResult(t *testing.T)
 			t.Fatalf("expected persisted cost history for %s, got %+v", path, got.Providers[0].Cost)
 		}
 	}
-	if fetches != 1 {
-		t.Fatalf("expected one direct fetch followed by cached usage, got %d", fetches)
+}
+
+func TestUsageManualRefreshReportsRefreshingForOldCollectorSnapshot(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	var wakeCount int
+	server.wakeDisplayStream = func() { wakeCount++ }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now.Add(-time.Minute),
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used"},
+				CollectedAt: now.Add(-time.Minute),
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if wakeCount != 1 {
+		t.Fatalf("manual refresh must wake the collector path once, got %d", wakeCount)
+	}
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Refresh.State != "refreshing" || len(got.Providers) != 1 || got.Providers[0].Weekly != 36 {
+		t.Fatalf("expected refreshing with last-good values, got %+v", got)
 	}
 }
 
-func TestUsageCachePicksUpTokenHistoryCollectedAfterFirstResponse(t *testing.T) {
+func TestUsageManualRefreshExpiresWithoutNewCollectorSnapshot(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	requestedAt := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	now := requestedAt
+	collectedAt := requestedAt.Add(-time.Minute)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         collectedAt,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used"},
+				CollectedAt: collectedAt,
+			}},
+		}, true
+	}
+
+	initial := httptest.NewRecorder()
+	server.Handler().ServeHTTP(initial, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+	var got usageResponse
+	if err := json.Unmarshal(initial.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode initial response: %v", err)
+	}
+	if initial.Code != http.StatusOK || got.Refresh.State != "refreshing" {
+		t.Fatalf("expected refresh to start, status=%d got=%+v", initial.Code, got.Refresh)
+	}
+
+	now = requestedAt.Add(usageRefreshRequestMaxAge)
+	expired := httptest.NewRecorder()
+	server.Handler().ServeHTTP(expired, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+
+	got = usageResponse{}
+	if err := json.Unmarshal(expired.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode expired response: %v", err)
+	}
+	if expired.Code != http.StatusOK || got.Refresh.State != "unavailable" {
+		t.Fatalf("failed collector refresh must stop refreshing, status=%d got=%+v", expired.Code, got.Refresh)
+	}
+	if got.Refresh.RequestedAt != requestedAt.Format(time.RFC3339) || len(got.Providers) != 1 || got.Providers[0].Weekly != 36 {
+		t.Fatalf("expired refresh must retain its request and last-good values, got %+v", got)
+	}
+
+	stillUnavailable := httptest.NewRecorder()
+	server.Handler().ServeHTTP(stillUnavailable, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if err := json.Unmarshal(stillUnavailable.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode repeated unavailable response: %v", err)
+	}
+	if got.Refresh.State != "unavailable" {
+		t.Fatalf("expired request returned to refreshing or claimed success: %+v", got.Refresh)
+	}
+
+	collectedAt = now
+	recovered := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recovered, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if err := json.Unmarshal(recovered.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode recovered response: %v", err)
+	}
+	if got.Refresh.State != "fresh" {
+		t.Fatalf("new collector snapshot did not clear the failed refresh: %+v", got.Refresh)
+	}
+}
+
+func TestUsageManualRefreshDoesNotCompleteForCachedDashboardSnapshotReread(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	snapshotProducedAt := now.Add(-15 * time.Second)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Source:      "codexbar-dashboard",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42, UsageMode: "used"},
+				CollectedAt: snapshotProducedAt,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if rec.Code != http.StatusOK || got.Refresh.State != "refreshing" || got.Providers[0].Weekly != 42 {
+		t.Fatalf("cached dashboard reread must not complete manual refresh, status=%d got %+v", rec.Code, got)
+	}
+}
+
+func TestUsageManualRefreshReportsFreshForNewCollectorSnapshot(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42, UsageMode: "used"},
+				CollectedAt: now,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if rec.Code != http.StatusOK || got.Refresh.State != "fresh" || got.Providers[0].Weekly != 42 {
+		t.Fatalf("expected fresh manual refresh response, status=%d got %+v", rec.Code, got)
+	}
+}
+
+func TestUsageManualRefreshWaitsForEveryProvider(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	old := now.Add(-time.Minute)
+	usage := daemon.PersistedUsage{
+		SavedAt: now,
+		Providers: []daemon.ProviderUsageSnapshot{
+			{Provider: "codex", Frame: protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42, UsageMode: "used"}, CollectedAt: old},
+			{Provider: "claude", Frame: protocol.Frame{Provider: "claude", Label: "Claude", Weekly: 24, UsageMode: "used"}, CollectedAt: old},
+		},
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return usage, true }
+
+	refresh := func() usageResponse {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		var got usageResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		return got
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode initial response: %v", err)
+	}
+	if got.Refresh.State != "refreshing" {
+		t.Fatalf("expected initial refresh to wait for both providers, got %+v", got.Refresh)
+	}
+
+	usage.Providers[0].CollectedAt = now
+	got = refresh()
+	if got.Refresh.State != "refreshing" {
+		t.Fatalf("one fresh provider must not complete refresh: %+v", got.Refresh)
+	}
+
+	usage.Providers[1].CollectedAt = now
+	got = refresh()
+	if got.Refresh.State != "fresh" {
+		t.Fatalf("refresh should complete after every provider is fresh: %+v", got.Refresh)
+	}
+}
+
+func TestUsageManualRefreshIgnoresDisabledPersistedProviders(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 30, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true},
+			{ID: "claude", Label: "Claude", Enabled: false},
+		}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: now,
+			Providers: []daemon.ProviderUsageSnapshot{
+				{
+					Provider: "codex", Frame: protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42}, CollectedAt: now,
+				},
+				{
+					Provider: "claude", Frame: protocol.Frame{Provider: "claude", Label: "Claude", Weekly: 24},
+					CollectedAt: now.Add(-time.Minute), RateLimited: true, RateLimitedUntil: now.Add(time.Minute),
+				},
+			},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if rec.Code != http.StatusOK || got.Refresh.State != "fresh" || len(got.Providers) != 1 || got.Providers[0].ID != "codex" {
+		t.Fatalf("disabled persisted provider changed visible refresh state: status=%d got=%+v", rec.Code, got)
+	}
+}
+
+func TestUsageTokenHistoryIgnoresDisabledPersistedProviders(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 45, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true},
+			{ID: "claude", Label: "Claude", Enabled: false},
+		}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: now,
+			Providers: []daemon.ProviderUsageSnapshot{
+				{
+					Provider:    "codex",
+					Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 42, TotalTokens: 120},
+					Meta:        codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{Last30DaysTokens: 120}},
+					CollectedAt: now, TokenStatsCollectedAt: now,
+				},
+				{
+					Provider:    "claude",
+					Frame:       protocol.Frame{Provider: "claude", Label: "Claude", Weekly: 24},
+					CollectedAt: now,
+				},
+			},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if rec.Code != http.StatusOK || !got.TokenUsageReady || len(got.Providers) != 1 ||
+		got.Providers[0].ID != "codex" || got.Providers[0].TotalTokens != 120 || got.Providers[0].Cost == nil {
+		t.Fatalf("disabled persisted provider cleared visible token history: status=%d got=%+v", rec.Code, got)
+	}
+}
+
+func TestUsageManualRefreshReportsRateLimitAndBlockedUntil(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	blockedUntil := now.Add(2 * time.Minute)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now.Add(-time.Minute),
+			CurrentProvider: "claude",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:         "claude",
+				Frame:            protocol.Frame{Provider: "claude", Label: "Claude", Session: 64, UsageMode: "used"},
+				CollectedAt:      now.Add(-time.Minute),
+				RateLimited:      true,
+				RateLimitedUntil: blockedUntil,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if rec.Code != http.StatusOK || got.Refresh.State != "rate_limited" {
+		t.Fatalf("expected rate-limited response, status=%d got %+v", rec.Code, got)
+	}
+	if got.Refresh.BlockedUntil != blockedUntil.Format(time.RFC3339) || got.Providers[0].BlockedUntil != blockedUntil.Format(time.RFC3339) {
+		t.Fatalf("expected exact blockedUntil to be exposed, got refresh=%+v provider=%+v", got.Refresh, got.Providers[0])
+	}
+	if got.Providers[0].Session != 64 {
+		t.Fatalf("expected last-good value to remain visible, got %+v", got.Providers[0])
+	}
+}
+
+func TestUsageRefreshRateLimitWithoutBlockedUntilDoesNotInventTimestamp(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now.Add(-time.Minute),
+			CurrentProvider: "claude",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "claude",
+				Frame:       protocol.Frame{Provider: "claude", Label: "Claude", Session: 64, UsageMode: "used"},
+				CollectedAt: now.Add(-time.Minute),
+				RateLimited: true,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Refresh.State != "rate_limited" || got.Refresh.BlockedUntil != "" || got.Providers[0].BlockedUntil != "" {
+		t.Fatalf("expected rate limit without invented blockedUntil, got %+v provider=%+v", got.Refresh, got.Providers[0])
+	}
+}
+
+func TestUsageRefreshStateClearsAfterRecovery(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	blockedUntil := now.Add(2 * time.Minute)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	recovered := false
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		snapshot := daemon.ProviderUsageSnapshot{
+			Provider:         "claude",
+			Frame:            protocol.Frame{Provider: "claude", Label: "Claude", Session: 64, UsageMode: "used"},
+			CollectedAt:      now.Add(-time.Minute),
+			RateLimited:      true,
+			RateLimitedUntil: blockedUntil,
+		}
+		if recovered {
+			snapshot.Frame.Session = 72
+			snapshot.CollectedAt = now.Add(time.Minute)
+			snapshot.RateLimited = false
+			snapshot.RateLimitedUntil = time.Time{}
+		}
+		return daemon.PersistedUsage{
+			SavedAt:         snapshot.CollectedAt,
+			CurrentProvider: "claude",
+			Providers:       []daemon.ProviderUsageSnapshot{snapshot},
+		}, true
+	}
+
+	first := httptest.NewRecorder()
+	server.Handler().ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+	recovered = true
+	second := httptest.NewRecorder()
+	server.Handler().ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(second.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if second.Code != http.StatusOK || got.Refresh.State != "fresh" || got.Refresh.BlockedUntil != "" || got.Providers[0].RateLimited {
+		t.Fatalf("expected recovery to clear rate-limit state, status=%d got %+v", second.Code, got)
+	}
+	if got.Providers[0].Session != 72 {
+		t.Fatalf("expected recovered provider value, got %+v", got.Providers[0])
+	}
+}
+
+func TestUsageRestartFreeConvergenceReadsNewCollectorSnapshot(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 	historyReady := false
@@ -1925,34 +2599,10 @@ func TestUsageCachePicksUpTokenHistoryCollectedAfterFirstResponse(t *testing.T) 
 			}},
 		}, true
 	}
-	fetches := 0
-	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
-		fetches++
-		return []codexbar.ParsedFrame{{
-			Provider: "codex",
-			Frame: protocol.Frame{
-				Provider:  "codex",
-				Label:     "Codex",
-				Weekly:    36,
-				UsageMode: "used",
-			},
-		}}, nil
-	}
-
 	first := httptest.NewRecorder()
-	server.Handler().ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
-	if first.Code != http.StatusOK {
-		t.Fatalf("expected first response 200, got %d body=%s", first.Code, first.Body.String())
-	}
-	var initial usageResponse
-	if err := json.Unmarshal(first.Body.Bytes(), &initial); err != nil {
-		t.Fatalf("decode first response: %v", err)
-	}
-	if len(initial.Providers) != 1 || initial.Providers[0].Cost != nil {
-		t.Fatalf("expected initial response without history, got %+v", initial.Providers)
-	}
-	if initial.TokenUsageReady {
-		t.Fatalf("expected initial response to keep token usage loading: %+v", initial)
+	server.Handler().ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if first.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected initial loading status 503, got %d body=%s", first.Code, first.Body.String())
 	}
 
 	historyReady = true
@@ -1966,47 +2616,126 @@ func TestUsageCachePicksUpTokenHistoryCollectedAfterFirstResponse(t *testing.T) 
 		t.Fatalf("decode second response: %v", err)
 	}
 	if len(enriched.Providers) != 1 || enriched.Providers[0].Cost == nil || len(enriched.Providers[0].Cost.Daily) != 1 {
-		t.Fatalf("expected cached response enriched with collected history, got %+v", enriched.Providers)
+		t.Fatalf("expected collector response enriched with collected history, got %+v", enriched.Providers)
 	}
 	if enriched.Providers[0].SessionTokens != 1234 || enriched.Providers[0].WeekTokens != 5678 || enriched.Providers[0].TotalTokens != 9000 {
-		t.Fatalf("expected cached response enriched with token totals, got %+v", enriched.Providers[0])
+		t.Fatalf("expected collector response enriched with token totals, got %+v", enriched.Providers[0])
 	}
 	if !enriched.TokenUsageReady {
 		t.Fatalf("expected enriched response to mark token usage ready: %+v", enriched)
 	}
-	if fetches != 1 {
-		t.Fatalf("expected cached second response without another direct fetch, got %d fetches", fetches)
+}
+
+func TestUsageTreatsExplicitZeroCostAsTokenResult(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: now,
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider: "codex",
+				Frame: protocol.Frame{
+					Provider:  "codex",
+					Label:     "Codex",
+					Weekly:    0,
+					UsageMode: "used",
+				},
+				Meta: codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{
+					UpdatedAt: now,
+				}},
+				CollectedAt: now,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.TokenUsageReady || len(got.Providers) != 1 || got.Providers[0].Cost == nil {
+		t.Fatalf("explicit zero cost result should mark token usage ready, got %+v", got)
+	}
+	if got.Providers[0].Cost.UpdatedAt != now.Format(time.RFC3339) {
+		t.Fatalf("expected zero cost provenance timestamp, got %+v", got.Providers[0].Cost)
 	}
 }
 
-func TestMergePersistedUsageDetailsKeepsSuccessfulZeroResult(t *testing.T) {
-	fresh := usageResponse{
-		Providers: []usageProviderInfo{{
-			ID:   "codex",
-			Cost: &usageCostInfo{},
-		}},
-	}
-	persisted := usageResponse{
-		TokenUsageReady: true,
-		Providers: []usageProviderInfo{{
-			ID:            "codex",
-			SessionTokens: 1234,
-			WeekTokens:    5678,
-			TotalTokens:   9000,
-			Cost:          &usageCostInfo{Last30DaysTokens: 9000},
-		}},
+func TestUsageTreatsSuccessfulEmptyTokenScanAsReady(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 12, 30, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: now,
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider: "codex",
+				Frame: protocol.Frame{
+					Provider:  "codex",
+					Label:     "Codex",
+					Weekly:    0,
+					UsageMode: "used",
+				},
+				CollectedAt:           now,
+				TokenStatsCollectedAt: now,
+			}},
+		}, true
 	}
 
-	got := mergePersistedUsageDetails(fresh, persisted)
-	if !got.TokenUsageReady || len(got.Providers) != 1 {
-		t.Fatalf("expected successful zero result to remain ready: %+v", got)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	provider := got.Providers[0]
-	if provider.SessionTokens != 0 || provider.WeekTokens != 0 || provider.TotalTokens != 0 {
-		t.Fatalf("persisted counters overwrote the successful zero result: %+v", provider)
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
 	}
-	if provider.Cost == nil || provider.Cost.Last30DaysTokens != 0 {
-		t.Fatalf("persisted history overwrote the successful zero result: %+v", provider.Cost)
+	if !got.TokenUsageReady || len(got.Providers) != 1 || got.Providers[0].Cost != nil {
+		t.Fatalf("successful empty token result should finish without inventing cost data: %+v", got)
+	}
+}
+
+func TestUsageWaitsForEveryProviderTokenResult(t *testing.T) {
+	now := time.Date(2026, 7, 28, 13, 0, 0, 0, time.UTC)
+	usage := daemon.PersistedUsage{
+		SavedAt: now,
+		Providers: []daemon.ProviderUsageSnapshot{
+			{
+				Provider: "codex",
+				Frame: protocol.Frame{
+					Provider: "codex", Label: "Codex", Weekly: 42, TotalTokens: 120,
+				},
+				Meta:        codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{Last30DaysTokens: 120}},
+				CollectedAt: now, TokenStatsCollectedAt: now,
+			},
+			{
+				Provider: "claude",
+				Frame: protocol.Frame{
+					Provider: "claude", Label: "Claude", Weekly: 31, TotalTokens: 90,
+				},
+				Meta:                  codexbar.ProviderUsageMeta{Cost: &codexbar.ProviderCostUsage{Last30DaysTokens: 90}},
+				CollectedAt:           now,
+				TokenStatsCollectedAt: now.Add(-time.Minute),
+			},
+		},
+	}
+
+	partial := usageResponseFromPersisted(now, usage)
+	if partial.TokenUsageReady {
+		t.Fatalf("partial provider scan published an incomplete aggregate: %+v", partial)
+	}
+	if partial.Providers[0].TotalTokens != 0 || partial.Providers[0].Cost != nil {
+		t.Fatalf("partial provider scan exposed incomplete totals: %+v", partial.Providers)
+	}
+
+	usage.Providers[1].TokenStatsCollectedAt = now
+	complete := usageResponseFromPersisted(now, usage)
+	if !complete.TokenUsageReady || complete.Providers[0].TotalTokens != 120 || complete.Providers[0].Cost == nil {
+		t.Fatalf("complete provider scan did not publish token totals: %+v", complete)
 	}
 }
 
@@ -2067,9 +2796,10 @@ func TestDisplayFrameLatestReturnsPersistedLastGoodFrame(t *testing.T) {
 func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
 	t.Setenv(displayStreamOutLogEnv, logPath)
+	usageSlots := url.QueryEscape(`[{"id":"secondary","label":"Weekly","percent":75,"resetSecs":490812},{"id":"codex-spark-weekly","label":"Codex Spark Weekly","percent":0,"resetSecs":604794}]`)
 	if err := os.WriteFile(
 		logPath,
-		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=0 weekly=58 sessionUnavailable=true weeklyUnavailable=false reset=2733s activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
+		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=0 weekly=58 sessionTokens=1400000 weekTokens=384000000 totalTokens=1070000000 tokenTotalsKnown=true sessionUnavailable=true weeklyUnavailable=false reset=2733s usageSlots=`+usageSlots+` activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
 		0o644,
 	); err != nil {
 		t.Fatalf("write display stream log: %v", err)
@@ -2108,12 +2838,58 @@ func TestDisplayFrameLatestPrefersLastSentDisplayFrame(t *testing.T) {
 	if got.Frame.Provider != "codex" || got.Frame.Label != "Vibe TV" {
 		t.Fatalf("unexpected frame identity: %+v", got.Frame)
 	}
-	if got.Frame.Session != 0 || got.Frame.Weekly != 58 || got.Frame.ResetSec != 2733 ||
-		!got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
+	if got.Frame.Session != 75 || got.Frame.Weekly != 0 || got.Frame.ResetSec != 490812 ||
+		got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
 		t.Fatalf("unexpected sent frame values: %+v", got.Frame)
 	}
 	if got.Frame.UsageMode != "remaining" || got.Frame.Activity != "coding" {
 		t.Fatalf("unexpected sent frame state: %+v", got.Frame)
+	}
+	if got.Frame.SessionTokens != 1400000 || got.Frame.WeekTokens != 384000000 ||
+		got.Frame.TotalTokens != 1070000000 || !got.Frame.TokenTotalsKnown {
+		t.Fatalf("expected token totals from the sent-frame log, got %+v", got.Frame)
+	}
+	if len(got.Frame.UsageWindows) != 2 ||
+		got.Frame.UsageWindows[0].Label != "Weekly" ||
+		got.Frame.UsageWindows[1].Label != "Codex Spark Weekly" {
+		t.Fatalf("expected sent usage windows in display preview, got %+v", got.Frame.UsageWindows)
+	}
+}
+
+func TestDisplayFrameLatestUsesUsageSlotsWhenUsageWindowsPlaceholder(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	usageSlots := url.QueryEscape(`[{"id":"secondary","label":"Weekly","percent":75,"resetSecs":490812},{"id":"codex-spark-weekly","label":"Codex Spark Weekly","percent":0,"resetSecs":604794}]`)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(`2026-07-03T14:36:54Z sent frame -> http://192.168.178.72 transport=wifi source=oauth fresh=true usageMode=remaining provider=codex label=Vibe TV session=0 weekly=58 sessionUnavailable=true weeklyUnavailable=false reset=2733s usageWindows=- usageSlots=`+usageSlots+` activity="coding" time="16:36" date="03.07.2026" error="" reason=sticky-current detail="provider=codex"`),
+		0o644,
+	); err != nil {
+		t.Fatalf("write display stream log: %v", err)
+	}
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/display-frame/latest", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got displayFrameResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Frame.Session != 75 || got.Frame.Weekly != 0 || got.Frame.ResetSec != 490812 ||
+		got.Frame.SessionUnavailable || got.Frame.WeeklyUnavailable {
+		t.Fatalf("expected usageSlots to drive legacy preview values, got %+v", got.Frame)
+	}
+	if len(got.Frame.UsageWindows) != 2 ||
+		got.Frame.UsageWindows[0].Label != "Weekly" ||
+		got.Frame.UsageWindows[0].ResetSec != 490812 ||
+		got.Frame.UsageWindows[1].Label != "Codex Spark Weekly" ||
+		got.Frame.UsageWindows[1].ResetSec != 604794 {
+		t.Fatalf("expected usageSlots to populate usage windows, got %+v", got.Frame.UsageWindows)
 	}
 }
 
@@ -2398,17 +3174,105 @@ func TestWaitForDisplayStreamAfterPairIgnoresTransientPairingError(t *testing.T)
 		return displayStreamInfo{Running: true, Healthy: true}
 	}
 
-	got := waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), false, inspect)
+	got := waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), false, inspect, nil)
 	if !got.Healthy || calls.Load() != 2 {
 		t.Fatalf("post-pair wait must ignore one stale auth error, got=%+v calls=%d", got, calls.Load())
 	}
 
 	calls.Store(0)
-	got = waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), true, inspect)
+	got = waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), true, inspect, nil)
 	if got.Healthy || got.ErrorCode != "device_pairing_required" || calls.Load() != 1 {
 		t.Fatalf("normal wait must surface pairing error immediately, got=%+v calls=%d", got, calls.Load())
 	}
 
+}
+
+// A provider the customer has not connected settles the wait immediately. The
+// customer's VibeTV finished half a minute before the Mac App did, and waiting
+// out the window answers with the same stream either way (issue #371).
+func TestWaitForDisplayStreamStopsOnSettledStream(t *testing.T) {
+	var calls atomic.Int32
+	inspect := func(context.Context, string, time.Time) displayStreamInfo {
+		calls.Add(1)
+		return displayStreamInfo{
+			Running:   true,
+			Target:    "http://192.0.2.10",
+			ErrorCode: "provider_setup_required",
+		}
+	}
+	settled := func(stream displayStreamInfo) bool {
+		return stream.ErrorCode == "provider_setup_required"
+	}
+
+	got := waitForDisplayStreamAfterProbe(
+		context.Background(), "http://192.0.2.10", time.Now(), true, inspect, settled,
+	)
+	if got.ErrorCode != "provider_setup_required" || calls.Load() != 1 {
+		t.Fatalf("settled stream must end the wait at once, got=%+v calls=%d", got, calls.Load())
+	}
+}
+
+// The same stream error while a provider is still warming up keeps its full
+// window: that provider does deliver usage, and ending early would tell a
+// working customer to connect one. A transient probe result -- timeout,
+// momentary engine error -- also keeps the window: it arrives as the same
+// global setup_required, but nothing about it is the customer's to fix.
+func TestProviderSetupNeedsCustomerActionOnlyForActionableStates(t *testing.T) {
+	for _, status := range []string{"", codexbar.ProviderReady, "checking", "CHECKING"} {
+		if providerSetupNeedsCustomerAction(codexbar.ProviderSetup{Status: status}) {
+			t.Fatalf("status %q must keep waiting", status)
+		}
+	}
+	for _, status := range []string{codexbar.ProviderTimeout, codexbar.ProviderEngineError, codexbar.ProviderNoUsageAvailable} {
+		setup := codexbar.ProviderSetup{
+			Status:    "setup_required",
+			Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: status}},
+		}
+		if providerSetupNeedsCustomerAction(setup) {
+			t.Fatalf("transient provider status %q must keep waiting", status)
+		}
+	}
+	if providerSetupNeedsCustomerAction(codexbar.ProviderSetup{Status: "setup_required"}) {
+		t.Fatal("setup_required with no diagnosed provider must keep waiting")
+	}
+	for _, status := range []string{codexbar.ProviderAuthRequired, codexbar.ProviderNotConfigured, codexbar.ProviderPermissionRequired, codexbar.ProviderConfigError} {
+		setup := codexbar.ProviderSetup{
+			Status:    "setup_required",
+			Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: status}},
+		}
+		if !providerSetupNeedsCustomerAction(setup) {
+			t.Fatalf("customer-owned provider status %q must end the wait", status)
+		}
+	}
+	engineBroken := codexbar.ProviderSetup{Status: "setup_required"}
+	engineBroken.Engine.Status = codexbar.ProviderNotConfigured
+	if !providerSetupNeedsCustomerAction(engineBroken) {
+		t.Fatal("a missing engine must end the wait")
+	}
+}
+
+// The wait reads the provider state the Companion already owns. A cold cache
+// reports "checking", so a Mac App that has not probed yet never cuts a wait
+// short on a guess.
+func TestWaitForDisplayStreamModeHonoursProviderSetup(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: "http://192.0.2.10", DeviceToken: "token"})
+	target := "http://192.0.2.10"
+	stream := displayStreamInfo{Running: true, Target: target, ErrorCode: "provider_setup_required"}
+
+	if providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
+		t.Fatal("a cold provider cache must not settle the wait")
+	}
+	server.providerSetupCache = codexbar.ProviderSetup{
+		Status:    "setup_required",
+		Providers: []codexbar.ProviderReadiness{{ID: "codex", Status: codexbar.ProviderNotConfigured}},
+	}
+	server.providerSetupCachedAt = time.Now()
+	if !providerSetupNeedsCustomerAction(server.providerSetupForStatus()) {
+		t.Fatal("an unconfigured provider must settle the wait")
+	}
+	if !providerSetupStreamForTarget(&stream, target) {
+		t.Fatal("stream must be the provider-held stream for this device")
+	}
 }
 
 func TestInspectDisplayStreamAfterIgnoresEarlierFrameAndError(t *testing.T) {
@@ -2537,25 +3401,63 @@ func TestDisplayFrameLatestReturnsNotFoundWithoutLastGoodFrame(t *testing.T) {
 	}
 }
 
-func TestUsageFallsBackToCodexBarFetchWhenSnapshotsMissing(t *testing.T) {
+func TestUsageUnavailableWhenCollectorHasNoUsableSnapshot(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
-		return daemon.PersistedUsage{}, false
-	}
-	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
-		return []codexbar.ParsedFrame{
-			{
-				Provider: "claude",
-				Source:   "web",
-				Frame: protocol.Frame{
+		return daemon.PersistedUsage{
+			SavedAt: time.Date(2026, 6, 26, 13, 0, 0, 0, time.UTC),
+			Providers: []daemon.ProviderUsageSnapshot{
+				{
 					Provider: "claude",
-					Label:    "Claude",
-					Session:  11,
-					Weekly:   22,
-					ResetSec: 3600,
+					Frame: protocol.Frame{
+						Provider:         "claude",
+						Label:            "Claude",
+						UsageUnavailable: true,
+					},
 				},
 			},
-		}, nil
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status 503, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.OK || got.Error.Code != "usage_unavailable" {
+		t.Fatalf("unexpected loading response: %+v", got)
+	}
+}
+
+func TestUsageShowsExpiredPersistedProviderAsUnavailable(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 6, 26, 13, 0, 0, 0, time.UTC)
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{
+				{
+					Provider:    "codex",
+					Source:      "codexbar-dashboard",
+					CollectedAt: now.Add(-11 * time.Minute),
+					Stale:       true,
+					Frame: protocol.Frame{
+						Provider:           "codex",
+						Label:              "Codex",
+						UsageUnavailable:   true,
+						SessionUnavailable: true,
+						WeeklyUnavailable:  true,
+					},
+				},
+			},
+		}, true
 	}
 
 	rec := httptest.NewRecorder()
@@ -2569,18 +3471,41 @@ func TestUsageFallsBackToCodexBarFetchWhenSnapshotsMissing(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.Source != "codexbar" || got.CurrentProvider != "claude" {
-		t.Fatalf("unexpected fallback metadata: %+v", got)
-	}
-	if len(got.Providers) != 1 || got.Providers[0].ID != "claude" || got.Providers[0].UsageMode != "used" {
-		t.Fatalf("unexpected fallback providers: %+v", got.Providers)
+	if len(got.Providers) != 1 || got.Providers[0].ID != "codex" || !got.Providers[0].UsageUnavailable ||
+		got.Providers[0].Session != 0 || got.Providers[0].Weekly != 0 || len(got.Providers[0].Windows) != 0 {
+		t.Fatalf("expected cleared unavailable provider, got %+v", got)
 	}
 }
 
 func TestUsageRefreshesStaleProviderSnapshots(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 6, 26, 13, 0, 0, 0, time.UTC)
+	freshReady := false
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		if freshReady {
+			return daemon.PersistedUsage{
+				SavedAt:         now,
+				CurrentProvider: "codex",
+				Providers: []daemon.ProviderUsageSnapshot{
+					{
+						Provider:    "codex",
+						Source:      "openai-web",
+						CollectedAt: now,
+						Frame: protocol.Frame{
+							Provider: "codex",
+							Label:    "Codex",
+							Session:  9,
+							Weekly:   19,
+						},
+						Meta: codexbar.ProviderUsageMeta{
+							OverTime: []codexbar.UsageOverTimePoint{
+								{Day: "2026-06-26", TotalCreditsUsed: 12},
+							},
+						},
+					},
+				},
+			}, true
+		}
 		return daemon.PersistedUsage{
 			SavedAt:         now.Add(-5 * time.Minute),
 			CurrentProvider: "codex",
@@ -2591,34 +3516,15 @@ func TestUsageRefreshesStaleProviderSnapshots(t *testing.T) {
 					CollectedAt: now.Add(-5 * time.Minute),
 					Stale:       true,
 					Frame: protocol.Frame{
-						Provider: "codex",
-						Label:    "Codex",
-						Session:  4,
-						Weekly:   18,
+						Provider:         "codex",
+						Label:            "Codex",
+						Session:          4,
+						Weekly:           18,
+						UsageUnavailable: true,
 					},
 				},
 			},
 		}, true
-	}
-	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
-		return []codexbar.ParsedFrame{
-			{
-				Provider:    "codex",
-				Source:      "openai-web",
-				CollectedAt: now,
-				Frame: protocol.Frame{
-					Provider: "codex",
-					Label:    "Codex",
-					Session:  9,
-					Weekly:   19,
-				},
-				Meta: codexbar.ProviderUsageMeta{
-					OverTime: []codexbar.UsageOverTimePoint{
-						{Day: "2026-06-26", TotalCreditsUsed: 12},
-					},
-				},
-			},
-		}, nil
 	}
 
 	rec := httptest.NewRecorder()
@@ -2632,14 +3538,28 @@ func TestUsageRefreshesStaleProviderSnapshots(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.Source != "codexbar" {
-		t.Fatalf("expected fresh codexbar source, got %+v", got)
+	if got.Source != "codexbar-display" || len(got.Providers) != 1 || !got.Providers[0].Stale {
+		t.Fatalf("expected stale collector usage before fresh snapshot, got %+v", got)
 	}
-	if len(got.Providers) != 1 || got.Providers[0].Session != 9 || got.Providers[0].Stale {
-		t.Fatalf("expected fresh provider usage, got %+v", got.Providers)
+
+	freshReady = true
+	second := httptest.NewRecorder()
+	server.Handler().ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
+	if second.Code != http.StatusOK {
+		t.Fatalf("expected status 200 after fresh snapshot, got %d body=%s", second.Code, second.Body.String())
 	}
-	if len(got.Providers[0].UsageOverTime) != 1 {
-		t.Fatalf("expected fresh usage-over-time, got %+v", got.Providers[0].UsageOverTime)
+	var fresh usageResponse
+	if err := json.Unmarshal(second.Body.Bytes(), &fresh); err != nil {
+		t.Fatalf("decode fresh response: %v", err)
+	}
+	if fresh.Source != "codexbar-display" {
+		t.Fatalf("expected collector source, got %+v", fresh)
+	}
+	if len(fresh.Providers) != 1 || fresh.Providers[0].Session != 9 || fresh.Providers[0].Stale {
+		t.Fatalf("expected fresh provider usage, got %+v", fresh.Providers)
+	}
+	if len(fresh.Providers[0].UsageOverTime) != 1 {
+		t.Fatalf("expected fresh usage-over-time, got %+v", fresh.Providers[0].UsageOverTime)
 	}
 }
 
@@ -2663,7 +3583,7 @@ func TestStartDisplayStreamUsesInjectedRefresh(t *testing.T) {
 	}
 }
 
-func TestUsageReturnsStaleProviderSnapshotsWhenRefreshFails(t *testing.T) {
+func TestUsagePreservesLastGoodCollectorSnapshot(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 6, 26, 13, 0, 0, 0, time.UTC)
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
@@ -2686,10 +3606,6 @@ func TestUsageReturnsStaleProviderSnapshotsWhenRefreshFails(t *testing.T) {
 			},
 		}, true
 	}
-	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
-		return nil, errors.New("codexbar temporarily unavailable")
-	}
-
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
 	server.Handler().ServeHTTP(rec, req)
@@ -2715,9 +3631,6 @@ func TestUsageUnavailableReturnsCustomerSafeError(t *testing.T) {
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
 		return daemon.PersistedUsage{}, false
 	}
-	server.fetchUsage = func(context.Context) ([]codexbar.ParsedFrame, error) {
-		return nil, errors.New("secret raw codexbar failure")
-	}
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
@@ -2727,8 +3640,8 @@ func TestUsageUnavailableReturnsCustomerSafeError(t *testing.T) {
 		t.Fatalf("expected status 503, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	if strings.Contains(body, "secret raw codexbar failure") {
-		t.Fatalf("usage error leaked raw failure: %s", body)
+	if strings.Contains(body, "CodexBar") {
+		t.Fatalf("usage error exposed the internal service name: %s", body)
 	}
 	var got errorResponse
 	if err := json.Unmarshal([]byte(body), &got); err != nil {
@@ -3027,6 +3940,133 @@ func TestCustomThemeRenderPackPersistsAcrossCompanionRestart(t *testing.T) {
 	}
 }
 
+func TestCustomThemeRenderPacksKeepInstalledRevisions(t *testing.T) {
+	home := t.TempDir()
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.home = home
+	first := testThemePackZipRevision(t, "my-custom", "/themes/u/custom-a.json", 1, "FIRST")
+	second := testThemePackZipRevision(t, "my-custom", "/themes/u/custom-b.json", 2, "SECOND")
+	if err := server.persistThemeRenderPack(first); err != nil {
+		t.Fatalf("persist first custom revision: %v", err)
+	}
+	if err := server.persistThemeRenderPack(second); err != nil {
+		t.Fatalf("persist second custom revision: %v", err)
+	}
+
+	requestPack := func(requestPath string) themeRenderPack {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, requestPath, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected %s status 200, got %d body=%s", requestPath, rec.Code, rec.Body.String())
+		}
+		var pack themeRenderPack
+		if err := json.Unmarshal(rec.Body.Bytes(), &pack); err != nil {
+			t.Fatalf("decode %s: %v", requestPath, err)
+		}
+		return pack
+	}
+
+	firstPack := requestPack("/theme-packs/render/my-custom/custom-a.json")
+	if firstPack.SpecPath != "/themes/u/custom-a.json" || firstPack.SpecHash == "" || !strings.Contains(string(firstPack.Spec), "FIRST") {
+		t.Fatalf("expected exact first custom revision, got %+v", firstPack)
+	}
+	if asset, ok := firstPack.Assets["/themes/u/custom-meta.txt"]; !ok || asset.Data != "FIRST" {
+		t.Fatalf("expected first revision assets to remain available, got %+v", firstPack.Assets)
+	}
+
+	secondPack := requestPack("/theme-packs/render/my-custom/custom-b.json")
+	if secondPack.SpecPath != "/themes/u/custom-b.json" || secondPack.SpecHash == firstPack.SpecHash || !strings.Contains(string(secondPack.Spec), "SECOND") {
+		t.Fatalf("expected exact second custom revision, got %+v", secondPack)
+	}
+
+	byDeviceHash := requestPack("/theme-packs/render/my-custom/custom-a.json?specHash=" + firstPack.SpecHash)
+	if byDeviceHash.SpecPath != firstPack.SpecPath {
+		t.Fatalf("expected exact path and device hash to return first revision, got %+v", byDeviceHash)
+	}
+
+	latest := requestPack("/theme-packs/render/my-custom.json")
+	if latest.SpecPath != secondPack.SpecPath {
+		t.Fatalf("expected id alias to serve most recent revision, got %+v", latest)
+	}
+
+	for _, requestPath := range []string{
+		"/theme-packs/render/my-custom/custom-a.json?specHash=00000000",
+		"/theme-packs/render/my-custom.json?specPath=%2Fthemes%2Fu%2Fmissing.json",
+	} {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, requestPath, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected exact selector miss %s to return 404, got %d body=%s", requestPath, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestCustomThemeRenderPackRevisionCacheIsBounded(t *testing.T) {
+	home := t.TempDir()
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.home = home
+
+	var newestPath string
+	for revision := 0; revision < themeRenderPackRevisionLimit+3; revision++ {
+		newestPath = fmt.Sprintf("/themes/u/custom-%02d.json", revision)
+		pack := testThemePackZipRevision(
+			t,
+			"my-custom",
+			newestPath,
+			revision+1,
+			fmt.Sprintf("REVISION-%02d", revision),
+		)
+		if err := server.persistThemeRenderPack(pack); err != nil {
+			t.Fatalf("persist custom revision %d: %v", revision, err)
+		}
+	}
+
+	entries, err := os.ReadDir(server.themeRenderPackRevisionDir("my-custom"))
+	if err != nil {
+		t.Fatalf("read bounded revision cache: %v", err)
+	}
+	if len(entries) != themeRenderPackRevisionLimit {
+		t.Fatalf("expected %d cached revisions, got %d", themeRenderPackRevisionLimit, len(entries))
+	}
+	rec := httptest.NewRecorder()
+	requestPath := "/theme-packs/render/my-custom/" + filepath.Base(newestPath)
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, requestPath, nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "REVISION-14") {
+		t.Fatalf("expected newest revision to survive pruning, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLegacySingleThemeRenderPackCacheStillSupportsExactSelector(t *testing.T) {
+	home := t.TempDir()
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.home = home
+	if err := server.persistThemeRenderPack(testThemePackZip(t)); err != nil {
+		t.Fatalf("persist legacy cache fixture: %v", err)
+	}
+	if err := os.RemoveAll(server.themeRenderPackRevisionDir("cozy-meadow")); err != nil {
+		t.Fatalf("remove revision cache to simulate old Companion: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/theme-packs/render/cozy-meadow/cm.json",
+		nil,
+	)
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected legacy id cache to satisfy exact path, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got themeRenderPack
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode legacy cache response: %v", err)
+	}
+	if got.SpecPath != "/themes/u/cm.json" {
+		t.Fatalf("unexpected legacy cache response: %+v", got)
+	}
+}
+
 func TestCustomThemeRenderPackPersistsWhenDisplayRefreshFails(t *testing.T) {
 	device := newThemeInstallReadyDeviceServer(t)
 	defer device.Close()
@@ -3253,7 +4293,7 @@ func TestDeviceGetDoesNotScanSubnetWhenSavedTargetIsStale(t *testing.T) {
 	}
 }
 
-func TestStatusKeepsConfiguredDeviceReconnectingDuringTransientProbeFailure(t *testing.T) {
+func TestStatusKeepsConfiguredDeviceReadyDuringTransientProbeFailureWithHealthyStream(t *testing.T) {
 	var available atomic.Bool
 	var boot atomic.Int32
 	available.Store(true)
@@ -3304,10 +4344,10 @@ func TestStatusKeepsConfiguredDeviceReconnectingDuringTransientProbeFailure(t *t
 	}
 	available.Store(false)
 	reconnecting := readStatus()
-	if reconnecting.Device.ConnectionState != deviceConnectionRetrying || reconnecting.Device.Ready {
-		t.Fatalf("transient timeout restarted setup instead of reconnecting: %+v", reconnecting.Device)
+	if reconnecting.Device.ConnectionState != deviceConnectionReady || !reconnecting.Device.Ready {
+		t.Fatalf("transient probe failure discarded healthy stream proof: %+v", reconnecting.Device)
 	}
-	if !reconnecting.Device.Active || !reconnecting.Device.Paired || reconnecting.Device.DeviceID != "vibetv-canary" {
+	if !reconnecting.Device.Active || !reconnecting.Device.Connected || !reconnecting.Device.Paired || reconnecting.Device.DeviceID != "vibetv-canary" {
 		t.Fatalf("saved active identity was not preserved: %+v", reconnecting.Device)
 	}
 	if reconnecting.Device.LastSeenAt == "" {
@@ -3327,6 +4367,289 @@ func TestStatusKeepsConfiguredDeviceReconnectingDuringTransientProbeFailure(t *t
 	}
 }
 
+func TestStatusKeepsReachableDeviceConnectedWhileFirstUsageIsPending(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.44","deviceId":"vibetv-canary","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"system":{"bootId":"boot-1","uptimeMs":1200,"resetCount":1,"resetReason":"Power On"},"render":{"fullCount":0,"partialCount":0,"lastKind":""}}`))
+		default:
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "vibetv-canary",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    device.URL,
+			ErrorCode: "provider_setup_required",
+			Detail:    "No provider is ready.",
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if !got.Device.Active || !got.Device.Connected || !got.Device.Paired {
+		t.Fatalf("first-usage wait lost the configured VibeTV: %+v", got.Device)
+	}
+	if got.Device.Ready || got.Device.ConnectionState != deviceConnectionNoProvider {
+		t.Fatalf("usage-pending device must stay connected, not ready, and not reconnecting: %+v", got.Device)
+	}
+}
+
+// Regression test for the live-observed customer failure (2026-08-06): the
+// Control Center bounced between the Overview and the "Choose a VibeTV"
+// setup screen because a single missed /hello probe flipped Connected to
+// false. A device that was just seen must stay Connected (state
+// "reconnecting") through transient probe misses for a bounded grace window,
+// and only then drop to disconnected.
+//
+// DO NOT weaken this test to make it pass. Fix the connection-state code.
+func TestStatusKeepsRecentlySeenDeviceConnectedThroughTransientProbeMiss(t *testing.T) {
+	var available atomic.Bool
+	available.Store(true)
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !available.Load() {
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.44","deviceId":"vibetv-canary","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"system":{"bootId":"boot-1","uptimeMs":1200,"resetCount":1,"resetReason":"Power On"},"render":{"fullCount":0,"partialCount":0,"lastKind":""}}`))
+		default:
+			http.Error(w, "unexpected", http.StatusNotFound)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "vibetv-canary",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    device.URL,
+			ErrorCode: "provider_setup_required",
+			Detail:    "No provider is ready.",
+		}
+	}
+	clock := time.Date(2026, 8, 6, 21, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return clock }
+
+	readStatus := func() statusResponse {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status: %v", err)
+		}
+		return got
+	}
+
+	if got := readStatus(); !got.Device.Connected {
+		t.Fatalf("reachable device must be connected: %+v", got.Device)
+	}
+
+	// One transient probe miss 10 seconds later must NOT flip the customer
+	// back to a disconnected/setup experience.
+	available.Store(false)
+	clock = clock.Add(10 * time.Second)
+	afterMiss := readStatus()
+	if !afterMiss.Device.Connected {
+		t.Fatalf("single probe miss flipped a just-seen device to disconnected: %+v", afterMiss.Device)
+	}
+	if afterMiss.Device.ConnectionState != deviceConnectionRetrying {
+		t.Fatalf("degraded device must report reconnecting, got %+v", afterMiss.Device)
+	}
+
+	// Still inside the grace window a minute later: keep Connected.
+	clock = clock.Add(50 * time.Second)
+	if got := readStatus(); !got.Device.Connected {
+		t.Fatalf("device inside the reconnect grace window must stay connected: %+v", got.Device)
+	}
+
+	// Well past the grace window the truth wins: disconnected.
+	clock = clock.Add(10 * time.Minute)
+	if got := readStatus(); got.Device.Connected {
+		t.Fatalf("device unseen for minutes must not stay connected: %+v", got.Device)
+	}
+
+	// The device comes back: connected again on the next poll.
+	available.Store(true)
+	clock = clock.Add(5 * time.Second)
+	if got := readStatus(); !got.Device.Connected {
+		t.Fatalf("recovered device must reconnect on the next poll: %+v", got.Device)
+	}
+}
+
+// Soak variant of the anti-flap regression: the customer-observed flakiness
+// only shows after 10-30+ seconds of real polling. This simulates 15 minutes
+// of 5s status polls against a device with a realistic miss pattern (every
+// 4th probe drops, plus one 30s outage). The customer-visible Connected state
+// must not flip even once. A real outage longer than the grace window must
+// then produce exactly one honest transition to disconnected.
+//
+// DO NOT weaken this test to make it pass.
+func TestStatusConnectedStateStaysStableThroughMinutesOfIntermittentProbes(t *testing.T) {
+	var available atomic.Bool
+	available.Store(true)
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !available.Load() {
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.44","deviceId":"vibetv-canary","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"system":{"bootId":"boot-1","uptimeMs":1200,"resetCount":1,"resetReason":"Power On"},"render":{"fullCount":0,"partialCount":0,"lastKind":""}}`))
+		default:
+			http.Error(w, "unexpected", http.StatusNotFound)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "vibetv-canary",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    device.URL,
+			ErrorCode: "provider_setup_required",
+			Detail:    "No provider is ready.",
+		}
+	}
+	clock := time.Date(2026, 8, 6, 21, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return clock }
+
+	readConnected := func() bool {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var got statusResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status: %v", err)
+		}
+		return got.Device.Connected
+	}
+
+	const pollEvery = 5 * time.Second
+	transitions := 0
+	last := readConnected()
+	if !last {
+		t.Fatalf("device must start connected")
+	}
+
+	poll := func() {
+		clock = clock.Add(pollEvery)
+		connected := readConnected()
+		if connected != last {
+			transitions++
+			last = connected
+		}
+	}
+
+	// 15 minutes of polling: every 4th probe misses transiently.
+	outageStart := 60 // poll index where a 30s outage begins
+	for i := 1; i <= 180; i++ {
+		transientMiss := i%4 == 0
+		inOutage := i >= outageStart && i < outageStart+6 // 6 polls = 30s
+		available.Store(!(transientMiss || inOutage))
+		poll()
+	}
+	if transitions != 0 {
+		t.Fatalf("customer-visible Connected flipped %d times during transient misses - this is the observed flakiness", transitions)
+	}
+
+	// A real outage longer than the grace window: exactly one honest drop.
+	available.Store(false)
+	for i := 0; i < 30; i++ { // 150s > grace window
+		poll()
+	}
+	if last {
+		t.Fatalf("device dead for 150s must read disconnected")
+	}
+	if transitions != 1 {
+		t.Fatalf("expected exactly one honest transition to disconnected, got %d", transitions)
+	}
+
+	// And exactly one transition back once it recovers.
+	available.Store(true)
+	poll()
+	if !last || transitions != 2 {
+		t.Fatalf("expected clean single transition back to connected, got connected=%v transitions=%d", last, transitions)
+	}
+}
+
+func TestStatusDoesNotReportUnreachableDeviceConnectedFromProviderSetupStream(t *testing.T) {
+	// A powered-off VibeTV must never look connected just because the display
+	// stream logged provider_setup_required minutes ago. Connectivity requires
+	// live evidence: a fresh /hello or a healthy (frame-acknowledged) stream.
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceToken:  "pair-token",
+		DeviceID:     "vibetv-canary",
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    device.URL,
+			ErrorCode: "provider_setup_required",
+			Detail:    "No provider is ready.",
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if !got.Device.Active {
+		t.Fatalf("configured VibeTV lost its active identity: %+v", got.Device)
+	}
+	if got.Device.Connected || got.Device.Ready {
+		t.Fatalf("unreachable device must not report connected/ready from a stale provider-setup stream: %+v", got.Device)
+	}
+	if got.Device.ConnectionState != deviceConnectionRetrying {
+		t.Fatalf("unreachable configured device must report reconnecting: %+v", got.Device)
+	}
+}
+
 func TestStatusIsReadOnlyAndKeepsOfflineActiveDevice(t *testing.T) {
 	var postCalls atomic.Int32
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3342,6 +4665,9 @@ func TestStatusIsReadOnlyAndKeepsOfflineActiveDevice(t *testing.T) {
 		DeviceToken:  "pair-token",
 		DeviceID:     "vibetv-canary",
 	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Running: true, Target: device.URL}
+	}
 	server.subnetTargets = func() []string {
 		t.Fatal("status must not scan the subnet")
 		return nil
@@ -3736,6 +5062,15 @@ func TestRenderHealthyRequiresCountersAndUsageKind(t *testing.T) {
 		if renderHealthyFromHealth(health) {
 			t.Fatalf("local %s render must not prove that the Mac sent a frame", localRenderKind)
 		}
+	}
+}
+
+func TestClockRenderKeepsTheLiveScreenReadyWithoutProvingAFrame(t *testing.T) {
+	if !liveScreenRenderKind("clock") {
+		t.Fatal("a clock repaint is still the live customer screen")
+	}
+	if usageRenderKind("clock") || localOverlayRenderKind("clock") {
+		t.Fatal("a clock repaint must not prove that the Mac sent a fresh usage frame")
 	}
 }
 
@@ -4382,6 +5717,84 @@ func TestDeviceDiscoverReturnsConflictForMultipleSubnetCandidates(t *testing.T) 
 	}
 }
 
+func TestDeviceSearchAmbiguityBlocksLaterLegacyDiscover(t *testing.T) {
+	var pairCalls atomic.Int32
+	var frameCalls atomic.Int32
+	first := newCountedSelectableDeviceServer(t, "vibetv-a", &pairCalls, &frameCalls)
+	defer first.Close()
+	second := newCountedSelectableDeviceServer(t, "vibetv-b", &pairCalls, &frameCalls)
+	defer second.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{})
+	subnetCalls := 0
+	server.subnetTargets = func() []string {
+		subnetCalls++
+		if subnetCalls == 1 {
+			return []string{first.URL, second.URL}
+		}
+		return []string{first.URL}
+	}
+
+	search := httptest.NewRecorder()
+	searchReq := httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
+	searchReq.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(search, searchReq)
+	if search.Code != http.StatusOK {
+		t.Fatalf("expected first search status 200, got %d body=%s", search.Code, search.Body.String())
+	}
+	var firstSearch struct {
+		Devices []deviceSearchEntry `json:"devices"`
+	}
+	if err := json.Unmarshal(search.Body.Bytes(), &firstSearch); err != nil {
+		t.Fatalf("decode first search: %v", err)
+	}
+	if len(firstSearch.Devices) != 2 {
+		t.Fatalf("expected two discovered devices, got %+v", firstSearch.Devices)
+	}
+
+	search = httptest.NewRecorder()
+	searchReq = httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
+	searchReq.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(search, searchReq)
+	if search.Code != http.StatusOK {
+		t.Fatalf("expected second search status 200, got %d body=%s", search.Code, search.Body.String())
+	}
+	var secondSearch struct {
+		Devices []deviceSearchEntry `json:"devices"`
+	}
+	if err := json.Unmarshal(search.Body.Bytes(), &secondSearch); err != nil {
+		t.Fatalf("decode second search: %v", err)
+	}
+	if len(secondSearch.Devices) != 1 || secondSearch.Devices[0].DeviceID != "vibetv-a" {
+		t.Fatalf("expected transiently unique first device, got %+v", secondSearch.Devices)
+	}
+
+	discover := httptest.NewRecorder()
+	discoverReq := httptest.NewRequest(http.MethodPost, "/v1/device/discover", strings.NewReader(`{}`))
+	discoverReq.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(discover, discoverReq)
+	if discover.Code != http.StatusConflict {
+		t.Fatalf("expected legacy discover to stay blocked, got %d body=%s", discover.Code, discover.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(discover.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode discover error: %v", err)
+	}
+	if got.Error.Code != "multiple_devices_found" {
+		t.Fatalf("expected multiple-devices error, got %+v", got)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceTarget != "" || cfg.DeviceToken != "" || cfg.DeviceID != "" || len(cfg.KnownDevices) != 0 {
+		t.Fatalf("ambiguous discovery persisted device state: %+v", cfg)
+	}
+	if pairCalls.Load() != 0 || frameCalls.Load() != 0 {
+		t.Fatalf("ambiguous discovery caused pair/frame writes: pair=%d frame=%d", pairCalls.Load(), frameCalls.Load())
+	}
+}
+
 func TestDeviceDiscoverIgnoresStaleSavedToken(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -4522,6 +5935,53 @@ func TestDeviceRepairFindsActiveDeviceAtNewIPWithoutPairing(t *testing.T) {
 	cfg, err := server.config()
 	if err != nil || cfg.DeviceID != deviceID || cfg.DeviceTarget != device.URL || cfg.DeviceToken != token {
 		t.Fatalf("reconnect did not preserve active profile: cfg=%+v err=%v", cfg, err)
+	}
+}
+
+func TestDeviceRepairFindsSavedDeviceIDWhenMultipleDevicesAreOnline(t *testing.T) {
+	const deviceID = "saved-vibetv"
+	const token = "saved-token"
+	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "old address", http.StatusServiceUnavailable)
+	}))
+	defer stale.Close()
+	var pairCalls atomic.Int32
+	expected := newCountedSelectableDeviceServer(t, deviceID, &pairCalls, nil)
+	defer expected.Close()
+	other := newCountedSelectableDeviceServer(t, "other-vibetv", &pairCalls, nil)
+	defer other.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: stale.URL,
+		DeviceToken:  token,
+		DeviceID:     deviceID,
+		KnownDevices: []runtimeconfig.KnownDevice{{
+			DeviceID:    deviceID,
+			Target:      stale.URL,
+			DeviceToken: token,
+		}},
+	})
+	server.subnetTargets = func() []string {
+		return []string{other.URL, expected.URL}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/repair", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected repair status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode repair response: %v", err)
+	}
+	if !got.Device.Connected || got.Device.DeviceID != deviceID || got.Device.Target != expected.URL {
+		t.Fatalf("expected repair to pin saved device identity, got %+v", got.Device)
+	}
+	if pairCalls.Load() != 0 {
+		t.Fatalf("saved device recovery must not pair again, got %d pair calls", pairCalls.Load())
 	}
 }
 
@@ -4676,9 +6136,9 @@ func TestDeviceRepairMigratesStoredLegacyMDNSTargetToSubnetIP(t *testing.T) {
 	server.subnetTargets = func() []string {
 		return []string{device.URL}
 	}
-	var setupCalls []setup.Options
+	setupCalls := make(chan setup.Options, 2)
 	server.runSetup = func(_ context.Context, opts setup.Options) error {
-		setupCalls = append(setupCalls, opts)
+		setupCalls <- opts
 		return nil
 	}
 
@@ -4698,8 +6158,17 @@ func TestDeviceRepairMigratesStoredLegacyMDNSTargetToSubnetIP(t *testing.T) {
 	if !got.OK || got.Device.Target != device.URL || !got.Device.Paired {
 		t.Fatalf("expected subnet repair target %q, got %+v", device.URL, got)
 	}
-	if len(setupCalls) == 0 || setupCalls[len(setupCalls)-1].Target != device.URL {
-		t.Fatalf("expected display stream refreshed with discovered target, got %+v", setupCalls)
+	var calls []setup.Options
+	for len(calls) < 2 {
+		select {
+		case call := <-setupCalls:
+			calls = append(calls, call)
+		case <-time.After(time.Second):
+			t.Fatalf("expected display stream refreshed with discovered target, got %+v", calls)
+		}
+	}
+	if calls[len(calls)-1].Target != device.URL {
+		t.Fatalf("expected display stream refreshed with discovered target, got %+v", calls)
 	}
 }
 
@@ -4708,9 +6177,9 @@ func TestDeviceRepairForcePairRotatesToken(t *testing.T) {
 	defer device.Close()
 
 	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "old-token"})
-	var setupCalls []setup.Options
+	setupCalls := make(chan setup.Options, 2)
 	server.runSetup = func(_ context.Context, opts setup.Options) error {
-		setupCalls = append(setupCalls, opts)
+		setupCalls <- opts
 		return nil
 	}
 
@@ -4730,8 +6199,14 @@ func TestDeviceRepairForcePairRotatesToken(t *testing.T) {
 	if !got.Device.Paired {
 		t.Fatalf("expected paired device, got %+v", got.Device)
 	}
-	if len(setupCalls) != 2 {
-		t.Fatalf("expected display stream refresh, got %+v", setupCalls)
+	var calls []setup.Options
+	for len(calls) < 2 {
+		select {
+		case call := <-setupCalls:
+			calls = append(calls, call)
+		case <-time.After(time.Second):
+			t.Fatalf("expected display stream refresh, got %+v", calls)
+		}
 	}
 
 	rec = httptest.NewRecorder()
@@ -5980,19 +7455,8 @@ func TestWriteRepairErrorMapsPairingAuthorizationStatus(t *testing.T) {
 
 func TestDefaultRepairDeadlineFitsExtendedUIRequestBudget(t *testing.T) {
 	const uiRequestBudget = 120 * time.Second
-	renderBudget := displayRenderWaitTime
-	if deviceTimeout > renderBudget {
-		renderBudget = deviceTimeout
-	}
-	worstCase := time.Duration(repairDiscoveryAttempts)*discoveryProbeTime +
-		time.Duration(repairDiscoveryAttempts-1)*repairDiscoveryRetryGap +
-		time.Duration(defaultPairAttempts)*defaultPairAttemptTimeout +
-		time.Duration(defaultPairAttempts-1)*defaultPairRetryGap +
-		2*deviceHealthProbeTime +
-		2*displayStreamWaitTime +
-		renderBudget
-	if worstCase >= uiRequestBudget {
-		t.Fatalf("backend repair deadline %s must stay below extended UI request budget %s", worstCase, uiRequestBudget)
+	if repairRequestTimeout >= uiRequestBudget {
+		t.Fatalf("backend repair request timeout %s must stay below extended UI request budget %s", repairRequestTimeout, uiRequestBudget)
 	}
 }
 
@@ -6269,8 +7733,76 @@ func TestThemeInstallCapturesRenderBaselineBeforeActivation(t *testing.T) {
 		return health, nil
 	}
 
-	if _, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, io.Discard); err != nil {
+	var out bytes.Buffer
+	if _, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, &out); err != nil {
 		t.Fatalf("run theme install: %v", err)
+	}
+	for _, phase := range []string{
+		"device-maintenance",
+		"preflight",
+		"device-install",
+		"stream-refresh",
+		"render-verification",
+		"total",
+	} {
+		if !strings.Contains(out.String(), "Theme install timing: phase="+phase+" duration=") {
+			t.Fatalf("missing %s timing in output:\n%s", phase, out.String())
+		}
+	}
+}
+
+func TestThemeInstallScreensaverSlotSkipsTheLiveRenderVerification(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("a screensaver install must not read the live render state: %s", r.URL.Path)
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	var gotSlot string
+	server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+		gotSlot = opts.Slot
+		return themeinstall.Result{ThemeID: "night-clock", Slot: opts.Slot}, nil
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		t.Fatal("a screensaver install has no new image to wait for")
+		return deviceHealth{}, nil
+	}
+
+	result, err := server.runThemeInstall(
+		context.Background(),
+		cfg,
+		themeInstallRequest{ThemeID: "night-clock", Slot: themepack.UsageScreensaver},
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("run screensaver install: %v", err)
+	}
+	if gotSlot != themepack.UsageScreensaver || result.Slot != themepack.UsageScreensaver {
+		t.Fatalf("expected the screensaver slot to reach the installer, got %q and %+v", gotSlot, result)
+	}
+}
+
+func TestThemeInstallRejectsUnknownSlot(t *testing.T) {
+	device := newThemeInstallReadyDeviceServer(t)
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		t.Fatal("an unknown slot must be rejected before the install starts")
+		return themeinstall.Result{}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(`{"themeId":"cozy-meadow","slot":"wall"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "invalid_install_slot") {
+		t.Fatalf("expected invalid_install_slot, got %s", rec.Body.String())
 	}
 }
 
@@ -6293,7 +7825,7 @@ func TestThemeInstallAcceptsZipAndReadsAsyncFromQuery(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true&themeId=cozy-meadow&themeName=Cozy%20Meadow", bytes.NewReader(zipBytes))
+	req := httptest.NewRequest(http.MethodPost, "/v1/themes/install?async=true&slot=screensaver&themeId=cozy-meadow&themeName=Cozy%20Meadow", bytes.NewReader(zipBytes))
 	req.Header.Set("Content-Type", "application/zip")
 	server.Handler().ServeHTTP(rec, req)
 
@@ -6310,10 +7842,13 @@ func TestThemeInstallAcceptsZipAndReadsAsyncFromQuery(t *testing.T) {
 	if started.Job.ThemeID != "cozy-meadow" || started.Job.ThemeName != "Cozy Meadow" {
 		t.Fatalf("expected resumable theme identity, got %+v", started.Job)
 	}
+	if started.Job.Slot != themepack.UsageScreensaver {
+		t.Fatalf("expected resumable theme slot, got %+v", started.Job)
+	}
 
 	select {
 	case opts := <-gotOpts:
-		if opts.ThemeID != "cozy-meadow" || opts.PackURL != "" || opts.CatalogURL != "" {
+		if opts.ThemeID != "cozy-meadow" || opts.Slot != themepack.UsageScreensaver || opts.PackURL != "" || opts.CatalogURL != "" {
 			t.Fatalf("unexpected in-memory theme source: %+v", opts)
 		}
 		if !bytes.Equal(opts.PackBytes, zipBytes) {
@@ -6900,6 +8435,200 @@ func TestFirmwareUpdateVerifiedFirmwareOverridesTemporaryCommandError(t *testing
 	}
 }
 
+// DO NOT weaken this test. The parent-paused marker lets the child updater
+// skip its writer-quiesce gate, so only a server that owns (and pauses) a
+// display writer may grant it. The standalone API server has no writer of its
+// own; its child must keep checking for a separate daemon writing the device.
+func TestFirmwareUpdateCommandEnvGrantsPausedMarkerOnlyToWriterOwners(t *testing.T) {
+	withWriter := strings.Join(firmwareUpdateCommandEnv(true, "/tmp/home"), "\n")
+	if !strings.Contains(withWriter, "VIBETV_UPDATE_PARENT_PAUSED=1") {
+		t.Fatal("a pausing writer owner must grant the parent-paused marker")
+	}
+	if !strings.Contains(withWriter, "HOME=/tmp/home") {
+		t.Fatal("the child updater must inherit the runtime home")
+	}
+	withoutWriter := strings.Join(firmwareUpdateCommandEnv(false, ""), "\n")
+	if strings.Contains(withoutWriter, "VIBETV_UPDATE_PARENT_PAUSED") {
+		t.Fatal("a server without a display writer must not grant the parent-paused marker")
+	}
+}
+
+// DO NOT weaken this test. An older Mac App must never push newer firmware
+// onto the device: the mixed state (new firmware + old app) renders slot-bound
+// theme elements empty and the old app cannot preview the device. The gate has
+// to hold at the API, not only in the UI, so races and alternative UI entry
+// points cannot start the job.
+func TestFirmwareUpdateInstallRefusesWhileMacAppUpdateAvailableOnDmg(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-gated","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.39"}`))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-gated", DeviceToken: "pair-token"})
+	server.installationMode = "dmg"
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		return githubRelease{TagName: "v9999999.0.0"}, nil
+	}
+	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
+		t.Fatal("firmware update must not start while a Mac App update is available")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	req.Header.Set("User-Agent", nativeControlCenterUA+"/9999.0.32")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 while the Mac App update is pending, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "mac_app_update_required") {
+		t.Fatalf("expected mac_app_update_required, got: %s", rec.Body.String())
+	}
+	if _, active := server.activeFirmwareUpdateJob(); active {
+		t.Fatal("no firmware update job may exist after the refusal")
+	}
+}
+
+// DO NOT weaken this test. A cached "no update" release answer from just
+// before a release publishes must not let the older app push the newer
+// firmware: the install-time gate has to bypass the release cache and
+// contact the feed.
+func TestFirmwareUpdateInstallGateBypassesStaleReleaseCache(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-cached","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.39"}`))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-cached", DeviceToken: "pair-token"})
+	server.installationMode = "dmg"
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		return githubRelease{TagName: "v0.0.1"}, nil
+	}
+	// Prime the cache with the pre-release "no update" answer.
+	if primed := server.macAppReleaseInfo(context.Background()); primed.UpdateAvailable {
+		t.Fatalf("priming check must not report an update, got %+v", primed)
+	}
+	// The release publishes inside the cache window.
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		return githubRelease{TagName: "v9999999.0.0"}, nil
+	}
+	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
+		t.Fatal("firmware update must not start on a stale cached release answer")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	req.Header.Set("User-Agent", nativeControlCenterUA+"/9999.0.32")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 from the fresh release check, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "mac_app_update_required") {
+		t.Fatalf("expected mac_app_update_required, got: %s", rec.Body.String())
+	}
+}
+
+// DO NOT weaken this test. An unknown release answer is not proof the Mac App
+// is current: the release feed and the firmware manifest are different
+// services, so the firmware can be reachable while the release check is down
+// or rate-limited. Customer installs fail closed.
+func TestFirmwareUpdateInstallRefusesWhenMacAppReleaseCheckFails(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-offline","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-offline", DeviceToken: "pair-token"})
+	server.installationMode = "dmg"
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		return githubRelease{}, errors.New("release feed unreachable")
+	}
+	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
+		t.Fatal("firmware update must not start on an unknown release answer")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	req.Header.Set("User-Agent", nativeControlCenterUA+"/9999.0.32")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 while the release check fails, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "mac_app_release_check_failed") {
+		t.Fatalf("expected mac_app_release_check_failed, got: %s", rec.Body.String())
+	}
+}
+
+// The env-var opt-out ("disabled") is the deliberate local escape for bench
+// and dev setups without a reachable release feed; it must keep working.
+func TestFirmwareUpdateInstallProceedsWhenReleaseCheckExplicitlyDisabled(t *testing.T) {
+	t.Setenv("CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL", "off")
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-optout","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-optout", DeviceToken: "pair-token"})
+	server.installationMode = "dmg"
+	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+		t.Fatal("disabled check must not contact the release feed")
+		return githubRelease{}, nil
+	}
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(_ context.Context, _ string, _ string, _ deviceHealth) (deviceHealth, error) {
+		return deviceHealth{OK: true}, nil
+	}
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","firmware":"1.0.40","target":"`+device.URL+`","deviceId":"device-optout","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	req.Header.Set("User-Agent", nativeControlCenterUA+"/9999.0.32")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected the update to start with the check disabled, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 200; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" && job.Phase != "" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Phase == "installing" || job.Phase == "" {
+		t.Fatalf("update job did not finish, last phase %q", job.Phase)
+	}
+}
+
 func TestFirmwareUpdateCurrentFirmwareWithStreamFailureNeedsAttention(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -6935,6 +8664,68 @@ func TestFirmwareUpdateCurrentFirmwareWithStreamFailureNeedsAttention(t *testing
 	}
 	if job.Phase != "attention" || job.Outcome != "firmware_current_stream_attention" || job.Result == nil || !job.Result.HealthVerified || job.Result.StreamVerified {
 		t.Fatalf("current firmware with a broken stream must need attention without another flash: %+v", job)
+	}
+}
+
+// A Mac without a ready AI provider has no usage picture to draw. The restarted
+// stream reports provider_setup_required forever, so demanding a verified render
+// there would report "needs attention" for an update that fully succeeded. This
+// is the exact state of the hosted guest matrix, which configures no provider.
+func TestFirmwareUpdateWithoutProviderCompletesWithoutRenderProof(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-no-provider","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-no-provider", DeviceToken: "pair-token"})
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		// No frame was ever sent, so LastTarget stays empty and the only signal
+		// is the daemon's runtime/no-providers cycle error.
+		return displayStreamInfo{
+			Running:   true,
+			Target:    target,
+			ErrorCode: "provider_setup_required",
+			Detail:    "VibeTV is connected, but no AI provider is ready yet.",
+		}
+	}
+	server.waitRender = func(_ context.Context, _ string, _ string, _ deviceHealth) (deviceHealth, error) {
+		t.Fatal("render proof must not be demanded while no provider can produce usage")
+		return deviceHealth{}, nil
+	}
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","firmware":"1.0.40","target":"`+device.URL+`","deviceId":"device-no-provider","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 100; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Phase != "complete" || job.Outcome != "updated" {
+		t.Fatalf("update without a provider must complete: %+v", job)
+	}
+	if job.Result == nil || !job.Result.StreamVerified {
+		t.Fatalf("restarted provider-setup stream must count as verified: %+v", job.Result)
+	}
+	if job.Result.RenderVerified || job.Result.RenderSkipped != "provider_setup_required" {
+		t.Fatalf("skipped render must be reported honestly, not claimed: %+v", job.Result)
 	}
 }
 
@@ -6983,6 +8774,26 @@ func TestFirmwareUpdateAsyncReportsCustomerError(t *testing.T) {
 	joinedLogs := strings.Join(got.Job.Logs, "\n")
 	if strings.Contains(joinedLogs, "pair-token") || strings.Contains(got.Job.Error.Message, "pair-token") {
 		t.Fatalf("update error leaked token: job=%+v logs=%q", got.Job, joinedLogs)
+	}
+}
+
+func TestFirmwareUpdateDiagnosticsRetainFailedPhaseAndObservedFirmware(t *testing.T) {
+	job := firmwareUpdateJob{
+		Phase: "error",
+		Stage: "rediscovering",
+		Result: &firmwareUpdateResult{
+			Firmware:         "1.0.40",
+			ObservedFirmware: "1.0.39",
+		},
+		Error: &apiError{Message: "VibeTV update failed."},
+	}
+
+	detail := firmwareUpdateDiagnosticDetail(job)
+	if !strings.Contains(detail, "rediscovering") || !strings.Contains(detail, "1.0.39") {
+		t.Fatalf("diagnostics lost the failed phase or observed firmware: %q", detail)
+	}
+	if strings.Contains(detail, "1.0.40 is installed") {
+		t.Fatalf("diagnostics rewrote the target as observed firmware: %q", detail)
 	}
 }
 
@@ -7492,6 +9303,189 @@ func TestSettingsValidatesAndForwardsBrightness(t *testing.T) {
 	}
 }
 
+func TestSettingsForwardsStandbyAndPassesTheCapabilityThrough(t *testing.T) {
+	settingsCalls := 0
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"display":{"brightness":{"supported":true}},"standby":{"supported":true,"minTimeoutMinutes":1,"maxTimeoutMinutes":240,"defaultTimeoutMinutes":10,"screensaverSlot":true},"transport":{"active":"wifi"}}}`))
+		case "/api/settings":
+			settingsCalls++
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse form: %v", err)
+			}
+			if got := r.Form.Get("sb"); got != "1" {
+				t.Fatalf("expected standby sb=1, got %q", got)
+			}
+			if got := r.Form.Get("st"); got != "30" {
+				t.Fatalf("expected standby st=30, got %q", got)
+			}
+			if got := r.Form.Get("sbr"); got != "15" {
+				t.Fatalf("expected standby sbr=15, got %q", got)
+			}
+			if r.Form.Has("b") {
+				t.Fatalf("a standby write must not change display brightness")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40},"standby":{"enabled":true,"timeoutMinutes":30,"brightnessPercent":15,"screensaverPath":null}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":{"display":{"brightnessPercent":40},"standby":{"enabled":true,"timeoutMinutes":30,"brightnessPercent":15,"screensaverPath":null}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/settings", strings.NewReader(`{"standby":{"enabled":true,"timeoutMinutes":30,"brightnessPercent":15}}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected standby write status 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if settingsCalls != 1 {
+		t.Fatalf("expected one forwarded settings call, got %d", settingsCalls)
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, `"standby":{"enabled":true,"timeoutMinutes":30,"brightnessPercent":15,"screensaverPath":null}`) {
+		t.Fatalf("expected the stored standby settings in the response, got %s", body)
+	}
+	if !strings.Contains(body, `"standby":{"supported":true,"minTimeoutMinutes":1,"maxTimeoutMinutes":240,"defaultTimeoutMinutes":10,"screensaverSlot":true}`) {
+		t.Fatalf("expected the standby capability to reach the Control Center, got %s", body)
+	}
+}
+
+func TestSettingsReadsAndWritesTheScreensaverSlot(t *testing.T) {
+	const slotPath = "/themes/s/night.json"
+	storedSlot := ""
+	settings := func() string {
+		slot := "null"
+		if storedSlot != "" {
+			slot = `"` + storedSlot + `"`
+		}
+		return `{"display":{"brightnessPercent":40},"standby":{"enabled":true,"timeoutMinutes":10,"brightnessPercent":20,"screensaverPath":` + slot + `}}`
+	}
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"display":{"brightness":{"supported":true}},"standby":{"supported":true,"screensaverSlot":true},"transport":{"active":"wifi"}}}`))
+		case "/api/settings":
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse form: %v", err)
+			}
+			if got := r.Form.Get("ss"); got != slotPath {
+				t.Fatalf("expected screensaver slot ss=%q, got %q", slotPath, got)
+			}
+			storedSlot = slotPath
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":` + settings() + `}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":` + settings() + `}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/settings", strings.NewReader(
+		`{"standby":{"enabled":true,"timeoutMinutes":10,"brightnessPercent":20,"screensaverPath":"`+slotPath+`"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected screensaver slot write status 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	recorder = httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/settings", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected settings read status 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"screensaverPath":"`+slotPath+`"`) {
+		t.Fatalf("expected the screensaver slot in the settings read, got %s", recorder.Body.String())
+	}
+}
+
+func TestSettingsLeavesTheScreensaverSlotAloneWhenOmitted(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"display":{"brightness":{"supported":true}},"standby":{"supported":true},"transport":{"active":"wifi"}}}`))
+		case "/api/settings":
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse form: %v", err)
+			}
+			if r.Form.Has("ss") {
+				t.Fatalf("a standby write without screensaverPath must not touch the slot")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40},"standby":{"enabled":false,"timeoutMinutes":10,"brightnessPercent":20,"screensaverPath":"/themes/s/night.json"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":{"display":{"brightnessPercent":40},"standby":{"enabled":false,"timeoutMinutes":10,"brightnessPercent":20,"screensaverPath":"/themes/s/night.json"}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/settings", strings.NewReader(`{"standby":{"enabled":false,"timeoutMinutes":10,"brightnessPercent":20}}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected standby write status 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"screensaverPath":"/themes/s/night.json"`) {
+		t.Fatalf("expected the untouched screensaver slot in the response, got %s", recorder.Body.String())
+	}
+}
+
+func TestSettingsRejectsStandbyWithoutDeviceSupport(t *testing.T) {
+	settingsCalls := 0
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"display":{"brightness":{"supported":true}},"standby":{"supported":false},"transport":{"active":"wifi"}}}`))
+		case "/api/settings":
+			settingsCalls++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/settings", strings.NewReader(`{"standby":{"enabled":true,"timeoutMinutes":10,"brightnessPercent":20}}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected standby write status 400, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if settingsCalls != 0 {
+		t.Fatalf("an unsupported standby write must not reach the device")
+	}
+}
+
 func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	t.Helper()
 	t.Setenv("CODEXBAR_DISPLAY_USAGE_MODE", "used")
@@ -7521,17 +9515,19 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
 		return githubRelease{TagName: "v1.0.0"}, nil
 	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{}, false
+	}
 	server.probeProviderSetup = func(context.Context, string) codexbar.ProviderSetup {
 		return codexbar.ProviderSetup{
 			Status: "ready",
 			Engine: codexbar.EngineReadiness{Status: codexbar.ProviderReady},
 			Providers: []codexbar.ProviderReadiness{{
-				ID: "codex", Label: "Codex", Enabled: true, Status: codexbar.ProviderReady,
+				ID: "codex", Label: "Codex", Enabled: providerEnabled(true), Status: codexbar.ProviderReady,
 			}},
 		}
 	}
 	server.providerPreferences.loadInventory = nil
-	server.openCodexBar = func(context.Context) error { return nil }
 	server.subnetTargets = func() []string {
 		return nil
 	}
@@ -7649,6 +9645,34 @@ func newPairableDeviceServer(t *testing.T) *httptest.Server {
 	}))
 }
 
+func newCountedSelectableDeviceServer(t *testing.T, deviceID string, pairCalls, frameCalls *atomic.Int32) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.31","deviceId":%q,"networkMode":"station","capabilities":{"theme":{"supportsThemeSpecV1":true},"auth":{"paired":true,"tokenHeader":"X-VibeTV-Token"},"transport":{"active":"wifi"}}}`, deviceID)
+		case "/api/pair":
+			if pairCalls != nil {
+				pairCalls.Add(1)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"token":"pair-token"}`))
+		case "/frame":
+			if frameCalls != nil {
+				frameCalls.Add(1)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":2,"partialCount":0,"lastKind":"usage"},"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"renderOk":true}},"settings":{"display":{"brightnessPercent":40}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+}
+
 func newRepairableDeviceServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -7701,6 +9725,46 @@ func testThemePackZip(t *testing.T) []byte {
 			name: "theme.json",
 			data: `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"v":"OK","s":1}]}`,
 		},
+	}
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	for _, file := range files {
+		entry, err := writer.Create(file.name)
+		if err != nil {
+			t.Fatalf("create ZIP entry %s: %v", file.name, err)
+		}
+		if _, err := io.WriteString(entry, file.data); err != nil {
+			t.Fatalf("write ZIP entry %s: %v", file.name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close theme ZIP: %v", err)
+	}
+	return append([]byte(nil), buffer.Bytes()...)
+}
+
+func testThemePackZipRevision(t *testing.T, themeID, specPath string, revision int, marker string) []byte {
+	t.Helper()
+	files := []struct {
+		name string
+		data string
+	}{
+		{
+			name: "manifest.json",
+			data: fmt.Sprintf(`{"kind":"vibetv-theme-pack","schemaVersion":1,"id":%q,"name":"My Custom","themeSpec":{"path":%q,"file":"theme.json"},"assets":[{"path":"/themes/u/custom-meta.txt","file":"assets/meta.txt","contentType":"text/plain"}]}`,
+				themeID,
+				specPath,
+			),
+		},
+		{
+			name: "theme.json",
+			data: fmt.Sprintf(`{"v":1,"id":%q,"rev":%d,"fb":"mini","p":[{"t":"tx","x":0,"y":0,"v":%q,"s":1}]}`,
+				themeID,
+				revision,
+				marker,
+			),
+		},
+		{name: "assets/meta.txt", data: marker},
 	}
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
@@ -7864,5 +9928,936 @@ func TestFirmwareLatestRejectsMalformedInstalledVersion(t *testing.T) {
 	}
 	if !strings.Contains(got.Message, "banana") {
 		t.Fatalf("expected message to name the malformed version, got %q", got.Message)
+	}
+}
+
+// Hardware, esp8266-smalltv-st7789, 2026-08-07: after a successful OTA the
+// device reboots and comes back with the stored theme spec active but parked on
+// the setup screen (lastKind "connected_setup", cbaCompletedFrames 0). The Mac
+// keeps reporting sent usage frames while the customer stares at the setup
+// screen, and render counters never advance on their own. repairDevice already
+// reactivates the stored theme in exactly this state; the update path must do
+// the same instead of finishing with a render attention.
+func TestFirmwareUpdateReactivatesStoredThemeParkedOnSetupScreen(t *testing.T) {
+	const healthBody = `{"ok":true,` +
+		`"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy-3-fe3fd4.json","renderOk":true}},` +
+		`"render":{"fullCount":3,"partialCount":0,"lastKind":"connected_setup"}}`
+	const renderedBody = `{"ok":true,` +
+		`"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy-3-fe3fd4.json","renderOk":true}},` +
+		`"render":{"fullCount":4,"partialCount":0,"lastKind":"theme_spec_usage"}}`
+
+	var activations atomic.Int32
+	var activatedPath atomic.Value
+	activatedPath.Store("")
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-parked","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			if activations.Load() > 0 {
+				_, _ = w.Write([]byte(renderedBody))
+				return
+			}
+			_, _ = w.Write([]byte(healthBody))
+		case "/theme/active":
+			if r.URL.RawQuery != "" {
+				t.Errorf("stored-theme activation must not put anything in the query: %q", r.URL.RawQuery)
+			}
+			var body struct {
+				Path string `json:"path"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			activatedPath.Store(body.Path)
+			activations.Add(1)
+			_, _ = w.Write([]byte(`{"ok":true,"path":"` + body.Path + `"}`))
+		default:
+			t.Errorf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-parked", DeviceToken: "pair-token"})
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","outcome":"updated","firmware":"1.0.40","target":"`+device.URL+`","deviceId":"device-parked","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 300; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if activations.Load() != 1 {
+		t.Fatalf("expected exactly one stored-theme activation, got %d", activations.Load())
+	}
+	if got := activatedPath.Load().(string); got != "/themes/u/clippy-3-fe3fd4.json" {
+		t.Fatalf("activated the wrong theme path: %q", got)
+	}
+	if job.Phase != "complete" || job.Outcome != "updated" {
+		t.Fatalf("a repaired picture must complete the update, got phase=%q outcome=%q message=%q", job.Phase, job.Outcome, job.Message)
+	}
+	if job.Result == nil || !job.Result.RenderVerified {
+		t.Fatalf("expected a verified render after reactivation, got %+v", job.Result)
+	}
+}
+
+// Hardware, esp8266-smalltv-st7789, 2026-08-07: the reactivation above ran
+// while the display stream that verifyFirmwareUpdateResult had just restarted
+// was sending frames. A VibeTV serves one connection at a time, so the device
+// answered EOF and the customer stayed on the setup screen. The firmware update
+// log recorded it in one line:
+//
+//	render-repair: reactivated from baseline err=reactivate current VibeTV
+//	theme: Post "http://192.168.178.72/theme/active": EOF
+//
+// repairDevice and the theme install both pause the stream around the same
+// call. This device drops the connection whenever they do not.
+func TestFirmwareUpdatePausesDisplayStreamWhileReactivatingTheme(t *testing.T) {
+	const parkedBody = `{"ok":true,` +
+		`"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy-3-fe3fd4.json","renderOk":true}},` +
+		`"render":{"fullCount":3,"partialCount":0,"lastKind":"connected_setup"}}`
+	const renderedBody = `{"ok":true,` +
+		`"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy-3-fe3fd4.json","renderOk":true}},` +
+		`"render":{"fullCount":4,"partialCount":0,"lastKind":"theme_spec_usage"}}`
+
+	var streamPaused atomic.Bool
+	var activations, refusedWhileStreaming atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-busy","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40","capabilities":{"transport":{"active":"wifi"}}}`))
+		case "/health":
+			if activations.Load() > 0 {
+				_, _ = w.Write([]byte(renderedBody))
+				return
+			}
+			_, _ = w.Write([]byte(parkedBody))
+		case "/theme/active":
+			if !streamPaused.Load() {
+				// The single connection still belongs to the display stream:
+				// drop this one without a response, exactly as the device does.
+				refusedWhileStreaming.Add(1)
+				panic(http.ErrAbortHandler)
+			}
+			activations.Add(1)
+			_, _ = w.Write([]byte(`{"ok":true,"path":"/themes/u/clippy-3-fe3fd4.json"}`))
+		default:
+			t.Errorf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-busy", DeviceToken: "pair-token"})
+	server.pauseDisplayStream = func(paused bool) { streamPaused.Store(paused) }
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","outcome":"updated","firmware":"1.0.40","target":"`+device.URL+`","deviceId":"device-busy","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 300; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if refusedWhileStreaming.Load() != 0 {
+		t.Fatalf("theme reactivation reached the device %d times with the stream still running", refusedWhileStreaming.Load())
+	}
+	if activations.Load() == 0 {
+		t.Fatal("expected the stored theme to be reactivated with the stream paused")
+	}
+	if streamPaused.Load() {
+		t.Fatal("the display stream must be running again once the update finishes")
+	}
+	if job.Phase != "complete" || job.Result == nil || !job.Result.RenderVerified {
+		t.Fatalf("expected a verified render, got phase=%q result=%+v", job.Phase, job.Result)
+	}
+}
+
+// Hardware, 2026-08-07: after a stalled upload the updater's own diagnosis of
+// why the stored theme was not restored existed only on the child process's
+// stdout. noteLine dropped every line customerFirmwareUpdateProgress did not
+// recognise, so nothing reached the job log or any file, and a support report
+// from a real customer could not explain the failure. The curated customer
+// messages must stay curated, but the raw child output has to survive.
+func TestFirmwareUpdateKeepsChildDiagnosticsOnDisk(t *testing.T) {
+	home := t.TempDir()
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-diag","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.39"}`))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-diag", DeviceToken: "pair-token-secret"})
+	server.home = home
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, "warning: could not restore stored theme after aborted upload: timed out\n")
+		_, _ = io.WriteString(out, "ota-upload: timed out waiting for VibeTV to acknowledge firmware data (512 bytes pending)\n")
+		_, _ = io.WriteString(out, "token check used http://device.local/hello?token=pair-token-secret\n")
+		return errors.New("interrupted upload")
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 0; attempt < 300; attempt++ {
+		job, _ := server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase == "error" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	path := runtimepaths.FirmwareUpdateLog(home)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("firmware update diagnostics were not written to %s: %v", path, err)
+	}
+	text := string(raw)
+	for _, want := range []string{
+		"could not restore stored theme after aborted upload",
+		"512 bytes pending",
+		started.Job.ID,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected %q in the diagnostics log, got %q", want, text)
+		}
+	}
+	if strings.Contains(text, "pair-token-secret") {
+		t.Fatalf("diagnostics log leaked the pairing token: %q", text)
+	}
+}
+
+// A Mac without a ready AI provider has no usage picture to draw, so the
+// restarted stream reports provider_setup_required forever. Demanding a
+// verified render there told the customer the install failed while the theme
+// was already on the device, and the mandatory theme chooser then offered the
+// same install again — a closed loop with no exit. The firmware update path
+// already makes this exact call for the same reason.
+func TestThemeInstallWithoutProviderCompletesWithoutRenderProof(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"error"},"display":{"activeTheme":"theme-missing","themeSpec":{"active":false,"path":"/themes/u/cm.json","renderOk":true}}}`))
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{ThemeID: "mini"}, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    target,
+			ErrorCode: "provider_setup_required",
+			Detail:    "VibeTV is connected, but no AI provider is ready yet.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		t.Fatal("render proof must not be demanded while no provider can produce usage")
+		return deviceHealth{}, nil
+	}
+
+	var out bytes.Buffer
+	result, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, &out)
+	if err != nil {
+		t.Fatalf("theme install without a provider must succeed: %v", err)
+	}
+	if result.ThemeID != "mini" {
+		t.Fatalf("install result must be returned: %+v", result)
+	}
+	if !strings.Contains(out.String(), "Display stream: waiting for AI provider") {
+		t.Fatalf("install must state why no picture arrived:\n%s", out.String())
+	}
+}
+
+// The provider tolerance is scoped to provider_setup_required on this exact
+// device. A stream that genuinely stopped delivering must still fail the
+// install, or a broken display would be reported as a finished setup.
+func TestThemeInstallStillFailsWhenStreamIsBroken(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"usage"}}`))
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{ThemeID: "mini"}, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    target,
+			ErrorCode: "display_send_failed",
+			Detail:    "VibeTV stopped accepting images.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		return deviceHealth{}, errors.New("display render not ready")
+	}
+
+	var out bytes.Buffer
+	if _, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, &out); err == nil {
+		t.Fatal("a broken display stream must still fail the install")
+	}
+}
+
+// Reload image cannot produce a picture while AI usage is unavailable. Route
+// the customer back to the Mac App without guessing whether the engine or an
+// account is the missing part.
+func TestReloadDisplayWithoutProviderReportsProviderSetup(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-no-provider","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"error"}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-no-provider", DeviceToken: "pair-token"})
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    target,
+			ErrorCode: "provider_setup_required",
+			Detail:    "VibeTV is connected, but no AI provider is ready yet.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		t.Fatal("render proof must not be demanded while no provider can produce usage")
+		return deviceHealth{}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/reload-display", nil))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("reload without a provider must not report a render failure: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "provider_setup_required") {
+		t.Fatalf("reload must name the missing provider: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Finish AI setup in the Mac App") {
+		t.Fatalf("reload must point to the central recovery step: %s", rec.Body.String())
+	}
+}
+
+// A support report must describe the same VibeTV as every other endpoint.
+// Shipping active=false made the Control Center believe the configured device
+// had gone away, which dropped a customer out of AI-usage recovery and onto
+// Overview every time they pressed Create support report.
+func TestDiagnosticsReportsTheConfiguredDeviceAsActive(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-active","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.40"}`))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"usage"}}`))
+		}
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceID: "device-active", DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+
+	read := func(path string) deviceInfo {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status=%d body=%s", path, rec.Code, rec.Body.String())
+		}
+		var payload struct {
+			Device deviceInfo `json:"device"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		return payload.Device
+	}
+
+	status := read("/v1/status")
+	diagnostics := read("/v1/diagnostics")
+
+	if !status.Active {
+		t.Fatalf("status must report the configured device as active: %+v", status)
+	}
+	if diagnostics.Active != status.Active {
+		t.Fatalf("diagnostics describes a different device than status: diagnostics.active=%t status.active=%t",
+			diagnostics.Active, status.Active)
+	}
+}
+
+// The automatic screensaver update reads the slot off the polled snapshot. It
+// arrives on the tokenless health probe under settings, not under standby, so
+// both are pinned here: the value, and the fact that the probe stays tokenless.
+func TestStatusIncludesScreensaverSlot(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.41","deviceId":"saved-device","capabilities":{"standby":{"supported":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			if token := r.Header.Get("X-VibeTV-Token"); token != "" {
+				t.Fatalf("health probe must stay tokenless, got %q", token)
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"night-clock","themeSpec":{"active":true,"path":"/themes/u/synthwave.json","renderOk":true}},"standby":{"active":false,"idleSecs":5,"liveThemePath":null},"settings":{"display":{"brightnessPercent":40},"standby":{"enabled":true,"timeoutMinutes":10,"brightnessPercent":20,"screensaverPath":"/themes/s/nc-2-cb6d64ba.json"}}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "saved-device",
+	})
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Device.Standby == nil ||
+		got.Device.Standby.ScreensaverPath != "/themes/s/nc-2-cb6d64ba.json" {
+		t.Fatalf("expected screensaver slot in status, got %+v", got.Device.Standby)
+	}
+}
+
+// handleDevice reaches the health probe by a different route than handleStatus,
+// and the Control Center polls both.
+func TestDeviceIncludesScreensaverSlot(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.41","deviceId":"saved-device","capabilities":{"standby":{"supported":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"night-clock","themeSpec":{"active":true,"path":"/themes/u/synthwave.json","renderOk":true}},"standby":{"active":false,"idleSecs":5,"liveThemePath":null},"settings":{"standby":{"enabled":true,"screensaverPath":"  /themes/s/nc-2-cb6d64ba.json  "}}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "saved-device",
+	})
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/device", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Device deviceInfo `json:"device"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Device.Standby == nil ||
+		got.Device.Standby.ScreensaverPath != "/themes/s/nc-2-cb6d64ba.json" {
+		t.Fatalf("expected trimmed screensaver slot, got %+v", got.Device.Standby)
+	}
+}
+
+// An empty slot must not reach the Control Center as an empty string: the
+// automatic update treats "no slot" and "slot unknown" alike, and omitempty is
+// what keeps a cleared slot from looking like a value.
+func TestStatusOmitsClearedScreensaverSlot(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.41","deviceId":"saved-device","capabilities":{"standby":{"supported":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"synthwave","themeSpec":{"active":true,"path":"/themes/u/synthwave.json","renderOk":true}},"standby":{"active":false,"idleSecs":5},"settings":{"standby":{"enabled":true,"screensaverPath":null}}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "saved-device",
+	})
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "screensaverPath") {
+		t.Fatalf("cleared slot must be omitted, got %s", rec.Body.String())
+	}
+}
+
+// The install itself succeeded, but a VibeTV without a ready provider keeps
+// drawing the error frame. Completing the job with "Theme is active on VibeTV."
+// contradicted the screen the customer was looking at, so the provider outcome
+// owns the terminal message.
+func TestThemeInstallAsyncKeepsProviderOutcomeAsFinalMessage(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","features":["theme","theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true},"transport":{"active":"wifi"}}}`))
+		case "/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"error"},"display":{"activeTheme":"theme-missing","themeSpec":{"active":false,"path":"/themes/u/cm.json","renderOk":true}}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"})
+	server.installTheme = func(_ context.Context, opts themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{ThemeID: opts.ThemeID, PackID: "mini", Name: "Mini"}, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{
+			Running:   true,
+			Target:    target,
+			ErrorCode: "provider_setup_required",
+			Detail:    "VibeTV is connected, but no AI provider is ready yet.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		t.Fatal("render proof must not be demanded while no provider can produce usage")
+		return deviceHealth{}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/themes/install",
+		strings.NewReader(`{"themeId":"mini","packUrl":"https://example.com/mini.zip","async":true}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var started themeInstallJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatalf("decode start response: %v", err)
+	}
+
+	var got themeInstallJobResponse
+	for attempt := 0; attempt < 100; attempt++ {
+		rec = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodGet, "/v1/themes/install/status?jobId="+started.Job.ID, nil)
+		server.Handler().ServeHTTP(rec, req)
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode status response: %v", err)
+		}
+		if got.Job.Phase == "complete" || got.Job.Phase == "error" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got.Job.Phase != "complete" {
+		t.Fatalf("a theme install without a provider must still complete: %+v", got.Job)
+	}
+	if got.Job.Message != themeInstallAwaitingProviderMessage {
+		t.Fatalf("the provider outcome must survive job completion, got %q", got.Job.Message)
+	}
+	if strings.Contains(strings.Join(got.Job.Logs, "\n"), "Theme is active on VibeTV.") {
+		t.Fatalf("a providerless install must not claim the theme is active: %q", got.Job.Logs)
+	}
+}
+
+// The Mac App stops this runtime to repair CodexBar. Asking runtime-health
+// whether an update runs and then killing the process are two steps, so an
+// update started in between died with the process that owned its job. The hold
+// makes the two the same step: claiming it and starting an update take the same
+// lock, so one of them always loses cleanly.
+func TestRuntimeUpdateHoldRefusesUpdatesStartedAfterTheProbe(t *testing.T) {
+	initial := runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	}
+	server := newTestServer(t, initial)
+
+	claim := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/runtime-health/update-hold",
+			strings.NewReader(`{}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+	startUpdate := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/updates/install",
+			strings.NewReader(`{}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := claim(); rec.Code != http.StatusOK {
+		t.Fatalf("an idle runtime must grant the hold, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec := startUpdate()
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("an update started after the hold must be refused, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "mac_app_restarting" {
+		t.Fatalf("error code=%q want mac_app_restarting", response.Error.Code)
+	}
+
+	// A repair that never stopped the runtime must not keep updates blocked.
+	relRec := httptest.NewRecorder()
+	relReq := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/runtime-health/update-hold",
+		strings.NewReader(`{"release":true}`),
+	)
+	relReq.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(relRec, relReq)
+	if relRec.Code != http.StatusOK {
+		t.Fatalf("releasing the hold must succeed, got %d body=%s", relRec.Code, relRec.Body.String())
+	}
+	if rec := startUpdate(); rec.Code == http.StatusConflict {
+		var released struct {
+			Error apiError `json:"error"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &released)
+		if released.Error.Code == "mac_app_restarting" {
+			t.Fatal("a released hold must stop refusing updates")
+		}
+	}
+}
+
+// The reverse order was already guarded and must stay guarded: an update that
+// owns the runtime refuses the hold, and the repair waits.
+func TestRuntimeUpdateHoldRefusedWhileAnUpdateOwnsTheRuntime(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+	server.updateJobs["active-update"] = &firmwareUpdateJob{
+		ID:    "active-update",
+		Phase: "installing",
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/runtime-health/update-hold",
+		strings.NewReader(`{}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("a running update must refuse the hold, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "firmware_update_in_progress" {
+		t.Fatalf("error code=%q want firmware_update_in_progress", response.Error.Code)
+	}
+}
+
+// The bench script proving update/repair serialisation can only see this from
+// outside: the Mac App keeps no log a script can read, so a repair that was held
+// back and one that never arrived look identical without it.
+func TestRuntimeUpdateHoldRefusalIsObservable(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+	server.updateJobs["active-update"] = &firmwareUpdateJob{ID: "active-update", Phase: "installing"}
+
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalStderr := os.Stderr
+	os.Stderr = write
+	defer func() { os.Stderr = originalStderr }()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/runtime-health/update-hold", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	_ = write.Close()
+
+	logged, _ := io.ReadAll(read)
+	os.Stderr = originalStderr
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", rec.Code)
+	}
+	if !strings.Contains(string(logged), "update hold refused") {
+		t.Fatalf("a refused hold must be observable in the runtime log, got %q", logged)
+	}
+}
+
+// A theme install job and its worker live in this process exactly like a
+// firmware job. The Mac App's repair unregisters the runtime, so granting the
+// hold while an install runs erases that install and the status the customer is
+// watching for it. The browser defers its own repair, but an externally
+// delivered vibetv://repair-codexbar never passes through that check.
+func TestRuntimeUpdateHoldRefusedWhileAThemeInstallOwnsTheRuntime(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+	server.themeInstallActive = true
+
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalStderr := os.Stderr
+	os.Stderr = write
+	defer func() { os.Stderr = originalStderr }()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/runtime-health/update-hold",
+		strings.NewReader(`{}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	_ = write.Close()
+
+	logged, _ := io.ReadAll(read)
+	os.Stderr = originalStderr
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("a running theme install must refuse the hold, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "theme_install_in_progress" {
+		t.Fatalf("error code=%q want theme_install_in_progress", response.Error.Code)
+	}
+	// Same reason the firmware refusal is logged: it is there for someone
+	// tailing the runtime. The 409 above is the contract a script relies on.
+	if !strings.Contains(string(logged), "update hold refused") {
+		t.Fatalf("a refused hold must be observable in the runtime log, got %q", logged)
+	}
+}
+
+// The other direction of the same race: once the Mac App has been told it may
+// restart, an install started after that answer would die with the runtime.
+func TestThemeInstallRefusedAfterTheRepairHoldIsGranted(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+
+	hold := func(body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/runtime-health/update-hold",
+			strings.NewReader(body),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+	startInstall := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/themes/install",
+			strings.NewReader(`{"themeId":"cozy-meadow","slot":"wall"}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := hold(`{}`); rec.Code != http.StatusOK {
+		t.Fatalf("an idle runtime must grant the hold, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec := startInstall()
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("an install started after the hold must be refused, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "mac_app_restarting" {
+		t.Fatalf("error code=%q want mac_app_restarting", response.Error.Code)
+	}
+
+	// A repair that never stopped the runtime must not keep installs blocked.
+	if rec := hold(`{"release":true}`); rec.Code != http.StatusOK {
+		t.Fatalf("releasing the hold must succeed, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if rec := startInstall(); rec.Code == http.StatusConflict {
+		var released struct {
+			Error apiError `json:"error"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &released)
+		if released.Error.Code == "mac_app_restarting" {
+			t.Fatal("a released hold must stop refusing theme installs")
+		}
+	}
+}
+
+// The refusal is the only sign from outside that a CodexBar repair actually met
+// a running job: the runtime's stderr reaches no file a script can read, and a
+// script asking the guard itself would be answered by the running job and learn
+// nothing about the repair. scripts/vibetv-prove-update-serialization.sh reads
+// this counter before and after it delivers the repair.
+func TestRuntimeHealthReportsRefusedUpdateHolds(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://192.168.178.72",
+		DeviceToken:  "pair-token",
+		DeviceID:     "device-a",
+	})
+
+	refusals := func() uint64 {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/runtime-health", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("runtime-health status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var payload struct {
+			UpdateHoldRefusals uint64 `json:"updateHoldRefusals"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("decode runtime-health: %v", err)
+		}
+		return payload.UpdateHoldRefusals
+	}
+	claim := func() int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/runtime-health/update-hold",
+			strings.NewReader(`{}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if got := refusals(); got != 0 {
+		t.Fatalf("a fresh runtime must report 0 refusals, got %d", got)
+	}
+	// A granted hold is not a refusal and must not be counted, or the bench
+	// would read its own successful claim as a collision.
+	if code := claim(); code != http.StatusOK {
+		t.Fatalf("an idle runtime must grant the hold, got %d", code)
+	}
+	if got := refusals(); got != 0 {
+		t.Fatalf("a granted hold must not count as a refusal, got %d", got)
+	}
+
+	server.updateHoldUntil = time.Time{}
+	server.updateJobs["active-update"] = &firmwareUpdateJob{ID: "active-update", Phase: "installing"}
+	if code := claim(); code != http.StatusConflict {
+		t.Fatalf("a running update must refuse the hold, got %d", code)
+	}
+	if got := refusals(); got != 1 {
+		t.Fatalf("a refused firmware hold must be counted, got %d", got)
+	}
+
+	delete(server.updateJobs, "active-update")
+	server.themeInstallActive = true
+	if code := claim(); code != http.StatusConflict {
+		t.Fatalf("a running theme install must refuse the hold, got %d", code)
+	}
+	if got := refusals(); got != 2 {
+		t.Fatalf("a refused theme-install hold must be counted too, got %d", got)
 	}
 }

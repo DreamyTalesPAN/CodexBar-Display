@@ -51,10 +51,7 @@ void GifCoreESP8266::ReleaseMemory() {
   filePresent_ = false;
   assetPath_ = "";
   tft_ = nullptr;
-  lastErrorPath_ = "";
   lastErrorStage_ = "";
-  lastErrorFailures_ = 0;
-  lastFailureAtMs_ = 0;
 }
 
 bool GifCoreESP8266::EnsureDecoder() {
@@ -78,10 +75,7 @@ void GifCoreESP8266::ResetForAssetUpdate() {
   fsMounted_ = false;
   filePresent_ = false;
   assetPath_ = "";
-  lastErrorPath_ = "";
   lastErrorStage_ = "";
-  lastErrorFailures_ = 0;
-  lastFailureAtMs_ = 0;
   guard_ = GifFailureGuard();
 }
 
@@ -96,10 +90,7 @@ void GifCoreESP8266::NoteFailure(const char* path, const char* stage) {
                                             ? static_cast<unsigned int>(
                                                   failuresBefore + (failuresBefore < 255 ? 1 : 0))
                                                   : static_cast<unsigned int>(guard_.consecutiveFailures);
-  lastErrorPath_ = path;
   lastErrorStage_ = stage != nullptr ? stage : "unknown";
-  lastErrorFailures_ = reportedFailures;
-  lastFailureAtMs_ = millis();
 
   Serial.printf(
       "gif_playback_failure path=%s stage=%s failures=%u\n",
@@ -119,10 +110,7 @@ void GifCoreESP8266::NoteSuccess(const char* path) {
     return;
   }
   GifCorePolicy::RecordSuccess(guard_);
-  lastErrorPath_ = "";
   lastErrorStage_ = "";
-  lastErrorFailures_ = 0;
-  lastFailureAtMs_ = 0;
 }
 
 bool GifCoreESP8266::IsBlocked(const char* path) {
@@ -319,24 +307,10 @@ bool GifCoreESP8266::Tick(TFT_eSPI& tft, const GifPlaybackRequest& request, bool
 GifCoreStatusSnapshot GifCoreESP8266::StatusSnapshot() const {
   GifCoreStatusSnapshot snapshot;
   snapshot.activePath = assetPath_;
-  snapshot.fsMounted = fsMounted_;
   snapshot.filePresent = filePresent_;
-  snapshot.fileOpen = static_cast<bool>(file_);
   snapshot.decoderAllocated = decoder_ != nullptr;
   snapshot.decoderOpen = decoderOpen_;
-  snapshot.lastErrorPath = lastErrorPath_;
   snapshot.lastErrorStage = lastErrorStage_;
-  snapshot.lastErrorFailures = lastErrorFailures_;
-
-  const unsigned long now = millis();
-  snapshot.consecutiveFailures = guard_.consecutiveFailures;
-  if (guard_.backoffUntilMs != 0 && static_cast<long>(now - guard_.backoffUntilMs) < 0) {
-    snapshot.blocked = true;
-    snapshot.backoffRemainingMs = guard_.backoffUntilMs - now;
-  }
-  if (lastFailureAtMs_ != 0) {
-    snapshot.lastErrorAgeMs = now - lastFailureAtMs_;
-  }
   return snapshot;
 }
 

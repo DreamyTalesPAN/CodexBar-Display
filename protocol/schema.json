@@ -6,6 +6,41 @@
   "required": [
     "v"
   ],
+  "$defs": {
+    "usageWindow": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "percent",
+        "resetSecs"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "x-maxUtf8Bytes": 32,
+          "description": "Maximum 32 UTF-8 bytes on the wire."
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "x-maxUtf8Bytes": 24,
+          "description": "Maximum 24 UTF-8 bytes on the wire."
+        },
+        "percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "resetSecs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  },
   "properties": {
     "v": {
       "enum": [
@@ -34,6 +69,28 @@
     "resetSecs": {
       "type": "integer",
       "minimum": 0
+    },
+    "resetAgeSecs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "resetTrustSecs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "resetSource": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 31,
+      "pattern": "^[a-z0-9_.:-]+$"
+    },
+    "resetTrust": {
+      "type": "string",
+      "enum": [
+        "live",
+        "offline",
+        "stale"
+      ]
     },
     "usageUnavailable": {
       "type": "boolean"
@@ -198,6 +255,18 @@
                   "s": {
                     "type": "integer",
                     "minimum": 0
+                  },
+                  "fit": {
+                    "type": "string",
+                    "enum": [
+                      "shrink"
+                    ]
+                  },
+                  "ft": {
+                    "type": "string",
+                    "enum": [
+                      "shrink"
+                    ]
                   },
                   "color": {
                     "type": "string",
@@ -408,6 +477,18 @@
                     "type": "integer",
                     "minimum": 0
                   },
+                  "fit": {
+                    "type": "string",
+                    "enum": [
+                      "shrink"
+                    ]
+                  },
+                  "ft": {
+                    "type": "string",
+                    "enum": [
+                      "shrink"
+                    ]
+                  },
                   "color": {
                     "type": "string",
                     "pattern": "^#[A-Fa-f0-9]{6}$"
@@ -613,6 +694,20 @@
     "error": {
       "type": "string",
       "minLength": 1
+    },
+    "usageSlots": {
+      "type": "array",
+      "deprecated": true,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/usageWindow"
+      }
+    },
+    "usageWindows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/usageWindow"
+      }
     }
   },
   "additionalProperties": true

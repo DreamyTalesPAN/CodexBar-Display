@@ -67,6 +67,7 @@ describe("loadLocalThemeRenderPack", () => {
       name: "Synthwave Custom",
       ok: true,
       spec: { bgColor: "#050014", themeId: "synthwave-custom" },
+      specHash: expect.stringMatching(/^[a-f0-9]{8}$/),
       themeId: "synthwave-custom",
     });
   });

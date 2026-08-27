@@ -36,6 +36,32 @@ func TestWiFiTransportDeviceCapabilitiesReadsHello(t *testing.T) {
 	}
 }
 
+func TestWiFiTransportDeviceCapabilitiesAuthenticatesWhenTargetHasToken(t *testing.T) {
+	const token = "pair-token-123"
+	var gotToken string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		gotToken = r.Header.Get(deviceAuthHeader)
+		if gotToken != token {
+			http.Error(w, "pairing token required", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","capabilities":{"transport":{"active":"wifi"}}}`))
+	}))
+	defer server.Close()
+
+	transport := NewWiFiTransportWithClient(server.Client())
+	if _, err := transport.DeviceCapabilities(server.URL + "/?token=" + token); err != nil {
+		t.Fatalf("DeviceCapabilities returned error: %v", err)
+	}
+	if gotToken != token {
+		t.Fatalf("unexpected auth token %q", gotToken)
+	}
+}
+
 func TestWiFiTransportSendLinePostsFrame(t *testing.T) {
 	var gotBody string
 	var gotToken string
@@ -349,6 +375,11 @@ func TestWiFiTransportUploadAssetPostsMultipart(t *testing.T) {
 		if r.URL.Path != "/assets" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"assets":[]}`))
+			return
+		}
 		gotToken = r.Header.Get(deviceAuthHeader)
 		gotPath = r.URL.Query().Get("path")
 		reader, err := r.MultipartReader()
@@ -392,12 +423,15 @@ func TestWiFiTransportUploadAssetRetriesTimeout(t *testing.T) {
 		assetUploadRetryDelay = oldDelay
 	}()
 
-	var attempts int
+	var uploadAttempts int
 	var retries int
 	transport := NewWiFiTransportWithClient(&http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			attempts++
-			if attempts == 1 {
+			if req.Method != http.MethodPost {
+				return nil, errors.New("asset readback unavailable")
+			}
+			uploadAttempts++
+			if uploadAttempts == 1 {
 				return nil, context.DeadlineExceeded
 			}
 			return &http.Response{
@@ -415,8 +449,8 @@ func TestWiFiTransportUploadAssetRetriesTimeout(t *testing.T) {
 	if err := transport.UploadAsset("http://192.0.2.10", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
 		t.Fatalf("UploadAsset returned error: %v", err)
 	}
-	if attempts != 2 {
-		t.Fatalf("expected retry after timeout, got attempts=%d", attempts)
+	if uploadAttempts != 2 {
+		t.Fatalf("expected retry after timeout, got attempts=%d", uploadAttempts)
 	}
 	if retries != 1 {
 		t.Fatalf("expected one retry event, got %d", retries)
@@ -455,11 +489,14 @@ func TestWiFiTransportUploadAssetRetriesEOF(t *testing.T) {
 		assetUploadRetryDelay = oldDelay
 	}()
 
-	var attempts int
+	var uploadAttempts int
 	transport := NewWiFiTransportWithClient(&http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			attempts++
-			if attempts == 1 {
+			if req.Method != http.MethodPost {
+				return nil, errors.New("asset readback unavailable")
+			}
+			uploadAttempts++
+			if uploadAttempts == 1 {
 				return nil, io.EOF
 			}
 			return &http.Response{
@@ -472,8 +509,75 @@ func TestWiFiTransportUploadAssetRetriesEOF(t *testing.T) {
 	if err := transport.UploadAsset("http://192.0.2.10", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
 		t.Fatalf("UploadAsset returned error: %v", err)
 	}
-	if attempts != 2 {
-		t.Fatalf("expected retry after EOF, got attempts=%d", attempts)
+	if uploadAttempts != 2 {
+		t.Fatalf("expected retry after EOF, got attempts=%d", uploadAttempts)
+	}
+}
+
+func TestWiFiTransportUploadAssetAcceptsCommittedAssetWhenResponseCloses(t *testing.T) {
+	var uploadAttempts int
+	transport := NewWiFiTransportWithClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/assets" && req.Method == http.MethodPost {
+				uploadAttempts++
+				return nil, io.EOF
+			}
+			if req.URL.Path == "/assets" && req.Method == http.MethodGet {
+				if uploadAttempts == 0 {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(`{"assets":[]}`)),
+					}, nil
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"assets":[{"path":"/themes/u/cm.cbi","sizeBytes":5}]}`)),
+				}, nil
+			}
+			return nil, errors.New("unexpected request")
+		}),
+	})
+
+	if err := transport.UploadAsset("http://192.0.2.10", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
+		t.Fatalf("UploadAsset returned error: %v", err)
+	}
+	if uploadAttempts != 1 {
+		t.Fatalf("expected no duplicate upload after committed readback, got attempts=%d", uploadAttempts)
+	}
+}
+
+func TestWiFiTransportUploadAssetDoesNotAcceptSameSizedStaleAssetOnLostResponse(t *testing.T) {
+	oldDelay := assetUploadRetryDelay
+	assetUploadRetryDelay = 0
+	defer func() {
+		assetUploadRetryDelay = oldDelay
+	}()
+
+	var uploadAttempts int
+	transport := NewWiFiTransportWithClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/assets" && req.Method == http.MethodPost {
+				uploadAttempts++
+				return nil, io.EOF
+			}
+			if req.URL.Path == "/assets" && req.Method == http.MethodGet {
+				// The path already holds an equally sized older file, so a size
+				// readback can never prove the new upload was committed.
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"assets":[{"path":"/themes/u/cm.cbi","sizeBytes":5}]}`)),
+				}, nil
+			}
+			return nil, errors.New("unexpected request")
+		}),
+	})
+
+	err := transport.UploadAsset("http://192.0.2.10", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n"))
+	if err == nil {
+		t.Fatal("expected lost responses over a same-sized stale asset to fail, got success")
+	}
+	if uploadAttempts < 2 {
+		t.Fatalf("expected the upload to be retried instead of trusting the stale size match, got attempts=%d", uploadAttempts)
 	}
 }
 
@@ -484,11 +588,14 @@ func TestWiFiTransportUploadAssetRetriesConnectionReset(t *testing.T) {
 		assetUploadRetryDelay = oldDelay
 	}()
 
-	var attempts int
+	var uploadAttempts int
 	transport := NewWiFiTransportWithClient(&http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			attempts++
-			if attempts == 1 {
+			if req.Method != http.MethodPost {
+				return nil, errors.New("asset readback unavailable")
+			}
+			uploadAttempts++
+			if uploadAttempts == 1 {
 				return nil, errors.New("read tcp 192.168.178.172:55149->192.168.178.163:80: read: connection reset by peer")
 			}
 			return &http.Response{
@@ -501,8 +608,8 @@ func TestWiFiTransportUploadAssetRetriesConnectionReset(t *testing.T) {
 	if err := transport.UploadAsset("http://192.0.2.10", "/themes/u/cm.cbi", "cm.cbi", []byte("CBI1\n")); err != nil {
 		t.Fatalf("UploadAsset returned error: %v", err)
 	}
-	if attempts != 2 {
-		t.Fatalf("expected retry after connection reset, got attempts=%d", attempts)
+	if uploadAttempts != 2 {
+		t.Fatalf("expected retry after connection reset, got attempts=%d", uploadAttempts)
 	}
 }
 
@@ -539,4 +646,20 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
+}
+
+// Pins the device-proven pacing rule from docs/hardware-contract.md: the
+// firmware waits at most ~5 s for each read of an upload body, so the gap
+// between paced chunks must stay far inside that window, and the overall pace
+// must finish the largest theme asset (24 KB GIF) in a few seconds. The old
+// 1 KB/s pace pushed a 6.3 KB asset past that per-read wait whenever a chunk
+// was dropped, which is why slower was never safer.
+func TestAssetUploadPaceStaysInsideFirmwareReadWait(t *testing.T) {
+	chunkGap := time.Duration(assetUploadReadChunk) * time.Second / time.Duration(assetUploadBytesPerSec)
+	if chunkGap > time.Second {
+		t.Fatalf("chunk gap %v leaves no margin against the firmware's 5s per-read wait", chunkGap)
+	}
+	if assetUploadBytesPerSec < 8192 {
+		t.Fatalf("asset pace %d B/s would stretch a 24 KB GIF past a few seconds", assetUploadBytesPerSec)
+	}
 }

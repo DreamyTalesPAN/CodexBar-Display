@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"io/fs"
 	"net"
@@ -19,6 +20,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,18 +48,23 @@ import (
 var embeddedControlCenterStatic embed.FS
 
 const (
-	DefaultAddr               = "127.0.0.1:47832"
-	appOrigin                 = "https://app.vibetv.shop"
-	defaultDevOrigin          = "http://localhost:3000"
-	previewOriginHostPrefix   = "codex-vibetv-control-center-"
-	previewOriginHostSuffix   = "-paul-anduschus-projects.vercel.app"
-	nativeControlCenterUA     = "VibeTVControlCenter/"
-	deviceConnectionReady     = "ready"
-	deviceConnectionRetrying  = "reconnecting"
-	deviceConnectionSetup     = "setup_required"
-	deviceTimeout             = 15 * time.Second
-	deviceSearchWindow        = 30 * time.Second
-	discoveryProbeTime        = 1500 * time.Millisecond
+	DefaultAddr              = "127.0.0.1:47832"
+	appOrigin                = "https://app.vibetv.shop"
+	defaultDevOrigin         = "http://localhost:3000"
+	previewOriginHostPrefix  = "codex-vibetv-control-center-"
+	previewOriginHostSuffix  = "-paul-anduschus-projects.vercel.app"
+	nativeControlCenterUA    = "VibeTVControlCenter/"
+	deviceConnectionReady    = "ready"
+	deviceConnectionRetrying = "reconnecting"
+	deviceConnectionSetup    = "setup_required"
+	deviceTimeout            = 15 * time.Second
+	deviceSearchWindow       = 30 * time.Second
+	repairRequestTimeout     = 110 * time.Second
+	// Device requests are serialized because the ESP8266 serves one request at
+	// a time. A read-only probe can therefore wait behind a frame render before
+	// it reaches the device; keep this below the client timeout, but long enough
+	// to cover the normal render acknowledgement on stored themes.
+	discoveryProbeTime        = 12 * time.Second
 	deviceProbeCacheTime      = 750 * time.Millisecond
 	repairDiscoveryAttempts   = 3
 	repairDiscoveryRetryGap   = 1200 * time.Millisecond
@@ -70,31 +77,37 @@ const (
 	displayStreamLabelEnv     = runtimepaths.DisplayStreamLaunchAgentLabelEnv
 	displayStreamOutLogEnv    = runtimepaths.DisplayStreamOutLogEnv
 	displayStreamReadyAge     = 2 * time.Minute
-	displayVerificationAge    = 2 * time.Minute
-	displayStreamWaitTime     = 30 * time.Second
-	displayRenderWaitTime     = 12 * time.Second
-	defaultPairAttempts       = 3
-	defaultPairAttemptTimeout = 5 * time.Second
-	defaultPairRetryGap       = 500 * time.Millisecond
-	firmwareUpdateJobTime     = 10 * time.Minute
-	macAppUpdateJobTime       = 8 * time.Minute
-	usageFallbackFetchTime    = 15 * time.Second
-	usageDirectCacheTime      = 5 * time.Minute
-	themeRenderPackDir        = "theme-render-packs"
-	macAppInstallerURL        = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
-	macAppReleaseAPIEnvVar    = "CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL"
-	macAppReleaseAPIURL       = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
-	macAppReleaseCheckGap     = 6 * time.Hour
-	macAppReleaseTimeout      = 5 * time.Second
-	macAppVersionEnv          = "VIBETV_MAC_APP_VERSION"
-	macAppBuildEnv            = "VIBETV_MAC_APP_BUILD"
-	firmwareManifestEnvVar    = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
-	firmwareReleaseTimeout    = 5 * time.Second
-	themePackUploadReadTime   = 30 * time.Second
+	// deviceConnectedGraceWindow keeps a just-seen device Connected (state
+	// "reconnecting") through transient probe misses: 2.5x the 30s WiFi
+	// interval. Long enough to absorb single misses, short enough that a
+	// powered-off device reads disconnected well under two minutes.
+	deviceConnectedGraceWindow   = 75 * time.Second
+	displayVerificationAge       = 2 * time.Minute
+	displayStreamWaitTime        = 30 * time.Second
+	displayRenderWaitTime        = 12 * time.Second
+	defaultPairAttempts          = 3
+	defaultPairAttemptTimeout    = 5 * time.Second
+	defaultPairRetryGap          = 500 * time.Millisecond
+	firmwareUpdateJobTime        = 10 * time.Minute
+	macAppUpdateJobTime          = 8 * time.Minute
+	themeRenderPackDir           = "theme-render-packs"
+	themeRenderPackRevisionLimit = 12
+	macAppInstallerURL           = "https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install-control-center-companion.sh"
+	macAppReleaseAPIEnvVar       = "CODEXBAR_DISPLAY_MAC_APP_RELEASE_API_URL"
+	macAppReleaseAPIURL          = "https://api.github.com/repos/DreamyTalesPAN/CodexBar-Display/releases/latest"
+	macAppReleaseCheckGap        = 6 * time.Hour
+	macAppReleaseTimeout         = 5 * time.Second
+	macAppVersionEnv             = "VIBETV_MAC_APP_VERSION"
+	macAppBuildEnv               = "VIBETV_MAC_APP_BUILD"
+	firmwareManifestEnvVar       = "CODEXBAR_DISPLAY_FIRMWARE_MANIFEST_URL"
+	firmwareReleaseTimeout       = 5 * time.Second
+	themePackUploadReadTime      = 30 * time.Second
 )
 
 var deviceHealthProbeTime = 2 * time.Second
 var themeRenderPackIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{2,63}$`)
+var themeRenderPackSpecFilePattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+\.json$`)
+var themeRenderPackHashPattern = regexp.MustCompile(`^[a-f0-9]{8}$`)
 var firmwareHealthVerifyTime = 30 * time.Second
 var diagnosticsDiscoveryTime = 5 * time.Second
 
@@ -130,9 +143,17 @@ var displayStreamLogKeys = []string{
 	"label",
 	"session",
 	"weekly",
+	"sessionTokens",
+	"weekTokens",
+	"totalTokens",
+	"tokenTotalsKnown",
+	"usageUnavailable",
 	"sessionUnavailable",
 	"weeklyUnavailable",
 	"reset",
+	"usageWindows",
+	"usageSlots",
+	"providerSlots",
 	"activity",
 	"time",
 	"date",
@@ -175,10 +196,14 @@ type Server struct {
 	wakeDisplayStream      func()
 	firmwareUpdateActive   atomic.Bool
 	firmwareUpdateStartMu  sync.Mutex
+	updateHoldUntil        time.Time
+	updateHoldRefusals     atomic.Uint64
 	configMu               sync.Mutex
 	repairMu               sync.Mutex
 	repairFlightsMu        sync.Mutex
 	repairFlights          map[string]*deviceRepairFlight
+	deviceSelectionMu      sync.Mutex
+	ambiguousDeviceSeen    bool
 	probeMu                sync.Mutex
 	helloProbeCache        map[string]helloProbeSnapshot
 	helloProbeFlights      map[string]*helloProbeFlight
@@ -198,13 +223,10 @@ type Server struct {
 	allowMacAppSelfUpdate  bool
 	installationMode       string
 	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
-	fetchUsage             func(context.Context) ([]codexbar.ParsedFrame, error)
 	usageCacheMu           sync.RWMutex
 	usageCache             *usageResponse
-	usageCacheAt           time.Time
 	probeProviderSetup     func(context.Context, string) codexbar.ProviderSetup
 	probeExactProvider     func(context.Context, string, string) codexbar.ProviderSetup
-	openCodexBar           func(context.Context) error
 	providerSetupMu        sync.Mutex
 	exactProviderProbeMu   sync.Mutex
 	exactProviderProbes    map[string]*exactProviderProbeFlight
@@ -213,6 +235,8 @@ type Server struct {
 	providerSetupCachedAt  time.Time
 	providerReadinessMu    sync.Mutex
 	providerReadiness      map[string]providerReadinessRecord
+	usageRefreshMu         sync.Mutex
+	usageRefresh           usageRefreshTracker
 	providerPreferences    providerPreferencesState
 	preferenceAdapters     []preferenceAdapter
 	updateFirmware         func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
@@ -367,6 +391,7 @@ type deviceInfo struct {
 	Capabilities    *protocol.CapabilityBlock `json:"capabilities,omitempty"`
 	Stream          *displayStreamInfo        `json:"stream,omitempty"`
 	Display         *deviceDisplayInfo        `json:"display,omitempty"`
+	Standby         *deviceStandbyInfo        `json:"standby,omitempty"`
 	Health          *deviceHealthInfo         `json:"health,omitempty"`
 }
 
@@ -389,6 +414,16 @@ type displayVerification struct {
 
 type deviceDisplayInfo struct {
 	ThemeSpec *themeSpecHealth `json:"themeSpec,omitempty"`
+}
+
+type deviceStandbyInfo struct {
+	Active        bool   `json:"active"`
+	LiveThemePath string `json:"liveThemePath,omitempty"`
+	// Mirrored from settings.standby.screensaverPath on the same health probe.
+	// The slot is standby state the Control Center needs on every poll, the way
+	// it already gets the live theme path — reading it from the settings screen
+	// instead left the automatic screensaver update waiting for a visit there.
+	ScreensaverPath string `json:"screensaverPath,omitempty"`
 }
 
 type deviceHealthInfo struct {
@@ -437,6 +472,9 @@ type deviceSearchEntry struct {
 }
 
 type themeInstallRequest struct {
+	// Slot is themepack.UsageLive or themepack.UsageScreensaver. Empty means
+	// the live theme slot.
+	Slot               string `json:"slot"`
 	ThemeID            string `json:"themeId"`
 	ThemeName          string `json:"themeName"`
 	PackURL            string `json:"packUrl"`
@@ -452,6 +490,7 @@ type themeInstallJob struct {
 	ID         string               `json:"id"`
 	ThemeID    string               `json:"themeId,omitempty"`
 	ThemeName  string               `json:"themeName,omitempty"`
+	Slot       string               `json:"slot,omitempty"`
 	Phase      string               `json:"phase"`
 	Message    string               `json:"message"`
 	Progress   int                  `json:"progress"`
@@ -496,6 +535,7 @@ type firmwareReleaseArtifact struct {
 
 type firmwareUpdateResult struct {
 	Firmware          string `json:"firmware,omitempty"`
+	ObservedFirmware  string `json:"observedFirmware,omitempty"`
 	Target            string `json:"target,omitempty"`
 	DeviceID          string `json:"deviceId,omitempty"`
 	ArtifactValidated bool   `json:"artifactValidated"`
@@ -504,6 +544,10 @@ type firmwareUpdateResult struct {
 	HealthVerified    bool   `json:"healthVerified"`
 	StreamVerified    bool   `json:"streamVerified"`
 	RenderVerified    bool   `json:"renderVerified"`
+	// RenderSkipped names the reason the picture could not be proven because
+	// there is no picture to prove, not because the update went wrong. It stays
+	// empty whenever RenderVerified is true.
+	RenderSkipped string `json:"renderSkipped,omitempty"`
 }
 
 type firmwareUpdateJob struct {
@@ -665,22 +709,53 @@ type settingsResponse struct {
 }
 
 type deviceSettings struct {
-	Display displaySettings `json:"display"`
+	Display displaySettings  `json:"display"`
+	Standby *standbySettings `json:"standby,omitempty"`
 }
 
 type displaySettings struct {
 	BrightnessPercent int `json:"brightnessPercent"`
 }
 
-type usageResponse struct {
-	OK              bool                `json:"ok"`
-	GeneratedAt     string              `json:"generatedAt"`
-	Source          string              `json:"source"`
-	UsageMode       string              `json:"usageMode"`
-	TokenUsageReady bool                `json:"tokenUsageReady"`
-	CurrentProvider string              `json:"currentProvider,omitempty"`
-	Providers       []usageProviderInfo `json:"providers"`
+// standbySettings mirrors the device standby block. ScreensaverPath is the
+// screensaver slot: the stored ThemeSpec the device shows in standby, null
+// while the slot is empty. It is a pointer so that a write can leave the slot
+// untouched by omitting the field.
+type standbySettings struct {
+	Enabled           bool    `json:"enabled"`
+	TimeoutMinutes    int     `json:"timeoutMinutes"`
+	BrightnessPercent int     `json:"brightnessPercent"`
+	ScreensaverPath   *string `json:"screensaverPath"`
 }
+
+type usageResponse struct {
+	OK              bool             `json:"ok"`
+	GeneratedAt     string           `json:"generatedAt"`
+	Source          string           `json:"source"`
+	UsageMode       string           `json:"usageMode"`
+	Refresh         usageRefreshInfo `json:"refresh"`
+	TokenUsageReady bool             `json:"tokenUsageReady"`
+	// TokenUsageUpdating reports that a shown token history is still growing,
+	// so the totals derived from it are not final yet.
+	TokenUsageUpdating bool                `json:"tokenUsageUpdating"`
+	CurrentProvider    string              `json:"currentProvider,omitempty"`
+	Providers          []usageProviderInfo `json:"providers"`
+}
+
+type usageRefreshTracker struct {
+	RequestedAt time.Time
+}
+
+type usageRefreshInfo struct {
+	State        string `json:"state"`
+	RequestedAt  string `json:"requestedAt,omitempty"`
+	BlockedUntil string `json:"blockedUntil,omitempty"`
+	Message      string `json:"message,omitempty"`
+}
+
+// The collector caps one provider collection at 15 minutes. After that bound,
+// a manual request cannot still describe a normal in-flight collection.
+const usageRefreshRequestMaxAge = 15 * time.Minute
 
 type displayFrameResponse struct {
 	OK      bool           `json:"ok"`
@@ -695,30 +770,35 @@ type persistedDisplayFrame struct {
 }
 
 type usageProviderInfo struct {
-	ID                 string                   `json:"id"`
-	Label              string                   `json:"label"`
-	Source             string                   `json:"source,omitempty"`
-	Session            int                      `json:"session"`
-	Weekly             int                      `json:"weekly"`
-	ResetSec           int64                    `json:"resetSecs,omitempty"`
-	UsageMode          string                   `json:"usageMode"`
-	SessionTokens      int64                    `json:"sessionTokens,omitempty"`
-	WeekTokens         int64                    `json:"weekTokens,omitempty"`
-	TotalTokens        int64                    `json:"totalTokens,omitempty"`
-	Activity           string                   `json:"activity,omitempty"`
-	Stale              bool                     `json:"stale"`
-	UsageUnavailable   bool                     `json:"usageUnavailable,omitempty"`
-	SessionUnavailable bool                     `json:"sessionUnavailable,omitempty"`
-	WeeklyUnavailable  bool                     `json:"weeklyUnavailable,omitempty"`
-	CollectedAt        string                   `json:"collectedAt,omitempty"`
-	ActivityObservedAt string                   `json:"activityObservedAt,omitempty"`
-	Windows            []usageWindowInfo        `json:"windows,omitempty"`
-	Status             *usageStatusInfo         `json:"status,omitempty"`
-	Credits            *usageCreditsInfo        `json:"credits,omitempty"`
-	ResetCredits       *usageResetCreditsInfo   `json:"resetCredits,omitempty"`
-	Cost               *usageCostInfo           `json:"cost,omitempty"`
-	Pace               []usagePaceInfo          `json:"pace,omitempty"`
-	UsageOverTime      []usageOverTimePointInfo `json:"usageOverTime,omitempty"`
+	ID                    string                   `json:"id"`
+	Label                 string                   `json:"label"`
+	Source                string                   `json:"source,omitempty"`
+	Session               int                      `json:"session"`
+	Weekly                int                      `json:"weekly"`
+	ResetSec              int64                    `json:"resetSecs,omitempty"`
+	UsageMode             string                   `json:"usageMode"`
+	SessionTokens         int64                    `json:"sessionTokens,omitempty"`
+	WeekTokens            int64                    `json:"weekTokens,omitempty"`
+	TotalTokens           int64                    `json:"totalTokens,omitempty"`
+	Activity              string                   `json:"activity,omitempty"`
+	Stale                 bool                     `json:"stale"`
+	UsageUnavailable      bool                     `json:"usageUnavailable,omitempty"`
+	SessionUnavailable    bool                     `json:"sessionUnavailable,omitempty"`
+	WeeklyUnavailable     bool                     `json:"weeklyUnavailable,omitempty"`
+	CollectedAt           string                   `json:"collectedAt,omitempty"`
+	ActivityObservedAt    string                   `json:"activityObservedAt,omitempty"`
+	RateLimited           bool                     `json:"rateLimited,omitempty"`
+	BlockedUntil          string                   `json:"blockedUntil,omitempty"`
+	Windows               []usageWindowInfo        `json:"windows,omitempty"`
+	Status                *usageStatusInfo         `json:"status,omitempty"`
+	Credits               *usageCreditsInfo        `json:"credits,omitempty"`
+	ResetCredits          *usageResetCreditsInfo   `json:"resetCredits,omitempty"`
+	Cost                  *usageCostInfo           `json:"cost,omitempty"`
+	CostSettled           bool                     `json:"costSettled,omitempty"`
+	TokenUsageReady       bool                     `json:"-"`
+	TokenStatsCollectedAt time.Time                `json:"-"`
+	Pace                  []usagePaceInfo          `json:"pace,omitempty"`
+	UsageOverTime         []usageOverTimePointInfo `json:"usageOverTime,omitempty"`
 }
 
 type usageWindowInfo struct {
@@ -840,7 +920,7 @@ func New(opts Options) (*Server, error) {
 			return nil, fmt.Errorf("load embedded control center: %w", err)
 		}
 	}
-	return &Server{
+	server := &Server{
 		addr:                  addr,
 		home:                  home,
 		allowedOrigins:        origins,
@@ -853,9 +933,6 @@ func New(opts Options) (*Server, error) {
 		subnetTargets:         localSubnetTargets,
 		defaultWiFiTarget:     setup.DefaultWiFiTarget,
 		streamStatus:          inspectDisplayStream,
-		waitStream:            waitForDisplayStream,
-		waitStreamAfter:       waitForDisplayStreamAfter,
-		waitStreamAfterPair:   waitForDisplayStreamAfterPair,
 		waitRender:            nil,
 		refreshStream:         opts.RefreshDisplayStream,
 		pauseDisplayStream:    opts.PauseDisplayStream,
@@ -875,23 +952,31 @@ func New(opts Options) (*Server, error) {
 		allowMacAppSelfUpdate: false,
 		installationMode:      macAppInstallationMode(),
 		loadUsage:             daemon.LoadPersistedUsage,
-		fetchUsage:            codexbar.FetchAllProviders,
 		probeProviderSetup:    codexbar.ProbeProviderSetup,
 		probeExactProvider:    codexbar.ProbeProviderSetupForProvider,
 		exactProviderProbes:   make(map[string]*exactProviderProbeFlight),
-		openCodexBar:          codexbar.OpenApp,
 		providerPreferences: providerPreferencesState{
 			load:          codexbar.FetchProviderSettings,
 			set:           codexbar.SetProviderEnabled,
 			loadInventory: codexbar.FetchProviderInventory,
 		},
-		updateFirmware:     runFirmwareUpdateCommand,
+		updateFirmware:     firmwareUpdateCommandRunner(opts.PauseDisplayStream != nil),
 		updateMacApp:       runMacAppUpdateCommand,
 		fetchMacAppRelease: fetchLatestMacAppRelease,
 		installJobs:        make(map[string]*themeInstallJob),
 		updateJobs:         make(map[string]*firmwareUpdateJob),
 		macAppUpdateJobs:   make(map[string]*macAppUpdateJob),
-	}, nil
+	}
+	server.waitStream = func(ctx context.Context, target string) displayStreamInfo {
+		return server.waitForDisplayStreamMode(ctx, target, time.Time{}, true)
+	}
+	server.waitStreamAfter = func(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+		return server.waitForDisplayStreamMode(ctx, target, notBefore, true)
+	}
+	server.waitStreamAfterPair = func(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+		return server.waitForDisplayStreamMode(ctx, target, notBefore, false)
+	}
+	return server, nil
 }
 
 func (s *Server) ListenAndServe(ctx context.Context) error {
@@ -933,6 +1018,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerControlCenterRoutes(mux)
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/runtime-health", s.handleRuntimeHealth)
+	mux.HandleFunc("/v1/runtime-health/update-hold", s.handleRuntimeUpdateHold)
 	mux.HandleFunc("/v1/usage", s.handleUsage)
 	mux.HandleFunc("/v1/preferences", s.handlePreferences)
 	mux.HandleFunc("/v1/preferences/", s.handlePreference)
@@ -940,7 +1026,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/providers/retry", s.handleProviderRetry)
-	mux.HandleFunc("/v1/providers/open-codexbar", s.handleOpenCodexBar)
 	mux.HandleFunc("/v1/device/discover", s.handleDeviceDiscover)
 	mux.HandleFunc("/v1/device/search", s.handleDeviceSearch)
 	mux.HandleFunc("/v1/device/select", s.handleDeviceSelect)
@@ -1023,19 +1108,101 @@ func (s *Server) handleThemeRenderPack(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet, http.MethodHead) {
 		return
 	}
-	themeID := themeRenderPackID(r.URL.Path)
-	if themeID != "" {
-		if data, err := os.ReadFile(s.themeRenderPackPath(themeID)); err == nil {
-			w.Header().Set("Cache-Control", "no-store")
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			if r.Method == http.MethodGet {
-				_, _ = w.Write(data)
-			}
+	themeID, specFile, exactPath := themeRenderPackRequest(r.URL.Path)
+	specHash, selectorOK := themeRenderPackRequestHash(r, exactPath)
+	if themeID == "" || !selectorOK {
+		http.NotFound(w, r)
+		return
+	}
+	if exactPath {
+		if data, ok := s.loadThemeRenderPackBySpecFile(themeID, specFile, specHash); ok {
+			serveThemeRenderPack(w, r, data)
 			return
 		}
+		// The Mac App bundles known historic revisions at this exact path. A
+		// custom cache miss may therefore safely fall through to those assets;
+		// never substitute the latest revision by id.
+		s.handleControlCenterAsset(w, r)
+		return
+	}
+	if data, err := os.ReadFile(s.themeRenderPackPath(themeID)); err == nil {
+		serveThemeRenderPack(w, r, data)
+		return
 	}
 	s.handleControlCenterAsset(w, r)
+}
+
+func serveThemeRenderPack(w http.ResponseWriter, r *http.Request, data []byte) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if r.Method == http.MethodGet {
+		_, _ = w.Write(data)
+	}
+}
+
+func themeRenderPackRequest(requestPath string) (themeID, specFile string, exactPath bool) {
+	const prefix = "/theme-packs/render/"
+	if !strings.HasPrefix(requestPath, prefix) {
+		return "", "", false
+	}
+	remaining := strings.TrimPrefix(requestPath, prefix)
+	parts := strings.Split(remaining, "/")
+	if len(parts) == 1 {
+		return themeRenderPackID(requestPath), "", false
+	}
+	if len(parts) != 2 || !themeRenderPackIDPattern.MatchString(parts[0]) || !themeRenderPackSpecFilePattern.MatchString(parts[1]) {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+func themeRenderPackRequestHash(r *http.Request, exactPath bool) (string, bool) {
+	query := r.URL.Query()
+	for key := range query {
+		if key != "specHash" {
+			return "", false
+		}
+	}
+	specHash := strings.ToLower(strings.TrimSpace(query.Get("specHash")))
+	if (!exactPath && specHash != "") ||
+		(specHash != "" && !themeRenderPackHashPattern.MatchString(specHash)) {
+		return "", false
+	}
+	return specHash, true
+}
+
+func (s *Server) loadThemeRenderPackBySpecFile(themeID, specFile, specHash string) ([]byte, bool) {
+	revisionPath := filepath.Join(s.themeRenderPackRevisionDir(themeID), specFile)
+	if data, err := os.ReadFile(revisionPath); err == nil && themeRenderPackMatches(data, specFile, specHash) {
+		return data, true
+	}
+	// Older Companions stored only <themeId>.json. It remains a safe fallback
+	// when its embedded path and optional fingerprint match the exact request.
+	if data, err := os.ReadFile(s.themeRenderPackPath(themeID)); err == nil && themeRenderPackMatches(data, specFile, specHash) {
+		return data, true
+	}
+	return nil, false
+}
+
+func themeRenderPackMatches(data []byte, specFile, specHash string) bool {
+	var pack themeRenderPack
+	if err := json.Unmarshal(data, &pack); err != nil || !pack.OK {
+		return false
+	}
+	if path.Base(strings.TrimSpace(pack.SpecPath)) != specFile {
+		return false
+	}
+	if specHash != "" {
+		actual := strings.ToLower(strings.TrimSpace(pack.SpecHash))
+		if actual == "" {
+			actual = themeRenderPackSpecHash(pack.Spec)
+		}
+		if actual != specHash {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) serveControlCenterFile(w http.ResponseWriter, r *http.Request, assetPath string) bool {
@@ -1152,19 +1319,22 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Stream:          streamPointer(stream),
 	}
 	reachable := false
+	identityMismatch := false
 	if strings.TrimSpace(cfg.DeviceTarget) != "" {
 		if hello, probeToken, tokenRejected, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
 			configuredID := strings.TrimSpace(cfg.DeviceID)
 			observedID := strings.TrimSpace(hello.DeviceID)
-			identityMismatch := configuredID != "" && observedID != "" &&
+			identityMismatch = configuredID != "" && observedID != "" &&
 				!strings.EqualFold(configuredID, observedID)
 			if !identityMismatch {
 				reachable = true
 				device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
 				device.Active = configuredID != "" && strings.EqualFold(configuredID, observedID)
-				device.Paired = strings.TrimSpace(cfg.DeviceToken) != "" &&
-					probeToken == cfg.DeviceToken &&
-					stream.ErrorCode != "device_pairing_required"
+				device.Paired = savedPairingRemainsValid(
+					cfg.DeviceToken,
+					tokenRejected,
+					stream.ErrorCode,
+				)
 				if tokenRejected {
 					device.Paired = false
 					stream.Healthy = false
@@ -1172,17 +1342,24 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 					stream.Detail = "VibeTV connection needs attention."
 					device.Stream = streamPointer(stream)
 				}
+				readinessToken := pairingTokenForReadiness(
+					cfg.DeviceToken,
+					probeToken,
+					device.Paired,
+				)
 				// /health is intentionally public and therefore only reports device
-				// health. Pairing is proven by the authenticated /hello probe above.
+				// health. Only an explicit rejection invalidates a saved pairing; a
+				// busy device may answer the public fallback after the authenticated
+				// probe timed out.
 				if health, healthErr := s.getHealthProbe(r.Context(), cfg.DeviceTarget, "", deviceHealthProbeTime); healthErr == nil {
-					device = s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, probeToken, false)
+					device = s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, readinessToken, false)
 				} else {
 					device = withDeviceHealthProbeError(device, healthErr)
 				}
 			}
 		}
 	}
-	device = s.withConfiguredConnectionState(cfg, device, reachable)
+	device = s.withConfiguredConnectionState(cfg, device, reachable, identityMismatch)
 	var firmwareUpdate *firmwareUpdateJob
 	if latest, ok := s.latestFirmwareUpdateJob(); ok {
 		firmwareUpdate = &latest
@@ -1202,10 +1379,27 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func savedPairingRemainsValid(savedToken string, tokenRejected bool, streamError string) bool {
+	return strings.TrimSpace(savedToken) != "" &&
+		!tokenRejected &&
+		strings.TrimSpace(streamError) != "device_pairing_required"
+}
+
+func pairingTokenForReadiness(savedToken string, probeToken string, paired bool) string {
+	if token := strings.TrimSpace(probeToken); token != "" {
+		return token
+	}
+	if paired {
+		return strings.TrimSpace(savedToken)
+	}
+	return ""
+}
+
 func (s *Server) withConfiguredConnectionState(
 	cfg runtimeconfig.Config,
 	device deviceInfo,
 	reachable bool,
+	identityMismatch bool,
 ) deviceInfo {
 	device.Active = strings.TrimSpace(cfg.DeviceID) != ""
 	if !device.Active {
@@ -1226,8 +1420,30 @@ func (s *Server) withConfiguredConnectionState(
 		s.connectionStates[key] = state
 	}
 
-	if reachable {
+	// Connectivity must stay evidence based. A healthy display stream is real
+	// evidence (the device acknowledged a frame inside the bounded ready-age
+	// window). A provider-setup stream entry alone is not: it only proves the
+	// device was reachable when the log line was written, which can be minutes
+	// ago on a powered-off device. Require a live /hello probe for that case.
+	healthyStream := !identityMismatch && device.Paired && displayStreamHealthyForTarget(device.Stream, device.Target)
+	streamConnected := healthyStream || (reachable && !identityMismatch && device.Paired && providerSetupStreamForTarget(device.Stream, device.Target))
+	if streamConnected {
+		device.Connected = true
+	}
+	if healthyStream {
+		device.Ready = true
+	}
+	if reachable || streamConnected {
 		state.lastSeenAt = now
+	}
+	// Anti-flap grace: a device that was just seen must not flip the customer
+	// to a disconnected/setup experience because one probe missed (the
+	// single-threaded ESP8266 drops connections while rendering). Within the
+	// bounded grace window the device stays Connected in state "reconnecting";
+	// past the window the honest truth wins and Connected drops.
+	if !device.Connected && !identityMismatch && device.Paired &&
+		!state.lastSeenAt.IsZero() && now.Sub(state.lastSeenAt) <= deviceConnectedGraceWindow {
+		device.Connected = true
 	}
 	if device.Ready {
 		device.ConnectionState = deviceConnectionReady
@@ -1237,9 +1453,22 @@ func (s *Server) withConfiguredConnectionState(
 	if !state.lastSeenAt.IsZero() {
 		device.LastSeenAt = state.lastSeenAt.UTC().Format(time.RFC3339Nano)
 	}
+	// Missing AI usage is not a connection problem. Reporting "reconnecting"
+	// here sends the customer after a link that is already up. This needs the
+	// live probe in streamConnected, not device.Connected: the anti-flap grace
+	// window above keeps an unreachable device Connected, and that one really
+	// is reconnecting.
+	if streamConnected {
+		device.ConnectionState = deviceConnectionNoProvider
+		return device
+	}
 	device.ConnectionState = deviceConnectionRetrying
 	return device
 }
+
+// A reachable, paired device whose only missing piece is AI usage is not
+// reconnecting. Naming that separately keeps the connection story honest.
+const deviceConnectionNoProvider = "provider_setup_required"
 
 func configuredDeviceKey(cfg runtimeconfig.Config) string {
 	if id := strings.ToLower(strings.TrimSpace(cfg.DeviceID)); id != "" {
@@ -1255,19 +1484,119 @@ func (s *Server) currentTime() time.Time {
 	return time.Now().UTC()
 }
 
+// The Mac App stops this runtime to repair CodexBar. runtime-health alone could
+// only report a job that had already started, so a firmware update begun
+// between that answer and the shutdown still died with this process. The Mac
+// App now claims a hold first: taking it and starting an update are the same
+// lock, so one of the two always loses cleanly. The hold expires on its own
+// because the process it protects is normally gone before it matters.
+const runtimeUpdateHoldWindow = 60 * time.Second
+
+func (s *Server) handleRuntimeUpdateHold(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var req struct {
+		Release bool `json:"release"`
+	}
+	if !decodeOptionalJSON(w, r, &req) {
+		return
+	}
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if req.Release {
+		s.updateHoldUntil = time.Time{}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+	if _, running := s.activeFirmwareUpdateJob(); running {
+		// For someone tailing this runtime in a terminal. Not bench evidence:
+		// the managed LaunchAgent redirects neither stream, so this never
+		// reaches daemon.out.log. The 409 below is the observable contract, and
+		// scripts/vibetv-prove-update-serialization.sh asks for it directly.
+		s.updateHoldRefusals.Add(1)
+		_, _ = fmt.Fprintln(os.Stderr, "VibeTV update hold refused: a firmware update owns this runtime")
+		writeError(
+			w,
+			http.StatusConflict,
+			"firmware_update_in_progress",
+			"VibeTV update is still running.",
+			"Wait for the update to finish.",
+		)
+		return
+	}
+	// A theme install job and its worker live in this process exactly like a
+	// firmware job, so the repair's restart erases a running install and the
+	// status the customer is watching for it. The browser defers its own repair
+	// while one runs, but an externally delivered vibetv://repair-codexbar never
+	// passes through that check -- the guard has to be here, where the hold is
+	// granted.
+	if s.themeInstallInFlight() {
+		s.updateHoldRefusals.Add(1)
+		_, _ = fmt.Fprintln(os.Stderr, "VibeTV update hold refused: a theme install owns this runtime")
+		writeError(
+			w,
+			http.StatusConflict,
+			"theme_install_in_progress",
+			"Theme install is still running.",
+			"Wait for the theme install to finish.",
+		)
+		return
+	}
+	s.updateHoldUntil = time.Now().Add(runtimeUpdateHoldWindow)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// Callers must hold firmwareUpdateStartMu.
+func (s *Server) updateHoldActive() bool {
+	return !s.updateHoldUntil.IsZero() && time.Now().Before(s.updateHoldUntil)
+}
+
+// Callers must hold firmwareUpdateStartMu, so that asking this and granting a
+// hold are one step. Lock order is firmwareUpdateStartMu -> installJobsMu
+// everywhere; tryStartThemeInstall takes the same two in the same order.
+func (s *Server) themeInstallInFlight() bool {
+	s.installJobsMu.Lock()
+	defer s.installJobsMu.Unlock()
+	return s.themeInstallActive
+}
+
 func (s *Server) handleRuntimeHealth(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
+	_, updateInProgress := s.activeFirmwareUpdateJob()
 	writeJSON(w, http.StatusOK, struct {
-		OK        bool `json:"ok"`
-		Companion struct {
+		OK bool `json:"ok"`
+		// The writer-quiesce gate cares about device writers, not runtimes: a
+		// standalone `codexbar-display api` server answers here without
+		// owning a display stream, and its own child updater must not
+		// mistake it for one. Absent field (older runtimes) means writer.
+		DisplayWriter bool `json:"displayWriter"`
+		// A firmware update job lives in this process and dies with it. The Mac
+		// App asks here before restarting the runtime for a CodexBar repair,
+		// because that restart would strand a running update: the next status
+		// poll asks a fresh process for a job id it has never seen.
+		UpdateInProgress bool `json:"updateInProgress"`
+		// How often this runtime has refused an update hold. The refusal is the
+		// only sign from outside that a CodexBar repair actually met a running
+		// job, and the runtime's stderr does not reach any file a script can
+		// read: the managed LaunchAgent redirects neither stream. A bench run
+		// reads this before and after it delivers the repair; an increase is
+		// the collision. scripts/vibetv-prove-update-serialization.sh requires
+		// it, and without it that script cannot tell a repair that was held
+		// back from one that bailed out before ever asking.
+		UpdateHoldRefusals uint64 `json:"updateHoldRefusals"`
+		Companion          struct {
 			Version string               `json:"version"`
 			App     companionAppInfo     `json:"app"`
 			Runtime companionRuntimeInfo `json:"runtime"`
 		} `json:"companion"`
 	}{
-		OK: true,
+		OK:                 true,
+		DisplayWriter:      s.pauseDisplayStream != nil,
+		UpdateInProgress:   updateInProgress,
+		UpdateHoldRefusals: s.updateHoldRefusals.Load(),
 		Companion: struct {
 			Version string               `json:"version"`
 			App     companionAppInfo     `json:"app"`
@@ -1285,115 +1614,251 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now().UTC()
+	now := s.currentTime()
 	showUsed := codexbar.UsageBarsShowUsed()
+	manualRefresh := usageRefreshRequested(r)
+	if manualRefresh {
+		s.requestUsageRefresh(now)
+	}
 	inventoryCh := make(chan []codexbar.ProviderSetting, 1)
 	go func() {
 		inventoryCh <- s.providerInventoryForUsage(r.Context())
 	}()
 	var inventory []codexbar.ProviderSetting
 	inventoryLoaded := false
-	writeUsage := func(resp usageResponse) {
+	loadInventory := func() {
 		if !inventoryLoaded {
 			inventory = <-inventoryCh
 			inventoryLoaded = true
 		}
+	}
+	writeUsage := func(resp usageResponse, usage daemon.PersistedUsage) {
+		loadInventory()
 		resp = filterDisabledProviders(resp, inventory)
+		resp.Refresh = s.usageRefreshInfo(now, usageForVisibleProviders(usage, resp.Providers))
 		writeJSON(w, http.StatusOK, usageResponseForDisplayMode(resp, showUsed))
 	}
-	forceRefresh := r.URL.Query().Get("refresh") == "1"
-	var persisted usageResponse
-	havePersisted := false
 	if s.loadUsage != nil {
 		if usage, ok := s.loadUsage(now); ok && len(usage.Providers) > 0 {
-			persisted = usageResponseFromPersisted(now, usage)
-			havePersisted = len(persisted.Providers) > 0
-		}
-	}
-	if !forceRefresh {
-		if cached, ok := s.cachedDirectUsage(now); ok {
-			if havePersisted {
-				cached = mergePersistedUsageDetails(cached, persisted)
+			loadInventory()
+			usage = usageForEnabledProviders(usage, inventory)
+			resp := usageResponseFromPersisted(now, usage)
+			if cached, ok := s.cachedExactUsageOverlay(now, usage); ok {
+				resp = cached
 			}
-			writeUsage(cached)
-			return
-		}
-		if havePersisted && usageResponseHasFreshProvider(persisted) {
-			writeUsage(persisted)
-			return
+			if len(resp.Providers) > 0 {
+				writeUsage(resp, usage)
+				return
+			}
 		}
 	}
 
-	if s.fetchUsage == nil {
-		if havePersisted {
-			writeUsage(persisted)
-			return
-		}
-		writeUsage(emptyUsageResponse(now, "codexbar-display"))
+	if cached, ok := s.cachedExactUsageOverlay(now, daemon.PersistedUsage{}); ok {
+		writeUsage(cached, daemon.PersistedUsage{})
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), usageFallbackFetchTime)
-	defer cancel()
-	providers, err := s.fetchUsage(ctx)
-	if err != nil {
-		if havePersisted {
-			writeUsage(persisted)
-			return
+	if manualRefresh {
+		resp := emptyUsageResponse(now, "codexbar-display")
+		writeUsage(resp, daemon.PersistedUsage{})
+		return
+	}
+
+	writeError(
+		w,
+		http.StatusServiceUnavailable,
+		"usage_unavailable",
+		"Usage is still loading.",
+		"Keep this page open. VibeTV will retry automatically.",
+	)
+}
+
+func usageForVisibleProviders(usage daemon.PersistedUsage, visible []usageProviderInfo) daemon.PersistedUsage {
+	visibleByID := make(map[string]struct{}, len(visible))
+	for _, provider := range visible {
+		visibleByID[provider.ID] = struct{}{}
+	}
+	providers := make([]daemon.ProviderUsageSnapshot, 0, len(visibleByID))
+	for _, provider := range usage.Providers {
+		id := usageProviderID(provider.Provider, provider.Frame.Provider)
+		if _, ok := visibleByID[id]; ok {
+			providers = append(providers, provider)
 		}
-		writeError(
-			w,
-			http.StatusServiceUnavailable,
-			"usage_unavailable",
-			"Usage is still loading.",
-			"Keep this page open. VibeTV will retry automatically.",
-		)
-		return
 	}
-	resp := usageResponseFromParsed(now, providers)
-	if havePersisted {
-		resp = mergePersistedUsageDetails(resp, persisted)
-	}
-	if len(resp.Providers) == 0 && havePersisted {
-		writeUsage(persisted)
-		return
-	}
-	s.cacheDirectUsage(resp, now)
-	writeUsage(resp)
+	usage.Providers = providers
+	return usage
 }
 
-func (s *Server) cachedDirectUsage(now time.Time) (usageResponse, bool) {
-	s.usageCacheMu.RLock()
-	defer s.usageCacheMu.RUnlock()
-	if s.usageCache == nil || now.Sub(s.usageCacheAt) > usageDirectCacheTime {
-		return usageResponse{}, false
+func usageForEnabledProviders(usage daemon.PersistedUsage, settings []codexbar.ProviderSetting) daemon.PersistedUsage {
+	if len(settings) == 0 {
+		return usage
 	}
-	return *s.usageCache, true
+	enabled := enabledProviderIDs(settings)
+	providers := make([]daemon.ProviderUsageSnapshot, 0, len(usage.Providers))
+	for _, provider := range usage.Providers {
+		id := usageProviderID(provider.Provider, provider.Frame.Provider)
+		if _, ok := enabled[id]; ok {
+			providers = append(providers, provider)
+		}
+	}
+	usage.Providers = providers
+	return usage
 }
 
-func (s *Server) cacheDirectUsage(resp usageResponse, now time.Time) {
-	s.usageCacheMu.Lock()
-	defer s.usageCacheMu.Unlock()
-	s.usageCache = &resp
-	s.usageCacheAt = now
+func usageRefreshRequested(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	raw := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("refresh")))
+	return raw == "1" || raw == "true" || raw == "yes"
 }
+
+func (s *Server) requestUsageRefresh(now time.Time) {
+	if s == nil {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	s.usageRefreshMu.Lock()
+	s.usageRefresh.RequestedAt = now.UTC()
+	s.usageRefreshMu.Unlock()
+	if s.wakeDisplayStream != nil {
+		s.wakeDisplayStream()
+	}
+}
+
+func (s *Server) usageRefreshInfo(now time.Time, usage daemon.PersistedUsage) usageRefreshInfo {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	now = now.UTC()
+	rateLimited, blockedUntil := usageRateLimitState(usage, now)
+
+	s.usageRefreshMu.Lock()
+	requestedAt := s.usageRefresh.RequestedAt
+	if rateLimited {
+		s.usageRefresh.RequestedAt = time.Time{}
+		s.usageRefreshMu.Unlock()
+		return usageRefreshInfo{
+			State:        "rate_limited",
+			RequestedAt:  formatOptionalTime(requestedAt),
+			BlockedUntil: formatOptionalTime(blockedUntil),
+			Message:      usageRefreshMessage("rate_limited", blockedUntil),
+		}
+	}
+	if !requestedAt.IsZero() {
+		if usageHasFreshSnapshotAfter(usage, requestedAt) {
+			s.usageRefresh.RequestedAt = time.Time{}
+			s.usageRefreshMu.Unlock()
+			return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh", time.Time{})}
+		}
+		if !now.Before(requestedAt.Add(usageRefreshRequestMaxAge)) {
+			s.usageRefreshMu.Unlock()
+			return usageRefreshInfo{
+				State:       "unavailable",
+				RequestedAt: formatOptionalTime(requestedAt),
+				Message:     "Usage refresh did not produce new data. Current values may be out of date.",
+			}
+		}
+		s.usageRefreshMu.Unlock()
+		return usageRefreshInfo{
+			State:       "refreshing",
+			RequestedAt: formatOptionalTime(requestedAt),
+			Message:     usageRefreshMessage("refreshing", time.Time{}),
+		}
+	}
+	s.usageRefreshMu.Unlock()
+
+	if usageHasFreshSnapshot(usage) {
+		return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh", time.Time{})}
+	}
+	return usageRefreshInfo{State: "unavailable", Message: usageRefreshMessage("unavailable", time.Time{})}
+}
+
+const exactUsageCacheMaxAge = 15 * time.Minute
 
 func (s *Server) invalidateUsageCache() {
 	s.usageCacheMu.Lock()
 	defer s.usageCacheMu.Unlock()
 	s.usageCache = nil
-	s.usageCacheAt = time.Time{}
+}
+
+func (s *Server) cachedExactUsageOverlay(now time.Time, usage daemon.PersistedUsage) (usageResponse, bool) {
+	s.usageCacheMu.RLock()
+	if s.usageCache == nil {
+		s.usageCacheMu.RUnlock()
+		return usageResponse{}, false
+	}
+	cached := cloneCachedUsageResponse(*s.usageCache)
+	s.usageCacheMu.RUnlock()
+
+	cachedProviderID := strings.TrimSpace(cached.CurrentProvider)
+	var cachedProvider usageProviderInfo
+	for _, provider := range cached.Providers {
+		if provider.ID == cachedProviderID {
+			cachedProvider = provider
+			break
+		}
+	}
+	if cachedProvider.ID == "" {
+		return usageResponse{}, false
+	}
+	cachedCollectedAt, err := time.Parse(time.RFC3339, cachedProvider.CollectedAt)
+	if err != nil || cachedCollectedAt.After(now.Add(5*time.Minute)) || now.Sub(cachedCollectedAt) > exactUsageCacheMaxAge {
+		return usageResponse{}, false
+	}
+
+	for _, provider := range usage.Providers {
+		id := usageProviderID(provider.Provider, provider.Frame.Provider)
+		if id != cachedProviderID {
+			continue
+		}
+		if provider.Stale || provider.Frame.Normalize().UsageUnavailable || !provider.CollectedAt.Before(cachedCollectedAt) {
+			return usageResponse{}, false
+		}
+	}
+	if len(usage.Providers) == 0 {
+		return cached, true
+	}
+
+	current := usageResponseFromPersisted(now, usage)
+	replaced := false
+	for i := range current.Providers {
+		if current.Providers[i].ID != cachedProviderID {
+			continue
+		}
+		current.Providers[i] = mergePersistedUsageDetails(
+			usageResponse{Providers: []usageProviderInfo{cachedProvider}},
+			usageResponse{Providers: []usageProviderInfo{current.Providers[i]}},
+		).Providers[0]
+		replaced = true
+		break
+	}
+	if !replaced {
+		current.Providers = append(current.Providers, cachedProvider)
+	}
+	current.CurrentProvider = cachedProviderID
+	current.UsageMode = usageModeForProviders(current.Providers)
+	current.TokenUsageReady = usageProvidersHaveTokenResult(current.Providers)
+	current.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(current.Providers)
+	return current, true
+}
+
+func cloneCachedUsageResponse(response usageResponse) usageResponse {
+	response.Providers = slices.Clone(response.Providers)
+	for i := range response.Providers {
+		response.Providers[i].Windows = slices.Clone(response.Providers[i].Windows)
+	}
+	return response
 }
 
 func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
 	now := s.currentTime().UTC()
-	const (
-		exactUsageMaxAge     = 15 * time.Minute
-		exactUsageFutureSkew = 5 * time.Minute
-	)
+	const exactUsageFutureSkew = 5 * time.Minute
 	if parsed.CollectedAt.IsZero() ||
 		parsed.CollectedAt.After(now.Add(exactUsageFutureSkew)) ||
-		now.Sub(parsed.CollectedAt) > exactUsageMaxAge {
+		now.Sub(parsed.CollectedAt) > exactUsageCacheMaxAge {
 		return
 	}
 	fresh, ok := usageProviderFromParsed(parsed)
@@ -1416,10 +1881,8 @@ func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
 		if base.Providers[i].ID != fresh.ID {
 			continue
 		}
-		fresh = mergePersistedUsageDetails(
-			usageResponse{Providers: []usageProviderInfo{fresh}},
-			usageResponse{Providers: []usageProviderInfo{base.Providers[i]}},
-		).Providers[0]
+		fresh.TokenUsageReady = base.Providers[i].TokenUsageReady
+		fresh.TokenStatsCollectedAt = base.Providers[i].TokenStatsCollectedAt
 		base.Providers[i] = fresh
 		replaced = true
 		break
@@ -1427,14 +1890,34 @@ func (s *Server) cacheExactProviderUsage(parsed codexbar.ParsedFrame) {
 	if !replaced {
 		base.Providers = append(base.Providers, fresh)
 	}
+	// This cache exists to overlay one probed provider's quota windows. Token
+	// history has one owner, so a cached copy must never outrank the newer
+	// collector snapshot merged in by cachedExactUsageOverlay.
+	for i := range base.Providers {
+		clearUsageProviderTokenHistory(&base.Providers[i])
+	}
+	base.TokenUsageReady = usageProvidersHaveTokenResult(base.Providers)
+	base.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(base.Providers)
 	base.OK = true
 	base.GeneratedAt = now.Format(time.RFC3339)
 	base.Source = "codexbar"
 	base.UsageMode = usageModeForProviders(base.Providers)
 	base.CurrentProvider = fresh.ID
 	s.usageCache = &base
-	s.usageCacheAt = now
 	s.usageCacheMu.Unlock()
+}
+
+func clearUsageProviderTokenHistory(provider *usageProviderInfo) {
+	if provider == nil {
+		return
+	}
+	provider.SessionTokens = 0
+	provider.WeekTokens = 0
+	provider.TotalTokens = 0
+	provider.Cost = nil
+	provider.CostSettled = false
+	provider.TokenUsageReady = false
+	provider.TokenStatsCollectedAt = time.Time{}
 }
 
 func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
@@ -1459,10 +1942,72 @@ func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
 				provider.TotalTokens = cached.TotalTokens
 			}
 			provider.Cost = cached.Cost
+			provider.CostSettled = cached.CostSettled
+		}
+		provider.TokenUsageReady = provider.TokenUsageReady || cached.TokenUsageReady
+		if provider.TokenStatsCollectedAt.IsZero() {
+			provider.TokenStatsCollectedAt = cached.TokenStatsCollectedAt
 		}
 	}
 	fresh.TokenUsageReady = usageProvidersHaveTokenResult(fresh.Providers)
+	fresh.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(fresh.Providers)
 	return fresh
+}
+
+func usageRateLimitState(usage daemon.PersistedUsage, now time.Time) (bool, time.Time) {
+	var latest time.Time
+	rateLimited := false
+	for _, provider := range usage.Providers {
+		if provider.RateLimited {
+			rateLimited = true
+		}
+		blockedUntil := provider.RateLimitedUntil.UTC()
+		if blockedUntil.After(now) && blockedUntil.After(latest) {
+			latest = blockedUntil
+			rateLimited = true
+		}
+	}
+	return rateLimited, latest
+}
+
+func usageHasFreshSnapshotAfter(usage daemon.PersistedUsage, requestedAt time.Time) bool {
+	if requestedAt.IsZero() {
+		return usageHasFreshSnapshot(usage)
+	}
+	if len(usage.Providers) == 0 {
+		return false
+	}
+	for _, provider := range usage.Providers {
+		if provider.Stale || provider.CollectedAt.IsZero() || provider.CollectedAt.Before(requestedAt) {
+			return false
+		}
+	}
+	return true
+}
+
+func usageHasFreshSnapshot(usage daemon.PersistedUsage) bool {
+	for _, provider := range usage.Providers {
+		if !provider.Stale && !provider.CollectedAt.IsZero() {
+			return true
+		}
+	}
+	return false
+}
+
+func usageRefreshMessage(state string, blockedUntil time.Time) string {
+	switch state {
+	case "refreshing":
+		return "Refreshing usage. Current values stay visible until new data arrives."
+	case "rate_limited":
+		if !blockedUntil.IsZero() {
+			return "Usage refresh is temporarily limited. Current values stay visible until usage can be collected again."
+		}
+		return "Usage refresh is temporarily limited. Current values stay visible."
+	case "fresh":
+		return "Usage is up to date."
+	default:
+		return "Usage is not available yet."
+	}
 }
 
 func (s *Server) handleDisplayFrameLatest(w http.ResponseWriter, r *http.Request) {
@@ -1637,6 +2182,11 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	device = s.withDisplayStream(r.Context(), cfg.DeviceTarget, deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello))
+	// A report describes the same VibeTV the rest of the API describes. Leaving
+	// this unset shipped active=false — the field has no omitempty — and the
+	// Control Center believed the configured device had gone away every time a
+	// customer created a support report.
+	device.Active = strings.TrimSpace(cfg.DeviceID) != "" && strings.EqualFold(cfg.DeviceID, device.DeviceID)
 	checks = append(checks, diagnosticCheck{
 		Name:   "device_hello",
 		Status: "pass",
@@ -1690,7 +2240,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 			Status:     "attention",
 			Detail:     device.Stream.Detail,
 			ErrorCode:  "provider_setup_required",
-			NextAction: "Open provider setup, connect an AI provider, then click Check again.",
+			NextAction: "Finish AI setup in the Mac App, then click Check again.",
 		})
 	} else {
 		checks = append(checks, diagnosticCheck{
@@ -1788,6 +2338,15 @@ func (s *Server) companionInfo(ctx context.Context) companion {
 }
 
 func (s *Server) macAppReleaseInfo(ctx context.Context) companionReleaseInfo {
+	return s.macAppReleaseInfoCached(ctx, true)
+}
+
+// macAppReleaseInfoCached with useCache=false always contacts the release
+// feed. The firmware-install gate needs that: a cached "no update" answer
+// from just before a release publishes would otherwise let the older app
+// push the newer firmware — the exact mixed state the gate exists to
+// prevent.
+func (s *Server) macAppReleaseInfoCached(ctx context.Context, useCache bool) companionReleaseInfo {
 	app := currentCompanionAppInfo(s.installationMode)
 	installedVersion := normalizeMacAppReleaseVersion(app.Version)
 	if installedVersion == "" {
@@ -1795,16 +2354,18 @@ func (s *Server) macAppReleaseInfo(ctx context.Context) companionReleaseInfo {
 	}
 	now := time.Now().UTC()
 
-	s.macAppReleaseMu.Lock()
-	if s.macAppReleaseChecked &&
-		s.macAppReleaseCache.InstalledVersion == installedVersion &&
-		now.Sub(s.macAppReleaseCheckedAt) >= 0 &&
-		now.Sub(s.macAppReleaseCheckedAt) < macAppReleaseCheckGap {
-		cached := s.macAppReleaseCache
+	if useCache {
+		s.macAppReleaseMu.Lock()
+		if s.macAppReleaseChecked &&
+			s.macAppReleaseCache.InstalledVersion == installedVersion &&
+			now.Sub(s.macAppReleaseCheckedAt) >= 0 &&
+			now.Sub(s.macAppReleaseCheckedAt) < macAppReleaseCheckGap {
+			cached := s.macAppReleaseCache
+			s.macAppReleaseMu.Unlock()
+			return cached
+		}
 		s.macAppReleaseMu.Unlock()
-		return cached
 	}
-	s.macAppReleaseMu.Unlock()
 
 	checkedAt := now.Format(time.RFC3339)
 	info := companionReleaseInfo{
@@ -1931,27 +2492,16 @@ func usageResponseFromPersisted(now time.Time, usage daemon.PersistedUsage) usag
 	}
 	resp := emptyUsageResponse(now, "codexbar-display")
 	resp.CurrentProvider = strings.TrimSpace(usage.CurrentProvider)
-	resp.Providers = providers
 	resp.UsageMode = usageModeForProviders(providers)
 	resp.TokenUsageReady = usageProvidersHaveTokenResult(providers)
-	if resp.CurrentProvider == "" && len(providers) > 0 {
-		resp.CurrentProvider = providers[0].ID
-	}
-	return resp
-}
-
-func usageResponseFromParsed(now time.Time, parsed []codexbar.ParsedFrame) usageResponse {
-	providers := make([]usageProviderInfo, 0, len(parsed))
-	for _, provider := range parsed {
-		if info, ok := usageProviderFromParsed(provider); ok {
-			providers = append(providers, info)
+	resp.TokenUsageUpdating = usageProvidersHaveUpdatingTokenHistory(providers)
+	if !resp.TokenUsageReady {
+		for i := range providers {
+			clearUsageProviderTokenHistory(&providers[i])
 		}
 	}
-	resp := emptyUsageResponse(now, "codexbar")
 	resp.Providers = providers
-	resp.UsageMode = usageModeForProviders(providers)
-	resp.TokenUsageReady = usageProvidersHaveTokenResult(providers)
-	if len(providers) > 0 {
+	if resp.CurrentProvider == "" && len(providers) > 0 {
 		resp.CurrentProvider = providers[0].ID
 	}
 	return resp
@@ -1970,18 +2520,33 @@ func emptyUsageResponse(now time.Time, source string) usageResponse {
 	}
 }
 
-func usageResponseHasFreshProvider(resp usageResponse) bool {
-	for _, provider := range resp.Providers {
-		if !provider.Stale {
-			return true
+func usageProvidersHaveTokenResult(providers []usageProviderInfo) bool {
+	if len(providers) == 0 {
+		return false
+	}
+	var completedAt time.Time
+	for _, provider := range providers {
+		if !provider.TokenUsageReady && provider.Cost == nil {
+			return false
+		}
+		if provider.TokenStatsCollectedAt.IsZero() {
+			continue
+		}
+		if completedAt.IsZero() {
+			completedAt = provider.TokenStatsCollectedAt
+		} else if !provider.TokenStatsCollectedAt.Equal(completedAt) {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
-func usageProvidersHaveTokenResult(providers []usageProviderInfo) bool {
+// usageProvidersHaveUpdatingTokenHistory reports whether any shown token
+// history is still growing. One unsettled provider makes every total derived
+// from the shown set provisional.
+func usageProvidersHaveUpdatingTokenHistory(providers []usageProviderInfo) bool {
 	for _, provider := range providers {
-		if provider.Cost != nil {
+		if provider.Cost != nil && !provider.CostSettled {
 			return true
 		}
 	}
@@ -1993,36 +2558,63 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 	if strings.TrimSpace(frame.Error) != "" {
 		return usageProviderInfo{}, false
 	}
+	if frame.UsageUnavailable && !snapshotHasUsableUsage(frame, snapshot.Meta) && !snapshotIsUnavailableUsageCarrier(snapshot, frame) {
+		return usageProviderInfo{}, false
+	}
 	id := usageProviderID(snapshot.Provider, frame.Provider)
 	if id == "" {
 		return usageProviderInfo{}, false
 	}
 	return usageProviderInfo{
-		ID:                 id,
-		Label:              usageProviderLabel(id, frame.Label),
-		Source:             strings.TrimSpace(snapshot.Source),
-		Session:            frame.Session,
-		Weekly:             frame.Weekly,
-		ResetSec:           frame.ResetSec,
-		UsageMode:          usageModeOrDefault(frame.UsageMode),
-		SessionTokens:      frame.SessionTokens,
-		WeekTokens:         frame.WeekTokens,
-		TotalTokens:        frame.TotalTokens,
-		Activity:           strings.TrimSpace(frame.Activity),
-		Stale:              snapshot.Stale,
-		UsageUnavailable:   snapshot.Stale || (frame.UsageUnavailable && len(snapshot.Meta.Windows) == 0),
-		SessionUnavailable: snapshot.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
-		WeeklyUnavailable:  snapshot.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
-		CollectedAt:        formatOptionalTime(snapshot.CollectedAt),
-		ActivityObservedAt: formatOptionalTime(snapshot.ActivityObservedAt),
-		Windows:            usageWindowsFromMeta(snapshot.Meta),
-		Status:             usageStatusFromMeta(snapshot.Meta),
-		Credits:            usageCreditsFromMeta(snapshot.Meta),
-		ResetCredits:       usageResetCreditsFromMeta(snapshot.Meta),
-		Cost:               usageCostFromMeta(snapshot.Meta),
-		Pace:               usagePaceFromMeta(snapshot.Meta),
-		UsageOverTime:      usageOverTimeFromMeta(snapshot.Meta),
+		ID:                    id,
+		Label:                 usageProviderLabel(id, frame.Label),
+		Source:                strings.TrimSpace(snapshot.Source),
+		Session:               frame.Session,
+		Weekly:                frame.Weekly,
+		ResetSec:              frame.ResetSec,
+		UsageMode:             usageModeOrDefault(frame.UsageMode),
+		SessionTokens:         frame.SessionTokens,
+		WeekTokens:            frame.WeekTokens,
+		TotalTokens:           frame.TotalTokens,
+		Activity:              strings.TrimSpace(frame.Activity),
+		Stale:                 snapshot.Stale,
+		UsageUnavailable:      snapshot.Stale || (frame.UsageUnavailable && len(snapshot.Meta.Windows) == 0),
+		SessionUnavailable:    snapshot.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
+		WeeklyUnavailable:     snapshot.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
+		CollectedAt:           formatOptionalTime(snapshot.CollectedAt),
+		ActivityObservedAt:    formatOptionalTime(snapshot.ActivityObservedAt),
+		RateLimited:           snapshot.RateLimited,
+		BlockedUntil:          formatOptionalTime(snapshot.RateLimitedUntil),
+		Windows:               usageWindowsFromMeta(snapshot.Meta),
+		Status:                usageStatusFromMeta(snapshot.Meta),
+		Credits:               usageCreditsFromMeta(snapshot.Meta),
+		ResetCredits:          usageResetCreditsFromMeta(snapshot.Meta),
+		Cost:                  usageCostFromMeta(snapshot.Meta),
+		CostSettled:           snapshot.TokenHistorySettled,
+		TokenUsageReady:       !snapshot.TokenStatsCollectedAt.IsZero(),
+		TokenStatsCollectedAt: snapshot.TokenStatsCollectedAt,
+		Pace:                  usagePaceFromMeta(snapshot.Meta),
+		UsageOverTime:         usageOverTimeFromMeta(snapshot.Meta),
 	}, true
+}
+
+func snapshotIsUnavailableUsageCarrier(snapshot daemon.ProviderUsageSnapshot, frame protocol.Frame) bool {
+	if snapshot.CollectedAt.IsZero() || !frame.UsageUnavailable {
+		return false
+	}
+	return !snapshot.Stale || (frame.SessionUnavailable && frame.WeeklyUnavailable)
+}
+
+func snapshotHasUsableUsage(frame protocol.Frame, meta codexbar.ProviderUsageMeta) bool {
+	if len(meta.Windows) > 0 || meta.Cost != nil {
+		return true
+	}
+	return frame.Session != 0 ||
+		frame.Weekly != 0 ||
+		frame.SessionTokens != 0 ||
+		frame.WeekTokens != 0 ||
+		frame.TotalTokens != 0 ||
+		len(frame.UsageSlots) > 0
 }
 
 func usageProviderFromParsed(parsed codexbar.ParsedFrame) (usageProviderInfo, bool) {
@@ -2150,7 +2742,8 @@ func usageCostFromMeta(meta codexbar.ProviderUsageMeta) *usageCostInfo {
 		cost.Last30DaysTokens <= 0 &&
 		cost.LatestTokens <= 0 &&
 		cost.TopModel == "" &&
-		len(cost.Daily) == 0 {
+		len(cost.Daily) == 0 &&
+		cost.UpdatedAt == "" {
 		return nil
 	}
 	return &cost
@@ -2351,10 +2944,20 @@ func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
+	if strings.TrimSpace(req.Target) == "" &&
+		strings.TrimSpace(cfg.DeviceID) == "" &&
+		s.ambiguousDeviceSelectionPending() {
+		writeDiscoveryError(w, &multipleDevicesError{})
+		return
+	}
 	discoveryCfg := cfg
 	discoveryCfg.DeviceToken = ""
 	target, hello, err := s.discover(r.Context(), discoveryCfg, req.Target)
 	if err != nil {
+		var multiple *multipleDevicesError
+		if errors.As(err, &multiple) {
+			s.markAmbiguousDeviceSelection()
+		}
 		writeDiscoveryError(w, err)
 		return
 	}
@@ -2408,6 +3011,9 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
+	if strings.TrimSpace(req.Target) == "" && distinctDeviceSearchCount(devices) > 1 {
+		s.markAmbiguousDeviceSelection()
+	}
 	writeJSON(w, http.StatusOK, struct {
 		OK      bool                `json:"ok"`
 		Devices []deviceSearchEntry `json:"devices"`
@@ -2434,6 +3040,7 @@ func (s *Server) handleDeviceSelect(w http.ResponseWriter, r *http.Request) {
 		writeRepairError(w, err)
 		return
 	}
+	s.clearAmbiguousDeviceSelection()
 	writeJSON(w, http.StatusOK, deviceActionResponse{OK: true, Device: device})
 }
 
@@ -2449,8 +3056,10 @@ func (s *Server) handleDeviceRepair(w http.ResponseWriter, r *http.Request) {
 	if !decodeOptionalJSON(w, r, &req) {
 		return
 	}
+	repairCtx, cancel := context.WithTimeout(r.Context(), repairRequestTimeout)
+	defer cancel()
 	device, err := s.repairDevice(
-		r.Context(),
+		repairCtx,
 		strings.TrimSpace(req.Target),
 		strings.TrimSpace(req.ExpectedDeviceID),
 		req.ForcePair,
@@ -2507,6 +3116,19 @@ func (s *Server) handleDeviceReloadDisplay(w http.ResponseWriter, r *http.Reques
 	}
 	stream := s.waitForFreshDisplayStream(r.Context(), cfg.DeviceTarget, streamStartedAt)
 	device := withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
+	// There is no image to reload while no provider delivers usage. Name that
+	// instead of reporting an unexplained render failure the customer cannot act
+	// on.
+	if providerSetupStreamForTarget(&stream, cfg.DeviceTarget) {
+		writeError(
+			w,
+			http.StatusConflict,
+			"provider_setup_required",
+			"VibeTV is connected, but AI usage is not ready yet.",
+			"Finish AI setup in the Mac App, then press Reload image again.",
+		)
+		return
+	}
 	health, err := s.waitForVerifiedDisplayRender(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
 	if err != nil {
 		writeError(
@@ -2737,7 +3359,28 @@ func (s *Server) repairDeviceOnceLocked(
 	if forcePair {
 		discoveryCfg.DeviceToken = ""
 	}
-	target, hello, err := s.discoverRepairTarget(ctx, discoveryCfg, requestedTarget)
+	// An already-paired known device proves its saved token with an
+	// authenticated /hello first. Pairing only runs when the device really
+	// rejects the token (401/403); a closed pairing window must not break
+	// Connect for a device whose saved token still works.
+	provenToken := ""
+	var target string
+	var hello protocol.DeviceHello
+	if forcePair {
+		if known, ok := cfg.KnownDevice(expectedDeviceID); ok {
+			if saved := strings.TrimSpace(known.DeviceToken); saved != "" {
+				authCfg := cfg
+				authCfg.DeviceToken = saved
+				if authTarget, authHello, authErr := s.discoverRepairTarget(ctx, authCfg, requestedTarget); authErr == nil {
+					target, hello = authTarget, authHello
+					provenToken = saved
+				}
+			}
+		}
+	}
+	if provenToken == "" {
+		target, hello, err = s.discoverRepairTarget(ctx, discoveryCfg, requestedTarget)
+	}
 	tokenRejected := false
 	if err != nil && !forcePair && strings.TrimSpace(cfg.DeviceToken) != "" && deviceAuthorizationRejected(err) {
 		discoveryCfg = cfg
@@ -2771,12 +3414,16 @@ func (s *Server) repairDeviceOnceLocked(
 		}
 	}
 	if forcePair {
-		token, err = s.pair(ctx, target, token)
-		if err != nil {
-			return deviceInfo{}, &repairStageError{
-				stage:    "pair",
-				firmware: strings.TrimSpace(hello.Firmware),
-				err:      err,
+		if provenToken != "" {
+			token = provenToken
+		} else {
+			token, err = s.pair(ctx, target, token)
+			if err != nil {
+				return deviceInfo{}, &repairStageError{
+					stage:    "pair",
+					firmware: strings.TrimSpace(hello.Firmware),
+					err:      err,
+				}
 			}
 		}
 		if _, err = s.updateConfig(func(current *runtimeconfig.Config) {
@@ -3079,30 +3726,55 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 		Display           struct {
 			BrightnessPercent int `json:"brightnessPercent"`
 		} `json:"display"`
+		Standby *standbySettings `json:"standby"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	brightness := req.BrightnessPercent
-	if brightness == 0 {
-		brightness = req.Display.BrightnessPercent
-	}
 	caps := protocol.CapabilitiesFromHello(hello)
-	if caps.Known && !caps.SupportsBrightness {
-		writeError(w, http.StatusBadRequest, "brightness_unsupported", "This VibeTV does not advertise brightness control.", "Update firmware or use a device with brightness support.")
-		return
+	form := url.Values{}
+	form.Set("api", "1")
+	if req.Standby != nil {
+		if caps.Known && !caps.SupportsStandby {
+			writeError(w, http.StatusBadRequest, "standby_unsupported", "This VibeTV cannot show a screensaver.", "Update VibeTV, then try again.")
+			return
+		}
+		enabled := "0"
+		if req.Standby.Enabled {
+			enabled = "1"
+		}
+		// The device clamps timeout and screensaver brightness and answers with
+		// the stored values, so the Companion does not repeat that arithmetic.
+		form.Set("sb", enabled)
+		form.Set("st", strconv.Itoa(req.Standby.TimeoutMinutes))
+		form.Set("sbr", strconv.Itoa(req.Standby.BrightnessPercent))
+		// Omitting screensaverPath leaves the slot as it is; an empty string
+		// clears it. The device rejects a path it has no file for.
+		if req.Standby.ScreensaverPath != nil {
+			form.Set("ss", strings.TrimSpace(*req.Standby.ScreensaverPath))
+		}
+	} else {
+		brightness := req.BrightnessPercent
+		if brightness == 0 {
+			brightness = req.Display.BrightnessPercent
+		}
+		if caps.Known && !caps.SupportsBrightness {
+			writeError(w, http.StatusBadRequest, "brightness_unsupported", "This VibeTV does not advertise brightness control.", "Update firmware or use a device with brightness support.")
+			return
+		}
+		minBrightness := protocol.DefaultMinBrightness
+		maxBrightness := protocol.DefaultMaxBrightness
+		if caps.SupportsBrightness {
+			minBrightness = caps.MinBrightnessPercent
+			maxBrightness = caps.MaxBrightnessPercent
+		}
+		if brightness < minBrightness || brightness > maxBrightness {
+			writeError(w, http.StatusBadRequest, "invalid_brightness", fmt.Sprintf("Brightness must be between %d and %d.", minBrightness, maxBrightness), "Choose a supported brightness value and retry.")
+			return
+		}
+		form.Set("b", strconv.Itoa(brightness))
 	}
-	minBrightness := protocol.DefaultMinBrightness
-	maxBrightness := protocol.DefaultMaxBrightness
-	if caps.SupportsBrightness {
-		minBrightness = caps.MinBrightnessPercent
-		maxBrightness = caps.MaxBrightnessPercent
-	}
-	if brightness < minBrightness || brightness > maxBrightness {
-		writeError(w, http.StatusBadRequest, "invalid_brightness", fmt.Sprintf("Brightness must be between %d and %d.", minBrightness, maxBrightness), "Choose a supported brightness value and retry.")
-		return
-	}
-	settings, err := s.updateBrightness(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, brightness)
+	settings, err := s.updateDeviceSettings(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, form)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "settings_write_failed", "Could not update VibeTV settings.", "Keep VibeTV powered on and retry.")
 		return
@@ -3122,8 +3794,13 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !s.tryStartThemeInstall() {
-		writeError(w, http.StatusConflict, "theme_install_in_progress", "Another theme install is already running.", "Wait for the current theme install to finish, then retry.")
+	switch refusal := s.tryStartThemeInstall(); refusal {
+	case "":
+	case "mac_app_restarting":
+		writeError(w, http.StatusConflict, refusal, "Mac App is restarting.", "Wait a moment, then start the theme install again.")
+		return
+	default:
+		writeError(w, http.StatusConflict, refusal, "Another theme install is already running.", "Wait for the current theme install to finish, then retry.")
 		return
 	}
 	releaseInstall := true
@@ -3143,6 +3820,11 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.ThemeID) == "" && strings.TrimSpace(req.PackURL) == "" && req.PackBytes == nil {
 		writeError(w, http.StatusBadRequest, "missing_theme_source", "themeId or packUrl is required.", "Select a theme and retry.")
+		return
+	}
+	req.Slot = installSlot(req.Slot)
+	if req.Slot == "" {
+		writeError(w, http.StatusBadRequest, "invalid_install_slot", "This theme cannot be installed here.", "Reload Control Center, then try again.")
 		return
 	}
 	if !validRemoteThemePackURL(req.PackURL) || !validRemoteThemePackURL(req.CatalogURL) {
@@ -3165,12 +3847,26 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		)
 		return
 	}
-	cfg, hello, ok := s.requireDevice(w, r)
-	if !ok {
-		return
-	}
-	if !s.requireThemeInstallPreflight(w, r, cfg, hello) {
-		return
+	var cfg runtimeconfig.Config
+	if req.Async {
+		// The async job pauses the display stream before it probes the device.
+		// Probing here would race the active ESP8266 render loop and can consume
+		// the receive/heap budget before maintenance has started.
+		cfg, err = s.config()
+		if err != nil {
+			writeInternalError(w, err)
+			return
+		}
+	} else {
+		var hello protocol.DeviceHello
+		var ok bool
+		cfg, hello, ok = s.requireDevice(w, r)
+		if !ok {
+			return
+		}
+		if !s.requireThemeInstallPreflight(w, r, cfg, hello) {
+			return
+		}
 	}
 	if req.Async {
 		job := s.createThemeInstallJob(req)
@@ -3191,6 +3887,18 @@ func (s *Server) handleThemeInstall(w http.ResponseWriter, r *http.Request) {
 		Result themeinstall.Result `json:"result"`
 		Logs   []string            `json:"logs,omitempty"`
 	}{OK: true, Result: result, Logs: splitInstallLog(installLog.String())})
+}
+
+// installSlot normalizes the requested slot and returns "" for an unknown one.
+func installSlot(raw string) string {
+	switch slot := strings.TrimSpace(raw); slot {
+	case "", themepack.UsageLive:
+		return themepack.UsageLive
+	case themepack.UsageScreensaver:
+		return themepack.UsageScreensaver
+	default:
+		return ""
+	}
 }
 
 func decodeThemeInstallRequest(w http.ResponseWriter, r *http.Request) (themeInstallRequest, bool) {
@@ -3231,6 +3939,7 @@ func decodeThemeInstallRequest(w http.ResponseWriter, r *http.Request) (themeIns
 	}
 
 	return themeInstallRequest{
+		Slot:      strings.TrimSpace(r.URL.Query().Get("slot")),
 		ThemeID:   strings.TrimSpace(r.URL.Query().Get("themeId")),
 		ThemeName: strings.TrimSpace(r.URL.Query().Get("themeName")),
 		PackBytes: packBytes,
@@ -3424,6 +4133,16 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 	}
 	s.firmwareUpdateStartMu.Lock()
 	defer s.firmwareUpdateStartMu.Unlock()
+	if s.updateHoldActive() {
+		writeError(
+			w,
+			http.StatusConflict,
+			"mac_app_restarting",
+			"Mac App is restarting.",
+			"Wait a moment, then start the update again.",
+		)
+		return
+	}
 	cfg, hello, ok := s.requireDevice(w, r)
 	if !ok {
 		return
@@ -3437,6 +4156,39 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 			"Pair VibeTV, then retry.",
 		)
 		return
+	}
+	// The firmware a release ships pairs with that release's Mac App. An older
+	// app must never push newer firmware onto the device: the mixed state
+	// renders degraded and the old app cannot even preview it. The release
+	// check runs fresh (cache bypassed) and synchronously here, so neither a
+	// UI race nor a stale pre-release cache entry can start the job. Only
+	// customer installs (dmg) are gated; dev and bench builds write devices
+	// deliberately. A failed check blocks too: the release feed and the
+	// firmware manifest are different services, so an unknown answer is not
+	// proof the app is current. The explicit env-var opt-out ("disabled")
+	// stays open for local setups.
+	if s.installationMode == "dmg" {
+		release := s.macAppReleaseInfoCached(r.Context(), false)
+		if release.UpdateAvailable {
+			writeError(
+				w,
+				http.StatusConflict,
+				"mac_app_update_required",
+				"Update the Mac App first.",
+				"Install the Mac App update, then update VibeTV firmware.",
+			)
+			return
+		}
+		if release.Status == "check_failed" {
+			writeError(
+				w,
+				http.StatusBadGateway,
+				"mac_app_release_check_failed",
+				"Could not verify that the Mac App is current.",
+				"Check the internet connection, then retry the update.",
+			)
+			return
+		}
 	}
 	caps := protocol.CapabilitiesFromHello(hello)
 	if strings.TrimSpace(caps.Board) == "" || strings.TrimSpace(caps.Firmware) == "" {
@@ -3522,6 +4274,10 @@ func (s *Server) handleMacAppUpdateStatus(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, req themeInstallRequest, out io.Writer) (themeinstall.Result, error) {
+	installStartedAt := time.Now()
+	defer logThemeInstallTiming(out, "total", installStartedAt)
+
+	maintenanceStartedAt := time.Now()
 	s.deviceMaintenanceMu.Lock()
 	defer s.deviceMaintenanceMu.Unlock()
 
@@ -3533,6 +4289,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		s.pauseDisplayStream(true)
 		streamPaused = true
 	}
+	logThemeInstallTiming(out, "device-maintenance", maintenanceStartedAt)
 	resumeStream := func() {
 		if streamPaused && s.pauseDisplayStream != nil {
 			s.pauseDisplayStream(false)
@@ -3541,6 +4298,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	}
 	defer resumeStream()
 
+	preflightStartedAt := time.Now()
 	latestCfg, err := s.config()
 	if err != nil {
 		return themeinstall.Result{}, err
@@ -3556,25 +4314,34 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			},
 		}
 	}
-	s.clearDisplayVerification(cfg.DeviceTarget)
-	baseline, err := s.captureDisplayRenderBaseline(ctx, cfg.DeviceTarget, cfg.DeviceToken)
-	if err != nil {
-		return themeinstall.Result{}, &statusAPIError{
-			status: http.StatusBadGateway,
-			api: apiError{
-				Code:       "display_render_failed",
-				Message:    "Mac App could not read the current VibeTV screen state.",
-				NextAction: "Keep VibeTV powered on, then retry the theme install.",
-			},
+	// Only a live theme install changes what is on screen, so only it has a
+	// render to baseline and verify against afterwards.
+	live := req.Slot != themepack.UsageScreensaver
+	var baseline deviceHealth
+	if live {
+		s.clearDisplayVerification(cfg.DeviceTarget)
+		baseline, err = s.captureDisplayRenderBaseline(ctx, cfg.DeviceTarget, cfg.DeviceToken)
+		if err != nil {
+			return themeinstall.Result{}, &statusAPIError{
+				status: http.StatusBadGateway,
+				api: apiError{
+					Code:       "display_render_failed",
+					Message:    "Mac App could not read the current VibeTV screen state.",
+					NextAction: "Keep VibeTV powered on, then retry the theme install.",
+				},
+			}
 		}
 	}
+	logThemeInstallTiming(out, "preflight", preflightStartedAt)
 
 	skipFirmwareUpdate := true
 	if req.SkipFirmwareUpdate != nil {
 		skipFirmwareUpdate = *req.SkipFirmwareUpdate
 	}
 	pairedDuringThemeInstall := false
+	deviceInstallStartedAt := time.Now()
 	result, err := s.installTheme(ctx, themeinstall.Options{
+		Slot:               req.Slot,
 		ThemeID:            strings.TrimSpace(req.ThemeID),
 		PackURL:            strings.TrimSpace(req.PackURL),
 		PackBytes:          req.PackBytes,
@@ -3601,6 +4368,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			return updateErr
 		},
 	})
+	logThemeInstallTiming(out, "device-install", deviceInstallStartedAt)
 	if err != nil {
 		return themeinstall.Result{}, err
 	}
@@ -3611,10 +4379,18 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			fmt.Fprintln(out, "Preview cache: ready")
 		}
 	}
+	if !live {
+		// The live theme rendered throughout, so there is no new image to wait
+		// for and no verification to run.
+		resumeStream()
+		return result, nil
+	}
 	fmt.Fprintln(out, "Refreshing display stream...")
 	resumeStream()
+	streamRefreshStartedAt := time.Now()
 	streamStartedAt := time.Now().UTC()
 	if err := s.startDisplayStream(ctx, cfg.DeviceTarget); err != nil {
+		logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
 		return themeinstall.Result{}, &statusAPIError{
 			status: http.StatusBadGateway,
 			api: apiError{
@@ -3630,7 +4406,19 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	} else {
 		stream = s.waitForFreshDisplayStream(ctx, cfg.DeviceTarget, streamStartedAt)
 	}
+	logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
+	// A stream that restarted, owns this exact VibeTV, and is only held back by
+	// provider setup has nothing left to prove about the theme install. It draws
+	// no usage picture because no provider is ready, so waiting for one reports
+	// a failed install to a customer whose theme is already on the device. The
+	// firmware update path makes the same call for the same reason.
+	if providerSetupStreamForTarget(&stream, cfg.DeviceTarget) {
+		fmt.Fprintln(out, "Display stream: waiting for AI provider")
+		return result, nil
+	}
+	renderVerificationStartedAt := time.Now()
 	health, err := s.waitForVerifiedDisplayRender(ctx, cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
+	logThemeInstallTiming(out, "render-verification", renderVerificationStartedAt)
 	if err != nil {
 		if !stream.Healthy {
 			return themeinstall.Result{}, &statusAPIError{
@@ -3670,6 +4458,18 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	return result, nil
 }
 
+func logThemeInstallTiming(out io.Writer, phase string, startedAt time.Time) {
+	if out == nil || startedAt.IsZero() {
+		return
+	}
+	fmt.Fprintf(
+		out,
+		"Theme install timing: phase=%s duration=%s\n",
+		strings.TrimSpace(phase),
+		time.Since(startedAt).Round(time.Millisecond),
+	)
+}
+
 type themeRenderPackAsset struct {
 	ContentType string `json:"contentType"`
 	Data        string `json:"data"`
@@ -3682,6 +4482,7 @@ type themeRenderPack struct {
 	Name     string                          `json:"name"`
 	Spec     json.RawMessage                 `json:"spec"`
 	SpecPath string                          `json:"specPath"`
+	SpecHash string                          `json:"specHash"`
 	Assets   map[string]themeRenderPackAsset `json:"assets"`
 }
 
@@ -3715,18 +4516,36 @@ func (s *Server) persistThemeRenderPack(packBytes []byte) error {
 			Encoding:    encoding,
 		}
 	}
+	specPath := strings.TrimSpace(pack.ThemeSpecFile.Entry.Path)
+	specHash := themeRenderPackSpecHash(pack.ThemeSpecRaw)
 	payload, err := json.Marshal(themeRenderPack{
 		OK:       true,
 		ThemeID:  themeID,
 		Name:     strings.TrimSpace(pack.Manifest.Name),
 		Spec:     json.RawMessage(pack.ThemeSpecRaw),
-		SpecPath: strings.TrimSpace(pack.ThemeSpecFile.Entry.Path),
+		SpecPath: specPath,
+		SpecHash: specHash,
 		Assets:   assets,
 	})
 	if err != nil {
 		return err
 	}
-	destination := s.themeRenderPackPath(themeID)
+	// Keep a bounded revision history. Custom themes deliberately reuse their
+	// ID while editing, so one id.json file is not enough to render the exact
+	// ThemeSpec that an already-connected VibeTV reports.
+	destination := s.themeRenderPackRevisionPath(themeID, specPath)
+	if err := writeThemeRenderPackFile(destination, payload); err != nil {
+		return err
+	}
+	if err := s.pruneThemeRenderPackRevisions(themeID, destination); err != nil {
+		return err
+	}
+	// Retain the original latest-by-id cache for old Mac Apps that do not send
+	// an exact ThemeSpec selector yet.
+	return writeThemeRenderPackFile(s.themeRenderPackPath(themeID), payload)
+}
+
+func writeThemeRenderPackFile(destination string, payload []byte) error {
 	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
 		return err
 	}
@@ -3761,6 +4580,77 @@ func (s *Server) themeRenderPackPath(themeID string) string {
 	)
 }
 
+func (s *Server) themeRenderPackRevisionPath(themeID, specPath string) string {
+	return filepath.Join(s.themeRenderPackRevisionDir(themeID), path.Base(specPath))
+}
+
+func (s *Server) themeRenderPackRevisionDir(themeID string) string {
+	return filepath.Join(
+		s.home,
+		"Library",
+		"Application Support",
+		"codexbar-display",
+		themeRenderPackDir,
+		themeID,
+	)
+}
+
+func (s *Server) pruneThemeRenderPackRevisions(themeID, preservePath string) error {
+	revisionDir := s.themeRenderPackRevisionDir(themeID)
+	entries, err := os.ReadDir(revisionDir)
+	if err != nil {
+		return err
+	}
+	type cachedRevision struct {
+		name       string
+		modTime    time.Time
+		isPreserve bool
+	}
+	revisions := make([]cachedRevision, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return infoErr
+		}
+		entryPath := filepath.Join(revisionDir, entry.Name())
+		revisions = append(revisions, cachedRevision{
+			name:       entry.Name(),
+			modTime:    info.ModTime(),
+			isPreserve: entryPath == preservePath,
+		})
+	}
+	sort.Slice(revisions, func(i, j int) bool {
+		if revisions[i].isPreserve != revisions[j].isPreserve {
+			return revisions[i].isPreserve
+		}
+		if !revisions[i].modTime.Equal(revisions[j].modTime) {
+			return revisions[i].modTime.After(revisions[j].modTime)
+		}
+		return revisions[i].name > revisions[j].name
+	})
+	if len(revisions) <= themeRenderPackRevisionLimit {
+		return nil
+	}
+	for _, revision := range revisions[themeRenderPackRevisionLimit:] {
+		if err := os.Remove(filepath.Join(revisionDir, revision.name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
+}
+
+// themeRenderPackSpecHash matches the FNV-1a hash exposed by the VibeTV
+// /health display.themeSpec.hash field. Firmware trims stored ThemeSpec bytes
+// before hashing, so a pack's harmless final newline must not change it.
+func themeRenderPackSpecHash(spec json.RawMessage) string {
+	hash := fnv.New32a()
+	_, _ = hash.Write(bytes.TrimSpace(spec))
+	return fmt.Sprintf("%08x", hash.Sum32())
+}
+
 func themeRenderPackID(requestPath string) string {
 	const prefix = "/theme-packs/render/"
 	if !strings.HasPrefix(requestPath, prefix) || !strings.HasSuffix(requestPath, ".json") {
@@ -3781,10 +4671,15 @@ func (s *Server) createThemeInstallJob(req themeInstallRequest) themeInstallJob 
 	}
 	s.nextInstallJob++
 	id := fmt.Sprintf("theme-install-%d-%d", time.Now().UnixNano(), s.nextInstallJob)
+	slot := strings.TrimSpace(req.Slot)
+	if slot == "" {
+		slot = themepack.UsageLive
+	}
 	job := &themeInstallJob{
 		ID:        id,
 		ThemeID:   strings.TrimSpace(req.ThemeID),
 		ThemeName: strings.TrimSpace(req.ThemeName),
+		Slot:      slot,
 		Phase:     "installing",
 		Message:   "Preparing theme install.",
 		Progress:  5,
@@ -3795,14 +4690,26 @@ func (s *Server) createThemeInstallJob(req themeInstallRequest) themeInstallJob 
 	return cloneThemeInstallJob(job)
 }
 
-func (s *Server) tryStartThemeInstall() bool {
+// Returns the error code that refused the start, or "" when the install may
+// run. Each guard sits under the lock that owns the thing it guards, and both
+// are taken in the same order handleRuntimeUpdateHold uses --
+// firmwareUpdateStartMu, then installJobsMu -- so a repair and an install can
+// never deadlock and one of the two always loses cleanly. Checking the hold
+// outside this lock would leave the gap the hold exists to close: an install
+// that starts after the Mac App was told it may restart dies with the runtime.
+func (s *Server) tryStartThemeInstall() string {
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if s.updateHoldActive() {
+		return "mac_app_restarting"
+	}
 	s.installJobsMu.Lock()
 	defer s.installJobsMu.Unlock()
 	if s.themeInstallActive {
-		return false
+		return "theme_install_in_progress"
 	}
 	s.themeInstallActive = true
-	return true
+	return ""
 }
 
 func (s *Server) finishThemeInstall() {
@@ -3810,6 +4717,10 @@ func (s *Server) finishThemeInstall() {
 	s.themeInstallActive = false
 	s.installJobsMu.Unlock()
 }
+
+// The install finished, but the device cannot draw usage yet. Both the progress
+// step and the job's terminal message use this one wording.
+const themeInstallAwaitingProviderMessage = "Theme installed. VibeTV shows it once AI usage is ready."
 
 func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runtimeconfig.Config, req themeInstallRequest) {
 	go func() {
@@ -3831,13 +4742,25 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 			})
 			return
 		}
+		// A screensaver is stored for standby, not put on screen, so saying it
+		// is active would be wrong.
+		done := "Theme is active on VibeTV."
+		if req.Slot == themepack.UsageScreensaver {
+			done = "Screensaver is ready on VibeTV."
+		}
 		s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
 			job.Phase = "complete"
-			job.Message = "Theme is active on VibeTV."
+			// Without a ready provider the VibeTV keeps drawing the error frame,
+			// so "active on VibeTV" would contradict the screen the customer is
+			// looking at. The install still succeeded: the provider outcome owns
+			// the final message and says what is still missing.
+			if job.Message != themeInstallAwaitingProviderMessage {
+				job.Message = done
+				appendInstallJobLog(job, done)
+			}
 			job.Progress = 100
 			job.FinishedAt = &finishedAt
 			job.Result = &result
-			appendInstallJobLog(job, "Theme is active on VibeTV.")
 		})
 	}()
 }
@@ -3976,6 +4899,8 @@ func customerInstallProgress(line string, job *themeInstallJob) (string, int, bo
 		return "Refreshing display stream.", 94, true
 	case strings.HasPrefix(line, "Display stream: refreshed"):
 		return "Display stream refreshed.", 98, true
+	case strings.HasPrefix(line, "Display stream: waiting for AI provider"):
+		return themeInstallAwaitingProviderMessage, 98, true
 	case strings.HasPrefix(line, "Done:"):
 		return "Theme installed.", 88, true
 	default:
@@ -4054,6 +4979,13 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		defer s.deviceMaintenanceMu.Unlock()
 
 		s.firmwareUpdateActive.Store(true)
+		// The OTA runs in a child process. Close this process's idle keep-alive
+		// sockets to the device first, so no half-open connection occupies the
+		// single-threaded ESP8266 server while the updater runs its
+		// authenticated preflight and upload.
+		if s.client != nil {
+			s.client.CloseIdleConnections()
+		}
 		streamPaused := false
 		if s.pauseDisplayStream != nil {
 			s.pauseDisplayStream(true)
@@ -4156,6 +5088,7 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 		result.HelloVerified = true
 		result.Target = target
 		result.Firmware = strings.TrimSpace(hello.Firmware)
+		result.ObservedFirmware = strings.TrimSpace(hello.Firmware)
 	})
 	if strings.TrimSpace(cfg.DeviceTarget) != target {
 		cfg.DeviceTarget = target
@@ -4192,15 +5125,36 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream could not restart.", nil
 	}
 	stream := s.waitForFreshDisplayStream(ctx, target, streamStartedAt)
-	if !displayStreamHealthyForTarget(&stream, target) {
+	streamHealthy := displayStreamHealthyForTarget(&stream, target)
+	// A stream that restarted, owns this exact VibeTV, and is only held back by
+	// provider setup has nothing left to prove about the firmware update. It
+	// draws no usage picture because no provider is ready, so demanding one here
+	// would report "needs attention" for a Mac that is simply not set up yet.
+	streamAwaitingProvider := !streamHealthy && providerSetupStreamForTarget(&stream, target)
+	if !streamHealthy && !streamAwaitingProvider {
 		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream still needs attention.", nil
 	}
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 		result.StreamVerified = true
 	})
+	if streamAwaitingProvider {
+		s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
+			result.RenderSkipped = "provider_setup_required"
+		})
+		if snapshot.Outcome == "already_current" {
+			return "already_current", "", nil
+		}
+		return "updated", "", nil
+	}
 
 	s.setFirmwareUpdateStage(jobID, "verifying_render")
-	if _, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream); err != nil {
+	// The device reboots into the new firmware parked on the setup screen with
+	// the stored theme spec active but nothing drawn from it, and it does not
+	// leave that screen on its own however many usage frames the Mac sends.
+	// repairDevice already reactivates the stored theme in exactly this state,
+	// so the update does the same rather than handing the customer a working
+	// device with a setup screen on it.
+	if err := s.repairParkedDisplayAfterFirmwareUpdate(ctx, jobID, target, token, baseline, stream); err != nil {
 		return firmwareAttentionOutcome("render"), "Firmware is current, but the picture could not be verified.", nil
 	}
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
@@ -4210,6 +5164,85 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 		return "already_current", "", nil
 	}
 	return "updated", "", nil
+}
+
+// repairParkedDisplayAfterFirmwareUpdate verifies the picture after an update
+// and, when the device is parked on a non-live screen with a stored theme,
+// reactivates that theme and waits for a full render. It mirrors what
+// repairDevice does for the manual "Reload image" action.
+func (s *Server) repairParkedDisplayAfterFirmwareUpdate(
+	ctx context.Context,
+	jobID string,
+	target string,
+	token string,
+	baseline deviceHealth,
+	stream displayStreamInfo,
+) error {
+	// The VibeTV serves one connection at a time, so the display stream this
+	// function just restarted takes /theme/active away from the reactivation and
+	// the device answers EOF. repairDevice and the theme install both pause the
+	// stream around the same call for the same reason; measured on hardware,
+	// where the unpaused call failed with
+	// `reactivate current VibeTV theme: Post ".../theme/active": EOF`.
+	// The passive wait below needs the stream running and must stay outside.
+	reactivate := func(from deviceHealth) error {
+		if s.pauseDisplayStream != nil {
+			s.pauseDisplayStream(true)
+			defer s.pauseDisplayStream(false)
+		}
+		_, err := s.reactivateCurrentThemeAndWaitForFullRender(ctx, target, token, from, stream)
+		return err
+	}
+
+	s.appendFirmwareUpdateDiagnostic(jobID, "render-repair: baseline "+describeRepairRenderState(baseline))
+	if activeThemeNeedsFullRepairRender(baseline) {
+		err := reactivate(baseline)
+		s.appendFirmwareUpdateDiagnostic(jobID, fmt.Sprintf("render-repair: reactivated from baseline err=%v", err))
+		return err
+	}
+	health, err := s.waitForVerifiedDisplayRender(ctx, target, token, baseline, stream)
+	if err == nil {
+		return nil
+	}
+	s.appendFirmwareUpdateDiagnostic(jobID, fmt.Sprintf("render-repair: verify failed err=%v, health %s", err, describeRepairRenderState(health)))
+	// The wait returns a zero health when every probe failed, and a device that
+	// is still busy right after its reboot does exactly that, so decide on a
+	// fresh reading rather than on whatever the failed wait left behind.
+	fresh, freshErr := s.getHealth(ctx, target, token)
+	s.appendFirmwareUpdateDiagnostic(jobID, fmt.Sprintf("render-repair: refetched health err=%v, %s", freshErr, describeRepairRenderState(fresh)))
+	if freshErr != nil {
+		return err
+	}
+	// Reactivate whenever a stored theme exists. The narrower "is it parked on a
+	// non-live screen" test races the stream cadence: the render kind reported
+	// right after a reboot depends on which frame happened to land last, and we
+	// have already failed to observe a live render at this point. Reactivation
+	// is idempotent and repairs the picture immediately on hardware.
+	if !storedThemeAvailableForRepair(fresh) {
+		return err
+	}
+	err = reactivate(fresh)
+	s.appendFirmwareUpdateDiagnostic(jobID, fmt.Sprintf("render-repair: reactivated after verify err=%v", err))
+	return err
+}
+
+// storedThemeAvailableForRepair reports whether the device has a stored theme
+// that can be reactivated to force a full render.
+func storedThemeAvailableForRepair(health deviceHealth) bool {
+	spec := health.Display.ThemeSpec
+	return spec.Active && strings.TrimSpace(spec.Path) != ""
+}
+
+func describeRepairRenderState(health deviceHealth) string {
+	spec := health.Display.ThemeSpec
+	full, partial, countersOK := displayRenderCounters(health)
+	return fmt.Sprintf(
+		"ok=%t specActive=%t specPath=%q lastKind=%q counters=%t/%d/%d needsRepair=%t",
+		health.OK, spec.Active, strings.TrimSpace(spec.Path),
+		strings.TrimSpace(health.Render.LastKind),
+		countersOK, full, partial,
+		activeThemeNeedsFullRepairRender(health),
+	)
 }
 
 func firmwareAttentionOutcome(kind string) string {
@@ -4298,6 +5331,48 @@ type firmwareUpdateProgressWriter struct {
 	pending string
 }
 
+// appendFirmwareUpdateDiagnostic records one raw updater line. The pairing
+// token never reaches the file, and the log is truncated once it grows past its
+// budget so an unattended Mac cannot fill its disk with update attempts.
+func (s *Server) appendFirmwareUpdateDiagnostic(jobID, line string) {
+	path := runtimepaths.FirmwareUpdateLog(s.home)
+	if path == "" {
+		return
+	}
+	if token := strings.TrimSpace(s.currentDeviceToken()); token != "" {
+		for _, secret := range []string{token, url.QueryEscape(token), url.PathEscape(token)} {
+			if secret != "" {
+				line = strings.ReplaceAll(line, secret, "[REDACTED]")
+			}
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return
+	}
+	if info, err := os.Stat(path); err == nil && info.Size() > runtimepaths.FirmwareUpdateLogMaxBytes {
+		_ = os.Truncate(path, 0)
+	}
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	record := fmt.Sprintf("%s %s %s\n",
+		time.Now().UTC().Format(time.RFC3339),
+		jobID,
+		sanitizeLogLine(line),
+	)
+	_, _ = file.WriteString(record)
+}
+
+func (s *Server) currentDeviceToken() string {
+	cfg, err := s.loadConfig(s.home)
+	if err != nil {
+		return ""
+	}
+	return cfg.DeviceToken
+}
+
 func (w *firmwareUpdateProgressWriter) Write(p []byte) (int, error) {
 	text := w.pending + string(p)
 	lines := strings.Split(text, "\n")
@@ -4318,6 +5393,10 @@ func (w *firmwareUpdateProgressWriter) noteLine(line string) {
 	if line == "" || w.server == nil {
 		return
 	}
+	// Everything the child prints is kept here before the customer-facing
+	// curation below throws most of it away, so a failed update can still be
+	// diagnosed afterwards.
+	w.server.appendFirmwareUpdateDiagnostic(w.jobID, line)
 	if strings.HasPrefix(line, firmwareupdate.EventPrefix) {
 		var event firmwareUpdateEvent
 		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, firmwareupdate.EventPrefix)), &event); err == nil {
@@ -4360,6 +5439,9 @@ func (s *Server) applyFirmwareUpdateEvent(jobID string, event firmwareUpdateEven
 		if value := strings.TrimSpace(event.Firmware); value != "" {
 			job.firmware = value
 			job.Result.Firmware = value
+		}
+		if value := strings.TrimSpace(event.ObservedFirmware); value != "" {
+			job.Result.ObservedFirmware = value
 		}
 		if value := strings.TrimSpace(event.Target); value != "" {
 			job.target = value
@@ -4741,24 +5823,39 @@ func firmwareUpdateDiagnosticStatus(job firmwareUpdateJob) string {
 }
 
 func firmwareUpdateDiagnosticDetail(job firmwareUpdateJob) string {
+	stage := strings.TrimSpace(job.Stage)
+	observed := ""
+	if job.Result != nil && strings.TrimSpace(job.Result.ObservedFirmware) != "" {
+		observed = " Last observed firmware: " + strings.TrimSpace(job.Result.ObservedFirmware) + "."
+	}
 	switch job.Phase {
 	case "complete":
+		if observed != "" {
+			return "Last VibeTV update completed." + observed
+		}
 		if job.Result != nil && strings.TrimSpace(job.Result.Firmware) != "" {
 			return "Last VibeTV update completed. Firmware " + strings.TrimSpace(job.Result.Firmware) + " is installed."
 		}
 		return "Last VibeTV update completed."
 	case "error":
-		if job.Error != nil && strings.TrimSpace(job.Error.Message) != "" {
-			return "Last VibeTV update failed: " + strings.TrimSpace(job.Error.Message)
+		prefix := "Last VibeTV update failed"
+		if stage != "" {
+			prefix += " during " + stage
 		}
-		return "Last VibeTV update failed."
+		if job.Error != nil && strings.TrimSpace(job.Error.Message) != "" {
+			return prefix + ": " + strings.TrimSpace(job.Error.Message) + observed
+		}
+		return prefix + "." + observed
 	case "attention":
 		if strings.TrimSpace(job.Message) != "" {
-			return strings.TrimSpace(job.Message)
+			return strings.TrimSpace(job.Message) + observed
 		}
-		return "Firmware is current, but VibeTV still needs attention."
+		return "Firmware is current, but VibeTV still needs attention." + observed
 	default:
-		return "VibeTV update is still running."
+		if stage != "" {
+			return "VibeTV update is still running in " + stage + "." + observed
+		}
+		return "VibeTV update is still running." + observed
 	}
 }
 
@@ -4779,7 +5876,32 @@ func firmwareUpdateDiagnosticNextAction(job firmwareUpdateJob) string {
 	return strings.TrimSpace(job.Error.NextAction)
 }
 
-func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfig.Config, req firmwareUpdateRequest, out io.Writer) error {
+// firmwareUpdateCommandRunner binds the update command to whether this server
+// owns (and therefore pauses) a display writer. Only then may the child
+// updater be told its parent already quiesced the device.
+func firmwareUpdateCommandRunner(ownsDisplayWriter bool) func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
+	return func(ctx context.Context, home string, cfg runtimeconfig.Config, req firmwareUpdateRequest, out io.Writer) error {
+		return runFirmwareUpdateCommand(ctx, home, cfg, req, out, ownsDisplayWriter)
+	}
+}
+
+// firmwareUpdateCommandEnv grants the child updater the parent-paused marker
+// only when this server really owns and paused the display stream. The
+// standalone API server (codexbar-display api) has no writer of its own, so
+// its child must still run the writer-quiesce check and detect a separate
+// daemon writing the device.
+func firmwareUpdateCommandEnv(parentPaused bool, home string) []string {
+	env := os.Environ()
+	if parentPaused {
+		env = append(env, "VIBETV_UPDATE_PARENT_PAUSED=1")
+	}
+	if strings.TrimSpace(home) != "" {
+		env = append(env, "HOME="+home)
+	}
+	return env
+}
+
+func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfig.Config, req firmwareUpdateRequest, out io.Writer, parentPaused bool) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -4792,9 +5914,7 @@ func runFirmwareUpdateCommand(ctx context.Context, home string, cfg runtimeconfi
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Stdout = out
 	cmd.Stderr = out
-	if strings.TrimSpace(home) != "" {
-		cmd.Env = append(os.Environ(), "HOME="+home)
-	}
+	cmd.Env = firmwareUpdateCommandEnv(parentPaused, home)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("firmware update command failed: %w", err)
 	}
@@ -4991,6 +6111,9 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 		writeDeviceNotFound(w)
 		return runtimeconfig.Config{}, protocol.DeviceHello{}, false
 	}
+	// Reuse the central single-flight probe: a dead device must not occupy the
+	// serialized per-host gate for the full 15s device timeout and starve the
+	// 5s status poll (head-of-line blocking during cold start).
 	hello, err := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
 	if err != nil {
 		// A read-only status poll must never fan out into a subnet scan. The
@@ -5005,6 +6128,7 @@ func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimec
 }
 
 func (s *Server) clearConfiguredDeviceState() {
+	s.clearAmbiguousDeviceSelection()
 	s.connectionMu.Lock()
 	clear(s.connectionStates)
 	s.connectionMu.Unlock()
@@ -5017,6 +6141,10 @@ func (s *Server) clearConfiguredDeviceState() {
 func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) (string, protocol.DeviceHello, error) {
 	explicitTarget = strings.TrimSpace(explicitTarget)
 	var lastErr error
+	expectedDeviceID := ""
+	if explicitTarget == "" {
+		expectedDeviceID = strings.TrimSpace(cfg.DeviceID)
+	}
 	if explicitTarget != "" {
 		target, targetErr := normalizeExplicitDeviceTarget(explicitTarget)
 		if targetErr != nil {
@@ -5025,6 +6153,8 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 		hello, err := s.getHelloProbe(ctx, target, cfg.DeviceToken, discoveryProbeTime)
 		if err != nil {
 			return "", protocol.DeviceHello{}, err
+		} else if !deviceIDMatchesExpected(hello, expectedDeviceID) {
+			return "", protocol.DeviceHello{}, errDeviceIdentityChanged
 		} else {
 			return target, hello, nil
 		}
@@ -5033,6 +6163,10 @@ func (s *Server) discover(ctx context.Context, cfg runtimeconfig.Config, explici
 		for _, candidate := range candidates {
 			hello, err := s.getHelloProbe(ctx, candidate, cfg.DeviceToken, discoveryProbeTime)
 			if err == nil {
+				if !deviceIDMatchesExpected(hello, expectedDeviceID) {
+					lastErr = errDeviceIdentityChanged
+					continue
+				}
 				return normalizeTarget(candidate), hello, nil
 			}
 			lastErr = err
@@ -5110,6 +6244,10 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 	for res := range results {
 		if res.err == nil {
 			res.target = normalizeTarget(res.target)
+			if !deviceIDMatchesExpected(res.hello, cfg.DeviceID) {
+				lastErr = errDeviceIdentityChanged
+				continue
+			}
 			matches = append(matches, res)
 			if len(matches) > 1 {
 				cancel()
@@ -5150,6 +6288,7 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 
 	byIdentity := make(map[string]deviceSearchEntry)
 	hasSavedIdentity := strings.TrimSpace(cfg.DeviceID) != ""
+	freshResultSeen := false
 	for {
 		foundKnown := false
 		entries, err := s.searchDevicesOnce(searchCtx, cfg, explicitTarget)
@@ -5165,13 +6304,15 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 				foundKnown = true
 			}
 		}
-		// A clean customer install has no saved device identity to prefer. Once
-		// that first scan finds a VibeTV, return it immediately instead of
-		// repeating the full /24 subnet scan until the UI request nearly times
-		// out. Recovery with a saved identity still gets the bounded retries so
-		// a briefly busy known device wins over an unknown alternative.
-		if foundKnown || (!hasSavedIdentity && len(byIdentity) > 0) {
+		// A clean customer install has no saved identity to prefer, so settle one
+		// additional full scan after the first result and merge both snapshots.
+		// Recovery with a saved identity keeps returning as soon as that known
+		// device answers.
+		if foundKnown || (!hasSavedIdentity && freshResultSeen) {
 			return sortedDeviceSearchEntries(byIdentity), nil
+		}
+		if !hasSavedIdentity && len(byIdentity) > 0 {
+			freshResultSeen = true
 		}
 		if searchCtx.Err() != nil {
 			break
@@ -5183,6 +6324,36 @@ func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, ex
 		}
 	}
 	return sortedDeviceSearchEntries(byIdentity), nil
+}
+
+func (s *Server) markAmbiguousDeviceSelection() {
+	s.deviceSelectionMu.Lock()
+	defer s.deviceSelectionMu.Unlock()
+	s.ambiguousDeviceSeen = true
+}
+
+func (s *Server) clearAmbiguousDeviceSelection() {
+	s.deviceSelectionMu.Lock()
+	defer s.deviceSelectionMu.Unlock()
+	s.ambiguousDeviceSeen = false
+}
+
+func (s *Server) ambiguousDeviceSelectionPending() bool {
+	s.deviceSelectionMu.Lock()
+	defer s.deviceSelectionMu.Unlock()
+	return s.ambiguousDeviceSeen
+}
+
+func distinctDeviceSearchCount(devices []deviceSearchEntry) int {
+	seen := make(map[string]struct{}, len(devices))
+	for _, device := range devices {
+		key := deviceSearchIdentityKey(device)
+		if key == "" {
+			continue
+		}
+		seen[key] = struct{}{}
+	}
+	return len(seen)
 }
 
 func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) ([]deviceSearchEntry, error) {
@@ -5377,6 +6548,15 @@ func deviceIdentityMatches(cfg runtimeconfig.Config, hello protocol.DeviceHello)
 	return wantID != "" && gotID != "" && strings.EqualFold(wantID, gotID)
 }
 
+func deviceIDMatchesExpected(hello protocol.DeviceHello, expectedDeviceID string) bool {
+	expectedDeviceID = strings.TrimSpace(expectedDeviceID)
+	if expectedDeviceID == "" {
+		return true
+	}
+	gotID := strings.TrimSpace(hello.DeviceID)
+	return gotID != "" && strings.EqualFold(expectedDeviceID, gotID)
+}
+
 func deviceIdentityIsKnown(cfg runtimeconfig.Config, hello protocol.DeviceHello) bool {
 	deviceID := strings.TrimSpace(hello.DeviceID)
 	if deviceID == "" {
@@ -5497,8 +6677,9 @@ func deviceAuthorizationRejected(err error) bool {
 }
 
 type deviceHealth struct {
-	OK       bool           `json:"ok"`
-	Settings deviceSettings `json:"settings"`
+	OK       bool               `json:"ok"`
+	Settings deviceSettings     `json:"settings"`
+	Standby  *deviceStandbyInfo `json:"standby"`
 	// correlatedFrameProof is set only by the companion after it correlates a
 	// fresh, target-matching stream acknowledgement with device render counters.
 	// It is intentionally not populated from device JSON.
@@ -5728,7 +6909,7 @@ func localOverlayRenderKind(raw string) bool {
 }
 
 func liveScreenRenderKind(raw string) bool {
-	return usageRenderKind(raw) || localOverlayRenderKind(raw)
+	return usageRenderKind(raw) || localOverlayRenderKind(raw) || strings.TrimSpace(raw) == "clock"
 }
 
 func correlatedOverlayProvesUsage(
@@ -5815,10 +6996,7 @@ func (s *Server) reactivateCurrentThemeAndWaitForFullRender(
 	return health, nil
 }
 
-func (s *Server) updateBrightness(ctx context.Context, target, token string, brightness int) (deviceSettings, error) {
-	form := url.Values{}
-	form.Set("api", "1")
-	form.Set("b", fmt.Sprintf("%d", brightness))
+func (s *Server) updateDeviceSettings(ctx context.Context, target, token string, form url.Values) (deviceSettings, error) {
 	var response struct {
 		Settings deviceSettings `json:"settings"`
 	}
@@ -6359,6 +7537,22 @@ func withDeviceHealth(device deviceInfo, health deviceHealth) deviceInfo {
 		RenderKind:  strings.TrimSpace(health.Render.LastKind),
 	}
 	device.ActiveTheme = strings.TrimSpace(health.Display.ActiveTheme)
+	device.Standby = nil
+	if health.Standby != nil {
+		device.Standby = &deviceStandbyInfo{
+			Active:        health.Standby.Active,
+			LiveThemePath: strings.TrimSpace(health.Standby.LiveThemePath),
+		}
+		// The device reports the slot under settings, not under standby, but it
+		// arrives on this same probe. Firmware emits both blocks together, so a
+		// health payload without a standby block has no slot worth reporting.
+		if health.Settings.Standby != nil &&
+			health.Settings.Standby.ScreensaverPath != nil {
+			device.Standby.ScreensaverPath = strings.TrimSpace(
+				*health.Settings.Standby.ScreensaverPath,
+			)
+		}
+	}
 	if health.Display.ThemeSpec.Active || health.Display.ThemeSpec.RenderOK != nil {
 		device.Display = &deviceDisplayInfo{
 			ThemeSpec: &themeSpecHealth{
@@ -6621,20 +7815,42 @@ func inspectDisplayStreamAfter(ctx context.Context, target string, notBefore tim
 	return stream
 }
 
-func waitForDisplayStream(ctx context.Context, target string) displayStreamInfo {
-	return waitForDisplayStreamAfter(ctx, target, time.Time{})
+func (s *Server) waitForDisplayStreamMode(
+	ctx context.Context,
+	target string,
+	notBefore time.Time,
+	stopOnPairingError bool,
+) displayStreamInfo {
+	return waitForDisplayStreamAfterProbe(
+		ctx, target, notBefore, stopOnPairingError, inspectDisplayStreamAfter,
+		func(stream displayStreamInfo) bool {
+			return providerSetupStreamForTarget(&stream, target) &&
+				providerSetupNeedsCustomerAction(s.providerSetupForStatus())
+		},
+	)
 }
 
-func waitForDisplayStreamAfter(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
-	return waitForDisplayStreamAfterMode(ctx, target, notBefore, true)
-}
-
-func waitForDisplayStreamAfterPair(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
-	return waitForDisplayStreamAfterMode(ctx, target, notBefore, false)
-}
-
-func waitForDisplayStreamAfterMode(ctx context.Context, target string, notBefore time.Time, stopOnPairingError bool) displayStreamInfo {
-	return waitForDisplayStreamAfterProbe(ctx, target, notBefore, stopOnPairingError, inspectDisplayStreamAfter)
+// providerSetupNeedsCustomerAction reports a provider state that only the
+// customer can move. "checking" is not one: a provider still warming up does
+// deliver usage, and the runtime sends the same no-providers error frame while
+// it waits. Neither is a transient probe result -- a timeout or a momentary
+// engine error also arrives as the global setup_required, but the provider
+// could still deliver inside the wait window. Only the failures the reconciler
+// already protects as customer-owned settle the wait.
+func providerSetupNeedsCustomerAction(setup codexbar.ProviderSetup) bool {
+	switch strings.TrimSpace(strings.ToLower(setup.Status)) {
+	case "", codexbar.ProviderReady, "checking":
+		return false
+	}
+	if providerSetupFailureMustWin(strings.TrimSpace(strings.ToLower(setup.Engine.Status))) {
+		return true
+	}
+	for _, provider := range setup.Providers {
+		if providerSetupFailureMustWin(strings.TrimSpace(strings.ToLower(provider.Status))) {
+			return true
+		}
+	}
+	return false
 }
 
 func waitForDisplayStreamAfterProbe(
@@ -6643,13 +7859,17 @@ func waitForDisplayStreamAfterProbe(
 	notBefore time.Time,
 	stopOnPairingError bool,
 	inspect func(context.Context, string, time.Time) displayStreamInfo,
+	settled func(displayStreamInfo) bool,
 ) displayStreamInfo {
 	deadline := time.Now().Add(displayStreamWaitTime)
 	var last displayStreamInfo
 	for {
 		last = inspect(ctx, target, notBefore)
+		// A settled stream has nothing left to prove: waiting out the rest of
+		// the window leaves the customer on "Installing" long after their
+		// VibeTV finished, and answers with the same stream either way.
 		if last.Healthy || (stopOnPairingError && last.ErrorCode == "device_pairing_required") ||
-			time.Now().After(deadline) {
+			(settled != nil && settled(last)) || time.Now().After(deadline) {
 			return last
 		}
 		select {
@@ -6800,7 +8020,7 @@ func lastDisplayStreamErrorRecordAfter(path string, boundary time.Time) (time.Ti
 			detail := "Display stream hit an error after the last frame and is reconnecting."
 			code := "display_stream_failed"
 			if displayStreamLogValue(line, "code") == "runtime/no-providers" || strings.Contains(line, "runtime/no-providers") {
-				detail = "VibeTV is connected, but no AI provider is ready yet."
+				detail = "VibeTV is connected, but AI usage is not ready yet."
 				code = "provider_setup_required"
 			} else if op == "send-line" {
 				detail = "Display stream could not send to VibeTV and is reconnecting."
@@ -6915,8 +8135,11 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 		Label:              displayStreamLogValue(line, "label"),
 		Session:            session,
 		Weekly:             weekly,
+		UsageUnavailable:   boolFieldFromDisplayStreamLog(line, "usageUnavailable"),
 		SessionUnavailable: boolFieldFromDisplayStreamLog(line, "sessionUnavailable"),
 		WeeklyUnavailable:  boolFieldFromDisplayStreamLog(line, "weeklyUnavailable"),
+		ResetSource:        displayStreamLogValue(line, "resetSource"),
+		ResetTrust:         displayStreamLogValue(line, "resetTrust"),
 		UsageMode:          displayStreamLogValue(line, "usageMode"),
 		Activity:           displayStreamLogValue(line, "activity"),
 		Time:               displayStreamLogValue(line, "time"),
@@ -6925,6 +8148,33 @@ func frameFromDisplayStreamLogLine(line string) (protocol.Frame, bool) {
 	}
 	if reset, ok := int64FieldFromDisplayStreamLog(line, "reset"); ok {
 		frame.ResetSec = reset
+	}
+	if sessionTokens, ok := int64FieldFromDisplayStreamLog(line, "sessionTokens"); ok {
+		frame.SessionTokens = sessionTokens
+	}
+	if weekTokens, ok := int64FieldFromDisplayStreamLog(line, "weekTokens"); ok {
+		frame.WeekTokens = weekTokens
+	}
+	if totalTokens, ok := int64FieldFromDisplayStreamLog(line, "totalTokens"); ok {
+		frame.TotalTokens = totalTokens
+	}
+	frame.TokenTotalsKnown = boolFieldFromDisplayStreamLog(line, "tokenTotalsKnown")
+	if encodedWindows := displayStreamLogValue(line, "usageWindows"); encodedWindows != "" && encodedWindows != "-" {
+		if rawWindows, err := url.QueryUnescape(encodedWindows); err == nil {
+			_ = json.Unmarshal([]byte(rawWindows), &frame.UsageWindows)
+			frame.V = protocol.ProtocolVersionV2
+		}
+	} else if encodedSlots := displayStreamLogValue(line, "usageSlots"); encodedSlots != "" {
+		if rawSlots, err := url.QueryUnescape(encodedSlots); err == nil {
+			_ = json.Unmarshal([]byte(rawSlots), &frame.UsageSlots)
+			frame.V = protocol.ProtocolVersionV2
+		}
+	}
+	if encodedProviderSlots := displayStreamLogValue(line, "providerSlots"); encodedProviderSlots != "" && encodedProviderSlots != "-" {
+		if rawProviderSlots, err := url.QueryUnescape(encodedProviderSlots); err == nil {
+			_ = json.Unmarshal([]byte(rawProviderSlots), &frame.ProviderSlots)
+			frame.V = protocol.ProtocolVersionV2
+		}
 	}
 	return frame.Normalize(), true
 }
@@ -7099,13 +8349,6 @@ func targetWithToken(target, token string) string {
 func applyDeviceToken(req *http.Request, token string) {
 	if token = strings.TrimSpace(token); token != "" {
 		req.Header.Set("X-VibeTV-Token", token)
-		// ESP8266WebServer 3.1.2 does not reliably retain custom headers on every
-		// route. Keep the header for compatible firmware, and also send the token
-		// through the firmware's existing query fallback used by the display
-		// stream. This makes /hello token verification reliable on real hardware.
-		query := req.URL.Query()
-		query.Set("token", token)
-		req.URL.RawQuery = query.Encode()
 	}
 }
 

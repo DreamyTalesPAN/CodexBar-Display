@@ -160,6 +160,7 @@ export function cloneDocument(
     ),
     packName: document.packName,
     spec: cloneThemeSpec(document.spec),
+    usage: document.usage || "live",
   };
 }
 

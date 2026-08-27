@@ -30,6 +30,7 @@ type CatalogTheme struct {
 	ID            string `json:"id"`
 	Title         string `json:"title"`
 	Description   string `json:"description,omitempty"`
+	Usage         string `json:"usage,omitempty"`
 	ThemeRev      int    `json:"themeRev,omitempty"`
 	DownloadURL   string `json:"downloadUrl,omitempty"`
 	DownloadAsset string `json:"downloadAsset,omitempty"`
@@ -117,6 +118,9 @@ func validateCatalog(catalog Catalog) error {
 		}
 		if theme.Bytes <= 0 || theme.Bytes > MaxZipBytes {
 			return fmt.Errorf("themes[%d].bytes must be between 1 and %d", index, MaxZipBytes)
+		}
+		if err := validateUsage(theme.Usage); err != nil {
+			return fmt.Errorf("themes[%d].%w", index, err)
 		}
 	}
 	return nil

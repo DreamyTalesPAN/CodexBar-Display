@@ -13,6 +13,7 @@ import {
 
 type Props = {
   align?: "start" | "center";
+  createLabel?: string;
   creating?: boolean;
   diagnostics?: SupportDiagnostics | null;
   emphasis?: "primary" | "secondary";
@@ -21,6 +22,7 @@ type Props = {
 
 export function SupportReportActions({
   align = "start",
+  createLabel = "Create report",
   creating = false,
   diagnostics,
   emphasis = "primary",
@@ -128,7 +130,7 @@ export function SupportReportActions({
             variant={createButtonVariant}
           >
             <FileText data-icon="inline-start" aria-hidden />
-            <span>Create report</span>
+            <span>{createLabel}</span>
           </Button>
         ) : null}
       </div>

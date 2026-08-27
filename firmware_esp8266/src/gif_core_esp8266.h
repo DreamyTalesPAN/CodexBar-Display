@@ -34,18 +34,10 @@ struct GifPlaybackRequest {
 
 struct GifCoreStatusSnapshot {
   String activePath;
-  bool fsMounted = false;
   bool filePresent = false;
-  bool fileOpen = false;
   bool decoderAllocated = false;
   bool decoderOpen = false;
-  bool blocked = false;
-  uint8_t consecutiveFailures = 0;
-  unsigned long backoffRemainingMs = 0;
-  String lastErrorPath;
   String lastErrorStage;
-  unsigned int lastErrorFailures = 0;
-  unsigned long lastErrorAgeMs = 0;
 };
 
 class GifCoreESP8266 {
@@ -64,7 +56,6 @@ class GifCoreESP8266 {
 
   GifCoreStatusSnapshot StatusSnapshot() const {
     GifCoreStatusSnapshot snapshot;
-    snapshot.blocked = true;
     snapshot.lastErrorStage = "gif_core_disabled";
     return snapshot;
   }
@@ -110,7 +101,6 @@ class GifCoreESP8266 {
   bool decoderOpen_ = false;
   bool suppressDraw_ = false;
   unsigned long nextFrameAtMs_ = 0;
-  unsigned long lastFailureAtMs_ = 0;
   int gifWidth_ = 0;
   int gifHeight_ = 0;
   int drawX_ = 0;
@@ -121,9 +111,7 @@ class GifCoreESP8266 {
   bool firstFrameCoversCanvasOpaque_ = false;
   uint16_t backgroundColor_ = 0x0000;
   String assetPath_ = "";
-  String lastErrorPath_ = "";
   String lastErrorStage_ = "";
-  unsigned int lastErrorFailures_ = 0;
   GifFailureGuard guard_;
   TFT_eSPI* tft_ = nullptr;
   uint16_t lineBuffer_[kMaxLinePixels];

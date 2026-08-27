@@ -35,52 +35,15 @@ run_expect_success() {
         --expect-catalog-source shopify \
         --expect-theme-id synthwave \
         --expect-all-free-themes-installable \
-        --expect-shopify-product-pages \
-        --shopify-app-url https://app.example.test \
-        --shopify-store-url https://vibetv.example.test \
         2>&1
   )" || {
     printf '%s\n' "$output" >&2
-    die "expected catalog-derived Shopify product page check to pass"
+    die "expected hosted theme catalog check to pass"
   }
 
   assert_contains "$output" "hosted app theme catalog ok:"
   assert_contains "$output" "app install routes reachable for all free themes: 2"
-  assert_contains "$output" "app Shopify product pages reachable and ready: 2"
   assert_contains "$output" "customer-readiness checks passed"
-}
-
-run_expect_broken_product_page_failure() {
-  local output status
-  set +e
-  output="$(
-    CONTROL_CENTER_READINESS_CURL="$FAKE_CURL" \
-      "$READINESS" \
-        --shopify-app-url https://app.example.test \
-        --shopify-product-page https://vibetv.example.test/products/broken synthwave \
-        2>&1
-  )"
-  status=$?
-  set -e
-
-  [[ "$status" -ne 0 ]] || die "expected broken Shopify product page check to fail"
-  assert_contains "$output" "missing hosted app install copy: https://app.example.test/install/synthwave"
-}
-
-run_expect_local_url_guard_failure() {
-  local output status
-  set +e
-  output="$(
-    CONTROL_CENTER_READINESS_CURL="$FAKE_CURL" \
-      "$READINESS" \
-        --shopify-product-page http://shop.example.local/products/synthwave synthwave \
-        2>&1
-  )"
-  status=$?
-  set -e
-
-  [[ "$status" -ne 0 ]] || die "expected local Shopify product page URL to fail"
-  assert_contains "$output" "must be a public product page, not localhost or .local"
 }
 
 run_expect_missing_free_pack_url_failure() {
@@ -435,7 +398,7 @@ JSON
       "themeId": "missing-pack",
       "source": "shopify",
       "isFree": true,
-      "handle": "missing-pack-theme"
+      "title": "Missing pack"
     }
   ]
 }
@@ -451,8 +414,7 @@ JSON
       "themeId": "invalid-pack",
       "source": "shopify",
       "isFree": true,
-      "packUrl": "file:///tmp/theme.vibetv-theme",
-      "handle": "invalid-pack-theme"
+      "packUrl": "file:///tmp/theme.vibetv-theme"
     }
   ]
 }
@@ -467,44 +429,23 @@ JSON
       "themeId": "synthwave",
       "source": "shopify",
       "isFree": true,
-      "packUrl": "https://cdn.example.test/synthwave.vibetv-theme",
-      "productUrl": "https://vibetv.example.test/products/synthwave-theme"
+      "packUrl": "https://cdn.example.test/synthwave.vibetv-theme"
     },
     {
       "themeId": "clippy",
       "source": "shopify",
       "isFree": true,
-      "packUrl": "https://cdn.example.test/clippy.vibetv-theme",
-      "handle": "clippy-theme"
+      "packUrl": "https://cdn.example.test/clippy.vibetv-theme"
     },
     {
       "themeId": "paid-theme",
       "source": "shopify",
       "isFree": false,
-      "packUrl": "https://cdn.example.test/paid.vibetv-theme",
-      "handle": "paid-theme"
+      "packUrl": "https://cdn.example.test/paid.vibetv-theme"
     }
   ]
 }
 JSON
-    ;;
-  https://vibetv.example.test/products/synthwave-theme)
-    cat <<'HTML'
-<!doctype html>
-<a href="https://app.example.test/install/synthwave">Check compatibility in the app</a>
-HTML
-    ;;
-  https://vibetv.example.test/products/clippy-theme)
-    cat <<'HTML'
-<!doctype html>
-<a href="https://app.example.test/install/clippy">Check compatibility in the app</a>
-HTML
-    ;;
-  https://vibetv.example.test/products/broken)
-    cat <<'HTML'
-<!doctype html>
-<button>Check compatibility in the app</button>
-HTML
     ;;
   *)
     printf 'unexpected fake curl URL: %s\n' "$url" >&2
@@ -515,8 +456,6 @@ EOF
 chmod +x "$FAKE_CURL"
 
 run_expect_success
-run_expect_broken_product_page_failure
-run_expect_local_url_guard_failure
 run_expect_missing_free_pack_url_failure
 run_expect_invalid_free_pack_url_failure
 run_expect_release_assets_success

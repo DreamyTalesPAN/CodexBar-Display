@@ -44,6 +44,23 @@ struct AssetPathPolicy {
     }
     return true;
   }
+
+  static bool IsLiveThemeSpecPath(const char* path, std::size_t length) {
+    static constexpr char kScreensaverPrefix[] = "/themes/s/";
+    static constexpr std::size_t kScreensaverPrefixLength = sizeof(kScreensaverPrefix) - 1;
+    if (!IsMutableThemeAsset(path, length)) {
+      return false;
+    }
+    if (length < kScreensaverPrefixLength) {
+      return true;
+    }
+    for (std::size_t i = 0; i < kScreensaverPrefixLength; ++i) {
+      if (path[i] != kScreensaverPrefix[i]) {
+        return true;
+      }
+    }
+    return false;
+  }
 };
 
 }  // namespace codexbar_display::esp8266

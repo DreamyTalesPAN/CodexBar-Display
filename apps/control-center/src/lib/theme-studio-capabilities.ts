@@ -1,6 +1,9 @@
 import {
   deviceThemeSpecJson,
   normalizeThemeSpec,
+  themeStudioSpecUsesProviderSlots,
+  themeStudioSpecUsesUsageWindows,
+  themeStudioSpecUsesUsageSlots,
   type ThemeStudioAsset,
   type ThemeStudioPrimitiveType,
   type ThemeStudioSpec,
@@ -8,6 +11,10 @@ import {
 
 export type ThemeStudioDeviceCapabilities = {
   supportsThemeSpecV1?: boolean;
+  supportsUsageSlotsV1?: boolean;
+  supportsUsageWindowsV1?: boolean;
+  supportsProviderSlotsV1?: boolean;
+  maxUsageWindows?: number;
   supportsStoredThemes?: boolean;
   maxThemeSpecBytes?: number;
   maxStoredThemeSpecBytes?: number;
@@ -60,6 +67,43 @@ export function validateThemeAgainstCapabilities(
 
   if (caps.supportsStoredThemes === false) {
     errors.push("This VibeTV does not support stored themes.");
+  }
+  if (
+    themeStudioSpecUsesUsageSlots(normalized) &&
+    caps.supportsUsageSlotsV1 !== true
+  ) {
+    errors.push(
+      "This VibeTV needs a firmware update before it can use this theme.",
+    );
+  }
+  if (
+    themeStudioSpecUsesUsageWindows(normalized) &&
+    caps.supportsUsageWindowsV1 !== true
+  ) {
+    errors.push(
+      "This VibeTV needs a firmware update before it can use this theme.",
+    );
+  }
+  if (
+    themeStudioSpecUsesProviderSlots(normalized) &&
+    caps.supportsProviderSlotsV1 !== true
+  ) {
+    errors.push(
+      "This VibeTV needs a firmware update before it can use this theme.",
+    );
+  }
+  const maxUsageIndex = Math.max(
+    -1,
+    ...normalized.primitives.flatMap((primitive) => [
+      primitive.usageIndex ?? -1,
+      ...usageBindingIndexes(primitive.binding),
+      ...usageBindingIndexes(primitive.text),
+    ]),
+  );
+  if (maxUsageIndex >= 0 && positiveLimit(caps.maxUsageWindows) && maxUsageIndex >= caps.maxUsageWindows) {
+    errors.push(
+      `This theme uses usage window ${maxUsageIndex + 1}, but this VibeTV supports ${caps.maxUsageWindows}.`,
+    );
   }
 
   const storedSpecLimit = positiveLimit(caps.maxStoredThemeSpecBytes)
@@ -171,6 +215,12 @@ export function validateThemeAgainstCapabilities(
 
 function positiveLimit(value: number | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function usageBindingIndexes(value: string | undefined): number[] {
+  return Array.from((value || "").matchAll(/usage\.([0-9]+)\./g), (match) =>
+    Number(match[1]),
+  ).filter((index) => Number.isInteger(index) && index >= 0);
 }
 
 function normalizePrimitiveTypes(

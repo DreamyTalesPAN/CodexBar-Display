@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   BarChart3,
+  Info,
   RefreshCw,
 } from "lucide-react";
 import { type ReactNode } from "react";
@@ -68,8 +69,22 @@ export function UsageScreen({
   const hasProviders = providers.length > 0;
   const tokenUsageReady =
     usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);
-  const tokenUsageLoading =
-    companionStatus === "online" && !usageError && !tokenUsageReady;
+  // The Mac App owns this decision; the browser does not re-derive freshness.
+  const tokenUsageUpdating = usage?.tokenUsageUpdating === true;
+  const hasUsableVisibleUsageContent =
+    hasProviders || usageProvidersHaveTokenResult(providers);
+  const usageLoading =
+    companionStatus === "online" && !usageError && !usage && !hasProviders;
+  const tokenUsagePending =
+    companionStatus === "online" &&
+    !usageError &&
+    hasProviders &&
+    !tokenUsageReady;
+  const refreshNotice = usageRefreshNotice(usage?.refresh, {
+    companionStatus,
+    hasUsableVisibleUsageContent,
+    usageError,
+  });
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -96,18 +111,36 @@ export function UsageScreen({
             </AlertDescription>
           </Alert>
         ) : null}
+        {refreshNotice ? (
+          <Alert className="mb-6 bg-muted">
+            {refreshNotice.tone === "attention" ? <AlertTriangle /> : <Info />}
+            <AlertTitle>{refreshNotice.title}</AlertTitle>
+            <AlertDescription>{refreshNotice.description}</AlertDescription>
+          </Alert>
+        ) : null}
 
-        {tokenUsageLoading ? (
+        {usageLoading ? (
           <UsageEmptyState companionStatus={companionStatus} loading />
-        ) : hasProviders ? (
+        ) : tokenUsageReady && hasProviders ? (
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}
             providers={providers}
             refreshing={refreshing}
+            updating={tokenUsageUpdating}
           />
+        ) : tokenUsagePending ? (
+          <Card
+            aria-live="polite"
+            className="mb-6 min-h-[294px] items-center justify-center"
+            data-testid="token-history-loading"
+            role="status"
+          >
+            <Spinner className="size-6" />
+            <span className="sr-only">Token history is loading</span>
+          </Card>
         ) : null}
 
-        {!tokenUsageLoading && hasProviders ? (
+        {hasProviders ? (
           <ol className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
             {providers.map((provider) => (
               <li className="min-w-0" key={provider.id}>
@@ -115,7 +148,7 @@ export function UsageScreen({
               </li>
             ))}
           </ol>
-        ) : !tokenUsageLoading && !usageError ? (
+        ) : !usageLoading && !usageError ? (
           <UsageEmptyState
             companionStatus={companionStatus}
             loading={false}
@@ -126,14 +159,76 @@ export function UsageScreen({
   );
 }
 
+function usageRefreshNotice(
+  refresh: UsageSnapshot["refresh"] | undefined,
+  {
+    companionStatus,
+    hasUsableVisibleUsageContent,
+    usageError,
+  }: {
+    companionStatus: CompanionStatus;
+    hasUsableVisibleUsageContent: boolean;
+    usageError?: ApiError | null;
+  },
+) {
+  switch (refresh?.state) {
+    case "refreshing":
+      return {
+        tone: "info" as const,
+        title: "Refreshing usage",
+        description:
+          "Current values stay visible while VibeTV waits for a new usage snapshot.",
+      };
+    case "rate_limited": {
+      const until = formatBlockedUntil(refresh.blockedUntil);
+      return {
+        tone: "attention" as const,
+        title: "Refresh is temporarily limited",
+        description: until
+          ? `Current values stay visible. Try again after ${until}.`
+          : "Current values stay visible. VibeTV will refresh again when the provider allows it.",
+      };
+    }
+    case "unavailable":
+      if (
+        companionStatus !== "online" ||
+        usageError ||
+        hasUsableVisibleUsageContent
+      ) {
+        return null;
+      }
+      return {
+        tone: "attention" as const,
+        title: "Usage is still loading",
+        description:
+          "Keep this page open. VibeTV updates automatically when usage is ready.",
+      };
+    default:
+      return null;
+  }
+}
+
+function formatBlockedUntil(value: string | undefined) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 function TokenUsageOverTimePanel({
   onRefresh,
   providers,
   refreshing,
+  updating,
 }: {
   onRefresh?: () => void;
   providers: UsageProviderInfo[];
   refreshing: boolean;
+  updating: boolean;
 }) {
   const currentProviderHistories = getProviderTokenHistories(providers);
   const hasCurrentData = currentProviderHistories.length > 0;
@@ -154,6 +249,17 @@ function TokenUsageOverTimePanel({
         aria-labelledby="total-tokens-heading"
         className="mb-6 px-4 text-center"
       >
+        {updating ? (
+          <Badge
+            aria-live="polite"
+            className="mb-3"
+            data-testid="token-history-updating"
+            variant="secondary"
+          >
+            <Spinner className="size-3" data-icon="inline-start" />
+            Still counting
+          </Badge>
+        ) : null}
         <h2
           className="text-sm font-bold uppercase tracking-wide text-muted-foreground"
           id="total-tokens-heading"
@@ -285,20 +391,22 @@ function UsageProviderTile({
 }: {
   provider: UsageProviderInfo;
 }) {
+  const tokenEvidence = providerHasTokenEvidence(provider);
+  const providerStale = provider.stale && !tokenEvidence;
   return (
     <Card
       className={cn(
         "h-full min-h-[248px] [--card-spacing:--spacing(5)]",
-        provider.stale && "opacity-65",
+        providerStale && "opacity-65",
       )}
     >
       <CardHeader>
         <CardTitle className="break-words text-xl font-black">
           {provider.label || provider.id}
         </CardTitle>
-        {provider.stale || provider.status ? (
+        {providerStale || provider.status ? (
           <CardDescription className="flex flex-wrap items-center gap-2">
-            {provider.stale ? <StatusPill>Stale</StatusPill> : null}
+            {providerStale ? <StatusPill>Stale</StatusPill> : null}
             {provider.status ? (
               <StatusPill>{providerStatusLabel(provider.status.description)}</StatusPill>
             ) : null}
@@ -317,6 +425,7 @@ function UsageProviderTile({
 }
 
 function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
+  const unavailableDetail = quotaUnavailableDetail(provider);
   if (provider.windows?.length) {
     return (
       <div className="grid gap-4">
@@ -325,6 +434,7 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
             key={window.id}
             mode={provider.usageMode}
             unavailable={provider.usageUnavailable}
+            unavailableDetail={unavailableDetail}
             window={window}
           />
         ))}
@@ -341,6 +451,7 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
         unavailable={
           provider.usageUnavailable || provider.sessionUnavailable
         }
+        unavailableDetail={unavailableDetail}
         value={provider.session}
       />
       <UsageBar
@@ -348,6 +459,7 @@ function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
         mode={provider.usageMode}
         resetSecs={provider.resetSecs}
         unavailable={provider.usageUnavailable || provider.weeklyUnavailable}
+        unavailableDetail={unavailableDetail}
         value={provider.weekly}
       />
     </div>
@@ -359,15 +471,18 @@ function UsageBar({
   mode,
   resetSecs,
   unavailable,
+  unavailableDetail,
   value,
 }: {
   label: string;
   mode?: string;
   resetSecs?: number;
   unavailable?: boolean;
+  unavailableDetail?: string;
   value: number;
 }) {
   const percent = clampPercent(value);
+  const detail = unavailableDetail || "Usage limits unavailable.";
   return (
     <div>
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
@@ -383,12 +498,15 @@ function UsageBar({
       <Progress
         aria-label={
           unavailable
-            ? `${label}: usage unavailable`
+            ? `${label}: ${detail}`
             : `${label}: ${percent}% ${usageModeShortLabel(mode)}`
         }
         className="h-2"
         value={unavailable ? 0 : percent}
       />
+      {unavailable ? (
+        <p className="mt-1 text-xs font-semibold text-[#6A5B00]">{detail}</p>
+      ) : null}
     </div>
   );
 }
@@ -454,13 +572,16 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
 function UsageWindowBar({
   mode,
   unavailable,
+  unavailableDetail,
   window,
 }: {
   mode?: string;
   unavailable?: boolean;
+  unavailableDetail?: string;
   window: UsageWindowInfo;
 }) {
   const percent = clampPercent(window.usedPercent);
+  const detail = unavailableDetail || "Usage limits unavailable.";
   return (
     <div>
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
@@ -476,12 +597,15 @@ function UsageWindowBar({
       <Progress
         aria-label={
           unavailable
-            ? `${window.label}: usage unavailable`
+            ? `${window.label}: ${detail}`
             : `${window.label}: ${percent}% ${usageModeShortLabel(mode)}`
         }
         className="h-2"
         value={unavailable ? 0 : percent}
       />
+      {unavailable ? (
+        <p className="mt-1 text-xs font-semibold text-[#6A5B00]">{detail}</p>
+      ) : null}
     </div>
   );
 }
@@ -594,6 +718,16 @@ function providerHasCost(provider: UsageProviderInfo): boolean {
     (cost.latestTokens || 0) > 0 ||
     Boolean(cost.topModel?.trim())
   );
+}
+
+function providerHasTokenEvidence(provider: UsageProviderInfo): boolean {
+  return providerHasTokens(provider) || providerHasCost(provider);
+}
+
+function quotaUnavailableDetail(provider: UsageProviderInfo): string {
+  return provider.stale
+    ? "Usage limits are stale."
+    : "Usage limits unavailable.";
 }
 
 function normalizeTokenHistory(days: UsageCostDay[]) {

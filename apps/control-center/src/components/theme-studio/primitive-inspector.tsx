@@ -4,15 +4,26 @@ import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ThemeStudioPrimitive } from "@/lib/theme-studio";
 import { ColorField, NumberField, SelectField, TextField } from "./editor-fields";
-import { primitiveBounds, type FieldKey } from "./editor-geometry";
+import {
+  primitiveBounds,
+  textPrimitiveNaturalWidth,
+  type FieldKey,
+} from "./editor-geometry";
 
 const DEFAULT_SPRITE_FPS = 8;
 
 const VARIABLE_TOKENS = [
   { label: "Label", token: "{label}" },
-  { label: "Session", token: "{session}" },
-  { label: "Weekly", token: "{weekly}" },
-  { label: "Reset", token: "{reset}" },
+  { label: "Usage window 1 label", token: "{usageSlot1Label}" },
+  { label: "Usage window 1 %", token: "{usageSlot1Percent}" },
+  { label: "Usage window 1 reset", token: "{usageSlot1Reset}" },
+  { label: "Usage window 2 label", token: "{usageSlot2Label}" },
+  { label: "Usage window 2 %", token: "{usageSlot2Percent}" },
+  { label: "Usage window 2 reset", token: "{usageSlot2Reset}" },
+  { label: "Provider 1 name", token: "{providerSlot1Label}" },
+  { label: "Provider 1 next reset", token: "{providerSlot1Reset}" },
+  { label: "Provider 2 name", token: "{providerSlot2Label}" },
+  { label: "Provider 2 next reset", token: "{providerSlot2Reset}" },
   { label: "Mode", token: "{usageMode}" },
   { label: "Time", token: "{time}" },
 ];
@@ -44,6 +55,29 @@ export function PrimitiveInspector({
         />
       </div>
 
+      <SelectField
+        label="Show when"
+        value={
+          primitive.slot
+            ? String(primitive.slot)
+            : primitive.providerSlot
+              ? `p${primitive.providerSlot}`
+              : ""
+        }
+        onChange={(value) => {
+          const providerMatch = /^p([12])$/.exec(value);
+          onChange("slot", providerMatch || !value ? "" : Number(value));
+          onChange("providerSlot", providerMatch ? Number(providerMatch[1]) : "");
+        }}
+        options={[
+          ["", "Always"],
+          ["1", "Usage window 1 has data"],
+          ["2", "Usage window 2 has data"],
+          ["p1", "Provider 1 has data"],
+          ["p2", "Provider 2 has data"],
+        ]}
+      />
+
       {(primitive.type === "rect" ||
         primitive.type === "progress" ||
         primitive.type === "gif" ||
@@ -53,7 +87,10 @@ export function PrimitiveInspector({
         <div className="grid grid-cols-2 gap-2">
           <NumberField
             label="Width"
-            value={primitive.type === "text" ? bounds.width : primitive.width ?? bounds.width}
+            // The stored width is the device's clip/fit box. Showing the
+            // rendered bounds instead hides a narrower stored box and makes
+            // align/shrink look broken while the field claims a wider value.
+            value={primitive.width ?? bounds.width}
             onChange={(value) => onChange("width", value)}
           />
           <NumberField
@@ -88,9 +125,19 @@ export function PrimitiveInspector({
             options={[
               ["", "None"],
               ["label", "Label"],
-              ["session", "Session"],
-              ["weekly", "Weekly"],
-              ["reset", "Reset"],
+              ["usageSlot1Label", "Usage window 1 label"],
+              ["usageSlot1Percent", "Usage window 1 %"],
+              ["usageSlot1Reset", "Usage window 1 reset"],
+              ["usageSlot2Label", "Usage window 2 label"],
+              ["usageSlot2Percent", "Usage window 2 %"],
+              ["usageSlot2Reset", "Usage window 2 reset"],
+              ["providerSlot1Label", "Provider 1 name"],
+              ["providerSlot1Reset", "Provider 1 next reset"],
+              ["providerSlot2Label", "Provider 2 name"],
+              ["providerSlot2Reset", "Provider 2 next reset"],
+              ["session", "Session (legacy)"],
+              ["weekly", "Weekly (legacy)"],
+              ["reset", "Reset (legacy)"],
               ["usageMode", "Mode"],
               ["time", "Time"],
               ["date", "Date"],
@@ -113,6 +160,25 @@ export function PrimitiveInspector({
               ]}
             />
           </div>
+          {primitive.fit === "shrink" &&
+          primitive.width !== undefined &&
+          textPrimitiveNaturalWidth(primitive) > primitive.width ? (
+            <div className="flex items-center justify-between gap-2 rounded-[var(--radius-control)] border bg-muted px-2 py-1.5">
+              <span className="text-xs text-muted-foreground">
+                Text is shrunk to fit the {primitive.width}px box.
+              </span>
+              <Button
+                onClick={() =>
+                  onChange("width", textPrimitiveNaturalWidth(primitive))
+                }
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Fit box to text
+              </Button>
+            </div>
+          ) : null}
           <ColorField
             label="Text color"
             value={primitive.color || "#FFFFFF"}
@@ -149,8 +215,10 @@ export function PrimitiveInspector({
             value={primitive.binding || "session"}
             onChange={(value) => onChange("binding", value)}
             options={[
-              ["session", "Session"],
-              ["weekly", "Weekly"],
+              ["usageSlot1Percent", "Usage window 1 %"],
+              ["usageSlot2Percent", "Usage window 2 %"],
+              ["session", "Session (legacy)"],
+              ["weekly", "Weekly (legacy)"],
             ]}
           />
           <SelectField

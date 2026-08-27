@@ -146,6 +146,11 @@ export type SupportDiagnostics = {
       viewport?: string;
       timezone?: string;
       visibility?: string;
+      surface?: "native-mac-app" | "browser";
+      appVersion?: string;
+      appBuild?: string;
+      /** Loopback runtime address. Diagnostic only; not navigable. */
+      internalRuntimeAddress?: string;
       page?: string;
     };
     state: SupportReportClientState;
@@ -166,6 +171,13 @@ export type SupportReportClientState = {
   device?: DeviceInfo | null;
   deviceSearchState: DeviceSearchState;
   deviceCandidates: DeviceCandidate[];
+  deviceRecovery?: {
+    preferredDeviceId?: string;
+    failedNormalChecks: number;
+    pickerReason?: string | null;
+    normalFailureLimit: number;
+    operationFailureLimit: number;
+  };
   providerSetup?: ProviderSetupInfo | null;
   lastError?: ApiError | null;
   recentEvents: ControlCenterEvent[];
@@ -204,7 +216,11 @@ export type DeviceInfo = {
   connected: boolean;
   paired?: boolean;
   ready?: boolean;
-  connectionState?: "ready" | "reconnecting" | "setup_required";
+  connectionState?:
+    | "ready"
+    | "reconnecting"
+    | "setup_required"
+    | "provider_setup_required";
   lastSeenAt?: string;
   board?: string;
   firmware?: string;
@@ -237,6 +253,11 @@ export type DeviceInfo = {
       renderFailures?: number;
     };
   };
+  standby?: {
+    active?: boolean;
+    liveThemePath?: string;
+    screensaverPath?: string;
+  };
   capabilities?: {
     auth?: {
       paired?: boolean;
@@ -253,8 +274,15 @@ export type DeviceInfo = {
       widthPx?: number;
       heightPx?: number;
     };
+    standby?: {
+      supported?: boolean;
+    };
     theme?: {
       supportsThemeSpecV1?: boolean;
+      supportsUsageSlotsV1?: boolean;
+      supportsUsageWindowsV1?: boolean;
+      supportsProviderSlotsV1?: boolean;
+      maxUsageWindows?: number;
       supportsStoredThemes?: boolean;
       maxThemeSpecBytes?: number;
       maxStoredThemeSpecBytes?: number;
@@ -273,6 +301,15 @@ export type DeviceInfo = {
     };
   };
 };
+
+export type StandbySettings = {
+  enabled: boolean;
+  timeoutMinutes: number;
+  brightnessPercent: number;
+  screensaverPath?: string | null;
+};
+
+export type AppearanceSection = "themes" | "screensavers";
 
 export type ActiveTab =
   "overview" | "usage" | "settings" | "theme-library" | "updates" | "logs";
@@ -319,11 +356,14 @@ export type UsageProviderInfo = {
   weeklyUnavailable?: boolean;
   collectedAt?: string;
   activityObservedAt?: string;
+  rateLimited?: boolean;
+  blockedUntil?: string;
   windows?: UsageWindowInfo[];
   status?: UsageStatusInfo;
   credits?: UsageCreditsInfo;
   resetCredits?: UsageResetCreditsInfo;
   cost?: UsageCostInfo;
+  costSettled?: boolean;
   pace?: UsagePaceInfo[];
   usageOverTime?: UsageOverTimePoint[];
 };
@@ -404,9 +444,18 @@ export type UsageSnapshot = {
   generatedAt?: string;
   source?: string;
   usageMode?: "used" | "remaining" | string;
+  refresh?: UsageRefreshInfo;
   tokenUsageReady?: boolean;
+  tokenUsageUpdating?: boolean;
   currentProvider?: string;
   providers: UsageProviderInfo[];
+};
+
+export type UsageRefreshInfo = {
+  state: "refreshing" | "rate_limited" | "fresh" | "unavailable" | string;
+  requestedAt?: string;
+  blockedUntil?: string;
+  message?: string;
 };
 
 export type PreferenceHealthState =
@@ -421,13 +470,7 @@ export type PreferenceHealthState =
   | string;
 
 export type PreferenceType =
-  | "boolean"
-  | "enum"
-  | "integer"
-  | "duration"
-  | "string"
-  | "secret"
-  | "action";
+  "boolean" | "enum" | "integer" | "duration" | "string" | "secret" | "action";
 
 export type PreferenceValue = boolean | number | string | null;
 
@@ -455,10 +498,7 @@ export type PreferenceDescriptor = {
   };
   requiredCapability?: string;
   writeStrategy:
-    | "codexbar_command"
-    | "vibetv_override"
-    | "device_api"
-    | "secure_session";
+    "codexbar_command" | "vibetv_override" | "device_api" | "secure_session";
   writable: boolean;
   secretState?: "configured" | "not_configured";
   health?: {
@@ -490,8 +530,166 @@ export function deviceIsReady(device: DeviceInfo | null | undefined) {
   return device?.ready === true;
 }
 
+export function deviceIsCustomerConnected(
+  device: DeviceInfo | null | undefined,
+): device is DeviceInfo & { active: true; connected: true } {
+  return Boolean(
+    device?.active === true &&
+      device.connected === true &&
+      device.paired !== false,
+  );
+}
+
+export function deviceIsWaitingForUsage(
+  device: DeviceInfo | null | undefined,
+) {
+  return Boolean(
+    deviceIsCustomerConnected(device) &&
+      device.ready !== true &&
+      device.stream?.running === true &&
+      device.stream.healthy !== true &&
+      !device.stream.errorCode,
+  );
+}
+
 export function deviceIsActive(device: DeviceInfo | null | undefined) {
   return device?.active === true;
+}
+
+// A reachable VibeTV whose display stream is running for this exact device but
+// has no AI usage to draw. Mirrors providerSetupStreamForTarget on the
+// Companion side without letting an old stream error prove connectivity.
+export function deviceAwaitsProviderSetup(
+  device: DeviceInfo | null | undefined,
+) {
+  const deviceTarget = comparableDeviceTarget(device?.target);
+  const streamTarget = comparableDeviceTarget(device?.stream?.target);
+  return (
+    deviceIsCustomerConnected(device) &&
+    device.paired === true &&
+    device.health?.ok === true &&
+    device.stream?.running === true &&
+    device.stream.errorCode === "provider_setup_required" &&
+    deviceTarget !== "" &&
+    deviceTarget === streamTarget
+  );
+}
+
+// The Companion owns provider readiness. It reports status "ready" as soon as
+// one provider delivers usage and deliberately keeps the remaining providers in
+// the list with their own failing status, so a per-provider rule here would
+// declare a working Mac broken. Only the reconciled status decides.
+export function providerSetupRequiresRecovery(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  const status = normalizedProviderStatus(providerSetup?.status);
+  return status !== "" && status !== "ready" && status !== "checking";
+}
+
+export function providerSetupIsChecking(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  const status = normalizedProviderStatus(providerSetup?.status);
+  return status === "" || status === "checking";
+}
+
+export function normalizedProviderStatus(value?: string) {
+  return value?.trim().toLowerCase().replace(/^provider_/, "") || "";
+}
+
+// A ready engine means CodexBar is installed: the Companion only reports it
+// after finding the binary, reading its config and accepting its version
+// (companion/internal/codexbar/provider_setup.go). Whatever is still missing --
+// a sign-in, a macOS permission, a switch, an account with no usage, or simply
+// nothing reported yet -- is settled inside CodexBar, and the download page
+// fixes none of it. Which of those it is stays CodexBar's to say; this only
+// reads that CodexBar is there.
+//
+// The provider list deliberately does not enter into it. An earlier version
+// asked for a provider other than the `codexbar` stand-in and treated an empty
+// list as the "nothing to report yet" state. The Companion never sends an empty
+// list: an empty `usage --json` becomes exactly that stand-in
+// ([{id:"codexbar",status:"not_configured"}]), so the state this predicate
+// exists for -- providers switched back on, none opened once, seen on the bench
+// on 2026-08-21 -- was the one state it still sent to the download.
+//
+// The download route belongs to an engine that is NOT ready: CodexBar missing,
+// too old, or broken. That is the case a download actually fixes.
+export function providerSetupCodexBarAnswered(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  return normalizedProviderStatus(providerSetup?.engine?.status) === "ready";
+}
+
+// A usable engine with every provider switched off is not a missing install:
+// the customer has CodexBar and turned the switches off. Telling them to
+// download it sends them after software they already have. CodexBar still owns
+// the switches -- this only reads what it reports.
+// The Companion completes every non-ready provider answer with CodexBar's
+// real switch state (issue #405). These are the short status rows the recovery
+// screen shows under its verdict: enabled providers keep their own failing
+// detail, switched-off tools are named -- and past a handful they collapse
+// into one count row, because a fresh setup switches every undetected
+// provider off and sixty rows would bury the one that matters. The Companion
+// stays the authority on every status and detail; this only arranges them.
+export function providerRecoveryStatusRows(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  const providers = (providerSetup?.providers ?? []).filter(
+    (provider) =>
+      provider.id !== "codexbar" &&
+      normalizedProviderStatus(provider.status) !== "ready",
+  );
+  const rows = providers
+    .filter((provider) => provider.enabled !== false)
+    .map((provider) => ({
+      id: provider.id,
+      label: provider.label?.trim() || provider.id,
+      text:
+        normalizedProviderStatus(provider.status) === "not_configured"
+          ? "Not connected yet."
+          : provider.detail?.trim() || "Not ready yet.",
+    }));
+  const switchedOff = providers.filter(
+    (provider) => provider.enabled === false,
+  );
+  if (switchedOff.length > 0 && switchedOff.length <= 4) {
+    rows.push(
+      ...switchedOff.map((provider) => ({
+        id: provider.id,
+        label: provider.label?.trim() || provider.id,
+        text: "Switched off.",
+      })),
+    );
+  } else if (switchedOff.length > 4) {
+    rows.push({
+      id: "switched-off-providers",
+      label: `${switchedOff.length} AI providers`,
+      text: "Switched off.",
+    });
+  }
+  return rows;
+}
+
+export function providerSetupHasEngineButNoEnabledProvider(
+  providerSetup: ProviderSetupInfo | null | undefined,
+) {
+  const providers = providerSetup?.providers ?? [];
+  return (
+    normalizedProviderStatus(providerSetup?.engine?.status) === "ready" &&
+    providers.length > 0 &&
+    // `codexbar` is not a provider. CodexBar reports the usage service itself
+    // under that id when its own probe timed out or failed, and the enablement
+    // flag on that stand-in is a zero value, not an answer. Reading it as
+    // "every provider is off" hides a failure behind the wrong screen.
+    !providers.some((provider) => provider.id === "codexbar") &&
+    // Every real provider must say it is off. A missing flag is not evidence.
+    providers.every((provider) => provider.enabled === false)
+  );
+}
+
+function comparableDeviceTarget(value: string | undefined) {
+  return value?.trim().replace(/\/+$/, "") || "";
 }
 
 export function deviceNeedsExplicitConnect(
@@ -506,9 +704,7 @@ export function deviceNeedsExplicitConnect(
   );
 }
 
-export function deviceNeedsThemeSetup(
-  device: DeviceInfo | null | undefined,
-) {
+export function deviceNeedsThemeSetup(device: DeviceInfo | null | undefined) {
   if (!deviceCanContinueThemeSetup(device) || device?.ready === true) {
     return false;
   }
@@ -532,7 +728,12 @@ export function deviceCanContinueThemeSetup(
     return false;
   }
 
-  return true;
+  // A device without a ready AI provider draws the error frame, which carries
+  // no ThemeSpec, so it reports theme-missing forever. Theme setup can never
+  // complete in that state, and this screen replaces the whole Control Center —
+  // including the surfaces that connect a provider. Missing usage is not a
+  // missing theme, so it must not claim this state.
+  return !deviceAwaitsProviderSetup(device);
 }
 
 export function deviceCompletedThemeSetup(
@@ -540,8 +741,7 @@ export function deviceCompletedThemeSetup(
 ) {
   return (
     deviceCanContinueThemeSetup(device) &&
-    device?.ready === true &&
-    device.display?.themeSpec?.active === true &&
+    device?.display?.themeSpec?.active === true &&
     device.display.themeSpec.renderOk === true
   );
 }

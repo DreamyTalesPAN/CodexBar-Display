@@ -1,4 +1,7 @@
-import type { ThemeStudioAsset } from "@/lib/theme-studio";
+import type {
+  ThemeStudioAsset,
+  ThemeStudioUsage,
+} from "@/lib/theme-studio";
 
 const DEFAULT_SPRITE_FPS = 8;
 const MAX_SPRITE_FRAME_WIDTH = 64;
@@ -34,7 +37,10 @@ type EncodedSprite = {
   width: number;
 };
 
-export async function importSpriteFile(file: File): Promise<SpriteImportResult> {
+export async function importSpriteFile(
+  file: File,
+  usage: ThemeStudioUsage = "live",
+): Promise<SpriteImportResult> {
   if (isSpriteTextFile(file)) {
     const raw = ensureTrailingNewline(await file.text());
     const metadata = spriteMetadata(raw);
@@ -48,7 +54,7 @@ export async function importSpriteFile(file: File): Promise<SpriteImportResult> 
         data: raw,
         encoding: "text",
       },
-      assetPath: themeAssetPathForFile(file.name, extension),
+      assetPath: themeAssetPathForFile(file.name, extension, usage),
       fps: metadata.fps,
       frameCount: metadata.frameCount,
       height: metadata.height,
@@ -71,7 +77,7 @@ export async function importSpriteFile(file: File): Promise<SpriteImportResult> 
         data: encodeSpriteAsset(sprite),
         encoding: "text",
       },
-      assetPath: themeAssetPathForFile(file.name, ".cba"),
+      assetPath: themeAssetPathForFile(file.name, ".cba", usage),
       fps: sprite.fps,
       frameCount: sprite.frameCount,
       height: sprite.height,
@@ -323,8 +329,12 @@ export function spriteMetadata(raw: string | undefined): SpriteMetadata | null {
 export function themeAssetPathForFile(
   name: string,
   extension: ".cba" | ".cbi" | ".gif",
+  usage: ThemeStudioUsage = "live",
 ): string {
-  return `/themes/u/${safeAssetName(name, extension)}`;
+  return `/themes/${usage === "screensaver" ? "s" : "u"}/${safeAssetName(
+    name,
+    extension,
+  )}`;
 }
 
 function safeAssetName(name: string, extension: ".cba" | ".cbi" | ".gif"): string {

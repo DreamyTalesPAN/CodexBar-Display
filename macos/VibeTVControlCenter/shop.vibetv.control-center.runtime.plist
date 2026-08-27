@@ -13,7 +13,7 @@
       <string>--transport</string>
       <string>wifi</string>
       <string>--interval</string>
-      <string>5s</string>
+      <string>30s</string>
       <string>--api-addr</string>
       <string>127.0.0.1:47832</string>
       <string>--api-dev-origin</string>
@@ -28,6 +28,8 @@
       <string>168h</string>
       <key>CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL</key>
       <string>shop.vibetv.control-center.runtime</string>
+      <key>VIBETV_CODEXBAR_PINNED_VERSION</key>
+      <string>0.46.0</string>
       <key>VIBETV_DISABLE_MAC_APP_SELF_UPDATE</key>
       <string>1</string>
       <key>VIBETV_MAC_APP_VERSION</key>

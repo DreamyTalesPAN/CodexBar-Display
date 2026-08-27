@@ -6,8 +6,6 @@ GITHUB_API_BASE="${CONTROL_CENTER_GITHUB_API_BASE:-https://api.github.com}"
 CURL_BIN="${CONTROL_CENTER_READINESS_CURL:-curl}"
 HOSTED_APP_ORIGIN="https://app.vibetv.shop"
 EXPECTED_COMPANION_ADDR="${VIBETV_COMPANION_ADDR:-127.0.0.1:47832}"
-SHOPIFY_APP_URL="$HOSTED_APP_ORIGIN"
-SHOPIFY_STORE_URL="https://vibetv.shop"
 RELEASE_TAG=""
 RELEASE_JSON=""
 APP_URL=""
@@ -15,10 +13,8 @@ EXPECT_VERSION=""
 EXPECT_CATALOG_SOURCE=""
 EXPECT_THEME_ID=""
 EXPECT_ALL_FREE_THEMES_INSTALLABLE=0
-EXPECT_SHOPIFY_PRODUCT_PAGES=0
 CHECK_LOCAL=0
 GITHUB_RELEASE_HEADERS=()
-SHOPIFY_PRODUCT_PAGES=()
 TMP_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-readiness.XXXXXX")"
 
 cleanup() {
@@ -45,13 +41,6 @@ Options:
   --expect-theme-id theme_id         With --app-url, require /api/themes to contain an installable free theme and /install/theme_id to be reachable.
   --expect-all-free-themes-installable
                                    With --app-url, require every free /api/themes item to have an installable packUrl.
-  --expect-shopify-product-pages   With --app-url, verify every free Shopify /api/themes productUrl, or derive it from handle plus --shopify-store-url.
-  --shopify-app-url https://app.vibetv.shop
-                                   Expected hosted app origin for Shopify product buttons. Default: https://app.vibetv.shop.
-  --shopify-store-url https://vibetv.shop
-                                   Public Shopify store origin used to derive product URLs from /api/themes handles. Default: https://vibetv.shop.
-  --shopify-product-page url theme_id
-                                   Check a public Shopify product page links to /install/theme_id and no longer exposes the legacy terminal command. Repeatable.
   --local-companion                Check local Mac App status on VIBETV_COMPANION_ADDR, default 127.0.0.1:47832.
   --expect-version x.y.z           Require local Mac App version where checked.
   -h, --help                       Show this help.
@@ -67,12 +56,7 @@ Examples:
     --app-url https://app.vibetv.shop \
     --expect-catalog-source shopify \
     --expect-theme-id my-theme-id \
-    --expect-all-free-themes-installable \
-    --expect-shopify-product-pages
-
-  scripts/check-control-center-companion-customer-readiness.sh \
-    --shopify-product-page https://vibetv.shop/products/synthwave-theme synthwave \
-    --shopify-product-page https://vibetv.shop/products/clippy-theme clippy
+    --expect-all-free-themes-installable
 
 This script does not install apps, start services, discover devices, or perform
 hardware writes. It is safe for preflight and customer-readiness audits.
@@ -169,38 +153,6 @@ parse_args() {
         EXPECT_ALL_FREE_THEMES_INSTALLABLE=1
         shift
         ;;
-      --expect-shopify-product-pages)
-        EXPECT_SHOPIFY_PRODUCT_PAGES=1
-        shift
-        ;;
-      --shopify-app-url)
-        [[ $# -ge 2 ]] || die "--shopify-app-url requires a value"
-        SHOPIFY_APP_URL="$2"
-        shift 2
-        ;;
-      --shopify-app-url=*)
-        SHOPIFY_APP_URL="${1#*=}"
-        shift
-        ;;
-      --shopify-store-url)
-        [[ $# -ge 2 ]] || die "--shopify-store-url requires a value"
-        SHOPIFY_STORE_URL="$2"
-        shift 2
-        ;;
-      --shopify-store-url=*)
-        SHOPIFY_STORE_URL="${1#*=}"
-        shift
-        ;;
-      --shopify-product-page)
-        [[ $# -ge 3 ]] || die "--shopify-product-page requires a URL and theme_id"
-        [[ -n "$2" && -n "$3" ]] || die "--shopify-product-page requires non-empty URL and theme_id"
-        SHOPIFY_PRODUCT_PAGES+=("$2|$3")
-        shift 3
-        ;;
-      --shopify-product-page=*)
-        parse_shopify_product_page_arg "${1#*=}"
-        shift
-        ;;
       --local-companion)
         CHECK_LOCAL=1
         shift
@@ -220,53 +172,6 @@ parse_args() {
         ;;
     esac
   done
-}
-
-parse_shopify_product_page_arg() {
-  local value url theme_id
-  value="$1"
-  url="${value%,*}"
-  theme_id="${value##*,}"
-  [[ "$url" != "$value" && -n "$url" && -n "$theme_id" ]] \
-    || die "--shopify-product-page= requires URL,theme_id"
-  SHOPIFY_PRODUCT_PAGES+=("$url|$theme_id")
-}
-
-validate_http_url() {
-  local raw label public_only
-  raw="$1"
-  label="$2"
-  public_only="${3:-0}"
-  python3 - "$raw" "$label" "$public_only" <<'PY'
-import ipaddress
-import sys
-from urllib.parse import urlparse
-
-raw, label, public_only = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
-parsed = urlparse(raw)
-errors = []
-
-if parsed.scheme not in ("http", "https"):
-    errors.append("must use http(s)")
-if not parsed.hostname:
-    errors.append("must include a host")
-if parsed.username or parsed.password:
-    errors.append("must not include credentials")
-if public_only and parsed.hostname:
-    host = parsed.hostname.lower()
-    if host == "localhost" or host.endswith(".local"):
-        errors.append("must be a public product page, not localhost or .local")
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        ip = None
-    if ip and (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_unspecified):
-        errors.append("must not point to a private, loopback, link-local, or unspecified IP")
-
-if errors:
-    print(f"{label} URL invalid: " + "; ".join(errors), file=sys.stderr)
-    sys.exit(1)
-PY
 }
 
 release_json_path() {
@@ -560,141 +465,6 @@ PY
   log "app install routes reachable for all free themes: ${count}"
 }
 
-check_shopify_product_pages() {
-  local entry url theme_id page_count
-  [[ "${#SHOPIFY_PRODUCT_PAGES[@]}" -gt 0 ]] || return 0
-
-  require_curl
-  require_cmd python3
-  validate_http_url "$SHOPIFY_APP_URL" "--shopify-app-url"
-  page_count=0
-  for entry in "${SHOPIFY_PRODUCT_PAGES[@]}"; do
-    url="${entry%%|*}"
-    theme_id="${entry#*|}"
-    [[ -n "$url" && -n "$theme_id" && "$url" != "$theme_id" ]] \
-      || die "invalid Shopify product page check: ${entry}"
-    check_shopify_product_page "$url" "$theme_id" "--shopify-product-page"
-    page_count=$((page_count + 1))
-  done
-  log "Shopify product page checks passed: ${page_count}"
-}
-
-check_app_shopify_product_pages() {
-  local app response_json product_pages entry url theme_id page_count
-  [[ "$EXPECT_SHOPIFY_PRODUCT_PAGES" == 1 ]] || return 0
-  [[ -n "$APP_URL" ]] || die "--expect-shopify-product-pages requires --app-url"
-
-  require_curl
-  require_cmd python3
-  validate_http_url "$SHOPIFY_APP_URL" "--shopify-app-url"
-  validate_http_url "$SHOPIFY_STORE_URL" "--shopify-store-url" 1
-  app="${APP_URL%/}"
-  response_json="$(mktemp "${TMP_WORK_DIR}/app-shopify-product-pages.XXXXXX")"
-  product_pages="$(mktemp "${TMP_WORK_DIR}/app-shopify-product-page-list.XXXXXX")"
-  curl_cmd -fsS "${app}/api/themes" > "$response_json"
-  python3 - "$response_json" "$SHOPIFY_STORE_URL" > "$product_pages" <<'PY'
-import json
-import sys
-from urllib.parse import quote
-from urllib.parse import urljoin
-
-path, store_url = sys.argv[1], sys.argv[2].rstrip("/") + "/"
-with open(path, encoding="utf-8") as f:
-    payload = json.load(f)
-
-errors = []
-count = 0
-for index, theme in enumerate(payload.get("themes") or []):
-    if not theme.get("isFree") or theme.get("source") != "shopify":
-        continue
-    theme_id = str(theme.get("themeId") or "").strip()
-    product_url = str(theme.get("productUrl") or "").strip()
-    handle = str(theme.get("handle") or "").strip()
-    label = theme_id or f"index {index}"
-    if not theme_id:
-        errors.append(f"free Shopify theme at index {index} has no themeId")
-        continue
-    if not product_url:
-        if handle:
-            product_url = urljoin(store_url, "products/" + quote(handle, safe=""))
-        else:
-            errors.append(f"free Shopify theme {label!r} has no productUrl or handle")
-            continue
-    print(f"{product_url}|{theme_id}")
-    count += 1
-
-if count == 0:
-    errors.append("free Shopify product pages empty")
-
-if errors:
-    print("hosted app Shopify product page catalog mismatch: " + "; ".join(errors), file=sys.stderr)
-    sys.exit(1)
-PY
-
-  page_count=0
-  while IFS= read -r entry; do
-    [[ -n "$entry" ]] || continue
-    url="${entry%%|*}"
-    theme_id="${entry#*|}"
-    check_shopify_product_page "$url" "$theme_id" "catalog productUrl"
-    page_count=$((page_count + 1))
-  done < "$product_pages"
-  log "app Shopify product pages reachable and ready: ${page_count}"
-}
-
-check_shopify_product_page() {
-  local url theme_id label html
-  url="$1"
-  theme_id="$2"
-  label="$3"
-  validate_http_url "$url" "$label" 1
-
-  html="$(mktemp "${TMP_WORK_DIR}/shopify-product.XXXXXX")"
-  curl_cmd -fsSL "$url" > "$html"
-  python3 - "$html" "$url" "$theme_id" "$SHOPIFY_APP_URL" <<'PY'
-import sys
-from urllib.parse import quote
-
-html_path, product_url, theme_id, app_url = sys.argv[1:]
-with open(html_path, encoding="utf-8", errors="replace") as f:
-    html = f.read()
-
-expected_app_url = f"{app_url.rstrip('/')}/install/{quote(theme_id, safe='')}"
-required_app_copy = [
-    "Check compatibility in the app",
-    expected_app_url,
-]
-forbidden = [
-    "Copy install command",
-    "codexbar-display theme-pack install",
-    "Jetzt installieren",
-    "Jetzt Theme installieren",
-    "Install now",
-    "One-click install",
-    "One click install",
-]
-
-errors = []
-for copy in required_app_copy:
-    if copy not in html:
-        errors.append(f"missing hosted app install copy: {copy}")
-for needle in forbidden:
-    if needle in html:
-        errors.append(f"legacy install copy still present: {needle}")
-
-if errors:
-    print(
-        "Shopify product page mismatch for "
-        + product_url
-        + ": "
-        + "; ".join(errors),
-        file=sys.stderr,
-    )
-    sys.exit(1)
-PY
-  log "Shopify product page ok: ${url} -> ${theme_id}"
-}
-
 expected_release_version() {
   local json version
   version="${RELEASE_TAG#v}"
@@ -776,8 +546,6 @@ main() {
   check_app_theme_catalog
   check_app_install_route
   check_app_install_routes_for_free_themes
-  check_app_shopify_product_pages
-  check_shopify_product_pages
   check_local_companion
   log "customer-readiness checks passed"
 }

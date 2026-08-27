@@ -36,6 +36,138 @@ Companion negotiation:
 - prefers v2 when available.
 - falls back to v1 when negotiation data is missing/legacy.
 
+### WiFi PHY mode: always 802.11g, on every radio bring-up
+
+The ESP8266 NONOS WiFi stack cannot receive 802.11n A-MSDU aggregates. When an
+AP decides to aggregate — measured 2026-08-08 on device `14799300` against a
+FRITZ!Box 7530, intermittently, for TCP/UDP frames above ~190 bytes L4
+payload — the device drops every affected frame below lwIP with no SDK
+diagnostic. Small frames and ICMP keep flowing, so `/hello`, `/health`, and
+sub-segment theme specs keep working while asset uploads, multi-segment HTTP
+bodies, and RAW OTA acknowledgements stall. This was the mechanism behind the
+intermittent OTA stalls (BUG-7) and the "impossible" theme-asset uploads.
+
+Rule: `applyWifiInteropPhyMode()` forces `WIFI_PHY_MODE_11G` immediately
+before **every** `WiFi.begin()` and `WiFi.softAP()` call, and no code path may
+select `WIFI_PHY_MODE_11N` or `WIFI_PHY_MODE_11B`. 802.11g has no frame
+aggregation; its ~20 Mbit/s real-world ceiling is far above anything this
+device transfers. A/B/A/B-proven on hardware: under 11n, UDP probes above
+200 bytes deliver 0/8 and 2 KB HTTP POSTs stall about half the time; under
+11g the same probes pass 8/8 and 6/6, and a 6.3 KB asset upload completes in
+0.41 s at full speed.
+
+Pinned by `scripts/check-wifi-phy-policy-tests.sh`
+(`firmware_esp8266/tests/wifi_phy_policy_test.cpp`), which runs inside
+`scripts/check-esp8266-soak-gate.sh`. The Companion-side pace floor is pinned
+by `TestAssetUploadPaceStaysInsideFirmwareReadWait`.
+
+Field caveat: devices still on firmware `1.0.39` run 11n until their first
+successful update to a fixed firmware, so that one update can still hit the
+black hole. Support guidance for a stalling first update: power-cycle the
+VibeTV immediately before retrying (a fresh association starts without
+aggregation state).
+
+Forcing 11g removes the A-MSDU black hole, but it is not the only OTA stall
+mechanism. A rarer RAW-OTA acknowledgement stall still occurs intermittently
+even on 11g with healthy heap (roughly one leg in 5–10; the receive window
+closes at a 1024-byte block boundary, most likely while the ESP8266 erases a
+flash sector). This is the case the paced RAW upload and the "restart before
+another firmware upload" recovery below exist for: power-cycle and retry once.
+`scripts/vibetv-hw-selftest.sh` performs that recovery after the operator
+approves it on the terminal (a failed hardware write is never retried
+unattended).
+
+### RAW OTA sender pacing: always paced, and never concurrent
+
+The RAW OTA sender keeps a 10 ms pause between 64-byte chunks for **every**
+firmware version, and waits for a block acknowledgement every 1024 bytes.
+
+The pause used to be skipped for released firmware >= 1.0.37, on the assumption
+that the receiver fix in that version made it unnecessary. Measured on
+`esp8266-smalltv-st7789`, with socket-level proof of what else was talking to
+the device during each run:
+
+| Sender | Other traffic to device | Device firmware | Direction | Result |
+|---|---|---|---|---|
+| Unpaced | none | 1.0.39 | -> 9999.0.24 | stalled |
+| Unpaced | none | 1.0.39 | -> 9999.0.24 | stalled |
+| Paced | none | 1.0.39 | -> 9999.0.24 | **installed** |
+| Paced | Mac App runtime polling | 9999.0.24 | -> 1.0.39 | stalled |
+| Unpaced | none (proven by `lsof`) | 9999.0.24 | -> 1.0.39 | stalled |
+| Paced | none (proven by `lsof`) | 9999.0.24 | -> 1.0.39 | **installed** |
+
+Unpaced: 0/3. Paced with the device to itself: 2/2. Paced while the Mac App
+runtime was still polling: 0/1.
+
+Two independent requirements follow, and both are needed:
+
+1. **Pace every upload.** No firmware version is exempt. Locked by
+   `TestFirmwareRawWritePauseIsConservativeForEveryFirmware`, `DO NOT weaken`.
+2. **Quiesce every other writer first.** A paced upload still stalls if anything
+   else is holding a connection to the device. Nothing may talk to port 80 while
+   firmware bytes are on port 8081 -- not health polls, not display frames.
+
+The stall itself is a TCP-level stop: `waitForFirmwareRawAck` polls the macOS
+socket's `Snd_sbbytes` and gives up after 30 s when the send buffer never
+drains, so the device's receive window closed and stayed closed. The "N bytes
+pending" figure is send-buffer occupancy, not protocol state, which is why it is
+not a multiple of the chunk size. A healthy paced upload takes about 100 s; a
+stalling one dies after the 30 s ack timeout.
+
+Contention was ruled out as the sole cause and pacing was ruled in by sampling
+`lsof -nP -i @<device>` twice a second through each run: in the isolated runs
+exactly one socket existed during the upload window, on port 8081, owned by the
+updater, with zero overlap between port 80 and port 8081 samples.
+
+### An interrupted OTA deactivates the stored theme
+
+After a stalled upload the device reboots and comes back with
+`display.activeTheme: "theme-missing"` and `display.themeSpec.active: false`,
+while `themeSpec.path` still points at the stored spec. Measured over 7 minutes
+and 24 probes with **no** Mac App or daemon running: the device never
+reactivates the spec on its own.
+
+A **successful** update does not have this problem — the device came back on
+`9999.0.24` with `activeTheme: "clippy"` and the spec active.
+
+So recovery is the updater's job: after a failed upload it must reactivate the
+stored spec rather than leave the customer on a blank theme. Not yet
+implemented.
+
+### Token transport: exactly one carrier per request
+
+An authenticated request carries the pairing token in the `X-VibeTV-Token`
+header **or** in the `?token=` query parameter — never in both at once.
+
+This is a device-proven rule, not a style preference. Measured against
+`esp8266-smalltv-st7789` on firmware `1.0.39`, 30 attempts per variant from one
+Go `http.Client`, no other traffic to the device:
+
+| Token carrier | Failures |
+|---|---|
+| Header **and** query together | **24/30** — connection closed, `EOF`, no response |
+| Header only | 0/30 |
+| Query only | 0/30 |
+
+The same bytes replayed over a raw socket succeed, and `curl` succeeds, so the
+trigger is timing-dependent on the device side rather than a malformed request.
+Until the firmware-side cause is understood, clients must not duplicate the
+token.
+
+Why this matters: duplicating the token broke **every** firmware update. The
+update path authenticated `/hello` with both carriers, so the preflight failed
+before a single byte was uploaded, and the customer saw only *"Update failed —
+Keep VibeTV powered on, then try again."* Retrying could not help. Removing the
+duplication took the same preflight to 0/30 failures on the same device.
+
+Regression tests that lock this rule are marked `DO NOT weaken`:
+`TestDeviceHelloPreflightSendsTokenOnlyInHeader`.
+
+A second device-side defect is visible in the same measurement: when the token
+is **invalid**, a header-only or query-only request returns a clean `401`, but a
+duplicated one closes the connection. An expired token therefore surfaces as an
+unexplained transport error instead of an authentication failure.
+
 ## WiFi Setup Contract
 - Devices ship with firmware installed.
 - Fresh or failed WiFi devices start an open `VibeTV-Setup` access point.
@@ -72,6 +204,11 @@ Companion negotiation:
 - `GET /assets` returns `filesystem.mounted` plus an `assets` array. Every asset entry includes `path` and `sizeBytes`; `sha256` is optional so small ESP8266 builds do not need to carry hashing code.
 - `GET /health` returns `display.activeTheme`, compact `display.themeSpec` render health, and `display.gif` so provisioning can see the active GIF path, file presence, decoder state, blocked state, and the last GIF open/decode error.
 - `GET /health` returns `settings.display.brightnessPercent` for support diagnostics. A VibeTV without saved display settings reports the 20 percent factory default.
+- `GET /health` returns `settings.standby` with `enabled`, `timeoutMinutes`, `brightnessPercent` and `screensaverPath`. `GET /hello` reports `capabilities.standby.supported`, which is the only way a host may decide whether standby exists on this device. `screensaverPath` must stay readable on the unauthenticated probe: it is how a host notices the screensaver slot has drifted behind the catalog, and gating or redacting it would silently stop automatic screensaver updates instead of failing loudly.
+- The screensaver slot is a second, independent ThemeSpec slot. `POST /screensaver/active` sets it and never changes the live theme; `POST /theme/active` never changes the screensaver.
+- `GET /health` returns a top-level `standby` object with the live state: `active`, `idleSecs` and `liveThemePath`. While `active` is true the device draws the screensaver, so `display.themeSpec.path` is the screensaver and `liveThemePath` is the live slot it returns to on wake. A host that restores the live theme must read `liveThemePath`, otherwise it writes the screensaver into the live slot. Standby starts after `timeoutMinutes` without a frame reporting `activity:"coding"` and ends on the first frame that does. `idleSecs` counts from the last such frame. Standby brightness applies on entry and the normal brightness is restored on wake. Both transitions reload the ThemeSpec from LittleFS, so a transition never writes flash and the device returns to the live theme after a reboot.
+- Standby settings and the screensaver slot reference live in the same device settings record as brightness, which is append-only: a shorter stored record is an older one and every reader length-checks its own section. Firmware without standby support keeps working against a record that has it.
+- `GET /health` returns `reset` with the sanitized countdown the device is willing to stand behind: `trust` (`live`, `offline`, `stale`, `unknown`), `deadlineSecs`, `trustSecs`, `basisAgeSecs` and `source`. `deadlineSecs` is `0` whenever `trust` is `stale`, which is exactly what the renderer shows as unavailable. There is no wall clock on the device, so `basisAgeSecs` is the wall-clock-free form of "last fresh at". See `protocol/PROTOCOL.md`, Reset Freshness and Trust.
 
 ## Theme Contract
 - Built-in runtime themes: `classic`, `crt`, `mini`.

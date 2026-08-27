@@ -32,6 +32,17 @@ assert_not_contains() {
   ! grep -Fq -- "$needle" "$file" || die "$message"
 }
 
+assert_before() {
+  local file="$1"
+  local first="$2"
+  local second="$3"
+  local message="$4"
+  local first_line second_line
+  first_line="$(grep -nF -- "$first" "$file" | head -n 1 | cut -d: -f1 || true)"
+  second_line="$(grep -nF -- "$second" "$file" | head -n 1 | cut -d: -f1 || true)"
+  [[ -n "$first_line" && -n "$second_line" && "$first_line" -lt "$second_line" ]] || die "$message"
+}
+
 job_block() {
   local workflow="$1"
   local job="$2"
@@ -242,6 +253,10 @@ main() {
     'merge gate must run its direct macOS checks on GitHub-hosted macOS 15'
   assert_contains "$MERGE_WORKFLOW" '9999.0.${GITHUB_RUN_NUMBER}' \
     'merge candidate must always sort above public releases for Sparkle'
+  assert_contains "$MERGE_WORKFLOW" 'build="${GITHUB_RUN_ID}"' \
+    'merge candidate build must sort above public release build numbers for Sparkle'
+  assert_contains "$MERGE_WORKFLOW" '--build "$build"' \
+    'merge candidate app must use the unique high Sparkle build number'
   assert_contains "$MERGE_WORKFLOW" 'clean_os' \
     'merge gate must cover a clean macOS customer state'
   assert_contains "$MERGE_WORKFLOW" 'current_public' \
@@ -277,10 +292,22 @@ main() {
   [[ "$untrusted_build" != *'SPARKLE_ED25519_PRIVATE_KEY'* ]] \
     || die 'untrusted PR build must not receive the Sparkle signing key'
 
-  assert_contains "$RC_WORKFLOW" 'name: CODEX Test VibeTV Release Candidate' \
-    'release-candidate workflow needs the stable CODEX name'
+  assert_contains "$RC_WORKFLOW" 'name: CODEX Prepare and Release VibeTV' \
+    'release workflow needs the stable CODEX name'
   assert_contains "$RC_WORKFLOW" 'version:' \
     'release-candidate workflow must require a candidate version'
+  assert_contains "$RC_WORKFLOW" 'firmware:' \
+    'release-candidate workflow must choose final firmware versions before build'
+  assert_contains "$RC_WORKFLOW" 'effective-firmware-versions.json' \
+    'release candidate must freeze its final firmware versions'
+  assert_contains "$RC_WORKFLOW" 'uses: ./.github/workflows/release.yml' \
+    'successful candidate tests must continue to the Production approval'
+  assert_contains "$ROOT/scripts/lib/vibetv-rehearsal.sh" \
+    'vibetv-release-candidate-result' \
+    'manual rehearsal must require the successful result of a waiting candidate'
+  assert_not_contains "$ROOT/scripts/lib/vibetv-rehearsal.sh" \
+    '--workflow vibetv-release-candidate.yml --status success' \
+    'manual rehearsal must discover candidates waiting for Production approval'
   assert_contains "$RC_WORKFLOW" 'ref: ${{ github.sha }}' \
     'release candidate must build the exact main SHA that dispatched it'
   assert_contains "$RC_WORKFLOW" 'pip install platformio intelhex' \
@@ -293,12 +320,16 @@ main() {
     assert_contains "$RC_WORKFLOW" "$required" \
       "release candidate must build the full publish asset set including ${required}"
   done
+  assert_contains "$RC_WORKFLOW" '--notary-log tmp/vibetv-rc/test/notarization-log.json' \
+    'release candidate must retain structured Apple notarization evidence'
+  assert_contains "$RC_WORKFLOW" 'notarization-evidence' \
+    'candidate manifest must classify notarization evidence as test-only'
   for field in repository sourceSha version candidateRunId createdAt virtualGate; do
     assert_contains "$RC_WORKFLOW" "\"${field}\"" \
       "candidate manifest must include ${field}"
   done
-  assert_contains "$RC_WORKFLOW" 'retention-days: 7' \
-    'release candidate artifacts and reports must remain available for seven days'
+  assert_contains "$RC_WORKFLOW" 'retention-days: 30' \
+    'release candidate artifacts and reports must remain available for thirty days'
   assert_contains "$RC_WORKFLOW" 'name: vibetv-release-candidate-result' \
     'release candidate result artifact name must remain stable for publish gates'
   for field in artifactHashes candidate-result.json 'result = "success"'; do
@@ -330,7 +361,13 @@ main() {
     'guest test must start the public baseline before Sparkle'
   assert_contains "$GUEST_TEST" 'replace and relaunch' \
     'guest test must require a replacement Candidate process after Sparkle'
-  assert_contains "$GUEST_TEST" 'gzip -cd' \
+  assert_contains "$GUEST_TEST" 'gzip -t "$FIRMWARE"' \
+    'guest test must distinguish compressed release firmware from raw merge firmware'
+  assert_contains "$GUEST_TEST" 'gzip -cd "$FIRMWARE"' \
+    'guest test must derive raw OTA bytes from compressed release firmware'
+  assert_contains "$GUEST_TEST" 'cp "$FIRMWARE" "$RAW_FIRMWARE"' \
+    'guest test must preserve already raw merge firmware bytes'
+  assert_contains "$GUEST_TEST" 'shasum -a 256 "$RAW_FIRMWARE"' \
     'guest test must hash the raw firmware bytes sent through OTA'
   assert_contains "$RC_WORKFLOW" 'artifactHashes": {item["path"]' \
     'candidate result must expose publish validators a path-to-hash map'
@@ -347,8 +384,8 @@ main() {
     assert_contains "$RC_WORKFLOW" 'baselines/baselines/${{ matrix.state }}.'"${frozen_baseline}" \
       "guest matrix must consume the downloaded frozen ${frozen_baseline} bytes"
   done
-  assert_contains "$RC_WORKFLOW" "esp8266_smalltv_st7789\"))').bin.gz" \
-    'release candidate must close the firmware-version Python expression'
+  assert_contains "$RC_WORKFLOW" 'firmware_asset="$(python3' \
+    'release candidate must resolve the tested firmware from its own manifest'
   assert_contains "$RC_WORKFLOW" '"${baseline_args[@]+"${baseline_args[@]}"}"' \
     'clean OS guest test must expand optional baseline arguments safely under set -u'
   assert_contains "$RC_WORKFLOW" '"protocolVersion":config.get' \
@@ -363,6 +400,46 @@ main() {
     'guest test must use the bundled candidate companion for OTA'
   assert_contains "$GUEST_TEST" 'daemon --transport wifi' \
     'guest test must exercise the bundled candidate companion render path'
+  assert_contains "$GUEST_TEST" 'if [[ "$STATE" == clean_os ]]; then' \
+    'guest test must run a standalone candidate daemon only on a clean OS'
+  assert_contains "$GUEST_TEST" 'if ! "$CANDIDATE_COMPANION" daemon' \
+    'clean OS guest test must inspect an expected no-provider daemon exit'
+  assert_contains "$GUEST_TEST" 'error code=runtime/no-providers' \
+    'clean OS guest test must only tolerate the known no-provider result'
+  assert_contains "$GUEST_TEST" '/v1/device/repair' \
+    'public guest states must ask the installed runtime to render to the virtual VibeTV'
+  assert_before "$GUEST_TEST" 'validate_installed_runtime "$OUTPUT/candidate-runtime-status.json"' '/v1/device/repair' \
+    'public guest states must verify the installed candidate runtime before requesting a render'
+  assert_contains "$GUEST_TEST" 'http://127.0.0.1:47832/v1/updates/install' \
+    'public guest states must drive the firmware update through the installed runtime API, not a direct CLI flash'
+  assert_contains "$GUEST_TEST" '/v1/updates/install/status?jobId=' \
+    'guest test must wait for the runtime firmware update job to finish'
+  assert_contains "$GUEST_TEST" 'mac_app_restarting' \
+    'guest test must retry only the documented transient runtime-restart conflict'
+  assert_before "$GUEST_TEST" '/v1/device/repair' 'api_firmware_update "$OUTPUT/candidate-install-update.json"' \
+    'the runtime must own the paired device before the API firmware update starts'
+  assert_contains "$GUEST_TEST" 'api_firmware_update "$OUTPUT/candidate-already-current.json" already_current' \
+    'public guest states must prove already_current through the runtime API as well'
+  assert_contains "$GUEST_TEST" 'if expected_uploads and not any(event.get("path") == "/update/firmware.raw"' \
+    'the Raw OTA assertion must be conditional: a candidate whose firmware matches the baseline uploads nothing, and demanding a Raw OTA regardless fails every release that ships no new firmware'
+  assert_contains "$GUEST_TEST" 'expected_uploads = int(sys.argv[2])' \
+    'guest test must read the expected upload count once and reuse it for both state assertions'
+  assert_contains "$GUEST_TEST" 'listenerOwner' \
+    'guest test must bind the live Companion port to the installed runtime service'
+  assert_contains "$GUEST_TEST" 'installationMode' \
+    'guest test must verify the running candidate reports DMG installation mode'
+  assert_contains "$GUEST_TEST" '--max-time 3 http://127.0.0.1:47832/v1/status' \
+    'guest test must bound each installed-runtime status request'
+  assert_contains "$GUEST_TEST" 'if runtime_pid="$(python3 - "$status_output"' \
+    'guest test must keep polling until the candidate runtime status itself validates'
+  assert_contains "$GUEST_TEST" 'shop.vibetv.control-center.runtime.registered-bundle-version' \
+    'guest test must wait for native app preparation to finish before driving the runtime update API'
+  assert_contains "$GUEST_TEST" 'deadline=$((SECONDS + 120))' \
+    'guest test must preserve the full native preparation and recovery timeout'
+  assert_not_contains "$GUEST_TEST" 'validate-macos-control-center-runtime.sh' \
+    'stateful guest checks must not invoke the clean-host runtime validator'
+  assert_not_contains "$GUEST_TEST" '--once --api-addr' \
+    'one-shot candidate daemon must not keep a companion API server alive'
 
   assert_safe_app_extractor
   printf 'PASS: hosted VibeTV merge and release-candidate gate contracts\n'

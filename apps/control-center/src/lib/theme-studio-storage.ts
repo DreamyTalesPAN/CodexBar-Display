@@ -4,6 +4,7 @@ import {
   THEME_STUDIO_DRAFT_STORAGE_KEY,
   type ThemeStudioAsset,
   type ThemeStudioSpec,
+  type ThemeStudioUsage,
 } from "./theme-studio";
 
 export const USER_THEMES_STORAGE_KEY = "vibetv.controlCenter.userThemes";
@@ -13,6 +14,7 @@ export type ThemeStudioDocument = {
   assets: Record<string, ThemeStudioAsset>;
   packName: string;
   spec: ThemeStudioSpec;
+  usage?: ThemeStudioUsage;
 };
 
 export type UserThemeRecord = {
@@ -334,7 +336,8 @@ function readDocument(value: unknown): ThemeStudioDocument | null {
     return null;
   }
   const assets = readAssets(value.assets);
-  if (!assets) {
+  const usage = readThemeStudioUsage(value.usage);
+  if (!assets || !usage) {
     return null;
   }
   try {
@@ -342,6 +345,7 @@ function readDocument(value: unknown): ThemeStudioDocument | null {
       assets,
       packName,
       spec: normalizeThemeSpec(importThemeSpec(value.spec)),
+      usage,
     };
   } catch {
     return null;
@@ -416,6 +420,13 @@ function isLegacyDraft(value: unknown): value is {
 
 function isRecoverySource(value: unknown): value is ThemeStudioRecoverySource {
   return value === "blank" || value === "custom" || value === "published";
+}
+
+function readThemeStudioUsage(value: unknown): ThemeStudioUsage | null {
+  if (value === undefined || value === "live") {
+    return "live";
+  }
+  return value === "screensaver" ? value : null;
 }
 
 function optionalString(value: unknown): string | undefined | null {

@@ -43,11 +43,11 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
    the first time. A temporary outage in the running app does not lock them
    again or change the active tab.
 6. Setup is complete when the Mac App is running, VibeTV is connected and paired,
-   and every enabled AI provider has passed the fresh provider check with a valid
-   display selection.
+   every enabled AI provider has passed the fresh provider check with a valid
+   display selection, and the first display frame contains real usage data.
 7. Theme Library is additionally locked until theme installs are allowed by the release gate.
 8. Support may stay available because it only creates support reports and shows recent activity, not a setup workflow.
-9. A Shopify theme install deep link must not bypass setup gating.
+9. A theme install deep link must not bypass setup gating.
 
 ## Review Checklist
 

@@ -38,7 +38,7 @@ export function SetupStatusScreen({
     >
       <section className="grid w-full max-w-2xl gap-8">
         <div className="flex justify-center">
-          <ControlCenterBrand />
+          <ControlCenterBrand showTagline={false} />
         </div>
 
         <header className="grid justify-items-center gap-3 text-center">

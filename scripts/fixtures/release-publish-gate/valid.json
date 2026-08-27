@@ -1,0 +1,135 @@
+{
+  "repository": "DreamyTalesPAN/CodexBar-Display",
+  "sourceSha": "0123456789abcdef0123456789abcdef01234567",
+  "version": "1.2.3",
+  "candidateRunId": "12345",
+  "files": {
+    "publish/VibeTV-Control-Center.dmg": "fixture signed dmg\n",
+    "publish/appcast.xml": "<rss xmlns:sparkle=\"http://www.andymatuschak.org/xml-namespaces/sparkle\"><channel><item><enclosure sparkle:edSignature=\"fixture-signature\" url=\"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.2.3/VibeTV-Control-Center.dmg\" /></item></channel></rss>\n",
+    "publish/install.sh": "#!/usr/bin/env bash\n",
+    "publish/install-control-center-companion.sh": "#!/usr/bin/env bash\n",
+    "publish/codexbar-display-darwin-amd64-v1.2.3": "fixture amd64 companion\n",
+    "publish/codexbar-display-darwin-arm64-v1.2.3": "fixture arm64 companion\n",
+    "publish/firmware.bin": "fixture firmware\n",
+    "publish/firmware-manifest.json": "{\"schemaVersion\":1,\"artifacts\":[{\"asset\":\"firmware.bin\",\"sha256\":\"9a89b6a955f91f18c969fe76bbb8af29312338c1b4351195e590e8544a48d845\",\"firmwareUrl\":\"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.2.3/firmware.bin\"}]}\n",
+    "publish/firmware-manifest-v1.2.3.json": "{\"schemaVersion\":1,\"artifacts\":[{\"asset\":\"firmware.bin\",\"sha256\":\"9a89b6a955f91f18c969fe76bbb8af29312338c1b4351195e590e8544a48d845\",\"firmwareUrl\":\"https://github.com/DreamyTalesPAN/CodexBar-Display/releases/download/v1.2.3/firmware.bin\"}]}\n",
+    "publish/checksums-v1.2.3.txt": "fixture checksums\n",
+    "test/codexbar-display": "fixture test-only universal companion\n",
+    "test/virtual-vibetv": "fixture virtual VibeTV\n",
+    "test/notarization-log.json": "{\"status\":\"Accepted\",\"issues\":[]}\n"
+  },
+  "candidateManifest": {
+    "schemaVersion": 1,
+    "repository": "DreamyTalesPAN/CodexBar-Display",
+    "sourceSha": "0123456789abcdef0123456789abcdef01234567",
+    "version": "1.2.3",
+    "candidateRunId": "12345",
+    "createdAt": "2026-07-28T08:00:00Z",
+    "artifacts": [
+      {
+        "name": "VibeTV-Control-Center.dmg",
+        "path": "publish/VibeTV-Control-Center.dmg",
+        "sha256": "",
+        "role": "signed-dmg",
+        "publish": true
+      },
+      {
+        "name": "appcast.xml",
+        "path": "publish/appcast.xml",
+        "sha256": "",
+        "role": "sparkle-appcast",
+        "publish": true
+      },
+      {
+        "name": "install.sh",
+        "path": "publish/install.sh",
+        "sha256": "",
+        "role": "installer",
+        "publish": true
+      },
+      {
+        "name": "install-control-center-companion.sh",
+        "path": "publish/install-control-center-companion.sh",
+        "sha256": "",
+        "role": "installer",
+        "publish": true
+      },
+      {
+        "name": "codexbar-display-darwin-amd64-v1.2.3",
+        "path": "publish/codexbar-display-darwin-amd64-v1.2.3",
+        "sha256": "",
+        "role": "companion-amd64",
+        "publish": true
+      },
+      {
+        "name": "codexbar-display-darwin-arm64-v1.2.3",
+        "path": "publish/codexbar-display-darwin-arm64-v1.2.3",
+        "sha256": "",
+        "role": "companion-arm64",
+        "publish": true
+      },
+      {
+        "name": "firmware.bin",
+        "path": "publish/firmware.bin",
+        "sha256": "",
+        "role": "firmware",
+        "publish": true
+      },
+      {
+        "name": "firmware-manifest.json",
+        "path": "publish/firmware-manifest.json",
+        "sha256": "",
+        "role": "firmware-manifest",
+        "publish": true
+      },
+      {
+        "name": "firmware-manifest-v1.2.3.json",
+        "path": "publish/firmware-manifest-v1.2.3.json",
+        "sha256": "",
+        "role": "firmware-manifest",
+        "publish": true
+      },
+      {
+        "name": "checksums-v1.2.3.txt",
+        "path": "publish/checksums-v1.2.3.txt",
+        "sha256": "",
+        "role": "checksums",
+        "publish": true
+      },
+      {
+        "name": "codexbar-display",
+        "path": "test/codexbar-display",
+        "sha256": "",
+        "role": "test-companion",
+        "publish": false
+      },
+      {
+        "name": "virtual-vibetv",
+        "path": "test/virtual-vibetv",
+        "sha256": "",
+        "role": "virtual-vibetv",
+        "publish": false
+      },
+      {
+        "name": "notarization-log.json",
+        "path": "test/notarization-log.json",
+        "sha256": "",
+        "role": "notarization-evidence",
+        "publish": false
+      }
+    ],
+    "virtualGate": {
+      "result": "pending",
+      "runId": "12345"
+    }
+  },
+  "candidateResult": {
+    "schemaVersion": 1,
+    "repository": "DreamyTalesPAN/CodexBar-Display",
+    "sourceSha": "0123456789abcdef0123456789abcdef01234567",
+    "version": "1.2.3",
+    "candidateRunId": "12345",
+    "result": "success",
+    "artifactHashes": {}
+  }
+}

@@ -24,6 +24,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/daemon"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
@@ -602,7 +603,7 @@ func TestRunOpenControlCenterFailsWhenLocalControlCenterUnavailable(t *testing.T
 	openControlCenterHTTPClient = server.Client()
 
 	addr := strings.TrimPrefix(server.URL, "http://")
-	err := runOpenControlCenter([]string{"--addr", addr, "--path", "/control-center", "--timeout", "20ms"})
+	err := runOpenControlCenter([]string{"--addr", addr, "--path", "/control-center", "--timeout", "1s"})
 	if err == nil {
 		t.Fatalf("expected unavailable Control Center error")
 	}
@@ -731,6 +732,7 @@ func TestResolveThemeSpecTransportNamePreservesPortOnlyUSBFlow(t *testing.T) {
 }
 
 func TestThemeApplySupportsWiFiTransport(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	specPath := writeTestThemeSpec(t)
 	var gotFrame struct {
 		V         int             `json:"v"`
@@ -774,6 +776,84 @@ func TestThemeApplySupportsWiFiTransport(t *testing.T) {
 	}
 	if !strings.Contains(string(gotFrame.ThemeSpec), `"themeId":"codex-test"`) {
 		t.Fatalf("expected themeSpec payload, got %s", string(gotFrame.ThemeSpec))
+	}
+}
+
+func TestThemeApplyUsesSavedTokenForMatchingWiFiTarget(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	specPath := writeTestThemeSpec(t)
+	const token = "saved-pair-token"
+	var helloAuth string
+	var frameAuth string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			helloAuth = r.Header.Get("X-VibeTV-Token")
+			if helloAuth != token {
+				http.Error(w, "pairing token required", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","deviceId":"device-1","features":["theme","theme-spec-v1"],"maxFrameBytes":1024,"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":900,"maxThemePrimitives":8,"builtinThemes":["mini","classic"]},"transport":{"active":"wifi","supported":["wifi"]}}}`))
+		case "/frame":
+			frameAuth = r.Header.Get("X-VibeTV-Token")
+			if frameAuth != token {
+				http.Error(w, "pairing token required", http.StatusUnauthorized)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	cfg := runtimeconfig.Config{}
+	cfg.SetActiveDevice(runtimeconfig.KnownDevice{
+		DeviceID:    "device-1",
+		Target:      server.URL,
+		DeviceToken: token,
+	})
+	if err := runtimeconfig.Save(home, cfg); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runThemeApply([]string{
+			"--transport", "wifi",
+			"--target", server.URL,
+			"--spec", specPath,
+		})
+	})
+	if err != nil {
+		t.Fatalf("runThemeApply returned error: %v", err)
+	}
+	if helloAuth != token || frameAuth != token {
+		t.Fatalf("saved token was not used for both requests: hello=%q frame=%q", helloAuth, frameAuth)
+	}
+	if strings.Contains(output, token) {
+		t.Fatalf("theme-apply output leaked pairing token: %q", output)
+	}
+	if !strings.Contains(output, "target="+server.URL) {
+		t.Fatalf("theme-apply output did not keep the public target: %q", output)
+	}
+}
+
+func TestResolveThemeSpecWiFiTargetDoesNotSendTokenToDifferentDevice(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		DeviceTarget: "http://192.0.2.10",
+		DeviceToken:  "secret-token",
+	}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+
+	const other = "http://192.0.2.11"
+	if got := resolveThemeSpecWiFiTarget(other, true); got != other {
+		t.Fatalf("token crossed device targets: got %q want %q", got, other)
 	}
 }
 

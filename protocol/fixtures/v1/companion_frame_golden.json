@@ -82,6 +82,101 @@
       }
     },
     {
+      "name": "one-usage-slot",
+      "inputFrame": {
+        "provider": "codex",
+        "label": "Codex",
+        "session": 42,
+        "weekly": 0,
+        "resetSecs": 15480,
+        "usageSlots": [
+          {
+            "id": "secondary",
+            "label": "Weekly",
+            "percent": 42,
+            "resetSecs": 15480
+          }
+        ]
+      },
+      "deviceCaps": {
+        "known": true,
+        "supportsTheme": true,
+        "maxFrameBytes": 512
+      },
+      "expectedFrame": {
+        "v": 1,
+        "provider": "codex",
+        "label": "Codex",
+        "session": 42,
+        "resetSecs": 15480,
+        "usageSlots": [
+          {
+            "id": "secondary",
+            "label": "Weekly",
+            "percent": 42,
+            "resetSecs": 15480
+          }
+        ]
+      }
+    },
+    {
+      "name": "two-usage-slots-bounded",
+      "inputFrame": {
+        "provider": "codex",
+        "label": "Codex",
+        "session": 42,
+        "weekly": 7,
+        "resetSecs": 15480,
+        "usageSlots": [
+          {
+            "id": "secondary",
+            "label": "Weekly",
+            "percent": 42,
+            "resetSecs": 15480
+          },
+          {
+            "id": "codex-spark-weekly",
+            "label": "Codex Spark Weekly",
+            "percent": 7,
+            "resetSecs": 604800
+          },
+          {
+            "id": "overflow",
+            "label": "Overflow",
+            "percent": 9,
+            "resetSecs": 1
+          }
+        ]
+      },
+      "deviceCaps": {
+        "known": true,
+        "supportsTheme": true,
+        "maxFrameBytes": 512
+      },
+      "expectedFrame": {
+        "v": 1,
+        "provider": "codex",
+        "label": "Codex",
+        "session": 42,
+        "weekly": 7,
+        "resetSecs": 15480,
+        "usageSlots": [
+          {
+            "id": "secondary",
+            "label": "Weekly",
+            "percent": 42,
+            "resetSecs": 15480
+          },
+          {
+            "id": "codex-spark-weekly",
+            "label": "Codex Spark Weekly",
+            "percent": 7,
+            "resetSecs": 604800
+          }
+        ]
+      }
+    },
+    {
       "name": "capability-gated-theme",
       "inputFrame": {
         "provider": "codex",

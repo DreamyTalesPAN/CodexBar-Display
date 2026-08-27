@@ -36,10 +36,13 @@ struct State {
   uint8_t networkCount = 0;
   ScanStatus scanStatus = ScanStatus::NotStarted;
   bool scanInProgress = false;
+  bool automaticScanStarted = false;
   ConnectionError connectionError = ConnectionError::None;
 };
 
 bool BeginScan(State& state);
+bool BeginAutomaticScan(State& state);
+void ResetPortalState(State& state);
 bool AddScanResult(State& state, const String& ssid, int32_t rssi, int32_t channel);
 void FinishScan(State& state, int rawNetworkCount);
 const char* SignalLabel(int32_t rssi);

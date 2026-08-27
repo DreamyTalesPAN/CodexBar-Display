@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits.h>
 #include <stdint.h>
 
 namespace codexbar_display {
@@ -27,6 +28,35 @@ class ThemeSpecRuntimePolicy {
   static bool CanAnimate(uint32_t freeHeapBytes, uint32_t maxFreeBlockBytes) {
     return freeHeapBytes >= kMinAnimationFreeHeapBytes &&
            maxFreeBlockBytes >= kMinAnimationMaxFreeBlockBytes;
+  }
+
+  static bool ParseCbaHeader(const char* text, int* values, uint8_t valueCount) {
+    if (text == nullptr || values == nullptr || valueCount == 0) {
+      return false;
+    }
+    const char* cursor = text;
+    for (uint8_t index = 0; index < valueCount; ++index) {
+      while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') {
+        ++cursor;
+      }
+      if (*cursor < '0' || *cursor > '9') {
+        return false;
+      }
+      int value = 0;
+      do {
+        const int digit = *cursor - '0';
+        if (value > (INT_MAX - digit) / 10) {
+          return false;
+        }
+        value = value * 10 + digit;
+        ++cursor;
+      } while (*cursor >= '0' && *cursor <= '9');
+      values[index] = value;
+    }
+    while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') {
+      ++cursor;
+    }
+    return *cursor == '\0';
   }
 
   static bool AnimatedAssetDue(
@@ -101,8 +131,10 @@ class ThemeSpecRuntimePolicy {
            maxFreeBlockBytes >= bufferBytes;
   }
 
-  static bool CanYieldAtDisplayTransactionDepth(uint16_t transactionDepth) {
-    return transactionDepth == 0;
+  static bool CanCooperativelyYield(
+      uint16_t transactionDepth,
+      bool continuationCanSuspend) {
+    return transactionDepth == 0 && continuationCanSuspend;
   }
 
   static int InitialAnimatedIndexedFrameCount(int frameCount) {

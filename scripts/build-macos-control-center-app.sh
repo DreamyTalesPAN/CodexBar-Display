@@ -12,9 +12,9 @@ RUNTIME_AGENT_PLIST_NAME="shop.vibetv.control-center.runtime.plist"
 APP_ICON="${ROOT}/macos/VibeTVControlCenter/${ICON_FILE_NAME}"
 RUNTIME_AGENT_PLIST="${ROOT}/macos/VibeTVControlCenter/${RUNTIME_AGENT_PLIST_NAME}"
 SPARKLE_PUBLIC_KEY_FILE="${ROOT}/macos/VibeTVControlCenter/SparklePublicKey.txt"
-CODEXBAR_MANIFEST="${ROOT}/macos/VibeTVControlCenter/CodexBar-v0.44.0.manifest.json"
+CODEXBAR_MANIFEST="${ROOT}/macos/VibeTVControlCenter/CodexBar-v0.46.0.manifest.json"
 CODEXBAR_LICENSE="${ROOT}/macos/VibeTVControlCenter/CodexBar-LICENSE.txt"
-CODEXBAR_ARCHIVE_NAME="CodexBar-macos-universal-0.44.0.zip"
+CODEXBAR_ARCHIVE_NAME="CodexBar-macos-universal-0.46.0.zip"
 SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/appcast.xml}"
 SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
 SPARKLE_DIST_DIR=""
@@ -306,13 +306,13 @@ copy_codexbar_distribution() {
   mkdir -p "$target_dir"
 
   if [[ "$DRY_RUN" == "1" ]]; then
-    printf 'CodexBar 0.44.0 dry-run archive placeholder\n' \
+    printf 'CodexBar 0.46.0 dry-run archive placeholder\n' \
       > "${target_dir}/${CODEXBAR_ARCHIVE_NAME}"
   else
     archive="$("${ROOT}/scripts/fetch-codexbar.sh")"
     cp "$archive" "${target_dir}/${CODEXBAR_ARCHIVE_NAME}"
   fi
-  cp "$CODEXBAR_MANIFEST" "${target_dir}/CodexBar-v0.44.0.manifest.json"
+  cp "$CODEXBAR_MANIFEST" "${target_dir}/CodexBar-v0.46.0.manifest.json"
   cp "$CODEXBAR_LICENSE" "${target_dir}/CodexBar-LICENSE.txt"
 }
 

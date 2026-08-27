@@ -12,14 +12,15 @@ on the active theme.
 
 | Theme | Preview | Notes |
 | --- | --- | --- |
-| Mini | <img src="assets/vibetv-theme-mini.png" alt="Mini theme" width="140"> | Compact default theme focused on provider, session, weekly, tokens, and reset time. |
+| Mini | <img src="assets/vibetv-theme-mini.png" alt="Mini theme" width="140"> | Compact theme focused on provider, session, weekly, tokens, and reset time. |
 | Claude Creature | <img src="assets/vibetv-theme-claude.png" alt="Claude Creature theme" width="140"> | Character-style usage display for Claude-heavy workflows. |
 | Clippy | <img src="assets/vibetv-theme-clippy.png" alt="Clippy theme" width="140"> | Animated assistant-style theme with live usage bindings. |
 | Synthwave | <img src="assets/vibetv-theme-synthwave.png" alt="Synthwave theme" width="140"> | High-contrast theme with a more visual display style. |
 
 The repository catalog also contains additional theme-pack work such as Cozy
-Meadow. The public Control Center catalog comes from Shopify and maps products
-to VibeTV theme-pack IDs.
+Meadow. The Mac App ships the matching repository catalog and theme packs in
+its local Control Center bundle. Shopify theme products are not part of this
+install path.
 
 ## Customer Flow
 
@@ -32,6 +33,20 @@ to VibeTV theme-pack IDs.
 The Mac App uploads the theme assets to VibeTV over local WiFi and activates the
 stored ThemeSpec. After that, the Mac App keeps sending live usage values to the
 same active theme.
+
+Overview resolves its preview by the exact active ThemeSpec path and the
+firmware-reported ThemeSpec fingerprint. The Mac App bundles render packs for
+known current and frozen legacy revisions. Every theme installed through the
+Companion, including a Custom Theme, is cached per revision with its assets so a
+later edit of the same theme ID cannot replace the preview of the revision still
+running on VibeTV. The Companion keeps the newest 12 revisions per theme, so
+repeated edits cannot grow the preview cache without bound. New Mac Apps also
+fall back to the exact-path metadata exposed by older Companions.
+
+Theme Library is intentionally different from Overview: its thumbnails and
+large preview use short neutral `Session` and `Weekly` example values. The large
+preview labels those values as example data. It does not claim to show the
+connected VibeTV or a particular provider.
 
 Theme install and firmware update are separate actions. Installing a theme
 should not silently run a firmware update.
@@ -50,11 +65,14 @@ Published artifacts live in:
 dist/theme-packs/
 ```
 
-The catalog file is:
+The current app-generation catalog is:
 
 ```text
-dist/theme-packs/vibetv-theme-packs.json
+dist/theme-packs/vibetv-theme-packs-v2.json
 ```
+
+`vibetv-theme-packs.json` and its unversioned ZIPs are the frozen legacy
+generation for already shipped Mac Apps and Companion binaries.
 
 See [theme-packs.md](theme-packs.md) for the pack format and CLI commands.
 
@@ -75,7 +93,7 @@ Theme Studio can:
 
 - edit 240x240 layouts
 - import sprites and GIFs in the local Control Center
-- preview live usage bindings
+- preview usage bindings with neutral example values
 - export theme packs from Control Center without an automatic hardware write
 - install the generated pack through the Mac App only after the customer clicks
   **Send to VibeTV**

@@ -10,7 +10,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 const (
@@ -38,7 +41,7 @@ type EngineReadiness struct {
 type ProviderReadiness struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
-	Enabled     bool   `json:"enabled"`
+	Enabled     *bool  `json:"enabled,omitempty"`
 	Status      string `json:"status"`
 	Source      string `json:"source,omitempty"`
 	CollectedAt string `json:"collectedAt,omitempty"`
@@ -54,11 +57,14 @@ type ProviderSetup struct {
 	ExactUsage *ParsedFrame        `json:"-"`
 }
 
-var openCodexBarCommand = func(ctx context.Context) error {
-	return exec.CommandContext(ctx, "/usr/bin/open", "-b", "com.steipete.codexbar").Run()
-}
-
 var runConfigBootstrapCommandFn = runConfigBootstrapCommand
+var configBootstrapMu sync.Mutex
+var firstRunProviderSetupMu sync.Mutex
+
+const (
+	firstRunProviderSetupPendingState = "pending"
+	firstRunProviderSetupFailedState  = "failed"
+)
 
 // EnsureConfig selects an existing CodexBar config without modifying it. If
 // none exists, CodexBar itself renders and validates its current default config
@@ -81,7 +87,7 @@ func EnsureConfig(home string) (string, error) {
 		filepath.Join(home, ".codexbar", "config.json"),
 	} {
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate, writableConfig(candidate)
+			return ensureConfigFile(candidate)
 		}
 	}
 	return ensureConfigFile(filepath.Join(home, ".codexbar", "config.json"))
@@ -99,12 +105,21 @@ func ensureConfigFile(path string) (string, error) {
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return path, fmt.Errorf("protect CodexBar config directory: %w", err)
 	}
+	// The UI readiness probe and the collector start together. Serialize the
+	// first config publication so concurrent callers share one private config.
+	configBootstrapMu.Lock()
+	defer configBootstrapMu.Unlock()
+	bootstrapLock, err := writerlock.AcquireAtWait(path + ".vibetv-bootstrap.lock")
+	if err != nil {
+		return path, fmt.Errorf("lock CodexBar config initialization: %w", err)
+	}
+	defer bootstrapLock.Release()
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		bin, findErr := FindBinary()
 		if findErr != nil {
 			return path, fmt.Errorf("find CodexBar for config initialization: %w", findErr)
 		}
-		if initErr := initializeConfigFile(path, bin); initErr != nil {
+		if _, initErr := initializeConfigFile(path, bin); initErr != nil {
 			return path, initErr
 		}
 	} else if err != nil {
@@ -116,19 +131,19 @@ func ensureConfigFile(path string) (string, error) {
 	return path, writableConfig(path)
 }
 
-func initializeConfigFile(path, bin string) error {
+func initializeConfigFile(path, bin string) (bool, error) {
 	dir := filepath.Dir(path)
 	staged, err := os.CreateTemp(dir, ".vibetv-codexbar-default-*")
 	if err != nil {
-		return fmt.Errorf("stage CodexBar config: %w", err)
+		return false, fmt.Errorf("stage CodexBar config: %w", err)
 	}
 	stagedPath := staged.Name()
 	if closeErr := staged.Close(); closeErr != nil {
 		_ = os.Remove(stagedPath)
-		return fmt.Errorf("close staged CodexBar config: %w", closeErr)
+		return false, fmt.Errorf("close staged CodexBar config: %w", closeErr)
 	}
 	if err := os.Remove(stagedPath); err != nil {
-		return fmt.Errorf("prepare CodexBar config staging path: %w", err)
+		return false, fmt.Errorf("prepare CodexBar config staging path: %w", err)
 	}
 	defer os.Remove(stagedPath)
 
@@ -144,13 +159,13 @@ func initializeConfigFile(path, bin string) error {
 		"json",
 	)
 	if err != nil {
-		return fmt.Errorf("render CodexBar default config: %w", err)
+		return false, fmt.Errorf("render CodexBar default config: %w", err)
 	}
 	if !json.Valid(raw) {
-		return errors.New("CodexBar default config is not valid JSON")
+		return false, errors.New("CodexBar default config is not valid JSON")
 	}
 	if err := os.WriteFile(stagedPath, raw, 0o600); err != nil {
-		return fmt.Errorf("write staged CodexBar config: %w", err)
+		return false, fmt.Errorf("write staged CodexBar config: %w", err)
 	}
 	if _, err := runConfigBootstrapCommandFn(
 		ctx,
@@ -161,17 +176,60 @@ func initializeConfigFile(path, bin string) error {
 		"--format",
 		"json",
 	); err != nil {
-		return fmt.Errorf("validate CodexBar default config: %w", err)
+		return false, fmt.Errorf("validate CodexBar default config: %w", err)
+	}
+	// Publish the pending marker first. The collector consumes it only after its
+	// own authoritative usage request has applied every detected switch.
+	if err := writeFirstRunProviderSetupState(path, firstRunProviderSetupPendingState); err != nil {
+		return false, fmt.Errorf("mark first-run CodexBar provider setup: %w", err)
 	}
 	// A hard link publishes without replacing a config another process may
 	// have created while CodexBar was rendering its defaults.
 	if err := os.Link(stagedPath, path); err != nil {
 		if _, statErr := os.Stat(path); statErr == nil {
-			return nil
+			if removeErr := os.Remove(firstRunMarkerPath(path)); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				return false, fmt.Errorf("discard first-run CodexBar provider setup marker: %w", removeErr)
+			}
+			return false, nil
 		}
-		return fmt.Errorf("publish CodexBar default config: %w", err)
+		return false, fmt.Errorf("publish CodexBar default config: %w", err)
 	}
-	return nil
+	return true, nil
+}
+
+func firstRunMarkerPath(configPath string) string {
+	return configPath + ".vibetv-first-run"
+}
+
+func firstRunProviderSetupPending(configPath string) bool {
+	_, err := os.Stat(firstRunMarkerPath(configPath))
+	return err == nil
+}
+
+func firstRunProviderSetupState(configPath string) string {
+	raw, err := os.ReadFile(firstRunMarkerPath(configPath))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+// FirstRunProviderSetupInProgress reports whether the initial complete
+// provider inventory is still running for this config.
+func FirstRunProviderSetupInProgress(configPath string) bool {
+	return firstRunProviderSetupState(configPath) == firstRunProviderSetupPendingState
+}
+
+func writeFirstRunProviderSetupState(configPath, state string) error {
+	return os.WriteFile(firstRunMarkerPath(configPath), []byte(strings.TrimSpace(state)+"\n"), 0o600)
+}
+
+// FirstRunProviderSetupPending tells the collector to use CodexBar's complete
+// inventory for its first authoritative usage request instead of the dashboard
+// snapshot, which still reflects the untouched default switches.
+func FirstRunProviderSetupPending() bool {
+	path, err := EnsureConfig("")
+	return err != nil || firstRunProviderSetupPending(path)
 }
 
 func runConfigBootstrapCommand(
@@ -296,6 +354,16 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 		return result
 	}
 	result.Engine.Status = ProviderReady
+	if exactProvider == "" {
+		switch firstRunProviderSetupState(configPath) {
+		case firstRunProviderSetupPendingState:
+			result.Status = "checking"
+			return result
+		case firstRunProviderSetupFailedState:
+			result.Providers = []ProviderReadiness{providerResult("codexbar", ProviderEngineError)}
+			return result
+		}
+	}
 
 	probeCtx, cancel := context.WithTimeout(configuredCtx, 20*time.Second)
 	defer cancel()
@@ -332,10 +400,11 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 	out, commandErr := runUsageCommandFn(probeCtx, 18*time.Second, bin, args...)
 	if exactProvider == "" {
 		result.Providers = providerReadinessFromOutput(out, commandErr, probeCtx.Err())
+		result.Providers = providersWithSwitchState(probeCtx, bin, result.Providers)
 	} else {
 		provider := exactProviderReadinessFromOutput(exactProvider, out, commandErr, probeCtx.Err())
 		provider.Label = exactSetting.Label
-		provider.Enabled = exactSetting.Enabled
+		provider.Enabled = &exactSetting.Enabled
 		result.Providers = []ProviderReadiness{provider}
 		if provider.Status == ProviderReady {
 			collectedAt, collectedErr := time.Parse(time.RFC3339, provider.CollectedAt)
@@ -373,6 +442,68 @@ func exactProviderReadinessFromOutput(providerID string, raw []byte, commandErr,
 	return providerResult(providerID, ProviderNoUsageAvailable)
 }
 
+// `usage --json` lists only the providers that are switched on and carries no
+// enablement field at all, so a customer whose tools are merely switched off is
+// invisible in the usage answer alone -- a Mac full of AI tools then reads as
+// "no AI provider". Whenever no provider is ready, CodexBar's own inventory,
+// the authority on the switches, completes the answer: reported providers carry
+// their real switch state, and every switched-off provider appears as its own
+// row. An engine-level failure (timeout, config error, engine error) keeps the
+// bare stand-in -- an inventory read is no more trustworthy than the usage call
+// that just failed. A ready provider skips the extra call entirely.
+func providersWithSwitchState(ctx context.Context, bin string, providers []ProviderReadiness) []ProviderReadiness {
+	standIn := len(providers) == 1 && providers[0].ID == "codexbar"
+	if standIn && providers[0].Status != ProviderNotConfigured {
+		return providers
+	}
+	for _, provider := range providers {
+		if provider.Status == ProviderReady {
+			return providers
+		}
+	}
+	raw, runErr := runUsageCommandFn(ctx, 5*time.Second, bin, "config", "providers", "--json")
+	inventory, parseErr := parseProviderSettings(raw)
+	if runErr != nil || parseErr != nil || len(inventory) == 0 {
+		return providers
+	}
+	settingByID := make(map[string]*ProviderSetting, len(inventory))
+	anyEnabled := false
+	for i := range inventory {
+		settingByID[inventory[i].ID] = &inventory[i]
+		anyEnabled = anyEnabled || inventory[i].Enabled
+	}
+	reported := make(map[string]struct{}, len(providers))
+	merged := make([]ProviderReadiness, 0, len(providers)+len(inventory))
+	for _, provider := range providers {
+		if provider.ID == "codexbar" {
+			// The stand-in means "switched-on providers answered nothing". With
+			// every switch off there is nothing left for it to say; with a
+			// switch still on it stays as that unanswered state.
+			if !anyEnabled {
+				continue
+			}
+		} else if setting := settingByID[provider.ID]; setting != nil {
+			provider.Label = setting.Label
+			provider.Enabled = &setting.Enabled
+		}
+		reported[provider.ID] = struct{}{}
+		merged = append(merged, provider)
+	}
+	for i := range inventory {
+		if inventory[i].Enabled {
+			continue
+		}
+		if _, seen := reported[inventory[i].ID]; seen {
+			continue
+		}
+		provider := providerResult(inventory[i].ID, ProviderNotConfigured)
+		provider.Label = inventory[i].Label
+		provider.Enabled = &inventory[i].Enabled
+		merged = append(merged, provider)
+	}
+	return merged
+}
+
 func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []ProviderReadiness {
 	if errors.Is(contextErr, context.DeadlineExceeded) || errors.Is(commandErr, context.DeadlineExceeded) {
 		return []ProviderReadiness{providerResult("codexbar", ProviderTimeout)}
@@ -402,7 +533,6 @@ func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []Pro
 			status = ProviderNoUsageAvailable
 		}
 		provider := providerResult(id, status)
-		provider.Enabled = true
 		provider.Source = safeProviderSource(firstString(payload, "source"))
 		if collectedAt := firstRFC3339AtPaths(payload, "usage.updatedAt", "updatedAt"); !collectedAt.IsZero() {
 			provider.CollectedAt = collectedAt.Format(time.RFC3339)
@@ -535,10 +665,4 @@ func BinarySource(bin string) string {
 		return "bundled"
 	}
 	return "system"
-}
-
-func OpenApp(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	return openCodexBarCommand(ctx)
 }

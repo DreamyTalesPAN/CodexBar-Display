@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
@@ -89,6 +91,9 @@ func TestEnsureConfigUsesCodexBarOwnedDefaultConfig(t *testing.T) {
 	if mode := fileMode(t, path); mode.Perm() != 0o600 {
 		t.Fatalf("expected config file 0600, got %o", mode.Perm())
 	}
+	if !firstRunProviderSetupPending(path) {
+		t.Fatal("new config must remain pending until the collector's first usage answer")
+	}
 }
 
 func TestEnsureConfigRejectsInvalidCodexBarDefaultWithoutPublishing(t *testing.T) {
@@ -116,6 +121,9 @@ func TestEnsureConfigRejectsInvalidCodexBarDefaultWithoutPublishing(t *testing.T
 	}
 	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("invalid config was published: %v", statErr)
+	}
+	if _, statErr := os.Stat(firstRunMarkerPath(path)); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("invalid config marker was published: %v", statErr)
 	}
 }
 
@@ -153,6 +161,104 @@ func TestEnsureConfigPreservesExistingStandardConfig(t *testing.T) {
 	}
 }
 
+func TestEnsureConfigDiscardsFirstRunMarkerWhenAnotherConfigWins(t *testing.T) {
+	t.Setenv("CODEXBAR_CONFIG", "")
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	originalBootstrap := runConfigBootstrapCommandFn
+	defer func() { runConfigBootstrapCommandFn = originalBootstrap }()
+
+	home := t.TempDir()
+	path := filepath.Join(home, ".codexbar", "config.json")
+	runConfigBootstrapCommandFn = func(
+		_ context.Context,
+		_ string,
+		_ string,
+		args ...string,
+	) ([]byte, error) {
+		if reflect.DeepEqual(args, []string{"config", "dump", "--format", "json"}) {
+			return []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`), nil
+		}
+		if reflect.DeepEqual(args, []string{"config", "validate", "--format", "json"}) {
+			if err := os.WriteFile(path, []byte(`{"existing":true}`), 0o600); err != nil {
+				t.Fatalf("publish competing config: %v", err)
+			}
+			return []byte(`{}`), nil
+		}
+		t.Fatalf("unexpected bootstrap command: %v", args)
+		return nil, nil
+	}
+
+	gotPath, err := EnsureConfig(home)
+	if err != nil {
+		t.Fatalf("EnsureConfig: %v", err)
+	}
+	if gotPath != path {
+		t.Fatalf("expected competing config path %q, got %q", path, gotPath)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != `{"existing":true}` {
+		t.Fatalf("competing config changed: data=%q err=%v", data, err)
+	}
+	if firstRunProviderSetupPending(path) {
+		t.Fatal("losing config publication retained the first-run marker")
+	}
+}
+
+func TestEnsureConfigPreservesFirstRunMarkerWhenParallelBootstrapWins(t *testing.T) {
+	t.Setenv("CODEXBAR_CONFIG", "")
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	originalBootstrap := runConfigBootstrapCommandFn
+	defer func() { runConfigBootstrapCommandFn = originalBootstrap }()
+	runConfigBootstrapCommandFn = func(context.Context, string, string, ...string) ([]byte, error) {
+		return nil, errors.New("parallel bootstrap loser must reuse the winning config")
+	}
+
+	home := t.TempDir()
+	path := filepath.Join(home, ".codexbar", "config.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	winnerLock, err := writerlock.AcquireAt(path + ".vibetv-bootstrap.lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer winnerLock.Release()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := EnsureConfig(home)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("parallel bootstrap loser did not wait for the winner: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	if err := os.WriteFile(path, []byte(`{"version":1,"providers":[{"id":"codex","enabled":true}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(firstRunMarkerPath(path), []byte("pending\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	winnerLock.Release()
+
+	if err := <-done; err != nil {
+		t.Fatalf("EnsureConfig: %v", err)
+	}
+	if !firstRunProviderSetupPending(path) {
+		t.Fatal("losing parallel bootstrap consumed the winner's first-run marker")
+	}
+}
+
 func TestRunUsageCommandInjectsResolvedConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -184,6 +290,7 @@ func TestFindBinaryPrefersBundledCLI(t *testing.T) {
 	originalExecutable := executablePathFn
 	defer func() { executablePathFn = originalExecutable }()
 	t.Setenv("CODEXBAR_BIN", "")
+	t.Setenv(appManagedCodexBarVersionEnvVar, "")
 	dir := t.TempDir()
 	executablePathFn = func() (string, error) { return filepath.Join(dir, "codexbar-display"), nil }
 	bundled := filepath.Join(dir, "CodexBarCLI")
@@ -206,6 +313,7 @@ func TestFindBinaryPrefersUserApplicationsAppOverPATH(t *testing.T) {
 	systemAppBinaryPaths = nil
 	executablePathFn = func() (string, error) { return filepath.Join(t.TempDir(), "codexbar-display"), nil }
 	t.Setenv("CODEXBAR_BIN", "")
+	t.Setenv(appManagedCodexBarVersionEnvVar, "")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	pathDir := t.TempDir()
@@ -223,6 +331,124 @@ func TestFindBinaryPrefersUserApplicationsAppOverPATH(t *testing.T) {
 	got, err := FindBinary()
 	if err != nil || got != appCLI {
 		t.Fatalf("expected installed app CLI %q before PATH %q, got %q err=%v", appCLI, pathCLI, got, err)
+	}
+}
+
+func TestFindBinaryUsesOnlyAppManagedPinnedPayload(t *testing.T) {
+	originalExecutable := executablePathFn
+	originalSystemApps := systemAppBinaryPaths
+	defer func() {
+		executablePathFn = originalExecutable
+		systemAppBinaryPaths = originalSystemApps
+	}()
+	executablePathFn = func() (string, error) { return filepath.Join(t.TempDir(), "codexbar-display"), nil }
+	t.Setenv(appManagedCodexBarVersionEnvVar, "0.46.0")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	privateCLI := filepath.Join(home, "Library", "Application Support", "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
+	foreignCLI := filepath.Join(t.TempDir(), "false-codexbar")
+	systemCLI := filepath.Join(t.TempDir(), "CodexBar.app", "Contents", "Helpers", "CodexBarCLI")
+	pathDir := t.TempDir()
+	pathCLI := filepath.Join(pathDir, "codexbar")
+	systemAppBinaryPaths = []string{systemCLI}
+	t.Setenv("PATH", pathDir)
+	t.Setenv("CODEXBAR_BIN", foreignCLI)
+	for _, path := range []string{privateCLI, foreignCLI, systemCLI, pathCLI} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := FindBinary()
+	if err != nil || got != privateCLI {
+		t.Fatalf("expected app-managed CLI %q, got %q err=%v", privateCLI, got, err)
+	}
+
+	if err := os.Remove(privateCLI); err != nil {
+		t.Fatal(err)
+	}
+	got, err = FindBinary()
+	if err == nil || got != "" {
+		t.Fatalf("expected app-managed mode to fail closed, got %q err=%v", got, err)
+	}
+}
+
+func TestFindBinaryRejectsSymlinkedAppManagedPinnedPayload(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, home string)
+	}{
+		{
+			name: "target app",
+			setup: func(t *testing.T, home string) {
+				targetApp := filepath.Join(home, "Library", "Application Support", "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app")
+				realApp := filepath.Join(t.TempDir(), "CodexBar.app")
+				writeExecutable(t, filepath.Join(realApp, "Contents", "Helpers", "CodexBarCLI"))
+				if err := os.MkdirAll(filepath.Dir(targetApp), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(realApp, targetApp); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "parent segment",
+			setup: func(t *testing.T, home string) {
+				targetParent := filepath.Join(home, "Library", "Application Support", "codexbar-display", "CodexBar")
+				realParent := filepath.Join(t.TempDir(), "CodexBar")
+				writeExecutable(t, filepath.Join(realParent, "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
+				if err := os.MkdirAll(filepath.Dir(targetParent), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(realParent, targetParent); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "ancestor segment",
+			setup: func(t *testing.T, home string) {
+				realLibrary := filepath.Join(t.TempDir(), "Library")
+				writeExecutable(t, filepath.Join(realLibrary, "Application Support", "codexbar-display", "CodexBar", "0.46.0", "CodexBar.app", "Contents", "Helpers", "CodexBarCLI"))
+				if err := os.MkdirAll(home, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(realLibrary, filepath.Join(home, "Library")); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			originalExecutable := executablePathFn
+			originalSystemApps := systemAppBinaryPaths
+			defer func() {
+				executablePathFn = originalExecutable
+				systemAppBinaryPaths = originalSystemApps
+			}()
+			executablePathFn = func() (string, error) { return filepath.Join(t.TempDir(), "codexbar-display"), nil }
+			systemAppBinaryPaths = nil
+			t.Setenv(appManagedCodexBarVersionEnvVar, "0.46.0")
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			foreignCLI := filepath.Join(t.TempDir(), "false-codexbar")
+			writeExecutable(t, foreignCLI)
+			t.Setenv("CODEXBAR_BIN", foreignCLI)
+			tc.setup(t, home)
+
+			got, err := FindBinary()
+			if err == nil || got != "" {
+				t.Fatalf("expected symlinked app-managed path to fail closed, got %q err=%v", got, err)
+			}
+			if !strings.Contains(err.Error(), "symlink") {
+				t.Fatalf("expected symlink error, got %v", err)
+			}
+		})
 	}
 }
 
@@ -293,17 +519,64 @@ func TestProbeProviderSetupReportsReadyProvider(t *testing.T) {
 	t.Setenv("CODEXBAR_BIN", bin)
 	setExistingConfig(t)
 	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
-		return []byte("CodexBar 0.44.0"), nil
+		return []byte("CodexBar 0.46.0"), nil
 	}
 	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
 		return []byte(`[{"provider":"codex","usage":{"primary":{"usedPercent":0}}}]`), nil
 	}
 	got := ProbeProviderSetup(context.Background(), t.TempDir())
-	if got.Status != ProviderReady || got.Engine.Status != ProviderReady || got.Engine.Version != "0.44" {
+	if got.Status != ProviderReady || got.Engine.Status != ProviderReady || got.Engine.Version != "0.46" {
 		t.Fatalf("unexpected ready probe: %+v", got)
 	}
-	if len(got.Providers) != 1 || !got.Providers[0].Enabled || got.Providers[0].Status != ProviderReady {
+	if len(got.Providers) != 1 || got.Providers[0].Status != ProviderReady {
 		t.Fatalf("unexpected ready providers: %+v", got.Providers)
+	}
+	// `usage --json` carries no enablement field, so the aggregate path must not
+	// answer that question. Only CodexBar's own inventory can.
+	if got.Providers[0].Enabled != nil {
+		t.Fatalf("aggregate usage must leave enablement unknown: %+v", got.Providers[0])
+	}
+}
+
+func TestProbeProviderSetupWaitsForFirstRunInventory(t *testing.T) {
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	defer func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	}()
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"version":1,"providers":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(firstRunMarkerPath(configPath), []byte("pending\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_CONFIG", configPath)
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.46.0"), nil
+	}
+	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		t.Fatal("the normal readiness probe must not overtake first-run inventory")
+		return nil, nil
+	}
+
+	got := ProbeProviderSetup(context.Background(), t.TempDir())
+	if got.Status != "checking" || got.Engine.Status != ProviderReady {
+		t.Fatalf("first-run inventory must remain the visible checking state: %+v", got)
+	}
+
+	if err := writeFirstRunProviderSetupState(configPath, firstRunProviderSetupFailedState); err != nil {
+		t.Fatal(err)
+	}
+	got = ProbeProviderSetup(context.Background(), t.TempDir())
+	if got.Status != "setup_required" || len(got.Providers) != 1 || got.Providers[0].Status != ProviderEngineError {
+		t.Fatalf("a failed first-run inventory must enter recovery: %+v", got)
 	}
 }
 
@@ -353,6 +626,16 @@ func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 	want := []string{"usage", "--json", "--provider", "antigravity", "--source", "auto", "--web-timeout", "8"}
 	if !reflect.DeepEqual(usageArgs, want) {
 		t.Fatalf("unexpected exact usage args: got %v want %v", usageArgs, want)
+	}
+}
+
+func writeExecutable(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -448,4 +731,179 @@ func fileMode(t *testing.T, path string) os.FileMode {
 		t.Fatalf("stat %s: %v", path, err)
 	}
 	return info.Mode()
+}
+
+// Verified against bundled CodexBar 0.46.0: `usage --json` lists only the
+// providers that are switched on and carries no enabled field, so switching
+// every provider off yields an empty list. That used to become the
+// not-configured stand-in, and the customer was told to download the CodexBar
+// they already have. CodexBar's own inventory is the authority on the switches.
+func TestProbeProviderSetupReportsEveryProviderSwitchedOff(t *testing.T) {
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	defer func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	}()
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	setExistingConfig(t)
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.46.0"), nil
+	}
+	inventoryCalls := 0
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[0] == "config" && args[1] == "providers" {
+			inventoryCalls++
+			return []byte(`[{"provider":"codex","displayName":"Codex","enabled":false},
+				{"provider":"claude","displayName":"Claude","enabled":false}]`), nil
+		}
+		return []byte(`[]`), nil
+	}
+
+	got := ProbeProviderSetup(context.Background(), t.TempDir())
+	if inventoryCalls != 1 {
+		t.Fatalf("the inventory must be asked exactly once, got %d", inventoryCalls)
+	}
+	if len(got.Providers) != 2 {
+		t.Fatalf("every switched-off provider must be reported: %+v", got.Providers)
+	}
+	for _, provider := range got.Providers {
+		if provider.ID == "codexbar" {
+			t.Fatalf("the stand-in must be replaced by the real inventory: %+v", got.Providers)
+		}
+		if provider.Enabled == nil || *provider.Enabled {
+			t.Fatalf("a switched-off provider must say so: %+v", provider)
+		}
+	}
+}
+
+// One provider switched on but silent is a reporting failure, not a switch that
+// is off: the stand-in stays as that unanswered state. The switched-off
+// provider next to it must still be disclosed -- one silent switch must not
+// hide every switched-off tool (issue #405).
+func TestProbeProviderSetupDisclosesSwitchedOffBesideSilentEnabledProvider(t *testing.T) {
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	defer func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	}()
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	setExistingConfig(t)
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.46.0"), nil
+	}
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[0] == "config" && args[1] == "providers" {
+			return []byte(`[{"provider":"codex","displayName":"Codex","enabled":true},
+				{"provider":"claude","displayName":"Claude","enabled":false}]`), nil
+		}
+		return []byte(`[]`), nil
+	}
+
+	got := ProbeProviderSetup(context.Background(), t.TempDir())
+	if len(got.Providers) != 2 {
+		t.Fatalf("stand-in plus the switched-off provider expected: %+v", got.Providers)
+	}
+	if got.Providers[0].ID != "codexbar" {
+		t.Fatalf("a switched-on provider must keep the stand-in first: %+v", got.Providers)
+	}
+	claude := got.Providers[1]
+	if claude.ID != "claude" || claude.Enabled == nil || *claude.Enabled {
+		t.Fatalf("the switched-off provider must be disclosed with its switch state: %+v", claude)
+	}
+}
+
+// A failing enabled provider must not hide the switched-off tools beside it:
+// the customer whose Claude is merely off must see exactly that, not the
+// generic connect message (issue #405). The reported provider keeps its own
+// status and gains its real switch state from the inventory.
+func TestProbeProviderSetupDisclosesSwitchedOffBesideFailingProvider(t *testing.T) {
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	defer func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	}()
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	setExistingConfig(t)
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.46.0"), nil
+	}
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[0] == "config" && args[1] == "providers" {
+			return []byte(`[{"provider":"codex","displayName":"Codex","enabled":true},
+				{"provider":"claude","displayName":"Claude","enabled":false},
+				{"provider":"gemini","displayName":"Gemini","enabled":false}]`), nil
+		}
+		return []byte(`[{"provider":"codex","error":"Not logged in. Sign in to Codex."}]`), nil
+	}
+
+	got := ProbeProviderSetup(context.Background(), t.TempDir())
+	if len(got.Providers) != 3 {
+		t.Fatalf("failing provider plus both switched-off providers expected: %+v", got.Providers)
+	}
+	codex := got.Providers[0]
+	if codex.ID != "codex" || codex.Status != ProviderAuthRequired {
+		t.Fatalf("the reported provider keeps its own status first: %+v", codex)
+	}
+	if codex.Enabled == nil || !*codex.Enabled {
+		t.Fatalf("the reported provider carries its real switch state: %+v", codex)
+	}
+	for _, provider := range got.Providers[1:] {
+		if provider.Enabled == nil || *provider.Enabled {
+			t.Fatalf("switched-off providers must say so: %+v", provider)
+		}
+		if provider.Status != ProviderNotConfigured {
+			t.Fatalf("switched-off providers report not_configured: %+v", provider)
+		}
+	}
+}
+
+// A ready provider means there is nothing to disclose and no inventory call to
+// pay for.
+func TestProbeProviderSetupSkipsInventoryWhenAProviderIsReady(t *testing.T) {
+	originalUsage := runUsageCommandFn
+	originalVersion := runVersionCommandFn
+	defer func() {
+		runUsageCommandFn = originalUsage
+		runVersionCommandFn = originalVersion
+	}()
+	bin := filepath.Join(t.TempDir(), "CodexBarCLI")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_BIN", bin)
+	setExistingConfig(t)
+	runVersionCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte("CodexBar 0.46.0"), nil
+	}
+	inventoryCalls := 0
+	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[0] == "config" && args[1] == "providers" {
+			inventoryCalls++
+			return []byte(`[]`), nil
+		}
+		return []byte(`[{"provider":"codex","usage":{"primary":{"usedPercent":12}}}]`), nil
+	}
+
+	got := ProbeProviderSetup(context.Background(), t.TempDir())
+	if got.Status != ProviderReady {
+		t.Fatalf("a delivering provider must make setup ready: %+v", got)
+	}
+	if inventoryCalls != 0 {
+		t.Fatalf("a ready answer must not pay for an inventory call, got %d", inventoryCalls)
+	}
 }

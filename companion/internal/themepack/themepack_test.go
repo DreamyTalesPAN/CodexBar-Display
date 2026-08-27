@@ -189,6 +189,40 @@ func TestLoadCatalogResolvesRelativeDownloadAsset(t *testing.T) {
 	}
 }
 
+func TestValidateCatalogUsage(t *testing.T) {
+	tests := []struct {
+		name    string
+		usage   string
+		wantErr bool
+	}{
+		{name: "missing field", usage: ""},
+		{name: "live", usage: `"usage":"live",`},
+		{name: "screensaver", usage: `"usage":"screensaver",`},
+		{name: "both", usage: `"usage":"both",`, wantErr: true},
+		{name: "unknown", usage: `"usage":"wallpaper",`, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			raw := `{"schemaVersion":1,"themes":[{"id":"cozy-meadow","title":"Cozy Meadow",` + test.usage +
+				`"downloadAsset":"vibetv-theme-cozy-meadow.zip","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes":905}]}`
+			var catalog Catalog
+			if err := json.Unmarshal([]byte(raw), &catalog); err != nil {
+				t.Fatalf("parse catalog: %v", err)
+			}
+			err := validateCatalog(catalog)
+			if test.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "unsupported") {
+					t.Fatalf("expected unsupported usage error, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("validate catalog: %v", err)
+			}
+		})
+	}
+}
+
 func TestLoadRejectsMissingReferencedAsset(t *testing.T) {
 	dir := writeThemePack(t, `"assets":[]`)
 
@@ -339,13 +373,142 @@ func TestLoadRejectsLongDevicePath(t *testing.T) {
 	}
 }
 
+func TestLoadPackUsage(t *testing.T) {
+	tests := []struct {
+		name     string
+		override string
+		prefix   string
+		want     string
+	}{
+		{name: "missing field defaults to live", override: "", prefix: LivePathPrefix, want: UsageLive},
+		{name: "live", override: `"usage":"live"`, prefix: LivePathPrefix, want: UsageLive},
+		{name: "screensaver", override: `"usage":"screensaver"`, prefix: ScreensaverPathPrefix, want: UsageScreensaver},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pack, err := Load(writeThemePackWithPrefix(t, test.override, test.prefix))
+			if err != nil {
+				t.Fatalf("Load returned error: %v", err)
+			}
+			if got := pack.Manifest.PackUsage(); got != test.want {
+				t.Fatalf("PackUsage()=%q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsUsageOutsideItsSlotDirectory(t *testing.T) {
+	tests := []struct {
+		name    string
+		usage   string
+		prefix  string
+		wantErr string
+	}{
+		{
+			name:    "screensaver pack outside the screensaver directory",
+			usage:   `"usage":"screensaver"`,
+			prefix:  LivePathPrefix,
+			wantErr: "device path /themes/u/cm.json must start with /themes/s/ in a screensaver pack",
+		},
+		{
+			name:    "live pack inside the screensaver directory",
+			usage:   `"usage":"live"`,
+			prefix:  ScreensaverPathPrefix,
+			wantErr: "device path /themes/s/cm.json is reserved for screensaver packs",
+		},
+		{
+			name:    "pack without a usage field inside the screensaver directory",
+			usage:   "",
+			prefix:  ScreensaverPathPrefix,
+			wantErr: "device path /themes/s/cm.json is reserved for screensaver packs",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Load(writeThemePackWithPrefix(t, test.usage, test.prefix))
+			if err == nil || err.Error() != test.wantErr {
+				t.Fatalf("Load error=%v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestSlotPathPrefix(t *testing.T) {
+	if got := SlotPathPrefix(UsageScreensaver); got != ScreensaverPathPrefix {
+		t.Fatalf("SlotPathPrefix(screensaver)=%q, want %q", got, ScreensaverPathPrefix)
+	}
+	if got := SlotPathPrefix(UsageLive); got != LivePathPrefix {
+		t.Fatalf("SlotPathPrefix(live)=%q, want %q", got, LivePathPrefix)
+	}
+}
+
+func TestLoadRejectsUnknownUsage(t *testing.T) {
+	_, err := Load(writeThemePack(t, `"usage":"wallpaper"`))
+	if err == nil || !strings.Contains(err.Error(), `usage "wallpaper" unsupported`) {
+		t.Fatalf("expected unsupported usage error, got %v", err)
+	}
+}
+
+func TestCheckSlot(t *testing.T) {
+	tests := []struct {
+		name    string
+		usage   string
+		slot    string
+		wantErr string
+	}{
+		{name: "missing field into live", usage: "", slot: UsageLive},
+		{name: "live into live", usage: UsageLive, slot: UsageLive},
+		{name: "screensaver into screensaver", usage: UsageScreensaver, slot: UsageScreensaver},
+		{
+			name:    "screensaver into live",
+			usage:   UsageScreensaver,
+			slot:    UsageLive,
+			wantErr: `theme pack "cozy-meadow" is a screensaver pack and cannot be installed into the live slot`,
+		},
+		{
+			name:    "missing field into screensaver",
+			usage:   "",
+			slot:    UsageScreensaver,
+			wantErr: `theme pack "cozy-meadow" is a live pack and cannot be installed into the screensaver slot`,
+		},
+		{
+			name:    "live into screensaver",
+			usage:   UsageLive,
+			slot:    UsageScreensaver,
+			wantErr: `theme pack "cozy-meadow" is a live pack and cannot be installed into the screensaver slot`,
+		},
+		{name: "unknown slot", usage: UsageLive, slot: "wall", wantErr: `unknown install slot "wall"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := Manifest{ID: "cozy-meadow", Usage: test.usage}.CheckSlot(test.slot)
+			if test.wantErr == "" {
+				if err != nil {
+					t.Fatalf("CheckSlot returned error: %v", err)
+				}
+				return
+			}
+			if err == nil || err.Error() != test.wantErr {
+				t.Fatalf("CheckSlot error=%v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func writeThemePack(t *testing.T, override string) string {
+	t.Helper()
+	return writeThemePackWithPrefix(t, override, "/themes/u/")
+}
+
+// writeThemePackWithPrefix builds a pack whose device paths live below prefix,
+// so that the screensaver directory rule can be exercised in both directions.
+func writeThemePackWithPrefix(t *testing.T, override, prefix string) string {
 	t.Helper()
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "assets"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	spec := `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":24,"h":24,"a":"/themes/u/cm.cbi"}]}`
+	spec := `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":24,"h":24,"a":"` + prefix + `cm.cbi"}]}`
 	asset := "CBI1\n1 1\n1\n#FFFFFF\na\n"
 	if err := os.WriteFile(filepath.Join(dir, "theme.json"), []byte(spec), 0o644); err != nil {
 		t.Fatal(err)
@@ -354,16 +517,20 @@ func writeThemePack(t *testing.T, override string) string {
 		t.Fatal(err)
 	}
 
-	themeSpec := `"themeSpec":{"path":"/themes/u/cm.json","file":"theme.json"}`
-	assets := `"assets":[{"path":"/themes/u/cm.cbi","file":"assets/cm.cbi"}]`
+	themeSpec := `"themeSpec":{"path":"` + prefix + `cm.json","file":"theme.json"}`
+	assets := `"assets":[{"path":"` + prefix + `cm.cbi","file":"assets/cm.cbi"}]`
+	extra := ""
 	if override != "" {
-		if strings.HasPrefix(override, `"themeSpec"`) {
+		switch {
+		case strings.HasPrefix(override, `"themeSpec"`):
 			themeSpec = override
-		} else {
+		case strings.HasPrefix(override, `"usage"`):
+			extra = override + ","
+		default:
 			assets = override
 		}
 	}
-	manifest := `{"kind":"vibetv-theme-pack","schemaVersion":1,"id":"cozy-meadow","name":"Cozy Meadow",` + themeSpec + `,` + assets + `}`
+	manifest := `{"kind":"vibetv-theme-pack","schemaVersion":1,"id":"cozy-meadow","name":"Cozy Meadow",` + extra + themeSpec + `,` + assets + `}`
 	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}

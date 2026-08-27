@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { openCodexBarApp } from "./control-center-runtime";
 import type {
   ApiError,
   PreferenceDescriptor,
@@ -463,6 +464,11 @@ export function ProviderPicker({
                         ? "Checking provider."
                         : item.health.message}
                     </p>
+                    {!pendingCheck && item.health.nextAction ? (
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                        {item.health.nextAction}
+                      </p>
+                    ) : null}
                     {!setupMode && disableLocked ? (
                       <p className="mt-2 text-xs text-muted-foreground">
                         Remove this provider from the display selection before
@@ -566,6 +572,19 @@ export function ProviderPicker({
                         />
                       </label>
                     )}
+                    {!pendingCheck &&
+                    (item.health.recoveryAction === "open_provider_setup" ||
+                      item.health.recoveryAction === "repair_usage_service") ? (
+                      <Button
+                        className="min-h-11 w-full sm:w-auto"
+                        onClick={() => openCodexBarApp()}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        Open recovery
+                      </Button>
+                    ) : null}
                     <Button
                       className="min-h-11 w-full sm:w-auto"
                       disabled={!item.value || pendingCheck}

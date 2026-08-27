@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,20 +78,43 @@ func TestRawFirmwareBodyWriterWaitsForBodyBlockAcks(t *testing.T) {
 	}
 }
 
-func TestFirmwareRawWritePauseKeepsLegacyReceiverPacing(t *testing.T) {
+// DO NOT weaken: renamed from TestFirmwareRawWritePauseKeepsLegacyReceiverPacing,
+// which expected released firmware >= 1.0.37 to be sent unpaced. On real
+// esp8266-smalltv-st7789 hardware running 1.0.39 the unpaced sender stalled
+// waiting for the block ack in 2 of 2 attempts and the update failed; the same
+// upload with the pause restored installed successfully. Every firmware is
+// paced now. See docs/hardware-contract.md.
+func TestFirmwareRawWritePauseIsConservativeForEveryFirmware(t *testing.T) {
 	tests := []struct {
 		firmware string
 		want     time.Duration
 	}{
 		{firmware: "1.0.36", want: otaRawWritePause},
-		{firmware: "1.0.37", want: 0},
-		{firmware: "1.0.37-dev.90d0575", want: 0},
-		{firmware: "1.0.38", want: 0},
+		{firmware: "1.0.37", want: otaRawWritePause},
+		{firmware: "1.0.37-dev.90d0575", want: otaRawWritePause},
+		{firmware: "1.0.39", want: otaRawWritePause},
+		{firmware: "1.0.40-dev.ddc9332", want: otaRawWritePause},
+		{firmware: "1.0.38", want: otaRawWritePause},
+		{firmware: "9999.0.24", want: otaRawWritePause},
 		{firmware: "invalid", want: otaRawWritePause},
 	}
 	for _, test := range tests {
 		if got := firmwareRawWritePause(test.firmware); got != test.want {
 			t.Fatalf("firmware %q write pause = %s, want %s", test.firmware, got, test.want)
+		}
+	}
+}
+
+// DO NOT weaken this test. It pins the removal of the unpaced fast path for
+// released firmware >= 1.0.37. Hardware measurement on esp8266-smalltv-st7789
+// running released 1.0.39 (2026-08-07): unpaced RAW uploads installed 0/3,
+// paced uploads with the device otherwise idle installed 2/2. Pacing is
+// mandatory for every firmware version, including unparseable and empty
+// version strings. See docs/firmware-ota-contract.md.
+func TestFirmwareRawWritePauseIsPositiveForEveryFirmwareVersion(t *testing.T) {
+	for _, firmware := range []string{"1.0.37", "1.0.39", "9999.0.24", ""} {
+		if got := firmwareRawWritePause(firmware); got <= 0 {
+			t.Fatalf("firmware %q write pause = %s, want > 0 (unpaced RAW uploads fail on real hardware)", firmware, got)
 		}
 	}
 }
@@ -676,6 +701,7 @@ func TestDownloadReleaseFirmwareUsesLatestManifestWhenTargetVersionEmpty(t *test
 }
 
 func TestRunInstallUpdateDownloadsVerifiesAndUploadsOTA(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {
 		releaseHTTPClient = previousHTTPClient
@@ -827,6 +853,7 @@ func TestRunInstallUpdateDoesNotFallBackFromExplicitTarget(t *testing.T) {
 }
 
 func TestRunInstallUpdateAlreadyCurrentSkipsOTAUpload(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn
 	t.Cleanup(func() {
@@ -872,6 +899,7 @@ func TestRunInstallUpdateAlreadyCurrentSkipsOTAUpload(t *testing.T) {
 }
 
 func TestRunInstallUpdateRediscoverAfterFirmwareRebootIPChange(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn
 	previousDiscover := discoverWiFiDeviceFn
@@ -987,6 +1015,15 @@ func TestRunInstallUpdateRediscoverAfterFirmwareRebootIPChange(t *testing.T) {
 	if !strings.Contains(output, "Using rediscovered VibeTV address: "+newServer.URL) {
 		t.Fatalf("expected rediscovery output, got:\n%s", output)
 	}
+	rebootingAt := strings.Index(output, `"stage":"rebooting"`)
+	rediscoveringAt := strings.Index(output, `"stage":"rediscovering"`)
+	verifiedAt := strings.LastIndex(output, `"stage":"verifying_health"`)
+	if rebootingAt < 0 || rediscoveringAt <= rebootingAt || verifiedAt <= rediscoveringAt {
+		t.Fatalf("expected truthful reboot -> rediscovery -> verification events, got:\n%s", output)
+	}
+	if !strings.Contains(output[verifiedAt:], `"observedFirmware":"1.0.1"`) {
+		t.Fatalf("final verification event lost the observed firmware, got:\n%s", output)
+	}
 	if !strings.Contains(strings.Join(discoveryCandidates, ","), oldServer.URL) {
 		t.Fatalf("expected old target in discovery candidates, got %v", discoveryCandidates)
 	}
@@ -1056,7 +1093,13 @@ func TestEnsureFirmwareUpdateDeviceTokenStoresValidatedIdentityTuple(t *testing.
 	}
 }
 
-func TestFetchDeviceHelloHTTPWithTokenRedactsTokenFromTransportError(t *testing.T) {
+// Renamed from TestFetchDeviceHelloHTTPWithTokenSendsQueryFallbackAndRedactsErrors.
+// That test required the token in the header AND the query string. Measured on
+// real hardware, exactly that combination makes the device close the connection
+// (24/30 EOF) and was the reason every firmware update failed. The query
+// fallback assertion is therefore gone; the header-only rule replaces it.
+// See docs/hardware-contract.md.
+func TestFetchDeviceHelloHTTPWithTokenSendsHeaderOnlyAndRedactsErrors(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {
 		releaseHTTPClient = previousHTTPClient
@@ -1065,6 +1108,12 @@ func TestFetchDeviceHelloHTTPWithTokenRedactsTokenFromTransportError(t *testing.
 	token := "pair token/with+symbols"
 	transportErr := errors.New("connection refused")
 	releaseHTTPClient = releaseHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
+		if got := req.Header.Get("X-VibeTV-Token"); got != token {
+			t.Fatalf("expected pairing token header, got %q", got)
+		}
+		if got := req.URL.Query().Get("token"); got != "" {
+			t.Fatalf("pairing token must not be duplicated into the query string, got %q", got)
+		}
 		return nil, &url.Error{
 			Op:  "Get",
 			URL: req.URL.String(),
@@ -1079,11 +1128,86 @@ func TestFetchDeviceHelloHTTPWithTokenRedactsTokenFromTransportError(t *testing.
 	if strings.Contains(err.Error(), token) || strings.Contains(err.Error(), url.QueryEscape(token)) {
 		t.Fatalf("authenticated hello error leaked pairing token: %v", err)
 	}
-	if !strings.Contains(err.Error(), "[REDACTED]") {
-		t.Fatalf("expected pairing token placeholder, got: %v", err)
+	// The token now travels in the header only, so it can never reach the URL
+	// that transport errors quote. That is a stronger guarantee than redacting
+	// it afterwards -- see docs/hardware-contract.md for why the query carrier
+	// was removed. The redaction wrapper is still covered on its own below.
+	if strings.Contains(err.Error(), "token=") {
+		t.Fatalf("authenticated hello URL must not carry a token at all: %v", err)
 	}
 	if !errors.Is(err, transportErr) {
 		t.Fatalf("expected original transport error to remain unwrap-compatible, got: %v", err)
+	}
+}
+
+func TestFetchDeviceHelloHTTPWithTokenUsesFreshConnection(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+	})
+
+	connections := make(chan string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		connections <- req.RemoteAddr
+		if req.URL.Path == "/hello" {
+			if got := req.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+				http.Error(w, "pairing token required", http.StatusUnauthorized)
+				return
+			}
+			_, _ = w.Write([]byte(
+				`{"kind":"hello","deviceId":"device-new","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.1"}`,
+			))
+		}
+	}))
+	defer server.Close()
+	client := server.Client()
+	releaseHTTPClient = client
+
+	resp, err := client.Get(server.URL + "/warmup")
+	if err != nil {
+		t.Fatalf("warm shared HTTP connection: %v", err)
+	}
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		t.Fatalf("read warmup response: %v", err)
+	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatalf("close warmup response: %v", err)
+	}
+	warmConnection := <-connections
+
+	hello, err := fetchDeviceHelloHTTPWithToken(context.Background(), server.URL, "pair-token")
+	if err != nil {
+		t.Fatalf("fetch authenticated hello: %v", err)
+	}
+	if hello.DeviceID != "device-new" {
+		t.Fatalf("unexpected device hello: %+v", hello)
+	}
+	if helloConnection := <-connections; helloConnection == warmConnection {
+		t.Fatalf("authenticated hello reused existing connection %s", helloConnection)
+	}
+}
+
+// Keeps the redaction wrapper itself under test now that the authenticated
+// hello no longer puts the token where it could be quoted back.
+func TestRedactedFirmwareDeviceTokenErrorReplacesToken(t *testing.T) {
+	token := "pair token/with+symbols"
+	wrapped := errors.New("boom")
+	err := &redactedFirmwareDeviceTokenError{
+		err: &url.Error{
+			Op:  "Get",
+			URL: "http://192.0.2.10/hello?token=" + url.QueryEscape(token),
+			Err: wrapped,
+		},
+		token: token,
+	}
+	if strings.Contains(err.Error(), token) || strings.Contains(err.Error(), url.QueryEscape(token)) {
+		t.Fatalf("redaction leaked the pairing token: %v", err)
+	}
+	if !strings.Contains(err.Error(), "[REDACTED]") {
+		t.Fatalf("expected pairing token placeholder, got: %v", err)
+	}
+	if !errors.Is(err, wrapped) {
+		t.Fatalf("redaction broke unwrapping: %v", err)
 	}
 }
 
@@ -1125,7 +1249,83 @@ func TestEnsureFirmwareUpdateDeviceTokenPairsOnlyOnceWhenFreshTokenIsRejected(t 
 	}
 }
 
+func TestEnsureFirmwareUpdateDeviceTokenRetriesTransientPreflightError(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+	})
+
+	home := t.TempDir()
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceToken: "pair-token"}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+
+	helloCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			helloCalls++
+			if helloCalls == 1 {
+				// Simulate the transient EOF the single-threaded ESP8266
+				// produces under connection pressure: close without response.
+				hj, ok := w.(http.Hijacker)
+				if !ok {
+					t.Fatal("test server does not support hijacking")
+				}
+				conn, _, err := hj.Hijack()
+				if err != nil {
+					t.Fatalf("hijack: %v", err)
+				}
+				_ = conn.Close()
+				return
+			}
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-a","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.39"}`))
+		case "/api/pair":
+			t.Fatal("transient transport error must not trigger re-pairing")
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	releaseHTTPClient = server.Client()
+
+	token, err := ensureFirmwareUpdateDeviceToken(context.Background(), home, server.URL, "device-a")
+	if err != nil {
+		t.Fatalf("transient preflight error must be retried before the flash, got %v", err)
+	}
+	if token != "pair-token" {
+		t.Fatalf("expected stored token, got %q", token)
+	}
+	if helloCalls != 2 {
+		t.Fatalf("expected one retry after the transient error, got %d hello calls", helloCalls)
+	}
+}
+
+func TestFetchDeviceHelloRetryStopsOnAuthError(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+	})
+
+	helloCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		helloCalls++
+		http.Error(w, "pairing token required", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	releaseHTTPClient = server.Client()
+
+	_, err := fetchDeviceHelloHTTPWithTokenRetry(context.Background(), server.URL, "stale-token")
+	if err == nil || !firmwareOTAAuthError(err) {
+		t.Fatalf("expected auth error, got %v", err)
+	}
+	if helloCalls != 1 {
+		t.Fatalf("auth errors must never be retried, got %d hello calls", helloCalls)
+	}
+}
+
 func TestRunInstallUpdateUsesStoredDeviceTokenForOTA(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {
 		releaseHTTPClient = previousHTTPClient
@@ -1350,6 +1550,7 @@ func TestFirmwareUploadConnectionInterruptedRequiresRecoveryForUnsafeErrors(t *t
 }
 
 func TestRunInstallUpdateRepairsStaleDeviceTokenBeforeOTA(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn
 	t.Cleanup(func() {
@@ -1448,6 +1649,7 @@ func TestRunInstallUpdateRepairsStaleDeviceTokenBeforeOTA(t *testing.T) {
 }
 
 func TestRunInstallUpdateStopsBeforeOTAOnNonAuthPreflightError(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn
 	t.Cleanup(func() {
@@ -1533,6 +1735,7 @@ func TestRunInstallUpdateStopsBeforeOTAOnNonAuthPreflightError(t *testing.T) {
 }
 
 func TestRunInstallUpdatePausesLaunchAgentDuringOTAAndRestarts(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn
 	previousStop := upgradeStopLaunchAgentFn
@@ -1617,6 +1820,7 @@ func TestRunInstallUpdatePausesLaunchAgentDuringOTAAndRestarts(t *testing.T) {
 }
 
 func TestRunInstallUpdateCanSkipLaunchAgentPauseForLocalAPI(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
 	previousUpload := uploadFirmwareOTAFn
 	previousStop := upgradeStopLaunchAgentFn
@@ -1704,6 +1908,503 @@ func TestRunInstallUpdateCanSkipLaunchAgentPauseForLocalAPI(t *testing.T) {
 	}
 	if strings.Contains(output, "Pausing Mac App during firmware update") {
 		t.Fatalf("local API update should not claim it paused the Mac App, got:\n%s", output)
+	}
+}
+
+// quiesceTestDeviceServer serves the minimal already-current device so a
+// runInstallUpdate call that passes the writer-quiesce gate finishes without
+// uploading anything. Every request is counted.
+func quiesceTestDeviceServer(t *testing.T, requests *int) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*requests++
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-a","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.1","features":["theme"],"maxFrameBytes":1024}`))
+		case "/manifest.json":
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"release":"v1.0.1","artifacts":[{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware.bin","firmwareUrl":"https://example.invalid/firmware.bin","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// DO NOT weaken this test. Measured on esp8266-smalltv-st7789 firmware 1.0.39
+// (2026-08-07): a correctly paced RAW OTA upload still failed 0/1 while the
+// Mac App runtime kept polling the device. The direct CLI updater must
+// therefore refuse to send any device request while another local runtime is
+// alive, unless the operator explicitly claims every writer is stopped.
+func TestRunInstallUpdateAbortsBeforeAnyDeviceRequestWhenAnotherRuntimeIsAlive(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousOrigin := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareUpdateRuntimeHealthOrigin = previousOrigin
+	})
+	t.Setenv("HOME", t.TempDir())
+
+	runtimeHealthCalls := 0
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/runtime-health" {
+			runtimeHealthCalls++
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer runtime.Close()
+	firmwareUpdateRuntimeHealthOrigin = runtime.URL
+
+	deviceRequests := 0
+	device := quiesceTestDeviceServer(t, &deviceRequests)
+	releaseHTTPClient = device.Client()
+
+	_, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.URL,
+			"--manifest-url", device.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err == nil {
+		t.Fatal("expected abort while another runtime is alive")
+	}
+	if !strings.Contains(err.Error(), "another VibeTV runtime is running and polling the device; stop it first or pass --i-stopped-all-writers") {
+		t.Fatalf("expected quiesce abort message, got: %v", err)
+	}
+	if deviceRequests != 0 {
+		t.Fatalf("abort must happen before any device request, got %d device requests", deviceRequests)
+	}
+	if runtimeHealthCalls == 0 {
+		t.Fatal("expected the updater to probe the runtime-health endpoint")
+	}
+}
+
+// DO NOT weaken this test. The quiesce gate cares about device writers, not
+// runtimes: a standalone `codexbar-display api` parent answers runtime-health
+// with displayWriter=false and must not block its own child updater, while a
+// writer-owning runtime (displayWriter=true or an older response without the
+// field) keeps blocking.
+func TestRunInstallUpdateIgnoresNonWriterRuntimeHealthResponder(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousOrigin := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareUpdateRuntimeHealthOrigin = previousOrigin
+	})
+	t.Setenv("HOME", t.TempDir())
+
+	nonWriter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/runtime-health" {
+			_, _ = w.Write([]byte(`{"ok":true,"displayWriter":false}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer nonWriter.Close()
+	firmwareUpdateRuntimeHealthOrigin = nonWriter.URL
+
+	deviceRequests := 0
+	device := quiesceTestDeviceServer(t, &deviceRequests)
+	releaseHTTPClient = device.Client()
+
+	_, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.URL,
+			"--manifest-url", device.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err != nil {
+		t.Fatalf("a declared non-writer must not block the update, got: %v", err)
+	}
+	if deviceRequests == 0 {
+		t.Fatal("expected the update to reach the device")
+	}
+}
+
+// An older runtime that omits the displayWriter field must stay a writer.
+func TestRunInstallUpdateTreatsLegacyRuntimeHealthAsWriter(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousOrigin := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareUpdateRuntimeHealthOrigin = previousOrigin
+	})
+	t.Setenv("HOME", t.TempDir())
+
+	legacy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer legacy.Close()
+	firmwareUpdateRuntimeHealthOrigin = legacy.URL
+
+	deviceRequests := 0
+	device := quiesceTestDeviceServer(t, &deviceRequests)
+	releaseHTTPClient = device.Client()
+
+	_, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.URL,
+			"--manifest-url", device.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err == nil || !strings.Contains(err.Error(), "another VibeTV runtime is running") {
+		t.Fatalf("a legacy runtime-health response must stay a writer, got: %v", err)
+	}
+	if deviceRequests != 0 {
+		t.Fatalf("abort must happen before any device request, got %d", deviceRequests)
+	}
+}
+
+// DO NOT weaken this test. The native app starts the daemon with
+// --api-fallback: when the default port is occupied the daemon serves from a
+// fallback port and publishes it in runtime-endpoint.json. The quiesce gate
+// must detect that writer even though nothing answers the default origin.
+func TestRunInstallUpdateAbortsWhenRuntimeAnswersOnPublishedFallbackEndpoint(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousOrigin := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareUpdateRuntimeHealthOrigin = previousOrigin
+	})
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Nothing answers the default origin: grab a loopback port and close it.
+	closedListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	firmwareUpdateRuntimeHealthOrigin = "http://" + closedListener.Addr().String()
+	_ = closedListener.Close()
+
+	runtimeHealthCalls := 0
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/runtime-health" {
+			runtimeHealthCalls++
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer runtime.Close()
+
+	endpointPath := runtimeEndpointPath(home)
+	if err := os.MkdirAll(filepath.Dir(endpointPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	endpointJSON := `{"origin":"` + runtime.URL + `","pid":12345}`
+	if err := os.WriteFile(endpointPath, []byte(endpointJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	deviceRequests := 0
+	device := quiesceTestDeviceServer(t, &deviceRequests)
+	releaseHTTPClient = device.Client()
+
+	_, err = captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.URL,
+			"--manifest-url", device.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err == nil {
+		t.Fatal("expected abort while a runtime answers on the published fallback endpoint")
+	}
+	if !strings.Contains(err.Error(), "another VibeTV runtime is running and polling the device") {
+		t.Fatalf("expected quiesce abort message, got: %v", err)
+	}
+	if deviceRequests != 0 {
+		t.Fatalf("abort must happen before any device request, got %d device requests", deviceRequests)
+	}
+	if runtimeHealthCalls == 0 {
+		t.Fatal("expected the updater to probe the published runtime endpoint")
+	}
+}
+
+// DO NOT weaken this test. --i-stopped-all-writers is the operator's explicit
+// claim that every device writer is stopped; the update must proceed then.
+func TestRunInstallUpdateProceedsWithWriterFlagDespiteAliveRuntime(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousOrigin := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareUpdateRuntimeHealthOrigin = previousOrigin
+	})
+	t.Setenv("HOME", t.TempDir())
+
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer runtime.Close()
+	firmwareUpdateRuntimeHealthOrigin = runtime.URL
+
+	deviceRequests := 0
+	device := quiesceTestDeviceServer(t, &deviceRequests)
+	releaseHTTPClient = device.Client()
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.URL,
+			"--manifest-url", device.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+			"--i-stopped-all-writers",
+		})
+	})
+	if err != nil {
+		t.Fatalf("update with --i-stopped-all-writers must proceed, got: %v", err)
+	}
+	if deviceRequests == 0 {
+		t.Fatal("expected the update to talk to the device")
+	}
+	if !strings.Contains(output, `"outcome":"already_current"`) {
+		t.Fatalf("expected already-current outcome, got:\n%s", output)
+	}
+}
+
+// DO NOT weaken this test. The API job pauses the display stream itself and
+// marks its child updater via VIBETV_UPDATE_PARENT_PAUSED=1; the customer path
+// must keep working without the CLI flag.
+func TestRunInstallUpdateProceedsWhenParentPausedEnvIsSet(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousOrigin := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareUpdateRuntimeHealthOrigin = previousOrigin
+	})
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("VIBETV_UPDATE_PARENT_PAUSED", "1")
+
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer runtime.Close()
+	firmwareUpdateRuntimeHealthOrigin = runtime.URL
+
+	deviceRequests := 0
+	device := quiesceTestDeviceServer(t, &deviceRequests)
+	releaseHTTPClient = device.Client()
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.URL,
+			"--manifest-url", device.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err != nil {
+		t.Fatalf("update from the paused API parent must proceed, got: %v", err)
+	}
+	if deviceRequests == 0 {
+		t.Fatal("expected the update to talk to the device")
+	}
+	if !strings.Contains(output, `"outcome":"already_current"`) {
+		t.Fatalf("expected already-current outcome, got:\n%s", output)
+	}
+}
+
+// DO NOT weaken this test. No runtime listening means no other writer; the
+// check must stay silent and never block the update.
+func TestRunInstallUpdateProceedsWhenRuntimeHealthEndpointIsDead(t *testing.T) {
+	previousHTTPClient := releaseHTTPClient
+	previousOrigin := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		firmwareUpdateRuntimeHealthOrigin = previousOrigin
+	})
+	t.Setenv("HOME", t.TempDir())
+
+	deadRuntime := httptest.NewServer(http.NotFoundHandler())
+	deadOrigin := deadRuntime.URL
+	deadRuntime.Close()
+	firmwareUpdateRuntimeHealthOrigin = deadOrigin
+
+	deviceRequests := 0
+	device := quiesceTestDeviceServer(t, &deviceRequests)
+	releaseHTTPClient = device.Client()
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.URL,
+			"--manifest-url", device.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err != nil {
+		t.Fatalf("update without a running runtime must proceed, got: %v", err)
+	}
+	if deviceRequests == 0 {
+		t.Fatal("expected the update to talk to the device")
+	}
+	if !strings.Contains(output, `"outcome":"already_current"`) {
+		t.Fatalf("expected already-current outcome, got:\n%s", output)
+	}
+}
+
+// themeRestoreTestDevice is a fake device whose upload was aborted: it stays
+// on the old firmware and reports the stored theme spec path with
+// active=false until POST /theme/active flips it.
+type themeRestoreTestDevice struct {
+	server           *httptest.Server
+	themeActive      bool
+	themeActiveCalls int
+	themeActiveBody  string
+	themeActiveToken string
+	themeActiveQuery string
+}
+
+func newThemeRestoreTestDevice(t *testing.T, initiallyActive bool) *themeRestoreTestDevice {
+	t.Helper()
+	device := &themeRestoreTestDevice{themeActive: initiallyActive}
+	imageBody := "firmware image"
+	device.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-a","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.0","features":["theme"],"maxFrameBytes":1024}`))
+		case "/manifest.json":
+			_, _ = w.Write([]byte(`{"schemaVersion":1,"release":"v1.0.1","artifacts":[{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware.bin","firmwareUrl":"` + device.server.URL + `/firmware.bin","sha256":"` + sha256String(imageBody) + `"}]}`))
+		case "/firmware.bin":
+			_, _ = w.Write([]byte(imageBody))
+		case "/health":
+			active := "false"
+			if device.themeActive {
+				active = "true"
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"display":{"activeTheme":"theme-missing","themeSpec":{"active":` + active + `,"path":"/themes/u/x.json","hash":null,"renderOk":true,"renderError":null,"renderFailures":0}}}`))
+		case "/theme/active":
+			body, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+			device.themeActiveCalls++
+			device.themeActiveBody = strings.TrimSpace(string(body))
+			device.themeActiveToken = r.Header.Get("X-VibeTV-Token")
+			device.themeActiveQuery = r.URL.RawQuery
+			device.themeActive = true
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(device.server.Close)
+	return device
+}
+
+func withFastInterruptedVerify(t *testing.T) {
+	t.Helper()
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousVerify := firmwareInterruptedVerifyTimeout
+	t.Cleanup(func() {
+		firmwareHTTPVerifyPollInterval = previousPoll
+		firmwareInterruptedVerifyTimeout = previousVerify
+	})
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+	firmwareInterruptedVerifyTimeout = 50 * time.Millisecond
+}
+
+// DO NOT weaken this test. Measured on esp8266-smalltv-st7789 firmware 1.0.39
+// (2026-08-07): an aborted OTA upload reboots the device and leaves the stored
+// theme spec with active=false ("theme-missing") while its path survives; a
+// seven-minute isolated observation showed no self-healing. The updater must
+// therefore re-activate the stored spec exactly once via an authenticated
+// header-token-only POST /theme/active, and still return the upload error.
+func TestRunInstallUpdateRestoresStoredThemeAfterAbortedUpload(t *testing.T) {
+	pinNoOtherRuntimeWriter(t)
+	previousHTTPClient := releaseHTTPClient
+	previousUpload := uploadFirmwareOTAFn
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		uploadFirmwareOTAFn = previousUpload
+	})
+	withFastInterruptedVerify(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceToken: "pair-token"}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+
+	device := newThemeRestoreTestDevice(t, false)
+	releaseHTTPClient = device.server.Client()
+	uploadFirmwareOTAFn = func(context.Context, string, string, string, string) error {
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, errors.New("broken pipe"))
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.server.URL,
+			"--manifest-url", device.server.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err == nil || !errors.Is(err, errFirmwareUploadRestartRequired) {
+		t.Fatalf("the original upload error must still be returned, got: %v", err)
+	}
+	if device.themeActiveCalls != 1 {
+		t.Fatalf("expected exactly one stored-theme activation, got %d", device.themeActiveCalls)
+	}
+	if device.themeActiveToken != "pair-token" {
+		t.Fatalf("expected header pairing token on /theme/active, got %q", device.themeActiveToken)
+	}
+	if strings.Contains(device.themeActiveQuery, "token") {
+		t.Fatalf("theme activation must not carry the token in the query, got %q", device.themeActiveQuery)
+	}
+	if device.themeActiveBody != `{"path":"/themes/u/x.json"}` {
+		t.Fatalf("unexpected theme activation body %q", device.themeActiveBody)
+	}
+	if !device.themeActive {
+		t.Fatal("expected device to report the stored theme as active again")
+	}
+	if !strings.Contains(output, "restored stored theme after aborted upload") {
+		t.Fatalf("expected restore log line, got:\n%s", output)
+	}
+}
+
+// DO NOT weaken this test. When the stored theme is still active after an
+// aborted upload there is nothing to repair: no /theme/active write may be
+// sent, and the upload error is still returned.
+func TestRunInstallUpdateDoesNotTouchActiveThemeAfterAbortedUpload(t *testing.T) {
+	previousWatch := themeRestoreRebootWatch
+	previousPoll := themeRestorePollInterval
+	t.Cleanup(func() {
+		themeRestoreRebootWatch = previousWatch
+		themeRestorePollInterval = previousPoll
+	})
+	themeRestoreRebootWatch = 200 * time.Millisecond
+	themeRestorePollInterval = 10 * time.Millisecond
+	pinNoOtherRuntimeWriter(t)
+	previousHTTPClient := releaseHTTPClient
+	previousUpload := uploadFirmwareOTAFn
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		uploadFirmwareOTAFn = previousUpload
+	})
+	withFastInterruptedVerify(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{DeviceToken: "pair-token"}); err != nil {
+		t.Fatalf("save runtime config: %v", err)
+	}
+
+	device := newThemeRestoreTestDevice(t, true)
+	releaseHTTPClient = device.server.Client()
+	uploadFirmwareOTAFn = func(context.Context, string, string, string, string) error {
+		return fmt.Errorf("%w: %v", errFirmwareUploadMayHaveWritten, errors.New("broken pipe"))
+	}
+
+	_, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{
+			"--target", device.server.URL,
+			"--manifest-url", device.server.URL + "/manifest.json",
+			"--skip-launchagent-pause",
+		})
+	})
+	if err == nil || !errors.Is(err, errFirmwareUploadRestartRequired) {
+		t.Fatalf("the original upload error must still be returned, got: %v", err)
+	}
+	if device.themeActiveCalls != 0 {
+		t.Fatalf("an active stored theme must not be re-activated, got %d calls", device.themeActiveCalls)
 	}
 }
 
@@ -2146,4 +2847,126 @@ func gzipString(t *testing.T, text string) string {
 		t.Fatalf("gzip close: %v", err)
 	}
 	return buf.String()
+}
+
+// DO NOT weaken: this locks a device-proven transport rule. Sending the pairing
+// token in the header AND the query string at once makes the real
+// esp8266-smalltv-st7789 close the connection without a response (24/30 requests
+// failed with EOF on firmware 1.0.39; header-only and query-only were 0/30).
+// That is what made every firmware update die in the auth preflight before the
+// upload ever started. See docs/hardware-contract.md.
+func TestDeviceHelloPreflightSendsTokenOnlyInHeader(t *testing.T) {
+	const token = "preflight-token"
+
+	var sawHeader, sawQuery bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			http.NotFound(w, r)
+			return
+		}
+		sawHeader = r.Header.Get("X-VibeTV-Token") == token
+		sawQuery = r.URL.Query().Get("token") != ""
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","deviceId":"14799300","firmware":"1.0.39"}`))
+	}))
+	defer server.Close()
+
+	if _, err := fetchDeviceHelloHTTPWithToken(context.Background(), server.URL, token); err != nil {
+		t.Fatalf("authenticated hello: %v", err)
+	}
+	if !sawHeader {
+		t.Fatal("preflight must send the token in the X-VibeTV-Token header")
+	}
+	if sawQuery {
+		t.Fatal("preflight must not duplicate the token into the query string; the device drops those connections")
+	}
+}
+
+// pinNoOtherRuntimeWriter points the writer-quiesce probe at a closed port so
+// the test never sees whatever runtime happens to run on the machine executing
+// it. Without this, every runInstallUpdate test fails on a developer Mac with
+// VibeTV Control Center installed and passes on CI, which is exactly backwards
+// from where the hardware work happens.
+func pinNoOtherRuntimeWriter(t *testing.T) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve closed port: %v", err)
+	}
+	origin := "http://" + listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatalf("close reserved port: %v", err)
+	}
+	previous := firmwareUpdateRuntimeHealthOrigin
+	t.Cleanup(func() { firmwareUpdateRuntimeHealthOrigin = previous })
+	firmwareUpdateRuntimeHealthOrigin = origin
+}
+
+// Hardware, esp8266-smalltv-st7789, 2026-08-07: after a stalled upload the
+// device was left on activeTheme "theme-missing" with themeSpec.path intact and
+// active=false, and the shipped recovery did not restore it -- although one
+// hand-issued header-token POST /theme/active fixed it instantly seconds later.
+// The reason is timing: the stall does not always reboot the device
+// immediately, so a single check right after the failure still sees the theme
+// active, returns, and the theme only goes missing on the reboot that follows.
+// The recovery has to keep watching across that reboot.
+func TestRunInstallUpdateRestoresStoredThemeLostOnTheRebootAfterAnAbortedUpload(t *testing.T) {
+	previousWatch := themeRestoreRebootWatch
+	previousPoll := themeRestorePollInterval
+	t.Cleanup(func() {
+		themeRestoreRebootWatch = previousWatch
+		themeRestorePollInterval = previousPoll
+	})
+	themeRestoreRebootWatch = 2 * time.Second
+	themeRestorePollInterval = 10 * time.Millisecond
+
+	var healthCalls atomic.Int32
+	var activations atomic.Int32
+	var activatedPath atomic.Value
+	activatedPath.Store("")
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-late-reboot","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.39"}`))
+		case "/health":
+			// The first samples still show the pre-reboot device with its theme
+			// active. Only the later boot reports the theme gone.
+			if healthCalls.Add(1) <= 2 && activations.Load() == 0 {
+				_, _ = w.Write([]byte(`{"ok":true,"system":{"bootId":"boot-a","resetCount":381},"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy-3-fe3fd4.json"}}}`))
+				return
+			}
+			if activations.Load() > 0 {
+				_, _ = w.Write([]byte(`{"ok":true,"system":{"bootId":"boot-b","resetCount":382},"display":{"activeTheme":"clippy","themeSpec":{"active":true,"path":"/themes/u/clippy-3-fe3fd4.json"}}}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"system":{"bootId":"boot-b","resetCount":382},"display":{"activeTheme":"theme-missing","themeSpec":{"active":false,"path":"/themes/u/clippy-3-fe3fd4.json"}}}`))
+		case "/theme/active":
+			if r.URL.RawQuery != "" {
+				t.Errorf("stored-theme activation must not put anything in the query: %q", r.URL.RawQuery)
+			}
+			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+				t.Errorf("stored-theme activation must send the pairing token in the header, got %q", got)
+			}
+			var body struct {
+				Path string `json:"path"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			activatedPath.Store(body.Path)
+			activations.Add(1)
+			_, _ = w.Write([]byte(`{"ok":true,"path":"` + body.Path + `"}`))
+		default:
+			t.Errorf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	restoreStoredThemeAfterAbortedUpload(context.Background(), device.URL, "pair-token")
+
+	if got := activations.Load(); got != 1 {
+		t.Fatalf("expected exactly one stored-theme activation across the reboot, got %d", got)
+	}
+	if got := activatedPath.Load().(string); got != "/themes/u/clippy-3-fe3fd4.json" {
+		t.Fatalf("activated the wrong theme path: %q", got)
+	}
 }

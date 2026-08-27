@@ -289,7 +289,7 @@ func exactSetupFixture(now time.Time, providerID, status string) codexbar.Provid
 		Status:    status,
 		CheckedAt: now.Format(time.RFC3339Nano),
 		Providers: []codexbar.ProviderReadiness{{
-			ID: providerID, Label: providerID, Enabled: true, Status: status,
+			ID: providerID, Label: providerID, Enabled: providerEnabled(true), Status: status,
 			Detail: "Safe provider status.", NextAction: "Check the provider, then try again.",
 		}},
 	}

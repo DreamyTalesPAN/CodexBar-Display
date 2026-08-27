@@ -20,5 +20,8 @@ describe("SetupStatusScreen", () => {
     expect(html).toContain("bg-background");
     expect(html).toContain('aria-hidden="true"');
     expect(html).toContain('class="sr-only"');
+    expect(html).toContain(">VIBE<span");
+    expect(html).toContain(">TV</span>");
+    expect(html).not.toContain("Control Center</div>");
   });
 });
