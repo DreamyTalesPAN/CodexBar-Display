@@ -644,6 +644,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
+    await testResetRetainsCableCapabilities(browser, appContext.appUrl);
     await testWiFiRollbackReturnsToConnectionChoice(
       browser,
       appContext.appUrl,
@@ -3400,6 +3401,35 @@ async function testFreshCableAutoBindingStillChoosesConnection(
   assert(
     resetRequests === 0,
     "Changing the connection for the same VibeTV must preserve its pairing",
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testResetRetainsCableCapabilities(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    resetDevice: {
+      connected: false,
+      capabilities: {
+        transport: { active: "usb", mode: "cable", supported: ["usb"] },
+      },
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await clickNavigation(page, "Settings");
+  await page.getByRole("button", { name: "Run setup again" }).click();
+  await page.getByRole("heading", { name: "Connect VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Use Cable" }).waitFor();
+  assert(
+    (await page.getByRole("button", { name: "Use WiFi" }).count()) === 0,
+    "Reset must retain USB-only capabilities before exposing the connection chooser",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -9176,6 +9206,7 @@ async function routeCompanionOnline(
     onSearch,
     onRequest = () => {},
     onReset,
+    resetDevice,
     resetError,
     onUpdate,
     onMacAppUpdate,
@@ -9874,7 +9905,7 @@ async function routeCompanionOnline(
         });
         return;
       }
-      currentDevice = {
+      currentDevice = resetDevice || {
         connected: false,
         capabilities: currentDevice?.capabilities,
       };

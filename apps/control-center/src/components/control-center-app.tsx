@@ -1955,7 +1955,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setDeviceRecoveryGate(resetDeviceRecoveryGate());
       setDeviceTarget("");
       setDeviceSession({
-        device: null,
+        device: payload.device || null,
         themeSetupIdentity: null,
         providerIncidentOpen: false,
       });
@@ -1991,9 +1991,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
       setHasEnteredControlCenter(false);
-      if (payload.device) {
-        setDevice(payload.device);
-      }
       addEvent({
         label: "Setup restarted",
         detail: "Local VibeTV connection was cleared.",
@@ -2026,7 +2023,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     markCompanionAccessBlocked,
     markCompanionUnavailable,
     runCompanion,
-    setDevice,
     setDeviceRecoveryGate,
   ]);
 
