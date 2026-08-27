@@ -189,6 +189,7 @@ type Server struct {
 	resolveCablePort       func(string, string) (string, error)
 	readCableHello         func(string) (protocol.DeviceHello, error)
 	currentCableHello      func() (protocol.DeviceHello, bool)
+	resetCableSender       func()
 	setCableConnectionMode func(string, string, string) error
 	subnetTargets          func() []string
 	defaultWiFiTarget      func() string
@@ -937,6 +938,7 @@ func New(opts Options) (*Server, error) {
 		resolveCablePort:       usb.ResolveVibeTVControlPort,
 		readCableHello:         usb.ReadDeviceHello,
 		currentCableHello:      usb.CurrentDeviceHello,
+		resetCableSender:       usb.CloseDefaultSender,
 		setCableConnectionMode: usb.SetConnectionMode,
 		subnetTargets:          localSubnetTargets,
 		defaultWiFiTarget:      setup.DefaultWiFiTarget,
@@ -3294,19 +3296,30 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 		s.pauseDisplayStream(true)
 		defer s.pauseDisplayStream(false)
 	}
+	device := s.currentCableConnectionChoiceDevice()
+	var savedTransports []string
 	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
+		savedTransports = append([]string(nil), cfg.DeviceTransports...)
 		cfg.ResetDeviceBinding()
 	})
 	if err != nil {
 		writeInternalError(w, err)
 		return
 	}
+	if s.resetCableSender != nil {
+		s.resetCableSender()
+	}
+	if device.Capabilities == nil && len(savedTransports) > 0 {
+		device.Capabilities = &protocol.CapabilityBlock{
+			Transport: protocol.TransportCapabilities{Supported: savedTransports},
+		}
+	}
 	s.clearDisplayVerification("")
 	s.clearConfiguredDeviceState()
 	writeJSON(w, http.StatusOK, statusResponse{
 		OK:                           true,
 		Companion:                    s.companionInfo(r.Context()),
-		Device:                       s.currentCableConnectionChoiceDevice(),
+		Device:                       device,
 		ConnectionModeChoiceRequired: true,
 	})
 }
