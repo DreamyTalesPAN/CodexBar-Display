@@ -770,6 +770,20 @@ issue scope, or release permission never implies UI permission.
   `provider-setup-card.tsx`, `usage-screen.tsx`, `usage-screen.test.tsx`, and
   the matching customer-flow assertions in `test-customer-flows.mjs`.
 
+## 2026-08-27 — Cold provider recovery moves to the usage service
+
+- User approval: While rebasing the provider-selection work onto main, the
+  user explicitly chose to rely on the usage service's collector warm-up and
+  first-run provider scan instead of a UI-level automatic retry in this
+  Claude task on 2026-08-27.
+- Approved customer-visible result: Startup checks each enabled provider
+  exactly once, one at a time. A cold `No usage available` result stays
+  visible, and `Check again` is the explicit recovery. This supersedes the
+  2026-08-04 startup double-retry; the setup hint behavior from that record
+  stays.
+- Approved files: `control-center-app.tsx`, the matching customer-flow
+  assertions, and this approval record.
+
 ## 2026-08-03 — Provider selection in Setup and Settings
 
 - User approval: The user explicitly approved the exact visible
