@@ -5,13 +5,16 @@
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
 #include <LittleFS.h>
+#include <MD5Builder.h>
 #include <Updater.h>
+#include <coredecls.h>
 #include <time.h>
 
 #include "../../firmware_shared/app_runtime.h"
 #include "../../firmware_shared/app_transport.h"
 #include "../../firmware_shared/theme_spec_renderer_core.h"
 #include "asset_path_policy.h"
+#include "cable_transfer_core.h"
 #include "connected_setup_policy.h"
 #include "device_settings.h"
 #include "standby_settings.h"
@@ -32,7 +35,7 @@
 #endif
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-const char kThemeFeatureJSON[] = "[\"theme-spec-v1\",\"provider-slots-v1\"]";
+const char kThemeFeatureJSON[] = "[\"theme-spec-v1\",\"provider-slots-v1\",\"cable-transfer-v1\"]";
 #else
 const char kThemeFeatureJSON[] = "[]";
 #endif
@@ -42,7 +45,6 @@ namespace {
 codexbar_display::app::RuntimeContext runtimeCtx;
 codexbar_display::esp8266::RendererESP8266 renderer;
 ESP8266WebServer webServer(80);
-WiFiServer rawOtaServer(8081);
 DNSServer dnsServer;
 
 constexpr int kMaxFrameBytes = 2048;
@@ -73,8 +75,8 @@ constexpr unsigned long kFrameStaleWarningMs = 150000UL;
 // interval, not a retry loop.
 constexpr unsigned long kDeviceClockPollMs = 2000UL;
 constexpr unsigned long kFirmwareUpdateNoticeToggleMs = 1500UL;
-constexpr unsigned long kRawOtaProgressTimeoutMs = 30000UL;
-constexpr size_t kRawOtaReadBufferBytes = 512;
+constexpr unsigned long kCableTransferTimeoutMs = 15000UL;
+constexpr size_t kCableTransferChunkBytes = 128;
 constexpr size_t kMaxStoredThemeSpecBytes = 4096;
 constexpr size_t kMaxThemeGifAssetBytes = codexbar_display::themespec::kMaxThemeSpecGifAssetBytes;
 constexpr uint8_t kDefaultBrightnessPercent =
@@ -183,6 +185,26 @@ struct DeviceSettings {
       codexbar_display::esp8266::device_settings::ConnectionMode::kUnspecified;
 };
 
+enum class CableTransferSink : uint8_t {
+  kNone = 0,
+  kAsset = 1,
+  kFirmware = 2,
+};
+
+enum class CableTransferActivation : uint8_t {
+  kNone = 0,
+  kTheme = 1,
+  kScreensaver = 2,
+};
+
+struct CableTransferState {
+  codexbar_display::esp8266::cable_transfer::State flow;
+  CableTransferSink sink = CableTransferSink::kNone;
+  CableTransferActivation activation = CableTransferActivation::kNone;
+  MD5Builder hash;
+  uint8_t expectedHash[16] = {};
+};
+
 namespace deviceclock = codexbar_display::deviceclock;
 
 unsigned long nextDeviceClockPollAtMs = 0;
@@ -190,7 +212,6 @@ char renderedClockTime[deviceclock::kTimeTextSize] = {};
 char renderedClockDate[deviceclock::kDateTextSize] = {};
 
 bool httpServerStarted = false;
-bool rawOtaServerStarted = false;
 bool setupMode = false;
 bool waitStatusRendered = false;
 String lastConnectedSetupIp;
@@ -245,10 +266,13 @@ String deviceID;
 String bootID;
 String bootResetReasonJSON;
 uint32_t bootResetCounter = 0;
+CableTransferState cableTransfer;
 
 void addCorsHeaders();
 void resetWifiReconnectState();
 void startHttpServer();
+bool handleCableTransferRequest(JsonDocument& doc, const char* op);
+void maintainCableTransfer();
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 constexpr const char* kLegacyMiniThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
@@ -1426,26 +1450,6 @@ String htmlEscape(const String& raw) {
   return codexbar_display::esp8266::wifi_setup::HtmlEscape(raw);
 }
 
-String macInstallerCommand() {
-  return F("curl -fsSL https://github.com/DreamyTalesPAN/CodexBar-Display/releases/latest/download/install.sh | bash");
-}
-
-String updateTargetURL() {
-  return String("http://") + WiFi.localIP().toString();
-}
-
-String updateInstallCommand() {
-  const String target = updateTargetURL();
-  String command;
-  command.reserve(260);
-  command += macInstallerCommand();
-  command += F(" -s -- --target ");
-  command += target;
-  command += F(" && codexbar-display install-update --confirm-live-update --target ");
-  command += target;
-  return command;
-}
-
 String updateStatusHTML(bool compact) {
   String html;
   html.reserve(700);
@@ -1986,6 +1990,9 @@ bool handleSerialControlLine(const String& line) {
   }
 
   const char* op = doc["op"] | "";
+  if (strncmp(op, "transfer-", 9) == 0) {
+    return handleCableTransferRequest(doc, op);
+  }
   if (strcmp(op, "hello") == 0) {
     codexbar_display::app::EmitDeviceHello(makeTransportConfig("usb"));
   } else if (strcmp(op, "status") == 0) {
@@ -2104,6 +2111,10 @@ void handleSerialInput() {
     return;
   }
   if (handleSerialControlLine(line)) {
+    return;
+  }
+  if (cableTransfer.flow.active) {
+    emitSerialError("transfer-active");
     return;
   }
   if (!codexbar_display::esp8266::device_settings::SupportsCable(
@@ -3309,26 +3320,12 @@ void maintainStandby() {
 }
 
 
-String updatePageHTML() {
-  const String installCommand = updateInstallCommand();
-  String html;
-  html.reserve(1600);
-  html += F("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>");
-  html += F("<title>VibeTV Update</title><style>");
-  html += F(":root{color-scheme:dark}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:0;background:#0b0c0d;color:#f6f4ed}main{max-width:620px;margin:auto;padding:24px 18px}a{color:#c7ff00;font-weight:800}h1{margin:16px 0}.muted{color:#a9adb3}.update,button,pre{border-radius:8px}.update{border:1px solid #6f8f00;padding:10px}.update-link{display:none}button{width:100%;font:inherit;padding:12px;margin-top:10px;background:#c7ff00;color:#111;border:0;font-weight:900}pre{white-space:pre-wrap;word-break:break-word;background:#08090a;border:1px solid #30343a;padding:12px}</style></head><body><main>");
-  html += F("<h1>VibeTV Update</h1>");
-  html += updateStatusHTML(false);
-  html += F("<h2>Check with Mac</h2><p class='muted'>Copy this command into Terminal. It refreshes the Mac helper first, then installs firmware if needed.</p><pre id='cmd'>");
-  html += htmlEscape(installCommand);
-  html += F("</pre><textarea id='cmdFallback' readonly style='position:absolute;left:-9999px'></textarea><button type='button' onclick='copyCmd()' id='copyBtn'>Copy update command</button>");
-  html += F("<p class='muted'><a href='/'>Setup</a> | <a href='/health'>Status</a> | <a href='/assets'>Files</a></p>");
-  html += F("<script>function copied(){document.getElementById('copyBtn').textContent='Copied';}function fallbackCopy(t){var a=document.getElementById('cmdFallback');a.value=t;a.focus();a.select();try{document.execCommand('copy');copied();}catch(e){window.prompt('Copy this command',t);}}function copyCmd(){var t=document.getElementById('cmd').textContent.trim();if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(copied,function(){fallbackCopy(t);});}else{fallbackCopy(t);}}</script></main></body></html>");
-  return html;
-}
-
 void handleUpdatePage() {
   webServer.keepAlive(false);
-  webServer.send(200, "text/html; charset=utf-8", updatePageHTML());
+  webServer.send(
+      200,
+      "text/html; charset=utf-8",
+      F("<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'><title>VibeTV Update</title><h1>VibeTV Update</h1><p>Open the VibeTV App on your Mac to check and install updates.</p><p><a href='/'>Back</a></p>"));
 }
 
 void setOtaError(const String& message) {
@@ -3470,181 +3467,352 @@ void handleOtaResult(const char* target) {
   otaUploadNeedsReboot = false;
 }
 
-void sendRawOtaResponse(WiFiClient& client, int status, const char* statusText, const String& body) {
-  client.print("HTTP/1.1 ");
-  client.print(status);
-  client.print(" ");
-  client.print(statusText);
-  client.print("\r\nConnection: close\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: ");
-  client.print(body.length());
-  client.print("\r\n\r\n");
-  client.print(body);
+int hexNibble(char value) {
+  if (value >= '0' && value <= '9') {
+    return value - '0';
+  }
+  if (value >= 'a' && value <= 'f') {
+    return value - 'a' + 10;
+  }
+  if (value >= 'A' && value <= 'F') {
+    return value - 'A' + 10;
+  }
+  return -1;
 }
 
-bool rawRequestLineIsFirmwarePost(const String& line) {
-  return line.startsWith("POST /update/firmware.raw ") ||
-         line.startsWith("POST /update/firmware.raw?") ||
-         line.startsWith("PUT /update/firmware.raw ") ||
-         line.startsWith("PUT /update/firmware.raw?");
+bool decodeTransferHash(const char* encoded, uint8_t* out) {
+  constexpr size_t kHashBytes = 16;
+  if (encoded == nullptr || out == nullptr || strlen(encoded) != kHashBytes * 2) {
+    return false;
+  }
+  for (size_t i = 0; i < kHashBytes; ++i) {
+    const int high = hexNibble(encoded[i * 2]);
+    const int low = hexNibble(encoded[i * 2 + 1]);
+    if (high < 0 || low < 0) {
+      return false;
+    }
+    out[i] = static_cast<uint8_t>((high << 4) | low);
+  }
+  return true;
 }
 
-String rawRequestToken(const String& line) {
-  const int queryStart = line.indexOf("?token=");
-  if (queryStart < 0) {
-    return "";
-  }
-  int tokenStart = queryStart + 7;
-  int tokenEnd = line.indexOf(' ', tokenStart);
-  const int nextParam = line.indexOf('&', tokenStart);
-  if (nextParam >= 0 && (tokenEnd < 0 || nextParam < tokenEnd)) {
-    tokenEnd = nextParam;
-  }
-  if (tokenEnd < 0) {
-    tokenEnd = line.length();
-  }
-  String token = line.substring(tokenStart, tokenEnd);
-  token.trim();
-  return token;
+uint32_t chunkChecksum(const uint8_t* data, size_t length) {
+  MD5Builder context;
+  uint8_t digest[16];
+  context.begin();
+  context.add(data, static_cast<uint16_t>(length));
+  context.calculate();
+  context.getBytes(digest);
+  return (static_cast<uint32_t>(digest[0]) << 24) |
+         (static_cast<uint32_t>(digest[1]) << 16) |
+         (static_cast<uint32_t>(digest[2]) << 8) |
+         static_cast<uint32_t>(digest[3]);
 }
 
-void handleRawOtaClient() {
-  if (!rawOtaServerStarted || otaUploadInProgress || assetUploadInProgress || rebootPending) {
+bool parseChunkChecksum(const char* encoded, uint32_t& checksum) {
+  if (encoded == nullptr || strlen(encoded) != 8) {
+    return false;
+  }
+  checksum = 0;
+  for (size_t i = 0; i < 8; ++i) {
+    const int nibble = hexNibble(encoded[i]);
+    if (nibble < 0) {
+      return false;
+    }
+    checksum = (checksum << 4) | static_cast<uint32_t>(nibble);
+  }
+  return true;
+}
+
+void emitCableTransferReply(const char* status) {
+  String out = "{\"kind\":\"transfer\",\"status\":\"";
+	out += status;
+	out += "\",\"next\":";
+	out += String(cableTransfer.flow.nextSequence);
+  out += "}";
+  Serial.println(out);
+}
+
+void resetCableTransfer(bool discard) {
+	if (!cableTransfer.flow.active) {
     return;
   }
-
-  WiFiClient client = rawOtaServer.accept();
-  if (!client) {
-    return;
-  }
-  client.setTimeout(5000);
-
-  String requestLine = client.readStringUntil('\n');
-  requestLine.trim();
-  if (!rawRequestLineIsFirmwarePost(requestLine)) {
-    sendRawOtaResponse(client, 404, "Not Found", "not found");
-    client.stop();
-    return;
-  }
-
-  String rawToken = rawRequestToken(requestLine);
-  size_t contentLength = 0;
-  while (client.connected()) {
-    String header = client.readStringUntil('\n');
-    header.trim();
-    if (header.length() == 0) {
-      break;
+  if (cableTransfer.sink == CableTransferSink::kAsset) {
+    if (assetUploadFile) {
+      assetUploadFile.close();
     }
-    String lower = header;
-    lower.toLowerCase();
-    if (lower.startsWith("content-length:")) {
-      String value = header.substring(header.indexOf(':') + 1);
-      value.trim();
-      contentLength = static_cast<size_t>(value.toInt());
-    } else if (lower.startsWith("x-vibetv-token:")) {
-      rawToken = header.substring(header.indexOf(':') + 1);
-      rawToken.trim();
+    if (discard) {
+      discardPartialAssetUpload();
     }
-  }
-
-  if (!codexbar_display::esp8266::WifiSecurityPolicy::AllowsFirmwareUpload(
-          deviceAuthConfigured(),
-          rawToken == deviceAuthToken)) {
-    sendRawOtaResponse(client, 401, "Unauthorized", "pairing token required");
-    client.stop();
-    return;
-  }
-
-  if (contentLength == 0) {
-    sendRawOtaResponse(client, 411, "Length Required", "content-length required");
-    client.stop();
-    return;
-  }
-
-  const size_t maxSize = otaMaxSizeForCommand(U_FLASH);
-  if (contentLength > maxSize) {
-    sendRawOtaResponse(client, 413, "Payload Too Large", "firmware image is too large");
-    client.stop();
-    return;
-  }
-
-  otaUploadSucceeded = false;
-  otaUploadInProgress = true;
-  otaUploadNeedsReboot = false;
-  otaUploadError = "";
-
-  enterOtaSafeMode(U_FLASH, &client);
-  otaUploadNeedsReboot = true;
-  drawUpdateStatus("Loading firmware");
-  waitStatusRendered = true;
-
-  if (!Update.begin(contentLength, U_FLASH)) {
-    setOtaError(Update.getErrorString());
-    resetOtaUpdaterAfterFailure();
-  }
-
-  uint8_t buffer[kRawOtaReadBufferBytes];
-  size_t remaining = contentLength;
-  unsigned long lastProgressMs = millis();
-  while (remaining > 0 && otaUploadError.length() == 0) {
-    const int available = client.available();
-    if (available <= 0) {
-      if (!client.connected()) {
-        setOtaError("raw upload disconnected");
-        resetOtaUpdaterAfterFailure();
-        break;
-      }
-      if (millis() - lastProgressMs > kRawOtaProgressTimeoutMs) {
-        setOtaError("raw upload timeout");
-        resetOtaUpdaterAfterFailure();
-        break;
-      }
-      delay(1);
-      continue;
-    }
-    size_t want = static_cast<size_t>(available);
-    if (want > remaining) {
-      want = remaining;
-    }
-    if (want > sizeof(buffer)) {
-      want = sizeof(buffer);
-    }
-    const int readCount = client.read(buffer, want);
-    if (readCount <= 0) {
-      delay(1);
-      continue;
-    }
-    const size_t got = static_cast<size_t>(readCount);
-    lastProgressMs = millis();
-    remaining -= got;
-    if (Update.write(buffer, got) != got) {
-      setOtaError(Update.getErrorString());
+    finishAssetUploadRequest();
+    assetUploadSucceeded = false;
+  } else if (cableTransfer.sink == CableTransferSink::kFirmware) {
+    if (discard) {
       resetOtaUpdaterAfterFailure();
-      break;
     }
-    ESP.wdtFeed();
-    delay(0);
+    otaUploadInProgress = false;
+    otaUploadNeedsReboot = false;
+    otaUploadSucceeded = false;
+  }
+  cableTransfer = CableTransferState{};
+}
+
+bool startCableTransfer(JsonDocument& doc) {
+  const char* expectedDeviceID = doc["deviceId"] | "";
+  const char* token = doc["token"] | "";
+  const char* sink = doc["sink"] | "";
+  const char* activation = doc["activate"] | "";
+  const char* expectedHash = doc["hash"] | "";
+	const int expectedBytesValue = doc["bytes"] | 0;
+	const size_t expectedBytes = expectedBytesValue > 0
+	    ? static_cast<size_t>(expectedBytesValue)
+	    : 0;
+  String destination = String(doc["path"] | "");
+  destination.trim();
+	if (cableTransfer.flow.active || otaUploadInProgress || assetUploadInProgress ||
+      rebootPending || strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
+      !deviceAuthConfigured() || strcmp(token, deviceAuthToken.c_str()) != 0 ||
+      expectedBytes == 0) {
+    emitSerialError("transfer-rejected");
+    return true;
   }
 
-  if (otaUploadError.length() == 0 && remaining == 0 && Update.end(false)) {
-    otaUploadSucceeded = true;
-    sendRawOtaResponse(client, 200, "OK", "ok");
-    drawUpdateStatus("Restarting");
-    waitStatusRendered = true;
-    scheduleReboot("firmware_raw");
-    otaUploadNeedsReboot = false;
+  CableTransferSink target = CableTransferSink::kNone;
+  CableTransferActivation targetActivation = CableTransferActivation::kNone;
+  if (strcmp(sink, "asset") == 0 && isMutableThemeAssetPath(destination)) {
+    target = CableTransferSink::kAsset;
+    if (activation[0] == '\0') {
+      targetActivation = CableTransferActivation::kNone;
+    } else if (strcmp(activation, "theme") == 0) {
+      targetActivation = CableTransferActivation::kTheme;
+    } else if (strcmp(activation, "screensaver") == 0) {
+      targetActivation = CableTransferActivation::kScreensaver;
+    } else {
+      target = CableTransferSink::kNone;
+    }
+  } else if (strcmp(sink, "firmware") == 0 &&
+             activation[0] == '\0' &&
+             expectedBytes <= otaMaxSizeForCommand(U_FLASH)) {
+    target = CableTransferSink::kFirmware;
+  }
+  uint8_t expectedDigest[16];
+  if (target == CableTransferSink::kNone ||
+      !decodeTransferHash(expectedHash, expectedDigest)) {
+    emitSerialError("transfer-rejected");
+    return true;
+  }
+
+  codexbar_display::esp8266::cable_transfer::Begin(
+      cableTransfer.flow, expectedBytes, millis());
+  cableTransfer.sink = target;
+  cableTransfer.activation = targetActivation;
+  memcpy(cableTransfer.expectedHash, expectedDigest, sizeof(expectedDigest));
+  cableTransfer.hash.begin();
+
+  if (target == CableTransferSink::kAsset) {
+    assetUploadSucceeded = false;
+    assetUploadInProgress = true;
+    assetUploadError = "";
+    assetUploadPath = destination;
+    assetUploadBytesSeen = 0;
+    enterAssetUploadSafeMode();
+    if ((assetPathLooksGif(assetUploadPath) &&
+         expectedBytes > kMaxThemeGifAssetBytes) ||
+        !LittleFS.begin() ||
+        !ensureAssetParentDirs(assetUploadPath) ||
+        (LittleFS.exists(kAssetUploadTemporaryPath) &&
+         !LittleFS.remove(kAssetUploadTemporaryPath))) {
+      resetCableTransfer(true);
+      emitSerialError("transfer-rejected");
+      return true;
+    }
+    assetUploadFile = LittleFS.open(kAssetUploadTemporaryPath, "w");
+    if (!assetUploadFile) {
+      resetCableTransfer(true);
+      emitSerialError("transfer-rejected");
+      return true;
+    }
   } else {
-    if (otaUploadError.length() == 0) {
-      setOtaError(Update.getErrorString());
-      resetOtaUpdaterAfterFailure();
+    otaUploadSucceeded = false;
+    otaUploadInProgress = true;
+    otaUploadNeedsReboot = true;
+    otaUploadError = "";
+    enterOtaSafeMode(U_FLASH, nullptr);
+    drawUpdateStatus("Loading firmware");
+    waitStatusRendered = true;
+    if (!Update.begin(expectedBytes, U_FLASH)) {
+      resetCableTransfer(true);
+      emitSerialError("transfer-rejected");
+      return true;
     }
-    sendRawOtaResponse(client, 500, "Internal Server Error", "Update failed: " + otaUploadError);
-    if (otaUploadNeedsReboot) {
-      scheduleReboot("firmware_raw_failure");
-    }
-    otaUploadNeedsReboot = false;
   }
-  otaUploadInProgress = false;
-  client.stop();
+  emitCableTransferReply("ready");
+  return true;
+}
+
+bool writeCableTransferChunk(JsonDocument& doc) {
+  const int sequence = doc["seq"] | -1;
+  const char* encoded = doc["data"] | "";
+  const char* encodedChecksum = doc["checksum"] | "";
+  uint32_t expectedChecksum = 0;
+  if (!cableTransfer.flow.active ||
+      !parseChunkChecksum(encodedChecksum, expectedChecksum)) {
+    emitSerialError("transfer-rejected");
+    return true;
+  }
+  const size_t encodedBytes = strlen(encoded);
+  if (encodedBytes == 0 || encodedBytes > kCableTransferChunkBytes * 2 ||
+      encodedBytes % 2 != 0) {
+    emitSerialError("transfer-rejected");
+    return true;
+  }
+
+  uint8_t decoded[kCableTransferChunkBytes];
+  const size_t decodedBytes = encodedBytes / 2;
+  for (size_t i = 0; i < decodedBytes; ++i) {
+    const int high = hexNibble(encoded[i * 2]);
+    const int low = hexNibble(encoded[i * 2 + 1]);
+    if (high < 0 || low < 0) {
+      emitSerialError("transfer-rejected");
+      return true;
+    }
+    decoded[i] = static_cast<uint8_t>((high << 4) | low);
+  }
+  const auto decision = codexbar_display::esp8266::cable_transfer::CheckChunk(
+      cableTransfer.flow,
+      sequence,
+      decodedBytes,
+      expectedChecksum,
+      chunkChecksum(decoded, decodedBytes));
+  if (decision == codexbar_display::esp8266::cable_transfer::ChunkDecision::kDuplicate) {
+    emitCableTransferReply("chunk");
+    return true;
+  }
+  if (decision != codexbar_display::esp8266::cable_transfer::ChunkDecision::kAccept) {
+    emitSerialError("transfer-rejected");
+    return true;
+  }
+
+  const size_t bytes = decodedBytes;
+  bool wrote = false;
+  if (cableTransfer.sink == CableTransferSink::kAsset) {
+    wrote = assetUploadFile && assetUploadFile.write(decoded, bytes) == bytes;
+    assetUploadBytesSeen += wrote ? bytes : 0;
+  } else if (cableTransfer.sink == CableTransferSink::kFirmware) {
+    wrote = Update.write(decoded, bytes) == bytes;
+  }
+  if (!wrote) {
+    resetCableTransfer(true);
+    emitSerialError("transfer-rejected");
+    return true;
+  }
+
+  cableTransfer.hash.add(decoded, static_cast<uint16_t>(bytes));
+  codexbar_display::esp8266::cable_transfer::AcceptChunk(
+      cableTransfer.flow, bytes, expectedChecksum, millis());
+  ESP.wdtFeed();
+  emitCableTransferReply("chunk");
+  return true;
+}
+
+bool finishCableTransfer(JsonDocument& doc) {
+  if (!cableTransfer.flow.active) {
+    emitSerialError("transfer-rejected");
+    return true;
+  }
+  uint8_t actualDigest[16];
+  cableTransfer.hash.calculate();
+  cableTransfer.hash.getBytes(actualDigest);
+  if (!codexbar_display::esp8266::cable_transfer::CanFinish(
+          cableTransfer.flow,
+          memcmp(actualDigest, cableTransfer.expectedHash, sizeof(actualDigest)) == 0)) {
+    resetCableTransfer(true);
+    emitSerialError("transfer-rejected");
+    return true;
+  }
+
+  bool committed = false;
+  if (cableTransfer.sink == CableTransferSink::kAsset) {
+    assetUploadFile.flush();
+    assetUploadFile.close();
+    committed = validateCompletedAssetUpload() && promoteCompletedAssetUpload();
+    if (committed && cableTransfer.activation == CableTransferActivation::kTheme) {
+      String themeID;
+      String error;
+      int themeRevision = 0;
+      committed = activateStoredThemePath(
+          assetUploadPath, true, themeID, themeRevision, error);
+      if (committed) {
+        screensaver_preview::Cancel(screensaverPreviewState);
+        screensaverPreviewLivePath = "";
+        standbyLiveThemePath = "";
+        standbyState.active = false;
+        standby::NoteUsageActivity(standbyState, millis());
+        applyDeviceSettings();
+      }
+    } else if (committed &&
+               cableTransfer.activation == CableTransferActivation::kScreensaver) {
+      DeviceSettings next = deviceSettings;
+      String error;
+      committed = setStandbyScreensaverPath(next.standby, assetUploadPath, error) &&
+                  persistDeviceSettings(next);
+      if (committed) {
+        screensaver_preview::NoteSelection(screensaverPreviewState);
+      }
+    }
+    assetUploadSucceeded = committed;
+  } else if (cableTransfer.sink == CableTransferSink::kFirmware) {
+    committed = Update.end(false);
+    otaUploadSucceeded = committed;
+  }
+  if (!committed) {
+    resetCableTransfer(true);
+    emitSerialError("transfer-rejected");
+    return true;
+  }
+
+  const CableTransferSink completedSink = cableTransfer.sink;
+  emitCableTransferReply("complete");
+  if (completedSink == CableTransferSink::kAsset) {
+    finishAssetUploadRequest();
+  } else {
+    otaUploadInProgress = false;
+    otaUploadNeedsReboot = false;
+    scheduleReboot("firmware_cable");
+  }
+  cableTransfer = CableTransferState{};
+  return true;
+}
+
+bool handleCableTransferRequest(JsonDocument& doc, const char* op) {
+  if (strcmp(op, "transfer-start") == 0) {
+    return startCableTransfer(doc);
+  }
+  if (strcmp(op, "transfer-chunk") == 0) {
+    return writeCableTransferChunk(doc);
+  }
+  if (strcmp(op, "transfer-finish") == 0) {
+    return finishCableTransfer(doc);
+  }
+  if (strcmp(op, "transfer-abort") == 0) {
+    if (cableTransfer.flow.active) {
+      resetCableTransfer(true);
+      emitCableTransferReply("aborted");
+      cableTransfer = CableTransferState{};
+    } else {
+      emitSerialError("transfer-rejected");
+    }
+    return true;
+  }
+  emitSerialError("unsupported-request");
+  return true;
+}
+
+void maintainCableTransfer() {
+  if (codexbar_display::esp8266::cable_transfer::Expired(
+          cableTransfer.flow, millis(), kCableTransferTimeoutMs)) {
+    resetCableTransfer(true);
+  }
 }
 
 void handleFrame() {
@@ -3757,11 +3925,7 @@ void startHttpServer() {
   webServer.collectHeaders(kDeviceAuthHeader);
   webServer.begin();
   httpServerStarted = true;
-  rawOtaServer.begin();
-  rawOtaServer.setNoDelay(true);
-  rawOtaServerStarted = true;
   Serial.println("http_server_started port=80");
-  Serial.println("raw_ota_server_started port=8081 path=/update/firmware.raw");
 }
 
 void startSetupAccessPoint() {
@@ -4005,11 +4169,11 @@ void loop() {
   }
 
   handleSerialInput();
+  maintainCableTransfer();
 
   if (httpServerStarted) {
     webServer.handleClient();
   }
-  handleRawOtaClient();
   maintainConnectionTransition();
   maintainWifiConnection();
   if (!otaUploadInProgress && !assetUploadInProgress) {

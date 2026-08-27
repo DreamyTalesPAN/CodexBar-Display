@@ -70,6 +70,11 @@ var (
 	discoverWiFiDeviceFn                               = transportlayer.DiscoverWiFiDevice
 	flashReleaseFirmwareImageFn                        = flashReleaseFirmwareImage
 	uploadFirmwareOTAFn                                = uploadFirmwareOTA
+	resolveCableFirmwarePortFn                         = usb.ResolveVibeTVControlPort
+	readCableFirmwareHelloFn                           = usb.ReadDeviceHello
+	transferCableFirmwareFn                            = usb.TransferFirmware
+	cableFirmwareVerifyTimeout                         = 120 * time.Second
+	cableFirmwareVerifyPollInterval                    = time.Second
 	firmwareRawDialContextFn                           = dialFirmwareRawConnection
 	firmwareRawOTAPort                                 = "8081"
 	firmwareHTTPVerifyPollInterval                     = 2 * time.Second
@@ -550,14 +555,8 @@ func runInstallUpdate(args []string) (retErr error) {
 	if err != nil {
 		return &commandError{Op: "resolve-home", Code: errcode.UpgradeStateWrite, Err: err}
 	}
-	base, err := normalizeHTTPBaseURL(*target)
-	if err != nil {
-		return &commandError{Op: "resolve-target", Code: errcode.UpgradeFlashFirmware, Err: err}
-	}
-	// Quiesce gate: concurrent device traffic during an OTA upload is fatal
-	// (see otherRuntimeWriterAlive). Runs before the first device request. The
-	// API job pauses the stream itself and marks the child via
-	// VIBETV_UPDATE_PARENT_PAUSED=1.
+	// Concurrent device traffic during any firmware transfer is fatal. This
+	// gate must run before the first WiFi or Cable device request.
 	if !*stoppedAllWriters && os.Getenv(firmwareUpdateParentPausedEnvVar) != "1" && otherRuntimeWriterAlive() {
 		return &commandError{
 			Op:   "quiesce-device-writers",
@@ -566,14 +565,44 @@ func runInstallUpdate(args []string) (retErr error) {
 			Hint: "quit the VibeTV Mac App (or stop the companion daemon), then retry; pass --i-stopped-all-writers only after every device writer is stopped",
 		}
 	}
-
-	hello, err := fetchDeviceHelloHTTP(ctx, base)
-	if err != nil {
-		return &commandError{
-			Op:   "device-hello",
-			Code: errcode.UpgradeFlashFirmware,
-			Err:  err,
-			Hint: "open http://<device-ip>/health or pass --target http://<device-ip>",
+	cableMode := strings.EqualFold(strings.TrimRight(strings.TrimSpace(*target), "/"), "cable://vibetv")
+	base := "cable://vibetv"
+	var cablePort string
+	var deviceToken string
+	var hello protocol.DeviceHello
+	if cableMode {
+		cfg, loadErr := runtimeconfig.Load(home)
+		if loadErr != nil {
+			return &commandError{Op: "load-cable-config", Code: errcode.UpgradeFlashFirmware, Err: loadErr}
+		}
+		if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" ||
+			strings.TrimSpace(cfg.DeviceID) == "" || strings.TrimSpace(cfg.DeviceToken) == "" {
+			return &commandError{Op: "cable-preflight", Code: errcode.UpgradeFlashFirmware, Err: errors.New("paired Cable VibeTV is required")}
+		}
+		cablePort, err = resolveCableFirmwarePortFn("", cfg.DeviceID)
+		if err == nil {
+			hello, err = readCableFirmwareHelloFn(cablePort)
+		}
+		if err == nil && !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(cfg.DeviceID)) {
+			err = fmt.Errorf("cable VibeTV identity changed from %s to %s", strings.TrimSpace(cfg.DeviceID), strings.TrimSpace(hello.DeviceID))
+		}
+		if err != nil {
+			return &commandError{Op: "cable-device-hello", Code: errcode.UpgradeFlashFirmware, Err: err}
+		}
+		deviceToken = strings.TrimSpace(cfg.DeviceToken)
+	} else {
+		base, err = normalizeHTTPBaseURL(*target)
+		if err != nil {
+			return &commandError{Op: "resolve-target", Code: errcode.UpgradeFlashFirmware, Err: err}
+		}
+		hello, err = fetchDeviceHelloHTTP(ctx, base)
+		if err != nil {
+			return &commandError{
+				Op:   "device-hello",
+				Code: errcode.UpgradeFlashFirmware,
+				Err:  err,
+				Hint: "open http://<device-ip>/health or pass --target http://<device-ip>",
+			}
 		}
 	}
 	caps := protocol.CapabilitiesFromHello(hello)
@@ -650,13 +679,15 @@ func runInstallUpdate(args []string) (retErr error) {
 		HelloVerified:     true,
 	})
 
-	deviceToken, err := ensureFirmwareUpdateDeviceToken(ctx, home, base, deviceID)
-	if err != nil {
-		return &commandError{
-			Op:   "device-auth-preflight",
-			Code: errcode.UpgradeFlashFirmware,
-			Err:  err,
-			Hint: "keep VibeTV powered and on the same WiFi, then retry",
+	if !cableMode {
+		deviceToken, err = ensureFirmwareUpdateDeviceToken(ctx, home, base, deviceID)
+		if err != nil {
+			return &commandError{
+				Op:   "device-auth-preflight",
+				Code: errcode.UpgradeFlashFirmware,
+				Err:  err,
+				Hint: "keep VibeTV powered and on the same WiFi, then retry",
+			}
 		}
 	}
 
@@ -667,20 +698,45 @@ func runInstallUpdate(args []string) (retErr error) {
 	}
 
 	fmt.Println("Uploading firmware...")
-	uploadErr := uploadFirmwareOTAFn(ctx, base, imagePath, deviceToken, caps.Firmware)
-	uploadInterrupted := firmwareUploadConnectionInterrupted(uploadErr)
-	uploadErr = recoverInterruptedFirmwareUpload(
-		ctx,
-		base,
-		targetVersion,
-		deviceID,
-		uploadErr,
-	)
+	var uploadErr error
+	uploadInterrupted := false
+	if cableMode {
+		var image []byte
+		image, uploadErr = os.ReadFile(imagePath)
+		if uploadErr == nil {
+			uploadErr = transferCableFirmwareFn(ctx, cablePort, deviceID, deviceToken, image)
+		}
+		uploadInterrupted = errors.Is(uploadErr, usb.ErrCableTransferInterrupted)
+	} else {
+		uploadErr = uploadFirmwareOTAFn(ctx, base, imagePath, deviceToken, caps.Firmware)
+		uploadInterrupted = firmwareUploadConnectionInterrupted(uploadErr)
+		uploadErr = recoverInterruptedFirmwareUpload(
+			ctx,
+			base,
+			targetVersion,
+			deviceID,
+			uploadErr,
+		)
+	}
 	if uploadErr != nil {
-		if uploadInterrupted {
+		if uploadInterrupted && !cableMode {
 			restoreStoredThemeAfterAbortedUpload(ctx, base, deviceToken)
 		}
 		hint := "keep VibeTV powered and on the same WiFi, then retry"
+		if cableMode {
+			hint = "reconnect VibeTV with a data-capable Cable, wait for it to start, then retry once"
+			if uploadInterrupted {
+				emitFirmwareUpdateEvent(firmwareUpdateEvent{
+					Stage:       "uploading",
+					Phase:       "attention",
+					Outcome:     "interrupted",
+					RetryPolicy: "reconnect_cable",
+					Firmware:    targetVersion,
+					Target:      base,
+					DeviceID:    deviceID,
+				})
+			}
+		}
 		if errors.Is(uploadErr, errFirmwareUploadRestartRequired) {
 			hint = "disconnect VibeTV from power for 10 seconds, reconnect it, wait until the picture returns, then retry once"
 			emitFirmwareUpdateEvent(firmwareUpdateEvent{
@@ -710,16 +766,27 @@ func runInstallUpdate(args []string) (retErr error) {
 	})
 	fmt.Println("Restarting VibeTV...")
 
-	verifiedBase, err := waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, deviceID, 120*time.Second)
-	if err != nil {
+	verifiedBase := base
+	var verifiedHello protocol.DeviceHello
+	var helloErr error
+	if cableMode {
+		verifiedHello, helloErr = waitForCableFirmwareVersion(ctx, targetVersion, deviceID, cableFirmwareVerifyTimeout)
+	} else {
+		verifiedBase, err = waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, deviceID, 120*time.Second)
+		if err == nil {
+			verifiedHello, helloErr = fetchDeviceHelloHTTP(ctx, verifiedBase)
+		} else {
+			helloErr = err
+		}
+	}
+	if helloErr != nil {
 		return &commandError{
 			Op:   "post-update-verify",
 			Code: errcode.UpgradeFlashFirmware,
-			Err:  err,
-			Hint: "wait one minute, then open http://<device-ip>/health",
+			Err:  helloErr,
+			Hint: "wait one minute, then reconnect VibeTV",
 		}
 	}
-	verifiedHello, helloErr := fetchDeviceHelloHTTP(ctx, verifiedBase)
 	if helloErr != nil || !strings.EqualFold(strings.TrimSpace(verifiedHello.DeviceID), deviceID) {
 		return &commandError{
 			Op:   "post-update-device-identity",
@@ -739,7 +806,7 @@ func runInstallUpdate(args []string) (retErr error) {
 		UploadAccepted:    true,
 		HelloVerified:     true,
 	})
-	if verifiedBase != base {
+	if !cableMode && verifiedBase != base {
 		base = verifiedBase
 		if _, err := ensureFirmwareUpdateDeviceToken(ctx, home, base, deviceID); err != nil {
 			fmt.Printf("warning: firmware updated, but saving the rediscovered VibeTV address failed: %v\n", err)
@@ -747,6 +814,42 @@ func runInstallUpdate(args []string) (retErr error) {
 	}
 	fmt.Printf("Done: firmware %s installed\n", targetVersion)
 	return nil
+}
+
+func waitForCableFirmwareVersion(
+	ctx context.Context,
+	targetVersion,
+	deviceID string,
+	timeout time.Duration,
+) (protocol.DeviceHello, error) {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		if err := ctx.Err(); err != nil {
+			return protocol.DeviceHello{}, err
+		}
+		port, err := resolveCableFirmwarePortFn("", deviceID)
+		if err == nil {
+			var hello protocol.DeviceHello
+			hello, err = readCableFirmwareHelloFn(port)
+			if err == nil {
+				if !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(deviceID)) {
+					err = fmt.Errorf("cable VibeTV identity changed from %s to %s", strings.TrimSpace(deviceID), strings.TrimSpace(hello.DeviceID))
+				} else if normalizeReleaseVersion(hello.Firmware) == normalizeReleaseVersion(targetVersion) {
+					return hello, nil
+				} else {
+					err = fmt.Errorf("cable VibeTV still reports firmware %s", strings.TrimSpace(hello.Firmware))
+				}
+			}
+		}
+		lastErr = err
+		select {
+		case <-ctx.Done():
+			return protocol.DeviceHello{}, ctx.Err()
+		case <-time.After(cableFirmwareVerifyPollInterval):
+		}
+	}
+	return protocol.DeviceHello{}, fmt.Errorf("cable VibeTV did not report firmware %s: %v", targetVersion, lastErr)
 }
 
 func ensureFirmwareUpdateDeviceToken(ctx context.Context, home, base, expectedDeviceID string) (string, error) {
@@ -1543,12 +1646,19 @@ func fetchDeviceHelloHTTPWithToken(ctx context.Context, base, token string) (pro
 }
 
 func uploadFirmwareOTA(ctx context.Context, base, imagePath, token, currentFirmware string) error {
+	if !usesLegacyRawFirmwareUpload(currentFirmware) {
+		return uploadFirmwareOTAMultipart(ctx, base, imagePath, token)
+	}
 	if err := uploadFirmwareOTARaw(ctx, base, imagePath, token, currentFirmware); err == nil {
 		return nil
 	} else if !rawFirmwareUploadUnavailable(err) {
 		return err
 	}
 	return uploadFirmwareOTAMultipart(ctx, base, imagePath, token)
+}
+
+func usesLegacyRawFirmwareUpload(currentFirmware string) bool {
+	return normalizeReleaseVersion(currentFirmware) == "1.0.36"
 }
 
 func uploadFirmwareOTAMultipart(ctx context.Context, base, imagePath, token string) error {
