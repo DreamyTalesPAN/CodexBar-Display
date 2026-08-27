@@ -180,6 +180,49 @@ func TestResolveCycleDeviceDoesNotRebindCableAfterSetupReset(t *testing.T) {
 	}
 }
 
+func TestRunCycleDoesNotWriteCableAfterSetupReset(t *testing.T) {
+	prepareFastTestEnv(t)
+	cfg := runtimeconfig.Config{
+		ConnectionMode:               "cable",
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: true,
+	}
+	sendCalls := 0
+	err := runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig:    func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		resolveUSBDevice: func(requested, expectedDeviceID string) (string, error) {
+			if requested != "" || expectedDeviceID != "" {
+				t.Fatalf("reset Cable resolution received requested=%q expectedDeviceID=%q", requested, expectedDeviceID)
+			}
+			return "/dev/cu.usbserial-replacement", nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:           true,
+				DeviceID:        "replacement-vibetv",
+				ConnectionMode:  "cable",
+				ActiveTransport: "usb",
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 34, 3600)}, nil
+		},
+		sendLine: func(string, []byte) error {
+			sendCalls++
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("run reset Cable cycle: %v", err)
+	}
+	if sendCalls != 0 {
+		t.Fatalf("reset Cable cycle sent %d usage frames before an explicit choice", sendCalls)
+	}
+}
+
 func TestResolveCycleDeviceReconcilesWiFiRollbackToCable(t *testing.T) {
 	cfg := runtimeconfig.Config{
 		CableAutoBindDisabled:        true,

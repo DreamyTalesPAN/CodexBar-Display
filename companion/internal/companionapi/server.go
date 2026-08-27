@@ -3290,6 +3290,10 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	}
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
+	if s.pauseDisplayStream != nil {
+		s.pauseDisplayStream(true)
+		defer s.pauseDisplayStream(false)
+	}
 	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
 		cfg.ResetDeviceBinding()
 	})
