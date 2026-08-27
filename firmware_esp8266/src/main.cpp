@@ -3853,18 +3853,17 @@ void setup() {
     // lwIP keeps the system clock corrected without any retry code here.
     configTime(0, 0, "pool.ntp.org");
     startHttpServer();
-  } else if (connectionTransitionPending && !hasSavedWifi) {
+  } else if (connectionTransitionPending) {
+    if (hasSavedWifi) {
+      clearWifiCredentials();
+      clearSdkWifiCredentials();
+      savedWifiCredentialsAvailable = false;
+    }
     connectionTransitionStartedAtMs = millis();
     Serial.printf(
         "connection_mode_transition_setup mode=wifi timeout_ms=%lu\n",
         device_settings::kConnectionTransitionSetupMs);
     startSetupAccessPoint();
-  } else if (connectionTransitionPending) {
-    const unsigned long renderStartUs = micros();
-    renderer.DrawStatus(runtimeCtx, "VIBE TV", "WiFi unavailable", "Returning to Cable");
-    recordRenderFull("connection_mode_rollback", micros() - renderStartUs);
-    waitStatusRendered = true;
-    (void)rollbackConnectionTransition("wifi_association_failed");
   } else {
     startSetupAccessPoint();
   }

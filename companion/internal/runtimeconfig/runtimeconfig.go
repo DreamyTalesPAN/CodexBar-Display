@@ -445,13 +445,19 @@ func (cfg *Config) RememberDevice(device KnownDevice) {
 	cfg.upsertKnownDevice(device)
 }
 
-func (cfg *Config) ClearDevices() {
+func (cfg *Config) ResetDeviceBinding() {
+	if strings.TrimSpace(cfg.DeviceID) != "" {
+		cfg.RememberDevice(KnownDevice{
+			DeviceID:    cfg.DeviceID,
+			Target:      cfg.DeviceTarget,
+			DeviceToken: cfg.DeviceToken,
+		})
+	}
 	cfg.CableAutoBindDisabled = true
 	cfg.ConnectionModeChoiceRequired = true
 	cfg.DeviceTarget = ""
 	cfg.DeviceToken = ""
 	cfg.DeviceID = ""
-	cfg.KnownDevices = nil
 }
 
 func (cfg *Config) normalizeKnownDevices() {
