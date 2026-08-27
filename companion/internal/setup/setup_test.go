@@ -36,7 +36,7 @@ func TestDaemonIntervalForSetupTransport(t *testing.T) {
 		want      string
 	}{
 		{name: "wifi", transport: "wifi", want: defaultWiFiDaemonInterval},
-		{name: "default", transport: "", want: defaultWiFiDaemonInterval},
+		{name: "default", transport: "", want: defaultDaemonInterval},
 		{name: "serial", transport: "serial", want: defaultDaemonInterval},
 	}
 
@@ -46,6 +46,12 @@ func TestDaemonIntervalForSetupTransport(t *testing.T) {
 				t.Fatalf("daemonIntervalForSetupTransport(%q)=%q, expected %q", tt.transport, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDefaultSetupTransportIsCable(t *testing.T) {
+	if got := DefaultSetupTransport(); got != "usb" {
+		t.Fatalf("DefaultSetupTransport()=%q, expected usb", got)
 	}
 }
 
@@ -231,6 +237,7 @@ func TestRunWithDepsNeverPersistsExplicitSetupPort(t *testing.T) {
 func TestRunWithDepsConfiguresWiFiLaunchAgentTarget(t *testing.T) {
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)
+	mustSaveConfirmedWiFiConfig(t, home)
 
 	err := runWithDeps(context.Background(), Options{
 		Transport: "wifi",
@@ -302,6 +309,7 @@ func TestRunWithDepsPersistsWiFiTargetAndTokenInRuntimeConfig(t *testing.T) {
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)
 	var stdout bytes.Buffer
+	mustSaveConfirmedWiFiConfig(t, home)
 
 	err := runWithDeps(context.Background(), Options{
 		Transport: "wifi",
@@ -367,11 +375,13 @@ func TestRunWithDepsPersistsWiFiTargetAndTokenInRuntimeConfig(t *testing.T) {
 	}
 }
 
-func TestRunWithDepsDefaultsToDiscoveryOnlyWiFiLaunchAgent(t *testing.T) {
+func TestRunWithDepsConfiguresDiscoveryOnlyWiFiLaunchAgent(t *testing.T) {
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)
+	mustSaveConfirmedWiFiConfig(t, home)
 
 	err := runWithDeps(context.Background(), Options{
+		Transport: "wifi",
 		AssumeYes: true,
 		SkipFlash: true,
 	}, deps{
@@ -421,13 +431,15 @@ func TestRunWithDepsDefaultsToDiscoveryOnlyWiFiLaunchAgent(t *testing.T) {
 	}
 }
 
-func TestRunWithDepsDiscoversWiFiIPWithoutDefaultHostname(t *testing.T) {
+func TestRunWithDepsDiscoversWiFiIPWithoutConfiguredHostname(t *testing.T) {
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)
 	var gotCandidates []string
 	var stdout bytes.Buffer
+	mustSaveConfirmedWiFiConfig(t, home)
 
 	err := runWithDeps(context.Background(), Options{
+		Transport: "wifi",
 		AssumeYes: true,
 		SkipFlash: true,
 	}, deps{
@@ -1510,7 +1522,9 @@ func TestRunWithDepsDryRunSkipsApplyingChanges(t *testing.T) {
 	mustWriteFile(t, execPath, []byte("binary-content"), 0o755)
 
 	var calls []commandCall
+	mustSaveConfirmedWiFiConfig(t, home)
 	err := runWithDeps(context.Background(), Options{
+		Transport:   "wifi",
 		AssumeYes:   true,
 		DryRun:      true,
 		FirmwareEnv: "esp8266_smalltv_st7789",
@@ -1658,6 +1672,35 @@ func TestRunWithDepsRejectsUnconfirmedWiFiBeforeMutatingSetup(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsRejectsWiFiForEmptyRuntimeConfig(t *testing.T) {
+	home := t.TempDir()
+	mutated := false
+	err := runWithDeps(context.Background(), Options{
+		Transport: "wifi",
+		Target:    "192.168.178.66",
+		AssumeYes: true,
+		SkipFlash: true,
+	}, deps{
+		stdout:  &bytes.Buffer{},
+		homeDir: func() (string, error) { return home, nil },
+		executablePath: func() (string, error) {
+			mutated = true
+			return "", errors.New("must not resolve executable")
+		},
+		discoverWiFi: func(context.Context, []string) (transportlayer.WiFiDiscoveryResult, error) {
+			mutated = true
+			return transportlayer.WiFiDiscoveryResult{}, errors.New("must not discover WiFi")
+		},
+	})
+	var stepErr *StepError
+	if !errors.As(err, &stepErr) || stepErr.Step != "validate-connection-mode" || !strings.Contains(err.Error(), "must confirm") {
+		t.Fatalf("expected early empty-config WiFi rejection, got %v", err)
+	}
+	if mutated {
+		t.Fatal("empty-config WiFi setup reached a mutating setup dependency")
+	}
+}
+
 func TestResolveFirmwareEnvironmentRejectsUnsupported(t *testing.T) {
 	if _, ok := ResolveFirmwareEnvironment("esp8266_smalltv_st7789_crt"); ok {
 		t.Fatalf("expected legacy compile-theme env to be rejected")
@@ -1779,6 +1822,13 @@ func mustCreateExecutable(t *testing.T) string {
 	path := filepath.Join(t.TempDir(), "codexbar-display-source")
 	mustWriteFile(t, path, []byte("binary-content"), 0o755)
 	return path
+}
+
+func mustSaveConfirmedWiFiConfig(t *testing.T, home string) {
+	t.Helper()
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "wifi"}); err != nil {
+		t.Fatalf("save confirmed WiFi config: %v", err)
+	}
 }
 
 func noSetupWiFiDiscovery(t *testing.T) func(context.Context, []string) (transportlayer.WiFiDiscoveryResult, error) {

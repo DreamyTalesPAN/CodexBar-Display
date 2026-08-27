@@ -1354,7 +1354,7 @@ func checkDoctorCompanionHealthOrigins(origins []string, expectedOwner string) e
 func runSetup(args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
 	port := fs.String("port", "", "optional serial candidate path (identity-resolved when empty)")
-	transportName := fs.String("transport", setup.DefaultTransport(), "device transport for LaunchAgent: wifi|usb")
+	transportName := fs.String("transport", setup.DefaultSetupTransport(), "device transport for LaunchAgent: wifi|usb")
 	target := fs.String("target", setup.DefaultWiFiTarget(), "WiFi target base URL, for example http://192.168.1.42")
 	yes := fs.Bool("yes", false, "auto-select defaults without prompts")
 	skipFlash := fs.Bool("skip-flash", false, "skip firmware flashing")

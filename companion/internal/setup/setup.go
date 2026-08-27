@@ -29,6 +29,7 @@ const (
 	defaultCompanionAPIAddr   = "127.0.0.1:47832"
 	defaultLastGoodMaxAge     = "168h"
 	defaultTransport          = "wifi"
+	defaultSetupTransport     = "usb"
 	codexbarInstallURL        = "https://codexbar.app/"
 	codexbarBrewCask          = "steipete/tap/codexbar"
 )
@@ -47,6 +48,10 @@ type Options struct {
 
 func DefaultTransport() string {
 	return defaultTransport
+}
+
+func DefaultSetupTransport() string {
+	return defaultSetupTransport
 }
 
 func DefaultWiFiTarget() string {
@@ -247,7 +252,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 
 	transportName := normalizeSetupTransport(opts.Transport)
 	if transportName == "" {
-		transportName = defaultTransport
+		transportName = defaultSetupTransport
 	}
 	if transportName != "usb" && transportName != "wifi" {
 		return &StepError{
@@ -884,7 +889,7 @@ func renderLaunchAgentPlist(home, binaryPath, transportName, target, port string
 func daemonIntervalForSetupTransport(transportName string) string {
 	normalized := normalizeSetupTransport(transportName)
 	if normalized == "" {
-		normalized = defaultTransport
+		normalized = defaultSetupTransport
 	}
 	if normalized == "wifi" {
 		return defaultWiFiDaemonInterval
@@ -1229,8 +1234,9 @@ func setupConnectionMode(rawConnectionMode string) string {
 }
 
 func validateRuntimeConnectionModeConfig(cfg runtimeconfig.Config, connectionMode string) error {
-	if connectionMode == "wifi" &&
-		(runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" || cfg.CableAutoBindDisabled) {
+	configuredMode := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode)
+	legacyWiFi := configuredMode == "" && strings.TrimSpace(cfg.DeviceTarget) != "" && !cfg.CableAutoBindDisabled
+	if connectionMode == "wifi" && configuredMode != "wifi" && !legacyWiFi {
 		return errors.New("VibeTV must confirm the Cable-to-WiFi transition before the host switches to WiFi")
 	}
 	return nil
