@@ -1996,3 +1996,15 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `control-center-app.tsx`, `device-startup-screen.tsx`,
   `device-startup-screen.test.tsx`, the Companion connection-mode endpoint and
   tests, and this approval record.
+
+## 2026-08-27 — Recurring rollback status reopens the approved chooser
+
+- User approval: Continuation of the user's explicit instruction to fix every
+  automated review finding on PR #407 and repeat the review loop. This is a
+  defect fix for the already approved failed-WiFi rollback behavior.
+- Approved customer-visible result: If WiFi setup rolls back after the initial
+  status check, the normal recurring status poll returns the startup screen to
+  the approved neutral Cable/WiFi cards. Cable remains the recommended card;
+  neither card gains a filled primary-color background.
+- Approved files: `control-center-app.tsx`,
+  `scripts/test-customer-flows.mjs`, and this approval record.

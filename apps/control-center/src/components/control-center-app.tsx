@@ -1067,6 +1067,29 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, [localControlCenterPath]);
 
+  const applyConnectionModeChoiceStatus = useCallback(
+    (payload: {
+      connectionModeChoiceRequired?: boolean;
+      device?: DeviceInfo;
+    }) => {
+      if (payload.connectionModeChoiceRequired === true) {
+        if (connectionModeChoiceSubmitted.current) {
+          connectionModeChoiceSubmitted.current = false;
+          setConnectionModeChoiceRevision((current) => current + 1);
+        }
+        connectionModeChoiceResolved.current = true;
+        setConnectionModeChoiceRequired(true);
+        return;
+      }
+      if (!connectionModeChoiceResolved.current) {
+        const choice = connectionModeChoiceStatus(payload);
+        connectionModeChoiceResolved.current = choice.resolved;
+        setConnectionModeChoiceRequired(choice.required);
+      }
+    },
+    [],
+  );
+
   const checkCompanion = useCallback(
     async (options?: { quiet?: boolean }) => {
       if (statusPollInFlight.current) {
@@ -1095,18 +1118,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setCompanionStatus("online");
         setCompanionInfo(payload.companion || null);
         setProviderSetup(payload.providerSetup || null);
-        if (payload.connectionModeChoiceRequired === true) {
-          if (connectionModeChoiceSubmitted.current) {
-            connectionModeChoiceSubmitted.current = false;
-            setConnectionModeChoiceRevision((current) => current + 1);
-          }
-          connectionModeChoiceResolved.current = true;
-          setConnectionModeChoiceRequired(true);
-        } else if (!connectionModeChoiceResolved.current) {
-          const choice = connectionModeChoiceStatus(payload);
-          connectionModeChoiceResolved.current = choice.resolved;
-          setConnectionModeChoiceRequired(choice.required);
-        }
+        applyConnectionModeChoiceStatus(payload);
         const pairingRejection = pairingRejectionForDevice(payload.device);
         if (pairingRejection) {
           setLastError(pairingRejection);
@@ -1233,6 +1245,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [
       addEvent,
+      applyConnectionModeChoiceStatus,
       applyPolledDeviceSnapshot,
       applyThemeInstallJob,
       companionStatus,
@@ -1255,6 +1268,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const payload = await runCompanion<{
         companion?: CompanionInfo;
         device?: DeviceInfo;
+        connectionModeChoiceRequired?: boolean;
         themeInstall?: ThemeInstallJob;
         firmwareUpdate?: FirmwareUpdateJob;
         providerSetup?: ProviderSetupInfo;
@@ -1265,6 +1279,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setCompanionStatus("online");
       setCompanionInfo(payload.companion || null);
       setProviderSetup(payload.providerSetup || null);
+      applyConnectionModeChoiceStatus(payload);
       const pairingRejection = pairingRejectionForDevice(payload.device);
       if (pairingRejection) {
         setLastError(pairingRejection);
@@ -1303,6 +1318,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       statusPollInFlight.current = false;
     }
   }, [
+    applyConnectionModeChoiceStatus,
     applyPolledDeviceSnapshot,
     applyThemeInstallJob,
     markCompanionAccessBlocked,

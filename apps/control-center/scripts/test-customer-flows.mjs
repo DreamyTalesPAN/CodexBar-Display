@@ -3347,8 +3347,8 @@ async function testFreshCableAutoBindingStillChoosesConnection(
   const installRequests = [];
   let searchRequests = 0;
   let resetRequests = 0;
+  let connectionChoiceRequired = true;
   await routeCompanionOnline(page, installRequests, () => {}, {
-    connectionModeChoiceRequired: true,
     device: {
       ...companionDevice,
       target: "Cable",
@@ -3360,6 +3360,10 @@ async function testFreshCableAutoBindingStillChoosesConnection(
       searchRequests += 1;
       return [];
     },
+    onConnectionMode: (mode) => {
+      if (mode === "cable") connectionChoiceRequired = false;
+    },
+    onStatusConnectionModeChoiceRequired: () => connectionChoiceRequired,
     onReset: () => {
       resetRequests += 1;
     },
@@ -3400,18 +3404,13 @@ async function testFreshCableAutoBindingStillChoosesConnection(
 async function testWiFiRollbackReturnsToConnectionChoice(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const installRequests = [];
-  const rolledBackCable = {
-    ...companionDevice,
-    target: "cable://vibetv",
-    capabilities: {
-      transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
-    },
-  };
+  let wifiSelected = false;
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: { connected: false },
-    onStatusConnectionModeChoiceRequired: (statusRequestCount) =>
-      statusRequestCount > 1,
-    statusDeviceSequence: [{ connected: false }, rolledBackCable],
+    onConnectionMode: (mode) => {
+      wifiSelected = mode === "wifi";
+    },
+    onStatusConnectionModeChoiceRequired: () => wifiSelected,
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
@@ -9131,6 +9130,7 @@ async function routeCompanionOnline(
     legacyCompanionRelease = false,
     device = companionDevice,
     onDiscover,
+    onConnectionMode = () => {},
     onPair,
     onRepair,
     onSelect,
@@ -9251,6 +9251,7 @@ async function routeCompanionOnline(
     }
     if (pathname === "/v1/setup/connection-mode") {
       const request = parseJSON(route.request().postData() || "") || {};
+      onConnectionMode(request.mode);
       await route.fulfill({
         status: request.mode === "wifi" ? 202 : 200,
         contentType: "application/json",
