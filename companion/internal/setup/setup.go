@@ -1234,9 +1234,8 @@ func setupConnectionMode(rawConnectionMode string) string {
 }
 
 func validateRuntimeConnectionModeConfig(cfg runtimeconfig.Config, connectionMode string) error {
-	configuredMode := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode)
-	legacyWiFi := configuredMode == "" && strings.TrimSpace(cfg.DeviceTarget) != "" && !cfg.CableAutoBindDisabled
-	if connectionMode == "wifi" && configuredMode != "wifi" && !legacyWiFi {
+	if connectionMode == "wifi" &&
+		(runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" || cfg.CableAutoBindDisabled) {
 		return errors.New("VibeTV must confirm the Cable-to-WiFi transition before the host switches to WiFi")
 	}
 	return nil

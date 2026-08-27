@@ -53,7 +53,7 @@ What it does:
   - detects macOS architecture
   - downloads the matching codexbar-display release binary from GitHub Releases
   - verifies the SHA-256 checksum from the release checksum file
-  - runs `codexbar-display setup --yes --skip-flash [setup args...]`
+  - runs `codexbar-display setup --yes --skip-flash --transport wifi [setup args...]`
   - makes `codexbar-display` available in Terminal
   - optionally runs `codexbar-display upgrade` to flash release firmware when --flash-firmware is passed
   - warms up CodexBar on fresh installs so providers are usable
@@ -587,7 +587,7 @@ main() {
   log "vibetv: normal setup uses WiFi; USB-C only powers VibeTV and no USB serial port is expected."
   log "vibetv: setup discovers the device IP automatically and verifies its device ID."
   prepare_control_center_service
-  "$DOWNLOAD_BIN" setup --yes --skip-flash "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}"
+  "$DOWNLOAD_BIN" setup --yes --skip-flash --transport wifi "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}"
 
   if [[ ! -x "$INSTALL_PATH" ]]; then
     die "setup finished but expected installed binary is missing: ${INSTALL_PATH}"
