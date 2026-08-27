@@ -5,6 +5,21 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-27 — Neutral Cable and WiFi choice cards
+
+- User approval: The user reviewed the rendered connection chooser, required
+  both options to use the same neutral card treatment, required only Cable to
+  carry a `Recommended` badge, rejected a full primary-color Cable card, and
+  then explicitly approved the resulting design with "jo so gebe ich es frei".
+- Approved customer-visible result: When both connection methods are supported,
+  Cable and WiFi appear as equal neutral cards side by side with large icons;
+  Cable alone carries the `Recommended` badge. When the connected VibeTV
+  advertises only Cable support, the same approved Cable card is shown alone and
+  the unavailable WiFi action stays hidden, including immediately after
+  `Run setup again`.
+- Approved files: `control-center-app.tsx`, the matching regression in
+  `test-customer-flows.mjs`, and this approval record.
+
 ## 2026-08-25 — First AI provider check finishes before theme selection
 
 - User approval: During the clean-Mac PR #406 rehearsal, the user observed that
