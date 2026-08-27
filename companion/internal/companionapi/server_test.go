@@ -7350,7 +7350,7 @@ func TestSetupResetUsesCurrentCableTransportSupport(t *testing.T) {
 		DeviceID:         "lilygo",
 		DeviceTransports: []string{"usb"},
 	})
-	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+	server.refreshCableHello = func() (protocol.DeviceHello, bool) {
 		return protocol.DeviceHello{
 			Kind:     "hello",
 			DeviceID: "lilygo",
@@ -7390,6 +7390,20 @@ func TestSetupResetReplacesStaleTransportSupportWithCurrentCableDevice(t *testin
 	server.currentCableHello = func() (protocol.DeviceHello, bool) {
 		return protocol.DeviceHello{
 			Kind:     "hello",
+			DeviceID: "old-lilygo",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb"}},
+			},
+		}, true
+	}
+	var refreshOrder []string
+	server.resetCableSender = func() {
+		refreshOrder = append(refreshOrder, "reset")
+	}
+	server.refreshCableHello = func() (protocol.DeviceHello, bool) {
+		refreshOrder = append(refreshOrder, "refresh")
+		return protocol.DeviceHello{
+			Kind:     "hello",
 			DeviceID: "new-esp8266",
 			Capabilities: protocol.CapabilityBlock{
 				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"}},
@@ -7408,6 +7422,9 @@ func TestSetupResetReplacesStaleTransportSupportWithCurrentCableDevice(t *testin
 	}
 	if got.Device.DeviceID != "new-esp8266" || got.Device.Capabilities == nil || len(got.Device.Capabilities.Transport.Supported) != 2 {
 		t.Fatalf("reset chooser did not use the current Cable device: %+v", got.Device)
+	}
+	if !reflect.DeepEqual(refreshOrder, []string{"reset", "refresh"}) {
+		t.Fatalf("reset chooser did not invalidate before refreshing Cable identity: %v", refreshOrder)
 	}
 }
 
@@ -10191,6 +10208,9 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	}
 	server.runSetup = func(context.Context, setup.Options) error {
 		return nil
+	}
+	server.refreshCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{}, false
 	}
 	server.resetCableSender = func() {}
 	server.defaultWiFiTarget = func() string { return "http://127.0.0.1:1" }
