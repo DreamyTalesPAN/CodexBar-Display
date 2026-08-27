@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestConnectionModeNormalizationKeepsOnlyCustomerChoices(t *testing.T) {
@@ -276,8 +277,61 @@ func TestResetDeviceBindingPreservesAuthenticationProfiles(t *testing.T) {
 	if !cfg.ConnectionModeChoiceRequired {
 		t.Fatal("device reset must require a new connection choice")
 	}
-	if len(cfg.DeviceTransports) != 1 || cfg.DeviceTransports[0] != "usb" {
-		t.Fatalf("device reset discarded verified transport support: %+v", cfg.DeviceTransports)
+	if len(cfg.DeviceTransports) != 0 {
+		t.Fatalf("device reset retained transport support without its device identity: %+v", cfg.DeviceTransports)
+	}
+}
+
+func TestWithConfigLockSerializesReadModifyWrite(t *testing.T) {
+	home := t.TempDir()
+	if err := Save(home, Config{Theme: "mini"}); err != nil {
+		t.Fatal(err)
+	}
+	firstLoaded := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- WithConfigLock(home, func() error {
+			cfg, err := Load(home)
+			if err != nil {
+				return err
+			}
+			close(firstLoaded)
+			<-releaseFirst
+			cfg.DeviceID = "worker-device"
+			return Save(home, cfg)
+		})
+	}()
+	<-firstLoaded
+	resetDone := make(chan error, 1)
+	go func() {
+		resetDone <- WithConfigLock(home, func() error {
+			cfg, err := Load(home)
+			if err != nil {
+				return err
+			}
+			cfg.ResetDeviceBinding()
+			return Save(home, cfg)
+		})
+	}()
+	select {
+	case err := <-resetDone:
+		t.Fatalf("reset bypassed active config transaction: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(releaseFirst)
+	if err := <-firstDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-resetDone; err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceID != "" || !cfg.CableAutoBindDisabled || !cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("serialized reset was overwritten by stale worker state: %+v", cfg)
 	}
 }
 

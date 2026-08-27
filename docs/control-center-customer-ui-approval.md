@@ -2034,3 +2034,16 @@ issue scope, or release permission never implies UI permission.
   action visible until setup actually completes.
 - Approved files: `control-center-app.tsx`,
   `scripts/test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-27 — Reset cards follow the currently connected VibeTV
+
+- User approval: Continuation of the user's explicit instruction to fix every
+  automated review finding on PR #407 and repeat the review loop. This removes
+  stale capability gating behind the already approved connection cards.
+- Approved customer-visible result: `Run setup again` no longer carries the
+  previous VibeTV's Cable/WiFi support into a replacement setup. If a current
+  data-Cable VibeTV is identified, its verified transports decide which neutral
+  cards appear. Without a verified current identity, both choices remain
+  available until the device is identified; Cable stays recommended.
+- Approved files: the Companion reset/status endpoints and tests, runtime
+  configuration transaction and reset logic, and this approval record.

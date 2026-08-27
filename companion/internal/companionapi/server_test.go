@@ -7286,12 +7286,21 @@ func TestSetupResetClearsActiveBindingAndPreservesAuthenticationProfiles(t *test
 	}
 }
 
-func TestSetupResetRetainsVerifiedCableTransportSupport(t *testing.T) {
+func TestSetupResetUsesCurrentCableTransportSupport(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		ConnectionMode:   "cable",
 		DeviceID:         "lilygo",
 		DeviceTransports: []string{"usb"},
 	})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			DeviceID: "lilygo",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb"}},
+			},
+		}, true
+	}
 
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil))
@@ -7309,8 +7318,38 @@ func TestSetupResetRetainsVerifiedCableTransportSupport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.DeviceTransports) != 1 || cfg.DeviceTransports[0] != "usb" {
-		t.Fatalf("reset config discarded USB-only support: %+v", cfg.DeviceTransports)
+	if len(cfg.DeviceTransports) != 0 {
+		t.Fatalf("reset config retained transports without an active identity: %+v", cfg.DeviceTransports)
+	}
+}
+
+func TestSetupResetReplacesStaleTransportSupportWithCurrentCableDevice(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:   "cable",
+		DeviceID:         "old-lilygo",
+		DeviceTransports: []string{"usb"},
+	})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			DeviceID: "new-esp8266",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"}},
+			},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Device.DeviceID != "new-esp8266" || got.Device.Capabilities == nil || len(got.Device.Capabilities.Transport.Supported) != 2 {
+		t.Fatalf("reset chooser did not use the current Cable device: %+v", got.Device)
 	}
 }
 

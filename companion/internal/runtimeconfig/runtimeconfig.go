@@ -38,6 +38,7 @@ type permissionMigrationCache struct {
 }
 
 var processPermissionMigrations permissionMigrationCache
+var configTransactionLocks sync.Map
 
 type Config struct {
 	Theme                        string        `json:"theme,omitempty"`
@@ -87,6 +88,20 @@ func ClearThemeValue(raw string) bool {
 
 func ConfigPath(home string) string {
 	return filepath.Join(home, "Library", "Application Support", "codexbar-display", configFileName)
+}
+
+// WithConfigLock serializes in-process read-modify-write transactions for one
+// runtime config across the Companion API and its display worker.
+func WithConfigLock(home string, run func() error) error {
+	if run == nil {
+		return nil
+	}
+	key := ConfigPath(strings.TrimSpace(home))
+	lockValue, _ := configTransactionLocks.LoadOrStore(key, &sync.Mutex{})
+	lock := lockValue.(*sync.Mutex)
+	lock.Lock()
+	defer lock.Unlock()
+	return run()
 }
 
 func deviceSelectionJournalPath(home string) string {
@@ -371,6 +386,7 @@ func (cfg *Config) ResetDeviceBinding() {
 	cfg.DeviceTarget = ""
 	cfg.DeviceToken = ""
 	cfg.DeviceID = ""
+	cfg.DeviceTransports = nil
 }
 
 func (cfg *Config) normalizeKnownDevices() {
