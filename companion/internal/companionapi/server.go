@@ -1351,9 +1351,18 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			observedID := strings.TrimSpace(hello.DeviceID)
 			identityMismatch = configuredID != "" && observedID != "" &&
 				!strings.EqualFold(configuredID, observedID)
-			transitionConfirmed := tokenRejected || s.confirmPendingWiFiTransition(
+			confirmationErr := s.confirmPendingWiFiTransition(
 				r.Context(), cfg.DeviceTarget, cfg.DeviceToken, configuredID, hello,
-			) == nil
+			)
+			transitionConfirmed := tokenRejected || confirmationErr == nil
+			if !identityMismatch && !tokenRejected && confirmationErr == nil {
+				if updated, committed, commitErr := s.commitConfirmedWiFiTransition(cfg, hello); commitErr != nil {
+					transitionConfirmed = false
+				} else if committed {
+					cfg = updated
+					configuredID = strings.TrimSpace(cfg.DeviceID)
+				}
+			}
 			if !identityMismatch && transitionConfirmed {
 				reachable = true
 				device = withDisplayStreamInfo(deviceFromHello(cfg.DeviceTarget, cfg.DeviceToken, hello), stream)
@@ -6973,6 +6982,40 @@ func (s *Server) confirmPendingWiFiTransition(
 		map[string]string{"deviceId": hello.DeviceID},
 		nil,
 	)
+}
+
+func (s *Server) commitConfirmedWiFiTransition(
+	cfg runtimeconfig.Config,
+	hello protocol.DeviceHello,
+) (runtimeconfig.Config, bool, error) {
+	if !cfg.WiFiTransitionPending() {
+		return cfg, false, nil
+	}
+	hello = hello.Normalize()
+	transport := hello.Capabilities.Transport
+	if !strings.EqualFold(cfg.DeviceID, hello.DeviceID) ||
+		transport.Active != "wifi" || transport.Mode != "wifi" {
+		return cfg, false, nil
+	}
+	supportedTransports := append([]string(nil), transport.Supported...)
+	committed := false
+	updated, err := s.updateConfig(func(current *runtimeconfig.Config) {
+		if !current.WiFiTransitionPending() || !strings.EqualFold(current.DeviceID, hello.DeviceID) {
+			return
+		}
+		current.SetActiveDevice(runtimeconfig.KnownDevice{
+			DeviceID:    hello.DeviceID,
+			Target:      current.DeviceTarget,
+			DeviceToken: current.DeviceToken,
+		})
+		current.ConnectionMode = "wifi"
+		current.DeviceTransports = supportedTransports
+		committed = true
+	})
+	if err != nil {
+		return cfg, false, err
+	}
+	return updated, committed, nil
 }
 
 func validateRepairIdentity(

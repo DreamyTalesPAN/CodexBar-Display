@@ -86,7 +86,7 @@ func TestStatusConfirmsPendingWiFiTransitionForExpectedDevice(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hello":
-			_, _ = io.WriteString(w, `{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"device-390","networkMode":"station","capabilities":{"transport":{"active":"wifi","mode":"wifi","transitionPending":true,"transitionFrom":"cable","transitionTo":"wifi"}}}`)
+			_, _ = io.WriteString(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","deviceId":"device-390","networkMode":"station","capabilities":{"transport":{"active":"wifi","mode":"wifi","supported":["usb","wifi"],"transitionPending":true,"transitionFrom":"cable","transitionTo":"wifi"}}}`)
 		case "/api/connection-mode/confirm":
 			confirmCalls.Add(1)
 			if r.Method != http.MethodPost || r.Header.Get("X-VibeTV-Token") != "pair-token" {
@@ -102,10 +102,10 @@ func TestStatusConfirmsPendingWiFiTransitionForExpectedDevice(t *testing.T) {
 	defer device.Close()
 
 	server := newTestServer(t, runtimeconfig.Config{
-		ConnectionMode: "wifi",
-		DeviceTarget:   device.URL,
-		DeviceID:       "device-390",
-		DeviceToken:    "pair-token",
+		DeviceTarget:          device.URL,
+		DeviceID:              "device-390",
+		DeviceToken:           "pair-token",
+		CableAutoBindDisabled: true,
 	})
 	server.streamStatus = func(context.Context, string) displayStreamInfo { return displayStreamInfo{} }
 	rec := httptest.NewRecorder()
@@ -115,6 +115,17 @@ func TestStatusConfirmsPendingWiFiTransitionForExpectedDevice(t *testing.T) {
 	}
 	if confirmCalls.Load() != 1 {
 		t.Fatalf("status polling made %d transition confirmations, expected 1", confirmCalls.Load())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "wifi" || cfg.WiFiTransitionPending() || cfg.CableAutoBindDisabled || len(cfg.DeviceTransports) != 2 {
+		t.Fatalf("confirmed WiFi transition was not committed to host config: %+v", cfg)
+	}
+	known, ok := cfg.KnownDevice("device-390")
+	if !ok || known.DeviceToken != "pair-token" || known.Target != device.URL {
+		t.Fatalf("confirmed WiFi transition lost the authenticated profile: %+v", cfg.KnownDevices)
 	}
 }
 
