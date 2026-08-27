@@ -810,44 +810,55 @@ func persistActiveCableIdentity(caps protocol.DeviceCapabilities, deps runtimeDe
 	if err != nil || strings.TrimSpace(home) == "" {
 		return
 	}
-	cfg, err := deps.loadConfig(home)
+	persisted := false
+	rolledBackFromWiFi := false
+	err = runtimeconfig.WithConfigLock(home, func() error {
+		cfg, err := deps.loadConfig(home)
+		if err != nil {
+			return err
+		}
+		if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "wifi" {
+			return nil
+		}
+		rolledBackFromWiFi = cfg.WiFiTransitionPending() &&
+			strings.EqualFold(cfg.DeviceID, deviceID)
+		if cfg.CableAutoBindDisabled && !rolledBackFromWiFi {
+			return nil
+		}
+		if savedID := strings.TrimSpace(cfg.DeviceID); savedID != "" && !strings.EqualFold(savedID, deviceID) {
+			deps.logf("runtime event=cable-identity-persist-rejected expected=%s observed=%s\n", savedID, deviceID)
+			return nil
+		}
+		supportedTransports := append([]string(nil), caps.SupportedTransportChannels...)
+		if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" &&
+			strings.EqualFold(cfg.DeviceID, deviceID) &&
+			strings.Join(cfg.DeviceTransports, "\x00") == strings.Join(supportedTransports, "\x00") {
+			return nil
+		}
+		freshSetup := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "" &&
+			strings.TrimSpace(cfg.DeviceID) == "" &&
+			strings.TrimSpace(cfg.DeviceTarget) == "" &&
+			len(cfg.KnownDevices) == 0
+		cfg.ConnectionMode = "cable"
+		cfg.DeviceID = deviceID
+		cfg.DeviceTransports = supportedTransports
+		if freshSetup || rolledBackFromWiFi {
+			cfg.ConnectionModeChoiceRequired = true
+		}
+		if rolledBackFromWiFi {
+			cfg.CableAutoBindDisabled = false
+		}
+		if err := deps.saveConfig(home, cfg); err != nil {
+			return err
+		}
+		persisted = true
+		return nil
+	})
 	if err != nil {
 		deps.logf("runtime event=cable-identity-persist-failed deviceId=%s err=%v\n", deviceID, err)
 		return
 	}
-	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "wifi" {
-		return
-	}
-	rolledBackFromWiFi := cfg.WiFiTransitionPending() &&
-		strings.EqualFold(cfg.DeviceID, deviceID)
-	if cfg.CableAutoBindDisabled && !rolledBackFromWiFi {
-		return
-	}
-	if savedID := strings.TrimSpace(cfg.DeviceID); savedID != "" && !strings.EqualFold(savedID, deviceID) {
-		deps.logf("runtime event=cable-identity-persist-rejected expected=%s observed=%s\n", savedID, deviceID)
-		return
-	}
-	supportedTransports := append([]string(nil), caps.SupportedTransportChannels...)
-	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" &&
-		strings.EqualFold(cfg.DeviceID, deviceID) &&
-		strings.Join(cfg.DeviceTransports, "\x00") == strings.Join(supportedTransports, "\x00") {
-		return
-	}
-	freshSetup := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "" &&
-		strings.TrimSpace(cfg.DeviceID) == "" &&
-		strings.TrimSpace(cfg.DeviceTarget) == "" &&
-		len(cfg.KnownDevices) == 0
-	cfg.ConnectionMode = "cable"
-	cfg.DeviceID = deviceID
-	cfg.DeviceTransports = supportedTransports
-	if freshSetup || rolledBackFromWiFi {
-		cfg.ConnectionModeChoiceRequired = true
-	}
-	if rolledBackFromWiFi {
-		cfg.CableAutoBindDisabled = false
-	}
-	if err := deps.saveConfig(home, cfg); err != nil {
-		deps.logf("runtime event=cable-identity-persist-failed deviceId=%s err=%v\n", deviceID, err)
+	if !persisted {
 		return
 	}
 	if rolledBackFromWiFi {
@@ -893,16 +904,26 @@ func persistActiveWiFiTarget(target string, deps runtimeDeps) {
 		return
 	}
 	if home, err := deps.homeDir(); err == nil && strings.TrimSpace(home) != "" {
-		if cfg, err := deps.loadConfig(home); err == nil && strings.TrimSpace(cfg.DeviceID) != "" {
+		var deviceID string
+		err := runtimeconfig.WithConfigLock(home, func() error {
+			cfg, err := deps.loadConfig(home)
+			if err != nil || strings.TrimSpace(cfg.DeviceID) == "" {
+				return err
+			}
 			if isSameTarget(cfg.DeviceTarget, target) {
-				return
+				return nil
 			}
 			cfg.DeviceTarget = target
 			if err := deps.saveConfig(home, cfg); err != nil {
-				deps.logf("runtime event=wifi-target-persist-failed target=%s err=%v\n", target, err)
-				return
+				return err
 			}
-			deps.logf("runtime event=wifi-target-persisted target=%s deviceId=%s\n", target, cfg.DeviceID)
+			deviceID = cfg.DeviceID
+			return nil
+		})
+		if err != nil {
+			deps.logf("runtime event=wifi-target-persist-failed target=%s err=%v\n", target, err)
+		} else if strings.TrimSpace(deviceID) != "" {
+			deps.logf("runtime event=wifi-target-persisted target=%s deviceId=%s\n", target, deviceID)
 		}
 	}
 }

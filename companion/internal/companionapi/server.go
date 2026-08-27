@@ -1388,6 +1388,11 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	device = s.withConfiguredConnectionState(cfg, device, reachable, identityMismatch)
+	if cfg.ConnectionModeChoiceRequired && strings.TrimSpace(cfg.DeviceID) == "" {
+		if candidate := s.currentCableConnectionChoiceDevice(); strings.TrimSpace(candidate.DeviceID) != "" {
+			device = candidate
+		}
+	}
 	var firmwareUpdate *firmwareUpdateJob
 	if latest, ok := s.latestFirmwareUpdateJob(); ok {
 		firmwareUpdate = &latest
@@ -1432,6 +1437,27 @@ func cableCapabilityBlock(supported []string) *protocol.CapabilityBlock {
 			Mode:      "cable",
 			Supported: append([]string(nil), supported...),
 		},
+	}
+}
+
+func (s *Server) currentCableConnectionChoiceDevice() deviceInfo {
+	hello, ok := s.currentCableHello()
+	if !ok {
+		return deviceInfo{Connected: false}
+	}
+	hello = hello.Normalize()
+	if strings.TrimSpace(hello.DeviceID) == "" ||
+		!strings.EqualFold(hello.Capabilities.Transport.Active, "usb") {
+		return deviceInfo{Connected: false}
+	}
+	observed := deviceFromHello("", "", hello)
+	return deviceInfo{
+		DeviceID:     observed.DeviceID,
+		Connected:    false,
+		Active:       false,
+		Board:        observed.Board,
+		Firmware:     observed.Firmware,
+		Capabilities: observed.Capabilities,
 	}
 }
 
@@ -3261,7 +3287,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	}
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
-	cfg, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
+	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
 		cfg.ResetDeviceBinding()
 		cfg.SetProviderSelectionSetupComplete(false)
 		// Setting up again asks for the display choice again, so the old one is
@@ -3279,12 +3305,9 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	s.clearDisplayVerification("")
 	s.clearConfiguredDeviceState()
 	writeJSON(w, http.StatusOK, statusResponse{
-		OK:        true,
-		Companion: s.companionInfo(r.Context()),
-		Device: deviceInfo{
-			Connected:    false,
-			Capabilities: cableCapabilityBlock(cfg.DeviceTransports),
-		},
+		OK:                           true,
+		Companion:                    s.companionInfo(r.Context()),
+		Device:                       s.currentCableConnectionChoiceDevice(),
 		ConnectionModeChoiceRequired: true,
 		Setup:                        setupProgress{ProviderSelectionRequired: true},
 	})
@@ -6412,18 +6435,23 @@ func (s *Server) loadConfigNormalized() (runtimeconfig.Config, error) {
 func (s *Server) updateConfig(mutate func(*runtimeconfig.Config)) (runtimeconfig.Config, error) {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
-	cfg, err := s.loadConfigNormalized()
-	if err != nil {
-		return runtimeconfig.Config{}, err
-	}
-	if mutate != nil {
-		mutate(&cfg)
-	}
-	cfg.Normalize()
-	if err := s.saveConfig(s.home, cfg); err != nil {
-		return runtimeconfig.Config{}, err
-	}
-	return cfg, nil
+	var updated runtimeconfig.Config
+	err := runtimeconfig.WithConfigLock(s.home, func() error {
+		cfg, err := s.loadConfigNormalized()
+		if err != nil {
+			return err
+		}
+		if mutate != nil {
+			mutate(&cfg)
+		}
+		cfg.Normalize()
+		if err := s.saveConfig(s.home, cfg); err != nil {
+			return err
+		}
+		updated = cfg
+		return nil
+	})
+	return updated, err
 }
 
 func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimeconfig.Config, protocol.DeviceHello, bool) {
