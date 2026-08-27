@@ -3256,7 +3256,7 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
 	cfg, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
-		cfg.ClearDevices()
+		cfg.ResetDeviceBinding()
 	})
 	if err != nil {
 		writeInternalError(w, err)
@@ -3341,6 +3341,7 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
+	knownDevice, known := cfg.KnownDevice(hello.DeviceID)
 
 	if mode == "wifi" {
 		if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
@@ -3349,6 +3350,10 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 			current.CableAutoBindDisabled = true
 			current.ConnectionModeChoiceRequired = false
 			current.DeviceTransports = supportedTransports
+			if known {
+				current.DeviceTarget = knownDevice.Target
+				current.DeviceToken = knownDevice.DeviceToken
+			}
 		}); err != nil {
 			writeInternalError(w, err)
 			return
@@ -3379,7 +3384,10 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		current.ConnectionModeChoiceRequired = false
 		current.DeviceTransports = supportedTransports
 		current.DeviceID = strings.TrimSpace(hello.DeviceID)
-		if identityChanged {
+		if known {
+			current.DeviceTarget = knownDevice.Target
+			current.DeviceToken = knownDevice.DeviceToken
+		} else if identityChanged {
 			current.DeviceTarget = ""
 			current.DeviceToken = ""
 		}

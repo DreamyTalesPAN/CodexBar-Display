@@ -7234,7 +7234,7 @@ func TestRepairFlightKeyUsesCanonicalDeviceIdentity(t *testing.T) {
 	}
 }
 
-func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
+func TestSetupResetClearsActiveBindingAndPreservesAuthenticationProfiles(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		Theme:        "mini",
 		DeviceTarget: "http://192.168.178.72",
@@ -7272,8 +7272,14 @@ func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.DeviceTarget != "" || cfg.DeviceToken != "" || cfg.DeviceID != "" || len(cfg.KnownDevices) != 0 {
-		t.Fatalf("expected reset to remove every stored device profile, got %+v", cfg)
+	if cfg.DeviceTarget != "" || cfg.DeviceToken != "" || cfg.DeviceID != "" {
+		t.Fatalf("expected reset to clear the active device binding, got %+v", cfg)
+	}
+	if len(cfg.KnownDevices) != 2 {
+		t.Fatalf("expected reset to preserve both authentication profiles, got %+v", cfg.KnownDevices)
+	}
+	if known, ok := cfg.KnownDevice("device-a"); !ok || known.DeviceToken != "pair-token" {
+		t.Fatalf("reset lost active-device authentication: %+v", cfg.KnownDevices)
 	}
 	if !cfg.CableAutoBindDisabled {
 		t.Fatal("setup reset must prevent automatic Cable rebinding")
@@ -7518,7 +7524,7 @@ func TestSetupConnectionModeExplicitlySelectsCableAfterReset(t *testing.T) {
 	}
 }
 
-func TestSetupConnectionModePreservesPairingForSameDeviceOnCable(t *testing.T) {
+func TestSetupResetPreservesSameDeviceAuthenticationThroughCableAndWiFiChoice(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		ConnectionMode: "wifi",
 		DeviceID:       "paired-vibetv",
@@ -7528,20 +7534,28 @@ func TestSetupConnectionModePreservesPairingForSameDeviceOnCable(t *testing.T) {
 	server.resolveCablePort = func(string, string) (string, error) {
 		return "/dev/cu.usbserial-vibetv", nil
 	}
+	deviceMode := "wifi"
 	server.readCableHello = func(string) (protocol.DeviceHello, error) {
 		return protocol.DeviceHello{
 			Kind:     "hello",
 			DeviceID: "paired-vibetv",
 			Capabilities: protocol.CapabilityBlock{
-				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "wifi", Supported: []string{"usb", "wifi"}},
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: deviceMode, Supported: []string{"usb", "wifi"}},
 			},
 		}, nil
 	}
 	server.setCableConnectionMode = func(_, deviceID, mode string) error {
-		if deviceID != "paired-vibetv" || mode != "cable" {
+		if deviceID != "paired-vibetv" || (mode != "cable" && mode != "wifi") {
 			t.Fatalf("unexpected Cable transition device=%q mode=%q", deviceID, mode)
 		}
+		deviceMode = mode
 		return nil
+	}
+
+	reset := httptest.NewRecorder()
+	server.Handler().ServeHTTP(reset, httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil))
+	if reset.Code != http.StatusOK {
+		t.Fatalf("reset status=%d body=%s", reset.Code, reset.Body.String())
 	}
 
 	rec := httptest.NewRecorder()
@@ -7556,7 +7570,22 @@ func TestSetupConnectionModePreservesPairingForSameDeviceOnCable(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.DeviceTarget != "http://192.168.178.72" || cfg.DeviceToken != "pair-token" {
-		t.Fatalf("same-device Cable selection discarded WiFi authentication: %+v", cfg)
+		t.Fatalf("post-reset Cable selection discarded WiFi authentication: %+v", cfg)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("WiFi status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err = server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceTarget != "http://192.168.178.72" || cfg.DeviceToken != "pair-token" || !cfg.WiFiTransitionPending() {
+		t.Fatalf("post-reset WiFi selection lost authentication or transition state: %+v", cfg)
 	}
 }
 

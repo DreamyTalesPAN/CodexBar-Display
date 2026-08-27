@@ -248,7 +248,7 @@ func TestSetActiveDeviceKeepsPreviousDeviceKnown(t *testing.T) {
 	}
 }
 
-func TestClearDevicesRemovesActiveAndKnownProfiles(t *testing.T) {
+func TestResetDeviceBindingPreservesAuthenticationProfiles(t *testing.T) {
 	cfg := Config{
 		DeviceID:         "device-a",
 		DeviceTarget:     "192.168.1.20",
@@ -256,10 +256,19 @@ func TestClearDevicesRemovesActiveAndKnownProfiles(t *testing.T) {
 		DeviceTransports: []string{"usb"},
 		KnownDevices:     []KnownDevice{{DeviceID: "device-b", Target: "192.168.2.30", DeviceToken: "token-b"}},
 	}
-	cfg.ClearDevices()
+	cfg.ResetDeviceBinding()
 
-	if cfg.DeviceID != "" || cfg.DeviceTarget != "" || cfg.DeviceToken != "" || len(cfg.KnownDevices) != 0 {
-		t.Fatalf("expected a complete device reset, got %+v", cfg)
+	if cfg.DeviceID != "" || cfg.DeviceTarget != "" || cfg.DeviceToken != "" {
+		t.Fatalf("expected the active device binding to be reset, got %+v", cfg)
+	}
+	if len(cfg.KnownDevices) != 2 {
+		t.Fatalf("expected both authentication profiles to remain, got %+v", cfg.KnownDevices)
+	}
+	if active, ok := cfg.KnownDevice("device-a"); !ok || active.DeviceToken != "token-a" {
+		t.Fatalf("active authentication profile was lost: %+v", cfg.KnownDevices)
+	}
+	if other, ok := cfg.KnownDevice("device-b"); !ok || other.DeviceToken != "token-b" {
+		t.Fatalf("known authentication profile was lost: %+v", cfg.KnownDevices)
 	}
 	if !cfg.CableAutoBindDisabled {
 		t.Fatal("device reset must prevent automatic Cable rebinding")

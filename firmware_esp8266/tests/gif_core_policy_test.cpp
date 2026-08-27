@@ -465,13 +465,21 @@ bool testAutomaticWifiFallbackNeverCarriesTheFailedSsid(const char* mainPath) {
   }
   const std::string setup = mainSource.substr(setupStart, setupEnd - setupStart);
   const std::string maintain = mainSource.substr(maintainStart, maintainEnd - maintainStart);
+  const std::size_t transition = setup.find("else if (connectionTransitionPending)");
+  const std::string transitionSetup =
+      transition == std::string::npos ? "" : setup.substr(transition);
   return expect(
       setup.find("startSetupAccessPoint()") != std::string::npos &&
           maintain.find("startSetupAccessPoint()") != std::string::npos &&
+          transitionSetup.find("clearWifiCredentials();") != std::string::npos &&
+          transitionSetup.find("clearSdkWifiCredentials();") != std::string::npos &&
+          transitionSetup.find("savedWifiCredentialsAvailable = false;") != std::string::npos &&
+          transitionSetup.find("startSetupAccessPoint();") != std::string::npos &&
+          transitionSetup.find("wifi_association_failed") == std::string::npos &&
           setup.find("SetConnectionError(") == std::string::npos &&
           maintain.find("SetConnectionError(") == std::string::npos &&
           maintain.find("WiFi.SSID()") == std::string::npos,
-      "automatic setup fallback must not show or prefill the failed SSID");
+      "failed WiFi association must clear stale credentials and reopen setup without prefilling the failed SSID");
 }
 
 bool testWifiSavePreservesDeviceStateAndRetiresStaleSdkCredentials(const char* mainPath) {
