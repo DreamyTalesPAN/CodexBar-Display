@@ -3722,6 +3722,8 @@ func (s *Server) repairDeviceOnceLocked(
 		cfg.DeviceTarget = known.Target
 		cfg.DeviceToken = known.DeviceToken
 	}
+	pendingTransitionWithoutToken := forcePair && cfg.WiFiTransitionPending() &&
+		strings.TrimSpace(cfg.DeviceToken) == ""
 	discoveryCfg := cfg
 	if forcePair {
 		discoveryCfg.DeviceToken = ""
@@ -3747,6 +3749,14 @@ func (s *Server) repairDeviceOnceLocked(
 	}
 	if provenToken == "" {
 		target, hello, err = s.discoverRepairTarget(ctx, discoveryCfg, requestedTarget)
+	}
+	if pendingTransitionWithoutToken && provenToken == "" && err == nil {
+		if refreshed, refreshErr := s.configForMaintenance(); refreshErr == nil &&
+			strings.EqualFold(refreshed.DeviceID, hello.DeviceID) &&
+			strings.TrimSpace(refreshed.DeviceToken) != "" {
+			cfg = refreshed
+			provenToken = strings.TrimSpace(refreshed.DeviceToken)
+		}
 	}
 	tokenRejected := false
 	if err != nil && !forcePair && strings.TrimSpace(cfg.DeviceToken) != "" && deviceAuthorizationRejected(err) {
@@ -6993,6 +7003,25 @@ func (s *Server) confirmPendingWiFiTransition(
 		transport.TransitionTo != "wifi" {
 		return errors.New("pending WiFi transition did not rediscover the expected VibeTV identity")
 	}
+	if strings.TrimSpace(token) == "" {
+		cfg, err := s.configForMaintenance()
+		if err != nil {
+			return err
+		}
+		if !cfg.WiFiTransitionPending() || !strings.EqualFold(cfg.DeviceID, hello.DeviceID) {
+			return errors.New("pending WiFi transition requires pairing authentication")
+		}
+		token = strings.TrimSpace(cfg.DeviceToken)
+		if token == "" {
+			token, err = s.pair(ctx, target, "")
+			if err != nil {
+				return err
+			}
+			if err := s.rememberPendingWiFiTransitionToken(target, hello.DeviceID, token); err != nil {
+				return err
+			}
+		}
+	}
 	return s.doJSON(
 		ctx,
 		http.MethodPost,
@@ -7002,6 +7031,33 @@ func (s *Server) confirmPendingWiFiTransition(
 		map[string]string{"deviceId": hello.DeviceID},
 		nil,
 	)
+}
+
+func (s *Server) rememberPendingWiFiTransitionToken(target, deviceID, token string) error {
+	target = normalizeTarget(target)
+	deviceID = strings.TrimSpace(deviceID)
+	token = strings.TrimSpace(token)
+	pending := false
+	_, err := s.updateConfig(func(current *runtimeconfig.Config) {
+		current.RememberDevice(runtimeconfig.KnownDevice{
+			DeviceID:    deviceID,
+			Target:      target,
+			DeviceToken: token,
+		})
+		if !current.WiFiTransitionPending() || !strings.EqualFold(current.DeviceID, deviceID) {
+			return
+		}
+		current.DeviceTarget = target
+		current.DeviceToken = token
+		pending = true
+	})
+	if err != nil {
+		return err
+	}
+	if !pending {
+		return errors.New("pending WiFi transition changed before pairing completed")
+	}
+	return nil
 }
 
 func (s *Server) commitConfirmedWiFiTransition(
