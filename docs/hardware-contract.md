@@ -112,8 +112,9 @@ device-side hash check. A final live identity lookup without a supplied port
 resolved `/dev/cu.usbserial-11230`, protocol 2, and the expected board and
 theme limits.
 
-The local #395 customer-flow development build on 2026-08-27 uses 478,451 bytes
-flash and 47,328 bytes RAM and remains below the release gates. It passed the
+The local #395 customer-flow development build on 2026-08-27 uses 477,531 bytes
+flash and 46,992 bytes RAM; its 481,680-byte image remains below the release
+gates with 320 bytes of binary-image reserve. It passed the
 release-gated ESP8266 build and native suites, but was not flashed to hardware;
 real-screen rehearsal still requires a separate current hardware-write
 approval.
