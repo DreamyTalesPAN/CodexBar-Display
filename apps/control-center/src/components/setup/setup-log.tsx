@@ -42,6 +42,11 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
       aria-live="polite"
       className={cn(
         "h-[118px] w-full overflow-y-auto text-left font-mono text-[13px] leading-6",
+        // The scrollbar is noise next to terminal type. Hiding it costs the
+        // only hint that there is more, so the top edge fades instead — the
+        // log always sits at its bottom, so anything out of view is above.
+        "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        "[mask-image:linear-gradient(to_bottom,transparent,black_14px)]",
         className,
       )}
       ref={scrollRef}
@@ -49,7 +54,9 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
       {lines.map((line, index) => (
         <div
           className={cn(
-            "flex items-center gap-2",
+            // Keyed by id, so only a line that is genuinely new animates; the
+            // ones already on screen keep their node and stay still.
+            "flex animate-in items-center gap-2 fade-in duration-500",
             line.tone === "error"
               ? "text-destructive"
               : "text-muted-foreground",

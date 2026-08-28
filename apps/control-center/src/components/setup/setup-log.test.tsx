@@ -32,6 +32,20 @@ describe("SetupLog", () => {
     expect(html.match(/text-muted-foreground/g)).toHaveLength(2);
   });
 
+  it("hides the scrollbar but keeps an edge fade so more content still reads", () => {
+    const html = renderToStaticMarkup(<SetupLog lines={lines} />);
+
+    expect(html).toContain("[scrollbar-width:none]");
+    expect(html).toContain("overflow-y-auto");
+    expect(html).toContain("mask-image");
+  });
+
+  it("fades a new line in", () => {
+    expect(renderToStaticMarkup(<SetupLog lines={lines} />)).toContain(
+      "fade-in",
+    );
+  });
+
   it("shows the caret only on the last line, and only while running", () => {
     expect(renderToStaticMarkup(<SetupLog lines={lines} />)).not.toContain(
       "vibetv-caret-blink",
