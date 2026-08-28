@@ -32,11 +32,17 @@ export function SetupWizardScreen({
   return (
     <section
       aria-label={label}
-      className="relative flex min-h-svh w-full flex-col items-center justify-center bg-background p-14"
+      className="relative flex min-h-svh w-full flex-col items-center bg-background px-6 py-10 sm:px-14 sm:py-14"
     >
+      {/*
+        my-auto rather than justify-center: a centred flex child whose content
+        outgrows the viewport has its top clipped and unreachable. The window
+        has no minimum size, so that is a state the customer can reach by
+        dragging a corner.
+      */}
       <div
         className={cn(
-          "flex w-full flex-col items-center gap-2 text-center",
+          "my-auto flex w-full flex-col items-center gap-2 text-center",
           contentWidth === "wide" ? "max-w-[464px]" : "max-w-[460px]",
         )}
       >
@@ -44,7 +50,7 @@ export function SetupWizardScreen({
       </div>
 
       {onBack ? (
-        <div className="absolute bottom-5 left-5 z-60">
+        <div className="fixed bottom-5 left-5 z-60">
           <Button
             className="text-muted-foreground"
             onClick={onBack}

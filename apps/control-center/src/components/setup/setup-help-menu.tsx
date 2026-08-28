@@ -77,7 +77,7 @@ export function SetupHelpMenu({
   }
 
   return (
-    <div className="absolute right-5 bottom-5 z-60" ref={containerRef}>
+    <div className="fixed right-5 bottom-5 z-60" ref={containerRef}>
       {open ? (
         <div className="absolute right-0 bottom-11 flex w-58 flex-col gap-0.5 rounded-xl bg-card p-1.5 shadow-lg ring-1 ring-foreground/10">
           {onAskAiToFix && !copied ? (
