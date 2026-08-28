@@ -844,7 +844,8 @@ function usageModeShortLabel(mode?: string): string {
   return mode === "remaining" ? "remaining" : "used";
 }
 
-function formatReset(seconds?: number): string {
+/** Customer-facing reset wording, shared with the setup display-mode step. */
+export function formatReset(seconds?: number): string {
   if (!seconds || seconds <= 0) {
     return "Reset unknown";
   }
