@@ -3479,6 +3479,7 @@ async function testFreshCableAutoBindingStillChoosesConnection(
 async function testSavedCableStartupNeverSearchesWifi(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
+    userAgent: "VibeTVControlCenter/99.0.859+859",
   });
   const installRequests = [];
   let searchRequests = 0;
@@ -3513,6 +3514,12 @@ async function testSavedCableStartupNeverSearchesWifi(browser, appUrl) {
         capabilities: connectingCableDevice.capabilities,
       },
     ],
+  });
+  await page.addInitScript(() => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
