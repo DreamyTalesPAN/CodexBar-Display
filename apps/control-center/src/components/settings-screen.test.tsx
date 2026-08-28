@@ -37,10 +37,12 @@ function render(
     <SettingsScreen
       brightness={70}
       busyAction={null}
+      connectionMode="cable"
       device={device}
       standby={standby}
       onBrightnessChange={vi.fn()}
       onChooseScreensaver={vi.fn()}
+      onConnectionModeChange={vi.fn()}
       onResetSetup={vi.fn()}
       onSaveBrightness={vi.fn()}
       onSaveStandby={vi.fn()}
@@ -151,23 +153,37 @@ describe("SettingsScreen standby controls", () => {
   it("uses responsive intro and control columns for every section", () => {
     const html = render(standbyDevice);
 
-    expect(html.match(/grid-cols-1/g)).toHaveLength(3);
+    expect(html.match(/grid-cols-1/g)).toHaveLength(4);
     expect(
       html.match(/md:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/g),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
     expect(html).toMatch(
       /<h3>Setup<\/h3>.*Connect this Mac to another VibeTV\.<\/p><\/div><div data-slot="item-actions"/,
     );
   });
+
+  it("uses the existing Settings select pattern for connection mode", () => {
+    const html = render(standbyDevice);
+
+    expect(html).toContain("<h3>Connection</h3>");
+    expect(html).toContain("Choose how this Mac connects to VibeTV.");
+    expect(html).toContain('for="vibetv-connection-mode"');
+    expect(html).toContain('aria-label="Connection mode"');
+    expect(html).toContain('data-slot="select-trigger"');
+    expect(html).not.toContain("Change connection");
+  });
+
   it("keeps VibeTV mutations disabled during a firmware update", () => {
     const html = renderToStaticMarkup(
       <SettingsScreen
         brightness={50}
         busyAction="firmware-update"
+        connectionMode="cable"
         device={standbyDevice}
         standby={savedStandby}
         onBrightnessChange={vi.fn()}
         onChooseScreensaver={vi.fn()}
+        onConnectionModeChange={vi.fn()}
         onResetSetup={vi.fn()}
         onSaveBrightness={vi.fn()}
         onSaveStandby={vi.fn()}

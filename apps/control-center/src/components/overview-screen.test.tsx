@@ -152,17 +152,16 @@ describe("OverviewScreen", () => {
     expect(html).not.toContain("Reconnecting to VibeTV");
   });
 
-  it("offers one clear path from Cable to WiFi-only controls", () => {
+  it("does not add a connection-mode banner to the overview", () => {
     const html = renderToStaticMarkup(
       <OverviewScreen
         companionStatus="online"
         device={{ active: true, connected: true, paired: true, ready: true }}
-        onChangeConnection={() => undefined}
       />,
     );
 
-    expect(html).toContain("Connected by Cable");
-    expect(html).toContain("Switch to WiFi for settings");
-    expect(html).toContain("Change connection</button>");
+    expect(html).toContain("VibeTV is connected");
+    expect(html).not.toContain("Connected by Cable");
+    expect(html).not.toContain("Change connection");
   });
 });
