@@ -3378,7 +3378,7 @@ async function testFreshCableAutoBindingStillChoosesConnection(
   };
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: connectingCableDevice,
-    displayFrameUnavailableResponses: 2,
+    displayFrameUnavailableResponses: 8,
     onSearch: () => {
       searchRequests += 1;
       return [];
@@ -3412,6 +3412,16 @@ async function testFreshCableAutoBindingStillChoosesConnection(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
       0,
     "Cable setup must stay on the startup screen until the first live frame",
+  );
+  assert(
+    searchRequests === 0,
+    "Cable setup must not start a WiFi search while its first frame is pending",
+  );
+  await page.waitForTimeout(6_500);
+  await page.getByRole("heading", { name: "Connecting to VibeTV" }).waitFor();
+  assert(
+    searchRequests === 0,
+    "Cable setup must keep WiFi discovery suppressed throughout the first-frame wait",
   );
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor();
   assert(

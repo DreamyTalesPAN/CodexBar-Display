@@ -1615,6 +1615,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (setupGeneration !== setupGenerationRef.current) {
           return false;
         }
+        if (mode === "cable") {
+          didRunAutomaticDeviceSearch.current = true;
+        }
         connectionModeChoiceSubmitted.current = true;
         connectionModeChoiceResolved.current = true;
         setWifiCredentialsRequired(
