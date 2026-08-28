@@ -172,6 +172,7 @@ describe("SettingsScreen standby controls", () => {
         onSaveBrightness={vi.fn()}
         onSaveStandby={vi.fn()}
         onStandbyBrightnessChange={vi.fn()}
+        providerPicker={providerPicker}
       />,
     );
 
