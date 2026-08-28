@@ -121,6 +121,9 @@ const LAUNCHD_RECOVERY_GRACE_MS = 12_000;
 // launch (main.swift:37-43). At 55s this fired while the repair was still
 // working, reported failure, and then discarded the successful native result.
 const NATIVE_RUNTIME_REPAIR_TIMEOUT_MS = 120_000;
+// The Help menu hands the last 20 of these to an AI along with the current
+// screen, so the log has to be at least that deep.
+const RECENT_EVENT_LIMIT = 20;
 const NATIVE_RUNTIME_REPAIR_RESULT_EVENT = "vibetv:runtime-repair-result";
 const NATIVE_CODEXBAR_REPAIR_RESULT_EVENT = "vibetv:codexbar-repair-result";
 
@@ -508,7 +511,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             ...event,
           },
           ...current,
-        ].slice(0, 10),
+        ].slice(0, RECENT_EVENT_LIMIT),
       );
     },
     [],
