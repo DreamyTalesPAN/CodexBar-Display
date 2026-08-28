@@ -7555,11 +7555,18 @@ func TestCableControlRequestsStayOffSerialDuringFirmwareUpdate(t *testing.T) {
 
 func TestSetupConnectionModeCollectsWiFiCredentialsBeforeChangingHostMode(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
-		ConnectionMode: "cable",
-		DeviceID:       "device-cable",
+		ConnectionMode:               "cable",
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: true,
 	})
+	resolveCalls := 0
 	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
-		if explicit != "" || expectedDeviceID != "device-cable" {
+		resolveCalls++
+		wantDeviceID := ""
+		if resolveCalls == 2 {
+			wantDeviceID = "device-cable"
+		}
+		if explicit != "" || expectedDeviceID != wantDeviceID {
 			t.Fatalf("unexpected Cable resolution explicit=%q expected=%q", explicit, expectedDeviceID)
 		}
 		return "/dev/cu.usbserial-vibetv", nil
@@ -7596,8 +7603,8 @@ func TestSetupConnectionModeCollectsWiFiCredentialsBeforeChangingHostMode(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ConnectionMode != "cable" || cfg.CableAutoBindDisabled || cfg.DeviceID != "device-cable" {
-		t.Fatalf("host mode changed before WiFi credentials: %+v", cfg)
+	if cfg.ConnectionMode != "cable" || cfg.CableAutoBindDisabled || cfg.ConnectionModeChoiceRequired || cfg.DeviceID != "device-cable" {
+		t.Fatalf("verified Cable identity was not persisted for WiFi credentials: %+v", cfg)
 	}
 
 	configuredSSID := ""
