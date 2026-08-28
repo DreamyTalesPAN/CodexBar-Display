@@ -85,7 +85,6 @@ import {
   type DisplayFrameSnapshot,
   useLatestDisplayFrame,
 } from "./live-vibetv-preview";
-import { MacAppRecoveryScreen } from "./mac-app-recovery-screen";
 import { OverviewScreen } from "./overview-screen";
 import {
   PROVIDER_RECONCILE_WINDOW_MS,
@@ -100,6 +99,7 @@ import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
 import { deriveSetupStep } from "./setup/setup-step";
 import { setupUsageCauseFor } from "./setup/setup-usage-dialog";
+import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
 import { SetupWizard } from "./setup/setup-wizard";
 import { SetupStatusScreen } from "./setup-status-screen";
 import { SettingsScreen } from "./settings-screen";
@@ -409,6 +409,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // was already set up reaches the shell without it, because nothing put the
   // customer on a step to close.
   const [setupFinished, setSetupFinished] = useState(false);
+  // Dismissing the recovery dialog only hides it; the repair itself runs on.
+  const [runtimeRecoveryHidden, setRuntimeRecoveryHidden] = useState(false);
+  const runtimeRecoveryWasNeeded = useRef(false);
   const lastFirmwareErrorRef = useRef<ApiError | null>(null);
   const [showCodexBarFallback, setShowCodexBarFallback] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
@@ -3854,6 +3857,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     onPreferenceChange: updateProviderPreference,
   };
   const needsRuntimeRecovery = companionStatus === "missing";
+
+  // A dismissal covers the incident it was made during, not the next one.
+  useEffect(() => {
+    if (needsRuntimeRecovery) {
+      runtimeRecoveryWasNeeded.current = true;
+      return;
+    }
+    if (runtimeRecoveryWasNeeded.current) {
+      runtimeRecoveryWasNeeded.current = false;
+      setRuntimeRecoveryHidden(false);
+    }
+  }, [needsRuntimeRecovery]);
   const controlCenterAvailable =
     hasActiveDevice && !connectionRecoveryRequired && !recoveryPickerOpen;
   const disabledTabs: ActiveTab[] = hasEnteredControlCenter
@@ -4162,283 +4177,294 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       screen: setupStep,
     });
 
-  if (runtimeSurface === "unknown") {
-    return (
-      <ControlCenterBootScreen
-        diagnostics={supportDiagnostics}
-        onCreateSupportReport={loadSupportDiagnostics}
-        supportReportBusy={supportReportBusy}
-      />
-    );
-  }
+  // The background service can die at any point, so its recovery is drawn
+  // over whatever is on screen rather than replacing it. Everything else is
+  // one screen at a time.
+  function renderScreen() {
+    if (runtimeSurface === "unknown") {
+      return (
+        <ControlCenterBootScreen
+          diagnostics={supportDiagnostics}
+          onCreateSupportReport={loadSupportDiagnostics}
+          supportReportBusy={supportReportBusy}
+        />
+      );
+    }
 
-  if (runtimeSurface === "hosted-setup") {
-    return (
-      <MacAppDownloadScreen
-        onCreateSupportReport={loadSupportDiagnostics}
-        release={companionRelease}
-      />
-    );
-  }
+    if (runtimeSurface === "hosted-setup") {
+      return (
+        <MacAppDownloadScreen
+          onCreateSupportReport={loadSupportDiagnostics}
+          release={companionRelease}
+        />
+      );
+    }
 
-  if (!initialCompanionCheckComplete) {
-    return (
-      <ControlCenterBootScreen
-        diagnostics={supportDiagnostics}
-        onCreateSupportReport={loadSupportDiagnostics}
-        supportReportBusy={supportReportBusy}
-      />
-    );
-  }
+    if (!initialCompanionCheckComplete) {
+      return (
+        <ControlCenterBootScreen
+          diagnostics={supportDiagnostics}
+          onCreateSupportReport={loadSupportDiagnostics}
+          supportReportBusy={supportReportBusy}
+        />
+      );
+    }
 
-  if (!hasEnteredControlCenter && needsRuntimeRecovery && !providerRecoveryRequired) {
-    return (
-      <MacAppRecoveryScreen
-        checking={busyAction === "status"}
-        phase={runtimeRecoveryPhase}
-        onRestart={restartLocalControlCenterApp}
-        onRetry={requestRuntimeRepair}
-      />
-    );
-  }
+    if (setupOwnsScreen) {
+      return (
+        <SetupWizard
+          aiFixPrompt={setupAiFixPrompt}
+          automaticPreviews={setupPreviews}
+          connectSteps={setupConnectSteps}
+          device={device}
+          deviceCandidates={startupDeviceCandidates}
+          deviceSearchState={startupDeviceSearchState}
+          displayFrame={displayFrame}
+          displayMode={providerDisplay?.mode ?? "automatic"}
+          displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
+          displayProviders={setupProviders
+            .filter((item) => item.value)
+            .map((item) => ({ id: item.providerId, label: item.label }))}
+          installingTheme={themeInstallStatus?.phase === "installing"}
+          onConnectManualTarget={(target) => void connectManualTarget(target)}
+          onCreateSupportReport={loadSupportDiagnostics}
+          onFinished={() => setSetupFinished(true)}
+          onDisplayContinue={() =>
+            void updateProviderDisplay(
+              {
+                mode: providerDisplay?.mode ?? "automatic",
+                providerIds:
+                  providerDisplay?.mode === "fixed" &&
+                  providerDisplay.providerIds.length > 0
+                    ? providerDisplay.providerIds
+                    : enabledProviderIds,
+              },
+              providerDisplay?.providerIds?.[0] ?? enabledProviderIds[0] ?? "",
+            )
+          }
+          onDisplayModeChange={(mode) =>
+            void updateProviderDisplay(
+              {
+                mode,
+                providerIds:
+                  mode === "fixed"
+                    ? providerDisplay?.providerIds?.slice(0, 1) ||
+                      enabledProviderIds.slice(0, 1)
+                    : enabledProviderIds,
+              },
+              providerDisplay?.providerIds?.[0] ?? enabledProviderIds[0] ?? "",
+            )
+          }
+          onDisplayProviderChange={(providerId) =>
+            void updateProviderDisplay(
+              { mode: "fixed", providerIds: [providerId] },
+              providerId,
+            )
+          }
+          onInstallTheme={() => void installTheme()}
+          onProviderCheck={(provider) => void checkProvider(provider)}
+          onProviderRecover={openCodexBarApp}
+          onProviderToggle={(provider, enabled) =>
+            void updateProviderPreference(provider, enabled)
+          }
+          onProvidersContinue={completeProviderSetup}
+          onRepairUsageService={retryUsageService}
+          onSearchDevices={() => void searchAndConnect()}
+          onSelectTheme={(theme) => setSelectedThemeId(theme.id)}
+          providers={setupProviders}
+          selectedThemeId={selectedThemeId}
+          step={setupStep}
+          themeInstallLogs={themeInstallStatus?.logs || []}
+          themes={setupThemes}
+          usage={usage}
+          usageFailure={
+            providerRecoveryRequired || initialProviderCheckInProgress
+              ? setupUsageCauseFor(providerSetup)
+              : null
+          }
+          welcomeLines={setupWelcomeLines}
+        />
+      );
+    }
 
-  if (setupOwnsScreen) {
+    if (themeSetupRequired) {
+      return (
+        <ThemeLibraryScreen
+          busyAction={busyAction}
+          catalogIssue={catalog.issue}
+          companionStatus={companionStatus}
+          device={device}
+          firmwareUpdate={effectiveFirmwareUpdate}
+          firmwareUpdateStatus={firmwareUpdateStatus}
+          installStatus={themeInstallStatus}
+          lastInstall={lastInstall}
+          readinessError={lastError}
+          onInstallCustomTheme={installCustomTheme}
+          onInstallFirmwareUpdate={installFirmwareUpdate}
+          onInstallTheme={installTheme}
+          onCreateSupportReport={loadSupportDiagnostics}
+          onSelectTheme={setSelectedThemeId}
+          requestedThemeId={initialThemeId}
+          selectedTheme={selectedTheme}
+          selectedThemeId={selectedThemeId}
+          setupMode
+          storefrontConfigured={catalog.storefrontConfigured}
+          themeInstallEnabled={themeInstallEnabled}
+          themes={catalog.themes}
+        />
+      );
+    }
+
     return (
-      <SetupWizard
-        aiFixPrompt={setupAiFixPrompt}
-        automaticPreviews={setupPreviews}
-        connectSteps={setupConnectSteps}
+      <ControlCenterShell
+        activeTab={activeShellTab}
+        activeAppearanceSection={appearanceSection}
+        disabledTabs={disabledTabs}
         device={device}
-        deviceCandidates={startupDeviceCandidates}
-        deviceSearchState={startupDeviceSearchState}
-        displayFrame={displayFrame}
-        displayMode={providerDisplay?.mode ?? "automatic"}
-        displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
-        displayProviders={setupProviders
-          .filter((item) => item.value)
-          .map((item) => ({ id: item.providerId, label: item.label }))}
-        installingTheme={themeInstallStatus?.phase === "installing"}
-        onConnectManualTarget={(target) => void connectManualTarget(target)}
-        onCreateSupportReport={loadSupportDiagnostics}
-        onFinished={() => setSetupFinished(true)}
-        onDisplayContinue={() =>
-          void updateProviderDisplay(
-            {
-              mode: providerDisplay?.mode ?? "automatic",
-              providerIds:
-                providerDisplay?.mode === "fixed" &&
-                providerDisplay.providerIds.length > 0
-                  ? providerDisplay.providerIds
-                  : enabledProviderIds,
-            },
-            providerDisplay?.providerIds?.[0] ?? enabledProviderIds[0] ?? "",
-          )
-        }
-        onDisplayModeChange={(mode) =>
-          void updateProviderDisplay(
-            {
-              mode,
-              providerIds:
-                mode === "fixed"
-                  ? providerDisplay?.providerIds?.slice(0, 1) ||
-                    enabledProviderIds.slice(0, 1)
-                  : enabledProviderIds,
-            },
-            providerDisplay?.providerIds?.[0] ?? enabledProviderIds[0] ?? "",
-          )
-        }
-        onDisplayProviderChange={(providerId) =>
-          void updateProviderDisplay(
-            { mode: "fixed", providerIds: [providerId] },
-            providerId,
-          )
-        }
-        onInstallTheme={() => void installTheme()}
-        onProviderCheck={(provider) => void checkProvider(provider)}
-        onProviderRecover={openCodexBarApp}
-        onProviderToggle={(provider, enabled) =>
-          void updateProviderPreference(provider, enabled)
-        }
-        onProvidersContinue={completeProviderSetup}
-        onRepairUsageService={retryUsageService}
-        onSearchDevices={() => void searchAndConnect()}
-        onSelectTheme={(theme) => setSelectedThemeId(theme.id)}
-        providers={setupProviders}
-        selectedThemeId={selectedThemeId}
-        step={setupStep}
-        themeInstallLogs={themeInstallStatus?.logs || []}
-        themes={setupThemes}
-        usage={usage}
-        usageFailure={
-          providerRecoveryRequired || initialProviderCheckInProgress
-            ? setupUsageCauseFor(providerSetup)
-            : null
-        }
-        welcomeLines={setupWelcomeLines}
-      />
-    );
-  }
+        updateAvailable={anyUpdateAvailable}
+        onAppearanceSectionChange={setAppearanceSection}
+        onTabChange={(tab) => {
+          if (disabledTabs.includes(tab)) {
+            return;
+          }
+          setActiveTab(tab);
+        }}
+      >
+        {activeShellTab === "overview" ? (
+          <OverviewScreen
+            companionVersion={companionInfo?.version}
+            companionStatus={companionStatus}
+            device={device}
+            displayFrame={displayFrame}
+            firmwareUpdateStatus={firmwareUpdateStatus}
+            usage={usage}
+          />
+        ) : null}
 
-  if (themeSetupRequired) {
-    return (
-      <ThemeLibraryScreen
-        busyAction={busyAction}
-        catalogIssue={catalog.issue}
-        companionStatus={companionStatus}
-        device={device}
-        firmwareUpdate={effectiveFirmwareUpdate}
-        firmwareUpdateStatus={firmwareUpdateStatus}
-        installStatus={themeInstallStatus}
-        lastInstall={lastInstall}
-        readinessError={lastError}
-        onInstallCustomTheme={installCustomTheme}
-        onInstallFirmwareUpdate={installFirmwareUpdate}
-        onInstallTheme={installTheme}
-        onCreateSupportReport={loadSupportDiagnostics}
-        onSelectTheme={setSelectedThemeId}
-        requestedThemeId={initialThemeId}
-        selectedTheme={selectedTheme}
-        selectedThemeId={selectedThemeId}
-        setupMode
-        storefrontConfigured={catalog.storefrontConfigured}
-        themeInstallEnabled={themeInstallEnabled}
-        themes={catalog.themes}
-      />
+        {activeShellTab === "usage" ? (
+          <UsageScreen
+            busyAction={busyAction}
+            companionStatus={companionStatus}
+            onRefresh={() => refreshUsage()}
+            usage={usage}
+            usageError={usageError}
+          />
+        ) : null}
+
+        {activeShellTab === "settings" ? (
+          <SettingsScreen
+            brightness={brightness}
+            busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
+            device={device}
+            standby={standby}
+            onBrightnessChange={changeBrightness}
+            onChooseScreensaver={() => {
+              setAppearanceSection("screensavers");
+              setActiveTab("theme-library");
+            }}
+            onResetSetup={resetSetup}
+            onSaveBrightness={saveBrightness}
+            providerPicker={providerPickerProps}
+            onSaveStandby={saveStandby}
+            onStandbyBrightnessChange={changeStandbyBrightness}
+          />
+        ) : null}
+
+        {activeShellTab === "theme-library" ? (
+          <ThemeLibraryScreen
+            busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
+            companionStatus={companionStatus}
+            device={device}
+            installStatus={themeInstallStatus}
+            catalogIssue={catalog.issue}
+            lastInstall={lastInstall}
+            onInstallCustomTheme={installCustomTheme}
+            onInstallTheme={installTheme}
+            onSelectTheme={
+              appearanceSection === "screensavers"
+                ? setSelectedScreensaverId
+                : setSelectedThemeId
+            }
+            installEntry={
+              appearanceSection === "themes" && Boolean(initialThemeId)
+            }
+            requestedThemeId={
+              appearanceSection === "themes" ? initialThemeId : undefined
+            }
+            selectedTheme={
+              appearanceSection === "screensavers"
+                ? selectedScreensaver
+                : selectedTheme
+            }
+            selectedThemeId={
+              appearanceSection === "screensavers"
+                ? selectedScreensaverId
+                : selectedThemeId
+            }
+            standby={standby}
+            storefrontConfigured={catalog.storefrontConfigured}
+            themeInstallEnabled={themeInstallEnabled}
+            themes={catalog.themes}
+            usage={appearanceSection === "screensavers" ? "screensaver" : "live"}
+            onSaveStandby={saveStandby}
+          />
+        ) : null}
+
+        {activeShellTab === "updates" ? (
+          <UpdatesScreen
+            busyAction={busyAction}
+            companionRelease={companionRelease}
+            companionStatus={companionStatus}
+            companionVersion={companionInfo?.version}
+            companionInfo={companionInfo}
+            device={device}
+            firmwareUpdate={effectiveFirmwareUpdate}
+            onCheckUpdates={checkUpdates}
+            onCreateReport={() => {
+              setActiveTab("logs");
+              void loadSupportDiagnostics();
+            }}
+            onInstallUpdate={installFirmwareUpdate}
+            onRetryThemeUpdate={retryActiveThemeUpgrade}
+            requiresMacAppMigration={requiresMacAppMigration}
+            supportReportBusy={supportReportBusy}
+            themeUpdateAvailable={activeThemeUpdateAvailable}
+            updateStatus={firmwareUpdateStatus}
+          />
+        ) : null}
+
+        {activeShellTab === "logs" ? (
+          <LogsScreen
+            busyAction={busyAction}
+            device={device}
+            diagnostics={supportDiagnostics}
+            events={logs}
+            lastError={lastError}
+            onLoadDiagnostics={loadSupportDiagnostics}
+            onRefresh={checkCompanion}
+            onRunSetupAgain={resetSetup}
+            supportReportBusy={supportReportBusy}
+          />
+        ) : null}
+      </ControlCenterShell>
     );
   }
 
   return (
-    <ControlCenterShell
-      activeTab={activeShellTab}
-      activeAppearanceSection={appearanceSection}
-      disabledTabs={disabledTabs}
-      device={device}
-      updateAvailable={anyUpdateAvailable}
-      onAppearanceSectionChange={setAppearanceSection}
-      onTabChange={(tab) => {
-        if (disabledTabs.includes(tab)) {
-          return;
+    <>
+      {renderScreen()}
+      <SetupRecoveryDialogs
+        onHide={() => setRuntimeRecoveryHidden(true)}
+        onRestart={restartLocalControlCenterApp}
+        onRetry={requestRuntimeRepair}
+        phase={
+          needsRuntimeRecovery && !runtimeRecoveryHidden
+            ? runtimeRecoveryPhase
+            : null
         }
-        setActiveTab(tab);
-      }}
-    >
-      {activeShellTab === "overview" ? (
-        <OverviewScreen
-          companionVersion={companionInfo?.version}
-          companionStatus={companionStatus}
-          device={device}
-          displayFrame={displayFrame}
-          firmwareUpdateStatus={firmwareUpdateStatus}
-          usage={usage}
-        />
-      ) : null}
-
-      {activeShellTab === "usage" ? (
-        <UsageScreen
-          busyAction={busyAction}
-          companionStatus={companionStatus}
-          onRefresh={() => refreshUsage()}
-          usage={usage}
-          usageError={usageError}
-        />
-      ) : null}
-
-      {activeShellTab === "settings" ? (
-        <SettingsScreen
-          brightness={brightness}
-          busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
-          device={device}
-          standby={standby}
-          onBrightnessChange={changeBrightness}
-          onChooseScreensaver={() => {
-            setAppearanceSection("screensavers");
-            setActiveTab("theme-library");
-          }}
-          onResetSetup={resetSetup}
-          onSaveBrightness={saveBrightness}
-          providerPicker={providerPickerProps}
-          onSaveStandby={saveStandby}
-          onStandbyBrightnessChange={changeStandbyBrightness}
-        />
-      ) : null}
-
-      {activeShellTab === "theme-library" ? (
-        <ThemeLibraryScreen
-          busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
-          companionStatus={companionStatus}
-          device={device}
-          installStatus={themeInstallStatus}
-          catalogIssue={catalog.issue}
-          lastInstall={lastInstall}
-          onInstallCustomTheme={installCustomTheme}
-          onInstallTheme={installTheme}
-          onSelectTheme={
-            appearanceSection === "screensavers"
-              ? setSelectedScreensaverId
-              : setSelectedThemeId
-          }
-          installEntry={
-            appearanceSection === "themes" && Boolean(initialThemeId)
-          }
-          requestedThemeId={
-            appearanceSection === "themes" ? initialThemeId : undefined
-          }
-          selectedTheme={
-            appearanceSection === "screensavers"
-              ? selectedScreensaver
-              : selectedTheme
-          }
-          selectedThemeId={
-            appearanceSection === "screensavers"
-              ? selectedScreensaverId
-              : selectedThemeId
-          }
-          standby={standby}
-          storefrontConfigured={catalog.storefrontConfigured}
-          themeInstallEnabled={themeInstallEnabled}
-          themes={catalog.themes}
-          usage={appearanceSection === "screensavers" ? "screensaver" : "live"}
-          onSaveStandby={saveStandby}
-        />
-      ) : null}
-
-      {activeShellTab === "updates" ? (
-        <UpdatesScreen
-          busyAction={busyAction}
-          companionRelease={companionRelease}
-          companionStatus={companionStatus}
-          companionVersion={companionInfo?.version}
-          companionInfo={companionInfo}
-          device={device}
-          firmwareUpdate={effectiveFirmwareUpdate}
-          onCheckUpdates={checkUpdates}
-          onCreateReport={() => {
-            setActiveTab("logs");
-            void loadSupportDiagnostics();
-          }}
-          onInstallUpdate={installFirmwareUpdate}
-          onRetryThemeUpdate={retryActiveThemeUpgrade}
-          requiresMacAppMigration={requiresMacAppMigration}
-          supportReportBusy={supportReportBusy}
-          themeUpdateAvailable={activeThemeUpdateAvailable}
-          updateStatus={firmwareUpdateStatus}
-        />
-      ) : null}
-
-      {activeShellTab === "logs" ? (
-        <LogsScreen
-          busyAction={busyAction}
-          device={device}
-          diagnostics={supportDiagnostics}
-          events={logs}
-          lastError={lastError}
-          onLoadDiagnostics={loadSupportDiagnostics}
-          onRefresh={checkCompanion}
-          onRunSetupAgain={resetSetup}
-          supportReportBusy={supportReportBusy}
-        />
-      ) : null}
-    </ControlCenterShell>
+        retrying={busyAction === "runtime-repair"}
+      />
+    </>
   );
 }
 
