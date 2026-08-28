@@ -85,12 +85,8 @@ import {
 import type { ThemeStudioDeviceCapabilities } from "@/lib/theme-studio-capabilities";
 import type { ThemeProduct } from "@/lib/themes";
 import { themeRenderPackUrl } from "./control-center-runtime";
+import { ThemeRenderPreview } from "./theme-render-preview";
 import type { StandbySettings } from "./control-center-types";
-import {
-  THEME_CATALOG_PREVIEW_FRAME,
-  ThemeSpecPreview,
-  type ThemeRenderPack,
-} from "./live-vibetv-preview";
 import {
   ThemeStudioScreen,
   type ThemeStudioEditorTheme,
@@ -1827,89 +1823,32 @@ function ThemePreview({
   large?: boolean;
   theme: ThemeLibraryItem;
 }) {
-  const [packState, setPackState] = useState<{
-    pack: ThemeRenderPack | null;
-    requestKey: string;
-    status: "idle" | "loading" | "ready" | "error";
-  }>({
-    pack: null,
-    requestKey: "",
-    status: "idle",
-  });
-  const className = large
-    ? "relative block aspect-square w-full overflow-hidden border border-border bg-muted"
-    : "relative block size-28 overflow-hidden rounded-lg border border-border bg-muted sm:size-36";
-  const themeId = theme.themeId;
-  const themeSpecPath =
-    theme.kind === "published" ? theme.product.themeSpecPath || "" : "";
-  const requestKey = `${themeId}\n${themeSpecPath}`;
-  const customPack =
-    theme.kind === "custom"
-      ? {
-          ok: true,
-          themeId,
-          name: theme.title,
-          spec: theme.custom.document.spec,
-          assets: theme.custom.document.assets,
-        }
-      : null;
-  const pack =
-    customPack ||
-    (packState.requestKey === requestKey && packState.status === "ready"
-      ? packState.pack
-      : null);
-  const status =
-    customPack
-      ? "ready"
-      : packState.requestKey === requestKey
-        ? packState.status
-        : "loading";
-
-  useEffect(() => {
-    if (theme.kind === "custom") {
-      return;
-    }
-    if (!themeId) {
-      return;
-    }
-
-    const controller = new AbortController();
-    fetch(themeRenderPackUrl(themeId, themeSpecPath), {
-      signal: controller.signal,
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("theme preview unavailable");
-        }
-        return response.json() as Promise<ThemeRenderPack>;
-      })
-      .then((payload) => {
-        setPackState({
-          pack: payload,
-          requestKey,
-          status: payload?.spec ? "ready" : "error",
-        });
-      })
-      .catch((error) => {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
-        setPackState({ pack: null, requestKey, status: "error" });
-      });
-
-    return () => controller.abort();
-  }, [requestKey, theme.kind, themeId, themeSpecPath]);
-
   return (
-    <span className={className}>
-      <ThemeSpecPreview
-        animate={Boolean(large)}
-        frame={THEME_CATALOG_PREVIEW_FRAME}
-        pack={pack}
-        status={status}
-        themeId={themeId}
-      />
-    </span>
+    <ThemeRenderPreview
+      animate={Boolean(large)}
+      className={
+        large
+          ? "aspect-square w-full"
+          : "size-28 rounded-lg sm:size-36"
+      }
+      // A Theme Studio theme has no published pack to load: its spec only
+      // exists in this app.
+      pack={
+        theme.kind === "custom"
+          ? {
+              ok: true,
+              themeId: theme.themeId,
+              name: theme.title,
+              spec: theme.custom.document.spec,
+              assets: theme.custom.document.assets,
+            }
+          : null
+      }
+      themeId={theme.themeId}
+      themeSpecPath={
+        theme.kind === "published" ? theme.product.themeSpecPath || "" : ""
+      }
+    />
   );
 }
 

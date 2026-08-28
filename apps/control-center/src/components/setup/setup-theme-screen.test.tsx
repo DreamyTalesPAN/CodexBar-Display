@@ -32,11 +32,14 @@ describe("SetupThemeScreen", () => {
     }
   });
 
-  it("names the selected theme in the install button", () => {
-    expect(render()).toContain("Install Clippy");
-    expect(render({ selectedThemeId: "synthwave" })).toContain(
-      "Install Synthwave",
-    );
+  it("keeps the install action to the one word, whichever theme is chosen", () => {
+    for (const selectedThemeId of ["clippy", "synthwave"]) {
+      const html = render({ selectedThemeId });
+
+      expect(html).toContain("<span>Install</span>");
+      expect(html).not.toContain("Install Clippy");
+      expect(html).not.toContain("Install Synthwave");
+    }
   });
 
   it("marks only the selected theme", () => {
@@ -49,23 +52,24 @@ describe("SetupThemeScreen", () => {
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[^<]*<span>Install<\/span>/);
   });
 
-  it("replaces the install label with the running phase while installing", () => {
-    const html = render({ busyLabel: "Restarting VibeTV", installing: true });
+  it("says it is installing while the install runs", () => {
+    const html = render({ installing: true });
 
-    expect(html).toContain("Restarting VibeTV");
-    expect(html).not.toContain("Install Clippy");
+    expect(html).toContain("<span>Installing</span>");
+    expect(html).toMatch(/<button[^>]*disabled=""/);
   });
 
-  it("shows the thumbnail the caller passed for a theme", () => {
+  it("shows the install steps the companion reported", () => {
     const html = render({
-      themes: [
-        {
-          ...themes[1],
-          preview: <span data-testid="clippy-preview" />,
-        },
-      ],
+      installLogs: ["Uploading theme", "Activating theme"],
+      installing: true,
     });
 
-    expect(html).toContain('data-testid="clippy-preview"');
+    expect(html).toContain("&gt; Uploading theme");
+    expect(html).toContain("&gt; Activating theme");
+  });
+
+  it("shows no log area before an install has said anything", () => {
+    expect(render()).not.toContain('aria-live="polite"');
   });
 });

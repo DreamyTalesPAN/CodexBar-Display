@@ -1,8 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
 import {
   Item,
   ItemActions,
@@ -10,6 +8,9 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
+import { Spinner } from "@/components/ui/spinner";
+import { ThemeRenderPreview } from "../theme-render-preview";
+import { SetupLog, type SetupLogLine } from "./setup-log";
 import { SelectionCheck, selectedItemClass } from "./setup-selectable-card";
 import {
   SetupWizardScreen,
@@ -20,17 +21,13 @@ import {
 export type SetupThemeOption = {
   id: string;
   name: string;
-  /**
-   * Rendered thumbnail for this theme. The theme library owns how a preview is
-   * loaded and drawn, so the caller hands the finished node in instead of this
-   * screen fetching render packs of its own.
-   */
-  preview?: ReactNode;
+  /** Where the published spec lives, so the preview draws the real theme. */
+  themeSpecPath?: string;
 };
 
 type SetupThemeScreenProps = {
-  /** Label on the disabled install button while the install runs. */
-  busyLabel?: string;
+  /** Install steps the companion reported, newest last. */
+  installLogs?: string[];
   installing?: boolean;
   onAskAiToFix?: () => boolean | Promise<boolean>;
   onBack?: () => void;
@@ -42,7 +39,7 @@ type SetupThemeScreenProps = {
 };
 
 export function SetupThemeScreen({
-  busyLabel = "Installing",
+  installLogs = [],
   installing = false,
   onAskAiToFix,
   onBack,
@@ -84,16 +81,20 @@ export function SetupThemeScreen({
         type="button"
       >
         {installing ? <Spinner data-icon="inline-start" /> : null}
-        <span>
-          {installing
-            ? busyLabel
-            : selected
-              ? `Install ${selected.name}`
-              : "Install"}
-        </span>
+        <span>{installing ? "Installing" : "Install"}</span>
       </Button>
+
+      <SetupLog
+        className="mt-4"
+        lines={installLogLines(installLogs)}
+        running={installing}
+      />
     </SetupWizardScreen>
   );
+}
+
+function installLogLines(logs: string[]): SetupLogLine[] {
+  return logs.map((text, index) => ({ id: `${index}-${text}`, text }));
 }
 
 function SetupThemeCard({
@@ -108,8 +109,12 @@ function SetupThemeCard({
   return (
     <Item asChild className={selectedItemClass(selected)} variant="outline">
       <button aria-pressed={selected} onClick={onSelect} type="button">
-        <ItemMedia className="h-[52px] w-[72px] overflow-hidden rounded-md bg-muted">
-          {theme.preview}
+        <ItemMedia>
+          <ThemeRenderPreview
+            className="h-[52px] w-[72px] rounded-md"
+            themeId={theme.id}
+            themeSpecPath={theme.themeSpecPath}
+          />
         </ItemMedia>
         <ItemContent>
           <ItemTitle>{theme.name}</ItemTitle>

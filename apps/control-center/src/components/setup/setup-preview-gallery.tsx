@@ -115,29 +115,18 @@ const PROVIDERS: ProviderItem[] = [
   }),
 ];
 
-const THEME_SWATCHES: Record<string, string> = {
-  "claude-creature": "#D97757",
-  clippy: "#CCFF00",
-  "mini-classic": "#72AFBC",
-  synthwave: "#C48CB9",
-};
-
 const THEMES = [
   { id: "claude-creature", name: "Claude Creature" },
   { id: "clippy", name: "Clippy" },
   { id: "mini-classic", name: "Mini Classic" },
   { id: "synthwave", name: "Synthwave" },
-].map((theme) => ({
-  ...theme,
-  preview: (
-    <div className="relative size-full rounded-md bg-[#161616]">
-      <div
-        className="absolute bottom-2.5 left-2.5 h-1 w-10 rounded-sm"
-        style={{ background: THEME_SWATCHES[theme.id] }}
-      />
-    </div>
-  ),
-}));
+];
+
+const THEME_INSTALL_LOGS = [
+  "Preparing theme install",
+  "Uploading theme to VibeTV",
+  "Activating theme",
+];
 
 const STEP_ORDER = ["01", "02", "03", "04", "05", "06"] as const;
 type Step = (typeof STEP_ORDER)[number];
@@ -399,6 +388,7 @@ export function SetupPreviewGallery() {
       case "05":
         return (
           <SetupThemeScreen
+            installLogs={installing ? THEME_INSTALL_LOGS : []}
             installing={installing}
             onBack={() => goTo("04")}
             onInstall={runInstall}
