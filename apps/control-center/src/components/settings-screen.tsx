@@ -38,9 +38,11 @@ export type SettingsScreenProps = {
   device: DeviceInfo | null;
   brightness: number | null;
   busyAction: string | null;
+  connectionMode: "cable" | "wifi";
   standby: StandbySettings | null;
   onBrightnessChange: (value: number) => void;
   onChooseScreensaver: () => void;
+  onConnectionModeChange: (mode: "cable" | "wifi") => void;
   onResetSetup: () => void;
   onSaveBrightness: (value: number) => void;
   onSaveStandby: (value: StandbySettings) => void;
@@ -51,9 +53,11 @@ export function SettingsScreen({
   device,
   brightness,
   busyAction,
+  connectionMode,
   standby,
   onBrightnessChange,
   onChooseScreensaver,
+  onConnectionModeChange,
   onResetSetup,
   onSaveBrightness,
   onSaveStandby,
@@ -69,6 +73,7 @@ export function SettingsScreen({
   const localActionBusy =
     busyAction === "brightness" ||
     busyAction === "standby" ||
+    busyAction === "connection-mode" ||
     busyAction === "reset-setup" ||
     busyAction === "firmware-update";
   // Firmware that does not advertise standby has no screensaver at all, so the
@@ -83,6 +88,13 @@ export function SettingsScreen({
     !deviceIsCustomerConnected(device) || localActionBusy;
   const standbyDetailsDisabled =
     standbyToggleDisabled || !standbyValues.enabled;
+  const connectionModeDisabled =
+    !deviceIsCustomerConnected(device) || localActionBusy;
+  const supportedTransports = device?.capabilities?.transport?.supported;
+  const cableSupported =
+    !supportedTransports || supportedTransports.includes("usb");
+  const wifiSupported =
+    !supportedTransports || supportedTransports.includes("wifi");
 
   return (
     <div className="mx-auto max-w-[1040px] py-4">
@@ -203,6 +215,49 @@ export function SettingsScreen({
             </Item>
           </>
         ) : null}
+
+        <ItemSeparator className="my-0" />
+        <Item className="grid grid-cols-1 items-start gap-5 rounded-none border-0 px-0 py-8 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:gap-12">
+          <ItemContent className="min-w-0">
+            <ItemTitle className="text-lg font-semibold">
+              <h3>Connection</h3>
+            </ItemTitle>
+            <ItemDescription>
+              Choose how this Mac connects to VibeTV.
+            </ItemDescription>
+          </ItemContent>
+          <FieldGroup className="min-w-0">
+            <Field data-disabled={connectionModeDisabled} orientation="horizontal">
+              <FieldLabel htmlFor="vibetv-connection-mode">
+                Connection mode
+              </FieldLabel>
+              <Select
+                disabled={connectionModeDisabled}
+                onValueChange={(value) => {
+                  if (value === "cable" || value === "wifi") {
+                    onConnectionModeChange(value);
+                  }
+                }}
+                value={connectionMode}
+              >
+                <SelectTrigger
+                  aria-label="Connection mode"
+                  id="vibetv-connection-mode"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem disabled={!cableSupported} value="cable">
+                    Cable
+                  </SelectItem>
+                  <SelectItem disabled={!wifiSupported} value="wifi">
+                    WiFi
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+          </FieldGroup>
+        </Item>
 
         <ItemSeparator className="my-0" />
         <Item className="grid grid-cols-1 items-start gap-5 rounded-none border-0 px-0 py-8 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:gap-12">

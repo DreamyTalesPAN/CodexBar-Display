@@ -933,8 +933,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runCompanion,
   ]);
 
-  const deviceConnectedForSettings =
-    deviceIsCustomerConnected(device) && !deviceUsesCable(device);
+  const deviceConnectedForSettings = deviceIsCustomerConnected(device);
 
   useEffect(() => {
     if (activeTab !== "settings" || !deviceConnectedForSettings) {
@@ -1208,7 +1207,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           "/v1/status",
         );
         if (acceptedDevice && payload.device) {
-          if (deviceIsReady(payload.device) && !deviceUsesCable(payload.device)) {
+          if (deviceIsReady(payload.device)) {
             void loadSettings();
           }
         }
@@ -1676,6 +1675,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [acceptDeviceSnapshot, addEvent, runCompanion],
   );
 
+  const changeConnectionMode = useCallback(
+    async (mode: "cable" | "wifi") => {
+      connectionModeChoiceSubmitted.current = false;
+      connectionModeChoiceResolved.current = true;
+      setConnectionModeChoiceRevision((current) => current + 1);
+      setConnectionModeChoiceRequired(true);
+      setWifiCredentialsRequired(false);
+      setWifiConnectionInProgress(mode === "wifi");
+      if (!(await selectSetupConnectionMode(mode))) {
+        setConnectionModeChoiceRequired(false);
+        setWifiConnectionInProgress(false);
+      }
+    },
+    [selectSetupConnectionMode],
+  );
+
   const configureSetupWiFi = useCallback(
     async (ssid: string, password: string): Promise<boolean> => {
       const setupGeneration = setupGenerationRef.current;
@@ -1716,15 +1731,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
     [addEvent, runCompanion],
   );
-
-  const reopenConnectionModeChoice = useCallback(() => {
-    connectionModeChoiceSubmitted.current = false;
-    connectionModeChoiceResolved.current = true;
-    setConnectionModeChoiceRevision((current) => current + 1);
-    setConnectionModeChoiceRequired(true);
-    setWifiCredentialsRequired(false);
-    setWifiConnectionInProgress(false);
-  }, []);
 
   useEffect(() => {
     if (deviceRecoveryPickerReason !== "confirmed-loss") {
@@ -3642,7 +3648,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       !themeInstallEnabled ||
       companionStatus !== "online" ||
       !deviceIsReady(device) ||
-      deviceUsesCable(device) ||
       busyAction ||
       firmwareUpdateInProgress ||
       !theme ||
@@ -3741,8 +3746,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         : [];
   const waitingForFirstUsage =
     hasActiveDevice &&
-    device?.connected === true &&
-    device.paired !== false &&
+    device?.paired !== false &&
     !connectionRecoveryRequired &&
     !hasEnteredControlCenter;
   // A repair takes the Mac App down on purpose, so the incident holds while one
@@ -3845,10 +3849,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const disabledTabs: ActiveTab[] = hasEnteredControlCenter
     ? []
     : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
-  const hiddenTabs: ActiveTab[] = cableConnectionActive
-    ? ["settings", "theme-library", "updates"]
-    : [];
-  const activeShellTab = [...disabledTabs, ...hiddenTabs].includes(activeTab)
+  const activeShellTab = disabledTabs.includes(activeTab)
     ? "overview"
     : activeTab;
 
@@ -4186,7 +4187,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       activeTab={activeShellTab}
       activeAppearanceSection={appearanceSection}
       disabledTabs={disabledTabs}
-      hiddenTabs={hiddenTabs}
       device={device}
       updateAvailable={anyUpdateAvailable}
       onAppearanceSectionChange={setAppearanceSection}
@@ -4204,9 +4204,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           device={device}
           displayFrame={displayFrame}
           firmwareUpdateStatus={firmwareUpdateStatus}
-          onChangeConnection={
-            cableConnectionActive ? reopenConnectionModeChoice : undefined
-          }
           usage={usage}
         />
       ) : null}
@@ -4229,6 +4226,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         <SettingsScreen
           brightness={brightness}
           busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
+          connectionMode={cableConnectionActive ? "cable" : "wifi"}
           device={device}
           standby={standby}
           onBrightnessChange={changeBrightness}
@@ -4237,6 +4235,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             setActiveTab("theme-library");
           }}
           onResetSetup={resetSetup}
+          onConnectionModeChange={changeConnectionMode}
           onSaveBrightness={saveBrightness}
           onSaveStandby={saveStandby}
           onStandbyBrightnessChange={changeStandbyBrightness}

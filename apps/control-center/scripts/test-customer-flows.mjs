@@ -3348,30 +3348,50 @@ async function testFreshCableAutoBindingStillChoosesConnection(
   browser,
   appUrl,
 ) {
-  const page = await newCustomerPage(browser, appUrl, { viewport });
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
   const installRequests = [];
   let searchRequests = 0;
   let resetRequests = 0;
   let connectionChoiceRequired = true;
-  await routeCompanionOnline(page, installRequests, () => {}, {
-    device: {
-      ...companionDevice,
-      target: "Cable",
-      capabilities: {
-        transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
-      },
+  const selectedConnectionModes = [];
+  const connectingCableDevice = {
+    ...companionDevice,
+    connected: false,
+    ready: false,
+    connectionState: "connecting",
+    target: "cable://vibetv",
+    capabilities: {
+      transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
     },
+    stream: {
+      healthy: false,
+      running: true,
+      detail: "Waiting for the first live preview.",
+    },
+  };
+  const readyCableDevice = {
+    ...companionDevice,
+    target: "cable://vibetv",
+    capabilities: connectingCableDevice.capabilities,
+  };
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: connectingCableDevice,
+    displayFrameUnavailableResponses: 2,
     onSearch: () => {
       searchRequests += 1;
       return [];
     },
     onConnectionMode: (mode) => {
+      selectedConnectionModes.push(mode);
       if (mode === "cable") connectionChoiceRequired = false;
     },
     onStatusConnectionModeChoiceRequired: () => connectionChoiceRequired,
     onReset: () => {
       resetRequests += 1;
     },
+    statusDeviceSequence: [connectingCableDevice, readyCableDevice],
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
@@ -3385,22 +3405,54 @@ async function testFreshCableAutoBindingStillChoosesConnection(
     "Fresh Cable auto-binding must preserve the explicit connection choice",
   );
   await page.getByRole("button", { name: "Use Cable" }).click();
-  await page.getByText("Connected by Cable", { exact: true }).waitFor({
+  await page.getByRole("heading", { name: "Connecting to VibeTV" }).waitFor({
     timeout: 10_000,
   });
-  for (const hiddenControl of ["Settings", "Appearance", "Updates"]) {
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "Cable setup must stay on the startup screen until the first live frame",
+  );
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor();
+  assert(
+    (await page.getByText("Connected by Cable", { exact: true }).count()) === 0,
+    "Overview must not show a separate Cable connection banner",
+  );
+  for (const cableControl of [
+    "Usage",
+    "Settings",
+    "Appearance",
+    "Updates",
+    "Support",
+  ]) {
+    const control = await getNavigationButton(page, cableControl);
     assert(
-      (await page.getByRole("button", { name: hiddenControl }).count()) === 0,
-      `Cable mode must hide HTTP-only ${hiddenControl}`,
+      (await control.count()) === 1 && (await control.isEnabled()),
+      `Cable mode must keep ${cableControl} available`,
     );
   }
-  await page.getByRole("button", { name: "Change connection" }).click();
-  await page
-    .getByRole("heading", { name: "Choose how VibeTV connects" })
-    .waitFor({ timeout: 10_000 });
+  await clickNavigation(page, "Settings");
+  await page.getByRole("heading", { name: "Connection" }).waitFor();
+  const connectionMode = page.getByRole("combobox", {
+    name: "Connection mode",
+  });
+  assert(
+    (await connectionMode.textContent())?.trim() === "Cable",
+    "Cable must be shown as the current connection mode in Settings",
+  );
+  await connectionMode.click();
+  await page.getByRole("option", { name: "WiFi" }).click();
+  await waitForCondition(
+    () => selectedConnectionModes.length === 2,
+    "Settings must send the selected connection mode",
+  );
   assert(
     resetRequests === 0,
     "Changing the connection for the same VibeTV must preserve its pairing",
+  );
+  assert(
+    selectedConnectionModes.join(",") === "cable,wifi",
+    `Settings must use the existing connection-mode endpoint, got ${selectedConnectionModes}`,
   );
   assertNoInstallRequests(installRequests);
   await page.close();
