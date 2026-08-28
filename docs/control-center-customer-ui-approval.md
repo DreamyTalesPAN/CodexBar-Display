@@ -5,6 +5,21 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-28 — Native Cable restart completes after Helper startup
+
+- User approval: The user granted all remaining implementation and hardware-test
+  approvals for this chat and instructed Codex to continue without asking again.
+  During the authorized saved-Cable restart rehearsal, Codex reported before
+  implementation that the native app stayed on the old WiFi setup fallback after
+  its Helper and Cable device were already ready.
+- Approved customer-visible result: When the native app restarts with Cable
+  already selected, its bounded incomplete-setup poll continues while the Helper
+  finishes starting, including while the WebView is temporarily backgrounded.
+  The existing Cable connecting state advances to the connected Control Center;
+  it neither starts WiFi discovery nor remains on stale WiFi setup copy.
+- Approved files: `control-center-app.tsx`, the matching native saved-Cable
+  regression in `test-customer-flows.mjs`, and this approval record.
+
 ## 2026-08-28 — Saved Cable mode never falls into WiFi recovery
 
 - User approval: The user granted all remaining implementation and hardware-test

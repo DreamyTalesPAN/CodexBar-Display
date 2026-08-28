@@ -2276,7 +2276,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
 
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "hidden" || busyAction) {
+      if (
+        (!isNativeControlCenterApp() && document.visibilityState === "hidden") ||
+        busyAction
+      ) {
         return;
       }
       void checkCompanion({ quiet: true });
