@@ -5,6 +5,23 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-28 — Cable first-frame wait never starts WiFi search
+
+- User approval: The user explicitly granted all approvals, including corrected
+  hardware retests, for the remaining work in this chat and instructed Codex to
+  continue without asking again. In
+  the authorized cold-start hardware rehearsal, Codex identified and stated the
+  exact visible correction before implementing it: after `Use Cable`, the
+  existing first-preview wait must not be replaced by a WiFi search screen.
+- Approved customer-visible result: Throughout the complete first-frame wait
+  after `Use Cable`, an active VibeTV remains on the existing `Connecting to VibeTV`
+  state with `Waiting for live preview…`. The app does not show `Looking for
+  your VibeTV`, claim that it is searching WiFi, or start a WiFi discovery while
+  that Cable device is already bound. Overview still opens only after the first
+  real preview frame.
+- Approved files: `control-center-app.tsx`, the matching regression in
+  `test-customer-flows.mjs`, and this approval record.
+
 ## 2026-08-28 — Connection mode belongs in Settings
 
 - User approval: The user explicitly required the Cable connection banner and
