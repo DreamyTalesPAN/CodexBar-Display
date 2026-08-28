@@ -59,6 +59,23 @@ Companion negotiation:
   device write if the stored mode changed. Legacy configs without the field
   keep their existing launch transport until the customer selects a mode.
 
+### Physical Cable pairing
+
+Explicitly choosing Cable in Control Center is the physical pairing gesture.
+After resolving exactly one matching `deviceId`, a host without a usable token
+sends `{"kind":"request","op":"pair","deviceId":"..."}`. Firmware returns
+the existing valid token, or creates and persists one before returning it. The
+token is accepted only from the dedicated pairing reply, validated against the
+same 16-64 character contract as firmware, and stored in the existing active
+device plus known-device record. It is never returned by the Companion API or
+support report.
+
+Discovery, status polling, app startup, and automatic Cable recovery never
+pair. A different identity, active transfer/upload, or pending reboot rejects
+the request without exposing a token. This keeps physical possession of the
+Cable as the trust boundary while making a factory-fresh Cable device capable
+of authenticated theme and firmware transfers.
+
 ### Safe connection-mode transition
 
 A mode switch is a two-step transaction. The stable target is written to `/s`

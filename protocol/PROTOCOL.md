@@ -24,6 +24,13 @@ the frame parser.
 - `{"kind":"request","op":"hello"}` returns the normal Device Hello.
 - `{"kind":"request","op":"status"}` returns the current Cable mode and
   transition state.
+- `{"kind":"request","op":"pair","deviceId":"14799300"}` is the physical
+  Cable pairing action. It is sent only after the customer explicitly selects
+  Cable in Control Center. The device verifies its exact identity, rejects the
+  request while a transfer, upload, or reboot is active, creates a token only
+  when none exists, and otherwise returns the existing token in a dedicated
+  `{"kind":"pairing","status":"paired",...}` reply. Automatic discovery,
+  status checks, and app startup never pair or rotate a token.
 - `{"kind":"request","op":"settings","deviceId":"14799300"}` returns a
   `kind:"settings"` reply containing the persisted display and standby values.
 - The same `settings` request may include a partial `settings` object. The

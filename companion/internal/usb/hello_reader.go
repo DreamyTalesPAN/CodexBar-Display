@@ -107,6 +107,69 @@ func readConnectionModeSwitchFromPort(port SerialPort, window time.Duration, dev
 	return nil
 }
 
+func readPairingFromPort(port SerialPort, window time.Duration, deviceID string) (string, error) {
+	var token string
+	var responseErr error
+	seen := readPortLines(port, window, func(line string) bool {
+		if !strings.HasPrefix(strings.TrimSpace(line), "{") {
+			return false
+		}
+		var reply struct {
+			Kind     string `json:"kind"`
+			Status   string `json:"status"`
+			DeviceID string `json:"deviceId"`
+			Token    string `json:"token"`
+			Code     string `json:"code"`
+			Message  string `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(line), &reply); err != nil {
+			return false
+		}
+		switch strings.TrimSpace(reply.Kind) {
+		case "error":
+			responseErr = errors.New("device rejected Cable pairing")
+			return true
+		case "pairing":
+			if !strings.EqualFold(strings.TrimSpace(reply.DeviceID), strings.TrimSpace(deviceID)) ||
+				!strings.EqualFold(strings.TrimSpace(reply.Status), "paired") {
+				responseErr = errors.New("device acknowledged Cable pairing for a different identity or status")
+				return true
+			}
+			token = strings.TrimSpace(reply.Token)
+			if !validCablePairingToken(token) {
+				responseErr = errors.New("Cable pairing response included an invalid token")
+			}
+			return true
+		default:
+			return false
+		}
+	})
+	if responseErr != nil {
+		return "", responseErr
+	}
+	if !seen {
+		return "", errors.New("device did not acknowledge Cable pairing")
+	}
+	return token, nil
+}
+
+func validCablePairingToken(token string) bool {
+	if len(token) < 16 || len(token) > 64 {
+		return false
+	}
+	for index := 0; index < len(token); index++ {
+		character := token[index]
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '-' || character == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func readSettingsFromPort(port SerialPort, window time.Duration, deviceID string) (protocol.DeviceSettings, error) {
 	var settings protocol.DeviceSettings
 	var responseErr error

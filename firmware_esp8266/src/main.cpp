@@ -1946,6 +1946,15 @@ void emitSerialError(const char* code) {
   Serial.println(out);
 }
 
+void emitSerialPairing(const String& token) {
+  String out = "{\"kind\":\"pairing\",\"status\":\"paired\",\"deviceId\":\"";
+  out += deviceID;
+  out += "\",\"token\":\"";
+  out += jsonEscape(token);
+  out += "\"}";
+  Serial.println(out);
+}
+
 void emitSerialConnectionMode(
     const String& status,
     device_settings::ConnectionMode mode,
@@ -1997,6 +2006,21 @@ bool handleSerialControlLine(const String& line) {
     codexbar_display::app::EmitDeviceHello(makeTransportConfig("usb"));
   } else if (strcmp(op, "status") == 0) {
     emitSerialStatus();
+  } else if (strcmp(op, "pair") == 0) {
+    const char* expectedDeviceID = doc["deviceId"] | "";
+    if (strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
+        cableTransfer.flow.active || otaUploadInProgress ||
+        assetUploadInProgress || rebootPending) {
+      emitSerialError("pairing-rejected");
+    } else {
+      const bool alreadyPaired = deviceAuthConfigured();
+      const String token = alreadyPaired ? deviceAuthToken : generateAuthToken();
+      if (!alreadyPaired && !saveDeviceAuthToken(token)) {
+        emitSerialError("pairing-rejected");
+      } else {
+        emitSerialPairing(token);
+      }
+    }
   } else if (strcmp(op, "set-connection-mode") == 0) {
     const char* expectedDeviceID = doc["deviceId"] | "";
     const device_settings::ConnectionMode target =

@@ -2,6 +2,7 @@ package usb
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -322,6 +323,45 @@ func (s *Sender) SetConnectionMode(path, deviceID, mode string) error {
 	// no longer authoritative.
 	s.closeCurrentLocked()
 	return nil
+}
+
+func (s *Sender) PairDevice(path, deviceID string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return "", errors.New("cable pairing deviceId is required")
+	}
+	if _, err := s.ensurePort(path); err != nil {
+		return "", err
+	}
+	request := struct {
+		Kind     string `json:"kind"`
+		Op       string `json:"op"`
+		DeviceID string `json:"deviceId"`
+	}{Kind: "request", Op: "pair", DeviceID: deviceID}
+	line, err := json.Marshal(request)
+	if err != nil {
+		return "", err
+	}
+	line = append(line, '\n')
+	_ = s.port.ResetInputBuffer()
+	if err := writeWithTimeout(s.port, line, s.writeTimeout); err != nil {
+		s.closeCurrentLocked()
+		return "", wrapTransportError(
+			errcode.TransportSerialWrite,
+			"pair",
+			path,
+			"Keep the selected VibeTV connected by Cable and try again.",
+			err,
+		)
+	}
+	token, err := readPairingFromPort(s.port, s.helloWindow, deviceID)
+	if err != nil {
+		return "", fmt.Errorf("pair VibeTV on %s: %w", path, err)
+	}
+	return token, nil
 }
 
 func (s *Sender) ReadSettings(path, deviceID string) (protocol.DeviceSettings, error) {

@@ -448,6 +448,74 @@ func TestSenderConfiguresWiFiWithoutLoggingOrReusingTheSecret(t *testing.T) {
 	}
 }
 
+func TestSenderPairsExactCableDevice(t *testing.T) {
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{[]byte(`{"kind":"pairing","status":"paired","deviceId":"14799300","token":"0123456789abcdef0123456789abcdef"}` + "\n")}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+
+	token, err := sender.PairDevice("/dev/mock", "14799300")
+	if err != nil {
+		t.Fatalf("pair Cable device: %v", err)
+	}
+	if token != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("unexpected Cable pairing token %q", token)
+	}
+	want := `{"kind":"request","op":"pair","deviceId":"14799300"}` + "\n"
+	if len(port.writePayloads) != 1 || string(port.writePayloads[0]) != want {
+		t.Fatalf("unexpected Cable pairing request %#v", port.writePayloads)
+	}
+}
+
+func TestSenderRejectsCablePairingForDifferentIdentity(t *testing.T) {
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{[]byte(`{"kind":"pairing","status":"paired","deviceId":"different-device","token":"0123456789abcdef0123456789abcdef"}` + "\n")}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+
+	if _, err := sender.PairDevice("/dev/mock", "14799300"); err == nil || !strings.Contains(err.Error(), "different identity") {
+		t.Fatalf("expected Cable pairing identity rejection, got %v", err)
+	}
+}
+
+func TestSenderRejectsInvalidCablePairingTokenWithoutLeakingIt(t *testing.T) {
+	secret := "invalid token that must stay secret"
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{[]byte(`{"kind":"pairing","status":"paired","deviceId":"14799300","token":"` + secret + `"}` + "\n")}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+
+	_, err := sender.PairDevice("/dev/mock", "14799300")
+	if err == nil || strings.Contains(err.Error(), secret) {
+		t.Fatalf("expected secret-free invalid-token rejection, got %v", err)
+	}
+}
+
+func TestSenderReportsCablePairingRejectionWithoutLeakingDeviceMessage(t *testing.T) {
+	secret := "device-message-secret"
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{[]byte(`{"kind":"error","code":"pairing-rejected","message":"` + secret + `"}` + "\n")}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+
+	_, err := sender.PairDevice("/dev/mock", "14799300")
+	if err == nil || strings.Contains(err.Error(), secret) {
+		t.Fatalf("expected secret-free device rejection, got %v", err)
+	}
+}
+
 type mockOpener struct {
 	mu          sync.Mutex
 	portsByPath map[string]SerialPort
