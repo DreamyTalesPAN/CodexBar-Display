@@ -89,7 +89,7 @@ describe("SetupProviderRow", () => {
     const html = render({ health: "no_usage_available" });
 
     expect(html).toContain("No usage data on this account");
-    expect(html).toContain('class="min-w-0 truncate text-sm font-semibold opacity-50"');
+    expect(html).toMatch(/data-slot="item-title"[^>]*opacity-50/);
     expect(html).not.toContain("<button");
   });
 
@@ -97,7 +97,7 @@ describe("SetupProviderRow", () => {
     const html = render({ health: "service_outage" });
 
     expect(html).toContain("Service outage — try again later");
-    expect(html).toContain('class="min-w-0 truncate text-sm font-semibold opacity-50"');
+    expect(html).toMatch(/data-slot="item-title"[^>]*opacity-50/);
     expect(html).not.toContain("<button");
   });
 });

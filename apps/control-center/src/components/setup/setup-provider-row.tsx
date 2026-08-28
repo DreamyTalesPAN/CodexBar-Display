@@ -5,6 +5,12 @@ import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemTitle,
+} from "@/components/ui/item";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import type { PreferenceHealthState } from "../control-center-types";
@@ -77,16 +83,15 @@ export function SetupProviderRow({
   const unusable = variant === "no_usage" || variant === "outage";
 
   return (
-    <div className="flex w-full items-center justify-between gap-3 rounded-[var(--radius-card)] bg-card p-4 ring-1 ring-foreground/10">
-      <span
-        className={cn(
-          "min-w-0 truncate text-sm font-semibold",
-          unusable && "opacity-50",
-        )}
-      >
-        {label}
-      </span>
-      <span className="flex shrink-0 items-center gap-2">
+    <Item
+      className="rounded-[var(--radius-card)] p-4"
+      role="listitem"
+      variant="outline"
+    >
+      <ItemContent>
+        <ItemTitle className={cn(unusable && "opacity-50")}>{label}</ItemTitle>
+      </ItemContent>
+      <ItemActions>
         {variant === "checking" ? (
           <>
             <Spinner />
@@ -143,8 +148,8 @@ export function SetupProviderRow({
             onCheckedChange={onToggle}
           />
         )}
-      </span>
-    </div>
+      </ItemActions>
+    </Item>
   );
 }
 

@@ -60,12 +60,18 @@ export function SetupDialog({
 }: SetupDialogProps) {
   return (
     <Dialog modal={false} onOpenChange={onOpenChange} open={open}>
-      {open ? (
-        <div
-          aria-hidden
-          className="fixed inset-0 z-40 bg-black/10 supports-backdrop-filter:backdrop-blur-xs"
-        />
-      ) : null}
+      {/*
+        Radix renders Dialog.Overlay only in modal mode, so this scrim is ours.
+        It stays mounted and fades both ways, which a conditionally rendered one
+        could not do — it would have no element left to animate on close.
+      */}
+      <div
+        aria-hidden
+        className={cn(
+          "fixed inset-0 z-40 bg-black/10 transition-opacity duration-100 supports-backdrop-filter:backdrop-blur-xs",
+          open ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
+      />
       <DialogContent
         onInteractOutside={(event) => event.preventDefault()}
         showCloseButton={showCloseButton}

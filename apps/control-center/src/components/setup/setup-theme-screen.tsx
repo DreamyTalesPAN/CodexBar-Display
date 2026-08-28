@@ -5,6 +5,7 @@ import {
   Item,
   ItemActions,
   ItemContent,
+  ItemGroup,
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
@@ -63,7 +64,11 @@ export function SetupThemeScreen({
         You can always switch themes later.
       </SetupWizardSubtitle>
 
-      <div className="mt-4 flex w-full flex-col gap-3">
+      <ItemGroup
+        aria-label="Themes"
+        className="mt-4 gap-3"
+        role="radiogroup"
+      >
         {themes.map((theme) => (
           <SetupThemeCard
             key={theme.id}
@@ -72,7 +77,7 @@ export function SetupThemeScreen({
             theme={theme}
           />
         ))}
-      </div>
+      </ItemGroup>
 
       <Button
         className="mt-4 w-full"
@@ -108,7 +113,12 @@ function SetupThemeCard({
 }) {
   return (
     <Item asChild className={selectedItemClass(selected)} variant="outline">
-      <button aria-pressed={selected} onClick={onSelect} type="button">
+      <button
+        aria-checked={selected}
+        onClick={onSelect}
+        role="radio"
+        type="button"
+      >
         <ItemMedia>
           <ThemeRenderPreview
             className="h-[52px] w-[72px] rounded-md"

@@ -30,7 +30,7 @@ export function SetupWizardScreen({
   onCreateSupportReport,
 }: SetupWizardScreenProps) {
   return (
-    <section
+    <main
       aria-label={label}
       className="relative flex min-h-svh w-full flex-col items-center bg-background px-6 py-10 sm:px-14 sm:py-14"
     >
@@ -68,7 +68,7 @@ export function SetupWizardScreen({
         onAskAiToFix={onAskAiToFix}
         onCreateSupportReport={onCreateSupportReport}
       />
-    </section>
+    </main>
   );
 }
 

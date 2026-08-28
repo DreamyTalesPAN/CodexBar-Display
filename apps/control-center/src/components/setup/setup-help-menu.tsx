@@ -26,6 +26,7 @@ export function SetupHelpMenu({
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -48,6 +49,7 @@ export function SetupHelpMenu({
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setOpen(false);
+        triggerRef.current?.focus();
       }
     }
     document.addEventListener("pointerdown", onPointerDown);
@@ -79,19 +81,34 @@ export function SetupHelpMenu({
   return (
     <div className="fixed right-5 bottom-5 z-60" ref={containerRef}>
       {open ? (
-        <div className="absolute right-0 bottom-11 flex w-58 flex-col gap-0.5 rounded-xl bg-card p-1.5 shadow-lg ring-1 ring-foreground/10">
+        <div
+          className="absolute right-0 bottom-11 flex w-58 flex-col gap-0.5 rounded-xl bg-card p-1.5 shadow-lg ring-1 ring-foreground/10"
+          id="setup-help-menu"
+          role="menu"
+        >
           {onAskAiToFix && !copied ? (
-            <button
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-medium hover:bg-muted"
+            <Button
+              className="w-full justify-start font-medium"
               onClick={() => void askAiToFix()}
+              role="menuitem"
+              size="sm"
               type="button"
+              variant="ghost"
             >
-              <Sparkles className="size-4 shrink-0 text-[var(--vibetv-support)]" />
+              <Sparkles
+                aria-hidden
+                className="text-[var(--vibetv-support)]"
+                data-icon="inline-start"
+              />
               <span>Ask AI to fix</span>
-            </button>
+            </Button>
           ) : null}
           {copied ? (
-            <div className="flex items-start gap-2 rounded-lg bg-success p-2.5 text-left text-success-foreground">
+            <div
+              aria-live="polite"
+              className="flex items-start gap-2 rounded-lg bg-success p-2.5 text-left text-success-foreground"
+              role="status"
+            >
               <Check className="mt-0.5 size-4 shrink-0" />
               <div className="flex flex-col gap-0.5">
                 <span className="text-sm font-medium">Prompt copied!</span>
@@ -102,22 +119,28 @@ export function SetupHelpMenu({
               </div>
             </div>
           ) : null}
-          <button
-            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-medium hover:bg-muted"
+          <Button
+            className="w-full justify-start font-medium"
             onClick={() => {
               setOpen(false);
               onCreateSupportReport?.();
             }}
+            role="menuitem"
+            size="sm"
             type="button"
+            variant="ghost"
           >
-            <FileText className="size-4 shrink-0" />
+            <FileText aria-hidden data-icon="inline-start" />
             <span>Create support report</span>
-          </button>
+          </Button>
         </div>
       ) : null}
       <Button
+        aria-controls="setup-help-menu"
         aria-expanded={open}
+        aria-haspopup="menu"
         className="text-muted-foreground"
+        ref={triggerRef}
         onClick={() => {
           setOpen((previous) => !previous);
           setCopied(false);

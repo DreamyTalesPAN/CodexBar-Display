@@ -6,7 +6,7 @@ import {
   availableMacAppDmgDownloadUrl,
   type CompanionReleaseInfo,
 } from "@/lib/companion-release";
-import { SetupWordmark } from "./setup-wordmark";
+import { ControlCenterBrand } from "../control-center-brand";
 import { SetupWizardScreen, SetupWizardSubtitle } from "./setup-wizard-screen";
 
 const INSTALL_STEPS = [
@@ -39,7 +39,7 @@ export function MacAppDownloadScreen({
       <p className="text-xs font-semibold tracking-[0.3em] text-muted-foreground uppercase">
         Welcome to
       </p>
-      <SetupWordmark />
+      <ControlCenterBrand variant="hero" />
       <SetupWizardSubtitle>
         Get the Mac App, then it takes you through the rest.
       </SetupWizardSubtitle>

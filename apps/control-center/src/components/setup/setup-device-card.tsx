@@ -26,7 +26,12 @@ export function SetupDeviceCard({
   const address = candidateAddress(candidate.target);
   return (
     <Item asChild className={selectedItemClass(selected)} variant="outline">
-      <button aria-pressed={selected} onClick={onSelect} type="button">
+      <button
+        aria-checked={selected}
+        onClick={onSelect}
+        role="radio"
+        type="button"
+      >
         <ItemContent>
           <ItemTitle>
             VibeTV {candidate.deviceId || address}

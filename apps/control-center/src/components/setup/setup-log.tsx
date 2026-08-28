@@ -40,6 +40,7 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
   return (
     <div
       aria-live="polite"
+      role="status"
       className={cn(
         "h-[118px] w-full overflow-y-auto text-left font-mono text-[13px] leading-6",
         // The scrollbar is noise next to terminal type. Hiding it costs the

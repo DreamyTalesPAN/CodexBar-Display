@@ -1,7 +1,7 @@
 "use client";
 
 import { SetupLog, type SetupLogLine } from "./setup-log";
-import { SetupWordmark } from "./setup-wordmark";
+import { ControlCenterBrand } from "../control-center-brand";
 import { SetupWizardScreen } from "./setup-wizard-screen";
 
 type SetupWelcomeScreenProps = {
@@ -28,7 +28,7 @@ export function SetupWelcomeScreen({
       <p className="text-xs font-semibold tracking-[0.3em] text-muted-foreground uppercase">
         Welcome to
       </p>
-      <SetupWordmark />
+      <ControlCenterBrand variant="hero" />
       <SetupLog className="mt-3 h-auto max-h-[118px]" lines={lines} running />
     </SetupWizardScreen>
   );

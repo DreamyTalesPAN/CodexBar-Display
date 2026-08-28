@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { ItemGroup } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
 import type { DeviceCandidate } from "../control-center-types";
 import { SetupDeviceCard } from "./setup-device-card";
@@ -46,7 +47,11 @@ export function SetupDeviceScreen({
       <SetupWizardTitle>Choose your VibeTV</SetupWizardTitle>
       <SetupWizardSubtitle>{foundLabel(candidates.length)}</SetupWizardSubtitle>
 
-      <div className="mt-4 flex w-full flex-col gap-3">
+      <ItemGroup
+        aria-label="VibeTVs found on your WiFi"
+        className="mt-4 gap-3"
+        role="radiogroup"
+      >
         {candidates.map((candidate) => (
           <SetupDeviceCard
             candidate={candidate}
@@ -55,7 +60,7 @@ export function SetupDeviceScreen({
             selected={selectedTarget === candidate.target}
           />
         ))}
-      </div>
+      </ItemGroup>
 
       <Button
         className="mt-4 w-full"

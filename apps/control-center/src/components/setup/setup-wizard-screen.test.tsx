@@ -10,12 +10,12 @@ function render(props: Partial<Parameters<typeof SetupWizardScreen>[0]> = {}) {
   );
 }
 
-function sectionClass(html: string): string {
-  return html.match(/<section[^>]*class="([^"]*)"/)?.[1] ?? "";
+function landmarkClass(html: string): string {
+  return html.match(/<main[^>]*class="([^"]*)"/)?.[1] ?? "";
 }
 
 function contentClass(html: string): string {
-  return html.match(/<section[^>]*><div class="([^"]*)"/)?.[1] ?? "";
+  return html.match(/<main[^>]*><div class="([^"]*)"/)?.[1] ?? "";
 }
 
 function cornerClasses(html: string): string[] {
@@ -32,8 +32,8 @@ describe("SetupWizardScreen", () => {
     const html = render();
 
     expect(contentClass(html)).toContain("my-auto");
-    expect(sectionClass(html)).not.toContain("justify-center");
-    expect(sectionClass(html)).toContain("min-h-svh");
+    expect(landmarkClass(html)).not.toContain("justify-center");
+    expect(landmarkClass(html)).toContain("min-h-svh");
   });
 
   it("keeps the corner controls in the viewport, not at the end of the content", () => {

@@ -43,7 +43,7 @@ describe("SetupThemeScreen", () => {
   });
 
   it("marks only the selected theme", () => {
-    expect(render().match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(render().match(/aria-checked="true"/g)).toHaveLength(1);
   });
 
   it("cannot install before a theme is chosen", () => {
