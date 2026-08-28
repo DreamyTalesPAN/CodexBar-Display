@@ -1,0 +1,174 @@
+"use client";
+
+import { ChevronRight, RefreshCw, type LucideIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
+import type { PreferenceHealthState } from "../control-center-types";
+
+export type SetupProviderRowVariant =
+  | "checking"
+  | "no_usage"
+  | "outage"
+  | "permission"
+  | "sign_in"
+  | "timed_out"
+  | "toggle"
+  | "waiting";
+
+/**
+ * The health states the usage service reports, mapped onto the presentations
+ * the design draws. Anything it does not name (unavailable, config_error,
+ * engine_error, and whatever a provider adds later) gets the re-check
+ * presentation: running the check again is the one action left to a customer
+ * who cannot sign in or grant anything.
+ */
+export function setupProviderRowVariant(
+  health: PreferenceHealthState,
+): SetupProviderRowVariant {
+  switch (health) {
+    case "checking":
+      return "checking";
+    // "stale" is a provider that already produced a real reading, so it stays
+    // usable; "disabled" is simply off.
+    case "disabled":
+    case "healthy":
+    case "stale":
+      return "toggle";
+    case "auth_required":
+    case "setup_required":
+      return "sign_in";
+    case "permission_required":
+      return "permission";
+    case "no_usage_available":
+      return "no_usage";
+    case "service_outage":
+      return "outage";
+    default:
+      return "timed_out";
+  }
+}
+
+type SetupProviderRowProps = {
+  enabled: boolean;
+  health: PreferenceHealthState;
+  label: string;
+  onCheckAgain: () => void;
+  onRecover: () => void;
+  onToggle: (enabled: boolean) => void;
+  /** Set once the customer pressed the sign-in button on this row. */
+  signingIn?: boolean;
+};
+
+export function SetupProviderRow({
+  enabled,
+  health,
+  label,
+  onCheckAgain,
+  onRecover,
+  onToggle,
+  signingIn = false,
+}: SetupProviderRowProps) {
+  const reported = setupProviderRowVariant(health);
+  const variant = reported === "sign_in" && signingIn ? "waiting" : reported;
+  const unusable = variant === "no_usage" || variant === "outage";
+
+  return (
+    <div className="flex w-full items-center justify-between gap-3 rounded-[var(--radius-card)] bg-card p-4 ring-1 ring-foreground/10">
+      <span
+        className={cn(
+          "min-w-0 truncate text-sm font-semibold",
+          unusable && "opacity-50",
+        )}
+      >
+        {label}
+      </span>
+      <span className="flex shrink-0 items-center gap-2">
+        {variant === "checking" ? (
+          <>
+            <Spinner />
+            <Switch aria-label={label} checked={enabled} disabled />
+          </>
+        ) : variant === "sign_in" ? (
+          <>
+            <SetupProviderRowMessage>Sign in to {label}</SetupProviderRowMessage>
+            <SetupProviderRowAction
+              icon={ChevronRight}
+              label={`Sign in to ${label}`}
+              onClick={onRecover}
+            />
+          </>
+        ) : variant === "waiting" ? (
+          <>
+            <SetupProviderRowMessage>
+              Waiting for sign-in…
+            </SetupProviderRowMessage>
+            <Spinner />
+          </>
+        ) : variant === "permission" ? (
+          <>
+            <SetupProviderRowMessage>
+              Allow access in macOS
+            </SetupProviderRowMessage>
+            <SetupProviderRowAction
+              icon={ChevronRight}
+              label={`Allow access for ${label} in macOS`}
+              onClick={onRecover}
+            />
+          </>
+        ) : variant === "timed_out" ? (
+          <>
+            <SetupProviderRowMessage>Check timed out</SetupProviderRowMessage>
+            <SetupProviderRowAction
+              icon={RefreshCw}
+              label={`Check ${label} again`}
+              onClick={onCheckAgain}
+            />
+          </>
+        ) : variant === "no_usage" ? (
+          <SetupProviderRowMessage>
+            No usage data on this account
+          </SetupProviderRowMessage>
+        ) : variant === "outage" ? (
+          <SetupProviderRowMessage>
+            Service outage — try again later
+          </SetupProviderRowMessage>
+        ) : (
+          <Switch
+            aria-label={label}
+            checked={enabled}
+            onCheckedChange={onToggle}
+          />
+        )}
+      </span>
+    </div>
+  );
+}
+
+function SetupProviderRowMessage({ children }: { children: React.ReactNode }) {
+  return <span className="text-sm text-muted-foreground">{children}</span>;
+}
+
+function SetupProviderRowAction({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      aria-label={label}
+      className="rounded-full"
+      onClick={onClick}
+      size="icon-sm"
+      type="button"
+      variant="outline"
+    >
+      <Icon aria-hidden />
+    </Button>
+  );
+}

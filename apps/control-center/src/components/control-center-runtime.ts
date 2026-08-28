@@ -7,10 +7,15 @@ export const REPAIR_CODEXBAR_URL = "vibetv://repair-codexbar";
 export const FINISH_CODEXBAR_RECOVERY_URL =
   "vibetv://finish-codexbar-recovery";
 export const OPEN_CODEXBAR_URL = "vibetv://open-codexbar";
+export const CHECK_FOR_UPDATES_URL = "vibetv://check-for-updates";
 const NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX = "VibeTVControlCenter/";
 
 export function restartLocalControlCenterApp(): void {
   launchNativeControlCenterAction(RESTART_CONTROL_CENTER_URL);
+}
+
+export function checkForMacAppUpdate(): void {
+  launchNativeControlCenterAction(CHECK_FOR_UPDATES_URL);
 }
 
 export function repairLocalControlCenterRuntime(): void {
