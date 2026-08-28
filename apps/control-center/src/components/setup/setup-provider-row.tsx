@@ -1,6 +1,8 @@
 "use client";
 
-import { ChevronRight, RefreshCw, type LucideIcon } from "lucide-react";
+import { ChevronRight, RefreshCw } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -146,7 +148,7 @@ export function SetupProviderRow({
   );
 }
 
-function SetupProviderRowMessage({ children }: { children: React.ReactNode }) {
+function SetupProviderRowMessage({ children }: { children: ReactNode }) {
   return <span className="text-sm text-muted-foreground">{children}</span>;
 }
 

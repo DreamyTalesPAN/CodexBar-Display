@@ -1,0 +1,118 @@
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
+import type { PreferenceHealthState } from "../control-center-types";
+import type { ProviderItem } from "../provider-picker";
+import {
+  SetupProvidersScreen,
+  setupProviderMatchesQuery,
+} from "./setup-providers-screen";
+
+function provider(fields: {
+  health: PreferenceHealthState;
+  label: string;
+  message?: string;
+  providerId: string;
+  value?: boolean;
+}): ProviderItem {
+  const value = fields.value ?? true;
+  return {
+    allowsDefault: false,
+    availability: { state: "available" },
+    effectiveValue: value,
+    health: {
+      message: fields.message || "",
+      service: "operational",
+      state: fields.health,
+    },
+    id: `codexbar.providers.${fields.providerId}.enabled`,
+    label: fields.label,
+    owner: "codexbar",
+    providerId: fields.providerId,
+    section: "providers",
+    type: "boolean",
+    value,
+    writable: true,
+    writeStrategy: "codexbar_command",
+  };
+}
+
+const claude = provider({
+  health: "healthy",
+  label: "Claude Code",
+  message: "Ready.",
+  providerId: "claude",
+});
+const copilot = provider({
+  health: "auth_required",
+  label: "GitHub Copilot",
+  message: "Sign in required.",
+  providerId: "copilot",
+  value: false,
+});
+
+function render(
+  props: Partial<Parameters<typeof SetupProvidersScreen>[0]> = {},
+) {
+  return renderToStaticMarkup(
+    <SetupProvidersScreen
+      onCheckAgain={vi.fn()}
+      onContinue={vi.fn()}
+      onRecover={vi.fn()}
+      onToggle={vi.fn()}
+      providers={[claude, copilot]}
+      {...props}
+    />,
+  );
+}
+
+describe("SetupProvidersScreen", () => {
+  it("lists every provider it was given, with no collapse", () => {
+    const html = render();
+
+    expect(html).toContain("Choose AI providers");
+    expect(html).toContain("Claude Code");
+    expect(html).toContain("GitHub Copilot");
+    expect(html).not.toContain("Show all");
+  });
+
+  it("cannot continue without a provider that is on and ready", () => {
+    const html = render({
+      providers: [
+        copilot,
+        provider({
+          health: "healthy",
+          label: "Cursor",
+          providerId: "cursor",
+          value: false,
+        }),
+      ],
+    });
+
+    expect(html).toMatch(
+      /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
+    );
+  });
+
+  it("continues as soon as one provider is on and ready", () => {
+    const html = render({ providers: [claude, copilot] });
+
+    expect(html).not.toMatch(
+      /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
+    );
+  });
+
+  it("finds a provider by label, by its message and by its id", () => {
+    expect(setupProviderMatchesQuery(copilot, "github")).toBe(true);
+    expect(setupProviderMatchesQuery(copilot, "sign in")).toBe(true);
+    expect(setupProviderMatchesQuery(copilot, "copilot")).toBe(true);
+    expect(setupProviderMatchesQuery(copilot, "claude")).toBe(false);
+    expect(setupProviderMatchesQuery(copilot, "  ")).toBe(true);
+  });
+
+  it("keeps the Back and Help ways out of the step", () => {
+    const html = render({ onBack: vi.fn() });
+
+    expect(html).toContain("Back");
+    expect(html).toContain("Help");
+  });
+});
