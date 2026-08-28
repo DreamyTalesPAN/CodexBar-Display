@@ -1075,6 +1075,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       connectionModeChoiceRequired?: boolean;
       device?: DeviceInfo;
     }) => {
+      if (deviceUsesCable(payload.device)) {
+        didRunAutomaticDeviceSearch.current = true;
+      }
       if (payload.connectionModeChoiceRequired === true) {
         if (
           connectionModeChoiceSubmitted.current &&
@@ -1736,7 +1739,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   useEffect(() => {
-    if (deviceRecoveryPickerReason !== "confirmed-loss") {
+    if (
+      deviceRecoveryPickerReason !== "confirmed-loss" ||
+      deviceUsesCable(device)
+    ) {
       recoverySearchStartedRef.current = false;
       return;
     }
@@ -1745,7 +1751,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
     recoverySearchStartedRef.current = true;
     void searchAndConnect();
-  }, [deviceRecoveryPickerReason, searchAndConnect]);
+  }, [device, deviceRecoveryPickerReason, searchAndConnect]);
 
   const selectAndConnectDevice = useCallback(
     async (candidate: DeviceCandidate) => {
@@ -2504,6 +2510,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       !initialCompanionCheckComplete ||
       companionStatus !== "online" ||
       connectionModeChoiceRequired ||
+      deviceUsesCable(device) ||
       deviceIsCustomerConnected(device) ||
       busyAction ||
       deviceSearchState !== "idle" ||

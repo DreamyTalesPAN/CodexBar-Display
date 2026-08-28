@@ -5,6 +5,21 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-28 — Saved Cable mode never falls into WiFi recovery
+
+- User approval: The user granted all remaining implementation and hardware-test
+  approvals for this chat and instructed Codex to continue without asking again.
+  During the authorized real-hardware restart, the app incorrectly replaced the
+  saved Cable connection with `Searching your WiFi`; Codex reported the exact
+  visible defect before correcting it.
+- Approved customer-visible result: A saved Cable connection stays on the
+  existing Cable connecting state while the Helper or first live frame is still
+  starting. Neither normal startup nor confirmed-loss recovery starts WiFi
+  discovery, shows `Looking for your VibeTV`, or tells the customer to configure
+  WiFi. Explicitly selecting WiFi in Settings remains available and unchanged.
+- Approved files: `control-center-app.tsx`, the matching saved-Cable regression
+  in `test-customer-flows.mjs`, and this approval record.
+
 ## 2026-08-28 — Cable first-frame wait never starts WiFi search
 
 - User approval: The user explicitly granted all approvals, including corrected

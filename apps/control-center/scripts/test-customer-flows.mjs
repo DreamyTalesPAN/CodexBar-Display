@@ -506,6 +506,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testSavedCableStartupNeverSearchesWifi(
+        browser,
+        appContext.appUrl,
+      );
       await testWiFiRollbackReturnsToConnectionChoice(
         browser,
         appContext.appUrl,
@@ -641,6 +645,10 @@ async function main() {
       appContext.appUrl,
     );
     await testFreshCableAutoBindingStillChoosesConnection(
+      browser,
+      appContext.appUrl,
+    );
+    await testSavedCableStartupNeverSearchesWifi(
       browser,
       appContext.appUrl,
     );
@@ -3464,6 +3472,61 @@ async function testFreshCableAutoBindingStillChoosesConnection(
     selectedConnectionModes.join(",") === "cable,wifi",
     `Settings must use the existing connection-mode endpoint, got ${selectedConnectionModes}`,
   );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testSavedCableStartupNeverSearchesWifi(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  let searchRequests = 0;
+  const connectingCableDevice = {
+    ...companionDevice,
+    connected: false,
+    ready: false,
+    connectionState: "connecting",
+    target: "cable://vibetv",
+    capabilities: {
+      transport: { active: "usb", mode: "cable", supported: ["usb", "wifi"] },
+    },
+    stream: {
+      healthy: false,
+      running: true,
+      detail: "Waiting for the first live preview.",
+    },
+  };
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    connectionModeChoiceRequired: false,
+    device: connectingCableDevice,
+    displayFrameUnavailableResponses: 8,
+    onSearch: () => {
+      searchRequests += 1;
+      return [];
+    },
+    statusDeviceSequence: [
+      connectingCableDevice,
+      {
+        ...companionDevice,
+        target: "cable://vibetv",
+        capabilities: connectingCableDevice.capabilities,
+      },
+    ],
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Connecting to VibeTV" }).waitFor({
+    timeout: 10_000,
+  });
+  await page.waitForTimeout(6_500);
+  assert(
+    searchRequests === 0,
+    "A saved Cable connection must never start WiFi discovery while reconnecting",
+  );
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
   assertNoInstallRequests(installRequests);
   await page.close();
 }
