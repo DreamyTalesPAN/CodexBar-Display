@@ -33,6 +33,12 @@ type SetupDialogProps = {
   primaryAction?: SetupDialogAction;
   /** At most one secondary way out, rendered left of the primary action. */
   secondaryAction?: SetupDialogAction;
+  /**
+   * Whether the screen behind is held. A step's own error freezes it; an
+   * announcement about the background service must not, or it takes away the
+   * app it is reporting on.
+   */
+  scrim?: boolean;
   showCloseButton?: boolean;
   title: string;
 };
@@ -54,6 +60,7 @@ export function SetupDialog({
   onOpenChange,
   open,
   primaryAction,
+  scrim = true,
   secondaryAction,
   showCloseButton = true,
   title,
@@ -69,7 +76,7 @@ export function SetupDialog({
         aria-hidden
         className={cn(
           "fixed inset-0 z-40 bg-black/10 transition-opacity duration-100 supports-backdrop-filter:backdrop-blur-xs",
-          open ? "opacity-100" : "pointer-events-none opacity-0",
+          open && scrim ? "opacity-100" : "pointer-events-none opacity-0",
         )}
       />
       <DialogContent

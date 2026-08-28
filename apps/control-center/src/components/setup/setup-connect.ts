@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiError, DeviceCandidate } from "../control-center-types";
 import type { ConnectPhase, ConnectState } from "./setup-connect-log";
 import {
@@ -40,19 +40,22 @@ const IDLE: ConnectState = { address: "", phase: "idle" };
  * is what the customer pressed Connect for: VibeTV is not theirs to use until
  * its firmware matches the app driving it.
  */
-export function useSetupConnect(steps: SetupConnectSteps) {
+export function useSetupConnect(
+  steps: SetupConnectSteps,
+  /** How far the running firmware install has got, for the frozen log line. */
+  firmwareProgress = 0,
+) {
   const [state, setState] = useState<ConnectState>(IDLE);
   const [failure, setFailure] = useState<ConnectFailure | null>(null);
   const progressRef = useRef(0);
+  // The device this sequence ran against. Retrying cannot look it up again:
+  // a successful connect empties the discovered list, and the device the
+  // customer is half way through updating would no longer be in it.
+  const candidateRef = useRef<DeviceCandidate | null>(null);
 
-  const reportProgress = useCallback((percent: number) => {
-    progressRef.current = percent;
-    setState((current) =>
-      current.phase === "updating-firmware"
-        ? { ...current, updateProgress: percent }
-        : current,
-    );
-  }, []);
+  useEffect(() => {
+    progressRef.current = firmwareProgress;
+  }, [firmwareProgress]);
 
   const run = useCallback(
     async (candidate: DeviceCandidate) => {
@@ -78,7 +81,7 @@ export function useSetupConnect(steps: SetupConnectSteps) {
       };
 
       setFailure(null);
-      progressRef.current = 0;
+      candidateRef.current = candidate;
       setState(base);
 
       let connected: ConnectedDevice = {};
@@ -157,8 +160,17 @@ export function useSetupConnect(steps: SetupConnectSteps) {
   const dismissFailure = useCallback(() => setFailure(null), []);
   const reset = useCallback(() => {
     setFailure(null);
+    candidateRef.current = null;
     setState(IDLE);
   }, []);
 
-  return { dismissFailure, failure, reportProgress, reset, run, state };
+  /** Runs the sequence again against the device it last ran against. */
+  const retry = useCallback(() => {
+    const candidate = candidateRef.current;
+    if (candidate) {
+      void run(candidate);
+    }
+  }, [run]);
+
+  return { dismissFailure, failure, reset, retry, run, state };
 }

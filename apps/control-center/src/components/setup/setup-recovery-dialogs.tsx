@@ -18,6 +18,10 @@ type SetupRecoveryDialogsProps = {
  *
  * It used to appear only before the customer had entered the app once, which
  * meant a service that died later said nothing at all.
+ *
+ * It deliberately does not hold the screen behind it. A step's own error can
+ * freeze its step, but an announcement about the background service must leave
+ * the app usable — taking it away is the very thing this is reporting.
  */
 export function SetupRecoveryDialogs({
   onHide,
@@ -37,6 +41,7 @@ export function SetupRecoveryDialogs({
         onOpenChange={(open) => !open && onHide()}
         open={phase === "repairing"}
         primaryAction={{ label: "Hide", onSelect: onHide }}
+        scrim={false}
         title="Repairing VibeTV Control Center"
         tone="neutral"
       />
@@ -50,6 +55,7 @@ export function SetupRecoveryDialogs({
           label: "Try automatic repair again",
           onSelect: onRetry,
         }}
+        scrim={false}
         secondaryAction={{
           label: "Restart Control Center",
           onSelect: onRestart,

@@ -54,6 +54,8 @@ export type SetupWizardProps = {
   displayMode: ProviderDisplaySelection["mode"];
   displayProviderId: string | null;
   displayProviders: SetupDisplayModeProvider[];
+  /** Percent of the running firmware install, for the frozen log line. */
+  firmwareProgress?: number;
   installingTheme: boolean;
   onConnectManualTarget: (target: string) => void;
   onCreateSupportReport: () => Promise<SupportDiagnostics | null>;
@@ -112,7 +114,7 @@ export function SetupWizard(props: SetupWizardProps) {
     mode: ProviderDisplaySelection["mode"];
     providerId: string | null;
   } | null>(null);
-  const connect = useSetupConnect(connectSteps);
+  const connect = useSetupConnect(connectSteps, props.firmwareProgress);
 
   const step = resolveSetupStep(derivedStep, wentBackTo);
   const back = previousSetupStep(step);
@@ -215,7 +217,7 @@ export function SetupWizard(props: SetupWizardProps) {
         {connect.failure?.kind === "firmware-blocked" ? (
           <SetupFirmwareBlockedDialog
             onOpenChange={(open) => !open && connect.dismissFailure()}
-            onResolve={startConnect}
+            onResolve={connect.retry}
             open
             reason={connect.failure.reason}
           />
@@ -223,7 +225,7 @@ export function SetupWizard(props: SetupWizardProps) {
         <SetupFirmwareUpdateFailedDialog
           onCreateSupportReport={() => void onCreateSupportReport()}
           onOpenChange={(open) => !open && connect.dismissFailure()}
-          onRetry={startConnect}
+          onRetry={connect.retry}
           open={connect.failure?.kind === "firmware-update"}
         />
       </>

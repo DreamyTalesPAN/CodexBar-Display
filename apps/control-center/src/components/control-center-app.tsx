@@ -4239,7 +4239,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           displayFrame={displayFrame}
           displayMode={providerDisplay?.mode ?? "automatic"}
           displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
-          displayProviders={setupProviders
+          firmwareProgress={firmwareUpdateStatus?.progress}
+        displayProviders={setupProviders
             .filter((item) => item.value)
             .map((item) => ({ id: item.providerId, label: item.label }))}
           installingTheme={themeInstallStatus?.phase === "installing"}
