@@ -88,6 +88,10 @@ func ConfirmConnectionMode(port, deviceID string) error {
 	return defaultSender.ConfirmConnectionMode(port, deviceID)
 }
 
+func PairDevice(port, deviceID string) (string, error) {
+	return defaultSender.PairDevice(port, deviceID)
+}
+
 func ReadSettings(port, deviceID string) (protocol.DeviceSettings, error) {
 	return defaultSender.ReadSettings(port, deviceID)
 }

@@ -194,6 +194,7 @@ type Server struct {
 	resetCableSender       func()
 	setCableConnectionMode func(string, string, string) error
 	confirmCableMode       func(string, string) error
+	pairCableDevice        func(string, string) (string, error)
 	readCableSettings      func(string, string) (protocol.DeviceSettings, error)
 	writeCableSettings     func(string, string, protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error)
 	configureCableWiFi     func(string, string, string, string) error
@@ -949,6 +950,7 @@ func New(opts Options) (*Server, error) {
 		resetCableSender:       usb.CloseDefaultSender,
 		setCableConnectionMode: usb.SetConnectionMode,
 		confirmCableMode:       usb.ConfirmConnectionMode,
+		pairCableDevice:        usb.PairDevice,
 		readCableSettings:      usb.ReadSettings,
 		writeCableSettings:     usb.WriteSettings,
 		configureCableWiFi:     usb.ConfigureWiFi,
@@ -1353,8 +1355,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			device.Firmware = observed.Firmware
 			device.Capabilities = observed.Capabilities
 		}
-		// Cable has no HTTP endpoint or pairing token. A current exact-transport
-		// stream result is the authoritative connection evidence.
+		// Cable readiness never depends on an HTTP endpoint or token probe. A
+		// current exact-transport stream result is the authoritative evidence.
 		reachable = providerSetupStreamForTarget(device.Stream, device.Target)
 	} else if strings.TrimSpace(cfg.DeviceTarget) != "" {
 		if hello, probeToken, tokenRejected, err := s.getHelloProbeWithTokenFallback(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime); err == nil {
@@ -3500,6 +3502,18 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	modeAlreadySelected := runtimeconfig.NormalizeConnectionMode(deviceMode) == mode ||
 		(deviceMode == "legacy-wifi-only" && mode == "wifi")
 	knownDevice, known := cfg.KnownDevice(hello.DeviceID)
+	cableToken := strings.TrimSpace(cfg.DeviceToken)
+	if known && strings.TrimSpace(knownDevice.DeviceToken) != "" {
+		cableToken = strings.TrimSpace(knownDevice.DeviceToken)
+	}
+	deviceReportsUnpaired := hello.Capabilities.Auth != nil && !hello.Capabilities.Auth.Paired
+	if mode == "cable" && (cableToken == "" || deviceReportsUnpaired) {
+		cableToken, err = s.pairCableDevice(port, hello.DeviceID)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "cable_pairing_failed", "VibeTV could not pair through Cable.", "Keep VibeTV connected by Cable, then try again.")
+			return
+		}
+	}
 	if mode == "wifi" && !modeAlreadySelected && (!known || strings.TrimSpace(knownDevice.Target) == "") {
 		writeJSON(w, http.StatusOK, struct {
 			OK             bool       `json:"ok"`
@@ -3562,18 +3576,19 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 
 	cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
 		identityChanged := !strings.EqualFold(current.DeviceID, hello.DeviceID)
-		current.ConnectionMode = "cable"
-		current.CableAutoBindDisabled = false
-		current.ConnectionModeChoiceRequired = false
-		current.DeviceTransports = supportedTransports
-		current.DeviceID = strings.TrimSpace(hello.DeviceID)
+		target := current.DeviceTarget
 		if known {
-			current.DeviceTarget = knownDevice.Target
-			current.DeviceToken = knownDevice.DeviceToken
+			target = knownDevice.Target
 		} else if identityChanged {
-			current.DeviceTarget = ""
-			current.DeviceToken = ""
+			target = ""
 		}
+		current.SetActiveDevice(runtimeconfig.KnownDevice{
+			DeviceID:    hello.DeviceID,
+			Target:      target,
+			DeviceToken: cableToken,
+		})
+		current.ConnectionMode = "cable"
+		current.DeviceTransports = supportedTransports
 	})
 	if err != nil {
 		writeInternalError(w, err)
@@ -3587,7 +3602,7 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	device := s.withConfiguredConnectionState(cfg, deviceInfo{
 		Target:       cableDeviceTarget,
 		DeviceID:     strings.TrimSpace(hello.DeviceID),
-		Paired:       true,
+		Paired:       cableToken != "",
 		Active:       true,
 		Capabilities: cableCapabilityBlock(supportedTransports),
 		Stream:       streamPointer(stream),

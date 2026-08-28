@@ -204,6 +204,31 @@ bool testPairingHandlerReplacesTokenWithoutAuthGate(const char* mainPath) {
       "pairing must replace the token without requiring the previous token");
 }
 
+bool testCablePairingRequiresExactPhysicalIdentity(const char* mainPath) {
+  const std::string mainSource = readFile(mainPath);
+  const std::size_t handler = mainSource.find("bool handleSerialControlLine(const String& line)");
+  const std::size_t handlerEnd = mainSource.find("void handleSerialInput()", handler);
+  if (!expect(
+          handler != std::string::npos && handlerEnd != std::string::npos,
+          "serial control handler must remain discoverable")) {
+    return false;
+  }
+  const std::string body = mainSource.substr(handler, handlerEnd - handler);
+  const std::size_t pair = body.find("strcmp(op, \"pair\") == 0");
+  const std::size_t identity = body.find("strcmp(expectedDeviceID, deviceID.c_str())", pair);
+  const std::size_t existing = body.find("deviceAuthConfigured()", identity);
+  const std::size_t generate = body.find("generateAuthToken()", existing);
+  const std::size_t save = body.find("saveDeviceAuthToken(token)", generate);
+  const std::size_t reply = body.find("emitSerialPairing(token)", save);
+  return expect(
+      pair != std::string::npos && identity != std::string::npos &&
+          existing != std::string::npos && generate != std::string::npos &&
+          save != std::string::npos && reply != std::string::npos &&
+          pair < identity && identity < existing && existing < generate &&
+          generate < save && save < reply,
+      "Cable pairing must verify identity, reuse an existing token, and persist a new token before returning it");
+}
+
 bool testConnectedPageNeverRendersPairingSecret(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
   const std::size_t pageStart = mainSource.find("String connectedPageHTML()");
@@ -1021,6 +1046,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!testPairingHandlerReplacesTokenWithoutAuthGate(argv[3])) {
+    return 1;
+  }
+  if (!testCablePairingRequiresExactPhysicalIdentity(argv[3])) {
     return 1;
   }
   if (!testConnectedPageNeverRendersPairingSecret(argv[3])) {
