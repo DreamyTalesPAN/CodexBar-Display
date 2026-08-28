@@ -1,9 +1,15 @@
 "use client";
 
-import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import type { ProviderDisplaySelection } from "../control-center-types";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemTitle,
+} from "@/components/ui/item";
+import { SelectionCheck, selectedItemClass } from "./setup-selectable-card";
 import {
   SetupWizardScreen,
   SetupWizardSubtitle,
@@ -91,22 +97,27 @@ export function SetupDisplayModeScreen({
         <div className="mt-4 flex w-full flex-col gap-2 text-left">
           <p className="text-sm font-semibold">Show this provider</p>
           {providers.map((provider) => (
-            <button
-              aria-pressed={provider.id === selectedProviderId}
-              className={cn(
-                "flex w-full items-center justify-between gap-3 rounded-[var(--radius-card)] bg-card p-4 text-left text-sm font-semibold ring-1 ring-foreground/10",
-                provider.id === selectedProviderId &&
-                  "outline-2 outline-ring/30",
-              )}
+            <Item
+              asChild
+              className={selectedItemClass(provider.id === selectedProviderId)}
               key={provider.id}
-              onClick={() => onSelectProvider(provider.id)}
-              type="button"
+              variant="outline"
             >
-              <span className="min-w-0 truncate">{provider.label}</span>
-              {provider.id === selectedProviderId ? (
-                <Check className="size-4 shrink-0 text-[var(--vibetv-support)]" />
-              ) : null}
-            </button>
+              <button
+                aria-pressed={provider.id === selectedProviderId}
+                onClick={() => onSelectProvider(provider.id)}
+                type="button"
+              >
+                <ItemContent>
+                  <ItemTitle>{provider.label}</ItemTitle>
+                </ItemContent>
+                <ItemActions>
+                  <SelectionCheck
+                    selected={provider.id === selectedProviderId}
+                  />
+                </ItemActions>
+              </button>
+            </Item>
           ))}
         </div>
       ) : null}
@@ -137,24 +148,22 @@ function ModeCard({
   title: string;
 }) {
   return (
-    <button
-      aria-pressed={selected}
-      className={cn(
-        "flex w-full flex-col gap-3 rounded-[var(--radius-card)] bg-card p-4 text-left ring-1 ring-foreground/10",
-        selected && "outline-2 outline-ring/30",
-      )}
-      onClick={onSelect}
-      type="button"
+    <Item
+      asChild
+      className={selectedItemClass(selected)}
+      variant="outline"
     >
-      <PreviewTile preview={preview} />
-      <span className="flex items-center justify-between gap-2">
-        <span className="text-sm font-semibold">{title}</span>
-        {selected ? (
-          <Check className="size-4 shrink-0 text-[var(--vibetv-support)]" />
-        ) : null}
-      </span>
-      <span className="text-xs text-muted-foreground">{description}</span>
-    </button>
+      <button aria-pressed={selected} onClick={onSelect} type="button">
+        <ItemContent className="gap-3">
+          <PreviewTile preview={preview} />
+          <ItemTitle className="justify-between">
+            <span>{title}</span>
+            <SelectionCheck selected={selected} />
+          </ItemTitle>
+          <ItemDescription className="text-xs">{description}</ItemDescription>
+        </ItemContent>
+      </button>
+    </Item>
   );
 }
 

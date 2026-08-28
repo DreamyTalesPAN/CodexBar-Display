@@ -6,6 +6,7 @@ import {
   availableMacAppDmgDownloadUrl,
   type CompanionReleaseInfo,
 } from "@/lib/companion-release";
+import { SetupWordmark } from "./setup-wordmark";
 import { SetupWizardScreen, SetupWizardSubtitle } from "./setup-wizard-screen";
 
 const INSTALL_STEPS = [
@@ -38,9 +39,7 @@ export function MacAppDownloadScreen({
       <p className="text-xs font-semibold tracking-[0.3em] text-muted-foreground uppercase">
         Welcome to
       </p>
-      <p className="text-[64px] leading-none font-black uppercase">
-        VIBE<span className="text-[var(--vibetv-support)]">TV</span>
-      </p>
+      <SetupWordmark />
       <SetupWizardSubtitle>
         Get the Mac App, then it takes you through the rest.
       </SetupWizardSubtitle>

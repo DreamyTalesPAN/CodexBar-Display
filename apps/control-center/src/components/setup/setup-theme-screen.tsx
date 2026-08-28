@@ -1,10 +1,16 @@
 "use client";
 
-import { Check } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { cn } from "@/lib/utils";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
+import { SelectionCheck, selectedItemClass } from "./setup-selectable-card";
 import {
   SetupWizardScreen,
   SetupWizardSubtitle,
@@ -100,24 +106,18 @@ function SetupThemeCard({
   theme: SetupThemeOption;
 }) {
   return (
-    <button
-      aria-pressed={selected}
-      className={cn(
-        "flex w-full items-center gap-3 rounded-[var(--radius-card)] bg-card p-3 text-left ring-1 ring-foreground/10",
-        selected && "outline-2 outline-ring/30",
-      )}
-      onClick={onSelect}
-      type="button"
-    >
-      <span className="grid h-[52px] w-[72px] shrink-0 place-items-center overflow-hidden rounded-md bg-muted">
-        {theme.preview}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-        {theme.name}
-      </span>
-      {selected ? (
-        <Check className="size-4 shrink-0 text-[var(--vibetv-support)]" />
-      ) : null}
-    </button>
+    <Item asChild className={selectedItemClass(selected)} variant="outline">
+      <button aria-pressed={selected} onClick={onSelect} type="button">
+        <ItemMedia className="h-[52px] w-[72px] overflow-hidden rounded-md bg-muted">
+          {theme.preview}
+        </ItemMedia>
+        <ItemContent>
+          <ItemTitle>{theme.name}</ItemTitle>
+        </ItemContent>
+        <ItemActions>
+          <SelectionCheck selected={selected} />
+        </ItemActions>
+      </button>
+    </Item>
   );
 }

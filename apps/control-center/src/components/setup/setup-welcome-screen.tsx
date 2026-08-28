@@ -1,6 +1,7 @@
 "use client";
 
 import { SetupLog, type SetupLogLine } from "./setup-log";
+import { SetupWordmark } from "./setup-wordmark";
 import { SetupWizardScreen } from "./setup-wizard-screen";
 
 type SetupWelcomeScreenProps = {
@@ -27,9 +28,7 @@ export function SetupWelcomeScreen({
       <p className="text-xs font-semibold tracking-[0.3em] text-muted-foreground uppercase">
         Welcome to
       </p>
-      <p className="text-[64px] leading-none font-black uppercase">
-        VIBE<span className="text-[var(--vibetv-support)]">TV</span>
-      </p>
+      <SetupWordmark />
       <SetupLog className="mt-3 h-auto max-h-[118px]" lines={lines} running />
     </SetupWizardScreen>
   );
