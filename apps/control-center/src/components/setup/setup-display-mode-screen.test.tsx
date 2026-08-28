@@ -37,8 +37,10 @@ function render(
 }
 
 /** The two device panels, in render order: Automatic's, then Manual's. */
+// Split on the slot rather than on a style value: the panel has been
+// restyled once already, and a test that reads colours breaks every time.
 function panels(html: string): { automatic: string; manual: string } {
-  const parts = html.split('bg-[#161616]');
+  const parts = html.split('data-slot="display-mode-preview"');
   return { automatic: parts[1] ?? "", manual: parts[2] ?? "" };
 }
 

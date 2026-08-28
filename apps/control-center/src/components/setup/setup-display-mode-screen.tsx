@@ -275,67 +275,96 @@ function PreviewTile({
 
   if (!frame) {
     return (
-      <span className="flex min-h-[175px] w-full items-center justify-center bg-[#161616] p-4 text-center font-mono text-[10px] uppercase tracking-[0.12em] text-white/45">
+      <span
+        className="flex min-h-[168px] w-full items-center justify-center bg-muted/50 p-4 text-center font-mono text-[10px] tracking-[0.12em] text-muted-foreground uppercase"
+        data-slot="display-mode-preview"
+      >
         No usage yet
       </span>
     );
   }
 
   return (
-    <span className="flex min-h-[175px] w-full flex-col gap-2 bg-[#161616] p-4 font-mono">
+    <span
+      className="flex min-h-[168px] w-full flex-col gap-3 bg-muted/50 p-4 font-mono"
+      data-slot="display-mode-preview"
+    >
       <CycledText
-        className="truncate text-[11px] font-bold uppercase leading-none tracking-[0.12em] text-[var(--vibetv-signal)]"
+        className="truncate text-center text-[11px] font-bold tracking-[0.12em] uppercase"
         cycleKey={index}
       >
         {frame.providerLabel}
       </CycledText>
-      <span className="text-[8px] uppercase leading-none tracking-[0.12em] text-[#8a8a8a]">
-        Session
-      </span>
-      <CycledText
-        className={cn(
-          "text-[26px] font-bold leading-none",
-          frame.sessionPercent === null
-            ? "text-[#575757]"
-            : "text-[var(--vibetv-signal)]",
-        )}
-        cycleKey={index}
-      >
-        {frame.sessionPercent === null ? (
-          "--"
-        ) : (
-          <>
-            {frame.sessionPercent}
-            <span className="text-[12px]">%</span>
-          </>
-        )}
-      </CycledText>
-      <PreviewBar height="4px" percent={frame.sessionPercent} />
-      <span className="flex items-center justify-between gap-2 text-[8px] uppercase leading-none tracking-[0.12em] text-[#8a8a8a]">
-        <span>Weekly</span>
-        <CycledText
-          className={
-            frame.weeklyPercent === null
-              ? "text-[#575757]"
-              : "text-[var(--vibetv-signal)]"
-          }
+
+      <span className="flex gap-3">
+        <PreviewReading
           cycleKey={index}
-        >
-          {frame.weeklyPercent === null ? "--" : `${frame.weeklyPercent}%`}
-        </CycledText>
+          label="Session"
+          percent={frame.sessionPercent}
+        />
+        <PreviewReading
+          align="right"
+          cycleKey={index}
+          label="Weekly"
+          percent={frame.weeklyPercent}
+        />
       </span>
-      <PreviewBar height="3px" percent={frame.weeklyPercent} />
+
       <CycledText
-        className="truncate text-[8px] uppercase leading-none tracking-[0.12em] text-[#6f6f6f]"
+        className="truncate text-center text-[8px] tracking-[0.12em] text-muted-foreground uppercase"
         cycleKey={index}
       >
         {frame.resetLabel || "Reset unavailable"}
       </CycledText>
+
       <PreviewRotationStrip
         animated={animated}
         frames={frames}
         index={index}
       />
+    </span>
+  );
+}
+
+/** One half of the panel: a named reading and how full it is. */
+function PreviewReading({
+  align = "left",
+  cycleKey,
+  label,
+  percent,
+}: {
+  align?: "left" | "right";
+  cycleKey: number;
+  label: string;
+  percent: number | null;
+}) {
+  return (
+    <span
+      className={cn(
+        "flex min-w-0 flex-1 flex-col gap-1.5",
+        align === "right" && "items-end",
+      )}
+    >
+      <span className="text-[8px] tracking-[0.12em] text-muted-foreground uppercase">
+        {label}
+      </span>
+      <CycledText
+        className={cn(
+          "text-[26px] leading-none font-bold",
+          percent === null && "text-muted-foreground/60",
+        )}
+        cycleKey={cycleKey}
+      >
+        {percent === null ? (
+          "--"
+        ) : (
+          <>
+            {percent}
+            <span className="text-[12px]">%</span>
+          </>
+        )}
+      </CycledText>
+      <PreviewBar percent={percent} />
     </span>
   );
 }
@@ -358,7 +387,7 @@ function CycledText({
       className={cn("block", className)}
       key={cycleKey}
       style={{
-        animation: "vibetv-preview-frame-in 420ms cubic-bezier(0.2, 0, 0, 1) both",
+        animation: "vibetv-preview-frame-in 260ms cubic-bezier(0.2, 0, 0, 1) both",
       }}
     >
       {children}
@@ -367,20 +396,11 @@ function CycledText({
 }
 
 /** A usage bar that glides to the next provider's reading instead of jumping. */
-function PreviewBar({
-  height,
-  percent,
-}: {
-  height: string;
-  percent: number | null;
-}) {
+function PreviewBar({ percent }: { percent: number | null }) {
   return (
-    <span
-      className="block w-full rounded-full bg-[#333]"
-      style={{ height }}
-    >
+    <span className="block h-[3px] w-full rounded-full bg-foreground/10">
       <span
-        className="block h-full rounded-full bg-[var(--vibetv-signal)]"
+        className="block h-full rounded-full bg-[var(--vibetv-support)]"
         style={{
           transitionDuration: "720ms",
           transitionProperty: "width",
@@ -419,15 +439,15 @@ function PreviewRotationStrip({
             <span
               className={cn(
                 "truncate text-[8px] uppercase leading-none tracking-[0.12em] transition-colors duration-200 ease-out",
-                active ? "text-[var(--vibetv-signal)]" : "text-[#575757]",
+                active ? "text-foreground" : "text-muted-foreground/60",
               )}
             >
               {frame.providerLabel}
             </span>
-            <span className="block h-px w-full bg-[#2f2f2f]">
+            <span className="block h-px w-full bg-foreground/10">
               {active ? (
                 <span
-                  className="block h-full origin-left bg-[var(--vibetv-signal)]"
+                  className="block h-full origin-left bg-[var(--vibetv-support)]"
                   key={index}
                   style={
                     animated

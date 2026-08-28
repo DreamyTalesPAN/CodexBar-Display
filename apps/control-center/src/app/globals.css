@@ -148,10 +148,13 @@ body {
   }
 }
 
+/* Never starts at zero: the readings are the only thing in the panel that
+   changes, and fading them out completely leaves it reading as empty rather
+   than as changing. */
 @keyframes vibetv-preview-frame-in {
   from {
-    opacity: 0;
-    transform: translateY(2px);
+    opacity: 0.2;
+    transform: translateY(3px);
   }
   to {
     opacity: 1;
