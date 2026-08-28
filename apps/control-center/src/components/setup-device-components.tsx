@@ -104,7 +104,7 @@ export function DeviceCandidateDetails({
   );
 }
 
-function candidateAddress(target: string): string {
+export function candidateAddress(target: string): string {
   try {
     return new URL(target).hostname || target;
   } catch {

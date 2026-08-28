@@ -1,8 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { CircleAlert } from "lucide-react";
-import { SetupDialog } from "./setup-dialog";
+import { useState, type ReactNode } from "react";
+import type { DeviceCandidate } from "../control-center-types";
+import {
+  SetupAddressDialog,
+  SetupConnectFailedDialog,
+  SetupDeviceNotFoundDialog,
+} from "./setup-device-dialogs";
+import { SetupDeviceScreen } from "./setup-device-screen";
 import type { SetupLogLine } from "./setup-log";
 import { SetupWelcomeScreen } from "./setup-welcome-screen";
 
@@ -13,7 +18,32 @@ const WELCOME_LINES: SetupLogLine[] = [
   { id: "device", text: "looking for your VibeTV" },
 ];
 
-type Entry = { id: string; label: string; render: () => React.ReactNode };
+const CANDIDATES: DeviceCandidate[] = [
+  {
+    target: "http://192.168.178.153",
+    deviceId: "5804508",
+    firmware: "1.0.55",
+    known: true,
+  },
+  {
+    target: "http://192.168.178.159",
+    deviceId: "5863327",
+    firmware: "1.0.55",
+  },
+];
+
+const CONNECT_LINES: SetupLogLine[] = [
+  { id: "1", text: "connecting to 192.168.178.153" },
+  { id: "2", text: "connected · VibeTV 5804508" },
+  { id: "3", text: "checking firmware version" },
+  { id: "4", text: "firmware update available · 1.0.55 → 1.0.61" },
+  { id: "5", text: "updating firmware — keep VibeTV powered on" },
+];
+
+const FAILED_LINES: SetupLogLine[] = [
+  { id: "1", text: "connecting to 192.168.178.153" },
+  { id: "2", text: "error: connection could not be completed", tone: "error" },
+];
 
 /**
  * Development-only gallery for the setup steps, mirroring the internal UI kit
@@ -23,29 +53,87 @@ type Entry = { id: string; label: string; render: () => React.ReactNode };
 export function SetupPreviewGallery() {
   const [active, setActive] = useState("01");
   const [dialogOpen, setDialogOpen] = useState(true);
+  const [selected, setSelected] = useState<string | null>(CANDIDATES[0].target);
 
-  const entries: Entry[] = [
+  const noop = () => undefined;
+
+  function deviceScreen(options: {
+    connecting?: boolean;
+    busyLabel?: string;
+    lines?: SetupLogLine[];
+  } = {}) {
+    return (
+      <SetupDeviceScreen
+        busyLabel={options.busyLabel}
+        candidates={CANDIDATES}
+        connecting={options.connecting}
+        logLines={options.lines ?? []}
+        onConnect={noop}
+        onEnterAddressManually={noop}
+        onSelect={(candidate) => setSelected(candidate.target)}
+        selectedTarget={selected}
+      />
+    );
+  }
+
+  const entries: { id: string; label: string; render: () => ReactNode }[] = [
     {
       id: "01",
-      label: "01 · Welcome",
+      label: "01 Welcome",
       render: () => <SetupWelcomeScreen lines={WELCOME_LINES} />,
     },
+    { id: "02", label: "02 Choose", render: () => deviceScreen() },
     {
-      id: "dialog",
-      label: "Dialog shell",
+      id: "02-connect",
+      label: "02 Connecting",
+      render: () =>
+        deviceScreen({
+          connecting: true,
+          busyLabel: "Updating firmware",
+          lines: CONNECT_LINES,
+        }),
+    },
+    {
+      id: "02b",
+      label: "02b Enter IP",
+      render: () => (
+        <>
+          {deviceScreen()}
+          <SetupAddressDialog
+            onConnect={noop}
+            onOpenChange={setDialogOpen}
+            open={dialogOpen}
+          />
+        </>
+      ),
+    },
+    {
+      id: "02c",
+      label: "02c Not found",
       render: () => (
         <>
           <SetupWelcomeScreen lines={WELCOME_LINES} />
-          <SetupDialog
-            description="It was found, but the connection could not be completed. Keep VibeTV powered on, then search again."
-            icon={CircleAlert}
+          <SetupDeviceNotFoundDialog
+            onEnterAddressManually={noop}
             onOpenChange={setDialogOpen}
+            onScanAgain={noop}
             open={dialogOpen}
-            primaryAction={{ label: "Search again", onSelect: () => undefined }}
-            secondaryAction={{
-              label: "Enter IP manually",
-              onSelect: () => undefined,
-            }}
+          />
+        </>
+      ),
+    },
+    {
+      id: "02d",
+      label: "02d Connect failed",
+      render: () => (
+        <>
+          {deviceScreen({ lines: FAILED_LINES })}
+          <SetupConnectFailedDialog
+            description="It was found, but the connection could not be completed. Keep VibeTV powered on, then search again."
+            onEnterAddressManually={noop}
+            onOpenChange={setDialogOpen}
+            onSearchAgain={noop}
+            open={dialogOpen}
             title="VibeTV could not connect"
           />
         </>
@@ -57,7 +145,7 @@ export function SetupPreviewGallery() {
 
   return (
     <div className="min-h-svh bg-muted">
-      <nav className="fixed top-2 left-1/2 z-70 flex -translate-x-1/2 flex-wrap gap-2 rounded-full bg-foreground/90 p-1.5 shadow-lg">
+      <nav className="fixed top-2 left-1/2 z-70 flex -translate-x-1/2 flex-wrap gap-1 rounded-full bg-foreground/90 p-1.5 shadow-lg">
         {entries.map((entry) => (
           <button
             className={
