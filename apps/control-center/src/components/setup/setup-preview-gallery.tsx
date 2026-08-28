@@ -8,8 +8,18 @@ import {
   SetupDeviceNotFoundDialog,
 } from "./setup-device-dialogs";
 import { SetupDeviceScreen } from "./setup-device-screen";
+import {
+  SetupFirmwareBlockedDialog,
+  SetupFirmwareUpdateFailedDialog,
+} from "./setup-firmware-dialogs";
+import { SetupDisplayModeScreen } from "./setup-display-mode-screen";
 import type { SetupLogLine } from "./setup-log";
+import { SetupProvidersScreen } from "./setup-providers-screen";
+import { SetupThemeScreen } from "./setup-theme-screen";
+import { SetupUsageDialog } from "./setup-usage-dialog";
 import { SetupWelcomeScreen } from "./setup-welcome-screen";
+import type { PreferenceHealthState } from "../control-center-types";
+import type { ProviderItem } from "../provider-picker";
 
 const WELCOME_LINES: SetupLogLine[] = [
   { id: "service", text: "starting background service", tone: "done" },
@@ -40,9 +50,80 @@ const CONNECT_LINES: SetupLogLine[] = [
   { id: "5", text: "updating firmware — keep VibeTV powered on" },
 ];
 
+const UPDATE_FAILED_LINES: SetupLogLine[] = [
+  ...CONNECT_LINES.slice(0, 4),
+  { id: "5", text: "updating firmware — stopped at 55%" },
+  { id: "6", text: "error: update did not finish", tone: "error" },
+];
+
 const FAILED_LINES: SetupLogLine[] = [
   { id: "1", text: "connecting to 192.168.178.153" },
   { id: "2", text: "error: connection could not be completed", tone: "error" },
+];
+
+
+function provider(fields: {
+  health: PreferenceHealthState;
+  label: string;
+  message?: string;
+  providerId: string;
+  value?: boolean;
+}): ProviderItem {
+  const value = fields.value ?? true;
+  return {
+    allowsDefault: false,
+    availability: { state: "available" },
+    effectiveValue: value,
+    health: {
+      message: fields.message || "",
+      service: "operational",
+      state: fields.health,
+    },
+    id: `codexbar.providers.${fields.providerId}.enabled`,
+    label: fields.label,
+    owner: "codexbar",
+    providerId: fields.providerId,
+    section: "providers",
+    type: "boolean",
+    value,
+    writable: true,
+    writeStrategy: "codexbar_command",
+  };
+}
+
+const PROVIDERS: ProviderItem[] = [
+  provider({ health: "healthy", label: "Codex", providerId: "codex" }),
+  provider({ health: "checking", label: "Cursor", providerId: "cursor" }),
+  provider({ health: "auth_required", label: "Claude", providerId: "claude" }),
+  provider({
+    health: "permission_required",
+    label: "Gemini",
+    providerId: "gemini",
+  }),
+  provider({ health: "timeout", label: "Copilot", providerId: "copilot" }),
+  provider({
+    health: "healthy",
+    label: "Mistral",
+    providerId: "mistral",
+    value: false,
+  }),
+  provider({
+    health: "no_usage_available",
+    label: "OpenCode",
+    providerId: "opencode",
+  }),
+  provider({
+    health: "service_outage",
+    label: "DeepSeek",
+    providerId: "deepseek",
+  }),
+];
+
+const THEMES = [
+  { id: "claude-creature", name: "Claude Creature" },
+  { id: "clippy", name: "Clippy" },
+  { id: "mini-classic", name: "Mini Classic" },
+  { id: "synthwave", name: "Synthwave" },
 ];
 
 /**
@@ -54,6 +135,11 @@ export function SetupPreviewGallery() {
   const [active, setActive] = useState("01");
   const [dialogOpen, setDialogOpen] = useState(true);
   const [selected, setSelected] = useState<string | null>(CANDIDATES[0].target);
+  const [displayMode, setDisplayMode] = useState<"automatic" | "fixed">(
+    "automatic",
+  );
+  const [displayProvider, setDisplayProvider] = useState<string | null>(null);
+  const [themeId, setThemeId] = useState<string | null>("clippy");
 
   const noop = () => undefined;
 
@@ -137,6 +223,116 @@ export function SetupPreviewGallery() {
             title="VibeTV could not connect"
           />
         </>
+      ),
+    },
+    {
+      id: "02f",
+      label: "02f Update failed",
+      render: () => (
+        <>
+          {deviceScreen({ lines: UPDATE_FAILED_LINES })}
+          <SetupFirmwareUpdateFailedDialog
+            onCreateSupportReport={noop}
+            onOpenChange={setDialogOpen}
+            onRetry={noop}
+            open={dialogOpen}
+          />
+        </>
+      ),
+    },
+    {
+      id: "02g",
+      label: "02g App behind",
+      render: () => (
+        <>
+          {deviceScreen({ lines: CONNECT_LINES.slice(0, 4) })}
+          <SetupFirmwareBlockedDialog
+            onOpenChange={setDialogOpen}
+            onResolve={noop}
+            open={dialogOpen}
+            reason="mac_app_update_required"
+          />
+        </>
+      ),
+    },
+    {
+      id: "03",
+      label: "03 Providers",
+      render: () => (
+        <SetupProvidersScreen
+          onBack={noop}
+          onCheckAgain={noop}
+          onContinue={noop}
+          onRecover={noop}
+          onToggle={noop}
+          providers={PROVIDERS}
+        />
+      ),
+    },
+    {
+      id: "03b",
+      label: "03b Usage failed",
+      render: () => (
+        <>
+          <SetupProvidersScreen
+            onCheckAgain={noop}
+            onContinue={noop}
+            onRecover={noop}
+            onToggle={noop}
+            providers={PROVIDERS.slice(0, 3)}
+          />
+          <SetupUsageDialog
+            cause="unknown"
+            onCreateSupportReport={noop}
+            onOpenChange={setDialogOpen}
+            onRepair={noop}
+            open={dialogOpen}
+          />
+        </>
+      ),
+    },
+    {
+      id: "04",
+      label: "04 Display Mode",
+      render: () => (
+        <SetupDisplayModeScreen
+          automaticPreview={{
+            providerLabel: "Codex",
+            resetLabel: "RESET IN 3H",
+            sessionPercent: 42,
+            weeklyPercent: 26,
+          }}
+          manualPreview={{
+            providerLabel: "Claude",
+            resetLabel: "RESET IN 5H",
+            sessionPercent: 45,
+            weeklyPercent: 26,
+          }}
+          mode={displayMode}
+          onBack={noop}
+          onContinue={noop}
+          onSelectMode={setDisplayMode}
+          onSelectProvider={setDisplayProvider}
+          providers={[
+            { id: "codex", label: "Codex" },
+            { id: "cursor", label: "Cursor" },
+            { id: "claude", label: "Claude" },
+          ]}
+          selectedProviderId={displayProvider}
+        />
+      ),
+    },
+    {
+      id: "05",
+      label: "05 Theme",
+      render: () => (
+        <SetupThemeScreen
+          onBack={noop}
+          onInstall={noop}
+          onSelect={(theme) => setThemeId(theme.id)}
+          selectedThemeId={themeId}
+          themes={THEMES}
+        />
       ),
     },
   ];
