@@ -3,7 +3,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { ProviderDisplaySelection } from "../control-center-types";
+import type {
+  ProviderDisplaySelection,
+  SupportDiagnostics,
+} from "../control-center-types";
 import {
   Item,
   ItemActions,
@@ -56,7 +59,7 @@ type SetupDisplayModeScreenProps = {
   aiFixPrompt?: () => string;
   onBack?: () => void;
   onContinue: () => void;
-  onCreateSupportReport?: () => void;
+  onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   onSelectMode: (mode: ProviderDisplaySelection["mode"]) => void;
   onSelectProvider: (providerId: string) => void;
   providers: SetupDisplayModeProvider[];

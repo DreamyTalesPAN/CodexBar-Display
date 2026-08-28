@@ -1,5 +1,6 @@
 "use client";
 
+import type { SupportDiagnostics } from "../control-center-types";
 import { SetupLog, type SetupLogLine } from "./setup-log";
 import { ControlCenterBrand } from "../control-center-brand";
 import { SetupWizardScreen } from "./setup-wizard-screen";
@@ -7,7 +8,7 @@ import { SetupWizardScreen } from "./setup-wizard-screen";
 type SetupWelcomeScreenProps = {
   lines: SetupLogLine[];
   aiFixPrompt?: () => string;
-  onCreateSupportReport?: () => void;
+  onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
 };
 
 /**

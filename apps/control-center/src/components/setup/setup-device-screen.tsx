@@ -3,7 +3,10 @@
 import { Button } from "@/components/ui/button";
 import { ItemGroup } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
-import type { DeviceCandidate } from "../control-center-types";
+import type {
+  DeviceCandidate,
+  SupportDiagnostics,
+} from "../control-center-types";
 import { SetupDeviceCard } from "./setup-device-card";
 import { SetupLog, type SetupLogLine } from "./setup-log";
 import {
@@ -18,7 +21,7 @@ type SetupDeviceScreenProps = {
   logLines: SetupLogLine[];
   aiFixPrompt?: () => string;
   onConnect: () => void;
-  onCreateSupportReport?: () => void;
+  onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   onEnterAddressManually: () => void;
   onSelect: (candidate: DeviceCandidate) => void;
   selectedTarget: string | null;

@@ -1,10 +1,44 @@
 "use client";
 
-import { Check, CircleHelp, FileText, Sparkles } from "lucide-react";
+import { Check, CircleAlert, CircleHelp, FileText, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
+import type { SupportDiagnostics } from "../control-center-types";
+import { downloadSupportReport } from "../support-report";
 
-const COPIED_CONFIRMATION_MS = 4000;
+const OUTCOME_MS = 5000;
+
+export type Outcome = "prompt-copied" | "report-saved" | "report-partial" | "failed";
+
+/** An outcome replaces the entry that produced it, never the other one. */
+export function belongsToReport(outcome: Outcome | null): boolean {
+  return outcome !== null && outcome !== "prompt-copied";
+}
+
+export const HELP_OUTCOME_COPY: Record<Outcome, { detail: string; title: string }> = {
+  "prompt-copied": {
+    detail:
+      "Paste it into any AI. It includes your support log and current screen.",
+    title: "Prompt copied!",
+  },
+  "report-saved": {
+    detail: "It is in your Downloads folder. Attach it when you ask for help.",
+    title: "Report saved",
+  },
+  // A report the Mac App could not contribute to is still worth having, but
+  // saying so is the difference between a useful report and a misleading one.
+  "report-partial": {
+    detail:
+      "The Mac App did not answer, so some details are missing. What could be collected was saved.",
+    title: "Report saved with gaps",
+  },
+  failed: {
+    detail: "Nothing was saved. Try again in a moment.",
+    title: "Report could not be created",
+  },
+};
 
 type SetupHelpMenuProps = {
   /**
@@ -13,7 +47,8 @@ type SetupHelpMenuProps = {
    * the entry is then hidden.
    */
   aiFixPrompt?: () => string;
-  onCreateSupportReport?: () => void;
+  /** Resolves with the collected report, or null when nothing could be read. */
+  onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
 };
 
 /**
@@ -28,15 +63,16 @@ export function SetupHelpMenu({
   onCreateSupportReport,
 }: SetupHelpMenuProps) {
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const outcomeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
-      if (copiedTimerRef.current) {
-        clearTimeout(copiedTimerRef.current);
+      if (outcomeTimerRef.current) {
+        clearTimeout(outcomeTimerRef.current);
       }
     };
   }, []);
@@ -64,6 +100,14 @@ export function SetupHelpMenu({
     };
   }, [open]);
 
+  function reportOutcome(next: Outcome) {
+    setOutcome(next);
+    if (outcomeTimerRef.current) {
+      clearTimeout(outcomeTimerRef.current);
+    }
+    outcomeTimerRef.current = setTimeout(() => setOutcome(null), OUTCOME_MS);
+  }
+
   async function askAiToFix() {
     if (!aiFixPrompt) {
       return;
@@ -74,14 +118,30 @@ export function SetupHelpMenu({
       // Nothing reached the clipboard, so nothing is confirmed.
       return;
     }
-    setCopied(true);
-    if (copiedTimerRef.current) {
-      clearTimeout(copiedTimerRef.current);
+    reportOutcome("prompt-copied");
+  }
+
+  async function createSupportReport() {
+    if (!onCreateSupportReport || creating) {
+      return;
     }
-    copiedTimerRef.current = setTimeout(
-      () => setCopied(false),
-      COPIED_CONFIRMATION_MS,
-    );
+    setOutcome(null);
+    setCreating(true);
+    try {
+      const report = await onCreateSupportReport();
+      if (!report) {
+        reportOutcome("failed");
+        return;
+      }
+      downloadSupportReport(report);
+      reportOutcome(
+        report.collectionErrors?.length ? "report-partial" : "report-saved",
+      );
+    } catch {
+      reportOutcome("failed");
+    } finally {
+      setCreating(false);
+    }
   }
 
   return (
@@ -92,7 +152,7 @@ export function SetupHelpMenu({
           id="setup-help-menu"
           role="menu"
         >
-          {aiFixPrompt && !copied ? (
+          {aiFixPrompt && outcome !== "prompt-copied" ? (
             <Button
               className="w-full justify-start font-medium"
               onClick={() => void askAiToFix()}
@@ -109,36 +169,27 @@ export function SetupHelpMenu({
               <span>Ask AI to fix</span>
             </Button>
           ) : null}
-          {copied ? (
-            <div
-              aria-live="polite"
-              className="flex items-start gap-2 rounded-lg bg-success p-2.5 text-left text-success-foreground"
-              role="status"
+          {outcome ? <HelpOutcome outcome={outcome} /> : null}
+          {onCreateSupportReport && !belongsToReport(outcome) ? (
+            <Button
+              className="w-full justify-start font-medium"
+              disabled={creating}
+              onClick={() => void createSupportReport()}
+              role="menuitem"
+              size="sm"
+              type="button"
+              variant="ghost"
             >
-              <Check className="mt-0.5 size-4 shrink-0" />
-              <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium">Prompt copied!</span>
-                <span className="text-xs leading-snug">
-                  Paste it into any AI. It includes your support log and current
-                  screen.
-                </span>
-              </div>
-            </div>
+              {creating ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <FileText aria-hidden data-icon="inline-start" />
+              )}
+              <span>
+                {creating ? "Creating report" : "Create support report"}
+              </span>
+            </Button>
           ) : null}
-          <Button
-            className="w-full justify-start font-medium"
-            onClick={() => {
-              setOpen(false);
-              onCreateSupportReport?.();
-            }}
-            role="menuitem"
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            <FileText aria-hidden data-icon="inline-start" />
-            <span>Create support report</span>
-          </Button>
         </div>
       ) : null}
       <Button
@@ -146,11 +197,11 @@ export function SetupHelpMenu({
         aria-expanded={open}
         aria-haspopup="menu"
         className="text-muted-foreground"
-        ref={triggerRef}
         onClick={() => {
           setOpen((previous) => !previous);
-          setCopied(false);
+          setOutcome(null);
         }}
+        ref={triggerRef}
         size="sm"
         type="button"
         variant="ghost"
@@ -158,6 +209,33 @@ export function SetupHelpMenu({
         <CircleHelp data-icon="inline-start" />
         <span>Help</span>
       </Button>
+    </div>
+  );
+}
+
+function HelpOutcome({ outcome }: { outcome: Outcome }) {
+  const failed = outcome === "failed";
+  const copy = HELP_OUTCOME_COPY[outcome];
+  return (
+    <div
+      aria-live="polite"
+      className={cn(
+        "flex items-start gap-2 rounded-lg p-2.5 text-left",
+        failed
+          ? "bg-destructive/10 text-destructive"
+          : "bg-success text-success-foreground",
+      )}
+      role="status"
+    >
+      {failed ? (
+        <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+      ) : (
+        <Check aria-hidden className="mt-0.5 size-4 shrink-0" />
+      )}
+      <div className="flex flex-col gap-0.5">
+        <span className="text-sm font-medium">{copy.title}</span>
+        <span className="text-xs leading-snug">{copy.detail}</span>
+      </div>
     </div>
   );
 }

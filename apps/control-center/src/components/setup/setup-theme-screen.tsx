@@ -1,5 +1,6 @@
 "use client";
 
+import type { SupportDiagnostics } from "../control-center-types";
 import { Button } from "@/components/ui/button";
 import {
   Item,
@@ -32,7 +33,7 @@ type SetupThemeScreenProps = {
   installing?: boolean;
   aiFixPrompt?: () => string;
   onBack?: () => void;
-  onCreateSupportReport?: () => void;
+  onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   onInstall: () => void;
   onSelect: (theme: SetupThemeOption) => void;
   selectedThemeId: string | null;

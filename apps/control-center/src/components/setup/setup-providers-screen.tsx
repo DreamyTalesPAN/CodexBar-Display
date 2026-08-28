@@ -1,5 +1,6 @@
 "use client";
 
+import type { SupportDiagnostics } from "../control-center-types";
 import { Search, SearchX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,7 @@ type SetupProvidersScreenProps = {
   onBack?: () => void;
   onCheckAgain: (provider: ProviderItem) => void;
   onContinue: () => void;
-  onCreateSupportReport?: () => void;
+  onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   onRecover: (provider: ProviderItem) => void;
   onToggle: (provider: ProviderItem, enabled: boolean) => void;
   providers: ProviderItem[];

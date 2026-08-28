@@ -1,5 +1,6 @@
 "use client";
 
+import type { SupportDiagnostics } from "../control-center-types";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +17,7 @@ const INSTALL_STEPS = [
 ];
 
 type MacAppDownloadScreenProps = {
-  onCreateSupportReport?: () => void;
+  onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   release: CompanionReleaseInfo | null;
 };
 

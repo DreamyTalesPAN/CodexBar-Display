@@ -1,5 +1,6 @@
 "use client";
 
+import type { SupportDiagnostics } from "../control-center-types";
 import { ChevronLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ type SetupWizardScreenProps = {
   label: string;
   aiFixPrompt?: () => string;
   onBack?: () => void;
-  onCreateSupportReport?: () => void;
+  onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
 };
 
 /**

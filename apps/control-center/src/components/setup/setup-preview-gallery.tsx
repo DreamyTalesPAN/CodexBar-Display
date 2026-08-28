@@ -5,6 +5,7 @@ import type {
   DeviceCandidate,
   PreferenceHealthState,
 } from "../control-center-types";
+import type { SupportDiagnostics } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import { connectLogLines, type ConnectPhase } from "./setup-connect-log";
 import {
@@ -182,6 +183,7 @@ export function SetupPreviewGallery() {
   );
   const [displayProvider, setDisplayProvider] = useState<string | null>(null);
   const [themeId, setThemeId] = useState<string | null>("clippy");
+  const reportStep = useRef(0);
   const [installing, setInstalling] = useState(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -246,6 +248,7 @@ export function SetupPreviewGallery() {
     return (
       <SetupDeviceScreen
         aiFixPrompt={aiFixPrompt}
+            onCreateSupportReport={createSupportReport}
         candidates={CANDIDATES}
         connecting={connecting}
         logLines={lines ?? connectLogLines(connectState)}
@@ -258,6 +261,25 @@ export function SetupPreviewGallery() {
   }
 
   const noop = () => undefined;
+
+  // Cycles saved -> saved with gaps -> failed, so all three outcomes of the
+  // Help menu can be seen without breaking anything to reach them.
+  const createSupportReport = async (): Promise<SupportDiagnostics | null> => {
+    const step = reportStep.current;
+    reportStep.current = (step + 1) % 3;
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    if (step === 2) {
+      return null;
+    }
+    return {
+      generatedAt: "2026-08-28T12:00:00Z",
+      checks: [],
+      collectionErrors:
+        step === 1
+          ? [{ source: "mac-app", message: "The Mac App did not answer." }]
+          : undefined,
+    } as SupportDiagnostics;
+  };
 
   const aiFixPrompt = () =>
     buildAiFixPrompt({
@@ -278,7 +300,11 @@ export function SetupPreviewGallery() {
     switch (active) {
       case "01":
         return (
-          <SetupWelcomeScreen aiFixPrompt={aiFixPrompt} lines={WELCOME_LINES} />
+          <SetupWelcomeScreen
+            aiFixPrompt={aiFixPrompt}
+            lines={WELCOME_LINES}
+            onCreateSupportReport={createSupportReport}
+          />
         );
       case "02":
         return deviceScreen();
@@ -366,6 +392,7 @@ export function SetupPreviewGallery() {
         return (
           <SetupProvidersScreen
             aiFixPrompt={aiFixPrompt}
+            onCreateSupportReport={createSupportReport}
             onBack={() => goTo("02")}
             onCheckAgain={noop}
             onContinue={() => goTo("04")}
@@ -397,6 +424,7 @@ export function SetupPreviewGallery() {
         return (
           <SetupDisplayModeScreen
             aiFixPrompt={aiFixPrompt}
+            onCreateSupportReport={createSupportReport}
             automaticPreview={AUTOMATIC_PREVIEWS[0]}
             automaticPreviews={AUTOMATIC_PREVIEWS}
             manualPreview={{
@@ -422,6 +450,7 @@ export function SetupPreviewGallery() {
         return (
           <SetupThemeScreen
             aiFixPrompt={aiFixPrompt}
+            onCreateSupportReport={createSupportReport}
             installLogs={installing ? THEME_INSTALL_LOGS : []}
             installing={installing}
             onBack={() => goTo("04")}
@@ -435,6 +464,7 @@ export function SetupPreviewGallery() {
         return (
           <SetupLiveScreen
             aiFixPrompt={aiFixPrompt}
+            onCreateSupportReport={createSupportReport}
             device={null}
             displayFrame={null}
             usage={null}

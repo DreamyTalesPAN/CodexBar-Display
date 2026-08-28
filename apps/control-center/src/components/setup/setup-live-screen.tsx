@@ -1,6 +1,10 @@
 "use client";
 
-import type { DeviceInfo, UsageSnapshot } from "../control-center-types";
+import type {
+  DeviceInfo,
+  SupportDiagnostics,
+  UsageSnapshot,
+} from "../control-center-types";
 import {
   LiveVibeTVPreview,
   type DisplayFrameSnapshot,
@@ -11,7 +15,7 @@ type SetupLiveScreenProps = {
   device: DeviceInfo | null;
   displayFrame: DisplayFrameSnapshot | null;
   aiFixPrompt?: () => string;
-  onCreateSupportReport?: () => void;
+  onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   usage: UsageSnapshot | null;
 };
 
