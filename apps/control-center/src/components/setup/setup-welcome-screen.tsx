@@ -30,7 +30,7 @@ export function SetupWelcomeScreen({
         Welcome to
       </p>
       <ControlCenterBrand variant="hero" />
-      <SetupLog className="mt-3 h-auto max-h-[118px]" lines={lines} running />
+      <SetupLog className="mt-3" lines={lines} running />
     </SetupWizardScreen>
   );
 }

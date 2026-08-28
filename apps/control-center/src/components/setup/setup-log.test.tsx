@@ -8,8 +8,11 @@ const lines: SetupLogLine[] = [
 ];
 
 describe("SetupLog", () => {
-  it("renders nothing before the first line", () => {
-    expect(renderToStaticMarkup(<SetupLog lines={[]} />)).toBe("");
+  it("holds its space before the first line, so nothing moves later", () => {
+    const empty = renderToStaticMarkup(<SetupLog lines={[]} />);
+
+    expect(empty).toContain("h-[118px]");
+    expect(empty).not.toContain("&gt;");
   });
 
   it("prefixes every line and keeps them muted", () => {

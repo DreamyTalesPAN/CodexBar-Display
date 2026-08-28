@@ -69,7 +69,10 @@ describe("SetupThemeScreen", () => {
     expect(html).toContain("&gt; Activating theme");
   });
 
-  it("shows no log area before an install has said anything", () => {
-    expect(render()).not.toContain('aria-live="polite"');
+  it("reserves the log area before the install has said anything", () => {
+    const html = render();
+
+    expect(html).toContain('aria-live="polite"');
+    expect(html).not.toContain("&gt;");
   });
 });

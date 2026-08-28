@@ -20,8 +20,10 @@ type SetupLogProps = {
 /**
  * Terminal-style progress log for the setup wizard.
  *
- * New lines append at the bottom without pushing the content above them up:
- * the container keeps a fixed height and only the log itself scrolls.
+ * Its height is reserved whether or not it has anything to say, so a step that
+ * starts logging cannot move the controls the customer is already looking at.
+ * New lines append at the bottom for the same reason: the box is a fixed size
+ * and only the log inside it scrolls.
  */
 export function SetupLog({ className, lines, running = false }: SetupLogProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -32,10 +34,6 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
       node.scrollTop = node.scrollHeight;
     }
   }, [lines, running]);
-
-  if (lines.length === 0) {
-    return null;
-  }
 
   return (
     <div
