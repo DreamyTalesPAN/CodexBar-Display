@@ -3530,6 +3530,17 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	if mode == "wifi" && !modeAlreadySelected && (!known || strings.TrimSpace(knownDevice.Target) == "") {
+		if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
+			current.SetActiveDevice(runtimeconfig.KnownDevice{
+				DeviceID:    hello.DeviceID,
+				DeviceToken: cableToken,
+			})
+			current.ConnectionMode = "cable"
+			current.DeviceTransports = supportedTransports
+		}); err != nil {
+			writeInternalError(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, struct {
 			OK             bool       `json:"ok"`
 			ConnectionMode string     `json:"connectionMode"`
