@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { SETUP_REVEAL } from "./setup-reveal";
 import type { SupportDiagnostics } from "../control-center-types";
 import { downloadSupportReport } from "../support-report";
 
@@ -148,7 +149,10 @@ export function SetupHelpMenu({
     <div className="fixed right-5 bottom-5 z-60" ref={containerRef}>
       {open ? (
         <div
-          className="absolute right-0 bottom-11 flex w-58 flex-col gap-0.5 rounded-xl bg-card p-1.5 shadow-lg ring-1 ring-foreground/10"
+          className={cn(
+            "absolute right-0 bottom-11 flex w-58 flex-col gap-0.5 rounded-xl bg-card p-1.5 shadow-lg ring-1 ring-foreground/10",
+            SETUP_REVEAL,
+          )}
           id="setup-help-menu"
           role="menu"
         >
@@ -221,6 +225,7 @@ function HelpOutcome({ outcome }: { outcome: Outcome }) {
       aria-live="polite"
       className={cn(
         "flex items-start gap-2 rounded-lg p-2.5 text-left",
+        SETUP_REVEAL,
         failed
           ? "bg-destructive/10 text-destructive"
           : "bg-success text-success-foreground",

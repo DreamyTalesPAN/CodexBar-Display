@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
+import { SETUP_REVEAL } from "./setup-reveal";
 
 export type SetupLogLine = {
   id: string;
@@ -55,7 +56,8 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
           className={cn(
             // Keyed by id, so only a line that is genuinely new animates; the
             // ones already on screen keep their node and stay still.
-            "flex animate-in items-center gap-2 fade-in duration-500",
+            "flex items-center gap-2",
+            SETUP_REVEAL,
             line.tone === "error"
               ? "text-destructive"
               : "text-muted-foreground",

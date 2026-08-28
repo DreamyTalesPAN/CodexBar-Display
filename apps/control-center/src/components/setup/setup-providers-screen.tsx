@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { ItemGroup } from "@/components/ui/item";
+import { cn } from "@/lib/utils";
+import { SETUP_REVEAL } from "./setup-reveal";
 import type { ProviderItem } from "../provider-picker";
 import { SetupProviderRow } from "./setup-provider-row";
 import { SetupWizardScreen, SetupWizardTitle } from "./setup-wizard-screen";
@@ -105,7 +107,12 @@ export function SetupProvidersScreen({
           />
         ))}
         {matching.length === 0 ? (
-          <Empty className="bg-muted/50 py-8 ring-1 ring-foreground/10">
+          <Empty
+            className={cn(
+              "bg-muted/50 py-8 ring-1 ring-foreground/10",
+              SETUP_REVEAL,
+            )}
+          >
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <SearchX size={17} aria-hidden />

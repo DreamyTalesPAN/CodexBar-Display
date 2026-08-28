@@ -75,11 +75,11 @@ describe("SetupDisplayModeScreen", () => {
     expect(html).not.toContain("Copilot");
   });
 
-  it("names every provider Automatic moves through", () => {
+  it("rests on the first provider of the rotation, and only that one", () => {
     const tile = panels(render()).automatic;
 
     expect(tile).toContain("Codex");
-    expect(tile).toContain("Cursor");
+    expect(tile).not.toContain("Cursor");
   });
 
   it("takes the rotation from the previews when it gets them", () => {
@@ -103,14 +103,16 @@ describe("SetupDisplayModeScreen", () => {
       }),
     ).automatic;
 
+    // The rotation the caller handed over wins over the enabled providers, and
+    // it starts on that list's first entry.
     expect(tile).toContain("Claude");
-    expect(tile).toContain("Copilot");
+    expect(tile).not.toContain("Copilot");
     expect(tile).not.toContain("Cursor");
   });
 
   it("stands still on the first provider until motion is allowed", () => {
-    // Server output is also what a reduced-motion Mac renders: one provider is
-    // held, and the strip still names the whole rotation.
+    // Server output is also what a reduced-motion Mac renders: the first
+    // provider, held.
     const tile = panels(render()).automatic;
 
     expect(tile).toContain("Resets in 2h 10m");

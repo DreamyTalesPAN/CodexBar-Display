@@ -14,6 +14,7 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import { SETUP_REVEAL } from "./setup-reveal";
 import { SelectionCheck, selectedItemClass } from "./setup-selectable-card";
 import {
   SetupWizardScreen,
@@ -22,7 +23,8 @@ import {
 } from "./setup-wizard-screen";
 
 /** How long the Automatic tile rests on one provider before moving on. */
-const ROTATION_HOLD_MS = 4200;
+// Short enough that the rotation reads as a rotation without waiting on it.
+const ROTATION_HOLD_MS = 1000;
 
 /** One AI provider that is switched on for this Mac. */
 export type SetupDisplayModeProvider = {
@@ -81,7 +83,7 @@ export function SetupDisplayModeScreen({
   selectedProviderId,
 }: SetupDisplayModeScreenProps) {
   const rotation = rotationFrames(automaticPreview, automaticPreviews, providers);
-  const { animated, index } = useProviderRotation(rotation.length);
+  const { index } = useProviderRotation(rotation.length);
 
   return (
     <SetupWizardScreen
@@ -103,7 +105,7 @@ export function SetupDisplayModeScreen({
           selected={mode === "automatic"}
           title="Automatic"
         >
-          <PreviewTile animated={animated} frames={rotation} index={index} />
+          <PreviewTile frames={rotation} index={index} />
         </ModeCard>
         <ModeCard
           description="VibeTV always shows the one provider you pick — nothing else."
@@ -112,7 +114,6 @@ export function SetupDisplayModeScreen({
           title="Manual"
         >
           <PreviewTile
-            animated={false}
             frames={manualPreview ? [manualPreview] : []}
             index={0}
           />
@@ -120,7 +121,7 @@ export function SetupDisplayModeScreen({
       </div>
 
       {mode === "fixed" ? (
-        <div className="mt-4 flex w-full flex-col gap-2 text-left">
+        <div className={cn("mt-4 flex w-full flex-col gap-2 text-left", SETUP_REVEAL)}>
           <p className="text-sm font-semibold">Show this provider</p>
           {providers.map((provider) => (
             <Item
@@ -185,15 +186,11 @@ function rotationFrames(
 }
 
 /**
- * Which provider the Automatic tile is on, and whether this Mac wants the move
- * animated at all. It starts held on the first provider, so server output and a
- * reduced-motion Mac render the same still tile — one that still names every
- * provider in the rotation strip instead of relying on the movement to say so.
+ * Which provider the Automatic tile is on. It starts held on the first one, so
+ * server output and a reduced-motion Mac render the same still tile; on such a
+ * Mac the card's own description is what says the mode rotates.
  */
-function useProviderRotation(count: number): {
-  animated: boolean;
-  index: number;
-} {
+function useProviderRotation(count: number): { index: number } {
   const [animated, setAnimated] = useState(false);
   const [index, setIndex] = useState(0);
 
@@ -216,7 +213,7 @@ function useProviderRotation(count: number): {
     return () => window.clearInterval(timer);
   }, [count, moving]);
 
-  return { animated: moving, index: count ? index % count : 0 };
+  return { index: count ? index % count : 0 };
 }
 
 function ModeCard({
@@ -263,11 +260,9 @@ function ModeCard({
  * has not been read yet renders as unavailable rather than as a placeholder.
  */
 function PreviewTile({
-  animated,
   frames,
   index,
 }: {
-  animated: boolean;
   frames: SetupDisplayModePreview[];
   index: number;
 }) {
@@ -276,7 +271,7 @@ function PreviewTile({
   if (!frame) {
     return (
       <span
-        className="flex min-h-[168px] w-full items-center justify-center bg-muted/50 p-4 text-center font-mono text-[10px] tracking-[0.12em] text-muted-foreground uppercase"
+        className="flex min-h-[140px] w-full items-center justify-center bg-muted/50 p-4 text-center font-mono text-[10px] tracking-[0.12em] text-muted-foreground uppercase"
         data-slot="display-mode-preview"
       >
         No usage yet
@@ -286,7 +281,7 @@ function PreviewTile({
 
   return (
     <span
-      className="flex min-h-[168px] w-full flex-col gap-3 bg-muted/50 p-4 font-mono"
+      className="flex min-h-[140px] w-full flex-col justify-center gap-3 bg-muted/50 p-4 font-mono"
       data-slot="display-mode-preview"
     >
       <CycledText
@@ -317,11 +312,6 @@ function PreviewTile({
         {frame.resetLabel || "Reset unavailable"}
       </CycledText>
 
-      <PreviewRotationStrip
-        animated={animated}
-        frames={frames}
-        index={index}
-      />
     </span>
   );
 }
@@ -387,7 +377,7 @@ function CycledText({
       className={cn("block", className)}
       key={cycleKey}
       style={{
-        animation: "vibetv-preview-frame-in 260ms cubic-bezier(0.2, 0, 0, 1) both",
+        animation: "vibetv-preview-frame-in 180ms cubic-bezier(0.2, 0, 0, 1) both",
       }}
     >
       {children}
@@ -402,7 +392,7 @@ function PreviewBar({ percent }: { percent: number | null }) {
       <span
         className="block h-full rounded-full bg-[var(--vibetv-support)]"
         style={{
-          transitionDuration: "720ms",
+          transitionDuration: "320ms",
           transitionProperty: "width",
           transitionTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)",
           width: `${percent ?? 0}%`,
@@ -412,56 +402,3 @@ function PreviewBar({ percent }: { percent: number | null }) {
   );
 }
 
-/**
- * Every provider the panel moves through, always all of them by name, so the
- * set is readable while the tile is standing still. The lit rule fills over the
- * hold, which is what says the panel will move on by itself. One provider has
- * nowhere to move to: its rule is simply full and stays that way.
- */
-function PreviewRotationStrip({
-  animated,
-  frames,
-  index,
-}: {
-  animated: boolean;
-  frames: SetupDisplayModePreview[];
-  index: number;
-}) {
-  return (
-    <span className="mt-auto flex items-end gap-2 pt-1.5">
-      {frames.map((frame, position) => {
-        const active = position === index;
-        return (
-          <span
-            className="flex min-w-0 flex-col gap-1"
-            key={`${frame.providerLabel}-${position}`}
-          >
-            <span
-              className={cn(
-                "truncate text-[8px] uppercase leading-none tracking-[0.12em] transition-colors duration-200 ease-out",
-                active ? "text-foreground" : "text-muted-foreground/60",
-              )}
-            >
-              {frame.providerLabel}
-            </span>
-            <span className="block h-px w-full bg-foreground/10">
-              {active ? (
-                <span
-                  className="block h-full origin-left bg-[var(--vibetv-support)]"
-                  key={index}
-                  style={
-                    animated
-                      ? {
-                          animation: `vibetv-preview-hold-sweep ${ROTATION_HOLD_MS}ms linear both`,
-                        }
-                      : undefined
-                  }
-                />
-              ) : null}
-            </span>
-          </span>
-        );
-      })}
-    </span>
-  );
-}
