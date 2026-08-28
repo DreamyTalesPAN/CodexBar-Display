@@ -5,6 +5,24 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-28 — Connection mode belongs in Settings
+
+- User approval: The user explicitly required the Cable connection banner and
+  its `Change connection` button to be removed from Overview, required the
+  Cable/WiFi switch to live in Settings, required it to reuse the existing
+  Settings elements and structure without inventing a new UI, and instructed
+  Codex to implement that exact result.
+- Approved customer-visible result: Overview contains no separate Cable banner
+  or connection-change button. Settings contains one flat `Connection` section
+  in the existing two-column Settings layout, with the existing labeled Select
+  pattern showing `Cable` or `WiFi`. Cable keeps Usage, Settings, Appearance,
+  Updates, and Support available. During first Cable setup, the existing
+  full-screen `Connecting to VibeTV` state remains until the first real preview
+  frame; only then does the connected Control Center appear.
+- Approved files: `control-center-app.tsx`, `overview-screen.tsx`,
+  `settings-screen.tsx`, their component tests, the matching regression in
+  `test-customer-flows.mjs`, and this approval record.
+
 ## 2026-08-27 — Neutral Cable and WiFi choice cards
 
 - User approval: The user reviewed the rendered connection chooser, required
