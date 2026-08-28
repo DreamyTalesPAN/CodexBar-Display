@@ -137,7 +137,7 @@ func readPairingFromPort(port SerialPort, window time.Duration, deviceID string)
 			}
 			token = strings.TrimSpace(reply.Token)
 			if !validCablePairingToken(token) {
-				responseErr = errors.New("Cable pairing response included an invalid token")
+				responseErr = errors.New("cable pairing response included an invalid token")
 			}
 			return true
 		default:
