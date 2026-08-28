@@ -136,12 +136,33 @@ release-gated ESP8266 build and native suites, but was not flashed to hardware;
 real-screen rehearsal still requires a separate current hardware-write
 approval.
 
-The local #302 Cable-transfer development build uses 476,023 bytes flash and
-46,832 bytes RAM; its 480,176-byte `firmware.bin` is below the 482,000-byte
-image limit. It has not been flashed. The 128-byte Cable chunk is a candidate,
-not a hardware-proven production limit: direct-Mac and dock measurements still
-must cover maximum theme, screensaver, and firmware transfers, unplug/timeout
-recovery, and transfer timing before #302 can close.
+Direct-Mac validation on 2026-08-28 used device `14799300` on
+`/dev/cu.usbserial-110`, commit `2ca9384`, and local Control Center
+`99.0.861`. The build used 476,431 bytes flash and 46,928 bytes RAM; each
+versioned test image was 480,576 bytes. A factory-fresh `1.0.40-dev-a` hello
+reported `auth.paired=false`. Explicit Cable selection created one 32-character
+token, persisted it in the active and known-device records without exposing it,
+and left discovery/startup read-only.
+
+The 128-byte stop-and-wait protocol completed these direct-Mac transfers:
+
+| Transfer | Payload | Result | Time |
+|---|---:|---|---:|
+| Firmware `dev-a` to `dev-b` | 480,576-byte image | accepted, rebooted, exact version read back | 160.5 s |
+| Clippy live theme | 36,277 bytes unpacked, including two CBA files | stored and activated | 12.4 s |
+| Mini Classic live theme | 22,457 bytes unpacked, including a 20,870-byte GIF | stored and activated | 7.8 s |
+| Token Fire screensaver | 13,952 bytes unpacked, including an 8,713-byte CBA | stored in screensaver slot | 5.2 s |
+| Maximum ThemeSpec fixture | 3,374 bytes, 32 primitives | stored, activated, and visually confirmed on the panel | 1.5 s |
+
+Terminating the updater during a `dev-b` to `dev-c` hardware transfer left
+`dev-b` bootable and healthy, produced an error with a retry action, and did
+not report upload acceptance. The immediate retry completed in 161.3 seconds,
+rebooted, and read back exact `dev-c`. This proves inactive-image safety and
+host retry after a controlled updater interruption. It does not replace the
+physical Cable-unplug test. #302 still requires a real unplug during transfer,
+visual confirmation of the installed GIF/CBA animations on the panel, and the
+dock path before it can close. After the boundary-render photo, Mini Classic
+was restored successfully and the `dev-c` Cable stream remained healthy.
 
 ## Cutover Migration Contract
 
