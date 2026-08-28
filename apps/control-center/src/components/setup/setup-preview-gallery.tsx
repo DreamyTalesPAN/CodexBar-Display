@@ -1,25 +1,33 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import type { DeviceCandidate } from "../control-center-types";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import type {
+  DeviceCandidate,
+  PreferenceHealthState,
+} from "../control-center-types";
+import type { ProviderItem } from "../provider-picker";
+import {
+  connectBusyLabel,
+  connectLogLines,
+  type ConnectPhase,
+} from "./setup-connect-log";
 import {
   SetupAddressDialog,
   SetupConnectFailedDialog,
   SetupDeviceNotFoundDialog,
 } from "./setup-device-dialogs";
 import { SetupDeviceScreen } from "./setup-device-screen";
+import { SetupDisplayModeScreen } from "./setup-display-mode-screen";
 import {
   SetupFirmwareBlockedDialog,
   SetupFirmwareUpdateFailedDialog,
 } from "./setup-firmware-dialogs";
-import { SetupDisplayModeScreen } from "./setup-display-mode-screen";
+import { SetupLiveScreen } from "./setup-live-screen";
 import type { SetupLogLine } from "./setup-log";
 import { SetupProvidersScreen } from "./setup-providers-screen";
 import { SetupThemeScreen } from "./setup-theme-screen";
 import { SetupUsageDialog } from "./setup-usage-dialog";
 import { SetupWelcomeScreen } from "./setup-welcome-screen";
-import type { PreferenceHealthState } from "../control-center-types";
-import type { ProviderItem } from "../provider-picker";
 
 const WELCOME_LINES: SetupLogLine[] = [
   { id: "service", text: "starting background service", tone: "done" },
@@ -42,25 +50,13 @@ const CANDIDATES: DeviceCandidate[] = [
   },
 ];
 
-const CONNECT_LINES: SetupLogLine[] = [
-  { id: "1", text: "connecting to 192.168.178.153" },
-  { id: "2", text: "connected · VibeTV 5804508" },
-  { id: "3", text: "checking firmware version" },
-  { id: "4", text: "firmware update available · 1.0.55 → 1.0.61" },
-  { id: "5", text: "updating firmware — keep VibeTV powered on" },
+/** The phases a connect walks through, with the dwell time of each. */
+const CONNECT_SCRIPT: { ms: number; phase: ConnectPhase }[] = [
+  { ms: 1200, phase: "connecting" },
+  { ms: 1200, phase: "checking-firmware" },
+  { ms: 2600, phase: "updating-firmware" },
+  { ms: 900, phase: "done" },
 ];
-
-const UPDATE_FAILED_LINES: SetupLogLine[] = [
-  ...CONNECT_LINES.slice(0, 4),
-  { id: "5", text: "updating firmware — stopped at 55%" },
-  { id: "6", text: "error: update did not finish", tone: "error" },
-];
-
-const FAILED_LINES: SetupLogLine[] = [
-  { id: "1", text: "connecting to 192.168.178.153" },
-  { id: "2", text: "error: connection could not be completed", tone: "error" },
-];
-
 
 function provider(fields: {
   health: PreferenceHealthState;
@@ -119,248 +115,331 @@ const PROVIDERS: ProviderItem[] = [
   }),
 ];
 
+const THEME_SWATCHES: Record<string, string> = {
+  "claude-creature": "#D97757",
+  clippy: "#CCFF00",
+  "mini-classic": "#72AFBC",
+  synthwave: "#C48CB9",
+};
+
 const THEMES = [
   { id: "claude-creature", name: "Claude Creature" },
   { id: "clippy", name: "Clippy" },
   { id: "mini-classic", name: "Mini Classic" },
   { id: "synthwave", name: "Synthwave" },
+].map((theme) => ({
+  ...theme,
+  preview: (
+    <div className="relative size-full rounded-md bg-[#161616]">
+      <div
+        className="absolute bottom-2.5 left-2.5 h-1 w-10 rounded-sm"
+        style={{ background: THEME_SWATCHES[theme.id] }}
+      />
+    </div>
+  ),
+}));
+
+const STEP_ORDER = ["01", "02", "03", "04", "05", "06"] as const;
+type Step = (typeof STEP_ORDER)[number];
+
+type Entry = { id: string; label: string };
+
+const ENTRIES: Entry[] = [
+  { id: "01", label: "01 Welcome" },
+  { id: "02", label: "02 Choose" },
+  { id: "03", label: "03 Providers" },
+  { id: "04", label: "04 Display" },
+  { id: "05", label: "05 Theme" },
+  { id: "06", label: "06 Live" },
+  { id: "02b", label: "· Enter IP" },
+  { id: "02c", label: "· Not found" },
+  { id: "02d", label: "· Connect failed" },
+  { id: "02f", label: "· Update failed" },
+  { id: "02g", label: "· App behind" },
+  { id: "03b", label: "· Usage failed" },
 ];
 
 /**
- * Development-only gallery for the setup steps, mirroring the internal UI kit
- * route. It is how each screen is checked against the design before the wizard
- * is wired into the app.
+ * Development-only walkthrough of the setup steps, mirroring the internal UI
+ * kit route. The signal button on each step advances, and Connect runs the real
+ * log derivation on a script, so the flow can be checked against the design
+ * before the wizard is wired into the app.
  */
 export function SetupPreviewGallery() {
-  const [active, setActive] = useState("01");
+  const [active, setActive] = useState<string>("01");
   const [dialogOpen, setDialogOpen] = useState(true);
   const [selected, setSelected] = useState<string | null>(CANDIDATES[0].target);
+  const [connectPhase, setConnectPhase] = useState<ConnectPhase>("idle");
   const [displayMode, setDisplayMode] = useState<"automatic" | "fixed">(
     "automatic",
   );
   const [displayProvider, setDisplayProvider] = useState<string | null>(null);
   const [themeId, setThemeId] = useState<string | null>("clippy");
+  const [installing, setInstalling] = useState(false);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  const noop = () => undefined;
+  const clearTimers = useCallback(() => {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+  }, []);
 
-  function deviceScreen(options: {
-    connecting?: boolean;
-    busyLabel?: string;
-    lines?: SetupLogLine[];
-  } = {}) {
+  useEffect(() => clearTimers, [clearTimers]);
+
+  const goTo = useCallback(
+    (step: string) => {
+      clearTimers();
+      setActive(step);
+      setDialogOpen(true);
+      setConnectPhase("idle");
+      setInstalling(false);
+    },
+    [clearTimers],
+  );
+
+  // Welcome has no controls: it advances as soon as the checks behind it answer.
+  useEffect(() => {
+    if (active !== "01") {
+      return;
+    }
+    const timer = setTimeout(() => setActive("02"), 2600);
+    return () => clearTimeout(timer);
+  }, [active]);
+
+  function runConnect() {
+    clearTimers();
+    let elapsed = 0;
+    for (const stage of CONNECT_SCRIPT) {
+      elapsed += stage.ms;
+      timers.current.push(
+        setTimeout(() => setConnectPhase(stage.phase), elapsed - stage.ms),
+      );
+    }
+    timers.current.push(setTimeout(() => goTo("03"), elapsed + 700));
+  }
+
+  function runInstall() {
+    setInstalling(true);
+    timers.current.push(setTimeout(() => goTo("06"), 1800));
+  }
+
+  const selectedCandidate = CANDIDATES.find(
+    (candidate) => candidate.target === selected,
+  );
+  const connectState = {
+    address: selectedCandidate?.target.replace(/^https?:\/\//, "") || "",
+    deviceLabel: `VibeTV ${selectedCandidate?.deviceId || ""}`,
+    firmwareFrom: "1.0.55",
+    firmwareTo: "1.0.61",
+    phase: connectPhase,
+  };
+  const connecting =
+    connectPhase !== "idle" && connectPhase !== "done" && connectPhase !== "failed";
+
+  function deviceScreen(lines?: SetupLogLine[]) {
     return (
       <SetupDeviceScreen
-        busyLabel={options.busyLabel}
+        busyLabel={connectBusyLabel(connectPhase)}
         candidates={CANDIDATES}
-        connecting={options.connecting}
-        logLines={options.lines ?? []}
-        onConnect={noop}
-        onEnterAddressManually={noop}
+        connecting={connecting}
+        logLines={lines ?? connectLogLines(connectState)}
+        onConnect={runConnect}
+        onEnterAddressManually={() => setActive("02b")}
         onSelect={(candidate) => setSelected(candidate.target)}
         selectedTarget={selected}
       />
     );
   }
 
-  const entries: { id: string; label: string; render: () => ReactNode }[] = [
-    {
-      id: "01",
-      label: "01 Welcome",
-      render: () => <SetupWelcomeScreen lines={WELCOME_LINES} />,
-    },
-    { id: "02", label: "02 Choose", render: () => deviceScreen() },
-    {
-      id: "02-connect",
-      label: "02 Connecting",
-      render: () =>
-        deviceScreen({
-          connecting: true,
-          busyLabel: "Updating firmware",
-          lines: CONNECT_LINES,
-        }),
-    },
-    {
-      id: "02b",
-      label: "02b Enter IP",
-      render: () => (
-        <>
-          {deviceScreen()}
-          <SetupAddressDialog
-            onConnect={noop}
-            onOpenChange={setDialogOpen}
-            open={dialogOpen}
-          />
-        </>
-      ),
-    },
-    {
-      id: "02c",
-      label: "02c Not found",
-      render: () => (
-        <>
-          <SetupWelcomeScreen lines={WELCOME_LINES} />
-          <SetupDeviceNotFoundDialog
-            onEnterAddressManually={noop}
-            onOpenChange={setDialogOpen}
-            onScanAgain={noop}
-            open={dialogOpen}
-          />
-        </>
-      ),
-    },
-    {
-      id: "02d",
-      label: "02d Connect failed",
-      render: () => (
-        <>
-          {deviceScreen({ lines: FAILED_LINES })}
-          <SetupConnectFailedDialog
-            description="It was found, but the connection could not be completed. Keep VibeTV powered on, then search again."
-            onEnterAddressManually={noop}
-            onOpenChange={setDialogOpen}
-            onSearchAgain={noop}
-            open={dialogOpen}
-            title="VibeTV could not connect"
-          />
-        </>
-      ),
-    },
-    {
-      id: "02f",
-      label: "02f Update failed",
-      render: () => (
-        <>
-          {deviceScreen({ lines: UPDATE_FAILED_LINES })}
-          <SetupFirmwareUpdateFailedDialog
-            onCreateSupportReport={noop}
-            onOpenChange={setDialogOpen}
-            onRetry={noop}
-            open={dialogOpen}
-          />
-        </>
-      ),
-    },
-    {
-      id: "02g",
-      label: "02g App behind",
-      render: () => (
-        <>
-          {deviceScreen({ lines: CONNECT_LINES.slice(0, 4) })}
-          <SetupFirmwareBlockedDialog
-            onOpenChange={setDialogOpen}
-            onResolve={noop}
-            open={dialogOpen}
-            reason="mac_app_update_required"
-          />
-        </>
-      ),
-    },
-    {
-      id: "03",
-      label: "03 Providers",
-      render: () => (
-        <SetupProvidersScreen
-          onBack={noop}
-          onCheckAgain={noop}
-          onContinue={noop}
-          onRecover={noop}
-          onToggle={noop}
-          providers={PROVIDERS}
-        />
-      ),
-    },
-    {
-      id: "03b",
-      label: "03b Usage failed",
-      render: () => (
-        <>
+  const noop = () => undefined;
+
+  function screen(): ReactNode {
+    switch (active) {
+      case "01":
+        return <SetupWelcomeScreen lines={WELCOME_LINES} />;
+      case "02":
+        return deviceScreen();
+      case "02b":
+        return (
+          <>
+            {deviceScreen([])}
+            <SetupAddressDialog
+              onConnect={() => goTo("03")}
+              onOpenChange={setDialogOpen}
+              open={dialogOpen}
+            />
+          </>
+        );
+      case "02c":
+        return (
+          <>
+            <SetupWelcomeScreen lines={WELCOME_LINES} />
+            <SetupDeviceNotFoundDialog
+              onEnterAddressManually={() => setActive("02b")}
+              onOpenChange={setDialogOpen}
+              onScanAgain={() => goTo("02")}
+              open={dialogOpen}
+            />
+          </>
+        );
+      case "02d":
+        return (
+          <>
+            {deviceScreen(
+              connectLogLines({
+                ...connectState,
+                errorText: "connection could not be completed",
+                failedAt: "connecting",
+                firmwareFrom: undefined,
+                firmwareTo: undefined,
+                phase: "failed",
+              }),
+            )}
+            <SetupConnectFailedDialog
+              description="It was found, but the connection could not be completed. Keep VibeTV powered on, then search again."
+              onEnterAddressManually={() => setActive("02b")}
+              onOpenChange={setDialogOpen}
+              onSearchAgain={() => goTo("02")}
+              open={dialogOpen}
+              title="VibeTV could not connect"
+            />
+          </>
+        );
+      case "02f":
+        return (
+          <>
+            {deviceScreen(
+              connectLogLines({
+                ...connectState,
+                errorText: "update did not finish",
+                failedAt: "updating-firmware",
+                phase: "failed",
+                updateProgress: 55,
+              }),
+            )}
+            <SetupFirmwareUpdateFailedDialog
+              onCreateSupportReport={noop}
+              onOpenChange={setDialogOpen}
+              onRetry={() => goTo("02")}
+              open={dialogOpen}
+            />
+          </>
+        );
+      case "02g":
+        return (
+          <>
+            {deviceScreen(
+              connectLogLines({ ...connectState, phase: "checking-firmware" }),
+            )}
+            <SetupFirmwareBlockedDialog
+              onOpenChange={setDialogOpen}
+              onResolve={noop}
+              open={dialogOpen}
+              reason="mac_app_update_required"
+            />
+          </>
+        );
+      case "03":
+        return (
           <SetupProvidersScreen
+            onBack={() => goTo("02")}
             onCheckAgain={noop}
-            onContinue={noop}
+            onContinue={() => goTo("04")}
             onRecover={noop}
             onToggle={noop}
-            providers={PROVIDERS.slice(0, 3)}
+            providers={PROVIDERS}
           />
-          <SetupUsageDialog
-            cause="unknown"
-            onCreateSupportReport={noop}
-            onOpenChange={setDialogOpen}
-            onRepair={noop}
-            open={dialogOpen}
+        );
+      case "03b":
+        return (
+          <>
+            <SetupProvidersScreen
+              onCheckAgain={noop}
+              onContinue={noop}
+              onRecover={noop}
+              onToggle={noop}
+              providers={PROVIDERS.slice(0, 3)}
+            />
+            <SetupUsageDialog
+              cause="unknown"
+              onCreateSupportReport={noop}
+              onOpenChange={setDialogOpen}
+              onRepair={noop}
+              open={dialogOpen}
+            />
+          </>
+        );
+      case "04":
+        return (
+          <SetupDisplayModeScreen
+            automaticPreview={{
+              providerLabel: "Codex",
+              resetLabel: "RESET IN 3H",
+              sessionPercent: 42,
+              weeklyPercent: 26,
+            }}
+            manualPreview={{
+              providerLabel: displayProvider === "claude" ? "Claude" : "Codex",
+              resetLabel: "RESET IN 5H",
+              sessionPercent: 45,
+              weeklyPercent: 26,
+            }}
+            mode={displayMode}
+            onBack={() => goTo("03")}
+            onContinue={() => goTo("05")}
+            onSelectMode={setDisplayMode}
+            onSelectProvider={setDisplayProvider}
+            providers={[
+              { id: "codex", label: "Codex" },
+              { id: "cursor", label: "Cursor" },
+              { id: "claude", label: "Claude" },
+            ]}
+            selectedProviderId={displayProvider}
           />
-        </>
-      ),
-    },
-    {
-      id: "04",
-      label: "04 Display Mode",
-      render: () => (
-        <SetupDisplayModeScreen
-          automaticPreview={{
-            providerLabel: "Codex",
-            resetLabel: "RESET IN 3H",
-            sessionPercent: 42,
-            weeklyPercent: 26,
-          }}
-          manualPreview={{
-            providerLabel: "Claude",
-            resetLabel: "RESET IN 5H",
-            sessionPercent: 45,
-            weeklyPercent: 26,
-          }}
-          mode={displayMode}
-          onBack={noop}
-          onContinue={noop}
-          onSelectMode={setDisplayMode}
-          onSelectProvider={setDisplayProvider}
-          providers={[
-            { id: "codex", label: "Codex" },
-            { id: "cursor", label: "Cursor" },
-            { id: "claude", label: "Claude" },
-          ]}
-          selectedProviderId={displayProvider}
-        />
-      ),
-    },
-    {
-      id: "05",
-      label: "05 Theme",
-      render: () => (
-        <SetupThemeScreen
-          onBack={noop}
-          onInstall={noop}
-          onSelect={(theme) => setThemeId(theme.id)}
-          selectedThemeId={themeId}
-          themes={THEMES}
-        />
-      ),
-    },
-  ];
+        );
+      case "05":
+        return (
+          <SetupThemeScreen
+            installing={installing}
+            onBack={() => goTo("04")}
+            onInstall={runInstall}
+            onSelect={(theme) => setThemeId(theme.id)}
+            selectedThemeId={themeId}
+            themes={THEMES}
+          />
+        );
+      default:
+        return <SetupLiveScreen device={null} displayFrame={null} usage={null} />;
+    }
+  }
 
-  const current = entries.find((entry) => entry.id === active) ?? entries[0];
+  const stepIndex = STEP_ORDER.indexOf(active as Step);
 
   return (
     <div className="min-h-svh bg-muted">
-      <nav className="fixed top-2 left-1/2 z-70 flex -translate-x-1/2 flex-wrap gap-1 rounded-full bg-foreground/90 p-1.5 shadow-lg">
-        {entries.map((entry) => (
+      <div className="relative">{screen()}</div>
+      <nav className="fixed top-3 left-3 z-70 flex w-36 flex-col gap-0.5 rounded-xl bg-foreground/90 p-1.5 shadow-lg">
+        {ENTRIES.map((entry) => (
           <button
             className={
               entry.id === active
-                ? "rounded-full bg-background px-3 py-1 text-xs font-semibold text-foreground"
-                : "rounded-full px-3 py-1 text-xs font-semibold text-background/70 hover:text-background"
+                ? "rounded-lg bg-background px-2.5 py-1 text-left text-xs font-semibold text-foreground"
+                : "rounded-lg px-2.5 py-1 text-left text-xs font-semibold text-background/70 hover:text-background"
             }
             key={entry.id}
-            onClick={() => {
-              setActive(entry.id);
-              setDialogOpen(true);
-            }}
+            onClick={() => goTo(entry.id)}
             type="button"
           >
             {entry.label}
           </button>
         ))}
+        <button
+          className="mt-1 rounded-lg border-t border-background/20 px-2.5 pt-1.5 text-left text-xs font-semibold text-background/70 hover:text-background"
+          onClick={() => goTo(STEP_ORDER[0])}
+          type="button"
+        >
+          {stepIndex >= 0 ? `↻ restart (${stepIndex + 1}/6)` : "↻ restart"}
+        </button>
       </nav>
-      <div className="relative">{current.render()}</div>
     </div>
   );
 }

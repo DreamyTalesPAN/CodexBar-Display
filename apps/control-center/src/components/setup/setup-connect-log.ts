@@ -70,7 +70,9 @@ export function connectLogLines(state: ConnectState): SetupLogLine[] {
     });
   }
 
-  if (reached === "updating-firmware") {
+  // The update line stays once the update started: the finished log has to
+  // still show that a firmware was written, not just that something completed.
+  if (hasUpdate && (reached === "updating-firmware" || reached === "done")) {
     lines.push({
       id: "firmware-updating",
       text:

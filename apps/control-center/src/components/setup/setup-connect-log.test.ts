@@ -50,8 +50,15 @@ describe("connectLogLines", () => {
       "connected · VibeTV 5804508",
       "checking firmware version",
       "firmware update available · 1.0.55 → 1.0.61",
+      "updating firmware — keep VibeTV powered on",
       "update complete",
     ]);
+  });
+
+  it("keeps no update line when the firmware was already current", () => {
+    expect(texts({ ...base, phase: "done" })).not.toContain(
+      "updating firmware — keep VibeTV powered on",
+    );
   });
 
   it("freezes the update line at the percent it stopped on", () => {
