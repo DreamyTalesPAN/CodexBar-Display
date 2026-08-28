@@ -7,8 +7,12 @@ import { Button } from "@/components/ui/button";
 const COPIED_CONFIRMATION_MS = 4000;
 
 type SetupHelpMenuProps = {
-  /** Omitted until the prompt builder exists; the entry is then hidden. */
-  onAskAiToFix?: () => boolean | Promise<boolean>;
+  /**
+   * Builds the prompt lazily, so it captures the moment the customer asked
+   * rather than every render. Omitted where there is nothing to describe, and
+   * the entry is then hidden.
+   */
+  aiFixPrompt?: () => string;
   onCreateSupportReport?: () => void;
 };
 
@@ -20,7 +24,7 @@ type SetupHelpMenuProps = {
  * keeps that guarantee without fighting portal stacking contexts.
  */
 export function SetupHelpMenu({
-  onAskAiToFix,
+  aiFixPrompt,
   onCreateSupportReport,
 }: SetupHelpMenuProps) {
   const [open, setOpen] = useState(false);
@@ -61,11 +65,13 @@ export function SetupHelpMenu({
   }, [open]);
 
   async function askAiToFix() {
-    if (!onAskAiToFix) {
+    if (!aiFixPrompt) {
       return;
     }
-    const ok = await onAskAiToFix();
-    if (!ok) {
+    try {
+      await navigator.clipboard.writeText(aiFixPrompt());
+    } catch {
+      // Nothing reached the clipboard, so nothing is confirmed.
       return;
     }
     setCopied(true);
@@ -86,7 +92,7 @@ export function SetupHelpMenu({
           id="setup-help-menu"
           role="menu"
         >
-          {onAskAiToFix && !copied ? (
+          {aiFixPrompt && !copied ? (
             <Button
               className="w-full justify-start font-medium"
               onClick={() => void askAiToFix()}

@@ -18,7 +18,7 @@ type SetupDeviceScreenProps = {
   candidates: DeviceCandidate[];
   connecting?: boolean;
   logLines: SetupLogLine[];
-  onAskAiToFix?: () => boolean | Promise<boolean>;
+  aiFixPrompt?: () => string;
   onConnect: () => void;
   onCreateSupportReport?: () => void;
   onEnterAddressManually: () => void;
@@ -31,7 +31,7 @@ export function SetupDeviceScreen({
   candidates,
   connecting = false,
   logLines,
-  onAskAiToFix,
+  aiFixPrompt,
   onConnect,
   onCreateSupportReport,
   onEnterAddressManually,
@@ -41,7 +41,7 @@ export function SetupDeviceScreen({
   return (
     <SetupWizardScreen
       label="Choose your VibeTV"
-      onAskAiToFix={onAskAiToFix}
+      aiFixPrompt={aiFixPrompt}
       onCreateSupportReport={onCreateSupportReport}
     >
       <SetupWizardTitle>Choose your VibeTV</SetupWizardTitle>

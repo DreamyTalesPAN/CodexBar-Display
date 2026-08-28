@@ -10,7 +10,7 @@ import { SetupWizardScreen, SetupWizardTitle } from "./setup-wizard-screen";
 type SetupLiveScreenProps = {
   device: DeviceInfo | null;
   displayFrame: DisplayFrameSnapshot | null;
-  onAskAiToFix?: () => boolean | Promise<boolean>;
+  aiFixPrompt?: () => string;
   onCreateSupportReport?: () => void;
   usage: UsageSnapshot | null;
 };
@@ -22,14 +22,14 @@ type SetupLiveScreenProps = {
 export function SetupLiveScreen({
   device,
   displayFrame,
-  onAskAiToFix,
+  aiFixPrompt,
   onCreateSupportReport,
   usage,
 }: SetupLiveScreenProps) {
   return (
     <SetupWizardScreen
       label="Your VibeTV is live"
-      onAskAiToFix={onAskAiToFix}
+      aiFixPrompt={aiFixPrompt}
       onCreateSupportReport={onCreateSupportReport}
     >
       <LiveVibeTVPreview

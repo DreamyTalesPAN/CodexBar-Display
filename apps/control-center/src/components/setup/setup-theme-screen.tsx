@@ -30,7 +30,7 @@ type SetupThemeScreenProps = {
   /** Install steps the companion reported, newest last. */
   installLogs?: string[];
   installing?: boolean;
-  onAskAiToFix?: () => boolean | Promise<boolean>;
+  aiFixPrompt?: () => string;
   onBack?: () => void;
   onCreateSupportReport?: () => void;
   onInstall: () => void;
@@ -42,7 +42,7 @@ type SetupThemeScreenProps = {
 export function SetupThemeScreen({
   installLogs = [],
   installing = false,
-  onAskAiToFix,
+  aiFixPrompt,
   onBack,
   onCreateSupportReport,
   onInstall,
@@ -55,7 +55,7 @@ export function SetupThemeScreen({
   return (
     <SetupWizardScreen
       label="Choose your theme"
-      onAskAiToFix={onAskAiToFix}
+      aiFixPrompt={aiFixPrompt}
       onBack={onBack}
       onCreateSupportReport={onCreateSupportReport}
     >

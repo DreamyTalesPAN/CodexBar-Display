@@ -6,6 +6,7 @@ const RECENT_EVENT_COUNT = 20;
 export type AiFixPromptInput = {
   appVersion?: string;
   deviceSummary: string;
+  /** Newest first, the way the app's event log stores them. */
   events: ControlCenterEvent[];
   osVersion?: string;
   screen: string;

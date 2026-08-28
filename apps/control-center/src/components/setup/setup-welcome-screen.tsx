@@ -6,7 +6,7 @@ import { SetupWizardScreen } from "./setup-wizard-screen";
 
 type SetupWelcomeScreenProps = {
   lines: SetupLogLine[];
-  onAskAiToFix?: () => boolean | Promise<boolean>;
+  aiFixPrompt?: () => string;
   onCreateSupportReport?: () => void;
 };
 
@@ -16,13 +16,13 @@ type SetupWelcomeScreenProps = {
  */
 export function SetupWelcomeScreen({
   lines,
-  onAskAiToFix,
+  aiFixPrompt,
   onCreateSupportReport,
 }: SetupWelcomeScreenProps) {
   return (
     <SetupWizardScreen
       label="Welcome"
-      onAskAiToFix={onAskAiToFix}
+      aiFixPrompt={aiFixPrompt}
       onCreateSupportReport={onCreateSupportReport}
     >
       <p className="text-xs font-semibold tracking-[0.3em] text-muted-foreground uppercase">

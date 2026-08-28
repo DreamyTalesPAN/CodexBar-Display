@@ -11,7 +11,7 @@ type SetupWizardScreenProps = {
   /** Widened for the two-card display-mode step. */
   contentWidth?: "default" | "wide";
   label: string;
-  onAskAiToFix?: () => boolean | Promise<boolean>;
+  aiFixPrompt?: () => string;
   onBack?: () => void;
   onCreateSupportReport?: () => void;
 };
@@ -25,7 +25,7 @@ export function SetupWizardScreen({
   children,
   contentWidth = "default",
   label,
-  onAskAiToFix,
+  aiFixPrompt,
   onBack,
   onCreateSupportReport,
 }: SetupWizardScreenProps) {
@@ -65,7 +65,7 @@ export function SetupWizardScreen({
       ) : null}
 
       <SetupHelpMenu
-        onAskAiToFix={onAskAiToFix}
+        aiFixPrompt={aiFixPrompt}
         onCreateSupportReport={onCreateSupportReport}
       />
     </main>

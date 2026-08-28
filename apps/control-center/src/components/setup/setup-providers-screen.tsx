@@ -16,7 +16,7 @@ import { SetupProviderRow } from "./setup-provider-row";
 import { SetupWizardScreen, SetupWizardTitle } from "./setup-wizard-screen";
 
 type SetupProvidersScreenProps = {
-  onAskAiToFix?: () => boolean | Promise<boolean>;
+  aiFixPrompt?: () => string;
   onBack?: () => void;
   onCheckAgain: (provider: ProviderItem) => void;
   onContinue: () => void;
@@ -29,7 +29,7 @@ type SetupProvidersScreenProps = {
 const SIGN_IN_WAIT_MS = 45_000;
 
 export function SetupProvidersScreen({
-  onAskAiToFix,
+  aiFixPrompt,
   onBack,
   onCheckAgain,
   onContinue,
@@ -56,7 +56,7 @@ export function SetupProvidersScreen({
   return (
     <SetupWizardScreen
       label="Choose AI providers"
-      onAskAiToFix={onAskAiToFix}
+      aiFixPrompt={aiFixPrompt}
       onBack={onBack}
       onCreateSupportReport={onCreateSupportReport}
     >

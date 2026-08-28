@@ -27,6 +27,7 @@ import type { SetupLogLine } from "./setup-log";
 import { SetupProvidersScreen } from "./setup-providers-screen";
 import { SetupThemeScreen } from "./setup-theme-screen";
 import { SetupUsageDialog } from "./setup-usage-dialog";
+import { buildAiFixPrompt } from "./setup-ai-prompt";
 import { SetupWelcomeScreen } from "./setup-welcome-screen";
 
 const WELCOME_LINES: SetupLogLine[] = [
@@ -120,6 +121,27 @@ const THEMES = [
   { id: "clippy", name: "Clippy" },
   { id: "mini-classic", name: "Mini Classic" },
   { id: "synthwave", name: "Synthwave" },
+];
+
+const AUTOMATIC_PREVIEWS = [
+  {
+    providerLabel: "Codex",
+    resetLabel: "RESET IN 3H",
+    sessionPercent: 42,
+    weeklyPercent: 26,
+  },
+  {
+    providerLabel: "Cursor",
+    resetLabel: "RESET IN 11H",
+    sessionPercent: 18,
+    weeklyPercent: 63,
+  },
+  {
+    providerLabel: "Claude",
+    resetLabel: "RESET IN 5H",
+    sessionPercent: 71,
+    weeklyPercent: 44,
+  },
 ];
 
 const THEME_INSTALL_LOGS = [
@@ -227,6 +249,7 @@ export function SetupPreviewGallery() {
   function deviceScreen(lines?: SetupLogLine[]) {
     return (
       <SetupDeviceScreen
+        aiFixPrompt={aiFixPrompt}
         busyLabel={connectBusyLabel(connectPhase)}
         candidates={CANDIDATES}
         connecting={connecting}
@@ -241,10 +264,27 @@ export function SetupPreviewGallery() {
 
   const noop = () => undefined;
 
+  const aiFixPrompt = () =>
+    buildAiFixPrompt({
+      appVersion: "1.4.2",
+      deviceSummary: selectedCandidate
+        ? `VibeTV ${selectedCandidate.deviceId} on ${connectState.address}`
+        : "not found yet",
+      // The app's event log prepends, so the newest entry is first.
+      events: [
+        { id: "2", at: "14:02:41", label: "Search finished", detail: "2 found" },
+        { id: "1", at: "14:02:11", label: "Search started", detail: "en0" },
+      ],
+      osVersion: "15.2",
+      screen: ENTRIES.find((entry) => entry.id === active)?.label ?? active,
+    });
+
   function screen(): ReactNode {
     switch (active) {
       case "01":
-        return <SetupWelcomeScreen lines={WELCOME_LINES} />;
+        return (
+          <SetupWelcomeScreen aiFixPrompt={aiFixPrompt} lines={WELCOME_LINES} />
+        );
       case "02":
         return deviceScreen();
       case "02b":
@@ -330,6 +370,7 @@ export function SetupPreviewGallery() {
       case "03":
         return (
           <SetupProvidersScreen
+            aiFixPrompt={aiFixPrompt}
             onBack={() => goTo("02")}
             onCheckAgain={noop}
             onContinue={() => goTo("04")}
@@ -360,12 +401,9 @@ export function SetupPreviewGallery() {
       case "04":
         return (
           <SetupDisplayModeScreen
-            automaticPreview={{
-              providerLabel: "Codex",
-              resetLabel: "RESET IN 3H",
-              sessionPercent: 42,
-              weeklyPercent: 26,
-            }}
+            aiFixPrompt={aiFixPrompt}
+            automaticPreview={AUTOMATIC_PREVIEWS[0]}
+            automaticPreviews={AUTOMATIC_PREVIEWS}
             manualPreview={{
               providerLabel: displayProvider === "claude" ? "Claude" : "Codex",
               resetLabel: "RESET IN 5H",
@@ -388,6 +426,7 @@ export function SetupPreviewGallery() {
       case "05":
         return (
           <SetupThemeScreen
+            aiFixPrompt={aiFixPrompt}
             installLogs={installing ? THEME_INSTALL_LOGS : []}
             installing={installing}
             onBack={() => goTo("04")}
@@ -398,7 +437,14 @@ export function SetupPreviewGallery() {
           />
         );
       default:
-        return <SetupLiveScreen device={null} displayFrame={null} usage={null} />;
+        return (
+          <SetupLiveScreen
+            aiFixPrompt={aiFixPrompt}
+            device={null}
+            displayFrame={null}
+            usage={null}
+          />
+        );
     }
   }
 
