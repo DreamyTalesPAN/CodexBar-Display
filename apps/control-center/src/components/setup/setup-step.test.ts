@@ -9,8 +9,8 @@ import {
 const done: SetupStepInput = {
   deviceReady: true,
   displayConfigured: true,
+  displaySelectionSupported: true,
   initialCheckComplete: true,
-  liveFrameRendered: true,
   providerSelectionRequired: false,
   themeSetupRequired: false,
 };
@@ -43,6 +43,17 @@ describe("deriveSetupStep", () => {
     ).toBe("providers");
   });
 
+  it("skips the display mode a companion cannot keep", () => {
+    expect(
+      deriveSetupStep({
+        ...done,
+        displayConfigured: false,
+        displaySelectionSupported: false,
+        themeSetupRequired: true,
+      }),
+    ).toBe("theme");
+  });
+
   it("asks for a display mode before a theme", () => {
     expect(
       deriveSetupStep({
@@ -53,9 +64,10 @@ describe("deriveSetupStep", () => {
     ).toBe("display");
   });
 
-  it("finishes only once VibeTV is actually showing something", () => {
+  it("is finished once nothing is left to ask for", () => {
+    // A customer who set up long ago boots straight into this, before any
+    // frame has arrived — waiting on one would put them back on a step.
     expect(deriveSetupStep(done)).toBe("live");
-    expect(deriveSetupStep({ ...done, liveFrameRendered: false })).toBe("theme");
   });
 
   it("falls back to the step whose precondition broke", () => {

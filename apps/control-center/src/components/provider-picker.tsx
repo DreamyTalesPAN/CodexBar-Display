@@ -793,7 +793,7 @@ export function providerMatchesQuery(
   );
 }
 
-function isProviderItem(item: PreferenceDescriptor): item is ProviderItem {
+export function isProviderItem(item: PreferenceDescriptor): item is ProviderItem {
   return (
     item.section === "providers" &&
     item.type === "boolean" &&

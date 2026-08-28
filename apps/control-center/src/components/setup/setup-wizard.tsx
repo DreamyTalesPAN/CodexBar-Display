@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DeviceCandidate,
   DeviceInfo,
@@ -58,6 +58,8 @@ export type SetupWizardProps = {
   onConnectManualTarget: (target: string) => void;
   onCreateSupportReport: () => Promise<SupportDiagnostics | null>;
   onDisplayContinue: () => void;
+  /** The closing step has been shown; the app can take the screen back. */
+  onFinished: () => void;
   onDisplayModeChange: (mode: ProviderDisplaySelection["mode"]) => void;
   onDisplayProviderChange: (providerId: string) => void;
   onInstallTheme: () => void;
@@ -283,11 +285,42 @@ export function SetupWizard(props: SetupWizardProps) {
   }
 
   return (
-    <SetupLiveScreen
+    <SetupFinalStep
       {...help}
       device={props.device}
       displayFrame={props.displayFrame}
+      onFinished={props.onFinished}
       usage={props.usage}
     />
   );
+}
+
+const HANDOVER_MS = 2500;
+
+/** Shows VibeTV running, then hands the screen back to the app on its own. */
+function SetupFinalStep({
+  onFinished,
+  ...live
+}: {
+  aiFixPrompt: () => string;
+  device: DeviceInfo | null;
+  displayFrame: DisplayFrameSnapshot | null;
+  onCreateSupportReport: () => Promise<SupportDiagnostics | null>;
+  onFinished: () => void;
+  usage: UsageSnapshot | null;
+}) {
+  // Kept in a ref so a re-render cannot restart the timer and leave the
+  // customer parked on this step forever.
+  const finish = useRef(onFinished);
+
+  useEffect(() => {
+    finish.current = onFinished;
+  }, [onFinished]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => finish.current(), HANDOVER_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  return <SetupLiveScreen {...live} />;
 }

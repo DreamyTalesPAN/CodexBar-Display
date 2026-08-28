@@ -68,3 +68,24 @@ export function SetupUsageDialog({
     />
   );
 }
+
+/**
+ * Which of the four causes the usage service is reporting. The engine says
+ * whether it is missing or merely unconfigured, and that is the difference
+ * between "install it" and "finish what it asks for".
+ */
+export function setupUsageCauseFor(setup: {
+  engine?: { status?: string };
+  status?: string;
+} | null): SetupUsageCause {
+  if (setup?.status === "checking") {
+    return "checking";
+  }
+  if (setup?.engine?.status === "not_configured") {
+    return "not_set_up";
+  }
+  if (setup?.status === "setup_required") {
+    return "setup_incomplete";
+  }
+  return "unknown";
+}

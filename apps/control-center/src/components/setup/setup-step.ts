@@ -14,10 +14,13 @@ export type SetupStepInput = {
   deviceReady: boolean;
   /** A display mode has been written for this Mac. */
   displayConfigured: boolean;
+  /**
+   * The companion can store a display mode at all. An older one cannot, and
+   * asking for a choice it will refuse to keep is a dead end.
+   */
+  displaySelectionSupported: boolean;
   /** The first companion check has answered, whatever it said. */
   initialCheckComplete: boolean;
-  /** VibeTV is showing something the customer would recognise as theirs. */
-  liveFrameRendered: boolean;
   providerSelectionRequired: boolean;
   themeSetupRequired: boolean;
 };
@@ -39,13 +42,13 @@ export function deriveSetupStep(input: SetupStepInput): SetupStep {
   if (input.providerSelectionRequired) {
     return "providers";
   }
-  if (!input.displayConfigured) {
+  if (input.displaySelectionSupported && !input.displayConfigured) {
     return "display";
   }
   if (input.themeSetupRequired) {
     return "theme";
   }
-  return input.liveFrameRendered ? "live" : "theme";
+  return "live";
 }
 
 /**
