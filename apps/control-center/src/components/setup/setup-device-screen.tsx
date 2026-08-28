@@ -13,8 +13,6 @@ import {
 } from "./setup-wizard-screen";
 
 type SetupDeviceScreenProps = {
-  /** Label on the disabled Connect button while the sequence runs. */
-  busyLabel?: string;
   candidates: DeviceCandidate[];
   connecting?: boolean;
   logLines: SetupLogLine[];
@@ -27,7 +25,6 @@ type SetupDeviceScreenProps = {
 };
 
 export function SetupDeviceScreen({
-  busyLabel = "Connecting",
   candidates,
   connecting = false,
   logLines,
@@ -69,7 +66,7 @@ export function SetupDeviceScreen({
         type="button"
       >
         {connecting ? <Spinner data-icon="inline-start" /> : null}
-        <span>{connecting ? busyLabel : "Connect"}</span>
+        <span>{connecting ? "Connecting" : "Connect"}</span>
       </Button>
       <Button
         disabled={connecting}

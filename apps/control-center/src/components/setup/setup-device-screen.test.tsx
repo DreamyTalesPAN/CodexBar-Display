@@ -55,10 +55,14 @@ describe("SetupDeviceScreen", () => {
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[^<]*<span>Connect<\/span>/);
   });
 
-  it("replaces Connect with the running phase while the sequence runs", () => {
-    const html = render({ connecting: true, busyLabel: "Updating firmware" });
+  it("says it is connecting, and leaves the step it is on to the log", () => {
+    const html = render({
+      connecting: true,
+      logLines: [{ id: "1", text: "updating firmware — keep VibeTV powered on" }],
+    });
 
-    expect(html).toContain("Updating firmware");
+    expect(html).toContain("<span>Connecting</span>");
     expect(html).not.toContain("<span>Connect</span>");
+    expect(html).toContain("&gt; updating firmware — keep VibeTV powered on");
   });
 });

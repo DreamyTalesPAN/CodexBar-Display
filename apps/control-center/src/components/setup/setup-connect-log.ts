@@ -25,19 +25,6 @@ export type ConnectState = {
   updateProgress?: number;
 };
 
-const BUSY_LABELS: Record<ConnectPhase, string> = {
-  idle: "Connect",
-  connecting: "Connecting",
-  "checking-firmware": "Checking firmware",
-  "updating-firmware": "Updating firmware",
-  done: "Connected",
-  failed: "Connect",
-};
-
-export function connectBusyLabel(phase: ConnectPhase): string {
-  return BUSY_LABELS[phase];
-}
-
 /**
  * Derives the whole log from the current state instead of appending to it, so
  * a retry or a re-render can never duplicate or drop a line.

@@ -6,11 +6,7 @@ import type {
   PreferenceHealthState,
 } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
-import {
-  connectBusyLabel,
-  connectLogLines,
-  type ConnectPhase,
-} from "./setup-connect-log";
+import { connectLogLines, type ConnectPhase } from "./setup-connect-log";
 import {
   SetupAddressDialog,
   SetupConnectFailedDialog,
@@ -250,7 +246,6 @@ export function SetupPreviewGallery() {
     return (
       <SetupDeviceScreen
         aiFixPrompt={aiFixPrompt}
-        busyLabel={connectBusyLabel(connectPhase)}
         candidates={CANDIDATES}
         connecting={connecting}
         logLines={lines ?? connectLogLines(connectState)}

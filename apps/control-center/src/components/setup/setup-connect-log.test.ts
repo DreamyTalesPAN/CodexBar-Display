@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  connectBusyLabel,
-  connectLogLines,
-  type ConnectState,
-} from "./setup-connect-log";
+import { connectLogLines, type ConnectState } from "./setup-connect-log";
 
 const base: ConnectState = {
   address: "192.168.178.153",
@@ -106,9 +102,4 @@ describe("connectLogLines", () => {
     expect(connectLogLines(state)).toEqual(connectLogLines(state));
   });
 
-  it("labels the running button with the phase the customer is waiting on", () => {
-    expect(connectBusyLabel("connecting")).toBe("Connecting");
-    expect(connectBusyLabel("checking-firmware")).toBe("Checking firmware");
-    expect(connectBusyLabel("updating-firmware")).toBe("Updating firmware");
-  });
 });
