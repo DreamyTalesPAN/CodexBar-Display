@@ -4108,8 +4108,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   ];
 
   // ---- Setup wizard -------------------------------------------------------
+  // Once the customer is inside, a device that is only reconnecting stays
+  // theirs. Handing the screen back to setup for it would drop them out of
+  // whatever they were doing over a missed poll.
+  // Deliberately not setupComplete: that needs a field an older companion
+  // never reports, so the guard would not exist on exactly the Macs that have
+  // one.
+  const deviceUsableForSetup =
+    deviceReady ||
+    (hasEnteredControlCenter && hasActiveDevice && !connectionRecoveryRequired);
+
   const setupStep = deriveSetupStep({
-    deviceReady,
+    deviceUsable: deviceUsableForSetup,
     displayConfigured: providerDisplay?.configured === true,
     // A companion that cannot answer for the display selection cannot store
     // one either, so there is nothing to ask the customer for.
@@ -4138,11 +4148,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }));
 
   const setupConnectSteps: SetupConnectSteps = {
-    checkFirmware: async () => {
-      const update = await refreshFirmwareUpdate();
+    checkFirmware: async (connected) => {
+      const update = await refreshFirmwareUpdate({
+        board: connected.board,
+        firmware: connected.firmware,
+      });
       return hasFirmwareUpdate(update) && update?.latestFirmware
         ? {
-            from: update.installedFirmware || device?.firmware || "",
+            from: update.installedFirmware || connected.firmware || "",
             to: update.latestFirmware,
           }
         : null;
@@ -4152,6 +4165,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (error) {
         throw error;
       }
+      // Read the device back rather than trusting this render's copy, which
+      // still describes whatever was connected before this one.
+      const connected = await refreshDevice({ quiet: true });
+      return { board: connected?.board, firmware: connected?.firmware };
     },
     installFirmware: async () => {
       lastFirmwareErrorRef.current = null;
@@ -4229,39 +4246,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onConnectManualTarget={(target) => void connectManualTarget(target)}
           onCreateSupportReport={loadSupportDiagnostics}
           onFinished={() => setSetupFinished(true)}
-          onDisplayContinue={() =>
-            void updateProviderDisplay(
-              {
-                mode: providerDisplay?.mode ?? "automatic",
-                providerIds:
-                  providerDisplay?.mode === "fixed" &&
-                  providerDisplay.providerIds.length > 0
-                    ? providerDisplay.providerIds
-                    : enabledProviderIds,
-              },
-              providerDisplay?.providerIds?.[0] ?? enabledProviderIds[0] ?? "",
-            )
-          }
-          onDisplayModeChange={(mode) =>
-            void updateProviderDisplay(
-              {
-                mode,
-                providerIds:
-                  mode === "fixed"
-                    ? providerDisplay?.providerIds?.slice(0, 1) ||
-                      enabledProviderIds.slice(0, 1)
-                    : enabledProviderIds,
-              },
-              providerDisplay?.providerIds?.[0] ?? enabledProviderIds[0] ?? "",
-            )
-          }
-          onDisplayProviderChange={(providerId) =>
-            void updateProviderDisplay(
-              { mode: "fixed", providerIds: [providerId] },
-              providerId,
-            )
-          }
-          onInstallTheme={() => void installTheme()}
+          onDisplayContinue={(selection) =>
+          void updateProviderDisplay(
+            selection,
+            selection.providerIds[0] ?? enabledProviderIds[0] ?? "",
+          )
+        }
+        onInstallTheme={() => void installTheme()}
           onProviderCheck={(provider) => void checkProvider(provider)}
           onProviderRecover={openCodexBarApp}
           onProviderToggle={(provider, enabled) =>

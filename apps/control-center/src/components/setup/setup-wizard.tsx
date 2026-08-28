@@ -57,11 +57,12 @@ export type SetupWizardProps = {
   installingTheme: boolean;
   onConnectManualTarget: (target: string) => void;
   onCreateSupportReport: () => Promise<SupportDiagnostics | null>;
-  onDisplayContinue: () => void;
+  /** Called once, with what the customer settled on. */
+  onDisplayContinue: (
+    selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
+  ) => void;
   /** The closing step has been shown; the app can take the screen back. */
   onFinished: () => void;
-  onDisplayModeChange: (mode: ProviderDisplaySelection["mode"]) => void;
-  onDisplayProviderChange: (providerId: string) => void;
   onInstallTheme: () => void;
   onProviderCheck: (provider: ProviderItem) => void;
   onProviderRecover: (provider: ProviderItem) => void;
@@ -103,9 +104,14 @@ export function SetupWizard(props: SetupWizardProps) {
   const [wentBackTo, setWentBackTo] = useState<SetupStep | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
-  const [dismissedSearchState, setDismissedSearchState] =
-    useState<DeviceSearchState | null>(null);
+  const [notFoundDismissed, setNotFoundDismissed] = useState(false);
   const [usageDialogDismissed, setUsageDialogDismissed] = useState(false);
+  // Held rather than written on every touch: writing on selection ends the
+  // step, so Continue was only ever reachable by not changing anything.
+  const [displayDraft, setDisplayDraft] = useState<{
+    mode: ProviderDisplaySelection["mode"];
+    providerId: string | null;
+  } | null>(null);
   const connect = useSetupConnect(connectSteps);
 
   const step = resolveSetupStep(derivedStep, wentBackTo);
@@ -120,8 +126,14 @@ export function SetupWizard(props: SetupWizardProps) {
     return known?.target ?? deviceCandidates[0]?.target ?? null;
   }, [deviceCandidates, selectedTarget]);
 
-  const searchFailed =
-    deviceSearchState === "not-found" && dismissedSearchState !== "not-found";
+  const searchFailed = deviceSearchState === "not-found" && !notFoundDismissed;
+
+  // Searching again clears the dismissal, so a second empty scan is explained
+  // rather than leaving the customer on an empty list with no reason for it.
+  const searchAgain = useCallback(() => {
+    setNotFoundDismissed(false);
+    onSearchDevices();
+  }, [onSearchDevices]);
 
   const startConnect = useCallback(() => {
     const candidate = deviceCandidates.find(
@@ -163,21 +175,21 @@ export function SetupWizard(props: SetupWizardProps) {
             setAddressDialogOpen(false);
             props.onConnectManualTarget(target);
           }}
-          onOpenChange={setAddressDialogOpen}
+          onOpenChange={(open) => {
+            setAddressDialogOpen(open);
+            if (!open) {
+              setNotFoundDismissed(false);
+            }
+          }}
           open={addressDialogOpen}
         />
         <SetupDeviceNotFoundDialog
           onEnterAddressManually={() => {
-            setDismissedSearchState("not-found");
+            setNotFoundDismissed(true);
             setAddressDialogOpen(true);
           }}
-          onOpenChange={(open) =>
-            setDismissedSearchState(open ? null : "not-found")
-          }
-          onScanAgain={() => {
-            setDismissedSearchState("not-found");
-            onSearchDevices();
-          }}
+          onOpenChange={(open) => setNotFoundDismissed(!open)}
+          onScanAgain={searchAgain}
           open={searchFailed}
         />
         <SetupConnectFailedDialog
@@ -193,7 +205,7 @@ export function SetupWizard(props: SetupWizardProps) {
           onOpenChange={(open) => !open && connect.dismissFailure()}
           onSearchAgain={() => {
             connect.reset();
-            onSearchDevices();
+            searchAgain();
           }}
           open={connect.failure?.kind === "connect"}
           title={
@@ -244,6 +256,9 @@ export function SetupWizard(props: SetupWizardProps) {
   }
 
   if (step === "display") {
+    const displayMode = displayDraft?.mode ?? props.displayMode;
+    const displayProviderId =
+      displayDraft?.providerId ?? props.displayProviderId;
     return (
       <SetupDisplayModeScreen
         {...help}
@@ -254,17 +269,29 @@ export function SetupWizard(props: SetupWizardProps) {
             (preview) =>
               preview.providerLabel ===
               props.displayProviders.find(
-                (provider) => provider.id === props.displayProviderId,
+                (provider) => provider.id === displayProviderId,
               )?.label,
           ) ?? null
         }
-        mode={props.displayMode}
+        mode={displayMode}
         onBack={goBack}
-        onContinue={props.onDisplayContinue}
-        onSelectMode={props.onDisplayModeChange}
-        onSelectProvider={props.onDisplayProviderChange}
+        onContinue={() =>
+          props.onDisplayContinue({
+            mode: displayMode,
+            providerIds:
+              displayMode === "fixed" && displayProviderId
+                ? [displayProviderId]
+                : props.displayProviders.map((provider) => provider.id),
+          })
+        }
+        onSelectMode={(mode) =>
+          setDisplayDraft({ mode, providerId: displayProviderId })
+        }
+        onSelectProvider={(providerId) =>
+          setDisplayDraft({ mode: displayMode, providerId })
+        }
         providers={props.displayProviders}
-        selectedProviderId={props.displayProviderId}
+        selectedProviderId={displayProviderId}
       />
     );
   }

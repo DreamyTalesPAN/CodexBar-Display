@@ -7,7 +7,7 @@ import {
 } from "./setup-step";
 
 const done: SetupStepInput = {
-  deviceReady: true,
+  deviceUsable: true,
   displayConfigured: true,
   displaySelectionSupported: true,
   initialCheckComplete: true,
@@ -26,7 +26,7 @@ describe("deriveSetupStep", () => {
     expect(
       deriveSetupStep({
         ...done,
-        deviceReady: false,
+        deviceUsable: false,
         providerSelectionRequired: true,
         themeSetupRequired: true,
       }),
@@ -71,8 +71,14 @@ describe("deriveSetupStep", () => {
   });
 
   it("falls back to the step whose precondition broke", () => {
-    // The device dropped out after the theme was installed.
-    expect(deriveSetupStep({ ...done, deviceReady: false })).toBe("device");
+    // The device is confirmed gone after the theme was installed.
+    expect(deriveSetupStep({ ...done, deviceUsable: false })).toBe("device");
+  });
+
+  it("keeps a running session while a device is only reconnecting", () => {
+    // The caller keeps deviceUsable true through a reconnect; only a confirmed
+    // loss clears it, so a missed poll cannot eject the customer.
+    expect(deriveSetupStep(done)).toBe("live");
   });
 });
 

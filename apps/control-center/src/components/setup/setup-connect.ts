@@ -14,10 +14,19 @@ export type ConnectFailure =
   | { kind: "firmware-blocked"; reason: FirmwareBlockedReason }
   | { kind: "firmware-update" };
 
+/** What the device reported once it was connected. */
+export type ConnectedDevice = { board?: string; firmware?: string };
+
 export type SetupConnectSteps = {
-  /** Resolves with the newer version when the device has one to install. */
-  checkFirmware: () => Promise<{ from: string; to: string } | null>;
-  connect: (candidate: DeviceCandidate) => Promise<void>;
+  /**
+   * Resolves with the newer version when the device has one to install. Takes
+   * the device it just connected to rather than reading app state, which at
+   * this point still describes whatever came before.
+   */
+  checkFirmware: (
+    device: ConnectedDevice,
+  ) => Promise<{ from: string; to: string } | null>;
+  connect: (candidate: DeviceCandidate) => Promise<ConnectedDevice>;
   installFirmware: () => Promise<void>;
 };
 
@@ -72,8 +81,9 @@ export function useSetupConnect(steps: SetupConnectSteps) {
       progressRef.current = 0;
       setState(base);
 
+      let connected: ConnectedDevice = {};
       try {
-        await steps.connect(candidate);
+        connected = await steps.connect(candidate);
       } catch (error) {
         const api = error as ApiError;
         fail(
@@ -93,7 +103,7 @@ export function useSetupConnect(steps: SetupConnectSteps) {
       setState({ ...base, phase: "checking-firmware" });
 
       try {
-        firmware = await steps.checkFirmware();
+        firmware = await steps.checkFirmware(connected);
       } catch (error) {
         const api = error as ApiError;
         const blocked = firmwareBlockedReason(api?.code);

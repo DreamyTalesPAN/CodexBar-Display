@@ -10,8 +10,12 @@ export const SETUP_STEPS = [
 export type SetupStep = (typeof SETUP_STEPS)[number];
 
 export type SetupStepInput = {
-  /** The device answered, is paired and is streaming. */
-  deviceReady: boolean;
+  /**
+   * The device is the customer's to use. A device that is merely reconnecting
+   * still counts: taking the whole app away for a missed poll would eject
+   * someone from what they were doing.
+   */
+  deviceUsable: boolean;
   /** A display mode has been written for this Mac. */
   displayConfigured: boolean;
   /**
@@ -36,7 +40,7 @@ export function deriveSetupStep(input: SetupStepInput): SetupStep {
   if (!input.initialCheckComplete) {
     return "welcome";
   }
-  if (!input.deviceReady) {
+  if (!input.deviceUsable) {
     return "device";
   }
   if (input.providerSelectionRequired) {
