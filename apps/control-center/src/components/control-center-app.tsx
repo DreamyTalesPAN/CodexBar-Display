@@ -64,7 +64,6 @@ import {
   type SupportDiagnostics,
   type UsageSnapshot,
 } from "./control-center-types";
-import { DeviceStartupScreen } from "./device-startup-screen";
 import {
   applyDeviceRecoveryStatus,
   deviceRecoveryConfirmedLoss,
@@ -78,7 +77,6 @@ import {
   type DeviceRecoveryPickerReason,
 } from "./device-recovery-gate";
 import { useCompanionRelease } from "./companion-installer-actions";
-import { HostedSetupShell } from "./hosted-setup-shell";
 import { LogsScreen } from "./logs-screen";
 import {
   hasRenderableUsage,
@@ -91,7 +89,6 @@ import {
   providerUsageNeedsReconcile,
   scheduleProviderUsageReconcile,
 } from "./provider-usage-reconcile";
-import { SetupScreen } from "./setup-screen";
 import { isProviderItem } from "./provider-picker";
 import { MacAppDownloadScreen } from "./setup/mac-app-download-screen";
 import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
@@ -352,9 +349,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [brightness, setBrightness] = useState<number | null>(null);
   const [standby, setStandby] = useState<StandbySettings | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [selectingDeviceTarget, setSelectingDeviceTarget] = useState<
-    string | undefined
-  >();
   const [supportReportBusy, setSupportReportBusy] = useState(false);
   const [lastError, setLastError] = useState<ApiError | null>(null);
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
@@ -397,7 +391,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
   );
-  const [setupResetVersion, setSetupResetVersion] = useState(0);
   const [runtimeRecoveryPhase, setRuntimeRecoveryPhase] = useState<
     "repairing" | "failed"
   >("repairing");
@@ -478,13 +471,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const requiresMacAppMigration = Boolean(
     companionStatus === "online" && companionInstallationMode === "legacy",
   );
-
-  const handleDeviceTargetChange = useCallback((target: string) => {
-    setDeviceTarget(target);
-    if (target.trim() === "") {
-      forgetDeviceTarget();
-    }
-  }, []);
 
   const mergeDevice = useCallback((next: DeviceInfo) => {
     if (deviceIsReady(next)) {
@@ -1601,7 +1587,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       const setupGeneration = setupGenerationRef.current;
       pendingPairingCandidate.current = candidate;
-      setSelectingDeviceTarget(candidate.target);
       setBusyAction("select");
       setLastError(null);
       try {
@@ -1689,7 +1674,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return normalized;
       } finally {
         if (setupGeneration === setupGenerationRef.current) {
-          setSelectingDeviceTarget(undefined);
           setBusyAction(null);
         }
       }
@@ -1917,7 +1901,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         detail: "Local VibeTV connection was cleared.",
         tone: "unknown",
       });
-      setSetupResetVersion((current) => current + 1);
       setBusyAction(null);
     } catch (error) {
       if (setupGeneration !== setupGenerationRef.current) {
@@ -4035,53 +4018,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     refreshProviderDisplay,
     refreshProviderPreferences,
   ]);
-
-  const renderSetupScreen = (showIntro: boolean) => (
-    <SetupScreen
-      key={setupResetVersion}
-      companionStatus={companionStatus}
-      deviceCandidates={startupDeviceCandidates}
-      deviceSearchState={startupDeviceSearchState}
-      deviceState={deviceState}
-      deviceTarget={deviceTarget}
-      lastError={lastError}
-      busyAction={busyAction}
-      hostedMode={hostedSetup}
-      macAppRelease={companionRelease}
-      previewStep={setupPreviewStep}
-      requiresMacAppMigration={requiresMacAppMigration}
-      selectingDeviceTarget={
-        busyAction === "select" ? selectingDeviceTarget : undefined
-      }
-      showIntro={showIntro}
-      setupComplete={setupComplete}
-      supportReportBusy={supportReportBusy}
-      device={device}
-      diagnostics={supportDiagnostics}
-      onCheckCompanion={checkCompanion}
-      onCheckUpdates={checkUpdates}
-      onDeviceTargetChange={handleDeviceTargetChange}
-      onSearchDevices={() => {
-        didRunSetupVerification.current = true;
-        void searchAndConnect();
-      }}
-      onSelectDevice={(candidate) => {
-        didRunSetupVerification.current = true;
-        void selectAndConnectDevice(candidate);
-      }}
-      onRepairConnection={(targetOverride) => {
-        didRunSetupVerification.current = true;
-        if (targetOverride) {
-          void connectManualTarget(targetOverride);
-        }
-      }}
-      onResetSetup={resetSetup}
-      onCreateSupportReport={loadSupportDiagnostics}
-      onCompleteProviderSetup={completeProviderSetup}
-      providerPicker={providerPickerProps}
-    />
-  );
-
 
   const setupDeviceSummary = deviceReady
     ? `VibeTV ${device?.deviceId || ""} on ${device?.target || "an unknown address"}`.trim()

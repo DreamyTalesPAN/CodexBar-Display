@@ -9,7 +9,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import type { DeviceCandidate } from "../control-center-types";
-import { candidateAddress } from "../setup-device-components";
+import { candidateAddress } from "../device-target-copy";
 import { SelectionCheck, selectedItemClass } from "./setup-selectable-card";
 
 type SetupDeviceCardProps = {

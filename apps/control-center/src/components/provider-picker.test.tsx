@@ -2,14 +2,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type {
   PreferenceDescriptor,
-  PreferenceHealthState,
   ProviderDisplaySelection,
 } from "./control-center-types";
 import {
   ProviderPicker,
   providerMatchesQuery,
-  providerSetupCanFinish,
-  providerSetupMissingEnabledProviders,
   providerEnableIsRedundant,
   setupFixedReplacedProviderId,
   setupToggleOffDisplay,
@@ -336,117 +333,6 @@ describe("ProviderPicker", () => {
 
     expect(html).toContain(">Gemini</h3>");
     expect(html).not.toContain("Show all providers");
-  });
-
-  it("blocks setup until every enabled provider is selected and freshly ready", () => {
-    expect(
-      providerSetupCanFinish(
-        [codex, claude],
-        { ...automatic, providerIds: ["codex"] },
-        new Set(),
-        new Set(),
-      ),
-    ).toBe(false);
-    expect(
-      providerSetupCanFinish(
-        [codex, claude],
-        automatic,
-        new Set(),
-        new Set(["claude"]),
-      ),
-    ).toBe(false);
-    expect(
-      providerSetupCanFinish(
-        [codex, claude],
-        automatic,
-        new Set(),
-        new Set(),
-        null,
-        true,
-      ),
-    ).toBe(false);
-    expect(
-      providerSetupCanFinish([codex, claude], automatic, new Set(), new Set()),
-    ).toBe(true);
-  });
-
-  it("does not block setup for a degraded external service when usage is ready", () => {
-    const degradedCodex = provider({
-      ...codex,
-      health: {
-        state: "healthy",
-        service: "degraded",
-        message: "Provider is working.",
-        verifiedAt: new Date().toISOString(),
-      },
-    });
-    expect(
-      providerSetupCanFinish(
-        [degradedCodex],
-        { ...automatic, providerIds: ["codex"] },
-        new Set(),
-        new Set(),
-      ),
-    ).toBe(true);
-  });
-
-  it("does not block setup on a momentary stale live check when usage already succeeded once", () => {
-    const staleClaude = provider({
-      ...claude,
-      health: {
-        state: "stale",
-        service: "unknown",
-        message:
-          "Live usage is unavailable; the last successful reading is still saved.",
-        lastSuccessAt: new Date().toISOString(),
-      },
-    });
-    expect(
-      providerSetupCanFinish(
-        [codex, staleClaude],
-        automatic,
-        new Set(),
-        new Set(),
-      ),
-    ).toBe(true);
-  });
-
-  it("still blocks setup for providers that genuinely need customer action", () => {
-    const blockedStates: PreferenceHealthState[] = [
-      "auth_required",
-      "setup_required",
-      "no_usage_available",
-      "timeout",
-      "config_error",
-      "unavailable",
-    ];
-    for (const state of blockedStates) {
-      const blockedCodex = provider({
-        ...codex,
-        health: {
-          state,
-          service: "unknown",
-          message: "Needs attention.",
-        },
-      });
-      expect(
-        providerSetupCanFinish(
-          [blockedCodex],
-          { ...automatic, providerIds: ["codex"] },
-          new Set(),
-          new Set(),
-        ),
-      ).toBe(false);
-    }
-  });
-
-  it("names enabled providers that are outside the display pool", () => {
-    expect(
-      providerSetupMissingEnabledProviders([codex, claude], {
-        ...automatic,
-        providerIds: ["codex"],
-      }),
-    ).toEqual(["Claude"]);
   });
 
   it("turning the setup switch on adds the provider to Automatic", () => {

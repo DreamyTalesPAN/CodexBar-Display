@@ -597,30 +597,6 @@ export function normalizedProviderStatus(value?: string) {
   return value?.trim().toLowerCase().replace(/^provider_/, "") || "";
 }
 
-// A ready engine means CodexBar is installed: the Companion only reports it
-// after finding the binary, reading its config and accepting its version
-// (companion/internal/codexbar/provider_setup.go). Whatever is still missing --
-// a sign-in, a macOS permission, a switch, an account with no usage, or simply
-// nothing reported yet -- is settled inside CodexBar, and the download page
-// fixes none of it. Which of those it is stays CodexBar's to say; this only
-// reads that CodexBar is there.
-//
-// The provider list deliberately does not enter into it. An earlier version
-// asked for a provider other than the `codexbar` stand-in and treated an empty
-// list as the "nothing to report yet" state. The Companion never sends an empty
-// list: an empty `usage --json` becomes exactly that stand-in
-// ([{id:"codexbar",status:"not_configured"}]), so the state this predicate
-// exists for -- providers switched back on, none opened once, seen on the bench
-// on 2026-08-21 -- was the one state it still sent to the download.
-//
-// The download route belongs to an engine that is NOT ready: CodexBar missing,
-// too old, or broken. That is the case a download actually fixes.
-export function providerSetupCodexBarAnswered(
-  providerSetup: ProviderSetupInfo | null | undefined,
-) {
-  return normalizedProviderStatus(providerSetup?.engine?.status) === "ready";
-}
-
 // A usable engine with every provider switched off is not a missing install:
 // the customer has CodexBar and turned the switches off. Telling them to
 // download it sends them after software they already have. CodexBar still owns

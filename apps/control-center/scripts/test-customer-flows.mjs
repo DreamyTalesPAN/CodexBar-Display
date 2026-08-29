@@ -2687,10 +2687,6 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
       .count()) === 0,
     "A background service outage must not return a running session to setup",
   );
-  assert(
-    (await page.getByTestId("mac-app-recovery-screen").count()) === 0,
-    "A background service outage must not replace an entered Control Center",
-  );
   for (const tab of [
     "Overview",
     "Usage",
