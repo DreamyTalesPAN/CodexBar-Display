@@ -41,7 +41,6 @@ import {
   SetupThemeScreen,
   type SetupThemeOption,
 } from "./setup-theme-screen";
-import { SetupUsageDialog, type SetupUsageCause } from "./setup-usage-dialog";
 import { SetupWelcomeScreen } from "./setup-welcome-screen";
 
 export type SetupWizardProps = {
@@ -72,7 +71,6 @@ export type SetupWizardProps = {
   onProviderRecover: (provider: ProviderItem) => void;
   onProviderToggle: (provider: ProviderItem, enabled: boolean) => void;
   onProvidersContinue: () => void;
-  onRepairUsageService: () => void;
   onSearchDevices: () => void;
   onSelectTheme: (theme: SetupThemeOption) => void;
   providers: ProviderItem[];
@@ -81,8 +79,6 @@ export type SetupWizardProps = {
   themeInstallLogs: string[];
   themes: SetupThemeOption[];
   usage: UsageSnapshot | null;
-  /** Set while the usage service cannot answer; opens the usage dialog. */
-  usageFailure: SetupUsageCause | null;
   welcomeLines: SetupLogLine[];
 };
 
@@ -109,7 +105,6 @@ export function SetupWizard(props: SetupWizardProps) {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
   const [notFoundDismissed, setNotFoundDismissed] = useState(false);
-  const [usageDialogDismissed, setUsageDialogDismissed] = useState(false);
   // Held rather than written on every touch: writing on selection ends the
   // step, so Continue was only ever reachable by not changing anything.
   const [displayDraft, setDisplayDraft] = useState<{
@@ -251,26 +246,15 @@ export function SetupWizard(props: SetupWizardProps) {
 
   if (step === "providers") {
     return (
-      <>
-        <SetupProvidersScreen
-          {...help}
-          onBack={goBack}
-          onCheckAgain={props.onProviderCheck}
-          onContinue={props.onProvidersContinue}
-          onRecover={props.onProviderRecover}
-          onToggle={props.onProviderToggle}
-          providers={props.providers}
-        />
-        {props.usageFailure && !usageDialogDismissed ? (
-          <SetupUsageDialog
-            cause={props.usageFailure}
-            onCreateSupportReport={() => void onCreateSupportReport()}
-            onOpenChange={(open) => setUsageDialogDismissed(!open)}
-            onRepair={props.onRepairUsageService}
-            open
-          />
-        ) : null}
-      </>
+      <SetupProvidersScreen
+        {...help}
+        onBack={goBack}
+        onCheckAgain={props.onProviderCheck}
+        onContinue={props.onProvidersContinue}
+        onRecover={props.onProviderRecover}
+        onToggle={props.onProviderToggle}
+        providers={props.providers}
+      />
     );
   }
 

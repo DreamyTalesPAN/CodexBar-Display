@@ -462,6 +462,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testUsageServiceFailureAfterSetupOffersRecovery(
+        browser,
+        appContext.appUrl,
+      );
       console.log("control-center startup timeout test passed");
       return;
     }
@@ -571,6 +575,10 @@ async function main() {
         appContext.appUrl,
       );
       await testLocalExistingSetupOpensOverviewWithoutRepair(
+        browser,
+        appContext.appUrl,
+      );
+      await testUsageServiceFailureAfterSetupOffersRecovery(
         browser,
         appContext.appUrl,
       );
@@ -763,6 +771,10 @@ async function main() {
       appContext.appUrl,
     );
     await testLocalExistingSetupOpensOverviewWithoutRepair(
+      browser,
+      appContext.appUrl,
+    );
+    await testUsageServiceFailureAfterSetupOffersRecovery(
       browser,
       appContext.appUrl,
     );
@@ -4465,6 +4477,71 @@ async function testLocalExistingSetupOpensOverviewWithoutRepair(
     "Existing setup should open Overview without onboarding or download steps",
   );
   assertNoInstallRequests(installRequests);
+  await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+async function testUsageServiceFailureAfterSetupOffersRecovery(
+  browser,
+  appUrl,
+) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  // The usage service used to be able to fail only on the provider step: the
+  // dialog was rendered inside that one branch. A Mac whose usage service died
+  // later walked into the Control Center with no usage and nothing said.
+  const brokenDevice = {
+    ...companionDevice,
+    stream: {
+      ...companionDevice.stream,
+      healthy: false,
+      errorCode: "provider_setup_required",
+      target: companionDevice.target,
+    },
+  };
+  let usageBroken = false;
+  await routeCompanionOnline(page, [], () => {}, {
+    device: companionDevice,
+    statusDeviceSequence: [companionDevice, companionDevice, brokenDevice],
+    onStatusProviderSetup: () =>
+      usageBroken
+        ? {
+            status: "setup_required",
+            engine: { status: "ready" },
+            providers: [{ id: "codexbar", status: "timeout" }],
+          }
+        : readyProviderSetup(),
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+
+  usageBroken = true;
+  const usageDialog = page.getByRole("dialog", {
+    name: "Finish AI setup on this Mac",
+  });
+  await usageDialog.waitFor({ timeout: 20_000 });
+  const navigation = page.getByRole("navigation", { name: "Control Center" });
+  assert(
+    (await navigation.count()) === 1,
+    "A usage service that fails after setup must announce itself over the Control Center, not replace it",
+  );
+  await usageDialog.getByRole("button", { name: "Repair" }).waitFor();
+  await usageDialog
+    .getByRole("button", { name: "Create support report" })
+    .waitFor();
+
+  await usageDialog.getByRole("button", { name: "Close" }).click();
+  await usageDialog.waitFor({ state: "detached", timeout: 10_000 });
+  // Hiding the announcement must give the app back, not leave it behind a scrim.
+  await clickNavigation(page, "Usage");
+  await clickNavigation(page, "Overview");
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
   await assertNoMobileOverflow(page);
   await page.close();
 }

@@ -60,6 +60,9 @@ export function SetupUsageDialog({
       onOpenChange={onOpenChange}
       open={open}
       primaryAction={{ label: "Repair", onSelect: onRepair }}
+      // Shown over whatever the customer is doing, so it must not hold the
+      // screen behind it: taking the app away is the very thing it reports.
+      scrim={false}
       secondaryAction={{
         label: "Create support report",
         onSelect: onCreateSupportReport,

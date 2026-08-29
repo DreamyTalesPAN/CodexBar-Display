@@ -95,7 +95,10 @@ import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
 import { deriveSetupStep } from "./setup/setup-step";
-import { setupUsageCauseFor } from "./setup/setup-usage-dialog";
+import {
+  SetupUsageDialog,
+  setupUsageCauseFor,
+} from "./setup/setup-usage-dialog";
 import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
 import { SetupWizard } from "./setup/setup-wizard";
 import { SetupStatusScreen } from "./setup-status-screen";
@@ -405,6 +408,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Dismissing the recovery dialog only hides it; the repair itself runs on.
   const [runtimeRecoveryHidden, setRuntimeRecoveryHidden] = useState(false);
   const runtimeRecoveryWasNeeded = useRef(false);
+  // Hiding the usage dialog hides the announcement; the repair itself runs on.
+  const [usageFailureHidden, setUsageFailureHidden] = useState(false);
+  const usageFailureWasOpen = useRef(false);
   const lastFirmwareErrorRef = useRef<ApiError | null>(null);
   const [showCodexBarFallback, setShowCodexBarFallback] = useState(false);
   const [supportDiagnostics, setSupportDiagnostics] =
@@ -3745,6 +3751,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     themeSetupRequired &&
     waitingForFirstUsage &&
     providerSetupIsChecking(providerSetup);
+  // A usage service that cannot answer is not the provider step's private
+  // problem: it can fail at any moment, and it used to say so only there.
+  const usageFailure =
+    providerRecoveryRequired || initialProviderCheckInProgress
+      ? setupUsageCauseFor(providerSetup)
+      : null;
+
+  // A dismissal covers the incident it was made during, not the next one.
+  useEffect(() => {
+    if (usageFailure) {
+      usageFailureWasOpen.current = true;
+      return;
+    }
+    if (usageFailureWasOpen.current) {
+      usageFailureWasOpen.current = false;
+      setUsageFailureHidden(false);
+    }
+  }, [usageFailure]);
 
   useEffect(() => {
     if (!providerRecoveryRequired) {
@@ -4190,7 +4214,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             void updateProviderPreference(provider, enabled)
           }
           onProvidersContinue={completeProviderSetup}
-          onRepairUsageService={retryUsageService}
           onSearchDevices={() => void searchAndConnect()}
           onSelectTheme={(theme) => setSelectedThemeId(theme.id)}
           providers={setupProviders}
@@ -4199,11 +4222,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           themeInstallLogs={themeInstallStatus?.logs || []}
           themes={setupThemes}
           usage={usage}
-          usageFailure={
-            providerRecoveryRequired || initialProviderCheckInProgress
-              ? setupUsageCauseFor(providerSetup)
-              : null
-          }
           welcomeLines={setupWelcomeLines}
         />
       );
@@ -4386,6 +4404,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         retrying={busyAction === "runtime-repair"}
       />
+      {/*
+        Both dialogs are centred and would otherwise land on each other while a
+        provider incident is still busy and the Mac App has gone missing. The
+        runtime repair wins: it is the one that took the Mac App down.
+      */}
+      {usageFailure && !usageFailureHidden && !needsRuntimeRecovery ? (
+        <SetupUsageDialog
+          cause={usageFailure}
+          onCreateSupportReport={() => void loadSupportDiagnostics()}
+          onOpenChange={(open) => setUsageFailureHidden(!open)}
+          onRepair={retryUsageService}
+          open
+        />
+      ) : null}
     </>
   );
 }
