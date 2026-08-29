@@ -2310,7 +2310,18 @@ async function testManualVibeTVTargetRejectsUnreachableAddress(
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await waitForSetupDeviceStep(page);
   await connectManualVibeTVAddress(page, "172.30.12.99");
-  await setupNotFoundDialog(page).waitFor({ timeout: 10_000 });
+  // The failure belongs to the address the customer typed, so it stays in that
+  // dialog with the address still in the field. It used to close the dialog and
+  // say nothing at all.
+  const addressDialog = setupAddressDialog(page);
+  await addressDialog
+    .getByText("No VibeTV answered at that IP address.", { exact: false })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await addressDialog.getByLabel("IP address").inputValue()) ===
+      "172.30.12.99",
+    "The address that did not answer must stay in the field to be corrected",
+  );
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
       0,
@@ -2320,9 +2331,6 @@ async function testManualVibeTVTargetRejectsUnreachableAddress(
     deviceWriteRequests.length === 0,
     `An unanswered address must not be written to, got ${deviceWriteRequests}`,
   );
-  await setupNotFoundDialog(page)
-    .getByRole("button", { name: "Enter IP manually" })
-    .waitFor();
   await page.close();
 }
 
