@@ -21,6 +21,8 @@ import {
 } from "./setup-wizard-screen";
 
 export type SetupThemeOption = {
+  /** Why this device cannot install it, or null when it can. */
+  blockedReason?: string | null;
   id: string;
   name: string;
   /** Where the published spec lives, so the preview draws the real theme. */
@@ -82,13 +84,21 @@ export function SetupThemeScreen({
 
       <Button
         className="mt-4 w-full"
-        disabled={installing || !selected}
+        disabled={installing || !selected || Boolean(selected.blockedReason)}
         onClick={onInstall}
         type="button"
       >
         {installing ? <Spinner data-icon="inline-start" /> : null}
         <span>{installing ? "Installing" : "Install"}</span>
       </Button>
+      {selected?.blockedReason ? (
+        <p
+          className="mt-2 text-sm text-muted-foreground"
+          data-slot="theme-blocked-reason"
+        >
+          {selected.blockedReason}
+        </p>
+      ) : null}
 
       <SetupLog
         className="mt-4"

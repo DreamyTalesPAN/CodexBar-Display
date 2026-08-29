@@ -59,6 +59,46 @@ describe("SetupThemeScreen", () => {
     expect(html).toMatch(/<button[^>]*disabled=""/);
   });
 
+  it("says why a theme this VibeTV cannot take is not installable", () => {
+    const html = render({
+      themes: themes.map((theme) =>
+        theme.id === "clippy"
+          ? { ...theme, blockedReason: "Update VibeTV first." }
+          : theme,
+      ),
+    });
+
+    expect(html).toContain("Update VibeTV first.");
+    expect(html).toMatch(
+      /<button[^>]*disabled=""[^>]*>[^<]*<span>Install<\/span>/,
+    );
+  });
+
+  it("still offers every theme when one of them is blocked", () => {
+    const html = render({
+      themes: themes.map((theme) =>
+        theme.id === "clippy"
+          ? { ...theme, blockedReason: "Update VibeTV first." }
+          : theme,
+      ),
+    });
+
+    for (const theme of themes) {
+      expect(html).toContain(theme.name);
+    }
+  });
+
+  it("installs a theme the device can take", () => {
+    const html = render({
+      themes: themes.map((theme) => ({ ...theme, blockedReason: null })),
+    });
+
+    expect(html).not.toMatch(
+      /<button[^>]*disabled=""[^>]*>[^<]*<span>Install<\/span>/,
+    );
+    expect(html).not.toContain('data-slot="theme-blocked-reason"');
+  });
+
   it("shows the install steps the companion reported", () => {
     const html = render({
       installLogs: ["Uploading theme", "Activating theme"],

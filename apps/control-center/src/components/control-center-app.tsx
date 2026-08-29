@@ -106,6 +106,7 @@ import { SettingsScreen } from "./settings-screen";
 import { SupportReportActions } from "./support-report-actions";
 import { collectSupportReport } from "./support-report";
 import {
+  buildThemeInstallBlocker,
   ThemeLibraryScreen,
   themeNeedsUpgradeableFirmware,
 } from "./theme-library-screen";
@@ -4093,12 +4094,26 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     .map((item) => item.providerId)
     .filter((id): id is string => Boolean(id));
   const setupPreviews = displayPreviewsFor(usage, enabledProviderIds);
+  // Step 05 keeps offering all four live themes: hiding one would make the
+  // device's limitation invisible. The Install is gated by the same rules the
+  // theme library uses, so setup cannot promise what the device would refuse.
   const setupThemes = catalog.themes
     .filter((theme) => (theme.usage || "live") === "live")
     .map((theme) => ({
       id: theme.themeId,
       name: theme.title,
       themeSpecPath: theme.themeSpecPath,
+      blockedReason:
+        buildThemeInstallBlocker({
+          // Inside the wizard the device is connected and paired, but `ready`
+          // can still be false while the first frame is pending. Refusing on
+          // that would deadlock the step.
+          allowUnreadyInstall: true,
+          device,
+          theme,
+          themeInstallBlockedReason: "",
+          themeInstallEnabled,
+        })?.reason ?? null,
     }));
 
   const setupConnectSteps: SetupConnectSteps = {

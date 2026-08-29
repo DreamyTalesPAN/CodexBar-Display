@@ -1510,7 +1510,7 @@ function installDisabledReason({
   return "Install is not available right now.";
 }
 
-function buildThemeInstallBlocker({
+export function buildThemeInstallBlocker({
   allowUnreadyInstall = false,
   device,
   theme,
