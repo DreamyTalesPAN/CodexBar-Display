@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  ApiError,
   DeviceCandidate,
   DeviceInfo,
   DeviceSearchState,
@@ -57,7 +58,8 @@ export type SetupWizardProps = {
   /** Percent of the running firmware install, for the frozen log line. */
   firmwareProgress?: number;
   installingTheme: boolean;
-  onConnectManualTarget: (target: string) => void;
+  /** Resolves with the VibeTV at that address, or rejects with what to show. */
+  onFindManualTarget: (target: string) => Promise<DeviceCandidate>;
   onCreateSupportReport: () => Promise<SupportDiagnostics | null>;
   /** Called once, with what the customer settled on. */
   onDisplayContinue: (
@@ -173,9 +175,24 @@ export function SetupWizard(props: SetupWizardProps) {
           selectedTarget={preselected}
         />
         <SetupAddressDialog
-          onConnect={(target) => {
-            setAddressDialogOpen(false);
-            props.onConnectManualTarget(target);
+          onConnect={async (target) => {
+            try {
+              const candidate = await props.onFindManualTarget(target);
+              // Closed here rather than through onOpenChange: that would clear
+              // notFoundDismissed and re-open "We couldn't find your VibeTV"
+              // over the connecting screen, because the search state only
+              // clears once the connect answers.
+              setAddressDialogOpen(false);
+              void connect.run(candidate);
+              return null;
+            } catch (error) {
+              const failure = error as ApiError;
+              return (
+                [failure?.message, failure?.nextAction]
+                  .filter(Boolean)
+                  .join(" ") || null
+              );
+            }
           }}
           onOpenChange={(open) => {
             setAddressDialogOpen(open);

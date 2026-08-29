@@ -13,15 +13,14 @@ import { SetupDialog } from "./setup-dialog";
 const ADDRESS_ERROR = "Enter the IP address shown on the VibeTV screen.";
 
 type AddressDialogProps = {
-  busy?: boolean;
-  onConnect: (target: string) => void;
+  /** Resolves with what to show under the field, or null once it succeeded. */
+  onConnect: (target: string) => Promise<string | null>;
   onOpenChange: (open: boolean) => void;
   open: boolean;
 };
 
 /** 02b — the manual way in when discovery does not find the right VibeTV. */
 export function SetupAddressDialog({
-  busy = false,
   onConnect,
   onOpenChange,
   open,
@@ -30,7 +29,6 @@ export function SetupAddressDialog({
   // resetting the previous attempt from an effect.
   return (
     <SetupAddressDialogForm
-      busy={busy}
       key={open ? "open" : "closed"}
       onConnect={onConnect}
       onOpenChange={onOpenChange}
@@ -40,22 +38,33 @@ export function SetupAddressDialog({
 }
 
 function SetupAddressDialogForm({
-  busy,
   onConnect,
   onOpenChange,
   open,
 }: AddressDialogProps) {
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  function submit() {
+  // The address that did not answer is the one thing the customer needs to
+  // correct, so a failure keeps the dialog and the typed value and puts the
+  // reason under the field. On success the wizard has already closed this
+  // dialog, so the trailing writes land on an unmounted form.
+  async function submit() {
+    if (busy) {
+      // Enter reaches this even while the button is disabled.
+      return;
+    }
     const target = normalizeManualDeviceTarget(value);
     if (!target) {
       setError(ADDRESS_ERROR);
       return;
     }
     setError(null);
-    onConnect(target);
+    setBusy(true);
+    const failure = await onConnect(target);
+    setBusy(false);
+    setError(failure);
   }
 
   return (
@@ -63,7 +72,7 @@ function SetupAddressDialogForm({
       description="Type the address shown on your VibeTV screen."
       onOpenChange={onOpenChange}
       open={open}
-      primaryAction={{ busy, label: "Connect", onSelect: submit }}
+      primaryAction={{ busy, label: "Connect", onSelect: () => void submit() }}
       secondaryAction={{
         label: "Cancel",
         onSelect: () => onOpenChange(false),
@@ -86,7 +95,7 @@ function SetupAddressDialogForm({
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              submit();
+              void submit();
             }
           }}
           placeholder={DEVICE_TARGET_PLACEHOLDER}

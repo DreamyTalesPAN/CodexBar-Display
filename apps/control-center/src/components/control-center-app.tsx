@@ -1707,8 +1707,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     selectAndConnectDevice,
   ]);
 
-  const connectManualTarget = useCallback(
-    async (targetOverride: string) => {
+  // Resolves with the VibeTV at that address, or throws the error the customer
+  // must be shown. Connecting is deliberately left to the wizard's connect
+  // sequence: a typed address then gets the same pairing, firmware check and
+  // log as a chosen card, instead of a second connect path of its own.
+  const findManualTarget = useCallback(
+    async (targetOverride: string): Promise<DeviceCandidate> => {
       const setupGeneration = setupGenerationRef.current;
       const searchAttempt = ++deviceSearchAttemptRef.current;
       const searchIsCurrent = () =>
@@ -1716,9 +1720,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         searchAttempt === deviceSearchAttemptRef.current;
       const target = normalizeDeviceTarget(targetOverride);
       setBusyAction("manual-target");
-      setDeviceCandidates([]);
-      setDeviceSearchState("not-found");
-      setLastError(null);
       try {
         const payload = await runCompanion<{ devices?: DeviceCandidate[] }>(
           "/v1/device/search",
@@ -1728,9 +1729,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           },
           { timeoutMs: DEVICE_SEARCH_REQUEST_TIMEOUT_MS },
         );
-        if (!searchIsCurrent()) {
-          return;
-        }
         const candidate = (payload.devices || []).find(
           (entry) =>
             entry.networkMode !== "setup" &&
@@ -1738,37 +1736,33 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             normalizeDeviceTarget(entry.target) === target,
         );
         if (!candidate) {
-          setLastError({
+          throw {
             code: "device_not_found",
             message: "No VibeTV answered at that IP address.",
             nextAction:
               "Check the IP address shown on the VibeTV screen, then try again.",
-          });
-          return;
+          } satisfies ApiError;
         }
-        await selectAndConnectDevice(candidate);
+        return candidate;
       } catch (error) {
-        if (!searchIsCurrent()) {
-          return;
-        }
         const normalized = normalizeCaughtError(
           error,
           "That IP address did not answer as a VibeTV.",
         );
         setLastError(normalized);
-        setDeviceSearchState("not-found");
         addEvent({
           label: "Manual VibeTV connection failed",
           detail: normalized.nextAction,
           tone: "attention",
         });
+        throw normalized;
       } finally {
         if (searchIsCurrent()) {
           setBusyAction(null);
         }
       }
     },
-    [addEvent, runCompanion, selectAndConnectDevice],
+    [addEvent, runCompanion],
   );
 
   const reloadDisplay = useCallback(
@@ -4180,7 +4174,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             .filter((item) => item.value)
             .map((item) => ({ id: item.providerId, label: item.label }))}
           installingTheme={themeInstallStatus?.phase === "installing"}
-          onConnectManualTarget={(target) => void connectManualTarget(target)}
+          onFindManualTarget={findManualTarget}
           onCreateSupportReport={loadSupportDiagnostics}
           onFinished={() => setSetupFinished(true)}
           onDisplayContinue={(selection) =>

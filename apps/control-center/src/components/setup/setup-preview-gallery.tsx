@@ -313,7 +313,13 @@ export function SetupPreviewGallery() {
           <>
             {deviceScreen([])}
             <SetupAddressDialog
-              onConnect={() => goTo("03")}
+              // Only the address of the demo VibeTV succeeds, so the failure
+              // the customer sees for a wrong one is walkable here too.
+              onConnect={async (target) =>
+                target === CANDIDATES[0].target
+                  ? (goTo("03"), null)
+                  : "No VibeTV answered at that IP address. Check the IP address shown on the VibeTV screen, then try again."
+              }
               onOpenChange={setDialogOpen}
               open={dialogOpen}
             />
