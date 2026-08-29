@@ -24,29 +24,38 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
 2. The installed Mac App never asks the customer to download itself during
    normal onboarding. A fresh setup searches the current WiFi for VibeTVs
    before showing setup instructions.
-3. During the initial search, the same full-screen startup gate shows the active
-   search first and an always-visible alternative to enter the IP address shown
-   on the VibeTV screen. If the search finds no VibeTV, it shows `We couldn't
-   find your VibeTV`, followed by the VibeTV WiFi instructions and `Scan WiFi
-   again`. Below those steps, the manual alternative reads `Or enter the IP
-   address shown on your VibeTV screen:`. The Control Center shell and
-   navigation remain hidden. On a later app start, a saved but unavailable
-   VibeTV uses a separate reconnect screen without first-time WiFi instructions.
-   It searches only for the active saved identity and allows the customer to
-   open Control Center without replacing that identity.
+3. Setup is a full-screen wizard whose step is derived from real state, never
+   advanced by a button. Its steps are: a welcome step with no controls that
+   shows the background service, the usage read and the VibeTV search as a
+   running log; choosing a VibeTV from the ones found on this WiFi, with manual
+   IP entry as the quieter alternative; choosing AI providers; choosing the
+   display mode; choosing a theme; and the live screen, which hands the app back
+   on its own. Firmware is checked and, where needed, installed inside the
+   connect step. Every failure is a dialog over the step that caused it, never a
+   screen of its own, and every step carries one Help control offering `Ask AI
+   to fix` and `Create support report`. The Control Center shell and navigation
+   stay hidden for the whole wizard.
 4. An existing healthy setup opens Overview without setup writes or extra
    confirmation. If VibeTV or the Mac App becomes unavailable after Control
-   Center was entered, the current tab and navigation remain visible. Overview
-   offers recovery for the saved VibeTV and only then a secondary action to
-   reset setup for another VibeTV.
-5. Settings, Theme Library, and Updates stay locked until setup is complete for
+   Center was entered, the current tab and navigation remain visible, and
+   Overview reports the saved VibeTV as not reachable rather than presenting
+   stale readings as current. A background service failure is announced in a
+   dialog over the current screen and must not take that screen away. Starting
+   over is a deliberate action in Settings or Support, never something the app
+   does on its own.
+5. Settings, Appearance, and Updates stay locked until setup is complete for
    the first time. A temporary outage in the running app does not lock them
    again or change the active tab.
-6. Setup is complete when the Mac App is running, VibeTV is connected and paired,
-   every enabled AI provider has passed the fresh provider check with a valid
-   display selection, and the first display frame contains real usage data.
-7. Theme Library is additionally locked until theme installs are allowed by the release gate.
-8. Support may stay available because it only creates support reports and shows recent activity, not a setup workflow.
+6. Setup is complete when the background service answers, VibeTV is connected
+   and paired with its firmware brought up to date inside the connect step, at
+   least one switched-on AI provider has passed its check, a display mode is
+   stored wherever the Mac App can store one, a theme is installed, and the
+   first display frame carries real usage data.
+7. Appearance is additionally locked until theme installs are allowed by the release gate.
+8. During setup, help is the Help control on every wizard screen, offering
+   `Ask AI to fix` and `Create support report`. Afterwards Support may stay
+   available because it only creates support reports and shows recent activity,
+   not a setup workflow.
 9. A theme install deep link must not bypass setup gating.
 
 ## Review Checklist
