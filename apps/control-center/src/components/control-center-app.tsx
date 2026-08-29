@@ -4186,16 +4186,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
     }
 
-    if (!initialCompanionCheckComplete) {
-      return (
-        <ControlCenterBootScreen
-          diagnostics={supportDiagnostics}
-          onCreateSupportReport={loadSupportDiagnostics}
-          supportReportBusy={supportReportBusy}
-        />
-      );
-    }
-
     if (setupOwnsScreen) {
       return (
         <SetupWizard

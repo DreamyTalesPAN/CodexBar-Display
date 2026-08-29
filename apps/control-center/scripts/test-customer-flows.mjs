@@ -4561,29 +4561,22 @@ async function testInitialHealthyStatusRaceAvoidsRepair(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "Starting Control Center" }).waitFor({
-    timeout: 10_000,
-  });
-  const bootStatus = page.getByRole("status", {
-    name: "Checking the Mac App and your last connected VibeTV.",
-  });
-  await bootStatus.waitFor({
-    timeout: 10_000,
-  });
+  // The wait for the first companion answer is step 01 of the wizard, not a
+  // screen of its own: it names the jobs it is waiting for instead of one
+  // undifferentiated "checking".
+  const welcome = setupScreen(page, SETUP_WELCOME_SCREEN);
+  await welcome.waitFor({ timeout: 10_000 });
+  await welcome
+    .getByRole("status")
+    .getByText("starting background service")
+    .waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("status").count()) === 1,
-    "Starting Control Center should expose one focused live status",
+    "The first setup step should expose one focused live status",
   );
-  const createReportButton = page.getByRole("button", {
-    name: "Create report",
-  });
-  await createReportButton.waitFor({
-    timeout: 10_000,
-  });
-  assert(
-    (await createReportButton.getAttribute("data-variant")) === "secondary",
-    "Starting Control Center should keep Create report secondary",
-  );
+  await welcome
+    .getByRole("button", { name: "Help" })
+    .waitFor({ timeout: 10_000 });
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
@@ -11049,6 +11042,7 @@ async function assertNoThemeLibraryReleaseDiagnostics(page) {
 // the dialogs it opens are portalled to the body and would otherwise collide
 // (both the device step and its address dialog own a "Connect" button).
 
+const SETUP_WELCOME_SCREEN = "Welcome";
 const SETUP_DEVICE_SCREEN = "Choose your VibeTV";
 const SETUP_PROVIDERS_SCREEN = "Choose AI providers";
 const SETUP_DISPLAY_SCREEN = "Display Mode";
