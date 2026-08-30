@@ -4,8 +4,7 @@
     {
       "name": "control-center",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "cwd": "apps/control-center",
+      "runtimeArgs": ["--prefix", "apps/control-center", "run", "dev"],
       "port": 3000
     }
   ]
