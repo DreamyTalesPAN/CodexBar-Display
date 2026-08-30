@@ -50,16 +50,15 @@ describe("SetupProviderRow", () => {
 
       expect(html).toContain("Sign in to Claude Code");
       expect(html).toContain("lucide-chevron-right");
-      expect(html).not.toContain('role="switch"');
     }
   });
 
-  it("waits without a second button once sign-in was pressed", () => {
+  it("waits without a second action once sign-in was pressed", () => {
     const html = render({ health: "auth_required", signingIn: true });
 
     expect(html).toContain("Waiting for sign-in…");
     expect(html).toContain("lucide-loader-circle");
-    expect(html).not.toContain("<button");
+    expect(html).not.toContain('data-slot="button"');
   });
 
   it("sends the customer to macOS for a missing permission", () => {
@@ -85,19 +84,41 @@ describe("SetupProviderRow", () => {
     }
   });
 
-  it("dims a provider whose account has no usage and offers no control", () => {
+  it("dims a provider whose account has no usage and offers no recovery", () => {
     const html = render({ health: "no_usage_available" });
 
     expect(html).toContain("No usage data on this account");
     expect(html).toMatch(/data-slot="item-title"[^>]*opacity-50/);
-    expect(html).not.toContain("<button");
+    expect(html).not.toContain('data-slot="button"');
   });
 
-  it("dims a provider in a service outage and offers no control", () => {
+  it("dims a provider in a service outage and offers no recovery", () => {
     const html = render({ health: "service_outage" });
 
     expect(html).toContain("Service outage — try again later");
     expect(html).toMatch(/data-slot="item-title"[^>]*opacity-50/);
-    expect(html).not.toContain("<button");
+    expect(html).not.toContain('data-slot="button"');
+  });
+
+  // The health decides what help to offer, never whether the provider may be
+  // switched off. A provider the customer cannot switch off is one they cannot
+  // keep off the display.
+  it("always offers the switch, whatever the provider reports", () => {
+    for (const health of [
+      "auth_required",
+      "setup_required",
+      "permission_required",
+      "timeout",
+      "no_usage_available",
+      "service_outage",
+      "unavailable",
+      "config_error",
+      "engine_error",
+    ]) {
+      expect(render({ health })).toContain('role="switch"');
+      expect(render({ health, enabled: false })).toContain(
+        'aria-checked="false"',
+      );
+    }
   });
 });

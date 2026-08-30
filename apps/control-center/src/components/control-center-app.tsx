@@ -93,6 +93,7 @@ import { MacAppDownloadScreen } from "./setup/mac-app-download-screen";
 import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
+import { setupProviderCanDisplay } from "./setup/setup-providers-screen";
 import { deriveSetupStep } from "./setup/setup-step";
 import {
   SetupUsageDialog,
@@ -3815,8 +3816,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
 
   const setupProviders = (providerPreferences || []).filter(isProviderItem);
-  const enabledProviderIds = setupProviders
-    .filter((item) => item.value)
+  // The display step may only offer providers that can actually show something.
+  // Filtering on "switched on" alone let a broken provider into the rotation
+  // and into the Manual list, where pinning to it produced a blank device.
+  const displayableProviders = setupProviders.filter(setupProviderCanDisplay);
+  const enabledProviderIds = displayableProviders
     .map((item) => item.providerId)
     .filter((id): id is string => Boolean(id));
   const setupPreviews = displayPreviewsFor(usage, enabledProviderIds);
@@ -3925,9 +3929,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           displayMode={providerDisplay?.mode ?? "automatic"}
           displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
           firmwareProgress={firmwareUpdateStatus?.progress}
-        displayProviders={setupProviders
-            .filter((item) => item.value)
-            .map((item) => ({ id: item.providerId, label: item.label }))}
+          displayProviders={displayableProviders.map((item) => ({
+            id: item.providerId,
+            label: item.label,
+          }))}
           installingTheme={themeInstallStatus?.phase === "installing"}
           onFindManualTarget={findManualTarget}
           onCreateSupportReport={loadSupportDiagnostics}

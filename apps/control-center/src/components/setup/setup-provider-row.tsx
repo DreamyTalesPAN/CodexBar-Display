@@ -93,10 +93,7 @@ export function SetupProviderRow({
       </ItemContent>
       <ItemActions>
         {variant === "checking" ? (
-          <>
-            <Spinner />
-            <Switch aria-label={label} checked={enabled} disabled />
-          </>
+          <Spinner />
         ) : variant === "sign_in" ? (
           <>
             <SetupProviderRowMessage>Sign in to {label}</SetupProviderRowMessage>
@@ -141,13 +138,19 @@ export function SetupProviderRow({
           <SetupProviderRowMessage>
             Service outage — try again later
           </SetupProviderRowMessage>
-        ) : (
-          <Switch
-            aria-label={label}
-            checked={enabled}
-            onCheckedChange={onToggle}
-          />
-        )}
+        ) : null}
+        {/*
+          Outside the branches on purpose: the health decides what help to
+          offer, never whether the customer may switch the provider off.
+          Turning one off is always valid and always theirs, and a provider
+          they cannot switch off is one they cannot keep off the display.
+        */}
+        <Switch
+          aria-label={label}
+          checked={enabled}
+          disabled={variant === "checking"}
+          onCheckedChange={onToggle}
+        />
       </ItemActions>
     </Item>
   );

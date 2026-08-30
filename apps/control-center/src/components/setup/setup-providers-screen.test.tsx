@@ -4,6 +4,7 @@ import type { PreferenceHealthState } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import {
   SetupProvidersScreen,
+  setupProviderCanDisplay,
   setupProviderMatchesQuery,
 } from "./setup-providers-screen";
 
@@ -114,5 +115,41 @@ describe("SetupProvidersScreen", () => {
 
     expect(html).toContain("Back");
     expect(html).toContain("Help");
+  });
+
+  // A provider that cannot produce a reading must not reach the display step:
+  // pinning VibeTV to it would leave the screen permanently blank.
+  it("only lets providers that can show something onto the display step", () => {
+    expect(setupProviderCanDisplay(claude)).toBe(true);
+    expect(
+      setupProviderCanDisplay(
+        provider({ health: "stale", label: "Codex", providerId: "codex" }),
+      ),
+    ).toBe(true);
+    expect(
+      setupProviderCanDisplay(
+        provider({
+          health: "healthy",
+          label: "Codex",
+          providerId: "codex",
+          value: false,
+        }),
+      ),
+    ).toBe(false);
+    for (const health of [
+      "auth_required",
+      "setup_required",
+      "permission_required",
+      "timeout",
+      "no_usage_available",
+      "service_outage",
+      "checking",
+    ] as PreferenceHealthState[]) {
+      expect(
+        setupProviderCanDisplay(
+          provider({ health, label: "Codex", providerId: "codex" }),
+        ),
+      ).toBe(false);
+    }
   });
 });

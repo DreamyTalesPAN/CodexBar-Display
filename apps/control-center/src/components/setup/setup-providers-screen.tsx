@@ -146,6 +146,21 @@ export function setupProvidersCanContinue(providers: ProviderItem[]): boolean {
   );
 }
 
+/**
+ * Whether this provider can actually put a reading on the device. "stale"
+ * counts: it produced a real one before and the saved value is still what the
+ * customer sees. Everything else -- waiting for a sign-in, refused a macOS
+ * permission, an account with no usage, an outage -- has nothing to show, so
+ * offering it on the display step would let the customer pin VibeTV to a
+ * permanently blank screen.
+ */
+export function setupProviderCanDisplay(provider: ProviderItem): boolean {
+  return (
+    provider.value &&
+    (provider.health.state === "healthy" || provider.health.state === "stale")
+  );
+}
+
 export function setupProviderMatchesQuery(
   provider: ProviderItem,
   query: string,
