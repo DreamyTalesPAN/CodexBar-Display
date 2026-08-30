@@ -16,7 +16,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
 import { openCodexBarApp } from "./control-center-runtime";
 import type {
   ApiError,
@@ -45,7 +44,6 @@ export type ProviderPickerProps = {
     item: PreferenceDescriptor,
     value: boolean,
   ) => void | Promise<void>;
-  setupMode?: boolean;
 };
 
 export type ProviderItem = PreferenceDescriptor & {
@@ -67,7 +65,6 @@ export function ProviderPicker({
   onDisplayChange,
   onDisplayDraftChange,
   onPreferenceChange,
-  setupMode = false,
 }: ProviderPickerProps) {
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
@@ -105,11 +102,10 @@ export function ProviderPicker({
   // Self-heal orphaned state: a provider can end up enabled (health-checked,
   // possibly healthy) while never making it into the Automatic display
   // selection, e.g. when the enable write and the display write raced, or
-  // the display write failed after the enable write already succeeded. A
-  // customer should never be stuck staring at a disabled Finish setup
-  // button with no visible reason and no action that fixes it just by
-  // waiting; reconcile the selection to include every enabled provider
-  // automatically instead of requiring a manual toggle. Guarded by a
+  // the display write failed after the enable write already succeeded. That
+  // leaves a provider the customer switched on that VibeTV never shows, with
+  // nothing on screen saying why; reconcile the selection to include every
+  // enabled provider instead of requiring a manual toggle. Guarded by a
   // per-provider "already attempted" set so a failed reconcile write does
   // not retry forever in a tight loop.
   const attemptedReconcileIdsRef = useRef<Set<string>>(new Set());
@@ -189,19 +185,6 @@ export function ProviderPicker({
       return;
     }
     if (nextMode === "fixed") {
-      if (setupMode) {
-        // Setup has no separate "save the fixed choice" step: switching to
-        // Always show one must immediately leave exactly one provider
-        // selected so the customer can never land on the two-selected
-        // error state that blocks Finish setup.
-        onDisplayDraftChange?.(false);
-        setDraftMode(null);
-        const seed = display?.providerIds[0] || enabledProviders[0]?.providerId;
-        if (seed) {
-          void onDisplayChange({ mode: "fixed", providerIds: [seed] }, seed);
-        }
-        return;
-      }
       onDisplayDraftChange?.(true);
       setDraftMode("fixed");
       return;
@@ -209,28 +192,6 @@ export function ProviderPicker({
     if (display?.mode === "automatic") {
       onDisplayDraftChange?.(false);
       setDraftMode(null);
-      return;
-    }
-    if (setupMode) {
-      // Setup already wrote Always show one immediately (no draft), so
-      // Automatic must restore the pool that was active before that
-      // switch, not just seed a single provider.
-      onDisplayDraftChange?.(false);
-      setDraftMode(null);
-      const restoredProviderIds =
-        lastAutomaticProviderIdsRef.current?.filter((providerId) =>
-          availableProviderIds.has(providerId),
-        ) || [];
-      const providerIds =
-        restoredProviderIds.length > 0
-          ? restoredProviderIds
-          : [display?.providerIds[0] || enabledProviders[0]?.providerId].filter(
-              (id): id is string => Boolean(id),
-            );
-      if (providerIds.length === 0) {
-        return;
-      }
-      void onDisplayChange({ mode: "automatic", providerIds }, providerIds[0]);
       return;
     }
     const seed = display?.providerIds[0] || enabledProviders[0]?.providerId;
@@ -264,80 +225,8 @@ export function ProviderPicker({
     void onDisplayChange({ mode: "automatic", providerIds }, item.providerId);
   }
 
-  // Setup uses a single "I use this" toggle instead of separate Enabled and
-  // Include controls: a customer setting up VibeTV for the first time has no
-  // use for "collect usage but never show it" yet. Turning a provider on
-  // enables it and includes it in Automatic in one step; turning it off does
-  // the reverse. Settings keeps the two controls separate for that later,
-  // more advanced choice.
-  //
-  // Always show one is exclusive: turning a provider on here always turns
-  // the previously shown provider off in the same action, so the customer
-  // can never end up with two providers marked on (the state that used to
-  // block Finish setup with no visible explanation). Turning the current
-  // provider off directly is intentionally not offered in fixed mode;
-  // choosing a replacement is how the customer changes their mind.
-  async function toggleProviderForSetup(
-    item: ProviderItem,
-    on: boolean,
-    now: number,
-  ) {
-    if (!display) {
-      return;
-    }
-    if (on) {
-      if (mode === "fixed") {
-        const previousProviderId = setupFixedReplacedProviderId(
-          selected,
-          item.providerId,
-        );
-        const previousItem = previousProviderId
-          ? allProviders.find(
-              (candidate) => candidate.providerId === previousProviderId,
-            )
-          : undefined;
-        onDisplayDraftChange?.(false);
-        setDraftMode(null);
-        void onDisplayChange(
-          { mode: "fixed", providerIds: [item.providerId] },
-          item.providerId,
-        );
-        await maybeEnableProvider(item, now);
-        if (previousItem) {
-          void onPreferenceChange(previousItem, false);
-        }
-        return;
-      }
-      await maybeEnableProvider(item, now);
-      onDisplayDraftChange?.(false);
-      setDraftMode(null);
-      const nextDisplay = setupToggleOnDisplay(mode, selected, item.providerId);
-      if (nextDisplay) {
-        void onDisplayChange(nextDisplay, item.providerId);
-      }
-      return;
-    }
-    const nextDisplay = setupToggleOffDisplay(mode, selected, item.providerId);
-    if (nextDisplay) {
-      await onDisplayChange(nextDisplay, item.providerId);
-    }
-    void onPreferenceChange(item, false);
-  }
-
-  // Skip the round trip through the server entirely when a provider is
-  // already known-good: the backend always resets health to "checking" and
-  // starts a fresh probe on every preference write, so re-enabling an
-  // already-verified provider (e.g. after switching Always show one back
-  // and forth) must not repeatedly re-check something that already passed.
-  async function maybeEnableProvider(item: ProviderItem, now: number) {
-    if (providerEnableIsRedundant(item, now)) {
-      return;
-    }
-    await onPreferenceChange(item, true);
-  }
-
   return (
-    <Card className={cn(setupMode ? "border-border" : "border-0")}>
+    <Card className="border-0">
       <CardHeader>
         <CardTitle>AI providers</CardTitle>
         <CardDescription>
@@ -469,7 +358,7 @@ export function ProviderPicker({
                         {item.health.nextAction}
                       </p>
                     ) : null}
-                    {!setupMode && disableLocked ? (
+                    {disableLocked ? (
                       <p className="mt-2 text-xs text-muted-foreground">
                         Remove this provider from the display selection before
                         turning it off.
@@ -478,100 +367,57 @@ export function ProviderPicker({
                   </div>
 
                   <div className="grid min-w-44 gap-3 sm:justify-items-end">
-                    {setupMode ? (
-                      // In Automatic, "using this" means enabled (it always
-                      // stays included). In Always show one, "using this"
-                      // must mean this exact provider is the one currently
-                      // shown, not merely enabled: a provider can stay
-                      // enabled in the background after being replaced, and
-                      // showing its switch as on would let two providers
-                      // look active at once.
-                      (() => {
-                        const usingThis =
-                          mode === "fixed" ? isSelected : item.value;
-                        return (
-                          <label className="flex min-h-11 items-center justify-between gap-3 text-sm sm:justify-end">
-                            <span>{usingThis ? "Using this" : "Not used"}</span>
-                            {pendingPreference || pendingDisplay ? (
-                              <Spinner aria-label={`Updating ${item.label}`} />
-                            ) : null}
-                            <Switch
-                              aria-label={`${usingThis ? "Stop using" : "Use"} ${item.label}`}
-                              checked={usingThis}
-                              disabled={
-                                pendingPreference ||
-                                pendingDisplay ||
-                                displayControlsDisabled ||
-                                (mode === "fixed"
-                                  ? usingThis
-                                  : item.value && enabledProviders.length === 1)
-                              }
-                              onCheckedChange={(value) =>
-                                void toggleProviderForSetup(
-                                  item,
-                                  value,
-                                  Date.now(),
-                                )
-                              }
-                            />
-                          </label>
-                        );
-                      })()
-                    ) : (
-                      <label className="flex min-h-11 items-center justify-between gap-3 text-sm sm:justify-end">
-                        <span>
-                          {mode === "fixed" ? "Always show" : "Include"}
+                    <label className="flex min-h-11 items-center justify-between gap-3 text-sm sm:justify-end">
+                      <span>
+                        {mode === "fixed" ? "Always show" : "Include"}
+                      </span>
+                      {pendingDisplay ? (
+                        <span
+                          aria-label={`Saving display choice for ${item.label}`}
+                          role="status"
+                        >
+                          <Spinner />
                         </span>
-                        {pendingDisplay ? (
-                          <span
-                            aria-label={`Saving display choice for ${item.label}`}
-                            role="status"
-                          >
-                            <Spinner />
-                          </span>
-                        ) : mode === "fixed" ? (
-                          <input
-                            aria-label={`Always show ${item.label}`}
-                            checked={isSelected && display?.mode === "fixed"}
-                            className="size-5 accent-primary"
-                            disabled={!item.value || displayControlsDisabled}
-                            name="fixed-provider"
-                            onChange={() => chooseProvider(item, true)}
-                            type="radio"
-                            value={item.providerId}
-                          />
-                        ) : (
-                          <Checkbox
-                            aria-label={`Include ${item.label} in Automatic`}
-                            checked={isSelected}
-                            disabled={
-                              !item.value ||
-                              displayControlsDisabled ||
-                              (isSelected && selected.size === 1)
-                            }
-                            onCheckedChange={(checked) =>
-                              chooseProvider(item, checked === true)
-                            }
-                          />
-                        )}
-                      </label>
-                    )}
-                    {setupMode ? null : (
-                      <label className="flex min-h-11 items-center justify-between gap-3 text-sm sm:justify-end">
-                        <span>{item.value ? "Enabled" : "Disabled"}</span>
-                        {pendingPreference ? (
-                          <Spinner aria-label={`Updating ${item.label}`} />
-                        ) : null}
-                        <Switch
-                          aria-label={`${item.value ? "Disable" : "Enable"} ${item.label}`}
-                          checked={item.value}
-                          disabled={disableLocked || pendingPreference}
-                          onCheckedChange={(value) =>
-                            void onPreferenceChange(item, value)
+                      ) : mode === "fixed" ? (
+                        <input
+                          aria-label={`Always show ${item.label}`}
+                          checked={isSelected && display?.mode === "fixed"}
+                          className="size-5 accent-primary"
+                          disabled={!item.value || displayControlsDisabled}
+                          name="fixed-provider"
+                          onChange={() => chooseProvider(item, true)}
+                          type="radio"
+                          value={item.providerId}
+                        />
+                      ) : (
+                        <Checkbox
+                          aria-label={`Include ${item.label} in Automatic`}
+                          checked={isSelected}
+                          disabled={
+                            !item.value ||
+                            displayControlsDisabled ||
+                            (isSelected && selected.size === 1)
+                          }
+                          onCheckedChange={(checked) =>
+                            chooseProvider(item, checked === true)
                           }
                         />
-                      </label>
-                    )}
+                      )}
+                    </label>
+                    <label className="flex min-h-11 items-center justify-between gap-3 text-sm sm:justify-end">
+                      <span>{item.value ? "Enabled" : "Disabled"}</span>
+                      {pendingPreference ? (
+                        <Spinner aria-label={`Updating ${item.label}`} />
+                      ) : null}
+                      <Switch
+                        aria-label={`${item.value ? "Disable" : "Enable"} ${item.label}`}
+                        checked={item.value}
+                        disabled={disableLocked || pendingPreference}
+                        onCheckedChange={(value) =>
+                          void onPreferenceChange(item, value)
+                        }
+                      />
+                    </label>
                     {!pendingCheck &&
                     (item.health.recoveryAction === "open_provider_setup" ||
                       item.health.recoveryAction === "repair_usage_service") ? (
@@ -622,76 +468,6 @@ export function ProviderPicker({
       </CardContent>
     </Card>
   );
-}
-
-// Pure display-selection helpers for the setup-mode combined toggle. Kept
-// outside the component so they can be unit tested directly instead of only
-// through rendered markup.
-export function setupToggleOnDisplay(
-  mode: "automatic" | "fixed",
-  selected: Set<string>,
-  providerId: string,
-): Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null {
-  if (mode === "fixed") {
-    return { mode: "fixed", providerIds: [providerId] };
-  }
-  if (selected.has(providerId)) {
-    return null;
-  }
-  return { mode: "automatic", providerIds: [...selected, providerId] };
-}
-
-export function setupToggleOffDisplay(
-  mode: "automatic" | "fixed",
-  selected: Set<string>,
-  providerId: string,
-): Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null {
-  if (!selected.has(providerId)) {
-    return null;
-  }
-  const providerIds = [...selected].filter((id) => id !== providerId);
-  if (providerIds.length === 0) {
-    // Never fully empty the display selection here: the combined switch is
-    // already disabled for the last enabled provider, so this is a defensive
-    // no-op rather than a state a customer can normally reach.
-    return null;
-  }
-  return { mode, providerIds };
-}
-
-// Which currently-selected provider must be turned off when switching to a
-// different provider in Always show one. Returns null when there is nothing
-// to turn off (no other provider was selected).
-export function setupFixedReplacedProviderId(
-  selected: Set<string>,
-  nextProviderId: string,
-): string | null {
-  const previous = [...selected].find((id) => id !== nextProviderId);
-  return previous ?? null;
-}
-
-// A provider is already known-good when it is enabled, healthy, and its
-// verification is still fresh: re-sending the enable write in that state
-// would only make the server discard the passing result and start another
-// probe for nothing.
-export function providerEnableIsRedundant(
-  item: Pick<PreferenceDescriptor, "value" | "health">,
-  now: number,
-): boolean {
-  return Boolean(
-    item.value &&
-    item.health?.state === "healthy" &&
-    providerVerificationIsFresh(item.health.verifiedAt, now),
-  );
-}
-
-function providerVerificationIsFresh(
-  verifiedAt: string | undefined,
-  now: number,
-): boolean {
-  const verified = Date.parse(verifiedAt || "");
-  const age = now - verified;
-  return Number.isFinite(verified) && age >= 0 && age <= 5 * 60 * 1000;
 }
 
 export function providerMatchesQuery(
