@@ -4964,6 +4964,16 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 		)
 		return
 	}
+	if s.themeInstallInFlight() {
+		writeError(
+			w,
+			http.StatusConflict,
+			"theme_install_in_progress",
+			"Theme install is still running.",
+			"Wait for the theme install to finish, then start the update again.",
+		)
+		return
+	}
 	cfg, err := s.config()
 	if err != nil {
 		writeInternalError(w, err)

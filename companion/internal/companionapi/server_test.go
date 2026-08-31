@@ -9836,6 +9836,32 @@ func TestFirmwareUpdateRejectsUnsupportedCableTransferBeforePairing(t *testing.T
 	}
 }
 
+func TestFirmwareUpdateInstallRefusesWhileThemeInstallIsActive(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	if refusal := server.tryStartThemeInstall(); refusal != "" {
+		t.Fatalf("start theme install: %s", refusal)
+	}
+	defer server.finishThemeInstall()
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("firmware update must wait for active theme install: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "theme_install_in_progress" {
+		t.Fatalf("error code=%q want theme_install_in_progress", response.Error.Code)
+	}
+	if _, active := server.activeFirmwareUpdateJob(); active {
+		t.Fatal("rejected firmware update created a job")
+	}
+}
+
 func TestFirmwareUpdateCableRequiresVerifiedRender(t *testing.T) {
 	cfg := runtimeconfig.Config{
 		ConnectionMode: "cable",
