@@ -106,7 +106,7 @@ simulation against the Virtual VibeTV; it runs in CI and needs no hardware.
 
 - The connected VibeTV is not a routine test target.
 - Do not perform firmware updates, theme-pack installs, asset uploads, `POST /v1/themes/install`, `codexbar-display theme-pack install`, `POST /assets`, `POST /theme/active`, `POST /frame`, `POST /reset-wifi`, or similar writes to a device IP without current, explicit user approval for that exact hardware test.
-- Read-only checks are allowed: `GET /hello`, `GET /health`, `GET /assets`, Companion `GET /v1/status`, `GET /v1/device`, and `POST /v1/device/discover`.
+- Read-only checks are allowed: `GET /hello`, `GET /health`, `GET /assets`, Companion `GET /v1/status`, `GET /v1/device`, and `POST /v1/device/search`. `POST /v1/device/search` only scans; `POST /v1/device/discover` is NOT read-only -- it persists the device target -- and must never be used as a check.
 - Before a hardware write test, clearly state in the chat which device and command are involved, what the risk is, and that the user wants to test now.
 - After a failed hardware write test, do not retry without new explicit approval.
 - Tagging a release, merging, or pushing `main` is also governed by the Merge, Release, and Production Guardrails above.
