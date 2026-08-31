@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   connectionModeChoiceStatus,
+  statusConfirmsSubmittedWiFiChoice,
   mergeDeviceInfo,
 } from "./control-center-app";
 import { deviceAwaitsProviderSetup } from "./control-center-types";
@@ -107,6 +108,29 @@ describe("connection mode choice status", () => {
         device: base,
       }),
     ).toEqual({ required: false, resolved: true });
+  });
+
+  it("finishes a submitted WiFi choice only after active WiFi confirmation", () => {
+    expect(
+      statusConfirmsSubmittedWiFiChoice({
+        connectionModeChoiceRequired: false,
+        device: {
+          ...base,
+          active: true,
+          target: "http://192.168.1.42",
+        },
+      }),
+    ).toBe(true);
+    expect(
+      statusConfirmsSubmittedWiFiChoice({
+        connectionModeChoiceRequired: false,
+        device: {
+          ...base,
+          active: true,
+          target: "cable://vibetv",
+        },
+      }),
+    ).toBe(false);
   });
 });
 

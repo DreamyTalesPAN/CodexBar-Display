@@ -267,6 +267,7 @@ String bootID;
 String bootResetReasonJSON;
 uint32_t bootResetCounter = 0;
 CableTransferState cableTransfer;
+bool cableScreensaverCleanupPending = false;
 
 void addCorsHeaders();
 void resetWifiReconnectState();
@@ -3103,7 +3104,11 @@ void cleanupCableThemeSlot(
   }
   if (activation == CableTransferActivation::kScreensaver &&
       (standbyState.active || screensaverPreviewState.showing)) {
+    cableScreensaverCleanupPending = true;
     return;
+  }
+  if (activation == CableTransferActivation::kScreensaver) {
+    cableScreensaverCleanupPending = false;
   }
   String raw;
   String error;
@@ -3378,7 +3383,6 @@ void maintainScreensaverPreview() {
       restoreScreensaverPreviewLiveTheme();
     }
   } else if (action == screensaver_preview::Action::Restore) {
-    Serial.printf("screensaver_preview restored path=%s\n", screensaverPreviewLivePath.c_str());
     if (blockerOwnsDisplay) {
       standbyLiveThemePath = screensaverPreviewLivePath;
       screensaverPreviewLivePath = "";
@@ -4330,6 +4334,14 @@ void loop() {
 
   maintainStandby();
   maintainScreensaverPreview();
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+  if (cableScreensaverCleanupPending && !standbyState.active &&
+      !screensaverPreviewState.showing) {
+    cleanupCableThemeSlot(
+        String(deviceSettings.standby.screensaverPath),
+        CableTransferActivation::kScreensaver);
+  }
+#endif
 
   if (!waitStatusRendered &&
       codexbar_display::app::HasFrame(runtimeCtx) &&

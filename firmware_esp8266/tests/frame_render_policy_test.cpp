@@ -202,8 +202,26 @@ bool testCableThemeTransferCleansOnlyAfterActivation(const std::string& source) 
           cleanup.find("CompileThemeSpec(raw.c_str(), doc, scene)") != std::string::npos &&
           cleanup.find("CompiledThemeSpecReferencesAsset(") != std::string::npos &&
           cleanup.find("standbyState.active || screensaverPreviewState.showing") != std::string::npos &&
+          cleanup.find("cableScreensaverCleanupPending = true") != std::string::npos &&
           cleanup.find("LittleFS.remove(obsoletePath)") != std::string::npos,
       "Cable theme cleanup must run after successful slot activation and before completion");
+}
+
+bool testDeferredCableScreensaverCleanupRunsAfterRenderRelease(const std::string& source) {
+  const std::size_t loopStart = source.find("void loop()");
+  const std::size_t standby = source.find("maintainStandby();", loopStart);
+  const std::size_t preview = source.find("maintainScreensaverPreview();", standby);
+  const std::size_t pending = source.find("if (cableScreensaverCleanupPending", preview);
+  const std::size_t activeGuard = source.find("!standbyState.active", pending);
+  const std::size_t previewGuard = source.find("!screensaverPreviewState.showing", activeGuard);
+  const std::size_t cleanup = source.find("cleanupCableThemeSlot(", previewGuard);
+  return expect(
+      loopStart != std::string::npos && standby != std::string::npos &&
+          preview != std::string::npos && pending != std::string::npos &&
+          activeGuard != std::string::npos && previewGuard != std::string::npos &&
+          cleanup != std::string::npos && standby < preview && preview < pending &&
+          pending < activeGuard && activeGuard < previewGuard && previewGuard < cleanup,
+      "deferred Cable screensaver cleanup must wait for standby and preview to release rendering");
 }
 
 bool testHelloAdvertisesEscapedUsageWindowCapacity(const std::string& source) {
@@ -468,6 +486,7 @@ int main(int argc, char** argv) {
       !testSetupSizesSerialRxBufferForFrameContract(source) ||
       !testCableFirmwareTransferAcknowledgesBeforeImmediateRestart(source) ||
       !testCableThemeTransferCleansOnlyAfterActivation(source) ||
+      !testDeferredCableScreensaverCleanupRunsAfterRenderRelease(source) ||
       !testHelloAdvertisesEscapedUsageWindowCapacity(source) ||
       !testSharedSerialHelloAdvertisesStandby(source) ||
       !testAssetDeleteProtectsStandbyLiveTheme(source) ||
