@@ -6428,6 +6428,64 @@ func TestRunCycleFromCollectorWaitsForFirstCollectionBeforeNoProviders(t *testin
 	}
 }
 
+func TestRunCycleFromCollectorKeepsExpiredSnapshotOffWireWhileFirstCollectionWarms(t *testing.T) {
+	prepareFastTestEnv(t)
+	t.Setenv("CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE", "168h")
+
+	now := time.Date(2026, 8, 31, 9, 15, 0, 0, time.UTC)
+	collectedAt := now.Add(-defaultProviderMaxAge - time.Second)
+	lastGood := testParsedFrame("codex", 8, 0, 3600).Frame
+	state := &runtimeState{
+		selector:    codexbar.NewProviderSelector(),
+		lastGood:    lastGood,
+		lastGoodAt:  collectedAt,
+		hasLastGood: true,
+	}
+	collector := &providerCollector{
+		now:                 func() time.Time { return now },
+		logf:                func(string, ...any) {},
+		order:               []string{"codex"},
+		snapshotMaxAge:      defaultProviderMaxAge,
+		warmupUntil:         now.Add(time.Minute),
+		firstCollectStarted: true,
+		providers: map[string]providerSnapshot{
+			"codex": {
+				Provider:  "codex",
+				Source:    "codexbar-dashboard",
+				Collected: collectedAt,
+				Frame:     lastGood,
+			},
+		},
+	}
+
+	sent := false
+	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
+		now:         func() time.Time { return now },
+		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+		sendLine: func(string, []byte) error {
+			sent = true
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("warming restart must keep the existing display frame, got %v", err)
+	}
+	if sent {
+		t.Fatal("warming restart replaced the visible last-good frame with unavailable")
+	}
+}
+
+func TestCollectorWarmupOutlastsCodexBarCommandAndDashboardRecovery(t *testing.T) {
+	t.Setenv(collectorWarmupEnvVar, "")
+	t.Setenv("CODEXBAR_DISPLAY_TIMEOUT_SECS", "")
+
+	wantMinimum := codexbar.CommandTimeout() + 2*time.Minute
+	if got := collectorWarmupMaxAge(); got < wantMinimum {
+		t.Fatalf("collector warm-up=%s, want at least %s", got, wantMinimum)
+	}
+}
+
 // Past the warm-up bound a collection that never completed reports its own
 // failure kind instead of flattening into no-providers: a Mac whose usage
 // engine cannot be read is not a Mac without providers.

@@ -1784,6 +1784,16 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 		fmt.Sprintf("snapshot_max_age=%s", collector.snapshotMaxAge),
 		"collector",
 	)
+	first := collector.firstCollectState(now)
+	if first.bounded && !first.settled && (first.warming || !first.started) &&
+		(result.failureKind == runtimeErrorNoProviders || !result.usageFresh) {
+		// A restart may load a snapshot that expires while CodexBar's first
+		// complete collection is still running. Keep the already visible device
+		// frame until that bounded collection answers instead of briefly replacing
+		// every usage row with unavailable.
+		deps.logf("runtime event=usage-waiting port=%s reason=collector-warming\n", publicDeviceTarget(port))
+		return nil
+	}
 
 	// Before the first collection since runtime start completes, a no-providers
 	// verdict is warm-up, not an answer about this Mac: the collector simply
@@ -1795,15 +1805,7 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 	// and keeps the immediate no-providers verdict: the hosted guest matrix
 	// greps exactly that code from a provider-less one-shot run.
 	if result.failureKind == runtimeErrorNoProviders && !state.hasLastGood {
-		if first := collector.firstCollectState(now); first.bounded && !first.settled {
-			if first.warming || !first.started {
-				// Warm-up, or the device gate has not let the collector ask
-				// CodexBar even once (pairing can happen long after runtime
-				// start; the next tick or wake starts the collection and
-				// re-anchors the window). Neither is an answer about this Mac.
-				deps.logf("runtime event=usage-waiting port=%s reason=collector-warming\n", publicDeviceTarget(port))
-				return nil
-			}
+		if first.bounded && !first.settled {
 			fetchErr := first.fetchErr
 			failureKind := runtimeErrorKindFromFetchErr(fetchErr)
 			if fetchErr == nil {
@@ -2271,10 +2273,10 @@ func providerSnapshotMaxAge() time.Duration {
 func collectorWarmupMaxAge() time.Duration {
 	// Bound the warm-up window in which a cycle waits for the first collection
 	// instead of settling on a provider verdict. The bound must outlast the
-	// synchronous first-run provider detection (a ~90s-4min probe holds the
-	// config bootstrap, and the dashboard serve starts only after it), or a
-	// fresh Mac reports a fabricated collection error mid-setup.
-	const fallback = 5 * time.Minute
+	// five-minute CodexBar command budget plus the observed dashboard recovery
+	// after that command releases the config bootstrap. A definitive answer
+	// still ends warm-up immediately.
+	const fallback = 7 * time.Minute
 	raw := strings.TrimSpace(os.Getenv(collectorWarmupEnvVar))
 	if raw == "" {
 		return fallback
