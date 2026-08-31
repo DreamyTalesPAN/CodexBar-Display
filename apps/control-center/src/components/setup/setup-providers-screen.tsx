@@ -92,13 +92,16 @@ export function SetupProvidersScreen({
               const providerId = provider.providerId;
               setSigningInIds((ids) => [...ids, providerId]);
               waitTimers.current.push(
-                setTimeout(
-                  () =>
-                    setSigningInIds((ids) =>
-                      ids.filter((id) => id !== providerId),
-                    ),
-                  SIGN_IN_WAIT_MS,
-                ),
+                setTimeout(() => {
+                  setSigningInIds((ids) =>
+                    ids.filter((id) => id !== providerId),
+                  );
+                  // The companion is still holding the failed check that sent
+                  // the customer to sign in, and it holds it for five minutes.
+                  // Coming back without asking again left them looking at the
+                  // old answer with Continue closed.
+                  onCheckAgain(provider);
+                }, SIGN_IN_WAIT_MS),
               );
               onRecover(provider);
             }}

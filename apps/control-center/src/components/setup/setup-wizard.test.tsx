@@ -53,6 +53,7 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     displayFrame: null,
     displayMode: "automatic",
     displayProviderId: null,
+    displaySavePending: false,
     displayProviders: [{ id: "codex", label: "Codex" }],
     installingTheme: false,
     onCreateSupportReport: vi.fn(),
@@ -147,6 +148,25 @@ describe("SetupWizard: going back", () => {
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     });
 
+    expect(shownStep()).toBe("Choose your theme");
+  });
+
+  // The display choice is written optimistically, and the derived step reads
+  // that as done. Moving on for it would put the customer on the theme step --
+  // picking, even installing -- on a write that can still roll back.
+  it("holds the display step while its save is in flight", () => {
+    const { rerender } = render(
+      <SetupWizard
+        {...baseProps({ step: "theme", displaySavePending: true })}
+      />,
+    );
+    expect(shownStep()).toBe("Display Mode");
+
+    rerender(
+      <SetupWizard
+        {...baseProps({ step: "theme", displaySavePending: false })}
+      />,
+    );
     expect(shownStep()).toBe("Choose your theme");
   });
 

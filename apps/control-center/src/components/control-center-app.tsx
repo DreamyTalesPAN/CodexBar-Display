@@ -4043,6 +4043,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           providerError={providerDisplayError || providerPreferencesError}
           onSearchDevices={() => void searchAndConnect()}
           onUpdateMacApp={checkForMacAppUpdate}
+          displaySavePending={pendingProviderDisplayId !== null}
           onSelectTheme={(theme) => setSelectedThemeId(theme.id)}
           providers={setupProviders}
           selectedThemeId={selectedThemeId}

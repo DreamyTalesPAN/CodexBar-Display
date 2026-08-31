@@ -55,6 +55,8 @@ export type SetupWizardProps = {
   displayMode: ProviderDisplaySelection["mode"];
   displayProviderId: string | null;
   displayProviders: SetupDisplayModeProvider[];
+  /** A display choice is being written; its step has not finished yet. */
+  displaySavePending: boolean;
   /** Percent of the running firmware install, for the frozen log line. */
   firmwareProgress?: number;
   installingTheme: boolean;
@@ -147,9 +149,18 @@ export function SetupWizard(props: SetupWizardProps) {
   // reset ("idle") releases the step.
   const connectSettled =
     connect.state.phase === "idle" || connect.state.phase === "done";
-  const step = connectSettled
+  const derived = connectSettled
     ? resolveSetupStep(derivedStep, wentBackTo)
     : "device";
+  // The display choice is written optimistically so it does not flicker, and
+  // the derived step reads that optimism as done -- which would put the
+  // customer on the theme step, picking or even installing, on the strength of
+  // a write that can still roll back. Held here rather than in
+  // `setupDisplayIsConfigured`: that value also decides whether setup owns the
+  // screen at all, so waiting there threw a customer out of Settings and back
+  // into the wizard for the length of every display save.
+  const step =
+    props.displaySavePending && derived === "theme" ? "display" : derived;
   const back = previousSetupStep(step);
   const goBack = back ? () => setWentBackTo(back) : undefined;
   // The counterpart to goBack. Without it the override outlives the visit it

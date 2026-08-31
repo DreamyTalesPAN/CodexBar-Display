@@ -2330,3 +2330,20 @@ issue scope, or release permission never implies UI permission.
      the usual update prompt does not reach someone still inside setup.
 - Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
   and its test, `control-center-app.tsx`.
+
+## 2026-08-31 — Waiting for the save, and asking again after a sign-in
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **The display step waits for its save before handing over the theme step.**
+     The choice is shown as saved straight away so it does not flicker, and the
+     wizard used to move on for that — a customer could be picking or installing
+     a theme while the save was still in flight, and be pulled back if it failed.
+  2. **Coming back from a provider sign-in checks the provider again.** The
+     waiting state simply ran out, and the Mac still held the failed check that
+     had sent them to sign in, so Continue stayed closed on an answer that was no
+     longer true. The check is now made at the end of that wait.
+- Approved files: `apps/control-center/src/components/setup/setup-step.ts`,
+  `setup-providers-screen.tsx`, their tests, and `control-center-app.tsx`.

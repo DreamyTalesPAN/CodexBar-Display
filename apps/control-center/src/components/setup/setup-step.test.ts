@@ -214,6 +214,7 @@ describe("setupDisplayIsConfigured", () => {
   it("does not treat a missing verdict as invalid", () => {
     expect(setupDisplayIsConfigured({ configured: true })).toBe(true);
   });
+
 });
 
 // Only a companion that does not know the endpoint answers 404. Treating any
