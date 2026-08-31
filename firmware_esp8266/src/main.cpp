@@ -562,10 +562,6 @@ bool beginConnectionTransition(
   connectionTransition = transition;
   connectionTransitionPending = true;
   connectionTransitionStartedAtMs = millis();
-  Serial.printf(
-      "connection_mode_transition_started from=%s to=%s\n",
-      device_settings::ConnectionModeName(previous),
-      device_settings::ConnectionModeName(target));
   return true;
 }
 
@@ -2122,8 +2118,7 @@ bool handleSerialControlLine(const String& line) {
     String error;
     const device_settings::ConnectionMode target =
         device_settings::ConnectionMode::kWifi;
-    const bool alreadyInWifiSetup =
-        deviceSettings.connectionMode == target && setupMode;
+    const bool alreadyInWifiMode = deviceSettings.connectionMode == target;
     bool rejected = strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
                     ssid.length() == 0 ||
                     ssid.length() >= kWifiSsidBytes ||
@@ -2133,14 +2128,14 @@ bool handleSerialControlLine(const String& line) {
     if (!rejected && !saveWifiCredentials(ssid, password)) {
       rejected = true;
     }
-    if (!rejected && !alreadyInWifiSetup &&
+    if (!rejected && !alreadyInWifiMode &&
         !beginConnectionTransition(target, error)) {
       rejected = true;
     }
     if (rejected) {
       emitSerialError("wifi-configuration-rejected");
     } else {
-      emitSerialConnectionMode("switching", target, !alreadyInWifiSetup);
+      emitSerialConnectionMode("switching", target, true);
       scheduleReboot("wifi_credentials_saved");
     }
   } else {
