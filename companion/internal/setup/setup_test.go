@@ -669,6 +669,56 @@ func TestRunWithDepsRejectsMissingCableIdentity(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsRestoresPreviousRuntimeAfterCablePairingFailure(t *testing.T) {
+	home := t.TempDir()
+	execPath := mustCreateExecutable(t)
+	launchAgentRestored := false
+	mustWriteFile(t, filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist"), []byte("previous runtime"), 0o644)
+
+	err := runWithDeps(context.Background(), Options{
+		Transport: "usb",
+		AssumeYes: true,
+		SkipFlash: true,
+	}, deps{
+		stdout:         &bytes.Buffer{},
+		executablePath: func() (string, error) { return execPath, nil },
+		homeDir:        func() (string, error) { return home, nil },
+		uid:            func() int { return 501 },
+		resolvePort:    func(string) (string, error) { return "/dev/cu.usbserial42", nil },
+		probePort:      func(string) error { return nil },
+		readDeviceHello: func(port string) (protocol.DeviceHello, error) {
+			hello, err := setupCableHello(port)
+			hello.Capabilities.Auth = &protocol.AuthCapabilities{Paired: false}
+			return hello, err
+		},
+		pairCableDevice: func(string, string) (string, error) {
+			return "", errors.New("pairing rejected")
+		},
+		findCodexbar: func() (string, error) { return "/opt/homebrew/bin/codexbar", nil },
+		lookPath: func(file string) (string, error) {
+			if file == "launchctl" {
+				return "/bin/launchctl", nil
+			}
+			return "", errors.New("not found")
+		},
+		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name == "launchctl" && len(args) > 0 && args[0] == "bootstrap" {
+				launchAgentRestored = true
+			}
+			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
+				return "state = running", nil
+			}
+			return "", nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "pairing rejected") {
+		t.Fatalf("expected Cable pairing failure, got %v", err)
+	}
+	if !launchAgentRestored {
+		t.Fatal("Cable pairing failure must restore the previous launch agent")
+	}
+}
+
 func TestRunWithDepsKeepsExistingThemeWhenUnset(t *testing.T) {
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)

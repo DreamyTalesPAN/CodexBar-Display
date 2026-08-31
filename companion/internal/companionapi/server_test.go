@@ -8183,6 +8183,34 @@ func TestSetupResetRejectsActiveFirmwareUpdate(t *testing.T) {
 	}
 }
 
+func TestSetupConnectionModeRejectsQueuedFirmwareUpdate(t *testing.T) {
+	initial := runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-a",
+	}
+	server := newTestServer(t, initial)
+	server.updateJobs["queued-update"] = &firmwareUpdateJob{
+		ID:    "queued-update",
+		Phase: "installing",
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "firmware_update_in_progress") {
+		t.Fatalf("queued firmware update did not block connection change: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != initial.ConnectionMode || cfg.DeviceID != initial.DeviceID {
+		t.Fatalf("queued firmware update connection request mutated config: %+v", cfg)
+	}
+}
+
 func TestDeviceDiscoverDoesNotFallbackWhenExplicitTargetFails(t *testing.T) {
 	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gone", http.StatusServiceUnavailable)

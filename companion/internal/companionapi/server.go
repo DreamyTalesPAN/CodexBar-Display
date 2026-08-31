@@ -3388,7 +3388,9 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "connection_mode_invalid", "Choose Cable or WiFi.", "Choose how this VibeTV should connect, then try again.")
 		return
 	}
-	if s.firmwareUpdateActive.Load() {
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if _, ok := s.activeFirmwareUpdateJob(); ok {
 		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then choose the connection again.")
 		return
 	}
