@@ -178,6 +178,23 @@ export function setupProviderCheckIsStale(
 }
 
 /**
+ * When the newest of these checks stops counting, or null if none of them still
+ * does. Nothing changes on screen at that moment, so the step has to come back
+ * for it on a clock rather than wait to be told.
+ */
+export function setupProviderCheckExpiresAt(
+  checkedAt: (number | undefined)[],
+  now: number,
+): number | null {
+  const held = checkedAt.filter(
+    (at): at is number => !setupProviderCheckIsStale(at, now),
+  );
+  return held.length === 0
+    ? null
+    : Math.max(...held) + PROVIDER_READINESS_FRESHNESS_MS;
+}
+
+/**
  * Whether this provider can actually put a reading on the device. "stale"
  * counts: it produced a real one before and the saved value is still what the
  * customer sees. Everything else -- waiting for a sign-in, refused a macOS

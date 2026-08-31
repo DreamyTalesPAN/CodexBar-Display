@@ -95,7 +95,7 @@ import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
 import {
   setupProviderCanDisplay,
-  setupProviderCheckIsStale,
+  setupProviderCheckExpiresAt,
 } from "./setup/setup-providers-screen";
 import {
   deriveSetupStep,
@@ -399,6 +399,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // companion only accepts a check for five minutes, so a set that remembered
   // forever stopped re-arming exactly when the check it stood for expired.
   const providerAutoCheckIdsRef = useRef(new Map<string, number>());
+  // Bumped by a timer when the oldest held check expires, so the effect below
+  // re-reads the clock at the moment there is something to do.
+  const [providerReadinessEpoch, setProviderReadinessEpoch] = useState(0);
   const providerCheckQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
@@ -2909,6 +2912,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return;
     }
     const now = Date.now();
+    let nextExpiry = Infinity;
     for (const item of providerPreferences || []) {
       const providerId = item.providerId?.trim().toLowerCase();
       if (item.section !== "providers" || item.value !== true || !providerId) {
@@ -2918,22 +2922,39 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       // for one recently enough that it does. Asking again in either case
       // would be a loop; once both have expired the check has to be possible
       // again, or Continue is refused with nothing left to press.
-      if (
-        !setupProviderCheckIsStale(
+      // Nothing to do while a check still counts -- but something to come back
+      // for: it expires on a clock, and nothing on screen changes when it
+      // does. Without waking up for that the effect never re-reads the time,
+      // and the customer meets a Continue the companion refuses beside a row
+      // that looks healthy and offers nothing to press.
+      const expiresAt = setupProviderCheckExpiresAt(
+        [
           Date.parse(item.health?.verifiedAt || ""),
-          now,
-        ) ||
-        !setupProviderCheckIsStale(
           providerAutoCheckIdsRef.current.get(providerId),
-          now,
-        )
-      ) {
+        ],
+        now,
+      );
+      if (expiresAt !== null) {
+        nextExpiry = Math.min(nextExpiry, expiresAt);
         continue;
       }
       providerAutoCheckIdsRef.current.set(providerId, now);
       void checkProvider(item);
     }
-  }, [checkProvider, providerPreferences, providerSelectionSetup]);
+    if (!Number.isFinite(nextExpiry)) {
+      return;
+    }
+    const timer = setTimeout(
+      () => setProviderReadinessEpoch((current) => current + 1),
+      Math.max(nextExpiry - now, 0) + 1_000,
+    );
+    return () => clearTimeout(timer);
+  }, [
+    checkProvider,
+    providerPreferences,
+    providerReadinessEpoch,
+    providerSelectionSetup,
+  ]);
 
   const updateProviderPreference = useCallback(
     async (item: PreferenceDescriptor, value: boolean) => {

@@ -6,6 +6,7 @@ import {
   PROVIDER_READINESS_FRESHNESS_MS,
   SetupProvidersScreen,
   setupProviderCanDisplay,
+  setupProviderCheckExpiresAt,
   setupProviderCheckIsStale,
   setupProviderMatchesQuery,
 } from "./setup-providers-screen";
@@ -207,5 +208,40 @@ describe("setupProviderCheckIsStale", () => {
 
   it("matches the companion's window", () => {
     expect(PROVIDER_READINESS_FRESHNESS_MS).toBe(5 * 60 * 1000);
+  });
+});
+
+// Making the check re-armable was not enough on its own: nothing on screen
+// changes when a check expires, so the step has to come back for it. This is
+// the moment it has to come back at.
+describe("setupProviderCheckExpiresAt", () => {
+  const now = Date.UTC(2026, 7, 31, 12, 0, 0);
+
+  it("has nothing to wait for when no check still counts", () => {
+    expect(setupProviderCheckExpiresAt([undefined, undefined], now)).toBe(null);
+    expect(
+      setupProviderCheckExpiresAt(
+        [now - PROVIDER_READINESS_FRESHNESS_MS - 1],
+        now,
+      ),
+    ).toBe(null);
+  });
+
+  it("waits for the newest check, not the oldest", () => {
+    const older = now - 4 * 60 * 1000;
+    const newer = now - 60 * 1000;
+
+    expect(setupProviderCheckExpiresAt([older, newer], now)).toBe(
+      newer + PROVIDER_READINESS_FRESHNESS_MS,
+    );
+  });
+
+  it("ignores a check that has already stopped counting", () => {
+    const expired = now - PROVIDER_READINESS_FRESHNESS_MS - 1;
+    const live = now - 60 * 1000;
+
+    expect(setupProviderCheckExpiresAt([expired, live], now)).toBe(
+      live + PROVIDER_READINESS_FRESHNESS_MS,
+    );
   });
 });
