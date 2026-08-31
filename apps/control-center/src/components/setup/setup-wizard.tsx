@@ -81,6 +81,8 @@ export type SetupWizardProps = {
   /** Ask the companion again for whatever the step could not read. */
   onRetryProviders: () => void;
   onSearchDevices: () => void;
+  /** Hand the customer to Sparkle: only it can update the Mac App. */
+  onUpdateMacApp: () => void;
   /** Why the last scan could not be made, when that is what happened. */
   searchError: ApiError | null;
   onSelectTheme: (theme: SetupThemeOption) => void;
@@ -135,14 +137,19 @@ export function SetupWizard(props: SetupWizardProps) {
     connect.state.phase !== "idle" &&
     connect.state.phase !== "done" &&
     connect.state.phase !== "failed";
-  // A failure is not the end of the sequence, it is the sequence waiting for
-  // the customer -- and every dialog that offers them the retry lives on this
-  // step. Leaving on "failed" unmounted the dialog that was about to explain
-  // it, which put them past a firmware check or install that never finished.
-  const step =
-    connectInFlight || connect.failure
-      ? "device"
-      : resolveSetupStep(derivedStep, wentBackTo);
+  // The step is held for the whole sequence, and a failure is not the end of
+  // it -- it is the sequence waiting for the customer. Every dialog that
+  // offers the retry lives on this step, so leaving would unmount the one
+  // explaining it and put them past a firmware check or install that never
+  // finished. Deliberately keyed on the phase rather than on `connect.failure`:
+  // that object is cleared by dismissing the dialog, which is not the same as
+  // the firmware being dealt with. Only a retry that succeeds ("done") or a
+  // reset ("idle") releases the step.
+  const connectSettled =
+    connect.state.phase === "idle" || connect.state.phase === "done";
+  const step = connectSettled
+    ? resolveSetupStep(derivedStep, wentBackTo)
+    : "device";
   const back = previousSetupStep(step);
   const goBack = back ? () => setWentBackTo(back) : undefined;
   // The counterpart to goBack. Without it the override outlives the visit it
@@ -293,7 +300,15 @@ export function SetupWizard(props: SetupWizardProps) {
         {connect.failure?.kind === "firmware-blocked" ? (
           <SetupFirmwareBlockedDialog
             onOpenChange={(open) => !open && connect.dismissFailure()}
-            onResolve={connect.retry}
+            // "Update" means update the Mac App, and only Sparkle can do that.
+            // Retrying the firmware install just meets the same refusal, and
+            // the automatic update prompt does not reach a customer who is
+            // still inside setup.
+            onResolve={
+              connect.failure.reason === "mac_app_update_required"
+                ? props.onUpdateMacApp
+                : connect.retry
+            }
             open
             reason={connect.failure.reason}
           />

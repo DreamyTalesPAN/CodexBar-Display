@@ -69,6 +69,7 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     providerError: null,
     searchError: null,
     onSearchDevices: vi.fn(),
+    onUpdateMacApp: vi.fn(),
     onSelectTheme: vi.fn(),
     providers: [provider()],
     selectedThemeId: null,
@@ -204,6 +205,49 @@ describe("SetupWizard: while the connect sequence is running", () => {
   // A failure is the sequence waiting for the customer, not the end of it. The
   // firmware dialogs that offer the retry live on this step, so leaving on
   // "failed" unmounted the one that was about to explain it.
+  // Dismissing the dialog is not the same as the firmware being dealt with:
+  // SetupDialog offers a close button and Escape, and clearing the failure
+  // object used to release the step and carry the customer past a check that
+  // never finished.
+  it("stays on the device step after the firmware dialog is dismissed", async () => {
+    const props = baseProps({
+      step: "device",
+      deviceCandidates: [
+        {
+          deviceId: "vibetv-1",
+          target: "http://192.168.178.73",
+          known: true,
+        } as never,
+      ],
+      connectSteps: {
+        connect: vi.fn(async () => null),
+        checkFirmware: vi.fn(async () => {
+          throw {
+            code: "firmware_check_failed",
+            message: "Could not check VibeTV's firmware.",
+            nextAction: "Check the internet connection, then try again.",
+          };
+        }),
+        installFirmware: vi.fn(),
+      } as unknown as SetupWizardProps["connectSteps"],
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    });
+    await act(async () => {
+      fireEvent.keyDown(document.activeElement ?? document.body, {
+        key: "Escape",
+      });
+    });
+    await act(async () => {
+      rerender(<SetupWizard {...props} step="providers" />);
+    });
+
+    expect(shownStep()).toBe("Choose your VibeTV");
+  });
+
   it("stays on the device step when the firmware check fails", async () => {
     const props = baseProps({
       step: "device",
