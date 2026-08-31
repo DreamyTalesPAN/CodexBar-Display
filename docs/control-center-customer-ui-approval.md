@@ -2029,3 +2029,33 @@ issue scope, or release permission never implies UI permission.
   transition. The customer-flow test now accepts either valid entry paint and
   continues to assert the complete recovery contract.
 - Approved files: `scripts/test-customer-flows.mjs` and this approval record.
+
+## 2026-08-31 — Setup becomes a six-step wizard
+
+- User approval: The user reviewed this record's wording and instructed on
+  2026-08-31 that it be entered (`trag du ein`), on the basis of their
+  instruction to continue the setup-wizard handover (`mach weiter`) and their
+  explicit decision on 2026-08-30 that a
+  provider row keeps its on/off switch whatever its health reports AND that the
+  display step only offers providers that can actually produce a reading
+  ("beides"). The wizard's own shape — its six steps, its dialogs, and the
+  hosted page keeping a single Download action — was decided by the product
+  owner before this branch and is recorded in the handover's decision table.
+- Approved customer-visible result: Setup is one full-screen wizard whose step
+  follows real state instead of button presses: a welcome screen that names
+  what it is waiting for, choosing a VibeTV (with manual IP entry behind a link,
+  and the firmware check and install inside the connect step), choosing AI
+  providers, the display mode, a theme, and a live screen that hands over to
+  Control Center by itself. Every failure is a dialog over the step that caused
+  it, and every step carries one Help control with `Ask AI to fix` and `Create
+  support report`. A typed IP address that nothing answers now keeps its dialog
+  open with the address still in the field and the reason under it, instead of
+  silently closing. The AI-usage dialog appears over whatever is on screen
+  rather than only on the provider step, and does not dim the app behind it. A
+  provider row always offers its switch. The theme step still offers all four
+  live themes but disables Install with the device's own reason when this
+  VibeTV cannot take one. Recent activity in Support holds 20 entries instead of
+  10. app.vibetv.shop keeps its single Download action in the new frame.
+- Approved files: the setup wizard under `apps/control-center/src/components/setup/`,
+  `control-center-app.tsx`, `provider-picker.tsx`, `theme-library-screen.tsx`,
+  `scripts/test-customer-flows.mjs`, and this approval record.
