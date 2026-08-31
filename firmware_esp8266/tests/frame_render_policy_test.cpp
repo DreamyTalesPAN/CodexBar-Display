@@ -176,6 +176,36 @@ bool testCableFirmwareTransferAcknowledgesBeforeImmediateRestart(const std::stri
       "Cable firmware transfer must flush its completion ACK before restarting immediately");
 }
 
+bool testCableThemeTransferCleansOnlyAfterActivation(const std::string& source) {
+  const std::size_t cleanupStart = source.find("bool findObsoleteThemeSlotAsset(");
+  const std::size_t cleanupEnd = source.find("\nvoid handleThemeActive()", cleanupStart);
+  const std::size_t finishStart = source.find("bool finishCableTransfer(");
+  const std::size_t finishEnd = source.find("\nbool handleCableTransferRequest(", finishStart);
+  if (!expect(
+          cleanupStart != std::string::npos && cleanupEnd != std::string::npos &&
+              finishStart != std::string::npos && finishEnd != std::string::npos,
+          "Cable cleanup and transfer finish handlers must remain discoverable")) {
+    return false;
+  }
+
+  const std::string cleanup = source.substr(cleanupStart, cleanupEnd - cleanupStart);
+  const std::string finish = source.substr(finishStart, finishEnd - finishStart);
+  const std::size_t activateTheme = finish.find("activateStoredThemePath(");
+  const std::size_t activateScreensaver = finish.find("persistDeviceSettings(next)");
+  const std::size_t sweep = finish.find("cleanupCableThemeSlot(");
+  const std::size_t complete = finish.find("emitCableTransferReply(\"complete\")");
+  return expect(
+      activateTheme != std::string::npos && activateScreensaver != std::string::npos &&
+          sweep != std::string::npos && complete != std::string::npos &&
+          activateTheme < sweep && activateScreensaver < sweep && sweep < complete &&
+          cleanup.find("path.startsWith(slotPrefix) && path != activeSpecPath") != std::string::npos &&
+          cleanup.find("CompileThemeSpec(raw.c_str(), doc, scene)") != std::string::npos &&
+          cleanup.find("CompiledThemeSpecReferencesAsset(") != std::string::npos &&
+          cleanup.find("standbyState.active || screensaverPreviewState.showing") != std::string::npos &&
+          cleanup.find("LittleFS.remove(obsoletePath)") != std::string::npos,
+      "Cable theme cleanup must run after successful slot activation and before completion");
+}
+
 bool testHelloAdvertisesEscapedUsageWindowCapacity(const std::string& source) {
   const std::size_t capabilitiesStart = source.find("String themeCapabilitiesJSON(");
   const std::size_t capabilitiesEnd = source.find("\nstruct WifiCredentials", capabilitiesStart);
@@ -437,6 +467,7 @@ int main(int argc, char** argv) {
       !testPendingHttpRenderRunsBeforeUsb(source) ||
       !testSetupSizesSerialRxBufferForFrameContract(source) ||
       !testCableFirmwareTransferAcknowledgesBeforeImmediateRestart(source) ||
+      !testCableThemeTransferCleansOnlyAfterActivation(source) ||
       !testHelloAdvertisesEscapedUsageWindowCapacity(source) ||
       !testSharedSerialHelloAdvertisesStandby(source) ||
       !testAssetDeleteProtectsStandbyLiveTheme(source) ||

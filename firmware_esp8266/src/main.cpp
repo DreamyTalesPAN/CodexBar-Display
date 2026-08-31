@@ -276,6 +276,7 @@ void maintainCableTransfer();
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
 constexpr const char* kLegacyMiniThemeSpecPath = "/themes/u/mini-cl-1-410a37.json";
+constexpr const char* kLegacyMiniGIFPath = "/themes/mini/mini.gif";
 #endif
 
 void recordRenderFull(const char* kind, unsigned long durationUs) {
@@ -3060,6 +3061,92 @@ bool storedThemeSpecReferencesAsset(const String& themeSpecPath, const String& a
 #endif
 }
 
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+bool findObsoleteThemeSlotAsset(
+    const String& directory,
+    const String& slotPrefix,
+    const String& activeSpecPath,
+    const codexbar_display::themespec::CompiledThemeSpec& scene,
+    String& obsoletePath,
+    uint8_t depth) {
+  if (depth > 4) {
+    return false;
+  }
+  Dir dir = LittleFS.openDir(directory);
+  while (dir.next()) {
+    const String path = normalizedAssetListPath(directory, dir.fileName());
+    if (dir.isDirectory()) {
+      if (findObsoleteThemeSlotAsset(
+              path, slotPrefix, activeSpecPath, scene, obsoletePath, depth + 1)) {
+        return true;
+      }
+      continue;
+    }
+    if (path.startsWith(slotPrefix) && path != activeSpecPath &&
+        !codexbar_display::themespec::CompiledThemeSpecReferencesAsset(
+            scene, path.c_str())) {
+      obsoletePath = path;
+      return true;
+    }
+  }
+  return false;
+}
+
+// Cable owns the whole install while the serial port is locked, so the device
+// can safely sweep the selected slot immediately after activation. Finding one
+// file per pass lets the directory iterator go out of scope before removal.
+void cleanupCableThemeSlot(
+    const String& activeSpecPath,
+    CableTransferActivation activation) {
+  if (activation == CableTransferActivation::kNone || !LittleFS.begin()) {
+    return;
+  }
+  if (activation == CableTransferActivation::kScreensaver &&
+      (standbyState.active || screensaverPreviewState.showing)) {
+    Serial.println("asset_cleanup_skipped source=cable_cleanup reason=screensaver_active");
+    return;
+  }
+  String raw;
+  String error;
+  JsonDocument doc;
+  codexbar_display::themespec::CompiledThemeSpec scene;
+  if (!readStoredThemeSpec(activeSpecPath, raw, error) ||
+      !codexbar_display::themespec::CompileThemeSpec(raw.c_str(), doc, scene)) {
+    codexbar_display::themespec::ReleaseCompiledThemeSpec(scene);
+    return;
+  }
+  const String slotPrefix = activation == CableTransferActivation::kScreensaver
+      ? "/themes/s/"
+      : "/themes/u/";
+  const String slotDirectory = slotPrefix.substring(0, slotPrefix.length() - 1);
+
+  if (activation == CableTransferActivation::kTheme &&
+      LittleFS.exists(kLegacyMiniGIFPath) &&
+      !codexbar_display::themespec::CompiledThemeSpecReferencesAsset(
+          scene, kLegacyMiniGIFPath)) {
+    if (LittleFS.remove(kLegacyMiniGIFPath)) {
+      Serial.printf("asset_deleted path=%s source=cable_cleanup\n", kLegacyMiniGIFPath);
+    }
+  }
+
+  while (true) {
+    String obsoletePath;
+    if (!findObsoleteThemeSlotAsset(
+            slotDirectory, slotPrefix, activeSpecPath, scene, obsoletePath, 0)) {
+      break;
+    }
+    if (!LittleFS.remove(obsoletePath)) {
+      Serial.printf("asset_cleanup_failed path=%s\n", obsoletePath.c_str());
+      break;
+    }
+    Serial.printf(
+        "asset_deleted path=%s source=cable_cleanup\n", obsoletePath.c_str());
+    ESP.wdtFeed();
+  }
+  codexbar_display::themespec::ReleaseCompiledThemeSpec(scene);
+}
+#endif
+
 void handleThemeActive() {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   if (!requireWriteAuth()) {
@@ -3805,6 +3892,11 @@ bool finishCableTransfer(JsonDocument& doc) {
       }
     }
     assetUploadSucceeded = committed;
+#if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
+    if (committed && cableTransfer.activation != CableTransferActivation::kNone) {
+      cleanupCableThemeSlot(assetUploadPath, cableTransfer.activation);
+    }
+#endif
   } else if (cableTransfer.sink == CableTransferSink::kFirmware) {
     committed = Update.end(false);
     otaUploadSucceeded = committed;

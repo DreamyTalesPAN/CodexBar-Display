@@ -445,6 +445,8 @@ func installCablePack(
 	if slot == themepack.UsageScreensaver {
 		activation = "screensaver"
 	}
+	// The Cable firmware owns the safe post-activation slot sweep because it
+	// alone can enumerate LittleFS while this serial transfer holds the device.
 	if err := cable.Upload(ctx, pack.ThemeSpecFile.Entry.Path, pack.ThemeSpecRaw, activation); err != nil {
 		return Result{}, &InstallError{Op: "theme-pack/activate", Code: errcode.UpgradeFlashFirmware, Err: err}
 	}
