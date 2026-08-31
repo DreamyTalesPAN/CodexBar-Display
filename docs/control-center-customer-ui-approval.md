@@ -2249,3 +2249,22 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/setup/setup-step.ts`,
   `setup-wizard.tsx`, `setup-provider-dialogs.tsx`, their tests, and
   `control-center-app.tsx`.
+
+## 2026-08-31 — The provider check now comes back on its own
+
+- User approval: The same standing instruction as the entries above — every
+  Codex bug-detector finding fixed where sound, repeated until nothing is found
+  ("fix alle findings vom codex bug detector, sofern sie sinnvoll sind ... mach
+  das so lang, bis der codex bug detector nichts mehr findet", 2026-08-31).
+  This one is the follow-up Codex raised against the previous fix: the rule was
+  made re-armable but nothing ever re-read it.
+- Approved customer-visible result: **Nothing changes for a customer who moves
+  through the provider step normally.** For one who stays on it for more than
+  five minutes, the check the companion holds expires, and the step now makes it
+  again by itself at that moment. Before, it did not: `Continue` was refused
+  with no explanation on the step, and the row still looked healthy with no
+  `Check again` to press, leaving switching the provider off and on as the only
+  way through. There is no new copy and no new control — only a check that
+  happens when it needs to.
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `setup/setup-providers-screen.tsx` and its test.
