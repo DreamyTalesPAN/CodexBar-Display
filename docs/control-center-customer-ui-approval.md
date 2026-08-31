@@ -2197,3 +2197,32 @@ issue scope, or release permission never implies UI permission.
   `setup-preview-gallery.tsx`, their tests, `control-center-app.tsx`,
   `provider-picker.tsx` and its reconcile test, the companion's `server.go` and
   `provider_display_test.go`, and this approval record.
+
+## 2026-08-31 — Three more setup gates, from the same instruction
+
+- User approval: The same standing instruction as the two entries above — every
+  Codex bug-detector finding fixed where sound, answered where not, repeated
+  until nothing is found ("fix alle findings vom codex bug detector, sofern sie
+  sinnvoll sind ... mach das so lang, bis der codex bug detector nichts mehr
+  findet", 2026-08-31). All three were reproduced before being changed.
+- Approved customer-visible result:
+  1. **The device step stays on screen until the firmware work is finished.**
+     Pairing publishes the VibeTV before the firmware check and install
+     complete, so the wizard could move on while they were still running — and
+     the firmware progress and its failure dialogs are part of that step. The
+     customer now sees the check and the install through, and a failure appears
+     where they are rather than on a screen they have left.
+  2. **A display choice that no longer works asks again instead of being
+     skipped.** Going back and switching off a provider that the saved choice
+     names leaves that choice unusable; the wizard used to carry on to the theme
+     step and then refuse to finish, with nothing on that step able to change
+     it. It now returns to Display Mode.
+  3. **A provider check that has gone stale is made again.** Staying on the
+     provider step for more than five minutes let the check the companion holds
+     expire while the app still believed it had asked; Continue was then refused
+     and the row, which looked healthy, offered no `Check again`. The check now
+     re-arms when the readiness it stood for expires. Nothing changes for a
+     customer who moves through the step normally.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`,
+  `setup-step.ts`, `setup-providers-screen.tsx`, their tests, and
+  `control-center-app.tsx`.
