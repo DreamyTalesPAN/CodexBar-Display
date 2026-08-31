@@ -101,6 +101,7 @@ import {
   deriveSetupStep,
   setupDeviceIsUsable,
   setupDisplayIsConfigured,
+  setupDisplaySelectionSupported,
 } from "./setup/setup-step";
 import {
   SetupUsageDialog,
@@ -3841,9 +3842,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const setupStep = deriveSetupStep({
     deviceUsable: deviceUsableForSetup,
     displayConfigured: setupDisplayIsConfigured(providerDisplay),
-    // A companion that cannot answer for the display selection cannot store
-    // one either, so there is nothing to ask the customer for.
-    displaySelectionSupported: Boolean(providerDisplay) || !providerDisplayError,
+    displaySelectionSupported: setupDisplaySelectionSupported(
+      providerDisplay,
+      providerDisplayError,
+    ),
     initialCheckComplete: initialCompanionCheckComplete,
     providerSelectionRequired,
     themeSetupRequired,
@@ -3996,13 +3998,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             void updateProviderPreference(provider, enabled)
           }
           onProvidersContinue={completeProviderSetup}
-          onDismissProviderError={() => setProviderDisplayError(null)}
+          onDismissProviderError={() => {
+            setProviderDisplayError(null);
+            setProviderPreferencesError(null);
+          }}
+          onRetryProviders={() => {
+            void refreshProviderPreferences();
+            void refreshProviderDisplay();
+          }}
           searchError={
             startupDeviceSearchState === "failed" && !needsRuntimeRecovery
               ? lastError
               : null
           }
-          providerError={providerDisplayError}
+          providerError={providerDisplayError || providerPreferencesError}
           onSearchDevices={() => void searchAndConnect()}
           onSelectTheme={(theme) => setSelectedThemeId(theme.id)}
           providers={setupProviders}

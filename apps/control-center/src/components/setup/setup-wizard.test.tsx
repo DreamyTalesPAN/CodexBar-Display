@@ -65,6 +65,7 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     onProviderToggle: vi.fn(),
     onProvidersContinue: vi.fn(),
     onDismissProviderError: vi.fn(),
+    onRetryProviders: vi.fn(),
     providerError: null,
     searchError: null,
     onSearchDevices: vi.fn(),
@@ -267,6 +268,31 @@ describe("SetupWizard: a refusal from the companion", () => {
     expect(
       screen.getByText("A displayed provider is turned off."),
     ).toBeTruthy();
+  });
+
+  // The provider list is read the same way as the display selection, and a
+  // failed read left the step saying no providers matched: an empty list, a
+  // closed Continue, and nothing said. Nothing retries it on its own either.
+  it("shows a failed provider read, with a way to ask again", () => {
+    const onRetryProviders = vi.fn();
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "providers",
+          providers: [],
+          onRetryProviders,
+          providerError: {
+            code: "COMPANION_TIMEOUT",
+            message: "Provider settings need attention.",
+            nextAction: "Try again in a moment.",
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Provider settings need attention.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetryProviders).toHaveBeenCalled();
   });
 
   it("says nothing when nothing was refused", () => {

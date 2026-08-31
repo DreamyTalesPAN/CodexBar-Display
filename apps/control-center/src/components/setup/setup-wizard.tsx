@@ -75,6 +75,8 @@ export type SetupWizardProps = {
   /** What the companion refused the provider or display step, if anything. */
   providerError: ApiError | null;
   onDismissProviderError: () => void;
+  /** Ask the companion again for whatever the step could not read. */
+  onRetryProviders: () => void;
   onSearchDevices: () => void;
   /** Why the last scan could not be made, when that is what happened. */
   searchError: ApiError | null;
@@ -316,6 +318,7 @@ export function SetupWizard(props: SetupWizardProps) {
         <SetupProviderStepFailedDialog
           error={props.providerError}
           onOpenChange={(open) => !open && props.onDismissProviderError()}
+          onRetry={props.onRetryProviders}
         />
       </>
     );
@@ -364,6 +367,7 @@ export function SetupWizard(props: SetupWizardProps) {
         <SetupProviderStepFailedDialog
           error={props.providerError}
           onOpenChange={(open) => !open && props.onDismissProviderError()}
+          onRetry={props.onRetryProviders}
         />
       </>
     );

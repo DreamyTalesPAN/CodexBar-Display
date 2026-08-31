@@ -5,6 +5,7 @@ import {
   resolveSetupStep,
   setupDeviceIsUsable,
   setupDisplayIsConfigured,
+  setupDisplaySelectionSupported,
   type SetupStepInput,
 } from "./setup-step";
 
@@ -212,5 +213,36 @@ describe("setupDisplayIsConfigured", () => {
   // to send the customer round the display step again.
   it("does not treat a missing verdict as invalid", () => {
     expect(setupDisplayIsConfigured({ configured: true })).toBe(true);
+  });
+});
+
+// Only a companion that does not know the endpoint answers 404. Treating any
+// failed read the same skipped a required step over a transient error, and
+// setup could then finish without the customer ever choosing what VibeTV shows.
+describe("setupDisplaySelectionSupported", () => {
+  it("skips the step only for a companion that cannot store a choice", () => {
+    expect(setupDisplaySelectionSupported(null, { code: "HTTP_404" })).toBe(
+      false,
+    );
+  });
+
+  it("keeps the step when the read simply failed this time", () => {
+    expect(
+      setupDisplaySelectionSupported(null, { code: "COMPANION_TIMEOUT" }),
+    ).toBe(true);
+    expect(
+      setupDisplaySelectionSupported(null, { code: "preferences_read_failed" }),
+    ).toBe(true);
+  });
+
+  it("keeps the step when nothing has failed", () => {
+    expect(setupDisplaySelectionSupported(null, null)).toBe(true);
+  });
+
+  // A selection already in hand settles it, whatever a later read said.
+  it("stays supported once a selection has been read", () => {
+    expect(
+      setupDisplaySelectionSupported({ mode: "automatic" }, { code: "HTTP_404" }),
+    ).toBe(true);
   });
 });

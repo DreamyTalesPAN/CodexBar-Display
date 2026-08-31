@@ -74,6 +74,22 @@ export function setupDisplayIsConfigured(
 }
 
 /**
+ * Whether the companion can store a display choice at all.
+ *
+ * Only a companion that does not know the endpoint answers 404, and asking it
+ * for a choice it will refuse to keep is a dead end -- so that one skips the
+ * step. Every other failure is a read that did not work this time: treating it
+ * the same skipped a required step over a transient error, and setup could
+ * finish without the customer ever making the choice.
+ */
+export function setupDisplaySelectionSupported(
+  display: unknown,
+  error: { code?: string } | null | undefined,
+): boolean {
+  return Boolean(display) || error?.code !== "HTTP_404";
+}
+
+/**
  * Which step the customer's actual state puts them on.
  *
  * Deliberately derived rather than remembered: a step that is only advanced by
