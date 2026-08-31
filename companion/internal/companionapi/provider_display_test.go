@@ -177,6 +177,51 @@ func TestProviderSetupCompletionRejectsEnabledProviderOutsideDisplayPool(t *test
 	}
 }
 
+// docs/control-center-ui-principles.md rule 4: an existing healthy setup opens
+// Overview without extra confirmation. A VibeTV set up before the display step
+// existed has no selection stored and never had a step that could store one, so
+// reporting the choice as still to be made put every one of those customers
+// into the wizard on the update that adds it.
+func TestLegacyInstallIsNotAskedForADisplayChoiceItNeverHad(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://127.0.0.1:1",
+		DeviceID:     "vibetv-1",
+	})
+	server.providerPreferences.load = providerSettingsFixture
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/provider-display", nil))
+	var response providerDisplayResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Selection.Configured || !response.Selection.Valid {
+		t.Fatalf("a completed legacy install was sent back for a display choice: %+v", response.Selection)
+	}
+	if len(response.Selection.ProviderIDs) == 0 {
+		t.Fatalf("the synthesised pool is empty: %+v", response.Selection)
+	}
+}
+
+// And a customer actually running setup still is: the flag is written the
+// moment the provider step completes, so there is nothing legacy about them.
+func TestAFreshSetupIsStillAskedForADisplayChoice(t *testing.T) {
+	cfg := runtimeconfig.Config{DeviceTarget: "http://127.0.0.1:1", DeviceID: "vibetv-1"}
+	cfg.SetProviderSelectionSetupComplete(true)
+	server := newTestServer(t, cfg)
+	server.providerPreferences.load = providerSettingsFixture
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/provider-display", nil))
+	var response providerDisplayResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Selection.Configured {
+		t.Fatalf("the display step was skipped for a setup that is being run now: %+v", response.Selection)
+	}
+}
+
 // "Always show one" names exactly one provider -- that is what the mode says on
 // the screen, and Settings writes and keeps it with other providers still on.
 // Measuring it against the enabled set refused the customer's own choice on the

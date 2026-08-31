@@ -368,6 +368,19 @@ func (cfg Config) hasPairedDevice() bool {
 		strings.TrimSpace(cfg.DeviceTarget) != ""
 }
 
+// ProviderDisplayPredatesSetup reports an installation that was set up before
+// the display choice existed to be made. It has no selection stored and never
+// had a step that could store one, and rule 4 of
+// docs/control-center-ui-principles.md says an existing healthy setup opens
+// Overview without extra confirmation -- so it is not asked for one now. A new
+// customer has neither the flag nor a paired VibeTV, and a reset clears both,
+// so a setup that is actually being run still asks.
+func (cfg Config) ProviderDisplayPredatesSetup() bool {
+	return cfg.ProviderDisplay == nil &&
+		cfg.ProviderSelectionSetupComplete == nil &&
+		cfg.hasPairedDevice()
+}
+
 func (cfg *Config) SetProviderSelectionSetupComplete(complete bool) {
 	if cfg == nil {
 		return

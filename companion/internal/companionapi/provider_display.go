@@ -181,6 +181,11 @@ func effectiveProviderDisplay(cfg runtimeconfig.Config, settings []codexbar.Prov
 				selection.ProviderIDs = append(selection.ProviderIDs, setting.ID)
 			}
 		}
+		// An install from before this choice existed is already set up and
+		// working, and the pool synthesised above is exactly what choosing
+		// Automatic would write. Reporting it as still to be made sent every
+		// such customer through the wizard on the update that adds the step.
+		selection.Configured = cfg.ProviderDisplayPredatesSetup()
 	} else {
 		selection.Configured = true
 		selection.Mode = cfg.ProviderDisplay.Mode

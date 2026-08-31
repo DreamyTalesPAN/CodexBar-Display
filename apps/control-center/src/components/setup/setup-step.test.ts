@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   deriveSetupStep,
   previousSetupStep,
-  providerStepOwnsRefusal,
   resolveSetupStep,
   setupDeviceIsUsable,
   setupDisplayIsConfigured,
   setupDisplaySelectionSupported,
+  setupStepForProviderRefusal,
   type SetupStepInput,
 } from "./setup-step";
 
@@ -249,22 +249,28 @@ describe("setupDisplaySelectionSupported", () => {
   });
 });
 
-// The provider step has no display control on it, so a refusal naming the
+// The provider step has no display control on it, so a refusal about the
 // display selection printed a next action the customer could not carry out --
-// and, coming back from a later step, the Back override held them there with
-// re-enabling the provider they had just turned off as the only way out.
-describe("providerStepOwnsRefusal", () => {
-  it("hands a refused display selection to the display step", () => {
-    expect(providerStepOwnsRefusal("provider_display_invalid")).toBe(false);
+// and the Back override held them there, with undoing the switch they had just
+// pressed as the only way on.
+describe("setupStepForProviderRefusal", () => {
+  it("names the display step for both display refusals", () => {
+    // The selection names a provider that was switched off.
+    expect(setupStepForProviderRefusal("provider_display_invalid")).toBe(
+      "display",
+    );
+    // The Automatic pool no longer covers everything that is switched on. Of
+    // the three actions this one offers, only "turn it off" is on the provider
+    // screen -- and it undoes the switch the customer had just pressed.
+    expect(setupStepForProviderRefusal("provider_display_incomplete")).toBe(
+      "display",
+    );
   });
 
   it("keeps everything the provider step can act on", () => {
-    expect(providerStepOwnsRefusal("provider_required")).toBe(true);
-    expect(providerStepOwnsRefusal("provider_check_required")).toBe(true);
-    // Turning the provider off is one of the three ways out of this one, and
-    // that switch is on the provider step.
-    expect(providerStepOwnsRefusal("provider_display_incomplete")).toBe(true);
-    expect(providerStepOwnsRefusal("COMPANION_TIMEOUT")).toBe(true);
-    expect(providerStepOwnsRefusal(undefined)).toBe(true);
+    expect(setupStepForProviderRefusal("provider_required")).toBe(null);
+    expect(setupStepForProviderRefusal("provider_check_required")).toBe(null);
+    expect(setupStepForProviderRefusal("COMPANION_TIMEOUT")).toBe(null);
+    expect(setupStepForProviderRefusal(undefined)).toBe(null);
   });
 });

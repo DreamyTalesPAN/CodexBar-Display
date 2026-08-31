@@ -147,14 +147,21 @@ export function resolveSetupStep(
 }
 
 /**
- * Whether a refused provider completion is the provider step's to fix.
+ * The step that can act on a refused provider completion, or null when the
+ * provider step itself can.
  *
- * Everything the companion refuses there is, except the display selection: it
- * names a provider the customer has since turned off, and the only controls
- * that change it are on the display step. Holding them on the provider screen
- * leaves a refusal whose next action is not on their screen, and re-enabling
- * the provider they had just turned off as the only way out.
+ * Everything the companion refuses there is the provider step's to fix, except
+ * the two that are about the display selection: one names a provider the
+ * customer has since turned off, the other an Automatic pool that no longer
+ * covers everything switched on. Neither has a control on the provider screen,
+ * so holding them there leaves a refusal whose next action is not on it, and
+ * undoing the switch they had just pressed as the only way out.
  */
-export function providerStepOwnsRefusal(code: string | undefined): boolean {
-  return code !== "provider_display_invalid";
+export function setupStepForProviderRefusal(
+  code: string | undefined,
+): SetupStep | null {
+  return code === "provider_display_invalid" ||
+    code === "provider_display_incomplete"
+    ? "display"
+    : null;
 }

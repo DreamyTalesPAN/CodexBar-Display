@@ -80,10 +80,10 @@ export type SetupWizardProps = {
    * Resolving false keeps the customer on the step: the companion can refuse
    * completion, and the step it would otherwise hand them to has nowhere to
    * show that. A refusal the provider screen carries no control for resolves
-   * true instead -- the derived step is then the one that can fix it, and it
-   * shows the same refusal.
+   * the step that does carry one, and the wizard shows that step with the same
+   * refusal over it.
    */
-  onProvidersContinue: () => void | Promise<boolean | void>;
+  onProvidersContinue: () => void | Promise<SetupStep | boolean | void>;
   /** What the companion refused the provider or display step, if anything. */
   providerError: ApiError | null;
   onDismissProviderError: () => void;
@@ -364,9 +364,18 @@ export function SetupWizard(props: SetupWizardProps) {
             // leaves the derived step ahead, so a refusal would carry the
             // customer on to a screen that cannot render it.
             void Promise.resolve(props.onProvidersContinue()).then((done) => {
-              if (done !== false) {
-                goForward();
+              if (done === false) {
+                return;
               }
+              // A refusal this screen carries no control for names the step
+              // that does. That step is behind the derived one -- the
+              // completion the customer is repeating already succeeded once --
+              // which is exactly the position the override is for.
+              if (typeof done === "string") {
+                setWentBackTo(done);
+                return;
+              }
+              goForward();
             });
           }}
           onRecover={props.onProviderRecover}

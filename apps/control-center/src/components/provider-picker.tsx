@@ -40,6 +40,8 @@ export type ProviderPickerProps = {
     providerId: string,
   ) => void | Promise<boolean | void>;
   onDisplayDraftChange?: (hasDraft: boolean) => void;
+  /** The managed usage service is the broken part, not the provider's sign-in. */
+  onRepairUsageService?: () => void;
   onPreferenceChange: (
     item: PreferenceDescriptor,
     value: boolean,
@@ -65,6 +67,7 @@ export function ProviderPicker({
   onDisplayChange,
   onDisplayDraftChange,
   onPreferenceChange,
+  onRepairUsageService,
 }: ProviderPickerProps) {
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
@@ -221,7 +224,10 @@ export function ProviderPicker({
   }
 
   function chooseProvider(item: ProviderItem, checked: boolean) {
-    if (!display || !item.value) {
+    // A provider that is off cannot go into the selection -- the companion
+    // refuses one naming it -- but it has to be able to come out, which is what
+    // repairs a selection the customer invalidated by switching it off.
+    if (!display || (!item.value && checked)) {
       return;
     }
     if (mode === "fixed") {
@@ -455,7 +461,16 @@ export function ProviderPicker({
                       item.health.recoveryAction === "repair_usage_service") ? (
                       <Button
                         className="min-h-11 w-full sm:w-auto"
-                        onClick={() => openCodexBarApp()}
+                        // Two different failures, and the companion says
+                        // which: a provider that needs the customer in its own
+                        // app, and a managed usage service that needs
+                        // restarting. Sending both to the provider app left the
+                        // second one to meet the same broken service again.
+                        onClick={() =>
+                          item.health.recoveryAction === "repair_usage_service"
+                            ? onRepairUsageService?.()
+                            : openCodexBarApp()
+                        }
                         size="sm"
                         type="button"
                         variant="outline"

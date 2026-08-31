@@ -128,6 +128,40 @@ describe("SetupWizard: going back", () => {
     expect(shownStep()).toBe("Choose AI providers");
   });
 
+  // The Automatic pool no longer covering an enabled provider is refused on a
+  // screen with no Include control, and the selection is still valid -- so the
+  // derived step is theme and releasing the override carried the refusal to a
+  // screen that renders none. The step that owns it is named instead.
+  it("shows the step a refusal names, with the refusal on it", async () => {
+    const onProvidersContinue = vi.fn(async () => "display" as const);
+    const props = baseProps({ step: "theme", onProvidersContinue });
+    const { rerender } = render(<SetupWizard {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Choose AI providers");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
+    expect(shownStep()).toBe("Display Mode");
+
+    rerender(
+      <SetupWizard
+        {...props}
+        providerError={{
+          code: "provider_display_incomplete",
+          message: "Every enabled provider must be included for display.",
+          nextAction:
+            "Add this provider to Automatic mode, select it in Always show, or turn it off.",
+        }}
+      />,
+    );
+    expect(shownStep()).toBe("Display Mode");
+    expect(
+      screen.getByText("Every enabled provider must be included for display."),
+    ).toBeTruthy();
+  });
+
   it("does not offer Back on the step it lands on, and still moves on", async () => {
     render(<SetupWizard {...baseProps({ step: "display" })} />);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));

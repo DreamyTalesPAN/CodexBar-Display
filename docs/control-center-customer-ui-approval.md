@@ -2526,3 +2526,32 @@ issue scope, or release permission never implies UI permission.
   `setup/setup-provider-row.tsx`, `setup/setup-providers-screen.tsx`,
   `setup/setup-wizard.tsx`, `setup/setup-preview-gallery.tsx`,
   `control-center-app.tsx`, and their tests.
+
+## 2026-09-01 — Existing customers keep Overview, and three controls mean what they say
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **A VibeTV that was already set up opens Overview after this update.** It
+     has no display choice stored and never had a step that could store one, so
+     the wizard would have taken the screen from every existing customer to ask
+     for one — the extra confirmation rule 4 forbids. The rotation it already
+     has is what choosing Automatic would write. A setup that is actually being
+     run is still asked.
+  2. **A refusal about the Automatic pool takes the customer to the display
+     step.** Switching a second provider on after Automatic was saved is refused
+     on the provider screen, which has no Include control: of the three actions
+     offered, only turning that provider back off exists there, and it undoes
+     what the customer had just done.
+  3. **The uncheck that takes a provider out of Automatic actually writes.** The
+     control was unlocked for a provider that had been switched off, but the
+     handler still refused to act on it, so the one control that mends the
+     selection did nothing.
+  4. **A broken usage service opens the repair, not the provider's app.** The
+     companion says which of the two failures it is, and both were sent to the
+     provider app — where the customer meets the same broken service again.
+- Approved files: `apps/control-center/src/components/provider-picker.tsx`,
+  `setup/setup-step.ts`, `setup/setup-wizard.tsx`, `control-center-app.tsx`,
+  their tests, and `companion/internal/companionapi/provider_display.go`,
+  `companion/internal/runtimeconfig/runtimeconfig.go` with their tests.

@@ -214,4 +214,69 @@ describe("ProviderPicker: leaving Always show one", () => {
     );
   });
 
+
+  // Unlocking the checkbox was only half of it: the handler still refused to
+  // act for a provider that is off, so the one control that mends the selection
+  // was a button that did nothing.
+  it("takes a provider that is off out of the pool", () => {
+    const onDisplayChange = vi.fn();
+    render(
+      <ProviderPicker
+        display={{
+          mode: "automatic",
+          providerIds: ["codex", "claude"],
+          configured: true,
+          valid: false,
+        }}
+        items={[{ ...codex, value: false, effectiveValue: false }, claude]}
+        onCheck={vi.fn()}
+        onDisplayChange={onDisplayChange}
+        onPreferenceChange={vi.fn()}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Include Codex in Automatic" }),
+    );
+
+    expect(onDisplayChange).toHaveBeenCalledWith(
+      { mode: "automatic", providerIds: ["claude"] },
+      "codex",
+    );
+  });
+
+  // Two different failures, and the companion says which. Sending both to the
+  // provider app left a broken usage service to be met again.
+  it("sends a broken usage service to the repair, not to the provider app", () => {
+    const onRepairUsageService = vi.fn();
+    render(
+      <ProviderPicker
+        display={automatic}
+        items={[
+          {
+            ...codex,
+            health: {
+              state: "config_error",
+              service: "unknown",
+              message: "Settings problem.",
+              nextAction: "Repair the usage service, then check again.",
+              recoveryAction: "repair_usage_service",
+            },
+          },
+          claude,
+        ]}
+        onCheck={vi.fn()}
+        onDisplayChange={vi.fn()}
+        onPreferenceChange={vi.fn()}
+        onRepairUsageService={onRepairUsageService}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open recovery" }));
+
+    expect(onRepairUsageService).toHaveBeenCalled();
+  });
+
 });
