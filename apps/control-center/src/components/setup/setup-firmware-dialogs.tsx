@@ -4,11 +4,13 @@ import { CircleAlert, Download, RefreshCw } from "lucide-react";
 import { SetupDialog } from "./setup-dialog";
 
 /**
- * Why a firmware update could not start. The companion refuses the install
- * outright in these three cases, so the connect flow shows the customer what
- * to do instead of moving on without the update.
+ * Why the firmware step could not finish: the companion refuses the install
+ * outright in three of these, and in the fourth the check itself never
+ * answered. The connect flow shows the customer what to do instead of moving
+ * on without the update, or without knowing whether one was needed.
  */
 export type FirmwareBlockedReason =
+  | "firmware_check_failed"
   | "mac_app_update_required"
   | "mac_app_release_check_failed"
   | "mac_app_restarting";
@@ -16,7 +18,8 @@ export type FirmwareBlockedReason =
 export function firmwareBlockedReason(
   code: string | undefined,
 ): FirmwareBlockedReason | null {
-  return code === "mac_app_update_required" ||
+  return code === "firmware_check_failed" ||
+    code === "mac_app_update_required" ||
     code === "mac_app_release_check_failed" ||
     code === "mac_app_restarting"
     ? code
@@ -27,6 +30,14 @@ export const FIRMWARE_BLOCKED_COPY: Record<
   FirmwareBlockedReason,
   { action: string; description: string; title: string }
 > = {
+  // The check itself could not be made, so whether this VibeTV needs an update
+  // is unknown. Saying nothing would leave the customer on firmware nobody
+  // looked at.
+  firmware_check_failed: {
+    action: "Try again",
+    description: "Check the internet connection, then try again.",
+    title: "Could not check VibeTV's firmware",
+  },
   // The Mac App and the firmware of a release belong together, so an older app
   // is not allowed to push newer firmware. The customer can settle it here.
   mac_app_update_required: {

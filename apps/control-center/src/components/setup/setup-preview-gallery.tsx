@@ -254,6 +254,7 @@ export function SetupPreviewGallery() {
         logLines={lines ?? connectLogLines(connectState)}
         onConnect={runConnect}
         onEnterAddressManually={() => setActive("02b")}
+        onSearchAgain={() => setActive("02")}
         onSelect={(candidate) => setSelected(candidate.target)}
         selectedTarget={selected}
       />

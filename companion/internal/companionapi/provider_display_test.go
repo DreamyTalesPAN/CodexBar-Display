@@ -386,3 +386,46 @@ func TestSetupCompletionRefusesAProviderThatSignedOutAfterItsCheck(t *testing.T)
 		t.Fatalf("setup completed against a signed-out provider: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
+
+// Setting up again asks for the display choice again. Carrying the old
+// selection over meant a provider switched on during the new run was not in
+// it, and completion was refused with provider_display_incomplete on a step
+// that offers no control to change the selection -- so the customer could
+// neither finish setup nor get back out of it.
+func TestSetupResetDropsTheDisplaySelectionItWillAskForAgain(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget: "http://127.0.0.1:1",
+		DeviceID:     "vibetv-1",
+		ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+			Mode:        providerDisplayModeFixed,
+			ProviderIDs: []string{"codex"},
+		},
+	})
+	server.providerPreferences.load = providerSettingsFixture
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("setup reset: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ProviderDisplay != nil {
+		t.Fatalf("the discarded setup's display selection survived: %+v", cfg.ProviderDisplay)
+	}
+
+	// And the wizard can finish again: every enabled provider is included by
+	// the synthesised pool rather than measured against a stale one.
+	recorder = httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/provider-display", nil))
+	var response providerDisplayResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Selection.Configured || !response.Selection.Valid {
+		t.Fatalf("unexpected selection after reset: %+v", response.Selection)
+	}
+}

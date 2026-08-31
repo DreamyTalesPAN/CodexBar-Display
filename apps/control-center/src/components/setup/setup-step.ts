@@ -30,6 +30,36 @@ export type SetupStepInput = {
 };
 
 /**
+ * Whether the wizard can move past the device step.
+ *
+ * `ready` is the plain answer, but it needs a rendered usage frame, and a
+ * brand-new customer has no provider yet and therefore no usage to render.
+ * Such a VibeTV is connected, paired and answering -- it reports
+ * `provider_setup_required` -- and the step that fixes it is the provider step,
+ * so holding it here is a dead end with the remedy on the other side.
+ *
+ * Only while the provider selection is still outstanding. Letting it through
+ * afterwards would carry a customer whose provider has just died past the
+ * remaining steps and tell them their VibeTV is live.
+ */
+export function setupDeviceIsUsable(input: {
+  awaitsProviderSetup: boolean;
+  hasActiveDevice: boolean;
+  hasEnteredControlCenter: boolean;
+  connectionRecoveryRequired: boolean;
+  providerSelectionRequired: boolean;
+  ready: boolean;
+}): boolean {
+  return (
+    input.ready ||
+    (input.providerSelectionRequired && input.awaitsProviderSetup) ||
+    (input.hasEnteredControlCenter &&
+      input.hasActiveDevice &&
+      !input.connectionRecoveryRequired)
+  );
+}
+
+/**
  * Which step the customer's actual state puts them on.
  *
  * Deliberately derived rather than remembered: a step that is only advanced by

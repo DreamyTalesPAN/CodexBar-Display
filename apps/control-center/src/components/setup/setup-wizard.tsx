@@ -76,6 +76,8 @@ export type SetupWizardProps = {
   providerError: ApiError | null;
   onDismissProviderError: () => void;
   onSearchDevices: () => void;
+  /** Why the last scan could not be made, when that is what happened. */
+  searchError: ApiError | null;
   onSelectTheme: (theme: SetupThemeOption) => void;
   providers: ProviderItem[];
   selectedThemeId: string | null;
@@ -109,6 +111,7 @@ export function SetupWizard(props: SetupWizardProps) {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
   const [notFoundDismissed, setNotFoundDismissed] = useState(false);
+  const [searchErrorDismissed, setSearchErrorDismissed] = useState(false);
   // Held rather than written on every touch: writing on selection ends the
   // step, so Continue was only ever reachable by not changing anything.
   const [displayDraft, setDisplayDraft] = useState<{
@@ -144,6 +147,7 @@ export function SetupWizard(props: SetupWizardProps) {
   // rather than leaving the customer on an empty list with no reason for it.
   const searchAgain = useCallback(() => {
     setNotFoundDismissed(false);
+    setSearchErrorDismissed(false);
     onSearchDevices();
   }, [onSearchDevices]);
 
@@ -182,6 +186,7 @@ export function SetupWizard(props: SetupWizardProps) {
             setNotFoundDismissed(true);
             setAddressDialogOpen(true);
           }}
+          onSearchAgain={searchAgain}
           onSelect={(candidate) => setSelectedTarget(candidate.target)}
           searching={searchingForDevices}
           selectedTarget={preselected}
@@ -222,6 +227,29 @@ export function SetupWizard(props: SetupWizardProps) {
           onOpenChange={(open) => setNotFoundDismissed(!open)}
           onScanAgain={searchAgain}
           open={searchFailed}
+        />
+        {/*
+          A scan that could not be made at all. Without this the step showed a
+          count of zero and kept the reason -- a refused Local Network
+          permission, a companion that did not answer -- to itself, so the
+          customer could only try the same thing again.
+        */}
+        <SetupConnectFailedDialog
+          description={
+            props.searchError
+              ? [props.searchError.message, props.searchError.nextAction]
+                  .filter(Boolean)
+                  .join(" ")
+              : ""
+          }
+          onEnterAddressManually={() => {
+            setSearchErrorDismissed(true);
+            setAddressDialogOpen(true);
+          }}
+          onOpenChange={(open) => setSearchErrorDismissed(!open)}
+          onSearchAgain={searchAgain}
+          open={Boolean(props.searchError) && !searchErrorDismissed}
+          title="We couldn't search for your VibeTV"
         />
         <SetupConnectFailedDialog
           description={

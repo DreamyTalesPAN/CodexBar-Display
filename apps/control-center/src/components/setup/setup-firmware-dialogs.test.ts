@@ -52,3 +52,22 @@ describe("FIRMWARE_BLOCKED_COPY", () => {
     }
   });
 });
+
+// A firmware check that could not be made is not a check that found nothing.
+// It resolved rather than rejected, so the connect step logged "firmware is up
+// to date" and carried on over firmware nobody had looked at.
+describe("a firmware check that never answered", () => {
+  it("is one of the reasons the connect step can show", () => {
+    expect(firmwareBlockedReason("firmware_check_failed")).toBe(
+      "firmware_check_failed",
+    );
+  });
+
+  it("says what happened and offers a retry", () => {
+    const copy = FIRMWARE_BLOCKED_COPY.firmware_check_failed;
+
+    expect(copy.title).toBe("Could not check VibeTV's firmware");
+    expect(copy.action).toBe("Try again");
+    expect(copy.description).toContain("try again");
+  });
+});

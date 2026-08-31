@@ -60,6 +60,7 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     onProvidersContinue: vi.fn(),
     onDismissProviderError: vi.fn(),
     providerError: null,
+    searchError: null,
     onSearchDevices: vi.fn(),
     onSelectTheme: vi.fn(),
     providers: [provider()],
@@ -111,6 +112,67 @@ describe("SetupWizard: going back", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(shownStep()).toBe("Choose your theme");
+  });
+});
+
+describe("SetupWizard: a scan that could not be made", () => {
+  // The step used to report a count of zero and keep the reason to itself, so
+  // the customer could only try the same thing again -- and for a refused
+  // Local Network permission, trying again can never work.
+  it("says why the scan failed and offers another one", () => {
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "device",
+          deviceSearchState: "failed",
+          searchError: {
+            code: "LOCAL_NETWORK_ACCESS_REQUIRED",
+            message: "Local Network access is off for VibeTV Control Center.",
+            nextAction:
+              "Open System Settings > Privacy & Security > Local Network, allow VibeTV Control Center, then try again.",
+          },
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText("We couldn't search for your VibeTV"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Local Network access is off/).textContent,
+    ).toContain("System Settings");
+  });
+
+  // Every dialog can be dismissed, and dismissing the only rescan control left
+  // the step with nothing but the address field. The step carries its own.
+  it("keeps a way to scan again on the step itself", () => {
+    const onSearchDevices = vi.fn();
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "device",
+          deviceSearchState: "not-found",
+          onSearchDevices,
+        })}
+      />,
+    );
+
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search again" }));
+
+    expect(onSearchDevices).toHaveBeenCalled();
+  });
+
+  it("does not offer it while a scan is still running", () => {
+    render(
+      <SetupWizard
+        {...baseProps({ step: "device", deviceSearchState: "searching" })}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Search again" })).toBeNull();
   });
 });
 

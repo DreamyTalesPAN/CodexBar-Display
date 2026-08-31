@@ -23,6 +23,7 @@ type SetupDeviceScreenProps = {
   onConnect: () => void;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   onEnterAddressManually: () => void;
+  onSearchAgain: () => void;
   onSelect: (candidate: DeviceCandidate) => void;
   /** No scan has produced a result yet, so there is no count to report. */
   searching?: boolean;
@@ -37,6 +38,7 @@ export function SetupDeviceScreen({
   onConnect,
   onCreateSupportReport,
   onEnterAddressManually,
+  onSearchAgain,
   onSelect,
   searching = false,
   selectedTarget,
@@ -78,6 +80,23 @@ export function SetupDeviceScreen({
         {connecting ? <Spinner data-icon="inline-start" /> : null}
         <span>{connecting ? "Connecting" : "Connect"}</span>
       </Button>
+      {/*
+        The step's own way to try again, not a dialog's. Every dialog that
+        offered one could be dismissed, and dismissing it left a scan that had
+        answered with nothing on a screen whose only remaining control was the
+        address field. One standing control covers every way a scan can end.
+      */}
+      {searching ? null : (
+        <Button
+          disabled={connecting}
+          onClick={onSearchAgain}
+          size="sm"
+          type="button"
+          variant="link"
+        >
+          Search again
+        </Button>
+      )}
       <Button
         disabled={connecting}
         onClick={onEnterAddressManually}

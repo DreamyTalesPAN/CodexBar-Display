@@ -94,7 +94,7 @@ import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
 import { setupProviderCanDisplay } from "./setup/setup-providers-screen";
-import { deriveSetupStep } from "./setup/setup-step";
+import { deriveSetupStep, setupDeviceIsUsable } from "./setup/setup-step";
 import {
   SetupUsageDialog,
   setupUsageCauseFor,
@@ -3803,9 +3803,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Deliberately not setupComplete: that needs a field an older companion
   // never reports, so the guard would not exist on exactly the Macs that have
   // one.
-  const deviceUsableForSetup =
-    deviceReady ||
-    (hasEnteredControlCenter && hasActiveDevice && !connectionRecoveryRequired);
+  // A VibeTV whose only problem is that no provider is set up yet reports
+  // ready:false -- readiness needs a rendered usage frame, and there is no
+  // usage to render. Without the middle term the wizard parks a brand-new
+  // customer on the device step and never offers the provider step that is the
+  // only way to fix it. Narrowed to the case that step actually answers:
+  // letting a device through once the provider selection is already done would
+  // carry someone whose provider just died to the live step and tell them
+  // their VibeTV is running.
+  const providerSelectionRequired =
+    providerSelectionSetup?.providerSelectionRequired === true;
+  const deviceUsableForSetup = setupDeviceIsUsable({
+    awaitsProviderSetup: deviceAwaitsProviderSetup(device),
+    connectionRecoveryRequired,
+    hasActiveDevice,
+    hasEnteredControlCenter,
+    providerSelectionRequired,
+    ready: deviceReady,
+  });
 
   const setupStep = deriveSetupStep({
     deviceUsable: deviceUsableForSetup,
@@ -3814,13 +3829,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     // one either, so there is nothing to ask the customer for.
     displaySelectionSupported: Boolean(providerDisplay) || !providerDisplayError,
     initialCheckComplete: initialCompanionCheckComplete,
-    providerSelectionRequired:
-      providerSelectionSetup?.providerSelectionRequired === true,
+    providerSelectionRequired,
     themeSetupRequired,
   });
   const setupOwnsScreen =
     setupStep !== "live" || !(setupFinished || setupComplete);
-
 
   const setupProviders = (providerPreferences || []).filter(isProviderItem);
   // The display step may only offer providers that can actually show something.
@@ -3859,6 +3872,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         board: connected.board,
         firmware: connected.firmware,
       });
+      // A check that could not be made is not a check that found nothing. Both
+      // resolve rather than reject, and treating them as "up to date" told the
+      // customer their firmware was current while it was simply unknown.
+      if (!update || update.status === "check_failed") {
+        throw {
+          code: "firmware_check_failed",
+          message: "Could not check VibeTV's firmware.",
+          nextAction: "Check the internet connection, then try again.",
+        };
+      }
       return hasFirmwareUpdate(update) && update?.latestFirmware
         ? {
             from: update.installedFirmware || connected.firmware || "",
@@ -3958,6 +3981,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }
           onProvidersContinue={completeProviderSetup}
           onDismissProviderError={() => setProviderDisplayError(null)}
+          searchError={
+            startupDeviceSearchState === "failed" && !needsRuntimeRecovery
+              ? lastError
+              : null
+          }
           providerError={providerDisplayError}
           onSearchDevices={() => void searchAndConnect()}
           onSelectTheme={(theme) => setSelectedThemeId(theme.id)}

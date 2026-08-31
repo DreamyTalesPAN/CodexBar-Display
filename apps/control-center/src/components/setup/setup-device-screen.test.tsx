@@ -22,6 +22,7 @@ function render(props: Partial<Parameters<typeof SetupDeviceScreen>[0]> = {}) {
       logLines={[]}
       onConnect={vi.fn()}
       onEnterAddressManually={vi.fn()}
+      onSearchAgain={vi.fn()}
       onSelect={vi.fn()}
       selectedTarget={known.target}
       {...props}

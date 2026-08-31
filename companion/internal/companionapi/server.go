@@ -3176,6 +3176,13 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 	_, err := s.updateConfig(func(cfg *runtimeconfig.Config) {
 		cfg.ClearDevices()
 		cfg.SetProviderSelectionSetupComplete(false)
+		// Setting up again asks for the display choice again, so the old one is
+		// not carried over. Keeping it sent the customer back into the wizard
+		// with a selection made for the setup they just discarded: a provider
+		// switched on during the new run is not in it, and completion is then
+		// refused with provider_display_incomplete on a step that offers no way
+		// to change the selection.
+		cfg.ProviderDisplay = nil
 	})
 	if err != nil {
 		writeInternalError(w, err)

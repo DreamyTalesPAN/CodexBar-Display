@@ -3,6 +3,7 @@ import {
   deriveSetupStep,
   previousSetupStep,
   resolveSetupStep,
+  setupDeviceIsUsable,
   type SetupStepInput,
 } from "./setup-step";
 
@@ -112,5 +113,72 @@ describe("resolveSetupStep", () => {
   it("never lets a stale step hold the customer ahead of the truth", () => {
     // The device dropped out while they were looking at the theme step.
     expect(resolveSetupStep("device", "theme")).toBe("device");
+  });
+});
+
+describe("setupDeviceIsUsable", () => {
+  const coldStart = {
+    awaitsProviderSetup: true,
+    connectionRecoveryRequired: false,
+    hasActiveDevice: true,
+    hasEnteredControlCenter: false,
+    providerSelectionRequired: true,
+    ready: false,
+  };
+
+  // A brand-new customer has CodexBar bundled but no provider signed in, so
+  // their first VibeTV cannot render usage and reports ready:false. Holding
+  // them on the device step puts the remedy -- the provider step -- on the
+  // other side of the wall.
+  it("lets a VibeTV waiting only for a provider reach the provider step", () => {
+    expect(setupDeviceIsUsable(coldStart)).toBe(true);
+  });
+
+  // The same state after the provider selection is done is a provider that
+  // died, and the steps ahead have nothing to offer for it. Letting it through
+  // would end on the live screen telling the customer their VibeTV is running.
+  it("does not let it through once the provider selection is done", () => {
+    expect(
+      setupDeviceIsUsable({ ...coldStart, providerSelectionRequired: false }),
+    ).toBe(false);
+  });
+
+  it("still needs the VibeTV to be answering", () => {
+    expect(
+      setupDeviceIsUsable({ ...coldStart, awaitsProviderSetup: false }),
+    ).toBe(false);
+  });
+
+  it("keeps a ready VibeTV usable whatever else is true", () => {
+    expect(
+      setupDeviceIsUsable({
+        ...coldStart,
+        awaitsProviderSetup: false,
+        providerSelectionRequired: false,
+        ready: true,
+      }),
+    ).toBe(true);
+  });
+
+  // Once the customer is inside, a device that is only reconnecting stays
+  // theirs -- unchanged behaviour, pinned so the new term cannot swallow it.
+  it("does not eject someone already inside over a missed poll", () => {
+    expect(
+      setupDeviceIsUsable({
+        ...coldStart,
+        awaitsProviderSetup: false,
+        hasEnteredControlCenter: true,
+        providerSelectionRequired: false,
+      }),
+    ).toBe(true);
+    expect(
+      setupDeviceIsUsable({
+        ...coldStart,
+        awaitsProviderSetup: false,
+        connectionRecoveryRequired: true,
+        hasEnteredControlCenter: true,
+        providerSelectionRequired: false,
+      }),
+    ).toBe(false);
   });
 });

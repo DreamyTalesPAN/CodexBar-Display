@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 //
-// The reconcile effect puts an enabled provider back into the Automatic pool
-// when it is missing from it — that is the remains of a half-finished enable.
-// It must not do that to a provider the customer just took out by hand, or the
-// "Include … in Automatic" control cannot exclude anything.
+// The reconcile finishes an enable this picker started, where the display
+// write failed or raced. It must not touch a provider that is simply absent
+// from a saved pool: that is what "Include … in Automatic" writes when the
+// customer leaves one out, and the two are indistinguishable once loaded —
+// so only an enable made here counts.
 //
 // DO NOT weaken these tests to make them pass. Fix the component.
 import { act, cleanup, render, screen } from "@testing-library/react";
@@ -42,6 +43,11 @@ function provider(providerId: string, label: string): PreferenceDescriptor {
 
 const codex = provider("codex", "Codex");
 const claude = provider("claude", "Claude");
+const claudeOff: PreferenceDescriptor = {
+  ...claude,
+  value: false,
+  effectiveValue: false,
+};
 
 function pool(providerIds: string[]): ProviderDisplaySelection {
   return { mode: "automatic", providerIds, configured: true, valid: true };
@@ -53,11 +59,12 @@ function picker(
     selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
     providerId: string,
   ) => void,
+  items: PreferenceDescriptor[] = [codex, claude],
 ) {
   return (
     <ProviderPicker
       display={display}
-      items={[codex, claude]}
+      items={items}
       onCheck={vi.fn()}
       onDisplayChange={onDisplayChange}
       onPreferenceChange={vi.fn()}
@@ -70,7 +77,9 @@ function picker(
 describe("ProviderPicker reconcile", () => {
   it("leaves a provider out once the customer excludes it", async () => {
     const onDisplayChange = vi.fn();
-    const { rerender } = render(picker(pool(["codex", "claude"]), onDisplayChange));
+    const { rerender } = render(
+      picker(pool(["codex", "claude"]), onDisplayChange),
+    );
 
     await act(async () => {
       screen
@@ -92,38 +101,57 @@ describe("ProviderPicker reconcile", () => {
     expect(onDisplayChange).not.toHaveBeenCalled();
   });
 
-  it("still repairs a provider that was never excluded on purpose", async () => {
+  // The exclusion is saved, so the customer meets it again on a fresh mount --
+  // reopening Settings, or restarting the app. A mount-scoped memory of the
+  // click cannot survive that, and the loaded state alone cannot tell the
+  // exclusion from a half-finished enable.
+  it("leaves it out again after Settings is reopened", async () => {
     const onDisplayChange = vi.fn();
-    // Claude is enabled but absent from the saved pool, with no customer action
-    // behind it — the half-finished enable the reconcile exists for.
+    const first = render(picker(pool(["codex", "claude"]), onDisplayChange));
+    await act(async () => {
+      screen
+        .getByRole("checkbox", { name: "Include Claude in Automatic" })
+        .click();
+    });
+    first.unmount();
+    onDisplayChange.mockClear();
+
     await act(async () => {
       render(picker(pool(["codex"]), onDisplayChange));
     });
 
-    expect(onDisplayChange).toHaveBeenCalledWith(
-      { mode: "automatic", providerIds: ["codex", "claude"] },
-      "claude",
-    );
+    expect(onDisplayChange).not.toHaveBeenCalled();
+    expect(
+      screen
+        .getByRole("checkbox", { name: "Include Claude in Automatic" })
+        .getAttribute("aria-checked"),
+    ).toBe("false");
   });
 
-  it("looks after it again once the customer puts it back", async () => {
+  it("does not touch a saved pool it never wrote to", async () => {
     const onDisplayChange = vi.fn();
-    const { rerender } = render(picker(pool(["codex", "claude"]), onDisplayChange));
-
+    // Claude is enabled and absent from the saved pool, with no enable made
+    // here behind it. Nothing to finish, so nothing to write.
     await act(async () => {
-      screen
-        .getByRole("checkbox", { name: "Include Claude in Automatic" })
-        .click();
+      render(picker(pool(["codex"]), onDisplayChange));
+    });
+
+    expect(onDisplayChange).not.toHaveBeenCalled();
+  });
+
+  it("finishes an enable whose display write never landed", async () => {
+    const onDisplayChange = vi.fn();
+    const { rerender } = render(
+      picker(pool(["codex"]), onDisplayChange, [codex, claudeOff]),
+    );
+
+    // The customer switches Claude on here; the enable lands, the pool write
+    // does not.
+    await act(async () => {
+      screen.getByRole("switch", { name: "Enable Claude" }).click();
     });
     await act(async () => {
-      rerender(picker(pool(["codex"]), onDisplayChange));
-    });
-    onDisplayChange.mockClear();
-
-    await act(async () => {
-      screen
-        .getByRole("checkbox", { name: "Include Claude in Automatic" })
-        .click();
+      rerender(picker(pool(["codex"]), onDisplayChange, [codex, claude]));
     });
 
     expect(onDisplayChange).toHaveBeenCalledWith(

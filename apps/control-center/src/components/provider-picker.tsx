@@ -99,16 +99,19 @@ export function ProviderPicker({
       lastAutomaticProviderIdsRef.current = display.providerIds;
     }
   }, [display]);
-  // Self-heal orphaned state: a provider can end up enabled (health-checked,
-  // possibly healthy) while never making it into the Automatic display
-  // selection, e.g. when the enable write and the display write raced, or
-  // the display write failed after the enable write already succeeded. That
-  // leaves a provider the customer switched on that VibeTV never shows, with
-  // nothing on screen saying why; reconcile the selection to include every
-  // enabled provider instead of requiring a manual toggle. Guarded by a
-  // per-provider "already attempted" set so a failed reconcile write does
-  // not retry forever in a tight loop.
-  const attemptedReconcileIdsRef = useRef<Set<string>>(new Set());
+  // Finish an enable this picker started: switching a provider on and adding it
+  // to the Automatic selection are two writes, and the second can fail or race.
+  // That leaves a provider the customer switched on that VibeTV never shows,
+  // with nothing on screen saying why, so it is repaired here.
+  //
+  // Only for enables made here. A saved selection that simply does not list an
+  // enabled provider is not damage -- it is what `Include ... in Automatic`
+  // writes when the customer leaves one out, and repairing that undid the
+  // control they had just used. The two are indistinguishable in the loaded
+  // state, so the difference has to be the action, and only this component
+  // knows about the action. Cleared per provider once attempted so a failing
+  // write does not retry in a tight loop.
+  const enabledHereRef = useRef<Set<string>>(new Set());
   const selectedKey = [...selected].sort().join(",");
   useEffect(() => {
     if (
@@ -123,14 +126,12 @@ export function ProviderPicker({
         item.value &&
         !selected.has(item.providerId) &&
         !pendingPreferenceIds.has(item.id) &&
-        !attemptedReconcileIdsRef.current.has(item.providerId),
+        enabledHereRef.current.has(item.providerId),
     );
     if (orphaned.length === 0) {
       return;
     }
-    orphaned.forEach((item) =>
-      attemptedReconcileIdsRef.current.add(item.providerId),
-    );
+    orphaned.forEach((item) => enabledHereRef.current.delete(item.providerId));
     const providerIds = [
       ...display.providerIds,
       ...orphaned.map((item) => item.providerId),
@@ -221,17 +222,6 @@ export function ProviderPicker({
       : [...selected].filter((providerId) => providerId !== item.providerId);
     if (providerIds.length === 0) {
       return;
-    }
-    if (checked) {
-      // Re-including it by hand ends the exclusion, so the reconcile below may
-      // look after it again.
-      attemptedReconcileIdsRef.current.delete(item.providerId);
-    } else {
-      // An enabled provider that is not in the pool is normally the remains of
-      // a half-finished enable, and the reconcile puts it back. Leaving this
-      // one out is the customer saying so, and reconciling it would undo the
-      // control they just used.
-      attemptedReconcileIdsRef.current.add(item.providerId);
     }
     void onDisplayChange({ mode: "automatic", providerIds }, item.providerId);
   }
@@ -424,9 +414,12 @@ export function ProviderPicker({
                         aria-label={`${item.value ? "Disable" : "Enable"} ${item.label}`}
                         checked={item.value}
                         disabled={disableLocked || pendingPreference}
-                        onCheckedChange={(value) =>
-                          void onPreferenceChange(item, value)
-                        }
+                        onCheckedChange={(value) => {
+                          if (value) {
+                            enabledHereRef.current.add(item.providerId);
+                          }
+                          void onPreferenceChange(item, value);
+                        }}
                       />
                     </label>
                     {!pendingCheck &&
@@ -494,7 +487,9 @@ export function providerMatchesQuery(
   );
 }
 
-export function isProviderItem(item: PreferenceDescriptor): item is ProviderItem {
+export function isProviderItem(
+  item: PreferenceDescriptor,
+): item is ProviderItem {
   return (
     item.section === "providers" &&
     item.type === "boolean" &&
