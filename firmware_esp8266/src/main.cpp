@@ -3103,7 +3103,6 @@ void cleanupCableThemeSlot(
   }
   if (activation == CableTransferActivation::kScreensaver &&
       (standbyState.active || screensaverPreviewState.showing)) {
-    Serial.println("asset_cleanup_skipped source=cable_cleanup reason=screensaver_active");
     return;
   }
   String raw;
@@ -3124,9 +3123,7 @@ void cleanupCableThemeSlot(
       LittleFS.exists(kLegacyMiniGIFPath) &&
       !codexbar_display::themespec::CompiledThemeSpecReferencesAsset(
           scene, kLegacyMiniGIFPath)) {
-    if (LittleFS.remove(kLegacyMiniGIFPath)) {
-      Serial.printf("asset_deleted path=%s source=cable_cleanup\n", kLegacyMiniGIFPath);
-    }
+    LittleFS.remove(kLegacyMiniGIFPath);
   }
 
   while (true) {
@@ -3136,11 +3133,8 @@ void cleanupCableThemeSlot(
       break;
     }
     if (!LittleFS.remove(obsoletePath)) {
-      Serial.printf("asset_cleanup_failed path=%s\n", obsoletePath.c_str());
       break;
     }
-    Serial.printf(
-        "asset_deleted path=%s source=cable_cleanup\n", obsoletePath.c_str());
     ESP.wdtFeed();
   }
   codexbar_display::themespec::ReleaseCompiledThemeSpec(scene);
