@@ -141,6 +141,14 @@ void test_connection_transition_rejects_unsafe_modes_and_corruption() {
   TEST_ASSERT_FALSE(DecodeConnectionTransition(record, sizeof(record) - 1, decoded));
 }
 
+void test_cable_wifi_configuration_accepts_only_cable_or_wifi_setup() {
+  TEST_ASSERT_TRUE(CanConfigureWifiOverCable(ConnectionMode::kCable, false));
+  TEST_ASSERT_TRUE(CanConfigureWifiOverCable(ConnectionMode::kWifi, true));
+  TEST_ASSERT_FALSE(CanConfigureWifiOverCable(ConnectionMode::kWifi, false));
+  TEST_ASSERT_FALSE(CanConfigureWifiOverCable(
+      ConnectionMode::kLegacyWifiOnly, true));
+}
+
 void test_connection_transition_gives_setup_a_bounded_customer_window() {
   TEST_ASSERT_EQUAL_UINT32(
       kConnectionTransitionConfirmationMs,
@@ -171,6 +179,7 @@ int main(int, char**) {
   RUN_TEST(test_stored_mode_is_never_reinterpreted);
   RUN_TEST(test_connection_transition_round_trips_both_directions);
   RUN_TEST(test_connection_transition_rejects_unsafe_modes_and_corruption);
+  RUN_TEST(test_cable_wifi_configuration_accepts_only_cable_or_wifi_setup);
   RUN_TEST(test_connection_transition_gives_setup_a_bounded_customer_window);
   return UNITY_END();
 }

@@ -73,6 +73,11 @@ inline bool CanBeginConnectionTransition(ConnectionMode current, ConnectionMode 
          current != target;
 }
 
+inline bool CanConfigureWifiOverCable(ConnectionMode mode, bool setupMode) {
+  return mode == ConnectionMode::kCable ||
+         (mode == ConnectionMode::kWifi && setupMode);
+}
+
 inline unsigned long ConnectionTransitionTimeoutMs(bool setupMode) {
   return setupMode ? kConnectionTransitionSetupMs
                    : kConnectionTransitionConfirmationMs;

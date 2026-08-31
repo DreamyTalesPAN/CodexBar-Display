@@ -1449,6 +1449,15 @@ func cableHelloMatchesConfig(hello protocol.DeviceHello, configuredDeviceID stri
 		strings.EqualFold(hello.Capabilities.Transport.Mode, "cable")
 }
 
+func cableHelloCanConfigureWiFi(hello protocol.DeviceHello, configuredDeviceID string) bool {
+	hello = hello.Normalize()
+	return strings.EqualFold(hello.DeviceID, strings.TrimSpace(configuredDeviceID)) &&
+		strings.EqualFold(hello.Capabilities.Transport.Active, "usb") &&
+		(strings.EqualFold(hello.Capabilities.Transport.Mode, "cable") ||
+			(strings.EqualFold(hello.Capabilities.Transport.Mode, "wifi") &&
+				strings.EqualFold(hello.NetworkMode, "setup")))
+}
+
 func configuredStatusTarget(cfg runtimeconfig.Config) string {
 	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
 		return cableDeviceTarget
@@ -3591,7 +3600,9 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
-	if mode == "wifi" && !modeAlreadySelected && (!known || strings.TrimSpace(knownDevice.Target) == "") {
+	wifiCredentialsRequired := (deviceMode == "wifi" && strings.EqualFold(strings.TrimSpace(hello.NetworkMode), "setup")) ||
+		(!modeAlreadySelected && (!known || strings.TrimSpace(knownDevice.Target) == ""))
+	if mode == "wifi" && wifiCredentialsRequired {
 		if _, err := s.updateConfig(func(current *runtimeconfig.Config) {
 			current.SetActiveDevice(runtimeconfig.KnownDevice{
 				DeviceID:    hello.DeviceID,
@@ -3750,7 +3761,7 @@ func (s *Server) handleSetupWiFi(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "cable_setup_required", "VibeTV is not ready to receive WiFi details by Cable.", "Choose Cable first, then choose WiFi again.")
 		return
 	}
-	port, hello, ok := s.requireCableControlDevice(w, cfg)
+	port, hello, ok := s.requireCableWiFiSetupDevice(w, cfg)
 	if !ok {
 		return
 	}
@@ -4402,11 +4413,26 @@ func (s *Server) requireCableControlDevice(
 	w http.ResponseWriter,
 	cfg runtimeconfig.Config,
 ) (string, protocol.DeviceHello, bool) {
+	return s.requireCableDevice(w, cfg, cableHelloMatchesConfig)
+}
+
+func (s *Server) requireCableWiFiSetupDevice(
+	w http.ResponseWriter,
+	cfg runtimeconfig.Config,
+) (string, protocol.DeviceHello, bool) {
+	return s.requireCableDevice(w, cfg, cableHelloCanConfigureWiFi)
+}
+
+func (s *Server) requireCableDevice(
+	w http.ResponseWriter,
+	cfg runtimeconfig.Config,
+	matches func(protocol.DeviceHello, string) bool,
+) (string, protocol.DeviceHello, bool) {
 	if s.firmwareUpdateActive.Load() {
 		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then try again.")
 		return "", protocol.DeviceHello{}, false
 	}
-	port, hello, err := s.cableControlDevice(cfg)
+	port, hello, err := s.cableDevice(cfg, matches)
 	if err == nil {
 		return port, hello, true
 	}
@@ -4423,6 +4449,13 @@ func (s *Server) requireCableControlDevice(
 }
 
 func (s *Server) cableControlDevice(cfg runtimeconfig.Config) (string, protocol.DeviceHello, error) {
+	return s.cableDevice(cfg, cableHelloMatchesConfig)
+}
+
+func (s *Server) cableDevice(
+	cfg runtimeconfig.Config,
+	matches func(protocol.DeviceHello, string) bool,
+) (string, protocol.DeviceHello, error) {
 	expectedDeviceID := strings.TrimSpace(cfg.DeviceID)
 	if expectedDeviceID == "" {
 		return "", protocol.DeviceHello{}, errors.New("cable device identity is unavailable")
@@ -4433,7 +4466,7 @@ func (s *Server) cableControlDevice(cfg runtimeconfig.Config) (string, protocol.
 	}
 	hello, err := s.readCableHello(port)
 	hello = hello.Normalize()
-	if err != nil || !cableHelloMatchesConfig(hello, expectedDeviceID) {
+	if err != nil || !matches(hello, expectedDeviceID) {
 		if err == nil {
 			err = errors.New("cable device identity changed")
 		}

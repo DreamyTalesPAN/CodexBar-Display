@@ -7727,6 +7727,58 @@ func TestSetupConnectionModeCollectsWiFiCredentialsBeforeChangingHostMode(t *tes
 	}
 }
 
+func TestSetupConnectionModeCollectsCredentialsForWifiDeviceInSetup(t *testing.T) {
+	const deviceID = "wifi-setup-device"
+	server := newTestServer(t, runtimeconfig.Config{
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: true,
+		KnownDevices: []runtimeconfig.KnownDevice{{
+			DeviceID: deviceID, Target: "http://192.168.178.72", DeviceToken: "pair-token",
+		}},
+	})
+	hello := protocol.DeviceHello{
+		Kind:        "hello",
+		DeviceID:    deviceID,
+		NetworkMode: "setup",
+		Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{
+			Active: "usb", Mode: "wifi", Supported: []string{"usb", "wifi"},
+		}},
+	}
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/cu.usbserial-vibetv", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return hello, nil }
+	server.setCableConnectionMode = func(string, string, string) error {
+		t.Fatal("WiFi setup must collect credentials without changing connection mode")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "wifi_credentials_required") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	configured := false
+	server.configureCableWiFi = func(port, gotDeviceID, ssid, password string) error {
+		configured = true
+		if port != "/dev/cu.usbserial-vibetv" || gotDeviceID != deviceID || ssid != "Home WiFi" || password != "secret pass" {
+			t.Fatalf("unexpected WiFi configuration port=%q device=%q ssid=%q password=%q", port, gotDeviceID, ssid, password)
+		}
+		return nil
+	}
+	wifi := httptest.NewRecorder()
+	wifiReq := httptest.NewRequest(http.MethodPost, "/v1/setup/wifi", strings.NewReader(`{"ssid":"Home WiFi","password":"secret pass"}`))
+	wifiReq.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(wifi, wifiReq)
+	if wifi.Code != http.StatusAccepted || !strings.Contains(wifi.Body.String(), "waiting_for_wifi") || !configured {
+		t.Fatalf("WiFi credentials status=%d configured=%t body=%s", wifi.Code, configured, wifi.Body.String())
+	}
+}
+
 func TestSetupConnectionModeRejectsWiFiForCableOnlyBoard(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{DeviceID: "lilygo"})
 	server.resolveCablePort = func(string, string) (string, error) {

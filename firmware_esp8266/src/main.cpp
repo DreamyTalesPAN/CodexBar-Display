@@ -2122,22 +2122,25 @@ bool handleSerialControlLine(const String& line) {
     String error;
     const device_settings::ConnectionMode target =
         device_settings::ConnectionMode::kWifi;
+    const bool alreadyInWifiSetup =
+        deviceSettings.connectionMode == target && setupMode;
     bool rejected = strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
                     ssid.length() == 0 ||
                     ssid.length() >= kWifiSsidBytes ||
                     password.length() >= kWifiPasswordBytes ||
-                    deviceSettings.connectionMode !=
-                        device_settings::ConnectionMode::kCable;
+                    !device_settings::CanConfigureWifiOverCable(
+                        deviceSettings.connectionMode, setupMode);
     if (!rejected && !saveWifiCredentials(ssid, password)) {
       rejected = true;
     }
-    if (!rejected && !beginConnectionTransition(target, error)) {
+    if (!rejected && !alreadyInWifiSetup &&
+        !beginConnectionTransition(target, error)) {
       rejected = true;
     }
     if (rejected) {
       emitSerialError("wifi-configuration-rejected");
     } else {
-      emitSerialConnectionMode("switching", target, true);
+      emitSerialConnectionMode("switching", target, !alreadyInWifiSetup);
       scheduleReboot("wifi_credentials_saved");
     }
   } else {
