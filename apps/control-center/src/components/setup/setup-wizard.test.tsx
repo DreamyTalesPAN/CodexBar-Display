@@ -93,24 +93,48 @@ describe("SetupWizard: going back", () => {
   // the fix the override outlived the visit and the customer was held on the
   // provider step for good -- no Back button, and a Continue that answered 200
   // without ever moving.
-  it("hands the screen back to the derived step once Continue is pressed", () => {
+  it("hands the screen back to the derived step once Continue is pressed", async () => {
     render(<SetupWizard {...baseProps({ step: "display" })} />);
     expect(shownStep()).toBe("Display Mode");
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Choose AI providers");
 
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    // Continue waits for the companion to accept it before releasing the step.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
     expect(shownStep()).toBe("Display Mode");
   });
 
-  it("does not offer Back on the step it lands on, and still moves on", () => {
+  // Coming back from theme leaves the derived step ahead, so a refused
+  // completion would carry the customer to a screen with nowhere to show it.
+  it("keeps the provider step when completion is refused", async () => {
+    const onProvidersContinue = vi.fn(async () => false);
+    render(
+      <SetupWizard {...baseProps({ step: "theme", onProvidersContinue })} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Choose AI providers");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
+
+    expect(onProvidersContinue).toHaveBeenCalled();
+    expect(shownStep()).toBe("Choose AI providers");
+  });
+
+  it("does not offer Back on the step it lands on, and still moves on", async () => {
     render(<SetupWizard {...baseProps({ step: "display" })} />);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
 
     // No way back from the provider step by design -- so Continue has to work.
     expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
     expect(shownStep()).toBe("Display Mode");
   });
 

@@ -76,7 +76,12 @@ export type SetupWizardProps = {
   onProviderCheck: (provider: ProviderItem) => void;
   onProviderRecover: (provider: ProviderItem) => void;
   onProviderToggle: (provider: ProviderItem, enabled: boolean) => void;
-  onProvidersContinue: () => void;
+  /**
+   * Resolving false keeps the customer on the step: the companion can refuse
+   * completion, and the step it would otherwise hand them to has nowhere to
+   * show that.
+   */
+  onProvidersContinue: () => void | Promise<boolean | void>;
   /** What the companion refused the provider or display step, if anything. */
   providerError: ApiError | null;
   onDismissProviderError: () => void;
@@ -342,8 +347,14 @@ export function SetupWizard(props: SetupWizardProps) {
           onBack={goBack}
           onCheckAgain={props.onProviderCheck}
           onContinue={() => {
-            goForward();
-            props.onProvidersContinue();
+            // Not goForward() first: coming back here from the theme step
+            // leaves the derived step ahead, so a refusal would carry the
+            // customer on to a screen that cannot render it.
+            void Promise.resolve(props.onProvidersContinue()).then((done) => {
+              if (done !== false) {
+                goForward();
+              }
+            });
           }}
           onRecover={props.onProviderRecover}
           onToggle={props.onProviderToggle}

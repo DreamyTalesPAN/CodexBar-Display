@@ -2906,10 +2906,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setProviderSelectionSetup(payload.setup);
       setProviderDisplayError(null);
       setLastError(null);
+      return true;
     } catch (error) {
       setProviderDisplayError(
         normalizeCaughtError(error, "Provider setup is not complete yet."),
       );
+      return false;
     } finally {
       setBusyAction(null);
     }
