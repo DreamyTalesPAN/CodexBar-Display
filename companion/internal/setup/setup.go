@@ -308,6 +308,9 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		return err
 	}
 	fmt.Fprintf(d.stdout, "CodexBar CLI: %s\n", codexbarBin)
+	if !opts.ValidateOnly && !opts.DryRun {
+		stopLaunchAgentBestEffort(ctx, d)
+	}
 
 	port := ""
 	cableDeviceID := ""
@@ -322,10 +325,6 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		// Identity resolution owns the package-level serial handle. Release it
 		// before validation paths open the same exclusive port for a probe.
 		usb.CloseDefaultSender()
-	}
-
-	if !opts.ValidateOnly && !opts.DryRun {
-		stopLaunchAgentBestEffort(ctx, d)
 	}
 
 	// Avoid probe-close contention on the flash path; upload itself is the authoritative serial check.

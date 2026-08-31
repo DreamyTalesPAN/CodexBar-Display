@@ -613,6 +613,7 @@ func TestRunWithDepsWritesDefaultMiniThemeConfigWhenUnset(t *testing.T) {
 func TestRunWithDepsRejectsMissingCableIdentity(t *testing.T) {
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)
+	launchAgentStopped := false
 
 	err := runWithDeps(context.Background(), Options{
 		Transport: "usb",
@@ -628,6 +629,9 @@ func TestRunWithDepsRejectsMissingCableIdentity(t *testing.T) {
 		},
 		uid: func() int { return 501 },
 		resolvePort: func(string) (string, error) {
+			if !launchAgentStopped {
+				t.Fatal("Cable setup must stop the running launch agent before resolving the serial port")
+			}
 			return "", errors.New("no matching Cable VibeTV answered hello")
 		},
 		findCodexbar: func() (string, error) {
@@ -640,6 +644,9 @@ func TestRunWithDepsRejectsMissingCableIdentity(t *testing.T) {
 			return "", errors.New("not found")
 		},
 		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name == "launchctl" && len(args) > 0 && args[0] == "bootout" {
+				launchAgentStopped = true
+			}
 			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
 				return "state = running", nil
 			}
