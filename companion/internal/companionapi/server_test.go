@@ -4424,6 +4424,49 @@ func TestFirmwareLatestSuppressesUnsupportedCableUpdate(t *testing.T) {
 	}
 }
 
+func TestFirmwareLatestResolvesUnsupportedCableUpdateAfterRestart(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "lilygo",
+	})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{}, false
+	}
+	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
+		if explicit != "" || expectedDeviceID != "lilygo" {
+			t.Fatalf("unexpected Cable resolution explicit=%q expected=%q", explicit, expectedDeviceID)
+		}
+		return "/dev/mock-lilygo", nil
+	}
+	server.readCableHello = func(port string) (protocol.DeviceHello, error) {
+		if port != "/dev/mock-lilygo" {
+			t.Fatalf("unexpected Cable port %q", port)
+		}
+		return protocol.DeviceHello{
+			DeviceID: "lilygo",
+			Board:    "esp32-lilygo-t-display-s3",
+			Firmware: "1.0.40",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"},
+			},
+		}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp32-lilygo-t-display-s3&firmware=1.0.39", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got firmwareLatestResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.UpdateAvailable || got.Status != "unsupported" || got.InstalledFirmware != "1.0.40" {
+		t.Fatalf("restart advertised unsupported or stale Cable update: %+v", got)
+	}
+}
+
 func TestFirmwareUpdateCommandUsesCheckedManifest(t *testing.T) {
 	target := "http://192.168.178.72"
 	manifestURL := "http://127.0.0.1:47833/firmware-manifest.json"

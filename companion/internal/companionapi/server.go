@@ -4799,18 +4799,24 @@ func (s *Server) handleFirmwareLatest(w http.ResponseWriter, r *http.Request) {
 	board := strings.TrimSpace(r.URL.Query().Get("board"))
 	installedFirmware := strings.TrimSpace(r.URL.Query().Get("firmware"))
 	checkedAt := time.Now().UTC().Format(time.RFC3339)
-	if board == "" || installedFirmware == "" {
-		writeJSON(w, http.StatusOK, firmwareLatestResponse{
-			CheckedAt:         checkedAt,
-			InstalledFirmware: installedFirmware,
-			UpdateAvailable:   false,
-			Status:            "missing_device_info",
-			Message:           "VibeTV update info is not available yet.",
-		})
-		return
-	}
 	if cfg, err := s.config(); err == nil && runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
-		if hello, ok := s.currentCableHello(); ok && cableHelloMatchesConfig(hello, cfg.DeviceID) && !hello.HasFeature(protocol.FeatureCableTransferV1) {
+		hello, ok := s.currentCableHello()
+		verified := ok && cableHelloMatchesConfig(hello, cfg.DeviceID)
+		if !verified {
+			s.firmwareUpdateStartMu.Lock()
+			if _, updateInProgress := s.activeFirmwareUpdateJob(); !updateInProgress {
+				_, hello, err = s.cableControlDevice(cfg)
+				verified = err == nil
+			}
+			s.firmwareUpdateStartMu.Unlock()
+		}
+		if !verified {
+			board = ""
+		} else {
+			board = strings.TrimSpace(hello.Board)
+			installedFirmware = strings.TrimSpace(hello.Firmware)
+		}
+		if verified && !hello.HasFeature(protocol.FeatureCableTransferV1) {
 			writeJSON(w, http.StatusOK, firmwareLatestResponse{
 				CheckedAt:         checkedAt,
 				InstalledFirmware: installedFirmware,
@@ -4820,6 +4826,16 @@ func (s *Server) handleFirmwareLatest(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+	}
+	if board == "" || installedFirmware == "" {
+		writeJSON(w, http.StatusOK, firmwareLatestResponse{
+			CheckedAt:         checkedAt,
+			InstalledFirmware: installedFirmware,
+			UpdateAvailable:   false,
+			Status:            "missing_device_info",
+			Message:           "VibeTV update info is not available yet.",
+		})
+		return
 	}
 
 	installedVersion, installedErr := versioning.ParseSemVer(installedFirmware)
