@@ -66,3 +66,21 @@ describe("SetupDeviceScreen", () => {
     expect(html).toContain("&gt; updating firmware — keep VibeTV powered on");
   });
 });
+
+// A count is a result, and before a scan has answered there is none. Saying
+// "0 VibeTVs found" while the scan was still running -- or before it had even
+// started -- told the customer the search had failed when it had not.
+describe("SetupDeviceScreen while the scan is still running", () => {
+  it("reports no count until a scan has answered", () => {
+    const html = render({ candidates: [], searching: true });
+
+    expect(html).toContain("Looking for VibeTVs on your WiFi.");
+    expect(html).not.toContain("0 VibeTVs found on your WiFi.");
+  });
+
+  it("reports the empty result once the scan has answered", () => {
+    const html = render({ candidates: [], searching: false });
+
+    expect(html).toContain("0 VibeTVs found on your WiFi.");
+  });
+});

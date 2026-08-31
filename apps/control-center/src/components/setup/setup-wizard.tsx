@@ -134,6 +134,11 @@ export function SetupWizard(props: SetupWizardProps) {
   }, [deviceCandidates, selectedTarget]);
 
   const searchFailed = deviceSearchState === "not-found" && !notFoundDismissed;
+  // "idle" is before the first scan was started, so like "searching" it has no
+  // result to report. Claiming a count there told the customer none were found
+  // while the scan that would find them had not answered, or not even run.
+  const searchingForDevices =
+    deviceSearchState === "idle" || deviceSearchState === "searching";
 
   // Searching again clears the dismissal, so a second empty scan is explained
   // rather than leaving the customer on an empty list with no reason for it.
@@ -178,6 +183,7 @@ export function SetupWizard(props: SetupWizardProps) {
             setAddressDialogOpen(true);
           }}
           onSelect={(candidate) => setSelectedTarget(candidate.target)}
+          searching={searchingForDevices}
           selectedTarget={preselected}
         />
         <SetupAddressDialog

@@ -24,6 +24,8 @@ type SetupDeviceScreenProps = {
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   onEnterAddressManually: () => void;
   onSelect: (candidate: DeviceCandidate) => void;
+  /** No scan has produced a result yet, so there is no count to report. */
+  searching?: boolean;
   selectedTarget: string | null;
 };
 
@@ -36,6 +38,7 @@ export function SetupDeviceScreen({
   onCreateSupportReport,
   onEnterAddressManually,
   onSelect,
+  searching = false,
   selectedTarget,
 }: SetupDeviceScreenProps) {
   return (
@@ -45,7 +48,11 @@ export function SetupDeviceScreen({
       onCreateSupportReport={onCreateSupportReport}
     >
       <SetupWizardTitle>Choose your VibeTV</SetupWizardTitle>
-      <SetupWizardSubtitle>{foundLabel(candidates.length)}</SetupWizardSubtitle>
+      <SetupWizardSubtitle>
+        {searching
+          ? "Looking for VibeTVs on your WiFi."
+          : foundLabel(candidates.length)}
+      </SetupWizardSubtitle>
 
       <ItemGroup
         aria-label="VibeTVs found on your WiFi"
