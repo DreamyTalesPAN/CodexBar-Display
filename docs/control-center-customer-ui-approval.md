@@ -2149,3 +2149,51 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/setup/setup-provider-row.tsx`,
   `apps/control-center/src/components/provider-picker.tsx`, their tests, and this
   approval record.
+
+## 2026-08-31 — Four walls in the setup flow, and one correction
+
+- User approval: The product owner instructed that every Codex bug-detector
+  finding be fixed where it is sound and answered where it is not ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so
+  lang, bis der codex bug detector nichts mehr findet", 2026-08-31), then asked
+  for the pull request to be marked ready for review, which produced these.
+  Each of the four below was reproduced before being changed; a fifth was
+  reproduced, found to be unreachable, and answered on its thread instead.
+- Approved customer-visible result:
+  1. **A VibeTV that is connected and waiting only for a provider now reaches
+     the provider step.** A customer setting up for the first time has no
+     provider signed in, so their VibeTV cannot draw usage and reports itself
+     as not ready. The wizard treated that as no usable VibeTV and kept them on
+     `Choose your VibeTV`, which has no control that can fix it. It does not
+     open afterwards: a customer whose provider stops working later still gets
+     the device step rather than being told, on the closing screen, that their
+     VibeTV is running.
+  2. **A firmware check that could not be made now says so.** The connect step
+     logged `firmware is up to date` whenever the check itself failed, and
+     carried on. It now stops with `Could not check VibeTV's firmware` and a
+     `Try again`, the same shape as the other firmware refusals.
+  3. **A search that failed now gives the reason and a way to retry.** Only
+     "nothing found" had a dialog; a search that could not be made at all --
+     Local Network access refused, the background service not answering, the
+     40-second timeout -- showed `0 VibeTVs found on your WiFi.` and nothing
+     else. It now opens `We couldn't search for your VibeTV` carrying the real
+     reason and its next action.
+  4. **The device step carries its own `Search again`.** Every way to rescan
+     lived inside a dialog, and dismissing that dialog left the step with only
+     the address field. The step now offers a quiet `Search again` beside
+     `Enter IP address manually`, shown once a search has answered. This also
+     covers the two states that had no dialog at all.
+  5. **Correction to the entry above (2026-08-31, "Two controls that rendered
+     as usable and were not").** That entry said leaving a provider out of
+     Automatic "now sticks". It did not: the exclusion was remembered only for
+     as long as the Settings screen stayed open, so reopening Settings or
+     restarting the app put the provider back. It sticks now.
+  6. **Running setup again no longer carries the old display choice into the
+     new run.** It asks for that choice again, and keeping the previous one
+     meant a provider switched on during the new run was missing from it, which
+     the companion refuses -- on a step that offers no way to change it.
+- Approved files: `apps/control-center/src/components/setup/setup-step.ts`,
+  `setup-wizard.tsx`, `setup-device-screen.tsx`, `setup-firmware-dialogs.tsx`,
+  `setup-preview-gallery.tsx`, their tests, `control-center-app.tsx`,
+  `provider-picker.tsx` and its reconcile test, the companion's `server.go` and
+  `provider_display_test.go`, and this approval record.
