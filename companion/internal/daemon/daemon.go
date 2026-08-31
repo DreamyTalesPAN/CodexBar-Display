@@ -1787,12 +1787,8 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 		"collector",
 	)
 	first := collector.firstCollectState(now)
-	if first.bounded && !first.settled && (first.warming || !first.started) &&
+	if !state.hasLastGood && first.bounded && !first.settled && (first.warming || !first.started) &&
 		(result.failureKind == runtimeErrorNoProviders || !result.usageFresh) {
-		// A restart may load a snapshot that expires while CodexBar's first
-		// complete collection is still running. Keep the already visible device
-		// frame until that bounded collection answers instead of briefly replacing
-		// every usage row with unavailable.
 		deps.logf("runtime event=usage-waiting port=%s reason=collector-warming\n", publicDeviceTarget(port))
 		return nil
 	}

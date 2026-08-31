@@ -6474,7 +6474,7 @@ func TestRunCycleFromCollectorWaitsForFirstCollectionBeforeNoProviders(t *testin
 	}
 }
 
-func TestRunCycleFromCollectorKeepsExpiredSnapshotOffWireWhileFirstCollectionWarms(t *testing.T) {
+func TestRunCycleFromCollectorExpiresSnapshotWhileFirstCollectionWarms(t *testing.T) {
 	prepareFastTestEnv(t)
 	t.Setenv("CODEXBAR_DISPLAY_LAST_GOOD_MAX_AGE", "168h")
 
@@ -6504,21 +6504,22 @@ func TestRunCycleFromCollectorKeepsExpiredSnapshotOffWireWhileFirstCollectionWar
 		},
 	}
 
-	sent := false
+	var sentLine []byte
 	err := runCycleFromCollector(context.Background(), "", state, collector, runtimeDeps{
 		now:         func() time.Time { return now },
 		resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
-		sendLine: func(string, []byte) error {
-			sent = true
+		sendLine: func(_ string, line []byte) error {
+			sentLine = append([]byte(nil), line...)
 			return nil
 		},
 		logf: func(string, ...any) {},
 	})
 	if err != nil {
-		t.Fatalf("warming restart must keep the existing display frame, got %v", err)
+		t.Fatalf("warming restart must expire stale usage, got %v", err)
 	}
-	if sent {
-		t.Fatal("warming restart replaced the visible last-good frame with unavailable")
+	frame := decodeFrameLine(t, sentLine)
+	if !frame.UsageUnavailable || frame.Session != 0 || frame.Weekly != 0 {
+		t.Fatalf("warming restart kept expired usage visible: %+v", frame)
 	}
 }
 
