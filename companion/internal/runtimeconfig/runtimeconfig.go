@@ -355,7 +355,17 @@ func (cfg Config) ProviderSelectionSetupIsComplete() bool {
 	if cfg.ProviderSelectionSetupComplete != nil {
 		return *cfg.ProviderSelectionSetupComplete
 	}
-	return strings.TrimSpace(cfg.DeviceID) != ""
+	return cfg.hasPairedDevice()
+}
+
+// hasPairedDevice reports whether this config was already set up, before the
+// completion flag existed to say so. The device id is the modern answer, but a
+// VibeTV that never reported one leaves only the target and token behind -- and
+// reading that as "never set up" sends a customer who has been using VibeTV for
+// months back through onboarding on the update that adds the flag.
+func (cfg Config) hasPairedDevice() bool {
+	return strings.TrimSpace(cfg.DeviceID) != "" ||
+		strings.TrimSpace(cfg.DeviceTarget) != ""
 }
 
 func (cfg *Config) SetProviderSelectionSetupComplete(complete bool) {
@@ -368,7 +378,10 @@ func (cfg *Config) SetProviderSelectionSetupComplete(complete bool) {
 
 func (cfg *Config) SetActiveDevice(device KnownDevice) {
 	device = normalizeKnownDevice(device)
-	if cfg.ProviderSelectionSetupComplete == nil && strings.TrimSpace(cfg.DeviceID) == "" {
+	// Stamping the flag for the first time must not overwrite what the config
+	// already implied: a legacy install being pinned to a stable identity has a
+	// target and no id, and writing false here made the loss permanent.
+	if cfg.ProviderSelectionSetupComplete == nil && !cfg.hasPairedDevice() {
 		cfg.SetProviderSelectionSetupComplete(false)
 	}
 	cfg.DeviceID = device.DeviceID
