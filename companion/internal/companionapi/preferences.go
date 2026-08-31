@@ -166,17 +166,6 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 		a.server.providerPreferences.mu.Unlock()
 		return preferenceDescriptor{}, errors.New("provider preference writer unavailable")
 	}
-	if !enabled {
-		cfg, configErr := a.server.config()
-		if configErr != nil {
-			a.server.providerPreferences.mu.Unlock()
-			return preferenceDescriptor{}, configErr
-		}
-		if providerDisplayContains(cfg, settings, providerID) {
-			a.server.providerPreferences.mu.Unlock()
-			return preferenceDescriptor{}, errProviderDisplaySelected
-		}
-	}
 	if err := a.server.providerPreferences.set(ctx, providerID, enabled); err != nil {
 		a.server.providerPreferences.mu.Unlock()
 		return preferenceDescriptor{}, err
@@ -248,7 +237,6 @@ func providerHealthFromReadiness(status string) codexbar.ProviderHealthState {
 }
 
 var errPreferenceNotFound = errors.New("preference not found")
-var errProviderDisplaySelected = errors.New("provider is selected for display")
 
 func (s *Server) preferenceRegistry() []preferenceAdapter {
 	if len(s.preferenceAdapters) > 0 {
@@ -331,10 +319,6 @@ func (s *Server) handlePreference(w http.ResponseWriter, r *http.Request) {
 		updated, err := adapter.Write(r.Context(), settingID, value)
 		if errors.Is(err, errPreferenceNotFound) {
 			writePreferenceNotFound(w)
-			return
-		}
-		if errors.Is(err, errProviderDisplaySelected) {
-			writeError(w, http.StatusConflict, "provider_display_selected", "This provider is selected for VibeTV.", "Choose another displayed provider before turning this one off.")
 			return
 		}
 		if err != nil {
@@ -443,8 +427,14 @@ func (s *Server) providerSettingsLocked(ctx context.Context, force bool) ([]code
 	if !force && len(s.providerPreferences.cached) > 0 && now.Sub(s.providerPreferences.at) < providerPreferenceCache {
 		return append([]codexbar.ProviderSetting(nil), s.providerPreferences.cached...), nil
 	}
+	// The inventory loader is the fast one: it lists providers and reports no
+	// health at all, which is why the last known health is carried over onto
+	// its rows and the real check runs behind it. A forced read cannot be
+	// served that way -- its whole point is to know the health right now, and
+	// carried-over health is exactly what it must not trust.
 	load := s.providerPreferences.load
-	if s.providerPreferences.loadInventory != nil {
+	inventoryOnly := !force && s.providerPreferences.loadInventory != nil
+	if inventoryOnly {
 		load = s.providerPreferences.loadInventory
 	}
 	if load == nil {
@@ -454,20 +444,24 @@ func (s *Server) providerSettingsLocked(ctx context.Context, force bool) ([]code
 	if err != nil {
 		return nil, err
 	}
-	healthByID := make(map[string]codexbar.ProviderSetting, len(s.providerPreferences.cached))
-	for _, cached := range s.providerPreferences.cached {
-		healthByID[cached.ID] = cached
-	}
-	for i := range settings {
-		if cached, ok := healthByID[settings[i].ID]; ok && cached.Enabled == settings[i].Enabled {
-			settings[i].Health = cached.Health
-			settings[i].Service = cached.Service
+	if inventoryOnly {
+		healthByID := make(map[string]codexbar.ProviderSetting, len(s.providerPreferences.cached))
+		for _, cached := range s.providerPreferences.cached {
+			healthByID[cached.ID] = cached
+		}
+		for i := range settings {
+			if cached, ok := healthByID[settings[i].ID]; ok && cached.Enabled == settings[i].Enabled {
+				settings[i].Health = cached.Health
+				settings[i].Service = cached.Service
+			}
 		}
 	}
 	s.providerPreferences.cached = append([]codexbar.ProviderSetting(nil), settings...)
 	s.providerPreferences.at = now
 	s.cacheProviderInventory(settings)
-	s.startProviderHealthRefreshLocked()
+	if inventoryOnly {
+		s.startProviderHealthRefreshLocked()
+	}
 	return append([]codexbar.ProviderSetting(nil), settings...), nil
 }
 

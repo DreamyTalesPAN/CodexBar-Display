@@ -177,7 +177,13 @@ func TestProviderSetupCompletionRejectsEnabledProviderOutsideDisplayPool(t *test
 	}
 }
 
-func TestSelectedProviderCannotBeDisabled(t *testing.T) {
+// The switch on a provider row always works. Refusing the write was the one
+// case where health decided whether a provider may be turned off at all, which
+// is what docs/control-center-ui-principles.md rule 3 forbids: a provider that
+// cannot be switched off is one that cannot be kept off the display. The
+// display selection is validated in its own right, so a selection left naming
+// the provider that was just turned off reports that itself.
+func TestSelectedProviderCanBeDisabledAndTheDisplaySaysSo(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
 		Mode:        providerDisplayModeFixed,
 		ProviderIDs: []string{"codex"},
@@ -192,11 +198,54 @@ func TestSelectedProviderCannotBeDisabled(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPatch, "/v1/preferences/codexbar.providers.codex.enabled", bytes.NewBufferString(`{"value":false}`))
 	server.Handler().ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusConflict || !bytes.Contains(recorder.Body.Bytes(), []byte(`"provider_display_selected"`)) {
-		t.Fatalf("expected selected-provider conflict, status=%d body=%s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("turning off a displayed provider was refused: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
-	if writes != 0 {
-		t.Fatalf("selected provider reached CodexBar write: %d", writes)
+	if writes != 1 {
+		t.Fatalf("provider write did not reach CodexBar: %d", writes)
+	}
+
+	recorder = httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/provider-display", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("get provider display: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response providerDisplayResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Selection.Valid {
+		t.Fatalf("a display naming a turned-off provider still reports valid: %+v", response.Selection)
+	}
+
+	recorder = httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("setup completed with a turned-off displayed provider: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+// A Mac that has never written a display selection must not have every enabled
+// provider locked on. The synthesised "everything enabled" pool is not a choice
+// the customer made, and treating it as one made the switch inert on a fresh
+// setup and, for an older companion that never writes one, permanently.
+func TestProviderCanBeDisabledBeforeADisplayIsChosen(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = providerSettingsFixture
+	writes := 0
+	server.providerPreferences.set = func(context.Context, string, bool) error {
+		writes++
+		return nil
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/v1/preferences/codexbar.providers.claude.enabled", bytes.NewBufferString(`{"value":false}`))
+	server.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("provider could not be turned off before a display was chosen: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if writes != 1 {
+		t.Fatalf("provider write did not reach CodexBar: %d", writes)
 	}
 }
 
@@ -292,5 +341,48 @@ func exactSetupFixture(now time.Time, providerID, status string) codexbar.Provid
 			ID: providerID, Label: providerID, Enabled: providerEnabled(true), Status: status,
 			Detail: "Safe provider status.", NextAction: "Check the provider, then try again.",
 		}},
+	}
+}
+
+// Setup completion asks for provider settings with force=true because it must
+// know the health right now. That read used to be served by the inventory
+// loader with the last known health carried over, so a provider that signed
+// out after its exact check still looked Ready and setup was written complete
+// against a provider the customer would then find broken. The forced read now
+// loads live health, and the contradiction check has something real to see.
+func TestSetupCompletionRefusesAProviderThatSignedOutAfterItsCheck(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        providerDisplayModeFixed,
+		ProviderIDs: []string{"codex"},
+	}})
+	server.now = func() time.Time { return now }
+
+	// What CodexBar reports today: the customer is signed out.
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthAuthRequired},
+		}, nil
+	}
+	// The fast path lists providers and knows nothing about health.
+	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true},
+		}, nil
+	}
+	// What the last real check found, before the customer signed out.
+	server.providerPreferences.cached = []codexbar.ProviderSetting{
+		{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+	}
+	server.providerReadinessMu.Lock()
+	server.providerReadiness = map[string]providerReadinessRecord{
+		"codex": {Status: codexbar.ProviderReady, CheckedAt: now, VerifiedAt: now},
+	}
+	server.providerReadinessMu.Unlock()
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
+	if recorder.Code != http.StatusConflict || !bytes.Contains(recorder.Body.Bytes(), []byte(`"provider_check_required"`)) {
+		t.Fatalf("setup completed against a signed-out provider: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }

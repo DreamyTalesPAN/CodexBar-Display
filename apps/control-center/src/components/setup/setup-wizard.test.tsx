@@ -58,6 +58,8 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     onProviderRecover: vi.fn(),
     onProviderToggle: vi.fn(),
     onProvidersContinue: vi.fn(),
+    onDismissProviderError: vi.fn(),
+    providerError: null,
     onSearchDevices: vi.fn(),
     onSelectTheme: vi.fn(),
     providers: [provider()],
@@ -109,6 +111,60 @@ describe("SetupWizard: going back", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(shownStep()).toBe("Choose your theme");
+  });
+});
+
+describe("SetupWizard: a refusal from the companion", () => {
+  // Both writing steps go through the companion, which applies gates the
+  // screen cannot fully anticipate. Swallowing the refusal left a Continue
+  // that answered and did nothing.
+  it("shows what the provider step was refused, and why", () => {
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "providers",
+          providerError: {
+            code: "provider_check_required",
+            message: "Every enabled provider must be ready.",
+            nextAction:
+              "Check each enabled provider and fix or turn off any provider that needs attention.",
+          },
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText("Every enabled provider must be ready."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Check each enabled provider and fix or turn off any provider that needs attention.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows what the display step was refused", () => {
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "display",
+          providerError: {
+            code: "provider_display_disabled",
+            message: "A displayed provider is turned off.",
+            nextAction: "Turn it on or choose another displayed provider.",
+          },
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText("A displayed provider is turned off."),
+    ).toBeTruthy();
+  });
+
+  it("says nothing when nothing was refused", () => {
+    render(<SetupWizard {...baseProps({ step: "providers" })} />);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 });
 

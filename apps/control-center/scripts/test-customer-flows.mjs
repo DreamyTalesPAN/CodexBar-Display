@@ -5715,9 +5715,27 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
   );
 
   await recheckCodex.click();
+  await providersScreen.getByText("Check timed out").waitFor({
+    state: "hidden",
+    timeout: 30_000,
+  });
+
+  // Codex is ready now, but Claude is still switched on and still waiting for
+  // a sign-in, and the companion refuses to write setup complete while any
+  // enabled provider is not ready. Opening the gate here would only produce a
+  // Continue that answers and leaves the customer on the same step.
+  assert(
+    await providersContinue.isDisabled(),
+    "a provider that is on and still needs the customer must keep setup closed",
+  );
+
+  // Turning it off is the other way on, and it has to work whatever the
+  // provider reports.
+  const claudeSwitch = providersScreen.getByRole("switch", { name: "Claude" });
+  await claudeSwitch.click();
   await waitForCondition(
     async () => !(await providersContinue.isDisabled()),
-    "setup did not unlock after the cold provider was rechecked",
+    "switching off the provider that needed attention must open setup",
     30_000,
   );
 

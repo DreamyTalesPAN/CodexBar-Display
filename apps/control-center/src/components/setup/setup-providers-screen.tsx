@@ -136,13 +136,18 @@ export function SetupProvidersScreen({
 }
 
 /**
- * Setup may only continue once VibeTV has something to show: one provider that
- * is switched on and answered the check. Every other state still needs the
- * customer, so the button stays closed.
+ * Setup may only continue once VibeTV has something to show, and once nothing
+ * that is switched on is still broken. Every other state needs the customer --
+ * sign in, allow access, or turn the provider off -- so the button stays
+ * closed. This is the same gate the companion applies before it writes setup
+ * complete; asking for less here only produced a Continue that answered and
+ * did nothing.
  */
 export function setupProvidersCanContinue(providers: ProviderItem[]): boolean {
-  return providers.some(
-    (provider) => provider.value && provider.health.state === "healthy",
+  const enabled = providers.filter((provider) => provider.value);
+  return (
+    enabled.length > 0 &&
+    enabled.every((provider) => provider.health.state === "healthy")
   );
 }
 

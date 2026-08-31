@@ -230,13 +230,3 @@ func normalizeProviderIDs(providerIDs []string) []string {
 	}
 	return normalized
 }
-
-func providerDisplayContains(cfg runtimeconfig.Config, settings []codexbar.ProviderSetting, providerID string) bool {
-	providerID = strings.TrimSpace(strings.ToLower(providerID))
-	for _, selected := range effectiveProviderDisplay(cfg, settings).ProviderIDs {
-		if selected == providerID {
-			return true
-		}
-	}
-	return false
-}

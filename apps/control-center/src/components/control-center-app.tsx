@@ -3957,6 +3957,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             void updateProviderPreference(provider, enabled)
           }
           onProvidersContinue={completeProviderSetup}
+          onDismissProviderError={() => setProviderDisplayError(null)}
+          providerError={providerDisplayError}
           onSearchDevices={() => void searchAndConnect()}
           onSelectTheme={(theme) => setSelectedThemeId(theme.id)}
           providers={setupProviders}

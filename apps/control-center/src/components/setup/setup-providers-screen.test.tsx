@@ -94,10 +94,32 @@ describe("SetupProvidersScreen", () => {
     );
   });
 
-  it("continues as soon as one provider is on and ready", () => {
+  it("continues once every provider that is on is ready", () => {
     const html = render({ providers: [claude, copilot] });
 
     expect(html).not.toMatch(
+      /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
+    );
+  });
+
+  // The companion refuses to write setup complete while any enabled provider
+  // still needs the customer. Letting Continue through here only produced a
+  // button that answered and left the customer on the same step with nothing
+  // said. The way on is to sign the provider in or switch it off.
+  it("cannot continue while a provider that is on still needs the customer", () => {
+    const html = render({
+      providers: [
+        claude,
+        provider({
+          health: "auth_required",
+          label: "GitHub Copilot",
+          message: "Sign in required.",
+          providerId: "copilot",
+        }),
+      ],
+    });
+
+    expect(html).toMatch(
       /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
     );
   });

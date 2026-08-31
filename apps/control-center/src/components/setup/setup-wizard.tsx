@@ -20,6 +20,7 @@ import {
   SetupDeviceNotFoundDialog,
 } from "./setup-device-dialogs";
 import { SetupDeviceScreen } from "./setup-device-screen";
+import { SetupProviderStepFailedDialog } from "./setup-provider-dialogs";
 import {
   SetupDisplayModeScreen,
   type SetupDisplayModePreview,
@@ -71,6 +72,9 @@ export type SetupWizardProps = {
   onProviderRecover: (provider: ProviderItem) => void;
   onProviderToggle: (provider: ProviderItem, enabled: boolean) => void;
   onProvidersContinue: () => void;
+  /** What the companion refused the provider or display step, if anything. */
+  providerError: ApiError | null;
+  onDismissProviderError: () => void;
   onSearchDevices: () => void;
   onSelectTheme: (theme: SetupThemeOption) => void;
   providers: ProviderItem[];
@@ -253,18 +257,24 @@ export function SetupWizard(props: SetupWizardProps) {
 
   if (step === "providers") {
     return (
-      <SetupProvidersScreen
-        {...help}
-        onBack={goBack}
-        onCheckAgain={props.onProviderCheck}
-        onContinue={() => {
-          goForward();
-          props.onProvidersContinue();
-        }}
-        onRecover={props.onProviderRecover}
-        onToggle={props.onProviderToggle}
-        providers={props.providers}
-      />
+      <>
+        <SetupProvidersScreen
+          {...help}
+          onBack={goBack}
+          onCheckAgain={props.onProviderCheck}
+          onContinue={() => {
+            goForward();
+            props.onProvidersContinue();
+          }}
+          onRecover={props.onProviderRecover}
+          onToggle={props.onProviderToggle}
+          providers={props.providers}
+        />
+        <SetupProviderStepFailedDialog
+          error={props.providerError}
+          onOpenChange={(open) => !open && props.onDismissProviderError()}
+        />
+      </>
     );
   }
 
@@ -273,40 +283,46 @@ export function SetupWizard(props: SetupWizardProps) {
     const displayProviderId =
       displayDraft?.providerId ?? props.displayProviderId;
     return (
-      <SetupDisplayModeScreen
-        {...help}
-        automaticPreview={props.automaticPreviews[0] ?? null}
-        automaticPreviews={props.automaticPreviews}
-        manualPreview={
-          props.automaticPreviews.find(
-            (preview) =>
-              preview.providerLabel ===
-              props.displayProviders.find(
-                (provider) => provider.id === displayProviderId,
-              )?.label,
-          ) ?? null
-        }
-        mode={displayMode}
-        onBack={goBack}
-        onContinue={() => {
-          goForward();
-          props.onDisplayContinue({
-            mode: displayMode,
-            providerIds:
-              displayMode === "fixed" && displayProviderId
-                ? [displayProviderId]
-                : props.displayProviders.map((provider) => provider.id),
-          });
-        }}
-        onSelectMode={(mode) =>
-          setDisplayDraft({ mode, providerId: displayProviderId })
-        }
-        onSelectProvider={(providerId) =>
-          setDisplayDraft({ mode: displayMode, providerId })
-        }
-        providers={props.displayProviders}
-        selectedProviderId={displayProviderId}
-      />
+      <>
+        <SetupDisplayModeScreen
+          {...help}
+          automaticPreview={props.automaticPreviews[0] ?? null}
+          automaticPreviews={props.automaticPreviews}
+          manualPreview={
+            props.automaticPreviews.find(
+              (preview) =>
+                preview.providerLabel ===
+                props.displayProviders.find(
+                  (provider) => provider.id === displayProviderId,
+                )?.label,
+            ) ?? null
+          }
+          mode={displayMode}
+          onBack={goBack}
+          onContinue={() => {
+            goForward();
+            props.onDisplayContinue({
+              mode: displayMode,
+              providerIds:
+                displayMode === "fixed" && displayProviderId
+                  ? [displayProviderId]
+                  : props.displayProviders.map((provider) => provider.id),
+            });
+          }}
+          onSelectMode={(mode) =>
+            setDisplayDraft({ mode, providerId: displayProviderId })
+          }
+          onSelectProvider={(providerId) =>
+            setDisplayDraft({ mode: displayMode, providerId })
+          }
+          providers={props.displayProviders}
+          selectedProviderId={displayProviderId}
+        />
+        <SetupProviderStepFailedDialog
+          error={props.providerError}
+          onOpenChange={(open) => !open && props.onDismissProviderError()}
+        />
+      </>
     );
   }
 
