@@ -144,6 +144,16 @@ bool testPendingHttpRenderRunsBeforeUsb(const std::string& source) {
       "the pending HTTP event must render before USB can replace the current frame");
 }
 
+bool testSetupSizesSerialRxBufferForFrameContract(const std::string& source) {
+  const std::size_t setupStart = source.find("void setup()");
+  const std::size_t buffer = source.find("Serial.setRxBufferSize(kMaxFrameBytes + 1);", setupStart);
+  const std::size_t begin = source.find("Serial.begin(115200);", setupStart);
+  return expect(
+      setupStart != std::string::npos && buffer != std::string::npos &&
+          begin != std::string::npos && buffer < begin,
+      "Cable UART must allocate the full frame buffer before Serial.begin");
+}
+
 bool testHelloAdvertisesEscapedUsageWindowCapacity(const std::string& source) {
   const std::size_t capabilitiesStart = source.find("String themeCapabilitiesJSON(");
   const std::size_t capabilitiesEnd = source.find("\nstruct WifiCredentials", capabilitiesStart);
@@ -403,6 +413,7 @@ int main(int argc, char** argv) {
       !testThemeActivationRejectsInvalidSpecsBeforePersisting(source) ||
       !testSetupAccessPointClearsPendingThemeRender(source) ||
       !testPendingHttpRenderRunsBeforeUsb(source) ||
+      !testSetupSizesSerialRxBufferForFrameContract(source) ||
       !testHelloAdvertisesEscapedUsageWindowCapacity(source) ||
       !testSharedSerialHelloAdvertisesStandby(source) ||
       !testAssetDeleteProtectsStandbyLiveTheme(source) ||

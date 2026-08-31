@@ -154,6 +154,15 @@ The 128-byte stop-and-wait protocol completed these direct-Mac transfers:
 | Token Fire screensaver | 13,952 bytes unpacked, including an 8,713-byte CBA | stored in screensaver slot | 5.2 s |
 | Maximum ThemeSpec fixture | 3,374 bytes, 32 primitives | stored, activated, and visually confirmed on the panel | 1.5 s |
 
+Direct-Mac validation on 2026-08-31 reproduced disappearing usage rows while
+Mini Classic decoded its GIF. The bundled CodexBar and Companion kept all three
+usage windows, but the old firmware accepted only 2 of about 14 unpaced Cable
+frames because its 256-byte UART receive ring overflowed while rendering. Test
+firmware `9999.0.862` sized that ring to the advertised 2,048-byte frame contract
+and accepted 15 of 15 post-boot frames on device `14799300`. The restored live
+stream then stayed ready for 20 of 20 samples across 60 seconds, with three
+usage windows and no unavailable frame in every sample.
+
 Terminating the updater during a `dev-b` to `dev-c` hardware transfer left
 `dev-b` bootable and healthy, produced an error with a retry action, and did
 not report upload acceptance. The immediate retry completed in 161.3 seconds,

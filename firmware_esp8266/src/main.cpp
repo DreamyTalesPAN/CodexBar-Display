@@ -4084,6 +4084,11 @@ void recordBench(unsigned long loopStartUs, bool rendered, unsigned long renderU
 }  // namespace
 
 void setup() {
+  // A complete Cable frame can arrive while the display is busy decoding an
+  // animated GIF. The ESP8266 default UART buffer is only 256 bytes, so size
+  // the ring for the frame contract (plus its otherwise unusable sentinel
+  // slot) before the UART allocates it.
+  Serial.setRxBufferSize(kMaxFrameBytes + 1);
   Serial.begin(115200);
   delay(200);
   bootResetReasonJSON = "\"";
