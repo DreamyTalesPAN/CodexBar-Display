@@ -850,10 +850,12 @@ func persistActiveCableIdentity(caps protocol.DeviceCapabilities, deps runtimeDe
 		cfg.ConnectionMode = "cable"
 		cfg.DeviceID = deviceID
 		cfg.DeviceTransports = supportedTransports
-		if freshSetup || rolledBackFromWiFi {
+		if freshSetup {
 			cfg.ConnectionModeChoiceRequired = true
+			cfg.CableAutoBindDisabled = true
 		}
 		if rolledBackFromWiFi {
+			cfg.ConnectionModeChoiceRequired = true
 			cfg.CableAutoBindDisabled = false
 		}
 		if err := deps.saveConfig(home, cfg); err != nil {

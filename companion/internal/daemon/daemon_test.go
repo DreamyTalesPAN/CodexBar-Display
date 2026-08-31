@@ -139,6 +139,9 @@ func TestResolveCycleDevicePersistsFreshCableIdentity(t *testing.T) {
 	if !cfg.ConnectionModeChoiceRequired {
 		t.Fatal("fresh Cable auto-binding must preserve the connection chooser")
 	}
+	if !cfg.CableAutoBindDisabled {
+		t.Fatal("fresh Cable auto-binding must block writes until the connection choice")
+	}
 	if len(cfg.DeviceTransports) != 2 || cfg.DeviceTransports[1] != "wifi" {
 		t.Fatalf("fresh Cable capabilities were not persisted: %+v", cfg.DeviceTransports)
 	}
@@ -220,6 +223,49 @@ func TestRunCycleDoesNotWriteCableAfterSetupReset(t *testing.T) {
 	}
 	if sendCalls != 0 {
 		t.Fatalf("reset Cable cycle sent %d usage frames before an explicit choice", sendCalls)
+	}
+}
+
+func TestRunCycleDoesNotWriteCableBeforeFreshConnectionChoice(t *testing.T) {
+	prepareFastTestEnv(t)
+	cfg := runtimeconfig.Config{}
+	sendCalls := 0
+	err := runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+		transportName: "usb",
+		homeDir:       func() (string, error) { return "/test-home", nil },
+		loadConfig:    func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		saveConfig: func(_ string, next runtimeconfig.Config) error {
+			cfg = next
+			return nil
+		},
+		resolveUSBDevice: func(string, string) (string, error) {
+			return "/dev/cu.usbserial-fresh", nil
+		},
+		deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+			return protocol.DeviceCapabilities{
+				Known:           true,
+				DeviceID:        "fresh-vibetv",
+				ConnectionMode:  "cable",
+				ActiveTransport: "usb",
+			}, nil
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 34, 3600)}, nil
+		},
+		sendLine: func(string, []byte) error {
+			sendCalls++
+			return nil
+		},
+		logf: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("run fresh Cable cycle: %v", err)
+	}
+	if sendCalls != 0 {
+		t.Fatalf("fresh Cable cycle sent %d usage frames before an explicit choice", sendCalls)
+	}
+	if !cfg.CableAutoBindDisabled || !cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("fresh Cable choice gate was not persisted: %+v", cfg)
 	}
 }
 
