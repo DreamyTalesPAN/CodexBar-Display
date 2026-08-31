@@ -1666,6 +1666,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       // display step over a selection that no longer exists.
       setProviderDisplay(null);
       setProviderDisplayError(null);
+      // The latch that says the wizard has already handed the screen back.
+      // Left standing, the rerun reaches its closing step and is treated as
+      // finished before it renders, so the customer never sees VibeTV running.
+      setSetupFinished(false);
       didRunAutoDisplayReload.current = false;
       didRunAutomaticDeviceSearch.current = false;
       didRunSetupVerification.current = false;

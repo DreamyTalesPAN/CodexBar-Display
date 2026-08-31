@@ -174,7 +174,14 @@ export function SetupWizard(props: SetupWizardProps) {
   const goForward = useCallback(() => setWentBackTo(null), []);
 
   const preselected = useMemo(() => {
-    if (selectedTarget) {
+    // Only while it is still one of the answers. A scan that no longer returns
+    // the VibeTV the customer had picked left the choice pointing at nothing:
+    // no card drawn as selected, Connect still live, and pressing it silently
+    // doing nothing because the target is not in the list any more.
+    if (
+      selectedTarget &&
+      deviceCandidates.some((candidate) => candidate.target === selectedTarget)
+    ) {
       return selectedTarget;
     }
     const known = deviceCandidates.find((candidate) => candidate.known);

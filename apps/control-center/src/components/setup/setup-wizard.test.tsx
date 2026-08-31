@@ -330,6 +330,59 @@ describe("SetupWizard: while the connect sequence is running", () => {
   });
 });
 
+describe("SetupWizard: a VibeTV that a rescan no longer finds", () => {
+  const candidate = (deviceId: string, target: string) =>
+    ({ deviceId, target, known: true }) as never;
+
+  // Search again is easy to reach now, and a VibeTV can be gone by the time it
+  // answers. The choice used to survive as a target nothing matched: no card
+  // drawn as selected, Connect still live, and pressing it doing nothing.
+  it("does not keep a choice the current results no longer contain", () => {
+    const props = baseProps({
+      step: "device",
+      deviceSearchState: "multiple",
+      deviceCandidates: [
+        candidate("vibetv-a", "http://192.168.178.10"),
+        candidate("vibetv-b", "http://192.168.178.11"),
+      ],
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    fireEvent.click(screen.getAllByRole("radio")[1]);
+
+    // The rescan comes back without the one they picked.
+    rerender(
+      <SetupWizard
+        {...props}
+        deviceCandidates={[candidate("vibetv-a", "http://192.168.178.10")]}
+      />,
+    );
+
+    const remaining = screen.getAllByRole("radio");
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].getAttribute("aria-checked")).toBe("true");
+    expect(
+      screen.getByRole("button", { name: "Connect" }).hasAttribute("disabled"),
+    ).toBe(false);
+  });
+
+  it("leaves Connect closed when a rescan finds nothing at all", () => {
+    const props = baseProps({
+      step: "device",
+      deviceSearchState: "multiple",
+      deviceCandidates: [candidate("vibetv-a", "http://192.168.178.10")],
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+    fireEvent.click(screen.getAllByRole("radio")[0]);
+
+    rerender(<SetupWizard {...props} deviceCandidates={[]} />);
+
+    expect(
+      screen.getByRole("button", { name: "Connect" }).hasAttribute("disabled"),
+    ).toBe(true);
+  });
+});
+
 describe("SetupWizard: a scan that could not be made", () => {
   // The step used to report a count of zero and keep the reason to itself, so
   // the customer could only try the same thing again -- and for a refused
