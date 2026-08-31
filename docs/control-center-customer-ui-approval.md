@@ -2367,3 +2367,20 @@ issue scope, or release permission never implies UI permission.
   left open.
 - Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
   and its test, `control-center-app.tsx`.
+
+## 2026-08-31 — A stale device choice, and a rerun that skipped its last step
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **A VibeTV that a new scan no longer finds stops being the selected one.**
+     Picking one, scanning again, and having it be gone left `Connect` live with
+     nothing drawn as selected, and pressing it did nothing. The step now falls
+     back to the known VibeTV or the first result, as it does before anything is
+     picked, and offers `Connect` only when there is something to connect to.
+  2. **Run setup again shows the closing screen.** A rerun in the same session
+     went straight back to Control Center when it reached the final step,
+     because the app still remembered the first run handing the screen over.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
+  and its test, `control-center-app.tsx`.
