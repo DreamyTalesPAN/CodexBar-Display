@@ -70,6 +70,7 @@ type deps struct {
 	resolveRecoveryPort func(string) (string, error)
 	probePort           func(string) error
 	readDeviceHello     func(string) (protocol.DeviceHello, error)
+	pairCableDevice     func(string, string) (string, error)
 	discoverWiFi        func(context.Context, []string) (transportlayer.WiFiDiscoveryResult, error)
 	findCodexbar        func() (string, error)
 	lookPath            func(string) (string, error)
@@ -105,6 +106,9 @@ func (d deps) withDefaults() deps {
 	}
 	if d.readDeviceHello == nil {
 		d.readDeviceHello = usb.ReadDeviceHello
+	}
+	if d.pairCableDevice == nil {
+		d.pairCableDevice = usb.PairDevice
 	}
 	if d.discoverWiFi == nil {
 		d.discoverWiFi = func(ctx context.Context, candidates []string) (transportlayer.WiFiDiscoveryResult, error) {
@@ -307,6 +311,8 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 
 	port := ""
 	cableDeviceID := ""
+	cableDeviceToken := ""
+	var cableHello protocol.DeviceHello
 	if transportName == "usb" {
 		port, err = choosePort(opts, d)
 		if err != nil {
@@ -370,6 +376,8 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		hello, helloErr := d.readDeviceHello(port)
 		usb.CloseDefaultSender()
 		if helloErr == nil {
+			hello = hello.Normalize()
+			cableHello = hello
 			cableDeviceID = strings.TrimSpace(hello.DeviceID)
 			detectedBoard := strings.TrimSpace(strings.ToLower(hello.Board))
 			if detectedBoard != "" && !containsString(targetBoardIDs, detectedBoard) {
@@ -409,7 +417,8 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	} else {
 		fmt.Fprintln(d.stdout, "Firmware flash: skipped (--skip-flash)")
 	}
-	if transportName == "usb" && !opts.ValidateOnly && !opts.DryRun && cableDeviceID == "" {
+	if transportName == "usb" && !opts.ValidateOnly && !opts.DryRun &&
+		(cableDeviceID == "" || !opts.SkipFlash) {
 		hello, helloErr := d.readDeviceHello(port)
 		usb.CloseDefaultSender()
 		if helloErr != nil || strings.TrimSpace(hello.DeviceID) == "" {
@@ -422,7 +431,22 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 				Hint: "keep the flashed VibeTV connected by Cable and rerun setup",
 			}
 		}
+		hello = hello.Normalize()
+		cableHello = hello
 		cableDeviceID = strings.TrimSpace(hello.DeviceID)
+	}
+	if transportName == "usb" && !opts.ValidateOnly && !opts.DryRun &&
+		cableHello.Capabilities.Auth != nil {
+		cableDeviceToken, err = d.pairCableDevice(port, cableDeviceID)
+		usb.CloseDefaultSender()
+		if err != nil {
+			return &StepError{
+				Step: "pair-cable-device",
+				Err:  err,
+				Hint: "keep the selected VibeTV connected by Cable and rerun setup",
+			}
+		}
+		fmt.Fprintln(d.stdout, "Cable pairing: ok")
 	}
 
 	if opts.ValidateOnly {
@@ -476,7 +500,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	fmt.Fprintf(d.stdout, "Recovery backup dir: %s\n", backupDir)
 
 	if err := applyRuntimeConfig(
-		home, opts.Theme, transportName, runtimeConfigTarget, cableDeviceID, d.stdout,
+		home, opts.Theme, transportName, runtimeConfigTarget, cableDeviceID, cableDeviceToken, d.stdout,
 	); err != nil {
 		return &StepError{
 			Step: "write-runtime-config",
@@ -1131,7 +1155,8 @@ func applyRuntimeConfig(
 	rawTheme,
 	rawConnectionMode,
 	rawDeviceTarget,
-	rawDeviceID string,
+	rawDeviceID,
+	rawCableDeviceToken string,
 	stdout io.Writer,
 ) error {
 	cfg, err := runtimeconfig.Load(home)
@@ -1178,6 +1203,19 @@ func applyRuntimeConfig(
 			cfg.DeviceTarget = ""
 			cfg.DeviceToken = ""
 			changed = true
+		}
+		cableDeviceToken := strings.TrimSpace(rawCableDeviceToken)
+		if cableDeviceToken != "" {
+			known, knownOK := cfg.KnownDevice(deviceID)
+			if cfg.DeviceToken != cableDeviceToken || !knownOK ||
+				known.DeviceToken != cableDeviceToken || known.Target != cfg.DeviceTarget {
+				changed = true
+			}
+			cfg.SetActiveDevice(runtimeconfig.KnownDevice{
+				DeviceID:    deviceID,
+				Target:      cfg.DeviceTarget,
+				DeviceToken: cableDeviceToken,
+			})
 		}
 	}
 

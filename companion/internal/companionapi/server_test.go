@@ -7805,6 +7805,7 @@ func TestSetupConnectionModeExplicitlySelectsCableAfterReset(t *testing.T) {
 			Kind:     "hello",
 			DeviceID: "new-cable-vibetv",
 			Capabilities: protocol.CapabilityBlock{
+				Auth:      &protocol.AuthCapabilities{Paired: false},
 				Transport: protocol.TransportCapabilities{Active: "usb", Supported: []string{"usb"}},
 			},
 		}, nil
@@ -7853,6 +7854,56 @@ func TestSetupConnectionModeExplicitlySelectsCableAfterReset(t *testing.T) {
 	}
 	if !got.Device.Active || !got.Device.Paired || !got.Device.Ready || got.Device.Target != cableDeviceTarget {
 		t.Fatalf("Cable selection response is not ready: %+v", got.Device)
+	}
+}
+
+func TestSetupConnectionModeSelectsCableWithoutPairingForBoardWithoutAuth(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:               "cable",
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: true,
+	})
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/cu.usbmodem-lilygo", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			Board:    "esp32-lilygo-t-display-s3",
+			DeviceID: "lilygo-cable",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb"}},
+			},
+		}, nil
+	}
+	server.pairCableDevice = func(string, string) (string, error) {
+		t.Fatal("board without auth capability must not receive a pairing request")
+		return "", nil
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.DeviceID != "lilygo-cable" || cfg.DeviceToken != "" || cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("Cable-only board selection persisted wrong state: %+v", cfg)
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Device.Active || !got.Device.Paired || !got.Device.Ready {
+		t.Fatalf("board without auth capability was not ready: %+v", got.Device)
 	}
 }
 

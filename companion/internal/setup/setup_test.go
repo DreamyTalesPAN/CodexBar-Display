@@ -1304,6 +1304,7 @@ func TestRunWithDepsSkipsSerialProbeOnFlashPath(t *testing.T) {
 	probeCalled := false
 	resolveRecoveryCalled := false
 	helloReads := 0
+	pairCalls := 0
 
 	err := runWithDeps(context.Background(), Options{
 		Transport: "usb",
@@ -1337,7 +1338,16 @@ func TestRunWithDepsSkipsSerialProbeOnFlashPath(t *testing.T) {
 			if helloReads == 1 {
 				return protocol.DeviceHello{}, errors.New("pre-cutover firmware has no hello")
 			}
-			return setupCableHello(port)
+			hello, err := setupCableHello(port)
+			hello.Capabilities.Auth = &protocol.AuthCapabilities{Paired: false}
+			return hello, err
+		},
+		pairCableDevice: func(port, deviceID string) (string, error) {
+			pairCalls++
+			if port != "/dev/cu.usbserial10" || deviceID != "vibetv-test" {
+				t.Fatalf("unexpected Cable pairing port=%q device=%q", port, deviceID)
+			}
+			return "setup-cable-token", nil
 		},
 		findCodexbar: func() (string, error) {
 			return "/opt/homebrew/bin/codexbar", nil
@@ -1370,8 +1380,11 @@ func TestRunWithDepsSkipsSerialProbeOnFlashPath(t *testing.T) {
 		t.Fatalf("expected identity retry after recovery flash, got %d hello reads", helloReads)
 	}
 	cfg, err := runtimeconfig.Load(home)
-	if err != nil || cfg.DeviceID != "vibetv-test" {
+	if err != nil || cfg.DeviceID != "vibetv-test" || cfg.DeviceToken != "setup-cable-token" || pairCalls != 1 {
 		t.Fatalf("expected post-flash Cable identity to be persisted, cfg=%+v err=%v", cfg, err)
+	}
+	if known, ok := cfg.KnownDevice("vibetv-test"); !ok || known.DeviceToken != "setup-cable-token" {
+		t.Fatalf("expected post-flash Cable pairing to be remembered: %+v", cfg.KnownDevices)
 	}
 }
 
@@ -1585,7 +1598,7 @@ func TestApplyRuntimeConfigReenablesCableBindingAfterReset(t *testing.T) {
 		t.Fatalf("save reset config: %v", err)
 	}
 
-	if err := applyRuntimeConfig(home, "", "usb", "", "new-vibetv", nil); err != nil {
+	if err := applyRuntimeConfig(home, "", "usb", "", "new-vibetv", "", nil); err != nil {
 		t.Fatalf("apply Cable config: %v", err)
 	}
 	cfg, err := runtimeconfig.Load(home)
@@ -1605,7 +1618,7 @@ func TestApplyRuntimeConfigRefusesUnconfirmedCableToWiFiSwitch(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := applyRuntimeConfig(home, "", "wifi", "http://192.0.2.10", "", nil); err == nil ||
+	if err := applyRuntimeConfig(home, "", "wifi", "http://192.0.2.10", "", "", nil); err == nil ||
 		!strings.Contains(err.Error(), "must confirm") {
 		t.Fatalf("expected unconfirmed transition rejection, got %v", err)
 	}
