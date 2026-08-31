@@ -33,12 +33,13 @@ function render(
   device: DeviceInfo,
   standby: StandbySettings | null = savedStandby,
   brightness: number | null = 70,
+  connectionMode: "cable" | "wifi" = "cable",
 ) {
   return renderToStaticMarkup(
     <SettingsScreen
       brightness={brightness}
       busyAction={null}
-      connectionMode="cable"
+      connectionMode={connectionMode}
       device={device}
       standby={standby}
       onBrightnessChange={vi.fn()}
@@ -187,6 +188,32 @@ describe("SettingsScreen standby controls", () => {
     expect(html).toContain('aria-label="Connection mode"');
     expect(html).toContain('data-slot="select-trigger"');
     expect(html).not.toContain("Change connection");
+  });
+
+  it("keeps Cable recovery available for an active offline WiFi binding", () => {
+    const html = render(
+      {
+        active: true,
+        connected: false,
+        paired: true,
+        capabilities: {
+          transport: {
+            active: "wifi",
+            mode: "wifi",
+            supported: ["usb", "wifi"],
+          },
+        },
+      },
+      null,
+      null,
+      "wifi",
+    );
+    const connectionModeTrigger = html.match(
+      /<button[^>]*aria-label="Connection mode"[^>]*>/,
+    )?.[0];
+
+    expect(connectionModeTrigger).toBeDefined();
+    expect(connectionModeTrigger).not.toContain('disabled=""');
   });
 
   it("keeps VibeTV mutations disabled during a firmware update", () => {

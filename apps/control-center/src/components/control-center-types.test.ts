@@ -5,6 +5,7 @@ import {
   deviceCompletedThemeSetup,
   deviceIsActive,
   deviceIsCustomerConnected,
+  deviceCanSwitchToCable,
   deviceIsReady,
   deviceUsesCable,
   deviceNeedsExplicitConnect,
@@ -128,6 +129,56 @@ describe("device connection contract", () => {
         connected: false,
         paired: false,
         ready: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("offers Cable recovery only for an active Cable-capable WiFi binding", () => {
+    expect(
+      deviceCanSwitchToCable({
+        active: true,
+        connected: false,
+        capabilities: {
+          transport: {
+            active: "wifi",
+            mode: "wifi",
+            supported: ["usb", "wifi"],
+          },
+        },
+      }),
+    ).toBe(true);
+    expect(
+      deviceCanSwitchToCable({
+        active: true,
+        connected: false,
+        capabilities: {
+          transport: {
+            active: "wifi",
+            mode: "legacy-wifi-only",
+            supported: ["wifi"],
+          },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      deviceCanSwitchToCable({
+        active: false,
+        connected: false,
+        capabilities: {
+          transport: { active: "wifi", mode: "wifi", supported: ["usb"] },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      deviceCanSwitchToCable({ active: true, connected: false }),
+    ).toBe(false);
+    expect(
+      deviceCanSwitchToCable({
+        active: true,
+        connected: true,
+        capabilities: {
+          transport: { active: "wifi", mode: "wifi", supported: ["usb"] },
+        },
       }),
     ).toBe(false);
   });

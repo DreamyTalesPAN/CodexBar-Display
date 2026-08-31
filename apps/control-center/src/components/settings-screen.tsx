@@ -24,6 +24,7 @@ import type { ProviderPickerProps } from "./provider-picker";
 import { ProviderPicker } from "./provider-picker";
 import { Switch } from "@/components/ui/switch";
 import {
+  deviceCanSwitchToCable,
   deviceIsCustomerConnected,
   deviceIsReady,
   type DeviceInfo,
@@ -92,13 +93,14 @@ export function SettingsScreen({
     !deviceIsCustomerConnected(device) || localActionBusy;
   const standbyDetailsDisabled =
     standbyToggleDisabled || !standbyValues.enabled;
-  const connectionModeDisabled =
-    !deviceIsCustomerConnected(device) || localActionBusy;
   const supportedTransports = device?.capabilities?.transport?.supported;
   const cableSupported =
     !supportedTransports || supportedTransports.includes("usb");
   const wifiSupported =
     !supportedTransports || supportedTransports.includes("wifi");
+  const connectionModeDisabled =
+    (!deviceIsCustomerConnected(device) && !deviceCanSwitchToCable(device)) ||
+    localActionBusy;
 
   return (
     <div className="mx-auto max-w-[1040px] py-4">
