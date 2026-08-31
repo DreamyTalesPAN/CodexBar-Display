@@ -10747,6 +10747,40 @@ func TestCableSettingsUseSerialReadbackWithoutAnHTTPProbe(t *testing.T) {
 	}
 }
 
+func TestCableSettingsSkipUnsupportedDeviceControls(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "lilygo"})
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			DeviceID: "lilygo",
+			Board:    "esp32-lilygo-t-display-s3",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb"}},
+			},
+		}, nil
+	}
+	server.readCableSettings = func(string, string) (protocol.DeviceSettings, error) {
+		t.Fatal("unsupported Cable settings must not reach the device")
+		return protocol.DeviceSettings{}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/settings", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected benign status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got settingsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK || got.Device.DeviceID != "lilygo" || got.Device.Capabilities == nil ||
+		got.Device.Capabilities.Display.Brightness.Supported {
+		t.Fatalf("unexpected unsupported settings response: %+v", got)
+	}
+}
+
 func TestSettingsGetReportsActiveTheme(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

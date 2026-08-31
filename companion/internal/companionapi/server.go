@@ -4434,6 +4434,14 @@ func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
+		caps := protocol.CapabilitiesFromHello(hello)
+		if caps.Known && !caps.SupportsBrightness && !caps.SupportsStandby {
+			writeJSON(w, http.StatusOK, settingsResponse{
+				OK:     true,
+				Device: s.cableDeviceInfo(r.Context(), cfg, hello),
+			})
+			return
+		}
 		settings, err := s.readCableSettings(port, hello.DeviceID)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, "settings_read_failed", "Could not read VibeTV settings.", "Keep VibeTV connected by Cable and retry.")

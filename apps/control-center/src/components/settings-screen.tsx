@@ -124,7 +124,13 @@ export function SettingsScreen({
               onSave={onSaveBrightness}
               onValueChange={onBrightnessChange}
               value={currentBrightness}
-              valueLabel={brightness == null ? "Loading" : `${brightness}%`}
+              valueLabel={
+                !brightnessSupport
+                  ? "Not supported"
+                  : brightness == null
+                    ? "Loading"
+                    : `${brightness}%`
+              }
             />
           </FieldGroup>
         </Item>

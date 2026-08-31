@@ -32,10 +32,11 @@ const savedStandby: StandbySettings = {
 function render(
   device: DeviceInfo,
   standby: StandbySettings | null = savedStandby,
+  brightness: number | null = 70,
 ) {
   return renderToStaticMarkup(
     <SettingsScreen
-      brightness={70}
+      brightness={brightness}
       busyAction={null}
       connectionMode="cable"
       device={device}
@@ -53,6 +54,21 @@ function render(
 }
 
 describe("SettingsScreen standby controls", () => {
+  it("labels unsupported brightness without a loading state", () => {
+    const html = render(
+      {
+        connected: true,
+        ready: true,
+        capabilities: { display: { brightness: { supported: false } } },
+      },
+      savedStandby,
+      null,
+    );
+
+    expect(html).toContain("Not supported");
+    expect(html).not.toContain("Loading");
+  });
+
   it("hides the whole block on firmware without standby support", () => {
     const html = render({ connected: true, ready: true });
 

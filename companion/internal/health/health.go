@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 )
 
 const (
@@ -31,6 +32,7 @@ type deps struct {
 	homeDir               func() (string, error)
 	runCommand            func(context.Context, string, ...string) (string, error)
 	readCableCapabilities func() (protocol.DeviceCapabilities, error)
+	loadRuntimeConfig     func(string) (runtimeconfig.Config, error)
 	readFile              func(string) ([]byte, error)
 }
 
@@ -51,6 +53,9 @@ func (d deps) withDefaults() deps {
 		d.readCableCapabilities = func() (protocol.DeviceCapabilities, error) {
 			return protocol.DeviceCapabilities{}, fmt.Errorf("running Companion Cable status reader is required")
 		}
+	}
+	if d.loadRuntimeConfig == nil {
+		d.loadRuntimeConfig = runtimeconfig.Load
 	}
 	if d.readFile == nil {
 		d.readFile = os.ReadFile
@@ -170,6 +175,14 @@ func readLaunchAgentConfig(d deps) launchAgentConfig {
 	home, err := d.homeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
 		return launchAgentConfig{}
+	}
+	if cfg, err := d.loadRuntimeConfig(home); err == nil &&
+		(runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "" || strings.TrimSpace(cfg.DeviceTarget) != "") {
+		config := launchAgentConfig{Transport: runtimeconfig.ActiveTransport(cfg)}
+		if config.Transport == "wifi" {
+			config.Target = strings.TrimSpace(cfg.DeviceTarget)
+		}
+		return config
 	}
 	path := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
 	data, err := d.readFile(path)

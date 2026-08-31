@@ -1008,17 +1008,7 @@ func readDoctorRuntimeConfig() (doctorRuntimeConfig, error) {
 }
 
 func doctorTransportForRuntimeConfig(cfg runtimeconfig.Config) string {
-	switch runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) {
-	case "wifi":
-		return "wifi"
-	case "cable":
-		return "usb"
-	default:
-		if strings.TrimSpace(cfg.DeviceTarget) != "" {
-			return "wifi"
-		}
-		return "usb"
-	}
+	return runtimeconfig.ActiveTransport(cfg)
 }
 
 func readDoctorLegacyLaunchAgentPlist(home, launchctlOutput string, readFile func(string) ([]byte, error)) ([]byte, error) {

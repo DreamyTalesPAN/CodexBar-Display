@@ -84,6 +84,20 @@ func NormalizeConnectionMode(raw string) string {
 	}
 }
 
+func ActiveTransport(cfg Config) string {
+	switch NormalizeConnectionMode(cfg.ConnectionMode) {
+	case "wifi":
+		return "wifi"
+	case "cable":
+		return "usb"
+	default:
+		if strings.TrimSpace(cfg.DeviceTarget) != "" {
+			return "wifi"
+		}
+		return "usb"
+	}
+}
+
 func ClearThemeValue(raw string) bool {
 	switch strings.TrimSpace(strings.ToLower(raw)) {
 	case "", "none", "off", "auto", "default":

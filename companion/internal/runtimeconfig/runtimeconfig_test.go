@@ -31,6 +31,23 @@ func TestConnectionModeNormalizationKeepsOnlyCustomerChoices(t *testing.T) {
 	}
 }
 
+func TestActiveTransportFollowsRuntimeDeviceSelection(t *testing.T) {
+	tests := []struct {
+		cfg  Config
+		want string
+	}{
+		{cfg: Config{}, want: "usb"},
+		{cfg: Config{ConnectionMode: "cable", DeviceTarget: "http://192.0.2.10"}, want: "usb"},
+		{cfg: Config{ConnectionMode: "wifi"}, want: "wifi"},
+		{cfg: Config{DeviceTarget: "http://192.0.2.10"}, want: "wifi"},
+	}
+	for _, tt := range tests {
+		if got := ActiveTransport(tt.cfg); got != tt.want {
+			t.Fatalf("ActiveTransport(%+v)=%q, expected %q", tt.cfg, got, tt.want)
+		}
+	}
+}
+
 func TestLoadMigratesActiveDeviceIntoKnownDevices(t *testing.T) {
 	home := t.TempDir()
 	path := ConfigPath(home)
