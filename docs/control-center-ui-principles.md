@@ -35,6 +35,13 @@ This is the customer-facing design standard for VibeTV Control Center. The targe
    screen of its own, and every step carries one Help control offering `Ask AI
    to fix` and `Create support report`. The Control Center shell and navigation
    stay hidden for the whole wizard.
+   On the provider step, every row keeps its on/off switch whatever the provider
+   reports. The health state decides what help the row offers -- sign in, allow
+   access in macOS, check again -- never whether the customer may switch the
+   provider off. A provider that cannot be switched off is one that cannot be
+   kept off the display, and only providers that can actually produce a reading
+   reach the display step. This is a deliberate departure from the design's
+   "Provider row states" board, decided by the product owner on 2026-08-30.
 4. An existing healthy setup opens Overview without setup writes or extra
    confirmation. If VibeTV or the Mac App becomes unavailable after Control
    Center was entered, the current tab and navigation remain visible, and
