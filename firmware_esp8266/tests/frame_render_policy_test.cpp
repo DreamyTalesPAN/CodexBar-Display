@@ -154,6 +154,28 @@ bool testSetupSizesSerialRxBufferForFrameContract(const std::string& source) {
       "Cable UART must allocate the full frame buffer before Serial.begin");
 }
 
+bool testCableFirmwareTransferAcknowledgesBeforeImmediateRestart(const std::string& source) {
+  const std::size_t finishStart = source.find("bool finishCableTransfer(");
+  const std::size_t finishEnd = source.find("\nbool handleCableTransferRequest(", finishStart);
+  if (!expect(
+          finishStart != std::string::npos && finishEnd != std::string::npos,
+          "Cable transfer finish handler must remain discoverable")) {
+    return false;
+  }
+
+  const std::string finish = source.substr(finishStart, finishEnd - finishStart);
+  const std::size_t ack = finish.find("emitCableTransferReply(\"complete\")");
+  const std::size_t flush = finish.find("Serial.flush()", ack);
+  const std::size_t persist = finish.find("persistResetTrustForRestart()", flush);
+  const std::size_t restart = finish.find("ESP.restart()", persist);
+  return expect(
+      ack != std::string::npos && flush != std::string::npos &&
+          persist != std::string::npos && restart != std::string::npos &&
+          ack < flush && flush < persist && persist < restart &&
+          finish.find("scheduleReboot(\"firmware_cable\")") == std::string::npos,
+      "Cable firmware transfer must flush its completion ACK before restarting immediately");
+}
+
 bool testHelloAdvertisesEscapedUsageWindowCapacity(const std::string& source) {
   const std::size_t capabilitiesStart = source.find("String themeCapabilitiesJSON(");
   const std::size_t capabilitiesEnd = source.find("\nstruct WifiCredentials", capabilitiesStart);
@@ -414,6 +436,7 @@ int main(int argc, char** argv) {
       !testSetupAccessPointClearsPendingThemeRender(source) ||
       !testPendingHttpRenderRunsBeforeUsb(source) ||
       !testSetupSizesSerialRxBufferForFrameContract(source) ||
+      !testCableFirmwareTransferAcknowledgesBeforeImmediateRestart(source) ||
       !testHelloAdvertisesEscapedUsageWindowCapacity(source) ||
       !testSharedSerialHelloAdvertisesStandby(source) ||
       !testAssetDeleteProtectsStandbyLiveTheme(source) ||

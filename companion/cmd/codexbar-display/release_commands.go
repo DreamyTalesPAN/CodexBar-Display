@@ -780,6 +780,19 @@ func runInstallUpdate(args []string) (retErr error) {
 		}
 	}
 	if helloErr != nil {
+		if cableMode {
+			emitFirmwareUpdateEvent(firmwareUpdateEvent{
+				Stage:             "rebooting",
+				Phase:             "attention",
+				RetryPolicy:       "power_cycle",
+				Firmware:          targetVersion,
+				Target:            base,
+				DeviceID:          deviceID,
+				ArtifactValidated: true,
+				UploadAccepted:    true,
+				HelloVerified:     true,
+			})
+		}
 		return &commandError{
 			Op:   "post-update-verify",
 			Code: errcode.UpgradeFlashFirmware,

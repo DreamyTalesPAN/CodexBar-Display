@@ -9467,6 +9467,53 @@ func TestFirmwareUpdateCablePreflightPreservesAlreadyCurrentOutcome(t *testing.T
 	}
 }
 
+func TestFirmwareUpdateCableDoesNotOverridePostUpdateVerificationError(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-cable-update",
+		DeviceToken:    "pair-token",
+	}
+	server := newTestServer(t, cfg)
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/mock-cable", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		var hello protocol.DeviceHello
+		if err := json.Unmarshal([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"device-cable-update","board":"esp8266-smalltv-st7789","firmware":"1.0.40","capabilities":{"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}}`), &hello); err != nil {
+			t.Fatal(err)
+		}
+		return hello, nil
+	}
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"rebooting","phase":"installing","retryPolicy":"power_cycle","firmware":"1.0.41","observedFirmware":"1.0.40","target":"cable://vibetv","deviceId":"device-cable-update","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return errors.New("post-update verification still reports firmware 1.0.40")
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected Cable update to start, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 100; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase == "error" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Phase != "error" || job.Error == nil || job.Error.Code != "firmware_update_restart_required" {
+		t.Fatalf("Cable verification error must remain visible: %+v", job)
+	}
+	if job.Result == nil || job.Result.Firmware != "1.0.41" || job.Result.ObservedFirmware != "1.0.40" {
+		t.Fatalf("Cable verification evidence was lost: %+v", job.Result)
+	}
+}
+
 func TestFirmwareUpdatePausesDisplayTrafficUntilJobFinishes(t *testing.T) {
 	var deviceCalls atomic.Int32
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

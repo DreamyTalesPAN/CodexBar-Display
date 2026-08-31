@@ -5810,23 +5810,31 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 
 		snapshot, _ := s.firmwareUpdateJobSnapshot(jobID)
 		shouldVerify := err == nil || (snapshot.Result != nil && snapshot.Result.UploadAccepted)
-		if shouldVerify && runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
-			finishedAt := time.Now().UTC()
-			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
-				outcome := strings.TrimSpace(job.Outcome)
-				if outcome == "" {
-					outcome = "updated"
-				}
-				job.Phase = "complete"
-				job.Progress = 100
-				job.FinishedAt = &finishedAt
-				job.Outcome = outcome
-				job.Message = "Update complete."
-				appendFirmwareUpdateJobLog(job, "Update complete.")
-			})
-			return
+		cableUpdate := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable"
+		if err == nil && cableUpdate {
+			result := snapshot.Result
+			if result == nil || !result.HelloVerified ||
+				strings.TrimSpace(result.Firmware) == "" ||
+				strings.TrimSpace(result.Firmware) != strings.TrimSpace(result.ObservedFirmware) {
+				err = errors.New("Cable firmware update did not verify the installed firmware")
+			} else {
+				finishedAt := time.Now().UTC()
+				s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
+					outcome := strings.TrimSpace(job.Outcome)
+					if outcome == "" {
+						outcome = "updated"
+					}
+					job.Phase = "complete"
+					job.Progress = 100
+					job.FinishedAt = &finishedAt
+					job.Outcome = outcome
+					job.Message = "Update complete."
+					appendFirmwareUpdateJobLog(job, "Update complete.")
+				})
+				return
+			}
 		}
-		if shouldVerify {
+		if shouldVerify && !cableUpdate {
 			outcome, attentionMessage, verifyErr := s.verifyFirmwareUpdateResult(ctx, jobID, cfg)
 			if verifyErr == nil {
 				finishedAt := time.Now().UTC()

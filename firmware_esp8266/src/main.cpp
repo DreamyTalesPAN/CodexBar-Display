@@ -3802,7 +3802,12 @@ bool finishCableTransfer(JsonDocument& doc) {
   } else {
     otaUploadInProgress = false;
     otaUploadNeedsReboot = false;
-    scheduleReboot("firmware_cable");
+    cableTransfer = CableTransferState{};
+    Serial.flush();
+    delay(100);
+    persistResetTrustForRestart();
+    ESP.restart();
+    return true;
   }
   cableTransfer = CableTransferState{};
   return true;

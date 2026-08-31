@@ -176,17 +176,39 @@ image hash is
 That exact image was flashed to device `14799300`, passed the device-side hash
 check, rebooted ready, and then held three real usage windows without an
 unavailable frame for 24 of 24 samples across 72 seconds while the reset
-seconds continued changing.
+seconds continued changing. The user visually confirmed on the physical Clippy
+screen that the roughly three-second usage-area flash was gone.
 
-Terminating the updater during a `dev-b` to `dev-c` hardware transfer left
-`dev-b` bootable and healthy, produced an error with a retry action, and did
-not report upload acceptance. The immediate retry completed in 161.3 seconds,
-rebooted, and read back exact `dev-c`. This proves inactive-image safety and
-host retry after a controlled updater interruption. It does not replace the
-physical Cable-unplug test. #302 still requires a real unplug during transfer,
-visual confirmation of the installed GIF/CBA animations on the panel, and the
-dock path before it can close. After the boundary-render photo, Mini Classic
-was restored successfully and the `dev-c` Cable stream remained healthy.
+The physical Cable-unplug test on 2026-08-31 interrupted the real Control Center
+update from `9999.0.864` to `9999.0.865` before upload acceptance. The job ended
+with `firmware_update_cable_interrupted`, the customer-facing Updates screen
+showed `Try again`, and reconnecting the same device booted the exact old
+`9999.0.864` image ready with a healthy stream. Activating `Try again` in that
+screen started a new real update job. This proves the inactive image remains
+bootable and the customer has an actionable retry after physically losing the
+Cable.
+
+The accepted retry exposed a separate restart race: the updater correctly
+reported that the device still advertised `9999.0.864`, but the Companion
+overwrote that failure with `complete`; a manual power cycle then booted the
+already committed `9999.0.865`. Cable completion now requires the updater's
+verified firmware to equal its observed firmware, so an accepted upload can no
+longer hide a post-update verification error. Such a failure now requires a
+power cycle before another attempt. Firmware flushes the `complete` transfer
+reply and restarts immediately instead of waiting for the host to close the
+CH340 serial port before a scheduled restart.
+
+The corrected `9999.0.867` build uses 476,903 bytes flash and 46,928 bytes RAM.
+Its 481,056-byte image hash is
+`5834a83fd9c56b1ad5ee9c559d3ceb2050e8f353612224b74632721e3a71e0bc`.
+To prove that the new restart code itself performed the handoff, Control Center
+transferred that exact image from already-running corrected firmware
+`9999.0.866` to device `14799300` over `/dev/cu.usbserial-10`. Without a manual
+power cycle the device advertised `9999.0.867` three seconds after the updater
+entered rebooting. The job completed only with exact observed firmware, and the
+device then stayed connected, ready, and on a healthy three-window Cable stream
+for 24 of 24 samples. #302 still requires visual confirmation that the installed
+GIF/CBA animations move on the panel and the dock-path test before it can close.
 
 ## Cutover Migration Contract
 

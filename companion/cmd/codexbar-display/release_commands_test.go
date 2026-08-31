@@ -1013,9 +1013,14 @@ func TestRunInstallUpdateCableRejectsPostRebootVersionMismatch(t *testing.T) {
 	cableFirmwareVerifyTimeout = 5 * time.Millisecond
 	cableFirmwareVerifyPollInterval = time.Millisecond
 
-	err := runInstallUpdate([]string{"--target", "cable://vibetv", "--manifest-url", manifestURL, "--skip-launchagent-pause"})
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", "cable://vibetv", "--manifest-url", manifestURL, "--skip-launchagent-pause"})
+	})
 	if err == nil || !strings.Contains(err.Error(), "still reports firmware 1.0.0") {
 		t.Fatalf("expected post-reboot Cable version mismatch, got %v", err)
+	}
+	if !strings.Contains(output, `"retryPolicy":"power_cycle"`) || !strings.Contains(output, `"uploadAccepted":true`) {
+		t.Fatalf("accepted Cable update must require a power cycle before retry:\n%s", output)
 	}
 }
 
