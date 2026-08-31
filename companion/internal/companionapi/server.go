@@ -3439,7 +3439,8 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		writeInternalError(w, err)
 		return
 	}
-	freshWiFiChoice := mode == "wifi" && strings.TrimSpace(cfg.DeviceID) == "" && cfg.ConnectionModeChoiceRequired
+	freshWiFiChoice := mode == "wifi" && strings.TrimSpace(cfg.DeviceID) == "" &&
+		(cfg.ConnectionModeChoiceRequired || runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "")
 	cableConnected := strings.TrimSpace(s.currentCableConnectionChoiceDevice().DeviceID) != ""
 	var cablePort string
 	if freshWiFiChoice && !cableConnected {
@@ -3513,53 +3514,83 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	transitioningFromWiFi := mode == "cable" &&
 		runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "wifi" &&
 		strings.TrimSpace(cfg.DeviceTarget) != "" && strings.TrimSpace(cfg.DeviceID) != ""
+	var port string
+	var hello protocol.DeviceHello
+	cableHelloReady := false
 	if transitioningFromWiFi {
-		hello, helloErr := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
-		if helloErr != nil || !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(cfg.DeviceID)) {
-			writeError(w, http.StatusConflict, "wifi_device_not_found", "The selected WiFi VibeTV is not available.", "Keep VibeTV powered on and retry.")
-			return
-		}
-		if !supportsTransport(hello, "usb") {
-			writeError(w, http.StatusConflict, "connection_mode_unsupported", "This VibeTV does not support Cable mode.", "Keep this VibeTV connected through WiFi.")
-			return
-		}
-		var response struct {
-			OK bool `json:"ok"`
-		}
-		if err := s.doJSON(r.Context(), http.MethodPost, cfg.DeviceTarget, "/api/connection-mode", cfg.DeviceToken, struct {
-			DeviceID string `json:"deviceId"`
-			Mode     string `json:"mode"`
-		}{DeviceID: cfg.DeviceID, Mode: "cable"}, &response); err != nil {
-			writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not change its connection.", "Keep VibeTV powered on and retry.")
-			return
-		}
-	}
-	port := cablePort
-	if port == "" {
-		port, err = s.resolveCablePort("", strings.TrimSpace(cfg.DeviceID))
-	}
-	if err != nil && transitioningFromWiFi {
-		deadline := time.Now().Add(cableTransitionWait)
-		for err != nil && time.Now().Before(deadline) {
-			select {
-			case <-r.Context().Done():
-				writeError(w, http.StatusRequestTimeout, "connection_mode_switch_cancelled", "The connection change was cancelled.", "Keep VibeTV connected by Cable and try again.")
+		expectedDeviceID := strings.TrimSpace(cfg.DeviceID)
+		port, err = s.resolveCablePort("", expectedDeviceID)
+		if err == nil {
+			hello, err = s.readCableHello(port)
+			hello = hello.Normalize()
+			if err != nil || !strings.EqualFold(strings.TrimSpace(hello.DeviceID), expectedDeviceID) {
+				writeError(w, http.StatusBadGateway, "cable_identity_unavailable", "The selected Cable VibeTV did not provide its current identity.", "Reconnect the Cable, wait for VibeTV to start, then try again.")
 				return
-			case <-time.After(500 * time.Millisecond):
 			}
+			if !supportsTransport(hello, "usb") {
+				writeError(w, http.StatusConflict, "connection_mode_unsupported", "This VibeTV does not support Cable mode.", "Keep this VibeTV connected through WiFi.")
+				return
+			}
+			if runtimeconfig.NormalizeConnectionMode(hello.Capabilities.Transport.Mode) != "cable" {
+				if err := s.setCableConnectionMode(port, hello.DeviceID, "cable"); err != nil {
+					writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not change its connection.", "Keep VibeTV connected by Cable, then try again.")
+					return
+				}
+				port, hello, err = s.waitForCableMode(r.Context(), expectedDeviceID)
+				if err != nil {
+					writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not finish changing its connection.", "Keep VibeTV connected by Cable, then try again.")
+					return
+				}
+			}
+			cableHelloReady = true
+		} else {
+			if errcode.Of(err) == errcode.TransportMultipleDevices {
+				writeCableResolutionError(w, err)
+				return
+			}
+			wifiHello, helloErr := s.getHelloProbe(r.Context(), cfg.DeviceTarget, cfg.DeviceToken, discoveryProbeTime)
+			if helloErr != nil || !strings.EqualFold(strings.TrimSpace(wifiHello.DeviceID), expectedDeviceID) {
+				writeError(w, http.StatusConflict, "wifi_device_not_found", "The selected WiFi VibeTV is not available.", "Connect this VibeTV with a data Cable, then try again.")
+				return
+			}
+			if !supportsTransport(wifiHello, "usb") {
+				writeError(w, http.StatusConflict, "connection_mode_unsupported", "This VibeTV does not support Cable mode.", "Keep this VibeTV connected through WiFi.")
+				return
+			}
+			var response struct {
+				OK bool `json:"ok"`
+			}
+			if err := s.doJSON(r.Context(), http.MethodPost, cfg.DeviceTarget, "/api/connection-mode", cfg.DeviceToken, struct {
+				DeviceID string `json:"deviceId"`
+				Mode     string `json:"mode"`
+			}{DeviceID: cfg.DeviceID, Mode: "cable"}, &response); err != nil {
+				writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not change its connection.", "Keep VibeTV powered on and retry.")
+				return
+			}
+			port, hello, err = s.waitForCableMode(r.Context(), expectedDeviceID)
+			if err != nil {
+				writeError(w, http.StatusBadGateway, "connection_mode_switch_failed", "VibeTV could not finish changing its connection.", "Keep VibeTV connected by Cable, then try again.")
+				return
+			}
+			cableHelloReady = true
+		}
+	}
+	if !cableHelloReady {
+		port = cablePort
+		if port == "" {
 			port, err = s.resolveCablePort("", strings.TrimSpace(cfg.DeviceID))
 		}
+		if err != nil {
+			writeCableResolutionError(w, err)
+			return
+		}
+		hello, err = s.readCableHello(port)
+		if err != nil || strings.TrimSpace(hello.DeviceID) == "" {
+			writeError(w, http.StatusBadGateway, "cable_identity_unavailable", "The connected Cable VibeTV did not provide its identity.", "Reconnect the Cable, wait for VibeTV to start, then try again.")
+			return
+		}
+		hello = hello.Normalize()
 	}
-	if err != nil {
-		writeCableResolutionError(w, err)
-		return
-	}
-	hello, err := s.readCableHello(port)
-	if err != nil || strings.TrimSpace(hello.DeviceID) == "" {
-		writeError(w, http.StatusBadGateway, "cable_identity_unavailable", "The connected Cable VibeTV did not provide its identity.", "Reconnect the Cable, wait for VibeTV to start, then try again.")
-		return
-	}
-	hello = hello.Normalize()
 	if mode == "cable" && hello.Capabilities.Transport.TransitionPending &&
 		strings.EqualFold(hello.Capabilities.Transport.TransitionTo, "cable") {
 		if err := s.confirmCableMode(port, hello.DeviceID); err != nil {
@@ -3712,6 +3743,45 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		Status         string     `json:"status"`
 		Device         deviceInfo `json:"device"`
 	}{OK: true, ConnectionMode: "cable", Status: "selected", Device: device})
+}
+
+func (s *Server) waitForCableMode(
+	ctx context.Context,
+	expectedDeviceID string,
+) (string, protocol.DeviceHello, error) {
+	deadline := time.Now().Add(cableTransitionWait)
+	lastErr := errors.New("Cable mode is not ready")
+	for {
+		port, err := s.resolveCablePort("", expectedDeviceID)
+		if errcode.Of(err) == errcode.TransportMultipleDevices {
+			return "", protocol.DeviceHello{}, err
+		}
+		if err == nil {
+			hello, helloErr := s.readCableHello(port)
+			hello = hello.Normalize()
+			if helloErr == nil {
+				if !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(expectedDeviceID)) {
+					return "", protocol.DeviceHello{}, errDeviceIdentityChanged
+				}
+				if runtimeconfig.NormalizeConnectionMode(hello.Capabilities.Transport.Mode) == "cable" {
+					return port, hello, nil
+				}
+				lastErr = errors.New("VibeTV is still changing to Cable mode")
+			} else {
+				lastErr = helloErr
+			}
+		} else {
+			lastErr = err
+		}
+		if !time.Now().Before(deadline) {
+			return "", protocol.DeviceHello{}, lastErr
+		}
+		select {
+		case <-ctx.Done():
+			return "", protocol.DeviceHello{}, ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 }
 
 func (s *Server) handleSetupWiFi(w http.ResponseWriter, r *http.Request) {

@@ -7838,9 +7838,14 @@ func TestSetupConnectionModeSwitchesFromWiFiThroughTheActiveHTTPPath(t *testing.
 		DeviceTarget:   device.URL,
 		DeviceToken:    token,
 	})
+	resolveCalls := 0
 	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
+		resolveCalls++
 		if explicit != "" || expectedDeviceID != "wifi-to-cable" {
 			t.Fatalf("unexpected Cable confirmation resolution explicit=%q expected=%q", explicit, expectedDeviceID)
+		}
+		if resolveCalls == 1 {
+			return "", errors.New("Cable has not restarted yet")
 		}
 		return "/dev/cu.usbserial-transition", nil
 	}
@@ -7880,6 +7885,82 @@ func TestSetupConnectionModeSwitchesFromWiFiThroughTheActiveHTTPPath(t *testing.
 	}
 	if cfg.ConnectionMode != "cable" || cfg.DeviceID != "wifi-to-cable" || cfg.DeviceTarget != device.URL || cfg.DeviceToken != token {
 		t.Fatalf("Cable mode did not preserve the authenticated WiFi profile: %+v", cfg)
+	}
+}
+
+func TestSetupConnectionModeRecoversCableWhileWiFiIsOffline(t *testing.T) {
+	const deviceID = "offline-wifi-to-cable"
+	var wifiCalls atomic.Int32
+	wifiDevice := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wifiCalls.Add(1)
+		http.Error(w, "offline", http.StatusServiceUnavailable)
+	}))
+	defer wifiDevice.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "wifi",
+		DeviceID:       deviceID,
+		DeviceTarget:   wifiDevice.URL,
+		DeviceToken:    "pair-token",
+	})
+	deviceMode := "wifi"
+	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
+		if explicit != "" || expectedDeviceID != deviceID {
+			t.Fatalf("unexpected Cable recovery resolution explicit=%q expected=%q", explicit, expectedDeviceID)
+		}
+		return "/dev/cu.usbserial-offline", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		transport := protocol.TransportCapabilities{
+			Active: "usb", Mode: deviceMode, Supported: []string{"usb", "wifi"},
+		}
+		if deviceMode == "cable" {
+			transport.TransitionPending = true
+			transport.TransitionFrom = "wifi"
+			transport.TransitionTo = "cable"
+		}
+		return protocol.DeviceHello{
+			Kind: "hello", DeviceID: deviceID,
+			Capabilities: protocol.CapabilityBlock{Transport: transport},
+		}, nil
+	}
+	switchCalls := 0
+	server.setCableConnectionMode = func(port, gotDeviceID, mode string) error {
+		switchCalls++
+		if port != "/dev/cu.usbserial-offline" || gotDeviceID != deviceID || mode != "cable" {
+			t.Fatalf("unexpected Cable recovery switch port=%q device=%q mode=%q", port, gotDeviceID, mode)
+		}
+		deviceMode = "cable"
+		return nil
+	}
+	confirmCalls := 0
+	server.confirmCableMode = func(port, gotDeviceID string) error {
+		confirmCalls++
+		if port != "/dev/cu.usbserial-offline" || gotDeviceID != deviceID {
+			t.Fatalf("unexpected Cable recovery confirmation port=%q device=%q", port, gotDeviceID)
+		}
+		return nil
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if wifiCalls.Load() != 0 || switchCalls != 1 || confirmCalls != 1 {
+		t.Fatalf("offline recovery used wrong path: wifi=%d switch=%d confirm=%d", wifiCalls.Load(), switchCalls, confirmCalls)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.DeviceID != deviceID || cfg.DeviceTarget != wifiDevice.URL || cfg.DeviceToken != "pair-token" {
+		t.Fatalf("offline Cable recovery lost the active binding: %+v", cfg)
 	}
 }
 
@@ -8262,10 +8343,7 @@ func TestSetupResetReselectsAuthenticatedKnownWiFiWithoutCable(t *testing.T) {
 }
 
 func TestSetupConnectionModeStartsWiFiDiscoveryWithoutCable(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{
-		CableAutoBindDisabled:        true,
-		ConnectionModeChoiceRequired: true,
-	})
+	server := newTestServer(t, runtimeconfig.Config{})
 	server.currentCableHello = func() (protocol.DeviceHello, bool) {
 		return protocol.DeviceHello{}, false
 	}
