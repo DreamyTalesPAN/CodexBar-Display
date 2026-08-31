@@ -2313,3 +2313,20 @@ issue scope, or release permission never implies UI permission.
   to come back").
 - Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
   and its test, `control-center-app.tsx`.
+
+## 2026-08-31 — The firmware failure holds, and "Update" updates
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31). The first is the
+  review catching the previous pin, which released on dismissal.
+- Approved customer-visible result:
+  1. **Closing a firmware failure dialog no longer carries the customer past
+     it.** They stay on the device step, where the check and the retry are; the
+     step's own controls — Connect, `Search again`, the address field — remain
+     usable, so this holds them at the problem without trapping them.
+  2. **`Update` on "Your Mac App is out of date" now opens the Mac App update.**
+     It used to run the connect sequence again and meet the same refusal, and
+     the usual update prompt does not reach someone still inside setup.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
+  and its test, `control-center-app.tsx`.
