@@ -3750,7 +3750,7 @@ func (s *Server) waitForCableMode(
 	expectedDeviceID string,
 ) (string, protocol.DeviceHello, error) {
 	deadline := time.Now().Add(cableTransitionWait)
-	lastErr := errors.New("Cable mode is not ready")
+	var lastErr error
 	for {
 		port, err := s.resolveCablePort("", expectedDeviceID)
 		if errcode.Of(err) == errcode.TransportMultipleDevices {
@@ -3774,6 +3774,9 @@ func (s *Server) waitForCableMode(
 			lastErr = err
 		}
 		if !time.Now().Before(deadline) {
+			if lastErr == nil {
+				lastErr = errors.New("cable mode is not ready")
+			}
 			return "", protocol.DeviceHello{}, lastErr
 		}
 		select {
