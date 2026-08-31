@@ -145,12 +145,7 @@ export function SetupProviderRow({
           Turning one off is always valid and always theirs, and a provider
           they cannot switch off is one they cannot keep off the display.
         */}
-        <Switch
-          aria-label={label}
-          checked={enabled}
-          disabled={variant === "checking"}
-          onCheckedChange={onToggle}
-        />
+        <Switch aria-label={label} checked={enabled} onCheckedChange={onToggle} />
       </ItemActions>
     </Item>
   );

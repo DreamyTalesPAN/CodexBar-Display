@@ -37,11 +37,14 @@ describe("SetupProviderRow", () => {
     }
   });
 
-  it("disables the switch while the provider is being checked", () => {
+  // A check that is slow or stuck must not hold the customer on the step: the
+  // switch is the way past it, and the running check keeps its spinner.
+  it("keeps the switch usable while the provider is being checked", () => {
     const html = render({ health: "checking" });
 
     expect(html).toContain("lucide-loader-circle");
-    expect(html).toMatch(/role="switch"[^>]*disabled=""/);
+    expect(html).toContain('role="switch"');
+    expect(html).not.toMatch(/role="switch"[^>]*disabled=""/);
   });
 
   it("offers sign-in for a provider that has none", () => {

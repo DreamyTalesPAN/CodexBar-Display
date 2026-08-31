@@ -222,6 +222,17 @@ export function ProviderPicker({
     if (providerIds.length === 0) {
       return;
     }
+    if (checked) {
+      // Re-including it by hand ends the exclusion, so the reconcile below may
+      // look after it again.
+      attemptedReconcileIdsRef.current.delete(item.providerId);
+    } else {
+      // An enabled provider that is not in the pool is normally the remains of
+      // a half-finished enable, and the reconcile puts it back. Leaving this
+      // one out is the customer saying so, and reconciling it would undo the
+      // control they just used.
+      attemptedReconcileIdsRef.current.add(item.providerId);
+    }
     void onDisplayChange({ mode: "automatic", providerIds }, item.providerId);
   }
 
