@@ -5816,7 +5816,7 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 			if result == nil || !result.HelloVerified ||
 				strings.TrimSpace(result.Firmware) == "" ||
 				strings.TrimSpace(result.Firmware) != strings.TrimSpace(result.ObservedFirmware) {
-				err = errors.New("Cable firmware update did not verify the installed firmware")
+				err = errors.New("cable firmware update did not verify the installed firmware")
 			} else {
 				finishedAt := time.Now().UTC()
 				s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
