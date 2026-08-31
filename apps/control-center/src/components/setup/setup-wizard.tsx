@@ -61,10 +61,13 @@ export type SetupWizardProps = {
   /** Resolves with the VibeTV at that address, or rejects with what to show. */
   onFindManualTarget: (target: string) => Promise<DeviceCandidate>;
   onCreateSupportReport: () => Promise<SupportDiagnostics | null>;
-  /** Called once, with what the customer settled on. */
+  /**
+   * Called once, with what the customer settled on. Resolving false keeps them
+   * on the step: a save that did not land must not read as one that did.
+   */
   onDisplayContinue: (
     selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
-  ) => void;
+  ) => void | Promise<boolean | void>;
   /** The closing step has been shown; the app can take the screen back. */
   onFinished: () => void;
   onInstallTheme: () => void;
@@ -346,13 +349,22 @@ export function SetupWizard(props: SetupWizardProps) {
           mode={displayMode}
           onBack={goBack}
           onContinue={() => {
-            goForward();
-            props.onDisplayContinue({
-              mode: displayMode,
-              providerIds:
-                displayMode === "fixed" && displayProviderId
-                  ? [displayProviderId]
-                  : props.displayProviders.map((provider) => provider.id),
+            // Deliberately not goForward() first: a failed save rolls the
+            // selection back, so the derived step stays on theme and the
+            // customer would be carried off this step believing the new choice
+            // was kept.
+            void Promise.resolve(
+              props.onDisplayContinue({
+                mode: displayMode,
+                providerIds:
+                  displayMode === "fixed" && displayProviderId
+                    ? [displayProviderId]
+                    : props.displayProviders.map((provider) => provider.id),
+              }),
+            ).then((saved) => {
+              if (saved !== false) {
+                goForward();
+              }
             });
           }}
           onSelectMode={(mode) =>

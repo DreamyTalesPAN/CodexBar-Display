@@ -1660,6 +1660,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setUsage(null);
       setUsageError(null);
       setProviderSetup(null);
+      // The reset deletes the saved display choice on the companion, so
+      // holding the old one here would let a slow or failed re-read skip the
+      // display step over a selection that no longer exists.
+      setProviderDisplay(null);
+      setProviderDisplayError(null);
       didRunAutoDisplayReload.current = false;
       didRunAutomaticDeviceSearch.current = false;
       didRunSetupVerification.current = false;
@@ -2877,11 +2882,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setProviderDisplay(payload.selection);
         setProviderDisplayError(null);
         void refreshUsage({ quiet: true });
+        return true;
       } catch (error) {
         setProviderDisplay(previous);
         setProviderDisplayError(
           normalizeCaughtError(error, "Display selection could not be saved."),
         );
+        return false;
       } finally {
         setPendingProviderDisplayId(null);
       }

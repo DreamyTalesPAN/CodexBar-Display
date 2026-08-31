@@ -38,7 +38,7 @@ export type ProviderPickerProps = {
   onDisplayChange: (
     selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
     providerId: string,
-  ) => void | Promise<void>;
+  ) => void | Promise<boolean | void>;
   onDisplayDraftChange?: (hasDraft: boolean) => void;
   onPreferenceChange: (
     item: PreferenceDescriptor,

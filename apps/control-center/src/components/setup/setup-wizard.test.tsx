@@ -112,12 +112,53 @@ describe("SetupWizard: going back", () => {
     expect(shownStep()).toBe("Display Mode");
   });
 
-  it("releases the theme step the same way", () => {
+  // A save that did not land must not read as one that did: the rollback
+  // restores the old selection, so the derived step stays on theme and the
+  // customer would be carried off the display step believing it was kept.
+  it("keeps the display step when the save is refused", async () => {
+    const onDisplayContinue = vi.fn(async () => false);
+    render(
+      <SetupWizard
+        {...baseProps({ step: "theme", onDisplayContinue })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Display Mode");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
+
+    expect(onDisplayContinue).toHaveBeenCalled();
+    expect(shownStep()).toBe("Display Mode");
+  });
+
+  it("moves on when the save lands", async () => {
+    const onDisplayContinue = vi.fn(async () => true);
+    render(
+      <SetupWizard
+        {...baseProps({ step: "theme", onDisplayContinue })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
+
+    expect(shownStep()).toBe("Choose your theme");
+  });
+
+  it("releases the theme step the same way", async () => {
     render(<SetupWizard {...baseProps({ step: "theme" })} />);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Display Mode");
 
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    // The display save is awaited before the step is released, so this one
+    // settles a microtask later than the provider step's Continue.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
     expect(shownStep()).toBe("Choose your theme");
   });
 });
