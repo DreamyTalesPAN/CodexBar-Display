@@ -377,6 +377,56 @@ describe("SetupWizard: while the connect sequence is running", () => {
     expect(shownStep()).toBe("Choose your VibeTV");
   });
 
+  // Connecting empties the discovered list, so after a firmware failure is
+  // dismissed the step is still held -- deliberately -- with an empty list and
+  // a closed Connect. The attempt is still there to repeat, and pressing
+  // Connect repeats it instead of demanding a full rescan first.
+  it("still offers the attempt that failed once its dialog is dismissed", async () => {
+    const installFirmware = vi.fn(async () => {
+      throw { code: "firmware_update_failed", message: "Update did not finish." };
+    });
+    const props = baseProps({
+      step: "device",
+      deviceCandidates: [
+        {
+          deviceId: "vibetv-1",
+          target: "http://192.168.178.73",
+          known: true,
+        } as never,
+      ],
+      connectSteps: {
+        connect: vi.fn(async () => ({})),
+        checkFirmware: vi.fn(async () => ({ from: "1.0.0", to: "1.1.0" })),
+        installFirmware,
+      } as unknown as SetupWizardProps["connectSteps"],
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    });
+    expect(installFirmware).toHaveBeenCalledTimes(1);
+
+    // The connect emptied the discovered list, and the dialog is dismissed
+    // without using either of its actions.
+    await act(async () => {
+      rerender(<SetupWizard {...props} deviceCandidates={[]} />);
+    });
+    await act(async () => {
+      fireEvent.keyDown(document.activeElement ?? document.body, {
+        key: "Escape",
+      });
+    });
+    expect(shownStep()).toBe("Choose your VibeTV");
+
+    const connectButton = screen.getByRole("button", { name: "Connect" });
+    expect(connectButton.hasAttribute("disabled")).toBe(false);
+    await act(async () => {
+      fireEvent.click(connectButton);
+    });
+    expect(installFirmware).toHaveBeenCalledTimes(2);
+  });
+
   it("stays on the device step when the firmware check fails", async () => {
     const props = baseProps({
       step: "device",

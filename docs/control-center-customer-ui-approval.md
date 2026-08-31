@@ -2607,3 +2607,16 @@ issue scope, or release permission never implies UI permission.
   offering a second one.
 - Approved files: `apps/control-center/src/components/setup/setup-provider-row.tsx`
   and its test.
+
+## 2026-09-01 — The VibeTV that failed is still the one Connect offers
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: **After closing a firmware dialog without
+  using it, `Connect` runs the same attempt again.** Connecting empties the list
+  of VibeTVs found on the WiFi, so the step — deliberately held for that failure
+  — showed an empty list and a closed `Connect`, and a full rescan was the only
+  way back to the retry the dialog had just offered.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
+  and its test.

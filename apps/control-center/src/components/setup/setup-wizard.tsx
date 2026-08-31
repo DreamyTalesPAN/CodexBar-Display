@@ -196,8 +196,16 @@ export function SetupWizard(props: SetupWizardProps) {
       return selectedTarget;
     }
     const known = deviceCandidates.find((candidate) => candidate.known);
-    return known?.target ?? deviceCandidates[0]?.target ?? null;
-  }, [deviceCandidates, selectedTarget]);
+    // With nothing in the list, the sequence that failed is still the thing to
+    // press: connecting empties the discovered VibeTVs, so dismissing a
+    // firmware dialog left a step that is deliberately held for that failure
+    // with a closed Connect and a full rescan as the only way back to it.
+    return (
+      known?.target ??
+      deviceCandidates[0]?.target ??
+      (connect.state.phase === "failed" ? connect.state.address : null)
+    );
+  }, [connect.state, deviceCandidates, selectedTarget]);
 
   const searchFailed = deviceSearchState === "not-found" && !notFoundDismissed;
   // "idle" is before the first scan was started, so like "searching" it has no
@@ -220,7 +228,12 @@ export function SetupWizard(props: SetupWizardProps) {
     );
     if (candidate) {
       void connect.run(candidate);
+      return;
     }
+    // Nothing in the list matches, which is the failed attempt above: it runs
+    // again against the VibeTV it ran against, which is the one the customer
+    // is half way through setting up.
+    connect.retry();
   }, [connect, deviceCandidates, preselected]);
 
   const help = {
