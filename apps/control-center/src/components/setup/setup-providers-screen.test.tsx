@@ -64,6 +64,7 @@ function render(
       onRecover={vi.fn()}
       onToggle={vi.fn()}
       pendingCheckIds={new Set<string>()}
+      pendingPreferenceIds={new Set<string>()}
       providers={[claude, copilot]}
       {...props}
     />,
@@ -144,6 +145,26 @@ describe("SetupProvidersScreen", () => {
     // And the row keeps its switch throughout: docs/control-center-ui-principles
     // rule 3 does not let a check decide whether a provider may be turned off.
     expect(html).toContain('aria-label="Claude Code"');
+  });
+
+  // The switch shows the new value the moment it is pressed, so a second press
+  // before the first write answers starts a race: two writes, and both the row
+  // and what the companion saved end on whichever answer landed last rather
+  // than on the customer's last press. Settings already closed its own switch
+  // for this; the setup row was the one left open.
+  it("closes a provider's switch while its own write is running", () => {
+    const html = render({
+      pendingPreferenceIds: new Set(["codexbar.providers.claude.enabled"]),
+      providers: [claude, copilot],
+    });
+
+    expect(html).toMatch(
+      /<button[^>]*disabled=""[^>]*aria-label="Claude Code"/,
+    );
+    // And only that one: the other row's switch is untouched.
+    expect(html).not.toMatch(
+      /<button[^>]*disabled=""[^>]*aria-label="GitHub Copilot"/,
+    );
   });
 
   it("finds a provider by label, by its message and by its id", () => {

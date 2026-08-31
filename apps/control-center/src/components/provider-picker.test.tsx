@@ -235,6 +235,35 @@ describe("ProviderPicker: switching a displayed provider off", () => {
   });
 });
 
+// Turning a pool member off leaves the saved selection naming a provider that
+// is now off, which the companion reports as invalid. The Include control was
+// locked for exactly that provider, so the only way to mend the choice was to
+// switch the provider back on.
+describe("ProviderPicker: a provider switched off inside Automatic", () => {
+  it("can still be taken out of the pool", () => {
+    const html = renderToStaticMarkup(
+      <ProviderPicker
+        display={{
+          mode: "automatic",
+          providerIds: ["codex", "claude"],
+          configured: true,
+          valid: false,
+        }}
+        items={[{ ...codex, value: false, effectiveValue: false }, claude]}
+        onCheck={vi.fn()}
+        onDisplayChange={vi.fn()}
+        onPreferenceChange={vi.fn()}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+      />,
+    );
+
+    expect(html).not.toMatch(
+      /<button[^>]*disabled=""[^>]*aria-label="Include Codex in Automatic"/,
+    );
+  });
+});
+
 function provider(
   overrides: Partial<PreferenceDescriptor> &
     Pick<PreferenceDescriptor, "id" | "label" | "providerId">,

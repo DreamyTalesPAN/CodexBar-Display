@@ -404,7 +404,14 @@ export function ProviderPicker({
                           aria-label={`Include ${item.label} in Automatic`}
                           checked={isSelected}
                           disabled={
-                            !item.value ||
+                            // A provider that is off cannot be put into the
+                            // pool -- the companion refuses a selection naming
+                            // one. Taking it back out is the opposite: it is
+                            // what repairs a selection left naming a provider
+                            // the customer has just switched off, and locking
+                            // it left switching that provider back on as the
+                            // only way to mend the choice.
+                            (!item.value && !isSelected) ||
                             displayControlsDisabled ||
                             (isSelected && selected.size === 1)
                           }

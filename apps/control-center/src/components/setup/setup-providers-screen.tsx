@@ -28,6 +28,8 @@ type SetupProvidersScreenProps = {
   onToggle: (provider: ProviderItem, enabled: boolean) => void;
   /** Providers whose exact check is queued or running. */
   pendingCheckIds: Set<string>;
+  /** Preferences whose on/off write is in flight, by preference id. */
+  pendingPreferenceIds: Set<string>;
   providers: ProviderItem[];
 };
 
@@ -42,6 +44,7 @@ export function SetupProvidersScreen({
   onRecover,
   onToggle,
   pendingCheckIds,
+  pendingPreferenceIds,
   providers,
 }: SetupProvidersScreenProps) {
   const [query, setQuery] = useState("");
@@ -110,6 +113,7 @@ export function SetupProvidersScreen({
               onRecover(provider);
             }}
             onToggle={(enabled) => onToggle(provider, enabled)}
+            saving={pendingPreferenceIds.has(provider.id)}
             signingIn={signingInIds.includes(provider.providerId)}
           />
         ))}

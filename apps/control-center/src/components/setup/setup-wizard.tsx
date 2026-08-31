@@ -92,6 +92,8 @@ export type SetupWizardProps = {
   onSearchDevices: () => void;
   /** Providers whose exact check is queued or running. */
   pendingCheckIds: Set<string>;
+  /** Preferences whose on/off write is in flight, by preference id. */
+  pendingPreferenceIds: Set<string>;
   /** Hand the customer to Sparkle: only it can update the Mac App. */
   onUpdateMacApp: () => void;
   /** Why the last scan could not be made, when that is what happened. */
@@ -370,6 +372,7 @@ export function SetupWizard(props: SetupWizardProps) {
           onRecover={props.onProviderRecover}
           onToggle={props.onProviderToggle}
           pendingCheckIds={props.pendingCheckIds}
+          pendingPreferenceIds={props.pendingPreferenceIds}
           providers={props.providers}
         />
         <SetupProviderStepFailedDialog

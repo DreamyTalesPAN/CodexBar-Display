@@ -73,6 +73,14 @@ type SetupProviderRowProps = {
   onCheckAgain: () => void;
   onRecover: () => void;
   onToggle: (enabled: boolean) => void;
+  /**
+   * This provider's own on/off write is in flight. The switch already shows
+   * the new value optimistically, so this only stops a second write starting
+   * beside the first: two racing writes leave both the row and what the
+   * companion saved on whichever answer landed last rather than on the
+   * customer's last press.
+   */
+  saving?: boolean;
   /** Set once the customer pressed the sign-in button on this row. */
   signingIn?: boolean;
 };
@@ -85,6 +93,7 @@ export function SetupProviderRow({
   onCheckAgain,
   onRecover,
   onToggle,
+  saving = false,
   signingIn = false,
 }: SetupProviderRowProps) {
   const reported = setupProviderRowVariant(health);
@@ -161,7 +170,12 @@ export function SetupProviderRow({
           Turning one off is always valid and always theirs, and a provider
           they cannot switch off is one they cannot keep off the display.
         */}
-        <Switch aria-label={label} checked={enabled} onCheckedChange={onToggle} />
+        <Switch
+          aria-label={label}
+          checked={enabled}
+          disabled={saving}
+          onCheckedChange={onToggle}
+        />
       </ItemActions>
     </Item>
   );

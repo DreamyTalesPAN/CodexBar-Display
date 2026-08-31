@@ -41,6 +41,7 @@ describe("SetupProvidersScreen after a sign-in", () => {
           onRecover={vi.fn()}
           onToggle={vi.fn()}
           pendingCheckIds={new Set<string>()}
+          pendingPreferenceIds={new Set<string>()}
           providers={[claude]}
         />,
       );

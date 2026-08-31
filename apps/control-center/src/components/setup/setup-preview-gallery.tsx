@@ -407,6 +407,7 @@ export function SetupPreviewGallery() {
             onRecover={noop}
             onToggle={noop}
             pendingCheckIds={NO_PENDING_CHECKS}
+            pendingPreferenceIds={NO_PENDING_CHECKS}
             providers={PROVIDERS}
           />
         );
@@ -419,6 +420,7 @@ export function SetupPreviewGallery() {
               onRecover={noop}
               onToggle={noop}
               pendingCheckIds={NO_PENDING_CHECKS}
+              pendingPreferenceIds={NO_PENDING_CHECKS}
               providers={PROVIDERS.slice(0, 3)}
             />
             <SetupUsageDialog

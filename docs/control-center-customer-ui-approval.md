@@ -2505,3 +2505,24 @@ issue scope, or release permission never implies UI permission.
      fresh save writes.
 - Approved files: `apps/control-center/src/components/provider-picker.tsx` and
   its tests.
+
+## 2026-09-01 — Two controls left open by the unlock
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **A provider's switch on the setup step closes while its own write is
+     running.** The switch shows the new value the moment it is pressed, so a
+     second press before the first write answered started a race, and both the
+     row and what was saved ended on whichever answer landed last rather than on
+     the customer's last press. Settings already closed its switch this way.
+  2. **A provider switched off inside Automatic can still be taken out of the
+     pool.** The selection then names a provider that is off, which is refused,
+     and the `Include` control was locked for exactly that provider — so
+     switching it back on was the only way to mend the choice. Putting a
+     provider that is off *into* the pool stays impossible.
+- Approved files: `apps/control-center/src/components/provider-picker.tsx`,
+  `setup/setup-provider-row.tsx`, `setup/setup-providers-screen.tsx`,
+  `setup/setup-wizard.tsx`, `setup/setup-preview-gallery.tsx`,
+  `control-center-app.tsx`, and their tests.
