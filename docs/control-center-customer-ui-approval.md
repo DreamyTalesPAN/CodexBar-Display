@@ -2416,3 +2416,24 @@ issue scope, or release permission never implies UI permission.
   definition, which is what the screen says and what Settings writes and keeps.
 - Approved files: `companion/internal/companionapi/provider_display.go` and its
   test.
+
+## 2026-08-31 — The Automatic pool comes back, and Continue waits for the check
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **Leaving "Always show one" restores the Automatic rotation the customer
+     had.** This was approved on 2026-08-03 ("Returning to `Automatic` restores
+     the saved automatic selection") and the picker remembered that pool but
+     never used it: switching back wrote the pinned provider alone, and every
+     other provider silently left the rotation. A provider switched off in the
+     meantime is left out, because a selection naming it is refused.
+  2. **`Continue` on the provider step waits for a check that is still
+     running.** A provider reports its own health before the exact check the
+     companion asks for has answered, so a row could read healthy while that
+     check was still queued — and `Continue` was open on a gate that refuses it.
+     Every row keeps its on/off switch throughout, as rule 3 requires.
+- Approved files: `apps/control-center/src/components/provider-picker.tsx`,
+  `setup/setup-providers-screen.tsx`, `setup/setup-wizard.tsx`,
+  `control-center-app.tsx`, `setup/setup-preview-gallery.tsx`, and their tests.

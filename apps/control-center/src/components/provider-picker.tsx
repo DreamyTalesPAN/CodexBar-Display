@@ -199,9 +199,18 @@ export function ProviderPicker({
     if (!seed) {
       return;
     }
+    // The pool the customer had before they pinned one provider, minus anything
+    // that has since been switched off -- the companion refuses a selection
+    // naming a provider that is not on. Writing just the pinned provider
+    // instead dropped the rest of their rotation without saying so.
+    const remembered = (lastAutomaticProviderIdsRef.current || []).filter(
+      (providerId) =>
+        enabledProviders.some((item) => item.providerId === providerId),
+    );
+    const providerIds = remembered.length > 0 ? remembered : [seed];
     onDisplayDraftChange?.(false);
     setDraftMode(null);
-    void onDisplayChange({ mode: "automatic", providerIds: [seed] }, seed);
+    void onDisplayChange({ mode: "automatic", providerIds }, seed);
   }
 
   function chooseProvider(item: ProviderItem, checked: boolean) {

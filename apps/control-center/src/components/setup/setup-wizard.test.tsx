@@ -70,6 +70,7 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     providerError: null,
     searchError: null,
     onSearchDevices: vi.fn(),
+    pendingCheckIds: new Set<string>(),
     onUpdateMacApp: vi.fn(),
     onSelectTheme: vi.fn(),
     providers: [provider()],

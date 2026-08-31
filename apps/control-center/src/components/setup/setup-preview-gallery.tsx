@@ -262,6 +262,7 @@ export function SetupPreviewGallery() {
   }
 
   const noop = () => undefined;
+  const NO_PENDING_CHECKS = new Set<string>();
 
   // Cycles saved -> saved with gaps -> failed, so all three outcomes of the
   // Help menu can be seen without breaking anything to reach them.
@@ -405,6 +406,7 @@ export function SetupPreviewGallery() {
             onContinue={() => goTo("04")}
             onRecover={noop}
             onToggle={noop}
+            pendingCheckIds={NO_PENDING_CHECKS}
             providers={PROVIDERS}
           />
         );
@@ -416,6 +418,7 @@ export function SetupPreviewGallery() {
               onContinue={noop}
               onRecover={noop}
               onToggle={noop}
+              pendingCheckIds={NO_PENDING_CHECKS}
               providers={PROVIDERS.slice(0, 3)}
             />
             <SetupUsageDialog

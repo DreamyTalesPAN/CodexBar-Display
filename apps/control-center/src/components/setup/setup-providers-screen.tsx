@@ -26,6 +26,8 @@ type SetupProvidersScreenProps = {
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   onRecover: (provider: ProviderItem) => void;
   onToggle: (provider: ProviderItem, enabled: boolean) => void;
+  /** Providers whose exact check is queued or running. */
+  pendingCheckIds: Set<string>;
   providers: ProviderItem[];
 };
 
@@ -39,6 +41,7 @@ export function SetupProvidersScreen({
   onCreateSupportReport,
   onRecover,
   onToggle,
+  pendingCheckIds,
   providers,
 }: SetupProvidersScreenProps) {
   const [query, setQuery] = useState("");
@@ -128,7 +131,7 @@ export function SetupProvidersScreen({
 
       <Button
         className="mt-4 w-full"
-        disabled={!setupProvidersCanContinue(providers)}
+        disabled={!setupProvidersCanContinue(providers, pendingCheckIds)}
         onClick={onContinue}
         type="button"
       >
@@ -145,12 +148,25 @@ export function SetupProvidersScreen({
  * closed. This is the same gate the companion applies before it writes setup
  * complete; asking for less here only produced a Continue that answered and
  * did nothing.
+ *
+ * A check still queued or running is one of those states. The companion asks
+ * for an exact check of its own, and the health a provider reports before that
+ * check has answered is not it -- so a row could read healthy while the answer
+ * the companion wants was still on its way, and Continue was open on a gate
+ * that refuses it.
  */
-export function setupProvidersCanContinue(providers: ProviderItem[]): boolean {
+export function setupProvidersCanContinue(
+  providers: ProviderItem[],
+  pendingCheckIds: Set<string>,
+): boolean {
   const enabled = providers.filter((provider) => provider.value);
   return (
     enabled.length > 0 &&
-    enabled.every((provider) => provider.health.state === "healthy")
+    enabled.every(
+      (provider) =>
+        provider.health.state === "healthy" &&
+        !pendingCheckIds.has(provider.providerId),
+    )
   );
 }
 

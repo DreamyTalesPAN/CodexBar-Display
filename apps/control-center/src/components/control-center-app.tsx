@@ -4044,6 +4044,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             void updateProviderPreference(provider, enabled)
           }
           onProvidersContinue={completeProviderSetup}
+          pendingCheckIds={pendingProviderCheckIds}
           onDismissProviderError={() => {
             setProviderDisplayError(null);
             setProviderPreferencesError(null);

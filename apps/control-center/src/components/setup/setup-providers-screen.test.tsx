@@ -63,6 +63,7 @@ function render(
       onContinue={vi.fn()}
       onRecover={vi.fn()}
       onToggle={vi.fn()}
+      pendingCheckIds={new Set<string>()}
       providers={[claude, copilot]}
       {...props}
     />,
@@ -125,6 +126,24 @@ describe("SetupProvidersScreen", () => {
     expect(html).toMatch(
       /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
     );
+  });
+
+  // The companion asks for an exact check of its own, and the health a provider
+  // reports before that answer arrives is not it. A row could read healthy while
+  // the check the companion wants was still queued, so Continue was open on a
+  // gate that refuses it -- and the row said nothing about the check running.
+  it("waits for a check that is still running", () => {
+    const html = render({
+      pendingCheckIds: new Set(["claude"]),
+      providers: [claude, copilot],
+    });
+
+    expect(html).toMatch(
+      /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
+    );
+    // And the row keeps its switch throughout: docs/control-center-ui-principles
+    // rule 3 does not let a check decide whether a provider may be turned off.
+    expect(html).toContain('aria-label="Claude Code"');
   });
 
   it("finds a provider by label, by its message and by its id", () => {
