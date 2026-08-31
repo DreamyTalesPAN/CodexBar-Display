@@ -3666,7 +3666,9 @@ func (s *Server) handleSetupWiFi(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "wifi_credentials_too_long", "The WiFi name or password is too long.", "Check the WiFi details and try again.")
 		return
 	}
-	if s.firmwareUpdateActive.Load() {
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if _, ok := s.activeFirmwareUpdateJob(); ok {
 		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then try again.")
 		return
 	}

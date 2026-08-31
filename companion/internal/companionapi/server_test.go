@@ -8211,6 +8211,38 @@ func TestSetupConnectionModeRejectsQueuedFirmwareUpdate(t *testing.T) {
 	}
 }
 
+func TestSetupWiFiRejectsQueuedFirmwareUpdate(t *testing.T) {
+	initial := runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-a",
+	}
+	server := newTestServer(t, initial)
+	server.updateJobs["queued-update"] = &firmwareUpdateJob{
+		ID:    "queued-update",
+		Phase: "installing",
+	}
+	server.configureCableWiFi = func(string, string, string, string) error {
+		t.Fatal("queued firmware update must block WiFi configuration")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/wifi", strings.NewReader(`{"ssid":"Home WiFi","password":"secret"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "firmware_update_in_progress") {
+		t.Fatalf("queued firmware update did not block WiFi setup: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != initial.ConnectionMode || cfg.DeviceID != initial.DeviceID {
+		t.Fatalf("queued firmware update WiFi request mutated config: %+v", cfg)
+	}
+}
+
 func TestDeviceDiscoverDoesNotFallbackWhenExplicitTargetFails(t *testing.T) {
 	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gone", http.StatusServiceUnavailable)
