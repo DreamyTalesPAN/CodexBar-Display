@@ -2268,3 +2268,23 @@ issue scope, or release permission never implies UI permission.
   happens when it needs to.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `setup/setup-providers-screen.tsx` and its test.
+
+## 2026-08-31 — A display choice that did not save, and one that no longer exists
+
+- User approval: The same standing instruction as the entries above — every
+  Codex bug-detector finding fixed where sound, repeated until nothing is found
+  ("fix alle findings vom codex bug detector, sofern sie sinnvoll sind ... mach
+  das so lang, bis der codex bug detector nichts mehr findet", 2026-08-31).
+  Both are follow-ups Codex raised against earlier commits on this branch.
+- Approved customer-visible result:
+  1. **The display step waits for its save.** Going back from the theme step to
+     change what VibeTV shows, and having that save fail, used to return the
+     customer to the theme step with nothing said — the old choice was quietly
+     kept while they believed the new one had been saved. They now stay on
+     Display Mode and see why it did not save.
+  2. **Running setup again really does ask for the display choice again.** The
+     previous choice was deleted on the Mac but still held on screen, so a slow
+     or failed reload could skip the display step over a choice that no longer
+     existed.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
+  and its test, `control-center-app.tsx`, `provider-picker.tsx`.
