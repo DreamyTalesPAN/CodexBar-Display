@@ -424,7 +424,14 @@ export function ProviderPicker({
                         checked={item.value}
                         disabled={disableLocked || pendingPreference}
                         onCheckedChange={(value) => {
-                          if (value) {
+                          // Only in Automatic, which is the mode whose enable
+                          // is two writes and therefore the only one with a
+                          // second write to finish. "Always show one" names a
+                          // single provider and adds nothing, so a mark left
+                          // here would only be read later, after a switch back
+                          // to Automatic, and add a provider to the restored
+                          // pool that the customer had kept out of it.
+                          if (value && display?.mode === "automatic") {
                             enabledHereRef.current.add(item.providerId);
                           }
                           void onPreferenceChange(item, value);

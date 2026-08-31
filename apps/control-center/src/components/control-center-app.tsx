@@ -2849,6 +2849,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           await refreshProviderPreferences({ quiet: true });
           setProviderPreferencesError(null);
         } catch (error) {
+          // The request never reached the companion, so it holds no new answer
+          // for this provider -- and the record of having asked is only there
+          // to keep this app from asking against one it already holds. Left
+          // standing it suppressed the next attempt for the whole freshness
+          // window, with the row still reading healthy, nothing on it to press,
+          // and a Continue the companion keeps refusing.
+          providerAutoCheckIdsRef.current.delete(providerId);
           setProviderPreferencesError(
             normalizeCaughtError(error, `${item.label} could not be checked.`),
           );

@@ -145,4 +145,48 @@ describe("ProviderPicker: leaving Always show one", () => {
       "claude",
     );
   });
+
+  // The repair exists to finish an enable this picker started, and only an
+  // Automatic enable is two writes. Recording one made under "Always show one"
+  // meant the switch back restored the pool and then quietly added a provider
+  // the customer had kept out of it.
+  it("does not add a provider enabled under Always show one to the restored pool", () => {
+    const onDisplayChange = vi.fn();
+    const onPreferenceChange = vi.fn();
+    const excluded = { ...cursor, value: false, effectiveValue: false };
+    const picker = (
+      display: ProviderDisplaySelection,
+      items: PreferenceDescriptor[],
+    ) => (
+      <ProviderPicker
+        display={display}
+        items={items}
+        onCheck={vi.fn()}
+        onDisplayChange={onDisplayChange}
+        onPreferenceChange={onPreferenceChange}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+      />
+    );
+
+    // Cursor is off and kept out of the Automatic pool, then the customer pins
+    // Claude and switches Cursor back on from the pinned screen.
+    const { rerender } = render(picker(automatic, [codex, claude, excluded]));
+    rerender(picker(pinnedToClaude, [codex, claude, excluded]));
+    fireEvent.click(screen.getByRole("switch", { name: "Enable Cursor" }));
+    expect(onPreferenceChange).toHaveBeenCalled();
+
+    rerender(picker(pinnedToClaude, [codex, claude, cursor]));
+    fireEvent.click(screen.getByRole("button", { name: "Automatic" }));
+
+    expect(onDisplayChange).toHaveBeenCalledWith(
+      { mode: "automatic", providerIds: ["codex", "claude"] },
+      "claude",
+    );
+
+    // The restore lands, which is when the repair effect gets to look at it.
+    rerender(picker(automatic, [codex, claude, cursor]));
+    expect(onDisplayChange).toHaveBeenCalledTimes(1);
+  });
+
 });

@@ -2463,3 +2463,23 @@ issue scope, or release permission never implies UI permission.
   `setup-display-mode-screen.tsx`, `setup-provider-row.tsx`,
   `setup-providers-screen.tsx`, `setup-theme-screen.tsx`, `setup-wizard.tsx`,
   and their tests.
+
+## 2026-08-31 — A check that never reached the Mac App, and an enable kept out of the pool
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **A provider check that could not be made can be made again.** The step
+     remembers having asked so it does not ask against an answer the Mac App
+     already holds — but it remembered a request that never arrived, so for five
+     minutes nothing asked again: the row read healthy with nothing on it to
+     press, `Try again` in the dialog only re-read, and `Continue` was refused
+     the whole time. `Try again` now reaches the check.
+  2. **A provider switched on under "Always show one" is not added to the
+     Automatic pool behind the customer's back.** Switching back to Automatic
+     restores the saved pool, and a provider deliberately kept out of it used to
+     be put back in by the repair that exists for a different case — finishing
+     an Automatic enable, which is the only one that writes to the pool at all.
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `provider-picker.tsx`, and its test.
