@@ -2073,3 +2073,50 @@ issue scope, or release permission never implies UI permission.
   theme active shows `Installed` on that row too, which made the unscoped
   locator match two buttons and fail at random.
 - Approved files: `scripts/test-customer-flows.mjs` and this approval record.
+
+## 2026-08-31 — Setup wizard: two dead ends, and the rules behind the provider step
+
+- User approval: The product owner asked to see the changes before approving
+  ("erst zeigen", 2026-08-31), was walked through them step by step in a running
+  wizard in the browser, then asked for the `0 VibeTVs` line to be corrected as
+  well and approved the result as the seven points below ("'0 VibeTVs' gleich
+  mitfixen ... dann Approval fuer sieben statt sechs Punkte").
+- Approved customer-visible result:
+  1. **Back returns the customer to where they were.** Going back from Display
+     Mode to the provider step and pressing `Continue` moves forward again.
+     Before, one Back press held the wizard on the provider step for the rest
+     of the session: that step offers no Back by design, and `Continue`
+     answered without moving. Restarting the app was the only way out. The same
+     applies to going back from the theme step.
+  2. **The device step no longer goes blank.** Typing an IP address while the
+     automatic scan is still running used to end that scan without putting
+     anything in its place: no list, no dialog, no way to scan again, on a step
+     that has no Back. The address dialog now keeps the reason a wrong address
+     failed, and closing it shows `We couldn't find your VibeTV` with
+     `Scan again` and `Enter IP manually`.
+  3. **A provider row's switch always turns the provider off.** It used to be
+     refused with `This provider is selected for VibeTV.` for every enabled
+     provider until a display mode had been saved -- so for the whole of a
+     fresh setup, and permanently against an older companion. This is what
+     `docs/control-center-ui-principles.md` rule 3 already required.
+  4. **`Continue` on the provider step stays closed while a provider that is
+     switched on still needs the customer.** It used to open as soon as one
+     provider was healthy and then do nothing, because the companion refuses to
+     finish setup while any enabled provider is not ready. The ways on are to
+     sign that provider in or to switch it off.
+  5. **A refusal from the companion on the provider or display step is a dialog
+     over the frozen step**, carrying the reason and the next action. It used to
+     be silent.
+  6. **Setup does not finish against a provider that signed out** after its
+     check. The check at the end now reads live provider health instead of the
+     health last seen.
+  7. **The device step reports a count only once a scan has answered.**
+     `0 VibeTVs found on your WiFi.` used to be on screen from the moment the
+     step appeared, for the up-to-30 seconds the scan takes and before it had
+     even started. It now says `Looking for VibeTVs on your WiFi.` until there
+     is a result.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`,
+  `setup-device-screen.tsx`, `setup-providers-screen.tsx`,
+  `setup-provider-dialogs.tsx` (new), their tests, `control-center-app.tsx`,
+  `scripts/test-customer-flows.mjs`, the companion's `preferences.go`,
+  `provider_display.go` and their tests, and this approval record.
