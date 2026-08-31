@@ -177,6 +177,32 @@ func TestProviderSetupCompletionRejectsEnabledProviderOutsideDisplayPool(t *test
 	}
 }
 
+// "Always show one" names exactly one provider -- that is what the mode says on
+// the screen, and Settings writes and keeps it with other providers still on.
+// Measuring it against the enabled set refused the customer's own choice on the
+// provider step, where the only action offered that is on that screen is
+// turning the providers they had just chosen to keep back off.
+func TestProviderSetupCompletionKeepsAFixedChoiceBesideOtherProviders(t *testing.T) {
+	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        providerDisplayModeFixed,
+		ProviderIDs: []string{"codex"},
+	}})
+	server.now = func() time.Time { return now }
+	server.providerPreferences.load = providerSettingsFixture
+	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	server.recordExactProviderSetup("codex", 0, exactSetupFixture(now, "codex", codexbar.ProviderReady))
+	server.recordExactProviderSetup("claude", 0, exactSetupFixture(now, "claude", codexbar.ProviderReady))
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("a fixed display choice was refused: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 // The switch on a provider row always works. Refusing the write was the one
 // case where health decided whether a provider may be turned off at all, which
 // is what docs/control-center-ui-principles.md rule 3 forbids: a provider that

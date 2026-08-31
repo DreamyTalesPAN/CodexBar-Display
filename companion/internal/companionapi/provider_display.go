@@ -146,8 +146,15 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 	for _, providerID := range selection.ProviderIDs {
 		selected[providerID] = struct{}{}
 	}
+	// Only the Automatic pool has to name every enabled provider: it is the set
+	// VibeTV rotates through, so one left out of it is collected and never
+	// shown. "Always show one" names exactly one provider by definition -- that
+	// is what the mode says on the screen, and what Settings writes and keeps --
+	// so measuring it against the enabled set refused the customer's own choice
+	// and offered turning the other providers off as the way to keep it.
+	wholePoolRequired := selection.Mode == providerDisplayModeAutomatic
 	for _, setting := range enabled {
-		if _, ok := selected[setting.ID]; !ok {
+		if _, ok := selected[setting.ID]; wholePoolRequired && !ok {
 			writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Add this provider to Automatic mode, select it in Always show, or turn it off.")
 			return
 		}

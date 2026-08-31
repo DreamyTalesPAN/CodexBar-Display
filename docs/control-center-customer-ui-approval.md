@@ -2400,3 +2400,19 @@ issue scope, or release permission never implies UI permission.
   way out.
 - Approved files: `apps/control-center/src/components/setup/setup-step.ts` and
   its test, `setup-wizard.tsx`, `control-center-app.tsx`.
+
+## 2026-08-31 — "Always show one" no longer demands the other providers be off
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: **A customer who picks "Always show one" can
+  keep their other providers on.** Coming back to the provider list and pressing
+  Continue used to be refused with "Every enabled provider must be included for
+  display", and the only one of the three offered actions that exists on that
+  screen is turning the other providers off — the opposite of what the customer
+  had just chosen. Only the Automatic pool is the set VibeTV rotates through and
+  therefore has to name every enabled provider; "Always show one" names one by
+  definition, which is what the screen says and what Settings writes and keeps.
+- Approved files: `companion/internal/companionapi/provider_display.go` and its
+  test.
