@@ -2226,3 +2226,26 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`,
   `setup-step.ts`, `setup-providers-screen.tsx`, their tests, and
   `control-center-app.tsx`.
+
+## 2026-08-31 — Two failed reads that passed for answers
+
+- User approval: The same standing instruction as the three entries above —
+  every Codex bug-detector finding fixed where sound, repeated until nothing is
+  found ("fix alle findings vom codex bug detector, sofern sie sinnvoll sind ...
+  mach das so lang, bis der codex bug detector nichts mehr findet",
+  2026-08-31). Both were reproduced before being changed.
+- Approved customer-visible result:
+  1. **The display step is skipped only for a Mac App that cannot keep the
+     choice.** Any failure to read the current choice used to skip it, so a
+     customer could finish setup without ever being asked what VibeTV should
+     show. A read that merely failed now keeps the step, and the failure is
+     shown rather than silently deciding the question.
+  2. **A provider list that could not be read says so, and offers `Try again`.**
+     The step used to report that no providers matched the search — the same
+     thing it says for a search with no hits — with Continue closed and no
+     explanation, and nothing asked again on its own. The same dialog that
+     carries the other provider-step failures now carries this one, with a
+     retry.
+- Approved files: `apps/control-center/src/components/setup/setup-step.ts`,
+  `setup-wizard.tsx`, `setup-provider-dialogs.tsx`, their tests, and
+  `control-center-app.tsx`.
