@@ -4,7 +4,13 @@
 // control left on screen. Both were reachable on a completely healthy Mac.
 //
 // DO NOT weaken these tests to make them pass. Fix the component.
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ProviderItem } from "../provider-picker";
@@ -112,6 +118,45 @@ describe("SetupWizard: going back", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(shownStep()).toBe("Choose your theme");
+  });
+});
+
+describe("SetupWizard: while the connect sequence is running", () => {
+  // Pairing publishes the device before the firmware check and install have
+  // finished. The firmware progress and its failure dialogs live on the device
+  // step, so leaving it early runs the update out of sight and strands its
+  // failure on a screen nobody is on.
+  it("stays on the device step even once the derived step has moved on", async () => {
+    const connect = vi.fn(() => new Promise<null>(() => {}) as Promise<null>);
+    const props = baseProps({
+      step: "device",
+      deviceCandidates: [
+        {
+          deviceId: "vibetv-1",
+          target: "http://192.168.178.73",
+          known: true,
+        } as never,
+      ],
+      connectSteps: {
+        connect,
+        checkFirmware: vi.fn(),
+        installFirmware: vi.fn(),
+      } as unknown as SetupWizardProps["connectSteps"],
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    });
+    expect(connect).toHaveBeenCalled();
+
+    // Pairing has published the device, so the derived step moves on while the
+    // firmware check and install are still to come.
+    await act(async () => {
+      rerender(<SetupWizard {...props} step="providers" />);
+    });
+
+    expect(shownStep()).toBe("Choose your VibeTV");
   });
 });
 

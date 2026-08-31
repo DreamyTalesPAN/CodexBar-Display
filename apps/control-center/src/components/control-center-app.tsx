@@ -93,8 +93,15 @@ import { MacAppDownloadScreen } from "./setup/mac-app-download-screen";
 import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
-import { setupProviderCanDisplay } from "./setup/setup-providers-screen";
-import { deriveSetupStep, setupDeviceIsUsable } from "./setup/setup-step";
+import {
+  setupProviderCanDisplay,
+  setupProviderCheckIsStale,
+} from "./setup/setup-providers-screen";
+import {
+  deriveSetupStep,
+  setupDeviceIsUsable,
+  setupDisplayIsConfigured,
+} from "./setup/setup-step";
 import {
   SetupUsageDialog,
   setupUsageCauseFor,
@@ -387,7 +394,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     () => new Set(),
   );
   const providerReconcileDeadlineRef = useRef(0);
-  const providerAutoCheckIdsRef = useRef(new Set<string>());
+  // When each provider was last checked here, not merely whether it was. The
+  // companion only accepts a check for five minutes, so a set that remembered
+  // forever stopped re-arming exactly when the check it stood for expired.
+  const providerAutoCheckIdsRef = useRef(new Map<string, number>());
   const providerCheckQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
@@ -2900,20 +2910,26 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const now = Date.now();
     for (const item of providerPreferences || []) {
       const providerId = item.providerId?.trim().toLowerCase();
-      const verifiedAt = Date.parse(item.health?.verifiedAt || "");
-      const verificationAge = now - verifiedAt;
+      if (item.section !== "providers" || item.value !== true || !providerId) {
+        continue;
+      }
+      // The companion still holds a check for this provider, or this app asked
+      // for one recently enough that it does. Asking again in either case
+      // would be a loop; once both have expired the check has to be possible
+      // again, or Continue is refused with nothing left to press.
       if (
-        item.section !== "providers" ||
-        item.value !== true ||
-        !providerId ||
-        (Number.isFinite(verifiedAt) &&
-          verificationAge >= 0 &&
-          verificationAge <= 5 * 60 * 1000) ||
-        providerAutoCheckIdsRef.current.has(providerId)
+        !setupProviderCheckIsStale(
+          Date.parse(item.health?.verifiedAt || ""),
+          now,
+        ) ||
+        !setupProviderCheckIsStale(
+          providerAutoCheckIdsRef.current.get(providerId),
+          now,
+        )
       ) {
         continue;
       }
-      providerAutoCheckIdsRef.current.add(providerId);
+      providerAutoCheckIdsRef.current.set(providerId, now);
       void checkProvider(item);
     }
   }, [checkProvider, providerPreferences, providerSelectionSetup]);
@@ -3824,7 +3840,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const setupStep = deriveSetupStep({
     deviceUsable: deviceUsableForSetup,
-    displayConfigured: providerDisplay?.configured === true,
+    displayConfigured: setupDisplayIsConfigured(providerDisplay),
     // A companion that cannot answer for the display selection cannot store
     // one either, so there is nothing to ask the customer for.
     displaySelectionSupported: Boolean(providerDisplay) || !providerDisplayError,

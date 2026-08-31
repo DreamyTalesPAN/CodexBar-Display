@@ -4,6 +4,7 @@ import {
   previousSetupStep,
   resolveSetupStep,
   setupDeviceIsUsable,
+  setupDisplayIsConfigured,
   type SetupStepInput,
 } from "./setup-step";
 
@@ -180,5 +181,36 @@ describe("setupDeviceIsUsable", () => {
         providerSelectionRequired: false,
       }),
     ).toBe(false);
+  });
+});
+
+// `configured` says a selection was written, not that it still works. One that
+// names a provider the customer has since turned off is exactly what the
+// display step is for -- and the companion refuses to finish setup on it, on a
+// step that cannot change it.
+describe("setupDisplayIsConfigured", () => {
+  it("accepts a saved selection that still works", () => {
+    expect(setupDisplayIsConfigured({ configured: true, valid: true })).toBe(
+      true,
+    );
+  });
+
+  it("asks again for one the companion reports as no longer valid", () => {
+    expect(setupDisplayIsConfigured({ configured: true, valid: false })).toBe(
+      false,
+    );
+  });
+
+  it("asks when nothing was ever chosen", () => {
+    expect(setupDisplayIsConfigured({ configured: false, valid: true })).toBe(
+      false,
+    );
+    expect(setupDisplayIsConfigured(null)).toBe(false);
+  });
+
+  // An older companion answers without the field at all; that is not a reason
+  // to send the customer round the display step again.
+  it("does not treat a missing verdict as invalid", () => {
+    expect(setupDisplayIsConfigured({ configured: true })).toBe(true);
   });
 });

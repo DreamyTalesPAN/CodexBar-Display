@@ -120,7 +120,19 @@ export function SetupWizard(props: SetupWizardProps) {
   } | null>(null);
   const connect = useSetupConnect(connectSteps, props.firmwareProgress);
 
-  const step = resolveSetupStep(derivedStep, wentBackTo);
+  // Pairing publishes the connected VibeTV before the firmware check and any
+  // install have finished, so the derived step can move on while the connect
+  // sequence is still running -- and the firmware progress and its failure
+  // dialogs live on this step. Leaving would run the update out of sight and
+  // strand its failure on a screen nobody is on, which is how a customer ends
+  // up past a firmware step that never completed.
+  const connectInFlight =
+    connect.state.phase !== "idle" &&
+    connect.state.phase !== "done" &&
+    connect.state.phase !== "failed";
+  const step = connectInFlight
+    ? "device"
+    : resolveSetupStep(derivedStep, wentBackTo);
   const back = previousSetupStep(step);
   const goBack = back ? () => setWentBackTo(back) : undefined;
   // The counterpart to goBack. Without it the override outlives the visit it
@@ -170,10 +182,7 @@ export function SetupWizard(props: SetupWizardProps) {
   }
 
   if (step === "device") {
-    const connecting =
-      connect.state.phase !== "idle" &&
-      connect.state.phase !== "done" &&
-      connect.state.phase !== "failed";
+    const connecting = connectInFlight;
     return (
       <>
         <SetupDeviceScreen

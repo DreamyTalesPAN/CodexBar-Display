@@ -60,6 +60,20 @@ export function setupDeviceIsUsable(input: {
 }
 
 /**
+ * Whether the customer already has a display choice the wizard can move past.
+ *
+ * `configured` only says one was written. A selection that names a provider
+ * since turned off is still configured, and the companion refuses to finish
+ * setup on it -- so it is exactly what the display step is for, not something
+ * to skip.
+ */
+export function setupDisplayIsConfigured(
+  display: { configured?: boolean; valid?: boolean } | null | undefined,
+): boolean {
+  return display?.configured === true && display.valid !== false;
+}
+
+/**
  * Which step the customer's actual state puts them on.
  *
  * Deliberately derived rather than remembered: a step that is only advanced by

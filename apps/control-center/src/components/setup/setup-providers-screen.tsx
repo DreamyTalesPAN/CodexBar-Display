@@ -152,6 +152,32 @@ export function setupProvidersCanContinue(providers: ProviderItem[]): boolean {
 }
 
 /**
+ * How long the companion accepts an exact provider check for
+ * (`providerReadinessFreshness` in `companion/internal/companionapi`).
+ */
+export const PROVIDER_READINESS_FRESHNESS_MS = 5 * 60 * 1000;
+
+/**
+ * Whether a check made at this time no longer counts.
+ *
+ * The same rule governs the check the companion holds and the one this app
+ * last asked for: remembering our own request forever stopped the automatic
+ * check re-arming exactly when the readiness it stood for expired, and the
+ * customer was left with a Continue the companion refuses and a healthy row
+ * offering no way to check again.
+ */
+export function setupProviderCheckIsStale(
+  checkedAt: number | undefined,
+  now: number,
+): boolean {
+  if (checkedAt === undefined || !Number.isFinite(checkedAt)) {
+    return true;
+  }
+  const age = now - checkedAt;
+  return age < 0 || age > PROVIDER_READINESS_FRESHNESS_MS;
+}
+
+/**
  * Whether this provider can actually put a reading on the device. "stale"
  * counts: it produced a real one before and the saved value is still what the
  * customer sees. Everything else -- waiting for a sign-in, refused a macOS

@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { PreferenceHealthState } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import {
+  PROVIDER_READINESS_FRESHNESS_MS,
   SetupProvidersScreen,
   setupProviderCanDisplay,
+  setupProviderCheckIsStale,
   setupProviderMatchesQuery,
 } from "./setup-providers-screen";
 
@@ -173,5 +175,37 @@ describe("SetupProvidersScreen", () => {
         ),
       ).toBe(false);
     }
+  });
+});
+
+// The companion only accepts an exact check for five minutes. The app used to
+// remember that it had asked for one forever, so when that readiness expired
+// nothing re-armed: Continue was refused, and a row reporting healthy offers no
+// Check again. The same staleness rule now governs both timestamps.
+describe("setupProviderCheckIsStale", () => {
+  const now = Date.UTC(2026, 7, 31, 12, 0, 0);
+
+  it("holds a check the companion still accepts", () => {
+    expect(setupProviderCheckIsStale(now - 60_000, now)).toBe(false);
+  });
+
+  it("lets go once the companion would not accept it any more", () => {
+    expect(
+      setupProviderCheckIsStale(now - PROVIDER_READINESS_FRESHNESS_MS - 1, now),
+    ).toBe(true);
+  });
+
+  it("treats a missing or unreadable time as no check at all", () => {
+    expect(setupProviderCheckIsStale(undefined, now)).toBe(true);
+    expect(setupProviderCheckIsStale(Number.NaN, now)).toBe(true);
+  });
+
+  // A clock that jumped backwards must not lock the check out.
+  it("does not trust a time in the future", () => {
+    expect(setupProviderCheckIsStale(now + 60_000, now)).toBe(true);
+  });
+
+  it("matches the companion's window", () => {
+    expect(PROVIDER_READINESS_FRESHNESS_MS).toBe(5 * 60 * 1000);
   });
 });
