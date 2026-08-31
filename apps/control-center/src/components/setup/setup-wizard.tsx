@@ -116,6 +116,10 @@ export function SetupWizard(props: SetupWizardProps) {
   const step = resolveSetupStep(derivedStep, wentBackTo);
   const back = previousSetupStep(step);
   const goBack = back ? () => setWentBackTo(back) : undefined;
+  // The counterpart to goBack. Without it the override outlives the visit it
+  // was made for: Continue answers, the derived step is already ahead, and the
+  // customer is held on the step they came back to with no Back button left.
+  const goForward = useCallback(() => setWentBackTo(null), []);
 
   const preselected = useMemo(() => {
     if (selectedTarget) {
@@ -165,7 +169,10 @@ export function SetupWizard(props: SetupWizardProps) {
           connecting={connecting}
           logLines={connectLogLines(connect.state)}
           onConnect={startConnect}
-          onEnterAddressManually={() => setAddressDialogOpen(true)}
+          onEnterAddressManually={() => {
+            setNotFoundDismissed(true);
+            setAddressDialogOpen(true);
+          }}
           onSelect={(candidate) => setSelectedTarget(candidate.target)}
           selectedTarget={preselected}
         />
@@ -250,7 +257,10 @@ export function SetupWizard(props: SetupWizardProps) {
         {...help}
         onBack={goBack}
         onCheckAgain={props.onProviderCheck}
-        onContinue={props.onProvidersContinue}
+        onContinue={() => {
+          goForward();
+          props.onProvidersContinue();
+        }}
         onRecover={props.onProviderRecover}
         onToggle={props.onProviderToggle}
         providers={props.providers}
@@ -278,15 +288,16 @@ export function SetupWizard(props: SetupWizardProps) {
         }
         mode={displayMode}
         onBack={goBack}
-        onContinue={() =>
+        onContinue={() => {
+          goForward();
           props.onDisplayContinue({
             mode: displayMode,
             providerIds:
               displayMode === "fixed" && displayProviderId
                 ? [displayProviderId]
                 : props.displayProviders.map((provider) => provider.id),
-          })
-        }
+          });
+        }}
         onSelectMode={(mode) =>
           setDisplayDraft({ mode, providerId: displayProviderId })
         }

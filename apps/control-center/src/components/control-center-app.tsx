@@ -1526,6 +1526,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           detail: normalized.nextAction,
           tone: "attention",
         });
+        // Settle the search this one superseded. Taking over the attempt
+        // counter silently ends the running scan, and leaving its state on
+        // "searching" strands the device step: nothing to pick, nothing to
+        // explain it, and no way to scan again.
+        if (searchIsCurrent()) {
+          setDeviceSearchState("not-found");
+        }
         throw normalized;
       } finally {
         if (searchIsCurrent()) {
