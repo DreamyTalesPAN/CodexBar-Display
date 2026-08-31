@@ -2120,3 +2120,32 @@ issue scope, or release permission never implies UI permission.
   `setup-provider-dialogs.tsx` (new), their tests, `control-center-app.tsx`,
   `scripts/test-customer-flows.mjs`, the companion's `preferences.go`,
   `provider_display.go` and their tests, and this approval record.
+
+## 2026-08-31 — Two controls that rendered as usable and were not
+
+- User approval: The product owner instructed that every Codex bug-detector
+  finding be fixed where it is sound, and that unsound ones be answered and
+  closed rather than acted on ("fix alle findings vom codex bug detector,
+  sofern sie sinnvoll sind ... mach das so lang, bis der codex bug detector
+  nichts mehr findet", 2026-08-31), then asked for the pull request to be marked
+  ready for review, which is what produced these two findings. Both were judged
+  sound: each contradicts a rule this repository already states, and neither
+  changes a decision the owner has made.
+- Approved customer-visible result:
+  1. **The switch on a provider row stays usable while its check is running.**
+     It was greyed out for the whole check, and the running check still shows
+     its spinner either way. This matters because the step only continues once
+     every enabled provider is ready: a check that is slow or stuck used to hold
+     the customer on the provider step with the one control that would free them
+     — switching that provider off — unavailable until the request timed out.
+     `docs/control-center-ui-principles.md` rule 3 already required this.
+  2. **Leaving a provider out of Automatic now sticks.** Unchecking
+     `Include <provider> in Automatic` saved the smaller pool and was then
+     immediately undone: the reconcile that repairs a half-finished enable could
+     not tell an intentional exclusion from one, and put the provider straight
+     back. The control now does what it says, and re-checking the provider hands
+     it back to the reconcile. A provider missing from the pool for any other
+     reason is still repaired exactly as before.
+- Approved files: `apps/control-center/src/components/setup/setup-provider-row.tsx`,
+  `apps/control-center/src/components/provider-picker.tsx`, their tests, and this
+  approval record.
