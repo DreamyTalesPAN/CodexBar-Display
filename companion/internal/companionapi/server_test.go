@@ -8364,6 +8364,53 @@ func TestSetupResetRejectsActiveFirmwareUpdate(t *testing.T) {
 	}
 }
 
+func TestSetupMutationsRejectActiveThemeInstall(t *testing.T) {
+	initial := runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-a",
+		DeviceToken:    "pair-token",
+	}
+	server := newTestServer(t, initial)
+	if refusal := server.tryStartThemeInstall(); refusal != "" {
+		t.Fatalf("start theme install: %s", refusal)
+	}
+	defer server.finishThemeInstall()
+
+	tests := []struct {
+		path string
+		body string
+	}{
+		{path: "/v1/setup/reset"},
+		{path: "/v1/setup/connection-mode", body: `{"mode":"wifi"}`},
+		{path: "/v1/setup/wifi", body: `{"ssid":"Home WiFi","password":"secret"}`},
+	}
+	for _, tt := range tests {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("%s must wait for active theme install: status=%d body=%s", tt.path, rec.Code, rec.Body.String())
+		}
+		var response struct {
+			Error apiError `json:"error"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if response.Error.Code != "theme_install_in_progress" {
+			t.Fatalf("%s error code=%q want theme_install_in_progress", tt.path, response.Error.Code)
+		}
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != initial.ConnectionMode || cfg.DeviceID != initial.DeviceID || cfg.DeviceToken != initial.DeviceToken {
+		t.Fatalf("rejected setup mutation changed config: %+v", cfg)
+	}
+}
+
 func TestSetupConnectionModeRejectsQueuedFirmwareUpdate(t *testing.T) {
 	initial := runtimeconfig.Config{
 		ConnectionMode: "cable",

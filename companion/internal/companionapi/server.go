@@ -1688,6 +1688,22 @@ func (s *Server) themeInstallInFlight() bool {
 	return s.themeInstallActive
 }
 
+// Callers hold firmwareUpdateStartMu so checking the accepted theme job and
+// starting another device operation are one serialized decision.
+func (s *Server) rejectActiveThemeInstall(w http.ResponseWriter) bool {
+	if !s.themeInstallInFlight() {
+		return false
+	}
+	writeError(
+		w,
+		http.StatusConflict,
+		"theme_install_in_progress",
+		"Theme install is still running.",
+		"Wait for the theme install to finish, then try again.",
+	)
+	return true
+}
+
 func (s *Server) handleRuntimeHealth(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
@@ -3330,6 +3346,9 @@ func (s *Server) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 		)
 		return
 	}
+	if s.rejectActiveThemeInstall(w) {
+		return
+	}
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
 	if s.pauseDisplayStream != nil {
@@ -3392,6 +3411,9 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	defer s.firmwareUpdateStartMu.Unlock()
 	if _, ok := s.activeFirmwareUpdateJob(); ok {
 		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then choose the connection again.")
+		return
+	}
+	if s.rejectActiveThemeInstall(w) {
 		return
 	}
 
@@ -3705,6 +3727,9 @@ func (s *Server) handleSetupWiFi(w http.ResponseWriter, r *http.Request) {
 	defer s.firmwareUpdateStartMu.Unlock()
 	if _, ok := s.activeFirmwareUpdateJob(); ok {
 		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then try again.")
+		return
+	}
+	if s.rejectActiveThemeInstall(w) {
 		return
 	}
 
@@ -4460,6 +4485,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then try again.")
 		return
 	}
+	if s.rejectActiveThemeInstall(w) {
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		s.handleSettingsGet(w, r)
@@ -4997,14 +5025,7 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 		)
 		return
 	}
-	if s.themeInstallInFlight() {
-		writeError(
-			w,
-			http.StatusConflict,
-			"theme_install_in_progress",
-			"Theme install is still running.",
-			"Wait for the theme install to finish, then start the update again.",
-		)
+	if s.rejectActiveThemeInstall(w) {
 		return
 	}
 	cfg, err := s.config()
