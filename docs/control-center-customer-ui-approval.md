@@ -2347,3 +2347,23 @@ issue scope, or release permission never implies UI permission.
      longer true. The check is now made at the end of that wait.
 - Approved files: `apps/control-center/src/components/setup/setup-step.ts`,
   `setup-providers-screen.tsx`, their tests, and `control-center-app.tsx`.
+
+## 2026-08-31 — The provider step waits for the companion too
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: **A `Continue` the companion refuses keeps
+  the customer on the provider step, where the reason is shown.** This already
+  held for a first run; going back from the theme step and pressing Continue
+  again used to move them on regardless, and the step they landed on has nowhere
+  to report it.
+- Also recorded: a second finding from the same review — that enabling a
+  provider can start one probe more than necessary, because the client asks for
+  a check the companion may already be running — is **not** changed here. It
+  costs a duplicate probe rather than misleading the customer, and the remedy
+  touches which side owns provider verification, so it deserves its own change
+  with evidence rather than an edit at the end of a long chain. The thread is
+  left open.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
+  and its test, `control-center-app.tsx`.
