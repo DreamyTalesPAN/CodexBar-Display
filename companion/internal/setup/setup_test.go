@@ -614,6 +614,8 @@ func TestRunWithDepsRejectsMissingCableIdentity(t *testing.T) {
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)
 	launchAgentStopped := false
+	launchAgentRestored := false
+	mustWriteFile(t, filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist"), []byte("previous runtime"), 0o644)
 
 	err := runWithDeps(context.Background(), Options{
 		Transport: "usb",
@@ -647,6 +649,9 @@ func TestRunWithDepsRejectsMissingCableIdentity(t *testing.T) {
 			if name == "launchctl" && len(args) > 0 && args[0] == "bootout" {
 				launchAgentStopped = true
 			}
+			if name == "launchctl" && len(args) > 0 && args[0] == "bootstrap" {
+				launchAgentRestored = true
+			}
 			if name == "launchctl" && len(args) > 0 && args[0] == "print" {
 				return "state = running", nil
 			}
@@ -658,6 +663,9 @@ func TestRunWithDepsRejectsMissingCableIdentity(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no matching Cable VibeTV") {
 		t.Fatalf("expected identity resolution error, got %v", err)
+	}
+	if !launchAgentRestored {
+		t.Fatal("failed Cable resolution must restore the previous launch agent")
 	}
 }
 

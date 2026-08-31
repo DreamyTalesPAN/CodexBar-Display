@@ -145,11 +145,16 @@ func TestRunWithDepsUsesBundledRuntimeWiFiSelection(t *testing.T) {
 	home := t.TempDir()
 	var output strings.Builder
 	cableCalled := false
+	printedService := ""
 	err := runWithDeps(context.Background(), deps{
-		stdout:  &output,
-		uid:     func() int { return 501 },
-		homeDir: func() (string, error) { return home, nil },
-		runCommand: func(context.Context, string, ...string) (string, error) {
+		stdout:           &output,
+		uid:              func() int { return 501 },
+		launchAgentLabel: "com.vibetv.preview.runtime",
+		homeDir:          func() (string, error) { return home, nil },
+		runCommand: func(_ context.Context, _ string, args ...string) (string, error) {
+			if len(args) > 1 && args[0] == "print" {
+				printedService = args[1]
+			}
 			return "state = running\npid = 54146", nil
 		},
 		loadRuntimeConfig: func(string) (runtimeconfig.Config, error) {
@@ -166,6 +171,9 @@ func TestRunWithDepsUsesBundledRuntimeWiFiSelection(t *testing.T) {
 	}
 	if cableCalled {
 		t.Fatal("bundled WiFi health must not call the Cable status reader")
+	}
+	if printedService != "gui/501/com.vibetv.preview.runtime" {
+		t.Fatalf("health inspected %q instead of the selected runtime label", printedService)
 	}
 	got := output.String()
 	if !strings.Contains(got, "transport: wifi") || !strings.Contains(got, "device target: http://192.0.2.20") {

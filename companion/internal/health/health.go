@@ -29,6 +29,7 @@ const (
 type deps struct {
 	stdout                io.Writer
 	uid                   func() int
+	launchAgentLabel      string
 	homeDir               func() (string, error)
 	runCommand            func(context.Context, string, ...string) (string, error)
 	readCableCapabilities func() (protocol.DeviceCapabilities, error)
@@ -42,6 +43,9 @@ func (d deps) withDefaults() deps {
 	}
 	if d.uid == nil {
 		d.uid = os.Getuid
+	}
+	if strings.TrimSpace(d.launchAgentLabel) == "" {
+		d.launchAgentLabel = launchAgentLabel
 	}
 	if d.homeDir == nil {
 		d.homeDir = os.UserHomeDir
@@ -74,14 +78,17 @@ type launchAgentConfig struct {
 	Port      string
 }
 
-func Run(ctx context.Context, readCableCapabilities func() (protocol.DeviceCapabilities, error)) error {
-	return runWithDeps(ctx, deps{readCableCapabilities: readCableCapabilities})
+func Run(ctx context.Context, runtimeLabel string, readCableCapabilities func() (protocol.DeviceCapabilities, error)) error {
+	return runWithDeps(ctx, deps{
+		launchAgentLabel:      runtimeLabel,
+		readCableCapabilities: readCableCapabilities,
+	})
 }
 
 func runWithDeps(ctx context.Context, d deps) error {
 	d = d.withDefaults()
 
-	service := fmt.Sprintf("gui/%d/%s", d.uid(), launchAgentLabel)
+	service := fmt.Sprintf("gui/%d/%s", d.uid(), d.launchAgentLabel)
 	launchctlOut, launchctlErr := d.runCommand(ctx, "launchctl", "print", service)
 	state, pid := parseLaunchctlStatus(launchctlOut)
 	if state == "" {
@@ -184,7 +191,7 @@ func readLaunchAgentConfig(d deps) launchAgentConfig {
 		}
 		return config
 	}
-	path := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	path := filepath.Join(home, "Library", "LaunchAgents", d.launchAgentLabel+".plist")
 	data, err := d.readFile(path)
 	if err != nil {
 		return launchAgentConfig{}

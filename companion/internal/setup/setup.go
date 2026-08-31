@@ -308,7 +308,11 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		return err
 	}
 	fmt.Fprintf(d.stdout, "CodexBar CLI: %s\n", codexbarBin)
+	previousLaunchAgentPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	restorePreviousLaunchAgent := false
 	if !opts.ValidateOnly && !opts.DryRun {
+		_, statErr := os.Stat(previousLaunchAgentPath)
+		restorePreviousLaunchAgent = statErr == nil && launchAgentLoaded(ctx, d, launchServiceTarget(d.uid()))
 		stopLaunchAgentBestEffort(ctx, d)
 	}
 
@@ -319,6 +323,9 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	if transportName == "usb" {
 		port, err = choosePort(opts, d)
 		if err != nil {
+			if restorePreviousLaunchAgent {
+				_ = reloadLaunchAgent(ctx, d, previousLaunchAgentPath)
+			}
 			return err
 		}
 		fmt.Fprintf(d.stdout, "Serial port: %s\n", port)

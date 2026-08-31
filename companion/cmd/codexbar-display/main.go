@@ -100,7 +100,7 @@ func main() {
 		err = runDoctor()
 	case "health":
 		expectedOwner := healthRuntimeOwner()
-		err = health.Run(context.Background(), func() (protocol.DeviceCapabilities, error) {
+		err = health.Run(context.Background(), expectedOwner, func() (protocol.DeviceCapabilities, error) {
 			return readLocalCableCapabilities(expectedOwner)
 		})
 	case "open-control-center":
