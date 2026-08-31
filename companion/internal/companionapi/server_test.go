@@ -4392,6 +4392,38 @@ func TestFirmwareLatestUsesReleaseManifest(t *testing.T) {
 	}
 }
 
+func TestFirmwareLatestSuppressesUnsupportedCableUpdate(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "lilygo",
+	})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{
+			DeviceID: "lilygo",
+			Board:    "esp32-lilygo-t-display-s3",
+			Firmware: "1.0.40",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"},
+			},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp32-lilygo-t-display-s3&firmware=1.0.40", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got firmwareLatestResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.UpdateAvailable || got.Status != "unsupported" {
+		t.Fatalf("unsupported Cable update was advertised: %+v", got)
+	}
+}
+
 func TestFirmwareUpdateCommandUsesCheckedManifest(t *testing.T) {
 	target := "http://192.168.178.72"
 	manifestURL := "http://127.0.0.1:47833/firmware-manifest.json"
@@ -9423,7 +9455,7 @@ func TestFirmwareUpdateCablePreflightPreservesAlreadyCurrentOutcome(t *testing.T
 			t.Fatalf("unexpected Cable port %q", port)
 		}
 		var hello protocol.DeviceHello
-		if err := json.Unmarshal([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"device-cable-update","board":"esp8266-smalltv-st7789","firmware":"1.0.40","capabilities":{"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}}`), &hello); err != nil {
+		if err := json.Unmarshal([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"device-cable-update","board":"esp8266-smalltv-st7789","firmware":"1.0.40","features":["cable-transfer-v1"],"capabilities":{"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}}`), &hello); err != nil {
 			t.Fatal(err)
 		}
 		return hello, nil
@@ -9467,6 +9499,46 @@ func TestFirmwareUpdateCablePreflightPreservesAlreadyCurrentOutcome(t *testing.T
 	}
 }
 
+func TestFirmwareUpdateRejectsUnsupportedCableTransferBeforePairing(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "lilygo",
+	}
+	server := newTestServer(t, cfg)
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/mock-cable", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			DeviceID: "lilygo",
+			Board:    "esp32-lilygo-t-display-s3",
+			Firmware: "1.0.40",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"},
+			},
+		}, nil
+	}
+	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
+		t.Fatal("unsupported Cable update must not start")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Error.Code != "firmware_update_unsupported" {
+		t.Fatalf("unsupported Cable update returned the wrong error: %+v", got)
+	}
+}
+
 func TestFirmwareUpdateCableDoesNotOverridePostUpdateVerificationError(t *testing.T) {
 	cfg := runtimeconfig.Config{
 		ConnectionMode: "cable",
@@ -9479,7 +9551,7 @@ func TestFirmwareUpdateCableDoesNotOverridePostUpdateVerificationError(t *testin
 	}
 	server.readCableHello = func(string) (protocol.DeviceHello, error) {
 		var hello protocol.DeviceHello
-		if err := json.Unmarshal([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"device-cable-update","board":"esp8266-smalltv-st7789","firmware":"1.0.40","capabilities":{"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}}`), &hello); err != nil {
+		if err := json.Unmarshal([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"device-cable-update","board":"esp8266-smalltv-st7789","firmware":"1.0.40","features":["cable-transfer-v1"],"capabilities":{"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}}`), &hello); err != nil {
 			t.Fatal(err)
 		}
 		return hello, nil
@@ -10054,7 +10126,7 @@ func TestFirmwareUpdateAsyncRequiresCableReconnectAfterInterruptedTransfer(t *te
 	server := newTestServer(t, cfg)
 	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
 	var hello protocol.DeviceHello
-	if err := json.Unmarshal([]byte(`{"kind":"hello","deviceId":"device-cable","board":"esp8266-smalltv-st7789","firmware":"1.0.40","capabilities":{"transport":{"active":"usb","mode":"cable"}}}`), &hello); err != nil {
+	if err := json.Unmarshal([]byte(`{"kind":"hello","deviceId":"device-cable","board":"esp8266-smalltv-st7789","firmware":"1.0.40","features":["cable-transfer-v1"],"capabilities":{"transport":{"active":"usb","mode":"cable"}}}`), &hello); err != nil {
 		t.Fatal(err)
 	}
 	server.readCableHello = func(string) (protocol.DeviceHello, error) { return hello, nil }

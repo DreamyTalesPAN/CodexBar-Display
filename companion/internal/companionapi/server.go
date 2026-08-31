@@ -4775,6 +4775,18 @@ func (s *Server) handleFirmwareLatest(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if cfg, err := s.config(); err == nil && runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" {
+		if hello, ok := s.currentCableHello(); ok && cableHelloMatchesConfig(hello, cfg.DeviceID) && !hello.HasFeature(protocol.FeatureCableTransferV1) {
+			writeJSON(w, http.StatusOK, firmwareLatestResponse{
+				CheckedAt:         checkedAt,
+				InstalledFirmware: installedFirmware,
+				UpdateAvailable:   false,
+				Status:            "unsupported",
+				Message:           "Firmware updates are not supported for this VibeTV over Cable.",
+			})
+			return
+		}
+	}
 
 	installedVersion, installedErr := versioning.ParseSemVer(installedFirmware)
 	if installedErr != nil {
@@ -4915,6 +4927,16 @@ func (s *Server) handleFirmwareUpdateInstall(w http.ResponseWriter, r *http.Requ
 		cfg, hello, ok = s.requireDevice(w, r)
 	}
 	if !ok {
+		return
+	}
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" && !hello.HasFeature(protocol.FeatureCableTransferV1) {
+		writeError(
+			w,
+			http.StatusConflict,
+			"firmware_update_unsupported",
+			"Firmware updates are not supported for this VibeTV over Cable.",
+			"Switch to WiFi to update this VibeTV.",
+		)
 		return
 	}
 	if strings.TrimSpace(cfg.DeviceToken) == "" {
