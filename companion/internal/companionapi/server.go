@@ -195,6 +195,7 @@ type Server struct {
 	setCableConnectionMode func(string, string, string) error
 	confirmCableMode       func(string, string) error
 	pairCableDevice        func(string, string) (string, error)
+	readCableHealth        func(string, string) (deviceHealth, error)
 	readCableSettings      func(string, string) (protocol.DeviceSettings, error)
 	writeCableSettings     func(string, string, protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error)
 	configureCableWiFi     func(string, string, string, string) error
@@ -954,6 +955,7 @@ func New(opts Options) (*Server, error) {
 		setCableConnectionMode: usb.SetConnectionMode,
 		confirmCableMode:       usb.ConfirmConnectionMode,
 		pairCableDevice:        usb.PairDevice,
+		readCableHealth:        readCableDeviceHealth,
 		readCableSettings:      usb.ReadSettings,
 		writeCableSettings:     usb.WriteSettings,
 		configureCableWiFi:     usb.ConfigureWiFi,
@@ -4376,6 +4378,18 @@ func (s *Server) cableControlDevice(cfg runtimeconfig.Config) (string, protocol.
 	return port, hello, nil
 }
 
+func readCableDeviceHealth(port, deviceID string) (deviceHealth, error) {
+	raw, err := usb.ReadHealth(port, deviceID)
+	if err != nil {
+		return deviceHealth{}, err
+	}
+	var health deviceHealth
+	if err := json.Unmarshal(raw, &health); err != nil {
+		return deviceHealth{}, fmt.Errorf("decode Cable health: %w", err)
+	}
+	return health, nil
+}
+
 func writeCableResolutionError(w http.ResponseWriter, err error) {
 	switch errcode.Of(err) {
 	case errcode.TransportMultipleDevices:
@@ -5097,6 +5111,10 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	}
 	cfg = latestCfg
 	cableMode := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable"
+	displayTarget := cfg.DeviceTarget
+	if cableMode {
+		displayTarget = cableDeviceTarget
+	}
 	if strings.TrimSpace(cfg.DeviceToken) == "" ||
 		(cableMode && strings.TrimSpace(cfg.DeviceID) == "") ||
 		(!cableMode && strings.TrimSpace(cfg.DeviceTarget) == "") {
@@ -5113,9 +5131,31 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	// render to baseline and verify against afterwards.
 	live := req.Slot != themepack.UsageScreensaver
 	var baseline deviceHealth
-	if live && !cableMode {
-		s.clearDisplayVerification(cfg.DeviceTarget)
-		baseline, err = s.captureDisplayRenderBaseline(ctx, cfg.DeviceTarget, cfg.DeviceToken)
+	var cablePort string
+	var cableHello protocol.DeviceHello
+	if cableMode {
+		cablePort, cableHello, err = s.cableControlDevice(cfg)
+		if err != nil {
+			return themeinstall.Result{}, err
+		}
+	}
+	if live {
+		s.clearDisplayVerification(displayTarget)
+		if cableMode {
+			if !cableHello.HasFeature(protocol.FeatureCableHealthV1) {
+				return themeinstall.Result{}, &statusAPIError{
+					status: http.StatusConflict,
+					api: apiError{
+						Code:       "theme_render_verification_unsupported",
+						Message:    "This VibeTV cannot verify a live theme over Cable yet.",
+						NextAction: "Update VibeTV firmware, then retry the theme install.",
+					},
+				}
+			}
+			baseline, err = s.readCableHealth(cablePort, cableHello.DeviceID)
+		} else {
+			baseline, err = s.captureDisplayRenderBaseline(ctx, cfg.DeviceTarget, cfg.DeviceToken)
+		}
 		if err != nil {
 			return themeinstall.Result{}, &statusAPIError{
 				status: http.StatusBadGateway,
@@ -5136,14 +5176,10 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	pairedDuringThemeInstall := false
 	var cableInstall *themeinstall.CableInstallOptions
 	if cableMode {
-		port, hello, cableErr := s.cableControlDevice(cfg)
-		if cableErr != nil {
-			return themeinstall.Result{}, cableErr
-		}
 		cableInstall = &themeinstall.CableInstallOptions{
-			Capabilities: protocol.CapabilitiesFromHello(hello),
+			Capabilities: protocol.CapabilitiesFromHello(cableHello),
 			Upload: func(ctx context.Context, devicePath string, payload []byte, activation string) error {
-				return s.transferCableAsset(ctx, port, hello.DeviceID, cfg.DeviceToken, devicePath, activation, payload)
+				return s.transferCableAsset(ctx, cablePort, cableHello.DeviceID, cfg.DeviceToken, devicePath, activation, payload)
 			},
 		}
 	}
@@ -5188,10 +5224,6 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			fmt.Fprintln(out, "Preview cache: ready")
 		}
 	}
-	if cableMode {
-		resumeStream()
-		return result, nil
-	}
 	if !live {
 		// The live theme rendered throughout, so there is no new image to wait
 		// for and no verification to run.
@@ -5202,7 +5234,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	resumeStream()
 	streamRefreshStartedAt := time.Now()
 	streamStartedAt := time.Now().UTC()
-	if err := s.startDisplayStream(ctx, cfg.DeviceTarget); err != nil {
+	if err := s.startDisplayStream(ctx, displayTarget); err != nil {
 		logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
 		return themeinstall.Result{}, &statusAPIError{
 			status: http.StatusBadGateway,
@@ -5215,9 +5247,9 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	}
 	var stream displayStreamInfo
 	if pairedDuringThemeInstall {
-		stream = s.waitForFreshDisplayStreamAfterPair(ctx, cfg.DeviceTarget, streamStartedAt)
+		stream = s.waitForFreshDisplayStreamAfterPair(ctx, displayTarget, streamStartedAt)
 	} else {
-		stream = s.waitForFreshDisplayStream(ctx, cfg.DeviceTarget, streamStartedAt)
+		stream = s.waitForFreshDisplayStream(ctx, displayTarget, streamStartedAt)
 	}
 	logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
 	// A stream that restarted, owns this exact VibeTV, and is only held back by
@@ -5225,12 +5257,17 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	// no usage picture because no provider is ready, so waiting for one reports
 	// a failed install to a customer whose theme is already on the device. The
 	// firmware update path makes the same call for the same reason.
-	if providerSetupStreamForTarget(&stream, cfg.DeviceTarget) {
+	if providerSetupStreamForTarget(&stream, displayTarget) {
 		fmt.Fprintln(out, "Display stream: waiting for AI provider")
 		return result, nil
 	}
 	renderVerificationStartedAt := time.Now()
-	health, err := s.waitForVerifiedDisplayRender(ctx, cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
+	var health deviceHealth
+	if cableMode {
+		health, err = s.waitForVerifiedCableDisplayRender(ctx, cablePort, cableHello.DeviceID, cfg.DeviceToken, baseline, stream)
+	} else {
+		health, err = s.waitForVerifiedDisplayRender(ctx, cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
+	}
 	logThemeInstallTiming(out, "render-verification", renderVerificationStartedAt)
 	if err != nil {
 		if !stream.Healthy {
@@ -5253,11 +5290,11 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		}
 	}
 	device := withDisplayStreamInfo(deviceInfo{
-		Target:    publicTarget(cfg.DeviceTarget),
+		Target:    publicTarget(displayTarget),
 		Connected: true,
 		Paired:    true,
 	}, stream)
-	if !s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, cfg.DeviceToken, true).Ready {
+	if !s.withVerifiedDeviceHealth(device, health, displayTarget, cfg.DeviceToken, true).Ready {
 		return themeinstall.Result{}, &statusAPIError{
 			status: http.StatusBadGateway,
 			api: apiError{
@@ -5833,31 +5870,15 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		snapshot, _ := s.firmwareUpdateJobSnapshot(jobID)
 		shouldVerify := err == nil || (snapshot.Result != nil && snapshot.Result.UploadAccepted)
 		cableUpdate := runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable"
-		if err == nil && cableUpdate {
-			result := snapshot.Result
-			if result == nil || !result.HelloVerified ||
-				strings.TrimSpace(result.Firmware) == "" ||
-				strings.TrimSpace(result.Firmware) != strings.TrimSpace(result.ObservedFirmware) {
-				err = errors.New("cable firmware update did not verify the installed firmware")
+		if shouldVerify {
+			var outcome string
+			var attentionMessage string
+			var verifyErr error
+			if cableUpdate {
+				outcome, attentionMessage, verifyErr = s.verifyCableFirmwareUpdateResult(ctx, jobID, cfg)
 			} else {
-				finishedAt := time.Now().UTC()
-				s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
-					outcome := strings.TrimSpace(job.Outcome)
-					if outcome == "" {
-						outcome = "updated"
-					}
-					job.Phase = "complete"
-					job.Progress = 100
-					job.FinishedAt = &finishedAt
-					job.Outcome = outcome
-					job.Message = "Update complete."
-					appendFirmwareUpdateJobLog(job, "Update complete.")
-				})
-				return
+				outcome, attentionMessage, verifyErr = s.verifyFirmwareUpdateResult(ctx, jobID, cfg)
 			}
-		}
-		if shouldVerify && !cableUpdate {
-			outcome, attentionMessage, verifyErr := s.verifyFirmwareUpdateResult(ctx, jobID, cfg)
 			if verifyErr == nil {
 				finishedAt := time.Now().UTC()
 				s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
@@ -5900,6 +5921,101 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 			return
 		}
 	}()
+}
+
+func (s *Server) verifyCableFirmwareUpdateResult(ctx context.Context, jobID string, initialCfg runtimeconfig.Config) (string, string, error) {
+	snapshot, ok := s.firmwareUpdateJobSnapshot(jobID)
+	if !ok || snapshot.Result == nil {
+		return "", "", errors.New("firmware update produced no verification result")
+	}
+	expectedFirmware := strings.TrimSpace(snapshot.Result.Firmware)
+	expectedDeviceID := strings.TrimSpace(snapshot.Result.DeviceID)
+	if expectedFirmware == "" || expectedDeviceID == "" || !samePublicTarget(snapshot.Result.Target, cableDeviceTarget) {
+		return "", "", errors.New("cable firmware update result is missing firmware, device id, or target")
+	}
+	cfg := initialCfg
+	if current, err := s.loadConfig(s.home); err == nil {
+		cfg = current
+	}
+
+	s.setFirmwareUpdateStage(jobID, "verifying_firmware")
+	port, hello, err := s.cableControlDevice(cfg)
+	if err != nil {
+		return "", "", fmt.Errorf("verify installed Cable firmware: %w", err)
+	}
+	if !strings.EqualFold(expectedDeviceID, strings.TrimSpace(hello.DeviceID)) {
+		return "", "", fmt.Errorf("VibeTV identity mismatch after update: expected=%q got=%q", expectedDeviceID, strings.TrimSpace(hello.DeviceID))
+	}
+	if strings.TrimSpace(hello.Firmware) != expectedFirmware {
+		return "", "", fmt.Errorf("VibeTV firmware mismatch after update: expected=%q got=%q", expectedFirmware, strings.TrimSpace(hello.Firmware))
+	}
+	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
+		result.HelloVerified = true
+		result.Target = cableDeviceTarget
+		result.Firmware = strings.TrimSpace(hello.Firmware)
+		result.ObservedFirmware = strings.TrimSpace(hello.Firmware)
+	})
+	if !hello.HasFeature(protocol.FeatureCableHealthV1) {
+		return firmwareAttentionOutcome("render"), "Firmware is current, but this VibeTV cannot verify the picture over Cable yet.", nil
+	}
+
+	s.setFirmwareUpdateStage(jobID, "verifying_health")
+	healthDeadline := time.Now().Add(firmwareHealthVerifyTime)
+	var health deviceHealth
+	for {
+		health, err = s.readCableHealth(port, hello.DeviceID)
+		if err == nil && health.OK {
+			break
+		}
+		if time.Now().After(healthDeadline) {
+			return firmwareAttentionOutcome("health"), "Firmware is current, but VibeTV health still needs attention.", nil
+		}
+		select {
+		case <-ctx.Done():
+			return "", "", ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
+		result.HealthVerified = true
+	})
+
+	s.setFirmwareUpdateStage(jobID, "restarting_stream")
+	streamStartedAt := time.Now().UTC()
+	if err := s.startDisplayStream(ctx, cableDeviceTarget); err != nil {
+		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream could not restart.", nil
+	}
+	stream := s.waitForFreshDisplayStream(ctx, cableDeviceTarget, streamStartedAt)
+	streamHealthy := displayStreamHealthyForTarget(&stream, cableDeviceTarget)
+	streamAwaitingProvider := !streamHealthy && providerSetupStreamForTarget(&stream, cableDeviceTarget)
+	if !streamHealthy && !streamAwaitingProvider {
+		return firmwareAttentionOutcome("stream"), "Firmware is current, but the display stream still needs attention.", nil
+	}
+	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
+		result.StreamVerified = true
+	})
+	if streamAwaitingProvider {
+		s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
+			result.RenderSkipped = "provider_setup_required"
+		})
+		return firmwareUpdateOutcome(snapshot), "", nil
+	}
+
+	s.setFirmwareUpdateStage(jobID, "verifying_render")
+	if _, err := s.waitForVerifiedCableDisplayRender(ctx, port, hello.DeviceID, cfg.DeviceToken, health, stream); err != nil {
+		return firmwareAttentionOutcome("render"), "Firmware is current, but the picture could not be verified.", nil
+	}
+	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
+		result.RenderVerified = true
+	})
+	return firmwareUpdateOutcome(snapshot), "", nil
+}
+
+func firmwareUpdateOutcome(snapshot firmwareUpdateJob) string {
+	if strings.TrimSpace(snapshot.Outcome) == "already_current" {
+		return "already_current"
+	}
+	return "updated"
 }
 
 func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, initialCfg runtimeconfig.Config) (string, string, error) {
@@ -5986,10 +6102,7 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 		s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 			result.RenderSkipped = "provider_setup_required"
 		})
-		if snapshot.Outcome == "already_current" {
-			return "already_current", "", nil
-		}
-		return "updated", "", nil
+		return firmwareUpdateOutcome(snapshot), "", nil
 	}
 
 	s.setFirmwareUpdateStage(jobID, "verifying_render")
@@ -6005,10 +6118,7 @@ func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, i
 	s.updateFirmwareVerification(jobID, func(result *firmwareUpdateResult) {
 		result.RenderVerified = true
 	})
-	if snapshot.Outcome == "already_current" {
-		return "already_current", "", nil
-	}
-	return "updated", "", nil
+	return firmwareUpdateOutcome(snapshot), "", nil
 }
 
 // repairParkedDisplayAfterFirmwareUpdate verifies the picture after an update
@@ -7793,11 +7903,23 @@ func (s *Server) waitForDisplayRenderWithStream(
 	baseline deviceHealth,
 	stream displayStreamInfo,
 ) (deviceHealth, error) {
+	return waitForDisplayRenderWithHealthReader(ctx, target, baseline, stream, func() (deviceHealth, error) {
+		return s.getHealth(ctx, target, token)
+	})
+}
+
+func waitForDisplayRenderWithHealthReader(
+	ctx context.Context,
+	target string,
+	baseline deviceHealth,
+	stream displayStreamInfo,
+	readHealth func() (deviceHealth, error),
+) (deviceHealth, error) {
 	deadline := time.Now().Add(displayRenderWaitTime)
 	var last deviceHealth
 	var lastErr error
 	for {
-		health, err := s.getHealth(ctx, target, token)
+		health, err := readHealth()
 		if err == nil {
 			last = health
 			if health.OK && renderHealthyFromHealth(health) && displayRenderAdvanced(baseline, health) {
@@ -7950,6 +8072,27 @@ func (s *Server) waitForVerifiedDisplayRender(
 		return health, err
 	}
 	return s.waitForDisplayRenderWithStream(ctx, target, token, baseline, stream)
+}
+
+func (s *Server) waitForVerifiedCableDisplayRender(
+	ctx context.Context,
+	port string,
+	deviceID string,
+	token string,
+	baseline deviceHealth,
+	stream displayStreamInfo,
+) (deviceHealth, error) {
+	if s.waitRender != nil {
+		health, err := s.waitRender(ctx, cableDeviceTarget, token, baseline)
+		if err != nil && health.OK && correlatedOverlayProvesUsage(baseline, health, stream, cableDeviceTarget) {
+			health.correlatedFrameProof = true
+			return health, nil
+		}
+		return health, err
+	}
+	return waitForDisplayRenderWithHealthReader(ctx, cableDeviceTarget, baseline, stream, func() (deviceHealth, error) {
+		return s.readCableHealth(port, deviceID)
+	})
 }
 
 func (s *Server) reactivateCurrentThemeAndWaitForFullRender(
@@ -8105,6 +8248,10 @@ func (s *Server) startDisplayStream(ctx context.Context, target string) error {
 		Target:    target,
 		AssumeYes: true,
 		SkipFlash: true,
+	}
+	if samePublicTarget(target, cableDeviceTarget) {
+		opts.Transport = "usb"
+		opts.Target = ""
 	}
 	validateOpts := opts
 	validateOpts.ValidateOnly = true

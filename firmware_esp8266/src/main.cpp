@@ -35,7 +35,7 @@
 #endif
 
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-const char kThemeFeatureJSON[] = "[\"theme-spec-v1\",\"provider-slots-v1\",\"cable-transfer-v1\"]";
+const char kThemeFeatureJSON[] = "[\"theme-spec-v1\",\"provider-slots-v1\",\"cable-transfer-v1\",\"cable-health-v1\"]";
 #else
 const char kThemeFeatureJSON[] = "[]";
 #endif
@@ -1987,6 +1987,7 @@ struct DeviceSettingsPatch {
 };
 
 bool applyDeviceSettingsPatch(const DeviceSettingsPatch& patch, String& error);
+String healthJSON();
 
 bool handleSerialControlLine(const String& line) {
   JsonDocument doc;
@@ -2006,6 +2007,20 @@ bool handleSerialControlLine(const String& line) {
     codexbar_display::app::EmitDeviceHello(makeTransportConfig("usb"));
   } else if (strcmp(op, "status") == 0) {
     emitSerialStatus();
+  } else if (strcmp(op, "health") == 0) {
+    const char* expectedDeviceID = doc["deviceId"] | "";
+    if (strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
+        cableTransfer.flow.active || otaUploadInProgress ||
+        assetUploadInProgress || rebootPending) {
+      emitSerialError("health-rejected");
+    } else {
+      String out = "{\"kind\":\"health\",\"deviceId\":\"";
+      out += deviceID;
+      out += "\",\"health\":";
+      out += healthJSON();
+      out += "}";
+      Serial.println(out);
+    }
   } else if (strcmp(op, "pair") == 0) {
     const char* expectedDeviceID = doc["deviceId"] | "";
     if (strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
@@ -2267,7 +2282,7 @@ void appendResetTrustJSON(String& out) {
   out += F("},");
 }
 
-void handleHealth() {
+String healthJSON() {
   const codexbar_display::esp8266::RendererHealthSnapshot snapshot = renderer.HealthSnapshot();
 
   String out;
@@ -2358,6 +2373,11 @@ void handleHealth() {
   out += "}";
 
   (void)filesystemMounted;
+  return out;
+}
+
+void handleHealth() {
+  const String out = healthJSON();
   addCorsHeaders();
   webServer.send(200, "application/json", out);
 }

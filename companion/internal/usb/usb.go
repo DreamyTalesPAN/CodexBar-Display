@@ -96,6 +96,10 @@ func ReadSettings(port, deviceID string) (protocol.DeviceSettings, error) {
 	return defaultSender.ReadSettings(port, deviceID)
 }
 
+func ReadHealth(port, deviceID string) ([]byte, error) {
+	return defaultSender.ReadHealth(port, deviceID)
+}
+
 func WriteSettings(port, deviceID string, patch protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error) {
 	return defaultSender.WriteSettings(port, deviceID, patch)
 }

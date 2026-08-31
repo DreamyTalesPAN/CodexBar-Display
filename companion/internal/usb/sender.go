@@ -368,6 +368,41 @@ func (s *Sender) ReadSettings(path, deviceID string) (protocol.DeviceSettings, e
 	return s.requestSettings(path, deviceID, nil)
 }
 
+func (s *Sender) ReadHealth(path, deviceID string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, err := s.ensurePort(path); err != nil {
+		return nil, err
+	}
+	request := struct {
+		Kind     string `json:"kind"`
+		Op       string `json:"op"`
+		DeviceID string `json:"deviceId"`
+	}{Kind: "request", Op: "health", DeviceID: strings.TrimSpace(deviceID)}
+	line, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	line = append(line, '\n')
+	_ = s.port.ResetInputBuffer()
+	if err := writeWithTimeout(s.port, line, s.writeTimeout); err != nil {
+		s.closeCurrentLocked()
+		return nil, wrapTransportError(
+			errcode.TransportSerialWrite,
+			"health",
+			path,
+			"Keep the selected VibeTV connected by Cable and retry.",
+			err,
+		)
+	}
+	health, err := readHealthFromPort(s.port, s.helloWindow, deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("health on %s: %w", path, err)
+	}
+	return health, nil
+}
+
 func (s *Sender) WriteSettings(path, deviceID string, patch protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error) {
 	return s.requestSettings(path, deviceID, &patch)
 }

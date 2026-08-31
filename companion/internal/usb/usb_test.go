@@ -427,6 +427,30 @@ func TestSenderReadsAndWritesConfirmedCableSettings(t *testing.T) {
 	}
 }
 
+func TestSenderReadsCableHealthForExactDevice(t *testing.T) {
+	path := "/dev/mock"
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{[]byte(`{"kind":"health","deviceId":"14799300","health":{"ok":true,"render":{"fullCount":8,"partialCount":3,"lastKind":"theme_spec_usage"}}}` + "\n")}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{path: port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+	defer sender.Close()
+
+	health, err := sender.ReadHealth(path, "14799300")
+	if err != nil {
+		t.Fatalf("read health: %v", err)
+	}
+	if !strings.Contains(string(health), `"fullCount":8`) {
+		t.Fatalf("unexpected health payload: %s", health)
+	}
+	want := `{"kind":"request","op":"health","deviceId":"14799300"}` + "\n"
+	if len(port.writePayloads) != 1 || string(port.writePayloads[0]) != want {
+		t.Fatalf("unexpected health request %#v", port.writePayloads)
+	}
+}
+
 func TestSenderConfiguresWiFiWithoutLoggingOrReusingTheSecret(t *testing.T) {
 	port := newMockSerialPort()
 	port.readQueue = [][]byte{[]byte(`{"kind":"connection-mode","status":"switching","deviceId":"14799300","mode":"wifi"}` + "\n")}

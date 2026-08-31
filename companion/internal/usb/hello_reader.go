@@ -211,6 +211,51 @@ func readSettingsFromPort(port SerialPort, window time.Duration, deviceID string
 	return settings, nil
 }
 
+func readHealthFromPort(port SerialPort, window time.Duration, deviceID string) ([]byte, error) {
+	var health []byte
+	var responseErr error
+	seen := readPortLines(port, window, func(line string) bool {
+		if !strings.HasPrefix(strings.TrimSpace(line), "{") {
+			return false
+		}
+		var reply struct {
+			Kind     string          `json:"kind"`
+			DeviceID string          `json:"deviceId"`
+			Health   json.RawMessage `json:"health"`
+			Code     string          `json:"code"`
+			Message  string          `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(line), &reply); err != nil {
+			return false
+		}
+		switch strings.TrimSpace(reply.Kind) {
+		case "error":
+			responseErr = fmt.Errorf("device rejected health request: %s: %s", strings.TrimSpace(reply.Code), strings.TrimSpace(reply.Message))
+			return true
+		case "health":
+			if !strings.EqualFold(strings.TrimSpace(reply.DeviceID), strings.TrimSpace(deviceID)) {
+				responseErr = errors.New("device returned health for a different identity")
+				return true
+			}
+			if len(reply.Health) == 0 {
+				responseErr = errors.New("device returned empty health")
+				return true
+			}
+			health = append([]byte(nil), reply.Health...)
+			return true
+		default:
+			return false
+		}
+	})
+	if responseErr != nil {
+		return nil, responseErr
+	}
+	if !seen {
+		return nil, errors.New("device did not acknowledge health request")
+	}
+	return health, nil
+}
+
 func readPortLines(port SerialPort, window time.Duration, accept func(string) bool) bool {
 	if port == nil || window <= 0 || accept == nil {
 		return false

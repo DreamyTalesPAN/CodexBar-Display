@@ -9,6 +9,7 @@ const (
 	FeatureUsageWindowsV1  = "usage-windows-v1"
 	FeatureProviderSlotsV1 = "provider-slots-v1"
 	FeatureCableTransferV1 = "cable-transfer-v1"
+	FeatureCableHealthV1   = "cable-health-v1"
 	DefaultMaxFrameBytes   = 512
 	DefaultMinBrightness   = 10
 	DefaultMaxBrightness   = 100

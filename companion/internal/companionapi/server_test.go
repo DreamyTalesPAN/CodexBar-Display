@@ -8804,10 +8804,37 @@ func TestThemeInstallUsesCableTransferWithoutWiFiDeviceCalls(t *testing.T) {
 		return "/dev/mock", nil
 	}
 	var hello protocol.DeviceHello
-	if err := json.Unmarshal([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"cable-device","board":"esp8266-smalltv-st7789","features":["theme-spec-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxStoredSpecBytes":4096,"maxPrimitives":32},"standby":{"supported":true},"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}}`), &hello); err != nil {
+	if err := json.Unmarshal([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"cable-device","board":"esp8266-smalltv-st7789","features":["theme-spec-v1","cable-health-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxStoredSpecBytes":4096,"maxPrimitives":32},"standby":{"supported":true},"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}}`), &hello); err != nil {
 		t.Fatal(err)
 	}
 	server.readCableHello = func(string) (protocol.DeviceHello, error) { return hello, nil }
+	fullCount := uint64(1)
+	partialCount := uint64(0)
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "cable_setup"
+		return health, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(_ context.Context, target string, _ string, baseline deviceHealth) (deviceHealth, error) {
+		if target != cableDeviceTarget || baseline.Render.FullCount == nil || *baseline.Render.FullCount != 1 {
+			t.Fatalf("unexpected Cable render verification target=%q baseline=%+v", target, baseline.Render)
+		}
+		renderedFullCount := uint64(2)
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &renderedFullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "theme_spec_usage"
+		active := true
+		health.Display.ThemeSpec.Active = true
+		health.Display.ThemeSpec.RenderOK = &active
+		return health, nil
+	}
 	type upload struct {
 		path       string
 		activation string
@@ -8832,6 +8859,45 @@ func TestThemeInstallUsesCableTransferWithoutWiFiDeviceCalls(t *testing.T) {
 	}
 	if result.Target != cableDeviceTarget || len(uploads) == 0 || uploads[len(uploads)-1].activation != "theme" {
 		t.Fatalf("unexpected Cable result=%+v uploads=%+v", result, uploads)
+	}
+}
+
+func TestCableThemeInstallRejectsUnverifiedLiveRender(t *testing.T) {
+	cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-device", DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			DeviceID: "cable-device",
+			Features: []string{protocol.FeatureCableHealthV1},
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"},
+			},
+		}, nil
+	}
+	fullCount := uint64(1)
+	partialCount := uint64(0)
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		return health, nil
+	}
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{ThemeID: "mini", Target: cableDeviceTarget}, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		return deviceHealth{}, errors.New("render counters did not advance")
+	}
+
+	_, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, io.Discard)
+	var statusErr *statusAPIError
+	if !errors.As(err, &statusErr) || statusErr.api.Code != "display_render_failed" {
+		t.Fatalf("unverified Cable theme was reported complete: %v", err)
 	}
 }
 
@@ -9455,10 +9521,31 @@ func TestFirmwareUpdateCablePreflightPreservesAlreadyCurrentOutcome(t *testing.T
 			t.Fatalf("unexpected Cable port %q", port)
 		}
 		var hello protocol.DeviceHello
-		if err := json.Unmarshal([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"device-cable-update","board":"esp8266-smalltv-st7789","firmware":"1.0.40","features":["cable-transfer-v1"],"capabilities":{"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}}`), &hello); err != nil {
+		if err := json.Unmarshal([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"device-cable-update","board":"esp8266-smalltv-st7789","firmware":"1.0.40","features":["cable-transfer-v1","cable-health-v1"],"capabilities":{"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}}`), &hello); err != nil {
 			t.Fatal(err)
 		}
 		return hello, nil
+	}
+	fullCount := uint64(1)
+	partialCount := uint64(0)
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "cable_setup"
+		return health, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		renderedFullCount := uint64(2)
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &renderedFullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "theme_spec_usage"
+		return health, nil
 	}
 	parentPortClosed := make(chan struct{})
 	server.resetCableSender = func() { close(parentPortClosed) }
@@ -9494,7 +9581,8 @@ func TestFirmwareUpdateCablePreflightPreservesAlreadyCurrentOutcome(t *testing.T
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if job.Phase != "complete" || job.Outcome != "already_current" {
+	if job.Phase != "complete" || job.Outcome != "already_current" || job.Result == nil ||
+		!job.Result.HealthVerified || !job.Result.StreamVerified || !job.Result.RenderVerified {
 		t.Fatalf("Cable already-current result was not preserved: %+v", job)
 	}
 }
@@ -9536,6 +9624,65 @@ func TestFirmwareUpdateRejectsUnsupportedCableTransferBeforePairing(t *testing.T
 	}
 	if got.Error.Code != "firmware_update_unsupported" {
 		t.Fatalf("unsupported Cable update returned the wrong error: %+v", got)
+	}
+}
+
+func TestFirmwareUpdateCableRequiresVerifiedRender(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-cable-update",
+		DeviceToken:    "pair-token",
+	}
+	server := newTestServer(t, cfg)
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			DeviceID: "device-cable-update",
+			Board:    "esp8266-smalltv-st7789",
+			Firmware: "1.0.41",
+			Features: []string{protocol.FeatureCableTransferV1, protocol.FeatureCableHealthV1},
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"},
+			},
+		}, nil
+	}
+	fullCount := uint64(1)
+	partialCount := uint64(0)
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		return health, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		return deviceHealth{}, errors.New("render counters did not advance")
+	}
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","outcome":"updated","firmware":"1.0.41","observedFirmware":"1.0.41","target":"cable://vibetv","deviceId":"device-cable-update","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 100; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Phase != "attention" || job.Result == nil || !job.Result.HealthVerified ||
+		!job.Result.StreamVerified || job.Result.RenderVerified {
+		t.Fatalf("unverified Cable update was reported complete: %+v", job)
 	}
 }
 
