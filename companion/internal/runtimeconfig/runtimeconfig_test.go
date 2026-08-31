@@ -381,3 +381,31 @@ func TestFreshConfigStillRequiresSetup(t *testing.T) {
 		t.Fatal("a new install must be stamped as not yet complete")
 	}
 }
+
+// Discovery writes a target before pairing has produced a token or an id, so a
+// setup abandoned after the search leaves exactly the shape a legacy install
+// leaves minus its token. Counting it as finished carried the customer past the
+// provider and display steps on the next launch -- or, with no provider able to
+// render usage, held them on the device step, because nothing was left that
+// could ask for a provider.
+func TestADiscoveredTargetWithoutPairingIsNotASetUpInstall(t *testing.T) {
+	discovered := Config{DeviceTarget: "http://192.168.178.73"}
+	if discovered.ProviderSelectionSetupIsComplete() {
+		t.Fatal("an abandoned discovery was treated as a finished setup")
+	}
+	if discovered.ProviderDisplayPredatesSetup() {
+		t.Fatal("an abandoned discovery was excused the display choice")
+	}
+
+	// And pinning it records that it is not finished, rather than preserving
+	// an inference that was never true.
+	pinned := discovered
+	pinned.SetActiveDevice(KnownDevice{
+		DeviceID:    "9517433",
+		Target:      "http://192.168.178.73",
+		DeviceToken: "token",
+	})
+	if pinned.ProviderSelectionSetupIsComplete() {
+		t.Fatal("pinning an unpaired discovery marked setup complete")
+	}
+}

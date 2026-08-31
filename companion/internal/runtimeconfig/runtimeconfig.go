@@ -360,12 +360,22 @@ func (cfg Config) ProviderSelectionSetupIsComplete() bool {
 
 // hasPairedDevice reports whether this config was already set up, before the
 // completion flag existed to say so. The device id is the modern answer, but a
-// VibeTV that never reported one leaves only the target and token behind -- and
+// VibeTV that never reported one leaves the target and token behind -- and
 // reading that as "never set up" sends a customer who has been using VibeTV for
 // months back through onboarding on the update that adds the flag.
+//
+// The token is what makes the target proof. Discovery writes a target of its
+// own before pairing has produced anything, so a setup abandoned after the
+// search leaves one behind too -- and counting that as finished carried the
+// customer past the provider and display steps, or, with no provider able to
+// render usage yet, held them on the device step with nothing that could
+// release it.
 func (cfg Config) hasPairedDevice() bool {
-	return strings.TrimSpace(cfg.DeviceID) != "" ||
-		strings.TrimSpace(cfg.DeviceTarget) != ""
+	if strings.TrimSpace(cfg.DeviceID) != "" {
+		return true
+	}
+	return strings.TrimSpace(cfg.DeviceTarget) != "" &&
+		strings.TrimSpace(cfg.DeviceToken) != ""
 }
 
 // ProviderDisplayPredatesSetup reports an installation that was set up before

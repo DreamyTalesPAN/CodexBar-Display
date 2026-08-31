@@ -2555,3 +2555,19 @@ issue scope, or release permission never implies UI permission.
   `setup/setup-step.ts`, `setup/setup-wizard.tsx`, `control-center-app.tsx`,
   their tests, and `companion/internal/companionapi/provider_display.go`,
   `companion/internal/runtimeconfig/runtimeconfig.go` with their tests.
+
+## 2026-09-01 — A search that was never finished is not a finished setup
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: **A customer who searched for a VibeTV once
+  and stopped there is still asked for everything.** Searching writes the
+  address it found before anything is paired, and that alone was read as an
+  install from before the completion flag existed — so on the next launch the
+  wizard carried them past choosing providers and the display mode, or, with no
+  provider able to show usage yet, held them on the VibeTV step with nothing
+  left that could ask for one. Proof of pairing is now the device id, or the
+  address together with the token pairing writes.
+- Approved files: `companion/internal/runtimeconfig/runtimeconfig.go` and its
+  test.
