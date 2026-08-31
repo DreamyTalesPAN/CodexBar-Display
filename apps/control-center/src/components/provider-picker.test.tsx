@@ -202,6 +202,39 @@ describe("ProviderPicker", () => {
 
 });
 
+// The companion's own refusal for this was removed in 5b76878 as a rule 3
+// violation -- health, or being displayed, never decides whether a provider may
+// be switched off. The picker kept the client-side twin: a provider in the
+// display selection had its switch locked, and it told the customer to remove
+// it from that selection first. With one provider that is impossible, because
+// the last Include cannot be unchecked either.
+describe("ProviderPicker: switching a displayed provider off", () => {
+  it("keeps the switch open for the only selected provider", () => {
+    const html = renderToStaticMarkup(
+      <ProviderPicker
+        display={{
+          mode: "automatic",
+          providerIds: ["codex"],
+          configured: true,
+          valid: true,
+        }}
+        items={[codex]}
+        onCheck={vi.fn()}
+        onDisplayChange={vi.fn()}
+        onPreferenceChange={vi.fn()}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Disable Codex"');
+    expect(html).not.toMatch(
+      /<button[^>]*disabled=""[^>]*aria-label="Disable Codex"/,
+    );
+    expect(html).not.toContain("Remove this provider from the display");
+  });
+});
+
 function provider(
   overrides: Partial<PreferenceDescriptor> &
     Pick<PreferenceDescriptor, "id" | "label" | "providerId">,

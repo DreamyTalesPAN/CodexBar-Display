@@ -2483,3 +2483,25 @@ issue scope, or release permission never implies UI permission.
      an Automatic enable, which is the only one that writes to the pool at all.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `provider-picker.tsx`, and its test.
+
+## 2026-08-31 — The switch stays open in Settings too, and Automatic still rotates
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **A provider VibeTV is showing can be switched off in Settings.** The row
+     locked its switch while the provider was in the display selection and told
+     the customer to remove it from that selection first — which, for anyone
+     with one provider, is impossible: the last Include cannot be unchecked
+     either. This is the same rule whose companion-side twin was removed earlier
+     in this branch as a rule 3 violation; a selection left naming a provider
+     that was turned off reports that itself.
+  2. **Automatic still rotates after leaving Settings and coming back.** The
+     pool the customer had is remembered for the visit only, so a return to
+     Automatic in a later visit had nothing to restore and wrote the pinned
+     provider alone — an Automatic that rotates through one thing. It now falls
+     back to every provider that is on, which is what Automatic means and what a
+     fresh save writes.
+- Approved files: `apps/control-center/src/components/provider-picker.tsx` and
+  its tests.

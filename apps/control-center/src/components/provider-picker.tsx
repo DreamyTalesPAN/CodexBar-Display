@@ -207,7 +207,14 @@ export function ProviderPicker({
       (providerId) =>
         enabledProviders.some((item) => item.providerId === providerId),
     );
-    const providerIds = remembered.length > 0 ? remembered : [seed];
+    // Nothing remembered means this picker never saw the Automatic pool -- it
+    // is held for the visit, and the saved selection holds only the pinned
+    // provider by then. Every provider that is on is what Automatic means and
+    // what a fresh save writes; falling back to the pinned one alone handed
+    // the customer an Automatic that rotates through nothing.
+    const providerIds = remembered.length > 0
+      ? remembered
+      : enabledProviders.map((item) => item.providerId);
     onDisplayDraftChange?.(false);
     setDraftMode(null);
     void onDisplayChange({ mode: "automatic", providerIds }, seed);
@@ -329,7 +336,6 @@ export function ProviderPicker({
               const pendingDisplay =
                 displayPendingProviderId === item.providerId;
               const isSelected = selected.has(item.providerId);
-              const disableLocked = item.value && isSelected;
               return (
                 <div
                   className="grid gap-4 rounded-lg border border-border p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
@@ -366,12 +372,6 @@ export function ProviderPicker({
                     {!pendingCheck && item.health.nextAction ? (
                       <p className="mt-1 text-sm leading-6 text-muted-foreground">
                         {item.health.nextAction}
-                      </p>
-                    ) : null}
-                    {disableLocked ? (
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Remove this provider from the display selection before
-                        turning it off.
                       </p>
                     ) : null}
                   </div>
@@ -422,7 +422,12 @@ export function ProviderPicker({
                       <Switch
                         aria-label={`${item.value ? "Disable" : "Enable"} ${item.label}`}
                         checked={item.value}
-                        disabled={disableLocked || pendingPreference}
+                        // Being displayed is not a reason a provider cannot
+                        // be switched off: docs/control-center-ui-principles.md
+                        // rule 3, and the same rule the companion's own refusal
+                        // was removed for in 5b76878. A selection left naming a
+                        // provider that was turned off reports that itself.
+                        disabled={pendingPreference}
                         onCheckedChange={(value) => {
                           // Only in Automatic, which is the mode whose enable
                           // is two writes and therefore the only one with a

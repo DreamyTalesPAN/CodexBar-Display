@@ -189,4 +189,29 @@ describe("ProviderPicker: leaving Always show one", () => {
     expect(onDisplayChange).toHaveBeenCalledTimes(1);
   });
 
+
+  // The remembered pool is held for the visit only, and the saved selection
+  // holds just the pinned provider. Leaving Settings and coming back used to
+  // turn Automatic into a rotation of one.
+  it("falls back to every provider that is on when it remembers no pool", () => {
+    const onDisplayChange = vi.fn();
+    render(
+      <ProviderPicker
+        display={pinnedToClaude}
+        items={[codex, claude]}
+        onCheck={vi.fn()}
+        onDisplayChange={onDisplayChange}
+        onPreferenceChange={vi.fn()}
+        pendingCheckIds={new Set()}
+        pendingPreferenceIds={new Set()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Automatic" }));
+
+    expect(onDisplayChange).toHaveBeenCalledWith(
+      { mode: "automatic", providerIds: ["codex", "claude"] },
+      "claude",
+    );
+  });
+
 });
