@@ -2059,3 +2059,17 @@ issue scope, or release permission never implies UI permission.
 - Approved files: the setup wizard under `apps/control-center/src/components/setup/`,
   `control-center-app.tsx`, `provider-picker.tsx`, `theme-library-screen.tsx`,
   `scripts/test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-31 — Test correction: scope the installed-theme assertion
+
+- User approval: The product owner's instruction to fix the remaining small
+  items ("kleinkram dann auch fixen", 2026-08-31). This records a test-only
+  correction found by `scripts/check-before-push.sh`; it adds no new copy,
+  control, decision, or customer state.
+- Approved customer-visible result: Unchanged. The theme install flow still
+  shows the same progress lines and the same `Installed` state on the theme it
+  installed. The customer flow now waits for that state inside the row it just
+  installed instead of anywhere on the page: a VibeTV that already had another
+  theme active shows `Installed` on that row too, which made the unscoped
+  locator match two buttons and fail at random.
+- Approved files: `scripts/test-customer-flows.mjs` and this approval record.

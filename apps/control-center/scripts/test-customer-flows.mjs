@@ -8691,9 +8691,13 @@ async function testThemeInstallShowsIntermediateProgress(browser, appUrl) {
   await installButton.click();
   await page.getByText("Uploading theme files.").waitFor({ timeout: 10_000 });
   await page.getByText("Uploaded theme file 1.").waitFor({ timeout: 10_000 });
-  await page.getByRole("button", { name: "Installed" }).waitFor({
-    timeout: 10_000,
-  });
+  // Scoped to the row under test: any theme the device already had also reads
+  // "Installed", so the unscoped locator raced two matches.
+  await page
+    .getByRole("listitem")
+    .filter({ hasText: "Fixture Synthwave Theme" })
+    .getByRole("button", { name: "Installed" })
+    .waitFor({ timeout: 10_000 });
 
   assert(
     installRequests.length === 1,
