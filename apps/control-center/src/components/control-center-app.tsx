@@ -4014,11 +4014,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onCreateSupportReport={loadSupportDiagnostics}
           onFinished={() => setSetupFinished(true)}
           onDisplayContinue={(selection) =>
-          void updateProviderDisplay(
-            selection,
-            selection.providerIds[0] ?? enabledProviderIds[0] ?? "",
-          )
-        }
+            updateProviderDisplay(
+              selection,
+              selection.providerIds[0] ?? enabledProviderIds[0] ?? "",
+            )
+          }
         onInstallTheme={() => void installTheme()}
           onProviderCheck={(provider) => void checkProvider(provider)}
           onProviderRecover={openCodexBarApp}

@@ -200,6 +200,46 @@ describe("SetupWizard: while the connect sequence is running", () => {
 
     expect(shownStep()).toBe("Choose your VibeTV");
   });
+
+  // A failure is the sequence waiting for the customer, not the end of it. The
+  // firmware dialogs that offer the retry live on this step, so leaving on
+  // "failed" unmounted the one that was about to explain it.
+  it("stays on the device step when the firmware check fails", async () => {
+    const props = baseProps({
+      step: "device",
+      deviceCandidates: [
+        {
+          deviceId: "vibetv-1",
+          target: "http://192.168.178.73",
+          known: true,
+        } as never,
+      ],
+      connectSteps: {
+        connect: vi.fn(async () => null),
+        checkFirmware: vi.fn(async () => {
+          throw {
+            code: "firmware_check_failed",
+            message: "Could not check VibeTV's firmware.",
+            nextAction: "Check the internet connection, then try again.",
+          };
+        }),
+        installFirmware: vi.fn(),
+      } as unknown as SetupWizardProps["connectSteps"],
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    });
+    await act(async () => {
+      rerender(<SetupWizard {...props} step="providers" />);
+    });
+
+    expect(shownStep()).toBe("Choose your VibeTV");
+    expect(
+      screen.getByText("Could not check VibeTV's firmware"),
+    ).toBeTruthy();
+  });
 });
 
 describe("SetupWizard: a scan that could not be made", () => {

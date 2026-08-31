@@ -135,9 +135,14 @@ export function SetupWizard(props: SetupWizardProps) {
     connect.state.phase !== "idle" &&
     connect.state.phase !== "done" &&
     connect.state.phase !== "failed";
-  const step = connectInFlight
-    ? "device"
-    : resolveSetupStep(derivedStep, wentBackTo);
+  // A failure is not the end of the sequence, it is the sequence waiting for
+  // the customer -- and every dialog that offers them the retry lives on this
+  // step. Leaving on "failed" unmounted the dialog that was about to explain
+  // it, which put them past a firmware check or install that never finished.
+  const step =
+    connectInFlight || connect.failure
+      ? "device"
+      : resolveSetupStep(derivedStep, wentBackTo);
   const back = previousSetupStep(step);
   const goBack = back ? () => setWentBackTo(back) : undefined;
   // The counterpart to goBack. Without it the override outlives the visit it

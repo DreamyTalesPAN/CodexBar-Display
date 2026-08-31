@@ -2288,3 +2288,28 @@ issue scope, or release permission never implies UI permission.
      existed.
 - Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
   and its test, `control-center-app.tsx`, `provider-picker.tsx`.
+
+## 2026-08-31 — Two fixes that had not taken effect
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31). Both are the
+  review catching earlier fixes on this branch that were written but never
+  reached the customer.
+- Approved customer-visible result:
+  1. **A firmware check or install that fails keeps the customer on the device
+     step**, where the dialog explaining it and offering the retry is. Until now
+     the step was released the moment the sequence failed, so that dialog was
+     removed from the screen as it appeared and setup carried on.
+  2. **A display choice that could not be saved really does keep the customer on
+     Display Mode.** The entry above claimed this; the call site discarded the
+     result, so the behaviour had not changed.
+- Not changed, deliberately: a theme install that fails still reports itself in
+  the step's own log with `Install` returning, rather than in a dialog. A dialog
+  was written for it and reverted — its scrim covers the `Install` button, which
+  is the retry the approved flow depends on
+  (`test-customer-flows.mjs`, "The failed install has nowhere to go but the
+  step's own log, so that is where the customer has to be told, and Install has
+  to come back").
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
+  and its test, `control-center-app.tsx`.
