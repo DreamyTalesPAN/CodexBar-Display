@@ -3408,7 +3408,9 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		writeInternalError(w, err)
 		return
 	}
-	if mode == "wifi" && strings.TrimSpace(cfg.DeviceID) == "" && cfg.ConnectionModeChoiceRequired {
+	cableChoice := s.currentCableConnectionChoiceDevice()
+	if mode == "wifi" && strings.TrimSpace(cfg.DeviceID) == "" && cfg.ConnectionModeChoiceRequired &&
+		strings.TrimSpace(cableChoice.DeviceID) == "" {
 		knownDevice, hello, found, authErr := s.authenticatedKnownWiFiDevice(r.Context(), cfg)
 		if authErr != nil {
 			writeError(w, http.StatusConflict, "multiple_devices_found", "Multiple known VibeTV devices are available on WiFi.", "Connect the VibeTV you want with a data Cable, then choose WiFi again.")

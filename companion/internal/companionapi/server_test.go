@@ -8146,6 +8146,96 @@ func TestSetupResetReselectsAuthenticatedKnownWiFiWithoutCable(t *testing.T) {
 	}
 }
 
+func TestSetupResetPrefersConnectedCableDeviceOverKnownWiFi(t *testing.T) {
+	const token = "pair-token"
+	var wifiProbes atomic.Int32
+	knownWiFi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wifiProbes.Add(1)
+		_, _ = io.WriteString(w, `{"kind":"hello","deviceId":"old-wifi","networkMode":"station","capabilities":{"transport":{"active":"wifi","mode":"wifi","supported":["usb","wifi"]}}}`)
+	}))
+	defer knownWiFi.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: true,
+		KnownDevices: []runtimeconfig.KnownDevice{{
+			DeviceID: "old-wifi", Target: knownWiFi.URL, DeviceToken: token,
+		}},
+	})
+	cableHello := protocol.DeviceHello{
+		Kind:     "hello",
+		DeviceID: "replacement-cable",
+		Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{
+			Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"},
+		}},
+	}
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return cableHello, true }
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return cableHello, nil }
+	server.setCableConnectionMode = func(string, string, string) error {
+		t.Fatal("replacement Cable device must collect WiFi credentials first")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "wifi_credentials_required") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if wifiProbes.Load() != 0 {
+		t.Fatalf("known WiFi device displaced connected Cable device after %d probes", wifiProbes.Load())
+	}
+}
+
+func TestSetupResetPromptsForCredentialsAfterFailedWiFiTransition(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceID:              "stale-wifi",
+		DeviceTarget:          "http://192.0.2.10",
+		DeviceToken:           "pair-token",
+		CableAutoBindDisabled: true,
+	})
+	cableHello := protocol.DeviceHello{
+		Kind:     "hello",
+		DeviceID: "stale-wifi",
+		Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{
+			Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"},
+		}},
+	}
+	server.resetCableSender = func() {}
+	server.refreshCableHello = func() (protocol.DeviceHello, bool) { return cableHello, true }
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return cableHello, true }
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return cableHello, nil }
+	server.setCableConnectionMode = func(string, string, string) error {
+		t.Fatal("failed WiFi transition must not retry stale credentials")
+		return nil
+	}
+
+	reset := httptest.NewRecorder()
+	server.Handler().ServeHTTP(reset, httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil))
+	if reset.Code != http.StatusOK {
+		t.Fatalf("reset status=%d body=%s", reset.Code, reset.Body.String())
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "wifi_credentials_required") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	known, ok := cfg.KnownDevice("stale-wifi")
+	if !ok || known.Target != "" || known.DeviceToken != "pair-token" {
+		t.Fatalf("retry retained stale WiFi target or lost authentication: %+v", cfg.KnownDevices)
+	}
+}
+
 func TestSetupResetRejectsActiveFirmwareUpdate(t *testing.T) {
 	initial := runtimeconfig.Config{
 		DeviceTarget: "http://192.168.178.72",

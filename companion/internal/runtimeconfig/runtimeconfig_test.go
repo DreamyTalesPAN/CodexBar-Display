@@ -328,6 +328,22 @@ func TestResetDeviceBindingPreservesAuthenticationProfiles(t *testing.T) {
 	}
 }
 
+func TestResetDeviceBindingClearsFailedWiFiTransitionTarget(t *testing.T) {
+	cfg := Config{
+		DeviceID:              "device-a",
+		DeviceTarget:          "192.168.1.20",
+		DeviceToken:           "token-a",
+		CableAutoBindDisabled: true,
+	}
+	cfg.Normalize()
+	cfg.ResetDeviceBinding()
+
+	known, ok := cfg.KnownDevice("device-a")
+	if !ok || known.Target != "" || known.DeviceToken != "token-a" {
+		t.Fatalf("failed WiFi transition retained stale target or lost authentication: %+v", cfg.KnownDevices)
+	}
+}
+
 func TestWithConfigLockSerializesReadModifyWrite(t *testing.T) {
 	home := t.TempDir()
 	if err := Save(home, Config{Theme: "mini"}); err != nil {

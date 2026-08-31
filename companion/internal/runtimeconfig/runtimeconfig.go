@@ -475,6 +475,8 @@ func (cfg *Config) RememberDevice(device KnownDevice) {
 }
 
 func (cfg *Config) ResetDeviceBinding() {
+	retryingWiFi := cfg.WiFiTransitionPending()
+	retryingDeviceID := strings.TrimSpace(cfg.DeviceID)
 	if strings.TrimSpace(cfg.DeviceID) != "" {
 		cfg.RememberDevice(KnownDevice{
 			DeviceID:    cfg.DeviceID,
@@ -488,6 +490,13 @@ func (cfg *Config) ResetDeviceBinding() {
 	cfg.DeviceToken = ""
 	cfg.DeviceID = ""
 	cfg.DeviceTransports = nil
+	if retryingWiFi {
+		for index := range cfg.KnownDevices {
+			if strings.EqualFold(cfg.KnownDevices[index].DeviceID, retryingDeviceID) {
+				cfg.KnownDevices[index].Target = ""
+			}
+		}
+	}
 }
 
 func (cfg *Config) normalizeKnownDevices() {
