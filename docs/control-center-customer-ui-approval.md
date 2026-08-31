@@ -5,6 +5,20 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-08-31 — Unsupported Cable controls never stay on Loading
+
+- User approval: The user instructed Codex to keep reviewing PR #407, fix every
+  sensible Codex review finding, push the fixes, and repeat the review loop
+  without asking again. Codex reported the exact current finding before the
+  fix: a Cable device without brightness or standby controls must not leave
+  Settings in a permanent loading state.
+- Approved customer-visible result: On a Cable VibeTV that explicitly reports
+  no brightness support, the existing Brightness row reads `Not supported`
+  instead of `Loading` and remains disabled. Supported VibeTVs keep the existing
+  percentage, slider, save action, layout, and connection-mode controls.
+- Approved files: `settings-screen.tsx`, its component regression test, and this
+  approval record.
+
 ## 2026-08-28 — Native Cable restart completes after Helper startup
 
 - User approval: The user granted all remaining implementation and hardware-test
