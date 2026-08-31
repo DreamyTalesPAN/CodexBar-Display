@@ -1168,6 +1168,60 @@ func TestRunWithDepsWaitsForLaunchAgentToBecomeRunning(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsRestartsRuntimeAfterReplacementLaunchAgentFails(t *testing.T) {
+	home := t.TempDir()
+	execPath := mustCreateExecutable(t)
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	mustWriteFile(t, plistPath, []byte("previous runtime"), 0o644)
+
+	bootstrapAttempts := 0
+	err := runWithDeps(context.Background(), Options{
+		Transport: "usb",
+		Port:      "/dev/cu.usbserial10",
+		AssumeYes: true,
+		SkipFlash: true,
+	}, deps{
+		stdout:          &bytes.Buffer{},
+		executablePath:  func() (string, error) { return execPath, nil },
+		homeDir:         func() (string, error) { return home, nil },
+		uid:             func() int { return 501 },
+		resolvePort:     func(string) (string, error) { return "/dev/cu.usbserial10", nil },
+		probePort:       func(string) error { return nil },
+		readDeviceHello: setupCableHello,
+		findCodexbar:    func() (string, error) { return "/opt/homebrew/bin/codexbar", nil },
+		lookPath: func(file string) (string, error) {
+			if file == "launchctl" {
+				return "/bin/launchctl", nil
+			}
+			return "", errors.New("not found")
+		},
+		runCommand: func(_ context.Context, _ string, name string, args ...string) (string, error) {
+			if name != "launchctl" || len(args) == 0 {
+				return "", nil
+			}
+			switch args[0] {
+			case "bootstrap":
+				bootstrapAttempts++
+				if bootstrapAttempts <= 3 {
+					return "transient bootstrap failure", errors.New("exit status 5")
+				}
+			case "print":
+				if bootstrapAttempts > 0 && bootstrapAttempts <= 3 {
+					return "Could not find service", errors.New("exit status 113")
+				}
+				return "state = running", nil
+			}
+			return "", nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "launchagent-bootstrap") {
+		t.Fatalf("expected replacement launch agent failure, got %v", err)
+	}
+	if bootstrapAttempts != 4 {
+		t.Fatalf("failed replacement must restart the runtime, bootstrap attempts=%d", bootstrapAttempts)
+	}
+}
+
 func TestRunWithDepsRetriesLaunchAgentBootstrapRace(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")

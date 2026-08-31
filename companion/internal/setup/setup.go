@@ -519,7 +519,6 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 			Hint: "use --theme classic|crt|mini or --theme none to clear",
 		}
 	}
-	replacementRuntimeCommitted = true
 
 	daemonPort := ""
 	daemonTransport := transportName
@@ -544,6 +543,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	if err := reloadLaunchAgent(ctx, d, plistPath); err != nil {
 		return err
 	}
+	replacementRuntimeCommitted = true
 
 	fmt.Fprintln(d.stdout, "Launch agent: running")
 	fmt.Fprintln(d.stdout, "Setup complete.")
