@@ -108,6 +108,22 @@ export function SetupProviderRow({
   const reported = setupProviderRowVariant(health);
   const variant = reported === "sign_in" && signingIn ? "waiting" : reported;
   const unusable = variant === "no_usage" || variant === "outage";
+  // Every state whose way on is another check offers the same control, and
+  // says so while one is running instead of offering a second: pressing again
+  // only queues another probe of the same provider.
+  const runningCheck = (
+    <>
+      <SetupProviderRowMessage>Checking…</SetupProviderRowMessage>
+      <Spinner />
+    </>
+  );
+  const checkAgain = (
+    <SetupProviderRowAction
+      icon={RefreshCw}
+      label={`Check ${label} again`}
+      onClick={onCheckAgain}
+    />
+  );
 
   return (
     <Item
@@ -161,28 +177,42 @@ export function SetupProviderRow({
           </>
         ) : variant === "timed_out" ? (
           checking ? (
-            <>
-              <SetupProviderRowMessage>Checking…</SetupProviderRowMessage>
-              <Spinner />
-            </>
+            runningCheck
           ) : (
             <>
               <SetupProviderRowMessage>Check timed out</SetupProviderRowMessage>
-              <SetupProviderRowAction
-                icon={RefreshCw}
-                label={`Check ${label} again`}
-                onClick={onCheckAgain}
-              />
+              {checkAgain}
             </>
           )
         ) : variant === "no_usage" ? (
-          <SetupProviderRowMessage>
-            No usage data on this account
-          </SetupProviderRowMessage>
+          // The account can gain usage -- the companion's own next action is
+          // to use the provider once and check again -- and this row used to
+          // discard that. A customer whose only provider said this had nothing
+          // to press: Continue asks for a provider that is ready, and switching
+          // it off leaves none.
+          checking ? (
+            runningCheck
+          ) : (
+            <>
+              <SetupProviderRowMessage>
+                No usage data on this account
+              </SetupProviderRowMessage>
+              {checkAgain}
+            </>
+          )
         ) : variant === "outage" ? (
-          <SetupProviderRowMessage>
-            Service outage — try again later
-          </SetupProviderRowMessage>
+          // "Try again later" with nothing to try again with. The same dead end
+          // as above once this is the only provider.
+          checking ? (
+            runningCheck
+          ) : (
+            <>
+              <SetupProviderRowMessage>
+                Service outage — try again later
+              </SetupProviderRowMessage>
+              {checkAgain}
+            </>
+          )
         ) : null}
         {/*
           Outside the branches on purpose: the health decides what help to

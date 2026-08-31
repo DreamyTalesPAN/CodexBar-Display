@@ -2590,3 +2590,20 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/setup/`
   `setup-provider-row.tsx`, `setup-wizard.tsx`, `control-center-app.tsx`, and
   their tests.
+
+## 2026-09-01 — A dimmed provider row can still be checked
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: **`No usage data on this account` and
+  `Service outage — try again later` now offer `Check again`.** Both rows were
+  inert. The account can gain usage — the guidance for it is to use the provider
+  once and check again — and an outage ends, which is the whole point of "try
+  again later"; neither had anything to try it with. A customer whose only
+  provider said either had no way on at all: `Continue` asks for a provider that
+  is ready, and switching it off leaves none. The rows stay dimmed, because
+  right now they cannot be used, and they say a check is running rather than
+  offering a second one.
+- Approved files: `apps/control-center/src/components/setup/setup-provider-row.tsx`
+  and its test.

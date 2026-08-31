@@ -89,20 +89,35 @@ describe("SetupProviderRow", () => {
     }
   });
 
-  it("dims a provider whose account has no usage and offers no recovery", () => {
+  // Dimmed because it cannot be used right now, but not inert: the account can
+  // gain usage, and the companion's own next action is to use the provider once
+  // and check again. A customer whose only provider said this had nothing to
+  // press -- Continue asks for a provider that is ready, and switching it off
+  // leaves none.
+  it("dims a provider whose account has no usage, and still lets it be checked", () => {
     const html = render({ health: "no_usage_available" });
 
     expect(html).toContain("No usage data on this account");
     expect(html).toMatch(/data-slot="item-title"[^>]*opacity-50/);
-    expect(html).not.toContain('data-slot="button"');
+    expect(html).toContain('aria-label="Check Claude Code again"');
   });
 
-  it("dims a provider in a service outage and offers no recovery", () => {
+  // "Try again later" with nothing to try again with is the same dead end.
+  it("dims a provider in a service outage, and still lets it be checked", () => {
     const html = render({ health: "service_outage" });
 
     expect(html).toContain("Service outage — try again later");
     expect(html).toMatch(/data-slot="item-title"[^>]*opacity-50/);
-    expect(html).not.toContain('data-slot="button"');
+    expect(html).toContain('aria-label="Check Claude Code again"');
+  });
+
+  it("says a check is running on those rows too", () => {
+    for (const health of ["no_usage_available", "service_outage"] as const) {
+      const html = render({ checking: true, health });
+
+      expect(html).toContain("Checking");
+      expect(html).not.toContain('aria-label="Check Claude Code again"');
+    }
   });
 
   // The health decides what help to offer, never whether the provider may be
