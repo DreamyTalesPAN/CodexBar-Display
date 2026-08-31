@@ -2437,3 +2437,29 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/provider-picker.tsx`,
   `setup/setup-providers-screen.tsx`, `setup/setup-wizard.tsx`,
   `control-center-app.tsx`, `setup/setup-preview-gallery.tsx`, and their tests.
+
+## 2026-08-31 — No control stays live while the write it started is running
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: three controls that answered while the write
+  they belong to was still on its way.
+  1. **The display step takes nothing more while it is saving.** `Continue`, the
+     two mode cards and the provider rows are closed for the length of the
+     write. A second `Continue`, or a changed choice, raced the first write: the
+     first answer released the step, and what VibeTV kept was whichever landed
+     last rather than what the customer had chosen.
+  2. **A provider row says a check is running instead of offering to start
+     another.** Repeated presses queued more probes of the same provider,
+     repeating the sign-in work behind them, and the first answer reopened
+     `Continue` while the rest were still on their way. The row keeps its on/off
+     switch throughout, as rule 3 requires.
+  3. **Theme cards are not selectable while a theme is installing.** `Install`
+     is already closed then, so a new pick had nothing to act on: the running
+     install still activated the theme it started with, and its status poll put
+     that one back as selected. The card answered and then changed its mind.
+- Approved files: `apps/control-center/src/components/setup/`
+  `setup-display-mode-screen.tsx`, `setup-provider-row.tsx`,
+  `setup-providers-screen.tsx`, `setup-theme-screen.tsx`, `setup-wizard.tsx`,
+  and their tests.

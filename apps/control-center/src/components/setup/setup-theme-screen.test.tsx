@@ -115,4 +115,18 @@ describe("SetupThemeScreen", () => {
     expect(html).toContain('aria-live="polite"');
     expect(html).not.toContain("&gt;");
   });
+
+  // Install is closed while one runs, so a new pick has nothing to act on: the
+  // running install still activates the theme it started with, and its status
+  // poll puts that one back as selected. All the customer got was a card that
+  // answered and then changed its mind.
+  it("does not take another theme while one is installing", () => {
+    const html = render({ installing: true });
+
+    expect(html.match(/<button[^>]*role="radio"/g)?.length).toBe(themes.length);
+    expect(html.match(/<button[^>]*disabled=""[^>]*role="radio"/g)?.length).toBe(
+      themes.length,
+    );
+  });
+
 });

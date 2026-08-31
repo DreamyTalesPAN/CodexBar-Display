@@ -124,4 +124,18 @@ describe("SetupProviderRow", () => {
       );
     }
   });
+
+  // Pressing it again only enqueues a second probe of the same provider, and
+  // the first answer clears the pending mark while the rest are still running
+  // -- reopening a Continue whose gate is not satisfied, and repeating the
+  // sign-in work behind the check.
+  it("says a check is running instead of offering to start another", () => {
+    const html = render({ checking: true, health: "unavailable" });
+
+    expect(html).toContain("Checking");
+    expect(html).not.toContain('aria-label="Check Claude Code again"');
+    // Rule 3: whatever the provider reports, the switch stays.
+    expect(html).toContain('role="switch"');
+  });
+
 });

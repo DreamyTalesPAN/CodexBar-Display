@@ -74,6 +74,12 @@ export function SetupThemeScreen({
       >
         {themes.map((theme) => (
           <SetupThemeCard
+            // Install is closed while one is running, so a new pick has nothing
+            // to act on: the running install still activates the theme it
+            // started with, and the poll behind it puts that theme back as the
+            // selected one. All the customer got was a card that answered and
+            // then changed its mind.
+            disabled={installing}
             key={theme.id}
             onSelect={() => onSelect(theme)}
             selected={theme.id === selectedThemeId}
@@ -114,10 +120,12 @@ function installLogLines(logs: string[]): SetupLogLine[] {
 }
 
 function SetupThemeCard({
+  disabled = false,
   onSelect,
   selected,
   theme,
 }: {
+  disabled?: boolean;
   onSelect: () => void;
   selected: boolean;
   theme: SetupThemeOption;
@@ -126,6 +134,7 @@ function SetupThemeCard({
     <Item asChild className={selectedItemClass(selected)} variant="outline">
       <button
         aria-checked={selected}
+        disabled={disabled}
         onClick={onSelect}
         role="radio"
         type="button"

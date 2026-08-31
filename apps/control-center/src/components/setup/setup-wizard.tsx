@@ -428,6 +428,7 @@ export function SetupWizard(props: SetupWizardProps) {
             setDisplayDraft({ mode: displayMode, providerId })
           }
           providers={props.displayProviders}
+          saving={props.displaySavePending}
           selectedProviderId={displayProviderId}
         />
         <SetupProviderStepFailedDialog

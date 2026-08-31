@@ -59,6 +59,14 @@ export function setupProviderRowVariant(
 }
 
 type SetupProviderRowProps = {
+  /**
+   * This provider's exact check is queued or running. It replaces the check
+   * action rather than the row: pressing it again only enqueues a second probe
+   * of the same provider, and the first one to answer clears the pending mark
+   * while the rest are still on their way -- reopening Continue on a gate that
+   * has not been satisfied, and repeating the sign-in work behind the check.
+   */
+  checking?: boolean;
   enabled: boolean;
   health: PreferenceHealthState;
   label: string;
@@ -70,6 +78,7 @@ type SetupProviderRowProps = {
 };
 
 export function SetupProviderRow({
+  checking = false,
   enabled,
   health,
   label,
@@ -122,14 +131,21 @@ export function SetupProviderRow({
             />
           </>
         ) : variant === "timed_out" ? (
-          <>
-            <SetupProviderRowMessage>Check timed out</SetupProviderRowMessage>
-            <SetupProviderRowAction
-              icon={RefreshCw}
-              label={`Check ${label} again`}
-              onClick={onCheckAgain}
-            />
-          </>
+          checking ? (
+            <>
+              <SetupProviderRowMessage>Checking…</SetupProviderRowMessage>
+              <Spinner />
+            </>
+          ) : (
+            <>
+              <SetupProviderRowMessage>Check timed out</SetupProviderRowMessage>
+              <SetupProviderRowAction
+                icon={RefreshCw}
+                label={`Check ${label} again`}
+                onClick={onCheckAgain}
+              />
+            </>
+          )
         ) : variant === "no_usage" ? (
           <SetupProviderRowMessage>
             No usage data on this account

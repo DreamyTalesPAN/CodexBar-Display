@@ -86,6 +86,7 @@ export function SetupProvidersScreen({
       <ItemGroup className="mt-3 gap-2">
         {matching.map((provider) => (
           <SetupProviderRow
+            checking={pendingCheckIds.has(provider.providerId)}
             enabled={provider.value}
             health={provider.health.state}
             key={provider.id}

@@ -65,6 +65,8 @@ type SetupDisplayModeScreenProps = {
   onSelectMode: (mode: ProviderDisplaySelection["mode"]) => void;
   onSelectProvider: (providerId: string) => void;
   providers: SetupDisplayModeProvider[];
+  /** The choice is being written; the step has not finished yet. */
+  saving?: boolean;
   selectedProviderId: string | null;
 };
 
@@ -80,6 +82,7 @@ export function SetupDisplayModeScreen({
   onSelectMode,
   onSelectProvider,
   providers,
+  saving = false,
   selectedProviderId,
 }: SetupDisplayModeScreenProps) {
   const rotation = rotationFrames(automaticPreview, automaticPreviews, providers);
@@ -101,6 +104,7 @@ export function SetupDisplayModeScreen({
       <div className="mt-4 grid w-full grid-cols-2 items-stretch gap-4">
         <ModeCard
           description="VibeTV switches between your providers based on recent activity and usage."
+          disabled={saving}
           onSelect={() => onSelectMode("automatic")}
           selected={mode === "automatic"}
           title="Automatic"
@@ -109,6 +113,7 @@ export function SetupDisplayModeScreen({
         </ModeCard>
         <ModeCard
           description="VibeTV always shows the one provider you pick — nothing else."
+          disabled={saving}
           onSelect={() => onSelectMode("fixed")}
           selected={mode === "fixed"}
           title="Manual"
@@ -132,6 +137,7 @@ export function SetupDisplayModeScreen({
             >
               <button
                 aria-pressed={provider.id === selectedProviderId}
+                disabled={saving}
                 onClick={() => onSelectProvider(provider.id)}
                 type="button"
               >
@@ -150,8 +156,13 @@ export function SetupDisplayModeScreen({
       ) : null}
 
       <Button
+        // Closed while the choice is being written. The screen used to take a
+        // second Continue, and a changed selection with it, while the first
+        // write was still on its way: two writes raced, the first one to answer
+        // released the step, and what VibeTV kept was whichever landed last
+        // rather than what the customer had chosen.
+        disabled={saving || (mode === "fixed" && !selectedProviderId)}
         className="mt-4 w-full"
-        disabled={mode === "fixed" && !selectedProviderId}
         onClick={onContinue}
         type="button"
       >
@@ -219,12 +230,14 @@ function useProviderRotation(count: number): { index: number } {
 function ModeCard({
   children,
   description,
+  disabled = false,
   onSelect,
   selected,
   title,
 }: {
   children: ReactNode;
   description: string;
+  disabled?: boolean;
   onSelect: () => void;
   selected: boolean;
   title: string;
@@ -235,7 +248,12 @@ function ModeCard({
       className={cn(selectedItemClass(selected), "overflow-hidden p-0")}
       variant="outline"
     >
-      <button aria-pressed={selected} onClick={onSelect} type="button">
+      <button
+        aria-pressed={selected}
+        disabled={disabled}
+        onClick={onSelect}
+        type="button"
+      >
         <ItemContent className="gap-0">
           {children}
           <span className="flex flex-col gap-1.5 px-4 py-3.5">

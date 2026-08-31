@@ -151,4 +151,23 @@ describe("SetupDisplayModeScreen", () => {
   it("offers one Continue action", () => {
     expect(render()).toContain("Continue");
   });
+
+  // The screen used to take a second Continue, and a changed selection with
+  // it, while the first write was still on its way: two writes raced, the
+  // first to answer released the step, and what VibeTV kept was whichever
+  // landed last rather than what the customer had chosen.
+  it("takes nothing more while the choice is being written", () => {
+    const html = render({
+      mode: "fixed",
+      providers: [codex, cursor],
+      saving: true,
+      selectedProviderId: "codex",
+    });
+
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+    // The mode cards and the provider rows are closed with it, so the choice
+    // cannot change out from under the write that is running.
+    expect(html).not.toMatch(/<button(?![^>]*disabled)[^>]*aria-pressed=/);
+  });
+
 });
