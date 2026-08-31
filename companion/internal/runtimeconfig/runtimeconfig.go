@@ -85,6 +85,9 @@ func NormalizeConnectionMode(raw string) string {
 }
 
 func ActiveTransport(cfg Config) string {
+	if cfg.WiFiTransitionPending() {
+		return "usb"
+	}
 	switch NormalizeConnectionMode(cfg.ConnectionMode) {
 	case "wifi":
 		return "wifi"

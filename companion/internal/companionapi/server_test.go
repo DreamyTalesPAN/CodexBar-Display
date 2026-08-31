@@ -8177,9 +8177,10 @@ func TestSetupResetReselectsAuthenticatedKnownWiFiWithoutCable(t *testing.T) {
 	if reset.Code != http.StatusOK {
 		t.Fatalf("reset status=%d body=%s", reset.Code, reset.Body.String())
 	}
+	cableProbes := 0
 	server.resolveCablePort = func(string, string) (string, error) {
-		t.Fatal("authenticated WiFi reselection must not require a data Cable")
-		return "", errors.New("must not resolve Cable")
+		cableProbes++
+		return "", errors.New("no Cable connected")
 	}
 
 	rec := httptest.NewRecorder()
@@ -8196,12 +8197,43 @@ func TestSetupResetReselectsAuthenticatedKnownWiFiWithoutCable(t *testing.T) {
 	if cfg.ConnectionMode != "wifi" || cfg.DeviceID != "known-wifi" || cfg.DeviceTarget != device.URL || cfg.DeviceToken != token || cfg.ConnectionModeChoiceRequired {
 		t.Fatalf("authenticated WiFi profile was not restored: %+v", cfg)
 	}
+	if cableProbes != 1 {
+		t.Fatalf("known WiFi reselection checked Cable %d times, want 1", cableProbes)
+	}
 	var got deviceActionResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
 	if !got.Device.Active || !got.Device.Paired || !got.Device.Connected || got.Device.Target != device.URL {
 		t.Fatalf("authenticated WiFi response is not active: %+v", got.Device)
+	}
+}
+
+func TestSetupConnectionModeStartsWiFiDiscoveryWithoutCable(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: true,
+	})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{}, false
+	}
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "", errors.New("no Cable connected")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted || !strings.Contains(rec.Body.String(), "waiting_for_wifi") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "wifi" || cfg.ConnectionModeChoiceRequired || !cfg.CableAutoBindDisabled || cfg.DeviceID != "" || cfg.DeviceTarget != "" {
+		t.Fatalf("fresh WiFi discovery persisted wrong state: %+v", cfg)
 	}
 }
 

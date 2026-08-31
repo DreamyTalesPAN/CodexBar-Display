@@ -40,6 +40,7 @@ func TestActiveTransportFollowsRuntimeDeviceSelection(t *testing.T) {
 		{cfg: Config{ConnectionMode: "cable", DeviceTarget: "http://192.0.2.10"}, want: "usb"},
 		{cfg: Config{ConnectionMode: "wifi"}, want: "wifi"},
 		{cfg: Config{DeviceTarget: "http://192.0.2.10"}, want: "wifi"},
+		{cfg: Config{DeviceID: "device-a", DeviceTarget: "http://192.0.2.10", CableAutoBindDisabled: true}, want: "usb"},
 	}
 	for _, tt := range tests {
 		if got := ActiveTransport(tt.cfg); got != tt.want {

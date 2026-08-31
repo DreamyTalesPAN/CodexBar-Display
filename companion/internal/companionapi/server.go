@@ -3408,9 +3408,18 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		writeInternalError(w, err)
 		return
 	}
-	cableChoice := s.currentCableConnectionChoiceDevice()
-	if mode == "wifi" && strings.TrimSpace(cfg.DeviceID) == "" && cfg.ConnectionModeChoiceRequired &&
-		strings.TrimSpace(cableChoice.DeviceID) == "" {
+	freshWiFiChoice := mode == "wifi" && strings.TrimSpace(cfg.DeviceID) == "" && cfg.ConnectionModeChoiceRequired
+	cableConnected := strings.TrimSpace(s.currentCableConnectionChoiceDevice().DeviceID) != ""
+	var cablePort string
+	if freshWiFiChoice && !cableConnected {
+		cablePort, err = s.resolveCablePort("", "")
+		cableConnected = err == nil
+		if errcode.Of(err) == errcode.TransportMultipleDevices {
+			writeCableResolutionError(w, err)
+			return
+		}
+	}
+	if freshWiFiChoice && !cableConnected {
 		knownDevice, hello, found, authErr := s.authenticatedKnownWiFiDevice(r.Context(), cfg)
 		if authErr != nil {
 			writeError(w, http.StatusConflict, "multiple_devices_found", "Multiple known VibeTV devices are available on WiFi.", "Connect the VibeTV you want with a data Cable, then choose WiFi again.")
@@ -3448,6 +3457,27 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 			}{OK: true, ConnectionMode: "wifi", Status: "selected", Device: device})
 			return
 		}
+		_, err = s.updateConfig(func(current *runtimeconfig.Config) {
+			current.ConnectionMode = "wifi"
+			current.CableAutoBindDisabled = true
+			current.ConnectionModeChoiceRequired = false
+			current.DeviceTarget = ""
+			current.DeviceToken = ""
+			current.DeviceID = ""
+			current.DeviceTransports = nil
+		})
+		if err != nil {
+			writeInternalError(w, err)
+			return
+		}
+		s.clearConfiguredDeviceState()
+		s.clearAmbiguousDeviceSelection()
+		writeJSON(w, http.StatusAccepted, struct {
+			OK             bool   `json:"ok"`
+			ConnectionMode string `json:"connectionMode"`
+			Status         string `json:"status"`
+		}{OK: true, ConnectionMode: "wifi", Status: "waiting_for_wifi"})
+		return
 	}
 	transitioningFromWiFi := mode == "cable" &&
 		runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "wifi" &&
@@ -3473,7 +3503,10 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
-	port, err := s.resolveCablePort("", strings.TrimSpace(cfg.DeviceID))
+	port := cablePort
+	if port == "" {
+		port, err = s.resolveCablePort("", strings.TrimSpace(cfg.DeviceID))
+	}
 	if err != nil && transitioningFromWiFi {
 		deadline := time.Now().Add(cableTransitionWait)
 		for err != nil && time.Now().Before(deadline) {
