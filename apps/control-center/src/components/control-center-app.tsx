@@ -100,6 +100,7 @@ import {
 } from "./setup/setup-providers-screen";
 import {
   deriveSetupStep,
+  providerStepOwnsRefusal,
   setupDeviceIsUsable,
   setupDisplayIsConfigured,
   setupDisplaySelectionSupported,
@@ -2912,14 +2913,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setLastError(null);
       return true;
     } catch (error) {
-      setProviderDisplayError(
-        normalizeCaughtError(error, "Provider setup is not complete yet."),
+      const refusal = normalizeCaughtError(
+        error,
+        "Provider setup is not complete yet.",
       );
+      // Reading the selection again is what turns the derived step back to
+      // Display, and it runs before the refusal is written because a read that
+      // succeeds clears it.
+      if (!providerStepOwnsRefusal(refusal.code)) {
+        await refreshProviderDisplay({ quiet: true });
+        setProviderDisplayError(refusal);
+        return true;
+      }
+      setProviderDisplayError(refusal);
       return false;
     } finally {
       setBusyAction(null);
     }
-  }, [runCompanion]);
+  }, [refreshProviderDisplay, runCompanion]);
 
   useEffect(() => {
     if (!providerSelectionSetup?.providerSelectionRequired) {

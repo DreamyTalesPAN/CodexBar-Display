@@ -2384,3 +2384,19 @@ issue scope, or release permission never implies UI permission.
      because the app still remembered the first run handing the screen over.
 - Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
   and its test, `control-center-app.tsx`.
+
+## 2026-08-31 — A refusal the provider step could not act on
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: **Turning off the provider that "Always
+  show" names now takes the customer to the display step, where the choice can
+  be changed.** Coming back from a later step to the provider list and turning
+  that provider off makes the companion refuse the completion — and the refusal
+  asks for a provider to display, which the provider screen has no control for.
+  The Back override held the customer on that screen with a next action that was
+  not on it, and re-enabling the provider they had just turned off was the only
+  way out.
+- Approved files: `apps/control-center/src/components/setup/setup-step.ts` and
+  its test, `setup-wizard.tsx`, `control-center-app.tsx`.

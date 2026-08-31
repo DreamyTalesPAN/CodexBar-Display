@@ -145,3 +145,16 @@ export function resolveSetupStep(
     ? wentBackTo
     : derived;
 }
+
+/**
+ * Whether a refused provider completion is the provider step's to fix.
+ *
+ * Everything the companion refuses there is, except the display selection: it
+ * names a provider the customer has since turned off, and the only controls
+ * that change it are on the display step. Holding them on the provider screen
+ * leaves a refusal whose next action is not on their screen, and re-enabling
+ * the provider they had just turned off as the only way out.
+ */
+export function providerStepOwnsRefusal(code: string | undefined): boolean {
+  return code !== "provider_display_invalid";
+}

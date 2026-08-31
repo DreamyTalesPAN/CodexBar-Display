@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveSetupStep,
   previousSetupStep,
+  providerStepOwnsRefusal,
   resolveSetupStep,
   setupDeviceIsUsable,
   setupDisplayIsConfigured,
@@ -245,5 +246,25 @@ describe("setupDisplaySelectionSupported", () => {
     expect(
       setupDisplaySelectionSupported({ mode: "automatic" }, { code: "HTTP_404" }),
     ).toBe(true);
+  });
+});
+
+// The provider step has no display control on it, so a refusal naming the
+// display selection printed a next action the customer could not carry out --
+// and, coming back from a later step, the Back override held them there with
+// re-enabling the provider they had just turned off as the only way out.
+describe("providerStepOwnsRefusal", () => {
+  it("hands a refused display selection to the display step", () => {
+    expect(providerStepOwnsRefusal("provider_display_invalid")).toBe(false);
+  });
+
+  it("keeps everything the provider step can act on", () => {
+    expect(providerStepOwnsRefusal("provider_required")).toBe(true);
+    expect(providerStepOwnsRefusal("provider_check_required")).toBe(true);
+    // Turning the provider off is one of the three ways out of this one, and
+    // that switch is on the provider step.
+    expect(providerStepOwnsRefusal("provider_display_incomplete")).toBe(true);
+    expect(providerStepOwnsRefusal("COMPANION_TIMEOUT")).toBe(true);
+    expect(providerStepOwnsRefusal(undefined)).toBe(true);
   });
 });

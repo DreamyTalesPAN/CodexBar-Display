@@ -79,7 +79,9 @@ export type SetupWizardProps = {
   /**
    * Resolving false keeps the customer on the step: the companion can refuse
    * completion, and the step it would otherwise hand them to has nowhere to
-   * show that.
+   * show that. A refusal the provider screen carries no control for resolves
+   * true instead -- the derived step is then the one that can fix it, and it
+   * shows the same refusal.
    */
   onProvidersContinue: () => void | Promise<boolean | void>;
   /** What the companion refused the provider or display step, if anything. */
