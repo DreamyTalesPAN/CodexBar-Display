@@ -7573,8 +7573,24 @@ func TestCableControlRequestsStayOffSerialDuringFirmwareUpdate(t *testing.T) {
 
 	server.firmwareUpdateActive.Store(false)
 	server.createFirmwareUpdateJob(cfg)
+	settings = httptest.NewRecorder()
+	server.Handler().ServeHTTP(settings, httptest.NewRequest(http.MethodGet, "/v1/settings", nil))
+	if settings.Code != http.StatusConflict || !strings.Contains(settings.Body.String(), "firmware_update_in_progress") {
+		t.Fatalf("Cable settings must wait for queued firmware update: status=%d body=%s", settings.Code, settings.Body.String())
+	}
+	settings = httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/settings", strings.NewReader(`{"brightnessPercent":50}`))
+	request.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(settings, request)
+	if settings.Code != http.StatusConflict || !strings.Contains(settings.Body.String(), "firmware_update_in_progress") {
+		t.Fatalf("Cable settings write must wait for queued firmware update: status=%d body=%s", settings.Code, settings.Body.String())
+	}
+	if serialCalls != 0 {
+		t.Fatalf("Cable settings reopened serial during queued firmware update: calls=%d", serialCalls)
+	}
+
 	theme := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(`{"themeId":"classic"}`))
+	request = httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(`{"themeId":"classic"}`))
 	request.Header.Set("Content-Type", "application/json")
 	server.Handler().ServeHTTP(theme, request)
 	if theme.Code != http.StatusConflict || !strings.Contains(theme.Body.String(), "firmware_update_in_progress") {

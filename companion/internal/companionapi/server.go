@@ -4421,6 +4421,12 @@ func (s *Server) cableDeviceInfo(ctx context.Context, cfg runtimeconfig.Config, 
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if _, ok := s.activeFirmwareUpdateJob(); ok {
+		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then try again.")
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		s.handleSettingsGet(w, r)
