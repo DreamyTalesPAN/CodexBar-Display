@@ -2571,3 +2571,22 @@ issue scope, or release permission never implies UI permission.
   address together with the token pairing writes.
 - Approved files: `companion/internal/runtimeconfig/runtimeconfig.go` and its
   test.
+
+## 2026-09-01 — A broken usage service can be repaired inside setup
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **A provider whose usage service is broken offers `Repair the usage
+     service` on the provider step.** It used to say `Check timed out` and offer
+     another check, which meets the same broken service — so a customer whose
+     only provider was in that state could not finish setup at all: `Continue`
+     asks for a provider that is ready, and switching it off leaves none. The
+     row keeps its on/off switch, as rule 3 requires.
+  2. **Leaving `Enter IP address` cancels what it started.** The lookup can take
+     a while, and its result went on to connect and pair the VibeTV — and could
+     begin a firmware install — after the customer had pressed `Cancel`.
+- Approved files: `apps/control-center/src/components/setup/`
+  `setup-provider-row.tsx`, `setup-wizard.tsx`, `control-center-app.tsx`, and
+  their tests.

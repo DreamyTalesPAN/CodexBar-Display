@@ -10,9 +10,11 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { DeviceCandidate } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import { SetupWizard, type SetupWizardProps } from "./setup-wizard";
 
@@ -241,6 +243,53 @@ describe("SetupWizard: going back", () => {
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     });
     expect(shownStep()).toBe("Choose your theme");
+  });
+});
+
+describe("SetupWizard: leaving the address dialog", () => {
+  // The lookup can take a while, and its continuation pairs the VibeTV and can
+  // start a firmware install. Cancel used to close the dialog and let both
+  // happen anyway, on a VibeTV the customer had decided against.
+  it("does not connect to an address the customer walked away from", async () => {
+    let settle: (candidate: DeviceCandidate) => void = () => {};
+    const onFindManualTarget = vi.fn(
+      () =>
+        new Promise<DeviceCandidate>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const connect = vi.fn();
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "device",
+          deviceSearchState: "not-found",
+          onFindManualTarget,
+          connectSteps: {
+            connect,
+            installFirmware: vi.fn(),
+          } as unknown as SetupWizardProps["connectSteps"],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Enter IP manually" }));
+    fireEvent.change(screen.getByLabelText("IP address"), {
+      target: { value: "192.168.1.50" },
+    });
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: "Enter IP address" }),
+      ).getByRole("button", { name: "Connect" }),
+    );
+    expect(onFindManualTarget).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await act(async () => {
+      settle({ target: "http://192.168.1.50", deviceId: "9517433" } as DeviceCandidate);
+    });
+
+    expect(connect).not.toHaveBeenCalled();
   });
 });
 

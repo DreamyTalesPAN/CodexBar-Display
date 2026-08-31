@@ -131,6 +131,11 @@ export function SetupWizard(props: SetupWizardProps) {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
   const [notFoundDismissed, setNotFoundDismissed] = useState(false);
+  // Which manual lookup is still the customer's. Leaving the dialog ends the
+  // attempt that was running, and the lookup can take a while: its
+  // continuation pairs the VibeTV and can start a firmware install, so without
+  // this Cancel left both to happen anyway.
+  const manualAttemptRef = useRef(0);
   const [searchErrorDismissed, setSearchErrorDismissed] = useState(false);
   // Held rather than written on every touch: writing on selection ends the
   // step, so Continue was only ever reachable by not changing anything.
@@ -248,8 +253,13 @@ export function SetupWizard(props: SetupWizardProps) {
         />
         <SetupAddressDialog
           onConnect={async (target) => {
+            const attempt = (manualAttemptRef.current += 1);
+            const abandoned = () => attempt !== manualAttemptRef.current;
             try {
               const candidate = await props.onFindManualTarget(target);
+              if (abandoned()) {
+                return null;
+              }
               // Closed here rather than through onOpenChange: that would clear
               // notFoundDismissed and re-open "We couldn't find your VibeTV"
               // over the connecting screen, because the search state only
@@ -258,6 +268,9 @@ export function SetupWizard(props: SetupWizardProps) {
               void connect.run(candidate);
               return null;
             } catch (error) {
+              if (abandoned()) {
+                return null;
+              }
               const failure = error as ApiError;
               return (
                 [failure?.message, failure?.nextAction]
@@ -269,6 +282,7 @@ export function SetupWizard(props: SetupWizardProps) {
           onOpenChange={(open) => {
             setAddressDialogOpen(open);
             if (!open) {
+              manualAttemptRef.current += 1;
               setNotFoundDismissed(false);
             }
           }}

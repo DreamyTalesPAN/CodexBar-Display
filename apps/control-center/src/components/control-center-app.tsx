@@ -4048,7 +4048,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }
         onInstallTheme={() => void installTheme()}
           onProviderCheck={(provider) => void checkProvider(provider)}
-          onProviderRecover={openCodexBarApp}
+          onProviderRecover={(provider) =>
+            provider.health.recoveryAction === "repair_usage_service"
+              ? repairUsageService()
+              : openCodexBarApp()
+          }
           onProviderToggle={(provider, enabled) =>
             void updateProviderPreference(provider, enabled)
           }

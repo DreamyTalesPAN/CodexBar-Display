@@ -5637,12 +5637,17 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
       if (providerId === "codex") {
         codexProviderRetries += 1;
       }
+      // A first check that did not answer, which is what this flow is about:
+      // a provider that is not ready yet and that pressing Check again can
+      // fix. Deliberately not config_error -- that one means the usage service
+      // itself is broken, and the row offers the repair for it rather than a
+      // check that would meet the same broken service.
       return exactProviderSetup(
         providerId,
         providerId === "claude"
           ? "auth_required"
           : codexProviderRetries <= 1
-            ? "config_error"
+            ? "timeout"
             : "ready",
       );
     },

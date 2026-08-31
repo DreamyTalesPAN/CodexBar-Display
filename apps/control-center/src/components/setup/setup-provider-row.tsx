@@ -20,6 +20,7 @@ export type SetupProviderRowVariant =
   | "no_usage"
   | "outage"
   | "permission"
+  | "repair"
   | "sign_in"
   | "timed_out"
   | "toggle"
@@ -27,10 +28,15 @@ export type SetupProviderRowVariant =
 
 /**
  * The health states the usage service reports, mapped onto the presentations
- * the design draws. Anything it does not name (unavailable, config_error,
- * engine_error, and whatever a provider adds later) gets the re-check
- * presentation: running the check again is the one action left to a customer
- * who cannot sign in or grant anything.
+ * the design draws. Anything it does not name (unavailable, and whatever a
+ * provider adds later) gets the re-check presentation: running the check again
+ * is the one action left to a customer who cannot sign in or grant anything.
+ *
+ * Except when the usage service itself is what is broken. Checking again then
+ * meets the same broken service, so the row used to say "Check timed out" and
+ * offer the one action that cannot work -- and a customer whose only provider
+ * was in that state could not finish setup at all, because Continue asks for a
+ * provider that is ready and switching it off leaves none.
  */
 export function setupProviderRowVariant(
   health: PreferenceHealthState,
@@ -47,6 +53,9 @@ export function setupProviderRowVariant(
     case "auth_required":
     case "setup_required":
       return "sign_in";
+    case "config_error":
+    case "engine_error":
+      return "repair";
     case "permission_required":
       return "permission";
     case "no_usage_available":
@@ -127,6 +136,17 @@ export function SetupProviderRow({
               Waiting for sign-in…
             </SetupProviderRowMessage>
             <Spinner />
+          </>
+        ) : variant === "repair" ? (
+          <>
+            <SetupProviderRowMessage>
+              Repair the usage service
+            </SetupProviderRowMessage>
+            <SetupProviderRowAction
+              icon={RefreshCw}
+              label={`Repair the usage service for ${label}`}
+              onClick={onRecover}
+            />
           </>
         ) : variant === "permission" ? (
           <>

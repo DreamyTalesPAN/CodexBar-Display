@@ -80,9 +80,11 @@ describe("SetupProviderRow", () => {
   });
 
   // Nothing else is left to offer for a state the design does not draw, and a
-  // row with no control at all would strand the customer.
+  // row with no control at all would strand the customer. Not for a broken
+  // usage service, though: another check meets the same broken service, and
+  // the companion says what does help -- see the repair case below.
   it("offers a re-check for every state the design does not name", () => {
-    for (const health of ["unavailable", "config_error", "engine_error", "?"]) {
+    for (const health of ["unavailable", "?"]) {
       expect(render({ health })).toContain("Check timed out");
     }
   });
@@ -136,6 +138,25 @@ describe("SetupProviderRow", () => {
     expect(html).not.toContain('aria-label="Check Claude Code again"');
     // Rule 3: whatever the provider reports, the switch stays.
     expect(html).toContain('role="switch"');
+  });
+
+
+  // Checking again meets the same broken service, so the row said "Check timed
+  // out" and offered the one action that cannot work. A customer whose only
+  // provider was in that state could not finish setup at all: Continue asks for
+  // a provider that is ready, and switching it off leaves none.
+  it("offers the repair when the usage service is what is broken", () => {
+    for (const health of ["config_error", "engine_error"] as const) {
+      const onRecover = vi.fn();
+      const html = render({ health, onRecover });
+
+      expect(html).toContain("Repair the usage service");
+      expect(html).not.toContain("Check timed out");
+      expect(html).toContain(
+        'aria-label="Repair the usage service for Claude Code"',
+      );
+      expect(html).toContain('role="switch"');
+    }
   });
 
 });
