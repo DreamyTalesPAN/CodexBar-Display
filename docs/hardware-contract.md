@@ -163,6 +163,21 @@ and accepted 15 of 15 post-boot frames on device `14799300`. The restored live
 stream then stayed ready for 20 of 20 samples across 60 seconds, with three
 usage windows and no unavailable frame in every sample.
 
+The same device exposed a second render issue after Clippy was installed over
+Cable: its two usage rows flashed on every roughly three-second Companion
+frame. The percentages and availability were unchanged; only the reset
+seconds moved. The ThemeSpec change detector now ignores reset-only movement
+for usage and provider slots unless the active theme actually binds that reset
+value. Countdown themes such as Night Clock still repaint their visible reset
+text. Native renderer coverage passed 124 of 124 cases. Final test firmware
+`9999.0.864` uses 476,879 bytes flash and 46,944 bytes RAM; its 481,024-byte
+image hash is
+`daf1c2533f68d2f4373326f5e2b03b600890796bce53dd05081d343e881681ca`.
+That exact image was flashed to device `14799300`, passed the device-side hash
+check, rebooted ready, and then held three real usage windows without an
+unavailable frame for 24 of 24 samples across 72 seconds while the reset
+seconds continued changing.
+
 Terminating the updater during a `dev-b` to `dev-c` hardware transfer left
 `dev-b` bootable and healthy, produced an error with a retry action, and did
 not report upload acceptance. The immediate retry completed in 161.3 seconds,
