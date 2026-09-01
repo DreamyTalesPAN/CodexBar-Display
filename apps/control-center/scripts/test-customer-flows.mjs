@@ -11247,14 +11247,14 @@ async function assertCompanionRequestTimeoutContract() {
     source.includes("options?.timeoutMs ?? COMPANION_REQUEST_TIMEOUT_MS"),
     "Mac App requests must use an explicit timeout override when provided",
   );
-  // select and reload-display. There is no separate repair call: selectDevice
-  // pairs by force on the server, so the wizard's Connect already is the repair
-  // the old Pair again button used to send.
+  // select, connection-mode, and reload-display. There is no separate repair
+  // call: selectDevice pairs by force on the server, so the wizard's Connect
+  // already is the repair the old Pair again button used to send.
   const repairTimeoutUses =
     source.match(/timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS/g) || [];
   assert(
-    repairTimeoutUses.length === 2,
-    `Exactly select and reload-display must use the long repair timeout, got ${repairTimeoutUses.length} uses`,
+    repairTimeoutUses.length === 3,
+    `Exactly select, connection-mode, and reload-display must use the long repair timeout, got ${repairTimeoutUses.length} uses`,
   );
   const statusPollGuards =
     source.match(/if \(statusPollInFlight\.current\)/g) || [];

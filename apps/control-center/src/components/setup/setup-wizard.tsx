@@ -166,6 +166,7 @@ export function SetupWizard(props: SetupWizardProps) {
   // continuation pairs the VibeTV and can start a firmware install, so without
   // this Cancel left both to happen anyway.
   const manualAttemptRef = useRef(0);
+  const directAttempt = useRef("");
   const [searchErrorDismissed, setSearchErrorDismissed] = useState(false);
   // Held rather than written on every touch: writing on selection ends the
   // step, so Continue was only ever reachable by not changing anything.
@@ -279,6 +280,11 @@ export function SetupWizard(props: SetupWizardProps) {
   // while the scan that would find them had not answered, or not even run.
   const searchingForDevices =
     deviceSearchState === "idle" || deviceSearchState === "searching";
+  useEffect(() => {
+    if (searchingForDevices) {
+      directAttempt.current = "";
+    }
+  }, [searchingForDevices]);
 
   // Searching again clears the dismissal, so a second empty scan is explained
   // rather than leaving the customer on an empty list with no reason for it.
@@ -363,7 +369,6 @@ export function SetupWizard(props: SetupWizardProps) {
     ],
   );
 
-  const directAttempt = useRef("");
   useEffect(() => {
     if (
       step !== "device" ||

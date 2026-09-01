@@ -10,6 +10,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -95,6 +96,54 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
 function shownStep(): string {
   return document.querySelector("main")?.getAttribute("aria-label") ?? "";
 }
+
+describe("SetupWizard: direct connection", () => {
+  it("retries the same single device after a fresh search", async () => {
+    const candidate: DeviceCandidate = {
+      target: "http://192.168.1.42",
+      deviceId: "vibetv-42",
+      transport: "wifi",
+    };
+    const connect = vi.fn().mockRejectedValue({
+      message: "VibeTV could not connect",
+      nextAction: "Search again.",
+    });
+    const onSearchDevices = vi.fn();
+    const props = baseProps({
+      step: "device",
+      connectionModeChoiceRequired: true,
+      deviceCandidates: [candidate],
+      deviceSearchState: "multiple",
+      connectSteps: {
+        checkFirmware: vi.fn(),
+        connect,
+        installFirmware: vi.fn(),
+      },
+      onSearchDevices,
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(1));
+    const failure = await screen.findByRole("dialog", {
+      name: "VibeTV could not connect",
+    });
+    fireEvent.click(
+      within(failure).getByRole("button", { name: "Search again" }),
+    );
+    expect(onSearchDevices).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <SetupWizard
+        {...props}
+        deviceCandidates={[]}
+        deviceSearchState="searching"
+      />,
+    );
+    rerender(<SetupWizard {...props} />);
+
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(2));
+  });
+});
 
 describe("SetupWizard: going back", () => {
   // The derived step stays "display" throughout: the server already accepted

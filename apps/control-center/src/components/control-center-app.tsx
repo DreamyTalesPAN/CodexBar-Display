@@ -1405,10 +1405,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           device?: DeviceInfo;
           status?:
             "selected" | "waiting_for_wifi" | "wifi_credentials_required";
-        }>("/v1/setup/connection-mode", {
-          method: "POST",
-          body: JSON.stringify({ mode, deviceId }),
-        });
+        }>(
+          "/v1/setup/connection-mode",
+          {
+            method: "POST",
+            body: JSON.stringify({ mode, deviceId }),
+          },
+          { timeoutMs: COMPANION_REPAIR_REQUEST_TIMEOUT_MS },
+        );
         if (setupGeneration !== setupGenerationRef.current) {
           throw new Error("setup changed while selecting the connection");
         }
