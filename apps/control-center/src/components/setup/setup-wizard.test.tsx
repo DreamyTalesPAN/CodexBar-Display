@@ -143,6 +143,72 @@ describe("SetupWizard: direct connection", () => {
 
     await waitFor(() => expect(connect).toHaveBeenCalledTimes(2));
   });
+
+  it("connects the configured Cable device when it appears on WiFi", async () => {
+    const cable: DeviceCandidate = {
+      target: "cable://vibetv",
+      deviceId: "configured-device",
+      transport: "cable",
+    };
+    const otherWiFi: DeviceCandidate = {
+      target: "http://192.168.1.10",
+      deviceId: "other-device",
+      transport: "wifi",
+    };
+    const transitioned: DeviceCandidate = {
+      target: "http://192.168.1.42",
+      deviceId: "configured-device",
+      transport: "wifi",
+    };
+    const connect = vi.fn().mockResolvedValue({
+      board: "esp8266_smalltv_st7789",
+      firmware: "1.0.40",
+    });
+    const onConfigureWiFi = vi
+      .fn()
+      .mockResolvedValue("configured-device");
+    const props = baseProps({
+      step: "device",
+      connectionModeChoiceRequired: true,
+      deviceCandidates: [cable, otherWiFi],
+      deviceSearchState: "multiple",
+      connectSteps: {
+        checkFirmware: vi.fn().mockResolvedValue(null),
+        connect,
+        installFirmware: vi.fn(),
+      },
+      onConfigureWiFi,
+      onScanWiFiNetworks: vi.fn().mockResolvedValue([]),
+      onSelectConnectionMode: vi.fn().mockResolvedValue({
+        status: "wifi_credentials_required",
+        deviceId: "configured-device",
+      }),
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "WiFi", exact: true }),
+    );
+    await screen.findByRole("heading", { name: "Connect VibeTV to WiFi" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Enter hidden network" }),
+    );
+    fireEvent.change(screen.getByLabelText("WiFi network"), {
+      target: { value: "Home" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect to WiFi" }));
+    await waitFor(() => expect(onConfigureWiFi).toHaveBeenCalledWith("Home", ""));
+
+    rerender(
+      <SetupWizard
+        {...props}
+        deviceCandidates={[transitioned]}
+        deviceSearchState="multiple"
+      />,
+    );
+
+    await waitFor(() => expect(connect).toHaveBeenCalledWith(transitioned));
+  });
 });
 
 describe("SetupWizard: going back", () => {

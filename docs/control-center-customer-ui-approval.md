@@ -5,6 +5,19 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-09-01 — Configured WiFi device continues automatically
+
+- User approval: The user explicitly instructed Codex to fix every sensible
+  Codex Bug Detector finding that matches the approved setup design and flow,
+  push it, and repeat the review loop until clean.
+- Approved customer-visible result: After WiFi credentials are sent through
+  Cable, the waiting step automatically connects the same `deviceId` when it
+  appears on WiFi, even if another VibeTV is also visible. The phone path has no
+  known identity and therefore still connects one result directly or shows the
+  existing list for multiple results. No new control or visual treatment.
+- Approved files: `setup-wizard.tsx`, its identity regression test, and this
+  approval record.
+
 ## 2026-09-01 — Direct setup retry remains automatic
 
 - User approval: The user explicitly instructed Codex to fix every sensible

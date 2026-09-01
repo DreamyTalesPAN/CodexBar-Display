@@ -340,10 +340,17 @@ export function SetupWizard(props: SetupWizardProps) {
       const cable = deviceCandidates.find(
         (candidate) => candidate.transport === "cable",
       );
+      setWiFiSetup({
+        phase: "waiting",
+        deviceId: cable?.deviceId,
+        viaCable: Boolean(cable),
+      });
       let result: SetupConnectionModeResult;
       try {
         result = await onSelectConnectionMode("wifi", cable?.deviceId);
       } catch {
+        setWiFiSetup(null);
+        setPreferredTransport(null);
         return;
       }
       if (result.status === "wifi_credentials_required") {
@@ -359,6 +366,8 @@ export function SetupWizard(props: SetupWizardProps) {
           deviceId: result.deviceId,
           viaCable: Boolean(cable),
         });
+      } else {
+        setWiFiSetup(null);
       }
     },
     [
@@ -368,6 +377,51 @@ export function SetupWizard(props: SetupWizardProps) {
       scanWiFiNetworks,
     ],
   );
+
+  useEffect(() => {
+    if (
+      step !== "device" ||
+      wifiSetup?.phase !== "waiting" ||
+      searchingForDevices ||
+      connect.state.phase !== "idle"
+    ) {
+      return;
+    }
+    const wifiCandidates = deviceCandidates.filter(
+      (candidate) => candidate.transport !== "cable",
+    );
+    if (!wifiSetup.deviceId) {
+      if (wifiCandidates.length === 0) {
+        return;
+      }
+      const release = window.setTimeout(() => {
+        setWiFiSetup(null);
+      }, 0);
+      return () => window.clearTimeout(release);
+    }
+    const candidate = wifiCandidates.find(
+      (entry) =>
+        entry.deviceId?.trim().toLowerCase() ===
+        wifiSetup.deviceId?.trim().toLowerCase(),
+    );
+    if (!candidate) {
+      return;
+    }
+    const connectTransitionedDevice = window.setTimeout(() => {
+      const key = candidateKey(candidate);
+      directAttempt.current = key;
+      setSelectedTarget(key);
+      setWiFiSetup(null);
+      void connect.run(candidate);
+    }, 0);
+    return () => window.clearTimeout(connectTransitionedDevice);
+  }, [
+    connect,
+    deviceCandidates,
+    searchingForDevices,
+    step,
+    wifiSetup,
+  ]);
 
   useEffect(() => {
     if (
