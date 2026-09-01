@@ -1475,6 +1475,13 @@ func TestEnsureFirmwareUpdateDeviceTokenRetriesTransientPreflightError(t *testin
 	}
 }
 
+func TestFirmwareOTAAuthErrorDoesNotReadStatusFromPort(t *testing.T) {
+	err := errors.New(`Get "http://127.0.0.1:42401/hello": EOF`)
+	if firmwareOTAAuthError(err) {
+		t.Fatalf("transport error port must not look like an HTTP auth status: %v", err)
+	}
+}
+
 func TestFetchDeviceHelloRetryStopsOnAuthError(t *testing.T) {
 	previousHTTPClient := releaseHTTPClient
 	t.Cleanup(func() {

@@ -1055,9 +1055,7 @@ func firmwareOTAAuthError(err error) bool {
 		return httpErr.StatusCode == http.StatusUnauthorized || httpErr.StatusCode == http.StatusForbidden
 	}
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "401") ||
-		strings.Contains(msg, "403") ||
-		strings.Contains(msg, "unauthorized") ||
+	return strings.Contains(msg, "unauthorized") ||
 		strings.Contains(msg, "forbidden") ||
 		strings.Contains(msg, "pairing token required")
 }
