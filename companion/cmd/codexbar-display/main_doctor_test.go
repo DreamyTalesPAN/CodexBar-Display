@@ -283,6 +283,7 @@ func TestDoctorCableReadsCapabilitiesFromRunningCompanion(t *testing.T) {
 			"companion":{"runtime":{"listenerOwner":"shop.vibetv.control-center.runtime"}},
 			"device":{
 				"deviceId":"vibetv-cable",
+				"connected":true,
 				"board":"esp8266-smalltv-st7789",
 				"firmware":"1.0.55",
 				"capabilities":{
@@ -304,6 +305,31 @@ func TestDoctorCableReadsCapabilitiesFromRunningCompanion(t *testing.T) {
 	if !caps.Known || caps.DeviceID != "vibetv-cable" || caps.Board != "esp8266-smalltv-st7789" ||
 		caps.ActiveTransport != "usb" || caps.ConnectionMode != "cable" || !caps.SupportsThemeSpecV1 {
 		t.Fatalf("unexpected Cable capabilities: %+v", caps)
+	}
+}
+
+func TestDoctorCableRejectsDisconnectedSavedCapabilities(t *testing.T) {
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"ok":true,
+			"companion":{"runtime":{"listenerOwner":"shop.vibetv.control-center.runtime"}},
+			"device":{
+				"deviceId":"saved-cable-device",
+				"connected":false,
+				"board":"esp8266-smalltv-st7789",
+				"capabilities":{"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}
+			}
+		}`))
+	}))
+	defer companion.Close()
+
+	_, err := readLocalCableCapabilitiesOrigins(
+		[]string{companion.URL},
+		"shop.vibetv.control-center.runtime",
+	)
+	if err == nil || !strings.Contains(err.Error(), "disconnected") {
+		t.Fatalf("expected disconnected Cable status to fail, got %v", err)
 	}
 }
 

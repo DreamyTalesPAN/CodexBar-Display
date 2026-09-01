@@ -1240,6 +1240,7 @@ func readLocalCableCapabilitiesOrigins(origins []string, expectedOwner string) (
 			} `json:"companion"`
 			Device struct {
 				DeviceID     string                    `json:"deviceId"`
+				Connected    bool                      `json:"connected"`
 				NetworkMode  string                    `json:"networkMode"`
 				Board        string                    `json:"board"`
 				Firmware     string                    `json:"firmware"`
@@ -1267,6 +1268,10 @@ func readLocalCableCapabilitiesOrigins(origins []string, expectedOwner string) (
 		}
 		if owner != "" && expectedOwner != "" && owner != expectedOwner {
 			lastErr = fmt.Errorf("companion status belongs to %q, expected %q", owner, expectedOwner)
+			continue
+		}
+		if !result.Device.Connected {
+			lastErr = errors.New("companion status reported Cable disconnected")
 			continue
 		}
 		if result.Device.Capabilities == nil {
