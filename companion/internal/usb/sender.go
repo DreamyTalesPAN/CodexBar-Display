@@ -235,9 +235,13 @@ func (s *Sender) captureHelloLocked() {
 }
 
 func (s *Sender) ResolvePort(explicit, expectedDeviceID string) (string, error) {
-	path, err := resolveVibeTVPort(explicit, expectedDeviceID, s.DeviceHello)
-	if err != nil {
-		return "", err
+	path, ok := s.currentMatchingPort(explicit, expectedDeviceID, false)
+	if !ok {
+		var err error
+		path, err = resolveVibeTVPort(explicit, expectedDeviceID, s.DeviceHello)
+		if err != nil {
+			return "", err
+		}
 	}
 	hello, err := s.DeviceHello(path)
 	if err != nil {
@@ -253,7 +257,32 @@ func (s *Sender) ResolvePort(explicit, expectedDeviceID string) (string, error) 
 }
 
 func (s *Sender) ResolveControlPort(explicit, expectedDeviceID string) (string, error) {
+	if path, ok := s.currentMatchingPort(explicit, expectedDeviceID, true); ok {
+		return path, nil
+	}
 	return resolveVibeTVPortForControl(explicit, expectedDeviceID, s.DeviceHello, true)
+}
+
+func (s *Sender) currentMatchingPort(explicit, expectedDeviceID string, allowWiFiMode bool) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	path := strings.TrimSpace(s.path)
+	explicit = strings.TrimSpace(explicit)
+	expectedDeviceID = strings.TrimSpace(expectedDeviceID)
+	if (explicit == "" && expectedDeviceID == "") || s.port == nil || !s.helloSeen || path == "" ||
+		(explicit != "" && explicit != path) {
+		return "", false
+	}
+	hello := s.hello.Normalize()
+	mode := hello.Capabilities.Transport.Mode
+	if hello.Kind != "hello" || !isSupportedCableBoard(hello.Board) || hello.DeviceID == "" ||
+		hello.Capabilities.Transport.Active != "usb" ||
+		(mode != "cable" && (!allowWiFiMode || (mode != "wifi" && mode != "legacy-wifi-only"))) ||
+		(expectedDeviceID != "" && !strings.EqualFold(hello.DeviceID, expectedDeviceID)) {
+		return "", false
+	}
+	return path, true
 }
 
 // ConfirmConnectionMode commits a pending Cable transition only after the

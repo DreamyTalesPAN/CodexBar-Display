@@ -337,6 +337,51 @@ func TestResolverConfirmsPendingCableTransitionAfterIdentityMatch(t *testing.T) 
 	}
 }
 
+func TestSenderReusesResolvedCablePortWithoutReopeningOtherDevices(t *testing.T) {
+	targetPath := filepath.Join(t.TempDir(), "cu.usbserial-target")
+	otherPath := filepath.Join(t.TempDir(), "cu.usbserial-other")
+	for _, path := range []string{targetPath, otherPath} {
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			t.Fatalf("create serial candidate: %v", err)
+		}
+	}
+	targetHello := []byte(`{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"14799300","capabilities":{"transport":{"active":"usb","mode":"cable"}}}` + "\n")
+	otherHello := []byte(`{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"other-device","capabilities":{"transport":{"active":"usb","mode":"cable"}}}` + "\n")
+	target := newMockSerialPort()
+	target.readQueue = [][]byte{targetHello, targetHello}
+	other := newMockSerialPort()
+	other.readQueue = [][]byte{otherHello}
+	opener := &mockOpener{portsByPath: map[string]SerialPort{
+		targetPath: target,
+		otherPath:  other,
+	}}
+	sender := NewSenderWithConfig(SenderConfig{Opener: opener, Sleep: func(time.Duration) {}})
+	defer sender.Close()
+
+	got, err := resolveVibeTVCandidates(
+		[]string{targetPath, otherPath},
+		"",
+		"14799300",
+		sender.DeviceHello,
+	)
+	if err != nil || got != targetPath {
+		t.Fatalf("resolve target VibeTV: got=%q err=%v", got, err)
+	}
+	if _, err := sender.DeviceHello(targetPath); err != nil {
+		t.Fatalf("restore selected target port: %v", err)
+	}
+	beforeTarget := opener.openCounts[targetPath]
+	beforeOther := opener.openCounts[otherPath]
+
+	got, err = sender.ResolvePort("", "14799300")
+	if err != nil || got != targetPath {
+		t.Fatalf("reuse target VibeTV: got=%q err=%v", got, err)
+	}
+	if opener.openCounts[targetPath] != beforeTarget || opener.openCounts[otherPath] != beforeOther {
+		t.Fatalf("cached resolution reopened serial devices: target=%d other=%d", opener.openCounts[targetPath], opener.openCounts[otherPath])
+	}
+}
+
 func TestResolverKeepsPendingCableTransitionWhenConfirmationIsRejected(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cu.usbserial-vibetv")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
