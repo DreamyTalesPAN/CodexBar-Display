@@ -2659,3 +2659,15 @@ issue scope, or release permission never implies UI permission.
      and either answer could move the step or raise a refusal on its own.
 - Approved files: `apps/control-center/src/components/setup/`
   `setup-providers-screen.tsx`, `setup-wizard.tsx`, and their tests.
+
+## 2026-09-01 — Back during a display save is kept
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: **Pressing `Back` while the display choice
+  is being saved keeps the customer where they went.** The save landing used to
+  carry them forward from the step they had just gone back to. `Back` stays
+  available throughout, rather than being taken away for the length of a write.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
+  and its test.

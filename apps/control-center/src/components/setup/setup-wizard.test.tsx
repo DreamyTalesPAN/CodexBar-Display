@@ -213,6 +213,35 @@ describe("SetupWizard: going back", () => {
     expect(shownStep()).toBe("Choose your theme");
   });
 
+  // The save can still be running when the customer leaves the step, and Back
+  // is their later word on where they want to be. The continuation used to
+  // release the override anyway and carry them forward from the step they had
+  // just gone back to.
+  it("keeps a Back press made while the save was running", async () => {
+    let settle: (saved: boolean) => void = () => {};
+    const onDisplayContinue = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    render(
+      <SetupWizard {...baseProps({ step: "theme", onDisplayContinue })} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Display Mode");
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Choose AI providers");
+
+    await act(async () => {
+      settle(true);
+    });
+
+    expect(shownStep()).toBe("Choose AI providers");
+  });
+
   // The display choice is written optimistically, and the derived step reads
   // that as done. Moving on for it would put the customer on the theme step --
   // picking, even installing -- on a write that can still roll back.

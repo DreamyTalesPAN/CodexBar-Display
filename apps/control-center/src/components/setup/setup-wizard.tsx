@@ -181,7 +181,17 @@ export function SetupWizard(props: SetupWizardProps) {
   const step =
     props.displaySavePending && derived === "theme" ? "display" : derived;
   const back = previousSetupStep(step);
-  const goBack = back ? () => setWentBackTo(back) : undefined;
+  // Counted so a write started before a Back press cannot undo it: the display
+  // save can still be running when the customer leaves, and its continuation
+  // used to release the override and carry them forward from the step they had
+  // just gone back to.
+  const navigations = useRef(0);
+  const goBack = back
+    ? () => {
+        navigations.current += 1;
+        setWentBackTo(back);
+      }
+    : undefined;
   // The counterpart to goBack. Without it the override outlives the visit it
   // was made for: Continue answers, the derived step is already ahead, and the
   // customer is held on the step they came back to with no Back button left.
@@ -453,6 +463,7 @@ export function SetupWizard(props: SetupWizardProps) {
             // selection back, so the derived step stays on theme and the
             // customer would be carried off this step believing the new choice
             // was kept.
+            const navigation = navigations.current;
             void Promise.resolve(
               props.onDisplayContinue({
                 mode: displayMode,
@@ -462,7 +473,10 @@ export function SetupWizard(props: SetupWizardProps) {
                     : props.displayProviders.map((provider) => provider.id),
               }),
             ).then((saved) => {
-              if (saved !== false) {
+              // A Back press while the save was running is the customer's
+              // later word on where they want to be, and the save landing
+              // does not undo it.
+              if (saved !== false && navigation === navigations.current) {
                 goForward();
               }
             });
