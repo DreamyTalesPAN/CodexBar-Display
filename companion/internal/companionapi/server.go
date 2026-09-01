@@ -1352,6 +1352,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		ConnectionState: deviceConnectionSetup,
 		Stream:          streamPointer(stream),
 	}
+	if len(cfg.DeviceTransports) > 0 {
+		device.Capabilities = &protocol.CapabilityBlock{
+			Transport: protocol.TransportCapabilities{
+				Supported: append([]string(nil), cfg.DeviceTransports...),
+			},
+		}
+	}
 	reachable := false
 	identityMismatch := false
 	if cableMode {

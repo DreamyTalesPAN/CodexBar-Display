@@ -4988,9 +4988,10 @@ func TestStatusIsReadOnlyAndKeepsOfflineActiveDevice(t *testing.T) {
 	defer device.Close()
 
 	server := newTestServer(t, runtimeconfig.Config{
-		DeviceTarget: device.URL,
-		DeviceToken:  "pair-token",
-		DeviceID:     "vibetv-canary",
+		DeviceTarget:     device.URL,
+		DeviceToken:      "pair-token",
+		DeviceID:         "vibetv-canary",
+		DeviceTransports: []string{"usb", "wifi"},
 	})
 	server.streamStatus = func(context.Context, string) displayStreamInfo {
 		return displayStreamInfo{Running: true, Target: device.URL}
@@ -5014,6 +5015,9 @@ func TestStatusIsReadOnlyAndKeepsOfflineActiveDevice(t *testing.T) {
 		}
 		if !got.Device.Active || got.Device.Ready || got.Device.ConnectionState != deviceConnectionRetrying {
 			t.Fatalf("offline active device must remain active and reconnecting: %+v", got.Device)
+		}
+		if got.Device.Capabilities == nil || !reflect.DeepEqual(got.Device.Capabilities.Transport.Supported, []string{"usb", "wifi"}) {
+			t.Fatalf("offline active device lost saved transport support: %+v", got.Device.Capabilities)
 		}
 	}
 	if postCalls.Load() != 0 || configWrites.Load() != 0 {
