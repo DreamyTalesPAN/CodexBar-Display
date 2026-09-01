@@ -2641,3 +2641,21 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/setup/`
   `setup-provider-row.tsx`, `setup-providers-screen.tsx`,
   `setup-display-mode-screen.tsx`, and their tests.
+
+## 2026-09-01 — Switching a provider off calls off its recovery, and Continue waits
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **Switching a provider off ends the recovery it was waiting for.** The wait
+     after a sign-in, a macOS permission or a repair finishes with a real
+     provider check, and that still ran 45 seconds later against a provider the
+     customer had switched off in the meantime — work they had just said they
+     did not want. The switch stays theirs to press at any time.
+  2. **`Continue` on the provider step waits for the completion it asked for.**
+     A second press started a second one, each forcing a live provider read
+     before writing anything, so the customer paid for the same slow check twice
+     and either answer could move the step or raise a refusal on its own.
+- Approved files: `apps/control-center/src/components/setup/`
+  `setup-providers-screen.tsx`, `setup-wizard.tsx`, and their tests.

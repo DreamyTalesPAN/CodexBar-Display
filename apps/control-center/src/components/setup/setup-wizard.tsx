@@ -131,6 +131,9 @@ export function SetupWizard(props: SetupWizardProps) {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
   const [notFoundDismissed, setNotFoundDismissed] = useState(false);
+  // The completion this step asked for is still on its way. Held here rather
+  // than passed in: the wizard is what awaits it.
+  const [providersContinuing, setProvidersContinuing] = useState(false);
   // Which manual lookup is still the customer's. Leaving the dialog ends the
   // attempt that was running, and the lookup can take a while: its
   // continuation pairs the VibeTV and can start a firmware install, so without
@@ -386,24 +389,28 @@ export function SetupWizard(props: SetupWizardProps) {
           {...help}
           onBack={goBack}
           onCheckAgain={props.onProviderCheck}
+          continuing={providersContinuing}
           onContinue={() => {
             // Not goForward() first: coming back here from the theme step
             // leaves the derived step ahead, so a refusal would carry the
             // customer on to a screen that cannot render it.
-            void Promise.resolve(props.onProvidersContinue()).then((done) => {
-              if (done === false) {
-                return;
-              }
-              // A refusal this screen carries no control for names the step
-              // that does. That step is behind the derived one -- the
-              // completion the customer is repeating already succeeded once --
-              // which is exactly the position the override is for.
-              if (typeof done === "string") {
-                setWentBackTo(done);
-                return;
-              }
-              goForward();
-            });
+            setProvidersContinuing(true);
+            void Promise.resolve(props.onProvidersContinue())
+              .then((done) => {
+                if (done === false) {
+                  return;
+                }
+                // A refusal this screen carries no control for names the step
+                // that does. That step is behind the derived one -- the
+                // completion the customer is repeating already succeeded once --
+                // which is exactly the position the override is for.
+                if (typeof done === "string") {
+                  setWentBackTo(done);
+                  return;
+                }
+                goForward();
+              })
+              .finally(() => setProvidersContinuing(false));
           }}
           onRecover={props.onProviderRecover}
           onToggle={props.onProviderToggle}

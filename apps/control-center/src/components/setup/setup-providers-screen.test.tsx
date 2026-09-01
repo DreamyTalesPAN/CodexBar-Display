@@ -167,6 +167,17 @@ describe("SetupProvidersScreen", () => {
     );
   });
 
+  // Each completion forces a live provider read before it writes anything, so
+  // a second press paid for the same slow check twice and either answer could
+  // move the step or raise a refusal on its own.
+  it("closes Continue while the completion is on its way", () => {
+    const html = render({ continuing: true, providers: [claude, copilot] });
+
+    expect(html).toMatch(
+      /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
+    );
+  });
+
   it("finds a provider by label, by its message and by its id", () => {
     expect(setupProviderMatchesQuery(copilot, "github")).toBe(true);
     expect(setupProviderMatchesQuery(copilot, "sign in")).toBe(true);

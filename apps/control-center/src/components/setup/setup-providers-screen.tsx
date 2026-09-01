@@ -2,7 +2,7 @@
 
 import type { SupportDiagnostics } from "../control-center-types";
 import { Search, SearchX } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -26,6 +26,8 @@ type SetupProvidersScreenProps = {
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   onRecover: (provider: ProviderItem) => void;
   onToggle: (provider: ProviderItem, enabled: boolean) => void;
+  /** The completion this step asked for has not answered yet. */
+  continuing?: boolean;
   /** Providers whose exact check is queued or running. */
   pendingCheckIds: Set<string>;
   /** Preferences whose on/off write is in flight, by preference id. */
@@ -43,6 +45,7 @@ export function SetupProvidersScreen({
   onCreateSupportReport,
   onRecover,
   onToggle,
+  continuing = false,
   pendingCheckIds,
   pendingPreferenceIds,
   providers,
@@ -53,12 +56,27 @@ export function SetupProvidersScreen({
   // after handing the customer over. It is bounded so one they abandoned
   // cannot leave the row spinning with nothing to press.
   const [recoveringIds, setRecoveringIds] = useState<string[]>([]);
-  const waitTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  // Kept per provider so the wait for one can be called off on its own.
+  const waitTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   useEffect(
     () => () => waitTimers.current.forEach(clearTimeout),
     [],
   );
+
+  // Switching a provider off ends the recovery it was waiting for. The check
+  // at the end of that wait is a real provider probe -- the companion asks
+  // CodexBar for live usage -- and running one against a provider the customer
+  // has just turned off is work they did not ask for.
+  const endWait = useCallback((providerId: string) => {
+    const timer = waitTimers.current.get(providerId);
+    if (timer === undefined) {
+      return;
+    }
+    clearTimeout(timer);
+    waitTimers.current.delete(providerId);
+    setRecoveringIds((ids) => ids.filter((id) => id !== providerId));
+  }, []);
   const matching = providers.filter((provider) =>
     setupProviderMatchesQuery(provider, query),
   );
@@ -99,8 +117,10 @@ export function SetupProvidersScreen({
             onRecover={() => {
               const providerId = provider.providerId;
               setRecoveringIds((ids) => [...ids, providerId]);
-              waitTimers.current.push(
+              waitTimers.current.set(
+                providerId,
                 setTimeout(() => {
+                  waitTimers.current.delete(providerId);
                   setRecoveringIds((ids) =>
                     ids.filter((id) => id !== providerId),
                   );
@@ -113,7 +133,12 @@ export function SetupProvidersScreen({
               );
               onRecover(provider);
             }}
-            onToggle={(enabled) => onToggle(provider, enabled)}
+            onToggle={(enabled) => {
+              if (!enabled) {
+                endWait(provider.providerId);
+              }
+              onToggle(provider, enabled);
+            }}
             saving={pendingPreferenceIds.has(provider.id)}
             recovering={recoveringIds.includes(provider.providerId)}
           />
@@ -137,7 +162,13 @@ export function SetupProvidersScreen({
 
       <Button
         className="mt-4 w-full"
-        disabled={!setupProvidersCanContinue(providers, pendingCheckIds)}
+        // Closed while the completion is on its way. A second press starts a
+        // second one, and each of those forces a live provider read before it
+        // writes anything -- so the customer paid for the same slow check twice
+        // and either answer could move the step or raise a refusal on its own.
+        disabled={
+          continuing || !setupProvidersCanContinue(providers, pendingCheckIds)
+        }
         onClick={onContinue}
         type="button"
       >
