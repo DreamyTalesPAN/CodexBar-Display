@@ -144,6 +144,8 @@ export type ThemePrimitive = {
   a?: string;
   stateAssets?: Record<string, string>;
   sa?: Record<string, string>;
+  providerAssets?: Record<string, string>;
+  pa?: Record<string, string>;
   data?: string;
   d?: string;
   r?: string[];
@@ -1607,6 +1609,11 @@ function usageLaneText(value: number, unavailable: boolean): string {
 }
 
 function activeAssetPath(primitive: ThemePrimitive, frame: FrameData): string {
+  const providerAssets = primitive.providerAssets || primitive.pa || {};
+  const provider = (frame.provider || "").trim().toLowerCase();
+  if (provider && providerAssets[provider]) {
+    return providerAssets[provider];
+  }
   const stateAssets = primitive.stateAssets || primitive.sa || {};
   if (frame.activity === "coding" && stateAssets.coding) {
     return stateAssets.coding;

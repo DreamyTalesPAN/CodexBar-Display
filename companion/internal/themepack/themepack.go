@@ -542,6 +542,11 @@ func validateReferencedAssets(spec themespec.Spec, assets []File) error {
 				return fmt.Errorf("primitives[%d].stateAssets[%s] references %s, but manifest assets do not include it", index, state, assetPath)
 			}
 		}
+		for provider, assetPath := range primitive.ProviderAssets {
+			if _, ok := available[assetPath]; !ok {
+				return fmt.Errorf("primitives[%d].providerAssets[%s] references %s, but manifest assets do not include it", index, provider, assetPath)
+			}
+		}
 	}
 	return nil
 }
@@ -572,6 +577,9 @@ func referencedSpriteAssets(spec themespec.Spec) map[string]struct{} {
 			refs[primitive.AssetPath] = struct{}{}
 		}
 		for _, assetPath := range primitive.StateAssets {
+			refs[assetPath] = struct{}{}
+		}
+		for _, assetPath := range primitive.ProviderAssets {
 			refs[assetPath] = struct{}{}
 		}
 	}
@@ -750,6 +758,9 @@ func referencedGIFAssets(spec themespec.Spec) map[string]struct{} {
 			refs[primitive.AssetPath] = struct{}{}
 		}
 		for _, assetPath := range primitive.StateAssets {
+			refs[assetPath] = struct{}{}
+		}
+		for _, assetPath := range primitive.ProviderAssets {
 			refs[assetPath] = struct{}{}
 		}
 	}

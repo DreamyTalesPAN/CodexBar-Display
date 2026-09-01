@@ -84,6 +84,37 @@ describe("validateThemeSpec", () => {
     });
   });
 
+  it("round-trips provider assets through compact device JSON", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        assetPath: "/themes/u/fallback.cbi",
+        height: 24,
+        providerAssets: {
+          claude: "/themes/u/claude.cbi",
+          cursor: "/themes/u/cursor.cbi",
+        },
+        type: "sprite",
+        width: 24,
+        x: 0,
+        y: 0,
+      },
+    ];
+
+    const compact = JSON.parse(deviceThemeSpecJson(spec));
+    expect(compact.p[0].pa).toEqual({
+      claude: "/themes/u/claude.cbi",
+      cursor: "/themes/u/cursor.cbi",
+    });
+    expect(compact.p[0].a).toBe("/themes/u/fallback.cbi");
+
+    const roundTrip = importThemeSpec(compact);
+    expect(roundTrip.primitives[0].providerAssets).toEqual({
+      claude: "/themes/u/claude.cbi",
+      cursor: "/themes/u/cursor.cbi",
+    });
+  });
+
   it("keeps screensaver assets with matching file names distinct", () => {
     const spec = validSpec();
     spec.primitives = [

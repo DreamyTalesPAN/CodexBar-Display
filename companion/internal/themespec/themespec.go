@@ -61,6 +61,8 @@ type Primitive struct {
 	ShortAsset       string            `json:"a,omitempty"`
 	StateAssets      map[string]string `json:"stateAssets,omitempty"`
 	ShortStateAssets map[string]string `json:"sa,omitempty"`
+	ProviderAssets      map[string]string `json:"providerAssets,omitempty"`
+	ShortProviderAssets map[string]string `json:"pa,omitempty"`
 	Data             string            `json:"data,omitempty"`
 	ShortData        string            `json:"d,omitempty"`
 	Palette          []string          `json:"p,omitempty"`
@@ -300,6 +302,7 @@ func normalizeSpec(spec Spec) Spec {
 		spec.Primitives[i].BorderColor = strings.TrimSpace(spec.Primitives[i].BorderColor)
 		spec.Primitives[i].AssetPath = strings.TrimSpace(spec.Primitives[i].AssetPath)
 		spec.Primitives[i].StateAssets = normalizeStateAssets(spec.Primitives[i].StateAssets)
+		spec.Primitives[i].ProviderAssets = normalizeProviderAssets(spec.Primitives[i].ProviderAssets)
 		spec.Primitives[i].Data = strings.TrimSpace(spec.Primitives[i].Data)
 		for j := range spec.Primitives[i].Palette {
 			spec.Primitives[i].Palette[j] = strings.TrimSpace(spec.Primitives[i].Palette[j])
@@ -358,10 +361,24 @@ func normalizePrimitive(p Primitive) Primitive {
 	if len(p.StateAssets) == 0 && len(p.ShortStateAssets) > 0 {
 		p.StateAssets = p.ShortStateAssets
 	}
+	if len(p.ProviderAssets) == 0 && len(p.ShortProviderAssets) > 0 {
+		p.ProviderAssets = p.ShortProviderAssets
+	}
 	if p.Data == "" {
 		p.Data = p.ShortData
 	}
 	return p
+}
+
+func normalizeProviderAssets(providerAssets map[string]string) map[string]string {
+	if len(providerAssets) == 0 {
+		return nil
+	}
+	normalized := make(map[string]string, len(providerAssets))
+	for provider, assetPath := range providerAssets {
+		normalized[strings.TrimSpace(strings.ToLower(provider))] = strings.TrimSpace(assetPath)
+	}
+	return normalized
 }
 
 func normalizeStateAssets(stateAssets map[string]string) map[string]string {
@@ -492,6 +509,9 @@ func validatePrimitive(p Primitive) error {
 		if err := validateSpriteAssetReferences(p); err != nil {
 			return err
 		}
+		if err := validateProviderAssetReferences(p); err != nil {
+			return err
+		}
 		if p.Width < 0 || p.Height < 0 {
 			return errors.New("sprite primitive width/height must be >= 0")
 		}
@@ -571,7 +591,7 @@ func gifAssetReferencesHaveGifExtension(p Primitive) bool {
 }
 
 func hasSpriteAssetReference(p Primitive) bool {
-	return strings.TrimSpace(p.AssetPath) != "" || len(p.StateAssets) > 0
+	return strings.TrimSpace(p.AssetPath) != "" || len(p.StateAssets) > 0 || len(p.ProviderAssets) > 0
 }
 
 func validateSpriteAssetReferences(p Primitive) error {
@@ -587,6 +607,27 @@ func validateSpriteAssetReferences(p Primitive) error {
 		}
 		if !isSafeThemeAssetPath(assetPath) {
 			return fmt.Errorf("stateAssets[%s] must be under /themes/", state)
+		}
+	}
+	return nil
+}
+
+func validateProviderAssetReferences(p Primitive) error {
+	if len(p.ProviderAssets) == 0 {
+		return nil
+	}
+	if p.Type == "gif" {
+		return errors.New("providerAssets is only supported on sprite primitives")
+	}
+	for provider, assetPath := range p.ProviderAssets {
+		if !stateNamePattern.MatchString(provider) {
+			return fmt.Errorf("providerAssets provider %q must match [a-z0-9][a-z0-9_-]{0,31}", provider)
+		}
+		if provider == "idle" || provider == "coding" {
+			return fmt.Errorf("providerAssets provider %q is reserved; use stateAssets for idle and coding", provider)
+		}
+		if !isSafeThemeAssetPath(assetPath) {
+			return fmt.Errorf("providerAssets[%s] must be under /themes/", provider)
 		}
 	}
 	return nil

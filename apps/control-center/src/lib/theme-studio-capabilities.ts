@@ -300,6 +300,11 @@ function referencedGifAssetPaths(spec: ThemeStudioSpec): string[] {
         paths.add(assetPath);
       }
     }
+    for (const assetPath of Object.values(primitive.providerAssets || {})) {
+      if (assetPath) {
+        paths.add(assetPath);
+      }
+    }
   }
   return [...paths];
 }

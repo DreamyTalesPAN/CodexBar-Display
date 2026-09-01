@@ -159,6 +159,12 @@ struct PixelsCommand {
 
 constexpr size_t kMaxCompiledThemeSpecPrimitives = 32;
 constexpr size_t kMaxCompiledThemeSpecStringBytes = 1024;
+constexpr size_t kMaxCompiledProviderAssets = 16;
+
+struct CompiledProviderAsset {
+  const char* key = nullptr;
+  const char* path = nullptr;
+};
 
 enum class PrimitiveKind : uint8_t {
   Unknown = 0,
@@ -197,6 +203,8 @@ struct CompiledPrimitive {
   const char* assetPath = "";
   const char* idleAssetPath = nullptr;
   const char* codingAssetPath = nullptr;
+  uint8_t providerAssetStart = 0;
+  uint8_t providerAssetCount = 0;
   const char* data = "";
   JsonArrayConst palette;
   JsonArrayConst rows;
@@ -213,6 +221,9 @@ struct CompiledThemeSpec {
   char* stringPool = nullptr;
   size_t stringPoolCapacity = 0;
   size_t stringPoolUsed = 0;
+  CompiledProviderAsset* providerAssets = nullptr;
+  size_t providerAssetCapacity = 0;
+  size_t providerAssetCount = 0;
 };
 
 inline bool CompiledThemeSpecHasGifAssets(const CompiledThemeSpec& scene) {
@@ -239,6 +250,12 @@ inline bool CompiledThemeSpecReferencesAsset(
          std::strcmp(primitive.codingAssetPath, assetPath) == 0)) {
       return true;
     }
+    for (uint8_t j = 0; j < primitive.providerAssetCount; ++j) {
+      const CompiledProviderAsset& entry = scene.providerAssets[primitive.providerAssetStart + j];
+      if (entry.path != nullptr && std::strcmp(entry.path, assetPath) == 0) {
+        return true;
+      }
+    }
   }
   return false;
 }
@@ -246,6 +263,7 @@ inline bool CompiledThemeSpecReferencesAsset(
 struct CompiledThemeSpecStoragePlan {
   size_t primitiveCapacity = 0;
   size_t stringPoolCapacity = 0;
+  size_t providerAssetCapacity = 0;
 };
 
 class Sink {
@@ -1074,6 +1092,7 @@ inline void ReleaseCompiledThemeSpec(CompiledThemeSpec& scene) {
   if (scene.ownsMemory) {
     delete[] scene.primitives;
     delete[] scene.stringPool;
+    delete[] scene.providerAssets;
   }
   scene = CompiledThemeSpec{};
 }
@@ -1083,14 +1102,19 @@ inline bool AllocateCompiledThemeSpecStorage(
     const CompiledThemeSpecStoragePlan& plan) {
   ReleaseCompiledThemeSpec(scene);
   if (plan.primitiveCapacity == 0 || plan.primitiveCapacity > kMaxCompiledThemeSpecPrimitives ||
-      plan.stringPoolCapacity > kMaxCompiledThemeSpecStringBytes) {
+      plan.stringPoolCapacity > kMaxCompiledThemeSpecStringBytes ||
+      plan.providerAssetCapacity > kMaxCompiledProviderAssets) {
     return false;
   }
 
   scene.primitives = new (std::nothrow) CompiledPrimitive[plan.primitiveCapacity];
   scene.stringPool = plan.stringPoolCapacity == 0 ? nullptr : new (std::nothrow) char[plan.stringPoolCapacity];
+  scene.providerAssets = plan.providerAssetCapacity == 0
+                             ? nullptr
+                             : new (std::nothrow) CompiledProviderAsset[plan.providerAssetCapacity];
   if (scene.primitives == nullptr ||
-      (plan.stringPoolCapacity > 0 && scene.stringPool == nullptr)) {
+      (plan.stringPoolCapacity > 0 && scene.stringPool == nullptr) ||
+      (plan.providerAssetCapacity > 0 && scene.providerAssets == nullptr)) {
     ReleaseCompiledThemeSpec(scene);
     return false;
   }
@@ -1098,6 +1122,7 @@ inline bool AllocateCompiledThemeSpecStorage(
   scene.ownsMemory = true;
   scene.primitiveCapacity = plan.primitiveCapacity;
   scene.stringPoolCapacity = plan.stringPoolCapacity;
+  scene.providerAssetCapacity = plan.providerAssetCapacity;
   return true;
 }
 
@@ -1115,6 +1140,25 @@ inline void AddCompiledStringStorage(const char* value, size_t& stringBytes) {
     return;
   }
   stringBytes += std::strlen(value) + 1;
+}
+
+inline void AddProviderAssetsStorage(
+    JsonObjectConst providerAssets,
+    size_t& stringBytes,
+    size_t& entryCount) {
+  if (providerAssets.isNull()) {
+    return;
+  }
+  for (JsonPairConst pair : providerAssets) {
+    const char* key = pair.key().c_str();
+    const char* path = JsonStringOrNull(pair.value());
+    if (key == nullptr || key[0] == '\0' || path == nullptr || path[0] == '\0') {
+      continue;
+    }
+    AddCompiledStringStorage(key, stringBytes);
+    AddCompiledStringStorage(path, stringBytes);
+    ++entryCount;
+  }
 }
 
 inline bool CountCompiledThemeSpecStorage(
@@ -1140,15 +1184,35 @@ inline bool CountCompiledThemeSpecStorage(
       JsonObjectConst stateAssets = JsonObjectFor(primitive, "stateAssets", "sa");
       AddCompiledStringStorage(JsonStringOrNull(stateAssets["idle"]), plan.stringPoolCapacity);
       AddCompiledStringStorage(JsonStringOrNull(stateAssets["coding"]), plan.stringPoolCapacity);
+      if (PrimitiveTypeIs(primitive, "sprite", "sp") || PrimitiveTypeIs(primitive, "image", "img")) {
+        AddProviderAssetsStorage(
+            JsonObjectFor(primitive, "providerAssets", "pa"),
+            plan.stringPoolCapacity,
+            plan.providerAssetCapacity);
+      }
     } else if (PrimitiveTypeIs(primitive, "pixels", "px")) {
       AddCompiledStringStorage(JsonStringFor(primitive, "data", "d"), plan.stringPoolCapacity);
     }
   }
 
-  return plan.stringPoolCapacity <= kMaxCompiledThemeSpecStringBytes;
+  return plan.stringPoolCapacity <= kMaxCompiledThemeSpecStringBytes &&
+         plan.providerAssetCapacity <= kMaxCompiledProviderAssets;
 }
 
-inline const char* CompiledStateAssetPathFor(const CompiledPrimitive& primitive, const FrameData& frame) {
+inline const char* CompiledStateAssetPathFor(
+    const CompiledThemeSpec& scene,
+    const CompiledPrimitive& primitive,
+    const FrameData& frame) {
+  const char* provider = frame.provider == nullptr ? "" : frame.provider;
+  if (provider[0] != '\0' && primitive.providerAssetCount > 0) {
+    for (uint8_t i = 0; i < primitive.providerAssetCount; ++i) {
+      const CompiledProviderAsset& entry = scene.providerAssets[primitive.providerAssetStart + i];
+      if (entry.key != nullptr && std::strcmp(entry.key, provider) == 0 &&
+          entry.path != nullptr && entry.path[0] != '\0') {
+        return entry.path;
+      }
+    }
+  }
   const char* activity = frame.activity == nullptr ? "" : frame.activity;
   if (std::strcmp(activity, "coding") == 0 &&
       primitive.codingAssetPath != nullptr &&
@@ -1159,6 +1223,27 @@ inline const char* CompiledStateAssetPathFor(const CompiledPrimitive& primitive,
     return primitive.idleAssetPath;
   }
   return primitive.assetPath;
+}
+
+inline bool CompiledPrimitiveHasAssetReference(
+    const CompiledThemeSpec& scene,
+    const CompiledPrimitive& primitive) {
+  if (primitive.assetPath != nullptr && primitive.assetPath[0] != '\0') {
+    return true;
+  }
+  if (primitive.idleAssetPath != nullptr && primitive.idleAssetPath[0] != '\0') {
+    return true;
+  }
+  if (primitive.codingAssetPath != nullptr && primitive.codingAssetPath[0] != '\0') {
+    return true;
+  }
+  for (uint8_t i = 0; i < primitive.providerAssetCount; ++i) {
+    const char* path = scene.providerAssets[primitive.providerAssetStart + i].path;
+    if (path != nullptr && path[0] != '\0') {
+      return true;
+    }
+  }
+  return false;
 }
 
 inline const char* CopyCompiledString(CompiledThemeSpec& scene, const char* value) {
@@ -1195,6 +1280,39 @@ inline bool CompileStateAssets(CompiledThemeSpec& scene, JsonObjectConst stateAs
     if (out.codingAssetPath == nullptr) {
       return false;
     }
+  }
+  return true;
+}
+
+inline bool CompileProviderAssets(
+    CompiledThemeSpec& scene,
+    JsonObjectConst providerAssets,
+    CompiledPrimitive& out) {
+  if (providerAssets.isNull()) {
+    return true;
+  }
+  out.providerAssetStart = static_cast<uint8_t>(scene.providerAssetCount);
+  uint8_t count = 0;
+  for (JsonPairConst pair : providerAssets) {
+    const char* key = pair.key().c_str();
+    const char* path = JsonStringOrNull(pair.value());
+    if (key == nullptr || key[0] == '\0' || path == nullptr || path[0] == '\0') {
+      continue;
+    }
+    if (scene.providerAssetCount >= scene.providerAssetCapacity) {
+      return false;
+    }
+    const char* copiedKey = CopyCompiledString(scene, key);
+    const char* copiedPath = CopyCompiledString(scene, path);
+    if (copiedKey == nullptr || copiedPath == nullptr) {
+      return false;
+    }
+    scene.providerAssets[scene.providerAssetCount++] = {copiedKey, copiedPath};
+    ++count;
+  }
+  out.providerAssetCount = count;
+  if (count > 0) {
+    out.liveFields |= kThemeSpecFieldProvider;
   }
   return true;
 }
@@ -1307,8 +1425,9 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
         out.width * out.height > kMaxThemeSpecGifPixels) {
       return false;
     }
-    const char* initialPath = CompiledStateAssetPathFor(out, FrameData{});
+    const char* initialPath = CompiledStateAssetPathFor(scene, out, FrameData{});
     return initialPath != nullptr &&
+           initialPath[0] != '\0' &&
            AssetPathLooksGif(initialPath) &&
            (out.idleAssetPath == nullptr || AssetPathLooksGif(out.idleAssetPath)) &&
            (out.codingAssetPath == nullptr || AssetPathLooksGif(out.codingAssetPath));
@@ -1326,15 +1445,25 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     if (!CompileStateAssets(scene, stateAssets, out)) {
       return false;
     }
+    if (!CompileProviderAssets(scene, JsonObjectFor(primitive, "providerAssets", "pa"), out)) {
+      return false;
+    }
     const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
     out.hasBg = bgColor != nullptr;
     out.bg = ParseColor(bgColor, 0x0000);
     out.liveFields |= (out.idleAssetPath == nullptr && out.codingAssetPath == nullptr) ? 0 : kThemeSpecFieldActivity;
+    for (uint8_t i = 0; i < out.providerAssetCount; ++i) {
+      const char* path = scene.providerAssets[out.providerAssetStart + i].path;
+      if (AssetPathLooksAnimated(path)) {
+        hasAnimatedAssets = true;
+        break;
+      }
+    }
     hasAnimatedAssets = hasAnimatedAssets ||
                         AssetPathLooksAnimated(out.assetPath) ||
                         AssetPathLooksAnimated(out.idleAssetPath) ||
                         AssetPathLooksAnimated(out.codingAssetPath);
-    return CompiledStateAssetPathFor(out, FrameData{}) != nullptr;
+    return CompiledPrimitiveHasAssetReference(scene, out);
   }
 
   if (PrimitiveTypeIs(primitive, "pixels", "px")) {
@@ -1502,17 +1631,21 @@ inline bool CompiledProgressLaneUnavailable(const CompiledPrimitive& primitive, 
   return frame.sessionUnavailable;
 }
 
-inline bool CompiledPrimitiveIsAnimated(const CompiledPrimitive& primitive, const FrameData& frame) {
+inline bool CompiledPrimitiveIsAnimated(
+    const CompiledThemeSpec& scene,
+    const CompiledPrimitive& primitive,
+    const FrameData& frame) {
   if (primitive.kind == PrimitiveKind::Gif) {
     return true;
   }
   if (primitive.kind == PrimitiveKind::Sprite) {
-    return AssetPathLooksAnimated(CompiledStateAssetPathFor(primitive, frame));
+    return AssetPathLooksAnimated(CompiledStateAssetPathFor(scene, primitive, frame));
   }
   return false;
 }
 
 inline bool CompiledPrimitiveBounds(
+    const CompiledThemeSpec& scene,
     const CompiledPrimitive& primitive,
     const FrameData& frame,
     bool requireStableTextBounds,
@@ -1531,7 +1664,7 @@ inline bool CompiledPrimitiveBounds(
   }
 
   if (primitive.kind == PrimitiveKind::Sprite) {
-    const char* assetPath = CompiledStateAssetPathFor(primitive, frame);
+    const char* assetPath = CompiledStateAssetPathFor(scene, primitive, frame);
     if (assetPath == nullptr || assetPath[0] == '\0') {
       return false;
     }
@@ -1566,7 +1699,11 @@ inline bool CompiledPrimitiveBounds(
   return false;
 }
 
-inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const FrameData& frame, Sink& sink) {
+inline bool DrawCompiledPrimitive(
+    const CompiledThemeSpec& scene,
+    const CompiledPrimitive& primitive,
+    const FrameData& frame,
+    Sink& sink) {
   if (primitive.usageSlot > 0 &&
       !UsageWindowOwnerAvailableFor(frame, static_cast<int>(primitive.usageSlot - 1))) {
     return false;
@@ -1646,7 +1783,7 @@ inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const Fram
     cmd.y = primitive.y;
     cmd.width = primitive.width;
     cmd.height = primitive.height;
-    cmd.assetPath = CompiledStateAssetPathFor(primitive, frame);
+    cmd.assetPath = CompiledStateAssetPathFor(scene, primitive, frame);
     cmd.hasBg = primitive.hasBg;
     cmd.bg = primitive.bg;
     if (cmd.assetPath == nullptr || cmd.assetPath[0] == '\0' || cmd.width <= 0 || cmd.height <= 0) {
@@ -1662,7 +1799,7 @@ inline bool DrawCompiledPrimitive(const CompiledPrimitive& primitive, const Fram
     cmd.y = primitive.y;
     cmd.width = primitive.width;
     cmd.height = primitive.height;
-    cmd.assetPath = CompiledStateAssetPathFor(primitive, frame);
+    cmd.assetPath = CompiledStateAssetPathFor(scene, primitive, frame);
     cmd.hasBg = primitive.hasBg;
     cmd.bg = primitive.bg;
     if (cmd.assetPath == nullptr || cmd.assetPath[0] == '\0') {
@@ -1706,7 +1843,7 @@ inline bool RenderCompiledThemeSpec(const CompiledThemeSpec& scene, const FrameD
   }
   sink.FillScreen(scene.bgColor);
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
-    (void)DrawCompiledPrimitive(scene.primitives[i], frame, sink);
+    (void)DrawCompiledPrimitive(scene, scene.primitives[i], frame, sink);
     RenderYield();
   }
   return true;
@@ -1718,8 +1855,8 @@ inline bool RenderCompiledThemeSpecStaticPrimitives(const CompiledThemeSpec& sce
   }
   sink.FillScreen(scene.bgColor);
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
-    if (!CompiledPrimitiveIsAnimated(scene.primitives[i], frame)) {
-      (void)DrawCompiledPrimitive(scene.primitives[i], frame, sink);
+    if (!CompiledPrimitiveIsAnimated(scene, scene.primitives[i], frame)) {
+      (void)DrawCompiledPrimitive(scene, scene.primitives[i], frame, sink);
       RenderYield();
     }
   }
@@ -1730,8 +1867,8 @@ inline bool RenderCompiledThemeSpecAnimatedPrimitives(const CompiledThemeSpec& s
   bool rendered = false;
   sink.PrimeBackground(scene.bgColor);
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
-    if (CompiledPrimitiveIsAnimated(scene.primitives[i], frame)) {
-      rendered = DrawCompiledPrimitive(scene.primitives[i], frame, sink) || rendered;
+    if (CompiledPrimitiveIsAnimated(scene, scene.primitives[i], frame)) {
+      rendered = DrawCompiledPrimitive(scene, scene.primitives[i], frame, sink) || rendered;
     }
   }
   return rendered;
@@ -1777,16 +1914,16 @@ inline bool RenderCompiledThemeSpecRegionPrimitives(
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
     Bounds primitiveBounds;
     const CompiledPrimitive& primitive = scene.primitives[i];
-    if (CompiledPrimitiveBounds(primitive, frame, false, primitiveBounds) &&
+    if (CompiledPrimitiveBounds(scene, primitive, frame, false, primitiveBounds) &&
         BoundsOverlap(region, primitiveBounds)) {
-      if (CompiledPrimitiveIsAnimated(primitive, frame)) {
+      if (CompiledPrimitiveIsAnimated(scene, primitive, frame)) {
         if (skippedAnimatedOverlap != nullptr) {
           *skippedAnimatedOverlap = true;
         }
         rendered = true;
         continue;
       }
-      rendered = DrawCompiledPrimitive(primitive, frame, sink) || rendered;
+      rendered = DrawCompiledPrimitive(scene, primitive, frame, sink) || rendered;
       RenderYield();
     }
   }
@@ -1832,7 +1969,7 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
     }
     hasAffectedPrimitive = true;
     Bounds primitiveBounds;
-    if (!CompiledPrimitiveBounds(primitive, frame, true, primitiveBounds)) {
+    if (!CompiledPrimitiveBounds(scene, primitive, frame, true, primitiveBounds)) {
       if (error != nullptr) {
         *error = "unstable_dirty_bounds";
       }
@@ -1856,12 +1993,12 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
   bool dirtyBridgesUnchangedAnimation = false;
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
     const CompiledPrimitive& primitive = scene.primitives[i];
-    if (!CompiledPrimitiveIsAnimated(primitive, frame) ||
+    if (!CompiledPrimitiveIsAnimated(scene, primitive, frame) ||
         (primitive.liveFields & changedFields) != 0) {
       continue;
     }
     Bounds primitiveBounds;
-    if (CompiledPrimitiveBounds(primitive, frame, false, primitiveBounds) &&
+    if (CompiledPrimitiveBounds(scene, primitive, frame, false, primitiveBounds) &&
         BoundsOverlap(dirty, primitiveBounds)) {
       dirtyBridgesUnchangedAnimation = true;
       break;
@@ -1876,7 +2013,7 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
         continue;
       }
       Bounds primitiveBounds;
-      if (!CompiledPrimitiveBounds(primitive, frame, true, primitiveBounds)) {
+      if (!CompiledPrimitiveBounds(scene, primitive, frame, true, primitiveBounds)) {
         if (error != nullptr) {
           *error = "unstable_dirty_bounds";
         }
@@ -1909,11 +2046,11 @@ inline bool AnyAnimatedCompiledPrimitiveOverlaps(
     const Bounds& region) {
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
     const CompiledPrimitive& primitive = scene.primitives[i];
-    if (!CompiledPrimitiveIsAnimated(primitive, frame)) {
+    if (!CompiledPrimitiveIsAnimated(scene, primitive, frame)) {
       continue;
     }
     Bounds primitiveBounds;
-    if (CompiledPrimitiveBounds(primitive, frame, false, primitiveBounds) &&
+    if (CompiledPrimitiveBounds(scene, primitive, frame, false, primitiveBounds) &&
         BoundsOverlap(region, primitiveBounds)) {
       return true;
     }

@@ -1112,6 +1112,11 @@ func requiredGIFAssets(spec themespec.Spec) []string {
 				seen[assetPath] = struct{}{}
 			}
 		}
+		for _, assetPath := range primitive.ProviderAssets {
+			if strings.TrimSpace(assetPath) != "" {
+				seen[assetPath] = struct{}{}
+			}
+		}
 	}
 	return mapKeys(seen)
 }

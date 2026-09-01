@@ -61,6 +61,7 @@ export type ThemeStudioPrimitive = {
   segmentGap?: number;
   assetPath?: string;
   stateAssets?: Record<string, string>;
+  providerAssets?: Record<string, string>;
   frameCount?: number;
   fps?: number;
   sheetColumns?: number;
@@ -1023,6 +1024,7 @@ function validateThemeAssetPaths(
   const paths = [
     primitive.assetPath,
     ...Object.values(primitive.stateAssets || {}),
+    ...Object.values(primitive.providerAssets || {}),
   ].filter((path): path is string => Boolean(path));
   if (paths.length === 0) {
     errors.push(`${prefix}: asset path is required.`);
@@ -1038,6 +1040,17 @@ function validateThemeAssetPaths(
     }
     validateThemeAssetPath(assetPath, prefix, errors);
   }
+  for (const [provider, assetPath] of Object.entries(
+    primitive.providerAssets || {},
+  )) {
+    if (!STATE_NAME_RE.test(provider)) {
+      errors.push(`${prefix}: provider name ${provider} is not supported.`);
+    }
+    if (provider === "idle" || provider === "coding") {
+      errors.push(`${prefix}: use stateAssets for idle and coding.`);
+    }
+    validateThemeAssetPath(assetPath, prefix, errors);
+  }
   if (primitive.assetPath) {
     validateThemeAssetPath(primitive.assetPath, prefix, errors);
   }
@@ -1050,6 +1063,7 @@ function primitiveAssetPaths(primitive: ThemeStudioPrimitive): string[] {
   return [
     primitive.assetPath,
     ...Object.values(primitive.stateAssets || {}),
+    ...Object.values(primitive.providerAssets || {}),
   ].filter((path): path is string => Boolean(path));
 }
 
@@ -1155,6 +1169,9 @@ function buildDevicePrimitive(
   }
   if (primitive.stateAssets !== undefined) {
     compact.sa = primitive.stateAssets;
+  }
+  if (primitive.providerAssets !== undefined) {
+    compact.pa = primitive.providerAssets;
   }
   if (primitive.frameCount !== undefined) {
     compact.fc = primitive.frameCount;
@@ -1286,6 +1303,11 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   const stateAssets = stateAssetsValue(value.stateAssets) ?? stateAssetsValue(value.sa);
   if (stateAssets) {
     primitive.stateAssets = stateAssets;
+  }
+  const providerAssets =
+    providerAssetsValue(value.providerAssets) ?? providerAssetsValue(value.pa);
+  if (providerAssets) {
+    primitive.providerAssets = providerAssets;
   }
   const frameCount = numberValue(value.frameCount) ?? numberValue(value.fc);
   if (frameCount !== undefined) {
@@ -1685,6 +1707,19 @@ function stateAssetsValue(value: unknown): Record<string, string> | undefined {
   for (const [stateName, assetPath] of Object.entries(value)) {
     if (typeof assetPath === "string") {
       result[stateName] = assetPath;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function providerAssetsValue(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const result: Record<string, string> = {};
+  for (const [provider, assetPath] of Object.entries(value)) {
+    if (typeof assetPath === "string") {
+      result[provider.trim().toLowerCase()] = assetPath;
     }
   }
   return Object.keys(result).length > 0 ? result : undefined;

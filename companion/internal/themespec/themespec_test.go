@@ -341,6 +341,115 @@ func TestValidateRejectsInvalidStateAssets(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsProviderAssetsForSprite(t *testing.T) {
+	spec := Spec{
+		ThemeSpecVersion: 1,
+		ThemeID:          "provider-logo",
+		ThemeRev:         1,
+		Primitives: []Primitive{
+			{
+				Type:   "sprite",
+				X:      0,
+				Y:      0,
+				Width:  24,
+				Height: 24,
+				ProviderAssets: map[string]string{
+					"cursor": "/themes/u/cursor.cbi",
+					"claude": "/themes/u/claude.cbi",
+				},
+				AssetPath: "/themes/u/fallback.cbi",
+			},
+		},
+	}
+
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected providerAssets spec to validate, got %v", err)
+	}
+}
+
+func TestValidateAcceptsCompactProviderAssets(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"provider-logo",
+		"rev":1,
+		"p":[
+			{"t":"sp","x":0,"y":0,"w":24,"h":24,"pa":{"cursor":"/themes/u/cursor.cbi"},"a":"/themes/u/fallback.cbi"}
+		]
+	}`)
+
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse compact providerAssets spec: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected compact providerAssets spec to validate, got %v", err)
+	}
+	if got := spec.Primitives[0].ProviderAssets["cursor"]; got != "/themes/u/cursor.cbi" {
+		t.Fatalf("compact providerAssets did not normalize, got %q", got)
+	}
+}
+
+func TestValidateRejectsInvalidProviderAssets(t *testing.T) {
+	tests := []struct {
+		name            string
+		providerAssets  map[string]string
+		primitiveType   string
+	}{
+		{
+			name: "reserved idle key",
+			providerAssets: map[string]string{
+				"idle": "/themes/u/idle.cbi",
+			},
+		},
+		{
+			name: "reserved coding key",
+			providerAssets: map[string]string{
+				"coding": "/themes/u/coding.cbi",
+			},
+		},
+		{
+			name: "unsafe path",
+			providerAssets: map[string]string{
+				"codex": "/themes/../codex.cbi",
+			},
+		},
+		{
+			name:           "gif primitive",
+			providerAssets: map[string]string{"codex": "/themes/u/codex.gif"},
+			primitiveType:  "gif",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			primitiveType := tt.primitiveType
+			if primitiveType == "" {
+				primitiveType = "sprite"
+			}
+			spec := Spec{
+				ThemeSpecVersion: 1,
+				ThemeID:          "provider-logo",
+				ThemeRev:         1,
+				Primitives: []Primitive{
+					{
+						Type:           primitiveType,
+						X:              0,
+						Y:              0,
+						Width:          24,
+						Height:         24,
+						ProviderAssets: tt.providerAssets,
+						AssetPath:      "/themes/u/fallback.cbi",
+					},
+				},
+			}
+
+			if err := Validate(spec); err == nil {
+				t.Fatalf("expected validation error")
+			}
+		})
+	}
+}
+
 func TestValidateRejectsUnknownPrimitiveType(t *testing.T) {
 	spec := Spec{
 		ThemeSpecVersion: 1,

@@ -48,6 +48,7 @@ Companion.
 - Build pixel art from a softened low-resolution source and upscale with nearest-neighbor blocks. Preserve intentional transitions; do not round every RGB channel to coarse steps.
 - Compare the final reference and the Theme Studio render at the same scale. Strong black/bright jumps, repeated horizontal bands, or noisy checkerboard detail usually indicate a bad downscale or quantization step, not a ThemeSpec layout problem.
 - Use `stateAssets` for `idle` and `coding`; do not duplicate the whole theme just to change one character sprite.
+- Use `providerAssets` / `pa` on sprite primitives when one pack must show different provider logos. Keys must be the lowercase wire `provider` value (`codex`, `claude`, `cursor`), not `{label}` display text.
 - Keep state names and paths short. Prefer a small state set (`idle`, `coding`) over many rarely used states.
 - Run `node scripts/build-theme-packs.mjs` after every pack change. It validates the source directory and generated ZIP, and regenerates the catalog and exact render pack.
 - Test every launch theme on real hardware for at least 10-20 minutes.
