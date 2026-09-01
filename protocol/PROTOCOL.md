@@ -42,6 +42,9 @@ the frame parser.
   `kind:"connection-mode",status:"switching"` reply only acknowledges that the
   transition started; the Mac must still rediscover and confirm the same
   `deviceId` over WiFi.
+- `{"kind":"request","op":"scan-wifi","deviceId":"14799300"}` returns
+  `kind:"wifi-networks"` with the visible 2.4 GHz networks, RSSI, and whether
+  each network is encrypted. An empty list is a valid completed scan.
 - `set-connection-mode` and `confirm-connection-mode` start and confirm the
   bounded mode transactions defined in the hardware contract.
 

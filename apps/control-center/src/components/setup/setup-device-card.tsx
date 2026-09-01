@@ -24,6 +24,7 @@ export function SetupDeviceCard({
   selected,
 }: SetupDeviceCardProps) {
   const address = candidateAddress(candidate.target);
+  const cable = candidate.transport === "cable";
   return (
     <Item asChild className={selectedItemClass(selected)} variant="outline">
       <button
@@ -39,9 +40,10 @@ export function SetupDeviceCard({
               <Badge variant="secondary">Previously connected</Badge>
             ) : null}
           </ItemTitle>
-          <ItemDescription className="font-mono text-xs">
-            {address}
-            {candidate.firmware ? ` · Firmware ${candidate.firmware}` : ""}
+          <ItemDescription className={cable ? "text-xs" : "font-mono text-xs"}>
+            {cable ? "" : address}
+            {!cable && candidate.firmware ? " · " : ""}
+            {candidate.firmware ? `Firmware ${candidate.firmware}` : ""}
           </ItemDescription>
         </ItemContent>
         <ItemActions>

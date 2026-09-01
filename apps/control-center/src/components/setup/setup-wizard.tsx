@@ -9,6 +9,7 @@ import type {
   ProviderDisplaySelection,
   SupportDiagnostics,
   UsageSnapshot,
+  WiFiNetwork,
 } from "../control-center-types";
 import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
 import type { ProviderItem } from "../provider-picker";
@@ -38,16 +39,21 @@ import {
   resolveSetupStep,
   type SetupStep,
 } from "./setup-step";
-import {
-  SetupThemeScreen,
-  type SetupThemeOption,
-} from "./setup-theme-screen";
+import { SetupThemeScreen, type SetupThemeOption } from "./setup-theme-screen";
 import { SetupWelcomeScreen } from "./setup-welcome-screen";
+import {
+  candidateKey,
+  decideSetupConnection,
+  type SetupConnectionModeResult,
+  type SetupTransport,
+} from "./setup-connection";
 
 export type SetupWizardProps = {
   aiFixPrompt: () => string;
   automaticPreviews: SetupDisplayModePreview[];
   connectSteps: SetupConnectSteps;
+  connectionMode: string;
+  connectionModeChoiceRequired: boolean;
   device: DeviceInfo | null;
   deviceCandidates: DeviceCandidate[];
   deviceSearchState: DeviceSearchState;
@@ -62,6 +68,10 @@ export type SetupWizardProps = {
   installingTheme: boolean;
   /** Resolves with the VibeTV at that address, or rejects with what to show. */
   onFindManualTarget: (target: string) => Promise<DeviceCandidate>;
+  onConfigureWiFi: (
+    ssid: string,
+    password: string,
+  ) => Promise<string | undefined>;
   onCreateSupportReport: () => Promise<SupportDiagnostics | null>;
   /**
    * Called once, with what the customer settled on. Resolving false keeps them
@@ -90,6 +100,11 @@ export type SetupWizardProps = {
   /** Ask the companion again for whatever the step could not read. */
   onRetryProviders: () => void;
   onSearchDevices: () => void;
+  onScanWiFiNetworks: () => Promise<WiFiNetwork[]>;
+  onSelectConnectionMode: (
+    mode: SetupTransport,
+    deviceId?: string,
+  ) => Promise<SetupConnectionModeResult>;
   /** Providers whose exact check is queued or running. */
   pendingCheckIds: Set<string>;
   /** Preferences whose on/off write is in flight, by preference id. */
@@ -123,12 +138,24 @@ export function SetupWizard(props: SetupWizardProps) {
     deviceCandidates,
     deviceSearchState,
     onCreateSupportReport,
+    onScanWiFiNetworks,
     onSearchDevices,
+    onSelectConnectionMode,
     step: derivedStep,
   } = props;
 
   const [wentBackTo, setWentBackTo] = useState<SetupStep | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
+  const [preferredTransport, setPreferredTransport] =
+    useState<SetupTransport | null>(null);
+  const [wifiSetup, setWiFiSetup] = useState<{
+    phase: "credentials" | "waiting";
+    deviceId?: string;
+    viaCable: boolean;
+  } | null>(null);
+  const [wifiNetworks, setWiFiNetworks] = useState<WiFiNetwork[]>([]);
+  const [wifiScanning, setWiFiScanning] = useState(false);
+  const [wifiScanError, setWiFiScanError] = useState<string | null>(null);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
   const [notFoundDismissed, setNotFoundDismissed] = useState(false);
   // The completion this step asked for is still on its way. Held here rather
@@ -147,6 +174,27 @@ export function SetupWizard(props: SetupWizardProps) {
     providerId: string | null;
   } | null>(null);
   const connect = useSetupConnect(connectSteps, props.firmwareProgress);
+  const connectionDecision = useMemo(
+    () =>
+      decideSetupConnection({
+        candidates: deviceCandidates,
+        choiceRequired: props.connectionModeChoiceRequired,
+        savedMode: props.connectionMode,
+        preferredTransport,
+      }),
+    [
+      deviceCandidates,
+      preferredTransport,
+      props.connectionMode,
+      props.connectionModeChoiceRequired,
+    ],
+  );
+  const visibleCandidates = connectionDecision.candidates;
+  const legacyCandidateFlow = props.connectionModeChoiceRequired === undefined;
+  const showCandidateList =
+    legacyCandidateFlow ||
+    connectionDecision.kind === "list" ||
+    connect.state.phase === "failed";
 
   // Pairing publishes the connected VibeTV before the firmware check and any
   // install have finished, so the derived step can move on while the connect
@@ -204,23 +252,28 @@ export function SetupWizard(props: SetupWizardProps) {
     // doing nothing because the target is not in the list any more.
     if (
       selectedTarget &&
-      deviceCandidates.some((candidate) => candidate.target === selectedTarget)
+      visibleCandidates.some(
+        (candidate) => candidateKey(candidate) === selectedTarget,
+      )
     ) {
       return selectedTarget;
     }
-    const known = deviceCandidates.find((candidate) => candidate.known);
+    const known = visibleCandidates.find((candidate) => candidate.known);
     // With nothing in the list, the sequence that failed is still the thing to
     // press: connecting empties the discovered VibeTVs, so dismissing a
     // firmware dialog left a step that is deliberately held for that failure
     // with a closed Connect and a full rescan as the only way back to it.
     return (
-      known?.target ??
-      deviceCandidates[0]?.target ??
+      (known ? candidateKey(known) : null) ??
+      (visibleCandidates[0] ? candidateKey(visibleCandidates[0]) : null) ??
       (connect.state.phase === "failed" ? connect.state.address : null)
     );
-  }, [connect.state, deviceCandidates, selectedTarget]);
+  }, [connect.state, selectedTarget, visibleCandidates]);
 
-  const searchFailed = deviceSearchState === "not-found" && !notFoundDismissed;
+  const searchFailed =
+    connectionDecision.kind === "not-found" &&
+    deviceSearchState === "not-found" &&
+    !notFoundDismissed;
   // "idle" is before the first scan was started, so like "searching" it has no
   // result to report. Claiming a count there told the customer none were found
   // while the scan that would find them had not answered, or not even run.
@@ -236,8 +289,8 @@ export function SetupWizard(props: SetupWizardProps) {
   }, [onSearchDevices]);
 
   const startConnect = useCallback(() => {
-    const candidate = deviceCandidates.find(
-      (entry) => entry.target === preselected,
+    const candidate = visibleCandidates.find(
+      (entry) => candidateKey(entry) === preselected,
     );
     if (candidate) {
       void connect.run(candidate);
@@ -247,7 +300,92 @@ export function SetupWizard(props: SetupWizardProps) {
     // again against the VibeTV it ran against, which is the one the customer
     // is half way through setting up.
     connect.retry();
-  }, [connect, deviceCandidates, preselected]);
+  }, [connect, preselected, visibleCandidates]);
+
+  const scanWiFiNetworks = useCallback(async () => {
+    setWiFiScanning(true);
+    setWiFiScanError(null);
+    try {
+      setWiFiNetworks(await onScanWiFiNetworks());
+    } catch (error) {
+      const failure = error as ApiError;
+      setWiFiNetworks([]);
+      setWiFiScanError(
+        failure?.nextAction || "Scan again or enter the WiFi name manually.",
+      );
+    } finally {
+      setWiFiScanning(false);
+    }
+  }, [onScanWiFiNetworks]);
+
+  const chooseTransport = useCallback(
+    async (transport: SetupTransport) => {
+      setPreferredTransport(transport);
+      setSelectedTarget(null);
+      if (transport === "cable") {
+        setWiFiSetup(null);
+        if (
+          !deviceCandidates.some((candidate) => candidate.transport === "cable")
+        ) {
+          onSearchDevices();
+        }
+        return;
+      }
+      const cable = deviceCandidates.find(
+        (candidate) => candidate.transport === "cable",
+      );
+      let result: SetupConnectionModeResult;
+      try {
+        result = await onSelectConnectionMode("wifi", cable?.deviceId);
+      } catch {
+        return;
+      }
+      if (result.status === "wifi_credentials_required") {
+        setWiFiSetup({
+          phase: "credentials",
+          deviceId: result.deviceId,
+          viaCable: true,
+        });
+        void scanWiFiNetworks();
+      } else if (result.status === "waiting_for_wifi") {
+        setWiFiSetup({
+          phase: "waiting",
+          deviceId: result.deviceId,
+          viaCable: Boolean(cable),
+        });
+      }
+    },
+    [
+      deviceCandidates,
+      onSearchDevices,
+      onSelectConnectionMode,
+      scanWiFiNetworks,
+    ],
+  );
+
+  const directAttempt = useRef("");
+  useEffect(() => {
+    if (
+      step !== "device" ||
+      searchingForDevices ||
+      wifiSetup ||
+      connectionDecision.kind !== "direct" ||
+      connect.state.phase !== "idle"
+    ) {
+      return;
+    }
+    const candidate = connectionDecision.candidates[0];
+    if (!candidate) {
+      return;
+    }
+    const key = candidateKey(candidate);
+    if (directAttempt.current === key) {
+      return;
+    }
+    directAttempt.current = key;
+    setSelectedTarget(key);
+    void connect.run(candidate);
+  }, [connect, connectionDecision, searchingForDevices, step, wifiSetup]);
 
   const help = {
     aiFixPrompt,
@@ -264,18 +402,44 @@ export function SetupWizard(props: SetupWizardProps) {
       <>
         <SetupDeviceScreen
           {...help}
-          candidates={deviceCandidates}
+          alternativeTransport={
+            legacyCandidateFlow ? undefined : connectionDecision.alternative
+          }
+          candidates={visibleCandidates}
           connecting={connecting}
           logLines={connectLogLines(connect.state)}
           onConnect={startConnect}
+          onChooseTransport={(transport) => void chooseTransport(transport)}
+          onConfigureWiFi={async (ssid, password) => {
+            try {
+              const deviceId = await props.onConfigureWiFi(ssid, password);
+              setWiFiSetup({
+                phase: "waiting",
+                deviceId: deviceId || wifiSetup?.deviceId,
+                viaCable: true,
+              });
+              window.setTimeout(onSearchDevices, 1500);
+            } catch {
+              // The app owns and displays the normalized API error.
+            }
+          }}
           onEnterAddressManually={() => {
             setNotFoundDismissed(true);
             setAddressDialogOpen(true);
           }}
           onSearchAgain={searchAgain}
-          onSelect={(candidate) => setSelectedTarget(candidate.target)}
+          onScanWiFiNetworks={() => void scanWiFiNetworks()}
+          onSelect={(candidate) => setSelectedTarget(candidateKey(candidate))}
           searching={searchingForDevices}
           selectedTarget={preselected}
+          showModeChoice={connectionDecision.kind === "mode"}
+          showCandidates={showCandidateList}
+          transport={connectionDecision.transport}
+          wifiNetworks={wifiNetworks}
+          wifiScanError={wifiScanError}
+          wifiScanning={wifiScanning}
+          wifiSetupPhase={wifiSetup?.phase}
+          wifiWaitingViaCable={wifiSetup?.viaCable}
         />
         <SetupAddressDialog
           onConnect={async (target) => {

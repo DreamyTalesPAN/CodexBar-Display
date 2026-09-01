@@ -21,8 +21,11 @@ function render(props: Partial<Parameters<typeof SetupDeviceScreen>[0]> = {}) {
       candidates={[known, other]}
       logLines={[]}
       onConnect={vi.fn()}
+      onChooseTransport={vi.fn()}
+      onConfigureWiFi={vi.fn()}
       onEnterAddressManually={vi.fn()}
       onSearchAgain={vi.fn()}
+      onScanWiFiNetworks={vi.fn()}
       onSelect={vi.fn()}
       selectedTarget={known.target}
       {...props}
@@ -53,18 +56,75 @@ describe("SetupDeviceScreen", () => {
   it("cannot connect before a device is chosen", () => {
     const html = render({ selectedTarget: null });
 
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[^<]*<span>Connect<\/span>/);
+    expect(html).toMatch(
+      /<button[^>]*disabled=""[^>]*>[^<]*<span>Connect<\/span>/,
+    );
   });
 
   it("says it is connecting, and leaves the step it is on to the log", () => {
     const html = render({
       connecting: true,
-      logLines: [{ id: "1", text: "updating firmware — keep VibeTV powered on" }],
+      logLines: [
+        { id: "1", text: "updating firmware — keep VibeTV powered on" },
+      ],
     });
 
     expect(html).toContain("<span>Connecting</span>");
     expect(html).not.toContain("<span>Connect</span>");
     expect(html).toContain("&gt; updating firmware — keep VibeTV powered on");
+  });
+
+  it("shows Cable and WiFi without a Recommended badge", () => {
+    const html = render({
+      candidates: [],
+      showCandidates: false,
+      showModeChoice: true,
+    });
+
+    expect(html).toContain(">Cable<");
+    expect(html).toContain(">WiFi<");
+    expect(html).not.toContain("Recommended");
+  });
+
+  it("never shows a serial port in a Cable device row", () => {
+    const html = render({
+      candidates: [
+        {
+          target: "/dev/cu.usbserial-110",
+          transport: "cable",
+          deviceId: "14799300",
+          firmware: "1.0.56",
+        },
+      ],
+      transport: "cable",
+    });
+
+    expect(html).toContain("VibeTV 14799300");
+    expect(html).toContain("Firmware 1.0.56");
+    expect(html).not.toContain("usbserial");
+  });
+
+  it("keeps WiFi submit blocked while scanning and preserves both fallbacks", () => {
+    const scanning = render({
+      candidates: [],
+      showCandidates: false,
+      wifiScanning: true,
+      wifiSetupPhase: "credentials",
+    });
+    expect(scanning).toContain("Scanning…");
+    expect(scanning).toMatch(
+      /<button[^>]*disabled=""[^>]*>Connect to WiFi<\/button>/,
+    );
+
+    const empty = render({
+      candidates: [],
+      showCandidates: false,
+      wifiScanning: false,
+      wifiSetupPhase: "credentials",
+    });
+    expect(empty).toContain("No networks found");
+    expect(empty).toContain("Scan again");
+    expect(empty).toContain("Enter hidden network");
   });
 });
 

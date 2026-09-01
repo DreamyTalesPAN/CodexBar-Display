@@ -517,6 +517,29 @@ func TestSenderConfiguresWiFiWithoutLoggingOrReusingTheSecret(t *testing.T) {
 	}
 }
 
+func TestSenderScansWiFiNetworksForExactCableIdentity(t *testing.T) {
+	port := newMockSerialPort()
+	port.readQueue = [][]byte{[]byte(`{"kind":"wifi-networks","deviceId":"14799300","networks":[{"ssid":"Home","rssi":-48,"encrypted":true},{"ssid":"Guest","rssi":-72,"encrypted":false}]}` + "\n")}
+	sender := NewSenderWithConfig(SenderConfig{
+		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:       func(time.Duration) {},
+		HelloWindow: 10 * time.Millisecond,
+	})
+	defer sender.Close()
+
+	networks, err := sender.ScanWiFi("/dev/mock", "14799300")
+	if err != nil {
+		t.Fatalf("scan WiFi: %v", err)
+	}
+	if len(networks) != 2 || networks[0].SSID != "Home" || networks[0].RSSI != -48 || !networks[0].Encrypted || networks[1].Encrypted {
+		t.Fatalf("unexpected WiFi networks: %+v", networks)
+	}
+	want := `{"kind":"request","op":"scan-wifi","deviceId":"14799300"}` + "\n"
+	if len(port.writePayloads) != 1 || string(port.writePayloads[0]) != want {
+		t.Fatalf("unexpected WiFi scan request %#v", port.writePayloads)
+	}
+}
+
 func TestSenderPairsExactCableDevice(t *testing.T) {
 	port := newMockSerialPort()
 	port.readQueue = [][]byte{[]byte(`{"kind":"pairing","status":"paired","deviceId":"14799300","token":"0123456789abcdef0123456789abcdef"}` + "\n")}

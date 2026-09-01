@@ -74,6 +74,72 @@ func ResolveVibeTVControlPort(explicit, expectedDeviceID string) (string, error)
 	return defaultSender.ResolveControlPort(explicit, expectedDeviceID)
 }
 
+// CableDevice is an identity-confirmed VibeTV found on a serial port. Port is
+// transport plumbing only and must never be persisted or shown as identity.
+type CableDevice struct {
+	Port  string
+	Hello protocol.DeviceHello
+}
+
+// DiscoverVibeTVs returns every Cable-capable VibeTV that answers hello. A
+// foreign serial device is reported only when no VibeTV answered, so it cannot
+// enter the selectable device list or hide valid VibeTVs.
+func DiscoverVibeTVs() ([]CableDevice, error) {
+	ports, err := ListPorts()
+	if err != nil {
+		return nil, err
+	}
+	return discoverVibeTVs(ports, defaultSender.DeviceHello, runtime.GOOS)
+}
+
+func discoverVibeTVs(
+	ports []string,
+	readHello func(string) (protocol.DeviceHello, error),
+	goos string,
+) ([]CableDevice, error) {
+	devices := make([]CableDevice, 0)
+	foreignDeviceAnswered := false
+	seen := make(map[string]struct{})
+	for _, port := range cableSerialCandidates(ports, goos) {
+		hello, err := readHello(port)
+		if err != nil {
+			continue
+		}
+		hello = hello.Normalize()
+		if hello.Kind == "hello" && strings.TrimSpace(hello.Board) != "" &&
+			!isSupportedCableBoard(hello.Board) {
+			foreignDeviceAnswered = true
+			continue
+		}
+		mode := strings.ToLower(strings.TrimSpace(hello.Capabilities.Transport.Mode))
+		if hello.Kind != "hello" || !isSupportedCableBoard(hello.Board) ||
+			strings.TrimSpace(hello.DeviceID) == "" ||
+			!strings.EqualFold(hello.Capabilities.Transport.Active, "usb") ||
+			(mode != "cable" && mode != "wifi" && mode != "legacy-wifi-only") {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(hello.DeviceID))
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		devices = append(devices, CableDevice{Port: port, Hello: hello})
+	}
+	sort.Slice(devices, func(i, j int) bool {
+		return strings.ToLower(devices[i].Hello.DeviceID) < strings.ToLower(devices[j].Hello.DeviceID)
+	})
+	if len(devices) == 0 && foreignDeviceAnswered {
+		return nil, wrapTransportError(
+			errcode.TransportForeignDevice,
+			"discover-vibetvs",
+			"",
+			"Disconnect the other serial device and connect VibeTV with a data-capable Cable.",
+			errors.New("a non-VibeTV serial device answered hello"),
+		)
+	}
+	return devices, nil
+}
+
 func resolveVibeTVPort(
 	explicit,
 	expectedDeviceID string,

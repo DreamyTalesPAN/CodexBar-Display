@@ -256,6 +256,47 @@ func readHealthFromPort(port SerialPort, window time.Duration, deviceID string) 
 	return health, nil
 }
 
+func readWiFiNetworksFromPort(port SerialPort, window time.Duration, deviceID string) ([]protocol.WiFiNetwork, error) {
+	var networks []protocol.WiFiNetwork
+	var responseErr error
+	seen := readPortLines(port, window, func(line string) bool {
+		if !strings.HasPrefix(strings.TrimSpace(line), "{") {
+			return false
+		}
+		var reply struct {
+			Kind     string                 `json:"kind"`
+			DeviceID string                 `json:"deviceId"`
+			Networks []protocol.WiFiNetwork `json:"networks"`
+			Code     string                 `json:"code"`
+			Message  string                 `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(line), &reply); err != nil {
+			return false
+		}
+		switch strings.TrimSpace(reply.Kind) {
+		case "error":
+			responseErr = fmt.Errorf("device rejected WiFi scan: %s: %s", strings.TrimSpace(reply.Code), strings.TrimSpace(reply.Message))
+			return true
+		case "wifi-networks":
+			if !strings.EqualFold(strings.TrimSpace(reply.DeviceID), strings.TrimSpace(deviceID)) {
+				responseErr = errors.New("device returned WiFi networks for a different identity")
+				return true
+			}
+			networks = append([]protocol.WiFiNetwork(nil), reply.Networks...)
+			return true
+		default:
+			return false
+		}
+	})
+	if responseErr != nil {
+		return nil, responseErr
+	}
+	if !seen {
+		return nil, errors.New("device did not acknowledge WiFi scan")
+	}
+	return networks, nil
+}
+
 func readPortLines(port SerialPort, window time.Duration, accept func(string) bool) bool {
 	if port == nil || window <= 0 || accept == nil {
 		return false

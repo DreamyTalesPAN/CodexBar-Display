@@ -515,6 +515,41 @@ func (s *Sender) ConfigureWiFi(path, deviceID, ssid, password string) error {
 	return nil
 }
 
+func (s *Sender) ScanWiFi(path, deviceID string) ([]protocol.WiFiNetwork, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, err := s.ensurePort(path); err != nil {
+		return nil, err
+	}
+	request := struct {
+		Kind     string `json:"kind"`
+		Op       string `json:"op"`
+		DeviceID string `json:"deviceId"`
+	}{Kind: "request", Op: "scan-wifi", DeviceID: strings.TrimSpace(deviceID)}
+	line, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	line = append(line, '\n')
+	_ = s.port.ResetInputBuffer()
+	if err := writeWithTimeout(s.port, line, s.writeTimeout); err != nil {
+		s.closeCurrentLocked()
+		return nil, wrapTransportError(
+			errcode.TransportSerialWrite,
+			"scan-wifi",
+			path,
+			"Keep the selected VibeTV connected by Cable and retry.",
+			err,
+		)
+	}
+	networks, err := readWiFiNetworksFromPort(s.port, wifiScanReadWindow, deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("scan WiFi on %s: %w", path, err)
+	}
+	return networks, nil
+}
+
 func (s *Sender) closeCurrentLocked() {
 	if s.port == nil {
 		return

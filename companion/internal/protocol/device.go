@@ -123,6 +123,12 @@ type DeviceSettingsPatch struct {
 	Standby           *DeviceStandbySettings `json:"standby,omitempty"`
 }
 
+type WiFiNetwork struct {
+	SSID      string `json:"ssid"`
+	RSSI      int    `json:"rssi"`
+	Encrypted bool   `json:"encrypted"`
+}
+
 func (h DeviceHello) Normalize() DeviceHello {
 	h.Kind = strings.TrimSpace(strings.ToLower(h.Kind))
 	h.Board = strings.TrimSpace(strings.ToLower(h.Board))

@@ -188,6 +188,7 @@ type Server struct {
 	installTheme           func(context.Context, themeinstall.Options) (themeinstall.Result, error)
 	runSetup               func(context.Context, setup.Options) error
 	resolveCablePort       func(string, string) (string, error)
+	discoverCableDevices   func() ([]usb.CableDevice, error)
 	readCableHello         func(string) (protocol.DeviceHello, error)
 	currentCableHello      func() (protocol.DeviceHello, bool)
 	refreshCableHello      func() (protocol.DeviceHello, bool)
@@ -199,6 +200,7 @@ type Server struct {
 	readCableSettings      func(string, string) (protocol.DeviceSettings, error)
 	writeCableSettings     func(string, string, protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error)
 	configureCableWiFi     func(string, string, string, string) error
+	scanCableWiFi          func(string, string) ([]protocol.WiFiNetwork, error)
 	transferCableAsset     func(context.Context, string, string, string, string, string, []byte) error
 	subnetTargets          func() []string
 	defaultWiFiTarget      func() string
@@ -481,6 +483,7 @@ type deviceActionResponse struct {
 
 type deviceSearchEntry struct {
 	Target      string `json:"target"`
+	Transport   string `json:"transport"`
 	DeviceID    string `json:"deviceId,omitempty"`
 	Board       string `json:"board,omitempty"`
 	Firmware    string `json:"firmware,omitempty"`
@@ -949,6 +952,7 @@ func New(opts Options) (*Server, error) {
 		installTheme:           themeinstall.Install,
 		runSetup:               setup.Run,
 		resolveCablePort:       usb.ResolveVibeTVControlPort,
+		discoverCableDevices:   usb.DiscoverVibeTVs,
 		readCableHello:         usb.ReadDeviceHello,
 		currentCableHello:      usb.CurrentDeviceHello,
 		refreshCableHello:      refreshDefaultCableHello,
@@ -960,6 +964,7 @@ func New(opts Options) (*Server, error) {
 		readCableSettings:      usb.ReadSettings,
 		writeCableSettings:     usb.WriteSettings,
 		configureCableWiFi:     usb.ConfigureWiFi,
+		scanCableWiFi:          usb.ScanWiFi,
 		transferCableAsset:     usb.TransferAsset,
 		subnetTargets:          localSubnetTargets,
 		defaultWiFiTarget:      setup.DefaultWiFiTarget,
@@ -1065,6 +1070,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/device", s.handleDevice)
 	mux.HandleFunc("/v1/device/pair", s.handleDevicePair)
 	mux.HandleFunc("/v1/setup/connection-mode", s.handleSetupConnectionMode)
+	mux.HandleFunc("/v1/setup/wifi-networks", s.handleSetupWiFiNetworks)
 	mux.HandleFunc("/v1/setup/wifi", s.handleSetupWiFi)
 	mux.HandleFunc("/v1/setup/reset", s.handleSetupReset)
 	mux.HandleFunc("/v1/setup/providers/complete", s.handleProviderSetupComplete)
@@ -3213,7 +3219,8 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	devices, err := s.searchDevices(r.Context(), cfg, strings.TrimSpace(req.Target))
+	explicitTarget := strings.TrimSpace(req.Target)
+	devices, err := s.searchDevices(r.Context(), cfg, explicitTarget)
 	if err != nil {
 		var invalidTarget *invalidTargetError
 		if errors.As(err, &invalidTarget) {
@@ -3232,6 +3239,27 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		}
 		writeInternalError(w, err)
 		return
+	}
+	if explicitTarget == "" && s.discoverCableDevices != nil {
+		cableDevices, cableErr := s.discoverCableDevices()
+		if cableErr != nil && errcode.Of(cableErr) == errcode.TransportForeignDevice && len(devices) == 0 {
+			writeCableResolutionError(w, cableErr)
+			return
+		}
+		for _, cable := range cableDevices {
+			hello := cable.Hello.Normalize()
+			devices = append(devices, deviceSearchEntry{
+				Target:    cableDeviceTarget,
+				Transport: "cable",
+				DeviceID:  hello.DeviceID,
+				Board:     hello.Board,
+				Firmware:  hello.Firmware,
+				Known:     deviceIdentityIsKnown(cfg, hello),
+				Active: runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" &&
+					deviceIdentityMatches(cfg, hello),
+			})
+		}
+		devices = sortedDeviceSearchEntriesFromSlice(devices)
 	}
 	if strings.TrimSpace(req.Target) == "" && distinctDeviceSearchCount(devices) > 1 {
 		s.markAmbiguousDeviceSelection()
@@ -3444,12 +3472,14 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	var req struct {
-		Mode string `json:"mode"`
+		Mode     string `json:"mode"`
+		DeviceID string `json:"deviceId"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	mode := runtimeconfig.NormalizeConnectionMode(req.Mode)
+	requestedDeviceID := strings.TrimSpace(req.DeviceID)
 	if mode == "" {
 		writeError(w, http.StatusBadRequest, "connection_mode_invalid", "Choose Cable or WiFi.", "Choose how this VibeTV should connect, then try again.")
 		return
@@ -3482,7 +3512,7 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	cableConnected := strings.TrimSpace(s.currentCableConnectionChoiceDevice().DeviceID) != ""
 	var cablePort string
 	if freshWiFiChoice && !cableConnected {
-		cablePort, err = s.resolveCablePort("", "")
+		cablePort, err = s.resolveCablePort("", requestedDeviceID)
 		cableConnected = err == nil
 		if errcode.Of(err) == errcode.TransportMultipleDevices {
 			writeCableResolutionError(w, err)
@@ -3615,8 +3645,12 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 	}
 	if !cableHelloReady {
 		port = cablePort
-		if port == "" {
-			port, err = s.resolveCablePort("", strings.TrimSpace(cfg.DeviceID))
+		selectionDeviceID := strings.TrimSpace(cfg.DeviceID)
+		if requestedDeviceID != "" {
+			selectionDeviceID = requestedDeviceID
+		}
+		if port == "" || requestedDeviceID != "" {
+			port, err = s.resolveCablePort("", selectionDeviceID)
 		}
 		if err != nil {
 			writeCableResolutionError(w, err)
@@ -3640,7 +3674,11 @@ func (s *Server) handleSetupConnectionMode(w http.ResponseWriter, r *http.Reques
 		hello.Capabilities.Transport.TransitionTo = ""
 	}
 	supportedTransports := append([]string(nil), hello.Capabilities.Transport.Supported...)
-	if expected := strings.TrimSpace(cfg.DeviceID); expected != "" && !strings.EqualFold(expected, hello.DeviceID) {
+	expectedDeviceID := strings.TrimSpace(cfg.DeviceID)
+	if requestedDeviceID != "" {
+		expectedDeviceID = requestedDeviceID
+	}
+	if expected := expectedDeviceID; expected != "" && !strings.EqualFold(expected, hello.DeviceID) {
 		writeError(w, http.StatusConflict, "device_identity_changed", "A different VibeTV answered on Cable.", "Connect the VibeTV you selected, then try again.")
 		return
 	}
@@ -3917,6 +3955,55 @@ func (s *Server) handleSetupWiFi(w http.ResponseWriter, r *http.Request) {
 			Capabilities: &hello.Capabilities,
 		},
 	})
+}
+
+func (s *Server) handleSetupWiFiNetworks(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	s.firmwareUpdateStartMu.Lock()
+	defer s.firmwareUpdateStartMu.Unlock()
+	if _, ok := s.activeFirmwareUpdateJob(); ok {
+		writeError(w, http.StatusConflict, "firmware_update_in_progress", "VibeTV update is still running.", "Wait for the update to finish, then scan again.")
+		return
+	}
+	if s.rejectActiveThemeInstall(w) {
+		return
+	}
+	s.deviceMaintenanceMu.Lock()
+	defer s.deviceMaintenanceMu.Unlock()
+	s.repairMu.Lock()
+	defer s.repairMu.Unlock()
+	if s.pauseDisplayStream != nil {
+		s.pauseDisplayStream(true)
+		defer s.pauseDisplayStream(false)
+	}
+	cfg, err := s.configForMaintenance()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" || strings.TrimSpace(cfg.DeviceID) == "" {
+		writeError(w, http.StatusConflict, "cable_setup_required", "VibeTV is not connected by Cable.", "Connect VibeTV by Cable before scanning WiFi networks in the app.")
+		return
+	}
+	port, hello, ok := s.requireCableWiFiSetupDevice(w, cfg)
+	if !ok {
+		return
+	}
+	if s.scanCableWiFi == nil {
+		writeError(w, http.StatusNotImplemented, "wifi_scan_unsupported", "This Mac App cannot scan WiFi networks through VibeTV.", "Enter the WiFi name manually.")
+		return
+	}
+	networks, err := s.scanCableWiFi(port, hello.DeviceID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "wifi_scan_failed", "VibeTV could not scan WiFi networks.", "Scan again or enter the WiFi name manually.")
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		OK       bool                   `json:"ok"`
+		Networks []protocol.WiFiNetwork `json:"networks"`
+	}{OK: true, Networks: networks})
 }
 
 func (s *Server) authenticatedKnownWiFiDevice(
@@ -7696,6 +7783,7 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 		}
 		entry := deviceSearchEntry{
 			Target:      publicTarget(found.target),
+			Transport:   "wifi",
 			DeviceID:    hello.DeviceID,
 			Board:       hello.Board,
 			Firmware:    hello.Firmware,
@@ -7769,7 +7857,14 @@ func sortedDeviceSearchEntries(byIdentity map[string]deviceSearchEntry) []device
 	for _, entry := range byIdentity {
 		devices = append(devices, entry)
 	}
-	sort.Slice(devices, func(i, j int) bool {
+	return sortedDeviceSearchEntriesFromSlice(devices)
+}
+
+func sortedDeviceSearchEntriesFromSlice(devices []deviceSearchEntry) []deviceSearchEntry {
+	sort.SliceStable(devices, func(i, j int) bool {
+		if devices[i].Transport != devices[j].Transport {
+			return devices[i].Transport == "cable"
+		}
 		if devices[i].Active != devices[j].Active {
 			return devices[i].Active
 		}

@@ -429,6 +429,12 @@ bool testUploadMutualExclusionPolicy(const char* mainPath) {
   }
 
   const std::string cableHandler = mainSource.substr(cableStart, cableEnd - cableStart);
+  const std::size_t serialBusyStart = mainSource.find("bool serialRequestBusy()");
+  const std::size_t serialBusyEnd = mainSource.find("bool handleSerialControlLine", serialBusyStart);
+  const std::string serialBusy =
+      serialBusyStart == std::string::npos || serialBusyEnd == std::string::npos
+          ? std::string()
+          : mainSource.substr(serialBusyStart, serialBusyEnd - serialBusyStart);
   const std::string assetHandler = mainSource.substr(assetStart, assetEnd - assetStart);
   const std::string otaHandler = mainSource.substr(otaStart, otaEnd - otaStart);
   const std::size_t assetStartEvent = assetHandler.find("if (upload.status == UPLOAD_FILE_START)");
@@ -440,9 +446,11 @@ bool testUploadMutualExclusionPolicy(const char* mainPath) {
       otaHandler.find("if (assetUploadInProgress || otaUploadInProgress || rebootPending)", otaStartEvent);
   const std::size_t otaSafeMode = otaHandler.find("enterOtaSafeMode(", otaStartEvent);
   return expect(
-      cableHandler.find("assetUploadInProgress") != std::string::npos &&
-          cableHandler.find("otaUploadInProgress") != std::string::npos &&
-          cableHandler.find("rebootPending") != std::string::npos && assetStartEvent != std::string::npos &&
+      cableHandler.find("serialRequestBusy()") != std::string::npos &&
+          serialBusy.find("cableTransfer.flow.active") != std::string::npos &&
+          serialBusy.find("assetUploadInProgress") != std::string::npos &&
+          serialBusy.find("otaUploadInProgress") != std::string::npos &&
+          serialBusy.find("rebootPending") != std::string::npos && assetStartEvent != std::string::npos &&
           assetBusy != std::string::npos && assetSafeMode != std::string::npos && assetBusy < assetSafeMode &&
           otaStartEvent != std::string::npos && otaBusy != std::string::npos && otaSafeMode != std::string::npos &&
           otaBusy < otaSafeMode,

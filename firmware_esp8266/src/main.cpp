@@ -1654,7 +1654,12 @@ bool scanSetupNetworks(bool automatic) {
   }
 
   for (int i = 0; i < networks; ++i) {
-    AddScanResult(setupWifiState, WiFi.SSID(i), WiFi.RSSI(i), WiFi.channel(i));
+    AddScanResult(
+        setupWifiState,
+        WiFi.SSID(i),
+        WiFi.RSSI(i),
+        WiFi.channel(i),
+        WiFi.encryptionType(i) != ENC_TYPE_NONE);
   }
   WiFi.scanDelete();
   FinishScan(setupWifiState, networks);
@@ -1987,6 +1992,11 @@ struct DeviceSettingsPatch {
 bool applyDeviceSettingsPatch(const DeviceSettingsPatch& patch, String& error);
 String healthJSON();
 
+bool serialRequestBusy() {
+  return cableTransfer.flow.active || otaUploadInProgress ||
+         assetUploadInProgress || rebootPending;
+}
+
 bool handleSerialControlLine(const String& line) {
   JsonDocument doc;
   if (deserializeJson(doc, line)) {
@@ -2008,8 +2018,7 @@ bool handleSerialControlLine(const String& line) {
   } else if (strcmp(op, "health") == 0) {
     const char* expectedDeviceID = doc["deviceId"] | "";
     if (strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
-        cableTransfer.flow.active || otaUploadInProgress ||
-        assetUploadInProgress || rebootPending) {
+        serialRequestBusy()) {
       emitSerialError("health-rejected");
     } else {
       String out = "{\"kind\":\"health\",\"deviceId\":\"";
@@ -2022,8 +2031,7 @@ bool handleSerialControlLine(const String& line) {
   } else if (strcmp(op, "pair") == 0) {
     const char* expectedDeviceID = doc["deviceId"] | "";
     if (strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
-        cableTransfer.flow.active || otaUploadInProgress ||
-        assetUploadInProgress || rebootPending) {
+        serialRequestBusy()) {
       emitSerialError("pairing-rejected");
     } else {
       const bool alreadyPaired = deviceAuthConfigured();
@@ -2108,6 +2116,30 @@ bool handleSerialControlLine(const String& line) {
       out += "\",";
       appendSettingsJSON(out);
       out += "}";
+      Serial.println(out);
+    }
+  } else if (strcmp(op, "scan-wifi") == 0) {
+    const char* expectedDeviceID = doc["deviceId"] | "";
+    if (strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
+        serialRequestBusy() || !scanSetupNetworks(false)) {
+      emitSerialError("wifi-scan-rejected");
+    } else {
+      String out = "{\"kind\":\"wifi-networks\",\"deviceId\":\"";
+      out += deviceID;
+      out += "\",\"networks\":[";
+      for (uint8_t i = 0; i < setupWifiState.networkCount; ++i) {
+        if (i > 0) {
+          out += ',';
+        }
+        out += "{\"ssid\":\"";
+        out += jsonEscape(setupWifiState.networks[i].ssid);
+        out += "\",\"rssi\":";
+        out += setupWifiState.networks[i].rssi;
+        out += ",\"encrypted\":";
+        out += setupWifiState.networks[i].encrypted ? "true" : "false";
+        out += '}';
+      }
+      out += "]}";
       Serial.println(out);
     }
   } else if (strcmp(op, "configure-wifi") == 0) {
@@ -3696,8 +3728,7 @@ bool startCableTransfer(JsonDocument& doc) {
 	    : 0;
   String destination = String(doc["path"] | "");
   destination.trim();
-	if (cableTransfer.flow.active || otaUploadInProgress || assetUploadInProgress ||
-      rebootPending || strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
+	if (serialRequestBusy() || strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
       !deviceAuthConfigured() || strcmp(token, deviceAuthToken.c_str()) != 0 ||
       expectedBytes == 0) {
     emitSerialError("transfer-rejected");
@@ -4232,14 +4263,6 @@ void setup() {
       deviceAuthConfigured();
   (void)resolveInitialConnectionMode(hasLegacyState);
   (void)loadConnectionTransition();
-  Serial.printf(
-      "connection_mode_loaded mode=%s cable_supported=%d\n",
-      codexbar_display::esp8266::device_settings::ConnectionModeName(
-          deviceSettings.connectionMode),
-      codexbar_display::esp8266::device_settings::SupportsCable(
-          deviceSettings.connectionMode)
-          ? 1
-          : 0);
   restoreResetTrustAfterRestart();
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   loadActiveStoredThemeSpecCache();
@@ -4269,7 +4292,6 @@ void setup() {
     renderer.DrawStatus(runtimeCtx, "VIBE TV", "Cable connected", "Open VibeTV App");
     recordRenderFull("cable_setup", micros() - renderStartUs);
     waitStatusRendered = true;
-    Serial.println("connection_mode_ready mode=cable radio=off");
     return;
   }
 
@@ -4290,9 +4312,6 @@ void setup() {
       savedWifiCredentialsAvailable = false;
     }
     connectionTransitionStartedAtMs = millis();
-    Serial.printf(
-        "connection_mode_transition_setup mode=wifi timeout_ms=%lu\n",
-        device_settings::kConnectionTransitionSetupMs);
     startSetupAccessPoint();
   } else {
     startSetupAccessPoint();

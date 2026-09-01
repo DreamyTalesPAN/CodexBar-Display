@@ -33,6 +33,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
 func TestDiscoverConfirmsPendingWiFiTransitionForExpectedDevice(t *testing.T) {
@@ -676,6 +677,89 @@ func TestDeviceSearchReturnsAllDevicesWithoutMutatingConfig(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cfg, initial) {
 		t.Fatalf("search mutated config: got=%+v want=%+v", cfg, initial)
+	}
+}
+
+func TestDeviceSearchReturnsTwoCableDevicesAsSelectableIdentities(t *testing.T) {
+	wifi := newCountedSelectableDeviceServer(t, "wifi-known", nil, nil)
+	defer wifi.Close()
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "wifi",
+		DeviceID:       "wifi-known",
+		DeviceTarget:   wifi.URL,
+	})
+	server.subnetTargets = func() []string { return []string{wifi.URL} }
+	server.discoverCableDevices = func() ([]usb.CableDevice, error) {
+		return []usb.CableDevice{
+			{Port: "/dev/cu.usbserial-a", Hello: cableHelloForTest("cable-a")},
+			{Port: "/dev/cu.usbserial-b", Hello: cableHelloForTest("cable-b")},
+		}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Devices []deviceSearchEntry `json:"devices"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	cableIDs := []string{}
+	for _, device := range got.Devices {
+		if device.Transport == "cable" {
+			cableIDs = append(cableIDs, device.DeviceID)
+			if device.Target != cableDeviceTarget {
+				t.Fatalf("Cable target leaked a port: %+v", device)
+			}
+		}
+	}
+	if !reflect.DeepEqual(cableIDs, []string{"cable-a", "cable-b"}) || strings.Contains(rec.Body.String(), "/dev/") {
+		t.Fatalf("unexpected Cable candidates: ids=%v body=%s", cableIDs, rec.Body.String())
+	}
+}
+
+func cableHelloForTest(deviceID string) protocol.DeviceHello {
+	return protocol.DeviceHello{
+		Kind:     "hello",
+		Board:    "esp8266-smalltv-st7789",
+		Firmware: "1.0.56",
+		DeviceID: deviceID,
+		Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{
+			Active:    "usb",
+			Mode:      "cable",
+			Supported: []string{"usb", "wifi"},
+		}},
+	}
+}
+
+func TestSetupWiFiNetworksReturnsCableScanResults(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "cable-a",
+	})
+	server.resolveCablePort = func(_, expectedDeviceID string) (string, error) {
+		if expectedDeviceID != "cable-a" {
+			t.Fatalf("unexpected identity %q", expectedDeviceID)
+		}
+		return "/dev/mock-cable", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return cableHelloForTest("cable-a"), nil
+	}
+	server.scanCableWiFi = func(port, deviceID string) ([]protocol.WiFiNetwork, error) {
+		if port != "/dev/mock-cable" || deviceID != "cable-a" {
+			t.Fatalf("unexpected scan target port=%q device=%q", port, deviceID)
+		}
+		return []protocol.WiFiNetwork{{SSID: "Home", RSSI: -48, Encrypted: true}}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/setup/wifi-networks", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"ssid":"Home"`) || !strings.Contains(rec.Body.String(), `"encrypted":true`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -11605,6 +11689,12 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	}
 	server.refreshCableHello = func() (protocol.DeviceHello, bool) {
 		return protocol.DeviceHello{}, false
+	}
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{}, false
+	}
+	server.discoverCableDevices = func() ([]usb.CableDevice, error) {
+		return nil, nil
 	}
 	server.resetCableSender = func() {}
 	server.pairCableDevice = func(string, string) (string, error) {

@@ -191,12 +191,19 @@ export type DeviceState = "unknown" | "online" | "offline" | "paired";
 
 export type DeviceCandidate = {
   target: string;
+  transport?: "cable" | "wifi";
   deviceId?: string;
   board?: string;
   firmware?: string;
   networkMode?: "station" | "setup" | string;
   known?: boolean;
   active?: boolean;
+};
+
+export type WiFiNetwork = {
+  ssid: string;
+  rssi: number;
+  encrypted: boolean;
 };
 
 export type DeviceSearchState =

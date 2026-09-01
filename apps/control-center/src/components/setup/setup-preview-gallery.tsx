@@ -253,8 +253,11 @@ export function SetupPreviewGallery() {
         connecting={connecting}
         logLines={lines ?? connectLogLines(connectState)}
         onConnect={runConnect}
+        onChooseTransport={() => {}}
+        onConfigureWiFi={async () => {}}
         onEnterAddressManually={() => setActive("02b")}
         onSearchAgain={() => setActive("02")}
+        onScanWiFiNetworks={() => {}}
         onSelect={(candidate) => setSelected(candidate.target)}
         selectedTarget={selected}
       />

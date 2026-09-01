@@ -5,6 +5,25 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-09-01 — Cable and WiFi setup follows reachable devices
+
+- User approval: The user explicitly supplied the six-case Cable/WiFi discovery
+  matrix for PR #407, required the connection choice only when both methods are
+  factually available, required multiple Cable devices to use the existing
+  device-list semantics, and required the labels `Cable` and `WiFi` without a
+  `Recommended` badge.
+- Approved customer-visible result: One reachable device connects directly;
+  multiple devices of the same transport show a device list; the Cable/WiFi
+  chooser appears only when both methods are currently available. With no
+  device, setup offers Cable and the existing phone-based WiFi path. WiFi
+  credentials are entered in the app only while a Cable device is connected,
+  and visible WiFi networks can be scanned, selected, rescanned, or entered
+  manually. Device rows show the VibeTV name, firmware, and previous-connection
+  hint without a serial-port path.
+- Approved files: Existing setup components and tests, the setup connection
+  decision helper, Companion discovery/setup endpoints and tests, firmware WiFi
+  scan support and tests, the serial protocol, and this approval record.
+
 ## 2026-08-31 — Unsupported Cable controls never stay on Loading
 
 - User approval: The user instructed Codex to keep reviewing PR #407, fix every

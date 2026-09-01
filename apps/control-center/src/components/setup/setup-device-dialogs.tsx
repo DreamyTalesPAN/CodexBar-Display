@@ -115,7 +115,7 @@ type NotFoundDialogProps = {
   open: boolean;
 };
 
-/** 02c — nothing answered on this WiFi. */
+/** 02c — neither Cable nor WiFi discovery found a VibeTV. */
 export function SetupDeviceNotFoundDialog({
   busy = false,
   onEnterAddressManually,
@@ -125,7 +125,7 @@ export function SetupDeviceNotFoundDialog({
 }: NotFoundDialogProps) {
   return (
     <SetupDialog
-      description="Connect it to your WiFi, then scan again."
+      description="Connect VibeTV by Cable, or set up WiFi with your phone, then scan again."
       icon={WifiOff}
       onOpenChange={onOpenChange}
       open={open}
@@ -137,7 +137,10 @@ export function SetupDeviceNotFoundDialog({
       title="We couldn't find your VibeTV"
     >
       <ol className="grid list-decimal gap-2 pl-5 text-left text-sm text-muted-foreground">
-        <li>Plug in your VibeTV and wait for the VibeTV-Setup network.</li>
+        <li>
+          Connect VibeTV to this Mac with a data-capable Cable, or wait for the
+          VibeTV-Setup network.
+        </li>
         <li>
           On your phone, join the WiFi network <strong>VibeTV-Setup</strong>.
         </li>

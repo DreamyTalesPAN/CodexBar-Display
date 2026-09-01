@@ -2,6 +2,7 @@ package usb
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
@@ -84,6 +85,38 @@ func TestResolveVibeTVCandidatesStopsOnSeveralMatches(t *testing.T) {
 	)
 	if errcode.Of(err) != errcode.TransportMultipleDevices {
 		t.Fatalf("expected multiple device error, got %v", err)
+	}
+}
+
+func TestDiscoverVibeTVsReturnsEveryIdentity(t *testing.T) {
+	ports := []string{"/dev/cu.usbserial-b", "/dev/cu.usbserial-a", "/dev/tty.usbserial-a"}
+	readHello := func(port string) (protocol.DeviceHello, error) {
+		id := "vibetv-b"
+		if strings.HasSuffix(port, "-a") {
+			id = "vibetv-a"
+		}
+		return cableHello(id), nil
+	}
+
+	got, err := discoverVibeTVs(ports, readHello, "darwin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Hello.DeviceID != "vibetv-a" || got[1].Hello.DeviceID != "vibetv-b" {
+		t.Fatalf("unexpected Cable devices: %+v", got)
+	}
+}
+
+func TestDiscoverVibeTVsKeepsForeignDeviceOutOfList(t *testing.T) {
+	got, err := discoverVibeTVs(
+		[]string{"/dev/cu.usbserial-foreign"},
+		func(string) (protocol.DeviceHello, error) {
+			return protocol.DeviceHello{Kind: "hello", Board: "foreign-board", DeviceID: "foreign"}, nil
+		},
+		"darwin",
+	)
+	if len(got) != 0 || errcode.Of(err) != errcode.TransportForeignDevice {
+		t.Fatalf("foreign serial device leaked into list: devices=%+v err=%v", got, err)
 	}
 }
 

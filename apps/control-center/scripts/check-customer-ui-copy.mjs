@@ -16,10 +16,11 @@ const files = [
     !file.includes(".spec."),
 );
 
-const approvedFirstInstallCopy = new Set([
+const approvedCustomerCopy = new Set([
   "Open the downloaded DMG.",
   "Drag VibeTV Control Center to Applications and wait for the copy to finish.",
   "Open VibeTV Control Center from Applications. If macOS asks, choose Open.",
+  "WiFi password",
 ]);
 
 const forbiddenPatterns = [
@@ -100,7 +101,7 @@ for (const file of files) {
 
   for (const item of extractCustomerCopy(sourceFile)) {
     const text = normalizeCopy(item.text);
-    if (!text || approvedFirstInstallCopy.has(text) || shouldIgnoreText(text)) {
+    if (!text || approvedCustomerCopy.has(text) || shouldIgnoreText(text)) {
       continue;
     }
     for (const forbidden of forbiddenPatterns) {

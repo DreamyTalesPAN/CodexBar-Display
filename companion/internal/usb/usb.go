@@ -22,6 +22,7 @@ const (
 	// requests took 111-162 ms. Identity resolution is a one-shot operation, so
 	// keep enough bounded room for that real first response.
 	helloReadWindow      = 2 * time.Second
+	wifiScanReadWindow   = 12 * time.Second
 	helloReadStepTimeout = 80 * time.Millisecond
 	helloReadBufferBytes = 2048
 )
@@ -106,6 +107,10 @@ func WriteSettings(port, deviceID string, patch protocol.DeviceSettingsPatch) (p
 
 func ConfigureWiFi(port, deviceID, ssid, password string) error {
 	return defaultSender.ConfigureWiFi(port, deviceID, ssid, password)
+}
+
+func ScanWiFi(port, deviceID string) ([]protocol.WiFiNetwork, error) {
+	return defaultSender.ScanWiFi(port, deviceID)
 }
 
 func TransferAsset(ctx context.Context, port, deviceID, token, destination, activation string, payload []byte) error {
