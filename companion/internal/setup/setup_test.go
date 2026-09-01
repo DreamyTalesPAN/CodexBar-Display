@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -1172,10 +1173,23 @@ func TestRunWithDepsRestartsRuntimeAfterReplacementLaunchAgentFails(t *testing.T
 	home := t.TempDir()
 	execPath := mustCreateExecutable(t)
 	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
-	mustWriteFile(t, plistPath, []byte("previous runtime"), 0o644)
+	previousPlist := []byte("previous runtime")
+	mustWriteFile(t, plistPath, previousPlist, 0o644)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		Theme:            "crt",
+		ConnectionMode:   "cable",
+		DeviceID:         "previous-vibetv",
+		DeviceTransports: []string{"usb", "wifi"},
+	}); err != nil {
+		t.Fatalf("seed previous runtime config: %v", err)
+	}
+	previousConfig, err := runtimeconfig.Load(home)
+	if err != nil {
+		t.Fatalf("load previous runtime config: %v", err)
+	}
 
 	bootstrapAttempts := 0
-	err := runWithDeps(context.Background(), Options{
+	err = runWithDeps(context.Background(), Options{
 		Transport: "usb",
 		Port:      "/dev/cu.usbserial10",
 		AssumeYes: true,
@@ -1219,6 +1233,14 @@ func TestRunWithDepsRestartsRuntimeAfterReplacementLaunchAgentFails(t *testing.T
 	}
 	if bootstrapAttempts != 4 {
 		t.Fatalf("failed replacement must restart the runtime, bootstrap attempts=%d", bootstrapAttempts)
+	}
+	gotPlist, err := os.ReadFile(plistPath)
+	if err != nil || !bytes.Equal(gotPlist, previousPlist) {
+		t.Fatalf("failed replacement did not restore previous plist: data=%q err=%v", gotPlist, err)
+	}
+	gotConfig, err := runtimeconfig.Load(home)
+	if err != nil || !reflect.DeepEqual(gotConfig, previousConfig) {
+		t.Fatalf("failed replacement did not restore previous config: got=%+v want=%+v err=%v", gotConfig, previousConfig, err)
 	}
 }
 

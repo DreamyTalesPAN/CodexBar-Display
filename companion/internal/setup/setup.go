@@ -311,14 +311,27 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	previousLaunchAgentPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
 	restorePreviousLaunchAgent := false
 	replacementRuntimeCommitted := false
+	var previousLaunchAgent []byte
+	var previousRuntimeConfig runtimeconfig.Config
 	if !opts.ValidateOnly && !opts.DryRun {
 		_, statErr := os.Stat(previousLaunchAgentPath)
 		restorePreviousLaunchAgent = statErr == nil && launchAgentLoaded(ctx, d, launchServiceTarget(d.uid()))
+		if restorePreviousLaunchAgent {
+			previousLaunchAgent, err = os.ReadFile(previousLaunchAgentPath)
+			if err == nil {
+				previousRuntimeConfig, err = runtimeconfig.Load(home)
+			}
+			if err != nil {
+				return fmt.Errorf("snapshot existing runtime: %w", err)
+			}
+		}
 		stopLaunchAgentBestEffort(ctx, d)
 	}
 	if restorePreviousLaunchAgent {
 		defer func() {
 			if !replacementRuntimeCommitted {
+				_ = runtimeconfig.Save(home, previousRuntimeConfig)
+				_ = writeFileAtomic(previousLaunchAgentPath, previousLaunchAgent, 0o644)
 				_ = reloadLaunchAgent(ctx, d, previousLaunchAgentPath)
 			}
 		}()
