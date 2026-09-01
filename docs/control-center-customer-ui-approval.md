@@ -5,6 +5,20 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-09-01 — Direct setup retry remains automatic
+
+- User approval: The user explicitly instructed Codex to fix every sensible
+  Codex Bug Detector finding that matches the approved setup design and flow,
+  push it, and repeat the review loop until clean.
+- Approved customer-visible result: If the automatic connection to the only
+  discovered VibeTV fails, `Search again` may return that same VibeTV and the
+  app automatically retries it instead of showing an idle automatic-connection
+  screen. Connection-mode requests also keep waiting for the Companion's
+  supported transition window. No control, layout, or visual treatment changes.
+- Approved files: `setup-wizard.tsx`, its regression test,
+  `control-center-app.tsx`, the customer-flow timeout contract, and this
+  approval record.
+
 ## 2026-09-01 — Cable and WiFi setup follows reachable devices
 
 - User approval: The user explicitly supplied the six-case Cable/WiFi discovery
