@@ -2620,3 +2620,24 @@ issue scope, or release permission never implies UI permission.
   way back to the retry the dialog had just offered.
 - Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
   and its test.
+
+## 2026-09-01 — One recovery at a time, and a display choice that is on offer
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **Every recovery on a provider row says it is running.** The wait replaced
+     the sign-in action but left `Allow access in macOS` and `Repair the usage
+     service` live, so each press started the recovery again and queued another
+     check behind it. Those rows now read `Waiting for access…` and
+     `Repairing…` while their attempt runs, beside the existing
+     `Waiting for sign-in…`, and keep their on/off switch.
+  2. **`Continue` on the display step waits for a provider that is on the
+     list.** A saved `Always show one` whose provider has since been switched
+     off is exactly what sends the customer back to this step, and it arrived
+     naming a provider the list no longer has: nothing drawn as chosen, and a
+     `Continue` that resubmitted the same refused provider.
+- Approved files: `apps/control-center/src/components/setup/`
+  `setup-provider-row.tsx`, `setup-providers-screen.tsx`,
+  `setup-display-mode-screen.tsx`, and their tests.

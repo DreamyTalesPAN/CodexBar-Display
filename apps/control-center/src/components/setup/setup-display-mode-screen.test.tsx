@@ -170,4 +170,19 @@ describe("SetupDisplayModeScreen", () => {
     expect(html).not.toMatch(/<button(?![^>]*disabled)[^>]*aria-pressed=/);
   });
 
+
+  // A saved choice whose provider has since been switched off is what sends the
+  // customer back to this step, and it arrives naming a provider the list no
+  // longer has: no card drawn as chosen, and a Continue that resubmitted the
+  // same provider the companion had just refused.
+  it("waits for a provider that is actually on offer", () => {
+    const html = render({
+      mode: "fixed",
+      providers: [cursor],
+      selectedProviderId: "codex",
+    });
+
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+  });
+
 });

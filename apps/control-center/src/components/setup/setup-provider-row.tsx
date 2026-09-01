@@ -90,8 +90,12 @@ type SetupProviderRowProps = {
    * customer's last press.
    */
   saving?: boolean;
-  /** Set once the customer pressed the sign-in button on this row. */
-  signingIn?: boolean;
+  /**
+   * Set once the customer pressed this row's recovery action. It replaces the
+   * action while the attempt runs: pressing it again launched the recovery a
+   * second time and queued another check behind it.
+   */
+  recovering?: boolean;
 };
 
 export function SetupProviderRow({
@@ -102,11 +106,17 @@ export function SetupProviderRow({
   onCheckAgain,
   onRecover,
   onToggle,
+  recovering = false,
   saving = false,
-  signingIn = false,
 }: SetupProviderRowProps) {
   const reported = setupProviderRowVariant(health);
-  const variant = reported === "sign_in" && signingIn ? "waiting" : reported;
+  const variant =
+    recovering &&
+    (reported === "sign_in" ||
+      reported === "permission" ||
+      reported === "repair")
+      ? "waiting"
+      : reported;
   const unusable = variant === "no_usage" || variant === "outage";
   // Every state whose way on is another check offers the same control, and
   // says so while one is running instead of offering a second: pressing again
@@ -149,7 +159,11 @@ export function SetupProviderRow({
         ) : variant === "waiting" ? (
           <>
             <SetupProviderRowMessage>
-              Waiting for sign-in…
+              {reported === "permission"
+                ? "Waiting for access…"
+                : reported === "repair"
+                  ? "Repairing…"
+                  : "Waiting for sign-in…"}
             </SetupProviderRowMessage>
             <Spinner />
           </>

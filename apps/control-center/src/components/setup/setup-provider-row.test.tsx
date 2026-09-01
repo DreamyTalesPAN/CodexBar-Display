@@ -57,7 +57,7 @@ describe("SetupProviderRow", () => {
   });
 
   it("waits without a second action once sign-in was pressed", () => {
-    const html = render({ health: "auth_required", signingIn: true });
+    const html = render({ health: "auth_required", recovering: true });
 
     expect(html).toContain("Waiting for sign-in…");
     expect(html).toContain("lucide-loader-circle");
@@ -170,6 +170,27 @@ describe("SetupProviderRow", () => {
       expect(html).toContain(
         'aria-label="Repair the usage service for Claude Code"',
       );
+      expect(html).toContain('role="switch"');
+    }
+  });
+
+
+  // The wait replaced the sign-in action but left the other two live, so every
+  // press launched the recovery again and queued another check behind it.
+  it("replaces every recovery action while its attempt runs", () => {
+    const cases = [
+      { health: "permission_required", waiting: "Waiting for access…" },
+      { health: "config_error", waiting: "Repairing…" },
+      { health: "auth_required", waiting: "Waiting for sign-in…" },
+    ] as const;
+
+    for (const { health, waiting } of cases) {
+      const html = render({ health, recovering: true });
+
+      expect(html).toContain(waiting);
+      expect(html).toContain('data-slot="spinner"');
+      expect(html).not.toContain('data-slot="button"');
+      // Rule 3 again: the switch is not one of the things that goes away.
       expect(html).toContain('role="switch"');
     }
   });

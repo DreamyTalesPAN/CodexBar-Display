@@ -48,10 +48,11 @@ export function SetupProvidersScreen({
   providers,
 }: SetupProvidersScreenProps) {
   const [query, setQuery] = useState("");
-  // A provider never tells us that a sign-in is under way; this is our own
-  // guess after opening the provider's app. It is bounded so a sign-in the
-  // customer abandoned cannot leave the row spinning with nothing to press.
-  const [signingInIds, setSigningInIds] = useState<string[]>([]);
+  // Nothing tells us that a recovery is under way -- a sign-in, a macOS
+  // permission, a usage service being restarted -- so this is our own guess
+  // after handing the customer over. It is bounded so one they abandoned
+  // cannot leave the row spinning with nothing to press.
+  const [recoveringIds, setRecoveringIds] = useState<string[]>([]);
   const waitTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(
@@ -97,10 +98,10 @@ export function SetupProvidersScreen({
             onCheckAgain={() => onCheckAgain(provider)}
             onRecover={() => {
               const providerId = provider.providerId;
-              setSigningInIds((ids) => [...ids, providerId]);
+              setRecoveringIds((ids) => [...ids, providerId]);
               waitTimers.current.push(
                 setTimeout(() => {
-                  setSigningInIds((ids) =>
+                  setRecoveringIds((ids) =>
                     ids.filter((id) => id !== providerId),
                   );
                   // The companion is still holding the failed check that sent
@@ -114,7 +115,7 @@ export function SetupProvidersScreen({
             }}
             onToggle={(enabled) => onToggle(provider, enabled)}
             saving={pendingPreferenceIds.has(provider.id)}
-            signingIn={signingInIds.includes(provider.providerId)}
+            recovering={recoveringIds.includes(provider.providerId)}
           />
         ))}
         {matching.length === 0 ? (

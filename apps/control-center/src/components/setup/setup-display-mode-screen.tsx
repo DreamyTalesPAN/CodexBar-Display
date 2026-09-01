@@ -161,7 +161,17 @@ export function SetupDisplayModeScreen({
         // write was still on its way: two writes raced, the first one to answer
         // released the step, and what VibeTV kept was whichever landed last
         // rather than what the customer had chosen.
-        disabled={saving || (mode === "fixed" && !selectedProviderId)}
+        //
+        // And the provider has to be one of the ones on offer. A saved choice
+        // whose provider has since been switched off is what sends the customer
+        // back to this step, and it arrives naming a provider the list no
+        // longer has: no card drawn as chosen, and a Continue that resubmitted
+        // the same refused provider.
+        disabled={
+          saving ||
+          (mode === "fixed" &&
+            !providers.some((provider) => provider.id === selectedProviderId))
+        }
         className="mt-4 w-full"
         onClick={onContinue}
         type="button"
