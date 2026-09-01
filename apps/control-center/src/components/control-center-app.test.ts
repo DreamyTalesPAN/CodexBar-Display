@@ -92,6 +92,16 @@ describe("connection mode choice status", () => {
     ).toEqual({ required: true, resolved: false });
   });
 
+  it("resumes Cable-free WiFi discovery after a reload", () => {
+    expect(
+      connectionModeChoiceStatus({
+        connectionMode: "wifi",
+        connectionModeChoiceRequired: false,
+        device: { connected: false },
+      }),
+    ).toEqual({ required: false, resolved: true });
+  });
+
   it("keeps the chooser once Cable auto-binding requires it", () => {
     expect(
       connectionModeChoiceStatus({

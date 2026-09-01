@@ -466,6 +466,7 @@ type statusResponse struct {
 	OK                           bool                   `json:"ok"`
 	Companion                    companion              `json:"companion"`
 	Device                       deviceInfo             `json:"device"`
+	ConnectionMode               string                 `json:"connectionMode,omitempty"`
 	ConnectionModeChoiceRequired bool                   `json:"connectionModeChoiceRequired"`
 	ProviderSetup                codexbar.ProviderSetup `json:"providerSetup"`
 	Setup                        setupProgress          `json:"setup"`
@@ -1368,6 +1369,19 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			device.Board = observed.Board
 			device.Firmware = observed.Firmware
 			device.Capabilities = observed.Capabilities
+			// Cable has the same read-only health contract as WiFi. Without it,
+			// status cannot distinguish a live usage screen from the firmware's
+			// "Theme missing" screen and incorrectly skips the existing theme
+			// chooser. The shared Sender serializes this probe with frame writes.
+			if hello.HasFeature(protocol.FeatureCableHealthV1) && s.cableStatusHealthAvailable() {
+				if port, portErr := s.resolveCablePort("", cfg.DeviceID); portErr == nil {
+					if health, healthErr := s.readCableHealth(port, cfg.DeviceID); healthErr == nil {
+						device.Connected = providerSetupStreamForTarget(device.Stream, device.Target) ||
+							displayStreamHealthyForTarget(device.Stream, device.Target)
+						device = withDeviceHealth(device, health)
+					}
+				}
+			}
 		}
 		// Cable readiness never depends on an HTTP endpoint or token probe. A
 		// current exact-transport stream result is the authoritative evidence.
@@ -1441,6 +1455,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		OK:                           true,
 		Companion:                    s.companionInfo(r.Context()),
 		Device:                       device,
+		ConnectionMode:               runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode),
 		ConnectionModeChoiceRequired: cfg.ConnectionModeChoiceRequired,
 		ProviderSetup:                s.providerSetupForStatus(),
 		Setup:                        setupProgressForConfig(cfg),
@@ -1573,7 +1588,10 @@ func (s *Server) withConfiguredConnectionState(
 	if streamConnected {
 		device.Connected = true
 	}
-	if healthyStream {
+	// A successful health probe owns display readiness. In particular, a
+	// healthy Cable stream can deliver a frame while the firmware is still
+	// showing "Theme missing"; do not overwrite that explicit health result.
+	if healthyStream && device.Health == nil {
 		device.Ready = true
 	}
 	if reachable || streamConnected {
@@ -1602,6 +1620,10 @@ func (s *Server) withConfiguredConnectionState(
 	// window above keeps an unreachable device Connected, and that one really
 	// is reconnecting.
 	if streamConnected {
+		if device.Display != nil && device.Display.ThemeSpec != nil && !device.Display.ThemeSpec.Active {
+			device.ConnectionState = deviceConnectionSetup
+			return device
+		}
 		device.ConnectionState = deviceConnectionNoProvider
 		return device
 	}
@@ -1702,6 +1724,15 @@ func (s *Server) themeInstallInFlight() bool {
 	s.installJobsMu.Lock()
 	defer s.installJobsMu.Unlock()
 	return s.themeInstallActive
+}
+
+func (s *Server) cableStatusHealthAvailable() bool {
+	if _, running := s.activeFirmwareUpdateJob(); running {
+		return false
+	}
+	s.installJobsMu.Lock()
+	defer s.installJobsMu.Unlock()
+	return !s.themeInstallActive
 }
 
 // Callers hold firmwareUpdateStartMu so checking the accepted theme job and

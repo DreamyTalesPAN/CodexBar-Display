@@ -284,6 +284,39 @@ type FirmwareCheckOptions = {
 };
 
 type RuntimeSurface = "unknown" | "hosted-setup" | "local-control-center";
+
+export function connectionModeChoiceStatus(payload: {
+  connectionMode?: string;
+  connectionModeChoiceRequired?: boolean;
+  device?: DeviceInfo;
+}) {
+  if (payload.connectionModeChoiceRequired === true) {
+    return { required: true, resolved: true };
+  }
+  if (payload.connectionMode === "wifi") {
+    return { required: false, resolved: true };
+  }
+  const hasBoundDevice = Boolean(
+    payload.device?.active === true ||
+      payload.device?.target?.trim() ||
+      payload.device?.deviceId?.trim(),
+  );
+  return hasBoundDevice
+    ? { required: false, resolved: true }
+    : { required: true, resolved: false };
+}
+
+export function statusConfirmsSubmittedWiFiChoice(payload: {
+  connectionModeChoiceRequired?: boolean;
+  device?: DeviceInfo;
+}) {
+  return Boolean(
+    payload.connectionModeChoiceRequired === false &&
+      payload.device?.active === true &&
+      !deviceUsesCable(payload.device),
+  );
+}
+
 export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   useEffect(() => {
     clearRetiredAiThemeStorage();
@@ -1068,6 +1101,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       try {
         const payload = await runCompanion<{
           companion?: CompanionInfo;
+          connectionMode?: string;
           device?: DeviceInfo;
           themeInstall?: ThemeInstallJob;
           firmwareUpdate?: FirmwareUpdateJob;

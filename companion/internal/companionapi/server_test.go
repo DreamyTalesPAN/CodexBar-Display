@@ -160,6 +160,26 @@ func TestStatusWorksWithoutDevice(t *testing.T) {
 	}
 }
 
+func TestStatusPreservesCableFreeWiFiDiscoveryMode(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:        "wifi",
+		CableAutoBindDisabled: true,
+	})
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ConnectionMode != "wifi" || got.ConnectionModeChoiceRequired || got.Device.DeviceID != "" {
+		t.Fatalf("Cable-free WiFi discovery state was not preserved: %+v", got)
+	}
+}
+
 func TestStatusSerializesFalseDeviceBooleans(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	rec := httptest.NewRecorder()
@@ -4691,6 +4711,67 @@ func TestStatusUsesAuthoritativeCableStreamWithoutHTTPProbe(t *testing.T) {
 	}
 	if got.Device.Capabilities.Transport.Active != "usb" || got.Device.Capabilities.Transport.Mode != "cable" {
 		t.Fatalf("Cable status omitted the running worker's transport: %+v", got.Device.Capabilities)
+	}
+}
+
+func TestStatusUsesCableHealthToExposeMissingTheme(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "vibetv-cable",
+		DeviceToken:    "pair-token",
+	})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{
+			Kind:            "hello",
+			ProtocolVersion: 2,
+			DeviceID:        "vibetv-cable",
+			Features:        []string{protocol.FeatureThemeSpecV1, protocol.FeatureCableHealthV1},
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"}},
+			},
+		}, true
+	}
+	server.resolveCablePort = func(_, expectedDeviceID string) (string, error) {
+		if expectedDeviceID != "vibetv-cable" {
+			t.Fatalf("resolved Cable health for device %q", expectedDeviceID)
+		}
+		return "/dev/mock-vibetv", nil
+	}
+	healthCalls := 0
+	server.readCableHealth = func(port, deviceID string) (deviceHealth, error) {
+		healthCalls++
+		if port != "/dev/mock-vibetv" || deviceID != "vibetv-cable" {
+			t.Fatalf("Cable health target port=%q device=%q", port, deviceID)
+		}
+		renderOK := true
+		fullCount := uint64(2)
+		partialCount := uint64(0)
+		health := deviceHealth{OK: true}
+		health.Display.ActiveTheme = "theme-missing"
+		health.Display.ThemeSpec.RenderOK = &renderOK
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "usage"
+		return health, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if healthCalls != 1 {
+		t.Fatalf("Cable status read health %d times, want 1", healthCalls)
+	}
+	if !got.Device.Connected || !got.Device.Paired || got.Device.Ready ||
+		got.Device.ConnectionState != deviceConnectionSetup ||
+		got.Device.ActiveTheme != "theme-missing" || got.Device.Health == nil || !got.Device.Health.OK ||
+		got.Device.Display == nil || got.Device.Display.ThemeSpec == nil || got.Device.Display.ThemeSpec.Active {
+		t.Fatalf("Cable theme-missing state was not exposed: %+v", got.Device)
 	}
 }
 
