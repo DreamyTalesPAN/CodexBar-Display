@@ -356,8 +356,6 @@ export type UsageProviderInfo = {
   weeklyUnavailable?: boolean;
   collectedAt?: string;
   activityObservedAt?: string;
-  rateLimited?: boolean;
-  blockedUntil?: string;
   windows?: UsageWindowInfo[];
   status?: UsageStatusInfo;
   credits?: UsageCreditsInfo;
@@ -452,9 +450,8 @@ export type UsageSnapshot = {
 };
 
 export type UsageRefreshInfo = {
-  state: "refreshing" | "rate_limited" | "fresh" | "unavailable" | string;
+  state: "refreshing" | "fresh" | "unavailable" | string;
   requestedAt?: string;
-  blockedUntil?: string;
   message?: string;
 };
 

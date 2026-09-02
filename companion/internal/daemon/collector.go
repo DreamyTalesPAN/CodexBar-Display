@@ -32,8 +32,6 @@ type providerSnapshot struct {
 	TokenStatsCollected time.Time                  `json:"tokenStatsCollectedAt,omitempty"`
 	TokenHistorySettled bool                       `json:"tokenHistorySettled,omitempty"`
 	ActivityObservedAt  time.Time                  `json:"activityObservedAt,omitempty"`
-	RateLimited         bool                       `json:"rateLimited,omitempty"`
-	RateLimitedUntil    time.Time                  `json:"rateLimitedUntil,omitempty"`
 }
 
 type persistedProviderSnapshots struct {
@@ -379,10 +377,6 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		if frame.UsageUnavailable {
 			lastGood, exists := c.providers[key]
 			if exists {
-				lastGood.RateLimited = parsed.RateLimited
-				lastGood.RateLimitedUntil = parsed.RateLimitedUntil.UTC()
-				c.providers[key] = lastGood
-				updated = true
 				if !lastGood.Frame.UsageUnavailable && isLastGoodFreshAt(lastGood.Collected, collectedAt, c.snapshotMaxAge) {
 					continue
 				}
@@ -390,12 +384,10 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 				c.providers[key] = lastGood
 			} else {
 				c.providers[key] = providerSnapshot{
-					Provider:         key,
-					Frame:            frame,
-					Source:           strings.TrimSpace(parsed.Source),
-					Collected:        parsedCollectedAt,
-					RateLimited:      parsed.RateLimited,
-					RateLimitedUntil: parsed.RateLimitedUntil.UTC(),
+					Provider:  key,
+					Frame:     frame,
+					Source:    strings.TrimSpace(parsed.Source),
+					Collected: parsedCollectedAt,
 				}
 			}
 			updated = true
@@ -409,8 +401,6 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 			Collected:           parsedCollectedAt,
 			TokenStatsCollected: parsedTokenStatsCollectedAt(parsed, now),
 			ActivityObservedAt:  parsed.ActivityObservedAt,
-			RateLimited:         false,
-			RateLimitedUntil:    time.Time{},
 		}
 		if previous, exists := c.providers[key]; exists {
 			// Only a token scan can change the history, so a quota collection
@@ -727,8 +717,6 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 			TokenStatsCollected: now,
 			TokenHistorySettled: providerSettled,
 			ActivityObservedAt:  activityObservedAt,
-			RateLimited:         snapshot.RateLimited,
-			RateLimitedUntil:    snapshot.RateLimitedUntil,
 		}
 		updated++
 	}
@@ -961,8 +949,6 @@ func (c *providerCollector) providerFrames(now time.Time) []codexbar.ParsedFrame
 			Meta:               snapshot.Meta,
 			CollectedAt:        snapshot.Collected,
 			ActivityObservedAt: snapshot.ActivityObservedAt,
-			RateLimited:        snapshot.RateLimited,
-			RateLimitedUntil:   snapshot.RateLimitedUntil,
 			Stale:              frame.UsageUnavailable || !c.snapshotIsFresh(snapshot, now),
 		})
 	}

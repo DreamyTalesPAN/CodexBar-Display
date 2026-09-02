@@ -754,10 +754,9 @@ type usageRefreshTracker struct {
 }
 
 type usageRefreshInfo struct {
-	State        string `json:"state"`
-	RequestedAt  string `json:"requestedAt,omitempty"`
-	BlockedUntil string `json:"blockedUntil,omitempty"`
-	Message      string `json:"message,omitempty"`
+	State       string `json:"state"`
+	RequestedAt string `json:"requestedAt,omitempty"`
+	Message     string `json:"message,omitempty"`
 }
 
 // The collector caps one provider collection at 15 minutes. After that bound,
@@ -794,8 +793,6 @@ type usageProviderInfo struct {
 	WeeklyUnavailable     bool                     `json:"weeklyUnavailable,omitempty"`
 	CollectedAt           string                   `json:"collectedAt,omitempty"`
 	ActivityObservedAt    string                   `json:"activityObservedAt,omitempty"`
-	RateLimited           bool                     `json:"rateLimited,omitempty"`
-	BlockedUntil          string                   `json:"blockedUntil,omitempty"`
 	Windows               []usageWindowInfo        `json:"windows,omitempty"`
 	Status                *usageStatusInfo         `json:"status,omitempty"`
 	Credits               *usageCreditsInfo        `json:"credits,omitempty"`
@@ -1741,25 +1738,14 @@ func (s *Server) usageRefreshInfo(now time.Time, usage daemon.PersistedUsage) us
 		now = time.Now().UTC()
 	}
 	now = now.UTC()
-	rateLimited, blockedUntil := usageRateLimitState(usage, now)
 
 	s.usageRefreshMu.Lock()
 	requestedAt := s.usageRefresh.RequestedAt
-	if rateLimited {
-		s.usageRefresh.RequestedAt = time.Time{}
-		s.usageRefreshMu.Unlock()
-		return usageRefreshInfo{
-			State:        "rate_limited",
-			RequestedAt:  formatOptionalTime(requestedAt),
-			BlockedUntil: formatOptionalTime(blockedUntil),
-			Message:      usageRefreshMessage("rate_limited", blockedUntil),
-		}
-	}
 	if !requestedAt.IsZero() {
 		if usageHasFreshSnapshotAfter(usage, requestedAt) {
 			s.usageRefresh.RequestedAt = time.Time{}
 			s.usageRefreshMu.Unlock()
-			return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh", time.Time{})}
+			return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh")}
 		}
 		if !now.Before(requestedAt.Add(usageRefreshRequestMaxAge)) {
 			s.usageRefreshMu.Unlock()
@@ -1773,15 +1759,15 @@ func (s *Server) usageRefreshInfo(now time.Time, usage daemon.PersistedUsage) us
 		return usageRefreshInfo{
 			State:       "refreshing",
 			RequestedAt: formatOptionalTime(requestedAt),
-			Message:     usageRefreshMessage("refreshing", time.Time{}),
+			Message:     usageRefreshMessage("refreshing"),
 		}
 	}
 	s.usageRefreshMu.Unlock()
 
 	if usageHasFreshSnapshot(usage) {
-		return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh", time.Time{})}
+		return usageRefreshInfo{State: "fresh", Message: usageRefreshMessage("fresh")}
 	}
-	return usageRefreshInfo{State: "unavailable", Message: usageRefreshMessage("unavailable", time.Time{})}
+	return usageRefreshInfo{State: "unavailable", Message: usageRefreshMessage("unavailable")}
 }
 
 const exactUsageCacheMaxAge = 15 * time.Minute
@@ -1962,22 +1948,6 @@ func mergePersistedUsageDetails(fresh, persisted usageResponse) usageResponse {
 	return fresh
 }
 
-func usageRateLimitState(usage daemon.PersistedUsage, now time.Time) (bool, time.Time) {
-	var latest time.Time
-	rateLimited := false
-	for _, provider := range usage.Providers {
-		if provider.RateLimited {
-			rateLimited = true
-		}
-		blockedUntil := provider.RateLimitedUntil.UTC()
-		if blockedUntil.After(now) && blockedUntil.After(latest) {
-			latest = blockedUntil
-			rateLimited = true
-		}
-	}
-	return rateLimited, latest
-}
-
 func usageHasFreshSnapshotAfter(usage daemon.PersistedUsage, requestedAt time.Time) bool {
 	if requestedAt.IsZero() {
 		return usageHasFreshSnapshot(usage)
@@ -2002,15 +1972,10 @@ func usageHasFreshSnapshot(usage daemon.PersistedUsage) bool {
 	return false
 }
 
-func usageRefreshMessage(state string, blockedUntil time.Time) string {
+func usageRefreshMessage(state string) string {
 	switch state {
 	case "refreshing":
 		return "Refreshing usage. Current values stay visible until new data arrives."
-	case "rate_limited":
-		if !blockedUntil.IsZero() {
-			return "Usage refresh is temporarily limited. Current values stay visible until usage can be collected again."
-		}
-		return "Usage refresh is temporarily limited. Current values stay visible."
 	case "fresh":
 		return "Usage is up to date."
 	default:
@@ -2593,8 +2558,6 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		WeeklyUnavailable:     snapshot.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
 		CollectedAt:           formatOptionalTime(snapshot.CollectedAt),
 		ActivityObservedAt:    formatOptionalTime(snapshot.ActivityObservedAt),
-		RateLimited:           snapshot.RateLimited,
-		BlockedUntil:          formatOptionalTime(snapshot.RateLimitedUntil),
 		Windows:               usageWindowsFromMeta(snapshot.Meta),
 		Status:                usageStatusFromMeta(snapshot.Meta),
 		Credits:               usageCreditsFromMeta(snapshot.Meta),

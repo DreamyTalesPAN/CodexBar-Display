@@ -146,22 +146,6 @@ func TestRunCycleWithDepsWaitsForFirstAvailableUsageFrame(t *testing.T) {
 		t.Fatalf("expected an error frame before first usage, got %+v", errorFrame)
 	}
 
-	// A rate-limited selection is a configured, live provider in a temporary
-	// condition: it must keep its unavailable semantics and wait silently
-	// instead of being reclassified as no-providers.
-	rateLimited := unavailable
-	rateLimited.RateLimited = true
-	providers = []codexbar.ParsedFrame{rateLimited}
-	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
-		t.Fatalf("expected the rate-limited cold start to keep waiting, got %v", err)
-	}
-	if len(sentLines) != 1 {
-		t.Fatalf("expected no extra frame for the rate-limited wait, got %d", len(sentLines))
-	}
-	if !strings.Contains(logged.String(), "event=usage-waiting") {
-		t.Fatalf("expected the rate-limited wait to log usage-waiting, got %q", logged.String())
-	}
-
 	providers = []codexbar.ParsedFrame{testParsedFrame("claude", 0, 11, 3600)}
 	if err := runCycleWithDeps(context.Background(), "", state, deps); err != nil {
 		t.Fatalf("expected first available usage frame to send, got %v", err)
@@ -4271,66 +4255,6 @@ func TestProviderCollectorBuffersUnavailableAndRecoversWithoutFlicker(t *testing
 	frames = collector.providerFrames(current)
 	if len(frames) != 1 || frames[0].Frame.UsageUnavailable || frames[0].Frame.Session != 12 {
 		t.Fatalf("expected immediate recovery from unavailable state, got %#v", frames)
-	}
-}
-
-func TestProviderCollectorReplacesRateLimitMetadataOnLaterUnavailableResponse(t *testing.T) {
-	prepareFastTestEnv(t)
-
-	now := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
-	current := testParsedFrame("claude", 64, 32, 3600)
-	collector := &providerCollector{
-		now:             func() time.Time { return now },
-		logf:            func(string, ...any) {},
-		order:           []string{"claude"},
-		snapshotMaxAge:  10 * time.Minute,
-		persistInterval: time.Minute,
-		providers:       make(map[string]providerSnapshot),
-		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
-			return []codexbar.ParsedFrame{current}, nil
-		},
-	}
-	collector.collectOnce(context.Background())
-
-	blockedUntil := now.Add(2 * time.Minute)
-	current = codexbar.ParsedFrame{
-		Provider:         "claude",
-		RateLimited:      true,
-		RateLimitedUntil: blockedUntil,
-		Frame: protocol.Frame{
-			Provider:         "claude",
-			UsageUnavailable: true,
-		},
-	}
-	collector.collectOnce(context.Background())
-	if got := collector.providers["claude"]; !got.RateLimited || !got.RateLimitedUntil.Equal(blockedUntil) {
-		t.Fatalf("expected current rate limit metadata, got %#v", got)
-	}
-
-	current.RateLimited = false
-	current.RateLimitedUntil = time.Time{}
-	collector.collectOnce(context.Background())
-	got := collector.providers["claude"]
-	if got.RateLimited || !got.RateLimitedUntil.IsZero() || got.Frame.UsageUnavailable || got.Frame.Session != 64 {
-		t.Fatalf("later unavailable error must clear only obsolete rate limit metadata, got %#v", got)
-	}
-
-	now = now.Add(11 * time.Minute)
-	blockedUntil = now.Add(2 * time.Minute)
-	current.RateLimited = true
-	current.RateLimitedUntil = blockedUntil
-	collector.collectOnce(context.Background())
-	got = collector.providers["claude"]
-	if !got.Frame.UsageUnavailable || !got.RateLimited || !got.RateLimitedUntil.Equal(blockedUntil) {
-		t.Fatalf("already unavailable provider did not receive current rate limit metadata: %#v", got)
-	}
-
-	current.RateLimited = false
-	current.RateLimitedUntil = time.Time{}
-	collector.collectOnce(context.Background())
-	got = collector.providers["claude"]
-	if !got.Frame.UsageUnavailable || got.RateLimited || !got.RateLimitedUntil.IsZero() {
-		t.Fatalf("already unavailable provider kept obsolete rate limit metadata: %#v", got)
 	}
 }
 

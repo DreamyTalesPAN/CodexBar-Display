@@ -2969,3 +2969,37 @@ issue scope, or release permission never implies UI permission.
   `apps/control-center/src/components/setup/setup-wizard.tsx`, their tests,
   and this approval record.
 
+## 2026-09-02 — The Mac App stops reading CodexBar's error text
+
+- User approval: The product owner chose this after the diagnosis of the
+  device-step hang ("ok mach a und direkt auch die folgearbeit textsuche nach
+  rate limit als ganzes rausnehmen", 2026-09-02).
+- Approved customer-visible result: **A switched-on provider that has never
+  delivered usage now carries the customer from the device step to the
+  provider step within one collector cycle, and the VibeTV shows its honest
+  "AI usage is not ready" frame instead of nothing.** The runtime used to keep
+  silent whenever CodexBar's error text happened to contain the words "rate
+  limit" -- which is what CodexBar says for a signed-out Codex -- and neither
+  the device nor the wizard was told anything. The runtime no longer reads that
+  text at all. This replaces the wizard-side guess approved earlier today ("A
+  connected VibeTV with no usage to draw reaches the provider step"): the
+  device step again reads only the runtime's own `provider_setup_required`
+  signal, and that promise is kept through the runtime -- a provider that has
+  never delivered yields the error frame at once; one that delivered before
+  keeps its last-good values on the VibeTV and sends an unavailable frame once
+  they expire. The Usage screen no longer has a "Refresh is temporarily
+  limited" state. A provider CodexBar cannot read keeps showing its last-good
+  values as up to date for their ten-minute lifetime and then reads as
+  unavailable, whatever reason CodexBar gives; a manual refresh in that time
+  says "Refreshing usage" and settles as unavailable after fifteen minutes
+  without new data.
+- Approved files: `companion/internal/codexbar/codexbar.go`,
+  `companion/internal/codexbar/dashboard_fetch.go`,
+  `companion/internal/daemon/collector.go`,
+  `companion/internal/daemon/daemon.go`,
+  `companion/internal/companionapi/server.go`, their tests,
+  `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/control-center-types.ts`,
+  `apps/control-center/src/components/usage-screen.tsx`, their tests,
+  `apps/control-center/scripts/test-customer-flows.mjs`,
+  `docs/usage-polling-architecture.md`, and this approval record.

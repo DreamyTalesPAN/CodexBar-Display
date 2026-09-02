@@ -468,8 +468,6 @@ type ParsedFrame struct {
 	Meta               ProviderUsageMeta
 	CollectedAt        time.Time
 	ActivityObservedAt time.Time
-	RateLimited        bool
-	RateLimitedUntil   time.Time
 	Stale              bool
 }
 
@@ -784,11 +782,9 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 				Label:            label,
 				UsageUnavailable: true,
 			},
-			Provider:         provider,
-			Source:           source,
-			RateLimited:      payloadIsRateLimited(payload),
-			RateLimitedUntil: rateLimitedUntilFromPayload(payload),
-			Stale:            true,
+			Provider: provider,
+			Source:   source,
+			Stale:    true,
 		}, nil
 	}
 
@@ -1494,43 +1490,6 @@ func providerPayloadHasError(payload map[string]any) bool {
 	default:
 		return true
 	}
-}
-
-func rateLimitedUntilFromPayload(payload map[string]any) time.Time {
-	if !payloadIsRateLimited(payload) {
-		return time.Time{}
-	}
-	return firstRFC3339AtPaths(
-		payload,
-		"error.blockedUntil",
-		"error.blocked_until",
-		"error.retryAfter",
-		"error.retry_after",
-		"blockedUntil",
-		"blocked_until",
-		"retryAfter",
-		"retry_after",
-	)
-}
-
-func payloadIsRateLimited(payload map[string]any) bool {
-	message := strings.Join([]string{
-		firstStringAtPaths(payload, "error.message", "message", "diagnostic"),
-		firstStringAtPaths(payload, "error.kind", "error.code", "code"),
-	}, " ")
-	return isRateLimitMessage(message)
-}
-
-func isRateLimitMessage(message string) bool {
-	lower := strings.ToLower(strings.TrimSpace(message))
-	if lower == "" {
-		return false
-	}
-	return strings.Contains(lower, "rate_limit_error") ||
-		strings.Contains(lower, "rate limit") ||
-		strings.Contains(lower, "rate-limited") ||
-		strings.Contains(lower, "rate limited") ||
-		strings.Contains(lower, "too many requests")
 }
 
 const (

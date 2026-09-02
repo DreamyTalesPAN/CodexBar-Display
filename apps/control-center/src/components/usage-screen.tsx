@@ -179,16 +179,6 @@ function usageRefreshNotice(
         description:
           "Current values stay visible while VibeTV waits for a new usage snapshot.",
       };
-    case "rate_limited": {
-      const until = formatBlockedUntil(refresh.blockedUntil);
-      return {
-        tone: "attention" as const,
-        title: "Refresh is temporarily limited",
-        description: until
-          ? `Current values stay visible. Try again after ${until}.`
-          : "Current values stay visible. VibeTV will refresh again when the provider allows it.",
-      };
-    }
     case "unavailable":
       if (
         companionStatus !== "online" ||
@@ -206,17 +196,6 @@ function usageRefreshNotice(
     default:
       return null;
   }
-}
-
-function formatBlockedUntil(value: string | undefined) {
-  if (!value) {
-    return "";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function TokenUsageOverTimePanel({

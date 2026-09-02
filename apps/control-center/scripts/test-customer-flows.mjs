@@ -462,7 +462,7 @@ async function main() {
         browser,
         appContext.appUrl,
       );
-      await testUsageWaitingDeviceReachesProviderStep(
+      await testProviderNeverDeliveredDeviceReachesProviderStep(
         browser,
         appContext.appUrl,
       );
@@ -726,7 +726,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testUsageWaitingDeviceReachesProviderStep(
+    await testProviderNeverDeliveredDeviceReachesProviderStep(
       browser,
       appContext.appUrl,
     );
@@ -3691,15 +3691,24 @@ async function testFirstUsageServiceFailureOffersRecovery(browser, appUrl) {
 // A paired VibeTV whose only problem is usage that never arrives must reach
 // the provider step -- the one screen that can change that -- instead of
 // parking forever on the device step with the connect long finished. The
-// runtime reports this state as a running stream with no usage and no error
-// code, not as provider_setup_required: a switched-on provider that cannot
-// deliver (signed out, nothing fresh) leaves nothing to send.
-async function testUsageWaitingDeviceReachesProviderStep(browser, appUrl) {
+// runtime reports a switched-on provider that has never delivered (signed
+// out, nothing to read) the same way as no provider at all: the stream
+// carries provider_setup_required, and that is the one signal the step reads.
+async function testProviderNeverDeliveredDeviceReachesProviderStep(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
   await routeCompanionOnline(page, [], () => {}, {
-    device: reachableUnreadyDevice,
+    device: {
+      ...reachableUnreadyDevice,
+      health: { ok: true },
+      stream: {
+        ...reachableUnreadyDevice.stream,
+        target: reachableUnreadyDevice.target,
+        errorCode: "provider_setup_required",
+        detail: "VibeTV is connected, but AI usage is not ready yet.",
+      },
+    },
     displayFrameStatus: 404,
     providerSetup: readyProviderSetup(),
     providerSelectionSetup: {

@@ -37,7 +37,6 @@ import {
 } from "./control-center-runtime";
 import {
   deviceAwaitsProviderSetup,
-  deviceIsWaitingForUsage,
   deviceCanContinueThemeSetup,
   deviceCompletedThemeSetup,
   deviceIsActive,
@@ -3959,16 +3958,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // letting a device through once the provider selection is already done would
   // carry someone whose provider just died to the live step and tell them
   // their VibeTV is running.
-  //
-  // That problem wears two shapes. With nothing switched on the stream reports
-  // `provider_setup_required`; with a provider switched on that cannot deliver
-  // (signed out, nothing fresh to read) it runs with no usage and no error
-  // code. Both have their remedy on the provider step.
   const providerSelectionRequired =
     providerSelectionSetup?.providerSelectionRequired === true;
   const deviceUsableForSetup = setupDeviceIsUsable({
-    awaitsProviderSetup:
-      deviceAwaitsProviderSetup(device) || deviceIsWaitingForUsage(device),
+    awaitsProviderSetup: deviceAwaitsProviderSetup(device),
     connectionRecoveryRequired,
     hasActiveDevice,
     hasEnteredControlCenter,
@@ -4410,14 +4403,6 @@ function usageRefreshEvent(payload: UsageSnapshot): {
         detail: "VibeTV is waiting for a new usage snapshot.",
         tone: "attention",
       };
-    case "rate_limited":
-      return {
-        label: "Usage refresh is waiting",
-        detail: payload.refresh.blockedUntil
-          ? `Try again after ${formatRefreshEventTime(payload.refresh.blockedUntil)}.`
-          : "The provider is temporarily limiting refreshes.",
-        tone: "attention",
-      };
     case "unavailable":
       return {
         label: "Usage is still loading",
@@ -4431,14 +4416,6 @@ function usageRefreshEvent(payload: UsageSnapshot): {
         tone: payload.providers?.length ? "ready" : "attention",
       };
   }
-}
-
-function formatRefreshEventTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function subscribeRuntimeSurface(onStoreChange: () => void) {
