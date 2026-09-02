@@ -1,0 +1,62 @@
+name: CODEX Spike Win-CodexBar CLI on Windows
+
+# Issue #357: prove that the Win-CodexBar console CLI builds from a pinned tag and
+# runs on real Windows. No logins exist on the runner, so this records the
+# unauthenticated shapes only; the schema comparison happens on the Mac.
+
+on:
+  push:
+    branches: [claude/windows-support-kiss-plan-5ab95e]
+    paths: [.github/workflows/spike-win-codexbar.yml]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Win-CodexBar tag to build
+        required: true
+        default: v0.55.0
+
+jobs:
+  spike:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: nesszer/Win-CodexBar
+          ref: ${{ inputs.tag || 'v0.55.0' }}
+          path: win-codexbar
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: win-codexbar
+      - name: Build console CLI
+        shell: pwsh
+        working-directory: win-codexbar
+        run: cargo build -p codexbar --release --bin codexbar
+      - name: Record unauthenticated shapes
+        shell: pwsh
+        working-directory: win-codexbar
+        run: |
+          $cli = "target\release\codexbar.exe"
+          New-Item -ItemType Directory -Force out | Out-Null
+          & $cli --version *> out\version.txt
+          & $cli --help *> out\help.txt
+          & $cli config providers *> out\config-providers.txt
+          & $cli diagnose --pretty *> out\diagnose.json
+          & $cli usage --json --provider all --web-timeout 8 > out\usage-all.json 2> out\usage-all.stderr
+          "usage-all exit=$LASTEXITCODE" | Tee-Object out\exit-codes.txt
+          & $cli usage --json --provider codex --web-timeout 8 > out\usage-codex.json 2> out\usage-codex.stderr
+          "usage-codex exit=$LASTEXITCODE" | Tee-Object -Append out\exit-codes.txt
+          & $cli usage --json --provider claude --web-timeout 8 > out\usage-claude.json 2> out\usage-claude.stderr
+          "usage-claude exit=$LASTEXITCODE" | Tee-Object -Append out\exit-codes.txt
+          & $cli dashboard --pretty > out\dashboard.json 2> out\dashboard.stderr
+          "dashboard exit=$LASTEXITCODE" | Tee-Object -Append out\exit-codes.txt
+          Get-Content out\version.txt
+          Get-Content out\usage-codex.json
+          Get-ChildItem out | Format-Table Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-codexbar-windows
+          path: |
+            win-codexbar/out/
+            win-codexbar/target/release/codexbar.exe
