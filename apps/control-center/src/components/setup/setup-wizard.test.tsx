@@ -73,6 +73,7 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     onSearchDevices: vi.fn(),
     pendingCheckIds: new Set<string>(),
     pendingPreferenceIds: new Set<string>(),
+    providersLoading: false,
     onUpdateMacApp: vi.fn(),
     onSelectTheme: vi.fn(),
     providers: [provider()],
@@ -85,6 +86,35 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     ...overrides,
   };
 }
+
+describe("SetupWizard: initial provider scan", () => {
+  it("shows the provider loading screen instead of the finished list", () => {
+    render(
+      <SetupWizard
+        {...baseProps({
+          providers: [],
+          providersLoading: true,
+          step: "providers",
+        })}
+      />,
+    );
+
+    expect(shownStep()).toBe("Choose AI providers");
+    expect(
+      screen.getByText(/reading provider usage on this Mac/),
+    ).toBeTruthy();
+    expect(screen.queryByText("Codex")).toBeNull();
+    expect(
+      (screen.getByRole("searchbox", {
+        name: "Search providers",
+      }) as HTMLInputElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+});
 
 function shownStep(): string {
   return document.querySelector("main")?.getAttribute("aria-label") ?? "";

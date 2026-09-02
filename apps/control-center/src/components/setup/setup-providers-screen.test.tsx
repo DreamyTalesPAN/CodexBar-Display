@@ -1,12 +1,26 @@
+// @vitest-environment jsdom
+
+import {
+  act,
+  cleanup,
+  render as renderDom,
+  screen,
+} from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PreferenceHealthState } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import {
+  PROVIDER_LOADING_LOG_INTERVAL_MS,
   SetupProvidersScreen,
   setupProviderCanDisplay,
   setupProviderMatchesQuery,
 } from "./setup-providers-screen";
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 function provider(fields: {
   health: PreferenceHealthState;
@@ -68,6 +82,51 @@ function render(
 }
 
 describe("SetupProvidersScreen", () => {
+  it("shows the approved loading state until the provider list is ready", () => {
+    const html = render({ loading: true, providers: [] });
+
+    expect(html).toContain("This can take up to 5 minutes. We&#x27;re sorry.");
+    expect(html).toContain("reading provider usage on this Mac");
+    expect(html).not.toContain("still checking, hang tight");
+    expect(html).toMatch(
+      /<input[^>]*disabled=""[^>]*placeholder="Search providers"/,
+    );
+    expect(html.match(/data-slot="skeleton"/g)).toHaveLength(6);
+    expect(html).toMatch(
+      /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
+    );
+    expect(html).not.toContain("No AI providers match your search.");
+  });
+
+  it("adds another still-checking line every twenty seconds", () => {
+    vi.useFakeTimers();
+    const props = {
+      loading: true,
+      onCheckAgain: vi.fn(),
+      onContinue: vi.fn(),
+      onToggle: vi.fn(),
+      pendingCheckIds: new Set<string>(),
+      pendingPreferenceIds: new Set<string>(),
+      providers: [] as ProviderItem[],
+    };
+    const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
+
+    expect(screen.queryAllByText(/still checking, hang tight/)).toHaveLength(0);
+
+    act(() => vi.advanceTimersByTime(PROVIDER_LOADING_LOG_INTERVAL_MS));
+    expect(screen.getAllByText(/still checking, hang tight/)).toHaveLength(1);
+
+    act(() => vi.advanceTimersByTime(PROVIDER_LOADING_LOG_INTERVAL_MS));
+    expect(screen.getAllByText(/still checking, hang tight/)).toHaveLength(2);
+
+    rerender(
+      <SetupProvidersScreen {...props} loading={false} providers={[claude]} />,
+    );
+    act(() => vi.advanceTimersByTime(PROVIDER_LOADING_LOG_INTERVAL_MS));
+    expect(screen.queryAllByText(/still checking, hang tight/)).toHaveLength(0);
+    expect(screen.getByText("Claude Code")).toBeTruthy();
+  });
+
   it("lists every provider it was given, with no collapse", () => {
     const html = render();
 

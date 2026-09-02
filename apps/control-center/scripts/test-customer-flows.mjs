@@ -3919,6 +3919,18 @@ async function testThemeMissingDeviceWaitsForInitialProviderCheck(
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
+  const browserErrors = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      browserErrors.push({
+        message: message.text(),
+        url: message.location().url,
+      });
+    }
+  });
+  page.on("pageerror", (error) =>
+    browserErrors.push({ message: error.message, url: "pageerror" }),
+  );
   const installRequests = [];
   const notReady = { ...themeMissingDevice, deviceId: "fixture-device-1" };
   let providerReady = false;
@@ -3929,6 +3941,7 @@ async function testThemeMissingDeviceWaitsForInitialProviderCheck(
     // provider step with theme setup still pending behind it.
     statusDeviceSequence: [notReady, { ...notReady, ready: true }],
     displayFrameStatus: 404,
+    preferencesDelayMs: 2_000,
     providerSelectionSetup: {
       providerSelectionRequired: true,
       providerSelectionComplete: false,
@@ -3938,10 +3951,28 @@ async function testThemeMissingDeviceWaitsForInitialProviderCheck(
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  const checkingDialog = page.getByRole("dialog", {
-    name: "Starting AI usage",
-  });
-  await checkingDialog.waitFor({ timeout: 15_000 });
+  const providersLoading = setupScreen(page, SETUP_PROVIDERS_SCREEN);
+  await providersLoading.waitFor({ timeout: 15_000 });
+  await providersLoading
+    .getByText("This can take up to 5 minutes. We're sorry.", { exact: true })
+    .waitFor();
+  assert(
+    await providersLoading
+      .getByRole("searchbox", { name: "Search providers" })
+      .isDisabled(),
+    "The provider search must stay closed until the inventory is ready",
+  );
+  assert(
+    await providersLoading
+      .getByRole("button", { name: "Continue" })
+      .isDisabled(),
+    "Continue must stay closed until the provider inventory is ready",
+  );
+  assert(
+    (await page.getByRole("dialog", { name: "Starting AI usage" }).count()) ===
+      0,
+    "The initial provider scan belongs on the provider screen, not in a dialog",
+  );
   assert(
     (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) ===
       0,
@@ -3950,9 +3981,7 @@ async function testThemeMissingDeviceWaitsForInitialProviderCheck(
   assertNoInstallRequests(installRequests);
 
   providerReady = true;
-  await checkingDialog.waitFor({ state: "detached", timeout: 20_000 });
   const providersScreen = setupScreen(page, SETUP_PROVIDERS_SCREEN);
-  await providersScreen.waitFor({ timeout: 10_000 });
   const providersContinue = providersScreen.getByRole("button", {
     name: "Continue",
   });
@@ -3968,9 +3997,18 @@ async function testThemeMissingDeviceWaitsForInitialProviderCheck(
   assert(
     (await page.getByRole("dialog", { name: "Starting AI usage" }).count()) ===
       0,
-    "Theme selection must replace the provider check only after it settles",
+    "Theme selection must not reopen the removed provider-check dialog",
   );
   assertNoInstallRequests(installRequests);
+  const unexpectedBrowserErrors = browserErrors.filter(
+    (error) =>
+      !error.url.endsWith("/v1/display-frame/latest") ||
+      !error.message.includes("404"),
+  );
+  assert(
+    unexpectedBrowserErrors.length === 0,
+    `The provider loading flow must not log unexpected browser errors, got ${JSON.stringify(unexpectedBrowserErrors)}`,
+  );
   await page.close();
 }
 
@@ -9562,6 +9600,7 @@ async function routeCompanionOnline(
     usageStatus = 200,
     preferencesResponse,
     onPreferencesResponse,
+    preferencesDelayMs = 0,
     preferencesStatus = 200,
     preferencePatchDelayMs = 0,
     preferencePatchFailureIds = [],
@@ -10074,6 +10113,9 @@ async function routeCompanionOnline(
       return;
     }
     if (pathname === "/v1/preferences") {
+      if (preferencesDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, preferencesDelayMs));
+      }
       if (preferencesStatus === 200 && onPreferencesResponse) {
         currentPreferences = structuredClone(
           onPreferencesResponse(currentPreferences) || currentPreferences,

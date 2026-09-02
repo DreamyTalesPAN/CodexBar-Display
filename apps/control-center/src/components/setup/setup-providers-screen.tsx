@@ -2,7 +2,7 @@
 
 import type { SupportDiagnostics } from "../control-center-types";
 import { Search, SearchX } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -11,12 +11,18 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
-import { ItemGroup } from "@/components/ui/item";
+import { Item, ItemGroup } from "@/components/ui/item";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { SETUP_REVEAL } from "./setup-reveal";
 import type { ProviderItem } from "../provider-picker";
+import { SetupLog, type SetupLogLine } from "./setup-log";
 import { SetupProviderRow } from "./setup-provider-row";
-import { SetupWizardScreen, SetupWizardTitle } from "./setup-wizard-screen";
+import {
+  SetupWizardScreen,
+  SetupWizardSubtitle,
+  SetupWizardTitle,
+} from "./setup-wizard-screen";
 
 type SetupProvidersScreenProps = {
   aiFixPrompt?: () => string;
@@ -27,6 +33,8 @@ type SetupProvidersScreenProps = {
   onToggle: (provider: ProviderItem, enabled: boolean) => void;
   /** The completion this step asked for has not answered yet. */
   continuing?: boolean;
+  /** The Companion is still collecting the first provider inventory. */
+  loading?: boolean;
   /** Providers whose exact check is queued or running. */
   pendingCheckIds: Set<string>;
   /** Preferences whose on/off write is in flight, by preference id. */
@@ -36,6 +44,7 @@ type SetupProvidersScreenProps = {
 
 /** How many provider rows are on screen before the customer asks for more. */
 const PROVIDER_PAGE_SIZE = 10;
+export const PROVIDER_LOADING_LOG_INTERVAL_MS = 20_000;
 
 type ProviderListProps = {
   className?: string;
@@ -150,10 +159,21 @@ export function SetupProvidersScreen({
   onCreateSupportReport,
   onToggle,
   continuing = false,
+  loading = false,
   pendingCheckIds,
   pendingPreferenceIds,
   providers,
 }: SetupProvidersScreenProps) {
+  if (loading) {
+    return (
+      <SetupProvidersLoadingScreen
+        aiFixPrompt={aiFixPrompt}
+        onBack={onBack}
+        onCreateSupportReport={onCreateSupportReport}
+      />
+    );
+  }
+
   return (
     <SetupWizardScreen
       label="Choose AI providers"
@@ -182,6 +202,86 @@ export function SetupProvidersScreen({
         onClick={onContinue}
         type="button"
       >
+        <span>Continue</span>
+      </Button>
+    </SetupWizardScreen>
+  );
+}
+
+function SetupProvidersLoadingScreen({
+  aiFixPrompt,
+  onBack,
+  onCreateSupportReport,
+}: Pick<
+  SetupProvidersScreenProps,
+  "aiFixPrompt" | "onBack" | "onCreateSupportReport"
+>) {
+  const [stillCheckingCount, setStillCheckingCount] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => setStillCheckingCount((count) => count + 1),
+      PROVIDER_LOADING_LOG_INTERVAL_MS,
+    );
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const lines: SetupLogLine[] = [
+    {
+      id: "provider-usage",
+      text: "reading provider usage on this Mac",
+      tone: stillCheckingCount > 0 ? "done" : undefined,
+    },
+    ...Array.from({ length: stillCheckingCount }, (_, index) => ({
+      id: `still-checking-${index + 1}`,
+      text: "still checking, hang tight",
+      tone:
+        index < stillCheckingCount - 1 ? ("done" as const) : undefined,
+    })),
+  ];
+
+  return (
+    <SetupWizardScreen
+      label="Choose AI providers"
+      aiFixPrompt={aiFixPrompt}
+      onBack={onBack}
+      onCreateSupportReport={onCreateSupportReport}
+    >
+      <SetupWizardTitle>Choose AI providers</SetupWizardTitle>
+      <SetupWizardSubtitle>
+        This can take up to 5 minutes. We&apos;re sorry.
+      </SetupWizardSubtitle>
+
+      <SetupLog className="mt-4" lines={lines} running />
+
+      <div className="relative w-full">
+        <Search
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          aria-label="Search providers"
+          className="pl-9"
+          disabled
+          placeholder="Search providers"
+          type="search"
+        />
+      </div>
+
+      <ItemGroup aria-hidden className="mt-2 gap-2">
+        {Array.from({ length: 3 }, (_, index) => (
+          <Item
+            className="min-h-14 rounded-[var(--radius-card)] p-4"
+            key={index}
+            variant="outline"
+          >
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="ml-auto h-7 w-12 rounded-full" />
+          </Item>
+        ))}
+      </ItemGroup>
+
+      <Button className="mt-4 w-full" disabled type="button">
         <span>Continue</span>
       </Button>
     </SetupWizardScreen>

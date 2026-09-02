@@ -3088,3 +3088,20 @@ issue scope, or release permission never implies UI permission.
   `apps/control-center/src/components/setup/setup-provider-row.tsx`, its
   regression test, `apps/control-center/scripts/test-customer-flows.mjs`, and
   this approval record.
+
+## 2026-09-02 — Initial AI provider scan stays visible
+
+- User approval: The product owner supplied the exact loading-state design and
+  explicitly asked for another `still checking, hang tight` log line roughly
+  every 20 seconds while the provider list is not ready (2026-09-02).
+- Approved customer-visible result: **After the firmware check, setup moves to
+  `Choose AI providers` while the Mac App reads the first provider inventory.**
+  The screen shows `reading provider usage on this Mac`, appends another
+  `still checking, hang tight` line every 20 seconds, keeps Search, three
+  provider placeholders, and Continue disabled, then replaces the loading
+  state with the real provider list as soon as it answers. The former
+  `Starting AI usage` dialog no longer covers this ordinary wait.
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `setup/setup-wizard.tsx`, `setup/setup-providers-screen.tsx`, their regression
+  tests, `apps/control-center/scripts/test-customer-flows.mjs`, and this
+  approval record.

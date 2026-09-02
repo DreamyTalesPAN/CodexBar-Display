@@ -3588,16 +3588,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerRecoveryRequired =
     (companionStatus === "online" || providerRecoveryBusy) &&
     providerSetupNeedsEngineRecovery(providerSetup);
-  const initialProviderCheckInProgress =
-    themeSetupRequired &&
-    waitingForFirstUsage &&
-    providerSetupIsChecking(providerSetup);
   // A usage service that cannot answer is not the provider step's private
   // problem: it can fail at any moment, and it used to say so only there.
-  const usageFailure =
-    providerRecoveryRequired || initialProviderCheckInProgress
-      ? setupUsageCauseFor(providerSetup)
-      : null;
+  const usageFailure = providerRecoveryRequired
+    ? setupUsageCauseFor(providerSetup)
+    : null;
 
   // A dismissal covers the incident it was made during, not the next one. A
   // "checking" answer is the probe still running, not the incident ending:
@@ -3909,8 +3904,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // their VibeTV is running.
   const providerSelectionRequired =
     providerSelectionSetup?.providerSelectionRequired === true;
+  // The Companion already owns the long-running scan. Until its first
+  // provider inventory answers, keep that wait visible on the step it belongs
+  // to instead of leaving the completed firmware log as the last word.
+  const providersLoading =
+    providerSelectionRequired &&
+    providerPreferences === null &&
+    providerSetupIsChecking(providerSetup);
   const deviceUsableForSetup = setupDeviceIsUsable({
-    awaitsProviderSetup: deviceAwaitsProviderSetup(device),
+    awaitsProviderSetup:
+      deviceAwaitsProviderSetup(device) ||
+      (providersLoading && deviceConnected),
     connectionRecoveryRequired,
     hasActiveDevice,
     hasEnteredControlCenter,
@@ -4119,6 +4123,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onProvidersContinue={completeProviderSetup}
           pendingCheckIds={pendingProviderCheckIds}
           pendingPreferenceIds={pendingPreferenceIds}
+          providersLoading={providersLoading}
           onDismissProviderError={() => {
             setProviderDisplayError(null);
             setProviderPreferencesError(null);
