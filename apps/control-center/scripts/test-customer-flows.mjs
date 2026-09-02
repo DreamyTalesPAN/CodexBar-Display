@@ -1992,7 +1992,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       reportedMessage:
         "Codex connection failed: codex account authentication required to read rate limits",
       rowActions: [
-        "Copy CodexBar message for Codex",
+        "Copy provider message for Codex",
         "Check Codex again",
         "Open CodexBar",
       ],
@@ -2005,7 +2005,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       reportedMessage:
         "Safari cookie file is not readable. Enable Full Disk Access for CodexBar.",
       rowActions: [
-        "Copy CodexBar message for Codex",
+        "Copy provider message for Codex",
         "Check Codex again",
         "Open CodexBar",
       ],
@@ -2017,7 +2017,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "no_usage_available",
       reportedMessage: "No usage data is available for this Codex account.",
       rowActions: [
-        "Copy CodexBar message for Codex",
+        "Copy provider message for Codex",
         "Check Codex again",
       ],
     },
@@ -2028,7 +2028,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "config_error",
       reportedMessage: "CodexBar could not save the Codex provider settings.",
       rowActions: [
-        "Copy CodexBar message for Codex",
+        "Copy provider message for Codex",
         "Check Codex again",
       ],
     },
@@ -2038,7 +2038,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       healthState: "setup_required",
       reportedMessage: "No available fetch strategy for codex.",
       rowActions: [
-        "Copy CodexBar message for Codex",
+        "Copy provider message for Codex",
         "Check Codex again",
         "Open CodexBar",
       ],
@@ -5759,7 +5759,7 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
     .first()
     .waitFor({ timeout: 10_000 });
   for (const action of [
-    "Copy CodexBar message for Claude",
+    "Copy provider message for Claude",
     "Check Claude again",
     "Open CodexBar",
   ]) {
@@ -5924,7 +5924,7 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
     )
     .waitFor({ timeout: 10_000 });
   await providersScreen
-    .getByRole("button", { name: "Copy CodexBar message for Claude" })
+    .getByRole("button", { name: "Copy provider message for Claude" })
     .waitFor({ timeout: 10_000 });
   await providersScreen
     .getByRole("button", { name: "Open CodexBar" })

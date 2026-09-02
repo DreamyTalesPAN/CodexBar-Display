@@ -116,7 +116,7 @@ export function SetupProviderRow({
   const copyReportedMessage = reportedMessage ? (
     <SetupProviderRowAction
       icon={Copy}
-      label={`Copy CodexBar message for ${label}`}
+      label={`Copy provider message for ${label}`}
       onClick={() => void navigator.clipboard?.writeText(reportedMessage)}
     />
   ) : null;

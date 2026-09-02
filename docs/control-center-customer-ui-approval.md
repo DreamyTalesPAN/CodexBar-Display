@@ -3046,6 +3046,7 @@ issue scope, or release permission never implies UI permission.
   `provider_setup.go`, `provider_reported.go`,
   `apps/control-center/src/components/setup/setup-provider-row.tsx`,
   `setup-providers-screen.tsx`, `provider-sign-in.ts`,
+  `apps/control-center/scripts/check-customer-ui-copy.mjs`,
   `apps/control-center/src/components/control-center-runtime.ts`,
   `macos/VibeTVControlCenter/main.swift`, their regression tests,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
@@ -3072,3 +3073,18 @@ issue scope, or release permission never implies UI permission.
   `setup/setup-wizard.tsx`, `control-center-app.tsx`, their regression tests,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-09-02 — The approved CodexBar action passes the copy guard
+
+- User approval: In option A, the product owner explicitly approved the
+  customer action `Open CodexBar` and a copy control beside CodexBar's exact
+  reported provider sentence (2026-09-02).
+- Approved customer-visible result: **The row keeps the exact `Open CodexBar`
+  action.** The copy control's accessible name reads `Copy provider message
+  for <provider>` while the copied sentence remains exactly what CodexBar
+  reported. The customer-copy guard permits only the explicitly approved
+  `Open CodexBar` label rather than permitting the internal name generally.
+- Approved files: `apps/control-center/scripts/check-customer-ui-copy.mjs`,
+  `apps/control-center/src/components/setup/setup-provider-row.tsx`, its
+  regression test, `apps/control-center/scripts/test-customer-flows.mjs`, and
+  this approval record.

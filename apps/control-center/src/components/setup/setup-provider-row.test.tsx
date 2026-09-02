@@ -58,7 +58,7 @@ describe("SetupProviderRow", () => {
       expect(html).toContain("This provider needs an active sign-in.");
       expect(html).toContain('aria-label="Check Claude Code again"');
       expect(html).toContain('aria-label="Open CodexBar"');
-      expect(html).not.toContain("Copy CodexBar message");
+      expect(html).not.toContain("Copy provider message");
       expect(html).toContain("lucide-external-link");
     }
   });
@@ -76,7 +76,7 @@ describe("SetupProviderRow", () => {
       "Codex connection failed: codex account authentication required to read rate limits",
     );
     expect(html).toContain(
-      'aria-label="Copy CodexBar message for Claude Code"',
+      'aria-label="Copy provider message for Claude Code"',
     );
     expect(html).toContain('aria-label="Check Claude Code again"');
     expect(html).toContain('aria-label="Open CodexBar"');
