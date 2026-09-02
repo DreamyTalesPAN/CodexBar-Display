@@ -450,7 +450,7 @@ async function main() {
     }
     if (providerSettingsOnly) {
       await testUsageManagesProviderPreferences(browser, appContext.appUrl);
-      await testProviderOnboardingRequiresEveryEnabledProvider(
+      await testProviderOnboardingUsesSharedHealthyDescriptor(
         browser,
         appContext.appUrl,
       );
@@ -817,7 +817,7 @@ async function main() {
     );
     await testUsagePrioritizesProviderTokenHistory(browser, appContext.appUrl);
     await testUsageManagesProviderPreferences(browser, appContext.appUrl);
-    await testProviderOnboardingRequiresEveryEnabledProvider(
+    await testProviderOnboardingUsesSharedHealthyDescriptor(
       browser,
       appContext.appUrl,
     );
@@ -1989,49 +1989,59 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       status: "auth_required",
       expected: "Sign in to Claude in CodexBar, then check again.",
       healthState: "auth_required",
-      rowMessage: "Sign in to Codex",
-      rowAction: "Sign in to Codex",
-      recoveryAction: "open_provider_setup",
+      reportedMessage:
+        "Codex connection failed: codex account authentication required to read rate limits",
+      rowActions: [
+        "Copy CodexBar message for Codex",
+        "Check Codex again",
+        "Open CodexBar",
+      ],
     },
     {
       status: "permission_required",
       expected:
         "Claude needs permission to read your sign-in. Open CodexBar and allow access, then check again.",
       healthState: "permission_required",
-      rowMessage: "Allow access in macOS",
-      rowAction: "Allow access for Codex in macOS",
-      nextAction:
-        "Allow the required macOS access, then check this provider.",
-      recoveryAction: "open_provider_setup",
+      reportedMessage:
+        "Safari cookie file is not readable. Enable Full Disk Access for CodexBar.",
+      rowActions: [
+        "Copy CodexBar message for Codex",
+        "Check Codex again",
+        "Open CodexBar",
+      ],
     },
     {
       status: "no_usage_available",
       expected:
         "Claude is connected, but this account does not expose usage limits. Choose another provider.",
       healthState: "no_usage_available",
-      rowMessage: "No usage data on this account",
-      rowAction: "Check Codex again",
-      nextAction:
-        "Use this provider once or connect an account with usage, then check again.",
-      recoveryAction: "open_provider_setup",
+      reportedMessage: "No usage data is available for this Codex account.",
+      rowActions: [
+        "Copy CodexBar message for Codex",
+        "Check Codex again",
+      ],
     },
     {
       status: "config_error",
       expected:
         "CodexBar could not save its provider settings. Open CodexBar and finish provider setup there.",
       healthState: "config_error",
-      rowMessage: "Repair the usage service",
-      rowAction: "Repair the usage service for Codex",
-      nextAction: "Repair the usage service, then check this provider again.",
-      recoveryAction: "repair_usage_service",
+      reportedMessage: "CodexBar could not save the Codex provider settings.",
+      rowActions: [
+        "Copy CodexBar message for Codex",
+        "Check Codex again",
+      ],
     },
     {
       status: "not_configured",
       expected: "No usable AI provider is configured yet.",
       healthState: "setup_required",
-      rowMessage: "Sign in to Codex",
-      rowAction: "Sign in to Codex",
-      recoveryAction: "open_provider_setup",
+      reportedMessage: "No available fetch strategy for codex.",
+      rowActions: [
+        "Copy CodexBar message for Codex",
+        "Check Codex again",
+        "Open CodexBar",
+      ],
     },
   ];
 
@@ -2051,8 +2061,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
               state: fixture.healthState,
               service: "unknown",
               message: "Provider needs attention.",
-              nextAction: fixture.nextAction,
-              recoveryAction: fixture.recoveryAction,
+              reported: fixture.reportedMessage,
             },
           },
         ],
@@ -2156,13 +2165,20 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       .getByRole("heading", { name: "AI providers", exact: true })
       .waitFor({ timeout: 10_000 });
     await page
-      .getByText(fixture.rowMessage, { exact: true })
+      .getByText(fixture.reportedMessage, { exact: true })
       .first()
       .waitFor({ timeout: 10_000 });
-    await page
-      .getByRole("button", { name: fixture.rowAction })
-      .first()
-      .waitFor({ timeout: 10_000 });
+    for (const action of fixture.rowActions) {
+      await page
+        .getByRole("button", { name: action })
+        .first()
+        .waitFor({ timeout: 10_000 });
+    }
+    assert(
+      (await page.getByText("Repair the usage service", { exact: true }).count()) ===
+        0,
+      `${fixture.status} must not let a provider row restart the Companion`,
+    );
 
     await assertNoMobileOverflow(page);
     await page.close();
@@ -3556,8 +3572,8 @@ async function testFirstUsageServiceFailureOffersRecovery(browser, appUrl) {
     userAgent: "VibeTVControlCenter/1.0.53",
   });
   let recovered = false;
-  // The provider step runs its own inventory check per enabled provider; only
-  // the parameterless retry belongs to the usage-service incident.
+  // Only the parameterless retry belongs to the usage-service incident;
+  // provider rows no longer start background checks or repairs on their own.
   let recoveryRetries = 0;
   const brokenSetup = {
     status: "setup_required",
@@ -5715,6 +5731,8 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
             state: "auth_required",
             service: "outage",
             message: "Sign in again for this provider.",
+            reported:
+              "Claude connection failed: authentication required to read usage.",
           },
         },
       ],
@@ -5733,11 +5751,23 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   const panel = page
     .locator("section")
     .filter({ has: page.getByRole("heading", { name: "AI providers" }) });
-  // The row states its own next action rather than echoing the companion's
-  // sentence, the same way the wizard does.
-  await panel.getByText("Sign in to Claude", { exact: true }).first().waitFor({
-    timeout: 10_000,
-  });
+  await panel
+    .getByText(
+      "Claude connection failed: authentication required to read usage.",
+      { exact: true },
+    )
+    .first()
+    .waitFor({ timeout: 10_000 });
+  for (const action of [
+    "Copy CodexBar message for Claude",
+    "Check Claude again",
+    "Open CodexBar",
+  ]) {
+    await panel
+      .getByRole("button", { name: action })
+      .first()
+      .waitFor({ timeout: 10_000 });
+  }
   await panel
     .getByText("GitHub Copilot", { exact: true })
     .waitFor({ timeout: 10_000 });
@@ -5796,17 +5826,45 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   await page.close();
 }
 
-async function testProviderOnboardingRequiresEveryEnabledProvider(
+async function testProviderOnboardingUsesSharedHealthyDescriptor(
   browser,
   appUrl,
 ) {
   const page = await newCustomerPage(browser, appUrl, { viewport });
   const requests = [];
-  let activeProviderRetries = 0;
-  let maxConcurrentProviderRetries = 0;
-  let codexProviderRetries = 0;
+  let providerRetries = 0;
+  let providerHealthReadyAt = Number.POSITIVE_INFINITY;
+  const claudePreference = {
+    ...providerPreferenceFixture("claude", "Claude"),
+    health: {
+      state: "auth_required",
+      service: "unknown",
+      message: "This provider needs an active sign-in.",
+      reported:
+        "Claude connection failed: authentication required to read usage.",
+    },
+  };
+  const checkingPreferences = {
+    ok: true,
+    items: [
+      {
+        ...providerPreferenceFixture("codex", "Codex"),
+        health: {
+          state: "checking",
+          service: "unknown",
+          message: "Checking provider status.",
+        },
+      },
+      claudePreference,
+    ],
+  };
+  const healthyPreferences = {
+    ok: true,
+    items: [providerPreferenceFixture("codex", "Codex"), claudePreference],
+  };
   await routeCompanionOnline(page, [], () => {}, {
-    onRequest: (path, method, body) => requests.push({ path, method, body }),
+    onRequest: (path, method, body) =>
+      requests.push({ path, method, body, at: Date.now() }),
     providerDisplay: {
       mode: "automatic",
       providerIds: ["codex", "claude", "removed-provider"],
@@ -5818,73 +5876,63 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
       providerSelectionComplete: false,
     },
     onProviderRetry: async (_setup, providerId) => {
-      activeProviderRetries += 1;
-      maxConcurrentProviderRetries = Math.max(
-        maxConcurrentProviderRetries,
-        activeProviderRetries,
-      );
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      activeProviderRetries -= 1;
-      if (providerId === "codex") {
-        codexProviderRetries += 1;
-      }
-      // A first check that did not answer, which is what this flow is about:
-      // a provider that is not ready yet and that pressing Check again can
-      // fix. Deliberately not config_error -- that one means the usage service
-      // itself is broken, and the row offers the repair for it rather than a
-      // check that would meet the same broken service.
+      providerRetries += 1;
+      await new Promise((resolve) => setTimeout(resolve, 250));
       return exactProviderSetup(
         providerId,
-        providerId === "claude"
-          ? "auth_required"
-          : codexProviderRetries <= 1
-            ? "timeout"
-            : "ready",
+        providerId === "claude" ? "auth_required" : "ready",
       );
     },
-    preferencesResponse: {
-      ok: true,
-      items: [
-        providerPreferenceFixture("codex", "Codex"),
-        providerPreferenceFixture("claude", "Claude"),
-      ],
-    },
+    preferencesResponse: checkingPreferences,
+    onPreferencesResponse: () =>
+      Date.now() >= providerHealthReadyAt
+        ? healthyPreferences
+        : checkingPreferences,
   });
 
+  providerHealthReadyAt = Date.now() + 4_000;
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   const providersScreen = setupScreen(page, SETUP_PROVIDERS_SCREEN);
   await providersScreen.waitFor({ timeout: 10_000 });
+  const providersContinue = providersScreen.getByRole("button", {
+    name: "Continue",
+  });
+  await page.waitForTimeout(750);
+  assert(
+    requests.every((request) => request.path !== "/v1/providers/retry"),
+    `setup must not start a duplicate exact-provider check: ${JSON.stringify(requests)}`,
+  );
+  assert(
+    await providersContinue.isDisabled(),
+    "inventory-only checking health must keep Continue closed",
+  );
   await waitForCondition(
-    () =>
-      requests.filter((request) => request.path === "/v1/providers/retry")
-        .length >= 2,
-    `setup did not start exact checks for every enabled provider: ${JSON.stringify(requests)}`,
-    30_000,
-  );
-  assert(
-    maxConcurrentProviderRetries === 1,
-    `setup must check enabled providers one at a time, saw ${maxConcurrentProviderRetries} concurrent checks`,
-  );
-  assert(
-    codexProviderRetries === 1,
-    `startup must check each enabled provider exactly once without hidden retries, saw ${codexProviderRetries} Codex checks`,
+    async () =>
+      requests.some(
+        (request) =>
+          request.path === "/v1/preferences" &&
+          request.at >= providerHealthReadyAt,
+      ) && !(await providersContinue.isDisabled()),
+    "the read-only provider-health poll did not open Continue after the cached descriptor became healthy",
+    15_000,
   );
 
-  const recheckCodex = providersScreen.getByRole("button", {
-    name: "Check Codex again",
-  });
-  try {
-    await recheckCodex.waitFor({ timeout: 10_000 });
-  } catch (error) {
-    throw new Error(
-      `failed provider state was not rendered: ${await page.locator("body").innerText()}\n${JSON.stringify(requests)}`,
-      { cause: error },
-    );
-  }
-  await providersScreen.getByText("Check timed out").waitFor();
   await providersScreen
-    .getByRole("button", { name: "Sign in to Claude" })
+    .getByText(
+      "Claude connection failed: authentication required to read usage.",
+      { exact: true },
+    )
     .waitFor({ timeout: 10_000 });
+  await providersScreen
+    .getByRole("button", { name: "Copy CodexBar message for Claude" })
+    .waitFor({ timeout: 10_000 });
+  await providersScreen
+    .getByRole("button", { name: "Open CodexBar" })
+    .waitFor({ timeout: 10_000 });
+  const recheckClaude = providersScreen.getByRole("button", {
+    name: "Check Claude again",
+  });
+  await recheckClaude.waitFor({ timeout: 10_000 });
 
   // The search box is the only way through a long provider list, so it has to
   // narrow it without hiding the state the customer is stuck on.
@@ -5902,41 +5950,27 @@ async function testProviderOnboardingRequiresEveryEnabledProvider(
     .waitFor({ timeout: 10_000 });
   await search.fill("");
 
-  const providersContinue = providersScreen.getByRole("button", {
-    name: "Continue",
-  });
   assert(
-    await providersContinue.isDisabled(),
-    "a broken enabled provider must block setup completion while nothing else is ready",
+    !(await providersContinue.isDisabled()),
+    "one healthy provider must open Continue even when another provider needs attention",
   );
 
-  await recheckCodex.click();
-  await providersScreen.getByText("Check timed out").waitFor({
-    state: "hidden",
-    timeout: 30_000,
-  });
-
-  // Codex is ready now, but Claude is still switched on and still waiting for
-  // a sign-in, and the companion refuses to write setup complete while any
-  // enabled provider is not ready. Opening the gate here would only produce a
-  // Continue that answers and leaves the customer on the same step.
-  assert(
-    await providersContinue.isDisabled(),
-    "a provider that is on and still needs the customer must keep setup closed",
-  );
-
-  // Turning it off is the other way on, and it has to work whatever the
-  // provider reports.
-  const claudeSwitch = providersScreen.getByRole("switch", { name: "Claude" });
-  await claudeSwitch.click();
+  await recheckClaude.click();
   await waitForCondition(
-    async () => !(await providersContinue.isDisabled()),
-    "switching off the provider that needed attention must open setup",
-    30_000,
+    () =>
+      requests.filter((request) => request.path === "/v1/providers/retry")
+        .length === 1,
+    "Check again must remain the one explicit provider retry",
   );
+  assert(
+    !(await providersContinue.isDisabled()),
+    "a manual check must not override a different healthy provider",
+  );
+  await recheckClaude.waitFor({ timeout: 10_000 });
+  assert(providerRetries === 1, `expected one manual retry, saw ${providerRetries}`);
 
-  // Switching the only working provider off has to close the gate again, and
-  // has to be written through the CodexBar preference endpoint.
+  // Switching the only healthy provider off closes the shared descriptor
+  // gate, and switching it back on opens it again.
   const codexSwitch = providersScreen.getByRole("switch", { name: "Codex" });
   await codexSwitch.click();
   await waitForCondition(
@@ -9527,6 +9561,7 @@ async function routeCompanionOnline(
     usageResponse,
     usageStatus = 200,
     preferencesResponse,
+    onPreferencesResponse,
     preferencesStatus = 200,
     preferencePatchDelayMs = 0,
     preferencePatchFailureIds = [],
@@ -9649,12 +9684,10 @@ async function routeCompanionOnline(
             ? "Usage data is available."
             : "This provider needs an active sign-in.",
           checkedAt: currentProviderSetup.checkedAt,
-          ...(ready ? { verifiedAt: currentProviderSetup.checkedAt } : {}),
           ...(!ready
             ? {
                 nextAction:
                   "Open provider setup, sign in again, then check this provider.",
-                recoveryAction: "open_provider_setup",
               }
             : {}),
         };
@@ -10041,6 +10074,11 @@ async function routeCompanionOnline(
       return;
     }
     if (pathname === "/v1/preferences") {
+      if (preferencesStatus === 200 && onPreferencesResponse) {
+        currentPreferences = structuredClone(
+          onPreferencesResponse(currentPreferences) || currentPreferences,
+        );
+      }
       await route.fulfill({
         status: preferencesStatus,
         contentType: "application/json",

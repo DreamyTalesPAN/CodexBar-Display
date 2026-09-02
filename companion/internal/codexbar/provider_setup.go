@@ -47,6 +47,10 @@ type ProviderReadiness struct {
 	CollectedAt string `json:"collectedAt,omitempty"`
 	Detail      string `json:"detail,omitempty"`
 	NextAction  string `json:"nextAction,omitempty"`
+	// Reported is CodexBar's own provider error sentence. It stays internal so
+	// raw account paths never escape through /v1/status or retry responses; the
+	// preferences adapter applies the one evidenced redaction before exposing it.
+	Reported string `json:"-"`
 }
 
 type ProviderSetup struct {
@@ -258,9 +262,9 @@ func configPathFromContext(ctx context.Context) string {
 	return strings.TrimSpace(path)
 }
 
-// ProbeProviderSetup performs one bounded, read-only CodexBar usage probe.
-// It never returns provider error text verbatim because that text can contain
-// account identifiers, paths or tokens.
+// ProbeProviderSetup performs one bounded, read-only CodexBar usage probe. Raw
+// provider text stays in the internal json:"-" field so status and retry JSON
+// expose only the generic Detail until the preferences adapter redacts it.
 func ProbeProviderSetup(ctx context.Context, home string) ProviderSetup {
 	return probeProviderSetup(ctx, home, "")
 }
@@ -470,12 +474,15 @@ func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []Pro
 			continue
 		}
 		status := ProviderReady
+		reported := ""
 		if providerPayloadHasError(payload) {
-			status = classifyProviderError(providerErrorText(payload))
+			reported = providerHealthErrorText(payload["error"])
+			status = classifyProviderError(reported)
 		} else if !providerPayloadHasUsage(payload) {
 			status = ProviderNoUsageAvailable
 		}
 		provider := providerResult(id, status)
+		provider.Reported = reported
 		provider.Source = safeProviderSource(firstString(payload, "source"))
 		if collectedAt := firstRFC3339AtPaths(payload, "usage.updatedAt", "updatedAt"); !collectedAt.IsZero() {
 			provider.CollectedAt = collectedAt.Format(time.RFC3339)
@@ -531,19 +538,6 @@ func providerPayloadHasUsage(payload map[string]any) bool {
 		}
 	}
 	return false
-}
-
-func providerErrorText(payload map[string]any) string {
-	raw := payload["error"]
-	switch value := raw.(type) {
-	case string:
-		return value
-	case map[string]any:
-		encoded, _ := json.Marshal(value)
-		return string(encoded)
-	default:
-		return fmt.Sprint(value)
-	}
 }
 
 func classifyProviderError(detail string) string {

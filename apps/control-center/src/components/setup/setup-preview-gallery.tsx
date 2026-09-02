@@ -423,7 +423,6 @@ export function SetupPreviewGallery() {
             onBack={() => goTo("02")}
             onCheckAgain={noop}
             onContinue={() => goTo("04")}
-            onRecover={noop}
             onToggle={noop}
             pendingCheckIds={NO_PENDING_CHECKS}
             pendingPreferenceIds={NO_PENDING_CHECKS}
@@ -436,7 +435,6 @@ export function SetupPreviewGallery() {
             <SetupProvidersScreen
               onCheckAgain={noop}
               onContinue={noop}
-              onRecover={noop}
               onToggle={noop}
               pendingCheckIds={NO_PENDING_CHECKS}
               pendingPreferenceIds={NO_PENDING_CHECKS}

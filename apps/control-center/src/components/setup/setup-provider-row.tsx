@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, Copy, ExternalLink, RefreshCw } from "lucide-react";
+import { Copy, ExternalLink, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -12,11 +12,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Switch } from "@/components/ui/switch";
-import {
-  FULL_DISK_ACCESS_SETTINGS_URL,
-  openProviderSignIn,
-} from "../control-center-runtime";
-import { providerSignInFor, providerSignInLabel } from "./provider-sign-in";
+import { openCodexBarApp } from "../control-center-runtime";
 import { cn } from "@/lib/utils";
 import type { PreferenceHealthState } from "../control-center-types";
 
@@ -25,11 +21,9 @@ export type SetupProviderRowVariant =
   | "no_usage"
   | "outage"
   | "permission"
-  | "repair"
   | "sign_in"
   | "timed_out"
-  | "toggle"
-  | "waiting";
+  | "toggle";
 
 /**
  * The health states the usage service reports, mapped onto the presentations
@@ -37,11 +31,9 @@ export type SetupProviderRowVariant =
  * provider adds later) gets the re-check presentation: running the check again
  * is the one action left to a customer who cannot sign in or grant anything.
  *
- * Except when the usage service itself is what is broken. Checking again then
- * meets the same broken service, so the row used to say "Check timed out" and
- * offer the one action that cannot work -- and a customer whose only provider
- * was in that state could not finish setup at all, because Continue asks for a
- * provider that is ready and switching it off leaves none.
+ * Engine recovery is owned by the app-level recovery flow. A row never stops
+ * the Companion; unknown, configuration and engine failures remain available
+ * for a manual re-check.
  */
 export function setupProviderRowVariant(
   health: PreferenceHealthState,
@@ -58,9 +50,6 @@ export function setupProviderRowVariant(
     case "auth_required":
     case "setup_required":
       return "sign_in";
-    case "config_error":
-    case "engine_error":
-      return "repair";
     case "permission_required":
       return "permission";
     case "no_usage_available":
@@ -84,7 +73,8 @@ type SetupProviderRowProps = {
   enabled: boolean;
   health: PreferenceHealthState;
   label: string;
-  providerId: string;
+  /** The generic detail attached to this health result. */
+  detail?: string;
   /**
    * What the usage service itself said about this provider, already redacted.
    * It is the only per-provider guidance that exists, so it replaces our own
@@ -92,7 +82,6 @@ type SetupProviderRowProps = {
    */
   reportedMessage?: string;
   onCheckAgain: () => void;
-  onRecover: () => void;
   onToggle: (enabled: boolean) => void;
   /**
    * This provider's own on/off write is in flight. The switch already shows
@@ -102,45 +91,21 @@ type SetupProviderRowProps = {
    * customer's last press.
    */
   saving?: boolean;
-  /**
-   * Set once the customer pressed this row's recovery action. It replaces the
-   * action while the attempt runs: pressing it again launched the recovery a
-   * second time and queued another check behind it.
-   */
-  recovering?: boolean;
 };
 
 export function SetupProviderRow({
   checking = false,
+  detail,
   enabled,
   health,
   label,
   onCheckAgain,
-  onRecover,
   onToggle,
-  providerId,
-  recovering = false,
   reportedMessage,
   saving = false,
 }: SetupProviderRowProps) {
-  const reported = setupProviderRowVariant(health);
-  const variant =
-    recovering &&
-    (reported === "sign_in" ||
-      reported === "permission" ||
-      reported === "repair")
-      ? "waiting"
-      : reported;
+  const variant = setupProviderRowVariant(health);
   const unusable = variant === "no_usage" || variant === "outage";
-  // Every state whose way on is another check offers the same control, and
-  // says so while one is running instead of offering a second: pressing again
-  // only queues another probe of the same provider.
-  const runningCheck = (
-    <>
-      <SetupProviderRowMessage>Checking…</SetupProviderRowMessage>
-      <Spinner />
-    </>
-  );
   const checkAgain = (
     <SetupProviderRowAction
       icon={RefreshCw}
@@ -148,37 +113,31 @@ export function SetupProviderRow({
       onClick={onCheckAgain}
     />
   );
-  // Where the customer actually signs in. The usage service names no
-  // destination in any released version, and two of its sentences name the
-  // wrong one, so this is ours -- and where we do not know one, the row offers
-  // another check rather than a control that leads nowhere.
-  const signIn = providerSignInFor(providerId, reportedMessage);
-  const signInAction = signIn ? (
+  const copyReportedMessage = reportedMessage ? (
     <SetupProviderRowAction
-      icon={
-        signIn.kind === "url"
-          ? ExternalLink
-          : signIn.kind === "command"
-            ? Copy
-            : ChevronRight
-      }
-      label={providerSignInLabel(signIn, label)}
-      onClick={() => {
-        if (signIn.kind === "url") {
-          openProviderSignIn(signIn.url);
-        } else if (signIn.kind === "command") {
-          void navigator.clipboard?.writeText(signIn.command);
-        } else {
-          openProviderSignIn(FULL_DISK_ACCESS_SETTINGS_URL);
-        }
-        // Still the recovery hand-off: the customer leaves to do something and
-        // comes back, and the companion is holding the failed check that sent
-        // them for five minutes. Without this nothing asks again, and they
-        // return to the same answer with no way on.
-        onRecover();
-      }}
+      icon={Copy}
+      label={`Copy CodexBar message for ${label}`}
+      onClick={() => void navigator.clipboard?.writeText(reportedMessage)}
     />
   ) : null;
+  const openCodexBar = (
+    <SetupProviderRowAction
+      icon={ExternalLink}
+      label="Open CodexBar"
+      onClick={openCodexBarApp}
+    />
+  );
+  const fallbackMessage =
+    variant === "sign_in"
+      ? `Sign in to ${label}`
+      : variant === "permission"
+        ? "Allow access in macOS"
+        : variant === "no_usage"
+          ? "No usage data on this account"
+          : variant === "outage"
+            ? "Service outage — try again later"
+            : "Check timed out";
+  const guidance = reportedMessage || detail || fallbackMessage;
 
   return (
     <Item
@@ -192,96 +151,23 @@ export function SetupProviderRow({
       <ItemActions>
         {variant === "checking" ? (
           <Spinner />
-        ) : variant === "sign_in" ? (
+        ) : variant === "toggle" ? null : (
           <>
-            <SetupProviderRowMessage>
-              {reportedMessage || `Sign in to ${label}`}
-            </SetupProviderRowMessage>
-            {signInAction || checkAgain}
-          </>
-        ) : variant === "waiting" ? (
-          <>
-            <SetupProviderRowMessage>
-              {reported === "permission"
-                ? "Waiting for access…"
-                : reported === "repair"
-                  ? "Repairing…"
-                  : "Waiting for sign-in…"}
-            </SetupProviderRowMessage>
-            <Spinner />
-          </>
-        ) : variant === "repair" ? (
-          <>
-            <SetupProviderRowMessage>
-              Repair the usage service
-            </SetupProviderRowMessage>
-            <SetupProviderRowAction
-              icon={RefreshCw}
-              label={`Repair the usage service for ${label}`}
-              onClick={onRecover}
-            />
-          </>
-        ) : variant === "permission" ? (
-          <>
-            <SetupProviderRowMessage>
-              {reportedMessage || "Allow access in macOS"}
-            </SetupProviderRowMessage>
-            {/*
-              A macOS permission is not fixed by a login page, so only the
-              settings destination counts here; anything else would send the
-              customer to sign in to an account they are already signed in to.
-            */}
-            {signIn?.kind === "full-disk-access" ? (
-              signInAction
+            <SetupProviderRowMessage>{guidance}</SetupProviderRowMessage>
+            {copyReportedMessage}
+            {checking ? (
+              <>
+                <span className="sr-only">Checking {label}…</span>
+                <Spinner />
+              </>
             ) : (
-              <SetupProviderRowAction
-                icon={ChevronRight}
-                label={`Allow access for ${label} in macOS`}
-                onClick={onRecover}
-              />
+              checkAgain
             )}
+            {variant === "sign_in" || variant === "permission"
+              ? openCodexBar
+              : null}
           </>
-        ) : variant === "timed_out" ? (
-          checking ? (
-            runningCheck
-          ) : (
-            <>
-              <SetupProviderRowMessage>
-                {reportedMessage || "Check timed out"}
-              </SetupProviderRowMessage>
-              {checkAgain}
-            </>
-          )
-        ) : variant === "no_usage" ? (
-          // The account can gain usage -- the companion's own next action is
-          // to use the provider once and check again -- and this row used to
-          // discard that. A customer whose only provider said this had nothing
-          // to press: Continue asks for a provider that is ready, and switching
-          // it off leaves none.
-          checking ? (
-            runningCheck
-          ) : (
-            <>
-              <SetupProviderRowMessage>
-                {reportedMessage || "No usage data on this account"}
-              </SetupProviderRowMessage>
-              {checkAgain}
-            </>
-          )
-        ) : variant === "outage" ? (
-          // "Try again later" with nothing to try again with. The same dead end
-          // as above once this is the only provider.
-          checking ? (
-            runningCheck
-          ) : (
-            <>
-              <SetupProviderRowMessage>
-                Service outage — try again later
-              </SetupProviderRowMessage>
-              {checkAgain}
-            </>
-          )
-        ) : null}
+        )}
         {/*
           Outside the branches on purpose: the health decides what help to
           offer, never whether the customer may switch the provider off.

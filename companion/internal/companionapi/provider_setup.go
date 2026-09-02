@@ -23,12 +23,10 @@ type exactProviderProbeFlight struct {
 }
 
 type providerReadinessRecord struct {
-	Status     string
-	Detail     string
-	NextAction string
-	CheckedAt  time.Time
-	VerifiedAt time.Time
-	Revision   uint64
+	Status    string
+	Detail    string
+	Reported  string
+	CheckedAt time.Time
 }
 
 // currentProviderSetup caches normal status polling and serializes explicit
@@ -421,14 +419,10 @@ func (s *Server) recordExactProviderSetup(providerID string, providerRevision ui
 		checkedAt = parsed.UTC()
 	}
 	record := providerReadinessRecord{
-		Status:     exactReadiness.Status,
-		Detail:     exactReadiness.Detail,
-		NextAction: exactReadiness.NextAction,
-		CheckedAt:  checkedAt,
-		Revision:   providerRevision,
-	}
-	if exactReadiness.Status == codexbar.ProviderReady {
-		record.VerifiedAt = checkedAt
+		Status:    exactReadiness.Status,
+		Detail:    exactReadiness.Detail,
+		Reported:  exactReadiness.Reported,
+		CheckedAt: checkedAt,
 	}
 
 	s.providerPreferences.mu.Lock()
@@ -445,6 +439,7 @@ func (s *Server) recordExactProviderSetup(providerID string, providerRevision ui
 		if enabled {
 			s.providerPreferences.cached[i].Health = providerHealthFromReadiness(exactReadiness.Status)
 			s.providerPreferences.cached[i].Service = codexbar.ProviderServiceUnknown
+			s.providerPreferences.cached[i].Reported = record.Reported
 			s.providerPreferences.at = s.currentTime().UTC()
 		}
 		break
@@ -476,21 +471,6 @@ func (s *Server) providerReadinessFor(providerID string) (providerReadinessRecor
 	defer s.providerReadinessMu.Unlock()
 	record, ok := s.providerReadiness[strings.TrimSpace(strings.ToLower(providerID))]
 	return record, ok
-}
-
-func (s *Server) providerHasFreshReadiness(setting codexbar.ProviderSetting, now time.Time) bool {
-	providerID := setting.ID
-	s.providerPreferences.mu.Lock()
-	revision := s.providerPreferences.providerRev[providerID]
-	s.providerReadinessMu.Lock()
-	record, ok := s.providerReadiness[providerID]
-	s.providerReadinessMu.Unlock()
-	s.providerPreferences.mu.Unlock()
-	if !ok || record.Revision != revision || record.Status != codexbar.ProviderReady || record.VerifiedAt.IsZero() || !providerReadinessAppliesToSetting(record, setting, now) {
-		return false
-	}
-	age := now.Sub(record.VerifiedAt)
-	return age >= 0 && age <= providerReadinessFreshness
 }
 
 func providerDiagnosticCheck(setup codexbar.ProviderSetup) diagnosticCheck {

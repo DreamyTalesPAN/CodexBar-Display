@@ -503,19 +503,13 @@ export type PreferenceDescriptor = {
     service: "operational" | "degraded" | "outage" | "unknown" | string;
     message: string;
     /**
-     * What the usage service itself said, already redacted by the companion.
-     * Absent when it said nothing the customer could act on.
+     * What the usage service itself said, with its home path redacted.
+     * Absent only when it did not report a sentence.
      */
     reported?: string;
     lastSuccessAt?: string;
     checkedAt?: string;
-    verifiedAt?: string;
     nextAction?: string;
-    recoveryAction?:
-      | "open_provider_setup"
-      | "repair_usage_service"
-      | "check_again"
-      | string;
   };
 };
 

@@ -84,7 +84,6 @@ export type SetupWizardProps = {
   onFinished: () => void;
   onInstallTheme: () => void;
   onProviderCheck: (provider: ProviderItem) => void;
-  onProviderRecover: (provider: ProviderItem) => void;
   onProviderToggle: (provider: ProviderItem, enabled: boolean) => void;
   /**
    * Resolving false keeps the customer on the step: the companion can refuse
@@ -487,7 +486,6 @@ export function SetupWizard(props: SetupWizardProps) {
               })
               .finally(() => setProvidersContinuing(false));
           }}
-          onRecover={props.onProviderRecover}
           onToggle={props.onProviderToggle}
           pendingCheckIds={props.pendingCheckIds}
           pendingPreferenceIds={props.pendingPreferenceIds}

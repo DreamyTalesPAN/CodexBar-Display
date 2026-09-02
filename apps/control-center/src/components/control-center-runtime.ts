@@ -8,10 +8,6 @@ export const FINISH_CODEXBAR_RECOVERY_URL =
   "vibetv://finish-codexbar-recovery";
 export const OPEN_CODEXBAR_URL = "vibetv://open-codexbar";
 export const CHECK_FOR_UPDATES_URL = "vibetv://check-for-updates";
-export const OPEN_SIGN_IN_URL = "vibetv://open-sign-in";
-/** The pane that lets the usage service read Safari's cookie file. */
-export const FULL_DISK_ACCESS_SETTINGS_URL =
-  "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles";
 const NATIVE_CONTROL_CENTER_USER_AGENT_PREFIX = "VibeTVControlCenter/";
 
 export function restartLocalControlCenterApp(): void {
@@ -24,20 +20,6 @@ export function checkForMacAppUpdate(): void {
 
 export function repairLocalControlCenterRuntime(): void {
   launchNativeControlCenterAction(REPAIR_CONTROL_CENTER_RUNTIME_URL);
-}
-
-/**
- * Opens a provider's sign-in page, or the macOS pane that unblocks reading it.
- *
- * Through the native side rather than a link: the Control Center has no
- * window-opening delegate, so an ordinary link navigates the app itself away
- * and strands the customer inside a website with no way back. The native side
- * validates the target again before opening it.
- */
-export function openProviderSignIn(target: string): void {
-  launchNativeControlCenterAction(
-    `${OPEN_SIGN_IN_URL}?url=${encodeURIComponent(target)}`,
-  );
 }
 
 export function isNativeControlCenterUserAgent(userAgent: string): boolean {

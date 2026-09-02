@@ -724,6 +724,28 @@ func TestProbeProviderSetupDisclosesSwitchedOffBesideFailingProvider(t *testing.
 	}
 }
 
+func TestProviderReadinessKeepsReportedMessageInternal(t *testing.T) {
+	const message = "Codex connection failed: codex account authentication required to read rate limits"
+	providers := providerReadinessFromOutput(
+		[]byte(`[{"provider":"codex","error":{"message":"`+message+`"}}]`),
+		errors.New("provider failed"),
+		nil,
+	)
+	if len(providers) != 1 {
+		t.Fatalf("unexpected provider readiness: %+v", providers)
+	}
+	if got := providers[0].Reported; got != message {
+		t.Fatalf("reported message = %q, want %q", got, message)
+	}
+	encoded, err := json.Marshal(providers[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), message) {
+		t.Fatalf("raw reported message leaked from provider setup JSON: %s", encoded)
+	}
+}
+
 // A ready provider means there is nothing to disclose and no inventory call to
 // pay for.
 func TestProbeProviderSetupSkipsInventoryWhenAProviderIsReady(t *testing.T) {

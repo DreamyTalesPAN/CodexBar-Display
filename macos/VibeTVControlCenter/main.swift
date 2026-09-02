@@ -21,7 +21,6 @@ private let checkForUpdatesURLHost = "check-for-updates"
 private let repairCodexBarURLHost = "repair-codexbar"
 private let finishCodexBarRecoveryURLHost = "finish-codexbar-recovery"
 private let openCodexBarURLHost = "open-codexbar"
-private let openSignInURLHost = "open-sign-in"
 private let controlCenterBundleIdentifier = "shop.vibetv.control-center"
 private let runtimeLaunchAgentLabel = "shop.vibetv.control-center.runtime"
 private let previewRuntimeLaunchAgentLabel =
@@ -169,51 +168,6 @@ func isOpenCodexBarURL(_ url: URL) -> Bool {
     return true
 }
 
-/// The provider sign-in page, or the macOS pane that unblocks reading it.
-///
-/// The Control Center is a WebView with no window-opening delegate, so a plain
-/// link navigates the app itself away from the Control Center and leaves the
-/// customer stranded in a website. Sign-in has to leave through the native side.
-///
-/// The target is validated rather than trusted: https only, no credentials in
-/// the URL, no port, and no loopback -- the runtime lives on loopback, and a
-/// sign-in control must never be able to reach it. The one non-https target is
-/// the Full Disk Access pane itself, matched literally.
-func signInTargetURL(_ url: URL) -> URL? {
-    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-          components.scheme?.lowercased() == controlCenterURLScheme,
-          components.host?.lowercased() == openSignInURLHost,
-          components.user == nil,
-          components.password == nil,
-          components.port == nil,
-          components.fragment == nil,
-          components.path.isEmpty || components.path == "/",
-          let target = components.queryItems?
-              .first(where: { $0.name == "url" })?.value,
-          let parsed = URLComponents(string: target) else {
-        return nil
-    }
-    if target == fullDiskAccessSettingsURL {
-        return URL(string: target)
-    }
-    guard parsed.scheme?.lowercased() == "https",
-          parsed.user == nil,
-          parsed.password == nil,
-          parsed.port == nil,
-          let host = parsed.host?.lowercased(),
-          !host.isEmpty,
-          host != "localhost",
-          !host.hasSuffix(".localhost"),
-          host != "127.0.0.1",
-          host != "::1" else {
-        return nil
-    }
-    return URL(string: target)
-}
-
-private let fullDiskAccessSettingsURL =
-    "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles"
-
 enum NativeControlCenterAction: Equatable {
     case restartControlCenter
     case repairRuntime
@@ -221,7 +175,6 @@ enum NativeControlCenterAction: Equatable {
     case repairCodexBar
     case finishCodexBarRecovery
     case openCodexBar
-    case openSignIn(URL)
 }
 
 func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
@@ -242,9 +195,6 @@ func nativeControlCenterAction(for url: URL) -> NativeControlCenterAction? {
     }
     if isOpenCodexBarURL(url) {
         return .openCodexBar
-    }
-    if let target = signInTargetURL(url) {
-        return .openSignIn(target)
     }
     return nil
 }
@@ -4514,8 +4464,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 finishControlCenterCodexBarRecovery()
             case .openCodexBar:
                 openManagedCodexBar()
-            case .openSignIn(let target):
-                NSWorkspace.shared.open(target)
             }
             return
         }

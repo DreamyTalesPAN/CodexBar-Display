@@ -29,7 +29,6 @@ import {
   localControlCenterUrl,
   launchCodexBarRepair,
   needsLoopbackTargetAddressSpace,
-  openCodexBarApp,
   repairLocalControlCenterRuntime,
   restartLocalControlCenterApp,
   shouldRedirectToLocalControlCenter,
@@ -90,16 +89,17 @@ import {
   providerUsageNeedsReconcile,
   scheduleProviderUsageReconcile,
 } from "./provider-usage-reconcile";
+import {
+  providerPreferencesNeedPolling,
+  startProviderPreferencesPolling,
+} from "./provider-preferences-polling";
 import { isProviderItem } from "./provider-picker";
 import { MacAppDownloadScreen } from "./setup/mac-app-download-screen";
 import { SetupWelcomeScreen } from "./setup/setup-welcome-screen";
 import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
-import {
-  setupProviderCanDisplay,
-  setupProviderCheckExpiresAt,
-} from "./setup/setup-providers-screen";
+import { setupProviderCanDisplay } from "./setup/setup-providers-screen";
 import {
   deriveSetupStep,
   setupDeviceIsUsable,
@@ -399,13 +399,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     () => new Set(),
   );
   const providerReconcileDeadlineRef = useRef(0);
-  // When each provider was last checked here, not merely whether it was. The
-  // companion only accepts a check for five minutes, so a set that remembered
-  // forever stopped re-arming exactly when the check it stood for expired.
-  const providerAutoCheckIdsRef = useRef(new Map<string, number>());
-  // Bumped by a timer when the oldest held check expires, so the effect below
-  // re-reads the clock at the moment there is something to do.
-  const [providerReadinessEpoch, setProviderReadinessEpoch] = useState(0);
   const providerCheckQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
@@ -1666,7 +1659,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       didRunAutoDisplayReload.current = false;
       didRunAutomaticDeviceSearch.current = false;
       didRunSetupVerification.current = false;
-      providerAutoCheckIdsRef.current.clear();
       setSetupPreviewStep(null);
       setActiveTab("overview");
       setCompanionStatus("online");
@@ -2863,13 +2855,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           await refreshProviderPreferences({ quiet: true });
           setProviderPreferencesError(null);
         } catch (error) {
-          // The request never reached the companion, so it holds no new answer
-          // for this provider -- and the record of having asked is only there
-          // to keep this app from asking against one it already holds. Left
-          // standing it suppressed the next attempt for the whole freshness
-          // window, with the row still reading healthy, nothing on it to press,
-          // and a Continue the companion keeps refusing.
-          providerAutoCheckIdsRef.current.delete(providerId);
           setProviderPreferencesError(
             normalizeCaughtError(error, `${item.label} could not be checked.`),
           );
@@ -2953,55 +2938,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setBusyAction(null);
     }
   }, [refreshProviderDisplay, runCompanion]);
-
-  useEffect(() => {
-    if (!providerSelectionSetup?.providerSelectionRequired) {
-      return;
-    }
-    const now = Date.now();
-    let nextExpiry = Infinity;
-    for (const item of providerPreferences || []) {
-      const providerId = item.providerId?.trim().toLowerCase();
-      if (item.section !== "providers" || item.value !== true || !providerId) {
-        continue;
-      }
-      // The companion still holds a check for this provider, or this app asked
-      // for one recently enough that it does. Asking again in either case
-      // would be a loop; once both have expired the check has to be possible
-      // again, or Continue is refused with nothing left to press.
-      // Nothing to do while a check still counts -- but something to come back
-      // for: it expires on a clock, and nothing on screen changes when it
-      // does. Without waking up for that the effect never re-reads the time,
-      // and the customer meets a Continue the companion refuses beside a row
-      // that looks healthy and offers nothing to press.
-      const expiresAt = setupProviderCheckExpiresAt(
-        [
-          Date.parse(item.health?.verifiedAt || ""),
-          providerAutoCheckIdsRef.current.get(providerId),
-        ],
-        now,
-      );
-      if (expiresAt !== null) {
-        nextExpiry = Math.min(nextExpiry, expiresAt);
-        continue;
-      }
-      providerAutoCheckIdsRef.current.set(providerId, now);
-      void checkProvider(item);
-    }
-    if (!Number.isFinite(nextExpiry)) {
-      return;
-    }
-    const timer = setTimeout(
-      () => setProviderReadinessEpoch((current) => current + 1),
-      Math.max(nextExpiry - now, 0) + 1_000,
-    );
-    return () => clearTimeout(timer);
-  }, [
-    checkProvider,
-    providerPreferences,
-    providerReadinessEpoch,
-    providerSelectionSetup,
-  ]);
 
   /**
    * Keeps the Automatic pool equal to the set of switched-on providers.
@@ -3286,6 +3222,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       const payload = await runCompanion<{
         providerSetup?: ProviderSetupInfo;
       }>("/v1/providers/retry", { method: "POST" });
+      await refreshProviderPreferences({ quiet: true });
       if (setupGeneration === setupGenerationRef.current) {
         const setup = payload.providerSetup || null;
         setProviderSetup(setup);
@@ -3304,7 +3241,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
     }
     return null;
-  }, [runCompanion]);
+  }, [refreshProviderPreferences, runCompanion]);
 
   // One place tells the native side it may drop the temporary CodexBar, and it
   // is the same place that clears the outstanding flag. Every exit from a
@@ -3748,7 +3685,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     onCheck: checkProvider,
     onDisplayChange: updateProviderDisplay,
     onPreferenceChange: updateProviderPreference,
-    onRepairUsageService: repairUsageService,
   };
   // The usage-service recovery unregisters the background service on purpose
   // and re-registers it some twenty seconds later. That is this page's own
@@ -3902,6 +3838,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     (activeShellTab === "settings" ||
       providerSelectionSetup?.providerSelectionRequired === true ||
       !(setupFinished || setupComplete));
+  const providerPreferencesPollingWanted = providerPreferencesNeedPolling(
+    providerDisplayWanted,
+    providerPreferences,
+  );
+
+  useEffect(() => {
+    if (!providerPreferencesPollingWanted) {
+      return;
+    }
+    return startProviderPreferencesPolling({
+      refresh: () => refreshProviderPreferences({ quiet: true }),
+    });
+  }, [providerPreferencesPollingWanted, refreshProviderPreferences]);
 
   useEffect(() => {
     if (!providerDisplayWanted) {
@@ -4162,13 +4111,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               selection.providerIds[0] ?? enabledProviderIds[0] ?? "",
             )
           }
-        onInstallTheme={() => void installTheme()}
+          onInstallTheme={() => void installTheme()}
           onProviderCheck={(provider) => void checkProvider(provider)}
-          onProviderRecover={(provider) =>
-            provider.health.recoveryAction === "repair_usage_service"
-              ? repairUsageService()
-              : openCodexBarApp()
-          }
           onProviderToggle={(provider, enabled) =>
             void updateProviderPreference(provider, enabled)
           }

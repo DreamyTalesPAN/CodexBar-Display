@@ -27,8 +27,6 @@ export type ProviderPickerProps = {
     selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
     providerId: string,
   ) => void | Promise<boolean | void>;
-  /** The managed usage service is the broken part, not the provider's sign-in. */
-  onRepairUsageService?: () => void;
   onPreferenceChange: (
     item: PreferenceDescriptor,
     value: boolean,

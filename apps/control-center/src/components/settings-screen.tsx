@@ -289,11 +289,6 @@ export function SettingsScreen({
         ) : null}
         <ProviderList
           onCheckAgain={(provider) => void providerPicker.onCheck(provider)}
-          onRecover={(provider) =>
-            provider.health.state === "repair_usage_service"
-              ? providerPicker.onRepairUsageService?.()
-              : void providerPicker.onCheck(provider)
-          }
           onToggle={(provider, enabled) =>
             void providerPicker.onPreferenceChange(provider, enabled)
           }

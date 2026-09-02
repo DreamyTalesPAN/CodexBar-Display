@@ -3003,3 +3003,72 @@ issue scope, or release permission never implies UI permission.
   `apps/control-center/src/components/usage-screen.tsx`, their tests,
   `apps/control-center/scripts/test-customer-flows.mjs`,
   `docs/usage-polling-architecture.md`, and this approval record.
+
+## 2026-09-02 — Continue uses the provider health already on screen
+
+- User approval: After the three provider-step failures were diagnosed, the
+  product owner explicitly instructed the B, A, C package to be implemented in
+  that order. For option B, the owner explicitly decided that token history by
+  itself is not a healthy provider (2026-09-02).
+- Approved customer-visible result: **`Continue` opens as soon as one provider
+  that is switched on reads healthy on the provider row, and the Companion
+  accepts that same answer.** The step no longer starts a second serial check
+  of every enabled provider, waits for a queued check, or mirrors the
+  Companion's five-minute verification clock in the browser. `Check again`
+  remains available on a row for a check the customer chooses. Token history
+  without usable provider usage stays visibly unavailable and does not open
+  `Continue`.
+- Approved files: `companion/internal/companionapi/preferences.go`,
+  `provider_display.go`, `provider_setup.go`,
+  `apps/control-center/src/components/control-center-app.tsx`,
+  `provider-preferences-polling.ts`,
+  `setup/setup-providers-screen.tsx`, their regression tests,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-02 — CodexBar owns the provider sign-in guidance
+
+- User approval: In the same explicit B, A, C instruction, the product owner
+  approved option A with `Open CodexBar` instead of a web sign-in link, the
+  CodexBar sentence shown exactly as reported, a copy control, and token
+  history kept separate from provider readiness (2026-09-02).
+- Approved customer-visible result: **A provider that needs attention shows
+  CodexBar's own sentence, with `Copy`, `Open CodexBar`, and `Check again`.**
+  `Open CodexBar` opens the existing CodexBar app, where its own provider help
+  and `Add Account…` live. The Control Center no longer chooses a sign-in
+  website, opens `chatgpt.com`, guesses from error words that Full Disk Access
+  is needed, or shows a 45-second `Waiting for sign-in…` state. Codex signed
+  out therefore shows the sentence its bundled CodexBar CLI actually reports,
+  rather than inventing the separate `codex login --device-auth` instruction
+  that exists only inside the CodexBar GUI binary. When CodexBar reports no
+  sentence, the existing generic provider detail remains the fallback.
+- Approved files: `companion/internal/companionapi/preferences.go`,
+  `provider_setup.go`, `provider_reported.go`,
+  `apps/control-center/src/components/setup/setup-provider-row.tsx`,
+  `setup-providers-screen.tsx`, `provider-sign-in.ts`,
+  `apps/control-center/src/components/control-center-runtime.ts`,
+  `macos/VibeTVControlCenter/main.swift`, their regression tests,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-02 — Provider rows never stop the Mac App service
+
+- User approval: In the same explicit B, A, C instruction, the product owner
+  approved option C: remove provider-row repair and waiting actions, keep the
+  automatic engine repair for a real engine failure, and let only the runtime
+  recovery screen report a Companion outage (2026-09-02).
+- Approved customer-visible result: **No action on a provider row shuts down
+  the Companion.** The row no longer offers `Repair the usage service` or a
+  guessed recovery wait; it offers CodexBar and the explicit provider check.
+  A connection gap reported as `COMPANION_UNREACHABLE` is not also rendered as
+  a provider-step failure dialog: the existing status poll and runtime
+  recovery screen own a real Companion outage. The automatic repair for a
+  genuine CodexBar engine failure remains, and the provider list is refreshed
+  after that repair so a stored connection error cannot appear afterwards.
+- Approved files: `companion/internal/companionapi/preferences.go`,
+  `apps/control-center/src/components/settings-screen.tsx`,
+  `setup/setup-provider-dialogs.tsx`,
+  `setup/setup-provider-row.tsx`, `setup-providers-screen.tsx`,
+  `setup/setup-wizard.tsx`, `control-center-app.tsx`, their regression tests,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.

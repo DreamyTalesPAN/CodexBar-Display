@@ -141,7 +141,6 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusConflict, "provider_display_invalid", "Choose which provider VibeTV should show.", "Select one provider or add providers to Automatic mode.")
 		return
 	}
-	now := s.currentTime().UTC()
 	selected := make(map[string]struct{}, len(selection.ProviderIDs))
 	for _, providerID := range selection.ProviderIDs {
 		selected[providerID] = struct{}{}
@@ -160,13 +159,16 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 	// leave, on a Mac whose first provider was working: the rotation already
 	// skips what it cannot read (daemon.go preferAvailableProviders), so the
 	// broken one costs nothing but the refusal did.
-	ready := 0
 	for _, setting := range enabled {
 		if _, ok := selected[setting.ID]; wholePoolRequired && !ok {
 			writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Add this provider to Automatic mode, select it in Always show, or turn it off.")
 			return
 		}
-		if s.providerHasFreshReadiness(setting, now) {
+	}
+	ready := 0
+	for _, descriptor := range s.providerDescriptors(settings) {
+		enabled, _ := descriptor.Value.(bool)
+		if enabled && descriptor.Health != nil && descriptor.Health.State == string(codexbar.ProviderHealthHealthy) {
 			ready++
 		}
 	}

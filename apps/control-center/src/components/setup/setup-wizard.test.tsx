@@ -64,7 +64,6 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     onFinished: vi.fn(),
     onInstallTheme: vi.fn(),
     onProviderCheck: vi.fn(),
-    onProviderRecover: vi.fn(),
     onProviderToggle: vi.fn(),
     onProvidersContinue: vi.fn(),
     onDismissProviderError: vi.fn(),
@@ -699,6 +698,27 @@ describe("SetupWizard: a refusal from the companion", () => {
     expect(screen.getByText("Provider settings need attention.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(onRetryProviders).toHaveBeenCalled();
+  });
+
+  // The status poll owns a missing Companion and presents the runtime-recovery
+  // screen. Repeating the same outage as a provider refusal puts two unrelated
+  // recovery paths on top of each other, including during automatic repair.
+  it("does not present a missing Companion as a provider-step refusal", () => {
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "providers",
+          providerError: {
+            code: "COMPANION_UNREACHABLE",
+            message: "Mac App did not answer.",
+            nextAction: "Quit and reopen the Mac App.",
+          },
+        })}
+      />,
+    );
+
+    expect(screen.queryByText("Mac App did not answer.")).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
   it("says nothing when nothing was refused", () => {
