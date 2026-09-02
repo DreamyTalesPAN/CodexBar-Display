@@ -424,6 +424,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     providerSetupCompletedThisSession,
     setProviderSetupCompletedThisSession,
   ] = useState(false);
+  const [setupThemeInstallRequested, setSetupThemeInstallRequested] =
+    useState(false);
+  const [setupThemeChoiceRequired, setSetupThemeChoiceRequired] =
+    useState(false);
   // Dismissing the recovery dialog only hides it; the repair itself runs on.
   const [runtimeRecoveryHidden, setRuntimeRecoveryHidden] = useState(false);
   // Hiding the usage dialog hides the announcement; the repair itself runs on.
@@ -498,6 +502,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     if (deviceIsReady(next)) {
       didRunAutomaticDeviceSearch.current = false;
       setLastError(null);
+    }
+    if (deviceNeedsThemeSetup(next)) {
+      setSetupThemeChoiceRequired(true);
     }
     setDeviceSession((current) => {
       const mergedDevice = mergeDeviceInfo(current.device, next);
@@ -1664,6 +1671,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       // finished before it renders, so the customer never sees VibeTV running.
       setSetupFinished(false);
       setProviderSetupCompletedThisSession(false);
+      setSetupThemeInstallRequested(false);
+      setSetupThemeChoiceRequired(false);
       didRunAutoDisplayReload.current = false;
       didRunAutomaticDeviceSearch.current = false;
       didRunSetupVerification.current = false;
@@ -2924,6 +2933,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }>("/v1/setup/providers/complete", { method: "POST" });
       setProviderSelectionSetup(payload.setup);
       setProviderSetupCompletedThisSession(true);
+      setSetupThemeInstallRequested(false);
       setProviderDisplayError(null);
       setLastError(null);
       return true;
@@ -3469,6 +3479,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       hostedSetup ||
       setupPreviewStep ||
       requiresMacAppMigration ||
+      (setupThemeChoiceRequired && !setupFinished) ||
       !themeInstallEnabled ||
       companionStatus !== "online" ||
       !deviceIsReady(device) ||
@@ -3512,6 +3523,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     pendingUpgrade,
     requiresMacAppMigration,
     screensaverPath,
+    setupFinished,
+    setupThemeChoiceRequired,
     setupPreviewStep,
     themeInstallEnabled,
     themeInstallStatus?.phase,
@@ -3957,10 +3970,25 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       (companionStatus !== "online" ||
         startupDeviceSearchState === "idle" ||
         startupDeviceSearchState === "searching"),
-    themeSetupRequired,
+    themeSetupRequired:
+      themeSetupRequired ||
+      (setupThemeChoiceRequired &&
+        !(
+          setupThemeInstallRequested &&
+          themeInstallStatus?.phase === "complete" &&
+          Boolean(selectedThemeId) &&
+          themeInstallStatus.themeId === selectedThemeId &&
+          themeInstallStatus.result?.themeId === selectedThemeId
+        )),
   });
   const setupOwnsScreen =
-    setupStep !== "live" || !(setupFinished || setupComplete);
+    !(setupThemeChoiceRequired && !deviceConnected) &&
+    (setupStep !== "live" ||
+      !(
+        setupFinished ||
+        setupComplete ||
+        (hasEnteredControlCenter && !providerSetupCompletedThisSession)
+      ));
 
   const setupProviders = (providerPreferences || []).filter(isProviderItem);
   // The display step may only offer providers that can actually show something.
@@ -4126,7 +4154,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               selection.providerIds[0] ?? enabledProviderIds[0] ?? "",
             )
           }
-          onInstallTheme={() => void installTheme()}
+          onInstallTheme={() => {
+            setSetupThemeInstallRequested(true);
+            void installTheme();
+          }}
           onProviderCheck={(provider) => void checkProvider(provider)}
           onProviderToggle={(provider, enabled) =>
             void updateProviderPreference(provider, enabled)

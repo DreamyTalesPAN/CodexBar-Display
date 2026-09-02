@@ -610,23 +610,40 @@ function SetupFinalStep({
   onFinished: () => void;
   usage: UsageSnapshot | null;
 }) {
-  const handoverReady =
-    live.device?.ready === true && hasRenderableUsage(live.displayFrame);
+  const sawReadyDevice = useRef(false);
+  const sawRenderableFrame = useRef(false);
   // Kept in a ref so a re-render cannot restart the timer and leave the
   // customer parked on this step forever.
   const finish = useRef(onFinished);
+  const handoverTimer = useRef<number | null>(null);
 
   useEffect(() => {
     finish.current = onFinished;
   }, [onFinished]);
 
   useEffect(() => {
-    if (!handoverReady) {
+    sawReadyDevice.current ||= live.device?.ready === true;
+    sawRenderableFrame.current ||= hasRenderableUsage(live.displayFrame);
+    if (
+      !sawReadyDevice.current ||
+      !sawRenderableFrame.current ||
+      handoverTimer.current !== null
+    ) {
       return;
     }
-    const timer = window.setTimeout(() => finish.current(), HANDOVER_MS);
-    return () => window.clearTimeout(timer);
-  }, [handoverReady]);
+    handoverTimer.current = window.setTimeout(() => {
+      handoverTimer.current = null;
+      finish.current();
+    }, HANDOVER_MS);
+  }, [live.device?.ready, live.displayFrame]);
+
+  useEffect(() => {
+    return () => {
+      if (handoverTimer.current !== null) {
+        window.clearTimeout(handoverTimer.current);
+      }
+    };
+  }, []);
 
   return <SetupLiveScreen {...live} />;
 }

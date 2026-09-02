@@ -62,8 +62,10 @@ export function SetupThemeScreen({
       onBack={onBack}
       onCreateSupportReport={onCreateSupportReport}
     >
-      <SetupWizardTitle>Choose your theme</SetupWizardTitle>
-      <SetupWizardSubtitle>
+      <SetupWizardTitle className="text-[40px]">
+        Choose your theme
+      </SetupWizardTitle>
+      <SetupWizardSubtitle className="text-lg">
         You can always switch themes later.
       </SetupWizardSubtitle>
 
@@ -131,7 +133,11 @@ function SetupThemeCard({
   theme: SetupThemeOption;
 }) {
   return (
-    <Item asChild className={selectedItemClass(selected)} variant="outline">
+    <Item
+      asChild
+      className={`${selectedItemClass(selected)} p-4`}
+      variant="outline"
+    >
       <button
         aria-checked={selected}
         disabled={disabled}
@@ -141,13 +147,13 @@ function SetupThemeCard({
       >
         <ItemMedia>
           <ThemeRenderPreview
-            className="h-[52px] w-[72px] rounded-md"
+            className="h-[72px] w-[100px] rounded-md"
             themeId={theme.id}
             themeSpecPath={theme.themeSpecPath}
           />
         </ItemMedia>
         <ItemContent>
-          <ItemTitle>{theme.name}</ItemTitle>
+          <ItemTitle className="text-lg font-semibold">{theme.name}</ItemTitle>
         </ItemContent>
         <ItemActions>
           <SelectionCheck selected={selected} />

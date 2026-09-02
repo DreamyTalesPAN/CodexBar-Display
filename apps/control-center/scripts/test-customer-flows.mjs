@@ -3947,21 +3947,26 @@ async function testThemeMissingDeviceWaitsForInitialProviderCheck(
   const installRequests = [];
   const notReady = { ...themeMissingDevice, deviceId: "fixture-device-1" };
   let providerReady = false;
-  await routeCompanionOnline(page, installRequests, () => {}, {
-    device: notReady,
-    // The first status seeds the theme-setup session while the device is still
-    // unready; the next one makes it ready, which is what opens the wizard's
-    // provider step with theme setup still pending behind it.
-    statusDeviceSequence: [notReady, { ...notReady, ready: true }],
-    displayFrameStatus: 404,
-    preferencesDelayMs: 2_000,
-    providerSelectionSetup: {
-      providerSelectionRequired: true,
-      providerSelectionComplete: false,
+  const companionRoute = await routeCompanionOnline(
+    page,
+    installRequests,
+    () => {},
+    {
+      device: notReady,
+      // The first status seeds the theme-setup session while the device is still
+      // unready; the next one makes it ready, which is what opens the wizard's
+      // provider step with theme setup still pending behind it.
+      statusDeviceSequence: [notReady, { ...notReady, ready: true }],
+      displayFrameStatus: 404,
+      preferencesDelayMs: 2_000,
+      providerSelectionSetup: {
+        providerSelectionRequired: true,
+        providerSelectionComplete: false,
+      },
+      onStatusProviderSetup: () =>
+        providerReady ? readyProviderSetup() : { status: "checking" },
     },
-    onStatusProviderSetup: () =>
-      providerReady ? readyProviderSetup() : { status: "checking" },
-  });
+  );
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   const providersLoading = setupScreen(page, SETUP_PROVIDERS_SCREEN);
@@ -4013,10 +4018,37 @@ async function testThemeMissingDeviceWaitsForInitialProviderCheck(
     "Theme selection must not reopen the removed provider-check dialog",
   );
   assertNoInstallRequests(installRequests);
+
+  // A fresh status can reveal a theme left on the device by an earlier Mac.
+  // That does not answer this setup's explicit choice: nothing was selected or
+  // installed here, so the wizard must not call the VibeTV live and skip Step 05.
+  companionRoute.setDevice({
+    ...synthwaveDevice,
+    deviceId: "fixture-device-1",
+    connectionState: "ready",
+    display: {
+      themeSpec: {
+        active: true,
+        path: "/themes/u/synthwa-2-old.json",
+        renderOk: true,
+      },
+    },
+  });
+  await page.waitForTimeout(6_000);
+  assert(
+    (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) === 1,
+    "A pre-existing device theme must not skip this setup's theme choice",
+  );
+  assert(
+    (await page.getByRole("heading", { name: SETUP_LIVE_SCREEN }).count()) === 0,
+    "Setup must not claim VibeTV is live before this setup installs a theme",
+  );
+  assertNoInstallRequests(installRequests);
   const unexpectedBrowserErrors = browserErrors.filter(
     (error) =>
-      !error.url.endsWith("/v1/display-frame/latest") ||
-      !error.message.includes("404"),
+      !error.message.includes("404") ||
+      (!error.url.endsWith("/v1/display-frame/latest") &&
+        !error.url.includes("/api/theme-pack/")),
   );
   assert(
     unexpectedBrowserErrors.length === 0,

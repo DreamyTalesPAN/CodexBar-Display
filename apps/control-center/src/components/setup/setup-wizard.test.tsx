@@ -355,6 +355,45 @@ describe("SetupWizard: live handover", () => {
     expect(onFinished).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
+
+  it("finishes a handover that already saw a real preview", () => {
+    vi.useFakeTimers();
+    const onFinished = vi.fn();
+    const readyDevice = {
+      active: true,
+      connected: true,
+      paired: true,
+      ready: true,
+    } as SetupWizardProps["device"];
+    const frame = {
+      ok: true,
+      frame: {
+        v: 2,
+        provider: "claude",
+        label: "Claude",
+        usageSlots: [{ id: "session", label: "Session", percent: 44 }],
+      },
+    } as SetupWizardProps["displayFrame"];
+    const props = baseProps({
+      device: readyDevice,
+      displayFrame: frame,
+      onFinished,
+      step: "live",
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    act(() => vi.advanceTimersByTime(1_000));
+    rerender(
+      <SetupWizard
+        {...props}
+        device={{ ...readyDevice, ready: false }}
+        displayFrame={null}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(1_500));
+
+    expect(onFinished).toHaveBeenCalledTimes(1);
+  });
 });
 
 function shownStep(): string {

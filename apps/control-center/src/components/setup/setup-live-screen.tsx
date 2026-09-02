@@ -36,12 +36,12 @@ export function SetupLiveScreen({
       aiFixPrompt={aiFixPrompt}
       onCreateSupportReport={onCreateSupportReport}
     >
+      <SetupWizardTitle>Your VibeTV is live</SetupWizardTitle>
       <LiveVibeTVPreview
         device={device}
         displayFrame={displayFrame}
         usage={usage}
       />
-      <SetupWizardTitle>Your VibeTV is live</SetupWizardTitle>
     </SetupWizardScreen>
   );
 }

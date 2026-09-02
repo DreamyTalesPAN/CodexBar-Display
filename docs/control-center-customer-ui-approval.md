@@ -3148,3 +3148,21 @@ issue scope, or release permission never implies UI permission.
   `setup/setup-wizard.tsx`, `setup/setup-providers-screen.tsx`, their regression
   tests, `apps/control-center/scripts/test-customer-flows.mjs`, and this
   approval record.
+
+## 2026-09-02 — Theme choice stays explicit and the live headline leads
+
+- User approval: The product owner reported that the theme list, headline, and
+  subheadline were too small compared with the preceding `Choose AI providers`
+  screen; that setup jumped to `Your VibeTV is live` without a theme choice;
+  and that the live headline belonged above the VibeTV image (2026-09-02).
+- Approved customer-visible result: **The theme step has a 40px headline, an
+  18px subheadline, and larger theme names and previews. It stays on `Choose
+  your theme` until the customer explicitly starts and completes the selected
+  theme install in this setup. A theme retained from an earlier Mac or updated
+  automatically in the background cannot skip that choice. On the final
+  screen, `Your VibeTV is live` appears above the VibeTV image.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `setup/setup-wizard.tsx`, `setup/setup-wizard-screen.tsx`,
+  `setup/setup-theme-screen.tsx`, `setup/setup-live-screen.tsx`, their
+  regression tests, `apps/control-center/scripts/test-customer-flows.mjs`, and
+  this approval record.
