@@ -1,0 +1,31 @@
+[
+  {
+    "provider": "codex",
+    "source": "oauth",
+    "usage": {
+      "accountEmail": "redacted@example.com",
+      "codexResetCredits": {
+        "availableCount": 0,
+        "credits": [],
+        "updatedAt": "2026-09-02T13:50:47Z"
+      },
+      "dataConfidence": "exact",
+      "identity": {
+        "accountEmail": "redacted@example.com",
+        "loginMethod": "free",
+        "providerID": "codex"
+      },
+      "loginMethod": "free",
+      "primary": {
+        "resetDescription": "Oct 2 at 3:50\u202fPM",
+        "resetsAt": "2026-10-02T13:50:47Z",
+        "usedPercent": 0,
+        "windowMinutes": 43200
+      },
+      "secondary": null,
+      "tertiary": null,
+      "updatedAt": "2026-09-02T13:50:47Z"
+    },
+    "version": "0.152.1"
+  }
+]

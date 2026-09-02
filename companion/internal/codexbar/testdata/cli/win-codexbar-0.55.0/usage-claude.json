@@ -1,0 +1,6 @@
+[
+  {
+    "error": "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Reading Claude Code's credentials is off. Enable \"Allow reading Claude Code's credentials\" in Settings \u2192 Providers \u2192 Claude to use OAuth, or rely on Auto/CLI usage.; CLI: Claude CLI /usage opened, but this Claude version returned local activity stats instead of plan limit percentages. Use Auto, OAuth, or Web mode for Claude limits.",
+    "provider": "claude"
+  }
+]

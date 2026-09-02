@@ -1,0 +1,86 @@
+{
+  "generatedAt": "2026-09-02T13:53:23Z",
+  "host": "redacted-host",
+  "providers": [
+    {
+      "cost": {
+        "last30DaysUSD": 2710.5854488799996,
+        "todayUSD": 135.0936472
+      },
+      "credits": null,
+      "display": {
+        "accentColor": "#49A3B0",
+        "priority": "normal",
+        "sortKey": 0
+      },
+      "enabled": true,
+      "error": null,
+      "id": "codex",
+      "identity": {
+        "accountEmail": "redacted@example.com",
+        "plan": "Free"
+      },
+      "name": "Codex",
+      "source": "oauth",
+      "status": null,
+      "updatedAt": "2026-09-02T13:53:00Z",
+      "windows": [
+        {
+          "kind": "session",
+          "label": "Session",
+          "remainingPercent": 100,
+          "resetAt": "2026-10-02T13:52:58Z",
+          "usedPercent": 0
+        }
+      ]
+    },
+    {
+      "cost": {
+        "last30DaysUSD": 6045.902145799999,
+        "todayUSD": 147.90136249999998
+      },
+      "credits": null,
+      "display": {
+        "accentColor": "#CC7C5E",
+        "priority": "normal",
+        "sortKey": 30
+      },
+      "enabled": true,
+      "error": null,
+      "id": "claude",
+      "identity": {
+        "accountEmail": "redacted@example.com",
+        "plan": "Max 20x"
+      },
+      "name": "Claude",
+      "source": "web",
+      "status": null,
+      "updatedAt": "2026-09-02T13:53:09Z",
+      "windows": [
+        {
+          "kind": "session",
+          "label": "Session",
+          "remainingPercent": 54,
+          "resetAt": "2026-09-02T15:49:59Z",
+          "usedPercent": 46
+        },
+        {
+          "kind": "weekly",
+          "label": "Weekly",
+          "remainingPercent": 74,
+          "resetAt": "2026-09-08T10:59:59Z",
+          "usedPercent": 26
+        },
+        {
+          "kind": "claude-weekly-scoped-fable",
+          "label": "Fable only",
+          "remainingPercent": 61,
+          "resetAt": "2026-09-08T11:00:00Z",
+          "usedPercent": 39
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 1,
+  "staleAfterSeconds": 180
+}

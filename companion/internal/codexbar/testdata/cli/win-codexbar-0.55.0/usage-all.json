@@ -1,0 +1,361 @@
+[
+  {
+    "cost": null,
+    "provider": "codex",
+    "source": "oauth",
+    "usage": {
+      "login_method": "ChatGPT Free",
+      "primary": {
+        "is_informational": false,
+        "reset_description": "29d 23h",
+        "resets_at": "2026-10-02T13:55:31Z",
+        "used_percent": 0.0,
+        "window_minutes": 43200
+      },
+      "updated_at": "2026-09-02T13:55:31.148438Z"
+    }
+  },
+  {
+    "error": "Claude usage failed from all configured sources. Web: No cookies available for web API; OAuth: OAuth error: Reading Claude Code's credentials is off. Enable \"Allow reading Claude Code's credentials\" in Settings \u2192 Providers \u2192 Claude to use OAuth, or rely on Auto/CLI usage.; CLI: Claude CLI /usage opened, but this Claude version returned local activity stats instead of plan limit percentages. Use Auto, OAuth, or Web mode for Claude limits.",
+    "provider": "claude"
+  },
+  {
+    "cost": {
+      "currency_code": "USD",
+      "period": "Cursor and Third Party (since 2026-08-09T18:28:24.699Z)",
+      "resets_at": "2026-09-09T18:28:24.699Z",
+      "updated_at": "2026-09-02T13:55:43.378918Z",
+      "used": 0.0
+    },
+    "provider": "cursor",
+    "source": "web",
+    "usage": {
+      "account_email": "redacted@example.com",
+      "login_method": "Cursor Free",
+      "model_specific": {
+        "is_informational": false,
+        "resets_at": "2026-09-09T18:28:24.699Z",
+        "used_percent": 0.0
+      },
+      "primary": {
+        "is_informational": false,
+        "resets_at": "2026-09-09T18:28:24.699Z",
+        "used_percent": 0.0
+      },
+      "secondary": {
+        "is_informational": false,
+        "resets_at": "2026-09-09T18:28:24.699Z",
+        "used_percent": 0.0
+      },
+      "updated_at": "2026-09-02T13:55:43.605598Z"
+    }
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "factory"
+  },
+  {
+    "error": "Provider not installed: Not logged in to Gemini. Run 'gemini' in Terminal to authenticate.",
+    "provider": "gemini"
+  },
+  {
+    "cost": null,
+    "provider": "antigravity",
+    "source": "offline",
+    "usage": {
+      "login_method": "offline",
+      "primary": {
+        "is_informational": true,
+        "reset_description": "Offline \u00b7 6 conversations",
+        "used_percent": 0.0
+      },
+      "updated_at": "2026-09-02T13:55:43.617860Z"
+    }
+  },
+  {
+    "cost": null,
+    "provider": "copilot",
+    "source": "oauth",
+    "usage": {
+      "extra_rate_windows": [
+        {
+          "id": "completions",
+          "title": "Completions",
+          "window": {
+            "is_informational": false,
+            "resets_at": "2026-10-01T00:00:00Z",
+            "used_percent": 0.0
+          }
+        },
+        {
+          "id": "ai-credits",
+          "title": "AI credits",
+          "window": {
+            "is_informational": true,
+            "reset_description": "0 AI credits used",
+            "used_percent": 0.0
+          }
+        }
+      ],
+      "login_method": "Copilot Individual",
+      "primary": {
+        "is_informational": false,
+        "resets_at": "2026-10-01T00:00:00Z",
+        "used_percent": 0.0
+      },
+      "updated_at": "2026-09-02T13:55:45.228692Z"
+    }
+  },
+  {
+    "error": "Provider not installed: z.ai API token not found. Set in Preferences \u2192 Providers or Z_AI_API_KEY.",
+    "provider": "zai"
+  },
+  {
+    "error": "Provider not installed: MiniMax API not configured. Set MINIMAX_API_KEY and MINIMAX_GROUP_ID environment variables",
+    "provider": "minimax"
+  },
+  {
+    "error": "Provider not installed: kiro-cli not found. Install from https://kiro.dev",
+    "provider": "kiro"
+  },
+  {
+    "error": "Provider not installed: gcloud CLI not found. Install from https://cloud.google.com/sdk",
+    "provider": "vertexai"
+  },
+  {
+    "error": "Authentication required",
+    "provider": "augment"
+  },
+  {
+    "error": "Authentication required",
+    "provider": "opencode"
+  },
+  {
+    "error": "Authentication required",
+    "provider": "kimi"
+  },
+  {
+    "error": "Provider not installed: Moonshot API key not found. Set it in Preferences \u2192 Providers, MOONSHOT_API_KEY, or MOONSHOT_KEY.",
+    "provider": "kimik2"
+  },
+  {
+    "error": "Provider not installed: Amp not configured. Set SRC_ACCESS_TOKEN environment variable or configure Amp.",
+    "provider": "amp"
+  },
+  {
+    "error": "Provider not installed: Warp API key not found. Set in Preferences \u2192 Providers or WARP_API_KEY environment variable.",
+    "provider": "warp"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "ollama"
+  },
+  {
+    "error": "Authentication required",
+    "provider": "azureopenai"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "t3chat"
+  },
+  {
+    "error": "Provider not installed: OpenRouter API key not found. Set in Preferences \u2192 Providers or OPENROUTER_API_KEY environment variable.",
+    "provider": "openrouter"
+  },
+  {
+    "error": "Provider not installed: JetBrains AI Assistant not found. Install from JetBrains IDE Marketplace.",
+    "provider": "jetbrains"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "alibaba"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "alibabatokenplan"
+  },
+  {
+    "error": "Provider not installed: NanoGPT API key not found. Set in Preferences \u2192 Providers or NANOGPT_API_KEY environment variable.",
+    "provider": "nanogpt"
+  },
+  {
+    "error": "Authentication required",
+    "provider": "infini"
+  },
+  {
+    "error": "Authentication required",
+    "provider": "perplexity"
+  },
+  {
+    "error": "Authentication required",
+    "provider": "abacus"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "mistral"
+  },
+  {
+    "error": "Authentication required",
+    "provider": "opencodego"
+  },
+  {
+    "error": "Provider not installed: Kilo API key not found. Set KILO_API_KEY, store in keychain, or sign in with Kilo CLI.",
+    "provider": "kilo"
+  },
+  {
+    "error": "Provider not installed: AWS credentials not configured. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.",
+    "provider": "bedrock"
+  },
+  {
+    "error": "Provider not installed: Codebuff API key not found. Set it in Preferences \u2192 Providers, CODEBUFF_API_KEY, or sign in with Codebuff/Manicode.",
+    "provider": "codebuff"
+  },
+  {
+    "error": "Provider not installed: DeepSeek API key not found. Set it in Preferences \u2192 Providers, DEEPSEEK_API_KEY, or DEEPSEEK_KEY.",
+    "provider": "deepseek"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set DEEPINFRA_API_KEY / DEEPINFRA_TOKEN in Preferences or environment.",
+    "provider": "deepinfra"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set AIAND_API_KEY in Preferences or environment.",
+    "provider": "aiand"
+  },
+  {
+    "error": "Provider not installed: Windsurf database not found at /Users/redacted/Library/Application Support/Windsurf/User/globalStorage/state.vscdb. Open Windsurf and sign in first.",
+    "provider": "windsurf"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "manus"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "mimo"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set ARK_API_KEY / DOUBAO_API_KEY / VOLCENGINE_API_KEY in Preferences or environment.",
+    "provider": "doubao"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "commandcode"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set CROF_API_KEY in Preferences or environment.",
+    "provider": "crof"
+  },
+  {
+    "error": "Provider not installed: StepFun token not found. Set STEPFUN_OASIS_TOKEN / STEPFUN_TOKEN in Preferences or environment.",
+    "provider": "stepfun"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set VENICE_API_KEY in Preferences or environment.",
+    "provider": "venice"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set OPENAI_ADMIN_KEY / OPENAI_ADMIN_API_KEY / OPENAI_API_KEY / OPENAI_PLATFORM_API_KEY in Preferences or environment.",
+    "provider": "openaiapi"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "grok"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set ELEVENLABS_API_KEY in Preferences or environment.",
+    "provider": "elevenlabs"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set DEEPGRAM_API_KEY in Preferences or environment.",
+    "provider": "deepgram"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set GROQ_API_KEY in Preferences or environment.",
+    "provider": "groq"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set LLM_PROXY_API_KEY in Preferences or environment.",
+    "provider": "llmproxy"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set CHUTES_API_KEY in Preferences or environment.",
+    "provider": "chutes"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set LITELLM_API_KEY in Preferences or environment.",
+    "provider": "litellm"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set POE_API_KEY in Preferences or environment.",
+    "provider": "poe"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set DEVIN_BEARER_TOKEN / DEVIN_API_KEY in Preferences or environment.",
+    "provider": "devin"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set ZED_API_KEY / ZED_CREDENTIALS in Preferences or environment.",
+    "provider": "zed"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set CROSSMODEL_API_KEY in Preferences or environment.",
+    "provider": "crossmodel"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "qoder"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "codebuddy"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "sakana"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set SUB2API_API_KEY in Preferences or environment.",
+    "provider": "sub2api"
+  },
+  {
+    "error": "Network error: error sending request for url (http://127.0.0.1:8088/healthz)",
+    "provider": "wayfinder"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set ZENMUX_MANAGEMENT_API_KEY / ZENMUX_API_KEY in Preferences or environment.",
+    "provider": "zenmux"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set CLINEPASS_API_KEY / CLINE_API_KEY in Preferences or environment.",
+    "provider": "clinepass"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "longcat"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set NEURALWATT_API_KEY in Preferences or environment.",
+    "provider": "neuralwatt"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "zoommate"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "qwen-cloud"
+  },
+  {
+    "error": "No cookies available for web API",
+    "provider": "notion"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set XAI_MANAGEMENT_API_KEY in Preferences or environment.",
+    "provider": "xai"
+  },
+  {
+    "error": "Provider not installed: API key not found. Set FIREWORKS_API_KEY in Preferences or environment.",
+    "provider": "fireworks"
+  }
+]
