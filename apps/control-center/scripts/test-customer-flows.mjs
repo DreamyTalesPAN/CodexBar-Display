@@ -1303,6 +1303,7 @@ async function testConnectInstallsFirmwareUpdate(browser, appUrl) {
   const installRequests = [];
   const firmwareUpdateRequests = [];
   const { candidate, connected } = firmwareConnectFixture();
+  let displayReady = false;
   const companionRoute = await routeCompanionOnline(
     page,
     installRequests,
@@ -1310,7 +1311,21 @@ async function testConnectInstallsFirmwareUpdate(browser, appUrl) {
     {
       companionVersion: "1.0.99",
       device: { connected: false, paired: false, ready: false, active: false },
-      displayFrameStatus: 404,
+      displayFrameResponse: () =>
+        displayReady
+          ? {
+              ok: true,
+              savedAt: "2026-09-02T13:43:12Z",
+              frame: {
+                v: 2,
+                provider: "codex",
+                label: "Codex",
+                usageSlots: [
+                  { id: "session", label: "Session", percent: 27 },
+                ],
+              },
+            }
+          : { ok: false },
       searchDevices: [candidate],
       onSelect: () => connected,
       onUpdate: (postData) => firmwareUpdateRequests.push(postData || ""),
@@ -1370,6 +1385,7 @@ async function testConnectInstallsFirmwareUpdate(browser, appUrl) {
   );
 
   // The updated VibeTV comes back ready, and setup carries on from there.
+  displayReady = true;
   companionRoute.setDevice({
     ...connected,
     firmware: "1.0.33",
@@ -1994,7 +2010,6 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       rowActions: [
         "Copy provider message for Codex",
         "Check Codex again",
-        "Open CodexBar",
       ],
     },
     {
@@ -2007,7 +2022,6 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       rowActions: [
         "Copy provider message for Codex",
         "Check Codex again",
-        "Open CodexBar",
       ],
     },
     {
@@ -2040,7 +2054,6 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       rowActions: [
         "Copy provider message for Codex",
         "Check Codex again",
-        "Open CodexBar",
       ],
     },
   ];
@@ -5799,7 +5812,6 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   for (const action of [
     "Copy provider message for Claude",
     "Check Claude again",
-    "Open CodexBar",
   ]) {
     await panel
       .getByRole("button", { name: action })
@@ -5964,9 +5976,12 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
   await providersScreen
     .getByRole("button", { name: "Copy provider message for Claude" })
     .waitFor({ timeout: 10_000 });
-  await providersScreen
-    .getByRole("button", { name: "Open CodexBar" })
-    .waitFor({ timeout: 10_000 });
+  assert(
+    (await providersScreen
+      .getByRole("button", { name: "Open CodexBar" })
+      .count()) === 0,
+    "provider rows must not offer a dead external action",
+  );
   const recheckClaude = providersScreen.getByRole("button", {
     name: "Check Claude again",
   });
@@ -7981,6 +7996,10 @@ async function testOverviewRejectsInvalidDisplayFrame(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await setupScreen(page, SETUP_LIVE_SCREEN).waitFor({ timeout: 10_000 });
+  // The handover delay used to open Overview after 2.5 seconds even though
+  // this label-only frame cannot render. Wait past it so the customer-flow
+  // test proves the closing step stays put, rather than sampling too early.
+  await page.waitForTimeout(3_000);
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
       0,

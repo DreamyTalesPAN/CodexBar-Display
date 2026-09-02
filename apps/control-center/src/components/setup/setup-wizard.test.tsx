@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { DeviceCandidate } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
+import { deriveSetupStep, setupDeviceIsUsable } from "./setup-step";
 import { SetupWizard, type SetupWizardProps } from "./setup-wizard";
 
 afterEach(cleanup);
@@ -113,6 +114,246 @@ describe("SetupWizard: initial provider scan", () => {
       (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+  });
+
+  it("moves to the loading screen as soon as the firmware check finishes", async () => {
+    let finishFirmwareCheck!: (value: null) => void;
+    const checkFirmware = vi.fn(
+      () =>
+        new Promise<null>((resolve) => {
+          finishFirmwareCheck = resolve;
+        }),
+    );
+    const props = baseProps({
+      deviceCandidates: [
+        {
+          deviceId: "vibetv-1",
+          target: "http://192.168.178.73",
+          known: true,
+        } as never,
+      ],
+      providers: [],
+      providersLoading: true,
+      step: "device",
+      connectSteps: {
+        connect: vi.fn(async () => ({})),
+        checkFirmware,
+        installFirmware: vi.fn(),
+      } as unknown as SetupWizardProps["connectSteps"],
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await act(async () => {
+      rerender(<SetupWizard {...props} step="providers" />);
+    });
+    expect(shownStep()).toBe("Choose your VibeTV");
+
+    await act(async () => finishFirmwareCheck(null));
+
+    expect(shownStep()).toBe("Choose AI providers");
+    expect(
+      screen.getByText(/reading provider usage on this Mac/),
+    ).toBeTruthy();
+  });
+
+  it("moves directly from provider completion to Display Mode after a fresh connection", async () => {
+    let finishFirmwareCheck!: (value: null) => void;
+    let finishProviderCompletion!: (value: boolean) => void;
+    const checkFirmware = vi.fn(
+      () =>
+        new Promise<null>((resolve) => {
+          finishFirmwareCheck = resolve;
+        }),
+    );
+    const onProvidersContinue = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishProviderCompletion = resolve;
+        }),
+    );
+    const onProviderToggle = vi.fn();
+    const installFirmware = vi.fn();
+    const disabledClaude = {
+      ...provider(),
+      effectiveValue: false,
+      health: { message: "", service: "unknown", state: "disabled" },
+      id: "codexbar.providers.claude.enabled",
+      label: "Claude",
+      providerId: "claude",
+      value: false,
+    } as ProviderItem;
+    const enabledClaude = {
+      ...disabledClaude,
+      effectiveValue: true,
+      health: { message: "", service: "operational", state: "healthy" },
+      value: true,
+    } as ProviderItem;
+    const stepAfterConnection = (
+      providerSelectionRequired: boolean,
+      providerSetupCompletedThisSession: boolean,
+    ) =>
+      deriveSetupStep({
+        deviceUsable: setupDeviceIsUsable({
+          connectionRecoveryRequired: false,
+          deviceConnected: true,
+          hasActiveDevice: true,
+          hasEnteredControlCenter: false,
+          providerSelectionRequired,
+          providerSetupCompletedThisSession,
+          ready: false,
+        }),
+        displayConfigured: false,
+        displaySelectionSupported: true,
+        initialCheckComplete: true,
+        providerSelectionRequired,
+        searchingForDevice: false,
+        themeSetupRequired: false,
+      });
+    let props = baseProps({
+      connectSteps: {
+        connect: vi.fn(async () => ({ firmware: "1.0.32" })),
+        checkFirmware,
+        installFirmware,
+      },
+      deviceCandidates: [
+        {
+          deviceId: "vibetv-1",
+          firmware: "1.0.32",
+          known: true,
+          target: "http://192.168.178.73",
+        } as DeviceCandidate,
+      ],
+      displayProviders: [{ id: "claude", label: "Claude" }],
+      onProviderToggle,
+      onProvidersContinue,
+      providers: [disabledClaude],
+      step: "device",
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+      await Promise.resolve();
+    });
+    expect(props.connectSteps.connect).toHaveBeenCalled();
+    expect(checkFirmware).toHaveBeenCalled();
+
+    // Pairing updates the parent state before the firmware check finishes. The
+    // wizard must keep the device screen until that check has actually answered.
+    props = { ...props, step: stepAfterConnection(true, false) };
+    rerender(<SetupWizard {...props} />);
+    expect(shownStep()).toBe("Choose your VibeTV");
+
+    await act(async () => finishFirmwareCheck(null));
+    expect(installFirmware).not.toHaveBeenCalled();
+    expect(shownStep()).toBe("Choose AI providers");
+
+    const providerContinue = screen.getByRole("button", { name: "Continue" });
+    expect((providerContinue as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("switch", { name: "Claude" }));
+    expect(onProviderToggle).toHaveBeenCalledWith(disabledClaude, true);
+    props = { ...props, providers: [enabledClaude] };
+    rerender(<SetupWizard {...props} />);
+    expect(
+      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(onProvidersContinue).toHaveBeenCalledTimes(1);
+    expect(shownStep()).toBe("Choose AI providers");
+    expect(
+      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    // The successful completion response clears the provider requirement while
+    // the first usage frame is still missing. That must advance to Display Mode,
+    // not briefly send the freshly connected customer back to Device.
+    await act(async () => {
+      props = { ...props, step: stepAfterConnection(false, true) };
+      rerender(<SetupWizard {...props} />);
+      finishProviderCompletion(true);
+    });
+    expect(shownStep()).toBe("Display Mode");
+    expect(
+      screen.queryByRole("main", { name: "Choose your VibeTV" }),
+    ).toBeNull();
+  });
+});
+
+describe("SetupWizard: live handover", () => {
+  it("keeps setup visible until a fresh preview is actually ready", () => {
+    vi.useFakeTimers();
+    const onFinished = vi.fn();
+    const waitingDevice = {
+      active: true,
+      connected: true,
+      paired: true,
+      ready: false,
+    } as SetupWizardProps["device"];
+    const readyDevice = { ...waitingDevice, ready: true };
+    const invalidFrame = {
+      ok: true,
+      frame: { v: 2, provider: "claude", label: "Claude" },
+    } as SetupWizardProps["displayFrame"];
+    const frame = {
+      ok: true,
+      frame: {
+        v: 2,
+        provider: "claude",
+        label: "Claude",
+        usageSlots: [
+          { id: "session", label: "Session", percent: 44 },
+        ],
+      },
+    } as SetupWizardProps["displayFrame"];
+    const props = baseProps({
+      device: waitingDevice,
+      onFinished,
+      step: "live",
+    });
+    const { rerender } = render(<SetupWizard {...props} />);
+
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(onFinished).not.toHaveBeenCalled();
+    expect(shownStep()).toBe("Your VibeTV is live");
+
+    rerender(<SetupWizard {...props} device={readyDevice} />);
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(onFinished).not.toHaveBeenCalled();
+
+    rerender(
+      <SetupWizard
+        {...props}
+        device={readyDevice}
+        displayFrame={invalidFrame}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(onFinished).not.toHaveBeenCalled();
+
+    rerender(
+      <SetupWizard
+        {...props}
+        device={readyDevice}
+        displayFrame={frame}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(1_000));
+    rerender(
+      <SetupWizard
+        {...props}
+        device={readyDevice}
+        displayFrame={{ ...frame, savedAt: "2026-09-02T13:42:00Z" }}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(1_499));
+    expect(onFinished).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(onFinished).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 });
 

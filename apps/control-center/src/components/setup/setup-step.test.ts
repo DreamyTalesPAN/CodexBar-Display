@@ -6,6 +6,7 @@ import {
   setupDeviceIsUsable,
   setupDisplayIsConfigured,
   setupDisplaySelectionSupported,
+  setupProviderInventoryIsLoading,
   setupStepForProviderRefusal,
   type SetupStepInput,
 } from "./setup-step";
@@ -136,6 +137,17 @@ describe("deriveSetupStep", () => {
   });
 });
 
+describe("initial provider inventory", () => {
+  it("loads until the separate preferences request answers", () => {
+    expect(setupProviderInventoryIsLoading(true, null, null)).toBe(true);
+    expect(setupProviderInventoryIsLoading(true, [], null)).toBe(false);
+  });
+
+  it("hands a failed request to the provider error dialog", () => {
+    expect(setupProviderInventoryIsLoading(true, null, {})).toBe(false);
+  });
+});
+
 describe("previousSetupStep", () => {
   it("offers no way back to a step with no choice on it", () => {
     expect(previousSetupStep("welcome")).toBeNull();
@@ -171,19 +183,18 @@ describe("resolveSetupStep", () => {
 
 describe("setupDeviceIsUsable", () => {
   const coldStart = {
-    awaitsProviderSetup: true,
+    deviceConnected: true,
     connectionRecoveryRequired: false,
     hasActiveDevice: true,
     hasEnteredControlCenter: false,
     providerSelectionRequired: true,
+    providerSetupCompletedThisSession: false,
     ready: false,
   };
 
-  // A brand-new customer has CodexBar bundled but no provider signed in, so
-  // their first VibeTV cannot render usage and reports ready:false. Holding
-  // them on the device step puts the remedy -- the provider step -- on the
-  // other side of the wall.
-  it("lets a VibeTV waiting only for a provider reach the provider step", () => {
+  // Pairing and the firmware check are enough. The first usage frame and the
+  // provider inventory may both still be in flight when this step ends.
+  it("lets a connected VibeTV reach the provider step", () => {
     expect(setupDeviceIsUsable(coldStart)).toBe(true);
   });
 
@@ -196,9 +207,19 @@ describe("setupDeviceIsUsable", () => {
     ).toBe(false);
   });
 
-  it("still needs the VibeTV to be answering", () => {
+  it("does not bounce back after Continue completes in this setup", () => {
     expect(
-      setupDeviceIsUsable({ ...coldStart, awaitsProviderSetup: false }),
+      setupDeviceIsUsable({
+        ...coldStart,
+        providerSelectionRequired: false,
+        providerSetupCompletedThisSession: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("still needs the VibeTV to be connected", () => {
+    expect(
+      setupDeviceIsUsable({ ...coldStart, deviceConnected: false }),
     ).toBe(false);
   });
 
@@ -206,7 +227,7 @@ describe("setupDeviceIsUsable", () => {
     expect(
       setupDeviceIsUsable({
         ...coldStart,
-        awaitsProviderSetup: false,
+        deviceConnected: false,
         providerSelectionRequired: false,
         ready: true,
       }),
@@ -219,7 +240,7 @@ describe("setupDeviceIsUsable", () => {
     expect(
       setupDeviceIsUsable({
         ...coldStart,
-        awaitsProviderSetup: false,
+        deviceConnected: false,
         hasEnteredControlCenter: true,
         providerSelectionRequired: false,
       }),
@@ -227,7 +248,7 @@ describe("setupDeviceIsUsable", () => {
     expect(
       setupDeviceIsUsable({
         ...coldStart,
-        awaitsProviderSetup: false,
+        deviceConnected: false,
         connectionRecoveryRequired: true,
         hasEnteredControlCenter: true,
         providerSelectionRequired: false,

@@ -57,15 +57,16 @@ describe("SetupProviderRow", () => {
 
       expect(html).toContain("This provider needs an active sign-in.");
       expect(html).toContain('aria-label="Check Claude Code again"');
-      expect(html).toContain('aria-label="Open CodexBar"');
+      expect(html).not.toContain('aria-label="Open CodexBar"');
       expect(html).not.toContain("Copy provider message");
-      expect(html).toContain("lucide-external-link");
+      expect(html).not.toContain("lucide-external-link");
+      expect(html.match(/data-slot="button"/g)).toHaveLength(1);
     }
   });
 
   // CodexBar owns provider guidance. The row repeats its answer exactly and
-  // offers only generic actions that do not guess how this provider signs in.
-  it("shows and copies CodexBar's reported message beside generic actions", () => {
+  // offers only Copy and Retry without guessing where this provider signs in.
+  it("shows CodexBar's reported message with only Copy and Retry", () => {
     const html = render({
       health: "auth_required",
       reportedMessage:
@@ -79,8 +80,10 @@ describe("SetupProviderRow", () => {
       'aria-label="Copy provider message for Claude Code"',
     );
     expect(html).toContain('aria-label="Check Claude Code again"');
-    expect(html).toContain('aria-label="Open CodexBar"');
+    expect(html).not.toContain('aria-label="Open CodexBar"');
     expect(html).not.toContain('aria-label="Sign in to Claude Code"');
+    expect(html).not.toContain("lucide-external-link");
+    expect(html.match(/data-slot="button"/g)).toHaveLength(2);
   });
 
   it("hands a missing permission to CodexBar without sniffing its text", () => {
@@ -88,8 +91,9 @@ describe("SetupProviderRow", () => {
 
     expect(html).toContain("Allow access in macOS");
     expect(html).toContain('aria-label="Check Claude Code again"');
-    expect(html).toContain('aria-label="Open CodexBar"');
+    expect(html).not.toContain('aria-label="Open CodexBar"');
     expect(html).not.toContain("Full Disk Access settings");
+    expect(html.match(/data-slot="button"/g)).toHaveLength(1);
   });
 
   it("offers a re-check after a timed out check", () => {

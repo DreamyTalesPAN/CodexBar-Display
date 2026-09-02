@@ -3089,6 +3089,49 @@ issue scope, or release permission never implies UI permission.
   regression test, `apps/control-center/scripts/test-customer-flows.mjs`, and
   this approval record.
 
+## 2026-09-02 — Overview waits for a real VibeTV preview
+
+- User approval: The product owner explicitly said the customer must never
+  reach Overview without a working preview after seeing `Connected` together
+  with `Waiting for first image` (2026-09-02).
+- Approved customer-visible result: **The closing `Your VibeTV is live` step
+  remains on screen until the connected device reports ready and the Mac App
+  has received a real display frame. Only then does the short handover delay
+  start and Overview become reachable.**
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`,
+  its regression test, and this approval record.
+
+## 2026-09-02 — Provider Continue goes directly to Display Mode
+
+- User approval: The product owner reported that `Continue` became disabled,
+  appeared to do nothing, then briefly returned to `Connect your VibeTV` before
+  reaching Display Mode. They explicitly asked for that flow to be fixed and
+  tested without further manual clicking (2026-09-02).
+- Approved customer-visible result: **`Continue` accepts the same healthy
+  provider state already visible on the screen, without starting a second live
+  provider scan. After the successful request, setup goes directly to Display
+  Mode and never flashes the device-connection step.**
+- Approved files: `companion/internal/companionapi/provider_display.go`,
+  `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-step.ts`, their regression
+  tests, and this approval record.
+
+## 2026-09-02 — Provider rows keep only Copy and Retry
+
+- User approval: The product owner explicitly removed the arrow/external
+  action because it did not lead anywhere and asked for enabled providers to
+  sort automatically above disabled providers (2026-09-02).
+- Approved customer-visible result: **A provider that needs attention offers
+  only Copy when CodexBar supplied a message and Retry.** No provider row shows
+  `Open CodexBar` or an external-link arrow. The shared setup-and-Settings list
+  puts switched-on providers first and preserves CodexBar's order inside the
+  switched-on and switched-off groups.
+- Approved files: `apps/control-center/src/components/setup/setup-provider-row.tsx`,
+  `setup/setup-providers-screen.tsx`, their regression tests,
+  `apps/control-center/scripts/check-customer-ui-copy.mjs`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
 ## 2026-09-02 — Initial AI provider scan stays visible
 
 - User approval: The product owner supplied the exact loading-state design and

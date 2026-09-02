@@ -74,8 +74,8 @@ export function ProviderList({
 }: ProviderListProps) {
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PROVIDER_PAGE_SIZE);
-  const matching = providers.filter((provider) =>
-    setupProviderMatchesQuery(provider, query),
+  const matching = setupProvidersEnabledFirst(
+    providers.filter((provider) => setupProviderMatchesQuery(provider, query)),
   );
   // CodexBar's inventory is 65 providers deep and almost all of it is off, so
   // the whole list buried the customer's own few under a page of names they
@@ -306,6 +306,16 @@ export function setupProvidersCanContinue(providers: ProviderItem[]): boolean {
   return providers.some(
     (provider) => provider.value && provider.health.state === "healthy",
   );
+}
+
+/** Keep CodexBar's order inside the on and off groups. */
+function setupProvidersEnabledFirst(
+  providers: ProviderItem[],
+): ProviderItem[] {
+  return [
+    ...providers.filter((provider) => provider.value === true),
+    ...providers.filter((provider) => provider.value !== true),
+  ];
 }
 
 /**

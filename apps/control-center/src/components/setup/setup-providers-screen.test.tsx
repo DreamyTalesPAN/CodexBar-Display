@@ -186,6 +186,36 @@ describe("SetupProvidersScreen", () => {
     expect(html).not.toContain("Show more providers");
   });
 
+  it("puts switched-on providers first without changing either group", () => {
+    const offOpenAI = provider({
+      health: "disabled",
+      label: "OpenAI",
+      providerId: "openai",
+      value: false,
+    });
+    const onCodex = provider({
+      health: "healthy",
+      label: "Codex",
+      providerId: "codex",
+    });
+    const offCursor = provider({
+      health: "disabled",
+      label: "Cursor",
+      providerId: "cursor",
+      value: false,
+    });
+
+    const providers = [offOpenAI, claude, offCursor, onCodex];
+    const html = render({ providers });
+    const labels = ["Claude Code", "Codex", "OpenAI", "Cursor"];
+    const positions = labels.map((label) => html.indexOf(`>${label}</`));
+
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual(
+      [...positions].sort((left, right) => left - right),
+    );
+  });
+
   // CodexBar switches providers on by itself, so a Mac whose own provider is
   // working can still carry a second one that is merely not signed in. Holding
   // the customer there closed the only step with no Back and no Skip, over a

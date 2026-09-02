@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, ExternalLink, RefreshCw } from "lucide-react";
+import { Copy, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,6 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Switch } from "@/components/ui/switch";
-import { openCodexBarApp } from "../control-center-runtime";
 import { cn } from "@/lib/utils";
 import type { PreferenceHealthState } from "../control-center-types";
 
@@ -120,13 +119,6 @@ export function SetupProviderRow({
       onClick={() => void navigator.clipboard?.writeText(reportedMessage)}
     />
   ) : null;
-  const openCodexBar = (
-    <SetupProviderRowAction
-      icon={ExternalLink}
-      label="Open CodexBar"
-      onClick={openCodexBarApp}
-    />
-  );
   const fallbackMessage =
     variant === "sign_in"
       ? `Sign in to ${label}`
@@ -163,9 +155,6 @@ export function SetupProviderRow({
             ) : (
               checkAgain
             )}
-            {variant === "sign_in" || variant === "permission"
-              ? openCodexBar
-              : null}
           </>
         )}
         {/*

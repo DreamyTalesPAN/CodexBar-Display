@@ -35,7 +35,6 @@ import {
   shouldUseHostedSetupShell,
 } from "./control-center-runtime";
 import {
-  deviceAwaitsProviderSetup,
   deviceCanContinueThemeSetup,
   deviceCompletedThemeSetup,
   deviceIsActive,
@@ -105,6 +104,7 @@ import {
   setupDeviceIsUsable,
   setupDisplayIsConfigured,
   setupDisplaySelectionSupported,
+  setupProviderInventoryIsLoading,
   setupStepForProviderRefusal,
 } from "./setup/setup-step";
 import {
@@ -417,6 +417,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // was already set up reaches the shell without it, because nothing put the
   // customer on a step to close.
   const [setupFinished, setSetupFinished] = useState(false);
+  // The completion response clears providerSelectionRequired before the first
+  // renderable frame necessarily exists. Keep this setup's confirmed device
+  // usable so the next screen is Display Mode, never a flash of Connect.
+  const [
+    providerSetupCompletedThisSession,
+    setProviderSetupCompletedThisSession,
+  ] = useState(false);
   // Dismissing the recovery dialog only hides it; the repair itself runs on.
   const [runtimeRecoveryHidden, setRuntimeRecoveryHidden] = useState(false);
   // Hiding the usage dialog hides the announcement; the repair itself runs on.
@@ -1656,6 +1663,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       // Left standing, the rerun reaches its closing step and is treated as
       // finished before it renders, so the customer never sees VibeTV running.
       setSetupFinished(false);
+      setProviderSetupCompletedThisSession(false);
       didRunAutoDisplayReload.current = false;
       didRunAutomaticDeviceSearch.current = false;
       didRunSetupVerification.current = false;
@@ -2915,6 +2923,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setup: ProviderSelectionSetup;
       }>("/v1/setup/providers/complete", { method: "POST" });
       setProviderSelectionSetup(payload.setup);
+      setProviderSetupCompletedThisSession(true);
       setProviderDisplayError(null);
       setLastError(null);
       return true;
@@ -3904,21 +3913,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // their VibeTV is running.
   const providerSelectionRequired =
     providerSelectionSetup?.providerSelectionRequired === true;
-  // The Companion already owns the long-running scan. Until its first
-  // provider inventory answers, keep that wait visible on the step it belongs
-  // to instead of leaving the completed firmware log as the last word.
-  const providersLoading =
-    providerSelectionRequired &&
-    providerPreferences === null &&
-    providerSetupIsChecking(providerSetup);
+  // The Companion already owns the long-running scan. The provider setup
+  // summary can become ready before the separate preferences inventory has
+  // answered, so the inventory itself is the loading boundary. Waiting for
+  // both kept a connected customer on the completed firmware log while the
+  // scan was still running out of sight.
+  const providersLoading = setupProviderInventoryIsLoading(
+    providerSelectionRequired,
+    providerPreferences,
+    providerPreferencesError,
+  );
   const deviceUsableForSetup = setupDeviceIsUsable({
-    awaitsProviderSetup:
-      deviceAwaitsProviderSetup(device) ||
-      (providersLoading && deviceConnected),
+    deviceConnected,
     connectionRecoveryRequired,
     hasActiveDevice,
     hasEnteredControlCenter,
     providerSelectionRequired,
+    providerSetupCompletedThisSession,
     ready: deviceReady,
   });
 

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { DeviceInfo, StandbySettings } from "./control-center-types";
-import type { ProviderPickerProps } from "./provider-picker";
+import type { ProviderItem, ProviderPickerProps } from "./provider-picker";
 import { SettingsScreen, standbyTimeoutLabel } from "./settings-screen";
 
 const providerPicker: ProviderPickerProps = {
@@ -29,9 +29,36 @@ const savedStandby: StandbySettings = {
   screensaverPath: "/themes/s/night.json",
 };
 
+function provider(
+  providerId: string,
+  label: string,
+  value: boolean,
+): ProviderItem {
+  return {
+    allowsDefault: false,
+    availability: { state: "available" },
+    effectiveValue: value,
+    health: {
+      message: value ? "Ready." : "Off.",
+      service: "operational",
+      state: value ? "healthy" : "disabled",
+    },
+    id: `codexbar.providers.${providerId}.enabled`,
+    label,
+    owner: "codexbar",
+    providerId,
+    section: "providers",
+    type: "boolean",
+    value,
+    writable: true,
+    writeStrategy: "codexbar_command",
+  };
+}
+
 function render(
   device: DeviceInfo,
   standby: StandbySettings | null = savedStandby,
+  picker: ProviderPickerProps = providerPicker,
 ) {
   return renderToStaticMarkup(
     <SettingsScreen
@@ -46,7 +73,7 @@ function render(
       onSaveBrightness={vi.fn()}
       onSaveStandby={vi.fn()}
       onStandbyBrightnessChange={vi.fn()}
-      providerPicker={providerPicker}
+      providerPicker={picker}
     />,
   );
 }
@@ -182,6 +209,27 @@ describe("SettingsScreen standby controls", () => {
       "Setup",
       "AI providers",
     ]);
+  });
+
+  it("keeps enabled providers first in Settings without reordering either group", () => {
+    const html = render(standbyDevice, savedStandby, {
+      ...providerPicker,
+      items: [
+        provider("openai", "OpenAI", false),
+        provider("claude", "Claude Code", true),
+        provider("cursor", "Cursor", false),
+        provider("codex", "Codex", true),
+      ],
+    });
+    const providerSection = html.slice(html.indexOf(">AI providers</h2>"));
+    const positions = ["Claude Code", "Codex", "OpenAI", "Cursor"].map(
+      (label) => providerSection.indexOf(`>${label}</`),
+    );
+
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual(
+      [...positions].sort((left, right) => left - right),
+    );
   });
 
   it("leaves the display mode cards usable when no write is in flight", () => {

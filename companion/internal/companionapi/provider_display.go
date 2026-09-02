@@ -116,7 +116,10 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	settings, err := s.cachedProviderSettings(r.Context(), true)
+	// Continue accepts the same fresh descriptors that opened the button in the
+	// provider list. Forcing another CodexBar read here repeated the full scan,
+	// left the button pending, and could contradict the answer still on screen.
+	settings, err := s.cachedProviderSettings(r.Context(), false)
 	if err != nil {
 		writePreferencesReadError(w, err)
 		return

@@ -40,27 +40,29 @@ export type SetupStepInput = {
 /**
  * Whether the wizard can move past the device step.
  *
- * `ready` is the plain answer, but it needs a rendered usage frame, and a
- * brand-new customer has no provider yet and therefore no usage to render.
- * Such a VibeTV is connected, paired and answering -- it reports
- * `provider_setup_required` -- and the step that fixes it is the provider step,
- * so holding it here is a dead end with the remedy on the other side.
+ * `ready` needs a rendered usage frame, which may arrive well after pairing,
+ * the firmware check, and even the provider inventory. While provider setup is
+ * still open, the successful connection is therefore the whole gate: waiting
+ * for a frame or a particular provider status strands the customer here.
  *
  * Only while the provider selection is still outstanding. Letting it through
  * afterwards would carry a customer whose provider has just died past the
  * remaining steps and tell them their VibeTV is live.
  */
 export function setupDeviceIsUsable(input: {
-  awaitsProviderSetup: boolean;
+  deviceConnected: boolean;
   hasActiveDevice: boolean;
   hasEnteredControlCenter: boolean;
   connectionRecoveryRequired: boolean;
   providerSelectionRequired: boolean;
+  providerSetupCompletedThisSession: boolean;
   ready: boolean;
 }): boolean {
   return (
     input.ready ||
-    (input.providerSelectionRequired && input.awaitsProviderSetup) ||
+    ((input.providerSelectionRequired ||
+      input.providerSetupCompletedThisSession) &&
+      input.deviceConnected) ||
     (input.hasEnteredControlCenter &&
       input.hasActiveDevice &&
       !input.connectionRecoveryRequired)
@@ -95,6 +97,19 @@ export function setupDisplaySelectionSupported(
   error: { code?: string } | null | undefined,
 ): boolean {
   return Boolean(display) || error?.code !== "HTTP_404";
+}
+
+/** The provider screen owns the first inventory wait and its retry dialog. */
+export function setupProviderInventoryIsLoading(
+  providerSelectionRequired: boolean,
+  providerInventory: readonly unknown[] | null,
+  providerInventoryError: unknown | null,
+): boolean {
+  return (
+    providerSelectionRequired &&
+    providerInventory === null &&
+    providerInventoryError === null
+  );
 }
 
 /**

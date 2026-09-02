@@ -10,7 +10,10 @@ import type {
   SupportDiagnostics,
   UsageSnapshot,
 } from "../control-center-types";
-import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
+import {
+  hasRenderableUsage,
+  type DisplayFrameSnapshot,
+} from "../live-vibetv-preview";
 import type { ProviderItem } from "../provider-picker";
 import { useSetupConnect, type SetupConnectSteps } from "./setup-connect";
 import { connectLogLines } from "./setup-connect-log";
@@ -607,6 +610,8 @@ function SetupFinalStep({
   onFinished: () => void;
   usage: UsageSnapshot | null;
 }) {
+  const handoverReady =
+    live.device?.ready === true && hasRenderableUsage(live.displayFrame);
   // Kept in a ref so a re-render cannot restart the timer and leave the
   // customer parked on this step forever.
   const finish = useRef(onFinished);
@@ -616,9 +621,12 @@ function SetupFinalStep({
   }, [onFinished]);
 
   useEffect(() => {
+    if (!handoverReady) {
+      return;
+    }
     const timer = window.setTimeout(() => finish.current(), HANDOVER_MS);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [handoverReady]);
 
   return <SetupLiveScreen {...live} />;
 }
