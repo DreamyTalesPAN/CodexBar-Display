@@ -67,24 +67,55 @@ describe("displayPreviewsFor", () => {
     ],
   } as UsageSnapshot;
 
+  const enabled = (...ids: string[]) =>
+    ids.map((id) => ({
+      id,
+      label: id.slice(0, 1).toUpperCase() + id.slice(1),
+    }));
+
   it("rotates only through the providers that are switched on", () => {
-    const previews = displayPreviewsFor(usage, ["codex", "claude"]);
+    const previews = displayPreviewsFor(usage, enabled("codex", "claude"));
 
     expect(previews.map((p) => p.providerLabel)).toEqual(["Codex", "Claude"]);
   });
 
-  it("keeps the order the usage service reported", () => {
-    const previews = displayPreviewsFor(usage, ["claude", "codex", "cursor"]);
+  it("keeps the order the providers are switched on in", () => {
+    const previews = displayPreviewsFor(
+      usage,
+      enabled("claude", "codex", "cursor"),
+    );
 
     expect(previews.map((p) => p.providerLabel)).toEqual([
+      "Claude",
       "Codex",
       "Cursor",
-      "Claude",
     ]);
+  });
+
+  // Dropping a provider the usage service has not reported yet shrank the
+  // rotation to whatever had already been read. On a Mac where that was one
+  // provider, Automatic held still and looked exactly like Manual.
+  it("keeps a provider that has no reading yet, as unavailable", () => {
+    const previews = displayPreviewsFor(usage, enabled("codex", "gemini"));
+
+    expect(previews.map((p) => p.providerLabel)).toEqual(["Codex", "Gemini"]);
+    expect(previews[1]).toEqual({
+      providerLabel: "Gemini",
+      resetLabel: null,
+      sessionPercent: null,
+      weeklyPercent: null,
+    });
   });
 
   it("has an empty rotation when nothing is switched on", () => {
     expect(displayPreviewsFor(usage, [])).toEqual([]);
-    expect(displayPreviewsFor(null, ["codex"])).toEqual([]);
+    expect(displayPreviewsFor(null, enabled("codex"))).toEqual([
+      {
+        providerLabel: "Codex",
+        resetLabel: null,
+        sessionPercent: null,
+        weeklyPercent: null,
+      },
+    ]);
   });
 });

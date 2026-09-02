@@ -82,6 +82,9 @@ type preferenceHealth struct {
 	VerifiedAt     string `json:"verifiedAt,omitempty"`
 	NextAction     string `json:"nextAction,omitempty"`
 	RecoveryAction string `json:"recoveryAction,omitempty"`
+	// What the usage service itself said, redacted. Empty when it said nothing
+	// the customer can act on, so the screen falls back to our own copy.
+	Reported string `json:"reported,omitempty"`
 }
 
 type preferencesResponse struct {
@@ -609,6 +612,12 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 	for _, setting := range settings {
 		state := string(setting.Health)
 		message := providerHealthMessage(setting.Health)
+		// Only worth carrying while the provider is on and actually needs the
+		// customer; a healthy row has nothing to report and an off one is off.
+		reported := reportedProviderMessage(setting.Reported)
+		if providerReportedIsUseless(reported) {
+			reported = ""
+		}
 		checkedAt := ""
 		verifiedAt := ""
 		nextAction := ""
@@ -616,6 +625,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 		if !setting.Enabled {
 			state = "disabled"
 			message = "Provider is off."
+			reported = ""
 		} else if readiness, ok := s.providerReadinessFor(setting.ID); ok &&
 			providerReadinessAppliesToSetting(readiness, setting, now) {
 			state = providerReadinessHealthState(readiness.Status)
@@ -659,6 +669,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 				State:          state,
 				Service:        string(setting.Service),
 				Message:        message,
+				Reported:       reported,
 				LastSuccessAt:  lastSuccess[setting.ID],
 				CheckedAt:      checkedAt,
 				VerifiedAt:     verifiedAt,

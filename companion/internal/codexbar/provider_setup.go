@@ -59,12 +59,8 @@ type ProviderSetup struct {
 
 var runConfigBootstrapCommandFn = runConfigBootstrapCommand
 var configBootstrapMu sync.Mutex
-var firstRunProviderSetupMu sync.Mutex
 
-const (
-	firstRunProviderSetupPendingState = "pending"
-	firstRunProviderSetupFailedState  = "failed"
-)
+const ()
 
 // EnsureConfig selects an existing CodexBar config without modifying it. If
 // none exists, CodexBar itself renders and validates its current default config
@@ -178,58 +174,15 @@ func initializeConfigFile(path, bin string) (bool, error) {
 	); err != nil {
 		return false, fmt.Errorf("validate CodexBar default config: %w", err)
 	}
-	// Publish the pending marker first. The collector consumes it only after its
-	// own authoritative usage request has applied every detected switch.
-	if err := writeFirstRunProviderSetupState(path, firstRunProviderSetupPendingState); err != nil {
-		return false, fmt.Errorf("mark first-run CodexBar provider setup: %w", err)
-	}
 	// A hard link publishes without replacing a config another process may
 	// have created while CodexBar was rendering its defaults.
 	if err := os.Link(stagedPath, path); err != nil {
 		if _, statErr := os.Stat(path); statErr == nil {
-			if removeErr := os.Remove(firstRunMarkerPath(path)); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-				return false, fmt.Errorf("discard first-run CodexBar provider setup marker: %w", removeErr)
-			}
 			return false, nil
 		}
 		return false, fmt.Errorf("publish CodexBar default config: %w", err)
 	}
 	return true, nil
-}
-
-func firstRunMarkerPath(configPath string) string {
-	return configPath + ".vibetv-first-run"
-}
-
-func firstRunProviderSetupPending(configPath string) bool {
-	_, err := os.Stat(firstRunMarkerPath(configPath))
-	return err == nil
-}
-
-func firstRunProviderSetupState(configPath string) string {
-	raw, err := os.ReadFile(firstRunMarkerPath(configPath))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(raw))
-}
-
-// FirstRunProviderSetupInProgress reports whether the initial complete
-// provider inventory is still running for this config.
-func FirstRunProviderSetupInProgress(configPath string) bool {
-	return firstRunProviderSetupState(configPath) == firstRunProviderSetupPendingState
-}
-
-func writeFirstRunProviderSetupState(configPath, state string) error {
-	return os.WriteFile(firstRunMarkerPath(configPath), []byte(strings.TrimSpace(state)+"\n"), 0o600)
-}
-
-// FirstRunProviderSetupPending tells the collector to use CodexBar's complete
-// inventory for its first authoritative usage request instead of the dashboard
-// snapshot, which still reflects the untouched default switches.
-func FirstRunProviderSetupPending() bool {
-	path, err := EnsureConfig("")
-	return err != nil || firstRunProviderSetupPending(path)
 }
 
 func runConfigBootstrapCommand(
@@ -354,16 +307,6 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 		return result
 	}
 	result.Engine.Status = ProviderReady
-	if exactProvider == "" {
-		switch firstRunProviderSetupState(configPath) {
-		case firstRunProviderSetupPendingState:
-			result.Status = "checking"
-			return result
-		case firstRunProviderSetupFailedState:
-			result.Providers = []ProviderReadiness{providerResult("codexbar", ProviderEngineError)}
-			return result
-		}
-	}
 
 	probeCtx, cancel := context.WithTimeout(configuredCtx, 20*time.Second)
 	defer cancel()

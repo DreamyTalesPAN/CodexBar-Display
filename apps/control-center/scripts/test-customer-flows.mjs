@@ -462,6 +462,14 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testUsageWaitingDeviceReachesProviderStep(
+        browser,
+        appContext.appUrl,
+      );
+      await testDismissedUsageIncidentSurvivesProbeRefresh(
+        browser,
+        appContext.appUrl,
+      );
       await testUsageServiceFailureAfterSetupOffersRecovery(
         browser,
         appContext.appUrl,
@@ -715,6 +723,14 @@ async function main() {
       appContext.appUrl,
     );
     await testFirstUsageServiceFailureOffersRecovery(
+      browser,
+      appContext.appUrl,
+    );
+    await testUsageWaitingDeviceReachesProviderStep(
+      browser,
+      appContext.appUrl,
+    );
+    await testDismissedUsageIncidentSurvivesProbeRefresh(
       browser,
       appContext.appUrl,
     );
@@ -1116,8 +1132,19 @@ async function testSetupDoesNotRequestBrowserPermission(browser, appUrl) {
     waitUntil: "domcontentloaded",
   });
   // This page was opened without the local-network permission on purpose:
-  // setup has to work its way to the device step without ever asking for it.
-  await waitForSetupDeviceStep(page);
+  // setup has to work its way forward without ever asking for it.
+  //
+  // With no background service there is nothing to search with, so the customer
+  // waits on the welcome step. Handing over the picker instead printed a count
+  // of a search that never ran -- "0 VibeTVs found on your WiFi." with a dead
+  // Connect -- while the service was still coming up.
+  await page
+    .getByRole("main", { name: "Welcome" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await page.getByText("VibeTVs found on your WiFi.").count()) === 0,
+    "a count must never be shown for a search the service could not run",
+  );
   await page
     .getByRole("button", { name: "Enter IP address manually" })
     .waitFor({ timeout: 10_000 });
@@ -1327,6 +1354,21 @@ async function testConnectInstallsFirmwareUpdate(browser, appUrl) {
   );
   assertNoInstallRequests(installRequests);
 
+  // Pairing used to empty the discovered list, which took the customer's own
+  // choice off the screen for the whole firmware install and left the count
+  // reading "0 VibeTVs found on your WiFi." while a VibeTV was connected.
+  assert(
+    (await page.getByText("VibeTV customer-device", { exact: true }).count()) >
+      0,
+    "The chosen VibeTV must stay on screen while it is being set up",
+  );
+  assert(
+    (await page
+      .getByText("0 VibeTVs found on your WiFi.", { exact: true })
+      .count()) === 0,
+    "A VibeTV that is connected must never be counted as none found",
+  );
+
   // The updated VibeTV comes back ready, and setup carries on from there.
   companionRoute.setDevice({
     ...connected,
@@ -1506,7 +1548,7 @@ async function testConnectedUnreadyDeviceKeepsSettingsAvailable(
     "Settings must stay available while a connected VibeTV is temporarily not ready",
   );
   await settingsButton.click();
-  await page.getByRole("heading", { name: "Display" }).waitFor({
+  await page.getByRole("heading", { name: "Display", exact: true }).waitFor({
     timeout: 10_000,
   });
   await waitForCondition(
@@ -1947,9 +1989,8 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       status: "auth_required",
       expected: "Sign in to Claude in CodexBar, then check again.",
       healthState: "auth_required",
-      healthLabel: "Sign-in needed",
-      nextAction:
-        "Open provider setup, sign in again, then check this provider.",
+      rowMessage: "Sign in to Codex",
+      rowAction: "Sign in to Codex",
       recoveryAction: "open_provider_setup",
     },
     {
@@ -1957,7 +1998,8 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       expected:
         "Claude needs permission to read your sign-in. Open CodexBar and allow access, then check again.",
       healthState: "permission_required",
-      healthLabel: "Permission needed",
+      rowMessage: "Allow access in macOS",
+      rowAction: "Allow access for Codex in macOS",
       nextAction:
         "Allow the required macOS access, then check this provider.",
       recoveryAction: "open_provider_setup",
@@ -1967,7 +2009,8 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       expected:
         "Claude is connected, but this account does not expose usage limits. Choose another provider.",
       healthState: "no_usage_available",
-      healthLabel: "No usage available",
+      rowMessage: "No usage data on this account",
+      rowAction: "Check Codex again",
       nextAction:
         "Use this provider once or connect an account with usage, then check again.",
       recoveryAction: "open_provider_setup",
@@ -1977,7 +2020,8 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       expected:
         "CodexBar could not save its provider settings. Open CodexBar and finish provider setup there.",
       healthState: "config_error",
-      healthLabel: "Settings problem",
+      rowMessage: "Repair the usage service",
+      rowAction: "Repair the usage service for Codex",
       nextAction: "Repair the usage service, then check this provider again.",
       recoveryAction: "repair_usage_service",
     },
@@ -1985,8 +2029,8 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
       status: "not_configured",
       expected: "No usable AI provider is configured yet.",
       healthState: "setup_required",
-      healthLabel: "Setup needed",
-      nextAction: "Finish setup for this provider, then check again.",
+      rowMessage: "Sign in to Codex",
+      rowAction: "Sign in to Codex",
       recoveryAction: "open_provider_setup",
     },
   ];
@@ -2111,10 +2155,13 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     await page
       .getByRole("heading", { name: "AI providers", exact: true })
       .waitFor({ timeout: 10_000 });
-    await page.getByText(fixture.healthLabel).waitFor({ timeout: 10_000 });
-    await page.getByText(fixture.nextAction).waitFor({ timeout: 10_000 });
     await page
-      .getByRole("button", { name: "Open recovery" })
+      .getByText(fixture.rowMessage, { exact: true })
+      .first()
+      .waitFor({ timeout: 10_000 });
+    await page
+      .getByRole("button", { name: fixture.rowAction })
+      .first()
       .waitFor({ timeout: 10_000 });
 
     await assertNoMobileOverflow(page);
@@ -2213,9 +2260,12 @@ async function testLocalWifiSearchOffersImmediateManualEntry(browser, appUrl) {
   });
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-  await waitForSetupDeviceStep(page);
-  // Still searching: manual entry has to be on the step itself, not parked
-  // behind another button or a dialog the customer has to summon first.
+  // The welcome step owns the search, so this is where the customer waits.
+  // Manual entry has to be on the step itself, not parked behind another
+  // button, a dialog they have to summon, or a scan they have to sit out.
+  await page
+    .getByRole("main", { name: "Welcome" })
+    .waitFor({ timeout: 10_000 });
   await page
     .getByRole("button", { name: "Enter IP address manually" })
     .waitFor({ timeout: 10_000 });
@@ -2227,9 +2277,14 @@ async function testLocalWifiSearchOffersImmediateManualEntry(browser, appUrl) {
     (await setupNotFoundDialog(page).count()) === 0,
     "A search that is still running must not claim the VibeTV is missing",
   );
+  assert(
+    (await page.getByText("VibeTVs found on your WiFi.").count()) === 0,
+    "A search that has not answered must not report a count",
+  );
   await createSetupSupportReport(page);
   await page.getByText(/^Report saved/).waitFor({ timeout: 15_000 });
   await page.keyboard.press("Escape");
+  // The empty scan has answered by now, which is what hands over to the picker.
   await waitForSetupDeviceStep(page);
 
   await connectManualVibeTVAddress(page, "172.30.12.34");
@@ -2458,9 +2513,7 @@ async function testFreshDiscoveredPairedDeviceShowsRecoveryWithoutWifi(
     "A discovered VibeTV with closed pairing must not fall into WiFi setup",
   );
   assert(
-    (await page
-      .getByText("Starting Control Center", { exact: true })
-      .count()) === 0,
+    (await page.getByRole("main", { name: "Welcome" }).count()) === 0,
     "Pairing attention must terminate the boot state",
   );
   assert(
@@ -2660,11 +2713,21 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
   await clickNavigation(page, "Usage");
   await page.getByText("Session: 12% used", { exact: true }).waitFor();
   failStatus = true;
-  // The outage is announced over whatever the customer was doing. Its scrim
-  // swallows clicks, so the session is only usable again once it is dismissed
-  // -- which it must be, rather than trapping the customer behind it.
+  // A service that stops answering is restarted by launchd on its own, and the
+  // customer hears nothing while that is happening: the announcement used to
+  // go up on the first failed poll, so an outage nobody would have noticed
+  // became a dialog over their work.
+  await page.waitForTimeout(10_000);
+  assert(
+    (await page.getByRole("dialog").count()) === 0,
+    "a service outage must stay quiet while it can still come back on its own",
+  );
+  // Once the grace is over the app steps in, and then it says so -- over
+  // whatever the customer was doing. Its scrim swallows clicks, so the session
+  // is only usable again once it is dismissed -- which it must be, rather than
+  // trapping the customer behind it.
   const recovery = page.getByRole("dialog");
-  await recovery.waitFor({ timeout: 20_000 });
+  await recovery.waitFor({ timeout: 45_000 });
   const recoveryTitle = (
     await recovery.getByRole("heading").first().innerText()
   ).trim();
@@ -3622,6 +3685,135 @@ async function testFirstUsageServiceFailureOffersRecovery(browser, appUrl) {
   await page
     .getByRole("navigation", { name: "Control Center" })
     .waitFor({ timeout: 20_000 });
+  await page.close();
+}
+
+// A paired VibeTV whose only problem is usage that never arrives must reach
+// the provider step -- the one screen that can change that -- instead of
+// parking forever on the device step with the connect long finished. The
+// runtime reports this state as a running stream with no usage and no error
+// code, not as provider_setup_required: a switched-on provider that cannot
+// deliver (signed out, nothing fresh) leaves nothing to send.
+async function testUsageWaitingDeviceReachesProviderStep(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  await routeCompanionOnline(page, [], () => {}, {
+    device: reachableUnreadyDevice,
+    displayFrameStatus: 404,
+    providerSetup: readyProviderSetup(),
+    providerSelectionSetup: {
+      providerSelectionRequired: true,
+      providerSelectionComplete: false,
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  const providersScreen = setupScreen(page, SETUP_PROVIDERS_SCREEN);
+  await providersScreen.waitFor({ timeout: 15_000 });
+  await page.close();
+}
+
+// A dismissed usage incident has to stay dismissed for as long as the same
+// incident runs. The companion answers "checking" during every provider-setup
+// cache refresh; reading that as the incident ending re-opened the dismissed
+// dialog on the next failing answer and re-armed the automatic repair, so the
+// app tore its own background service down once per probe cycle.
+async function testDismissedUsageIncidentSurvivesProbeRefresh(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+    userAgent: "VibeTVControlCenter/1.0.53",
+  });
+  const brokenSetup = {
+    status: "setup_required",
+    engine: { status: "ready" },
+    providers: [{ id: "codexbar", status: "timeout" }],
+  };
+  let phase = "broken";
+  let brokenAnswersAfterChecking = 0;
+  let recoveryRetries = 0;
+  await routeCompanionOnline(page, [], () => {}, {
+    // Not ready: only an incomplete setup keeps the 5s status poll running,
+    // and the poll is what delivers the probe's "checking" window.
+    device: reachableUnreadyDevice,
+    displayFrameStatus: 404,
+    providerSetup: brokenSetup,
+    providerSelectionSetup: {
+      providerSelectionRequired: true,
+      providerSelectionComplete: false,
+    },
+    onStatusProviderSetup: () => {
+      if (phase === "checking") {
+        phase = "broken-again";
+        return { status: "checking" };
+      }
+      if (phase === "broken-again") {
+        brokenAnswersAfterChecking += 1;
+      }
+      return brokenSetup;
+    },
+    onProviderRetry: (_setup, providerId) => {
+      if (providerId) {
+        return undefined;
+      }
+      recoveryRetries += 1;
+      return brokenSetup;
+    },
+    usageResponse: {
+      ok: true,
+      generatedAt: "2026-07-29T08:00:00Z",
+      providers: [],
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  const usageDialog = page.getByRole("dialog", {
+    name: "Finish AI setup on this Mac",
+  });
+  await usageDialog.waitFor({ timeout: 15_000 });
+  // Settle the automatic repair that greets the incident, still broken after.
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:codexbar-repair-result", {
+        detail: { success: true },
+      }),
+    );
+  });
+  await waitForCondition(
+    () => recoveryRetries === 1,
+    "The automatic repair must run its one provider check",
+  );
+  await usageDialog.waitFor({ timeout: 10_000 });
+
+  await usageDialog.getByRole("button", { name: "Close" }).click();
+  await usageDialog.waitFor({ state: "detached", timeout: 5_000 });
+
+  // One probe refresh: a "checking" answer, then the same failing verdict.
+  phase = "checking";
+  await waitForCondition(
+    () => brokenAnswersAfterChecking >= 1,
+    "The status poll must deliver the refreshed failing verdict",
+    40_000,
+  );
+  await page.waitForTimeout(1_000);
+  assert(
+    (await usageDialog.count()) === 0,
+    "A dismissed incident must stay dismissed across a probe refresh",
+  );
+  // No repair may be waiting either: an unsolicited result is ignored, while a
+  // re-armed automatic repair would consume it and run another check.
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:codexbar-repair-result", {
+        detail: { success: true },
+      }),
+    );
+  });
+  await page.waitForTimeout(1_000);
+  assert(
+    recoveryRetries === 1,
+    "A probe refresh must not re-arm the automatic repair",
+  );
   await page.close();
 }
 
@@ -5010,7 +5202,7 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     "expected settings refresh before opening Settings",
   );
   await clickNavigation(page, "Settings");
-  await page.getByRole("heading", { name: "Display" }).waitFor({
+  await page.getByRole("heading", { name: "Display", exact: true }).waitFor({
     timeout: 10_000,
   });
   await waitForCondition(
@@ -5527,29 +5719,26 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
     "Usage must stay read-only without provider controls",
   );
   await clickNavigation(page, "Settings");
+  // Settings renders the same section the wizard does, so the panel is the
+  // section, not a card.
   const panel = page
-    .locator('[data-slot="card"]')
+    .locator("section")
     .filter({ has: page.getByRole("heading", { name: "AI providers" }) });
-  await panel.getByText("Sign-in needed").waitFor({ timeout: 10_000 });
-  await panel.getByText("Service outage").waitFor({ timeout: 10_000 });
+  // The row states its own next action rather than echoing the companion's
+  // sentence, the same way the wizard does.
+  await panel.getByText("Sign in to Claude", { exact: true }).first().waitFor({
+    timeout: 10_000,
+  });
   await panel
     .getByText("GitHub Copilot", { exact: true })
     .waitFor({ timeout: 10_000 });
 
-  const itemLabels = (await panel.locator("h3").allTextContents()).filter(
-    (label) => label !== "AI providers",
-  );
-  assert(itemLabels[0] === "Codex", "common providers should use the expected order");
-  assert(
-    (await panel.getByText("Gemini", { exact: true }).count()) === 0 &&
-      (await panel.getByText("OpenCode", { exact: true }).count()) === 0,
-    "providers outside the common four should start collapsed",
-  );
-  await panel.getByRole("button", { name: "Show all providers (2 more)" }).click();
-  await panel.getByText("OpenCode", { exact: true }).waitFor();
-  await panel.getByRole("button", { name: "Show fewer providers" }).click();
+  // The list is flat now, as it is in the wizard: every provider is present
+  // and search is the way through them.
+  await panel.getByText("Gemini", { exact: true }).waitFor({ timeout: 10_000 });
+  await panel.getByText("OpenCode", { exact: true }).waitFor({ timeout: 10_000 });
 
-  const search = panel.getByLabel("Search AI providers");
+  const search = panel.getByLabel("Search providers");
   await search.fill("opencode");
   await panel.getByText("OpenCode", { exact: true }).waitFor();
   await search.fill("codex");
@@ -5566,37 +5755,30 @@ async function testUsageManagesProviderPreferences(browser, appUrl) {
   );
   await search.fill("");
 
-  const enableCopilot = panel.getByRole("switch", {
-    name: "Enable GitHub Copilot",
-  });
-  await enableCopilot.click();
-  const pendingCopilot = panel.getByRole("switch", {
-    name: "Disable GitHub Copilot",
-  });
+  const copilot = panel.getByRole("switch", { name: "GitHub Copilot" });
+  await copilot.click();
+  assert(await copilot.isDisabled(), "changed provider should be pending");
+  const gemini = panel.getByRole("switch", { name: "Gemini" });
   assert(
-    await pendingCopilot.isDisabled(),
-    "changed provider should be pending",
-  );
-  await panel.getByRole("button", { name: /Show all providers/ }).click();
-  const enableGemini = panel.getByRole("switch", { name: "Enable Gemini" });
-  assert(
-    !(await enableGemini.isDisabled()),
+    !(await gemini.isDisabled()),
     "unrelated provider should stay interactive",
   );
-  await panel
-    .getByLabel("Updating GitHub Copilot")
-    .waitFor({ state: "hidden", timeout: 10_000 });
+  await copilot.waitFor({ state: "attached", timeout: 10_000 });
+  await waitForCondition(
+    async () => !(await copilot.isDisabled()),
+    "the provider write should settle",
+  );
   assert(
-    await pendingCopilot.isChecked(),
+    await copilot.isChecked(),
     "changed provider should keep its new value after the save",
   );
 
-  await enableGemini.click();
+  await gemini.click();
   await page
     .getByText("This provider could not be updated.")
     .waitFor({ timeout: 10_000 });
   assert(
-    !(await panel.getByRole("switch", { name: "Enable Gemini" }).isChecked()),
+    !(await gemini.isChecked()),
     "failed update must keep the previous value",
   );
 

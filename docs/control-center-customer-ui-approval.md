@@ -2671,3 +2671,281 @@ issue scope, or release permission never implies UI permission.
   available throughout, rather than being taken away for the length of a write.
 - Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
   and its test.
+
+## 2026-09-01 — The welcome screen is what the customer meets, and Settings offers the wizard's own controls
+
+- User approval: While testing the PR #331 candidate the user reported eight
+  findings and, on the first, instructed: "doch, dieser pr kann und wird das
+  lösen. änder das, die screens fliegen raus, bis sie exakt so aussehen wie im
+  design". On the third: "änder das so, dass der wlan scan auf dem welcome
+  screen läuft, so wie es ja auch im design ist". On the fourth ("dann mach
+  das"), on the second ("fix das"), and on the log ordering: "alles ausgrauen,
+  außer immer den letzten ... es geht um die reihenfolge in der das gestartet
+  wird". Separately: "bau den settings tab um, der hat noch scheiß design. das
+  muss so aussehen wie hier", naming the `Settings Tab Redesign` board.
+- Approved customer-visible result:
+  1. **The first screen at launch is the welcome step.** The native window and
+     the WebView now draw the same brand and the same running log on the same
+     background, so the handover between them is invisible. Two loading screens
+     titled `Starting Control Center` are gone.
+  2. **The WiFi search runs on the welcome step.** The customer leaves it when
+     there is a VibeTV to choose, not when the first background-service check
+     answers. `Enter IP address manually` is offered there throughout — a
+     deliberate departure from the board, which gives the step no controls, so
+     that a customer who already knows the address is not made to sit out a
+     40-second scan (the capability the 2026-07-22 entry required).
+  3. **The setup log reads as an order of events.** Every line above the newest
+     is dimmed; the newest carries the caret.
+  4. **The chosen VibeTV stays on screen while it is being set up.** Pairing no
+     longer empties the discovered list, so the card keeps its selection and the
+     count can no longer read `0 VibeTVs found on your WiFi.` while a VibeTV is
+     connected. The button names the phase it is in — `Checking firmware`,
+     `Updating firmware` — instead of `Connecting` throughout.
+  5. **`Ask AI to fix` asks for a fix.** It names the repository, the file that
+     draws the failing screen, the Mac App version separately from the
+     background service version, the error the app is holding, every provider
+     state, and the log the screen is actually showing.
+  6. **Settings offers the same controls as the wizard.** `Display mode` is its
+     own section with the two preview cards, and the AI provider rows are the
+     wizard's rows. Removed with it: the per-provider `Include in Automatic`
+     checkbox, the health badges, the `Show all providers` collapse, and the
+     `Always show one` wording — Settings and the wizard now say `Manual`.
+     Enabling or disabling a provider under Automatic writes the whole enabled
+     set, which is what the checkbox and its repair effect did between them.
+     Rows keep their switch whatever the provider reports, per rule 3, which the
+     board's no-control row would have reversed. `Screensaver` and `Setup` keep
+     their sections; the board does not draw them and their controls exist
+     nowhere else.
+  7. **The brightness reading sits beside its label** in a mono face instead of
+     riding the slider thumb.
+- Approved files: `apps/control-center/src/components/` `settings-screen.tsx`,
+  `provider-picker.tsx`, `control-center-app.tsx`, `setup/` and their tests;
+  `macos/VibeTVControlCenter/main.swift`.
+
+## 2026-09-01 — One working AI provider finishes setup
+
+- User approval: While testing the PR #331 candidate the user reported being
+  stuck on the provider step and instructed: "8 das ist quatsch, der muss
+  funktionieren, sobald ein ai provider ausgewählt ist und funktioniert".
+- Approved customer-visible result: **`Continue` on the provider step opens as
+  soon as one switched-on provider has passed its check.** It used to demand
+  every switched-on provider, and CodexBar switches providers on by itself — so
+  a single one merely not signed in closed the only step that offers no `Back`
+  and no `Skip`, on a Mac whose own provider was working. What VibeTV shows is
+  unaffected: the rotation already skips a provider it cannot read. The
+  companion's completion applies the same sentence, so the button cannot open
+  on a gate that would refuse it. Without any ready provider it stays closed —
+  there would be nothing real to put on the screen.
+- Approved files: `apps/control-center/src/components/setup/setup-providers-screen.tsx`,
+  `companion/internal/companionapi/provider_display.go`, and their tests.
+
+## 2026-09-01 — The sign-in control leads somewhere
+
+- User approval: The user reported that pressing sign-in did nothing and stated
+  the intent: "die idee von der funktionalität war, dass wir den kunden bspw.
+  direkt zu codex bzw. openai oder auf www.claude.ai/login oder wo auch immer hin
+  schicken … wenn das bedeutet, dass wir für alle provider speichern müssen, wo
+  sich der kunde einloggt, dann so be it." On the proposal below: "finde ich gut
+  … wir zeigen codexbar", and after the release check, "ja mach".
+- Approved customer-visible result:
+  1. **The sign-in control opens where the customer actually signs in.** It used
+     to activate a menu-bar app with no window, so nothing happened, ever. A
+     provider read from a browser session opens that provider's own page; one
+     whose credential is written by its own CLI hands over the command to copy,
+     because a browser login would put nothing where the usage service looks.
+  2. **A blocked cookie read goes to the macOS setting, not to a login page.**
+     On a Mac where the usage service cannot read Safari's cookie file, the
+     customer is already signed in and only Full Disk Access is missing. This is
+     checked before the sign-in branch.
+  3. **The row says what the usage service said**, redacted. Its sentence is the
+     only per-provider guidance that exists, and it is often the better one:
+     "Please sign in at https://ollama.com/signin in your browser."
+  4. **Two of its sentences are never shown.** "Please log in via the CodexBar
+     menu" (Cursor, Augment) names a product the app does not mention and points
+     away from what works — both are read from browser cookies. "No available
+     fetch strategy for <id>." is its answer for 34 of 65 providers and reads as
+     a dead end where a working sign-in exists.
+  5. **A provider we have no destination for offers another check** rather than
+     a control that leads nowhere.
+- Deliberate departure, recorded rather than smuggled: the destination table is
+  the Mac App holding provider knowledge, which the AGENTS.md CodexBar boundary
+  otherwise reserves for the engine. It was checked against the pinned 0.46.0
+  and against the current 0.56.2: neither publishes a sign-in destination in any
+  field, both still carry the two wrong sentences, and five of their messages
+  embed the account's home directory. Forwarding alone cannot do the job.
+- Approved files: `apps/control-center/src/components/setup/`
+  `provider-sign-in.ts`, `setup-provider-row.tsx`, `setup-providers-screen.tsx`;
+  `apps/control-center/src/components/control-center-runtime.ts`;
+  `companion/internal/codexbar/providers.go`;
+  `companion/internal/companionapi/` `provider_reported.go`, `preferences.go`;
+  `macos/VibeTVControlCenter/main.swift`; and their tests.
+
+## 2026-09-01 — Nothing switches a provider on but the customer, and the usage read no longer waits for a VibeTV
+
+- User approval: On the provider list filling itself in, the user chose option C
+  from three offered ("7c finde ich am elegantesten") after being told what it
+  costs. On starting the read earlier: "ja aber der state ist ja scheiße so. 🙂
+  meine frage war ja, ob wir den scheiss scan nicht schon auf dem welcome screen
+  starten sollten zb". Confirmed with "mach".
+- Approved customer-visible result:
+  1. **No provider switches itself on any more.** The first run used to ask the
+     usage service for every provider it could reach and then switch each one on
+     with a separate write. That is what the customer watched: minutes of
+     silence, then providers appearing and toggling themselves on under their
+     hands, with `Continue` closing again on each one. The list now shows what
+     the usage service already has switched on — on a fresh Mac that is Codex —
+     and every other switch is the customer's to press.
+  2. **The read starts when the Mac starts, not when the VibeTV is connected.**
+     Reading this Mac's AI usage has nothing to do with pairing, and waiting for
+     it meant the first read began the moment the customer pressed `Connect` —
+     three silent minutes on a screen whose log had already finished. Nothing
+     reaches a device that is not there: the cycle that sends a frame resolves
+     the device itself and returns without one.
+- Honest cost, named rather than discovered later: on a Mac whose customer uses
+  Claude or Cursor but not Codex, the provider list now opens with one
+  pre-armed switch that is not theirs. Search reaches any provider, and the list
+  shows ten at a time.
+- Approved files: `companion/internal/codexbar/` `codexbar.go`,
+  `provider_setup.go`; `companion/internal/companionapi/provider_setup.go`;
+  `companion/internal/daemon/` `collector.go`, `daemon.go`; and their tests.
+  Net on the Go side: 737 lines deleted, 107 added.
+
+## 2026-09-01 — A search the background service did not survive is not an answer
+
+- User approval: After installing the preview the user reported the wizard had
+  handed them "0 VibeTVs found on your WiFi." with a dead Connect on a fresh
+  Mac ("ein satz mit x!", with the screens), then approved the fix: "jo mach".
+- Approved customer-visible result: **The customer stays on the welcome step
+  until there is a VibeTV to choose, including while the background service is
+  still starting.** On a fresh Mac that service restarts several times as it
+  installs its usage engine — three times in the first minute, measured — and a
+  search running into one of those gaps came back empty. That empty result was
+  shown as a count, with a Connect the service could not serve behind it: the
+  customer pressed it and got "Mac App did not answer", a failed firmware check
+  and a repair dialog, one after the other. A search the service did not survive
+  is now discarded and run again once it is back. A service that is genuinely
+  gone is not hidden: its recovery dialog is drawn over the welcome step.
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-step.test.ts`,
+  `apps/control-center/scripts/test-customer-flows.mjs`.
+
+## 2026-09-01 — Never two dialogs on top of each other
+
+- User approval: While testing preview 99.0.911 the user reported being stuck
+  after pressing Connect: "jetzt bin ich hier stuck, 2 pop ups übereinander,
+  chaos", with the screen showing "Could not check VibeTV's firmware" lying over
+  "Finish AI setup on this Mac".
+- Approved customer-visible result: **Setup shows one dialog at a time.** Every
+  one of them is centred, so a second lands on the first and the lower one's
+  buttons cannot be reached — the customer could answer neither. The dialog
+  about what they just did wins; the ambient usage-service incident stands down
+  while a step has a failure of its own and is raised again the moment that one
+  is answered. It is no longer drawn from outside the wizard at all: the step
+  decides, because only the step knows whether it already has something to say.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`,
+  `apps/control-center/src/components/control-center-app.tsx`, and their tests.
+
+## 2026-09-01 — The app stops taking its own background service down
+
+- User approval: The user asked why the background service restarts at all and
+  proposed repairing it quietly instead ("wieso startet der verfickte dienst
+  überhaupt neu", "sollten wir ihn einfach im hintergrund repairen"), then
+  approved the fix and the removal of what it made redundant: "mach und wirf
+  auch überschüssigen code den du in diesem zuge vorher eingebaut hast, wieder
+  weg".
+- Approved customer-visible result: **A Mac sitting on the provider step no
+  longer tears its own background service down, and a service that stops
+  answering is given the time to come back before anything is said about it.**
+  A VibeTV reporting `provider_setup_required` means nobody has switched a
+  provider on yet — the ordinary state of this wizard now that the first run no
+  longer switches providers on by itself. It was being read as a broken usage
+  service, which sent the automatic recovery after it; that recovery
+  unregisters the background service for some twenty seconds before it
+  reinstalls the engine, after which the VibeTV reported "no provider" again and
+  it started over. Measured on the bench: nine restarts while the customer did
+  nothing but sit on the provider list, each one killing the Connect flow's
+  firmware check and raising "Repairing VibeTV Control Center" for a teardown
+  the app had asked for itself. Only CodexBar's own verdict on its engine
+  decides now — reinstalling an engine that reports ready cannot switch a
+  provider on. A service that really does stop answering is left to launchd,
+  which restarts it within about seventeen seconds; the customer hears nothing
+  until that has had its chance and the app has to step in. One that never
+  answered at all has no restart coming and is still reported at once.
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/control-center-types.ts`,
+  `apps/control-center/scripts/test-customer-flows.mjs`. Net: the provider
+  incident latch carried on the device session and the recovery dialog's own
+  dismissal bookkeeping are gone.
+
+## 2026-09-01 — A dismissed incident stays dismissed, and a probe is not an answer
+
+- User approval: While testing this build on the bench the user reported being
+  hard-stuck on "Choose your VibeTV" under stacked popups: "öffnen sich mehrere
+  pop ups übereinander und ich komme nicht mehr weiter … finish ai setup on
+  this mac kann ich bspw. gar nicht schließen".
+- Approved customer-visible result: **Closing "Finish AI setup on this Mac"
+  works, and what was closed stays closed.** The dialog's close control did
+  nothing inside setup; now it puts the incident away and the step behind it
+  stays usable, with the provider step still carrying the broken state on its
+  rows. The incident returns only when the current one has ended and a new one
+  starts. What used to bring it back was the usage service's own probe: it
+  answers "checking" during every half-minute cache refresh, and the app read
+  that as the incident ending — un-hiding the dismissed dialog on the next
+  failing answer, with a fresh pop-in each time, and re-arming the automatic
+  repair so the app tore its own background service down once per probe cycle.
+  A "checking" answer is a probe still running, not a verdict, and no longer
+  ends an incident. And a scan that could not be made is a failure of the
+  device step itself, so "We couldn't search for your VibeTV" now wins over the
+  ambient incident the same way every other step failure does — never two
+  stacked cards.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`,
+  `apps/control-center/src/components/setup/setup-wizard.test.tsx`,
+  `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`.
+
+## 2026-09-01 — WiFi off is said, not searched around
+
+- User approval: While testing the rebuilt setup the user found the scan
+  running with WiFi switched off: "mir ist gerade aufgefallen, dass er auch
+  scant, wenn ich gar kein wifi an habe und dann einfach irgendwann kommt,
+  dass er nichts gefunden hat. es braucht noch nen pop up mit der meldung,
+  dass wifi aus ist."
+- Approved customer-visible result: **A Mac without a network is told so
+  instead of being searched around.** The automatic scan used to fan out over
+  the saved VibeTV addresses into a void for its whole thirty-second window
+  and then settle on "0 VibeTVs found on your WiFi" — an answer about
+  VibeTVs when the actual problem was the Mac. The background service now
+  refuses such a search immediately, and the refusal carries the reason and
+  the way out: "This Mac isn't connected to a WiFi network. Turn on WiFi and
+  connect this Mac to the WiFi your VibeTV uses, then search again." — shown
+  in the existing "We couldn't search for your VibeTV" dialog over the device
+  step. Manual IP entry still probes exactly the typed address and reports
+  its own failure in its own dialog. A remembered VibeTV on this Mac itself
+  (the virtual one used for testing) still answers without WiFi, and an
+  unusual but connected network is not accused of being off — it searches
+  like today.
+- Approved files: `companion/internal/companionapi/server.go`,
+  `companion/internal/companionapi/server_test.go`.
+
+## 2026-09-02 — A connected VibeTV with no usage to draw reaches the provider step
+
+- User approval: After connecting on the rebuilt setup the user reported being
+  parked: "ok ich glaube er hat sich connected, allerdings bin ich jetzt hier
+  stuck für ca. ne minute. dort oben steht wieder 0 vibetvs found. das macht
+  ja keinen sinn, weil er hat ja schon einen gefunden und sich mit dem
+  connected. außerdem wieso gehts nicht weiter jetzt?"
+- Approved customer-visible result: **A VibeTV that connects and pairs but has
+  no AI usage to draw carries the customer on to the provider step.** The
+  device step already let a VibeTV reporting `provider_setup_required` through
+  to the one screen that can fix a provider — but a Mac whose switched-on
+  provider cannot deliver usage (signed out, nothing fresh to read) reports a
+  running stream with no usage and no error code instead, and that shape
+  parked the customer on the device step forever: connect finished, firmware
+  checked, and the headline falling back to "0 VibeTVs found on your WiFi"
+  over a VibeTV it had just connected. Both shapes are the provider step's
+  case, and both pass now — only while the provider selection is still open,
+  so a provider that dies after setup still keeps its recovery instead of a
+  live screen. The finished-setup gates are untouched: setup still ends only
+  on a working provider and a real first frame.
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`.

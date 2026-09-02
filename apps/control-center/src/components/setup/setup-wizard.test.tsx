@@ -724,3 +724,78 @@ describe("SetupWizard: typing an address while the scan runs", () => {
     expect(screen.getByRole("button", { name: "Scan again" })).toBeTruthy();
   });
 });
+
+// Every one of these dialogs is centred, so two at once are two stacked cards
+// with the lower one's buttons unreachable. That is what a customer met after
+// pressing Connect on a fresh Mac: a failed firmware check landing on "Finish
+// AI setup on this Mac". The step's own failure is about what they just did and
+// wins; the usage incident is still there once that one is answered.
+describe("SetupWizard with a broken usage service", () => {
+  it("shows the usage incident when the step has nothing of its own", () => {
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "welcome",
+          usageFailure: "setup_incomplete",
+          onRepairUsageService: vi.fn(),
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Finish AI setup on this Mac")).toBeTruthy();
+  });
+
+  it("never stacks it on the step's own failure", () => {
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "device",
+          deviceSearchState: "not-found",
+          usageFailure: "setup_incomplete",
+          onRepairUsageService: vi.fn(),
+        })}
+      />,
+    );
+
+    expect(screen.getByText("We couldn't find your VibeTV")).toBeTruthy();
+    expect(screen.queryByText("Finish AI setup on this Mac")).toBeNull();
+  });
+
+  it("never stacks it on a scan that could not be made", () => {
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "device",
+          searchError: {
+            code: "search_failed",
+            message: "The Mac refused the local network scan.",
+            nextAction: "Allow Local Network access, then search again.",
+          },
+          usageFailure: "setup_incomplete",
+          onRepairUsageService: vi.fn(),
+        })}
+      />,
+    );
+
+    expect(screen.getByText("We couldn't search for your VibeTV")).toBeTruthy();
+    expect(screen.queryByText("Finish AI setup on this Mac")).toBeNull();
+  });
+
+  it("lets the customer put the incident away", () => {
+    const onDismissUsageFailure = vi.fn();
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "welcome",
+          usageFailure: "setup_incomplete",
+          onRepairUsageService: vi.fn(),
+          onDismissUsageFailure,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(onDismissUsageFailure).toHaveBeenCalledTimes(1);
+  });
+});

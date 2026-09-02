@@ -8,6 +8,7 @@ function render(props: Partial<Parameters<typeof SetupProviderRow>[0]> = {}) {
       enabled
       health="healthy"
       label="Claude Code"
+      providerId="claude"
       onCheckAgain={vi.fn()}
       onRecover={vi.fn()}
       onToggle={vi.fn()}
@@ -47,13 +48,65 @@ describe("SetupProviderRow", () => {
     expect(html).not.toMatch(/role="switch"[^>]*disabled=""/);
   });
 
+  // The control leads somewhere now. The usage service publishes no sign-in
+  // destination in any released version, so the destination is ours, and it
+  // leaves through the native side -- an ordinary link would navigate the
+  // Control Center itself away into a website.
   it("offers sign-in for a provider that has none", () => {
     for (const health of ["auth_required", "setup_required"]) {
       const html = render({ health });
 
       expect(html).toContain("Sign in to Claude Code");
-      expect(html).toContain("lucide-chevron-right");
+      expect(html).toContain('aria-label="Sign in to Claude Code"');
+      expect(html).toContain("lucide-external-link");
     }
+  });
+
+  // "wir zeigen codexbar": where the usage service says something the customer
+  // can act on, its sentence is what the row says.
+  it("prefers what the usage service reported", () => {
+    const html = render({
+      health: "auth_required",
+      reportedMessage:
+        "No Ollama session cookie found. Please sign in at https://ollama.com/signin in your browser.",
+      providerId: "ollama",
+    });
+
+    expect(html).toContain("Please sign in at https://ollama.com/signin");
+    // The control keeps its name; it is the sentence that changes.
+    expect(html).not.toContain(">Sign in to Claude Code</span>");
+  });
+
+  // A credential the provider's own CLI writes on disk: a browser login puts
+  // nothing where the usage service looks, so the row hands over the command.
+  it("copies the command for a provider that is not signed in through a browser", () => {
+    const html = render({ health: "auth_required", providerId: "gemini" });
+
+    expect(html).toContain('aria-label="Copy the Claude Code sign-in command"');
+    expect(html).toContain("lucide-copy");
+  });
+
+  // The top blocker on a Mac whose customer is already signed in everywhere.
+  // Sending them to a login page would be the second-most useless thing.
+  it("sends a blocked cookie read to the macOS setting, not to a login page", () => {
+    const html = render({
+      health: "auth_required",
+      providerId: "codex",
+      reportedMessage:
+        "Safari cookie file exists but is not readable (~/Library/Containers/com.apple.Safari/…). Enable Full Disk Access.",
+    });
+
+    expect(html).toContain('aria-label="Open Full Disk Access settings"');
+    expect(html).not.toContain('aria-label="Sign in to Claude Code"');
+  });
+
+  // Where we do not know a destination, the row offers another check rather
+  // than a control that leads nowhere.
+  it("offers no destination it does not have", () => {
+    const html = render({ health: "auth_required", providerId: "clawrouter" });
+
+    expect(html).toContain('aria-label="Check Claude Code again"');
+    expect(html).not.toContain("lucide-external-link");
   });
 
   it("waits without a second action once sign-in was pressed", () => {

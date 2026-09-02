@@ -66,6 +66,34 @@ describe("SetupDeviceScreen", () => {
     expect(html).not.toContain("<span>Connect</span>");
     expect(html).toContain("&gt; updating firmware — keep VibeTV powered on");
   });
+
+  // A firmware install is the longest thing behind this button and the one the
+  // customer must not unplug through. "Connecting" for all of it hid that.
+  it("names the phase it is in, not just that it is busy", () => {
+    expect(
+      render({ connecting: true, connectPhase: "checking-firmware" }),
+    ).toContain("<span>Checking firmware</span>");
+    expect(
+      render({ connecting: true, connectPhase: "updating-firmware" }),
+    ).toContain("<span>Updating firmware</span>");
+  });
+
+  // The customer picked this VibeTV; taking it off the screen to connect to it
+  // is the one thing the step must not do.
+  it("keeps the chosen device on screen while it connects", () => {
+    const html = render({ connecting: true, connectPhase: "connecting" });
+
+    expect(html).toContain("VibeTV 5804508");
+    expect(html).toContain("Previously connected");
+    expect(html).toContain("VibeTV 5863327");
+  });
+
+  it("drops the count once a device is being connected", () => {
+    const html = render({ connecting: true, connectPhase: "connecting" });
+
+    expect(html).not.toContain("VibeTVs found on your WiFi.");
+    expect(html).not.toContain("Looking for VibeTVs on your WiFi.");
+  });
 });
 
 // A count is a result, and before a scan has answered there is none. Saying

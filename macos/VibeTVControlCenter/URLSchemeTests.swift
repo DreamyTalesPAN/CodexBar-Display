@@ -349,6 +349,52 @@ func runURLSchemeTests() {
             "unexpected open-CodexBar action must be rejected: \(rejectedOpenURL)"
         )
     }
+    // The sign-in route carries a target, which every other route refuses to.
+    // It is the only place a page the app did not author can be opened, so the
+    // target is validated rather than trusted.
+    require(
+        signInTargetURL(
+            URL(string: "vibetv://open-sign-in?url=https%3A%2F%2Fclaude.ai")!
+        )?.absoluteString == "https://claude.ai",
+        "a provider sign-in page must be accepted"
+    )
+    require(
+        nativeControlCenterAction(
+            for: URL(string: "vibetv://open-sign-in?url=https%3A%2F%2Fchatgpt.com")!
+        ) == .openSignIn(URL(string: "https://chatgpt.com")!),
+        "the WebView sign-in URL must open the provider's own page"
+    )
+    require(
+        signInTargetURL(
+            URL(
+                string: "vibetv://open-sign-in?url=x-apple.systempreferences%3Acom.apple.settings.PrivacySecurity.extension%3FPrivacy_AllFiles"
+            )!
+        ) != nil,
+        "the Full Disk Access pane must be reachable, it is the top blocker"
+    )
+    for rejectedSignInURL in [
+        // The runtime lives on loopback. A sign-in control must never reach it.
+        "vibetv://open-sign-in?url=http%3A%2F%2F127.0.0.1%3A47832%2Fv1%2Fstatus",
+        "vibetv://open-sign-in?url=https%3A%2F%2F127.0.0.1",
+        "vibetv://open-sign-in?url=https%3A%2F%2Flocalhost%2Fadmin",
+        // Anything but https, and any other settings pane.
+        "vibetv://open-sign-in?url=http%3A%2F%2Fclaude.ai",
+        "vibetv://open-sign-in?url=file%3A%2F%2F%2Fetc%2Fpasswd",
+        "vibetv://open-sign-in?url=javascript%3Aalert(1)",
+        "vibetv://open-sign-in?url=x-apple.systempreferences%3Acom.apple.settings.Users",
+        // Credentials and ports in the target.
+        "vibetv://open-sign-in?url=https%3A%2F%2Fuser%3Apass%40claude.ai",
+        "vibetv://open-sign-in?url=https%3A%2F%2Fclaude.ai%3A8443",
+        // The route itself, misused.
+        "vibetv://open-sign-in",
+        "vibetv://open-sign-in?other=https%3A%2F%2Fclaude.ai",
+        "https://open-sign-in?url=https%3A%2F%2Fclaude.ai",
+    ] {
+        require(
+            signInTargetURL(URL(string: rejectedSignInURL)!) == nil,
+            "unsafe sign-in target must be rejected: \(rejectedSignInURL)"
+        )
+    }
     require(
         nativeControlCenterAction(
             for: URL(string: "vibetv://check-for-updates")!

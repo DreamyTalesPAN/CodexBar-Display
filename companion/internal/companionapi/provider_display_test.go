@@ -70,7 +70,7 @@ func TestProviderDisplayRejectsDisabledProvider(t *testing.T) {
 	}
 }
 
-func TestProviderSetupCompletionRequiresEveryEnabledProviderFreshAndReady(t *testing.T) {
+func TestProviderSetupCompletionRequiresOneEnabledProviderFreshAndReady(t *testing.T) {
 	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
 	server := newTestServer(t, runtimeconfig.Config{
 		DeviceID: "device-a",
@@ -84,16 +84,20 @@ func TestProviderSetupCompletionRequiresEveryEnabledProviderFreshAndReady(t *tes
 	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
 		t.Fatal(err)
 	}
-	server.recordExactProviderSetup("codex", 0, exactSetupFixture(now, "codex", codexbar.ProviderReady))
+	// Nothing ready at all: VibeTV would have nothing real to put on screen.
+	server.recordExactProviderSetup("codex", 0, exactSetupFixture(now, "codex", codexbar.ProviderAuthRequired))
 	server.recordExactProviderSetup("claude", 0, exactSetupFixture(now, "claude", codexbar.ProviderAuthRequired))
 
 	recorder := httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
 	if recorder.Code != http.StatusConflict || !bytes.Contains(recorder.Body.Bytes(), []byte(`"provider_check_required"`)) {
-		t.Fatalf("expected mixed readiness to block setup, status=%d body=%s", recorder.Code, recorder.Body.String())
+		t.Fatalf("expected no ready provider to block setup, status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 
-	server.recordExactProviderSetup("claude", 0, exactSetupFixture(now, "claude", codexbar.ProviderReady))
+	// One is enough. The other is switched on and merely not signed in, which
+	// the rotation skips on its own -- holding the customer on a step with no
+	// Back and no Skip over it is the trap this rule removes.
+	server.recordExactProviderSetup("codex", 0, exactSetupFixture(now, "codex", codexbar.ProviderReady))
 	recorder = httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))
 	if recorder.Code != http.StatusOK {
@@ -119,8 +123,10 @@ func TestProviderSetupCompletionRejectsExpiredExactCheck(t *testing.T) {
 	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
 		t.Fatal(err)
 	}
+	// Every reading is past its window, so none of them answers the question
+	// the completion asks. One fresh reading would be enough; none is not.
 	server.recordExactProviderSetup("codex", 0, exactSetupFixture(now.Add(-providerReadinessFreshness-time.Second), "codex", codexbar.ProviderReady))
-	server.recordExactProviderSetup("claude", 0, exactSetupFixture(now, "claude", codexbar.ProviderReady))
+	server.recordExactProviderSetup("claude", 0, exactSetupFixture(now.Add(-providerReadinessFreshness-time.Second), "claude", codexbar.ProviderReady))
 
 	recorder := httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/setup/providers/complete", nil))

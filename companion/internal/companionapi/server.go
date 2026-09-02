@@ -120,6 +120,12 @@ var localNetworkPermissionGOOS = runtime.GOOS
 var errMacAppActionRequired = errors.New("mac app installation requires customer action")
 var errLocalNetworkAccessDenied = errors.New("local network access denied")
 
+// errNoLocalNetwork: the Mac holds no usable network address, so an automatic
+// scan has nowhere to go. Saved private targets would be probed into a void
+// for the whole search window and settle on "0 found" -- the honest answer is
+// that WiFi is off, not that no VibeTV exists.
+var errNoLocalNetwork = errors.New("no local network")
+
 const (
 	localNetworkDenialMinimumSamples  = 8
 	localNetworkDenialProbeMaxElapsed = 250 * time.Millisecond
@@ -185,6 +191,7 @@ type Server struct {
 	installTheme           func(context.Context, themeinstall.Options) (themeinstall.Result, error)
 	runSetup               func(context.Context, setup.Options) error
 	subnetTargets          func() []string
+	localNetworkAvailable  func() bool
 	defaultWiFiTarget      func() string
 	streamStatus           func(context.Context, string) displayStreamInfo
 	waitStream             func(context.Context, string) displayStreamInfo
@@ -931,6 +938,7 @@ func New(opts Options) (*Server, error) {
 		installTheme:          themeinstall.Install,
 		runSetup:              setup.Run,
 		subnetTargets:         localSubnetTargets,
+		localNetworkAvailable: hostHasUsableNetwork,
 		defaultWiFiTarget:     setup.DefaultWiFiTarget,
 		streamStatus:          inspectDisplayStream,
 		waitRender:            nil,
@@ -2284,6 +2292,8 @@ func (s *Server) diagnosticsNetworkDiscovery(ctx context.Context, cfg runtimecon
 		result.ErrorCode = "device_search_failed"
 		if errors.Is(err, errLocalNetworkAccessDenied) {
 			result.ErrorCode = "local_network_access_denied"
+		} else if errors.Is(err, errNoLocalNetwork) {
+			result.ErrorCode = "network_unavailable"
 		} else if errors.Is(err, context.DeadlineExceeded) {
 			result.ErrorCode = "device_search_incomplete"
 		}
@@ -3005,6 +3015,16 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 				"local_network_access_denied",
 				"Local Network access is off for VibeTV Control Center.",
 				"Open System Settings > Privacy & Security > Local Network, allow VibeTV Control Center, then try again.",
+			)
+			return
+		}
+		if errors.Is(err, errNoLocalNetwork) {
+			writeError(
+				w,
+				http.StatusServiceUnavailable,
+				"network_unavailable",
+				"This Mac isn't connected to a WiFi network.",
+				"Turn on WiFi and connect this Mac to the WiFi your VibeTV uses, then search again.",
 			)
 			return
 		}
@@ -6384,6 +6404,13 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 		}
 	}
 	candidates = uniqueStrings(candidates...)
+	// A loopback target (the Virtual VibeTV) needs no WiFi, so it keeps the
+	// scan alive; everything else is unreachable without a network.
+	if explicitTarget == "" &&
+		s.localNetworkAvailable != nil && !s.localNetworkAvailable() &&
+		!anyLoopbackTarget(candidates) {
+		return nil, errNoLocalNetwork
+	}
 	if len(candidates) == 0 {
 		return []deviceSearchEntry{}, nil
 	}
@@ -8357,6 +8384,58 @@ func applyDeviceToken(req *http.Request, token string) {
 	if token = strings.TrimSpace(token); token != "" {
 		req.Header.Set("X-VibeTV-Token", token)
 	}
+}
+
+// hostHasUsableNetwork reports whether this Mac holds any address a network
+// conversation could use. WiFi off (and nothing else connected) leaves only
+// loopback and link-local self-assignments. Broader than the subnet fan-out's
+// question on purpose: an unusual but connected network must not claim WiFi
+// is off, it just searches like today.
+func hostHasUsableNetwork() bool {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		// Not knowing is not "offline": let the search try.
+		return true
+	}
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch value := addr.(type) {
+			case *net.IPNet:
+				ip = value.IP
+			case *net.IPAddr:
+				ip = value.IP
+			}
+			if ip != nil && ip.IsGlobalUnicast() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func anyLoopbackTarget(targets []string) bool {
+	for _, target := range targets {
+		parsed, err := url.Parse(strings.TrimSpace(target))
+		if err != nil {
+			continue
+		}
+		host := parsed.Hostname()
+		if strings.EqualFold(host, "localhost") {
+			return true
+		}
+		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+			return true
+		}
+	}
+	return false
 }
 
 func localSubnetTargets() []string {

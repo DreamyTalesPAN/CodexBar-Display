@@ -39,8 +39,7 @@ func (s *Server) currentProviderSetup(ctx context.Context, force bool) codexbar.
 	now := s.currentTime()
 	if !s.providerSetupCachedAt.IsZero() {
 		age := now.Sub(s.providerSetupCachedAt)
-		if age >= 0 && (age < providerSetupCacheTTL && !force || age < time.Second) &&
-			providerSetupCacheIsCurrent(s.providerSetupCache) {
+		if age >= 0 && (age < providerSetupCacheTTL && !force || age < time.Second) {
 			cached := s.providerSetupCache
 			s.providerSetupMu.Unlock()
 			return s.providerSetupWithFreshUsage(cached, now)
@@ -71,7 +70,7 @@ func (s *Server) providerSetupForStatus() codexbar.ProviderSetup {
 
 	if !cachedAt.IsZero() {
 		age := now.Sub(cachedAt)
-		if age >= 0 && age < providerSetupCacheTTL && providerSetupCacheIsCurrent(cached) {
+		if age >= 0 && age < providerSetupCacheTTL {
 			return s.providerSetupWithFreshUsage(cached, now)
 		}
 	}
@@ -88,14 +87,6 @@ func (s *Server) providerSetupForStatus() codexbar.ProviderSetup {
 		return s.providerSetupWithFreshUsage(cached, now)
 	}
 	return s.providerSetupWithFreshUsage(checkingProviderSetup(now), now)
-}
-
-func providerSetupCacheIsCurrent(setup codexbar.ProviderSetup) bool {
-	if !strings.EqualFold(strings.TrimSpace(setup.Status), "checking") {
-		return true
-	}
-	configPath := strings.TrimSpace(setup.Engine.ConfigPath)
-	return configPath == "" || codexbar.FirstRunProviderSetupInProgress(configPath)
 }
 
 func (s *Server) providerSetupWithFreshUsage(setup codexbar.ProviderSetup, now time.Time) codexbar.ProviderSetup {

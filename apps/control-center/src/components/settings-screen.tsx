@@ -1,16 +1,11 @@
 "use client";
 
+import { AlertTriangle } from "lucide-react";
+import type { ReactNode } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemSeparator,
-  ItemTitle,
-} from "@/components/ui/item";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { ItemSeparator } from "@/components/ui/item";
 import {
   Select,
   SelectContent,
@@ -20,9 +15,16 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
-import type { ProviderPickerProps } from "./provider-picker";
-import { ProviderPicker } from "./provider-picker";
 import { Switch } from "@/components/ui/switch";
+import { isProviderItem, type ProviderPickerProps } from "./provider-picker";
+import {
+  DisplayModeChoice,
+  type SetupDisplayModePreview,
+} from "./setup/setup-display-mode-screen";
+import {
+  ProviderList,
+  setupProviderCanDisplay,
+} from "./setup/setup-providers-screen";
 import {
   deviceIsCustomerConnected,
   deviceIsReady,
@@ -37,6 +39,8 @@ export function standbyTimeoutLabel(minutes: number): string {
 }
 
 export type SettingsScreenProps = {
+  /** Live usage per provider, in the order Automatic moves through them. */
+  automaticPreviews: SetupDisplayModePreview[];
   device: DeviceInfo | null;
   brightness: number | null;
   busyAction: string | null;
@@ -51,6 +55,7 @@ export type SettingsScreenProps = {
 };
 
 export function SettingsScreen({
+  automaticPreviews,
   device,
   brightness,
   busyAction,
@@ -88,159 +93,244 @@ export function SettingsScreen({
   const standbyDetailsDisabled =
     standbyToggleDisabled || !standbyValues.enabled;
 
+  const providers = (providerPicker.items || []).filter(isProviderItem);
+  // Manual pins the device to exactly one provider, so it may only offer ones
+  // that can actually produce a reading. Offering every switched-on provider,
+  // as the design board's wording does, lets a customer pin VibeTV to a
+  // provider that shows nothing.
+  const displayable = providers.filter(setupProviderCanDisplay);
+  const displayMode = providerPicker.display?.mode ?? "automatic";
+  // Optional prop: `undefined` means "nothing pending", the same as null.
+  // Comparing against null alone left both mode cards disabled forever.
+  const displaySavePending = Boolean(providerPicker.displayPendingProviderId);
+  const providerError =
+    providerPicker.preferencesError || providerPicker.displayError;
+
   return (
-    <div className="mx-auto max-w-[1040px] py-4">
-      <ItemGroup className="gap-0">
-        <Item className="grid grid-cols-1 items-start gap-5 rounded-none border-0 px-0 py-8 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:gap-12">
-          <ItemContent className="min-w-0">
-            <ItemTitle className="text-lg font-semibold">
-              <h3>Display</h3>
-            </ItemTitle>
-          </ItemContent>
-          <FieldGroup className="min-w-0">
+    <div className="mx-auto w-full max-w-[1040px] py-10">
+      <SettingsSection title="Display">
+        <BrightnessControl
+          disabled={
+            !brightnessSupport ||
+            !deviceIsReady(device) ||
+            brightness == null ||
+            localActionBusy
+          }
+          id="vibetv-brightness"
+          label="Brightness"
+          max={maxBrightness}
+          min={minBrightness}
+          onSave={onSaveBrightness}
+          onValueChange={onBrightnessChange}
+          value={currentBrightness}
+          valueLabel={brightness == null ? "Loading" : `${brightness}%`}
+        />
+      </SettingsSection>
+
+      <ItemSeparator className="my-0" />
+
+      <SettingsSection title="Display mode">
+        <DisplayModeChoice
+          automaticPreview={automaticPreviews[0] ?? null}
+          automaticPreviews={automaticPreviews}
+          manualPreview={
+            automaticPreviews.find(
+              (preview) =>
+                preview.providerLabel ===
+                displayable.find(
+                  (item) =>
+                    item.providerId === providerPicker.display?.providerIds[0],
+                )?.label,
+            ) ?? null
+          }
+          mode={displayMode}
+          onSelectMode={(mode) =>
+            void providerPicker.onDisplayChange(
+              {
+                mode,
+                providerIds:
+                  mode === "automatic"
+                    ? displayable.map((item) => item.providerId)
+                    : (providerPicker.display?.providerIds ?? []).slice(0, 1),
+              },
+              providerPicker.display?.providerIds[0] ??
+                displayable[0]?.providerId ??
+                "",
+            )
+          }
+          onSelectProvider={(providerId) =>
+            void providerPicker.onDisplayChange(
+              { mode: "fixed", providerIds: [providerId] },
+              providerId,
+            )
+          }
+          providers={displayable.map((item) => ({
+            id: item.providerId,
+            label: item.label,
+          }))}
+          saving={displaySavePending}
+          selectedProviderId={providerPicker.display?.providerIds[0] ?? null}
+        />
+      </SettingsSection>
+
+      {standbySupport ? (
+        <>
+          <ItemSeparator className="my-0" />
+          <SettingsSection title="Screensaver">
+            <Field className="justify-start gap-3" orientation="horizontal">
+              <Switch
+                aria-label="Show screensaver"
+                checked={standbyValues.enabled}
+                disabled={standbyToggleDisabled}
+                id="vibetv-standby"
+                onCheckedChange={(enabled) =>
+                  onSaveStandby({ ...standbyValues, enabled })
+                }
+              />
+              <FieldLabel htmlFor="vibetv-standby">Show screensaver</FieldLabel>
+            </Field>
+            <Field data-disabled={standbyDetailsDisabled} orientation="horizontal">
+              <FieldLabel htmlFor="vibetv-standby-timeout">Show after</FieldLabel>
+              <Select
+                disabled={standbyDetailsDisabled}
+                onValueChange={(value) =>
+                  onSaveStandby({
+                    ...standbyValues,
+                    timeoutMinutes: Number(value),
+                  })
+                }
+                value={String(standbyValues.timeoutMinutes)}
+              >
+                <SelectTrigger aria-label="Show after" id="vibetv-standby-timeout">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {standbyTimeoutOptions.map((minutes) => (
+                    <SelectItem key={minutes} value={String(minutes)}>
+                      {standbyTimeoutLabel(minutes)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
             <BrightnessControl
-              disabled={
-                !brightnessSupport ||
-                !deviceIsReady(device) ||
-                brightness == null ||
-                localActionBusy
-              }
-              id="vibetv-brightness"
-              label="Brightness"
+              disabled={standbyDetailsDisabled}
+              id="vibetv-standby-brightness"
+              label="Brightness in screensaver"
               max={maxBrightness}
               min={minBrightness}
-              onSave={onSaveBrightness}
-              onValueChange={onBrightnessChange}
-              value={currentBrightness}
-              valueLabel={brightness == null ? "Loading" : `${brightness}%`}
+              onSave={(brightnessPercent) =>
+                onSaveStandby({ ...standbyValues, brightnessPercent })
+              }
+              onValueChange={onStandbyBrightnessChange}
+              value={standbyValues.brightnessPercent}
+              valueLabel={`${standbyValues.brightnessPercent}%`}
             />
-          </FieldGroup>
-        </Item>
-
-        <ItemSeparator className="my-0" />
-        <div className="py-8">
-          <ProviderPicker {...providerPicker} />
-        </div>
-
-        {standbySupport ? (
-          <>
-            <ItemSeparator className="my-0" />
-            <Item className="grid grid-cols-1 items-start gap-5 rounded-none border-0 px-0 py-8 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:gap-12">
-              <ItemContent className="min-w-0">
-                <ItemTitle className="text-lg font-semibold">
-                  <h3>Screensaver</h3>
-                </ItemTitle>
-              </ItemContent>
-              <FieldGroup className="min-w-0">
-                <Field className="justify-start gap-3" orientation="horizontal">
-                  <Switch
-                    aria-label="Show screensaver"
-                    checked={standbyValues.enabled}
-                    disabled={standbyToggleDisabled}
-                    id="vibetv-standby"
-                    onCheckedChange={(enabled) =>
-                      onSaveStandby({ ...standbyValues, enabled })
-                    }
-                  />
-                  <FieldLabel htmlFor="vibetv-standby">
-                    Show screensaver
-                  </FieldLabel>
-                </Field>
-                <Field data-disabled={standbyDetailsDisabled} orientation="horizontal">
-                  <FieldLabel htmlFor="vibetv-standby-timeout">
-                    Show after
-                  </FieldLabel>
-                  <Select
-                    disabled={standbyDetailsDisabled}
-                    onValueChange={(value) =>
-                      onSaveStandby({
-                        ...standbyValues,
-                        timeoutMinutes: Number(value),
-                      })
-                    }
-                    value={String(standbyValues.timeoutMinutes)}
-                  >
-                    <SelectTrigger
-                      aria-label="Show after"
-                      id="vibetv-standby-timeout"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {standbyTimeoutOptions.map((minutes) => (
-                        <SelectItem key={minutes} value={String(minutes)}>
-                          {standbyTimeoutLabel(minutes)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <BrightnessControl
-                  disabled={standbyDetailsDisabled}
-                  id="vibetv-standby-brightness"
-                  label="Brightness in screensaver"
-                  max={maxBrightness}
-                  min={minBrightness}
-                  onSave={(brightnessPercent) =>
-                    onSaveStandby({ ...standbyValues, brightnessPercent })
+            <div className="pt-1">
+              <a
+                aria-disabled={standbyDetailsDisabled}
+                className={
+                  standbyDetailsDisabled
+                    ? "pointer-events-none inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 opacity-50"
+                    : "inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                }
+                href="#screensavers"
+                onClick={(event) => {
+                  event.preventDefault();
+                  if (!standbyDetailsDisabled) {
+                    onChooseScreensaver();
                   }
-                  onValueChange={onStandbyBrightnessChange}
-                  value={standbyValues.brightnessPercent}
-                  valueLabel={`${standbyValues.brightnessPercent}%`}
-                />
-                <div className="pt-1">
-                  <a
-                    aria-disabled={standbyDetailsDisabled}
-                    className={
-                      standbyDetailsDisabled
-                        ? "pointer-events-none inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 opacity-50"
-                        : "inline-block py-1 text-sm font-normal text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                    }
-                    href="#screensavers"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      if (!standbyDetailsDisabled) {
-                        onChooseScreensaver();
-                      }
-                    }}
-                    tabIndex={standbyDetailsDisabled ? -1 : undefined}
-                  >
-                    Choose screensaver
-                  </a>
-                </div>
-              </FieldGroup>
-            </Item>
-          </>
-        ) : null}
+                }}
+                tabIndex={standbyDetailsDisabled ? -1 : undefined}
+              >
+                Choose screensaver
+              </a>
+            </div>
+          </SettingsSection>
+        </>
+      ) : null}
 
-        <ItemSeparator className="my-0" />
-        <Item className="grid grid-cols-1 items-start gap-5 rounded-none border-0 px-0 py-8 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:gap-12">
-          <ItemContent className="min-w-0">
-            <ItemTitle className="text-lg font-semibold">
-              <h3>Setup</h3>
-            </ItemTitle>
-            <ItemDescription>
-              Connect this Mac to another VibeTV.
-            </ItemDescription>
-          </ItemContent>
-          <ItemActions className="w-full justify-start">
-            <Button
-              disabled={localActionBusy}
-              onClick={onResetSetup}
-              type="button"
-              variant="outline"
-            >
-              {busyAction === "reset-setup" ? (
-                <Spinner data-icon="inline-start" />
-              ) : null}
-              <span>
-                {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
-              </span>
-            </Button>
-          </ItemActions>
-        </Item>
-      </ItemGroup>
+      <ItemSeparator className="my-0" />
+
+      <SettingsSection
+        description="Connect this Mac to another VibeTV."
+        title="Setup"
+      >
+        <div>
+          <Button
+            disabled={localActionBusy}
+            onClick={onResetSetup}
+            type="button"
+            variant="outline"
+          >
+            {busyAction === "reset-setup" ? (
+              <Spinner data-icon="inline-start" />
+            ) : null}
+            <span>
+              {busyAction === "reset-setup" ? "Resetting" : "Run setup again"}
+            </span>
+          </Button>
+        </div>
+      </SettingsSection>
+
+      <ItemSeparator className="my-0" />
+
+      <SettingsSection title="AI providers">
+        {/*
+          The only place a failed provider or display write is reported once the
+          customer is past the wizard.
+        */}
+        {providerError ? (
+          <Alert className="mb-4" variant="destructive">
+            <AlertTriangle />
+            <AlertTitle>{providerError.message}</AlertTitle>
+            <AlertDescription>{providerError.nextAction}</AlertDescription>
+          </Alert>
+        ) : null}
+        <ProviderList
+          onCheckAgain={(provider) => void providerPicker.onCheck(provider)}
+          onRecover={(provider) =>
+            provider.health.state === "repair_usage_service"
+              ? providerPicker.onRepairUsageService?.()
+              : void providerPicker.onCheck(provider)
+          }
+          onToggle={(provider, enabled) =>
+            void providerPicker.onPreferenceChange(provider, enabled)
+          }
+          pendingCheckIds={providerPicker.pendingCheckIds}
+          pendingPreferenceIds={providerPicker.pendingPreferenceIds}
+          providers={providers}
+        />
+      </SettingsSection>
     </div>
+  );
+}
+
+/**
+ * One settings group: its name in a fixed left column, its controls in the
+ * right one. The label column is capped rather than fixed so the control
+ * column keeps its width at the tablet breakpoint, where a hard 240px track
+ * leaves too little for the display-mode cards.
+ */
+function SettingsSection({
+  children,
+  description,
+  title,
+}: {
+  children: ReactNode;
+  description?: string;
+  title: string;
+}) {
+  return (
+    <section className="grid grid-cols-1 items-start gap-5 py-8 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)] md:gap-10">
+      <div className="min-w-0">
+        <h2 className="text-base font-semibold">{title}</h2>
+        {description ? (
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        ) : null}
+      </div>
+      <div className="flex min-w-0 max-w-[520px] flex-col gap-4">{children}</div>
+    </section>
   );
 }
 
@@ -265,15 +355,23 @@ function BrightnessControl({
   value: number;
   valueLabel: string;
 }) {
-  const valuePosition =
-    max === min
-      ? 0
-      : Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100));
-
   return (
     <Field data-disabled={disabled}>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <div className={disabled ? "relative pb-6 opacity-50" : "relative pb-6"}>
+      {/*
+        The reading belongs beside its label, not on the thumb: following the
+        thumb cost a position calculation and put the number where the cursor
+        already is. Still an <output>, so it is still announced as it changes.
+      */}
+      <div className="flex items-baseline justify-between gap-3">
+        <FieldLabel htmlFor={id}>{label}</FieldLabel>
+        <output
+          className="font-mono text-sm tabular-nums text-muted-foreground"
+          htmlFor={id}
+        >
+          {valueLabel}
+        </output>
+      </div>
+      <div className={disabled ? "opacity-50" : undefined}>
         <Slider
           aria-label={label}
           disabled={disabled}
@@ -284,15 +382,6 @@ function BrightnessControl({
           onValueChange={(values) => onValueChange(values[0] ?? value)}
           value={[value]}
         />
-        <output
-          className="absolute top-4 text-xs tabular-nums text-muted-foreground"
-          style={{
-            left: `${valuePosition}%`,
-            transform: `translateX(-${valuePosition}%)`,
-          }}
-        >
-          {valueLabel}
-        </output>
       </div>
     </Field>
   );

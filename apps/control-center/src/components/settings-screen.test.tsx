@@ -35,6 +35,7 @@ function render(
 ) {
   return renderToStaticMarkup(
     <SettingsScreen
+      automaticPreviews={[]}
       brightness={70}
       busyAction={null}
       device={device}
@@ -63,7 +64,7 @@ describe("SettingsScreen standby controls", () => {
   it("keeps every screensaver setting visible while the screensaver is off", () => {
     const html = render(standbyDevice);
 
-    expect(html).toContain(">Screensaver</h3>");
+    expect(html).toContain(">Screensaver</h2>");
     expect(html).toContain("Show screensaver");
     expect(html.indexOf('id="vibetv-standby"')).toBeLessThan(
       html.indexOf('for="vibetv-standby"'),
@@ -143,25 +144,69 @@ describe("SettingsScreen standby controls", () => {
     expect(html).not.toContain("minimum");
     expect(html).not.toContain("Save brightness");
     expect(html).toContain('data-slot="item-separator"');
-    const cardCount = html.match(/data-slot="card"/g)?.length ?? 0;
-    expect(cardCount).toBe(1);
-    expect(html).toContain("AI providers");
+    // Nothing on this screen is a card any more: the provider list carries its
+    // own rows, and the card that used to wrap them took the page's only
+    // heading with it.
+    expect(html).not.toContain('data-slot="card"');
+    expect(html).toContain(">AI providers</h2>");
   });
 
-  it("uses responsive intro and control columns for every section", () => {
+  // Asserted as structure rather than as class strings: counting the class
+  // string is what let three copies of it accumulate in the first place.
+  it("gives every section a heading and a control column", () => {
+    const html = render(standbyDevice);
+    const headings = html.match(/<h2[^>]*>([^<]+)<\/h2>/g) || [];
+
+    expect(headings).toHaveLength(5);
+    expect(html).toContain(">Display</h2>");
+    expect(html).toContain(">Display mode</h2>");
+    expect(html).toContain(">AI providers</h2>");
+    expect(html).toContain(">Screensaver</h2>");
+    expect(html).toContain(">Setup</h2>");
+    expect(html).toContain("Connect this Mac to another VibeTV.");
+    expect(html.match(/<section /g)).toHaveLength(5);
+  });
+
+  // The provider list is the longest thing on the page, so it closes it rather
+  // than pushing the short settings below it off the screen.
+  it("puts AI providers last", () => {
+    const html = render(standbyDevice);
+    const order = (html.match(/<h2[^>]*>([^<]+)<\/h2>/g) || []).map((tag) =>
+      tag.replace(/<[^>]+>/g, ""),
+    );
+
+    expect(order).toEqual([
+      "Display",
+      "Display mode",
+      "Screensaver",
+      "Setup",
+      "AI providers",
+    ]);
+  });
+
+  it("leaves the display mode cards usable when no write is in flight", () => {
+    const html = render(standbyDevice);
+    const cards = html.match(/<button aria-pressed="(?:true|false)"[^>]*>/g) || [];
+
+    expect(cards.length).toBeGreaterThanOrEqual(2);
+    expect(cards.some((card) => card.includes('disabled=""'))).toBe(false);
+  });
+
+  // The design puts the reading beside its label. It stays an <output>, so a
+  // screen reader still announces it as it changes.
+  it("shows the brightness reading next to its label", () => {
     const html = render(standbyDevice);
 
-    expect(html.match(/grid-cols-1/g)).toHaveLength(3);
-    expect(
-      html.match(/md:grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/g),
-    ).toHaveLength(3);
-    expect(html).toMatch(
-      /<h3>Setup<\/h3>.*Connect this Mac to another VibeTV\.<\/p><\/div><div data-slot="item-actions"/,
-    );
+    expect(html).toMatch(/for="vibetv-brightness"[^>]*>Brightness<\/label>/);
+    expect(html).toContain(">70%</output>");
+    // It no longer rides the thumb: no absolute placement, no computed offset.
+    expect(html).not.toMatch(/<output[^>]*class="[^"]*absolute/);
+    expect(html).not.toMatch(/<output[^>]*style="left:/);
   });
   it("keeps VibeTV mutations disabled during a firmware update", () => {
     const html = renderToStaticMarkup(
       <SettingsScreen
+        automaticPreviews={[]}
         brightness={50}
         busyAction="firmware-update"
         device={standbyDevice}

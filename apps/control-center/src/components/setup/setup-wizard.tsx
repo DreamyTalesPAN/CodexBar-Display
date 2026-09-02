@@ -42,10 +42,20 @@ import {
   SetupThemeScreen,
   type SetupThemeOption,
 } from "./setup-theme-screen";
+import { SetupUsageDialog, type SetupUsageCause } from "./setup-usage-dialog";
 import { SetupWelcomeScreen } from "./setup-welcome-screen";
 
 export type SetupWizardProps = {
-  aiFixPrompt: () => string;
+  aiFixPrompt: (setupLog: string[]) => string;
+  /**
+   * The usage service itself is broken. Shown only where the step has no
+   * dialog of its own: every one of these is centred, so two at once land on
+   * each other and the lower one's buttons cannot be reached.
+   */
+  usageFailure?: SetupUsageCause | null;
+  onRepairUsageService?: () => void;
+  /** The customer put the incident away; it returns only if a new one starts. */
+  onDismissUsageFailure?: () => void;
   automaticPreviews: SetupDisplayModePreview[];
   connectSteps: SetupConnectSteps;
   device: DeviceInfo | null;
@@ -249,13 +259,92 @@ export function SetupWizard(props: SetupWizardProps) {
     connect.retry();
   }, [connect, deviceCandidates, preselected]);
 
+  // The connect log lives in the wizard, the prompt builder one level up, so
+  // "Ask AI to fix" used to copy an app event log that setup barely writes to
+  // while the log the customer was looking at never left this component.
+  // Shared by welcome and device: both steps offer manual entry, and two
+  // copies of this dialog would be two attempt counters.
+  const openAddressDialog = () => {
+    setNotFoundDismissed(true);
+    setAddressDialogOpen(true);
+  };
+  const addressDialog = (
+    <SetupAddressDialog
+      onConnect={async (target) => {
+        const attempt = (manualAttemptRef.current += 1);
+        const abandoned = () => attempt !== manualAttemptRef.current;
+        try {
+          const candidate = await props.onFindManualTarget(target);
+          if (abandoned()) {
+            return null;
+          }
+          // Closed here rather than through onOpenChange: that would clear
+          // notFoundDismissed and re-open "We couldn't find your VibeTV" over
+          // the connecting screen, because the search state only clears once
+          // the connect answers.
+          setAddressDialogOpen(false);
+          void connect.run(candidate);
+          return null;
+        } catch (error) {
+          if (abandoned()) {
+            return null;
+          }
+          const failure = error as ApiError;
+          return (
+            [failure?.message, failure?.nextAction].filter(Boolean).join(" ") ||
+            null
+          );
+        }
+      }}
+      onOpenChange={(open) => {
+        setAddressDialogOpen(open);
+        if (!open) {
+          manualAttemptRef.current += 1;
+          setNotFoundDismissed(false);
+        }
+      }}
+      open={addressDialogOpen}
+    />
+  );
+
+  // Lowest precedence by construction: a step passes it only when it has no
+  // failure of its own to report. The incident does not go away meanwhile --
+  // it is raised again the moment the step's own dialog is answered. Closing
+  // it is the customer's call and holds for this incident; the step stays
+  // usable behind it either way.
+  const usageDialog =
+    props.usageFailure && props.onRepairUsageService ? (
+      <SetupUsageDialog
+        cause={props.usageFailure}
+        onCreateSupportReport={() => void onCreateSupportReport()}
+        onOpenChange={(open) => {
+          if (!open) {
+            props.onDismissUsageFailure?.();
+          }
+        }}
+        onRepair={props.onRepairUsageService}
+        open
+      />
+    ) : null;
+
   const help = {
-    aiFixPrompt,
+    aiFixPrompt: () =>
+      aiFixPrompt(connectLogLines(connect.state).map((line) => line.text)),
     onCreateSupportReport,
   };
 
   if (step === "welcome") {
-    return <SetupWelcomeScreen {...help} lines={props.welcomeLines} />;
+    return (
+      <>
+        <SetupWelcomeScreen
+          {...help}
+          lines={props.welcomeLines}
+          onEnterAddressManually={openAddressDialog}
+        />
+        {addressDialog}
+        {addressDialogOpen ? null : usageDialog}
+      </>
+    );
   }
 
   if (step === "device") {
@@ -266,59 +355,18 @@ export function SetupWizard(props: SetupWizardProps) {
           {...help}
           candidates={deviceCandidates}
           connecting={connecting}
+          connectPhase={connect.state.phase}
           logLines={connectLogLines(connect.state)}
           onConnect={startConnect}
-          onEnterAddressManually={() => {
-            setNotFoundDismissed(true);
-            setAddressDialogOpen(true);
-          }}
+          onEnterAddressManually={openAddressDialog}
           onSearchAgain={searchAgain}
           onSelect={(candidate) => setSelectedTarget(candidate.target)}
           searching={searchingForDevices}
           selectedTarget={preselected}
         />
-        <SetupAddressDialog
-          onConnect={async (target) => {
-            const attempt = (manualAttemptRef.current += 1);
-            const abandoned = () => attempt !== manualAttemptRef.current;
-            try {
-              const candidate = await props.onFindManualTarget(target);
-              if (abandoned()) {
-                return null;
-              }
-              // Closed here rather than through onOpenChange: that would clear
-              // notFoundDismissed and re-open "We couldn't find your VibeTV"
-              // over the connecting screen, because the search state only
-              // clears once the connect answers.
-              setAddressDialogOpen(false);
-              void connect.run(candidate);
-              return null;
-            } catch (error) {
-              if (abandoned()) {
-                return null;
-              }
-              const failure = error as ApiError;
-              return (
-                [failure?.message, failure?.nextAction]
-                  .filter(Boolean)
-                  .join(" ") || null
-              );
-            }
-          }}
-          onOpenChange={(open) => {
-            setAddressDialogOpen(open);
-            if (!open) {
-              manualAttemptRef.current += 1;
-              setNotFoundDismissed(false);
-            }
-          }}
-          open={addressDialogOpen}
-        />
+        {addressDialog}
         <SetupDeviceNotFoundDialog
-          onEnterAddressManually={() => {
-            setNotFoundDismissed(true);
-            setAddressDialogOpen(true);
-          }}
+          onEnterAddressManually={openAddressDialog}
           onOpenChange={(open) => setNotFoundDismissed(!open)}
           onScanAgain={searchAgain}
           open={searchFailed}
@@ -388,6 +436,18 @@ export function SetupWizard(props: SetupWizardProps) {
           onRetry={connect.retry}
           open={connect.failure?.kind === "firmware-update"}
         />
+        {/*
+          Last. A failed firmware check landing on top of "Finish AI setup on
+          this Mac" left a customer with two stacked cards and neither
+          answerable. A scan that could not be made is a failure of this step
+          too, so its dialog wins the same way.
+        */}
+        {connect.failure ||
+        searchFailed ||
+        (props.searchError && !searchErrorDismissed) ||
+        addressDialogOpen
+          ? null
+          : usageDialog}
       </>
     );
   }
@@ -433,7 +493,8 @@ export function SetupWizard(props: SetupWizardProps) {
           onOpenChange={(open) => !open && props.onDismissProviderError()}
           onRetry={props.onRetryProviders}
         />
-      </>
+      {props.providerError ? null : usageDialog}
+        </>
     );
   }
 

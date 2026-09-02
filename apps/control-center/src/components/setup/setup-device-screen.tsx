@@ -8,6 +8,7 @@ import type {
   SupportDiagnostics,
 } from "../control-center-types";
 import { SetupDeviceCard } from "./setup-device-card";
+import type { ConnectPhase } from "./setup-connect-log";
 import { SetupLog, type SetupLogLine } from "./setup-log";
 import {
   SetupWizardScreen,
@@ -18,6 +19,8 @@ import {
 type SetupDeviceScreenProps = {
   candidates: DeviceCandidate[];
   connecting?: boolean;
+  /** Names the work in flight, so the button reports it instead of "Connecting" throughout. */
+  connectPhase?: ConnectPhase;
   logLines: SetupLogLine[];
   aiFixPrompt?: () => string;
   onConnect: () => void;
@@ -33,6 +36,7 @@ type SetupDeviceScreenProps = {
 export function SetupDeviceScreen({
   candidates,
   connecting = false,
+  connectPhase,
   logLines,
   aiFixPrompt,
   onConnect,
@@ -50,11 +54,19 @@ export function SetupDeviceScreen({
       onCreateSupportReport={onCreateSupportReport}
     >
       <SetupWizardTitle>Choose your VibeTV</SetupWizardTitle>
-      <SetupWizardSubtitle>
-        {searching
-          ? "Looking for VibeTVs on your WiFi."
-          : foundLabel(candidates.length)}
-      </SetupWizardSubtitle>
+      {/*
+        Once a VibeTV is being connected the count is no longer what the
+        customer is waiting on -- the log below is. Reporting one there also
+        outlived its own truth: the search state is neither idle nor searching
+        during a connect, so the count was the only thing left to render.
+      */}
+      {connecting ? null : (
+        <SetupWizardSubtitle>
+          {searching
+            ? "Looking for VibeTVs on your WiFi."
+            : foundLabel(candidates.length)}
+        </SetupWizardSubtitle>
+      )}
 
       <ItemGroup
         aria-label="VibeTVs found on your WiFi"
@@ -78,7 +90,7 @@ export function SetupDeviceScreen({
         type="button"
       >
         {connecting ? <Spinner data-icon="inline-start" /> : null}
-        <span>{connecting ? "Connecting" : "Connect"}</span>
+        <span>{connecting ? connectingLabel(connectPhase) : "Connect"}</span>
       </Button>
       {/*
         The step's own way to try again, not a dialog's. Every dialog that
@@ -110,6 +122,22 @@ export function SetupDeviceScreen({
       <SetupLog className="mt-4" lines={logLines} running={connecting} />
     </SetupWizardScreen>
   );
+}
+
+/**
+ * A firmware install is the longest thing behind this button and the one the
+ * customer must not unplug through. Reporting all of it as "Connecting" hid
+ * that entirely.
+ */
+function connectingLabel(phase: ConnectPhase | undefined): string {
+  switch (phase) {
+    case "checking-firmware":
+      return "Checking firmware";
+    case "updating-firmware":
+      return "Updating firmware";
+    default:
+      return "Connecting";
+  }
 }
 
 function foundLabel(count: number): string {

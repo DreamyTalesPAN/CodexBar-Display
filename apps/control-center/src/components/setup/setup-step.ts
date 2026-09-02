@@ -26,6 +26,14 @@ export type SetupStepInput = {
   /** The first companion check has answered, whatever it said. */
   initialCheckComplete: boolean;
   providerSelectionRequired: boolean;
+  /**
+   * A device search is running and has produced nothing to choose from yet.
+   *
+   * The welcome step owns this wait: its log is the only place that says
+   * "looking for your VibeTV", and a picker offering nothing to pick is not
+   * the screen the customer is on.
+   */
+  searchingForDevice: boolean;
   themeSetupRequired: boolean;
 };
 
@@ -101,7 +109,12 @@ export function deriveSetupStep(input: SetupStepInput): SetupStep {
     return "welcome";
   }
   if (!input.deviceUsable) {
-    return "device";
+    // The first status check answers in milliseconds and the search it gates
+    // takes up to 40 seconds, so welcome-until-checked left the whole search
+    // on a picker with nothing in it. The `deviceUsable` guard above is what
+    // keeps this from dragging a connected customer back: pairing returns the
+    // search state to "idle" once it is done.
+    return input.searchingForDevice ? "welcome" : "device";
   }
   if (input.providerSelectionRequired) {
     return "providers";

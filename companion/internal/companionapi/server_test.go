@@ -884,6 +884,66 @@ func TestDeviceSearchProbesEveryRememberedVibeTV(t *testing.T) {
 	}
 }
 
+func TestDeviceSearchRefusesWithoutLocalNetwork(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		DeviceID:     "active-device",
+		DeviceTarget: "http://192.168.178.73",
+	}
+	server := newTestServer(t, cfg)
+	server.subnetTargets = func() []string { return nil }
+	server.defaultWiFiTarget = func() string { return "" }
+	server.localNetworkAvailable = func() bool { return false }
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	started := time.Now()
+	server.Handler().ServeHTTP(rec, req)
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("offline refusal took %s; must not wait out the search window", elapsed)
+	}
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error.Code != "network_unavailable" {
+		t.Fatalf("code=%q body=%s", got.Error.Code, rec.Body.String())
+	}
+	if got.Error.Message == "" || got.Error.NextAction == "" {
+		t.Fatalf("refusal must carry a reason and a next action, got %+v", got.Error)
+	}
+}
+
+// The Virtual VibeTV lives on loopback, which needs no WiFi. A saved loopback
+// target keeps the search alive however offline the Mac is.
+func TestDeviceSearchWithoutLocalNetworkStillProbesLoopbackTargets(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"active-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`)
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{
+		DeviceID:     "active-device",
+		DeviceTarget: device.URL,
+	}
+	server := newTestServer(t, cfg)
+	server.subnetTargets = func() []string { return nil }
+	server.defaultWiFiTarget = func() string { return "" }
+	server.localNetworkAvailable = func() bool { return false }
+
+	devices, err := server.searchDevices(context.Background(), cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 {
+		t.Fatalf("expected the loopback VibeTV, got %+v", devices)
+	}
+}
+
 func TestDeviceSearchActuallyWaitsThirtySecondsWhenNothingIsFound(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.subnetTargets = func() []string { return nil }
@@ -9506,6 +9566,7 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 		return nil
 	}
 	server.defaultWiFiTarget = func() string { return "http://127.0.0.1:1" }
+	server.localNetworkAvailable = func() bool { return true }
 	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
 		return nil
 	}

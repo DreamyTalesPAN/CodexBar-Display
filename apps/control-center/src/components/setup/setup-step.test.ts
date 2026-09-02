@@ -16,6 +16,7 @@ const done: SetupStepInput = {
   displaySelectionSupported: true,
   initialCheckComplete: true,
   providerSelectionRequired: false,
+  searchingForDevice: false,
   themeSetupRequired: false,
 };
 
@@ -24,6 +25,55 @@ describe("deriveSetupStep", () => {
     expect(deriveSetupStep({ ...done, initialCheckComplete: false })).toBe(
       "welcome",
     );
+  });
+
+  it("stays on welcome while the search has nothing to choose from yet", () => {
+    // The first check answers in milliseconds and the search it gates takes up
+    // to 40 seconds, so gating welcome on the check alone put the whole search
+    // on a picker with an empty list and a disabled Connect.
+    expect(
+      deriveSetupStep({
+        ...done,
+        deviceUsable: false,
+        searchingForDevice: true,
+      }),
+    ).toBe("welcome");
+  });
+
+  // The background service restarts several times on a fresh install, and a
+  // search that ran into one of those gaps comes back empty. Handing that over
+  // as an answer is what put a customer on "0 VibeTVs found on your WiFi." with
+  // a dead Connect while the service was still starting.
+  it("stays on welcome while the background service is still coming up", () => {
+    expect(
+      deriveSetupStep({
+        ...done,
+        deviceUsable: false,
+        searchingForDevice: true,
+      }),
+    ).toBe("welcome");
+  });
+
+  it("hands over to the picker as soon as the search has answered", () => {
+    expect(
+      deriveSetupStep({
+        ...done,
+        deviceUsable: false,
+        searchingForDevice: false,
+      }),
+    ).toBe("device");
+  });
+
+  it("never sends a connected customer back to welcome", () => {
+    // Pairing returns the search state to "idle", which reads as "searching"
+    // to everything that only looks at the search state.
+    expect(
+      deriveSetupStep({
+        ...done,
+        providerSelectionRequired: true,
+        searchingForDevice: true,
+      }),
+    ).toBe("providers");
   });
 
   it("asks for a VibeTV before anything that needs one", () => {

@@ -133,7 +133,6 @@ type runtimeDeps struct {
 	resolvePort           func(string) (string, error)
 	deviceCaps            func(string) (protocol.DeviceCapabilities, error)
 	fetchProviders        func(context.Context) ([]codexbar.ParsedFrame, error)
-	firstRunSetupPending  func() bool
 	fetchDashboard        func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error)
 	fetchProvider         func(context.Context, string) (codexbar.ParsedFrame, error)
 	fetchInventory        func(context.Context) ([]codexbar.ProviderSetting, error)
@@ -175,9 +174,6 @@ func (d runtimeDeps) withDefaults() runtimeDeps {
 	}
 	if d.fetchProviders == nil {
 		d.fetchProviders = codexbar.FetchAllProviders
-	}
-	if d.firstRunSetupPending == nil {
-		d.firstRunSetupPending = codexbar.FirstRunProviderSetupPending
 	}
 	if d.fetchDashboard == nil {
 		d.fetchDashboard = codexbar.FetchDashboardProviders
@@ -2107,10 +2103,11 @@ func providerSnapshotMaxAge() time.Duration {
 
 func collectorWarmupMaxAge() time.Duration {
 	// Bound the warm-up window in which a cycle waits for the first collection
-	// instead of settling on a provider verdict. The bound must outlast the
-	// synchronous first-run provider detection (a ~90s-4min probe holds the
-	// config bootstrap, and the dashboard serve starts only after it), or a
-	// fresh Mac reports a fabricated collection error mid-setup.
+	// instead of settling on a provider verdict. It must outlast a first read
+	// on a slow Mac, or a fresh one reports a fabricated collection error
+	// mid-setup. Generous on purpose: it only delays a "no providers" verdict,
+	// and the first-run inventory that used to make it necessary -- a 90s-4min
+	// probe holding the config bootstrap -- is gone.
 	const fallback = 5 * time.Minute
 	raw := strings.TrimSpace(os.Getenv(collectorWarmupEnvVar))
 	if raw == "" {

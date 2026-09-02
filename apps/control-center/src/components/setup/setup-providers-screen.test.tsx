@@ -107,14 +107,57 @@ describe("SetupProvidersScreen", () => {
     );
   });
 
-  // The companion refuses to write setup complete while any enabled provider
-  // still needs the customer. Letting Continue through here only produced a
-  // button that answered and left the customer on the same step with nothing
-  // said. The way on is to sign the provider in or switch it off.
-  it("cannot continue while a provider that is on still needs the customer", () => {
+  // CodexBar ships 65 providers and almost all of them are off. Putting the
+  // whole inventory on screen buried the customer's own two under a page of
+  // names they have never heard of.
+  it("shows ten providers and offers the rest", () => {
+    const many = Array.from({ length: 14 }, (_, index) =>
+      provider({
+        health: "healthy",
+        label: `Provider ${index}`,
+        providerId: `p${index}`,
+      }),
+    );
+    const html = render({ providers: many });
+
+    expect(html).toContain("Provider 9");
+    expect(html).not.toContain("Provider 10");
+    expect(html).toContain("Show more providers (4 left)");
+  });
+
+  it("does not offer more when everything already fits", () => {
+    const html = render({ providers: [claude, copilot] });
+
+    expect(html).not.toContain("Show more providers");
+  });
+
+  // CodexBar switches providers on by itself, so a Mac whose own provider is
+  // working can still carry a second one that is merely not signed in. Holding
+  // the customer there closed the only step with no Back and no Skip, over a
+  // provider the rotation would have skipped anyway.
+  it("continues on one working provider, whatever the others report", () => {
     const html = render({
       providers: [
         claude,
+        provider({
+          health: "auth_required",
+          label: "GitHub Copilot",
+          message: "Sign in required.",
+          providerId: "copilot",
+        }),
+      ],
+    });
+
+    expect(html).not.toMatch(
+      /<button[^>]*disabled=""[^>]*>[^<]*<span>Continue<\/span>/,
+    );
+  });
+
+  // One is the floor, not zero: without a working provider VibeTV has nothing
+  // real to put on the screen, and the companion refuses the completion.
+  it("cannot continue while no provider that is on is ready", () => {
+    const html = render({
+      providers: [
         provider({
           health: "auth_required",
           label: "GitHub Copilot",

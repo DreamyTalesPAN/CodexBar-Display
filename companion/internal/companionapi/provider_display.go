@@ -153,15 +153,26 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 	// so measuring it against the enabled set refused the customer's own choice
 	// and offered turning the other providers off as the way to keep it.
 	wholePoolRequired := selection.Mode == providerDisplayModeAutomatic
+	// Setup is complete once VibeTV has something real to show, which is one
+	// working provider -- the rule docs/control-center-ui-principles.md has
+	// carried all along. Demanding every enabled one instead handed a customer
+	// whose second provider was merely not signed in a wizard they could not
+	// leave, on a Mac whose first provider was working: the rotation already
+	// skips what it cannot read (daemon.go preferAvailableProviders), so the
+	// broken one costs nothing but the refusal did.
+	ready := 0
 	for _, setting := range enabled {
 		if _, ok := selected[setting.ID]; wholePoolRequired && !ok {
 			writeError(w, http.StatusConflict, "provider_display_incomplete", "Every enabled provider must be included for display.", "Add this provider to Automatic mode, select it in Always show, or turn it off.")
 			return
 		}
-		if !s.providerHasFreshReadiness(setting, now) {
-			writeError(w, http.StatusConflict, "provider_check_required", "Every enabled provider must be ready.", "Check each enabled provider and fix or turn off any provider that needs attention.")
-			return
+		if s.providerHasFreshReadiness(setting, now) {
+			ready++
 		}
+	}
+	if ready == 0 {
+		writeError(w, http.StatusConflict, "provider_check_required", "At least one enabled provider must be ready.", "Check your providers and fix or turn off any provider that needs attention.")
+		return
 	}
 	cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
 		current.SetProviderSelectionSetupComplete(true)

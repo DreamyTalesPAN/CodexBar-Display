@@ -37,6 +37,7 @@ import {
 } from "./control-center-runtime";
 import {
   deviceAwaitsProviderSetup,
+  deviceIsWaitingForUsage,
   deviceCanContinueThemeSetup,
   deviceCompletedThemeSetup,
   deviceIsActive,
@@ -46,6 +47,7 @@ import {
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
   providerSetupIsChecking,
+  providerSetupNeedsEngineRecovery,
   providerSetupRequiresRecovery,
   type ActiveTab,
   type AppearanceSection,
@@ -91,6 +93,7 @@ import {
 } from "./provider-usage-reconcile";
 import { isProviderItem } from "./provider-picker";
 import { MacAppDownloadScreen } from "./setup/mac-app-download-screen";
+import { SetupWelcomeScreen } from "./setup/setup-welcome-screen";
 import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
 import { displayPreviewsFor } from "./setup/setup-display-previews";
@@ -111,9 +114,7 @@ import {
 } from "./setup/setup-usage-dialog";
 import { SetupRecoveryDialogs } from "./setup/setup-recovery-dialogs";
 import { SetupWizard } from "./setup/setup-wizard";
-import { SetupStatusScreen } from "./setup-status-screen";
 import { SettingsScreen } from "./settings-screen";
-import { SupportReportActions } from "./support-report-actions";
 import { collectSupportReport } from "./support-report";
 import {
   buildThemeInstallBlocker,
@@ -133,7 +134,12 @@ const COMPANION_REQUEST_TIMEOUT_MS = 45_000;
 const COMPANION_REPAIR_REQUEST_TIMEOUT_MS = 120_000;
 const DEVICE_SEARCH_REQUEST_TIMEOUT_MS = 40_000;
 const RECENT_COMPANION_REQUEST_MS = 5_000;
-const LAUNCHD_RECOVERY_GRACE_MS = 12_000;
+// launchd restarts the service itself: KeepAlive with a 10s ThrottleInterval
+// (main.swift:3759-3761), then the process start, then the 5s poll that sees it
+// -- about seventeen seconds before the app has learnt anything. Repairing at
+// twelve took the service down again just as launchd was bringing it up, and
+// turned a restart into an outage.
+const LAUNCHD_RECOVERY_GRACE_MS = 25_000;
 // Only a safety net for a native side that never answers at all, so it has to
 // outlast the repair's own bounded worst case: 8s initial health gate + 20s
 // unregister quiesce + 2s settle + 35s health wait, plus provisioning and app
@@ -335,15 +341,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [deviceSession, setDeviceSession] = useState<{
     device: DeviceInfo | null;
     themeSetupIdentity: ThemeSetupDeviceIdentity | null;
-    providerIncidentOpen: boolean;
   }>({
     device: null,
     themeSetupIdentity: null,
-    providerIncidentOpen: false,
   });
   const device = deviceSession.device;
   const themeSetupIdentity = deviceSession.themeSetupIdentity;
-  const providerIncidentOpen = deviceSession.providerIncidentOpen;
   const setDevice = useCallback(
     (
       update:
@@ -408,9 +411,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
   );
+  // null until the app has to step in. launchd brings the service back on its
+  // own, and saying so first turned a restart nobody would have noticed into a
+  // dialog over whatever the customer was doing.
   const [runtimeRecoveryPhase, setRuntimeRecoveryPhase] = useState<
-    "repairing" | "failed"
-  >("repairing");
+    "repairing" | "failed" | null
+  >(null);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
   const [hasEnteredControlCenter, setHasEnteredControlCenter] = useState(false);
   // The closing step is shown for a moment before the app takes over, but only
@@ -421,10 +427,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [setupFinished, setSetupFinished] = useState(false);
   // Dismissing the recovery dialog only hides it; the repair itself runs on.
   const [runtimeRecoveryHidden, setRuntimeRecoveryHidden] = useState(false);
-  const runtimeRecoveryWasNeeded = useRef(false);
   // Hiding the usage dialog hides the announcement; the repair itself runs on.
   const [usageFailureHidden, setUsageFailureHidden] = useState(false);
-  const usageFailureWasOpen = useRef(false);
   const lastFirmwareErrorRef = useRef<ApiError | null>(null);
   const [supportDiagnostics, setSupportDiagnostics] =
     useState<SupportDiagnostics | null>(null);
@@ -504,23 +508,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           current.themeSetupIdentity,
           mergedDevice,
         ),
-        providerIncidentOpen: deviceAwaitsProviderSetup(mergedDevice),
       };
     });
   }, []);
 
-  // Connectivity and provider readiness are different questions. A VibeTV that
-  // was waiting for a provider and is now confirmed gone is a connection
-  // problem: carrying its incident past the loss held the AI recovery screen in
-  // front of the reconnect picker for a device that is not there at all. Only
-  // the recovery gate's confirmed-loss paths use this -- a single missed poll or
-  // a Mac App outage must still keep the incident, because the repair takes the
-  // Mac App down on purpose.
   const markDeviceLost = useCallback(() => {
     setDeviceSession((current) => ({
       ...current,
       device: markDeviceDisconnected(current.device),
-      providerIncidentOpen: false,
     }));
   }, []);
 
@@ -566,7 +561,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setDeviceState(
         next.paired ? "paired" : next.connected ? "online" : "unknown",
       );
-      setDeviceCandidates([]);
+      // Deliberately not clearing deviceCandidates: setup holds the device
+      // step for the whole connect-and-firmware sequence, so emptying the list
+      // here took the customer's own selection off the screen mid-connect and
+      // left the count reading "0 VibeTVs found on your WiFi." Only a fresh
+      // scan and a confirmed device loss clear the list.
       setDeviceSearchState("idle");
     },
     [mergeDevice, setDeviceRecoveryGate],
@@ -1392,7 +1391,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           return null;
         }
         acceptDeviceSnapshot(payload.device);
-        setDeviceCandidates([]);
         pendingPairingCandidate.current = null;
         setDeviceSearchState("idle");
         setLastError(null);
@@ -1431,7 +1429,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             )
           ) {
             acceptDeviceSnapshot(statusPayload.device);
-            setDeviceCandidates([]);
             pendingPairingCandidate.current = null;
             setDeviceSearchState("idle");
             setLastError(null);
@@ -1641,11 +1638,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       forgetDeviceTarget();
       setDeviceRecoveryGate(resetDeviceRecoveryGate());
       setDeviceTarget("");
-      setDeviceSession({
-        device: null,
-        themeSetupIdentity: null,
-        providerIncidentOpen: false,
-      });
+      setDeviceSession({ device: null, themeSetupIdentity: null });
       setDeviceState("unknown");
       setDeviceCandidates([]);
       setDeviceSearchState("idle");
@@ -2124,6 +2117,28 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const connectionRecoveryRequired =
     isConnectionRecoveryError(lastError) || deviceNeedsExplicitConnect(device);
+
+  // A search the background service did not survive answered nothing, and
+  // nothing is not an answer. The service restarts several times while it
+  // installs its usage engine on a fresh Mac, so the first search regularly
+  // lands in one of those gaps; keeping its empty result told the customer
+  // their VibeTV was not on the network. Once the service is back, search again.
+  const companionWasOnline = useRef(false);
+  // Sticky: a service that has answered once is one launchd will restart.
+  const companionEverOnline = useRef(false);
+  useEffect(() => {
+    const online = companionStatus === "online";
+    const returned = online && !companionWasOnline.current;
+    companionWasOnline.current = online;
+    companionEverOnline.current = companionEverOnline.current || online;
+    if (!returned || deviceIsCustomerConnected(device)) {
+      return;
+    }
+    didRunAutomaticDeviceSearch.current = false;
+    setDeviceSearchState((current) =>
+      current === "not-found" || current === "failed" ? "idle" : current,
+    );
+  }, [companionStatus, device]);
 
   useEffect(() => {
     if (
@@ -2989,6 +3004,52 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     providerSelectionSetup,
   ]);
 
+  /**
+   * Keeps the Automatic pool equal to the set of switched-on providers.
+   *
+   * Only for Automatic: a fixed selection names one provider on purpose, and
+   * widening it would undo the customer's choice. A fixed selection whose
+   * provider was just switched off is left alone too -- the companion refuses
+   * it, and refusing is what hands the customer back to the display step where
+   * they can pick another one.
+   */
+  const syncAutomaticProviderPool = useCallback(
+    async (item: PreferenceDescriptor, enabled: boolean) => {
+      const providerId = item.providerId;
+      // Maintains an existing selection; never creates one. Writing a pool
+      // before the customer has made the choice marks the display configured
+      // and makes setup skip the very step that asks for it.
+      if (
+        !providerId ||
+        providerDisplay?.configured !== true ||
+        providerDisplay.mode !== "automatic"
+      ) {
+        return;
+      }
+      const current = new Set(providerDisplay.providerIds || []);
+      if (current.has(providerId) === enabled) {
+        return;
+      }
+      if (enabled) {
+        current.add(providerId);
+      } else {
+        current.delete(providerId);
+      }
+      // An empty pool is a selection the companion refuses. Switching off the
+      // last provider is a real state -- it is what the provider step is for --
+      // so leave the stored pool as it is rather than writing one that cannot
+      // be stored.
+      if (current.size === 0) {
+        return;
+      }
+      await updateProviderDisplay(
+        { mode: "automatic", providerIds: [...current] },
+        providerId,
+      );
+    },
+    [providerDisplay, updateProviderDisplay],
+  );
+
   const updateProviderPreference = useCallback(
     async (item: PreferenceDescriptor, value: boolean) => {
       if (value) {
@@ -3031,6 +3092,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           ),
         );
         setProviderPreferencesError(null);
+        // Automatic means "every provider that is switched on", so switching
+        // one on or off IS the change to the pool. The runtime filters strictly
+        // by the stored list (daemon.go applyProviderDisplaySelection), so a
+        // provider left out of it is enabled, healthy, and permanently invisible
+        // on the device -- with nothing on screen saying why. Writing the pool
+        // here is the one central rule that keeps them equal; the alternative
+        // was a per-row inclusion control plus a repair effect to finish what it
+        // half-did.
+        await syncAutomaticProviderPool(payload.item, value);
         if (value) {
           await checkProvider(payload.item);
         }
@@ -3062,6 +3132,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       refreshProviderPreferences,
       refreshUsage,
       runCompanion,
+      syncAutomaticProviderPool,
     ],
   );
 
@@ -3567,11 +3638,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // screen in front of a repair that had just succeeded.
   const providerRecoveryBusy =
     busyAction === "usage-service-repair" || busyAction === "providers-retry";
+  // What the VibeTV reports as `provider_setup_required` is the ordinary state
+  // of a Mac whose customer has not picked a provider yet -- nothing is
+  // switched on for CodexBar to read. Treating it as a broken usage service
+  // sent the automatic recovery after it, and that recovery unregisters the
+  // background service for some twenty seconds before it reinstalls the engine
+  // (main.swift:3162-3204). The VibeTV then reported "no provider" again and it
+  // started over: a Mac left on the provider step tore its own background
+  // service down every couple of minutes.
+  //
+  // Only CodexBar's own verdict on its engine decides now. Reinstalling an
+  // engine that reports ready cannot switch a provider on.
   const providerRecoveryRequired =
     (companionStatus === "online" || providerRecoveryBusy) &&
-    (providerIncidentOpen ||
-      deviceAwaitsProviderSetup(device) ||
-      (waitingForFirstUsage && providerSetupRequiresRecovery(providerSetup)));
+    providerSetupNeedsEngineRecovery(providerSetup);
   const initialProviderCheckInProgress =
     themeSetupRequired &&
     waitingForFirstUsage &&
@@ -3583,26 +3663,32 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? setupUsageCauseFor(providerSetup)
       : null;
 
-  // A dismissal covers the incident it was made during, not the next one.
+  // A dismissal covers the incident it was made during, not the next one. A
+  // "checking" answer is the probe still running, not the incident ending:
+  // the companion reports it during every cache refresh, and treating it as
+  // the end re-opened a dismissed dialog every thirty seconds.
   useEffect(() => {
-    if (usageFailure) {
-      usageFailureWasOpen.current = true;
+    if (usageFailure || providerSetupIsChecking(providerSetup)) {
       return;
     }
-    if (usageFailureWasOpen.current) {
-      usageFailureWasOpen.current = false;
-      setUsageFailureHidden(false);
-    }
-  }, [usageFailure]);
+    const timer = window.setTimeout(() => setUsageFailureHidden(false), 0);
+    return () => window.clearTimeout(timer);
+  }, [providerSetup, usageFailure]);
 
   useEffect(() => {
     if (!providerRecoveryRequired) {
       // A Mac App that briefly disappears does not end a provider incident, and
       // the native repair takes it down on purpose. Ending the incident on that
       // gap would relaunch the automatic repair instead of showing the approved
-      // Try again. Only a reachable Mac App that no longer needs recovery ends
-      // one.
-      if (companionStatus === "online") {
+      // Try again. A "checking" answer does not end one either -- the companion
+      // reports it during every cache refresh, and re-arming on it fired the
+      // automatic repair once per probe cycle, tearing the background service
+      // down over and over. Only a reachable Mac App whose settled answer no
+      // longer needs recovery ends one.
+      if (
+        companionStatus === "online" &&
+        !providerSetupIsChecking(providerSetup)
+      ) {
         providerRecoveryAttempted.current = false;
         providerRecoveryManualAttempted.current = false;
       }
@@ -3633,6 +3719,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, [
     companionStatus,
     providerRecoveryRequired,
+    providerSetup,
     repairUsageService,
     themeInstallInProgress,
   ]);
@@ -3664,19 +3751,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     onPreferenceChange: updateProviderPreference,
     onRepairUsageService: repairUsageService,
   };
-  const needsRuntimeRecovery = companionStatus === "missing";
+  // The usage-service recovery unregisters the background service on purpose
+  // and re-registers it some twenty seconds later. That is this page's own
+  // request, so reporting it as an outage announced our own work as a fault.
+  const needsRuntimeRecovery =
+    companionStatus === "missing" && !providerRecoveryBusy;
 
-  // A dismissal covers the incident it was made during, not the next one.
-  useEffect(() => {
-    if (needsRuntimeRecovery) {
-      runtimeRecoveryWasNeeded.current = true;
-      return;
-    }
-    if (runtimeRecoveryWasNeeded.current) {
-      runtimeRecoveryWasNeeded.current = false;
-      setRuntimeRecoveryHidden(false);
-    }
-  }, [needsRuntimeRecovery]);
   const controlCenterAvailable =
     hasActiveDevice && !connectionRecoveryRequired && !recoveryPickerOpen;
   const disabledTabs: ActiveTab[] = hasEnteredControlCenter
@@ -3715,22 +3795,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       clearRuntimeRepairTimeout();
       runtimeRepairAttempted.current = false;
       const resetTimer = window.setTimeout(() => {
-        setRuntimeRecoveryPhase("repairing");
+        setRuntimeRecoveryPhase(null);
+        setRuntimeRecoveryHidden(false);
       }, 0);
       return () => window.clearTimeout(resetTimer);
-    }
-    if (!isNativeControlCenterApp()) {
-      const failureTimer = window.setTimeout(() => {
-        setRuntimeRecoveryPhase("failed");
-      }, 0);
-      return () => window.clearTimeout(failureTimer);
     }
     if (runtimeRepairAttempted.current) {
       return;
     }
-    const timer = window.setTimeout(() => {
-      requestRuntimeRepair();
-    }, LAUNCHD_RECOVERY_GRACE_MS);
+    // A service that never answered has no restart coming: repairing it is the
+    // only way forward and the customer is told at once. One that disappeared
+    // mid-session gets the grace first, and hears nothing until it is over.
+    const timer = window.setTimeout(
+      requestRuntimeRepair,
+      companionEverOnline.current ? LAUNCHD_RECOVERY_GRACE_MS : 0,
+    );
     return () => window.clearTimeout(timer);
   }, [clearRuntimeRepairTimeout, needsRuntimeRecovery, requestRuntimeRepair]);
 
@@ -3850,23 +3929,20 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       ? "not found on this WiFi"
       : "not connected yet";
 
+  // The log reads as an order of events, not as a set of statuses: everything
+  // above the newest line is dimmed, and the newest one carries the caret.
+  // Tying the dimming to whether each step had finished made three lines flip
+  // back and forth while the customer watched, for no information they could
+  // act on.
   const setupWelcomeLines = [
-    {
-      id: "service",
-      text: "starting background service",
-      tone: companionStatus === "online" ? ("done" as const) : undefined,
-    },
-    {
-      id: "usage",
-      text: "reading provider usage on this Mac",
-      tone: providerSetup ? ("done" as const) : undefined,
-    },
-    {
-      id: "device",
-      text: "looking for your VibeTV",
-      tone: deviceCandidates.length > 0 ? ("done" as const) : undefined,
-    },
-  ];
+    { id: "service", text: "starting background service" },
+    { id: "usage", text: "reading provider usage on this Mac" },
+    { id: "wifi", text: "scanning your WiFi" },
+    { id: "device", text: "looking for your VibeTV" },
+  ].map((line, index, lines) => ({
+    ...line,
+    tone: index < lines.length - 1 ? ("done" as const) : undefined,
+  }));
 
   // ---- Setup wizard -------------------------------------------------------
   // Once the customer is inside, a device that is only reconnecting stays
@@ -3883,10 +3959,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // letting a device through once the provider selection is already done would
   // carry someone whose provider just died to the live step and tell them
   // their VibeTV is running.
+  //
+  // That problem wears two shapes. With nothing switched on the stream reports
+  // `provider_setup_required`; with a provider switched on that cannot deliver
+  // (signed out, nothing fresh to read) it runs with no usage and no error
+  // code. Both have their remedy on the provider step.
   const providerSelectionRequired =
     providerSelectionSetup?.providerSelectionRequired === true;
   const deviceUsableForSetup = setupDeviceIsUsable({
-    awaitsProviderSetup: deviceAwaitsProviderSetup(device),
+    awaitsProviderSetup:
+      deviceAwaitsProviderSetup(device) || deviceIsWaitingForUsage(device),
     connectionRecoveryRequired,
     hasActiveDevice,
     hasEnteredControlCenter,
@@ -3903,6 +3985,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ),
     initialCheckComplete: initialCompanionCheckComplete,
     providerSelectionRequired,
+    // Everything before there is a VibeTV to choose belongs to the welcome
+    // step: the background service coming up, and the search itself.
+    //
+    // The service restarts several times on a fresh install -- it installs its
+    // own usage engine -- and a search running into one of those restarts comes
+    // back empty. Treating that as an answer is what put a customer on
+    // "0 VibeTVs found on your WiFi." with a dead Connect while the service was
+    // still starting, and let them press it. A service that is genuinely gone
+    // is not hidden by this: its recovery dialog is drawn over whatever step is
+    // on screen.
+    searchingForDevice:
+      startupDeviceCandidates.length === 0 &&
+      (companionStatus !== "online" ||
+        startupDeviceSearchState === "idle" ||
+        startupDeviceSearchState === "searching"),
     themeSetupRequired,
   });
   const setupOwnsScreen =
@@ -3916,7 +4013,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const enabledProviderIds = displayableProviders
     .map((item) => item.providerId)
     .filter((id): id is string => Boolean(id));
-  const setupPreviews = displayPreviewsFor(usage, enabledProviderIds);
+  const setupPreviews = displayPreviewsFor(
+    usage,
+    displayableProviders.map((item) => ({
+      id: item.providerId,
+      label: item.label,
+    })),
+  );
   // Step 05 keeps offering all four live themes: hiding one would make the
   // device's limitation invisible. The Install is gated by the same rules the
   // theme library uses, so setup cannot promise what the device would refuse.
@@ -3987,25 +4090,42 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     },
   };
 
-  const setupAiFixPrompt = () =>
+  // setupLog is what the failing screen is showing; the wizard owns it and
+  // passes it in. Optional so the pre-hydration welcome paint, which has no
+  // wizard behind it yet, can still offer the same Help control.
+  const setupAiFixPrompt = (setupLog: string[] = []) =>
     buildAiFixPrompt({
-      appVersion: companionInfo?.version,
+      appBuild: companionInfo?.app?.build,
+      appVersion: companionInfo?.app?.version,
+      companionCommit: companionInfo?.runtime?.commit,
+      companionVersion: companionInfo?.version,
       deviceSummary: setupDeviceSummary,
       events,
+      lastError,
       osVersion: supportDiagnostics?.environment?.os,
+      providers: setupProviders.map((item) => ({
+        id: item.providerId || item.id,
+        message: item.health?.message,
+        state: item.health?.state,
+      })),
       screen: setupStep,
+      setupLog,
     });
 
   // The background service can die at any point, so its recovery is drawn
   // over whatever is on screen rather than replacing it. Everything else is
   // one screen at a time.
   function renderScreen() {
+    // The first paint is the wizard's own welcome step, not a second loading
+    // screen that happens to look like it. The native window shows the same
+    // brand and the same running log until the WebView takes over, so the
+    // customer sees one screen from launch, not a handover between two.
     if (runtimeSurface === "unknown") {
       return (
-        <ControlCenterBootScreen
-          diagnostics={supportDiagnostics}
+        <SetupWelcomeScreen
+          aiFixPrompt={setupAiFixPrompt}
+          lines={setupWelcomeLines}
           onCreateSupportReport={loadSupportDiagnostics}
-          supportReportBusy={supportReportBusy}
         />
       );
     }
@@ -4023,6 +4143,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return (
         <SetupWizard
           aiFixPrompt={setupAiFixPrompt}
+          usageFailure={usageFailureHidden ? null : usageFailure}
+          onRepairUsageService={retryUsageService}
+          onDismissUsageFailure={() => setUsageFailureHidden(true)}
           automaticPreviews={setupPreviews}
           connectSteps={setupConnectSteps}
           device={device}
@@ -4126,6 +4249,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
         {activeShellTab === "settings" ? (
           <SettingsScreen
+            automaticPreviews={setupPreviews}
             brightness={brightness}
             busyAction={firmwareUpdateInProgress ? "firmware-update" : busyAction}
             device={device}
@@ -4238,11 +4362,22 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         retrying={busyAction === "runtime-repair"}
       />
       {/*
-        Both dialogs are centred and would otherwise land on each other while a
-        provider incident is still busy and the Mac App has gone missing. The
-        runtime repair wins: it is the one that took the Mac App down.
+        Every one of these is centred, so a second one lands on top of the
+        first: two stacked cards, the lower one's buttons unreachable behind
+        the upper one. That is what a customer met after pressing Connect on a
+        fresh Mac -- the firmware check failed over "Finish AI setup on this
+        Mac", and neither could be answered.
+
+        The runtime repair wins over this one: it is what took the Mac App down.
+        And the whole of setup wins over it too. Every failure inside the wizard
+        is already a dialog over the step that caused it, and the provider step
+        is where a usage problem is dealt with -- so this ambient surface has
+        nothing to add there and is still waiting once setup is done.
       */}
-      {usageFailure && !usageFailureHidden && !needsRuntimeRecovery ? (
+      {usageFailure &&
+      !usageFailureHidden &&
+      !needsRuntimeRecovery &&
+      !setupOwnsScreen ? (
         <SetupUsageDialog
           cause={usageFailure}
           onCreateSupportReport={() => void loadSupportDiagnostics()}
@@ -4252,35 +4387,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         />
       ) : null}
     </>
-  );
-}
-
-function ControlCenterBootScreen({
-  diagnostics,
-  onCreateSupportReport,
-  supportReportBusy,
-}: {
-  diagnostics?: SupportDiagnostics | null;
-  onCreateSupportReport: () => void;
-  supportReportBusy: boolean;
-}) {
-  return (
-    <SetupStatusScreen
-      busy
-      description="Checking the Mac App and your last connected VibeTV."
-      footer={
-        <SupportReportActions
-          align="center"
-          creating={supportReportBusy}
-          emphasis="secondary"
-          diagnostics={diagnostics}
-          onCreate={onCreateSupportReport}
-        />
-      }
-      statusLabel="Checking the Mac App and your last connected VibeTV."
-      statusVisible={false}
-      title="Starting Control Center"
-    />
   );
 }
 

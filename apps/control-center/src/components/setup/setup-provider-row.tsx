@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, RefreshCw } from "lucide-react";
+import { ChevronRight, Copy, ExternalLink, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,11 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Switch } from "@/components/ui/switch";
+import {
+  FULL_DISK_ACCESS_SETTINGS_URL,
+  openProviderSignIn,
+} from "../control-center-runtime";
+import { providerSignInFor, providerSignInLabel } from "./provider-sign-in";
 import { cn } from "@/lib/utils";
 import type { PreferenceHealthState } from "../control-center-types";
 
@@ -79,6 +84,13 @@ type SetupProviderRowProps = {
   enabled: boolean;
   health: PreferenceHealthState;
   label: string;
+  providerId: string;
+  /**
+   * What the usage service itself said about this provider, already redacted.
+   * It is the only per-provider guidance that exists, so it replaces our own
+   * wording wherever it says something the customer can act on.
+   */
+  reportedMessage?: string;
   onCheckAgain: () => void;
   onRecover: () => void;
   onToggle: (enabled: boolean) => void;
@@ -106,7 +118,9 @@ export function SetupProviderRow({
   onCheckAgain,
   onRecover,
   onToggle,
+  providerId,
   recovering = false,
+  reportedMessage,
   saving = false,
 }: SetupProviderRowProps) {
   const reported = setupProviderRowVariant(health);
@@ -134,6 +148,37 @@ export function SetupProviderRow({
       onClick={onCheckAgain}
     />
   );
+  // Where the customer actually signs in. The usage service names no
+  // destination in any released version, and two of its sentences name the
+  // wrong one, so this is ours -- and where we do not know one, the row offers
+  // another check rather than a control that leads nowhere.
+  const signIn = providerSignInFor(providerId, reportedMessage);
+  const signInAction = signIn ? (
+    <SetupProviderRowAction
+      icon={
+        signIn.kind === "url"
+          ? ExternalLink
+          : signIn.kind === "command"
+            ? Copy
+            : ChevronRight
+      }
+      label={providerSignInLabel(signIn, label)}
+      onClick={() => {
+        if (signIn.kind === "url") {
+          openProviderSignIn(signIn.url);
+        } else if (signIn.kind === "command") {
+          void navigator.clipboard?.writeText(signIn.command);
+        } else {
+          openProviderSignIn(FULL_DISK_ACCESS_SETTINGS_URL);
+        }
+        // Still the recovery hand-off: the customer leaves to do something and
+        // comes back, and the companion is holding the failed check that sent
+        // them for five minutes. Without this nothing asks again, and they
+        // return to the same answer with no way on.
+        onRecover();
+      }}
+    />
+  ) : null;
 
   return (
     <Item
@@ -149,12 +194,10 @@ export function SetupProviderRow({
           <Spinner />
         ) : variant === "sign_in" ? (
           <>
-            <SetupProviderRowMessage>Sign in to {label}</SetupProviderRowMessage>
-            <SetupProviderRowAction
-              icon={ChevronRight}
-              label={`Sign in to ${label}`}
-              onClick={onRecover}
-            />
+            <SetupProviderRowMessage>
+              {reportedMessage || `Sign in to ${label}`}
+            </SetupProviderRowMessage>
+            {signInAction || checkAgain}
           </>
         ) : variant === "waiting" ? (
           <>
@@ -181,20 +224,31 @@ export function SetupProviderRow({
         ) : variant === "permission" ? (
           <>
             <SetupProviderRowMessage>
-              Allow access in macOS
+              {reportedMessage || "Allow access in macOS"}
             </SetupProviderRowMessage>
-            <SetupProviderRowAction
-              icon={ChevronRight}
-              label={`Allow access for ${label} in macOS`}
-              onClick={onRecover}
-            />
+            {/*
+              A macOS permission is not fixed by a login page, so only the
+              settings destination counts here; anything else would send the
+              customer to sign in to an account they are already signed in to.
+            */}
+            {signIn?.kind === "full-disk-access" ? (
+              signInAction
+            ) : (
+              <SetupProviderRowAction
+                icon={ChevronRight}
+                label={`Allow access for ${label} in macOS`}
+                onClick={onRecover}
+              />
+            )}
           </>
         ) : variant === "timed_out" ? (
           checking ? (
             runningCheck
           ) : (
             <>
-              <SetupProviderRowMessage>Check timed out</SetupProviderRowMessage>
+              <SetupProviderRowMessage>
+                {reportedMessage || "Check timed out"}
+              </SetupProviderRowMessage>
               {checkAgain}
             </>
           )
@@ -209,7 +263,7 @@ export function SetupProviderRow({
           ) : (
             <>
               <SetupProviderRowMessage>
-                No usage data on this account
+                {reportedMessage || "No usage data on this account"}
               </SetupProviderRowMessage>
               {checkAgain}
             </>
