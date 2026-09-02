@@ -131,12 +131,14 @@ export function deriveSetupStep(input: SetupStepInput): SetupStep {
 /**
  * Where Back goes from a step, or null where there is no way back.
  *
- * Nothing before the provider step can be returned to: the welcome step has no
- * controls, and the device is paired by the time the provider step is reached,
- * so going back to pick another one is a settings job rather than a wizard one.
+ * The welcome step has no controls, so nothing returns to it. The device step
+ * is the first choice the customer makes, and Connect is its way forward
+ * again: a connect that finishes releases the step.
  */
 export function previousSetupStep(step: SetupStep): SetupStep | null {
   switch (step) {
+    case "providers":
+      return "device";
     case "display":
       return "providers";
     case "theme":

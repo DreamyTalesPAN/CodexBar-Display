@@ -164,14 +164,34 @@ describe("SetupWizard: going back", () => {
     ).toBeTruthy();
   });
 
-  it("does not offer Back on the step it lands on, and still moves on", async () => {
-    render(<SetupWizard {...baseProps({ step: "display" })} />);
+  // The device step is the first choice the customer makes, so Back reaches
+  // it from the provider step. There is no Continue on it: Connect is what
+  // moves on, and a connect that finishes releases the step again.
+  it("walks back to the device step, and Connect carries the customer on again", async () => {
+    const props = baseProps({
+      step: "display",
+      deviceCandidates: [
+        {
+          deviceId: "vibetv-1",
+          target: "http://192.168.178.73",
+          known: true,
+        } as never,
+      ],
+      connectSteps: {
+        connect: vi.fn(async () => null),
+        checkFirmware: vi.fn(async () => null),
+        installFirmware: vi.fn(),
+      } as unknown as SetupWizardProps["connectSteps"],
+    });
+    render(<SetupWizard {...props} />);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-
-    // No way back from the provider step by design -- so Continue has to work.
+    expect(shownStep()).toBe("Choose AI providers");
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Choose your VibeTV");
     expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
     });
     expect(shownStep()).toBe("Display Mode");
   });

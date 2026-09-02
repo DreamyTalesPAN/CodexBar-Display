@@ -2949,3 +2949,23 @@ issue scope, or release permission never implies UI permission.
   on a working provider and a real first frame.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/scripts/test-customer-flows.mjs`.
+
+## 2026-09-02 — Back sits top left and reaches the device step
+
+- User approval: The user asked for it from the running wizard on the bench:
+  the ghost Back buttons were missing top left, and there was no way back to
+  the previous setup step (2026-09-02).
+- Approved customer-visible result: **Every setup step with a step before it
+  shows a ghost `Back` button in the top left corner**, where it used to sit
+  bottom left. **The provider step now offers Back as well**, to the device
+  step: the VibeTV that was connected is still on the list there, and pressing
+  `Connect` runs the connect and firmware check again and carries the customer
+  forward once it finishes. Back from Display Mode and from the theme step is
+  unchanged. The welcome and device steps still have none: there is no choice
+  before them to return to.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard-screen.tsx`,
+  `apps/control-center/src/components/setup/setup-step.ts`,
+  `apps/control-center/src/components/setup/setup-connect.ts`,
+  `apps/control-center/src/components/setup/setup-wizard.tsx`, their tests,
+  and this approval record.
+

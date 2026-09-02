@@ -19,7 +19,7 @@ type SetupWizardScreenProps = {
 
 /**
  * The frame every setup step sits in: one centred column, Help bottom right,
- * Back bottom left. Both corner controls stay above the dialog overlay so the
+ * Back top left. Both corner controls stay above the dialog overlay so the
  * customer is never locked out of help by an error.
  */
 export function SetupWizardScreen({
@@ -51,7 +51,7 @@ export function SetupWizardScreen({
       </div>
 
       {onBack ? (
-        <div className="fixed bottom-5 left-5 z-60">
+        <div className="fixed top-5 left-5 z-60">
           <Button
             className="text-muted-foreground"
             onClick={onBack}

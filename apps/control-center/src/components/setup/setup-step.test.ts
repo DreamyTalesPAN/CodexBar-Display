@@ -137,15 +137,15 @@ describe("deriveSetupStep", () => {
 });
 
 describe("previousSetupStep", () => {
-  it("offers no way back before the device is paired", () => {
+  it("offers no way back to a step with no choice on it", () => {
     expect(previousSetupStep("welcome")).toBeNull();
     expect(previousSetupStep("device")).toBeNull();
-    expect(previousSetupStep("providers")).toBeNull();
   });
 
   it("walks back through the choices that can be revisited", () => {
     expect(previousSetupStep("theme")).toBe("display");
     expect(previousSetupStep("display")).toBe("providers");
+    expect(previousSetupStep("providers")).toBe("device");
   });
 
   it("has nowhere to go from the last step", () => {

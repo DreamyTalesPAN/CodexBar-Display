@@ -156,7 +156,17 @@ export function SetupWizard(props: SetupWizardProps) {
     mode: ProviderDisplaySelection["mode"];
     providerId: string | null;
   } | null>(null);
-  const connect = useSetupConnect(connectSteps, props.firmwareProgress);
+  // The counterpart to goBack. Without it the override outlives the visit it
+  // was made for: Continue answers, the derived step is already ahead, and the
+  // customer is held on the step they came back to with no Back button left.
+  // The device step has no Continue; there the connect sequence finishing is
+  // what moves on.
+  const goForward = useCallback(() => setWentBackTo(null), []);
+  const connect = useSetupConnect(
+    connectSteps,
+    props.firmwareProgress,
+    goForward,
+  );
 
   // Pairing publishes the connected VibeTV before the firmware check and any
   // install have finished, so the derived step can move on while the connect
@@ -202,11 +212,6 @@ export function SetupWizard(props: SetupWizardProps) {
         setWentBackTo(back);
       }
     : undefined;
-  // The counterpart to goBack. Without it the override outlives the visit it
-  // was made for: Continue answers, the derived step is already ahead, and the
-  // customer is held on the step they came back to with no Back button left.
-  const goForward = useCallback(() => setWentBackTo(null), []);
-
   const preselected = useMemo(() => {
     // Only while it is still one of the answers. A scan that no longer returns
     // the VibeTV the customer had picked left the choice pointing at nothing:
