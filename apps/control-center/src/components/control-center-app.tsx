@@ -417,6 +417,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // was already set up reaches the shell without it, because nothing put the
   // customer on a step to close.
   const [setupFinished, setSetupFinished] = useState(false);
+  const finishSetup = useCallback(() => setSetupFinished(true), []);
   // The completion response clears providerSelectionRequired before the first
   // renderable frame necessarily exists. Keep this setup's confirmed device
   // usable so the next screen is Display Mode, never a flash of Connect.
@@ -4150,7 +4151,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           installingTheme={themeInstallStatus?.phase === "installing"}
           onFindManualTarget={findManualTarget}
           onCreateSupportReport={loadSupportDiagnostics}
-          onFinished={() => setSetupFinished(true)}
+          onFinished={finishSetup}
           onDisplayContinue={(selection) =>
             updateProviderDisplay(
               selection,

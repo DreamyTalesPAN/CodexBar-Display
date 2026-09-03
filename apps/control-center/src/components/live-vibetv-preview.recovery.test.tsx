@@ -61,36 +61,50 @@ afterEach(() => {
 
 describe("connected preview must self-heal (customer bug 2026-08-06)", () => {
   it("renders a real frame instead of a stale provider-setup placeholder", async () => {
-    const onPreviewReadyChange = vi.fn();
+    vi.useFakeTimers();
+    const onPreviewReady = vi.fn();
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(matchingPack)));
 
-    render(
-      createElement(LiveVibeTVPreview, {
-        device: {
-          ...connectedDevice,
+    const props = {
+      device: {
+        ...connectedDevice,
+        target: "http://192.168.178.73",
+        ready: false,
+        health: { ok: true },
+        stream: {
+          healthy: false,
+          running: true,
           target: "http://192.168.178.73",
-          ready: false,
-          health: { ok: true },
-          stream: {
-            healthy: false,
-            running: true,
-            target: "http://192.168.178.73",
-            errorCode: "provider_setup_required",
-          },
+          errorCode: "provider_setup_required",
         },
-        displayFrame: renderableFrame,
-        onPreviewReadyChange,
-        usage: null,
-      }),
-    );
+      },
+      displayFrame: renderableFrame,
+      onPreviewReady,
+      usage: null,
+    };
+    const { rerender } = render(createElement(LiveVibeTVPreview, props));
 
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
     expect(
-      await screen.findByRole("img", {
+      screen.getByRole("img", {
         name: /Rendered VibeTV theme codex showing Codex/i,
       }),
     ).toBeTruthy();
     expect(screen.queryByText(/Waiting for AI setup/i)).toBeNull();
-    expect(onPreviewReadyChange).toHaveBeenCalledWith(true);
+    act(() => vi.advanceTimersByTime(2_499));
+    expect(onPreviewReady).not.toHaveBeenCalled();
+    rerender(
+      createElement(LiveVibeTVPreview, { ...props, displayFrame: null }),
+    );
+    act(() => vi.advanceTimersByTime(300_000));
+    expect(onPreviewReady).not.toHaveBeenCalled();
+    rerender(createElement(LiveVibeTVPreview, props));
+    act(() => vi.advanceTimersByTime(2_499));
+    expect(onPreviewReady).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(onPreviewReady).toHaveBeenCalledTimes(1);
   });
 
   it("keeps retrying the render pack while connected instead of staying on PREVIEW UNAVAILABLE", async () => {

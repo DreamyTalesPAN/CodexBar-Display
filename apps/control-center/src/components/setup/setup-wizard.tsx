@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type {
   ApiError,
   DeviceCandidate,
@@ -583,53 +583,12 @@ export function SetupWizard(props: SetupWizardProps) {
   }
 
   return (
-    <SetupFinalStep
+    <SetupLiveScreen
       {...help}
       device={props.device}
       displayFrame={props.displayFrame}
-      onFinished={props.onFinished}
+      onPreviewReady={props.onFinished}
       usage={props.usage}
     />
-  );
-}
-
-const PREVIEW_STABILITY_MS = 2500;
-
-/** Shows VibeTV running, then hands the screen back to the app on its own. */
-function SetupFinalStep({
-  onFinished,
-  ...live
-}: {
-  aiFixPrompt: () => string;
-  device: DeviceInfo | null;
-  displayFrame: DisplayFrameSnapshot | null;
-  onCreateSupportReport: () => Promise<SupportDiagnostics | null>;
-  onFinished: () => void;
-  usage: UsageSnapshot | null;
-}) {
-  const [previewReady, setPreviewReady] = useState(false);
-  // Kept in a ref so a re-render cannot restart the timer and leave the
-  // customer parked on this step forever.
-  const finish = useRef(onFinished);
-
-  useEffect(() => {
-    finish.current = onFinished;
-  }, [onFinished]);
-
-  useEffect(() => {
-    if (!previewReady) {
-      return;
-    }
-    // There is deliberately no maximum wait. A preview that disappears during
-    // this stability window cancels the handover, so Overview can never replace
-    // the exact screen that is showing "Live preview paused".
-    const timer = window.setTimeout(() => {
-      finish.current();
-    }, PREVIEW_STABILITY_MS);
-    return () => window.clearTimeout(timer);
-  }, [previewReady]);
-
-  return (
-    <SetupLiveScreen {...live} onPreviewReadyChange={setPreviewReady} />
   );
 }
