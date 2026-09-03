@@ -4407,7 +4407,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		return result, nil
 	}
 	renderVerificationStartedAt := time.Now()
-	health, err := s.waitForVerifiedDisplayRender(ctx, cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
+	_, err = s.waitForVerifiedDisplayRender(ctx, cfg.DeviceTarget, cfg.DeviceToken, baseline, stream)
 	logThemeInstallTiming(out, "render-verification", renderVerificationStartedAt)
 	if err != nil {
 		if !stream.Healthy {
@@ -4429,22 +4429,7 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 			},
 		}
 	}
-	device := withDisplayStreamInfo(deviceInfo{
-		Target:    publicTarget(cfg.DeviceTarget),
-		Connected: true,
-		Paired:    true,
-	}, stream)
-	if !s.withVerifiedDeviceHealth(device, health, cfg.DeviceTarget, cfg.DeviceToken, true).Ready {
-		return themeinstall.Result{}, &statusAPIError{
-			status: http.StatusBadGateway,
-			api: apiError{
-				Code:       "display_stream_refresh_failed",
-				Message:    "Theme installed, but the continuous VibeTV display stream is not running.",
-				NextAction: "Keep VibeTV powered on, then use Reload image in Control Center.",
-			},
-		}
-	}
-	fmt.Fprintln(out, "Display stream: refreshed and rendered")
+	fmt.Fprintln(out, "Theme render: verified")
 	return result, nil
 }
 

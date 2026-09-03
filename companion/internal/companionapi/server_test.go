@@ -10195,6 +10195,63 @@ func TestThemeInstallStillFailsWhenStreamIsBroken(t *testing.T) {
 	}
 }
 
+// Hardware, esp8266-smalltv-st7789, 2026-09-03: the device had already
+// rendered the installed Mini Classic theme with real Claude usage, but the
+// restarted LaunchAgent had not yet updated its stream-health log. The final
+// readiness check overwrote that stronger render proof with "Theme install
+// failed" even though the display was correct and the stream recovered on its
+// own moments later.
+func TestThemeInstallCompletesWhenRenderProofPrecedesStreamHealth(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"theme_spec_frame"},"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"path":"/themes/u/mini.json","renderOk":true}}}`))
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{ThemeID: "mini-classic"}, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{
+			Running: true,
+			Target:  target,
+			Detail:  "Display stream is starting.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		fullCount := uint64(8)
+		partialCount := uint64(3)
+		renderOK := true
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "theme_spec_frame"
+		health.Display.ActiveTheme = "mini-classic"
+		health.Display.ThemeSpec.Active = true
+		health.Display.ThemeSpec.Path = "/themes/u/mini.json"
+		health.Display.ThemeSpec.RenderOK = &renderOK
+		return health, nil
+	}
+
+	var out bytes.Buffer
+	result, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini-classic"}, &out)
+	if err != nil {
+		t.Fatalf("a verified theme render must complete the install while stream health catches up: %v", err)
+	}
+	if result.ThemeID != "mini-classic" {
+		t.Fatalf("unexpected theme result: %+v", result)
+	}
+	if !strings.Contains(out.String(), "Theme render: verified") {
+		t.Fatalf("missing verified render log:\n%s", out.String())
+	}
+}
+
 // Reload image cannot produce a picture while AI usage is unavailable. Route
 // the customer back to the Mac App without guessing whether the engine or an
 // account is the missing part.
