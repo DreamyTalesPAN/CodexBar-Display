@@ -328,8 +328,11 @@ describe("SetupWizard: live handover", () => {
           renderOk: true,
         },
       },
-    } as SetupWizardProps["device"];
-    const readyDevice = { ...waitingDevice, ready: true };
+    } as NonNullable<SetupWizardProps["device"]>;
+    const readyDevice: NonNullable<SetupWizardProps["device"]> = {
+      ...waitingDevice,
+      ready: true,
+    };
     const invalidFrame = {
       ok: true,
       frame: { v: 2, provider: "claude", label: "Claude" },

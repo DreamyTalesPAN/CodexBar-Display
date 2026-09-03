@@ -3926,6 +3926,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // carry someone whose provider just died to the live step and tell them
   // their VibeTV is running.
   const providerSelectionRequired =
+    !providerSetupCompletedThisSession &&
     providerSelectionSetup?.providerSelectionRequired === true;
   // The Companion already owns the long-running scan. The provider setup
   // summary can become ready before the separate preferences inventory has
@@ -3947,6 +3948,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ready: deviceReady,
   });
 
+  const setupLiveHandoverActive =
+    providerSetupCompletedThisSession ||
+    setupThemeInstallRequested;
   const setupStep = deriveSetupStep({
     deviceUsable: deviceUsableForSetup,
     displayConfigured: setupDisplayIsConfigured(providerDisplay),
@@ -3973,6 +3977,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         startupDeviceSearchState === "searching"),
     themeSetupRequired:
       themeSetupRequired ||
+      (setupLiveHandoverActive && !hasRenderableUsage(displayFrame)) ||
       (setupThemeChoiceRequired &&
         !(
           setupThemeInstallRequested &&
@@ -3982,9 +3987,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           themeInstallStatus.result?.themeId === selectedThemeId
         )),
   });
-  const setupLiveHandoverActive =
-    providerSetupCompletedThisSession ||
-    setupThemeInstallRequested;
   const setupOwnsScreen =
     !(setupThemeChoiceRequired && !deviceConnected) &&
     (setupStep !== "live" ||
@@ -4059,6 +4061,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (error) {
         throw error;
       }
+      setSetupThemeChoiceRequired(true);
       // Read the device back rather than trusting this render's copy, which
       // still describes whatever was connected before this one.
       const connected = await refreshDevice({ quiet: true });

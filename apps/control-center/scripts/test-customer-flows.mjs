@@ -1392,7 +1392,7 @@ async function testConnectInstallsFirmwareUpdate(browser, appUrl) {
     ready: true,
   });
   await page
-    .getByRole("navigation", { name: "Control Center" })
+    .getByRole("heading", { name: SETUP_THEME_SCREEN })
     .waitFor({ timeout: 20_000 });
   await page.close();
 }
@@ -1517,7 +1517,7 @@ async function testLocalWifiVerificationReconcilesCompletedSelection(
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await connectDiscoveredVibeTV(page, { deviceId: selectedDevice.deviceId });
-  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+  await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).waitFor({
     timeout: 15_000,
   });
   assert(
@@ -1784,9 +1784,14 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
     "The one discovered VibeTV must be offered as an explicit choice",
   );
   await connectDiscoveredVibeTV(page, { deviceId: "customer-device" });
-  await page.getByRole("navigation", { name: "Control Center" }).waitFor({
+  await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).waitFor({
     timeout: 15_000,
   });
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "A fresh setup must require an explicit theme choice before Overview",
+  );
   assert(
     requests.filter((request) => request === "POST /v1/device/search")
       .length === 1,
@@ -1795,7 +1800,7 @@ async function testFreshLaunchConnectsTheOnlyVibeTV(browser, appUrl) {
   assert(
     (await page.getByRole("button", { name: "Setup", exact: true }).count()) ===
       0,
-    "The connected Control Center must not show a second Setup tab",
+    "Setup must not add a second Setup tab",
   );
   assert(
     (await page
