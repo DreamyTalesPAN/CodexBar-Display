@@ -126,6 +126,16 @@ func TestReportedProviderMessageRedactsAccountsAndSecrets(t *testing.T) {
 			in:   "Keychain password: hunter",
 			want: "Keychain password: [redacted]",
 		},
+		{
+			name: "a short alphabetic token after a colon",
+			in:   "Rejected token: letmein",
+			want: "Rejected token: [redacted]",
+		},
+		{
+			name: "a short alphabetic session value after a colon",
+			in:   "Stored session: hunter expired.",
+			want: "Stored session: [redacted] expired.",
+		},
 	} {
 		if got := reportedProviderMessage(tc.in); got != tc.want {
 			t.Fatalf("%s:\n got %q\nwant %q", tc.name, got, tc.want)

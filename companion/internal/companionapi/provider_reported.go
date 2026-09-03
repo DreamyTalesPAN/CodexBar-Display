@@ -24,15 +24,14 @@ var (
 	// a key, and the value may carry an auth scheme word so `Authorization:
 	// Bearer x` collapses to one marker instead of two.
 	reportedCredentialPair = regexp.MustCompile(`(?im)((?:^|[\s,{(\[])["']?[A-Za-z0-9._-]*(?:token|cookie|secret|key|session|auth|password|bearer)[A-Za-z0-9._-]*["']?\s*[:=]\s*)(?:bearer\s+|basic\s+)?(?:"[^"]*"|'[^']*'|[^\s,;)\]}"']*[^\s,;)\]}"'.])`)
-	// A plain English word after a prose colon is not a credential. CodexBar's
-	// own permission templates read "Safari cookies: permission denied for ..."
-	// and "Chrome cookies: missing auth cookie", so without this the rule ate
-	// the one word that says what went wrong and left the private path
-	// standing. Only a colon can introduce prose: `password=letmein` is a
-	// value however short, and a password or secret key never gets the benefit.
-	reportedPlainWord  = regexp.MustCompile(`^[A-Za-z]{1,15}$`)
-	reportedProseKey   = regexp.MustCompile(`(?i)^[^=]*[^=]:\s*$`)
-	reportedNeverProse = regexp.MustCompile(`(?i)password|passwd|secret`)
+	// One prose family is evidenced in the pinned engine and must survive:
+	// "Safari cookies: permission denied for ...", "Chrome cookies: missing
+	// auth cookie", "Firefox cookies: missing ory_session_* cookie". Without
+	// this the rule ate the one word that says what went wrong and left the
+	// private path standing. Nothing else gets the benefit: `token: letmein`
+	// and `password=hunter` are values however short.
+	reportedPlainWord = regexp.MustCompile(`^[A-Za-z]{1,15}$`)
+	reportedProseKey  = regexp.MustCompile(`(?i)cookies:\s*$`)
 	// The same credential with no key in front of it. It is the only rule that
 	// catches a short scheme-prefixed token (`Bearer abc12345`); a long one is
 	// caught by reportedOpaque.
@@ -64,9 +63,7 @@ func reportedProviderMessage(raw string) string {
 			return match
 		}
 		prefix, value := match[idx[2]:idx[3]], match[idx[3]:]
-		if reportedPlainWord.MatchString(value) &&
-			reportedProseKey.MatchString(prefix) &&
-			!reportedNeverProse.MatchString(prefix) {
+		if reportedPlainWord.MatchString(value) && reportedProseKey.MatchString(prefix) {
 			return match
 		}
 		return prefix + reportedRedacted
