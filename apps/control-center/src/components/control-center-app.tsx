@@ -106,6 +106,7 @@ import {
   setupDisplaySelectionSupported,
   setupProviderInventoryIsLoading,
   setupStepForProviderRefusal,
+  setupWasCompletedBefore,
 } from "./setup/setup-step";
 import {
   SetupUsageDialog,
@@ -413,7 +414,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     "repairing" | "failed" | null
   >(null);
   const [themeInstallEnabled, setThemeInstallEnabled] = useState(false);
-  const [hasEnteredControlCenter, setHasEnteredControlCenter] = useState(false);
+  const [enteredControlCenterThisSession, setEnteredControlCenterThisSession] =
+    useState(false);
+  // Null until the app knows the Mac's state; then it is the answer to "is this
+  // session a customer coming back, or one being set up", settled once. See
+  // where it is written for why both directions have to stay put.
+  const [sessionSkipsSetup, setSessionSkipsSetup] = useState<boolean | null>(
+    null,
+  );
   // The closing step is shown for a moment before the app takes over, but only
   // to someone who actually walked through setup.
   // Flipped by the wizard once its closing step has been seen. A VibeTV that
@@ -1699,7 +1707,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setThemeInstallEnabled(
         Boolean(payload.companion?.features?.themeInstallEnabled),
       );
-      setHasEnteredControlCenter(false);
+      setEnteredControlCenterThisSession(false);
+      // Run setup again asks the question over.
+      setSessionSkipsSetup(null);
       if (payload.device) {
         setDevice(payload.device.connected ? payload.device : null);
       }
@@ -3481,28 +3491,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // the dialog is dismissed.
   const macAppUpdateOfferedVersion =
     companionRelease?.latestVersion || companionRelease?.release || "";
-  const macAppUpdatePromptedFor = useRef("");
-  useEffect(() => {
-    if (
-      hostedSetup ||
-      !hasEnteredControlCenter ||
-      !macAppUpdateAvailable ||
-      !macAppUpdateOfferedVersion ||
-      firmwareUpdateInProgress ||
-      !isNativeControlCenterApp() ||
-      macAppUpdatePromptedFor.current === macAppUpdateOfferedVersion
-    ) {
-      return;
-    }
-    macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
-    window.location.href = "vibetv://check-for-updates";
-  }, [
-    firmwareUpdateInProgress,
-    hasEnteredControlCenter,
-    hostedSetup,
-    macAppUpdateAvailable,
-    macAppUpdateOfferedVersion,
-  ]);
   const activeThemeUpdateAvailable = Boolean(
     activeThemeUpgrade.theme &&
       activeThemeUpgrade.needed &&
@@ -3586,7 +3574,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         (themeSetupComplete || firmwareUpdateInProgress) &&
         (!setupThemeChoiceRequired || setupFinished)
       ) {
-        setHasEnteredControlCenter(true);
+        setEnteredControlCenterThisSession(true);
       }
     },
     [
@@ -3599,6 +3587,74 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ],
   );
   const hasActiveDevice = deviceIsActive(device);
+  const themeSetupEntryRequired =
+    companionStatus === "online" && deviceNeedsThemeSetup(device);
+  const themeSetupSessionMatches =
+    deviceCanContinueThemeSetup(device) &&
+    deviceMatchesThemeSetupIdentity(themeSetupIdentity, device);
+  const themeSetupRequired =
+    companionStatus === "online" &&
+    !themeSetupComplete &&
+    (themeSetupEntryRequired || themeSetupSessionMatches);
+  // Everything the answer needs has arrived: the companion's own state, and the
+  // display choice, which is read from its own endpoint and can still be in
+  // flight once the first status has answered.
+  const setupIdentityKnown =
+    initialCompanionCheckComplete &&
+    (providerDisplay !== null || providerDisplayError !== null);
+  const setupLooksComplete =
+    setupIdentityKnown &&
+    setupWasCompletedBefore({
+      hasActiveDevice,
+      connectionRecoveryRequired,
+      providerSelectionComplete:
+        providerSelectionSetup?.providerSelectionComplete === true,
+      displayConfigured: displaySetupComplete,
+      providerSetupCompletedThisSession,
+      themeSetupRequired,
+    });
+  // Whether this session belongs to a customer coming back or to one being set
+  // up is settled the first time the app knows the Mac's state, and never
+  // revisited. Both directions have to hold.
+  //
+  // Deciding it true later would hand the window back to setup around someone
+  // working in the app: switching off the provider on display is one click in
+  // Settings, and a reconnecting VibeTV can report its theme missing again.
+  //
+  // Deciding it false later is the mirror: a Mac whose provider and display
+  // choices are already recorded but whose VibeTV is gone or switched off
+  // starts on the device step, and pairing or reconnecting one there must not
+  // turn the session into a returning one and take the connect log off the
+  // screen mid firmware install.
+  //
+  // The deciding render reads the fresh value, so nothing flashes.
+  if (sessionSkipsSetup === null && setupIdentityKnown) {
+    setSessionSkipsSetup(setupLooksComplete);
+  }
+  const hasEnteredControlCenter =
+    enteredControlCenterThisSession || (sessionSkipsSetup ?? setupLooksComplete);
+  const macAppUpdatePromptedFor = useRef("");
+  useEffect(() => {
+    if (
+      hostedSetup ||
+      !hasEnteredControlCenter ||
+      !macAppUpdateAvailable ||
+      !macAppUpdateOfferedVersion ||
+      firmwareUpdateInProgress ||
+      !isNativeControlCenterApp() ||
+      macAppUpdatePromptedFor.current === macAppUpdateOfferedVersion
+    ) {
+      return;
+    }
+    macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
+    window.location.href = "vibetv://check-for-updates";
+  }, [
+    firmwareUpdateInProgress,
+    hasEnteredControlCenter,
+    hostedSetup,
+    macAppUpdateAvailable,
+    macAppUpdateOfferedVersion,
+  ]);
   const displaySessionActive = Boolean(
     deviceConnected ||
       ((hasEnteredControlCenter || firmwareUpdateInProgress) &&
@@ -3609,15 +3665,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     displaySessionActive,
     handleDisplayFrame,
   );
-  const themeSetupEntryRequired =
-    companionStatus === "online" && deviceNeedsThemeSetup(device);
-  const themeSetupSessionMatches =
-    deviceCanContinueThemeSetup(device) &&
-    deviceMatchesThemeSetupIdentity(themeSetupIdentity, device);
-  const themeSetupRequired =
-    companionStatus === "online" &&
-    !themeSetupComplete &&
-    (themeSetupEntryRequired || themeSetupSessionMatches);
   const startupDeviceCandidates =
     deviceCandidates.length > 0
       ? deviceCandidates

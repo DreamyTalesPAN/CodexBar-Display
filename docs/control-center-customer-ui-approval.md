@@ -3275,3 +3275,30 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/control-center-app.tsx`,
   `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
   record.
+
+## 2026-09-03 — Completed setup survives a restart; a pinned provider must be ready
+
+- User approval: The product owner reviewed the PR #331 bug-detector findings
+  and required all three fixed before the merge (2026-09-03): "Nach Neustart
+  wieder Wizard" for a customer who had already reached Overview, "fester
+  Provider ist kaputt, anderer funktioniert", and provider messages that carry a
+  token or an e-mail address.
+- Approved customer-visible result: **Starting the app on a Mac whose setup is
+  already recorded opens the Control Center directly, with every tab available,
+  while its connected VibeTV is still coming up and has not drawn a frame yet;
+  before, it opened the wizard on "looking for your VibeTV" or held its closing
+  step. Overview renders no theme and no usage until a real frame arrives. A
+  VibeTV that is switched off when the app starts keeps the device step with
+  its recovery picker, as approved before. On the provider step, Continue is refused with
+  "The provider VibeTV shows is not ready." and the display step opens when the
+  provider under "Always show" cannot produce a reading while another one can;
+  Automatic is unchanged. A provider's own message on the provider row keeps its
+  wording but shows `[redacted]` in place of an e-mail address, a cookie or
+  token value, or a key inside an echoed response, in the row and in what Copy
+  puts on the clipboard.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-step.ts`, their regression
+  tests, `apps/control-center/scripts/test-customer-flows.mjs`, the Companion
+  provider-completion gate and provider-message redaction with their tests,
+  `docs/control-center-ui-principles.md` rules 4 and 6, and this approval
+  record.
