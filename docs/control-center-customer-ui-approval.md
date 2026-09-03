@@ -3205,3 +3205,20 @@ issue scope, or release permission never implies UI permission.
   `setup/setup-wizard.test.tsx`,
   `companion/internal/companionapi/server.go`, its regression tests, and this
   approval record.
+
+## 2026-09-03 — Provider and theme handover stays on the chosen path
+
+- User approval: The product owner reported that setup briefly returned from
+  Display Mode to Choose AI providers and then moved forward again. They asked
+  for the complete flow to be reviewed against the repository's simplicity
+  rules and explicitly approved implementing the simplified result with
+  `ja dann mach` (2026-09-03).
+- Approved customer-visible result: **After a successful provider Continue,
+  setup stays on Display Mode even if an older status request finishes late.
+  A newly connected VibeTV always requires the explicit theme choice before
+  the final live handover, and that handover still waits for a real renderable
+  preview before Overview opens.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-wizard.test.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
