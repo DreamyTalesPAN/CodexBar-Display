@@ -1649,6 +1649,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setBusyAction("reset-setup");
     setLastError(null);
     try {
+      // A display-mode save still in flight would land after the reset and
+      // write the old selection back, so the rerun skipped the display step.
+      // Every entry point -- Settings, Support -- comes through here, so this
+      // is where the reset waits for it; the busy state above is what the
+      // customer sees meanwhile.
+      await providerDisplayWriteQueueRef.current;
       const payload = await runCompanion<{
         companion?: CompanionInfo;
         device?: DeviceInfo;

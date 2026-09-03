@@ -3355,3 +3355,19 @@ issue scope, or release permission never implies UI permission.
 - Approved files: `apps/control-center/src/components/settings-screen.tsx` and
   its test, the Companion provider descriptors and provider-message redaction
   with their tests, and this approval record.
+
+## 2026-09-03 — Detector round 5 on the three fixes
+
+- User approval: Same instruction as the entries above (2026-09-03): fix the
+  bug-detector findings and repeat until nothing real remains. This entry
+  records the review round on `86f3225`.
+- Approved customer-visible result: **`Run setup again` no longer greys out
+  during a display-mode save; instead the reset itself, from Settings and from
+  Support alike, shows `Resetting` until a save still in flight has landed and
+  then proceeds. A provider message also redacts a credential value after a
+  URL's `#`.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/settings-screen.tsx` and its test
+  (restored), `apps/control-center/scripts/test-customer-flows.mjs`, the
+  Companion provider-message redaction with its tests, and this approval
+  record.

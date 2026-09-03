@@ -855,6 +855,10 @@ async function main() {
     );
     await testUsageShowsMacAppUpdateForOldMacApp(browser, appContext.appUrl);
     await testRunSetupAgainReturnsToWifiOnboarding(browser, appContext.appUrl);
+    await testRunSetupAgainWaitsForAPendingDisplaySave(
+      browser,
+      appContext.appUrl,
+    );
     await testSettingsStayCustomerOnly(browser, appContext.appUrl);
     await testUpdatesShowCustomerCompanionAction(browser, appContext.appUrl);
     await testMacAppUpdatePrecedesFirmwareUpdate(browser, appContext.appUrl);
@@ -6475,6 +6479,56 @@ async function testRunSetupAgainReturnsToWifiOnboarding(browser, appUrl) {
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
+  await page.close();
+}
+
+// A reset while a display-mode save was still in flight let that save land
+// after the reset and write the old selection back, so the rerun skipped the
+// display step. The reset waits for the save, from every entry point.
+async function testRunSetupAgainWaitsForAPendingDisplaySave(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const timeline = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    providerDisplayPatchDelayMs: 1500,
+    searchDelayMs: 300,
+    searchDevices: [],
+    onRequest: (pathname, method) => {
+      if (
+        (pathname === "/v1/provider-display" && method === "PATCH") ||
+        (pathname === "/v1/setup/reset" && method === "POST")
+      ) {
+        timeline.push({ pathname, at: Date.now() });
+      }
+    },
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
+    timeout: 10_000,
+  });
+  await clickNavigation(page, "Settings");
+  await page.getByRole("button", { name: /Manual/ }).click();
+  await waitForCondition(
+    () => timeline.some((entry) => entry.pathname === "/v1/provider-display"),
+    "choosing a display mode in Settings must save it",
+  );
+  await page.getByRole("button", { name: "Run setup again" }).click();
+  await waitForCondition(
+    () => timeline.some((entry) => entry.pathname === "/v1/setup/reset"),
+    "Run setup again must reset once the save has landed",
+    20_000,
+  );
+  const patchAt = timeline.find((e) => e.pathname === "/v1/provider-display").at;
+  const resetAt = timeline.find((e) => e.pathname === "/v1/setup/reset").at;
+  assert(
+    resetAt - patchAt >= 1_400,
+    `the reset must wait for the pending display save, but ran ${resetAt - patchAt}ms after it started`,
+  );
+  await page.getByRole("main", { name: "Welcome" }).waitFor({ timeout: 10_000 });
+  assertNoInstallRequests(installRequests);
   await page.close();
 }
 
