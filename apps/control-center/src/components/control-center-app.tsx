@@ -104,6 +104,7 @@ import {
   setupDeviceIsUsable,
   setupDisplayIsConfigured,
   setupDisplaySelectionSupported,
+  setupIdentityIsKnown,
   setupProviderInventoryIsLoading,
   setupStepForProviderRefusal,
   setupWasCompletedBefore,
@@ -3596,12 +3597,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" &&
     !themeSetupComplete &&
     (themeSetupEntryRequired || themeSetupSessionMatches);
-  // Everything the answer needs has arrived: the companion's own state, and the
-  // display choice, which is read from its own endpoint and can still be in
-  // flight once the first status has answered.
-  const setupIdentityKnown =
-    initialCompanionCheckComplete &&
-    (providerDisplay !== null || providerDisplayError !== null);
+  const setupIdentityKnown = setupIdentityIsKnown(
+    initialCompanionCheckComplete,
+    providerDisplay,
+    providerDisplayError,
+  );
   const setupLooksComplete =
     setupIdentityKnown &&
     setupWasCompletedBefore({

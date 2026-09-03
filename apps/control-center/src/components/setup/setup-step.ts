@@ -102,6 +102,28 @@ export function setupDisplaySelectionSupported(
 }
 
 /**
+ * Whether the app knows enough to say who this session belongs to.
+ *
+ * The companion's own state comes with the first status answer; the display
+ * choice is read from its own endpoint and can still be in flight. A read that
+ * failed is not an answer: settling on it would call a customer who is coming
+ * back a first-time one for the whole session over one dropped request. Only
+ * the 404 of a companion that cannot store a display choice at all is final --
+ * there is nothing to wait for, and `setupDisplaySelectionSupported` already
+ * owns that reading.
+ */
+export function setupIdentityIsKnown(
+  initialCheckComplete: boolean,
+  display: unknown,
+  displayError: { code?: string } | null | undefined,
+): boolean {
+  return (
+    initialCheckComplete &&
+    (Boolean(display) || !setupDisplaySelectionSupported(display, displayError))
+  );
+}
+
+/**
  * Whether this Mac has been through setup before, on evidence that survives a
  * restart.
  *

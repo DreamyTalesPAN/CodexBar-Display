@@ -3302,3 +3302,21 @@ issue scope, or release permission never implies UI permission.
   provider-completion gate and provider-message redaction with their tests,
   `docs/control-center-ui-principles.md` rules 4 and 6, and this approval
   record.
+
+## 2026-09-03 — Detector follow-up on the three fixes
+
+- User approval: Same instruction as the entry above (2026-09-03): fix the
+  bug-detector findings, push, tag the detector, and repeat until nothing
+  real remains. This entry records the review round on `f3c72a6`.
+- Approved customer-visible result: **No new screen or wording. Two
+  hardenings of the results approved above: a provider message now also
+  redacts a short alphabetic value after `=` or under a password key
+  (`password=letmein` reads `password=[redacted]`), and a launch whose
+  display-selection read fails transiently keeps waiting for a real frame
+  as before instead of deciding for the whole session that setup was never
+  completed. The theme-step assertion in the customer flows reports what was
+  on screen when it fails.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-step.ts`, their regression
+  tests, `apps/control-center/scripts/test-customer-flows.mjs`, the Companion
+  provider-message redaction with its tests, and this approval record.

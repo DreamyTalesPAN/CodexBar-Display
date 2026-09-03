@@ -6,6 +6,7 @@ import {
   setupDeviceIsUsable,
   setupDisplayIsConfigured,
   setupDisplaySelectionSupported,
+  setupIdentityIsKnown,
   setupProviderInventoryIsLoading,
   setupStepForProviderRefusal,
   setupWasCompletedBefore,
@@ -434,5 +435,30 @@ describe("setupWasCompletedBefore", () => {
         providerSelectionComplete: false,
       }),
     ).toBe(false);
+  });
+});
+
+// A dropped display read must not decide the whole session.
+describe("setupIdentityIsKnown", () => {
+  it("waits for the first status answer", () => {
+    expect(setupIdentityIsKnown(false, { configured: true }, null)).toBe(false);
+  });
+
+  it("is known once the display choice has been read", () => {
+    expect(setupIdentityIsKnown(true, { configured: true }, null)).toBe(true);
+  });
+
+  it("stays open over a transient read failure", () => {
+    // Settling here would call a returning customer a first-time one for the
+    // whole session; leaving it open means this launch waits for a frame, as
+    // before, until the read succeeds.
+    expect(setupIdentityIsKnown(true, null, { code: "COMPANION_TIMEOUT" })).toBe(
+      false,
+    );
+    expect(setupIdentityIsKnown(true, null, null)).toBe(false);
+  });
+
+  it("treats a companion without a display choice as answered", () => {
+    expect(setupIdentityIsKnown(true, null, { code: "HTTP_404" })).toBe(true);
   });
 });

@@ -4708,7 +4708,7 @@ async function testThemeSetupWaitsAfterDeviceReadbackFailure(browser, appUrl) {
   assert(
     (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) ===
       1,
-    "A failed post-install device read must keep the entered theme setup visible",
+    `A failed post-install device read must keep the entered theme setup visible, got headings ${JSON.stringify(await page.getByRole("heading").allInnerTexts())}`,
   );
 
   companionRoute.setDevice(readyDevice);
