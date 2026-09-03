@@ -583,6 +583,11 @@ func enabledProviderIDs(settings []codexbar.ProviderSetting) map[string]struct{}
 	return enabled
 }
 
+// The state a provider row shows when live usage is unavailable but a saved
+// reading is still on disk. Two places decide from it -- the row itself and the
+// setup-completion gate -- so it is spelled once.
+const providerHealthStateStale = "stale"
+
 func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []preferenceDescriptor {
 	now := s.currentTime().UTC()
 	lastSuccess := make(map[string]string)
@@ -637,7 +642,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			state = "service_outage"
 			message = "This provider is reporting a service outage."
 		} else if setting.Health == codexbar.ProviderHealthUnavailable && lastSuccess[setting.ID] != "" {
-			state = "stale"
+			state = providerHealthStateStale
 			message = "Live usage is unavailable; the last successful reading is still saved."
 		}
 		items = append(items, preferenceDescriptor{

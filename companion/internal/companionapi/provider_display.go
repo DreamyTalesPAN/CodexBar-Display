@@ -168,14 +168,44 @@ func (s *Server) handleProviderSetupComplete(w http.ResponseWriter, r *http.Requ
 			return
 		}
 	}
-	ready := 0
+	// What VibeTV will actually show, beside what merely works somewhere.
+	readyShown := 0
+	readyAnywhere := 0
 	for _, descriptor := range s.providerDescriptors(settings) {
-		enabled, _ := descriptor.Value.(bool)
-		if enabled && descriptor.Health != nil && descriptor.Health.State == string(codexbar.ProviderHealthHealthy) {
-			ready++
+		on, _ := descriptor.Value.(bool)
+		if !on || descriptor.Health == nil {
+			continue
+		}
+		// A saved reading counts too: it is still a real reading, and it is the
+		// same rule setup-providers-screen.tsx setupProviderCanDisplay uses to
+		// decide what may be pinned. Refusing here what the display step still
+		// offers would be a loop with no way out.
+		if descriptor.Health.State != string(codexbar.ProviderHealthHealthy) &&
+			descriptor.Health.State != providerHealthStateStale {
+			continue
+		}
+		readyAnywhere++
+		if _, shown := selected[descriptor.ProviderID]; shown {
+			readyShown++
 		}
 	}
-	if ready == 0 {
+	if readyShown == 0 {
+		// Something works, but not what VibeTV was told to show. Any healthy
+		// provider used to be enough, so a Mac pinned to a provider that had
+		// since been signed out finished setup on the strength of one it had
+		// been told never to show, and the customer reached the live step in
+		// front of a blank VibeTV: a fixed selection pins without fallback
+		// (daemon.go applyProviderDisplaySelection). The two counts can only
+		// differ for a fixed selection -- the pool loop above requires every
+		// enabled provider to be in an Automatic pool, and validateProviderDisplay
+		// requires every selected one to be enabled -- so Automatic keeps the
+		// refusal it had. It is also the display choice, not the provider, that
+		// this names: without another provider to show instead, the display step
+		// would have nothing to offer and the provider step owns the fix.
+		if readyAnywhere > 0 {
+			writeError(w, http.StatusConflict, "provider_display_not_ready", "The provider VibeTV shows is not ready.", "Show a different provider, or switch to Automatic.")
+			return
+		}
 		writeError(w, http.StatusConflict, "provider_check_required", "At least one enabled provider must be ready.", "Check your providers and fix or turn off any provider that needs attention.")
 		return
 	}
