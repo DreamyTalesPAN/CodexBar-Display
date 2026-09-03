@@ -578,6 +578,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testTransientDisplayReadStillOpensOverview(
+        browser,
+        appContext.appUrl,
+      );
       await testRunningDeviceOutageKeepsControlCenterOpen(
         browser,
         appContext.appUrl,
@@ -787,6 +791,10 @@ async function main() {
       appContext.appUrl,
     );
     await testFirstSetupStillWaitsForARenderedPreview(
+      browser,
+      appContext.appUrl,
+    );
+    await testTransientDisplayReadStillOpensOverview(
       browser,
       appContext.appUrl,
     );
@@ -4805,6 +4813,33 @@ async function testConnectedNotReadyDeviceKeepsControlCenterOpen(
   await page.getByRole("button", { name: "Run setup again" }).waitFor({
     timeout: 10_000,
   });
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+// One dropped display-selection read must not decide the launch. The read is
+// asked again on the status cadence, and the customer who was coming back is
+// still let in once it answers.
+async function testTransientDisplayReadStillOpensOverview(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  await routeCompanionOnline(page, installRequests, () => {}, {
+    device: {
+      ...companionDevice,
+      deviceId: "known-device-1",
+      ready: false,
+      display: { themeSpec: { active: true, renderOk: true } },
+    },
+    displayFrameResponse: { ok: false },
+    providerDisplayGetFailures: 1,
+  });
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await page
+    .getByRole("navigation", { name: "Control Center" })
+    .waitFor({ timeout: 30_000 });
   assertNoInstallRequests(installRequests);
   await page.close();
 }
@@ -9904,6 +9939,7 @@ async function routeCompanionOnline(
       valid: true,
     },
     providerDisplayGetDelayMs = 0,
+    providerDisplayGetFailures = 0,
     providerDisplayPatchDelayMs = 0,
     providerSelectionSetup = {
       providerSelectionRequired: false,
@@ -9914,6 +9950,7 @@ async function routeCompanionOnline(
   } = {},
 ) {
   let currentDevice = device;
+  let providerDisplayGetFailuresLeft = providerDisplayGetFailures;
   let currentCompanionVersion = companionVersion;
   let activeInstallJobId = statusThemeInstallJob?.id || "";
   let currentStatusThemeInstallJob = statusThemeInstallJob;
@@ -10022,6 +10059,17 @@ async function routeCompanionOnline(
           configured: true,
           valid: true,
         };
+      } else if (providerDisplayGetFailuresLeft > 0) {
+        providerDisplayGetFailuresLeft -= 1;
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: false,
+            error: { code: "INTERNAL", message: "Display selection read failed." },
+          }),
+        });
+        return;
       } else if (providerDisplayGetDelayMs > 0) {
         await new Promise((resolve) =>
           setTimeout(resolve, providerDisplayGetDelayMs),

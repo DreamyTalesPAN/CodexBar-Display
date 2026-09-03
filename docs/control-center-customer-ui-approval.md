@@ -3320,3 +3320,22 @@ issue scope, or release permission never implies UI permission.
   `apps/control-center/src/components/setup/setup-step.ts`, their regression
   tests, `apps/control-center/scripts/test-customer-flows.mjs`, the Companion
   provider-message redaction with its tests, and this approval record.
+
+## 2026-09-03 — Detector round 3 on the three fixes
+
+- User approval: Same instruction as the two entries above (2026-09-03): fix
+  the bug-detector findings and repeat until nothing real remains. This entry
+  records the review round on `406b250`.
+- Approved customer-visible result: **No new screen or wording. A provider
+  message keeps its words only after a browser's `cookies:` prefix, the one
+  prose family the pinned usage engine produces, so `token: letmein` reads
+  `token: [redacted]`. A display-selection read that failed at startup is
+  asked again every five seconds until it answers, so a customer coming back
+  reaches Overview after one dropped request instead of waiting for a frame
+  all launch. Two provider switches saved in the same moment both reach the
+  Automatic pool; before, the second could undo the first.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/control-center-types.ts`, their
+  regression tests, `apps/control-center/scripts/test-customer-flows.mjs`, the
+  Companion provider-message redaction with its tests, and this approval
+  record.

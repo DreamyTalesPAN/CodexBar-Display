@@ -749,3 +749,41 @@ export function deviceCompletedThemeSetup(
     device.display.themeSpec.renderOk === true
   );
 }
+
+/**
+ * The Automatic pool after one provider is switched on or off, or null when
+ * nothing is to be written.
+ *
+ * Maintains an existing selection; never creates one. Writing a pool before the
+ * customer has made the choice marks the display configured and makes setup
+ * skip the very step that asks for it. Only for Automatic: a fixed selection
+ * names one provider on purpose, and widening it would undo the customer's
+ * choice; a fixed selection whose provider was just switched off is left alone
+ * too -- the companion refuses it, and refusing is what hands the customer
+ * back to the display step where they can pick another one. An empty pool is a
+ * selection the companion refuses, and switching off the last provider is a
+ * real state -- it is what the provider step is for -- so the stored pool is
+ * left as it is rather than written as one that cannot be stored.
+ */
+export function automaticPoolAfterToggle(
+  display: ProviderDisplaySelection | null,
+  providerId: string,
+  enabled: boolean,
+): Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null {
+  if (display?.configured !== true || display.mode !== "automatic") {
+    return null;
+  }
+  const pool = new Set(display.providerIds || []);
+  if (pool.has(providerId) === enabled) {
+    return null;
+  }
+  if (enabled) {
+    pool.add(providerId);
+  } else {
+    pool.delete(providerId);
+  }
+  if (pool.size === 0) {
+    return null;
+  }
+  return { mode: "automatic", providerIds: [...pool] };
+}

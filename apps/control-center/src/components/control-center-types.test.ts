@@ -12,6 +12,7 @@ import {
   providerSetupIsChecking,
   providerSetupNeedsEngineRecovery,
   providerSetupRequiresRecovery,
+  automaticPoolAfterToggle,
 } from "./control-center-types";
 
 describe("device connection contract", () => {
@@ -519,5 +520,57 @@ describe("providerSetupNeedsEngineRecovery", () => {
       }),
     ).toBe(false);
     expect(providerSetupNeedsEngineRecovery({ status: "checking" })).toBe(false);
+  });
+});
+
+describe("automaticPoolAfterToggle", () => {
+  const automatic = {
+    mode: "automatic" as const,
+    providerIds: ["codex"],
+    configured: true,
+    valid: true,
+  };
+
+  it("adds and removes one provider from the stored pool", () => {
+    expect(automaticPoolAfterToggle(automatic, "claude", true)).toEqual({
+      mode: "automatic",
+      providerIds: ["codex", "claude"],
+    });
+    expect(
+      automaticPoolAfterToggle(
+        { ...automatic, providerIds: ["codex", "claude"] },
+        "claude",
+        false,
+      ),
+    ).toEqual({ mode: "automatic", providerIds: ["codex"] });
+  });
+
+  it("derives the second toggle from what the first one wrote", () => {
+    // Two saves landing in the same tick used to derive their pool from the
+    // same stored selection, and the second undid the first. Fed the first
+    // result, the second keeps it.
+    const afterClaude = automaticPoolAfterToggle(automatic, "claude", true);
+    const afterCursor = automaticPoolAfterToggle(
+      { ...automatic, ...afterClaude },
+      "cursor",
+      true,
+    );
+    expect(afterCursor?.providerIds).toEqual(["codex", "claude", "cursor"]);
+  });
+
+  it("writes nothing when there is nothing to change", () => {
+    expect(automaticPoolAfterToggle(automatic, "codex", true)).toBeNull();
+    expect(automaticPoolAfterToggle(automatic, "codex", false)).toBeNull();
+    expect(automaticPoolAfterToggle(null, "codex", true)).toBeNull();
+    expect(
+      automaticPoolAfterToggle({ ...automatic, configured: false }, "claude", true),
+    ).toBeNull();
+    expect(
+      automaticPoolAfterToggle(
+        { ...automatic, mode: "fixed", providerIds: ["codex"] },
+        "claude",
+        true,
+      ),
+    ).toBeNull();
   });
 });

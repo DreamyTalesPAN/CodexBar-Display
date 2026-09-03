@@ -35,6 +35,7 @@ import {
   shouldUseHostedSetupShell,
 } from "./control-center-runtime";
 import {
+  automaticPoolAfterToggle,
   deviceCanContinueThemeSetup,
   deviceCompletedThemeSetup,
   deviceIsActive,
@@ -2923,11 +2924,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const updateProviderDisplay = useCallback(
     (
-      selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
+      next:
+        | Pick<ProviderDisplaySelection, "mode" | "providerIds">
+        | ((
+            current: ProviderDisplaySelection | null,
+          ) => Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null),
       providerId: string,
     ) => {
       const write = async () => {
         const previous = providerDisplayRef.current;
+        // Derived inside the queue, from what the writes ahead of it left
+        // behind. Two provider toggles whose saves land in the same tick each
+        // derived their pool from the same stored selection, and the second
+        // write undid the first.
+        const selection = typeof next === "function" ? next(previous) : next;
+        if (!selection) {
+          return true;
+        }
         const optimistic = { ...selection, configured: true, valid: true };
         setPendingProviderDisplayId(providerId);
         providerDisplayRef.current = optimistic;
@@ -3013,35 +3026,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const syncAutomaticProviderPool = useCallback(
     async (item: PreferenceDescriptor, enabled: boolean) => {
       const providerId = item.providerId;
-      const display = providerDisplayRef.current;
-      // Maintains an existing selection; never creates one. Writing a pool
-      // before the customer has made the choice marks the display configured
-      // and makes setup skip the very step that asks for it.
-      if (
-        !providerId ||
-        display?.configured !== true ||
-        display.mode !== "automatic"
-      ) {
-        return;
-      }
-      const current = new Set(display.providerIds || []);
-      if (current.has(providerId) === enabled) {
-        return;
-      }
-      if (enabled) {
-        current.add(providerId);
-      } else {
-        current.delete(providerId);
-      }
-      // An empty pool is a selection the companion refuses. Switching off the
-      // last provider is a real state -- it is what the provider step is for --
-      // so leave the stored pool as it is rather than writing one that cannot
-      // be stored.
-      if (current.size === 0) {
+      if (!providerId) {
         return;
       }
       return updateProviderDisplay(
-        { mode: "automatic", providerIds: [...current] },
+        (current) => automaticPoolAfterToggle(current, providerId, enabled),
         providerId,
       );
     },
@@ -3960,6 +3949,25 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     providerDisplayWanted,
     providerPreferences,
   );
+  // A display read that failed is asked again on the status cadence. Nothing
+  // else retries it: the startup effect below reads once, polling refreshes
+  // preferences only, and a customer held on the device step has no control
+  // that reads it. Left alone, one dropped request kept a customer who was
+  // coming back frame-gated for the whole launch. The read that succeeds, or
+  // the 404 of a companion that cannot store a display choice, ends it.
+  const providerDisplayRetryWanted =
+    providerDisplayWanted &&
+    providerDisplayError !== null &&
+    !setupIdentityIsKnown(true, providerDisplay, providerDisplayError);
+  useEffect(() => {
+    if (!providerDisplayRetryWanted) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void refreshProviderDisplay({ quiet: true });
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [providerDisplayRetryWanted, refreshProviderDisplay]);
 
   useEffect(() => {
     if (!providerPreferencesPollingWanted) {
