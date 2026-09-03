@@ -205,6 +205,7 @@ describe("SetupWizard: initial provider scan", () => {
           hasEnteredControlCenter: false,
           providerSelectionRequired,
           providerSetupCompletedThisSession,
+          themeSetupRequired: false,
           ready: false,
         }),
         displayConfigured: false,
@@ -572,6 +573,27 @@ describe("SetupWizard: going back", () => {
     });
 
     expect(shownStep()).toBe("Choose AI providers");
+  });
+
+  it("keeps a Back press made while provider completion was running", async () => {
+    let settle: (done: boolean) => void = () => {};
+    const onProvidersContinue = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    render(
+      <SetupWizard {...baseProps({ step: "display", onProvidersContinue })} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Choose your VibeTV");
+
+    await act(async () => settle(true));
+
+    expect(shownStep()).toBe("Choose your VibeTV");
   });
 
   // The display choice is written optimistically, and the derived step reads
@@ -1096,6 +1118,21 @@ describe("SetupWizard with a broken usage service", () => {
     );
 
     expect(screen.getByText("Finish AI setup on this Mac")).toBeTruthy();
+  });
+
+  it("keeps the recovery action available on the Live step", () => {
+    render(
+      <SetupWizard
+        {...baseProps({
+          step: "live",
+          usageFailure: "setup_incomplete",
+          onRepairUsageService: vi.fn(),
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Finish AI setup on this Mac")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Repair" })).toBeTruthy();
   });
 
   it("never stacks it on the step's own failure", () => {

@@ -385,6 +385,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     useState<ApiError | null>(null);
   const [providerDisplay, setProviderDisplay] =
     useState<ProviderDisplaySelection | null>(null);
+  const providerDisplayRef = useRef<ProviderDisplaySelection | null>(null);
   const [providerDisplayError, setProviderDisplayError] =
     useState<ApiError | null>(null);
   const [providerSelectionSetup, setProviderSelectionSetup] =
@@ -400,6 +401,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
   const providerReconcileDeadlineRef = useRef(0);
   const providerCheckQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const providerDisplayWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const providerPreferencesRef = useRef<PreferenceDescriptor[] | null>(null);
   const [setupPreviewStep, setSetupPreviewStep] = useState<"mac-app" | null>(
     readLocalSetupPreviewStep,
   );
@@ -518,6 +521,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       };
     });
   }, []);
+
+  useEffect(() => {
+    providerPreferencesRef.current = providerPreferences;
+  }, [providerPreferences]);
 
   const markDeviceLost = useCallback(() => {
     setDeviceSession((current) => ({
@@ -1665,6 +1672,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       // The reset deletes the saved display choice on the companion, so
       // holding the old one here would let a slow or failed re-read skip the
       // display step over a selection that no longer exists.
+      providerDisplayRef.current = null;
       setProviderDisplay(null);
       setProviderDisplayError(null);
       // The latch that says the wizard has already handed the screen back.
@@ -2844,6 +2852,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }>("/v1/provider-display", undefined, {
           preserveLastError: Boolean(options?.quiet),
         });
+        providerDisplayRef.current = payload.selection;
         setProviderDisplay(payload.selection);
         setProviderDisplayError(null);
       } catch (error) {
@@ -2866,6 +2875,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
       const runCheck = async () => {
         try {
+          const current = providerPreferencesRef.current?.find(
+            (preference) =>
+              preference.providerId?.trim().toLowerCase() === providerId,
+          );
+          if (!current?.value) {
+            return;
+          }
           await runCompanion(
             `/v1/providers/retry?provider=${encodeURIComponent(providerId)}`,
             { method: "POST" },
@@ -2895,35 +2911,50 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const updateProviderDisplay = useCallback(
-    async (
+    (
       selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
       providerId: string,
     ) => {
-      const previous = providerDisplay;
-      setPendingProviderDisplayId(providerId);
-      setProviderDisplay({ ...selection, configured: true, valid: true });
-      try {
-        const payload = await runCompanion<{
-          selection: ProviderDisplaySelection;
-        }>("/v1/provider-display", {
-          method: "PATCH",
-          body: JSON.stringify(selection),
-        });
-        setProviderDisplay(payload.selection);
-        setProviderDisplayError(null);
-        void refreshUsage({ quiet: true });
-        return true;
-      } catch (error) {
-        setProviderDisplay(previous);
-        setProviderDisplayError(
-          normalizeCaughtError(error, "Display selection could not be saved."),
-        );
-        return false;
-      } finally {
-        setPendingProviderDisplayId(null);
-      }
+      const write = async () => {
+        const previous = providerDisplayRef.current;
+        const optimistic = { ...selection, configured: true, valid: true };
+        setPendingProviderDisplayId(providerId);
+        providerDisplayRef.current = optimistic;
+        setProviderDisplay(optimistic);
+        try {
+          const payload = await runCompanion<{
+            selection: ProviderDisplaySelection;
+          }>("/v1/provider-display", {
+            method: "PATCH",
+            body: JSON.stringify(selection),
+          });
+          providerDisplayRef.current = payload.selection;
+          setProviderDisplay(payload.selection);
+          setProviderDisplayError(null);
+          void refreshUsage({ quiet: true });
+          return true;
+        } catch (error) {
+          providerDisplayRef.current = previous;
+          setProviderDisplay(previous);
+          setProviderDisplayError(
+            normalizeCaughtError(
+              error,
+              "Display selection could not be saved.",
+            ),
+          );
+          return false;
+        } finally {
+          setPendingProviderDisplayId(null);
+        }
+      };
+      const queued = providerDisplayWriteQueueRef.current.then(write, write);
+      providerDisplayWriteQueueRef.current = queued.then(
+        () => undefined,
+        () => undefined,
+      );
+      return queued;
     },
-    [providerDisplay, refreshUsage, runCompanion],
+    [refreshUsage, runCompanion],
   );
 
   const completeProviderSetup = useCallback(async () => {
@@ -2971,17 +3002,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const syncAutomaticProviderPool = useCallback(
     async (item: PreferenceDescriptor, enabled: boolean) => {
       const providerId = item.providerId;
+      const display = providerDisplayRef.current;
       // Maintains an existing selection; never creates one. Writing a pool
       // before the customer has made the choice marks the display configured
       // and makes setup skip the very step that asks for it.
       if (
         !providerId ||
-        providerDisplay?.configured !== true ||
-        providerDisplay.mode !== "automatic"
+        display?.configured !== true ||
+        display.mode !== "automatic"
       ) {
         return;
       }
-      const current = new Set(providerDisplay.providerIds || []);
+      const current = new Set(display.providerIds || []);
       if (current.has(providerId) === enabled) {
         return;
       }
@@ -2997,12 +3029,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (current.size === 0) {
         return;
       }
-      await updateProviderDisplay(
+      return updateProviderDisplay(
         { mode: "automatic", providerIds: [...current] },
         providerId,
       );
     },
-    [providerDisplay, updateProviderDisplay],
+    [updateProviderDisplay],
   );
 
   const updateProviderPreference = useCallback(
@@ -3055,15 +3087,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         // here is the one central rule that keeps them equal; the alternative
         // was a per-row inclusion control plus a repair effect to finish what it
         // half-did.
-        await syncAutomaticProviderPool(payload.item, value);
-        if (value) {
-          await checkProvider(payload.item);
-        }
-        void Promise.all([
+        const displayUpdated = await syncAutomaticProviderPool(
+          payload.item,
+          value,
+        );
+        const refreshes = [
           refreshProviderPreferences({ quiet: true }),
-          refreshProviderDisplay({ quiet: true }),
           refreshUsage({ quiet: true }),
-        ]);
+        ];
+        if (displayUpdated !== false) {
+          refreshes.push(refreshProviderDisplay({ quiet: true }));
+        }
+        void Promise.all(refreshes);
       } catch (error) {
         setProviderPreferences((current) =>
           (current || []).map((preference) =>
@@ -3082,7 +3117,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
     },
     [
-      checkProvider,
       refreshProviderDisplay,
       refreshProviderPreferences,
       refreshUsage,
@@ -3541,11 +3575,25 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     macAppMigrationAvailable;
   const deviceConnected = deviceIsCustomerConnected(device);
   const deviceReady = deviceIsReady(device);
-  const handleDisplayFrame = useCallback((frame: DisplayFrameSnapshot) => {
-    if (hasRenderableUsage(frame)) {
-      setHasEnteredControlCenter(true);
-    }
-  }, []);
+  const themeSetupComplete = deviceCompletedThemeSetup(device);
+  const handleDisplayFrame = useCallback(
+    (frame: DisplayFrameSnapshot) => {
+      if (
+        hasRenderableUsage(frame) &&
+        providerSelectionSetup?.providerSelectionComplete === true &&
+        themeSetupComplete &&
+        (!setupThemeChoiceRequired || setupFinished)
+      ) {
+        setHasEnteredControlCenter(true);
+      }
+    },
+    [
+      providerSelectionSetup?.providerSelectionComplete,
+      setupFinished,
+      setupThemeChoiceRequired,
+      themeSetupComplete,
+    ],
+  );
   const hasActiveDevice = deviceIsActive(device);
   const displaySessionActive = Boolean(
     deviceConnected ||
@@ -3560,7 +3608,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const themeSetupSessionMatches =
     deviceCanContinueThemeSetup(device) &&
     deviceMatchesThemeSetupIdentity(themeSetupIdentity, device);
-  const themeSetupComplete = deviceCompletedThemeSetup(device);
   const themeSetupRequired =
     companionStatus === "online" &&
     !themeSetupComplete &&
@@ -3945,6 +3992,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     hasEnteredControlCenter,
     providerSelectionRequired,
     providerSetupCompletedThisSession,
+    themeSetupRequired,
     ready: deviceReady,
   });
 
@@ -3984,24 +4032,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           themeInstallStatus?.phase === "complete" &&
           Boolean(selectedThemeId) &&
           themeInstallStatus.themeId === selectedThemeId &&
-          themeInstallStatus.result?.themeId === selectedThemeId
+          themeInstallStatus.result?.themeId === selectedThemeId &&
+          deviceCompletedThemeSetup(device)
         )),
   });
+  // Once setup has admitted the customer to the Control Center, it never owns
+  // the window again. Theme and screensaver installs can temporarily make the
+  // device unready; that is install progress, not a new customer setup.
   const setupOwnsScreen =
-    !(setupThemeChoiceRequired && !deviceConnected) &&
-    (setupStep !== "live" ||
-      !(
-        setupFinished ||
-        (!setupLiveHandoverActive &&
-          (setupComplete || hasEnteredControlCenter))
-      ));
+    !hasEnteredControlCenter && (setupStep !== "live" || !setupFinished);
 
   const setupProviders = (providerPreferences || []).filter(isProviderItem);
   // The display step may only offer providers that can actually show something.
   // Filtering on "switched on" alone let a broken provider into the rotation
   // and into the Manual list, where pinning to it produced a blank device.
   const displayableProviders = setupProviders.filter(setupProviderCanDisplay);
-  const enabledProviderIds = displayableProviders
+  const enabledProviderIds = setupProviders
+    .filter((item) => item.value)
     .map((item) => item.providerId)
     .filter((id): id is string => Boolean(id));
   const setupPreviews = displayPreviewsFor(
@@ -4159,8 +4206,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           onFinished={finishSetup}
           onDisplayContinue={(selection) =>
             updateProviderDisplay(
-              selection,
-              selection.providerIds[0] ?? enabledProviderIds[0] ?? "",
+              selection.mode === "automatic"
+                ? { ...selection, providerIds: enabledProviderIds }
+                : selection,
+              selection.mode === "automatic"
+                ? enabledProviderIds[0] ?? ""
+                : selection.providerIds[0] ?? "",
             )
           }
           onInstallTheme={() => {
@@ -4459,7 +4510,9 @@ async function pollThemeInstallJob({
   jobId: string;
   runCompanion: RunCompanion;
 }): Promise<ThemeInstallJob> {
-  for (let attempt = 0; attempt < 600; attempt += 1) {
+  // The server may spend the full five-minute budget waiting for the first
+  // fresh display frame after it has already installed the theme.
+  for (let attempt = 0; attempt < 900; attempt += 1) {
     await delay(500);
     const payload = await runCompanion<{ job: ThemeInstallJob }>(
       `/v1/themes/install/status?jobId=${encodeURIComponent(jobId)}`,

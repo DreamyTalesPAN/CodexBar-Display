@@ -189,6 +189,7 @@ describe("setupDeviceIsUsable", () => {
     hasEnteredControlCenter: false,
     providerSelectionRequired: true,
     providerSetupCompletedThisSession: false,
+    themeSetupRequired: false,
     ready: false,
   };
 
@@ -213,6 +214,16 @@ describe("setupDeviceIsUsable", () => {
         ...coldStart,
         providerSelectionRequired: false,
         providerSetupCompletedThisSession: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("lets a connected VibeTV continue to its required theme setup", () => {
+    expect(
+      setupDeviceIsUsable({
+        ...coldStart,
+        providerSelectionRequired: false,
+        themeSetupRequired: true,
       }),
     ).toBe(true);
   });

@@ -56,12 +56,14 @@ export function setupDeviceIsUsable(input: {
   connectionRecoveryRequired: boolean;
   providerSelectionRequired: boolean;
   providerSetupCompletedThisSession: boolean;
+  themeSetupRequired: boolean;
   ready: boolean;
 }): boolean {
   return (
     input.ready ||
     ((input.providerSelectionRequired ||
-      input.providerSetupCompletedThisSession) &&
+      input.providerSetupCompletedThisSession ||
+      input.themeSetupRequired) &&
       input.deviceConnected) ||
     (input.hasEnteredControlCenter &&
       input.hasActiveDevice &&

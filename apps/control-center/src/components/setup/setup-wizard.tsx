@@ -471,9 +471,10 @@ export function SetupWizard(props: SetupWizardProps) {
             // leaves the derived step ahead, so a refusal would carry the
             // customer on to a screen that cannot render it.
             setProvidersContinuing(true);
+            const navigation = navigations.current;
             void Promise.resolve(props.onProvidersContinue())
               .then((done) => {
-                if (done === false) {
+                if (done === false || navigation !== navigations.current) {
                   return;
                 }
                 // A refusal this screen carries no control for names the step
@@ -583,12 +584,15 @@ export function SetupWizard(props: SetupWizardProps) {
   }
 
   return (
-    <SetupLiveScreen
-      {...help}
-      device={props.device}
-      displayFrame={props.displayFrame}
-      onPreviewReady={props.onFinished}
-      usage={props.usage}
-    />
+    <>
+      <SetupLiveScreen
+        {...help}
+        device={props.device}
+        displayFrame={props.displayFrame}
+        onPreviewReady={props.onFinished}
+        usage={props.usage}
+      />
+      {usageDialog}
+    </>
   );
 }

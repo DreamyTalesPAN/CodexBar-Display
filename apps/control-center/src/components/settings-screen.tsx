@@ -99,6 +99,15 @@ export function SettingsScreen({
   // as the design board's wording does, lets a customer pin VibeTV to a
   // provider that shows nothing.
   const displayable = providers.filter(setupProviderCanDisplay);
+  const enabledProviderIds = providers
+    .filter((item) => item.value)
+    .map((item) => item.providerId);
+  const currentProviderId = providerPicker.display?.providerIds[0];
+  const manualProviderId = displayable.some(
+    (item) => item.providerId === currentProviderId,
+  )
+    ? currentProviderId
+    : displayable[0]?.providerId;
   const displayMode = providerPicker.display?.mode ?? "automatic";
   // Optional prop: `undefined` means "nothing pending", the same as null.
   // Comparing against null alone left both mode cards disabled forever.
@@ -150,12 +159,12 @@ export function SettingsScreen({
                 mode,
                 providerIds:
                   mode === "automatic"
-                    ? displayable.map((item) => item.providerId)
-                    : (providerPicker.display?.providerIds ?? []).slice(0, 1),
+                    ? enabledProviderIds
+                    : manualProviderId
+                      ? [manualProviderId]
+                      : [],
               },
-              providerPicker.display?.providerIds[0] ??
-                displayable[0]?.providerId ??
-                "",
+              manualProviderId ?? enabledProviderIds[0] ?? "",
             )
           }
           onSelectProvider={(providerId) =>

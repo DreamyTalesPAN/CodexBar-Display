@@ -47,13 +47,12 @@ export type AiFixPromptInput = {
 /**
  * Builds the prompt the Help menu copies to the clipboard.
  *
- * It asks for a fix rather than for advice, and carries what a fix needs: the
- * repository, the file that draws the failing screen, both version numbers,
- * the error the app is holding, the provider states, and — separately — the
- * two logs. They are separate because they are separate stores: the wizard's
- * connect log is what the customer is looking at, while the app event log is
- * mostly empty during setup, and merging them made an empty event log read as
- * "nothing happened".
+ * It makes restoring this Mac's setup the first job, and carries what that job
+ * needs: the relevant source location, both version numbers, the error the app
+ * is holding, the provider states, and — separately — the two logs. They are
+ * separate because they are separate stores: the wizard's connect log is what
+ * the customer is looking at, while the app event log is mostly empty during
+ * setup, and merging them made an empty event log read as "nothing happened".
  *
  * It is assembled from named fields rather than from the support report, so
  * the loopback address the app deliberately keeps out of customer-visible
@@ -65,8 +64,9 @@ export function buildAiFixPrompt(input: AiFixPromptInput): string {
     .map((line) => clean(line))
     .filter(Boolean);
   const lines = [
-    "You are an AI coding agent. Fix this VibeTV setup failure in the source",
-    "repository below — do not just tell me what to check.",
+    "You are an AI support and coding agent. Your first and highest priority is",
+    "to get this VibeTV setup working on this Mac. Work with the existing local",
+    "installation and state. Do not clone the repository or open a pull request.",
     "",
     `Repository: ${REPOSITORY}`,
     `Failing screen: ${input.screen} — ${SCREEN_SOURCE[input.screen]}`,
@@ -87,8 +87,11 @@ export function buildAiFixPrompt(input: AiFixPromptInput): string {
     `--- App event log (last ${RECENT_EVENT_COUNT}) ---`,
     ...recentEventLines(input.events),
     "",
-    "Clone the repository, reproduce the failure from the logs above, find the",
-    "root cause in the code, and open a pull request with the fix.",
+    "First diagnose and repair the local setup, then verify that VibeTV works.",
+    "Only after it works, analyze what failed and compare that finding with the",
+    "repository source. If a source change would be useful, explain it and ask",
+    "whether I want a pull request. Never commit, push, or open a pull request",
+    "without my explicit approval.",
   ];
   return lines.join("\n");
 }

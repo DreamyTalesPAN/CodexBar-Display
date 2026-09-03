@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, RefreshCw } from "lucide-react";
+import { Copy, ExternalLink, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import type { PreferenceHealthState } from "../control-center-types";
+import { openCodexBarApp } from "../control-center-runtime";
 
 export type SetupProviderRowVariant =
   | "checking"
@@ -147,7 +148,16 @@ export function SetupProviderRow({
           <>
             <SetupProviderRowMessage>{guidance}</SetupProviderRowMessage>
             {copyReportedMessage}
-            {checking ? (
+            {variant === "sign_in" ? (
+              <>
+                <SetupProviderRowAction
+                  icon={ExternalLink}
+                  label="Open CodexBar"
+                  onClick={openCodexBarApp}
+                />
+                {checkAgain}
+              </>
+            ) : checking ? (
               <>
                 <span className="sr-only">Checking {label}…</span>
                 <Spinner />

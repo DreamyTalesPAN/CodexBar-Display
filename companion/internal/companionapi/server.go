@@ -85,6 +85,7 @@ const (
 	displayVerificationAge       = 2 * time.Minute
 	displayStreamWaitTime        = 30 * time.Second
 	themeInstallStreamWaitTime   = 5 * time.Minute
+	themeInstallJobTime          = 7 * time.Minute
 	displayRenderWaitTime        = 12 * time.Second
 	defaultPairAttempts          = 3
 	defaultPairAttemptTimeout    = 5 * time.Second
@@ -4692,7 +4693,7 @@ const themeInstallAwaitingProviderMessage = "Theme installed. VibeTV shows it on
 func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runtimeconfig.Config, req themeInstallRequest) {
 	go func() {
 		defer s.finishThemeInstall()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), themeInstallJobTime)
 		defer cancel()
 		writer := &themeInstallProgressWriter{server: s, jobID: jobID}
 		result, err := s.runThemeInstall(ctx, cfg, req, writer)

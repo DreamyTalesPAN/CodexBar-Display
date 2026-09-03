@@ -618,7 +618,7 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 			message = "Provider is off."
 			reported = ""
 		} else if readiness, ok := s.providerReadinessFor(setting.ID); ok &&
-			providerReadinessAppliesToSetting(readiness, setting, now) {
+			providerReadinessAppliesToSetting(readiness, setting, freshSuccess[setting.ID], now) {
 			state = providerReadinessHealthState(readiness.Status)
 			message = strings.TrimSpace(readiness.Detail)
 			if message == "" {
@@ -667,9 +667,12 @@ func (s *Server) providerDescriptors(settings []codexbar.ProviderSetting) []pref
 	return items
 }
 
-func providerReadinessAppliesToSetting(readiness providerReadinessRecord, setting codexbar.ProviderSetting, now time.Time) bool {
+func providerReadinessAppliesToSetting(readiness providerReadinessRecord, setting codexbar.ProviderSetting, freshSuccess codexbar.ProviderReadiness, now time.Time) bool {
 	age := now.Sub(readiness.CheckedAt)
 	if readiness.CheckedAt.IsZero() || age < 0 || age > providerReadinessFreshness {
+		return false
+	}
+	if collectedAt, err := time.Parse(time.RFC3339Nano, freshSuccess.CollectedAt); err == nil && collectedAt.After(readiness.CheckedAt) {
 		return false
 	}
 	if readiness.Status != codexbar.ProviderReady {

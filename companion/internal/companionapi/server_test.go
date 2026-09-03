@@ -35,6 +35,16 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
 )
 
+func TestThemeInstallJobOutlivesFreshStreamWait(t *testing.T) {
+	if themeInstallJobTime <= themeInstallStreamWaitTime+displayRenderWaitTime {
+		t.Fatalf(
+			"theme install job %s must outlive stream and render verification %s",
+			themeInstallJobTime,
+			themeInstallStreamWaitTime+displayRenderWaitTime,
+		)
+	}
+}
+
 func TestStatusWorksWithoutDevice(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	rec := httptest.NewRecorder()

@@ -317,6 +317,30 @@ func TestExactProviderRecordCarriesReportedMessageToPreferences(t *testing.T) {
 	}
 }
 
+func TestFreshUsageAfterExactFailureRestoresHealthyPreference(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.providerReadiness = map[string]providerReadinessRecord{
+		"codex": {
+			Status:    codexbar.ProviderAuthRequired,
+			Detail:    "This provider needs an active sign-in.",
+			CheckedAt: now.Add(-time.Minute),
+		},
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return freshProviderUsage("codex", "Codex", now), true
+	}
+
+	items := server.providerDescriptors([]codexbar.ProviderSetting{{
+		ID: "codex", Label: "Codex", Enabled: true,
+		Health: codexbar.ProviderHealthHealthy,
+	}})
+	if len(items) != 1 || items[0].Health.State != "healthy" {
+		t.Fatalf("fresh usage did not supersede the older exact failure: %#v", items)
+	}
+}
+
 func TestPreferencesKeepCodexBarNoStrategySentence(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {

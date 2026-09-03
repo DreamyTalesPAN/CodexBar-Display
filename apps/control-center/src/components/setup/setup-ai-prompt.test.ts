@@ -12,7 +12,7 @@ function event(
 }
 
 describe("buildAiFixPrompt", () => {
-  it("asks for a fix in the repository, not for advice", () => {
+  it("repairs the local setup first and leaves a pull request to the user", () => {
     const prompt = buildAiFixPrompt({
       appVersion: "1.4.2",
       deviceSummary: "not found yet",
@@ -24,8 +24,13 @@ describe("buildAiFixPrompt", () => {
     expect(prompt).toContain(
       "https://github.com/DreamyTalesPAN/CodexBar-Display",
     );
-    expect(prompt).toContain("open a pull request with the fix");
-    expect(prompt).not.toContain("What should I check");
+    expect(prompt).toContain("first and highest priority");
+    expect(prompt).toContain("First diagnose and repair the local setup");
+    expect(prompt).toMatch(/ask\s+whether I want a pull request/);
+    expect(prompt).toContain("without my explicit approval");
+    expect(prompt).toContain("Do not clone the repository");
+    expect(prompt).not.toContain("Clone the repository");
+    expect(prompt).not.toContain("open a pull request with the fix");
   });
 
   it("names the file that draws the failing screen", () => {

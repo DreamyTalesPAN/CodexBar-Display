@@ -554,6 +554,10 @@ async function main() {
         browser,
         appContext.appUrl,
       );
+      await testThemeInstallNeverReopensSetupAfterOverview(
+        browser,
+        appContext.appUrl,
+      );
       await testProviderlessInstallKeepsTheCompanionOutcome(
         browser,
         appContext.appUrl,
@@ -751,6 +755,10 @@ async function main() {
       appContext.appUrl,
     );
     await testThemeSetupLeavesChooserWhenConnectionIsLost(
+      browser,
+      appContext.appUrl,
+    );
+    await testThemeInstallNeverReopensSetupAfterOverview(
       browser,
       appContext.appUrl,
     );
@@ -4459,15 +4467,56 @@ async function testThemeSetupLeavesChooserWhenConnectionIsLost(
     },
   });
 
-  // A theme cannot be installed on a VibeTV that is not there, so the wizard
-  // has to drop the chooser and hand the screen back to the app's own recovery.
-  await page
-    .getByRole("navigation", { name: "Control Center" })
-    .waitFor({ timeout: 20_000 });
+  // Before Overview has ever opened, losing the VibeTV is still setup. The
+  // wizard must go back to the device step instead of leaking into the app.
+  await waitForSetupDeviceStep(page, 20_000);
   assert(
     (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) ===
       0,
-    "A disconnected VibeTV must leave theme setup for the existing recovery UI",
+    "A disconnected VibeTV must leave the theme chooser",
+  );
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "A customer who never reached Overview must remain inside setup",
+  );
+  assertNoInstallRequests(installRequests);
+  await page.close();
+}
+
+async function testThemeInstallNeverReopensSetupAfterOverview(browser, appUrl) {
+  const page = await newCustomerPage(browser, appUrl, {
+    viewport: desktopViewport,
+  });
+  const installRequests = [];
+  const companionRoute = await routeCompanionOnline(
+    page,
+    installRequests,
+    () => {},
+    { device: companionDevice },
+  );
+
+  await page.goto(appUrl, { waitUntil: "domcontentloaded" });
+  const navigation = page.getByRole("navigation", { name: "Control Center" });
+  await navigation.waitFor({ timeout: 20_000 });
+
+  // Installing a theme or screensaver can briefly make the device look like
+  // setup is incomplete. Once Overview was open, that state must never hand
+  // the whole window back to the wizard.
+  companionRoute.setDevice(themeMissingDevice);
+  await page.waitForTimeout(1_500);
+  assert(await navigation.isVisible(), "Theme install must keep Overview open");
+  assert(
+    (await page.getByRole("heading", { name: SETUP_THEME_SCREEN }).count()) ===
+      0,
+    "Theme install must not reopen the setup theme chooser",
+  );
+
+  companionRoute.setDevice(reconnectingDevice);
+  await page.waitForTimeout(1_500);
+  assert(
+    await navigation.isVisible(),
+    "A transient install reconnect must keep the Control Center open",
   );
   assertNoInstallRequests(installRequests);
   await page.close();
@@ -6250,6 +6299,23 @@ async function testRunSetupAgainReturnsToWifiOnboarding(browser, appUrl) {
   assert(
     resetRequests.length === 0,
     `Opening the ready Control Center must not reset setup, got ${resetRequests.length}`,
+  );
+
+  await clickNavigation(page, "Settings");
+  const runSetupAgain = page.getByRole("button", { name: "Run setup again" });
+  await runSetupAgain.waitFor({ timeout: 10_000 });
+  await runSetupAgain.click();
+  await page
+    .getByRole("main", { name: "Welcome" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    resetRequests.length === 1,
+    `Run setup again must reset setup once, got ${resetRequests.length}`,
+  );
+  assert(
+    (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
+      0,
+    "Run setup again must let the wizard own the window again",
   );
 
   assertNoInstallRequests(installRequests);
