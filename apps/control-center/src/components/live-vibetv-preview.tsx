@@ -140,6 +140,8 @@ export type ThemePrimitive = {
   sg?: number;
   segmentGap?: number;
   gg?: number;
+  colorStops?: Array<{ gte?: number; color?: string; c?: string }>;
+  cs?: Array<{ gte?: number; color?: string; c?: string }>;
   assetPath?: string;
   a?: string;
   stateAssets?: Record<string, string>;
@@ -938,7 +940,7 @@ function ThemeProgress({
     "#7BEF7B",
   );
   const bgColor = colorFor(primitive.bgColor || primitive.bg, "#000000");
-  const fillColor = colorFor(primitive.color || primitive.c, "#FFFFFF");
+  const fillColor = resolveProgressFillColor(primitive, percent);
   const innerWidth = Math.max(0, width - 2);
   const innerHeight = Math.max(0, height - 2);
   const style = primitive.progressStyle || primitive.ps || "";
@@ -1602,6 +1604,26 @@ export function progressPercent(
     return frame.weeklyUnavailable ? 0 : frame.weekly;
   }
   return frame.sessionUnavailable ? 0 : frame.session;
+}
+
+function resolveProgressFillColor(
+  primitive: ThemePrimitive,
+  percent: number,
+): string {
+  const stops = [...(primitive.colorStops || primitive.cs || [])]
+    .map((stop) => ({
+      gte: typeof stop.gte === "number" ? stop.gte : -1,
+      color: stop.color || stop.c || "",
+    }))
+    .filter((stop) => stop.gte >= 0 && stop.gte <= 100 && stop.color)
+    .sort((a, b) => b.gte - a.gte);
+  const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  for (const stop of stops) {
+    if (clamped >= stop.gte) {
+      return colorFor(stop.color, "#FFFFFF");
+    }
+  }
+  return colorFor(primitive.color || primitive.c, "#FFFFFF");
 }
 
 function usageLaneText(value: number, unavailable: boolean): string {

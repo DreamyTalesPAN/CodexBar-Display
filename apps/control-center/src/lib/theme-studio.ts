@@ -59,6 +59,7 @@ export type ThemeStudioPrimitive = {
   progressStyle?: "solid" | "segments";
   segments?: number;
   segmentGap?: number;
+  colorStops?: Array<{ gte: number; color: string }>;
   assetPath?: string;
   stateAssets?: Record<string, string>;
   providerAssets?: Record<string, string>;
@@ -867,6 +868,38 @@ function validatePrimitive(
     ) {
       errors.push(`${prefix}: segments must be between 1 and 32.`);
     }
+    if (primitive.colorStops !== undefined) {
+      if (
+        !Array.isArray(primitive.colorStops) ||
+        primitive.colorStops.length > 4
+      ) {
+        errors.push(`${prefix}: colorStops supports at most 4 entries.`);
+      } else {
+        const seen = new Set<number>();
+        for (const [index, stop] of primitive.colorStops.entries()) {
+          if (
+            !Number.isInteger(stop.gte) ||
+            stop.gte < 0 ||
+            stop.gte > 100
+          ) {
+            errors.push(
+              `${prefix}: colorStops[${index}].gte must be between 0 and 100.`,
+            );
+          } else if (seen.has(stop.gte)) {
+            errors.push(
+              `${prefix}: colorStops[${index}].gte ${stop.gte} is duplicated.`,
+            );
+          } else {
+            seen.add(stop.gte);
+          }
+          if (!COLOR_RE.test(stop.color)) {
+            errors.push(
+              `${prefix}: colorStops[${index}].color must be #RRGGBB.`,
+            );
+          }
+        }
+      }
+    }
   }
 
   if (primitive.type === "gif" || primitive.type === "sprite") {
@@ -1152,6 +1185,12 @@ function buildDevicePrimitive(
   if (primitive.segmentGap !== undefined) {
     compact.gg = primitive.segmentGap;
   }
+  if (primitive.colorStops !== undefined && primitive.colorStops.length > 0) {
+    compact.cs = primitive.colorStops.map((stop) => ({
+      gte: stop.gte,
+      c: stop.color,
+    }));
+  }
   if (primitive.color !== undefined) {
     compact.c = primitive.color;
   }
@@ -1270,6 +1309,10 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   const segmentGap = numberValue(value.segmentGap) ?? numberValue(value.gg);
   if (segmentGap !== undefined) {
     primitive.segmentGap = segmentGap;
+  }
+  const colorStops = colorStopsValue(value.colorStops) ?? colorStopsValue(value.cs);
+  if (colorStops) {
+    primitive.colorStops = colorStops;
   }
   const borderRadius = numberValue(value.borderRadius) ?? numberValue(value.br);
   if (borderRadius !== undefined) {
@@ -1723,4 +1766,30 @@ function providerAssetsValue(value: unknown): Record<string, string> | undefined
     }
   }
   return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function colorStopsValue(
+  value: unknown,
+): Array<{ gte: number; color: string }> | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const result: Array<{ gte: number; color: string }> = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    const gte = numberValue(entry.gte);
+    const color = normalizeColor(
+      colorStringValue(entry.color) ?? colorStringValue(entry.c),
+    );
+    if (gte === undefined || !color) {
+      continue;
+    }
+    result.push({ gte, color });
+  }
+  if (result.length === 0) {
+    return undefined;
+  }
+  return result.sort((a, b) => b.gte - a.gte);
 }

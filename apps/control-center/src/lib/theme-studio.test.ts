@@ -115,6 +115,44 @@ describe("validateThemeSpec", () => {
     });
   });
 
+  it("round-trips progress colorStops through compact device JSON", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        color: "#22C55E",
+        colorStops: [
+          { color: "#22C55E", gte: 75 },
+          { color: "#EAB308", gte: 50 },
+          { color: "#F59E0B", gte: 25 },
+          { color: "#EF4444", gte: 0 },
+        ],
+        height: 12,
+        progressStyle: "segments",
+        segments: 12,
+        type: "progress",
+        width: 120,
+        x: 10,
+        y: 20,
+      },
+    ];
+
+    const compact = JSON.parse(deviceThemeSpecJson(spec));
+    expect(compact.p[0].cs).toEqual([
+      { c: "#22C55E", gte: 75 },
+      { c: "#EAB308", gte: 50 },
+      { c: "#F59E0B", gte: 25 },
+      { c: "#EF4444", gte: 0 },
+    ]);
+
+    const roundTrip = importThemeSpec(compact);
+    expect(roundTrip.primitives[0].colorStops).toEqual([
+      { color: "#22C55E", gte: 75 },
+      { color: "#EAB308", gte: 50 },
+      { color: "#F59E0B", gte: 25 },
+      { color: "#EF4444", gte: 0 },
+    ]);
+  });
+
   it("keeps screensaver assets with matching file names distinct", () => {
     const spec = validSpec();
     spec.primitives = [

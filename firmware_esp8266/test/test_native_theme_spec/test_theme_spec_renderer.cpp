@@ -27,6 +27,7 @@ using codexbar_display::themespec::RenderCompiledThemeSpecChangedPrimitives;
 using codexbar_display::themespec::RenderCompiledThemeSpecRegionPrimitives;
 using codexbar_display::themespec::RenderCompiledThemeSpecStaticPrimitives;
 using codexbar_display::themespec::ReleaseCompiledThemeSpec;
+using codexbar_display::themespec::ParseColor;
 using codexbar_display::themespec::Sink;
 using codexbar_display::themespec::SpriteCommand;
 using codexbar_display::themespec::TextCommand;
@@ -239,6 +240,15 @@ size_t SpriteCommandCount(const RecordingSink& sink) {
     }
   }
   return count;
+}
+
+const RecordedCommand* FirstProgressCommand(const RecordingSink& sink) {
+  for (const RecordedCommand& cmd : sink.commands) {
+    if (cmd.type == CommandType::Progress) {
+      return &cmd;
+    }
+  }
+  return nullptr;
 }
 
 bool renderSpec(const char* spec, const FrameData& frame, RecordingSink& sink) {
@@ -2059,6 +2069,87 @@ void testProviderAssetsCompileRejectsTooManyEntries() {
   ReleaseCompiledThemeSpec(scene);
 }
 
+void testProgressColorStopsSelectFillByPercent() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"color-stops",
+    "rev":1,
+    "p":[
+      {"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","ps":"segments","sg":10,"c":"#111111",
+       "cs":[
+         {"gte":75,"c":"#22C55E"},
+         {"gte":50,"c":"#EAB308"},
+         {"gte":25,"c":"#F59E0B"},
+         {"gte":0,"c":"#EF4444"}
+       ]}
+    ]
+  })JSON";
+
+  FrameData greenFrame = testFrame();
+  greenFrame.session = 80;
+  RecordingSink greenSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, greenFrame, greenSink));
+  const RecordedCommand* green = FirstProgressCommand(greenSink);
+  TEST_ASSERT_NOT_NULL(green);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#22C55E", 0), green->color);
+
+  FrameData yellowFrame = testFrame();
+  yellowFrame.session = 55;
+  RecordingSink yellowSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, yellowFrame, yellowSink));
+  const RecordedCommand* yellow = FirstProgressCommand(yellowSink);
+  TEST_ASSERT_NOT_NULL(yellow);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#EAB308", 0), yellow->color);
+
+  FrameData orangeFrame = testFrame();
+  orangeFrame.session = 30;
+  RecordingSink orangeSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, orangeFrame, orangeSink));
+  const RecordedCommand* orange = FirstProgressCommand(orangeSink);
+  TEST_ASSERT_NOT_NULL(orange);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#F59E0B", 0), orange->color);
+
+  FrameData redFrame = testFrame();
+  redFrame.session = 10;
+  RecordingSink redSink;
+  TEST_ASSERT_TRUE(renderSpec(spec, redFrame, redSink));
+  const RecordedCommand* red = FirstProgressCommand(redSink);
+  TEST_ASSERT_NOT_NULL(red);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#EF4444", 0), red->color);
+}
+
+void testProgressColorStopsFallbackToSolidColor() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"color-fallback",
+    "rev":1,
+    "p":[{"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","ps":"segments","sg":8,"c":"#00FF00"}]
+  })JSON";
+  FrameData frame = testFrame();
+  frame.session = 12;
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  const RecordedCommand* progress = FirstProgressCommand(sink);
+  TEST_ASSERT_NOT_NULL(progress);
+  TEST_ASSERT_EQUAL_UINT16(ParseColor("#00FF00", 0), progress->color);
+}
+
+void testProgressColorStopsCompileRejectsTooManyEntries() {
+  const char* spec = R"JSON({
+    "v":1,
+    "id":"color-overflow",
+    "rev":1,
+    "p":[{"t":"p","x":1,"y":2,"w":40,"h":10,"b":"s","c":"#FFFFFF","cs":[
+      {"gte":80,"c":"#111111"},{"gte":60,"c":"#222222"},{"gte":40,"c":"#333333"},
+      {"gte":20,"c":"#444444"},{"gte":0,"c":"#555555"}
+    ]}]
+  })JSON";
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_FALSE(CompileThemeSpec(spec, doc, scene));
+  ReleaseCompiledThemeSpec(scene);
+}
+
 void testStateAssetsUseActivityWithIdleFallback() {
   const char* spec = R"JSON({
     "themeSpecVersion": 1,
@@ -3071,6 +3162,9 @@ int main() {
   RUN_TEST(testProviderAssetsProviderChangeUsesPartialRender);
   RUN_TEST(testProviderAssetsOnlyProviderAssetsSkipsUnknownProvider);
   RUN_TEST(testProviderAssetsCompileRejectsTooManyEntries);
+  RUN_TEST(testProgressColorStopsSelectFillByPercent);
+  RUN_TEST(testProgressColorStopsFallbackToSolidColor);
+  RUN_TEST(testProgressColorStopsCompileRejectsTooManyEntries);
   RUN_TEST(testStateAssetsUseActivityWithIdleFallback);
   RUN_TEST(testStateAnimatedSpriteActivityChangeRedrawsAnimatedPass);
   RUN_TEST(testFrameActivityDefaultsToCodingWhenUsageChanges);

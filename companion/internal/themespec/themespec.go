@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
@@ -27,6 +28,12 @@ var (
 	colorPattern         = regexp.MustCompile(`^#[A-Fa-f0-9]{6}$`)
 	hexPattern           = regexp.MustCompile(`^[A-Fa-f0-9]+$`)
 )
+
+type ColorStop struct {
+	Gte   int    `json:"gte"`
+	Color string `json:"color,omitempty"`
+	C     string `json:"c,omitempty"`
+}
 
 type Primitive struct {
 	Type             string            `json:"type"`
@@ -63,6 +70,8 @@ type Primitive struct {
 	ShortStateAssets map[string]string `json:"sa,omitempty"`
 	ProviderAssets      map[string]string `json:"providerAssets,omitempty"`
 	ShortProviderAssets map[string]string `json:"pa,omitempty"`
+	ColorStops       []ColorStop       `json:"colorStops,omitempty"`
+	ShortColorStops  []ColorStop       `json:"cs,omitempty"`
 	Data             string            `json:"data,omitempty"`
 	ShortData        string            `json:"d,omitempty"`
 	Palette          []string          `json:"p,omitempty"`
@@ -364,10 +373,36 @@ func normalizePrimitive(p Primitive) Primitive {
 	if len(p.ProviderAssets) == 0 && len(p.ShortProviderAssets) > 0 {
 		p.ProviderAssets = p.ShortProviderAssets
 	}
+	if len(p.ColorStops) == 0 && len(p.ShortColorStops) > 0 {
+		p.ColorStops = p.ShortColorStops
+	}
+	p.ColorStops = normalizeColorStops(p.ColorStops)
 	if p.Data == "" {
 		p.Data = p.ShortData
 	}
 	return p
+}
+
+func normalizeColorStops(stops []ColorStop) []ColorStop {
+	if len(stops) == 0 {
+		return nil
+	}
+	normalized := make([]ColorStop, 0, len(stops))
+	for _, stop := range stops {
+		color := strings.TrimSpace(stop.Color)
+		if color == "" {
+			color = strings.TrimSpace(stop.C)
+		}
+		normalized = append(normalized, ColorStop{
+			Gte:   stop.Gte,
+			Color: color,
+			C:     color,
+		})
+	}
+	sort.SliceStable(normalized, func(i, j int) bool {
+		return normalized[i].Gte > normalized[j].Gte
+	})
+	return normalized
 }
 
 func normalizeProviderAssets(providerAssets map[string]string) map[string]string {
@@ -488,6 +523,11 @@ func validatePrimitive(p Primitive) error {
 	case "rect", "progress":
 		if p.Width <= 0 || p.Height <= 0 {
 			return errors.New("rect/progress primitive requires width/height > 0")
+		}
+		if p.Type == "progress" {
+			if err := validateColorStops(p); err != nil {
+				return err
+			}
 		}
 	case "gif":
 		if p.Width <= 0 || p.Height <= 0 {
@@ -628,6 +668,36 @@ func validateProviderAssetReferences(p Primitive) error {
 		}
 		if !isSafeThemeAssetPath(assetPath) {
 			return fmt.Errorf("providerAssets[%s] must be under /themes/", provider)
+		}
+	}
+	return nil
+}
+
+func validateColorStops(p Primitive) error {
+	if len(p.ColorStops) == 0 {
+		return nil
+	}
+	if p.Type != "progress" {
+		return errors.New("colorStops is only supported on progress primitives")
+	}
+	if len(p.ColorStops) > 4 {
+		return errors.New("colorStops supports at most 4 entries")
+	}
+	seen := map[int]struct{}{}
+	for i, stop := range p.ColorStops {
+		if stop.Gte < 0 || stop.Gte > 100 {
+			return fmt.Errorf("colorStops[%d].gte must be between 0 and 100", i)
+		}
+		if _, ok := seen[stop.Gte]; ok {
+			return fmt.Errorf("colorStops[%d].gte %d is duplicated", i, stop.Gte)
+		}
+		seen[stop.Gte] = struct{}{}
+		color := strings.TrimSpace(stop.Color)
+		if color == "" {
+			color = strings.TrimSpace(stop.C)
+		}
+		if !colorPattern.MatchString(color) {
+			return fmt.Errorf("colorStops[%d] color must be #RRGGBB", i)
 		}
 	}
 	return nil

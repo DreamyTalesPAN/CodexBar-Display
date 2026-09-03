@@ -160,10 +160,16 @@ struct PixelsCommand {
 constexpr size_t kMaxCompiledThemeSpecPrimitives = 32;
 constexpr size_t kMaxCompiledThemeSpecStringBytes = 1024;
 constexpr size_t kMaxCompiledProviderAssets = 16;
+constexpr size_t kMaxCompiledColorStops = 4;
 
 struct CompiledProviderAsset {
   const char* key = nullptr;
   const char* path = nullptr;
+};
+
+struct CompiledColorStop {
+  int16_t gte = 0;
+  uint16_t color = 0xFFFF;
 };
 
 enum class PrimitiveKind : uint8_t {
@@ -198,6 +204,8 @@ struct CompiledPrimitive {
   uint16_t border = 0x7BEF;
   bool hasBg = false;
   bool fitShrink = false;
+  uint8_t colorStopCount = 0;
+  CompiledColorStop colorStops[kMaxCompiledColorStops];
   const char* text = "";
   const char* binding = nullptr;
   const char* assetPath = "";
@@ -1317,6 +1325,8 @@ inline bool CompileProviderAssets(
   return true;
 }
 
+inline bool CompileProgressColorStops(JsonObjectConst primitive, CompiledPrimitive& out);
+
 inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive, CompiledPrimitive& out, bool& hasAnimatedAssets) {
   out = CompiledPrimitive{};
   out.x = primitive["x"] | 0;
@@ -1394,6 +1404,9 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     out.color = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
     out.bg = ParseColor(JsonStringFor(primitive, "bgColor", "bg"), 0x0000);
     out.border = ParseColor(JsonStringFor(primitive, "borderColor", "bc"), 0x7BEF);
+    if (!CompileProgressColorStops(primitive, out)) {
+      return false;
+    }
     const uint32_t slotField = BindingFieldMask(out.binding) & kThemeSpecFieldUsageWindows;
     if (slotField != 0) {
       out.liveFields |= slotField;
@@ -1617,6 +1630,59 @@ inline int CompiledProgressPercentFor(const CompiledPrimitive& primitive, const 
   return ClampPct(frame.session);
 }
 
+inline uint16_t ResolveProgressFillColor(const CompiledPrimitive& primitive, int percent) {
+  const int clamped = ClampPct(percent);
+  for (uint8_t i = 0; i < primitive.colorStopCount; ++i) {
+    if (clamped >= primitive.colorStops[i].gte) {
+      return primitive.colorStops[i].color;
+    }
+  }
+  return primitive.color;
+}
+
+inline bool CompileProgressColorStops(JsonObjectConst primitive, CompiledPrimitive& out) {
+  JsonArrayConst stops = JsonArrayFor(primitive, "colorStops", "cs");
+  if (stops.isNull() || stops.size() == 0) {
+    return true;
+  }
+  if (stops.size() > kMaxCompiledColorStops) {
+    return false;
+  }
+  CompiledColorStop compiled[kMaxCompiledColorStops];
+  uint8_t count = 0;
+  for (JsonVariantConst entry : stops) {
+    JsonObjectConst stop = entry.as<JsonObjectConst>();
+    if (stop.isNull()) {
+      return false;
+    }
+    const int gte = stop["gte"] | -1;
+    const char* color = JsonStringOrNull(stop["c"]);
+    if (color == nullptr || color[0] == '\0') {
+      color = JsonStringOrNull(stop["color"]);
+    }
+    if (gte < 0 || gte > 100 || color == nullptr || color[0] == '\0') {
+      return false;
+    }
+    compiled[count].gte = static_cast<int16_t>(gte);
+    compiled[count].color = ParseColor(color, 0xFFFF);
+    ++count;
+  }
+  for (uint8_t i = 0; i + 1 < count; ++i) {
+    for (uint8_t j = static_cast<uint8_t>(i + 1); j < count; ++j) {
+      if (compiled[j].gte > compiled[i].gte) {
+        const CompiledColorStop tmp = compiled[i];
+        compiled[i] = compiled[j];
+        compiled[j] = tmp;
+      }
+    }
+  }
+  out.colorStopCount = count;
+  for (uint8_t i = 0; i < count; ++i) {
+    out.colorStops[i] = compiled[i];
+  }
+  return true;
+}
+
 inline bool CompiledProgressLaneUnavailable(const CompiledPrimitive& primitive, const FrameData& frame) {
   const int slotIndex = UsageWindowBindingIndex(primitive.binding);
   if (slotIndex >= 0) {
@@ -1767,7 +1833,7 @@ inline bool DrawCompiledPrimitive(
     cmd.segments = primitive.segments;
     cmd.segmentGap = primitive.segmentGap;
     cmd.borderRadius = primitive.borderRadius;
-    cmd.fillColor = primitive.color;
+    cmd.fillColor = ResolveProgressFillColor(primitive, cmd.percent);
     cmd.bgColor = primitive.bg;
     cmd.borderColor = primitive.border;
     if (cmd.width <= 0 || cmd.height <= 0) {

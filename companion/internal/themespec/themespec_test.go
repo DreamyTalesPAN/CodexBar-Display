@@ -450,6 +450,63 @@ func TestValidateRejectsInvalidProviderAssets(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsProgressColorStops(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"color-stops",
+		"rev":1,
+		"p":[
+			{"t":"p","x":0,"y":0,"w":40,"h":10,"b":"s","c":"#22C55E","cs":[
+				{"gte":75,"c":"#22C55E"},
+				{"gte":50,"c":"#EAB308"},
+				{"gte":25,"c":"#F59E0B"},
+				{"gte":0,"c":"#EF4444"}
+			]}
+		]
+	}`)
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected colorStops to validate, got %v", err)
+	}
+	if got := spec.Primitives[0].ColorStops[0].Gte; got != 75 {
+		t.Fatalf("expected sorted highest gte first, got %d", got)
+	}
+}
+
+func TestValidateRejectsInvalidProgressColorStops(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "too many",
+			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"p","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"gte":80,"c":"#111111"},{"gte":60,"c":"#222222"},{"gte":40,"c":"#333333"},{"gte":20,"c":"#444444"},{"gte":0,"c":"#555555"}]}]}`,
+		},
+		{
+			name: "bad color",
+			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"p","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"gte":0,"c":"red"}]}]}`,
+		},
+		{
+			name: "gte out of range",
+			raw:  `{"v":1,"id":"color-stops","rev":1,"p":[{"t":"p","x":0,"y":0,"w":10,"h":10,"c":"#FFFFFF","cs":[{"gte":101,"c":"#EF4444"}]}]}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec, _, err := Parse([]byte(tt.raw))
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if err := Validate(spec); err == nil {
+				t.Fatalf("expected validation error")
+			}
+		})
+	}
+}
+
 func TestValidateRejectsUnknownPrimitiveType(t *testing.T) {
 	spec := Spec{
 		ThemeSpecVersion: 1,

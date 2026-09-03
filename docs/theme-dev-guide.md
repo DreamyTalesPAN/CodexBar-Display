@@ -49,6 +49,7 @@ Companion.
 - Compare the final reference and the Theme Studio render at the same scale. Strong black/bright jumps, repeated horizontal bands, or noisy checkerboard detail usually indicate a bad downscale or quantization step, not a ThemeSpec layout problem.
 - Use `stateAssets` for `idle` and `coding`; do not duplicate the whole theme just to change one character sprite.
 - Use `providerAssets` / `pa` on sprite primitives when one pack must show different provider logos. Keys must be the lowercase wire `provider` value (`codex`, `claude`, `cursor`), not `{label}` display text.
+- Use `colorStops` / `cs` on progress primitives when fill should track remaining percent (for example green ≥75, yellow ≥50, orange ≥25, red ≥0). Keep at most four stops. Always set solid `c` as the fallback for older firmware.
 - Keep state names and paths short. Prefer a small state set (`idle`, `coding`) over many rarely used states.
 - Run `node scripts/build-theme-packs.mjs` after every pack change. It validates the source directory and generated ZIP, and regenerates the catalog and exact render pack.
 - Test every launch theme on real hardware for at least 10-20 minutes.
