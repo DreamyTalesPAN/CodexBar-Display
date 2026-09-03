@@ -266,8 +266,11 @@ export function SettingsScreen({
         title="Setup"
       >
         <div>
+          {/* A reset while a display-mode save is still in flight let that
+              save land after the reset and write the old selection back, so
+              the rerun skipped the display step. */}
           <Button
-            disabled={localActionBusy}
+            disabled={localActionBusy || displaySavePending}
             onClick={onResetSetup}
             type="button"
             variant="outline"

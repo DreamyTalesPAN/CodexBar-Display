@@ -272,3 +272,30 @@ describe("SettingsScreen standby controls", () => {
     expect(html.match(/<button[^>]*disabled=""/g)?.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+// A reset while a display-mode save was still in flight let that save land
+// after the reset and write the old selection back, so the rerun skipped the
+// display step.
+describe("SettingsScreen setup reset", () => {
+  const device: DeviceInfo = {
+    active: true,
+    connected: true,
+    paired: true,
+    ready: true,
+    capabilities: { standby: { supported: false } },
+  };
+
+  it("waits for a pending display save before offering Run setup again", () => {
+    const pending = render(device, savedStandby, {
+      ...providerPicker,
+      displayPendingProviderId: "codex",
+    });
+    expect(pending).toMatch(/<button[^>]*disabled=""[^>]*>[^<]*(<[^>]*>[^<]*)*Run setup again/);
+
+    const settled = render(device, savedStandby, providerPicker);
+    const button =
+      settled.match(/<button(?:(?!<\/button>)[\s\S])*Run setup again/)?.[0] ??
+      "";
+    expect(button).not.toContain('disabled=""');
+  });
+});

@@ -3339,3 +3339,19 @@ issue scope, or release permission never implies UI permission.
   regression tests, `apps/control-center/scripts/test-customer-flows.mjs`, the
   Companion provider-message redaction with its tests, and this approval
   record.
+
+## 2026-09-03 — Detector round 4 on the three fixes
+
+- User approval: Same instruction as the entries above (2026-09-03): fix the
+  bug-detector findings and repeat until nothing real remains. This entry
+  records the review round on `e95035a`.
+- Approved customer-visible result: **A provider whose last reading is older
+  than the ten minutes the Mac App keeps one is no longer shown as having a
+  saved reading: its row reads unavailable, the display step no longer offers
+  it, and setup no longer completes on a pin to it. In Settings, `Run setup
+  again` waits while a display-mode save is still in flight. A provider
+  message also redacts credential values inside a URL query string
+  (`?token=…&session=…`).**
+- Approved files: `apps/control-center/src/components/settings-screen.tsx` and
+  its test, the Companion provider descriptors and provider-message redaction
+  with their tests, and this approval record.
