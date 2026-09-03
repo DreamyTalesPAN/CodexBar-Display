@@ -42,8 +42,10 @@ type ProviderSetting struct {
 	// What CodexBar itself said went wrong, verbatim. It is the only per-provider
 	// sign-in guidance that exists -- CodexBar publishes no structured
 	// destination, in 0.46.0 or in 0.56.2 -- so throwing it away left the app
-	// with nothing to tell the customer. Never customer-visible as it stands:
-	// five of its sentences carry the account's home path.
+	// with nothing to tell the customer. Never exposed raw: it carries account
+	// addresses, cookie and token values and whole HTTP bodies.
+	// companionapi.reportedProviderMessage is the one place that redacts it
+	// before it reaches a screen.
 	Reported string
 }
 
