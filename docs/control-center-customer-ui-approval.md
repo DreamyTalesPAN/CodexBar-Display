@@ -3188,17 +3188,20 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-09-03 — The final preview must remain visible through handover
 
-- User approval: After the product owner reported that the closing setup screen could
+- User approval: In the final clarified flow, the product owner reported that the closing setup screen could
   show `Live preview paused` and still redirect to Overview, explicitly
   required setup never to continue before the preview is certainly visible
   even when waiting takes five minutes or longer, and then explicitly required
   the implementation to follow the repository's simplest possible design
   principle (2026-09-03).
-- Approved customer-visible result: **The final `Your VibeTV is live` step
+- Approved customer-visible result: **After theme installation, the final `Your VibeTV is live` step
   has no maximum wait timeout. It remains on screen while the preview is
-  unavailable. Once the real preview renders, it remains visible for the short
-  2.5-second handover; if it disappears, that handover is cancelled.**
+  unavailable. Theme installation allows up to five minutes for a fresh display
+  stream. Once the same real preview used by Overview renders, it remains
+  visible for three seconds before Overview opens.**
 - Approved files: `apps/control-center/src/components/live-vibetv-preview.tsx`,
   `live-vibetv-preview.recovery.test.tsx`, `control-center-app.tsx`,
   `setup/setup-live-screen.tsx`, `setup/setup-wizard.tsx`,
-  `setup/setup-wizard.test.tsx`, and this approval record.
+  `setup/setup-wizard.test.tsx`,
+  `companion/internal/companionapi/server.go`, its regression tests, and this
+  approval record.

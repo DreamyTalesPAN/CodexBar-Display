@@ -389,7 +389,7 @@ describe("SetupWizard: live handover", () => {
         name: /Rendered VibeTV theme claude-creature showing Claude/i,
       }),
     ).toBeTruthy();
-    act(() => vi.advanceTimersByTime(2_499));
+    act(() => vi.advanceTimersByTime(2_999));
     expect(onFinished).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(1));
     expect(onFinished).toHaveBeenCalledTimes(1);

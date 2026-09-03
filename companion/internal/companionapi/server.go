@@ -84,6 +84,7 @@ const (
 	deviceConnectedGraceWindow   = 75 * time.Second
 	displayVerificationAge       = 2 * time.Minute
 	displayStreamWaitTime        = 30 * time.Second
+	themeInstallStreamWaitTime   = 5 * time.Minute
 	displayRenderWaitTime        = 12 * time.Second
 	defaultPairAttempts          = 3
 	defaultPairAttemptTimeout    = 5 * time.Second
@@ -971,15 +972,6 @@ func New(opts Options) (*Server, error) {
 		installJobs:        make(map[string]*themeInstallJob),
 		updateJobs:         make(map[string]*firmwareUpdateJob),
 		macAppUpdateJobs:   make(map[string]*macAppUpdateJob),
-	}
-	server.waitStream = func(ctx context.Context, target string) displayStreamInfo {
-		return server.waitForDisplayStreamMode(ctx, target, time.Time{}, true)
-	}
-	server.waitStreamAfter = func(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
-		return server.waitForDisplayStreamMode(ctx, target, notBefore, true)
-	}
-	server.waitStreamAfterPair = func(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
-		return server.waitForDisplayStreamMode(ctx, target, notBefore, false)
 	}
 	return server, nil
 }
@@ -4392,9 +4384,9 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 	}
 	var stream displayStreamInfo
 	if pairedDuringThemeInstall {
-		stream = s.waitForFreshDisplayStreamAfterPair(ctx, cfg.DeviceTarget, streamStartedAt)
+		stream = s.waitForFreshDisplayStreamAfterPair(ctx, cfg.DeviceTarget, streamStartedAt, themeInstallStreamWaitTime)
 	} else {
-		stream = s.waitForFreshDisplayStream(ctx, cfg.DeviceTarget, streamStartedAt)
+		stream = s.waitForFreshDisplayStreamUpTo(ctx, cfg.DeviceTarget, streamStartedAt, themeInstallStreamWaitTime)
 	}
 	logThemeInstallTiming(out, "stream-refresh", streamRefreshStartedAt)
 	// A stream that restarted, owns this exact VibeTV, and is only held back by
@@ -7802,9 +7794,10 @@ func (s *Server) waitForDisplayStreamMode(
 	target string,
 	notBefore time.Time,
 	stopOnPairingError bool,
+	waitTime time.Duration,
 ) displayStreamInfo {
 	return waitForDisplayStreamAfterProbe(
-		ctx, target, notBefore, stopOnPairingError, inspectDisplayStreamAfter,
+		ctx, target, notBefore, stopOnPairingError, waitTime, inspectDisplayStreamAfter,
 		func(stream displayStreamInfo) bool {
 			return providerSetupStreamForTarget(&stream, target) &&
 				providerSetupNeedsCustomerAction(s.providerSetupForStatus())
@@ -7840,10 +7833,11 @@ func waitForDisplayStreamAfterProbe(
 	target string,
 	notBefore time.Time,
 	stopOnPairingError bool,
+	waitTime time.Duration,
 	inspect func(context.Context, string, time.Time) displayStreamInfo,
 	settled func(displayStreamInfo) bool,
 ) displayStreamInfo {
-	deadline := time.Now().Add(displayStreamWaitTime)
+	deadline := time.Now().Add(waitTime)
 	var last displayStreamInfo
 	for {
 		last = inspect(ctx, target, notBefore)
@@ -7863,17 +7857,24 @@ func waitForDisplayStreamAfterProbe(
 }
 
 func (s *Server) waitForFreshDisplayStream(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+	return s.waitForFreshDisplayStreamUpTo(ctx, target, notBefore, displayStreamWaitTime)
+}
+
+func (s *Server) waitForFreshDisplayStreamUpTo(ctx context.Context, target string, notBefore time.Time, waitTime time.Duration) displayStreamInfo {
 	if s.waitStreamAfter != nil {
 		return s.waitStreamAfter(ctx, target, notBefore)
 	}
-	return s.waitStream(ctx, target)
+	if s.waitStream != nil {
+		return s.waitStream(ctx, target)
+	}
+	return s.waitForDisplayStreamMode(ctx, target, notBefore, true, waitTime)
 }
 
-func (s *Server) waitForFreshDisplayStreamAfterPair(ctx context.Context, target string, notBefore time.Time) displayStreamInfo {
+func (s *Server) waitForFreshDisplayStreamAfterPair(ctx context.Context, target string, notBefore time.Time, waitTime time.Duration) displayStreamInfo {
 	if s.waitStreamAfterPair != nil {
 		return s.waitStreamAfterPair(ctx, target, notBefore)
 	}
-	return s.waitForFreshDisplayStream(ctx, target, notBefore)
+	return s.waitForDisplayStreamMode(ctx, target, notBefore, false, waitTime)
 }
 
 func parseDisplayStreamLaunchState(output string) string {

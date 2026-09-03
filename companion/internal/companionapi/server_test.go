@@ -3120,13 +3120,13 @@ func TestWaitForDisplayStreamAfterPairIgnoresTransientPairingError(t *testing.T)
 		return displayStreamInfo{Running: true, Healthy: true}
 	}
 
-	got := waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), false, inspect, nil)
+	got := waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), false, displayStreamWaitTime, inspect, nil)
 	if !got.Healthy || calls.Load() != 2 {
 		t.Fatalf("post-pair wait must ignore one stale auth error, got=%+v calls=%d", got, calls.Load())
 	}
 
 	calls.Store(0)
-	got = waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), true, inspect, nil)
+	got = waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), true, displayStreamWaitTime, inspect, nil)
 	if got.Healthy || got.ErrorCode != "device_pairing_required" || calls.Load() != 1 {
 		t.Fatalf("normal wait must surface pairing error immediately, got=%+v calls=%d", got, calls.Load())
 	}
@@ -3151,7 +3151,7 @@ func TestWaitForDisplayStreamStopsOnSettledStream(t *testing.T) {
 	}
 
 	got := waitForDisplayStreamAfterProbe(
-		context.Background(), "http://192.0.2.10", time.Now(), true, inspect, settled,
+		context.Background(), "http://192.0.2.10", time.Now(), true, displayStreamWaitTime, inspect, settled,
 	)
 	if got.ErrorCode != "provider_setup_required" || calls.Load() != 1 {
 		t.Fatalf("settled stream must end the wait at once, got=%+v calls=%d", got, calls.Load())

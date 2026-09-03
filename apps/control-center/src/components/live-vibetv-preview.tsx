@@ -26,7 +26,7 @@ type LiveVibeTVPreviewProps = {
   usage: UsageSnapshot | null;
 };
 
-const PREVIEW_HANDOVER_MS = 2500;
+const PREVIEW_HANDOVER_MS = 3000;
 
 export type ThemePackAsset = {
   contentType: string;

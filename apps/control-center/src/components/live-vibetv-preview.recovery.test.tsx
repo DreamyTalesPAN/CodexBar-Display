@@ -93,7 +93,7 @@ describe("connected preview must self-heal (customer bug 2026-08-06)", () => {
       }),
     ).toBeTruthy();
     expect(screen.queryByText(/Waiting for AI setup/i)).toBeNull();
-    act(() => vi.advanceTimersByTime(2_499));
+    act(() => vi.advanceTimersByTime(2_999));
     expect(onPreviewReady).not.toHaveBeenCalled();
     rerender(
       createElement(LiveVibeTVPreview, { ...props, displayFrame: null }),
@@ -101,7 +101,7 @@ describe("connected preview must self-heal (customer bug 2026-08-06)", () => {
     act(() => vi.advanceTimersByTime(300_000));
     expect(onPreviewReady).not.toHaveBeenCalled();
     rerender(createElement(LiveVibeTVPreview, props));
-    act(() => vi.advanceTimersByTime(2_499));
+    act(() => vi.advanceTimersByTime(2_999));
     expect(onPreviewReady).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(1));
     expect(onPreviewReady).toHaveBeenCalledTimes(1);
