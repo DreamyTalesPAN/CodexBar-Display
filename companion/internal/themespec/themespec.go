@@ -59,6 +59,8 @@ type Primitive struct {
 	ShortBinding     string            `json:"b,omitempty"`
 	FontSize         int               `json:"fontSize,omitempty"`
 	ShortSize        int               `json:"s,omitempty"`
+	Valign           string            `json:"valign,omitempty"`
+	ShortValign      string            `json:"va,omitempty"`
 	Color            string            `json:"color,omitempty"`
 	ShortColor       string            `json:"c,omitempty"`
 	BgColor          string            `json:"bgColor,omitempty"`
@@ -372,6 +374,10 @@ func normalizePrimitive(p Primitive) Primitive {
 	if p.FontSize == 0 {
 		p.FontSize = p.ShortSize
 	}
+	if p.Valign == "" {
+		p.Valign = p.ShortValign
+	}
+	p.Valign = normalizeValign(p.Valign)
 	if p.Color == "" {
 		p.Color = p.ShortColor
 	}
@@ -401,6 +407,17 @@ func normalizePrimitive(p Primitive) Primitive {
 		p.Data = p.ShortData
 	}
 	return p
+}
+
+func normalizeValign(value string) string {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "middle", "center":
+		return "middle"
+	case "bottom":
+		return "bottom"
+	default:
+		return ""
+	}
 }
 
 func normalizeColorStops(stops []ColorStop) []ColorStop {

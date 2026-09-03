@@ -56,6 +56,7 @@ export type ThemeStudioPrimitive = {
   borderColor?: string;
   borderRadius?: number;
   align?: "left" | "center" | "right";
+  valign?: "top" | "middle" | "bottom";
   progressStyle?: "solid" | "segments";
   segments?: number;
   segmentGap?: number;
@@ -485,6 +486,12 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
         ? primitive.align
         : primitive.align === "left"
           ? "left"
+          : undefined,
+    valign:
+      primitive.valign === "middle" || primitive.valign === "bottom"
+        ? primitive.valign
+        : primitive.valign === "top"
+          ? "top"
           : undefined,
     fit: primitive.fit === "shrink" ? "shrink" : undefined,
     progressStyle:
@@ -1197,6 +1204,9 @@ function buildDevicePrimitive(
   if (primitive.align && primitive.align !== "left") {
     compact.al = primitive.align;
   }
+  if (primitive.valign && primitive.valign !== "top") {
+    compact.va = primitive.valign;
+  }
   if (primitive.progressStyle === "segments") {
     compact.ps = "segments";
   }
@@ -1318,6 +1328,12 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
   const align = stringValue(value.align) ?? stringValue(value.al);
   if (align === "left" || align === "center" || align === "right") {
     primitive.align = align;
+  }
+  const valign = stringValue(value.valign) ?? stringValue(value.va);
+  if (valign === "middle" || valign === "center") {
+    primitive.valign = "middle";
+  } else if (valign === "bottom" || valign === "top") {
+    primitive.valign = valign;
   }
   const progressStyle = stringValue(value.progressStyle) ?? stringValue(value.ps);
   if (progressStyle === "segments" || progressStyle === "segmented") {

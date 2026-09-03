@@ -311,6 +311,31 @@ describe("validateThemeSpec", () => {
     expect(importThemeSpec(deviceSpec).primitives[0].fit).toBe("shrink");
   });
 
+  it("round-trips vertical text align through compact device JSON", () => {
+    const spec = validSpec();
+    spec.primitives = [
+      {
+        fit: "shrink",
+        fontSize: 2,
+        height: 32,
+        text: "{label}",
+        type: "text",
+        valign: "middle",
+        width: 156,
+        x: 68,
+        y: 20,
+      },
+    ];
+
+    const deviceSpec = JSON.parse(deviceThemeSpecJson(spec));
+    expect(deviceSpec.p[0].va).toBe("middle");
+    expect(deviceSpec.p[0].h).toBe(32);
+    expect(importThemeSpec(deviceSpec).primitives[0].valign).toBe("middle");
+    expect(importThemeSpec({ p: [{ t: "tx", va: "center", h: 32 }] }).primitives[0].valign).toBe(
+      "middle",
+    );
+  });
+
   it("rejects border radii outside the supported pixel range", () => {
     const spec = validSpec();
     spec.primitives[0].borderRadius = 121;

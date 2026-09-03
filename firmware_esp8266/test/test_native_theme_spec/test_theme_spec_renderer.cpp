@@ -74,6 +74,7 @@ struct RecordedCommand {
   int maxWidth = 0;
   bool fitShrink = false;
   int align = 0;
+  int valign = 0;
   int percent = 0;
   int style = 0;
   int segments = 0;
@@ -136,6 +137,8 @@ class RecordingSink final : public Sink {
     cmd.maxWidth = text.maxWidth;
     cmd.fitShrink = text.fitShrink;
     cmd.align = text.align;
+    cmd.valign = text.valign;
+    cmd.height = text.height;
     cmd.fg = text.fg;
     cmd.bg = text.bg;
     cmd.hasBg = text.hasBg;
@@ -1423,6 +1426,55 @@ void testCompactTextWidthMapsToMaxWidthForAlignment() {
   TEST_ASSERT_EQUAL_INT(12, text.y);
   TEST_ASSERT_EQUAL_INT(198, text.maxWidth);
   TEST_ASSERT_EQUAL_INT(1, text.align);
+}
+
+void testAlignedTextYUsesVisualGlyphBox() {
+  TEST_ASSERT_EQUAL_INT(36, codexbar_display::themespec::TextValignBoxHeight(0, 2, 2));
+  TEST_ASSERT_EQUAL_INT(32, codexbar_display::themespec::TextValignBoxHeight(32, 2, 2));
+  TEST_ASSERT_EQUAL_INT(20, codexbar_display::themespec::AlignedTextY(20, 32, 32, 0));
+  TEST_ASSERT_EQUAL_INT(20, codexbar_display::themespec::AlignedTextY(20, 32, 32, 1));
+  TEST_ASSERT_EQUAL_INT(28, codexbar_display::themespec::AlignedTextY(20, 32, 16, 1));
+  TEST_ASSERT_EQUAL_INT(36, codexbar_display::themespec::AlignedTextY(20, 32, 16, 2));
+}
+
+void testCompactValignMapsToTextCommand() {
+  const char* spec = R"JSON({
+    "v": 1,
+    "id": "codex-test",
+    "rev": 1,
+    "p": [
+      {"t":"tx","x":68,"y":20,"w":156,"h":32,"b":"l","s":2,"f":2,"ft":"shrink","va":"middle","c":"#F8FAFC"}
+    ]
+  })JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
+  TEST_ASSERT_EQUAL_UINT32(2, sink.commands.size());
+
+  const RecordedCommand& text = sink.commands[1];
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(text.type));
+  TEST_ASSERT_EQUAL_STRING("Codex", text.text.c_str());
+  TEST_ASSERT_EQUAL_INT(68, text.x);
+  TEST_ASSERT_EQUAL_INT(20, text.y);
+  TEST_ASSERT_EQUAL_INT(32, text.height);
+  TEST_ASSERT_EQUAL_INT(1, text.valign);
+  TEST_ASSERT_TRUE(text.fitShrink);
+}
+
+void testValignCenterAliasIsMiddle() {
+  const char* spec = R"JSON({
+    "themeSpecVersion": 1,
+    "themeId": "codex-test",
+    "themeRev": 1,
+    "primitives": [
+      {"type":"text","x":68,"y":20,"width":156,"height":32,"binding":"label","valign":"center"}
+    ]
+  })JSON";
+
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, testFrame(), sink));
+  TEST_ASSERT_EQUAL_INT(1, sink.commands[1].valign);
+  TEST_ASSERT_EQUAL_INT(32, sink.commands[1].height);
 }
 
 void testRendersMulticolorRlePixelsAsFillRects() {
@@ -3139,6 +3191,9 @@ int main() {
   RUN_TEST(testUpdateNoticeSurfaceChangeRestoresOldSurface);
   RUN_TEST(testRendersCompactCommandsAndBindings);
   RUN_TEST(testCompactTextWidthMapsToMaxWidthForAlignment);
+  RUN_TEST(testAlignedTextYUsesVisualGlyphBox);
+  RUN_TEST(testCompactValignMapsToTextCommand);
+  RUN_TEST(testValignCenterAliasIsMiddle);
   RUN_TEST(testRendersMulticolorRlePixelsAsFillRects);
   RUN_TEST(testInvalidMulticolorRlePixelsAreSkippedWithoutPartialDraw);
   RUN_TEST(testInvalidPrimitivesAreSkipped);

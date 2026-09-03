@@ -110,6 +110,8 @@ struct TextCommand {
   bool hasBg = false;
   bool fitShrink = false;
   int align = 0;
+  int valign = 0;
+  int height = 0;
   bool wrap = false;
 };
 
@@ -195,6 +197,7 @@ struct CompiledPrimitive {
   int size = 1;
   int maxWidth = 0;
   int align = 0;
+  int valign = 0;
   int style = 0;
   int segments = 0;
   int segmentGap = 1;
@@ -1375,11 +1378,19 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     }
     const char* fit = JsonStringFor(primitive, "fit", "ft");
     out.fitShrink = fit != nullptr && std::strcmp(fit, "shrink") == 0;
+    out.height = JsonIntFor(primitive, "height", "h", 0);
     const char* align = JsonStringFor(primitive, "align", "al");
     if (align != nullptr && std::strcmp(align, "center") == 0) {
       out.align = 1;
     } else if (align != nullptr && std::strcmp(align, "right") == 0) {
       out.align = 2;
+    }
+    const char* valign = JsonStringFor(primitive, "valign", "va");
+    if (valign != nullptr &&
+        (std::strcmp(valign, "middle") == 0 || std::strcmp(valign, "center") == 0)) {
+      out.valign = 1;
+    } else if (valign != nullptr && std::strcmp(valign, "bottom") == 0) {
+      out.valign = 2;
     }
     out.color = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
     const char* bgColor = JsonStringFor(primitive, "bgColor", "bg");
@@ -1618,6 +1629,31 @@ inline int ApproxTextHeight(int font, int size) {
   return (baseHeight * size) + 4;
 }
 
+// Vertical box for valign: explicit h/height, else the pre-shrink font lane
+// (ApproxTextHeight includes the same +4 pad as textClipH).
+inline int TextValignBoxHeight(int explicitHeight, int font, int maxSize) {
+  if (explicitHeight > 0) {
+    return explicitHeight;
+  }
+  return ApproxTextHeight(font, maxSize);
+}
+
+// valign 0=top (y is glyph top), 1=middle/center, 2=bottom.
+// glyphHeight is the visual TFT fontHeight after size is chosen — not clipH.
+inline int AlignedTextY(int boxY, int boxHeight, int glyphHeight, int valign) {
+  if (valign == 0 || boxHeight <= 0) {
+    return boxY;
+  }
+  const int glyph = glyphHeight > 0 ? glyphHeight : 0;
+  if (valign == 1) {
+    return boxY + (boxHeight - glyph) / 2;
+  }
+  if (valign == 2) {
+    return boxY + boxHeight - glyph;
+  }
+  return boxY;
+}
+
 inline int CompiledProgressPercentFor(const CompiledPrimitive& primitive, const FrameData& frame) {
   const int slotIndex = UsageWindowBindingIndex(primitive.binding);
   if (slotIndex >= 0) {
@@ -1743,7 +1779,9 @@ inline bool CompiledPrimitiveBounds(
     if (primitive.size <= 0) {
       return false;
     }
-    bounds.height = ApproxTextHeight(primitive.font, primitive.size);
+    bounds.height = primitive.height > 0
+                        ? primitive.height
+                        : ApproxTextHeight(primitive.font, primitive.size);
     bounds.width = primitive.maxWidth;
     if (bounds.width <= 0) {
       if (requireStableTextBounds) {
@@ -1802,6 +1840,8 @@ inline bool DrawCompiledPrimitive(
     cmd.maxWidth = primitive.maxWidth;
     cmd.fitShrink = primitive.fitShrink;
     cmd.align = primitive.align;
+    cmd.valign = primitive.valign;
+    cmd.height = primitive.height;
     if (cmd.size <= 0) {
       return false;
     }

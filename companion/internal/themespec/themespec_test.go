@@ -271,6 +271,31 @@ func TestValidateAcceptsCompactStateAssets(t *testing.T) {
 	}
 }
 
+func TestParseAcceptsCompactValign(t *testing.T) {
+	raw := []byte(`{
+		"v":1,
+		"id":"mini-transport",
+		"rev":1,
+		"p":[
+			{"t":"tx","x":68,"y":20,"w":156,"h":32,"b":"l","s":2,"va":"center"}
+		]
+	}`)
+
+	spec, _, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse compact valign spec: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected compact valign spec to validate, got %v", err)
+	}
+	if got := spec.Primitives[0].Valign; got != "middle" {
+		t.Fatalf("compact va=center should normalize to middle, got %q", got)
+	}
+	if got := spec.Primitives[0].Height; got != 32 {
+		t.Fatalf("compact h should normalize to height 32, got %d", got)
+	}
+}
+
 func TestValidateAcceptsCompactActivityBinding(t *testing.T) {
 	raw := []byte(`{
 		"v":1,

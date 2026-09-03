@@ -935,7 +935,19 @@ class ThemeSpecSink final : public themespec::Sink {
         text.x = cmd.x + max(0, cmd.maxWidth - width);
       }
       const int fontHeight = static_cast<int>(tft.fontHeight());
+      if (cmd.valign != 0) {
+        const int boxH = themespec::TextValignBoxHeight(cmd.height, cmd.font, cmd.size);
+        text.y = themespec::AlignedTextY(cmd.y, boxH, fontHeight, cmd.valign);
+        textClipY = text.y;
+      }
       textClipH = fontHeight > 1 ? fontHeight + 4 : 1;
+    } else if (cmd.valign != 0) {
+      TFT_eSPI& tft = Tft();
+      tft.setTextFont(cmd.font);
+      tft.setTextSize(text.size);
+      const int fontHeight = static_cast<int>(tft.fontHeight());
+      const int boxH = themespec::TextValignBoxHeight(cmd.height, cmd.font, cmd.size);
+      text.y = themespec::AlignedTextY(cmd.y, boxH, fontHeight, cmd.valign);
     }
     if (textClipW > 0) {
       if (!intersectWithActiveClip(textClipX, textClipY, textClipW, textClipH)) {
