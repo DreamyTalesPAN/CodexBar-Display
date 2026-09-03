@@ -3,13 +3,79 @@
 The payload protocol is line-delimited JSON. Each frame must be a single JSON object followed by `\n`.
 
 Supported transports:
-- USB CDC serial at `115200` baud for development/support.
-- HTTP over device WiFi for the VibeTV runtime path.
+- CH340 USB-UART serial at `115200` baud in Cable mode.
+- HTTP over device WiFi in WiFi mode.
+
+Cable and WiFi are exclusive. Cable mode never starts the radio or HTTP
+server. WiFi mode ignores serial application data.
 
 Status:
 - v1 usage/error/theme frames remain supported.
 - v2 handshake negotiation and ThemeSpec v1 payload support are available on supported firmware.
 - Negotiation prefers v2 and falls back to v1.
+
+## Cable control requests
+
+Cable control uses the same newline-delimited JSON stream as frames. Every
+request that can read or change customer state carries the expected `deviceId`;
+the firmware rejects a different identity. Control replies are never passed to
+the frame parser.
+
+- `{"kind":"request","op":"hello"}` returns the normal Device Hello.
+- `{"kind":"request","op":"status"}` returns the current Cable mode and
+  transition state.
+- `{"kind":"request","op":"pair","deviceId":"14799300"}` is the physical
+  Cable pairing action. It is sent only after the customer explicitly selects
+  Cable in Control Center. The device verifies its exact identity, rejects the
+  request while a transfer, upload, or reboot is active, creates a token only
+  when none exists, and otherwise returns the existing token in a dedicated
+  `{"kind":"pairing","status":"paired",...}` reply. Automatic discovery,
+  status checks, and app startup never pair or rotate a token.
+- `{"kind":"request","op":"settings","deviceId":"14799300"}` returns a
+  `kind:"settings"` reply containing the persisted display and standby values.
+- The same `settings` request may include a partial `settings` object. The
+  firmware applies it through the same validation, persistence and readback
+  owner as `POST /api/settings`, then returns the complete stored values.
+- `{"kind":"request","op":"configure-wifi","deviceId":"14799300","ssid":"Home WiFi","password":"..."}`
+  stores the credentials through the existing credential owner and begins the
+  bounded Cable-to-WiFi transition. The secret is never echoed or logged. A
+  `kind:"connection-mode",status:"switching"` reply only acknowledges that the
+  transition started; the Mac must still rediscover and confirm the same
+  `deviceId` over WiFi.
+- `{"kind":"request","op":"scan-wifi","deviceId":"14799300"}` returns
+  `kind:"wifi-networks"` with the visible 2.4 GHz networks, RSSI, and whether
+  each network is encrypted. An empty list is a valid completed scan.
+- `set-connection-mode` and `confirm-connection-mode` start and confirm the
+  bounded mode transactions defined in the hardware contract.
+
+### Cable bulk transfer v1
+
+Assets, stored ThemeSpecs, screensavers and firmware use one stop-and-wait
+transfer on the same newline-delimited control stream. Only one transfer and
+one 128-byte candidate chunk may be in flight. The final chunk may be shorter.
+The exact production chunk size remains gated on the direct-Mac and dock-path
+hardware measurements required by #302.
+
+1. `transfer-start` carries the expected `deviceId`, pairing `token`, sink
+   (`asset` or `firmware`), byte count, whole-payload MD5 hash and, for assets,
+   the destination path plus optional `activate` value (`theme` or
+   `screensaver`). The device answers `status:"ready",next:0` only after the
+   inactive sink is open.
+2. Each `transfer-chunk` carries its zero-based `seq`, lowercase hex payload
+   and the first eight hex characters of that chunk's MD5. The device validates
+   the checksum before writing, then answers `status:"chunk",next:N` only after
+   the sink write returns. A duplicate of the last acknowledged sequence and
+   checksum is acknowledged without a second write.
+3. `transfer-finish` succeeds only when the byte count and complete MD5 match.
+   Assets are atomically promoted before optional activation; firmware calls
+   `Update.end()` only after the match. `transfer-abort`, a write error or the
+   15-second inactivity bound discards the temporary asset or ends the inactive
+   firmware update without changing the bootable image.
+
+Transfer JSON is consumed before the normal frame parser. Firmware never logs
+the pairing token or payload bytes, and transfer replies are JSON objects with
+`kind:"transfer"`; ordinary debug lines remain non-JSON and are ignored by the
+Mac transfer reader.
 
 ## Host -> Device Frame
 
@@ -190,7 +256,7 @@ Design constraints:
 
 When the ESP8266 is connected to WiFi, it serves:
 
-- `GET /hello`: returns the same Device Hello JSON shape as USB Serial. For WiFi, `capabilities.transport.active` is `wifi` and `supported` includes both `usb` and `wifi`.
+- `GET /hello`: returns the same Device Hello JSON shape as Cable Serial. For WiFi, `capabilities.transport.active` is `wifi`. `supported` contains both `usb` and `wifi` only on cutover-capable devices; a migrated legacy device contains only `wifi`.
 - `GET /health`: returns current WiFi/filesystem/display diagnostics plus `system.freeHeap`, `system.bootId`, `system.uptimeMs`, `system.resetCount`, `system.resetReason`, and ThemeSpec render status fields (`renderOk`, `renderError`, `renderFailures`). A changed `bootId` proves a reboot; `uptimeMs` lets the Companion calculate the reset timestamp using the Mac clock. The `clock` object reports the device wall clock: `synced` (SNTP delivered a plausible epoch), `source` (`device`, `companion` or `unknown` — which source the rendered time actually came from), `epoch` (device UTC, `0` when unsynced), `utcOffsetMinutes` (learned local offset or `null`), `lastSyncAgeMs`, `syncCount`, and the resolved `time`/`date` texts. The `settings.standby` object reports the persisted standby configuration: `enabled`, `timeoutMinutes`, `brightnessPercent`, and `screensaverPath` (the selected slot reference, or `null` when nothing is selected). All of it survives a reboot. The top-level `standby` object reports live state instead of configuration: `active` (the screensaver is on screen right now) and `idleSecs` (seconds since the last frame that moved the usage numbers). Live state never appears in `/hello`, which is a boot snapshot.
 - `POST /frame`: accepts one newline-delimited JSON frame as the request body and feeds it into the same firmware parser used by USB Serial.
 - Frame payloads may include a local `update` object (`available`, `latestVersion`, `status`, `lastError`). This updates the cached display/diagnostic update state. On built-in themes, `available=true` renders a firmware-level notice that cycles through the provider, `Update available`, and `app.vibetv.shop`. ThemeSpec themes receive the same values through the existing `{label}` / `label` binding. The ESP8266 firmware must not fetch public HTTPS manifests directly.
@@ -215,7 +281,9 @@ Standby behavior:
 Pairing/auth:
 - Firmware `1.0.39` accepts every local-WiFi `/api/pair` request and immediately replaces the previous token. It has no physical pairing gesture or pairing window.
 - Firmware `1.0.38` remains compatible with its legacy first-pair and three-power-cycle 30-minute recovery window.
-- Protected write APIs require `X-VibeTV-Token: <token>` or the documented query fallback used by native tooling and raw OTA.
+- Protected WiFi write APIs require `X-VibeTV-Token: <token>`. The legacy RAW
+  compatibility sender is not a current WiFi API fallback; see
+  `docs/firmware-ota-contract.md`.
 - Protected write APIs include `POST /frame`, `POST /api/settings`, WiFi credential writes, `POST /assets`, `DELETE /assets`, `POST /theme/active`, `POST /screensaver/active`, and firmware/filesystem OTA upload paths. OTA upload always requires a configured device and its current token.
 - Read APIs such as `GET /hello`, `GET /health`, and `GET /assets` stay open for diagnostics.
 - The unauthenticated device page never renders the pairing token. Firmware `1.0.39` WiFi `/hello` reports `capabilities.auth.paired` and `tokenHeader`; legacy firmware may additionally report pairing-window fields. No firmware reports the token value.
@@ -241,9 +309,28 @@ printf '{"v":2,"provider":"codex","label":"Codex","session":17,"weekly":42,"rese
   | curl -X POST -H "X-VibeTV-Token: $TOKEN" --data-binary @- http://192.168.178.123/frame
 ```
 
+## Cable Control Messages
+
+Control messages and frames share newline-delimited JSON framing but use
+different discriminators. A control request never enters the frame parser and
+never changes the display.
+
+```json
+{"kind":"request","op":"hello"}
+{"kind":"request","op":"status"}
+```
+
+`hello` returns the Device Hello below. `status` returns stable `deviceId`,
+board, firmware, `connectionMode`, active transport, and whether a real frame
+has been accepted. Unknown requests receive a structured `kind:error` line.
+Malformed JSON, partial lines, debug chatter, control messages, and objects
+without `v:1|2` are rejected without replacing the last rendered frame.
+
 ## Device Hello (Firmware -> Host)
 
-On boot or after serial reconnect, firmware emits a capability line over USB. `GET /hello` returns the equivalent JSON over WiFi:
+In Cable mode firmware emits a capability line on boot and answers an explicit
+hello request without resetting. `GET /hello` returns the equivalent JSON over
+WiFi:
 
 ```json
 {
@@ -253,6 +340,8 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
   "preferredProtocolVersion": 2,
   "board": "esp8266-smalltv-st7789",
   "firmware": "1.0.0",
+  "deviceId": "14799300",
+  "networkMode": "off",
   "features": ["theme", "theme-spec-v1"],
   "maxFrameBytes": 2048,
   "capabilities": {
@@ -288,7 +377,7 @@ On boot or after serial reconnect, firmware emits a capability line over USB. `G
       "paired": false,
       "tokenHeader": "X-VibeTV-Token"
     },
-    "transport": {"active": "wifi", "supported": ["usb", "wifi"]}
+    "transport": {"active": "usb", "supported": ["usb", "wifi"], "mode": "cable"}
   }
 }
 ```
@@ -313,6 +402,9 @@ Fields:
   - `auth.paired` tells hosts whether write APIs currently require a pairing token.
   - `auth.tokenHeader` names the HTTP header hosts should use for write auth.
   - `transport.maxFrameBytes` or top-level `maxFrameBytes` is the live frame payload limit. Hosts should use the stricter known value when both are present.
+  - `transport.active` is the wire channel (`usb` or `wifi`).
+  - `transport.mode` is the persisted customer mode (`cable`, `wifi`, or
+    `legacy-wifi-only`). A legacy device never advertises `usb` in `supported`.
 
 Firmware may emit plain readiness lines (`codexbar_display_ready*`) instead of JSON hello.
 Companion treats missing hello as unknown capabilities.
@@ -337,7 +429,8 @@ Result:
 - `theme` is optional.
 - Token stats are optional and additive; existing percentage/quota rendering remains valid when they are absent.
 - If device capabilities are explicitly known and `theme` is unsupported, host must omit `theme`.
-- If hello is missing (unknown capabilities), host may send `theme` on MVP USB path and rely on device-side ignore/fallback behavior.
+- Cable resolution requires a requestable hello with stable `deviceId`; the
+  host never sends a frame to an unknown or foreign serial device.
 - WiFi Companion usage: `codexbar-display daemon --transport wifi --target http://<device-ip>`.
 - Unknown `theme` values should be ignored by firmware.
 - Host should send at least every 60 seconds.

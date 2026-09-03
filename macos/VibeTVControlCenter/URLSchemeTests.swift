@@ -351,6 +351,12 @@ func runURLSchemeTests() {
     }
     require(
         nativeControlCenterAction(
+            for: URL(string: "vibetv://open-sign-in?url=https%3A%2F%2Fchatgpt.com")!
+        ) == nil,
+        "provider sign-in must stay inside CodexBar instead of opening a website"
+    )
+    require(
+        nativeControlCenterAction(
             for: URL(string: "vibetv://check-for-updates")!
         ) == .checkForUpdates,
         "the WebView update URL must route to the native Sparkle action"

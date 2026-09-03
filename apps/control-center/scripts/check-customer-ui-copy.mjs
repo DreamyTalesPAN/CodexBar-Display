@@ -16,10 +16,11 @@ const files = [
     !file.includes(".spec."),
 );
 
-const approvedFirstInstallCopy = new Set([
+const approvedCustomerCopy = new Set([
   "Open the downloaded DMG.",
   "Drag VibeTV Control Center to Applications and wait for the copy to finish.",
   "Open VibeTV Control Center from Applications. If macOS asks, choose Open.",
+  "WiFi password",
 ]);
 
 const forbiddenPatterns = [
@@ -87,19 +88,6 @@ const forbiddenPatterns = [
 ];
 
 const findings = [];
-const approvedCodexBarRecoveryCopy = new Set([
-  "CodexBar is needed",
-  "Download CodexBar",
-  "VibeTV needs CodexBar to read AI usage, but could not complete the setup here. Download and open CodexBar, then try again.",
-  // Stopgap copy until #245 moves provider selection into setup and settings.
-  "Open CodexBar",
-  "CodexBar is installed, but every AI provider in it is switched off. Open CodexBar, switch one on, then try again.",
-  // CodexBar answered, so it is installed. Whatever is still missing is settled
-  // inside it, and the download page cannot fix any of it. Deliberately does
-  // not name which step is missing: CodexBar owns that.
-  "Finish AI setup in CodexBar",
-  "CodexBar is installed, but it still cannot read your AI usage. Open CodexBar, finish what it asks for, then try again.",
-]);
 
 for (const file of files) {
   const source = readFileSync(file, "utf8");
@@ -113,19 +101,11 @@ for (const file of files) {
 
   for (const item of extractCustomerCopy(sourceFile)) {
     const text = normalizeCopy(item.text);
-    if (!text || approvedFirstInstallCopy.has(text) || shouldIgnoreText(text)) {
+    if (!text || approvedCustomerCopy.has(text) || shouldIgnoreText(text)) {
       continue;
     }
     for (const forbidden of forbiddenPatterns) {
       if (forbidden.pattern.test(text)) {
-        if (
-          forbidden.label === "internal usage service name" &&
-          relative(appRoot, file) ===
-            "src/components/device-startup-screen.tsx" &&
-          approvedCodexBarRecoveryCopy.has(text)
-        ) {
-          continue;
-        }
         const { line, character } = sourceFile.getLineAndCharacterOfPosition(
           item.pos,
         );

@@ -1,7 +1,6 @@
 package setup
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/xml"
@@ -12,8 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -32,25 +29,29 @@ const (
 	defaultCompanionAPIAddr   = "127.0.0.1:47832"
 	defaultLastGoodMaxAge     = "168h"
 	defaultTransport          = "wifi"
+	defaultSetupTransport     = "usb"
 	codexbarInstallURL        = "https://codexbar.app/"
 	codexbarBrewCask          = "steipete/tap/codexbar"
 )
 
 type Options struct {
-	Port          string
-	Transport     string
-	Target        string
-	AssumeYes     bool
-	SkipFlash     bool
-	PinDaemonPort bool
-	FirmwareEnv   string
-	Theme         string
-	ValidateOnly  bool
-	DryRun        bool
+	Port         string
+	Transport    string
+	Target       string
+	AssumeYes    bool
+	SkipFlash    bool
+	FirmwareEnv  string
+	Theme        string
+	ValidateOnly bool
+	DryRun       bool
 }
 
 func DefaultTransport() string {
 	return defaultTransport
+}
+
+func DefaultSetupTransport() string {
+	return defaultSetupTransport
 }
 
 func DefaultWiFiTarget() string {
@@ -60,27 +61,23 @@ func DefaultWiFiTarget() string {
 type commandRunner func(ctx context.Context, dir string, name string, args ...string) (string, error)
 
 type deps struct {
-	stdin           io.Reader
-	stdout          io.Writer
-	cwd             func() (string, error)
-	executablePath  func() (string, error)
-	homeDir         func() (string, error)
-	uid             func() int
-	listPorts       func() ([]string, error)
-	resolvePort     func(string) (string, error)
-	probePort       func(string) error
-	readDeviceHello func(string) (protocol.DeviceHello, error)
-	discoverWiFi    func(context.Context, []string) (transportlayer.WiFiDiscoveryResult, error)
-	findCodexbar    func() (string, error)
-	lookPath        func(string) (string, error)
-	runCommand      commandRunner
-	isInteractive   func() bool
+	stdout              io.Writer
+	cwd                 func() (string, error)
+	executablePath      func() (string, error)
+	homeDir             func() (string, error)
+	uid                 func() int
+	resolvePort         func(string) (string, error)
+	resolveRecoveryPort func(string) (string, error)
+	probePort           func(string) error
+	readDeviceHello     func(string) (protocol.DeviceHello, error)
+	pairCableDevice     func(string, string) (string, error)
+	discoverWiFi        func(context.Context, []string) (transportlayer.WiFiDiscoveryResult, error)
+	findCodexbar        func() (string, error)
+	lookPath            func(string) (string, error)
+	runCommand          commandRunner
 }
 
 func (d deps) withDefaults() deps {
-	if d.stdin == nil {
-		d.stdin = os.Stdin
-	}
 	if d.stdout == nil {
 		d.stdout = os.Stdout
 	}
@@ -96,17 +93,22 @@ func (d deps) withDefaults() deps {
 	if d.uid == nil {
 		d.uid = os.Getuid
 	}
-	if d.listPorts == nil {
-		d.listPorts = usb.ListPorts
-	}
 	if d.resolvePort == nil {
-		d.resolvePort = usb.ResolvePort
+		d.resolvePort = func(explicit string) (string, error) {
+			return usb.ResolveVibeTVPort(explicit, "")
+		}
+	}
+	if d.resolveRecoveryPort == nil {
+		d.resolveRecoveryPort = usb.ResolvePort
 	}
 	if d.probePort == nil {
 		d.probePort = usb.ProbePort
 	}
 	if d.readDeviceHello == nil {
 		d.readDeviceHello = usb.ReadDeviceHello
+	}
+	if d.pairCableDevice == nil {
+		d.pairCableDevice = usb.PairDevice
 	}
 	if d.discoverWiFi == nil {
 		d.discoverWiFi = func(ctx context.Context, candidates []string) (transportlayer.WiFiDiscoveryResult, error) {
@@ -124,9 +126,6 @@ func (d deps) withDefaults() deps {
 	}
 	if d.runCommand == nil {
 		d.runCommand = runSystemCommand
-	}
-	if d.isInteractive == nil {
-		d.isInteractive = stdinIsInteractive
 	}
 	return d
 }
@@ -257,13 +256,27 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 
 	transportName := normalizeSetupTransport(opts.Transport)
 	if transportName == "" {
-		transportName = defaultTransport
+		transportName = defaultSetupTransport
 	}
 	if transportName != "usb" && transportName != "wifi" {
 		return &StepError{
 			Step: "validate-transport",
 			Err:  fmt.Errorf("unsupported transport %q", opts.Transport),
 			Hint: "use --transport wifi or --transport usb",
+		}
+	}
+	home, err := d.homeDir()
+	if err != nil {
+		return &StepError{
+			Step: "resolve-home",
+			Err:  err,
+		}
+	}
+	if err := validateRuntimeConnectionMode(home, transportName); err != nil {
+		return &StepError{
+			Step: "validate-connection-mode",
+			Err:  err,
+			Hint: "switch connection mode in VibeTV Control Center before running setup",
 		}
 	}
 	target := normalizeSetupTarget(opts.Target)
@@ -295,18 +308,48 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		return err
 	}
 	fmt.Fprintf(d.stdout, "CodexBar CLI: %s\n", codexbarBin)
+	previousLaunchAgentPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	restorePreviousLaunchAgent := false
+	replacementRuntimeCommitted := false
+	var previousLaunchAgent []byte
+	var previousRuntimeConfig runtimeconfig.Config
+	if !opts.ValidateOnly && !opts.DryRun {
+		_, statErr := os.Stat(previousLaunchAgentPath)
+		restorePreviousLaunchAgent = statErr == nil && launchAgentLoaded(ctx, d, launchServiceTarget(d.uid()))
+		if restorePreviousLaunchAgent {
+			previousLaunchAgent, err = os.ReadFile(previousLaunchAgentPath)
+			if err == nil {
+				previousRuntimeConfig, err = runtimeconfig.Load(home)
+			}
+			if err != nil {
+				return fmt.Errorf("snapshot existing runtime: %w", err)
+			}
+		}
+		stopLaunchAgentBestEffort(ctx, d)
+	}
+	if restorePreviousLaunchAgent {
+		defer func() {
+			if !replacementRuntimeCommitted {
+				_ = runtimeconfig.Save(home, previousRuntimeConfig)
+				_ = writeFileAtomic(previousLaunchAgentPath, previousLaunchAgent, 0o644)
+				_ = reloadLaunchAgent(ctx, d, previousLaunchAgentPath)
+			}
+		}()
+	}
 
 	port := ""
+	cableDeviceID := ""
+	cableDeviceToken := ""
+	var cableHello protocol.DeviceHello
 	if transportName == "usb" {
 		port, err = choosePort(opts, d)
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(d.stdout, "Serial port: %s\n", port)
-	}
-
-	if !opts.ValidateOnly && !opts.DryRun {
-		stopLaunchAgentBestEffort(ctx, d)
+		// Identity resolution owns the package-level serial handle. Release it
+		// before validation paths open the same exclusive port for a probe.
+		usb.CloseDefaultSender()
 	}
 
 	// Avoid probe-close contention on the flash path; upload itself is the authoritative serial check.
@@ -338,14 +381,6 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		}
 	}
 
-	home, err := d.homeDir()
-	if err != nil {
-		return &StepError{
-			Step: "resolve-home",
-			Err:  err,
-		}
-	}
-
 	firmwareEnv := strings.TrimSpace(opts.FirmwareEnv)
 	if firmwareEnv == "" {
 		firmwareEnv = DefaultFirmwareEnvironment()
@@ -365,6 +400,9 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		hello, helloErr := d.readDeviceHello(port)
 		usb.CloseDefaultSender()
 		if helloErr == nil {
+			hello = hello.Normalize()
+			cableHello = hello
+			cableDeviceID = strings.TrimSpace(hello.DeviceID)
 			detectedBoard := strings.TrimSpace(strings.ToLower(hello.Board))
 			if detectedBoard != "" && !containsString(targetBoardIDs, detectedBoard) {
 				return &StepError{
@@ -403,6 +441,37 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	} else {
 		fmt.Fprintln(d.stdout, "Firmware flash: skipped (--skip-flash)")
 	}
+	if transportName == "usb" && !opts.ValidateOnly && !opts.DryRun &&
+		(cableDeviceID == "" || !opts.SkipFlash) {
+		hello, helloErr := d.readDeviceHello(port)
+		usb.CloseDefaultSender()
+		if helloErr != nil || strings.TrimSpace(hello.DeviceID) == "" {
+			if helloErr == nil {
+				helloErr = errors.New("device hello did not include deviceId")
+			}
+			return &StepError{
+				Step: "read-cable-identity",
+				Err:  helloErr,
+				Hint: "keep the flashed VibeTV connected by Cable and rerun setup",
+			}
+		}
+		hello = hello.Normalize()
+		cableHello = hello
+		cableDeviceID = strings.TrimSpace(hello.DeviceID)
+	}
+	if transportName == "usb" && !opts.ValidateOnly && !opts.DryRun &&
+		cableHello.Capabilities.Auth != nil {
+		cableDeviceToken, err = d.pairCableDevice(port, cableDeviceID)
+		usb.CloseDefaultSender()
+		if err != nil {
+			return &StepError{
+				Step: "pair-cable-device",
+				Err:  err,
+				Hint: "keep the selected VibeTV connected by Cable and rerun setup",
+			}
+		}
+		fmt.Fprintln(d.stdout, "Cable pairing: ok")
+	}
 
 	if opts.ValidateOnly {
 		fmt.Fprintln(d.stdout, "Validation complete. No changes applied.")
@@ -420,10 +489,8 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 		}
 		if transportName == "wifi" {
 			fmt.Fprintf(d.stdout, "Dry-run: would configure LaunchAgent for WiFi target %s\n", target)
-		} else if opts.PinDaemonPort {
-			fmt.Fprintf(d.stdout, "Dry-run: would pin LaunchAgent to port %s\n", port)
 		} else {
-			fmt.Fprintln(d.stdout, "Dry-run: would configure LaunchAgent in auto-detect mode")
+			fmt.Fprintln(d.stdout, "Dry-run: would configure identity-resolved Cable mode")
 		}
 		fmt.Fprintf(d.stdout, "Dry-run: would write LaunchAgent plist %s\n", plistPath)
 		fmt.Fprintln(d.stdout, "Dry-run complete. No changes applied.")
@@ -456,7 +523,9 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	}
 	fmt.Fprintf(d.stdout, "Recovery backup dir: %s\n", backupDir)
 
-	if err := applyRuntimeConfig(home, opts.Theme, runtimeConfigTarget, d.stdout); err != nil {
+	if err := applyRuntimeConfig(
+		home, opts.Theme, transportName, runtimeConfigTarget, cableDeviceID, cableDeviceToken, d.stdout,
+	); err != nil {
 		return &StepError{
 			Step: "write-runtime-config",
 			Err:  err,
@@ -470,11 +539,8 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	if transportName == "wifi" {
 		daemonTarget = target
 		fmt.Fprintf(d.stdout, "Launch agent WiFi target: %s\n", daemonTarget)
-	} else if opts.PinDaemonPort {
-		daemonPort = port
-		fmt.Fprintf(d.stdout, "Launch agent serial mode: pinned (%s)\n", daemonPort)
 	} else {
-		fmt.Fprintln(d.stdout, "Launch agent serial mode: auto-detect")
+		fmt.Fprintln(d.stdout, "Launch agent serial mode: identity-resolved")
 	}
 
 	plistPath, err := writeLaunchAgentPlist(home, installPath, daemonTransport, daemonTarget, daemonPort)
@@ -490,6 +556,7 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 	if err := reloadLaunchAgent(ctx, d, plistPath); err != nil {
 		return err
 	}
+	replacementRuntimeCommitted = true
 
 	fmt.Fprintln(d.stdout, "Launch agent: running")
 	fmt.Fprintln(d.stdout, "Setup complete.")
@@ -499,61 +566,30 @@ func runWithDeps(ctx context.Context, opts Options, d deps) error {
 
 func choosePort(opts Options, d deps) (string, error) {
 	explicit := strings.TrimSpace(opts.Port)
-	if explicit != "" {
-		port, err := d.resolvePort(explicit)
-		if err != nil {
-			return "", &StepError{
-				Step: "select-port",
-				Err:  err,
-				Hint: "run `ls /dev/cu.usb*` and pass an existing path via --port",
-			}
-		}
-		return port, nil
+	resolve := d.resolvePort
+	// Flashing is the recovery path for devices whose current firmware cannot
+	// answer the runtime identity handshake. An explicitly supplied port is the
+	// operator's bounded recovery target, so only verify that path exists before
+	// handing it to the authoritative upgrade command.
+	if explicit != "" && !opts.SkipFlash && !opts.ValidateOnly && !opts.DryRun {
+		resolve = d.resolveRecoveryPort
 	}
-
-	ports, err := d.listPorts()
+	port, err := resolve(explicit)
 	if err != nil {
 		return "", &StepError{
-			Step: "list-ports",
+			Step: "select-port",
 			Err:  err,
-			Hint: "disconnect and reconnect the board, then rerun setup",
+			Hint: "connect exactly one Cable VibeTV or pass its explicit path via --port",
 		}
 	}
-	if len(ports) == 0 {
+	if strings.TrimSpace(port) == "" {
 		return "", &StepError{
-			Step: "list-ports",
-			Err:  errors.New("no serial ports found"),
-			Hint: "connect the board with a data-capable USB cable and run `ls /dev/cu.usb*`",
+			Step: "select-port",
+			Err:  errors.New("identity resolver returned an empty serial port"),
+			Hint: "connect exactly one Cable VibeTV and retry",
 		}
 	}
-
-	sorted := sortPreferredPorts(ports)
-	if !containsUSBSerialPort(sorted) {
-		return "", &StepError{
-			Step: "list-ports",
-			Err:  errors.New("no usb serial ports found"),
-			Hint: "connect the board with a data-capable USB cable and run `ls /dev/cu.usb*`",
-		}
-	}
-	if len(sorted) == 1 {
-		return sorted[0], nil
-	}
-
-	if opts.AssumeYes || !d.isInteractive() {
-		fmt.Fprintf(d.stdout, "Multiple serial ports detected; choosing preferred port %s (--yes/non-interactive)\n", sorted[0])
-		return sorted[0], nil
-	}
-
-	return promptForPortSelection(d.stdin, d.stdout, sorted)
-}
-
-func containsUSBSerialPort(ports []string) bool {
-	for _, port := range ports {
-		if portRank(port) < 2 {
-			return true
-		}
-	}
-	return false
+	return port, nil
 }
 
 func normalizeSetupTransport(value string) string {
@@ -659,83 +695,6 @@ func openCodexbarInstallPage(ctx context.Context, d deps) {
 		return
 	}
 	_, _ = d.runCommand(ctx, "", "open", codexbarInstallURL)
-}
-
-func sortPreferredPorts(ports []string) []string {
-	seen := make(map[string]struct{}, len(ports))
-	clean := make([]string, 0, len(ports))
-	for _, p := range ports {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		if _, ok := seen[p]; ok {
-			continue
-		}
-		seen[p] = struct{}{}
-		clean = append(clean, p)
-	}
-
-	sort.Slice(clean, func(i, j int) bool {
-		pi := clean[i]
-		pj := clean[j]
-		ri := portRank(pi)
-		rj := portRank(pj)
-		if ri != rj {
-			return ri < rj
-		}
-		return pi < pj
-	})
-	return clean
-}
-
-func portRank(port string) int {
-	switch {
-	case strings.Contains(port, "usbmodem"):
-		return 0
-	case strings.Contains(port, "usbserial"):
-		return 1
-	default:
-		return 2
-	}
-}
-
-func promptForPortSelection(stdin io.Reader, stdout io.Writer, ports []string) (string, error) {
-	fmt.Fprintln(stdout, "Multiple serial ports detected:")
-	for idx, port := range ports {
-		suffix := ""
-		if idx == 0 {
-			suffix = " (recommended)"
-		}
-		fmt.Fprintf(stdout, "  %d) %s%s\n", idx+1, port, suffix)
-	}
-	fmt.Fprintf(stdout, "Select a port [1-%d] (Enter=1): ", len(ports))
-
-	reader := bufio.NewReader(stdin)
-	line, err := reader.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", &StepError{
-			Step: "select-port",
-			Err:  err,
-			Hint: "rerun setup with --yes to auto-select the recommended port",
-		}
-	}
-
-	trimmed := strings.TrimSpace(line)
-	if trimmed == "" {
-		return ports[0], nil
-	}
-
-	selected, convErr := strconv.Atoi(trimmed)
-	if convErr != nil || selected < 1 || selected > len(ports) {
-		return "", &StepError{
-			Step: "select-port",
-			Err:  fmt.Errorf("invalid selection %q", trimmed),
-			Hint: "rerun setup and enter a number from the list, or use --yes",
-		}
-	}
-
-	return ports[selected-1], nil
 }
 
 func locateRepository(d deps) (string, error) {
@@ -979,7 +938,7 @@ func renderLaunchAgentPlist(home, binaryPath, transportName, target, port string
 func daemonIntervalForSetupTransport(transportName string) string {
 	normalized := normalizeSetupTransport(transportName)
 	if normalized == "" {
-		normalized = defaultTransport
+		normalized = defaultSetupTransport
 	}
 	if normalized == "wifi" {
 		return defaultWiFiDaemonInterval
@@ -1216,13 +1175,32 @@ func installRecoveryAssets(repoRoot, home string) (string, string, error) {
 	return restoreTarget, backupDir, nil
 }
 
-func applyRuntimeConfig(home, rawTheme, rawDeviceTarget string, stdout io.Writer) error {
+func applyRuntimeConfig(
+	home,
+	rawTheme,
+	rawConnectionMode,
+	rawDeviceTarget,
+	rawDeviceID,
+	rawCableDeviceToken string,
+	stdout io.Writer,
+) error {
 	cfg, err := runtimeconfig.Load(home)
 	if err != nil {
 		return err
 	}
 
 	changed := false
+	connectionMode := setupConnectionMode(rawConnectionMode)
+	if err := validateRuntimeConnectionModeConfig(cfg, connectionMode); err != nil {
+		return err
+	}
+	if connectionMode != "" && cfg.ConnectionMode != connectionMode {
+		cfg.ConnectionMode = connectionMode
+		changed = true
+		if stdout != nil {
+			fmt.Fprintf(stdout, "Runtime config: connectionMode=%s\n", connectionMode)
+		}
+	}
 	deviceTarget, deviceToken := splitDeviceTargetToken(rawDeviceTarget)
 	if deviceTarget != "" && cfg.DeviceTarget != deviceTarget {
 		cfg.DeviceTarget = deviceTarget
@@ -1231,6 +1209,39 @@ func applyRuntimeConfig(home, rawTheme, rawDeviceTarget string, stdout io.Writer
 	if deviceToken != "" && cfg.DeviceToken != deviceToken {
 		cfg.DeviceToken = deviceToken
 		changed = true
+	}
+	deviceID := strings.TrimSpace(rawDeviceID)
+	if connectionMode == "cable" && deviceID != "" {
+		if cfg.CableAutoBindDisabled {
+			cfg.CableAutoBindDisabled = false
+			changed = true
+		}
+		if cfg.ConnectionModeChoiceRequired {
+			cfg.ConnectionModeChoiceRequired = false
+			changed = true
+		}
+		if !strings.EqualFold(cfg.DeviceID, deviceID) {
+			cfg.DeviceID = deviceID
+			// A target and token belong to the previously selected identity. Never
+			// attach them to a different VibeTV merely because Cable setup replaced
+			// the active device ID.
+			cfg.DeviceTarget = ""
+			cfg.DeviceToken = ""
+			changed = true
+		}
+		cableDeviceToken := strings.TrimSpace(rawCableDeviceToken)
+		if cableDeviceToken != "" {
+			known, knownOK := cfg.KnownDevice(deviceID)
+			if cfg.DeviceToken != cableDeviceToken || !knownOK ||
+				known.DeviceToken != cableDeviceToken || known.Target != cfg.DeviceTarget {
+				changed = true
+			}
+			cfg.SetActiveDevice(runtimeconfig.KnownDevice{
+				DeviceID:    deviceID,
+				Target:      cfg.DeviceTarget,
+				DeviceToken: cableDeviceToken,
+			})
+		}
 	}
 
 	themeInput := strings.TrimSpace(rawTheme)
@@ -1265,10 +1276,36 @@ func applyRuntimeConfig(home, rawTheme, rawDeviceTarget string, stdout io.Writer
 	if deviceTarget != "" && stdout != nil {
 		fmt.Fprintf(stdout, "Runtime config: deviceTarget=%s\n", deviceTarget)
 	}
+	if connectionMode == "cable" && deviceID != "" && stdout != nil {
+		fmt.Fprintf(stdout, "Runtime config: deviceId=%s\n", deviceID)
+	}
 	if !changed {
 		return nil
 	}
 	return runtimeconfig.Save(home, cfg)
+}
+
+func validateRuntimeConnectionMode(home, rawConnectionMode string) error {
+	cfg, err := runtimeconfig.Load(home)
+	if err != nil {
+		return err
+	}
+	return validateRuntimeConnectionModeConfig(cfg, setupConnectionMode(rawConnectionMode))
+}
+
+func setupConnectionMode(rawConnectionMode string) string {
+	if normalizeSetupTransport(rawConnectionMode) == "usb" {
+		return "cable"
+	}
+	return runtimeconfig.NormalizeConnectionMode(rawConnectionMode)
+}
+
+func validateRuntimeConnectionModeConfig(cfg runtimeconfig.Config, connectionMode string) error {
+	if connectionMode == "wifi" &&
+		(runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) == "cable" || cfg.CableAutoBindDisabled) {
+		return errors.New("VibeTV must confirm the Cable-to-WiFi transition before the host switches to WiFi")
+	}
+	return nil
 }
 
 func discoverSetupWiFiTarget(ctx context.Context, d deps, target, rawRuntimeTarget string) (string, string) {
@@ -1356,12 +1393,4 @@ func splitDeviceTargetToken(raw string) (target, token string) {
 	parsed.RawQuery = query.Encode()
 	parsed.Fragment = ""
 	return strings.TrimRight(parsed.String(), "/"), token
-}
-
-func stdinIsInteractive() bool {
-	info, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return (info.Mode() & os.ModeCharDevice) != 0
 }

@@ -94,6 +94,48 @@ func TestInstallUsesValidInMemoryPackBytes(t *testing.T) {
 	}
 }
 
+func TestInstallUsesOneCableUploadPathAndActivatesOnlyTheStoredSpec(t *testing.T) {
+	packBytes := zipMinimalThemePack(t, writeMinimalThemePack(t))
+	type upload struct {
+		path       string
+		activation string
+		bytes      int
+	}
+	var uploads []upload
+	result, err := Install(context.Background(), Options{
+		PackBytes: packBytes,
+		Out:       io.Discard,
+		Cable: &CableInstallOptions{
+			Capabilities: FallbackThemeSpecCapabilities(),
+			Upload: func(_ context.Context, devicePath string, payload []byte, activation string) error {
+				uploads = append(uploads, upload{path: devicePath, activation: activation, bytes: len(payload)})
+				return nil
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install by Cable: %v", err)
+	}
+	if result.Target != "cable://vibetv" || result.ActivePath != "/themes/u/synth.json" {
+		t.Fatalf("unexpected Cable result %+v", result)
+	}
+	if len(uploads) < 1 {
+		t.Fatal("expected Cable uploads")
+	}
+	for index, got := range uploads {
+		if got.bytes == 0 {
+			t.Fatalf("upload %d is empty", index)
+		}
+		wantActivation := ""
+		if index == len(uploads)-1 {
+			wantActivation = "theme"
+		}
+		if got.activation != wantActivation {
+			t.Fatalf("upload %d activation=%q want=%q", index, got.activation, wantActivation)
+		}
+	}
+}
+
 func TestInstallRejectsScreensaverPackInLiveSlotBeforeDeviceAccess(t *testing.T) {
 	_, err := Install(context.Background(), Options{
 		PackBytes: zipThemePackFiles(t, screensaverPackFiles),

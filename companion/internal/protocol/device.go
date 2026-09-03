@@ -8,9 +8,11 @@ const (
 	FeatureUsageSlotsV1    = "usage-slots-v1"
 	FeatureUsageWindowsV1  = "usage-windows-v1"
 	FeatureProviderSlotsV1 = "provider-slots-v1"
-	DefaultMaxFrameBytes  = 512
-	DefaultMinBrightness  = 10
-	DefaultMaxBrightness  = 100
+	FeatureCableTransferV1 = "cable-transfer-v1"
+	FeatureCableHealthV1   = "cable-health-v1"
+	DefaultMaxFrameBytes   = 512
+	DefaultMinBrightness   = 10
+	DefaultMaxBrightness   = 100
 )
 
 type DisplayBrightnessCapabilities struct {
@@ -59,9 +61,12 @@ type ThemeCapabilities struct {
 }
 
 type TransportCapabilities struct {
-	Active    string   `json:"active,omitempty"`
-	Supported []string `json:"supported,omitempty"`
-	Mode      string   `json:"mode,omitempty"`
+	Active            string   `json:"active,omitempty"`
+	Supported         []string `json:"supported,omitempty"`
+	Mode              string   `json:"mode,omitempty"`
+	TransitionPending bool     `json:"transitionPending,omitempty"`
+	TransitionFrom    string   `json:"transitionFrom,omitempty"`
+	TransitionTo      string   `json:"transitionTo,omitempty"`
 }
 
 type AuthCapabilities struct {
@@ -93,6 +98,37 @@ type DeviceHello struct {
 	Capabilities              CapabilityBlock `json:"capabilities,omitempty"`
 }
 
+// DeviceSettings is the shared settings payload returned by both the WiFi
+// HTTP API and the Cable control protocol.
+type DeviceSettings struct {
+	Display DeviceDisplaySettings  `json:"display"`
+	Standby *DeviceStandbySettings `json:"standby,omitempty"`
+}
+
+type DeviceDisplaySettings struct {
+	BrightnessPercent int `json:"brightnessPercent"`
+}
+
+type DeviceStandbySettings struct {
+	Enabled           bool    `json:"enabled"`
+	TimeoutMinutes    int     `json:"timeoutMinutes"`
+	BrightnessPercent int     `json:"brightnessPercent"`
+	ScreensaverPath   *string `json:"screensaverPath"`
+}
+
+// DeviceSettingsPatch keeps omitted fields distinct from explicit zero/empty
+// values so Cable and WiFi apply exactly the same partial-update semantics.
+type DeviceSettingsPatch struct {
+	BrightnessPercent *int                   `json:"brightnessPercent,omitempty"`
+	Standby           *DeviceStandbySettings `json:"standby,omitempty"`
+}
+
+type WiFiNetwork struct {
+	SSID      string `json:"ssid"`
+	RSSI      int    `json:"rssi"`
+	Encrypted bool   `json:"encrypted"`
+}
+
 func (h DeviceHello) Normalize() DeviceHello {
 	h.Kind = strings.TrimSpace(strings.ToLower(h.Kind))
 	h.Board = strings.TrimSpace(strings.ToLower(h.Board))
@@ -121,6 +157,8 @@ func (h DeviceHello) Normalize() DeviceHello {
 	}
 	h.Capabilities.Transport.Active = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Active))
 	h.Capabilities.Transport.Mode = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Mode))
+	h.Capabilities.Transport.TransitionFrom = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.TransitionFrom))
+	h.Capabilities.Transport.TransitionTo = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.TransitionTo))
 	for i := range h.Capabilities.Transport.Supported {
 		h.Capabilities.Transport.Supported[i] = strings.TrimSpace(strings.ToLower(h.Capabilities.Transport.Supported[i]))
 	}
@@ -145,6 +183,8 @@ func (h DeviceHello) HasFeature(feature string) bool {
 
 type DeviceCapabilities struct {
 	Known                      bool
+	DeviceID                   string
+	ConnectionMode             string
 	ProtocolVersion            int
 	SupportedProtocolVersions  []int
 	PreferredProtocolVersion   int
@@ -209,6 +249,8 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 	}
 
 	caps := DeviceCapabilities{
+		DeviceID:                   h.DeviceID,
+		ConnectionMode:             h.Capabilities.Transport.Mode,
 		ProtocolVersion:            h.ProtocolVersion,
 		SupportedProtocolVersions:  supportedProtocols,
 		PreferredProtocolVersion:   h.PreferredProtocolVersion,

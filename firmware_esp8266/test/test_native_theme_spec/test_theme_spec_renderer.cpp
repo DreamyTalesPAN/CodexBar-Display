@@ -795,6 +795,34 @@ void testCompactUsageWindowBindingTriggersLiveRedraw() {
   TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindows) != 0);
 }
 
+void testCountdownOnlyFramesDoNotRedrawUsageThemesWithoutCountdowns() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","resetSecs":3600,"usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":3600}],"providerSlots":[{"id":"codex","label":"Codex","percent":42,"resetSecs":3600}],"themeSpec":{"v":1,"id":"clippy-like","rev":1,"p":[{"t":"p","x":27,"y":166,"w":146,"h":14,"sl":1,"b":"us1p"},{"t":"tx","x":181,"y":157,"sl":1,"v":"{usageSlot1Percent}%"},{"t":"tx","x":18,"y":142,"sl":1,"v":"{usageSlot1Label}"},{"t":"tx","x":18,"y":196,"pl":1,"v":"{providerSlot1Percent}%"}]}})JSON";
+  const char* countdownOnlyFrame = R"JSON({"v":2,"provider":"codex","resetSecs":3597,"usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":3597}],"providerSlots":[{"id":"codex","label":"Codex","percent":42,"resetSecs":3597}]})JSON";
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, countdownOnlyFrame, 4000, event));
+  TEST_ASSERT_FALSE(event.visualChanged);
+  TEST_ASSERT_FALSE(event.themeSpecPartialRender);
+  TEST_ASSERT_EQUAL_UINT32(0, event.themeSpecChangedFields);
+}
+
+void testCountdownOnlyFramesRedrawThemesThatShowCountdowns() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  const char* firstFrame = R"JSON({"v":2,"provider":"codex","resetSecs":3600,"usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":3600}],"providerSlots":[{"id":"codex","label":"Codex","percent":42,"resetSecs":3600}],"themeSpec":{"v":1,"id":"countdowns","rev":1,"p":[{"t":"tx","x":0,"y":0,"b":"r"},{"t":"tx","x":0,"y":20,"sl":1,"b":"us1r"},{"t":"tx","x":0,"y":40,"pl":1,"b":"pv1r"}]}})JSON";
+  const char* countdownFrame = R"JSON({"v":2,"provider":"codex","resetSecs":3540,"usageWindows":[{"id":"weekly","label":"Weekly","percent":42,"resetSecs":3540}],"providerSlots":[{"id":"codex","label":"Codex","percent":42,"resetSecs":3540}]})JSON";
+
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, firstFrame, 1000, event));
+  TEST_ASSERT_TRUE(ConsumeFrameLine(state, countdownFrame, 61000, event));
+  TEST_ASSERT_TRUE(event.visualChanged);
+  TEST_ASSERT_TRUE(event.themeSpecPartialRender);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldReset) != 0);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindows) != 0);
+  TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldProviderSlots) != 0);
+}
+
 void testConsumeFrameLineComparesCurrentBeforeAssignment() {
   RuntimeState state;
   SerialConsumeEvent event;
@@ -2792,6 +2820,32 @@ void testStaleResetRendersUnavailableWhateverTheThemeBinds() {
   TEST_ASSERT_EQUAL_STRING("Reset unavailable", sink.commands[2].text.c_str());
 }
 
+void testMalformedAndControlLinesNeverBecomeFrames() {
+  RuntimeState state;
+  SerialConsumeEvent event;
+  TEST_ASSERT_FALSE(ConsumeFrameLine(state, "{broken", 1000, event));
+  TEST_ASSERT_FALSE(state.hasFrame);
+  TEST_ASSERT_FALSE(event.frameAccepted);
+
+  TEST_ASSERT_FALSE(
+      ConsumeFrameLine(
+          state,
+          R"JSON({"kind":"request","op":"hello"})JSON",
+          1001,
+          event));
+  TEST_ASSERT_FALSE(state.hasFrame);
+  TEST_ASSERT_FALSE(event.frameAccepted);
+
+  TEST_ASSERT_TRUE(
+      ConsumeFrameLine(
+          state,
+          R"JSON({"v":2,"provider":"codex","session":12,"weekly":34})JSON",
+          1002,
+          event));
+  TEST_ASSERT_TRUE(state.hasFrame);
+  TEST_ASSERT_TRUE(event.frameAccepted);
+}
+
 // The selected provider can lack a reset while another fresh provider has one.
 // providerResetSlots still ships that countdown, so trust must not hinge on the
 // legacy root projection being positive.
@@ -2860,6 +2914,8 @@ int main() {
   RUN_TEST(testRawUsageWindowParserCapacityStillAcceptsNormalLabels);
   RUN_TEST(testHighestAdvertisedUsageWindowBindingCompiles);
   RUN_TEST(testCompactUsageWindowBindingTriggersLiveRedraw);
+  RUN_TEST(testCountdownOnlyFramesDoNotRedrawUsageThemesWithoutCountdowns);
+  RUN_TEST(testCountdownOnlyFramesRedrawThemesThatShowCountdowns);
   RUN_TEST(testConsumeFrameLineComparesCurrentBeforeAssignment);
   RUN_TEST(testQuotaReplenishmentDoesNotCountAsUsageProgress);
   RUN_TEST(testUsageProgressRequiresStableProviderAndWindowIdentity);
@@ -2946,5 +3002,6 @@ int main() {
   RUN_TEST(testResetTrustLegacyFrameKeepsUnboundedLocalCountdown);
   RUN_TEST(testResetTrustIsUntouchedByFramesWithoutResetFields);
   RUN_TEST(testStaleResetRendersUnavailableWhateverTheThemeBinds);
+  RUN_TEST(testMalformedAndControlLinesNeverBecomeFrames);
   return UNITY_END();
 }

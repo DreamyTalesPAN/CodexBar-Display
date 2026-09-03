@@ -26,6 +26,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
 type recordingWriter struct {
@@ -115,6 +116,24 @@ func TestFirmwareRawWritePauseIsPositiveForEveryFirmwareVersion(t *testing.T) {
 	for _, firmware := range []string{"1.0.37", "1.0.39", "9999.0.24", ""} {
 		if got := firmwareRawWritePause(firmware); got <= 0 {
 			t.Fatalf("firmware %q write pause = %s, want > 0 (unpaced RAW uploads fail on real hardware)", firmware, got)
+		}
+	}
+}
+
+func TestLegacyRawFirmwareUploadIsLimitedToPublic1036(t *testing.T) {
+	for _, test := range []struct {
+		firmware string
+		want     bool
+	}{
+		{firmware: "1.0.36", want: true},
+		{firmware: "v1.0.36", want: true},
+		{firmware: "1.0.36-dev.1", want: false},
+		{firmware: "1.0.37", want: false},
+		{firmware: "1.0.40-dev", want: false},
+		{firmware: "", want: false},
+	} {
+		if got := usesLegacyRawFirmwareUpload(test.firmware); got != test.want {
+			t.Fatalf("usesLegacyRawFirmwareUpload(%q)=%t want=%t", test.firmware, got, test.want)
 		}
 	}
 }
@@ -898,6 +917,161 @@ func TestRunInstallUpdateAlreadyCurrentSkipsOTAUpload(t *testing.T) {
 	}
 }
 
+func TestRunInstallUpdateCableHappyPath(t *testing.T) {
+	home, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-cable",
+		DeviceToken:    "pair-token",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	transferCableFirmwareFn = func(_ context.Context, port, deviceID, token string, image []byte) error {
+		if port != "/dev/mock-cable" || deviceID != "device-cable" || token != "pair-token" || string(image) != "cable firmware" {
+			t.Fatalf("unexpected Cable transfer port=%q id=%q token=%q image=%q", port, deviceID, token, image)
+		}
+		*firmwareVersion = "1.0.1"
+		return nil
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", "cable://vibetv", "--manifest-url", manifestURL, "--skip-launchagent-pause"})
+	})
+	if err != nil {
+		t.Fatalf("Cable update: %v", err)
+	}
+	if !strings.Contains(output, `"uploadAccepted":true`) || !strings.Contains(output, `"observedFirmware":"1.0.1"`) {
+		t.Fatalf("Cable update did not report accepted and verified firmware:\n%s", output)
+	}
+}
+
+func TestRunInstallUpdateCableAlreadyCurrentSkipsTransfer(t *testing.T) {
+	home, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
+	*firmwareVersion = "1.0.1"
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable", DeviceToken: "pair-token"}); err != nil {
+		t.Fatal(err)
+	}
+	transferCableFirmwareFn = func(context.Context, string, string, string, []byte) error {
+		t.Fatal("already-current Cable firmware must not transfer")
+		return nil
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", "cable://vibetv", "--manifest-url", manifestURL, "--skip-launchagent-pause"})
+	})
+	if err != nil || !strings.Contains(output, `"outcome":"already_current"`) {
+		t.Fatalf("Cable already-current result err=%v output=%s", err, output)
+	}
+}
+
+func TestRunInstallUpdateCableReportsInterruptedTransferWithoutRetry(t *testing.T) {
+	home, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable", DeviceToken: "pair-token"}); err != nil {
+		t.Fatal(err)
+	}
+	transferCalls := 0
+	transferCableFirmwareFn = func(context.Context, string, string, string, []byte) error {
+		transferCalls++
+		return fmt.Errorf("%w: Cable disconnected", usb.ErrCableTransferInterrupted)
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", "cable://vibetv", "--manifest-url", manifestURL, "--skip-launchagent-pause"})
+	})
+	if err == nil || transferCalls != 1 {
+		t.Fatalf("interrupted Cable transfer err=%v calls=%d", err, transferCalls)
+	}
+	if !strings.Contains(output, `"outcome":"interrupted"`) || !strings.Contains(output, `"retryPolicy":"reconnect_cable"`) {
+		t.Fatalf("Cable interruption was not reported truthfully:\n%s", output)
+	}
+	if !strings.Contains(errcode.Recovery(err), "data-capable Cable") {
+		t.Fatalf("Cable interruption returned the wrong recovery action: %v", err)
+	}
+}
+
+func TestRunInstallUpdateCableRejectsChangedIdentity(t *testing.T) {
+	home, _, _ := prepareCableFirmwareUpdateTest(t)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable", DeviceToken: "pair-token"}); err != nil {
+		t.Fatal(err)
+	}
+	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{DeviceID: "other-device", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}, nil
+	}
+
+	err := runInstallUpdate([]string{"--target", "cable://vibetv", "--manifest-url", "https://example.invalid/manifest.json", "--skip-launchagent-pause"})
+	if err == nil || !strings.Contains(err.Error(), "identity changed") {
+		t.Fatalf("expected changed Cable identity rejection, got %v", err)
+	}
+}
+
+func TestRunInstallUpdateCableRejectsPostRebootVersionMismatch(t *testing.T) {
+	home, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable", DeviceToken: "pair-token"}); err != nil {
+		t.Fatal(err)
+	}
+	transferCableFirmwareFn = func(context.Context, string, string, string, []byte) error { return nil }
+	cableFirmwareVerifyTimeout = 5 * time.Millisecond
+	cableFirmwareVerifyPollInterval = time.Millisecond
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", "cable://vibetv", "--manifest-url", manifestURL, "--skip-launchagent-pause"})
+	})
+	if err == nil || !strings.Contains(err.Error(), "still reports firmware 1.0.0") {
+		t.Fatalf("expected post-reboot Cable version mismatch, got %v", err)
+	}
+	if !strings.Contains(output, `"retryPolicy":"power_cycle"`) || !strings.Contains(output, `"uploadAccepted":true`) {
+		t.Fatalf("accepted Cable update must require a power cycle before retry:\n%s", output)
+	}
+}
+
+func prepareCableFirmwareUpdateTest(t *testing.T) (string, string, *string) {
+	t.Helper()
+	pinNoOtherRuntimeWriter(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	previousResolve := resolveCableFirmwarePortFn
+	previousRead := readCableFirmwareHelloFn
+	previousTransfer := transferCableFirmwareFn
+	previousTimeout := cableFirmwareVerifyTimeout
+	previousPoll := cableFirmwareVerifyPollInterval
+	previousHTTPClient := releaseHTTPClient
+	t.Cleanup(func() {
+		resolveCableFirmwarePortFn = previousResolve
+		readCableFirmwareHelloFn = previousRead
+		transferCableFirmwareFn = previousTransfer
+		cableFirmwareVerifyTimeout = previousTimeout
+		cableFirmwareVerifyPollInterval = previousPoll
+		releaseHTTPClient = previousHTTPClient
+	})
+	firmwareVersion := "1.0.0"
+	resolveCableFirmwarePortFn = func(explicit, expectedDeviceID string) (string, error) {
+		if explicit != "" || expectedDeviceID != "device-cable" {
+			t.Fatalf("unexpected Cable resolution explicit=%q id=%q", explicit, expectedDeviceID)
+		}
+		return "/dev/mock-cable", nil
+	}
+	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
+		if port != "/dev/mock-cable" {
+			t.Fatalf("unexpected Cable port %q", port)
+		}
+		return protocol.DeviceHello{DeviceID: "device-cable", Board: "esp8266-smalltv-st7789", Firmware: firmwareVersion}, nil
+	}
+	image := "cable firmware"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/manifest.json":
+			_, _ = fmt.Fprintf(w, `{"schemaVersion":1,"release":"v1.0.1","artifacts":[{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware.bin","firmwareUrl":"%s/firmware.bin","sha256":"%s"}]}`, "http://"+r.Host, sha256String(image))
+		case "/firmware.bin":
+			_, _ = io.WriteString(w, image)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+	releaseHTTPClient = server.Client()
+	return home, server.URL + "/manifest.json", &firmwareVersion
+}
+
 func TestRunInstallUpdateRediscoverAfterFirmwareRebootIPChange(t *testing.T) {
 	pinNoOtherRuntimeWriter(t)
 	previousHTTPClient := releaseHTTPClient
@@ -1298,6 +1472,13 @@ func TestEnsureFirmwareUpdateDeviceTokenRetriesTransientPreflightError(t *testin
 	}
 	if helloCalls != 2 {
 		t.Fatalf("expected one retry after the transient error, got %d hello calls", helloCalls)
+	}
+}
+
+func TestFirmwareOTAAuthErrorDoesNotReadStatusFromPort(t *testing.T) {
+	err := errors.New(`Get "http://127.0.0.1:42401/hello": EOF`)
+	if firmwareOTAAuthError(err) {
+		t.Fatalf("transport error port must not look like an HTTP auth status: %v", err)
 	}
 }
 
@@ -2882,24 +3063,20 @@ func TestDeviceHelloPreflightSendsTokenOnlyInHeader(t *testing.T) {
 	}
 }
 
-// pinNoOtherRuntimeWriter points the writer-quiesce probe at a closed port so
-// the test never sees whatever runtime happens to run on the machine executing
-// it. Without this, every runInstallUpdate test fails on a developer Mac with
-// VibeTV Control Center installed and passes on CI, which is exactly backwards
-// from where the hardware work happens.
+// pinNoOtherRuntimeWriter points the writer-quiesce probe at a stable
+// non-writer endpoint so tests never depend on local runtime state or port
+// reuse timing.
 func pinNoOtherRuntimeWriter(t *testing.T) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserve closed port: %v", err)
-	}
-	origin := "http://" + listener.Addr().String()
-	if err := listener.Close(); err != nil {
-		t.Fatalf("close reserved port: %v", err)
-	}
+	nonWriter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"displayWriter":false}`))
+	}))
 	previous := firmwareUpdateRuntimeHealthOrigin
-	t.Cleanup(func() { firmwareUpdateRuntimeHealthOrigin = previous })
-	firmwareUpdateRuntimeHealthOrigin = origin
+	t.Cleanup(func() {
+		firmwareUpdateRuntimeHealthOrigin = previous
+		nonWriter.Close()
+	})
+	firmwareUpdateRuntimeHealthOrigin = nonWriter.URL
 }
 
 // Hardware, esp8266-smalltv-st7789, 2026-08-07: after a stalled upload the

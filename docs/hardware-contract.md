@@ -1,12 +1,15 @@
-# Hardware Contract (WiFi runtime MVP)
+# Hardware Contract (Cable and WiFi)
 
-This document defines the required hardware/runtime contract for codexbar-display on the VibeTV WiFi runtime path.
+This document defines the required hardware/runtime contract for the two
+exclusive VibeTV connection modes.
 
 ## Scope and Release Policy
 - Release-gated MVP target: `esp8266_smalltv_st7789`
 - Experimental fallback (non-blocking): `lilygo_t_display_s3`
-- MVP runtime transport: WiFi HTTP (`transport.active=wifi`)
-- USB CDC serial remains optional for development, flashing, logs, and support (`supported=["usb","wifi"]`)
+- New cutover hardware defaults to Cable (`transport.active=usb`, `transport.mode=cable`).
+- WiFi remains a complete customer-selectable runtime (`transport.active=wifi`, `transport.mode=wifi`).
+- The physical Cable data link is a CH340 USB-UART bridge, not native USB CDC.
+- Updated legacy devices persist `legacy-wifi-only` and advertise only WiFi.
 
 ## Firmware Environment -> Board Identity
 
@@ -17,24 +20,239 @@ The firmware `hello.board` value must match the selected firmware environment:
 | `esp8266_smalltv_st7789` | `esp8266-smalltv-st7789` | release-gated |
 | `lilygo_t_display_s3` | `esp32-lilygo-t-display-s3` | experimental, non-blocking |
 
-Companion setup enforces this mapping when a device hello is available.
+Companion setup enforces this mapping when a device hello is available. Both
+supported Cable targets emit a stable, non-empty `deviceId` and advertise
+`transport.active=usb` with `transport.mode=cable`; serial port names are never
+used as device identity.
 
 ## Transport and Protocol Contract
-- USB CDC serial at `115200` baud.
+- CH340 USB-UART serial at `115200` baud.
 - WiFi HTTP on port 80 after the device joins the customer WiFi network.
-- Host sends newline-delimited JSON frames either over USB Serial or as the body of `POST /frame`.
+- Cable and WiFi are exclusive stable modes. Cable turns the radio, AP, captive
+  DNS, and HTTP server off. WiFi ignores serial application data.
+- Host sends newline-delimited JSON frames over Cable or as the body of
+  `POST /frame` in WiFi mode.
 - Firmware exposes `GET /hello` over WiFi with the same hello shape as USB.
-- Firmware emits JSON `hello` on boot/reconnect with:
+- Cable identity is requested with
+  `{"kind":"request","op":"hello"}`. Opening a port must not reset the
+  ESP8266 merely to obtain identity.
+- Firmware emits JSON `hello` in Cable mode with:
   - `supportedProtocolVersions: [2,1]`
   - `preferredProtocolVersion: 2`
   - `protocolVersion` (legacy single-value signal)
-  - `board`, `firmware`, `features`, `maxFrameBytes`
+  - stable `deviceId`, `board`, `firmware`, `features`, `maxFrameBytes`
   - `capabilities` block (`display`, `theme`, `transport`)
   - `capabilities.display.brightness` when browser-adjustable backlight control is supported, including `minPercent` and `maxPercent` (1-100 on the current ESP8266 firmware)
 
 Companion negotiation:
 - prefers v2 when available.
 - falls back to v1 when negotiation data is missing/legacy.
+- probes every USB candidate and accepts exactly one hello whose board, Cable
+  mode, and `deviceId` match. Port names, alphabetical order, and CH340
+  enumeration are never identity. Zero or several matches stop explicitly.
+- On macOS, `/dev/cu.usb*` and `/dev/tty.usb*` are callout/tty aliases for the
+  same USB-UART. The resolver probes the `cu` endpoint and ignores only its
+  `tty` alias; two matching `cu` devices still stop as several VibeTVs.
+- Runtime config stores the customer choice as `connectionMode=cable|wifi`.
+  The display worker maps `cable` to its internal USB transport in one place,
+  reloads the value on worker start, and stops the current cycle before its
+  device write if the stored mode changed. Legacy configs without the field
+  keep their existing launch transport until the customer selects a mode.
+
+### Physical Cable pairing
+
+Explicitly choosing Cable in Control Center is the physical pairing gesture.
+After resolving exactly one matching `deviceId`, a host without a usable token
+sends `{"kind":"request","op":"pair","deviceId":"..."}`. Firmware returns
+the existing valid token, or creates and persists one before returning it. The
+token is accepted only from the dedicated pairing reply, validated against the
+same 16-64 character contract as firmware, and stored in the existing active
+device plus known-device record. It is never returned by the Companion API or
+support report.
+
+Discovery, status polling, app startup, and automatic Cable recovery never
+pair. A different identity, active transfer/upload, or pending reboot rejects
+the request without exposing a token. This keeps physical possession of the
+Cable as the trust boundary while making a factory-fresh Cable device capable
+of authenticated theme and firmware transfers.
+
+### Safe connection-mode transition
+
+A mode switch is a two-step transaction. The stable target is written to `/s`
+and a five-byte temporary `/cm` record stores the previous and target modes.
+The target mode gets one 60-second boot window to prove the same `deviceId` on
+its new transport:
+
+- Cable confirmation:
+  `{"kind":"request","op":"confirm-connection-mode","deviceId":"..."}`
+- WiFi confirmation: authenticated `POST /api/connection-mode/confirm` with
+  `{"deviceId":"..."}`
+
+Cable starts a switch with the serial request `set-connection-mode`; WiFi uses
+authenticated `POST /api/connection-mode`. A confirmation removes `/cm` and
+makes the target stable. A Cable-to-WiFi switch without credentials keeps the
+existing `VibeTV-Setup` portal open for a bounded ten-minute customer-entry
+window. Saving credentials reboots into the normal 60-second association and
+identity-confirmation window. A failed WiFi association or expired setup or
+confirmation window restores the previous mode and reboots once.
+
+The Mac App customer path uses the narrower serial `configure-wifi` request:
+it validates and stores the entered SSID/key through the same credential owner,
+then begins the existing Cable-to-WiFi transaction. The secret is never echoed
+or logged. WiFi-to-Cable starts on the active authenticated HTTP path, then the
+Companion resolves and confirms the same `deviceId` over Cable. Brightness and
+standby use one serial `settings` request in Cable mode and the existing HTTP
+settings endpoint in WiFi mode; both finish in the same firmware validation,
+persistence, apply, and complete readback owner.
+An incomplete power-loss write is discarded on boot when `/cm` does not match
+the mode in `/s`. `legacy-wifi-only` can never start a Cable transition.
+
+Hello advertises `transitionPending`, `transitionFrom`, and `transitionTo`
+inside `capabilities.transport` while confirmation is required. The Companion
+confirms only after identity resolution selected exactly one matching Cable
+device or WiFi rediscovery matched the stored `deviceId`.
+
+Hardware validation on 2026-08-26 used supplier device `16199051` at
+`/dev/cu.usbserial-11230` behind the D6000 dock. The branch binary
+(`fc4e898a7b9932d1cd51fae24eb0bc90f577393b7b8f2d23ae3dcf92be76ed84`,
+479,904-byte image) flashed and hash-verified at 115200 baud. That tested build
+used 475,755 bytes flash and 46,768 bytes RAM. One explicit
+Cable-to-WiFi switch without stored credentials logged
+`wifi_association_failed`, restored Cable once, and returned the same
+`deviceId` with `networkMode=off` and `transitionPending=false`.
+
+The final 60-second-window build uses 475,771 bytes flash and 46,768 bytes RAM;
+its 479,920-byte image hash is
+`c2361122a515fa13c9c1b9422d75cbf22df969c6b8efe0f5fc443237ff6d0698`.
+That exact image was subsequently flashed at 115200 baud and passed the
+device-side hash check. A final live identity lookup without a supplied port
+resolved `/dev/cu.usbserial-11230`, protocol 2, and the expected board and
+theme limits.
+
+The local #395 customer-flow development build on 2026-08-27 uses 477,531 bytes
+flash and 46,992 bytes RAM; its 481,680-byte image remains below the release
+gates with 320 bytes of binary-image reserve. It passed the
+release-gated ESP8266 build and native suites, but was not flashed to hardware;
+real-screen rehearsal still requires a separate current hardware-write
+approval.
+
+Direct-Mac validation on 2026-08-28 used device `14799300` on
+`/dev/cu.usbserial-110`, commit `2ca9384`, and local Control Center
+`99.0.861`. The build used 476,431 bytes flash and 46,928 bytes RAM; each
+versioned test image was 480,576 bytes. A factory-fresh `1.0.40-dev-a` hello
+reported `auth.paired=false`. Explicit Cable selection created one 32-character
+token, persisted it in the active and known-device records without exposing it,
+and left discovery/startup read-only.
+
+The 128-byte stop-and-wait protocol completed these direct-Mac transfers:
+
+| Transfer | Payload | Result | Time |
+|---|---:|---|---:|
+| Firmware `dev-a` to `dev-b` | 480,576-byte image | accepted, rebooted, exact version read back | 160.5 s |
+| Clippy live theme | 36,277 bytes unpacked, including two CBA files | stored and activated | 12.4 s |
+| Mini Classic live theme | 22,457 bytes unpacked, including a 20,870-byte GIF | stored and activated | 7.8 s |
+| Token Fire screensaver | 13,952 bytes unpacked, including an 8,713-byte CBA | stored in screensaver slot | 5.2 s |
+| Maximum ThemeSpec fixture | 3,374 bytes, 32 primitives | stored, activated, and visually confirmed on the panel | 1.5 s |
+
+Direct-Mac validation on 2026-08-31 reproduced disappearing usage rows while
+Mini Classic decoded its GIF. The bundled CodexBar and Companion kept all three
+usage windows, but the old firmware accepted only 2 of about 14 unpaced Cable
+frames because its 256-byte UART receive ring overflowed while rendering. Test
+firmware `9999.0.862` sized that ring to the advertised 2,048-byte frame contract
+and accepted 15 of 15 post-boot frames on device `14799300`. The restored live
+stream then stayed ready for 20 of 20 samples across 60 seconds, with three
+usage windows and no unavailable frame in every sample.
+
+The same device exposed a second render issue after Clippy was installed over
+Cable: its two usage rows flashed on every roughly three-second Companion
+frame. The percentages and availability were unchanged; only the reset
+seconds moved. The ThemeSpec change detector now ignores reset-only movement
+for usage and provider slots unless the active theme actually binds that reset
+value. Countdown themes such as Night Clock still repaint their visible reset
+text. Native renderer coverage passed 124 of 124 cases. Final test firmware
+`9999.0.864` uses 476,879 bytes flash and 46,944 bytes RAM; its 481,024-byte
+image hash is
+`daf1c2533f68d2f4373326f5e2b03b600890796bce53dd05081d343e881681ca`.
+That exact image was flashed to device `14799300`, passed the device-side hash
+check, rebooted ready, and then held three real usage windows without an
+unavailable frame for 24 of 24 samples across 72 seconds while the reset
+seconds continued changing. The user visually confirmed on the physical Clippy
+screen that the roughly three-second usage-area flash was gone.
+
+The physical Cable-unplug test on 2026-08-31 interrupted the real Control Center
+update from `9999.0.864` to `9999.0.865` before upload acceptance. The job ended
+with `firmware_update_cable_interrupted`, the customer-facing Updates screen
+showed `Try again`, and reconnecting the same device booted the exact old
+`9999.0.864` image ready with a healthy stream. Activating `Try again` in that
+screen started a new real update job. This proves the inactive image remains
+bootable and the customer has an actionable retry after physically losing the
+Cable.
+
+The accepted retry exposed a separate restart race: the updater correctly
+reported that the device still advertised `9999.0.864`, but the Companion
+overwrote that failure with `complete`; a manual power cycle then booted the
+already committed `9999.0.865`. Cable completion now requires the updater's
+verified firmware to equal its observed firmware, so an accepted upload can no
+longer hide a post-update verification error. Such a failure now requires a
+power cycle before another attempt. Firmware flushes the `complete` transfer
+reply and restarts immediately instead of waiting for the host to close the
+CH340 serial port before a scheduled restart.
+
+The corrected `9999.0.867` build uses 476,903 bytes flash and 46,928 bytes RAM.
+Its 481,056-byte image hash is
+`5834a83fd9c56b1ad5ee9c559d3ceb2050e8f353612224b74632721e3a71e0bc`.
+To prove that the new restart code itself performed the handoff, Control Center
+transferred that exact image from already-running corrected firmware
+`9999.0.866` to device `14799300` over `/dev/cu.usbserial-10`. Without a manual
+power cycle the device advertised `9999.0.867` three seconds after the updater
+entered rebooting. The job completed only with exact observed firmware, and the
+device then stayed connected, ready, and on a healthy three-window Cable stream
+for 24 of 24 samples. #302 still requires visual confirmation that the installed
+GIF/CBA animations move on the panel and the dock-path test before it can close.
+
+## Cutover Migration Contract
+
+The connection-mode byte is appended to the existing `/s` record. Shorter
+records remain readable.
+
+- No stored mode plus any preserved settings record, VibeTV WiFi credentials,
+  or pairing token becomes `legacy-wifi-only` once.
+- No stored mode and no legacy state becomes `cable` once.
+- A stored mode is never reinterpreted by later firmware.
+- WiFi credentials, pairing, brightness, standby, themes, and assets are not
+  deleted by this migration.
+- The exact cutover firmware version remains unassigned until the immutable
+  release candidate exists.
+
+## Supplier CH340 Bench Limits
+
+The supplier sample on `/dev/cu.usbserial-11230` behind the D6000 dock proved
+bit-exact paced writes and recovery at `115200` baud. A 475,728-byte firmware
+write completed in 38.2 seconds and passed the device-side hash check.
+Sustained reads at `230400` and `460800` lost bytes behind that dock, so
+customer Cable traffic and support flashing stay at `115200` until a
+direct-Mac measurement proves otherwise.
+
+`115200` is not by itself a flow-control guarantee. A single 4 MB esptool read
+failed around 1.36 MB with a short 4 KB response. Splitting it into separate
+128 KB esptool sessions let three segments pass, but the fourth still failed
+around 53 KB. Do not treat 128 KB as a safe application chunk or accept a
+transfer merely because its baud rate is 115200; the Cable protocol needs its
+own bounded chunks, acknowledgements, retry boundary, and whole-payload hash.
+
+The ESP8266 UART has no flow control. Six back-to-back frames overflowed the
+current receive path while six frames spaced by 100 ms passed. Normal runtime
+frames therefore remain paced. #302 now uses one 128-byte candidate chunk at a
+time, with a device acknowledgement after its MD5 prefix is verified and the
+chunk is written; the final full-payload MD5 gates commit. That implementation
+still needs the direct-Mac and dock measurement gate above.
+
+The full Cable hello on the branch firmware is 1,161 bytes including newline.
+After opening the CH340 behind the D6000 dock, the first requested hello took
+1,103 ms; four later requests took 111-162 ms. The Companion therefore keeps a
+2,048-byte hello buffer and a bounded two-second identity window. The older
+1,024-byte/300-ms reader both truncated the real capability line and expired
+before the first response, so it could not resolve the supplier hardware.
 
 ### WiFi PHY mode: always 802.11g, on every radio bring-up
 
@@ -67,20 +285,24 @@ black hole. Support guidance for a stalling first update: power-cycle the
 VibeTV immediately before retrying (a fresh association starts without
 aggregation state).
 
-Forcing 11g removes the A-MSDU black hole, but it is not the only OTA stall
-mechanism. A rarer RAW-OTA acknowledgement stall still occurs intermittently
-even on 11g with healthy heap (roughly one leg in 5–10; the receive window
-closes at a 1024-byte block boundary, most likely while the ESP8266 erases a
-flash sector). This is the case the paced RAW upload and the "restart before
-another firmware upload" recovery below exist for: power-cycle and retry once.
+Forcing 11g removes the A-MSDU black hole, but it is not the only historical
+OTA stall mechanism. A rarer legacy RAW-OTA acknowledgement stall occurred
+intermittently even on 11g with healthy heap (roughly one leg in 5–10; the
+receive window closed at a 1024-byte block boundary, most likely while the
+ESP8266 erased a flash sector). The paced RAW bridge and the "restart before
+another firmware upload" recovery below apply only while upgrading installed
+1.0.36 devices.
 `scripts/vibetv-hw-selftest.sh` performs that recovery after the operator
 approves it on the terminal (a failed hardware write is never retried
 unattended).
 
-### RAW OTA sender pacing: always paced, and never concurrent
+### Legacy RAW OTA sender pacing: compatibility evidence
 
-The RAW OTA sender keeps a 10 ms pause between 64-byte chunks for **every**
-firmware version, and waits for a block acknowledgement every 1024 bytes.
+The Mac keeps the RAW sender only to bridge installed 1.0.36 devices. That
+legacy sender keeps a 10 ms pause between 64-byte chunks and waits for a block
+acknowledgement every 1024 bytes. Current firmware no longer runs the duplicate
+RAW receiver on TCP port 8081: WiFi receives multipart updates, Cable receives
+the serial bulk protocol.
 
 The pause used to be skipped for released firmware >= 1.0.37, on the assumption
 that the receiver fix in that version made it unnecessary. Measured on
@@ -101,9 +323,9 @@ runtime was still polling: 0/1.
 
 Two independent requirements follow, and both are needed:
 
-1. **Pace every upload.** No firmware version is exempt. Locked by
+1. **Pace every legacy RAW upload.** No compatibility upload is exempt. Locked by
    `TestFirmwareRawWritePauseIsConservativeForEveryFirmware`, `DO NOT weaken`.
-2. **Quiesce every other writer first.** A paced upload still stalls if anything
+2. **Quiesce every other writer first.** A paced legacy upload still stalls if anything
    else is holding a connection to the device. Nothing may talk to port 80 while
    firmware bytes are on port 8081 -- not health polls, not display frames.
 
@@ -187,7 +409,7 @@ unexplained transport error instead of an authentication failure.
 - Connected devices expose their current IP in `/hello` discovery, show `WiFi connected!` plus `app.vibetv.shop`, serve the local setup hub on that IP, and wait for the Mac App.
 - Connected devices expose read-only status on their current IP. Customer-facing writes are performed by the authenticated Control Center.
 - `POST /api/settings` accepts form field `b` as a brightness percentage and updates supported settings without reflashing firmware. Include `api=1` for a JSON/CORS response; omit it for the built-in IP-based form redirect. `GET /health` is the readback and support-diagnostics path.
-- Starting with firmware `1.0.39`, connected devices accept an explicit local-WiFi `POST /api/pair` without the previous token; the latest Mac wins. Other write APIs require `X-VibeTV-Token` or the native-tool/raw-OTA query fallback. Read-only diagnostics (`/hello`, `/health`, `GET /assets`) remain open.
+- Starting with firmware `1.0.39`, connected devices accept an explicit local-WiFi `POST /api/pair` without the previous token; the latest Mac wins. Other WiFi write APIs require `X-VibeTV-Token`. Read-only diagnostics (`/hello`, `/health`, `GET /assets`) remain open.
 - Firmware and filesystem uploads always require the current pairing token,
   including on fresh devices and while `VibeTV-Setup` is active. The public
   `/update` page never embeds that token or exposes a direct upload form.

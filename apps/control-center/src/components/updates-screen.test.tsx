@@ -270,6 +270,37 @@ describe("UpdatesScreen VibeTV update card", () => {
 
     expect(html).toContain("Update failed");
   });
+
+  it("shows Cable reconnect recovery with a manual retry button", () => {
+    const html = renderToStaticMarkup(
+      <UpdatesScreen
+        companionStatus="online"
+        device={{ connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.40" }}
+        firmwareUpdate={{
+          checkedAt: "2026-08-27T10:00:00Z",
+          installedFirmware: "1.0.40",
+          latestFirmware: "1.0.41",
+          updateAvailable: true,
+          status: "update_available",
+        }}
+        onCreateReport={() => undefined}
+        onInstallUpdate={() => undefined}
+        updateStatus={{
+          phase: "error",
+          stage: "uploading",
+          startedAt: "2026-08-27T10:00:00Z",
+          finishedAt: "2026-08-27T10:01:00Z",
+          retryAllowed: true,
+          error: "Reconnect VibeTV with a data-capable Cable, wait for it to start, then try the update once.",
+          logs: [],
+        }}
+      />,
+    );
+
+    expect(html).toContain("Reconnect VibeTV with a data-capable Cable");
+    expect(html).toContain("Try again");
+    expect(html).toContain("Create report");
+  });
 });
 
 // The mixed state (new firmware + old Mac App) renders slot-bound theme

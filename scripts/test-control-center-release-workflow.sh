@@ -139,8 +139,12 @@ main() {
     "releases/latest/download/VibeTV-Control-Center.dmg" \
     "hosted setup must not use an unchecked latest-release DMG fallback"
   assert_contains \
-    "$(cat "$ROOT/apps/control-center/src/components/setup-screen.tsx")" \
-    "Download Mac App" \
+    "$(cat "$ROOT/apps/control-center/src/components/setup/mac-app-download-screen.tsx")" \
+    "availableMacAppDmgDownloadUrl" \
+    "hosted setup must resolve the Mac App download through the verified DMG asset"
+  assert_contains \
+    "$(cat "$ROOT/apps/control-center/src/components/setup/mac-app-download-screen.tsx")" \
+    "<span>Download</span>" \
     "hosted setup must present the DMG download as the primary Mac App action"
   assert_contains "$(cat "$ROOT/macos/VibeTVControlCenter/main.swift")" \
     "migration-backups" \

@@ -60,10 +60,6 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import {
-  hasFirmwareUpdate,
-  type FirmwareUpdateInfo,
-} from "@/lib/firmware";
 import { compareSemVer, parseSemVer } from "@/lib/semver";
 import { cn } from "@/lib/utils";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
@@ -85,12 +81,8 @@ import {
 import type { ThemeStudioDeviceCapabilities } from "@/lib/theme-studio-capabilities";
 import type { ThemeProduct } from "@/lib/themes";
 import { themeRenderPackUrl } from "./control-center-runtime";
+import { ThemeRenderPreview } from "./theme-render-preview";
 import type { StandbySettings } from "./control-center-types";
-import {
-  THEME_CATALOG_PREVIEW_FRAME,
-  ThemeSpecPreview,
-  type ThemeRenderPack,
-} from "./live-vibetv-preview";
 import {
   ThemeStudioScreen,
   type ThemeStudioEditorTheme,
@@ -164,14 +156,6 @@ export type ThemeInstallStatus = {
   error?: string;
 };
 
-export type ThemeSetupFirmwareUpdateStatus = {
-  phase: "installing" | "complete" | "attention" | "error";
-  message?: string;
-  retryAllowed?: boolean;
-  error?: string;
-  progress?: number;
-};
-
 export type ThemeLibraryScreenProps = {
   themes: ThemeProduct[];
   usage?: ThemeStudioUsage;
@@ -183,23 +167,14 @@ export type ThemeLibraryScreenProps = {
   themeInstallEnabled: boolean;
   busyAction: string | null;
   installStatus?: ThemeInstallStatus | null;
-  firmwareUpdate?: FirmwareUpdateInfo | null;
-  firmwareUpdateStatus?: ThemeSetupFirmwareUpdateStatus | null;
   installEntry?: boolean;
   lastInstall?: ThemeInstallResult;
-  readinessError?: {
-    message: string;
-    nextAction?: string;
-  } | null;
   requestedThemeId?: string;
-  setupMode?: boolean;
   storefrontConfigured: boolean;
   standby?: StandbySettings | null;
   onSelectTheme: (themeId: string) => void;
   onInstallCustomTheme: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
-  onInstallFirmwareUpdate?: () => Promise<boolean> | boolean | void;
   onInstallTheme: (theme: ThemeProduct) => Promise<unknown> | void;
-  onCreateSupportReport?: () => Promise<unknown> | void;
   onSaveStandby?: (value: StandbySettings) => Promise<void> | void;
 };
 
@@ -212,19 +187,13 @@ export function ThemeLibraryScreen({
   catalogIssue,
   device,
   installStatus,
-  firmwareUpdate,
-  firmwareUpdateStatus,
   lastInstall,
-  readinessError,
   requestedThemeId,
-  setupMode = false,
   companionStatus,
   storefrontConfigured,
   standby,
   themeInstallEnabled,
   onInstallCustomTheme,
-  onInstallFirmwareUpdate,
-  onCreateSupportReport,
   onSelectTheme,
   onInstallTheme,
   onSaveStandby,
@@ -250,19 +219,15 @@ export function ThemeLibraryScreen({
   const recoveryMatchesUsage =
     (recovery ? themeDocumentUsage(recovery.document) : "live") === usage;
   const libraryThemes: ThemeLibraryItem[] = [
-    ...(setupMode
-      ? []
-      : userThemes
-          .filter(
-            (custom) => themeDocumentUsage(custom.document) === usage,
-          )
-          .map((custom) => ({
-            kind: "custom" as const,
-            custom,
-            id: custom.id,
-            themeId: custom.document.spec.themeId,
-            title: custom.document.packName,
-          }))),
+    ...userThemes
+      .filter((custom) => themeDocumentUsage(custom.document) === usage)
+      .map((custom) => ({
+        kind: "custom" as const,
+        custom,
+        id: custom.id,
+        themeId: custom.document.spec.themeId,
+        title: custom.document.packName,
+      })),
     ...visibleThemes.map((product) => ({
       kind: "published" as const,
       id: product.id,
@@ -277,19 +242,11 @@ export function ThemeLibraryScreen({
   const catalogEmpty = libraryThemes.length === 0;
   const requestedThemeMissing = Boolean(
     !screensavers &&
-    !setupMode &&
       requestedThemeId &&
       selectedThemeId === requestedThemeId &&
       !displayTheme,
   );
-  const readiness = setupMode
-    ? {
-        title: "Choose your VibeTV theme",
-        detail: "",
-        buttonReason: "",
-        icon: <Library size={22} aria-hidden />,
-      }
-    : requestedThemeMissing
+  const readiness = requestedThemeMissing
     ? {
         title: "Choose an available theme",
         detail:
@@ -303,24 +260,7 @@ export function ThemeLibraryScreen({
         selectedTheme: displayTheme,
         themeInstallEnabled,
       });
-  const setupNeedsFirmwareUpdate =
-    setupMode &&
-    themeInstallEnabled &&
-    visibleThemes.some((theme) =>
-      themeNeedsUpgradeableFirmware(theme, device, themeInstallEnabled),
-    );
-  const setupReadiness = setupMode
-    ? themeSetupReadinessState({
-        busyAction,
-        firmwareUpdateStatus,
-        installStatus,
-        readinessError,
-      })
-    : null;
   useEffect(() => {
-    if (setupMode) {
-      return;
-    }
     const timer = window.setTimeout(() => {
       const themesResult = loadUserThemes();
       if (themesResult.ok) {
@@ -345,7 +285,7 @@ export function ThemeLibraryScreen({
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [setupMode]);
+  }, []);
 
   function persistUserThemes(next: UserThemeRecord[]) {
     if (storageLocked) {
@@ -570,51 +510,40 @@ export function ThemeLibraryScreen({
     <div
       className={cn(
         "mx-auto w-full max-w-[1180px]",
-        setupMode && "px-5 sm:px-7 lg:px-10",
       )}
-      data-theme-setup={setupMode ? "" : undefined}
     >
       <section
         className={cn(
           "grid gap-5 py-5",
-          !setupMode &&
-            "sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center",
+          "sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center",
         )}
       >
         <div>
           <h2
             className={cn(
               "text-3xl font-black leading-tight text-[#1B1B1B] outline-none",
-              !setupMode && "truncate",
+              "truncate",
             )}
             ref={libraryHeadingRef}
             tabIndex={-1}
           >
-            {setupMode
-              ? "Choose your VibeTV theme"
-              : screensavers
-                ? "Screensavers"
-                : "Themes"}
+            {screensavers ? "Screensavers" : "Themes"}
           </h2>
-          {!setupMode ? (
-            <p className="mt-2 text-sm text-muted-foreground">
-              {screensavers
-                ? "Choose what appears when VibeTV enters standby after being idle."
-                : "Customize how your live usage screen looks while VibeTV is active."}
-            </p>
-          ) : null}
+          <p className="mt-2 text-sm text-muted-foreground">
+            {screensavers
+              ? "Choose what appears when VibeTV enters standby after being idle."
+              : "Customize how your live usage screen looks while VibeTV is active."}
+          </p>
         </div>
-        {!setupMode ? (
-          <Button onClick={openBlankTheme} type="button">
-            <Plus data-icon="inline-start" aria-hidden />
-            <span>{screensavers ? "Create Screensaver" : "Create Theme"}</span>
-          </Button>
-        ) : null}
+        <Button onClick={openBlankTheme} type="button">
+          <Plus data-icon="inline-start" aria-hidden />
+          <span>{screensavers ? "Create Screensaver" : "Create Theme"}</span>
+        </Button>
       </section>
 
       {/* Installing a screensaver only makes sense while the screensaver is
           turned on; management (create, edit, preview) stays available. */}
-      {screensavers && !setupMode && standby ? (
+      {screensavers && standby ? (
         <section className="space-y-3 pb-5">
           <Field className="border-y py-4" orientation="horizontal">
             <FieldLabel htmlFor="vibetv-library-standby">
@@ -642,35 +571,22 @@ export function ThemeLibraryScreen({
         </section>
       ) : null}
 
-      <section aria-busy={setupReadiness?.kind === "loading"} className="py-8">
-        {setupReadiness ? (
-          <ThemeSetupReadinessNotice
-            onCreateSupportReport={onCreateSupportReport}
-            state={setupReadiness}
-          />
-        ) : null}
-        {setupNeedsFirmwareUpdate ? (
-          <ThemeSetupFirmwareUpdate
-            firmwareUpdate={firmwareUpdate}
-            onInstallFirmwareUpdate={onInstallFirmwareUpdate}
-            status={firmwareUpdateStatus}
-          />
-        ) : null}
-        {!setupMode && storageWarning ? (
+      <section className="py-8">
+        {storageWarning ? (
           <Alert className="mb-5">
             <Lock aria-hidden />
             <AlertTitle>Theme storage needs attention</AlertTitle>
             <AlertDescription>{storageWarning}</AlertDescription>
           </Alert>
         ) : null}
-        {!setupMode && libraryError ? (
+        {libraryError ? (
           <Alert className="mb-5" variant="destructive">
             <Lock aria-hidden />
             <AlertTitle>Theme action failed</AlertTitle>
             <AlertDescription>{libraryError}</AlertDescription>
           </Alert>
         ) : null}
-        {!setupMode && recovery && recoveryMatchesUsage ? (
+        {recovery && recoveryMatchesUsage ? (
           <RecoveryCard
             onDiscard={discardRecovery}
             onResume={resumeRecovery}
@@ -697,10 +613,10 @@ export function ThemeLibraryScreen({
                 <ThemeListItem
                   busyAction={busyAction}
                   screensaverInstallLocked={
-                    screensavers && !setupMode && Boolean(standby) && !standby?.enabled
+                    screensavers && Boolean(standby) && !standby?.enabled
                   }
                   device={device}
-                  displayThemeId={setupMode ? undefined : displayTheme?.themeId}
+                  displayThemeId={displayTheme?.themeId}
                   item={theme}
                   installStatus={installStatus}
                   key={theme.themeId}
@@ -712,7 +628,6 @@ export function ThemeLibraryScreen({
                   onPreviewTheme={setPreviewTheme}
                   preparingInstallThemeId={preparingInstallThemeId}
                   selectedThemeId={selectedThemeId}
-                  setupMode={setupMode}
                   usage={usage}
                   themeInstallBlockedReason={readiness.buttonReason}
                   themeInstallEnabled={themeInstallEnabled}
@@ -724,7 +639,7 @@ export function ThemeLibraryScreen({
         )}
       </section>
 
-      {!setupMode && previewTheme ? (
+      {previewTheme ? (
         <Dialog open onOpenChange={(open) => !open && setPreviewTheme(null)}>
           <DialogContent
             aria-describedby="theme-library-example-data"
@@ -743,7 +658,7 @@ export function ThemeLibraryScreen({
           </DialogContent>
         </Dialog>
       ) : null}
-      {!setupMode && deleteTheme ? (
+      {deleteTheme ? (
         <DeleteThemeDialog
           error={deleteError}
           onCancel={cancelDeleteTheme}
@@ -944,7 +859,6 @@ function ThemeListItem({
   preparingInstallThemeId,
   screensaverInstallLocked = false,
   selectedThemeId,
-  setupMode,
   usage,
   themeInstallBlockedReason,
   themeInstallEnabled,
@@ -964,7 +878,6 @@ function ThemeListItem({
   preparingInstallThemeId: string;
   screensaverInstallLocked?: boolean;
   selectedThemeId: string;
-  setupMode: boolean;
   usage: ThemeStudioUsage;
   themeInstallBlockedReason: string;
   themeInstallEnabled: boolean;
@@ -994,7 +907,7 @@ function ThemeListItem({
       ? buildThemeInstallBlocker({
           device,
           theme,
-          allowUnreadyInstall: setupMode,
+          allowUnreadyInstall: false,
           themeInstallBlockedReason,
           themeInstallEnabled,
         })
@@ -1018,61 +931,46 @@ function ThemeListItem({
   return (
     <Item
       role="listitem"
-      variant={
-        !setupMode && item.themeId === displayThemeId ? "muted" : "outline"
-      }
+      variant={item.themeId === displayThemeId ? "muted" : "outline"}
     >
       <ItemMedia className="w-28 sm:w-36">
-        {setupMode ? (
+        <Button
+          aria-label={`Preview ${item.title}`}
+          className="h-auto w-full justify-start p-0"
+          onClick={() => onPreviewTheme(item)}
+          type="button"
+          variant="ghost"
+        >
           <ThemePreview theme={item} />
-        ) : (
-          <Button
-            aria-label={`Preview ${item.title}`}
-            className="h-auto w-full justify-start p-0"
-            onClick={() => onPreviewTheme(item)}
-            type="button"
-            variant="ghost"
-          >
-            <ThemePreview theme={item} />
-          </Button>
-        )}
+        </Button>
       </ItemMedia>
       <ItemContent className="min-w-[180px]">
         <ItemTitle className="text-lg font-bold">{item.title}</ItemTitle>
-        {!setupMode && isCustom ? (
+        {isCustom ? (
           <Badge variant="secondary">Custom</Badge>
         ) : null}
       </ItemContent>
       <ItemActions
         className={cn(
           "basis-full grid w-full gap-2 sm:basis-auto sm:w-auto",
-          setupMode
-            ? "sm:grid-cols-1"
-            : isCustom
-              ? "sm:grid-cols-3"
-              : "sm:grid-cols-2",
+          isCustom ? "sm:grid-cols-3" : "sm:grid-cols-2",
         )}
       >
-        {!setupMode ? (
-          <Button
-            disabled={Boolean(loadingEditorThemeId)}
-            onClick={() => void onEditTheme(item)}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {loadingEdit ? (
-              <Spinner data-icon="inline-start" />
-            ) : (
-              <Edit3 data-icon="inline-start" aria-hidden />
-            )}
-            <span>{loadingEdit ? "Opening" : "Edit"}</span>
-          </Button>
-        ) : null}
         <Button
-          className={
-            setupMode ? "h-12 text-base sm:h-9 sm:text-[0.8rem]" : undefined
-          }
+          disabled={Boolean(loadingEditorThemeId)}
+          onClick={() => void onEditTheme(item)}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {loadingEdit ? (
+            <Spinner data-icon="inline-start" />
+          ) : (
+            <Edit3 data-icon="inline-start" aria-hidden />
+          )}
+          <span>{loadingEdit ? "Opening" : "Edit"}</span>
+        </Button>
+        <Button
           disabled={disabled}
           onClick={() => {
             if (!blocker) {
@@ -1090,10 +988,9 @@ function ThemeListItem({
             installed,
             selected: item.themeId === selectedThemeId,
             disabled,
-            setupMode,
           })}
         </Button>
-        {!setupMode && item.kind === "custom" ? (
+        {item.kind === "custom" ? (
           <Button
             aria-label={`Delete ${item.title}`}
             disabled={themeStorageLocked}
@@ -1211,7 +1108,6 @@ function labelForInstallButton({
   installInFlight,
   installed,
   selected,
-  setupMode,
 }: {
   actionInFlight: boolean;
   blockedLabel: string;
@@ -1219,15 +1115,11 @@ function labelForInstallButton({
   installInFlight: boolean;
   installed: boolean;
   selected: boolean;
-  setupMode: boolean;
 }) {
   if (installInFlight && selected) {
     return "Installing";
   }
   if (actionInFlight) {
-    if (setupMode) {
-      return blockedLabel || "Install";
-    }
     return "Wait";
   }
   if (installed) {
@@ -1240,103 +1132,6 @@ function labelForInstallButton({
     return blockedLabel;
   }
   return "Install";
-}
-
-type ThemeSetupReadinessState = {
-  detail: string;
-  kind: "loading" | "error";
-  title: string;
-};
-
-function themeSetupReadinessState({
-  busyAction,
-  firmwareUpdateStatus,
-  installStatus,
-  readinessError,
-}: {
-  busyAction: string | null;
-  firmwareUpdateStatus?: ThemeSetupFirmwareUpdateStatus | null;
-  installStatus?: ThemeInstallStatus | null;
-  readinessError?: ThemeLibraryScreenProps["readinessError"];
-}): ThemeSetupReadinessState | null {
-  // Firmware and theme installs already have their own single progress surface.
-  if (
-    firmwareUpdateStatus?.phase === "installing" ||
-    installStatus?.phase === "installing"
-  ) {
-    return null;
-  }
-  // Provider recovery owns its full-screen state in ControlCenterApp. Do not
-  // let a transition frame turn this notice into a second provider/auth flow.
-  if (
-    busyAction === "usage-service-repair" ||
-    busyAction === "providers-retry"
-  ) {
-    return null;
-  }
-  if (busyAction === "firmware-check") {
-    return {
-      kind: "loading",
-      title: "Checking theme readiness",
-      detail:
-        "VibeTV is checking firmware support before theme install becomes available.",
-    };
-  }
-  if (busyAction && busyAction !== "install") {
-    return {
-      kind: "loading",
-      title: "Checking VibeTV readiness",
-      detail:
-        "VibeTV is confirming its connection and theme install support.",
-    };
-  }
-  if (
-    readinessError &&
-    installStatus?.phase !== "error" &&
-    firmwareUpdateStatus?.phase !== "error" &&
-    firmwareUpdateStatus?.phase !== "attention"
-  ) {
-    return {
-      kind: "error",
-      title: "Theme setup needs attention",
-      detail: readinessError.nextAction || readinessError.message,
-    };
-  }
-  return null;
-}
-
-function ThemeSetupReadinessNotice({
-  onCreateSupportReport,
-  state,
-}: {
-  onCreateSupportReport?: ThemeLibraryScreenProps["onCreateSupportReport"];
-  state: ThemeSetupReadinessState;
-}) {
-  const failed = state.kind === "error";
-  return (
-    <Alert
-      aria-live={failed ? "assertive" : "polite"}
-      className="mb-5"
-      role={failed ? "alert" : "status"}
-      variant={failed ? "destructive" : "default"}
-    >
-      {failed ? <CircleAlert aria-hidden /> : <Spinner />}
-      <AlertTitle>{state.title}</AlertTitle>
-      <AlertDescription>{state.detail}</AlertDescription>
-      {failed && onCreateSupportReport ? (
-        <AlertAction>
-          <Button
-            onClick={() => void onCreateSupportReport()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Create support report
-          </Button>
-        </AlertAction>
-      ) : null}
-    </Alert>
-  );
 }
 
 function buildCustomThemeInstallBlocker({
@@ -1514,7 +1309,7 @@ function installDisabledReason({
   return "Install is not available right now.";
 }
 
-function buildThemeInstallBlocker({
+export function buildThemeInstallBlocker({
   allowUnreadyInstall = false,
   device,
   theme,
@@ -1730,89 +1525,6 @@ export function themeNeedsUpgradeableFirmware(
   );
 }
 
-function ThemeSetupFirmwareUpdate({
-  firmwareUpdate,
-  onInstallFirmwareUpdate,
-  status,
-}: {
-  firmwareUpdate?: FirmwareUpdateInfo | null;
-  onInstallFirmwareUpdate?: () => Promise<boolean> | boolean | void;
-  status?: ThemeSetupFirmwareUpdateStatus | null;
-}) {
-  const installing = status?.phase === "installing";
-  const failed = status?.phase === "error";
-  const attention = status?.phase === "attention";
-  const complete = status?.phase === "complete";
-  const updateAvailable = hasFirmwareUpdate(firmwareUpdate);
-  const canStartUpdate =
-    updateAvailable &&
-    Boolean(onInstallFirmwareUpdate) &&
-    !installing &&
-    !complete;
-  const title = installing
-    ? "Updating VibeTV"
-    : failed || attention
-      ? "VibeTV update needs attention"
-      : complete
-        ? "VibeTV updated"
-        : updateAvailable
-          ? "Update VibeTV to continue"
-          : firmwareUpdate
-            ? "VibeTV update needed"
-            : "Checking for a VibeTV update";
-  const detail = installing
-    ? status?.message || "Keep VibeTV powered on while the update installs."
-    : failed || attention
-      ? status?.error ||
-        status?.message ||
-        "The update could not be completed."
-      : complete
-        ? "Checking theme support. Install a theme when its button becomes available."
-        : updateAvailable
-          ? "Install the firmware update first. Then choose and install a theme."
-          : firmwareUpdate?.message ||
-            "Theme install stays locked until a compatible update is available.";
-
-  return (
-    <Alert className="mb-5" variant={failed ? "destructive" : "default"}>
-      {installing ? (
-        <RefreshCw className="animate-spin" aria-hidden />
-      ) : complete ? (
-        <ShieldCheck aria-hidden />
-      ) : (
-        <RefreshCw aria-hidden />
-      )}
-      <AlertTitle>{title}</AlertTitle>
-      <AlertDescription>{detail}</AlertDescription>
-      {installing ? (
-        <Progress
-          aria-label="VibeTV update progress"
-          className="mt-3"
-          value={clampInstallProgress(status?.progress)}
-        />
-      ) : null}
-      {canStartUpdate ||
-      (updateAvailable &&
-        (failed || attention) &&
-        status?.retryAllowed !== false &&
-        onInstallFirmwareUpdate) ? (
-        <AlertAction>
-          <Button
-            onClick={() => void onInstallFirmwareUpdate?.()}
-            size="sm"
-            type="button"
-          >
-            <RefreshCw data-icon="inline-start" aria-hidden />
-            <span>
-              {failed || attention ? "Try update again" : "Update VibeTV"}
-            </span>
-          </Button>
-        </AlertAction>
-      ) : null}
-    </Alert>
-  );
-}
-
 function normalizeBoard(value: string): string {
   return value
     .trim()
@@ -1827,89 +1539,32 @@ function ThemePreview({
   large?: boolean;
   theme: ThemeLibraryItem;
 }) {
-  const [packState, setPackState] = useState<{
-    pack: ThemeRenderPack | null;
-    requestKey: string;
-    status: "idle" | "loading" | "ready" | "error";
-  }>({
-    pack: null,
-    requestKey: "",
-    status: "idle",
-  });
-  const className = large
-    ? "relative block aspect-square w-full overflow-hidden border border-border bg-muted"
-    : "relative block size-28 overflow-hidden rounded-lg border border-border bg-muted sm:size-36";
-  const themeId = theme.themeId;
-  const themeSpecPath =
-    theme.kind === "published" ? theme.product.themeSpecPath || "" : "";
-  const requestKey = `${themeId}\n${themeSpecPath}`;
-  const customPack =
-    theme.kind === "custom"
-      ? {
-          ok: true,
-          themeId,
-          name: theme.title,
-          spec: theme.custom.document.spec,
-          assets: theme.custom.document.assets,
-        }
-      : null;
-  const pack =
-    customPack ||
-    (packState.requestKey === requestKey && packState.status === "ready"
-      ? packState.pack
-      : null);
-  const status =
-    customPack
-      ? "ready"
-      : packState.requestKey === requestKey
-        ? packState.status
-        : "loading";
-
-  useEffect(() => {
-    if (theme.kind === "custom") {
-      return;
-    }
-    if (!themeId) {
-      return;
-    }
-
-    const controller = new AbortController();
-    fetch(themeRenderPackUrl(themeId, themeSpecPath), {
-      signal: controller.signal,
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("theme preview unavailable");
-        }
-        return response.json() as Promise<ThemeRenderPack>;
-      })
-      .then((payload) => {
-        setPackState({
-          pack: payload,
-          requestKey,
-          status: payload?.spec ? "ready" : "error",
-        });
-      })
-      .catch((error) => {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
-        setPackState({ pack: null, requestKey, status: "error" });
-      });
-
-    return () => controller.abort();
-  }, [requestKey, theme.kind, themeId, themeSpecPath]);
-
   return (
-    <span className={className}>
-      <ThemeSpecPreview
-        animate={Boolean(large)}
-        frame={THEME_CATALOG_PREVIEW_FRAME}
-        pack={pack}
-        status={status}
-        themeId={themeId}
-      />
-    </span>
+    <ThemeRenderPreview
+      animate={Boolean(large)}
+      className={
+        large
+          ? "aspect-square w-full"
+          : "size-28 rounded-lg sm:size-36"
+      }
+      // A Theme Studio theme has no published pack to load: its spec only
+      // exists in this app.
+      pack={
+        theme.kind === "custom"
+          ? {
+              ok: true,
+              themeId: theme.themeId,
+              name: theme.title,
+              spec: theme.custom.document.spec,
+              assets: theme.custom.document.assets,
+            }
+          : null
+      }
+      themeId={theme.themeId}
+      themeSpecPath={
+        theme.kind === "published" ? theme.product.themeSpecPath || "" : ""
+      }
+    />
   );
 }
 

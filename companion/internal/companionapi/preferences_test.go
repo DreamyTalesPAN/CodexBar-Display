@@ -164,7 +164,7 @@ func TestPreferencesFreshUsagePreservesServiceOutage(t *testing.T) {
 	}
 }
 
-func TestPreferencesMarkFreshTokenProviderHealthyWithoutClaimingQuotaReady(t *testing.T) {
+func TestPreferencesDoNotMarkFreshTokenHistoryHealthy(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 29, 12, 30, 0, 0, time.UTC)
 	server.now = func() time.Time { return now }
@@ -187,10 +187,9 @@ func TestPreferencesMarkFreshTokenProviderHealthyWithoutClaimingQuotaReady(t *te
 	if len(response.Items) != 2 {
 		t.Fatalf("unexpected preferences: %#v", response.Items)
 	}
-	if response.Items[0].Health.State != "healthy" ||
-		!strings.Contains(response.Items[0].Health.Message, "usage limits are temporarily unavailable") ||
-		strings.Contains(response.Items[0].Health.Message, "not responding") {
-		t.Fatalf("fresh token evidence did not clear provider-wide unavailable copy: %#v", response.Items[0].Health)
+	if response.Items[0].Health.State == "healthy" ||
+		strings.Contains(response.Items[0].Health.Message, "Token history is available") {
+		t.Fatalf("fresh token history was presented as provider readiness: %#v", response.Items[0].Health)
 	}
 	if response.Items[1].Health.State != "auth_required" {
 		t.Fatalf("token evidence changed a genuine auth failure: %#v", response.Items[1].Health)
@@ -213,6 +212,7 @@ func TestPreferencesReturnsDynamicInventoryBeforeSlowHealthProbeFinishes(t *test
 		defer close(healthDone)
 		return []codexbar.ProviderSetting{{
 			ID: "future-provider", Label: "Future Provider", Enabled: true, Health: codexbar.ProviderHealthHealthy,
+			Reported: "CodexBar background health detail.",
 		}}, nil
 	}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
@@ -249,10 +249,14 @@ func TestPreferencesReturnsDynamicInventoryBeforeSlowHealthProbeFinishes(t *test
 		server.providerPreferences.mu.Lock()
 		refreshing := server.providerPreferences.healthRefresh
 		health := server.providerPreferences.cached[0].Health
+		reported := server.providerPreferences.cached[0].Reported
 		server.providerPreferences.mu.Unlock()
 		if !refreshing {
 			if health != codexbar.ProviderHealthHealthy {
 				t.Fatalf("background health was not cached: %q", health)
+			}
+			if reported != "CodexBar background health detail." {
+				t.Fatalf("background health dropped CodexBar's sentence: %q", reported)
 			}
 			break
 		}
@@ -260,6 +264,123 @@ func TestPreferencesReturnsDynamicInventoryBeforeSlowHealthProbeFinishes(t *test
 			t.Fatal("background health result was not applied")
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestProviderInventoryCacheCarriesReportedHealth(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.cached = []codexbar.ProviderSetting{{
+		ID: "codex", Label: "Codex", Enabled: true,
+		Health: codexbar.ProviderHealthAuthRequired, Reported: "CodexBar cached health detail.",
+	}}
+	server.providerPreferences.at = time.Time{}
+	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "codex", Label: "Codex", Enabled: true}}, nil
+	}
+
+	settings, err := server.cachedProviderSettings(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(settings) != 1 || settings[0].Reported != "CodexBar cached health detail." {
+		t.Fatalf("inventory cache dropped CodexBar's sentence: %#v", settings)
+	}
+}
+
+func TestExactProviderRecordCarriesReportedMessageToPreferences(t *testing.T) {
+	now := time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{
+			ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy,
+			Reported: "Older aggregate sentence.",
+		}}, nil
+	}
+	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+
+	readiness := codexbar.ProviderReadiness{
+		ID: "codex", Label: "Codex", Enabled: providerEnabled(true), Status: codexbar.ProviderAuthRequired,
+		Detail:   "This provider needs an active sign-in.",
+		Reported: "Codex connection failed: authentication required.",
+	}
+	server.recordExactProviderSetup("codex", 0, codexbar.ProviderSetup{
+		Status: codexbar.ProviderAuthRequired, CheckedAt: now.Format(time.RFC3339Nano),
+		Providers: []codexbar.ProviderReadiness{readiness},
+	})
+
+	items := server.providerDescriptors(server.providerPreferences.cached)
+	if len(items) != 1 || items[0].Health.Reported != "Codex connection failed: authentication required." {
+		t.Fatalf("exact provider record dropped CodexBar's sentence: %#v", items)
+	}
+}
+
+func TestFreshUsageAfterExactFailureRestoresHealthyPreference(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.providerReadiness = map[string]providerReadinessRecord{
+		"codex": {
+			Status:    codexbar.ProviderAuthRequired,
+			Detail:    "This provider needs an active sign-in.",
+			CheckedAt: now.Add(-time.Minute),
+		},
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return freshProviderUsage("codex", "Codex", now), true
+	}
+
+	items := server.providerDescriptors([]codexbar.ProviderSetting{{
+		ID: "codex", Label: "Codex", Enabled: true,
+		Health: codexbar.ProviderHealthHealthy,
+	}})
+	if len(items) != 1 || items[0].Health.State != "healthy" {
+		t.Fatalf("fresh usage did not supersede the older exact failure: %#v", items)
+	}
+}
+
+func TestPreferencesKeepCodexBarNoStrategySentence(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{
+			ID: "copilot", Label: "GitHub Copilot", Enabled: true,
+			Health: codexbar.ProviderHealthSetupRequired, Reported: "No available fetch strategy for copilot.",
+		}}, nil
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+	var response preferencesResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Items) != 1 || response.Items[0].Health.Reported != "No available fetch strategy for copilot." {
+		t.Fatalf("CodexBar's sentence was filtered: %#v", response.Items)
+	}
+}
+
+func TestPreferencesDoNotExposeProviderRecoveryAction(t *testing.T) {
+	now := time.Date(2026, 9, 2, 10, 30, 0, 0, time.UTC)
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.now = func() time.Time { return now }
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{
+			ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthUnavailable,
+		}}, nil
+	}
+	server.providerReadiness = map[string]providerReadinessRecord{
+		"codex": {Status: codexbar.ProviderEngineError, CheckedAt: now},
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("preferences status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), `"recoveryAction"`) {
+		t.Fatalf("provider row can still request a Companion repair: %s", recorder.Body.String())
 	}
 }
 
@@ -441,7 +562,10 @@ func TestEnablingAnotherProviderDoesNotCancelFirstExactProbe(t *testing.T) {
 }
 
 func TestDisablingProviderRemovesItsPersistedUsageCard(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
+	server := newTestServer(t, runtimeconfig.Config{ProviderDisplay: &runtimeconfig.ProviderDisplayConfig{
+		Mode:        providerDisplayModeAutomatic,
+		ProviderIDs: []string{"codex"},
+	}})
 	cursorEnabled := true
 	loads := 0
 	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {

@@ -5,6 +5,146 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-09-01 — Configured WiFi device continues automatically
+
+- User approval: The user explicitly instructed Codex to fix every sensible
+  Codex Bug Detector finding that matches the approved setup design and flow,
+  push it, and repeat the review loop until clean.
+- Approved customer-visible result: After WiFi credentials are sent through
+  Cable, the waiting step automatically connects the same `deviceId` when it
+  appears on WiFi, even if another VibeTV is also visible. The phone path has no
+  known identity and therefore still connects one result directly or shows the
+  existing list for multiple results. No new control or visual treatment.
+- Approved files: `setup-wizard.tsx`, its identity regression test, and this
+  approval record.
+
+## 2026-09-01 — Direct setup retry remains automatic
+
+- User approval: The user explicitly instructed Codex to fix every sensible
+  Codex Bug Detector finding that matches the approved setup design and flow,
+  push it, and repeat the review loop until clean.
+- Approved customer-visible result: If the automatic connection to the only
+  discovered VibeTV fails, `Search again` may return that same VibeTV and the
+  app automatically retries it instead of showing an idle automatic-connection
+  screen. Connection-mode requests also keep waiting for the Companion's
+  supported transition window. No control, layout, or visual treatment changes.
+- Approved files: `setup-wizard.tsx`, its regression test,
+  `control-center-app.tsx`, the customer-flow timeout contract, and this
+  approval record.
+
+## 2026-09-01 — Cable and WiFi setup follows reachable devices
+
+- User approval: The user explicitly supplied the six-case Cable/WiFi discovery
+  matrix for PR #407, required the connection choice only when both methods are
+  factually available, required multiple Cable devices to use the existing
+  device-list semantics, and required the labels `Cable` and `WiFi` without a
+  `Recommended` badge.
+- Approved customer-visible result: One reachable device connects directly;
+  multiple devices of the same transport show a device list; the Cable/WiFi
+  chooser appears only when both methods are currently available. With no
+  device, setup offers Cable and the existing phone-based WiFi path. WiFi
+  credentials are entered in the app only while a Cable device is connected,
+  and visible WiFi networks can be scanned, selected, rescanned, or entered
+  manually. Device rows show the VibeTV name, firmware, and previous-connection
+  hint without a serial-port path.
+- Approved files: Existing setup components and tests, the setup connection
+  decision helper, Companion discovery/setup endpoints and tests, firmware WiFi
+  scan support and tests, the serial protocol, and this approval record.
+
+## 2026-08-31 — Unsupported Cable controls never stay on Loading
+
+- User approval: The user instructed Codex to keep reviewing PR #407, fix every
+  sensible Codex review finding, push the fixes, and repeat the review loop
+  without asking again. Codex reported the exact current finding before the
+  fix: a Cable device without brightness or standby controls must not leave
+  Settings in a permanent loading state.
+- Approved customer-visible result: On a Cable VibeTV that explicitly reports
+  no brightness support, the existing Brightness row reads `Not supported`
+  instead of `Loading` and remains disabled. Supported VibeTVs keep the existing
+  percentage, slider, save action, layout, and connection-mode controls.
+- Approved files: `settings-screen.tsx`, its component regression test, and this
+  approval record.
+
+## 2026-08-28 — Native Cable restart completes after Helper startup
+
+- User approval: The user granted all remaining implementation and hardware-test
+  approvals for this chat and instructed Codex to continue without asking again.
+  During the authorized saved-Cable restart rehearsal, Codex reported before
+  implementation that the native app stayed on the old WiFi setup fallback after
+  its Helper and Cable device were already ready.
+- Approved customer-visible result: When the native app restarts with Cable
+  already selected, its bounded incomplete-setup poll continues while the Helper
+  finishes starting, including while the WebView is temporarily backgrounded.
+  The existing Cable connecting state advances to the connected Control Center;
+  it neither starts WiFi discovery nor remains on stale WiFi setup copy.
+- Approved files: `control-center-app.tsx`, the matching native saved-Cable
+  regression in `test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-28 — Saved Cable mode never falls into WiFi recovery
+
+- User approval: The user granted all remaining implementation and hardware-test
+  approvals for this chat and instructed Codex to continue without asking again.
+  During the authorized real-hardware restart, the app incorrectly replaced the
+  saved Cable connection with `Searching your WiFi`; Codex reported the exact
+  visible defect before correcting it.
+- Approved customer-visible result: A saved Cable connection stays on the
+  existing Cable connecting state while the Helper or first live frame is still
+  starting. Neither normal startup nor confirmed-loss recovery starts WiFi
+  discovery, shows `Looking for your VibeTV`, or tells the customer to configure
+  WiFi. Explicitly selecting WiFi in Settings remains available and unchanged.
+- Approved files: `control-center-app.tsx`, the matching saved-Cable regression
+  in `test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-28 — Cable first-frame wait never starts WiFi search
+
+- User approval: The user explicitly granted all approvals, including corrected
+  hardware retests, for the remaining work in this chat and instructed Codex to
+  continue without asking again. In
+  the authorized cold-start hardware rehearsal, Codex identified and stated the
+  exact visible correction before implementing it: after `Use Cable`, the
+  existing first-preview wait must not be replaced by a WiFi search screen.
+- Approved customer-visible result: Throughout the complete first-frame wait
+  after `Use Cable`, an active VibeTV remains on the existing `Connecting to VibeTV`
+  state with `Waiting for live preview…`. The app does not show `Looking for
+  your VibeTV`, claim that it is searching WiFi, or start a WiFi discovery while
+  that Cable device is already bound. Overview still opens only after the first
+  real preview frame.
+- Approved files: `control-center-app.tsx`, the matching regression in
+  `test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-28 — Connection mode belongs in Settings
+
+- User approval: The user explicitly required the Cable connection banner and
+  its `Change connection` button to be removed from Overview, required the
+  Cable/WiFi switch to live in Settings, required it to reuse the existing
+  Settings elements and structure without inventing a new UI, and instructed
+  Codex to implement that exact result.
+- Approved customer-visible result: Overview contains no separate Cable banner
+  or connection-change button. Settings contains one flat `Connection` section
+  in the existing two-column Settings layout, with the existing labeled Select
+  pattern showing `Cable` or `WiFi`. Cable keeps Usage, Settings, Appearance,
+  Updates, and Support available. During first Cable setup, the existing
+  full-screen `Connecting to VibeTV` state remains until the first real preview
+  frame; only then does the connected Control Center appear.
+- Approved files: `control-center-app.tsx`, `overview-screen.tsx`,
+  `settings-screen.tsx`, their component tests, the matching regression in
+  `test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-27 — Neutral Cable and WiFi choice cards
+
+- User approval: The user reviewed the rendered connection chooser, required
+  both options to use the same neutral card treatment, required only Cable to
+  carry a `Recommended` badge, rejected a full primary-color Cable card, and
+  then explicitly approved the resulting design with "jo so gebe ich es frei".
+- Approved customer-visible result: When both connection methods are supported,
+  Cable and WiFi appear as equal neutral cards side by side with large icons;
+  Cable alone carries the `Recommended` badge. When the connected VibeTV
+  advertises only Cable support, the same approved Cable card is shown alone and
+  the unavailable WiFi action stays hidden, including immediately after
+  `Run setup again`.
+- Approved files: `control-center-app.tsx`, the matching regression in
+  `test-customer-flows.mjs`, and this approval record.
+
 ## 2026-08-25 — First AI provider check finishes before theme selection
 
 - User approval: During the clean-Mac PR #406 rehearsal, the user observed that
@@ -770,6 +910,147 @@ issue scope, or release permission never implies UI permission.
   `provider-setup-card.tsx`, `usage-screen.tsx`, `usage-screen.test.tsx`, and
   the matching customer-flow assertions in `test-customer-flows.mjs`.
 
+## 2026-08-27 — Cold provider recovery moves to the usage service
+
+- User approval: While rebasing the provider-selection work onto main, the
+  user explicitly chose to rely on the usage service's collector warm-up and
+  first-run provider scan instead of a UI-level automatic retry in this
+  Claude task on 2026-08-27.
+- Approved customer-visible result: Startup checks each enabled provider
+  exactly once, one at a time. A cold `No usage available` result stays
+  visible, and `Check again` is the explicit recovery. This supersedes the
+  2026-08-04 startup double-retry; the setup hint behavior from that record
+  stays.
+- Approved files: `control-center-app.tsx`, the matching customer-flow
+  assertions, and this approval record.
+
+## 2026-08-03 — Provider selection in Setup and Settings
+
+- User approval: The user explicitly approved the exact visible
+  provider-selection result in the Codex task on 2026-08-03.
+- Approved customer-visible result: Usage is read-only and no longer contains
+  provider controls. Setup and Settings share the `AI providers` card with
+  provider search, `Automatic` and `Always show one`, Include or Always-show
+  selection, enable switches, `Check again`, focused recovery actions, and
+  setup completion only after every enabled provider is freshly ready and
+  included in the valid display selection.
+- Approved files: `control-center-app.tsx`, `control-center-types.ts`,
+  `provider-picker.tsx`, `settings-screen.tsx`, `setup-screen.tsx`,
+  `usage-screen.tsx`, and their unit and customer-flow assertions.
+
+## 2026-08-03 — Unsaved fixed selection blocks setup completion
+
+- User approval: The user's explicit approval of the provider-selection UI
+  includes setup completion only after the display selection is valid.
+- Approved customer-visible result: Choosing `Always show one` keeps `Finish
+  setup` disabled until the customer selects and saves the provider that VibeTV
+  should always show. Returning to `Automatic` restores the saved automatic
+  selection.
+- Approved files: `provider-picker.tsx`, `setup-screen.tsx`, and their unit and
+  customer-flow assertions.
+
+## 2026-08-03 — Cancelling fixed mode preserves Automatic
+
+- User approval: The user's explicit approval of the provider-selection UI
+  includes a separate Automatic pool that stays selected until the customer
+  changes it.
+- Approved customer-visible result: If the customer opens `Always show one`
+  but returns to `Automatic` without choosing a fixed provider, the complete
+  saved Automatic provider pool remains unchanged.
+- Approved files: `provider-picker.tsx` and the matching customer-flow
+  assertion.
+
+## 2026-08-03 — Provider display saves stay ordered
+
+- User approval: The user's explicit approval requires line-local Pending and
+  atomic provider display writes.
+- Approved customer-visible result: While one display choice is being saved,
+  its provider row alone shows Pending and the remaining display choices wait
+  until that save finishes. Provider enablement and readiness controls remain
+  separate.
+- Approved files: `provider-picker.tsx` and the matching unit and customer-flow
+  assertions.
+
+## 2026-08-03 — Empty Usage points to Settings
+
+- User approval: The user's explicit approval makes Usage read-only and moves
+  provider management to Settings.
+- Approved customer-visible result: When no provider usage is available, Usage
+  tells the customer to manage providers in Settings and refresh instead of
+  referring to controls below the empty state.
+- Approved files: `usage-screen.tsx` and its unit test.
+
+## 2026-08-03 — Provider outage status stays singular
+
+- User approval: The user's explicit approval of the shared provider-selection
+  UI includes one clear readiness or service status per provider.
+- Approved customer-visible result: A provider whose readiness state already
+  says `Service outage` shows that status once instead of rendering a duplicate
+  outage badge beside it.
+- Approved files: `provider-picker.tsx` and its unit test.
+
+## 2026-08-03 — Display choices wait for saved selection
+
+- User approval: The user's explicit approval requires the provider display
+  selection to be stored and changed atomically without losing prior choices.
+- Approved customer-visible result: Provider enablement and readiness remain
+  available while display selection loads, but display mode and Include or
+  Always-show choices unlock only after the saved selection is available.
+- Approved files: `provider-picker.tsx`, its unit test, and the matching
+  customer-flow assertion.
+
+## 2026-08-04 — Short common-provider list
+
+- User approval: The user explicitly requested a short provider list in Setup
+  and Settings with search, four common providers, and a Show More action.
+- Approved customer-visible result: Codex, Claude, Cursor, and GitHub Copilot
+  appear first. Other providers stay collapsed behind `Show all providers`,
+  while search still finds every provider and enabled, selected, or pending
+  providers remain visible. Setup explains why `Finish setup` may still be
+  disabled while provider checks are running.
+- Approved files: `provider-picker.tsx`, `setup-screen.tsx`, their unit and
+  customer-flow assertions, and this approval record.
+
+## 2026-08-04 — Provider startup checks stay truthful
+
+- User approval: After reproducing that startup showed `No usage available`
+  for Codex until `Check again` returned `Ready`, the user explicitly approved
+  fixing that behavior in the Codex task on 2026-08-04.
+- Approved customer-visible result: During Setup startup, enabled AI providers
+  remain in `Checking` while their fresh exact checks run one at a time. A
+  provider shows `Ready` or `No usage available` only after its own fresh check
+  completes; the customer does not need to press `Check again` to correct the
+  initial state.
+- The approved issue plan also requires display selection to validate against
+  the current provider inventory. When a removed provider remains in an older
+  Automatic selection, the next customer change drops that stale ID instead of
+  sending it back and trapping the picker in a rejected state.
+- Approved files: `control-center-app.tsx`, `provider-picker.tsx`, the provider
+  onboarding assertions in `test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-04 — Removed providers no longer trap Automatic
+
+- User approval: The user approved the Issue #245 implementation plan, which
+  explicitly requires the complete display selection to be validated against
+  the current CodexBar inventory.
+- Approved customer-visible result: If an older Automatic selection contains a
+  provider that no longer exists, the next customer selection removes that
+  stale ID and saves the remaining current providers normally.
+- Approved files: `provider-picker.tsx`, the stale-inventory customer-flow
+  assertion in `test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-04 — Cold provider checks retry before blocking setup
+
+- User approval: After reproducing the restart path where Codex showed `No
+  usage available` until the customer pressed `Check again`, the user
+  explicitly asked to fix it in the Codex task on 2026-08-04.
+- Approved customer-visible result: Startup retries transient cold provider
+  checks twice with a short delay while the provider remains pending. The
+  setup hint names any enabled provider that is outside the saved display pool,
+  so a disabled `Finish setup` button has a concrete next action.
+- Approved files: `control-center-app.tsx`, `provider-picker.tsx`,
+  `setup-screen.tsx`, their unit and customer-flow assertions, and this
+  approval record.
 ## 2026-07-27 — Overview waits for complete usage
 
 - User approval: While testing the signed PR 260 preview with the connected
@@ -1888,3 +2169,1293 @@ issue scope, or release permission never implies UI permission.
   transition. The customer-flow test now accepts either valid entry paint and
   continues to assert the complete recovery contract.
 - Approved files: `scripts/test-customer-flows.mjs` and this approval record.
+
+## 2026-08-31 — Setup becomes a six-step wizard
+
+- User approval: The user reviewed this record's wording and instructed on
+  2026-08-31 that it be entered (`trag du ein`), on the basis of their
+  instruction to continue the setup-wizard handover (`mach weiter`) and their
+  explicit decision on 2026-08-30 that a
+  provider row keeps its on/off switch whatever its health reports AND that the
+  display step only offers providers that can actually produce a reading
+  ("beides"). The wizard's own shape — its six steps, its dialogs, and the
+  hosted page keeping a single Download action — was decided by the product
+  owner before this branch and is recorded in the handover's decision table.
+- Approved customer-visible result: Setup is one full-screen wizard whose step
+  follows real state instead of button presses: a welcome screen that names
+  what it is waiting for, choosing a VibeTV (with manual IP entry behind a link,
+  and the firmware check and install inside the connect step), choosing AI
+  providers, the display mode, a theme, and a live screen that hands over to
+  Control Center by itself. Every failure is a dialog over the step that caused
+  it, and every step carries one Help control with `Ask AI to fix` and `Create
+  support report`. A typed IP address that nothing answers now keeps its dialog
+  open with the address still in the field and the reason under it, instead of
+  silently closing. The AI-usage dialog appears over whatever is on screen
+  rather than only on the provider step, and does not dim the app behind it. A
+  provider row always offers its switch. The theme step still offers all four
+  live themes but disables Install with the device's own reason when this
+  VibeTV cannot take one. Recent activity in Support holds 20 entries instead of
+  10. app.vibetv.shop keeps its single Download action in the new frame.
+- Approved files: the setup wizard under `apps/control-center/src/components/setup/`,
+  `control-center-app.tsx`, `provider-picker.tsx`, `theme-library-screen.tsx`,
+  `scripts/test-customer-flows.mjs`, and this approval record.
+
+## 2026-08-31 — Test correction: scope the installed-theme assertion
+
+- User approval: The product owner's instruction to fix the remaining small
+  items ("kleinkram dann auch fixen", 2026-08-31). This records a test-only
+  correction found by `scripts/check-before-push.sh`; it adds no new copy,
+  control, decision, or customer state.
+- Approved customer-visible result: Unchanged. The theme install flow still
+  shows the same progress lines and the same `Installed` state on the theme it
+  installed. The customer flow now waits for that state inside the row it just
+  installed instead of anywhere on the page: a VibeTV that already had another
+  theme active shows `Installed` on that row too, which made the unscoped
+  locator match two buttons and fail at random.
+- Approved files: `scripts/test-customer-flows.mjs` and this approval record.
+
+## 2026-08-31 — Setup wizard: two dead ends, and the rules behind the provider step
+
+- User approval: The product owner asked to see the changes before approving
+  ("erst zeigen", 2026-08-31), was walked through them step by step in a running
+  wizard in the browser, then asked for the `0 VibeTVs` line to be corrected as
+  well and approved the result as the seven points below ("'0 VibeTVs' gleich
+  mitfixen ... dann Approval fuer sieben statt sechs Punkte").
+- Approved customer-visible result:
+  1. **Back returns the customer to where they were.** Going back from Display
+     Mode to the provider step and pressing `Continue` moves forward again.
+     Before, one Back press held the wizard on the provider step for the rest
+     of the session: that step offers no Back by design, and `Continue`
+     answered without moving. Restarting the app was the only way out. The same
+     applies to going back from the theme step.
+  2. **The device step no longer goes blank.** Typing an IP address while the
+     automatic scan is still running used to end that scan without putting
+     anything in its place: no list, no dialog, no way to scan again, on a step
+     that has no Back. The address dialog now keeps the reason a wrong address
+     failed, and closing it shows `We couldn't find your VibeTV` with
+     `Scan again` and `Enter IP manually`.
+  3. **A provider row's switch always turns the provider off.** It used to be
+     refused with `This provider is selected for VibeTV.` for every enabled
+     provider until a display mode had been saved -- so for the whole of a
+     fresh setup, and permanently against an older companion. This is what
+     `docs/control-center-ui-principles.md` rule 3 already required.
+  4. **`Continue` on the provider step stays closed while a provider that is
+     switched on still needs the customer.** It used to open as soon as one
+     provider was healthy and then do nothing, because the companion refuses to
+     finish setup while any enabled provider is not ready. The ways on are to
+     sign that provider in or to switch it off.
+  5. **A refusal from the companion on the provider or display step is a dialog
+     over the frozen step**, carrying the reason and the next action. It used to
+     be silent.
+  6. **Setup does not finish against a provider that signed out** after its
+     check. The check at the end now reads live provider health instead of the
+     health last seen.
+  7. **The device step reports a count only once a scan has answered.**
+     `0 VibeTVs found on your WiFi.` used to be on screen from the moment the
+     step appeared, for the up-to-30 seconds the scan takes and before it had
+     even started. It now says `Looking for VibeTVs on your WiFi.` until there
+     is a result.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`,
+  `setup-device-screen.tsx`, `setup-providers-screen.tsx`,
+  `setup-provider-dialogs.tsx` (new), their tests, `control-center-app.tsx`,
+  `scripts/test-customer-flows.mjs`, the companion's `preferences.go`,
+  `provider_display.go` and their tests, and this approval record.
+
+## 2026-08-31 — Two controls that rendered as usable and were not
+
+- User approval: The product owner instructed that every Codex bug-detector
+  finding be fixed where it is sound, and that unsound ones be answered and
+  closed rather than acted on ("fix alle findings vom codex bug detector,
+  sofern sie sinnvoll sind ... mach das so lang, bis der codex bug detector
+  nichts mehr findet", 2026-08-31), then asked for the pull request to be marked
+  ready for review, which is what produced these two findings. Both were judged
+  sound: each contradicts a rule this repository already states, and neither
+  changes a decision the owner has made.
+- Approved customer-visible result:
+  1. **The switch on a provider row stays usable while its check is running.**
+     It was greyed out for the whole check, and the running check still shows
+     its spinner either way. This matters because the step only continues once
+     every enabled provider is ready: a check that is slow or stuck used to hold
+     the customer on the provider step with the one control that would free them
+     — switching that provider off — unavailable until the request timed out.
+     `docs/control-center-ui-principles.md` rule 3 already required this.
+  2. **Leaving a provider out of Automatic now sticks.** Unchecking
+     `Include <provider> in Automatic` saved the smaller pool and was then
+     immediately undone: the reconcile that repairs a half-finished enable could
+     not tell an intentional exclusion from one, and put the provider straight
+     back. The control now does what it says, and re-checking the provider hands
+     it back to the reconcile. A provider missing from the pool for any other
+     reason is still repaired exactly as before.
+- Approved files: `apps/control-center/src/components/setup/setup-provider-row.tsx`,
+  `apps/control-center/src/components/provider-picker.tsx`, their tests, and this
+  approval record.
+
+## 2026-08-31 — Four walls in the setup flow, and one correction
+
+- User approval: The product owner instructed that every Codex bug-detector
+  finding be fixed where it is sound and answered where it is not ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so
+  lang, bis der codex bug detector nichts mehr findet", 2026-08-31), then asked
+  for the pull request to be marked ready for review, which produced these.
+  Each of the four below was reproduced before being changed; a fifth was
+  reproduced, found to be unreachable, and answered on its thread instead.
+- Approved customer-visible result:
+  1. **A VibeTV that is connected and waiting only for a provider now reaches
+     the provider step.** A customer setting up for the first time has no
+     provider signed in, so their VibeTV cannot draw usage and reports itself
+     as not ready. The wizard treated that as no usable VibeTV and kept them on
+     `Choose your VibeTV`, which has no control that can fix it. It does not
+     open afterwards: a customer whose provider stops working later still gets
+     the device step rather than being told, on the closing screen, that their
+     VibeTV is running.
+  2. **A firmware check that could not be made now says so.** The connect step
+     logged `firmware is up to date` whenever the check itself failed, and
+     carried on. It now stops with `Could not check VibeTV's firmware` and a
+     `Try again`, the same shape as the other firmware refusals.
+  3. **A search that failed now gives the reason and a way to retry.** Only
+     "nothing found" had a dialog; a search that could not be made at all --
+     Local Network access refused, the background service not answering, the
+     40-second timeout -- showed `0 VibeTVs found on your WiFi.` and nothing
+     else. It now opens `We couldn't search for your VibeTV` carrying the real
+     reason and its next action.
+  4. **The device step carries its own `Search again`.** Every way to rescan
+     lived inside a dialog, and dismissing that dialog left the step with only
+     the address field. The step now offers a quiet `Search again` beside
+     `Enter IP address manually`, shown once a search has answered. This also
+     covers the two states that had no dialog at all.
+  5. **Correction to the entry above (2026-08-31, "Two controls that rendered
+     as usable and were not").** That entry said leaving a provider out of
+     Automatic "now sticks". It did not: the exclusion was remembered only for
+     as long as the Settings screen stayed open, so reopening Settings or
+     restarting the app put the provider back. It sticks now.
+  6. **Running setup again no longer carries the old display choice into the
+     new run.** It asks for that choice again, and keeping the previous one
+     meant a provider switched on during the new run was missing from it, which
+     the companion refuses -- on a step that offers no way to change it.
+- Approved files: `apps/control-center/src/components/setup/setup-step.ts`,
+  `setup-wizard.tsx`, `setup-device-screen.tsx`, `setup-firmware-dialogs.tsx`,
+  `setup-preview-gallery.tsx`, their tests, `control-center-app.tsx`,
+  `provider-picker.tsx` and its reconcile test, the companion's `server.go` and
+  `provider_display_test.go`, and this approval record.
+
+## 2026-08-31 — Three more setup gates, from the same instruction
+
+- User approval: The same standing instruction as the two entries above — every
+  Codex bug-detector finding fixed where sound, answered where not, repeated
+  until nothing is found ("fix alle findings vom codex bug detector, sofern sie
+  sinnvoll sind ... mach das so lang, bis der codex bug detector nichts mehr
+  findet", 2026-08-31). All three were reproduced before being changed.
+- Approved customer-visible result:
+  1. **The device step stays on screen until the firmware work is finished.**
+     Pairing publishes the VibeTV before the firmware check and install
+     complete, so the wizard could move on while they were still running — and
+     the firmware progress and its failure dialogs are part of that step. The
+     customer now sees the check and the install through, and a failure appears
+     where they are rather than on a screen they have left.
+  2. **A display choice that no longer works asks again instead of being
+     skipped.** Going back and switching off a provider that the saved choice
+     names leaves that choice unusable; the wizard used to carry on to the theme
+     step and then refuse to finish, with nothing on that step able to change
+     it. It now returns to Display Mode.
+  3. **A provider check that has gone stale is made again.** Staying on the
+     provider step for more than five minutes let the check the companion holds
+     expire while the app still believed it had asked; Continue was then refused
+     and the row, which looked healthy, offered no `Check again`. The check now
+     re-arms when the readiness it stood for expires. Nothing changes for a
+     customer who moves through the step normally.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`,
+  `setup-step.ts`, `setup-providers-screen.tsx`, their tests, and
+  `control-center-app.tsx`.
+
+## 2026-08-31 — Two failed reads that passed for answers
+
+- User approval: The same standing instruction as the three entries above —
+  every Codex bug-detector finding fixed where sound, repeated until nothing is
+  found ("fix alle findings vom codex bug detector, sofern sie sinnvoll sind ...
+  mach das so lang, bis der codex bug detector nichts mehr findet",
+  2026-08-31). Both were reproduced before being changed.
+- Approved customer-visible result:
+  1. **The display step is skipped only for a Mac App that cannot keep the
+     choice.** Any failure to read the current choice used to skip it, so a
+     customer could finish setup without ever being asked what VibeTV should
+     show. A read that merely failed now keeps the step, and the failure is
+     shown rather than silently deciding the question.
+  2. **A provider list that could not be read says so, and offers `Try again`.**
+     The step used to report that no providers matched the search — the same
+     thing it says for a search with no hits — with Continue closed and no
+     explanation, and nothing asked again on its own. The same dialog that
+     carries the other provider-step failures now carries this one, with a
+     retry.
+- Approved files: `apps/control-center/src/components/setup/setup-step.ts`,
+  `setup-wizard.tsx`, `setup-provider-dialogs.tsx`, their tests, and
+  `control-center-app.tsx`.
+
+## 2026-08-31 — The provider check now comes back on its own
+
+- User approval: The same standing instruction as the entries above — every
+  Codex bug-detector finding fixed where sound, repeated until nothing is found
+  ("fix alle findings vom codex bug detector, sofern sie sinnvoll sind ... mach
+  das so lang, bis der codex bug detector nichts mehr findet", 2026-08-31).
+  This one is the follow-up Codex raised against the previous fix: the rule was
+  made re-armable but nothing ever re-read it.
+- Approved customer-visible result: **Nothing changes for a customer who moves
+  through the provider step normally.** For one who stays on it for more than
+  five minutes, the check the companion holds expires, and the step now makes it
+  again by itself at that moment. Before, it did not: `Continue` was refused
+  with no explanation on the step, and the row still looked healthy with no
+  `Check again` to press, leaving switching the provider off and on as the only
+  way through. There is no new copy and no new control — only a check that
+  happens when it needs to.
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `setup/setup-providers-screen.tsx` and its test.
+
+## 2026-08-31 — A display choice that did not save, and one that no longer exists
+
+- User approval: The same standing instruction as the entries above — every
+  Codex bug-detector finding fixed where sound, repeated until nothing is found
+  ("fix alle findings vom codex bug detector, sofern sie sinnvoll sind ... mach
+  das so lang, bis der codex bug detector nichts mehr findet", 2026-08-31).
+  Both are follow-ups Codex raised against earlier commits on this branch.
+- Approved customer-visible result:
+  1. **The display step waits for its save.** Going back from the theme step to
+     change what VibeTV shows, and having that save fail, used to return the
+     customer to the theme step with nothing said — the old choice was quietly
+     kept while they believed the new one had been saved. They now stay on
+     Display Mode and see why it did not save.
+  2. **Running setup again really does ask for the display choice again.** The
+     previous choice was deleted on the Mac but still held on screen, so a slow
+     or failed reload could skip the display step over a choice that no longer
+     existed.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
+  and its test, `control-center-app.tsx`, `provider-picker.tsx`.
+
+## 2026-08-31 — Two fixes that had not taken effect
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31). Both are the
+  review catching earlier fixes on this branch that were written but never
+  reached the customer.
+- Approved customer-visible result:
+  1. **A firmware check or install that fails keeps the customer on the device
+     step**, where the dialog explaining it and offering the retry is. Until now
+     the step was released the moment the sequence failed, so that dialog was
+     removed from the screen as it appeared and setup carried on.
+  2. **A display choice that could not be saved really does keep the customer on
+     Display Mode.** The entry above claimed this; the call site discarded the
+     result, so the behaviour had not changed.
+- Not changed, deliberately: a theme install that fails still reports itself in
+  the step's own log with `Install` returning, rather than in a dialog. A dialog
+  was written for it and reverted — its scrim covers the `Install` button, which
+  is the retry the approved flow depends on
+  (`test-customer-flows.mjs`, "The failed install has nowhere to go but the
+  step's own log, so that is where the customer has to be told, and Install has
+  to come back").
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
+  and its test, `control-center-app.tsx`.
+
+## 2026-08-31 — The firmware failure holds, and "Update" updates
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31). The first is the
+  review catching the previous pin, which released on dismissal.
+- Approved customer-visible result:
+  1. **Closing a firmware failure dialog no longer carries the customer past
+     it.** They stay on the device step, where the check and the retry are; the
+     step's own controls — Connect, `Search again`, the address field — remain
+     usable, so this holds them at the problem without trapping them.
+  2. **`Update` on "Your Mac App is out of date" now opens the Mac App update.**
+     It used to run the connect sequence again and meet the same refusal, and
+     the usual update prompt does not reach someone still inside setup.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
+  and its test, `control-center-app.tsx`.
+
+## 2026-08-31 — Waiting for the save, and asking again after a sign-in
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **The display step waits for its save before handing over the theme step.**
+     The choice is shown as saved straight away so it does not flicker, and the
+     wizard used to move on for that — a customer could be picking or installing
+     a theme while the save was still in flight, and be pulled back if it failed.
+  2. **Coming back from a provider sign-in checks the provider again.** The
+     waiting state simply ran out, and the Mac still held the failed check that
+     had sent them to sign in, so Continue stayed closed on an answer that was no
+     longer true. The check is now made at the end of that wait.
+- Approved files: `apps/control-center/src/components/setup/setup-step.ts`,
+  `setup-providers-screen.tsx`, their tests, and `control-center-app.tsx`.
+
+## 2026-08-31 — The provider step waits for the companion too
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: **A `Continue` the companion refuses keeps
+  the customer on the provider step, where the reason is shown.** This already
+  held for a first run; going back from the theme step and pressing Continue
+  again used to move them on regardless, and the step they landed on has nowhere
+  to report it.
+- Also recorded: a second finding from the same review — that enabling a
+  provider can start one probe more than necessary, because the client asks for
+  a check the companion may already be running — is **not** changed here. It
+  costs a duplicate probe rather than misleading the customer, and the remedy
+  touches which side owns provider verification, so it deserves its own change
+  with evidence rather than an edit at the end of a long chain. The thread is
+  left open.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
+  and its test, `control-center-app.tsx`.
+
+## 2026-08-31 — A stale device choice, and a rerun that skipped its last step
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **A VibeTV that a new scan no longer finds stops being the selected one.**
+     Picking one, scanning again, and having it be gone left `Connect` live with
+     nothing drawn as selected, and pressing it did nothing. The step now falls
+     back to the known VibeTV or the first result, as it does before anything is
+     picked, and offers `Connect` only when there is something to connect to.
+  2. **Run setup again shows the closing screen.** A rerun in the same session
+     went straight back to Control Center when it reached the final step,
+     because the app still remembered the first run handing the screen over.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
+  and its test, `control-center-app.tsx`.
+
+## 2026-08-31 — A refusal the provider step could not act on
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: **Turning off the provider that "Always
+  show" names now takes the customer to the display step, where the choice can
+  be changed.** Coming back from a later step to the provider list and turning
+  that provider off makes the companion refuse the completion — and the refusal
+  asks for a provider to display, which the provider screen has no control for.
+  The Back override held the customer on that screen with a next action that was
+  not on it, and re-enabling the provider they had just turned off was the only
+  way out.
+- Approved files: `apps/control-center/src/components/setup/setup-step.ts` and
+  its test, `setup-wizard.tsx`, `control-center-app.tsx`.
+
+## 2026-08-31 — "Always show one" no longer demands the other providers be off
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: **A customer who picks "Always show one" can
+  keep their other providers on.** Coming back to the provider list and pressing
+  Continue used to be refused with "Every enabled provider must be included for
+  display", and the only one of the three offered actions that exists on that
+  screen is turning the other providers off — the opposite of what the customer
+  had just chosen. Only the Automatic pool is the set VibeTV rotates through and
+  therefore has to name every enabled provider; "Always show one" names one by
+  definition, which is what the screen says and what Settings writes and keeps.
+- Approved files: `companion/internal/companionapi/provider_display.go` and its
+  test.
+
+## 2026-08-31 — The Automatic pool comes back, and Continue waits for the check
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **Leaving "Always show one" restores the Automatic rotation the customer
+     had.** This was approved on 2026-08-03 ("Returning to `Automatic` restores
+     the saved automatic selection") and the picker remembered that pool but
+     never used it: switching back wrote the pinned provider alone, and every
+     other provider silently left the rotation. A provider switched off in the
+     meantime is left out, because a selection naming it is refused.
+  2. **`Continue` on the provider step waits for a check that is still
+     running.** A provider reports its own health before the exact check the
+     companion asks for has answered, so a row could read healthy while that
+     check was still queued — and `Continue` was open on a gate that refuses it.
+     Every row keeps its on/off switch throughout, as rule 3 requires.
+- Approved files: `apps/control-center/src/components/provider-picker.tsx`,
+  `setup/setup-providers-screen.tsx`, `setup/setup-wizard.tsx`,
+  `control-center-app.tsx`, `setup/setup-preview-gallery.tsx`, and their tests.
+
+## 2026-08-31 — No control stays live while the write it started is running
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: three controls that answered while the write
+  they belong to was still on its way.
+  1. **The display step takes nothing more while it is saving.** `Continue`, the
+     two mode cards and the provider rows are closed for the length of the
+     write. A second `Continue`, or a changed choice, raced the first write: the
+     first answer released the step, and what VibeTV kept was whichever landed
+     last rather than what the customer had chosen.
+  2. **A provider row says a check is running instead of offering to start
+     another.** Repeated presses queued more probes of the same provider,
+     repeating the sign-in work behind them, and the first answer reopened
+     `Continue` while the rest were still on their way. The row keeps its on/off
+     switch throughout, as rule 3 requires.
+  3. **Theme cards are not selectable while a theme is installing.** `Install`
+     is already closed then, so a new pick had nothing to act on: the running
+     install still activated the theme it started with, and its status poll put
+     that one back as selected. The card answered and then changed its mind.
+- Approved files: `apps/control-center/src/components/setup/`
+  `setup-display-mode-screen.tsx`, `setup-provider-row.tsx`,
+  `setup-providers-screen.tsx`, `setup-theme-screen.tsx`, `setup-wizard.tsx`,
+  and their tests.
+
+## 2026-08-31 — A check that never reached the Mac App, and an enable kept out of the pool
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **A provider check that could not be made can be made again.** The step
+     remembers having asked so it does not ask against an answer the Mac App
+     already holds — but it remembered a request that never arrived, so for five
+     minutes nothing asked again: the row read healthy with nothing on it to
+     press, `Try again` in the dialog only re-read, and `Continue` was refused
+     the whole time. `Try again` now reaches the check.
+  2. **A provider switched on under "Always show one" is not added to the
+     Automatic pool behind the customer's back.** Switching back to Automatic
+     restores the saved pool, and a provider deliberately kept out of it used to
+     be put back in by the repair that exists for a different case — finishing
+     an Automatic enable, which is the only one that writes to the pool at all.
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `provider-picker.tsx`, and its test.
+
+## 2026-08-31 — The switch stays open in Settings too, and Automatic still rotates
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **A provider VibeTV is showing can be switched off in Settings.** The row
+     locked its switch while the provider was in the display selection and told
+     the customer to remove it from that selection first — which, for anyone
+     with one provider, is impossible: the last Include cannot be unchecked
+     either. This is the same rule whose companion-side twin was removed earlier
+     in this branch as a rule 3 violation; a selection left naming a provider
+     that was turned off reports that itself.
+  2. **Automatic still rotates after leaving Settings and coming back.** The
+     pool the customer had is remembered for the visit only, so a return to
+     Automatic in a later visit had nothing to restore and wrote the pinned
+     provider alone — an Automatic that rotates through one thing. It now falls
+     back to every provider that is on, which is what Automatic means and what a
+     fresh save writes.
+- Approved files: `apps/control-center/src/components/provider-picker.tsx` and
+  its tests.
+
+## 2026-09-01 — Two controls left open by the unlock
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **A provider's switch on the setup step closes while its own write is
+     running.** The switch shows the new value the moment it is pressed, so a
+     second press before the first write answered started a race, and both the
+     row and what was saved ended on whichever answer landed last rather than on
+     the customer's last press. Settings already closed its switch this way.
+  2. **A provider switched off inside Automatic can still be taken out of the
+     pool.** The selection then names a provider that is off, which is refused,
+     and the `Include` control was locked for exactly that provider — so
+     switching it back on was the only way to mend the choice. Putting a
+     provider that is off *into* the pool stays impossible.
+- Approved files: `apps/control-center/src/components/provider-picker.tsx`,
+  `setup/setup-provider-row.tsx`, `setup/setup-providers-screen.tsx`,
+  `setup/setup-wizard.tsx`, `setup/setup-preview-gallery.tsx`,
+  `control-center-app.tsx`, and their tests.
+
+## 2026-09-01 — Existing customers keep Overview, and three controls mean what they say
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **A VibeTV that was already set up opens Overview after this update.** It
+     has no display choice stored and never had a step that could store one, so
+     the wizard would have taken the screen from every existing customer to ask
+     for one — the extra confirmation rule 4 forbids. The rotation it already
+     has is what choosing Automatic would write. A setup that is actually being
+     run is still asked.
+  2. **A refusal about the Automatic pool takes the customer to the display
+     step.** Switching a second provider on after Automatic was saved is refused
+     on the provider screen, which has no Include control: of the three actions
+     offered, only turning that provider back off exists there, and it undoes
+     what the customer had just done.
+  3. **The uncheck that takes a provider out of Automatic actually writes.** The
+     control was unlocked for a provider that had been switched off, but the
+     handler still refused to act on it, so the one control that mends the
+     selection did nothing.
+  4. **A broken usage service opens the repair, not the provider's app.** The
+     companion says which of the two failures it is, and both were sent to the
+     provider app — where the customer meets the same broken service again.
+- Approved files: `apps/control-center/src/components/provider-picker.tsx`,
+  `setup/setup-step.ts`, `setup/setup-wizard.tsx`, `control-center-app.tsx`,
+  their tests, and `companion/internal/companionapi/provider_display.go`,
+  `companion/internal/runtimeconfig/runtimeconfig.go` with their tests.
+
+## 2026-09-01 — A search that was never finished is not a finished setup
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: **A customer who searched for a VibeTV once
+  and stopped there is still asked for everything.** Searching writes the
+  address it found before anything is paired, and that alone was read as an
+  install from before the completion flag existed — so on the next launch the
+  wizard carried them past choosing providers and the display mode, or, with no
+  provider able to show usage yet, held them on the VibeTV step with nothing
+  left that could ask for one. Proof of pairing is now the device id, or the
+  address together with the token pairing writes.
+- Approved files: `companion/internal/runtimeconfig/runtimeconfig.go` and its
+  test.
+
+## 2026-09-01 — A broken usage service can be repaired inside setup
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **A provider whose usage service is broken offers `Repair the usage
+     service` on the provider step.** It used to say `Check timed out` and offer
+     another check, which meets the same broken service — so a customer whose
+     only provider was in that state could not finish setup at all: `Continue`
+     asks for a provider that is ready, and switching it off leaves none. The
+     row keeps its on/off switch, as rule 3 requires.
+  2. **Leaving `Enter IP address` cancels what it started.** The lookup can take
+     a while, and its result went on to connect and pair the VibeTV — and could
+     begin a firmware install — after the customer had pressed `Cancel`.
+- Approved files: `apps/control-center/src/components/setup/`
+  `setup-provider-row.tsx`, `setup-wizard.tsx`, `control-center-app.tsx`, and
+  their tests.
+
+## 2026-09-01 — A dimmed provider row can still be checked
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: **`No usage data on this account` and
+  `Service outage — try again later` now offer `Check again`.** Both rows were
+  inert. The account can gain usage — the guidance for it is to use the provider
+  once and check again — and an outage ends, which is the whole point of "try
+  again later"; neither had anything to try it with. A customer whose only
+  provider said either had no way on at all: `Continue` asks for a provider that
+  is ready, and switching it off leaves none. The rows stay dimmed, because
+  right now they cannot be used, and they say a check is running rather than
+  offering a second one.
+- Approved files: `apps/control-center/src/components/setup/setup-provider-row.tsx`
+  and its test.
+
+## 2026-09-01 — The VibeTV that failed is still the one Connect offers
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: **After closing a firmware dialog without
+  using it, `Connect` runs the same attempt again.** Connecting empties the list
+  of VibeTVs found on the WiFi, so the step — deliberately held for that failure
+  — showed an empty list and a closed `Connect`, and a full rescan was the only
+  way back to the retry the dialog had just offered.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
+  and its test.
+
+## 2026-09-01 — One recovery at a time, and a display choice that is on offer
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **Every recovery on a provider row says it is running.** The wait replaced
+     the sign-in action but left `Allow access in macOS` and `Repair the usage
+     service` live, so each press started the recovery again and queued another
+     check behind it. Those rows now read `Waiting for access…` and
+     `Repairing…` while their attempt runs, beside the existing
+     `Waiting for sign-in…`, and keep their on/off switch.
+  2. **`Continue` on the display step waits for a provider that is on the
+     list.** A saved `Always show one` whose provider has since been switched
+     off is exactly what sends the customer back to this step, and it arrived
+     naming a provider the list no longer has: nothing drawn as chosen, and a
+     `Continue` that resubmitted the same refused provider.
+- Approved files: `apps/control-center/src/components/setup/`
+  `setup-provider-row.tsx`, `setup-providers-screen.tsx`,
+  `setup-display-mode-screen.tsx`, and their tests.
+
+## 2026-09-01 — Switching a provider off calls off its recovery, and Continue waits
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result:
+  1. **Switching a provider off ends the recovery it was waiting for.** The wait
+     after a sign-in, a macOS permission or a repair finishes with a real
+     provider check, and that still ran 45 seconds later against a provider the
+     customer had switched off in the meantime — work they had just said they
+     did not want. The switch stays theirs to press at any time.
+  2. **`Continue` on the provider step waits for the completion it asked for.**
+     A second press started a second one, each forcing a live provider read
+     before writing anything, so the customer paid for the same slow check twice
+     and either answer could move the step or raise a refusal on its own.
+- Approved files: `apps/control-center/src/components/setup/`
+  `setup-providers-screen.tsx`, `setup-wizard.tsx`, and their tests.
+
+## 2026-09-01 — Back during a display save is kept
+
+- User approval: The same standing instruction as the entries above ("fix alle
+  findings vom codex bug detector, sofern sie sinnvoll sind ... mach das so lang,
+  bis der codex bug detector nichts mehr findet", 2026-08-31).
+- Approved customer-visible result: **Pressing `Back` while the display choice
+  is being saved keeps the customer where they went.** The save landing used to
+  carry them forward from the step they had just gone back to. `Back` stays
+  available throughout, rather than being taken away for the length of a write.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`
+  and its test.
+
+## 2026-09-01 — The welcome screen is what the customer meets, and Settings offers the wizard's own controls
+
+- User approval: While testing the PR #331 candidate the user reported eight
+  findings and, on the first, instructed: "doch, dieser pr kann und wird das
+  lösen. änder das, die screens fliegen raus, bis sie exakt so aussehen wie im
+  design". On the third: "änder das so, dass der wlan scan auf dem welcome
+  screen läuft, so wie es ja auch im design ist". On the fourth ("dann mach
+  das"), on the second ("fix das"), and on the log ordering: "alles ausgrauen,
+  außer immer den letzten ... es geht um die reihenfolge in der das gestartet
+  wird". Separately: "bau den settings tab um, der hat noch scheiß design. das
+  muss so aussehen wie hier", naming the `Settings Tab Redesign` board.
+- Approved customer-visible result:
+  1. **The first screen at launch is the welcome step.** The native window and
+     the WebView now draw the same brand and the same running log on the same
+     background, so the handover between them is invisible. Two loading screens
+     titled `Starting Control Center` are gone.
+  2. **The WiFi search runs on the welcome step.** The customer leaves it when
+     there is a VibeTV to choose, not when the first background-service check
+     answers. `Enter IP address manually` is offered there throughout — a
+     deliberate departure from the board, which gives the step no controls, so
+     that a customer who already knows the address is not made to sit out a
+     40-second scan (the capability the 2026-07-22 entry required).
+  3. **The setup log reads as an order of events.** Every line above the newest
+     is dimmed; the newest carries the caret.
+  4. **The chosen VibeTV stays on screen while it is being set up.** Pairing no
+     longer empties the discovered list, so the card keeps its selection and the
+     count can no longer read `0 VibeTVs found on your WiFi.` while a VibeTV is
+     connected. The button names the phase it is in — `Checking firmware`,
+     `Updating firmware` — instead of `Connecting` throughout.
+  5. **`Ask AI to fix` asks for a fix.** It names the repository, the file that
+     draws the failing screen, the Mac App version separately from the
+     background service version, the error the app is holding, every provider
+     state, and the log the screen is actually showing.
+  6. **Settings offers the same controls as the wizard.** `Display mode` is its
+     own section with the two preview cards, and the AI provider rows are the
+     wizard's rows. Removed with it: the per-provider `Include in Automatic`
+     checkbox, the health badges, the `Show all providers` collapse, and the
+     `Always show one` wording — Settings and the wizard now say `Manual`.
+     Enabling or disabling a provider under Automatic writes the whole enabled
+     set, which is what the checkbox and its repair effect did between them.
+     Rows keep their switch whatever the provider reports, per rule 3, which the
+     board's no-control row would have reversed. `Screensaver` and `Setup` keep
+     their sections; the board does not draw them and their controls exist
+     nowhere else.
+  7. **The brightness reading sits beside its label** in a mono face instead of
+     riding the slider thumb.
+- Approved files: `apps/control-center/src/components/` `settings-screen.tsx`,
+  `provider-picker.tsx`, `control-center-app.tsx`, `setup/` and their tests;
+  `macos/VibeTVControlCenter/main.swift`.
+
+## 2026-09-01 — One working AI provider finishes setup
+
+- User approval: While testing the PR #331 candidate the user reported being
+  stuck on the provider step and instructed: "8 das ist quatsch, der muss
+  funktionieren, sobald ein ai provider ausgewählt ist und funktioniert".
+- Approved customer-visible result: **`Continue` on the provider step opens as
+  soon as one switched-on provider has passed its check.** It used to demand
+  every switched-on provider, and CodexBar switches providers on by itself — so
+  a single one merely not signed in closed the only step that offers no `Back`
+  and no `Skip`, on a Mac whose own provider was working. What VibeTV shows is
+  unaffected: the rotation already skips a provider it cannot read. The
+  companion's completion applies the same sentence, so the button cannot open
+  on a gate that would refuse it. Without any ready provider it stays closed —
+  there would be nothing real to put on the screen.
+- Approved files: `apps/control-center/src/components/setup/setup-providers-screen.tsx`,
+  `companion/internal/companionapi/provider_display.go`, and their tests.
+
+## 2026-09-01 — The sign-in control leads somewhere
+
+- User approval: The user reported that pressing sign-in did nothing and stated
+  the intent: "die idee von der funktionalität war, dass wir den kunden bspw.
+  direkt zu codex bzw. openai oder auf www.claude.ai/login oder wo auch immer hin
+  schicken … wenn das bedeutet, dass wir für alle provider speichern müssen, wo
+  sich der kunde einloggt, dann so be it." On the proposal below: "finde ich gut
+  … wir zeigen codexbar", and after the release check, "ja mach".
+- Approved customer-visible result:
+  1. **The sign-in control opens where the customer actually signs in.** It used
+     to activate a menu-bar app with no window, so nothing happened, ever. A
+     provider read from a browser session opens that provider's own page; one
+     whose credential is written by its own CLI hands over the command to copy,
+     because a browser login would put nothing where the usage service looks.
+  2. **A blocked cookie read goes to the macOS setting, not to a login page.**
+     On a Mac where the usage service cannot read Safari's cookie file, the
+     customer is already signed in and only Full Disk Access is missing. This is
+     checked before the sign-in branch.
+  3. **The row says what the usage service said**, redacted. Its sentence is the
+     only per-provider guidance that exists, and it is often the better one:
+     "Please sign in at https://ollama.com/signin in your browser."
+  4. **Two of its sentences are never shown.** "Please log in via the CodexBar
+     menu" (Cursor, Augment) names a product the app does not mention and points
+     away from what works — both are read from browser cookies. "No available
+     fetch strategy for <id>." is its answer for 34 of 65 providers and reads as
+     a dead end where a working sign-in exists.
+  5. **A provider we have no destination for offers another check** rather than
+     a control that leads nowhere.
+- Deliberate departure, recorded rather than smuggled: the destination table is
+  the Mac App holding provider knowledge, which the AGENTS.md CodexBar boundary
+  otherwise reserves for the engine. It was checked against the pinned 0.46.0
+  and against the current 0.56.2: neither publishes a sign-in destination in any
+  field, both still carry the two wrong sentences, and five of their messages
+  embed the account's home directory. Forwarding alone cannot do the job.
+- Approved files: `apps/control-center/src/components/setup/`
+  `provider-sign-in.ts`, `setup-provider-row.tsx`, `setup-providers-screen.tsx`;
+  `apps/control-center/src/components/control-center-runtime.ts`;
+  `companion/internal/codexbar/providers.go`;
+  `companion/internal/companionapi/` `provider_reported.go`, `preferences.go`;
+  `macos/VibeTVControlCenter/main.swift`; and their tests.
+
+## 2026-09-01 — Nothing switches a provider on but the customer, and the usage read no longer waits for a VibeTV
+
+- User approval: On the provider list filling itself in, the user chose option C
+  from three offered ("7c finde ich am elegantesten") after being told what it
+  costs. On starting the read earlier: "ja aber der state ist ja scheiße so. 🙂
+  meine frage war ja, ob wir den scheiss scan nicht schon auf dem welcome screen
+  starten sollten zb". Confirmed with "mach".
+- Approved customer-visible result:
+  1. **No provider switches itself on any more.** The first run used to ask the
+     usage service for every provider it could reach and then switch each one on
+     with a separate write. That is what the customer watched: minutes of
+     silence, then providers appearing and toggling themselves on under their
+     hands, with `Continue` closing again on each one. The list now shows what
+     the usage service already has switched on — on a fresh Mac that is Codex —
+     and every other switch is the customer's to press.
+  2. **The read starts when the Mac starts, not when the VibeTV is connected.**
+     Reading this Mac's AI usage has nothing to do with pairing, and waiting for
+     it meant the first read began the moment the customer pressed `Connect` —
+     three silent minutes on a screen whose log had already finished. Nothing
+     reaches a device that is not there: the cycle that sends a frame resolves
+     the device itself and returns without one.
+- Honest cost, named rather than discovered later: on a Mac whose customer uses
+  Claude or Cursor but not Codex, the provider list now opens with one
+  pre-armed switch that is not theirs. Search reaches any provider, and the list
+  shows ten at a time.
+- Approved files: `companion/internal/codexbar/` `codexbar.go`,
+  `provider_setup.go`; `companion/internal/companionapi/provider_setup.go`;
+  `companion/internal/daemon/` `collector.go`, `daemon.go`; and their tests.
+  Net on the Go side: 737 lines deleted, 107 added.
+
+## 2026-09-01 — A search the background service did not survive is not an answer
+
+- User approval: After installing the preview the user reported the wizard had
+  handed them "0 VibeTVs found on your WiFi." with a dead Connect on a fresh
+  Mac ("ein satz mit x!", with the screens), then approved the fix: "jo mach".
+- Approved customer-visible result: **The customer stays on the welcome step
+  until there is a VibeTV to choose, including while the background service is
+  still starting.** On a fresh Mac that service restarts several times as it
+  installs its usage engine — three times in the first minute, measured — and a
+  search running into one of those gaps came back empty. That empty result was
+  shown as a count, with a Connect the service could not serve behind it: the
+  customer pressed it and got "Mac App did not answer", a failed firmware check
+  and a repair dialog, one after the other. A search the service did not survive
+  is now discarded and run again once it is back. A service that is genuinely
+  gone is not hidden: its recovery dialog is drawn over the welcome step.
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-step.test.ts`,
+  `apps/control-center/scripts/test-customer-flows.mjs`.
+
+## 2026-09-01 — Never two dialogs on top of each other
+
+- User approval: While testing preview 99.0.911 the user reported being stuck
+  after pressing Connect: "jetzt bin ich hier stuck, 2 pop ups übereinander,
+  chaos", with the screen showing "Could not check VibeTV's firmware" lying over
+  "Finish AI setup on this Mac".
+- Approved customer-visible result: **Setup shows one dialog at a time.** Every
+  one of them is centred, so a second lands on the first and the lower one's
+  buttons cannot be reached — the customer could answer neither. The dialog
+  about what they just did wins; the ambient usage-service incident stands down
+  while a step has a failure of its own and is raised again the moment that one
+  is answered. It is no longer drawn from outside the wizard at all: the step
+  decides, because only the step knows whether it already has something to say.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`,
+  `apps/control-center/src/components/control-center-app.tsx`, and their tests.
+
+## 2026-09-01 — The app stops taking its own background service down
+
+- User approval: The user asked why the background service restarts at all and
+  proposed repairing it quietly instead ("wieso startet der verfickte dienst
+  überhaupt neu", "sollten wir ihn einfach im hintergrund repairen"), then
+  approved the fix and the removal of what it made redundant: "mach und wirf
+  auch überschüssigen code den du in diesem zuge vorher eingebaut hast, wieder
+  weg".
+- Approved customer-visible result: **A Mac sitting on the provider step no
+  longer tears its own background service down, and a service that stops
+  answering is given the time to come back before anything is said about it.**
+  A VibeTV reporting `provider_setup_required` means nobody has switched a
+  provider on yet — the ordinary state of this wizard now that the first run no
+  longer switches providers on by itself. It was being read as a broken usage
+  service, which sent the automatic recovery after it; that recovery
+  unregisters the background service for some twenty seconds before it
+  reinstalls the engine, after which the VibeTV reported "no provider" again and
+  it started over. Measured on the bench: nine restarts while the customer did
+  nothing but sit on the provider list, each one killing the Connect flow's
+  firmware check and raising "Repairing VibeTV Control Center" for a teardown
+  the app had asked for itself. Only CodexBar's own verdict on its engine
+  decides now — reinstalling an engine that reports ready cannot switch a
+  provider on. A service that really does stop answering is left to launchd,
+  which restarts it within about seventeen seconds; the customer hears nothing
+  until that has had its chance and the app has to step in. One that never
+  answered at all has no restart coming and is still reported at once.
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/control-center-types.ts`,
+  `apps/control-center/scripts/test-customer-flows.mjs`. Net: the provider
+  incident latch carried on the device session and the recovery dialog's own
+  dismissal bookkeeping are gone.
+
+## 2026-09-01 — A dismissed incident stays dismissed, and a probe is not an answer
+
+- User approval: While testing this build on the bench the user reported being
+  hard-stuck on "Choose your VibeTV" under stacked popups: "öffnen sich mehrere
+  pop ups übereinander und ich komme nicht mehr weiter … finish ai setup on
+  this mac kann ich bspw. gar nicht schließen".
+- Approved customer-visible result: **Closing "Finish AI setup on this Mac"
+  works, and what was closed stays closed.** The dialog's close control did
+  nothing inside setup; now it puts the incident away and the step behind it
+  stays usable, with the provider step still carrying the broken state on its
+  rows. The incident returns only when the current one has ended and a new one
+  starts. What used to bring it back was the usage service's own probe: it
+  answers "checking" during every half-minute cache refresh, and the app read
+  that as the incident ending — un-hiding the dismissed dialog on the next
+  failing answer, with a fresh pop-in each time, and re-arming the automatic
+  repair so the app tore its own background service down once per probe cycle.
+  A "checking" answer is a probe still running, not a verdict, and no longer
+  ends an incident. And a scan that could not be made is a failure of the
+  device step itself, so "We couldn't search for your VibeTV" now wins over the
+  ambient incident the same way every other step failure does — never two
+  stacked cards.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`,
+  `apps/control-center/src/components/setup/setup-wizard.test.tsx`,
+  `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`.
+
+## 2026-09-01 — WiFi off is said, not searched around
+
+- User approval: While testing the rebuilt setup the user found the scan
+  running with WiFi switched off: "mir ist gerade aufgefallen, dass er auch
+  scant, wenn ich gar kein wifi an habe und dann einfach irgendwann kommt,
+  dass er nichts gefunden hat. es braucht noch nen pop up mit der meldung,
+  dass wifi aus ist."
+- Approved customer-visible result: **A Mac without a network is told so
+  instead of being searched around.** The automatic scan used to fan out over
+  the saved VibeTV addresses into a void for its whole thirty-second window
+  and then settle on "0 VibeTVs found on your WiFi" — an answer about
+  VibeTVs when the actual problem was the Mac. The background service now
+  refuses such a search immediately, and the refusal carries the reason and
+  the way out: "This Mac isn't connected to a WiFi network. Turn on WiFi and
+  connect this Mac to the WiFi your VibeTV uses, then search again." — shown
+  in the existing "We couldn't search for your VibeTV" dialog over the device
+  step. Manual IP entry still probes exactly the typed address and reports
+  its own failure in its own dialog. A remembered VibeTV on this Mac itself
+  (the virtual one used for testing) still answers without WiFi, and an
+  unusual but connected network is not accused of being off — it searches
+  like today.
+- Approved files: `companion/internal/companionapi/server.go`,
+  `companion/internal/companionapi/server_test.go`.
+
+## 2026-09-02 — A connected VibeTV with no usage to draw reaches the provider step
+
+- User approval: After connecting on the rebuilt setup the user reported being
+  parked: "ok ich glaube er hat sich connected, allerdings bin ich jetzt hier
+  stuck für ca. ne minute. dort oben steht wieder 0 vibetvs found. das macht
+  ja keinen sinn, weil er hat ja schon einen gefunden und sich mit dem
+  connected. außerdem wieso gehts nicht weiter jetzt?"
+- Approved customer-visible result: **A VibeTV that connects and pairs but has
+  no AI usage to draw carries the customer on to the provider step.** The
+  device step already let a VibeTV reporting `provider_setup_required` through
+  to the one screen that can fix a provider — but a Mac whose switched-on
+  provider cannot deliver usage (signed out, nothing fresh to read) reports a
+  running stream with no usage and no error code instead, and that shape
+  parked the customer on the device step forever: connect finished, firmware
+  checked, and the headline falling back to "0 VibeTVs found on your WiFi"
+  over a VibeTV it had just connected. Both shapes are the provider step's
+  case, and both pass now — only while the provider selection is still open,
+  so a provider that dies after setup still keeps its recovery instead of a
+  live screen. The finished-setup gates are untouched: setup still ends only
+  on a working provider and a real first frame.
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`.
+
+## 2026-09-02 — Back sits top left and reaches the device step
+
+- User approval: The user asked for it from the running wizard on the bench:
+  the ghost Back buttons were missing top left, and there was no way back to
+  the previous setup step (2026-09-02).
+- Approved customer-visible result: **Every setup step with a step before it
+  shows a ghost `Back` button in the top left corner**, where it used to sit
+  bottom left. **The provider step now offers Back as well**, to the device
+  step: the VibeTV that was connected is still on the list there, and pressing
+  `Connect` runs the connect and firmware check again and carries the customer
+  forward once it finishes. Back from Display Mode and from the theme step is
+  unchanged. The welcome and device steps still have none: there is no choice
+  before them to return to.
+- Approved files: `apps/control-center/src/components/setup/setup-wizard-screen.tsx`,
+  `apps/control-center/src/components/setup/setup-step.ts`,
+  `apps/control-center/src/components/setup/setup-connect.ts`,
+  `apps/control-center/src/components/setup/setup-wizard.tsx`, their tests,
+  and this approval record.
+
+## 2026-09-02 — The Mac App stops reading CodexBar's error text
+
+- User approval: The product owner chose this after the diagnosis of the
+  device-step hang ("ok mach a und direkt auch die folgearbeit textsuche nach
+  rate limit als ganzes rausnehmen", 2026-09-02).
+- Approved customer-visible result: **A switched-on provider that has never
+  delivered usage now carries the customer from the device step to the
+  provider step within one collector cycle, and the VibeTV shows its honest
+  "AI usage is not ready" frame instead of nothing.** The runtime used to keep
+  silent whenever CodexBar's error text happened to contain the words "rate
+  limit" -- which is what CodexBar says for a signed-out Codex -- and neither
+  the device nor the wizard was told anything. The runtime no longer reads that
+  text at all. This replaces the wizard-side guess approved earlier today ("A
+  connected VibeTV with no usage to draw reaches the provider step"): the
+  device step again reads only the runtime's own `provider_setup_required`
+  signal, and that promise is kept through the runtime -- a provider that has
+  never delivered yields the error frame at once; one that delivered before
+  keeps its last-good values on the VibeTV and sends an unavailable frame once
+  they expire. The Usage screen no longer has a "Refresh is temporarily
+  limited" state. A provider CodexBar cannot read keeps showing its last-good
+  values as up to date for their ten-minute lifetime and then reads as
+  unavailable, whatever reason CodexBar gives; a manual refresh in that time
+  says "Refreshing usage" and settles as unavailable after fifteen minutes
+  without new data.
+- Approved files: `companion/internal/codexbar/codexbar.go`,
+  `companion/internal/codexbar/dashboard_fetch.go`,
+  `companion/internal/daemon/collector.go`,
+  `companion/internal/daemon/daemon.go`,
+  `companion/internal/companionapi/server.go`, their tests,
+  `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/control-center-types.ts`,
+  `apps/control-center/src/components/usage-screen.tsx`, their tests,
+  `apps/control-center/scripts/test-customer-flows.mjs`,
+  `docs/usage-polling-architecture.md`, and this approval record.
+
+## 2026-09-02 — Continue uses the provider health already on screen
+
+- User approval: After the three provider-step failures were diagnosed, the
+  product owner explicitly instructed the B, A, C package to be implemented in
+  that order. For option B, the owner explicitly decided that token history by
+  itself is not a healthy provider (2026-09-02).
+- Approved customer-visible result: **`Continue` opens as soon as one provider
+  that is switched on reads healthy on the provider row, and the Companion
+  accepts that same answer.** The step no longer starts a second serial check
+  of every enabled provider, waits for a queued check, or mirrors the
+  Companion's five-minute verification clock in the browser. `Check again`
+  remains available on a row for a check the customer chooses. Token history
+  without usable provider usage stays visibly unavailable and does not open
+  `Continue`.
+- Approved files: `companion/internal/companionapi/preferences.go`,
+  `provider_display.go`, `provider_setup.go`,
+  `apps/control-center/src/components/control-center-app.tsx`,
+  `provider-preferences-polling.ts`,
+  `setup/setup-providers-screen.tsx`, their regression tests,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-02 — CodexBar owns the provider sign-in guidance
+
+- User approval: In the same explicit B, A, C instruction, the product owner
+  approved option A with `Open CodexBar` instead of a web sign-in link, the
+  CodexBar sentence shown exactly as reported, a copy control, and token
+  history kept separate from provider readiness (2026-09-02).
+- Approved customer-visible result: **A provider that needs attention shows
+  CodexBar's own sentence, with `Copy`, `Open CodexBar`, and `Check again`.**
+  `Open CodexBar` opens the existing CodexBar app, where its own provider help
+  and `Add Account…` live. The Control Center no longer chooses a sign-in
+  website, opens `chatgpt.com`, guesses from error words that Full Disk Access
+  is needed, or shows a 45-second `Waiting for sign-in…` state. Codex signed
+  out therefore shows the sentence its bundled CodexBar CLI actually reports,
+  rather than inventing the separate `codex login --device-auth` instruction
+  that exists only inside the CodexBar GUI binary. When CodexBar reports no
+  sentence, the existing generic provider detail remains the fallback.
+- Approved files: `companion/internal/companionapi/preferences.go`,
+  `provider_setup.go`, `provider_reported.go`,
+  `apps/control-center/src/components/setup/setup-provider-row.tsx`,
+  `setup-providers-screen.tsx`, `provider-sign-in.ts`,
+  `apps/control-center/scripts/check-customer-ui-copy.mjs`,
+  `apps/control-center/src/components/control-center-runtime.ts`,
+  `macos/VibeTVControlCenter/main.swift`, their regression tests,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-02 — Provider rows never stop the Mac App service
+
+- User approval: In the same explicit B, A, C instruction, the product owner
+  approved option C: remove provider-row repair and waiting actions, keep the
+  automatic engine repair for a real engine failure, and let only the runtime
+  recovery screen report a Companion outage (2026-09-02).
+- Approved customer-visible result: **No action on a provider row shuts down
+  the Companion.** The row no longer offers `Repair the usage service` or a
+  guessed recovery wait; it offers CodexBar and the explicit provider check.
+  A connection gap reported as `COMPANION_UNREACHABLE` is not also rendered as
+  a provider-step failure dialog: the existing status poll and runtime
+  recovery screen own a real Companion outage. The automatic repair for a
+  genuine CodexBar engine failure remains, and the provider list is refreshed
+  after that repair so a stored connection error cannot appear afterwards.
+- Approved files: `companion/internal/companionapi/preferences.go`,
+  `apps/control-center/src/components/settings-screen.tsx`,
+  `setup/setup-provider-dialogs.tsx`,
+  `setup/setup-provider-row.tsx`, `setup-providers-screen.tsx`,
+  `setup/setup-wizard.tsx`, `control-center-app.tsx`, their regression tests,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-02 — The approved CodexBar action passes the copy guard
+
+- User approval: In option A, the product owner explicitly approved the
+  customer action `Open CodexBar` and a copy control beside CodexBar's exact
+  reported provider sentence (2026-09-02).
+- Approved customer-visible result: **The row keeps the exact `Open CodexBar`
+  action.** The copy control's accessible name reads `Copy provider message
+  for <provider>` while the copied sentence remains exactly what CodexBar
+  reported. The customer-copy guard permits only the explicitly approved
+  `Open CodexBar` label rather than permitting the internal name generally.
+- Approved files: `apps/control-center/scripts/check-customer-ui-copy.mjs`,
+  `apps/control-center/src/components/setup/setup-provider-row.tsx`, its
+  regression test, `apps/control-center/scripts/test-customer-flows.mjs`, and
+  this approval record.
+
+## 2026-09-02 — Overview waits for a real VibeTV preview
+
+- User approval: The product owner explicitly said the customer must never
+  reach Overview without a working preview after seeing `Connected` together
+  with `Waiting for first image` (2026-09-02).
+- Approved customer-visible result: **The closing `Your VibeTV is live` step
+  remains on screen until the connected device reports ready and the Mac App
+  has received a real display frame. Only then does the short handover delay
+  start and Overview become reachable.**
+- Approved files: `apps/control-center/src/components/setup/setup-wizard.tsx`,
+  its regression test, and this approval record.
+
+## 2026-09-02 — Provider Continue goes directly to Display Mode
+
+- User approval: The product owner reported that `Continue` became disabled,
+  appeared to do nothing, then briefly returned to `Connect your VibeTV` before
+  reaching Display Mode. They explicitly asked for that flow to be fixed and
+  tested without further manual clicking (2026-09-02).
+- Approved customer-visible result: **`Continue` accepts the same healthy
+  provider state already visible on the screen, without starting a second live
+  provider scan. After the successful request, setup goes directly to Display
+  Mode and never flashes the device-connection step.**
+- Approved files: `companion/internal/companionapi/provider_display.go`,
+  `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-step.ts`, their regression
+  tests, and this approval record.
+
+## 2026-09-02 — Provider rows keep only Copy and Retry
+
+- User approval: The product owner explicitly removed the arrow/external
+  action because it did not lead anywhere and asked for enabled providers to
+  sort automatically above disabled providers (2026-09-02).
+- Approved customer-visible result: **A provider that needs attention offers
+  only Copy when CodexBar supplied a message and Retry.** No provider row shows
+  `Open CodexBar` or an external-link arrow. The shared setup-and-Settings list
+  puts switched-on providers first and preserves CodexBar's order inside the
+  switched-on and switched-off groups.
+- Approved files: `apps/control-center/src/components/setup/setup-provider-row.tsx`,
+  `setup/setup-providers-screen.tsx`, their regression tests,
+  `apps/control-center/scripts/check-customer-ui-copy.mjs`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-02 — Initial AI provider scan stays visible
+
+- User approval: The product owner supplied the exact loading-state design and
+  explicitly asked for another `still checking, hang tight` log line roughly
+  every 20 seconds while the provider list is not ready (2026-09-02).
+- Approved customer-visible result: **After the firmware check, setup moves to
+  `Choose AI providers` while the Mac App reads the first provider inventory.**
+  The screen shows `reading provider usage on this Mac`, appends another
+  `still checking, hang tight` line every 20 seconds, keeps Search, three
+  provider placeholders, and Continue disabled, then replaces the loading
+  state with the real provider list as soon as it answers. The former
+  `Starting AI usage` dialog no longer covers this ordinary wait.
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `setup/setup-wizard.tsx`, `setup/setup-providers-screen.tsx`, their regression
+  tests, `apps/control-center/scripts/test-customer-flows.mjs`, and this
+  approval record.
+
+## 2026-09-02 — Theme choice stays explicit and the live headline leads
+
+- User approval: The product owner reported that the theme list, headline, and
+  subheadline were too small compared with the preceding `Choose AI providers`
+  screen; that setup jumped to `Your VibeTV is live` without a theme choice;
+  and that the live headline belonged above the VibeTV image (2026-09-02).
+- Approved customer-visible result: **The theme step has a 40px headline, an
+  18px subheadline, and larger theme names and previews. It stays on `Choose
+  your theme` until the customer explicitly starts and completes the selected
+  theme install in this setup. A theme retained from an earlier Mac or updated
+  automatically in the background cannot skip that choice. On the final
+  screen, `Your VibeTV is live` appears above the VibeTV image.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `setup/setup-wizard.tsx`, `setup/setup-wizard-screen.tsx`,
+  `setup/setup-theme-screen.tsx`, `setup/setup-live-screen.tsx`, their
+  regression tests, `apps/control-center/scripts/test-customer-flows.mjs`, and
+  this approval record.
+
+## 2026-09-02 — The final live screen shows the real preview
+
+- User approval: The product owner reported that Overview showed the correct
+  live preview while the preceding `Your VibeTV is live` screen still showed
+  `WAITING FOR AI SETUP…`, and explicitly required the missing final preview
+  to be shown there as well (2026-09-02).
+- Approved customer-visible result: **A real display frame takes precedence
+  over a briefly stale provider-setup error on the final screen. `Your VibeTV
+  is live` remains visible until the selected theme has actually rendered that
+  real frame inside the VibeTV image; only then does the short automatic
+  handover to Overview begin.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `live-vibetv-preview.tsx`,
+  `live-vibetv-preview.recovery.test.tsx`,
+  `setup/setup-live-screen.tsx`, `setup/setup-wizard.tsx`,
+  `setup/setup-wizard.test.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-03 — The final preview must remain visible through handover
+
+- User approval: In the final clarified flow, the product owner reported that the closing setup screen could
+  show `Live preview paused` and still redirect to Overview, explicitly
+  required setup never to continue before the preview is certainly visible
+  even when waiting takes five minutes or longer, and then explicitly required
+  the implementation to follow the repository's simplest possible design
+  principle (2026-09-03).
+- Approved customer-visible result: **After theme installation, the final `Your VibeTV is live` step
+  has no maximum wait timeout. It remains on screen while the preview is
+  unavailable. Theme installation allows up to five minutes for a fresh display
+  stream. Once the same real preview used by Overview renders, it remains
+  visible for three seconds before Overview opens.**
+- Approved files: `apps/control-center/src/components/live-vibetv-preview.tsx`,
+  `live-vibetv-preview.recovery.test.tsx`, `control-center-app.tsx`,
+  `setup/setup-live-screen.tsx`, `setup/setup-wizard.tsx`,
+  `setup/setup-wizard.test.tsx`,
+  `companion/internal/companionapi/server.go`, its regression tests, and this
+  approval record.
+
+## 2026-09-03 — Provider and theme handover stays on the chosen path
+
+- User approval: The product owner reported that setup briefly returned from
+  Display Mode to Choose AI providers and then moved forward again. They asked
+  for the complete flow to be reviewed against the repository's simplicity
+  rules, required the rehearsal to use a true new-customer Mac state, and
+  explicitly approved implementing the simplified result with `ja dann mach`
+  (2026-09-03).
+- Approved customer-visible result: **After a successful provider Continue,
+  setup stays on Display Mode even if an older status request finishes late.
+  A Mac whose first provider setup is still open must make the explicit theme
+  choice before the final live handover; an already completed healthy setup
+  may return directly to Overview. The live handover still waits for a real
+  renderable preview before Overview opens.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-wizard.test.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-03 — Completed setups keep their direct Overview path
+
+- User approval: During the same approved setup-flow review, the product owner
+  required the solution to remain as simple as possible and told us to proceed
+  with the corrected complete flow (2026-09-03).
+- Approved customer-visible result: **Only a genuinely unfinished first-time
+  provider setup adds the explicit theme choice after connecting. A healthy Mac
+  whose provider setup was already completed continues directly to Overview.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-03 — Setup only returns by explicit customer choice
+
+- User approval: The product owner reported that installing a theme or
+  screensaver after reaching Overview reopened the setup wizard, explicitly
+  required that this must never happen after Overview was reached once, and
+  clarified that `Run setup again` is the deliberate exception. They also
+  explicitly required `Ask AI to fix` to restore the local setup first and
+  never clone a repository or create a pull request without a later customer
+  decision (2026-09-03). During the same review they instructed us to resolve
+  the remaining real Bug Detector findings before another candidate test.
+- Approved customer-visible result: **The first completed setup waits for a
+  real preview and then opens Overview. From that point on, theme installs,
+  screensaver installs, provider refreshes, and temporary reconnects keep the
+  Control Center open; only the explicit `Run setup again` action may return
+  to the wizard. Automatic display keeps every enabled provider, and Manual
+  display chooses a provider that can currently render. `Ask AI to fix` tells
+  the agent to repair and verify this Mac first, then inspect the source and
+  ask before any pull request; it never instructs the agent to clone, commit,
+  push, or open a pull request.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `settings-screen.tsx`, `setup/setup-ai-prompt.ts`, `setup/setup-step.ts`,
+  `setup/setup-wizard.tsx`, their regression tests,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-03 — Reloads preserve completed setup
+
+- User approval: The product owner explicitly required that once Overview was
+  reached, installing themes or screensavers must never return to the wizard,
+  and clarified that only `Run setup again` may reopen setup (2026-09-03).
+- Approved customer-visible result: **After Overview has opened, a reload,
+  pairing loss, theme or screensaver install, and a VibeTV restart during an
+  already-running firmware update keep the Control Center shell open. A first
+  setup still waits for provider choice, display choice, a completed theme,
+  and a real preview before Overview opens.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-03 — Cable/WiFi setup keeps the current wizard fixes
+
+- User approval: After reviewing PR 407 against the current PR 331 head, the
+  product owner explicitly instructed us to integrate the reviewed changes on
+  PR 407 while leaving PR 331 untouched (2026-09-03).
+- Approved customer-visible result: **The Cable/WiFi decision stays inside the
+  current setup wizard: one matching Cable or WiFi VibeTV connects
+  automatically, multiple matching VibeTVs require a choice, and Cable-based
+  WiFi setup remains available. Provider, display, theme, and final-preview
+  handovers retain the current wizard behavior. Settings presents Connection
+  as one flat section alongside the other settings.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `settings-screen.tsx`, `setup/setup-device-screen.tsx`,
+  `setup/setup-wizard.tsx`, their regression tests,
+  `apps/control-center/scripts/test-customer-flows.mjs`, and this approval
+  record.
+
+## 2026-09-03 — Completed setup survives a restart; a pinned provider must be ready
+
+- User approval: The product owner reviewed the PR #331 bug-detector findings
+  and required all three fixed before the merge (2026-09-03): "Nach Neustart
+  wieder Wizard" for a customer who had already reached Overview, "fester
+  Provider ist kaputt, anderer funktioniert", and provider messages that carry a
+  token or an e-mail address.
+- Approved customer-visible result: **Starting the app on a Mac whose setup is
+  already recorded opens the Control Center directly, with every tab available,
+  while its connected VibeTV is still coming up and has not drawn a frame yet;
+  before, it opened the wizard on "looking for your VibeTV" or held its closing
+  step. Overview renders no theme and no usage until a real frame arrives. A
+  VibeTV that is switched off when the app starts keeps the device step with
+  its recovery picker, as approved before. On the provider step, Continue is refused with
+  "The provider VibeTV shows is not ready." and the display step opens when the
+  provider under "Always show" cannot produce a reading while another one can;
+  Automatic is unchanged. A provider's own message on the provider row keeps its
+  wording but shows `[redacted]` in place of an e-mail address, a cookie or
+  token value, or a key inside an echoed response, in the row and in what Copy
+  puts on the clipboard.**
+- Approved files: `apps/control-center/src/components/control-center-app.tsx`,
+  `apps/control-center/src/components/setup/setup-step.ts`, their regression
+  tests, `apps/control-center/scripts/test-customer-flows.mjs`, the Companion
+  provider-completion gate and provider-message redaction with their tests,
+  `docs/control-center-ui-principles.md` rules 4 and 6, and this approval
+  record.

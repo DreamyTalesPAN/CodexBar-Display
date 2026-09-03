@@ -5,11 +5,14 @@ import {
   deviceCompletedThemeSetup,
   deviceIsActive,
   deviceIsCustomerConnected,
+  deviceCanSwitchToCable,
   deviceIsReady,
+  deviceUsesCable,
   deviceNeedsExplicitConnect,
   deviceNeedsThemeSetup,
   providerRecoveryStatusRows,
   providerSetupIsChecking,
+  providerSetupNeedsEngineRecovery,
   providerSetupRequiresRecovery,
 } from "./control-center-types";
 
@@ -61,6 +64,24 @@ describe("device connection contract", () => {
     ).toBe(true);
   });
 
+  it("recognizes Cable from the transport contract or Cable target", () => {
+    expect(
+      deviceUsesCable({
+        connected: true,
+        capabilities: { transport: { active: "usb", mode: "cable" } },
+      }),
+    ).toBe(true);
+    expect(deviceUsesCable({ connected: true, target: "cable://vibetv" })).toBe(
+      true,
+    );
+    expect(
+      deviceUsesCable({
+        connected: true,
+        capabilities: { transport: { active: "wifi", mode: "wifi" } },
+      }),
+    ).toBe(false);
+  });
+
   it("never treats fast reachable-before-selected updates as customer connected", () => {
     const updates = [
       { connected: false, ready: false },
@@ -109,6 +130,56 @@ describe("device connection contract", () => {
         connected: false,
         paired: false,
         ready: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("offers Cable recovery only for an active Cable-capable WiFi binding", () => {
+    expect(
+      deviceCanSwitchToCable({
+        active: true,
+        connected: false,
+        capabilities: {
+          transport: {
+            active: "wifi",
+            mode: "wifi",
+            supported: ["usb", "wifi"],
+          },
+        },
+      }),
+    ).toBe(true);
+    expect(
+      deviceCanSwitchToCable({
+        active: true,
+        connected: false,
+        capabilities: {
+          transport: {
+            active: "wifi",
+            mode: "legacy-wifi-only",
+            supported: ["wifi"],
+          },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      deviceCanSwitchToCable({
+        active: false,
+        connected: false,
+        capabilities: {
+          transport: { active: "wifi", mode: "wifi", supported: ["usb"] },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      deviceCanSwitchToCable({ active: true, connected: false }),
+    ).toBe(false);
+    expect(
+      deviceCanSwitchToCable({
+        active: true,
+        connected: true,
+        capabilities: {
+          transport: { active: "wifi", mode: "wifi", supported: ["usb"] },
+        },
       }),
     ).toBe(false);
   });
@@ -469,5 +540,54 @@ describe("providerRecoveryStatusRows", () => {
         text: "This provider needs an active sign-in.",
       },
     ]);
+  });
+});
+
+// The automatic recovery unregisters the background service for some twenty
+// seconds and reinstalls the engine. Running it for a Mac whose customer has
+// simply not picked a provider yet made the VibeTV report "no provider" again
+// afterwards, and it started over: nine teardowns while the customer read the
+// provider list.
+describe("providerSetupNeedsEngineRecovery", () => {
+  it("leaves a working engine alone when no provider is signed in", () => {
+    expect(
+      providerSetupNeedsEngineRecovery({
+        status: "setup_required",
+        engine: { status: "ready" },
+        providers: [{ id: "codex", enabled: true, status: "auth_required" }],
+      }),
+    ).toBe(false);
+  });
+
+  it("recovers a usage service that cannot answer", () => {
+    // `codexbar` is not a provider: CodexBar reports itself under that id when
+    // its own probe timed out, and then the engine really is the problem.
+    expect(
+      providerSetupNeedsEngineRecovery({
+        status: "setup_required",
+        engine: { status: "ready" },
+        providers: [{ id: "codexbar", status: "timeout" }],
+      }),
+    ).toBe(true);
+  });
+
+  it("recovers an engine that is not there", () => {
+    expect(
+      providerSetupNeedsEngineRecovery({
+        status: "setup_required",
+        engine: { status: "not_configured" },
+        providers: [],
+      }),
+    ).toBe(true);
+  });
+
+  it("asks for nothing while the usage service is ready or still checking", () => {
+    expect(
+      providerSetupNeedsEngineRecovery({
+        status: "ready",
+        engine: { status: "ready" },
+      }),
+    ).toBe(false);
+    expect(providerSetupNeedsEngineRecovery({ status: "checking" })).toBe(false);
   });
 });

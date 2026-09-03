@@ -33,7 +33,112 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/setup"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
+
+func TestDiscoverConfirmsPendingWiFiTransitionForExpectedDevice(t *testing.T) {
+	var confirmCalls int
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = io.WriteString(w, `{"kind":"hello","board":"esp8266-smalltv-st7789","deviceId":"device-390","networkMode":"station","capabilities":{"transport":{"active":"wifi","mode":"wifi","transitionPending":true,"transitionFrom":"cable","transitionTo":"wifi"}}}`)
+		case "/api/connection-mode/confirm":
+			confirmCalls++
+			if r.Method != http.MethodPost {
+				t.Fatalf("expected POST confirmation, got %s", r.Method)
+			}
+			if got := r.Header.Get("X-VibeTV-Token"); got != "pair-token" {
+				t.Fatalf("expected pairing token, got %q", got)
+			}
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode confirmation: %v", err)
+			}
+			if body["deviceId"] != "device-390" {
+				t.Fatalf("unexpected confirmation body: %#v", body)
+			}
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{
+		DeviceTarget: device.URL,
+		DeviceID:     "device-390",
+		DeviceToken:  "pair-token",
+	}
+	server := newTestServer(t, cfg)
+	target, hello, err := server.discover(context.Background(), cfg, "")
+	if err != nil {
+		t.Fatalf("discover pending WiFi transition: %v", err)
+	}
+	if target != device.URL || hello.DeviceID != cfg.DeviceID {
+		t.Fatalf("unexpected discovery result target=%q hello=%+v", target, hello)
+	}
+	if confirmCalls != 1 {
+		t.Fatalf("expected one WiFi confirmation, got %d", confirmCalls)
+	}
+}
+
+func TestStatusConfirmsPendingWiFiTransitionForExpectedDevice(t *testing.T) {
+	var confirmCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = io.WriteString(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","deviceId":"device-390","networkMode":"station","capabilities":{"transport":{"active":"wifi","mode":"wifi","supported":["usb","wifi"],"transitionPending":true,"transitionFrom":"cable","transitionTo":"wifi"}}}`)
+		case "/api/connection-mode/confirm":
+			confirmCalls.Add(1)
+			if r.Method != http.MethodPost || r.Header.Get("X-VibeTV-Token") != "pair-token" {
+				t.Fatalf("unexpected transition confirmation request: method=%s token=%q", r.Method, r.Header.Get("X-VibeTV-Token"))
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/health":
+			_, _ = io.WriteString(w, `{"ok":true}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceTarget:          device.URL,
+		DeviceID:              "device-390",
+		DeviceToken:           "pair-token",
+		CableAutoBindDisabled: true,
+	})
+	server.streamStatus = func(context.Context, string) displayStreamInfo { return displayStreamInfo{} }
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if confirmCalls.Load() != 1 {
+		t.Fatalf("status polling made %d transition confirmations, expected 1", confirmCalls.Load())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "wifi" || cfg.WiFiTransitionPending() || cfg.CableAutoBindDisabled || len(cfg.DeviceTransports) != 2 {
+		t.Fatalf("confirmed WiFi transition was not committed to host config: %+v", cfg)
+	}
+	known, ok := cfg.KnownDevice("device-390")
+	if !ok || known.DeviceToken != "pair-token" || known.Target != device.URL {
+		t.Fatalf("confirmed WiFi transition lost the authenticated profile: %+v", cfg.KnownDevices)
+	}
+}
+
+func TestThemeInstallJobOutlivesFreshStreamWait(t *testing.T) {
+	if themeInstallJobTime <= themeInstallStreamWaitTime+displayRenderWaitTime {
+		t.Fatalf(
+			"theme install job %s must outlive stream and render verification %s",
+			themeInstallJobTime,
+			themeInstallStreamWaitTime+displayRenderWaitTime,
+		)
+	}
+}
 
 func TestStatusWorksWithoutDevice(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
@@ -63,6 +168,26 @@ func TestStatusWorksWithoutDevice(t *testing.T) {
 	}
 	if got.Device.Connected {
 		t.Fatalf("expected disconnected device without probing, got %+v", got.Device)
+	}
+}
+
+func TestStatusPreservesCableFreeWiFiDiscoveryMode(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:        "wifi",
+		CableAutoBindDisabled: true,
+	})
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ConnectionMode != "wifi" || got.ConnectionModeChoiceRequired || got.Device.DeviceID != "" {
+		t.Fatalf("Cable-free WiFi discovery state was not preserved: %+v", got)
 	}
 }
 
@@ -565,6 +690,89 @@ func TestDeviceSearchReturnsAllDevicesWithoutMutatingConfig(t *testing.T) {
 	}
 }
 
+func TestDeviceSearchReturnsTwoCableDevicesAsSelectableIdentities(t *testing.T) {
+	wifi := newCountedSelectableDeviceServer(t, "wifi-known", nil, nil)
+	defer wifi.Close()
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "wifi",
+		DeviceID:       "wifi-known",
+		DeviceTarget:   wifi.URL,
+	})
+	server.subnetTargets = func() []string { return []string{wifi.URL} }
+	server.discoverCableDevices = func() ([]usb.CableDevice, error) {
+		return []usb.CableDevice{
+			{Port: "/dev/cu.usbserial-a", Hello: cableHelloForTest("cable-a")},
+			{Port: "/dev/cu.usbserial-b", Hello: cableHelloForTest("cable-b")},
+		}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Devices []deviceSearchEntry `json:"devices"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	cableIDs := []string{}
+	for _, device := range got.Devices {
+		if device.Transport == "cable" {
+			cableIDs = append(cableIDs, device.DeviceID)
+			if device.Target != cableDeviceTarget {
+				t.Fatalf("Cable target leaked a port: %+v", device)
+			}
+		}
+	}
+	if !reflect.DeepEqual(cableIDs, []string{"cable-a", "cable-b"}) || strings.Contains(rec.Body.String(), "/dev/") {
+		t.Fatalf("unexpected Cable candidates: ids=%v body=%s", cableIDs, rec.Body.String())
+	}
+}
+
+func cableHelloForTest(deviceID string) protocol.DeviceHello {
+	return protocol.DeviceHello{
+		Kind:     "hello",
+		Board:    "esp8266-smalltv-st7789",
+		Firmware: "1.0.56",
+		DeviceID: deviceID,
+		Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{
+			Active:    "usb",
+			Mode:      "cable",
+			Supported: []string{"usb", "wifi"},
+		}},
+	}
+}
+
+func TestSetupWiFiNetworksReturnsCableScanResults(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "cable-a",
+	})
+	server.resolveCablePort = func(_, expectedDeviceID string) (string, error) {
+		if expectedDeviceID != "cable-a" {
+			t.Fatalf("unexpected identity %q", expectedDeviceID)
+		}
+		return "/dev/mock-cable", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return cableHelloForTest("cable-a"), nil
+	}
+	server.scanCableWiFi = func(port, deviceID string) ([]protocol.WiFiNetwork, error) {
+		if port != "/dev/mock-cable" || deviceID != "cable-a" {
+			t.Fatalf("unexpected scan target port=%q device=%q", port, deviceID)
+		}
+		return []protocol.WiFiNetwork{{SSID: "Home", RSSI: -48, Encrypted: true}}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/setup/wifi-networks", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"ssid":"Home"`) || !strings.Contains(rec.Body.String(), `"encrypted":true`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestDeviceSearchSettlesFreshResultsAcrossTwoScans(t *testing.T) {
 	first := newCountedSelectableDeviceServer(t, "vibetv-a", nil, nil)
 	defer first.Close()
@@ -884,6 +1092,66 @@ func TestDeviceSearchProbesEveryRememberedVibeTV(t *testing.T) {
 	}
 }
 
+func TestDeviceSearchRefusesWithoutLocalNetwork(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		DeviceID:     "active-device",
+		DeviceTarget: "http://192.168.178.73",
+	}
+	server := newTestServer(t, cfg)
+	server.subnetTargets = func() []string { return nil }
+	server.defaultWiFiTarget = func() string { return "" }
+	server.localNetworkAvailable = func() bool { return false }
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/device/search", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	started := time.Now()
+	server.Handler().ServeHTTP(rec, req)
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("offline refusal took %s; must not wait out the search window", elapsed)
+	}
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error.Code != "network_unavailable" {
+		t.Fatalf("code=%q body=%s", got.Error.Code, rec.Body.String())
+	}
+	if got.Error.Message == "" || got.Error.NextAction == "" {
+		t.Fatalf("refusal must carry a reason and a next action, got %+v", got.Error)
+	}
+}
+
+// The Virtual VibeTV lives on loopback, which needs no WiFi. A saved loopback
+// target keeps the search alive however offline the Mac is.
+func TestDeviceSearchWithoutLocalNetworkStillProbesLoopbackTargets(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.37","deviceId":"active-device","networkMode":"station","capabilities":{"transport":{"active":"wifi"}}}`)
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{
+		DeviceID:     "active-device",
+		DeviceTarget: device.URL,
+	}
+	server := newTestServer(t, cfg)
+	server.subnetTargets = func() []string { return nil }
+	server.defaultWiFiTarget = func() string { return "" }
+	server.localNetworkAvailable = func() bool { return false }
+
+	devices, err := server.searchDevices(context.Background(), cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 {
+		t.Fatalf("expected the loopback VibeTV, got %+v", devices)
+	}
+}
+
 func TestDeviceSearchActuallyWaitsThirtySecondsWhenNothingIsFound(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.subnetTargets = func() []string { return nil }
@@ -1067,6 +1335,73 @@ func TestDeviceSelectCommitsBeforeFirstFrame(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("display stream was not started after the connection was committed")
+	}
+}
+
+func TestDeviceSelectPairsBeforeConfirmingCableTransitionOnNewMac(t *testing.T) {
+	const deviceID = "moved-cable-device"
+	const pairedToken = "new-mac-token"
+	var pairCalls atomic.Int32
+	var confirmCalls atomic.Int32
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimSpace(r.Header.Get("X-VibeTV-Token"))
+		switch r.URL.Path {
+		case "/hello":
+			if token != "" && token != pairedToken {
+				http.Error(w, "invalid token", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.44","deviceId":%q,"networkMode":"station","capabilities":{"transport":{"active":"wifi","mode":"wifi","supported":["usb","wifi"],"transitionPending":true,"transitionFrom":"cable","transitionTo":"wifi"},"auth":{"paired":true,"tokenHeader":"X-VibeTV-Token"}}}`, deviceID)
+		case "/api/pair":
+			pairCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"ok":true,"token":%q}`, pairedToken)
+		case "/api/connection-mode/confirm":
+			confirmCalls.Add(1)
+			if token != pairedToken {
+				http.Error(w, "pairing token required", http.StatusUnauthorized)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/health":
+			if token != pairedToken {
+				http.Error(w, "pairing token required", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":1,"partialCount":0,"lastKind":"usage"}}`))
+		default:
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceID:              deviceID,
+		CableAutoBindDisabled: true,
+		DeviceTransports:      []string{"usb", "wifi"},
+	})
+	selected, err := server.selectDevice(context.Background(), device.URL, deviceID)
+	if err != nil {
+		t.Fatalf("select moved Cable device: %v", err)
+	}
+	if !selected.Active || !selected.Paired || selected.DeviceID != deviceID {
+		t.Fatalf("unexpected selected device: %+v", selected)
+	}
+	if pairCalls.Load() != 1 || confirmCalls.Load() != 1 {
+		t.Fatalf("pair/confirm calls=%d/%d, want 1/1", pairCalls.Load(), confirmCalls.Load())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "wifi" || cfg.DeviceTarget != device.URL || cfg.DeviceToken != pairedToken {
+		t.Fatalf("new Mac did not retain confirmed WiFi authentication: %+v", cfg)
+	}
+	known, ok := cfg.KnownDevice(deviceID)
+	if !ok || known.DeviceToken != pairedToken || known.Target != device.URL {
+		t.Fatalf("new Mac did not remember moved VibeTV authentication: %+v", cfg.KnownDevices)
 	}
 }
 
@@ -2399,7 +2734,7 @@ func TestUsageManualRefreshIgnoresDisabledPersistedProviders(t *testing.T) {
 				},
 				{
 					Provider: "claude", Frame: protocol.Frame{Provider: "claude", Label: "Claude", Weekly: 24},
-					CollectedAt: now.Add(-time.Minute), RateLimited: true, RateLimitedUntil: now.Add(time.Minute),
+					CollectedAt: now.Add(-time.Minute),
 				},
 			},
 		}, true
@@ -2454,120 +2789,6 @@ func TestUsageTokenHistoryIgnoresDisabledPersistedProviders(t *testing.T) {
 	if rec.Code != http.StatusOK || !got.TokenUsageReady || len(got.Providers) != 1 ||
 		got.Providers[0].ID != "codex" || got.Providers[0].TotalTokens != 120 || got.Providers[0].Cost == nil {
 		t.Fatalf("disabled persisted provider cleared visible token history: status=%d got=%+v", rec.Code, got)
-	}
-}
-
-func TestUsageManualRefreshReportsRateLimitAndBlockedUntil(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
-	blockedUntil := now.Add(2 * time.Minute)
-	server.now = func() time.Time { return now }
-	server.wakeDisplayStream = func() {}
-	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
-		return daemon.PersistedUsage{
-			SavedAt:         now.Add(-time.Minute),
-			CurrentProvider: "claude",
-			Providers: []daemon.ProviderUsageSnapshot{{
-				Provider:         "claude",
-				Frame:            protocol.Frame{Provider: "claude", Label: "Claude", Session: 64, UsageMode: "used"},
-				CollectedAt:      now.Add(-time.Minute),
-				RateLimited:      true,
-				RateLimitedUntil: blockedUntil,
-			}},
-		}, true
-	}
-
-	rec := httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
-
-	var got usageResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if rec.Code != http.StatusOK || got.Refresh.State != "rate_limited" {
-		t.Fatalf("expected rate-limited response, status=%d got %+v", rec.Code, got)
-	}
-	if got.Refresh.BlockedUntil != blockedUntil.Format(time.RFC3339) || got.Providers[0].BlockedUntil != blockedUntil.Format(time.RFC3339) {
-		t.Fatalf("expected exact blockedUntil to be exposed, got refresh=%+v provider=%+v", got.Refresh, got.Providers[0])
-	}
-	if got.Providers[0].Session != 64 {
-		t.Fatalf("expected last-good value to remain visible, got %+v", got.Providers[0])
-	}
-}
-
-func TestUsageRefreshRateLimitWithoutBlockedUntilDoesNotInventTimestamp(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
-	server.now = func() time.Time { return now }
-	server.wakeDisplayStream = func() {}
-	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
-		return daemon.PersistedUsage{
-			SavedAt:         now.Add(-time.Minute),
-			CurrentProvider: "claude",
-			Providers: []daemon.ProviderUsageSnapshot{{
-				Provider:    "claude",
-				Frame:       protocol.Frame{Provider: "claude", Label: "Claude", Session: 64, UsageMode: "used"},
-				CollectedAt: now.Add(-time.Minute),
-				RateLimited: true,
-			}},
-		}, true
-	}
-
-	rec := httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
-
-	var got usageResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if got.Refresh.State != "rate_limited" || got.Refresh.BlockedUntil != "" || got.Providers[0].BlockedUntil != "" {
-		t.Fatalf("expected rate limit without invented blockedUntil, got %+v provider=%+v", got.Refresh, got.Providers[0])
-	}
-}
-
-func TestUsageRefreshStateClearsAfterRecovery(t *testing.T) {
-	server := newTestServer(t, runtimeconfig.Config{})
-	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
-	blockedUntil := now.Add(2 * time.Minute)
-	server.now = func() time.Time { return now }
-	server.wakeDisplayStream = func() {}
-	recovered := false
-	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
-		snapshot := daemon.ProviderUsageSnapshot{
-			Provider:         "claude",
-			Frame:            protocol.Frame{Provider: "claude", Label: "Claude", Session: 64, UsageMode: "used"},
-			CollectedAt:      now.Add(-time.Minute),
-			RateLimited:      true,
-			RateLimitedUntil: blockedUntil,
-		}
-		if recovered {
-			snapshot.Frame.Session = 72
-			snapshot.CollectedAt = now.Add(time.Minute)
-			snapshot.RateLimited = false
-			snapshot.RateLimitedUntil = time.Time{}
-		}
-		return daemon.PersistedUsage{
-			SavedAt:         snapshot.CollectedAt,
-			CurrentProvider: "claude",
-			Providers:       []daemon.ProviderUsageSnapshot{snapshot},
-		}, true
-	}
-
-	first := httptest.NewRecorder()
-	server.Handler().ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
-	recovered = true
-	second := httptest.NewRecorder()
-	server.Handler().ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/v1/usage", nil))
-
-	var got usageResponse
-	if err := json.Unmarshal(second.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if second.Code != http.StatusOK || got.Refresh.State != "fresh" || got.Refresh.BlockedUntil != "" || got.Providers[0].RateLimited {
-		t.Fatalf("expected recovery to clear rate-limit state, status=%d got %+v", second.Code, got)
-	}
-	if got.Providers[0].Session != 72 {
-		t.Fatalf("expected recovered provider value, got %+v", got.Providers[0])
 	}
 }
 
@@ -2931,6 +3152,30 @@ func TestInspectDisplayStreamUsesConfiguredRuntimeLabelAndSharedLog(t *testing.T
 	}
 }
 
+func TestInspectDisplayStreamMapsCurrentUSBPathToStableCableTarget(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
+	t.Setenv(displayStreamOutLogEnv, logPath)
+	sentAt := time.Now().UTC().Add(-time.Second).Truncate(time.Second)
+	if err := os.WriteFile(
+		logPath,
+		[]byte(sentAt.Format(time.RFC3339Nano)+` sent frame -> /dev/cu.usbserial-1410 transport=usb source=oauth fresh=true usageMode=remaining provider=codex label=VibeTV session=73 weekly=58 reset=2733s`+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write display stream log: %v", err)
+	}
+
+	oldPrint := printDisplayStreamService
+	t.Cleanup(func() { printDisplayStreamService = oldPrint })
+	printDisplayStreamService = func(context.Context, string) ([]byte, error) {
+		return []byte("state = running\n"), nil
+	}
+
+	stream := inspectDisplayStream(context.Background(), cableDeviceTarget)
+	if !stream.Running || !stream.Healthy || stream.Target != cableDeviceTarget || stream.LastTarget != cableDeviceTarget {
+		t.Fatalf("expected healthy canonical Cable stream, got %+v", stream)
+	}
+}
+
 func TestConfiguredRuntimeRejectsRecentLegacyFrameWithoutStartMarker(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "daemon.out.log")
 	t.Setenv(displayStreamOutLogEnv, logPath)
@@ -3174,13 +3419,13 @@ func TestWaitForDisplayStreamAfterPairIgnoresTransientPairingError(t *testing.T)
 		return displayStreamInfo{Running: true, Healthy: true}
 	}
 
-	got := waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), false, inspect, nil)
+	got := waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), false, displayStreamWaitTime, inspect, nil)
 	if !got.Healthy || calls.Load() != 2 {
 		t.Fatalf("post-pair wait must ignore one stale auth error, got=%+v calls=%d", got, calls.Load())
 	}
 
 	calls.Store(0)
-	got = waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), true, inspect, nil)
+	got = waitForDisplayStreamAfterProbe(context.Background(), "http://192.0.2.10", time.Now(), true, displayStreamWaitTime, inspect, nil)
 	if got.Healthy || got.ErrorCode != "device_pairing_required" || calls.Load() != 1 {
 		t.Fatalf("normal wait must surface pairing error immediately, got=%+v calls=%d", got, calls.Load())
 	}
@@ -3205,7 +3450,7 @@ func TestWaitForDisplayStreamStopsOnSettledStream(t *testing.T) {
 	}
 
 	got := waitForDisplayStreamAfterProbe(
-		context.Background(), "http://192.0.2.10", time.Now(), true, inspect, settled,
+		context.Background(), "http://192.0.2.10", time.Now(), true, displayStreamWaitTime, inspect, settled,
 	)
 	if got.ErrorCode != "provider_setup_required" || calls.Load() != 1 {
 		t.Fatalf("settled stream must end the wait at once, got=%+v calls=%d", got, calls.Load())
@@ -4207,6 +4452,81 @@ func TestFirmwareLatestUsesReleaseManifest(t *testing.T) {
 	}
 }
 
+func TestFirmwareLatestSuppressesUnsupportedCableUpdate(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "lilygo",
+	})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{
+			DeviceID: "lilygo",
+			Board:    "esp32-lilygo-t-display-s3",
+			Firmware: "1.0.40",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"},
+			},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp32-lilygo-t-display-s3&firmware=1.0.40", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got firmwareLatestResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.UpdateAvailable || got.Status != "unsupported" {
+		t.Fatalf("unsupported Cable update was advertised: %+v", got)
+	}
+}
+
+func TestFirmwareLatestResolvesUnsupportedCableUpdateAfterRestart(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "lilygo",
+	})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{}, false
+	}
+	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
+		if explicit != "" || expectedDeviceID != "lilygo" {
+			t.Fatalf("unexpected Cable resolution explicit=%q expected=%q", explicit, expectedDeviceID)
+		}
+		return "/dev/mock-lilygo", nil
+	}
+	server.readCableHello = func(port string) (protocol.DeviceHello, error) {
+		if port != "/dev/mock-lilygo" {
+			t.Fatalf("unexpected Cable port %q", port)
+		}
+		return protocol.DeviceHello{
+			DeviceID: "lilygo",
+			Board:    "esp32-lilygo-t-display-s3",
+			Firmware: "1.0.40",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"},
+			},
+		}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/updates/latest?board=esp32-lilygo-t-display-s3&firmware=1.0.39", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got firmwareLatestResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.UpdateAvailable || got.Status != "unsupported" || got.InstalledFirmware != "1.0.40" {
+		t.Fatalf("restart advertised unsupported or stale Cable update: %+v", got)
+	}
+}
+
 func TestFirmwareUpdateCommandUsesCheckedManifest(t *testing.T) {
 	target := "http://192.168.178.72"
 	manifestURL := "http://127.0.0.1:47833/firmware-manifest.json"
@@ -4364,6 +4684,134 @@ func TestStatusKeepsConfiguredDeviceReadyDuringTransientProbeFailureWithHealthyS
 	}
 	if subnetCalls.Load() != 0 {
 		t.Fatalf("short reboot recovery unexpectedly scanned the subnet %d times", subnetCalls.Load())
+	}
+}
+
+func TestStatusUsesAuthoritativeCableStreamWithoutHTTPProbe(t *testing.T) {
+	var probeCalls atomic.Int32
+	staleWiFiTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probeCalls.Add(1)
+		http.Error(w, "Cable mode must not probe WiFi", http.StatusInternalServerError)
+	}))
+	defer staleWiFiTarget.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceTarget:   staleWiFiTarget.URL,
+		DeviceID:       "vibetv-cable",
+	})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{
+			Kind:                      "hello",
+			ProtocolVersion:           2,
+			SupportedProtocolVersions: []int{2, 1},
+			PreferredProtocolVersion:  2,
+			Board:                     "esp8266-smalltv-st7789",
+			Firmware:                  "1.0.44",
+			DeviceID:                  "vibetv-cable",
+			Features:                  []string{protocol.FeatureTheme, protocol.FeatureThemeSpecV1},
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"}},
+			},
+		}, true
+	}
+	server.streamStatus = func(_ context.Context, target string) displayStreamInfo {
+		if target != cableDeviceTarget {
+			t.Fatalf("Cable status target=%q, expected %q", target, cableDeviceTarget)
+		}
+		return displayStreamInfo{
+			Healthy:    true,
+			Running:    true,
+			Target:     cableDeviceTarget,
+			LastTarget: cableDeviceTarget,
+			LastSentAt: time.Now().UTC().Format(time.RFC3339),
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if probeCalls.Load() != 0 {
+		t.Fatalf("Cable status made %d HTTP probes", probeCalls.Load())
+	}
+	if !got.Device.Connected || !got.Device.Paired || !got.Device.Ready || got.Device.ConnectionState != deviceConnectionReady {
+		t.Fatalf("healthy Cable stream was not authoritative: %+v", got.Device)
+	}
+	if got.Device.Target != cableDeviceTarget {
+		t.Fatalf("Cable status exposed stale WiFi target: %+v", got.Device)
+	}
+	if got.Device.Board != "esp8266-smalltv-st7789" || got.Device.Firmware != "1.0.44" || got.Device.Capabilities == nil {
+		t.Fatalf("Cable status omitted the running worker's identity: %+v", got.Device)
+	}
+	if got.Device.Capabilities.Transport.Active != "usb" || got.Device.Capabilities.Transport.Mode != "cable" {
+		t.Fatalf("Cable status omitted the running worker's transport: %+v", got.Device.Capabilities)
+	}
+}
+
+func TestStatusUsesCableHealthToExposeMissingTheme(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "vibetv-cable",
+		DeviceToken:    "pair-token",
+	})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{
+			Kind:            "hello",
+			ProtocolVersion: 2,
+			DeviceID:        "vibetv-cable",
+			Features:        []string{protocol.FeatureThemeSpecV1, protocol.FeatureCableHealthV1},
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"}},
+			},
+		}, true
+	}
+	server.resolveCablePort = func(_, expectedDeviceID string) (string, error) {
+		if expectedDeviceID != "vibetv-cable" {
+			t.Fatalf("resolved Cable health for device %q", expectedDeviceID)
+		}
+		return "/dev/mock-vibetv", nil
+	}
+	healthCalls := 0
+	server.readCableHealth = func(port, deviceID string) (deviceHealth, error) {
+		healthCalls++
+		if port != "/dev/mock-vibetv" || deviceID != "vibetv-cable" {
+			t.Fatalf("Cable health target port=%q device=%q", port, deviceID)
+		}
+		renderOK := true
+		fullCount := uint64(2)
+		partialCount := uint64(0)
+		health := deviceHealth{OK: true}
+		health.Display.ActiveTheme = "theme-missing"
+		health.Display.ThemeSpec.RenderOK = &renderOK
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "usage"
+		return health, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if healthCalls != 1 {
+		t.Fatalf("Cable status read health %d times, want 1", healthCalls)
+	}
+	if !got.Device.Connected || !got.Device.Paired || got.Device.Ready ||
+		got.Device.ConnectionState != deviceConnectionSetup ||
+		got.Device.ActiveTheme != "theme-missing" || got.Device.Health == nil || !got.Device.Health.OK ||
+		got.Device.Display == nil || got.Device.Display.ThemeSpec == nil || got.Device.Display.ThemeSpec.Active {
+		t.Fatalf("Cable theme-missing state was not exposed: %+v", got.Device)
 	}
 }
 
@@ -4661,9 +5109,10 @@ func TestStatusIsReadOnlyAndKeepsOfflineActiveDevice(t *testing.T) {
 	defer device.Close()
 
 	server := newTestServer(t, runtimeconfig.Config{
-		DeviceTarget: device.URL,
-		DeviceToken:  "pair-token",
-		DeviceID:     "vibetv-canary",
+		DeviceTarget:     device.URL,
+		DeviceToken:      "pair-token",
+		DeviceID:         "vibetv-canary",
+		DeviceTransports: []string{"usb", "wifi"},
 	})
 	server.streamStatus = func(context.Context, string) displayStreamInfo {
 		return displayStreamInfo{Running: true, Target: device.URL}
@@ -4687,6 +5136,9 @@ func TestStatusIsReadOnlyAndKeepsOfflineActiveDevice(t *testing.T) {
 		}
 		if !got.Device.Active || got.Device.Ready || got.Device.ConnectionState != deviceConnectionRetrying {
 			t.Fatalf("offline active device must remain active and reconnecting: %+v", got.Device)
+		}
+		if got.Device.Capabilities == nil || !reflect.DeepEqual(got.Device.Capabilities.Transport.Supported, []string{"usb", "wifi"}) {
+			t.Fatalf("offline active device lost saved transport support: %+v", got.Device.Capabilities)
 		}
 	}
 	if postCalls.Load() != 0 || configWrites.Load() != 0 {
@@ -5400,6 +5852,55 @@ func TestDiagnosticsWorksWithoutDeviceTarget(t *testing.T) {
 	}
 	if !hasDiagnosticCheck(got.Checks, "device_target", "attention") {
 		t.Fatalf("expected missing target diagnostic, got %+v", got.Checks)
+	}
+}
+
+func TestDiagnosticsUsesHealthyCableStreamWithoutWiFiTarget(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "vibetv-cable",
+	})
+	wifiDiscoveryCalls := 0
+	server.subnetTargets = func() []string {
+		wifiDiscoveryCalls++
+		return nil
+	}
+	server.streamStatus = func(_ context.Context, target string) displayStreamInfo {
+		if target != cableDeviceTarget {
+			t.Fatalf("Cable diagnostics target=%q, expected %q", target, cableDeviceTarget)
+		}
+		return displayStreamInfo{
+			Healthy:    true,
+			Running:    true,
+			Target:     cableDeviceTarget,
+			LastTarget: cableDeviceTarget,
+			LastSentAt: time.Now().UTC().Format(time.RFC3339),
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/diagnostics", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got diagnosticsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode diagnostics: %v", err)
+	}
+	if got.Configuration.DeviceTarget != cableDeviceTarget || got.Device.Target != cableDeviceTarget {
+		t.Fatalf("Cable diagnostics exposed the wrong target: %+v", got)
+	}
+	if !got.Device.Connected || !got.Device.Paired || !got.Device.Ready || !got.Device.Active {
+		t.Fatalf("healthy Cable stream was not authoritative: %+v", got.Device)
+	}
+	if hasDiagnosticCheck(got.Checks, "device_target", "attention") ||
+		!hasDiagnosticCheck(got.Checks, "device_target", "pass") ||
+		!hasDiagnosticCheck(got.Checks, "display_stream", "pass") {
+		t.Fatalf("Cable diagnostics checks are inconsistent: %+v", got.Checks)
+	}
+	if wifiDiscoveryCalls != 0 || got.NetworkDiscovery.Attempted ||
+		hasDiagnosticCheck(got.Checks, "network_discovery", "attention") {
+		t.Fatalf("Cable diagnostics must skip WiFi discovery: discovery=%+v checks=%+v calls=%d", got.NetworkDiscovery, got.Checks, wifiDiscoveryCalls)
 	}
 }
 
@@ -7011,7 +7512,7 @@ func TestRepairFlightKeyUsesCanonicalDeviceIdentity(t *testing.T) {
 	}
 }
 
-func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
+func TestSetupResetClearsActiveBindingAndPreservesAuthenticationProfiles(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{
 		Theme:        "mini",
 		DeviceTarget: "http://192.168.178.72",
@@ -7019,6 +7520,14 @@ func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
 		DeviceID:     "device-a",
 		KnownDevices: []runtimeconfig.KnownDevice{{DeviceID: "device-b", Target: "http://192.168.178.73", DeviceToken: "pair-token-b"}},
 	})
+	var pauseEvents []bool
+	resetCableSenderCalls := 0
+	server.pauseDisplayStream = func(paused bool) {
+		pauseEvents = append(pauseEvents, paused)
+	}
+	server.resetCableSender = func() {
+		resetCableSenderCalls++
+	}
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil)
@@ -7049,8 +7558,1027 @@ func TestSetupResetClearsStoredDeviceBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.DeviceTarget != "" || cfg.DeviceToken != "" || cfg.DeviceID != "" || len(cfg.KnownDevices) != 0 {
-		t.Fatalf("expected reset to remove every stored device profile, got %+v", cfg)
+	if cfg.DeviceTarget != "" || cfg.DeviceToken != "" || cfg.DeviceID != "" {
+		t.Fatalf("expected reset to clear the active device binding, got %+v", cfg)
+	}
+	if len(cfg.KnownDevices) != 2 {
+		t.Fatalf("expected reset to preserve both authentication profiles, got %+v", cfg.KnownDevices)
+	}
+	if known, ok := cfg.KnownDevice("device-a"); !ok || known.DeviceToken != "pair-token" {
+		t.Fatalf("reset lost active-device authentication: %+v", cfg.KnownDevices)
+	}
+	if !cfg.CableAutoBindDisabled {
+		t.Fatal("setup reset must prevent automatic Cable rebinding")
+	}
+	if !reflect.DeepEqual(pauseEvents, []bool{true, false}) {
+		t.Fatalf("setup reset did not serialize the write gate: %v", pauseEvents)
+	}
+	if resetCableSenderCalls != 1 {
+		t.Fatalf("setup reset invalidated the Cable sender %d times, want 1", resetCableSenderCalls)
+	}
+}
+
+func TestSetupResetUsesSavedWiFiOnlyTransportSupport(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:   "wifi",
+		DeviceID:         "legacy-wifi-only",
+		DeviceTarget:     "http://192.168.178.72",
+		DeviceTransports: []string{"wifi"},
+	})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{}, false
+	}
+	server.resetCableSender = func() {}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Device.Capabilities == nil || !reflect.DeepEqual(got.Device.Capabilities.Transport.Supported, []string{"wifi"}) {
+		t.Fatalf("reset response lost saved WiFi-only support: %+v", got.Device.Capabilities)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.DeviceTransports) != 0 {
+		t.Fatalf("reset persisted stale transport support: %+v", cfg.DeviceTransports)
+	}
+}
+
+func TestSetupResetUsesCurrentCableTransportSupport(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:   "cable",
+		DeviceID:         "lilygo",
+		DeviceTransports: []string{"usb"},
+	})
+	server.refreshCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			DeviceID: "lilygo",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb"}},
+			},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Device.Capabilities == nil || len(got.Device.Capabilities.Transport.Supported) != 1 || got.Device.Capabilities.Transport.Supported[0] != "usb" {
+		t.Fatalf("reset response discarded USB-only support: %+v", got.Device.Capabilities)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.DeviceTransports) != 0 {
+		t.Fatalf("reset config retained transports without an active identity: %+v", cfg.DeviceTransports)
+	}
+}
+
+func TestSetupResetReplacesStaleTransportSupportWithCurrentCableDevice(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:   "cable",
+		DeviceID:         "old-lilygo",
+		DeviceTransports: []string{"usb"},
+	})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			DeviceID: "old-lilygo",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb"}},
+			},
+		}, true
+	}
+	var refreshOrder []string
+	server.resetCableSender = func() {
+		refreshOrder = append(refreshOrder, "reset")
+	}
+	server.refreshCableHello = func() (protocol.DeviceHello, bool) {
+		refreshOrder = append(refreshOrder, "refresh")
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			DeviceID: "new-esp8266",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"}},
+			},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Device.DeviceID != "new-esp8266" || got.Device.Capabilities == nil || len(got.Device.Capabilities.Transport.Supported) != 2 {
+		t.Fatalf("reset chooser did not use the current Cable device: %+v", got.Device)
+	}
+	if !reflect.DeepEqual(refreshOrder, []string{"reset", "refresh"}) {
+		t.Fatalf("reset chooser did not invalidate before refreshing Cable identity: %v", refreshOrder)
+	}
+}
+
+func TestStatusPreservesFreshCableChoiceAndReportsTransportSupport(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:               "cable",
+		DeviceID:                     "lilygo",
+		DeviceTransports:             []string{"usb"},
+		ConnectionModeChoiceRequired: true,
+	})
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.ConnectionModeChoiceRequired {
+		t.Fatal("fresh Cable auto-binding lost the explicit chooser")
+	}
+	if got.Device.Capabilities == nil || len(got.Device.Capabilities.Transport.Supported) != 1 || got.Device.Capabilities.Transport.Supported[0] != "usb" {
+		t.Fatalf("Cable transport capabilities missing from status: %+v", got.Device.Capabilities)
+	}
+}
+
+func TestCableControlRequestsStayOffSerialDuringFirmwareUpdate(t *testing.T) {
+	cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable", DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	serialCalls := 0
+	server.resolveCablePort = func(string, string) (string, error) {
+		serialCalls++
+		return "/dev/mock", nil
+	}
+	server.firmwareUpdateActive.Store(true)
+
+	settings := httptest.NewRecorder()
+	server.Handler().ServeHTTP(settings, httptest.NewRequest(http.MethodGet, "/v1/settings", nil))
+	if settings.Code != http.StatusConflict || !strings.Contains(settings.Body.String(), "firmware_update_in_progress") {
+		t.Fatalf("Cable settings must wait for firmware update: status=%d body=%s", settings.Code, settings.Body.String())
+	}
+	if serialCalls != 0 {
+		t.Fatalf("Cable settings reopened serial during firmware update: calls=%d", serialCalls)
+	}
+
+	server.firmwareUpdateActive.Store(false)
+	server.createFirmwareUpdateJob(cfg)
+	settings = httptest.NewRecorder()
+	server.Handler().ServeHTTP(settings, httptest.NewRequest(http.MethodGet, "/v1/settings", nil))
+	if settings.Code != http.StatusConflict || !strings.Contains(settings.Body.String(), "firmware_update_in_progress") {
+		t.Fatalf("Cable settings must wait for queued firmware update: status=%d body=%s", settings.Code, settings.Body.String())
+	}
+	settings = httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/settings", strings.NewReader(`{"brightnessPercent":50}`))
+	request.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(settings, request)
+	if settings.Code != http.StatusConflict || !strings.Contains(settings.Body.String(), "firmware_update_in_progress") {
+		t.Fatalf("Cable settings write must wait for queued firmware update: status=%d body=%s", settings.Code, settings.Body.String())
+	}
+	if serialCalls != 0 {
+		t.Fatalf("Cable settings reopened serial during queued firmware update: calls=%d", serialCalls)
+	}
+
+	theme := httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/v1/themes/install", strings.NewReader(`{"themeId":"classic"}`))
+	request.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(theme, request)
+	if theme.Code != http.StatusConflict || !strings.Contains(theme.Body.String(), "firmware_update_in_progress") {
+		t.Fatalf("Cable theme install must not overlap firmware update: status=%d body=%s", theme.Code, theme.Body.String())
+	}
+	if serialCalls != 0 {
+		t.Fatalf("Cable theme install reopened serial during firmware update: calls=%d", serialCalls)
+	}
+}
+
+func TestSetupConnectionModeCollectsWiFiCredentialsBeforeChangingHostMode(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:               "cable",
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: true,
+	})
+	resolveCalls := 0
+	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
+		resolveCalls++
+		wantDeviceID := ""
+		if resolveCalls == 2 {
+			wantDeviceID = "device-cable"
+		}
+		if explicit != "" || expectedDeviceID != wantDeviceID {
+			t.Fatalf("unexpected Cable resolution explicit=%q expected=%q", explicit, expectedDeviceID)
+		}
+		return "/dev/cu.usbserial-vibetv", nil
+	}
+	server.readCableHello = func(port string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			DeviceID: "device-cable",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"}},
+			},
+		}, nil
+	}
+	switchCalls := 0
+	server.setCableConnectionMode = func(port, deviceID, mode string) error {
+		switchCalls++
+		if port != "/dev/cu.usbserial-vibetv" || deviceID != "device-cable" || mode != "wifi" {
+			t.Fatalf("unexpected switch port=%q device=%q mode=%q", port, deviceID, mode)
+		}
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "wifi_credentials_required") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if switchCalls != 0 {
+		t.Fatalf("WiFi transition started before credentials were supplied: %d", switchCalls)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.CableAutoBindDisabled || cfg.ConnectionModeChoiceRequired || cfg.DeviceID != "device-cable" {
+		t.Fatalf("verified Cable identity was not persisted for WiFi credentials: %+v", cfg)
+	}
+
+	configuredSSID := ""
+	configuredPassword := ""
+	server.configureCableWiFi = func(port, deviceID, ssid, password string) error {
+		if port != "/dev/cu.usbserial-vibetv" || deviceID != "device-cable" {
+			t.Fatalf("unexpected Cable WiFi target port=%q device=%q", port, deviceID)
+		}
+		configuredSSID = ssid
+		configuredPassword = password
+		return nil
+	}
+	wifi := httptest.NewRecorder()
+	wifiReq := httptest.NewRequest(http.MethodPost, "/v1/setup/wifi", strings.NewReader(`{"ssid":"Home WiFi","password":"secret pass"}`))
+	wifiReq.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(wifi, wifiReq)
+	if wifi.Code != http.StatusAccepted || !strings.Contains(wifi.Body.String(), "waiting_for_wifi") {
+		t.Fatalf("WiFi credentials status=%d body=%s", wifi.Code, wifi.Body.String())
+	}
+	if configuredSSID != "Home WiFi" || configuredPassword != "secret pass" {
+		t.Fatalf("WiFi credentials were not forwarded exactly")
+	}
+	cfg, err = server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "" || !cfg.CableAutoBindDisabled || cfg.DeviceID != "device-cable" || cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("host did not retain a pending WiFi transition: %+v", cfg)
+	}
+}
+
+func TestSetupConnectionModeCollectsCredentialsForWifiDeviceInSetup(t *testing.T) {
+	const deviceID = "wifi-setup-device"
+	server := newTestServer(t, runtimeconfig.Config{
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: true,
+		KnownDevices: []runtimeconfig.KnownDevice{{
+			DeviceID: deviceID, Target: "http://192.168.178.72", DeviceToken: "pair-token",
+		}},
+	})
+	hello := protocol.DeviceHello{
+		Kind:        "hello",
+		DeviceID:    deviceID,
+		NetworkMode: "setup",
+		Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{
+			Active: "usb", Mode: "wifi", Supported: []string{"usb", "wifi"},
+		}},
+	}
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return hello, true }
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/cu.usbserial-vibetv", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return hello, nil }
+	server.setCableConnectionMode = func(string, string, string) error {
+		t.Fatal("WiFi setup must collect credentials without changing connection mode")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "wifi_credentials_required") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	configured := false
+	server.configureCableWiFi = func(port, gotDeviceID, ssid, password string) error {
+		configured = true
+		if port != "/dev/cu.usbserial-vibetv" || gotDeviceID != deviceID || ssid != "Home WiFi" || password != "secret pass" {
+			t.Fatalf("unexpected WiFi configuration port=%q device=%q ssid=%q password=%q", port, gotDeviceID, ssid, password)
+		}
+		return nil
+	}
+	wifi := httptest.NewRecorder()
+	wifiReq := httptest.NewRequest(http.MethodPost, "/v1/setup/wifi", strings.NewReader(`{"ssid":"Home WiFi","password":"secret pass"}`))
+	wifiReq.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(wifi, wifiReq)
+	if wifi.Code != http.StatusAccepted || !strings.Contains(wifi.Body.String(), "waiting_for_wifi") || !configured {
+		t.Fatalf("WiFi credentials status=%d configured=%t body=%s", wifi.Code, configured, wifi.Body.String())
+	}
+}
+
+func TestSetupConnectionModeRejectsWiFiForCableOnlyBoard(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{DeviceID: "lilygo"})
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/cu.usbmodem-lilygo", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			Board:    "esp32-lilygo-t-display-s3",
+			DeviceID: "lilygo",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb"}},
+			},
+		}, nil
+	}
+	server.setCableConnectionMode = func(string, string, string) error {
+		t.Fatal("Cable-only board must not receive a WiFi switch command")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "connection_mode_unsupported") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSetupConnectionModeSwitchesFromWiFiThroughTheActiveHTTPPath(t *testing.T) {
+	const token = "pair-token"
+	var switchCalls int
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			if r.Header.Get("X-VibeTV-Token") != token {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			_, _ = io.WriteString(w, `{"kind":"hello","deviceId":"wifi-to-cable","board":"esp8266-smalltv-st7789","capabilities":{"transport":{"active":"wifi","mode":"wifi","supported":["usb","wifi"]}}}`)
+		case "/api/connection-mode":
+			switchCalls++
+			if r.Method != http.MethodPost || r.Header.Get("X-VibeTV-Token") != token {
+				t.Fatalf("unexpected WiFi switch request method=%s token=%q", r.Method, r.Header.Get("X-VibeTV-Token"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"ok":true}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "wifi",
+		DeviceID:       "wifi-to-cable",
+		DeviceTarget:   device.URL,
+		DeviceToken:    token,
+	})
+	resolveCalls := 0
+	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
+		resolveCalls++
+		if explicit != "" || expectedDeviceID != "wifi-to-cable" {
+			t.Fatalf("unexpected Cable confirmation resolution explicit=%q expected=%q", explicit, expectedDeviceID)
+		}
+		if resolveCalls == 1 {
+			return "", errors.New("Cable has not restarted yet")
+		}
+		return "/dev/cu.usbserial-transition", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			Board:    "esp8266-smalltv-st7789",
+			DeviceID: "wifi-to-cable",
+			Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{
+				Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"},
+				TransitionPending: true, TransitionFrom: "wifi", TransitionTo: "cable",
+			}},
+		}, nil
+	}
+	confirmCalls := 0
+	server.confirmCableMode = func(port, deviceID string) error {
+		confirmCalls++
+		if port != "/dev/cu.usbserial-transition" || deviceID != "wifi-to-cable" {
+			t.Fatalf("unexpected Cable confirmation port=%q device=%q", port, deviceID)
+		}
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if switchCalls != 1 || confirmCalls != 1 {
+		t.Fatalf("expected one WiFi switch and one Cable confirmation, got switch=%d confirm=%d", switchCalls, confirmCalls)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.DeviceID != "wifi-to-cable" || cfg.DeviceTarget != device.URL || cfg.DeviceToken != token {
+		t.Fatalf("Cable mode did not preserve the authenticated WiFi profile: %+v", cfg)
+	}
+}
+
+func TestSetupConnectionModeRecoversCableWhileWiFiIsOffline(t *testing.T) {
+	const deviceID = "offline-wifi-to-cable"
+	var wifiCalls atomic.Int32
+	wifiDevice := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wifiCalls.Add(1)
+		http.Error(w, "offline", http.StatusServiceUnavailable)
+	}))
+	defer wifiDevice.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "wifi",
+		DeviceID:       deviceID,
+		DeviceTarget:   wifiDevice.URL,
+		DeviceToken:    "pair-token",
+	})
+	deviceMode := "wifi"
+	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
+		if explicit != "" || expectedDeviceID != deviceID {
+			t.Fatalf("unexpected Cable recovery resolution explicit=%q expected=%q", explicit, expectedDeviceID)
+		}
+		return "/dev/cu.usbserial-offline", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		transport := protocol.TransportCapabilities{
+			Active: "usb", Mode: deviceMode, Supported: []string{"usb", "wifi"},
+		}
+		if deviceMode == "cable" {
+			transport.TransitionPending = true
+			transport.TransitionFrom = "wifi"
+			transport.TransitionTo = "cable"
+		}
+		return protocol.DeviceHello{
+			Kind: "hello", DeviceID: deviceID,
+			Capabilities: protocol.CapabilityBlock{Transport: transport},
+		}, nil
+	}
+	switchCalls := 0
+	server.setCableConnectionMode = func(port, gotDeviceID, mode string) error {
+		switchCalls++
+		if port != "/dev/cu.usbserial-offline" || gotDeviceID != deviceID || mode != "cable" {
+			t.Fatalf("unexpected Cable recovery switch port=%q device=%q mode=%q", port, gotDeviceID, mode)
+		}
+		deviceMode = "cable"
+		return nil
+	}
+	confirmCalls := 0
+	server.confirmCableMode = func(port, gotDeviceID string) error {
+		confirmCalls++
+		if port != "/dev/cu.usbserial-offline" || gotDeviceID != deviceID {
+			t.Fatalf("unexpected Cable recovery confirmation port=%q device=%q", port, gotDeviceID)
+		}
+		return nil
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if wifiCalls.Load() != 0 || switchCalls != 1 || confirmCalls != 1 {
+		t.Fatalf("offline recovery used wrong path: wifi=%d switch=%d confirm=%d", wifiCalls.Load(), switchCalls, confirmCalls)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.DeviceID != deviceID || cfg.DeviceTarget != wifiDevice.URL || cfg.DeviceToken != "pair-token" {
+		t.Fatalf("offline Cable recovery lost the active binding: %+v", cfg)
+	}
+}
+
+func TestSetupConnectionModeReselectsLegacyWiFiOnlyWithoutTransition(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: true,
+		DeviceTransports:             []string{"wifi"},
+	})
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/cu.usbserial-legacy", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			Board:    "esp8266-smalltv-st7789",
+			DeviceID: "legacy-vibetv",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{
+					Active:    "usb",
+					Mode:      "legacy-wifi-only",
+					Supported: []string{"wifi"},
+				},
+			},
+		}, nil
+	}
+	server.setCableConnectionMode = func(string, string, string) error {
+		t.Fatal("legacy WiFi-only reselection must not start a connection transition")
+		return nil
+	}
+
+	cable := httptest.NewRecorder()
+	cableRequest := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	cableRequest.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(cable, cableRequest)
+	if cable.Code != http.StatusConflict || !strings.Contains(cable.Body.String(), "connection_mode_unsupported") {
+		t.Fatalf("unsupported Cable status=%d body=%s", cable.Code, cable.Body.String())
+	}
+
+	wifi := httptest.NewRecorder()
+	wifiRequest := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	wifiRequest.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(wifi, wifiRequest)
+	if wifi.Code != http.StatusAccepted {
+		t.Fatalf("WiFi reselection status=%d body=%s", wifi.Code, wifi.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceID != "legacy-vibetv" || cfg.ConnectionMode != "" || !cfg.CableAutoBindDisabled || cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("legacy WiFi reselection persisted wrong state: %+v", cfg)
+	}
+}
+
+func TestSetupConnectionModeExplicitlySelectsCableAfterReset(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:        "cable",
+		CableAutoBindDisabled: true,
+	})
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/cu.usbserial-vibetv", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			DeviceID: "new-cable-vibetv",
+			Capabilities: protocol.CapabilityBlock{
+				Auth:      &protocol.AuthCapabilities{Paired: false},
+				Transport: protocol.TransportCapabilities{Active: "usb", Supported: []string{"usb"}},
+			},
+		}, nil
+	}
+	server.setCableConnectionMode = func(port, deviceID, mode string) error {
+		if port != "/dev/cu.usbserial-vibetv" || deviceID != "new-cable-vibetv" || mode != "cable" {
+			t.Fatalf("unexpected switch port=%q device=%q mode=%q", port, deviceID, mode)
+		}
+		return nil
+	}
+	pairCalls := 0
+	server.pairCableDevice = func(port, deviceID string) (string, error) {
+		pairCalls += 1
+		if port != "/dev/cu.usbserial-vibetv" || deviceID != "new-cable-vibetv" {
+			t.Fatalf("unexpected Cable pairing port=%q device=%q", port, deviceID)
+		}
+		return "fresh-cable-token", nil
+	}
+	server.streamStatus = func(_ context.Context, target string) displayStreamInfo {
+		if target != cableDeviceTarget {
+			t.Fatalf("unexpected stream target %q", target)
+		}
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.CableAutoBindDisabled || cfg.DeviceID != "new-cable-vibetv" || cfg.DeviceToken != "fresh-cable-token" || pairCalls != 1 {
+		t.Fatalf("Cable selection did not replace reset state: %+v", cfg)
+	}
+	if known, ok := cfg.KnownDevice("new-cable-vibetv"); !ok || known.DeviceToken != "fresh-cable-token" {
+		t.Fatalf("Cable selection did not remember pairing: %+v", cfg.KnownDevices)
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Device.Active || !got.Device.Paired || !got.Device.Ready || got.Device.Target != cableDeviceTarget {
+		t.Fatalf("Cable selection response is not ready: %+v", got.Device)
+	}
+}
+
+func TestSetupConnectionModeSelectsCableWithoutPairingForBoardWithoutAuth(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode:               "cable",
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: true,
+	})
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/cu.usbmodem-lilygo", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			Board:    "esp32-lilygo-t-display-s3",
+			DeviceID: "lilygo-cable",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb"}},
+			},
+		}, nil
+	}
+	server.pairCableDevice = func(string, string) (string, error) {
+		t.Fatal("board without auth capability must not receive a pairing request")
+		return "", nil
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "cable" || cfg.DeviceID != "lilygo-cable" || cfg.DeviceToken != "" || cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("Cable-only board selection persisted wrong state: %+v", cfg)
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Device.Active || !got.Device.Paired || !got.Device.Ready {
+		t.Fatalf("board without auth capability was not ready: %+v", got.Device)
+	}
+}
+
+func TestSetupConnectionModeRepairsDeviceReportedUnpairedCableToken(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "factory-reset-vibetv",
+		DeviceToken:    "stale-cable-token",
+	})
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/cu.usbserial-vibetv", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			DeviceID: "factory-reset-vibetv",
+			Capabilities: protocol.CapabilityBlock{
+				Auth:      &protocol.AuthCapabilities{Paired: false},
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb"}},
+			},
+		}, nil
+	}
+	pairCalls := 0
+	server.pairCableDevice = func(port, deviceID string) (string, error) {
+		pairCalls++
+		return "replacement-cable-token", nil
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pairCalls != 1 || cfg.DeviceToken != "replacement-cable-token" {
+		t.Fatalf("device-reported reset was not repaired: calls=%d config=%+v", pairCalls, cfg)
+	}
+}
+
+func TestSetupConnectionModeReusesDeviceReportedPairedCableToken(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "paired-cable-vibetv",
+		DeviceToken:    "existing-cable-token",
+	})
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/cu.usbserial-vibetv", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			DeviceID: "paired-cable-vibetv",
+			Capabilities: protocol.CapabilityBlock{
+				Auth:      &protocol.AuthCapabilities{Paired: true},
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb"}},
+			},
+		}, nil
+	}
+	server.pairCableDevice = func(string, string) (string, error) {
+		t.Fatal("paired Cable selection must reuse its known token")
+		return "", nil
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: cableDeviceTarget, LastTarget: cableDeviceTarget}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceToken != "existing-cable-token" {
+		t.Fatalf("paired Cable token changed: %+v", cfg)
+	}
+}
+
+func TestSetupResetPreservesSameDeviceAuthenticationThroughCableAndWiFiChoice(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "wifi",
+		DeviceID:       "paired-vibetv",
+		DeviceTarget:   "http://192.168.178.72",
+		DeviceToken:    "pair-token",
+	})
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/cu.usbserial-vibetv", nil
+	}
+	deviceMode := "wifi"
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			DeviceID: "paired-vibetv",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: deviceMode, Supported: []string{"usb", "wifi"}},
+			},
+		}, nil
+	}
+	server.setCableConnectionMode = func(_, deviceID, mode string) error {
+		if deviceID != "paired-vibetv" || (mode != "cable" && mode != "wifi") {
+			t.Fatalf("unexpected Cable transition device=%q mode=%q", deviceID, mode)
+		}
+		deviceMode = mode
+		return nil
+	}
+
+	reset := httptest.NewRecorder()
+	server.Handler().ServeHTTP(reset, httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil))
+	if reset.Code != http.StatusOK {
+		t.Fatalf("reset status=%d body=%s", reset.Code, reset.Body.String())
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"cable"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceTarget != "http://192.168.178.72" || cfg.DeviceToken != "pair-token" {
+		t.Fatalf("post-reset Cable selection discarded WiFi authentication: %+v", cfg)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("WiFi status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err = server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeviceTarget != "http://192.168.178.72" || cfg.DeviceToken != "pair-token" || !cfg.WiFiTransitionPending() {
+		t.Fatalf("post-reset WiFi selection lost authentication or transition state: %+v", cfg)
+	}
+}
+
+func TestSetupResetReselectsAuthenticatedKnownWiFiWithoutCable(t *testing.T) {
+	const token = "pair-token"
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hello" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.Header.Get("X-VibeTV-Token"); got != token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"known-wifi","board":"esp8266-smalltv-st7789","firmware":"1.0.40","networkMode":"station","capabilities":{"transport":{"active":"wifi","mode":"wifi","supported":["usb","wifi"]}}}`))
+	}))
+	defer device.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "wifi",
+		DeviceID:       "known-wifi",
+		DeviceTarget:   device.URL,
+		DeviceToken:    token,
+	})
+	reset := httptest.NewRecorder()
+	server.Handler().ServeHTTP(reset, httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil))
+	if reset.Code != http.StatusOK {
+		t.Fatalf("reset status=%d body=%s", reset.Code, reset.Body.String())
+	}
+	cableProbes := 0
+	server.resolveCablePort = func(string, string) (string, error) {
+		cableProbes++
+		return "", errors.New("no Cable connected")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("WiFi status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "wifi" || cfg.DeviceID != "known-wifi" || cfg.DeviceTarget != device.URL || cfg.DeviceToken != token || cfg.ConnectionModeChoiceRequired {
+		t.Fatalf("authenticated WiFi profile was not restored: %+v", cfg)
+	}
+	if cableProbes != 1 {
+		t.Fatalf("known WiFi reselection checked Cable %d times, want 1", cableProbes)
+	}
+	var got deviceActionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Device.Active || !got.Device.Paired || !got.Device.Connected || got.Device.Target != device.URL {
+		t.Fatalf("authenticated WiFi response is not active: %+v", got.Device)
+	}
+}
+
+func TestSetupConnectionModeStartsWiFiDiscoveryWithoutCable(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{}, false
+	}
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "", errors.New("no Cable connected")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted || !strings.Contains(rec.Body.String(), "waiting_for_wifi") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != "wifi" || cfg.ConnectionModeChoiceRequired || !cfg.CableAutoBindDisabled || cfg.DeviceID != "" || cfg.DeviceTarget != "" {
+		t.Fatalf("fresh WiFi discovery persisted wrong state: %+v", cfg)
+	}
+}
+
+func TestSetupResetPrefersConnectedCableDeviceOverKnownWiFi(t *testing.T) {
+	const token = "pair-token"
+	var wifiProbes atomic.Int32
+	knownWiFi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wifiProbes.Add(1)
+		_, _ = io.WriteString(w, `{"kind":"hello","deviceId":"old-wifi","networkMode":"station","capabilities":{"transport":{"active":"wifi","mode":"wifi","supported":["usb","wifi"]}}}`)
+	}))
+	defer knownWiFi.Close()
+
+	server := newTestServer(t, runtimeconfig.Config{
+		CableAutoBindDisabled:        true,
+		ConnectionModeChoiceRequired: true,
+		KnownDevices: []runtimeconfig.KnownDevice{{
+			DeviceID: "old-wifi", Target: knownWiFi.URL, DeviceToken: token,
+		}},
+	})
+	cableHello := protocol.DeviceHello{
+		Kind:     "hello",
+		DeviceID: "replacement-cable",
+		Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{
+			Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"},
+		}},
+	}
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return cableHello, true }
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return cableHello, nil }
+	server.setCableConnectionMode = func(string, string, string) error {
+		t.Fatal("replacement Cable device must collect WiFi credentials first")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "wifi_credentials_required") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if wifiProbes.Load() != 0 {
+		t.Fatalf("known WiFi device displaced connected Cable device after %d probes", wifiProbes.Load())
+	}
+}
+
+func TestSetupResetPromptsForCredentialsAfterFailedWiFiTransition(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		DeviceID:              "stale-wifi",
+		DeviceTarget:          "http://192.0.2.10",
+		DeviceToken:           "pair-token",
+		CableAutoBindDisabled: true,
+	})
+	cableHello := protocol.DeviceHello{
+		Kind:     "hello",
+		DeviceID: "stale-wifi",
+		Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{
+			Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"},
+		}},
+	}
+	server.resetCableSender = func() {}
+	server.refreshCableHello = func() (protocol.DeviceHello, bool) { return cableHello, true }
+	server.currentCableHello = func() (protocol.DeviceHello, bool) { return cableHello, true }
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return cableHello, nil }
+	server.setCableConnectionMode = func(string, string, string) error {
+		t.Fatal("failed WiFi transition must not retry stale credentials")
+		return nil
+	}
+
+	reset := httptest.NewRecorder()
+	server.Handler().ServeHTTP(reset, httptest.NewRequest(http.MethodPost, "/v1/setup/reset", nil))
+	if reset.Code != http.StatusOK {
+		t.Fatalf("reset status=%d body=%s", reset.Code, reset.Body.String())
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "wifi_credentials_required") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	known, ok := cfg.KnownDevice("stale-wifi")
+	if !ok || known.Target != "" || known.DeviceToken != "pair-token" {
+		t.Fatalf("retry retained stale WiFi target or lost authentication: %+v", cfg.KnownDevices)
 	}
 }
 
@@ -7088,6 +8616,113 @@ func TestSetupResetRejectsActiveFirmwareUpdate(t *testing.T) {
 	}
 	if cfg.DeviceTarget != initial.DeviceTarget || cfg.DeviceToken != initial.DeviceToken || cfg.DeviceID != initial.DeviceID {
 		t.Fatalf("active update reset mutated config: %+v", cfg)
+	}
+}
+
+func TestSetupMutationsRejectActiveThemeInstall(t *testing.T) {
+	initial := runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-a",
+		DeviceToken:    "pair-token",
+	}
+	server := newTestServer(t, initial)
+	if refusal := server.tryStartThemeInstall(); refusal != "" {
+		t.Fatalf("start theme install: %s", refusal)
+	}
+	defer server.finishThemeInstall()
+
+	tests := []struct {
+		path string
+		body string
+	}{
+		{path: "/v1/setup/reset"},
+		{path: "/v1/setup/connection-mode", body: `{"mode":"wifi"}`},
+		{path: "/v1/setup/wifi", body: `{"ssid":"Home WiFi","password":"secret"}`},
+	}
+	for _, tt := range tests {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+		req.Header.Set("Content-Type", "application/json")
+		server.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("%s must wait for active theme install: status=%d body=%s", tt.path, rec.Code, rec.Body.String())
+		}
+		var response struct {
+			Error apiError `json:"error"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if response.Error.Code != "theme_install_in_progress" {
+			t.Fatalf("%s error code=%q want theme_install_in_progress", tt.path, response.Error.Code)
+		}
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != initial.ConnectionMode || cfg.DeviceID != initial.DeviceID || cfg.DeviceToken != initial.DeviceToken {
+		t.Fatalf("rejected setup mutation changed config: %+v", cfg)
+	}
+}
+
+func TestSetupConnectionModeRejectsQueuedFirmwareUpdate(t *testing.T) {
+	initial := runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-a",
+	}
+	server := newTestServer(t, initial)
+	server.updateJobs["queued-update"] = &firmwareUpdateJob{
+		ID:    "queued-update",
+		Phase: "installing",
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/connection-mode", strings.NewReader(`{"mode":"wifi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "firmware_update_in_progress") {
+		t.Fatalf("queued firmware update did not block connection change: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != initial.ConnectionMode || cfg.DeviceID != initial.DeviceID {
+		t.Fatalf("queued firmware update connection request mutated config: %+v", cfg)
+	}
+}
+
+func TestSetupWiFiRejectsQueuedFirmwareUpdate(t *testing.T) {
+	initial := runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-a",
+	}
+	server := newTestServer(t, initial)
+	server.updateJobs["queued-update"] = &firmwareUpdateJob{
+		ID:    "queued-update",
+		Phase: "installing",
+	}
+	server.configureCableWiFi = func(string, string, string, string) error {
+		t.Fatal("queued firmware update must block WiFi configuration")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/setup/wifi", strings.NewReader(`{"ssid":"Home WiFi","password":"secret"}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "firmware_update_in_progress") {
+		t.Fatalf("queued firmware update did not block WiFi setup: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionMode != initial.ConnectionMode || cfg.DeviceID != initial.DeviceID {
+		t.Fatalf("queued firmware update WiFi request mutated config: %+v", cfg)
 	}
 }
 
@@ -7699,6 +9334,116 @@ func TestThemeInstallDelegatesToThemeInstallLogic(t *testing.T) {
 	}
 }
 
+func TestThemeInstallUsesCableTransferWithoutWiFiDeviceCalls(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "cable-device",
+		DeviceToken:    "pair-token",
+	})
+	server.resolveCablePort = func(_, expectedID string) (string, error) {
+		if expectedID != "cable-device" {
+			t.Fatalf("unexpected expected device %q", expectedID)
+		}
+		return "/dev/mock", nil
+	}
+	var hello protocol.DeviceHello
+	if err := json.Unmarshal([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"cable-device","board":"esp8266-smalltv-st7789","features":["theme-spec-v1","cable-health-v1"],"capabilities":{"theme":{"supportsThemeSpecV1":true,"maxStoredSpecBytes":4096,"maxPrimitives":32},"standby":{"supported":true},"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}}`), &hello); err != nil {
+		t.Fatal(err)
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return hello, nil }
+	fullCount := uint64(1)
+	partialCount := uint64(0)
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "cable_setup"
+		return health, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(_ context.Context, target string, _ string, baseline deviceHealth) (deviceHealth, error) {
+		if target != cableDeviceTarget || baseline.Render.FullCount == nil || *baseline.Render.FullCount != 1 {
+			t.Fatalf("unexpected Cable render verification target=%q baseline=%+v", target, baseline.Render)
+		}
+		renderedFullCount := uint64(2)
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &renderedFullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "theme_spec_usage"
+		active := true
+		health.Display.ThemeSpec.Active = true
+		health.Display.ThemeSpec.RenderOK = &active
+		return health, nil
+	}
+	type upload struct {
+		path       string
+		activation string
+	}
+	var uploads []upload
+	server.transferCableAsset = func(_ context.Context, port, deviceID, token, devicePath, activation string, payload []byte) error {
+		if port != "/dev/mock" || deviceID != "cable-device" || token != "pair-token" || len(payload) == 0 {
+			t.Fatalf("unexpected Cable upload port=%q id=%q token=%q bytes=%d", port, deviceID, token, len(payload))
+		}
+		uploads = append(uploads, upload{path: devicePath, activation: activation})
+		return nil
+	}
+
+	result, err := server.runThemeInstall(
+		context.Background(),
+		runtimeconfig.Config{},
+		themeInstallRequest{PackBytes: testThemePackZip(t)},
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("run Cable theme install: %v", err)
+	}
+	if result.Target != cableDeviceTarget || len(uploads) == 0 || uploads[len(uploads)-1].activation != "theme" {
+		t.Fatalf("unexpected Cable result=%+v uploads=%+v", result, uploads)
+	}
+}
+
+func TestCableThemeInstallRejectsUnverifiedLiveRender(t *testing.T) {
+	cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-device", DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			DeviceID: "cable-device",
+			Features: []string{protocol.FeatureCableHealthV1},
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"},
+			},
+		}, nil
+	}
+	fullCount := uint64(1)
+	partialCount := uint64(0)
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		return health, nil
+	}
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{ThemeID: "mini", Target: cableDeviceTarget}, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		return deviceHealth{}, errors.New("render counters did not advance")
+	}
+
+	_, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, io.Discard)
+	var statusErr *statusAPIError
+	if !errors.As(err, &statusErr) || statusErr.api.Code != "display_render_failed" {
+		t.Fatalf("unverified Cable theme was reported complete: %v", err)
+	}
+}
+
 func TestThemeInstallCapturesRenderBaselineBeforeActivation(t *testing.T) {
 	var healthCalls atomic.Int32
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -8301,6 +10046,262 @@ func TestFirmwareUpdateAsyncReportsCustomerProgress(t *testing.T) {
 	}
 }
 
+func TestFirmwareUpdateCablePreflightPreservesAlreadyCurrentOutcome(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-cable-update",
+		DeviceToken:    "pair-token",
+	}
+	server := newTestServer(t, cfg)
+	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
+		if explicit != "" || expectedDeviceID != cfg.DeviceID {
+			t.Fatalf("unexpected Cable resolution explicit=%q device=%q", explicit, expectedDeviceID)
+		}
+		return "/dev/mock-cable", nil
+	}
+	server.readCableHello = func(port string) (protocol.DeviceHello, error) {
+		if port != "/dev/mock-cable" {
+			t.Fatalf("unexpected Cable port %q", port)
+		}
+		var hello protocol.DeviceHello
+		if err := json.Unmarshal([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"device-cable-update","board":"esp8266-smalltv-st7789","firmware":"1.0.40","features":["cable-transfer-v1","cable-health-v1"],"capabilities":{"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}}`), &hello); err != nil {
+			t.Fatal(err)
+		}
+		return hello, nil
+	}
+	fullCount := uint64(1)
+	partialCount := uint64(0)
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "cable_setup"
+		return health, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		renderedFullCount := uint64(2)
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &renderedFullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "theme_spec_usage"
+		return health, nil
+	}
+	parentPortClosed := make(chan struct{})
+	server.resetCableSender = func() { close(parentPortClosed) }
+	server.updateFirmware = func(_ context.Context, _ string, got runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		select {
+		case <-parentPortClosed:
+		default:
+			t.Fatal("parent Cable handle must close before the child updater starts")
+		}
+		if runtimeconfig.NormalizeConnectionMode(got.ConnectionMode) != "cable" || got.DeviceID != cfg.DeviceID {
+			t.Fatalf("unexpected Cable update config: %+v", got)
+		}
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"complete","outcome":"already_current","firmware":"1.0.40","observedFirmware":"1.0.40","target":"cable://vibetv","deviceId":"device-cable-update","artifactValidated":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected Cable update to start without a WiFi target, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 100; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase == "complete" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Phase != "complete" || job.Outcome != "already_current" || job.Result == nil ||
+		!job.Result.HealthVerified || !job.Result.StreamVerified || !job.Result.RenderVerified {
+		t.Fatalf("Cable already-current result was not preserved: %+v", job)
+	}
+}
+
+func TestFirmwareUpdateRejectsUnsupportedCableTransferBeforePairing(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "lilygo",
+	}
+	server := newTestServer(t, cfg)
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/mock-cable", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			DeviceID: "lilygo",
+			Board:    "esp32-lilygo-t-display-s3",
+			Firmware: "1.0.40",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"},
+			},
+		}, nil
+	}
+	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
+		t.Fatal("unsupported Cable update must not start")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Error.Code != "firmware_update_unsupported" {
+		t.Fatalf("unsupported Cable update returned the wrong error: %+v", got)
+	}
+}
+
+func TestFirmwareUpdateInstallRefusesWhileThemeInstallIsActive(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	if refusal := server.tryStartThemeInstall(); refusal != "" {
+		t.Fatalf("start theme install: %s", refusal)
+	}
+	defer server.finishThemeInstall()
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("firmware update must wait for active theme install: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Error apiError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != "theme_install_in_progress" {
+		t.Fatalf("error code=%q want theme_install_in_progress", response.Error.Code)
+	}
+	if _, active := server.activeFirmwareUpdateJob(); active {
+		t.Fatal("rejected firmware update created a job")
+	}
+}
+
+func TestFirmwareUpdateCableRequiresVerifiedRender(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-cable-update",
+		DeviceToken:    "pair-token",
+	}
+	server := newTestServer(t, cfg)
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			DeviceID: "device-cable-update",
+			Board:    "esp8266-smalltv-st7789",
+			Firmware: "1.0.41",
+			Features: []string{protocol.FeatureCableTransferV1, protocol.FeatureCableHealthV1},
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"},
+			},
+		}, nil
+	}
+	fullCount := uint64(1)
+	partialCount := uint64(0)
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		return health, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		return deviceHealth{}, errors.New("render counters did not advance")
+	}
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","outcome":"updated","firmware":"1.0.41","observedFirmware":"1.0.41","target":"cable://vibetv","deviceId":"device-cable-update","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 100; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Phase != "attention" || job.Result == nil || !job.Result.HealthVerified ||
+		!job.Result.StreamVerified || job.Result.RenderVerified {
+		t.Fatalf("unverified Cable update was reported complete: %+v", job)
+	}
+}
+
+func TestFirmwareUpdateCableDoesNotOverridePostUpdateVerificationError(t *testing.T) {
+	cfg := runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "device-cable-update",
+		DeviceToken:    "pair-token",
+	}
+	server := newTestServer(t, cfg)
+	server.resolveCablePort = func(string, string) (string, error) {
+		return "/dev/mock-cable", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		var hello protocol.DeviceHello
+		if err := json.Unmarshal([]byte(`{"kind":"hello","protocolVersion":2,"deviceId":"device-cable-update","board":"esp8266-smalltv-st7789","firmware":"1.0.40","features":["cable-transfer-v1"],"capabilities":{"transport":{"active":"usb","mode":"cable","supported":["usb","wifi"]}}}`), &hello); err != nil {
+			t.Fatal(err)
+		}
+		return hello, nil
+	}
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"rebooting","phase":"installing","retryPolicy":"power_cycle","firmware":"1.0.41","observedFirmware":"1.0.40","target":"cable://vibetv","deviceId":"device-cable-update","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return errors.New("post-update verification still reports firmware 1.0.40")
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected Cable update to start, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 100; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase == "error" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Phase != "error" || job.Error == nil || job.Error.Code != "firmware_update_restart_required" {
+		t.Fatalf("Cable verification error must remain visible: %+v", job)
+	}
+	if job.Result == nil || job.Result.Firmware != "1.0.41" || job.Result.ObservedFirmware != "1.0.40" {
+		t.Fatalf("Cable verification evidence was lost: %+v", job.Result)
+	}
+}
+
 func TestFirmwareUpdatePausesDisplayTrafficUntilJobFinishes(t *testing.T) {
 	var deviceCalls atomic.Int32
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -8836,6 +10837,48 @@ func TestFirmwareUpdateAsyncRequiresPowerCycleAfterUnsafeUpload(t *testing.T) {
 	}
 }
 
+func TestFirmwareUpdateAsyncRequiresCableReconnectAfterInterruptedTransfer(t *testing.T) {
+	cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable", DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	var hello protocol.DeviceHello
+	if err := json.Unmarshal([]byte(`{"kind":"hello","deviceId":"device-cable","board":"esp8266-smalltv-st7789","firmware":"1.0.40","features":["cable-transfer-v1"],"capabilities":{"transport":{"active":"usb","mode":"cable"}}}`), &hello); err != nil {
+		t.Fatal(err)
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) { return hello, nil }
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		event, err := json.Marshal(firmwareUpdateEvent{Stage: "uploading", Phase: "attention", Outcome: "interrupted", RetryPolicy: "reconnect_cable"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = fmt.Fprintf(out, "%s%s\n", firmwareupdate.EventPrefix, event)
+		return errors.New("Cable disconnected")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(rec, req)
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 50; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase == "error" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.Error == nil || job.Error.Code != "firmware_update_cable_interrupted" || job.RetryPolicy != "reconnect_cable" {
+		t.Fatalf("interrupted Cable update lost typed recovery: %+v", job)
+	}
+	if !strings.Contains(job.Error.NextAction, "data-capable Cable") {
+		t.Fatalf("interrupted Cable update has wrong next action: %+v", job.Error)
+	}
+}
+
 func TestMacAppUpdateAsyncReportsCustomerProgress(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.allowMacAppSelfUpdate = true
@@ -9212,6 +11255,101 @@ func TestThemeInstallCanBeDisabledByLocalEnv(t *testing.T) {
 	}
 }
 
+func TestCableSettingsUseSerialReadbackWithoutAnHTTPProbe(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{
+		ConnectionMode: "cable",
+		DeviceID:       "cable-settings",
+	})
+	server.resolveCablePort = func(explicit, expectedDeviceID string) (string, error) {
+		if explicit != "" || expectedDeviceID != "cable-settings" {
+			t.Fatalf("unexpected Cable settings resolution explicit=%q expected=%q", explicit, expectedDeviceID)
+		}
+		return "/dev/cu.usbserial-settings", nil
+	}
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			Board:    "esp8266-smalltv-st7789",
+			DeviceID: "cable-settings",
+			Capabilities: protocol.CapabilityBlock{
+				Display: protocol.DisplayCapabilities{
+					Brightness: protocol.DisplayBrightnessCapabilities{Supported: true, MinPercent: 10, MaxPercent: 100},
+				},
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb", "wifi"}},
+			},
+		}, nil
+	}
+	confirmed := protocol.DeviceSettings{
+		Display: protocol.DeviceDisplaySettings{BrightnessPercent: 35},
+		Standby: &protocol.DeviceStandbySettings{Enabled: true, TimeoutMinutes: 15, BrightnessPercent: 10},
+	}
+	server.readCableSettings = func(port, deviceID string) (protocol.DeviceSettings, error) {
+		if port != "/dev/cu.usbserial-settings" || deviceID != "cable-settings" {
+			t.Fatalf("unexpected Cable settings read port=%q device=%q", port, deviceID)
+		}
+		return confirmed, nil
+	}
+	server.writeCableSettings = func(port, deviceID string, patch protocol.DeviceSettingsPatch) (protocol.DeviceSettings, error) {
+		if port != "/dev/cu.usbserial-settings" || deviceID != "cable-settings" || patch.BrightnessPercent == nil || *patch.BrightnessPercent != 60 {
+			t.Fatalf("unexpected Cable settings write port=%q device=%q patch=%+v", port, deviceID, patch)
+		}
+		confirmed.Display.BrightnessPercent = 60
+		return confirmed, nil
+	}
+	server.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("Cable settings must not probe HTTP")
+		return nil, errors.New("unexpected HTTP request")
+	})
+
+	get := httptest.NewRecorder()
+	server.Handler().ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/v1/settings", nil))
+	if get.Code != http.StatusOK || !strings.Contains(get.Body.String(), `"brightnessPercent":35`) {
+		t.Fatalf("Cable settings read status=%d body=%s", get.Code, get.Body.String())
+	}
+
+	post := httptest.NewRecorder()
+	postReq := httptest.NewRequest(http.MethodPost, "/v1/settings", strings.NewReader(`{"brightnessPercent":60}`))
+	postReq.Header.Set("Content-Type", "application/json")
+	server.Handler().ServeHTTP(post, postReq)
+	if post.Code != http.StatusOK || !strings.Contains(post.Body.String(), `"brightnessPercent":60`) {
+		t.Fatalf("Cable settings write status=%d body=%s", post.Code, post.Body.String())
+	}
+}
+
+func TestCableSettingsSkipUnsupportedDeviceControls(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "lilygo"})
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind:     "hello",
+			DeviceID: "lilygo",
+			Board:    "esp32-lilygo-t-display-s3",
+			Capabilities: protocol.CapabilityBlock{
+				Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable", Supported: []string{"usb"}},
+			},
+		}, nil
+	}
+	server.readCableSettings = func(string, string) (protocol.DeviceSettings, error) {
+		t.Fatal("unsupported Cable settings must not reach the device")
+		return protocol.DeviceSettings{}, nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/settings", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected benign status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got settingsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK || got.Device.DeviceID != "lilygo" || got.Device.Capabilities == nil ||
+		got.Device.Capabilities.Display.Brightness.Supported {
+		t.Fatalf("unexpected unsupported settings response: %+v", got)
+	}
+}
+
 func TestSettingsGetReportsActiveTheme(t *testing.T) {
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -9505,7 +11643,21 @@ func newTestServer(t *testing.T, cfg runtimeconfig.Config) *Server {
 	server.runSetup = func(context.Context, setup.Options) error {
 		return nil
 	}
+	server.refreshCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{}, false
+	}
+	server.currentCableHello = func() (protocol.DeviceHello, bool) {
+		return protocol.DeviceHello{}, false
+	}
+	server.discoverCableDevices = func() ([]usb.CableDevice, error) {
+		return nil, nil
+	}
+	server.resetCableSender = func() {}
+	server.pairCableDevice = func(string, string) (string, error) {
+		return "pair-token", nil
+	}
 	server.defaultWiFiTarget = func() string { return "http://127.0.0.1:1" }
+	server.localNetworkAvailable = func() bool { return true }
 	server.updateFirmware = func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error {
 		return nil
 	}
@@ -10245,6 +12397,63 @@ func TestThemeInstallStillFailsWhenStreamIsBroken(t *testing.T) {
 	var out bytes.Buffer
 	if _, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini"}, &out); err == nil {
 		t.Fatal("a broken display stream must still fail the install")
+	}
+}
+
+// Hardware, esp8266-smalltv-st7789, 2026-09-03: the device had already
+// rendered the installed Mini Classic theme with real Claude usage, but the
+// restarted LaunchAgent had not yet updated its stream-health log. The final
+// readiness check overwrote that stronger render proof with "Theme install
+// failed" even though the display was correct and the stream recovered on its
+// own moments later.
+func TestThemeInstallCompletesWhenRenderProofPrecedesStreamHealth(t *testing.T) {
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Fatalf("unexpected device path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"render":{"fullCount":7,"partialCount":3,"lastKind":"theme_spec_frame"},"display":{"activeTheme":"mini-classic","themeSpec":{"active":true,"path":"/themes/u/mini.json","renderOk":true}}}`))
+	}))
+	defer device.Close()
+
+	cfg := runtimeconfig.Config{DeviceTarget: device.URL, DeviceToken: "pair-token"}
+	server := newTestServer(t, cfg)
+	server.installTheme = func(context.Context, themeinstall.Options) (themeinstall.Result, error) {
+		return themeinstall.Result{ThemeID: "mini-classic"}, nil
+	}
+	server.refreshStream = func(context.Context, string) error { return nil }
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		return displayStreamInfo{
+			Running: true,
+			Target:  target,
+			Detail:  "Display stream is starting.",
+		}
+	}
+	server.waitRender = func(context.Context, string, string, deviceHealth) (deviceHealth, error) {
+		fullCount := uint64(8)
+		partialCount := uint64(3)
+		renderOK := true
+		health := deviceHealth{OK: true}
+		health.Render.FullCount = &fullCount
+		health.Render.PartialCount = &partialCount
+		health.Render.LastKind = "theme_spec_frame"
+		health.Display.ActiveTheme = "mini-classic"
+		health.Display.ThemeSpec.Active = true
+		health.Display.ThemeSpec.Path = "/themes/u/mini.json"
+		health.Display.ThemeSpec.RenderOK = &renderOK
+		return health, nil
+	}
+
+	var out bytes.Buffer
+	result, err := server.runThemeInstall(context.Background(), cfg, themeInstallRequest{ThemeID: "mini-classic"}, &out)
+	if err != nil {
+		t.Fatalf("a verified theme render must complete the install while stream health catches up: %v", err)
+	}
+	if result.ThemeID != "mini-classic" {
+		t.Fatalf("unexpected theme result: %+v", result)
+	}
+	if !strings.Contains(out.String(), "Theme render: verified") {
+		t.Fatalf("missing verified render log:\n%s", out.String())
 	}
 }
 

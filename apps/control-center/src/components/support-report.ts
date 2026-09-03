@@ -111,7 +111,7 @@ function safeErrorMessage(error: unknown): string {
   return "Mac App diagnostics are unavailable.";
 }
 
-function redactSensitiveValues(value: unknown): unknown {
+export function redactSensitiveValues(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(redactSensitiveValues);
   }

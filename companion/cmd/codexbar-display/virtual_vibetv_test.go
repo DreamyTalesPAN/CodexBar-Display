@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -17,16 +16,16 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/virtualvibetv"
 )
 
-func TestRunInstallUpdateUsesDedicatedRawOTAAndDoesNotFlashAlreadyCurrentDevice(t *testing.T) {
+func TestRunInstallUpdateUsesMultipartOTAAndDoesNotFlashAlreadyCurrentDevice(t *testing.T) {
 	pinNoOtherRuntimeWriter(t)
-	previousClient, previousPoll, previousPort := releaseHTTPClient, firmwareHTTPVerifyPollInterval, firmwareRawOTAPort
+	previousClient, previousPoll := releaseHTTPClient, firmwareHTTPVerifyPollInterval
 	t.Cleanup(func() {
-		releaseHTTPClient, firmwareHTTPVerifyPollInterval, firmwareRawOTAPort = previousClient, previousPoll, previousPort
+		releaseHTTPClient, firmwareHTTPVerifyPollInterval = previousClient, previousPoll
 	})
 	t.Setenv("HOME", t.TempDir())
 	firmwareHTTPVerifyPollInterval = time.Millisecond
 
-	image := []byte("virtual raw OTA candidate")
+	image := []byte("virtual multipart OTA candidate")
 	cfg := virtualvibetv.DefaultConfig()
 	cfg.HTTPListenAddr, cfg.RawOTAListenAddr = "127.0.0.1:0", "127.0.0.1:0"
 	cfg.RebootUnavailableRequests = 0
@@ -38,16 +37,11 @@ func TestRunInstallUpdateUsesDedicatedRawOTAAndDoesNotFlashAlreadyCurrentDevice(
 	}
 	t.Cleanup(func() { _ = device.Close() })
 
-	rawURL, err := url.Parse(device.RawOTAURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	firmwareRawOTAPort = rawURL.Port()
 	manifestURL := virtualFirmwareManifestServer(t, image)
 	releaseHTTPClient = &http.Client{Timeout: time.Second}
 	args := []string{"--target", device.HTTPURL, "--manifest-url", manifestURL, "--skip-launchagent-pause"}
 	if _, err := captureStdout(t, func() error { return runInstallUpdate(args) }); err != nil {
-		t.Fatalf("install through raw OTA listener: %v", err)
+		t.Fatalf("install through multipart OTA: %v", err)
 	}
 	output, err := captureStdout(t, func() error { return runInstallUpdate(args) })
 	if err != nil {
@@ -58,23 +52,23 @@ func TestRunInstallUpdateUsesDedicatedRawOTAAndDoesNotFlashAlreadyCurrentDevice(
 	}
 	state := device.Snapshot()
 	if state.UpdateUploads != 1 || len(state.Violations) != 0 {
-		t.Fatalf("OTA was repeated or not raw: %+v", state)
+		t.Fatalf("OTA was repeated: %+v", state)
 	}
-	if !hasEvent(state.Events, "/update/firmware.raw") {
-		t.Fatalf("raw OTA listener was not exercised: %+v", state.Events)
+	if !hasEvent(state.Events, "/update/firmware") {
+		t.Fatalf("multipart OTA endpoint was not exercised: %+v", state.Events)
 	}
 }
 
-func TestRunInstallUpdateAcceptsDroppedRawOTAResponseWithoutSecondFlash(t *testing.T) {
+func TestRunInstallUpdateAcceptsDroppedMultipartOTAResponseWithoutSecondFlash(t *testing.T) {
 	pinNoOtherRuntimeWriter(t)
-	previousClient, previousPoll, previousPort, previousTimeout := releaseHTTPClient, firmwareHTTPVerifyPollInterval, firmwareRawOTAPort, firmwareInterruptedVerifyTimeout
+	previousClient, previousPoll, previousTimeout := releaseHTTPClient, firmwareHTTPVerifyPollInterval, firmwareInterruptedVerifyTimeout
 	t.Cleanup(func() {
-		releaseHTTPClient, firmwareHTTPVerifyPollInterval, firmwareRawOTAPort, firmwareInterruptedVerifyTimeout = previousClient, previousPoll, previousPort, previousTimeout
+		releaseHTTPClient, firmwareHTTPVerifyPollInterval, firmwareInterruptedVerifyTimeout = previousClient, previousPoll, previousTimeout
 	})
 	t.Setenv("HOME", t.TempDir())
 	firmwareHTTPVerifyPollInterval, firmwareInterruptedVerifyTimeout = time.Millisecond, 100*time.Millisecond
 
-	image := []byte("accepted raw OTA then disconnected")
+	image := []byte("accepted multipart OTA then disconnected")
 	cfg := virtualvibetv.DefaultConfig()
 	cfg.HTTPListenAddr, cfg.RawOTAListenAddr = "127.0.0.1:0", "127.0.0.1:0"
 	cfg.DropUpdateResponseAfterAccept, cfg.RebootUnavailableRequests = true, 0
@@ -85,11 +79,6 @@ func TestRunInstallUpdateAcceptsDroppedRawOTAResponseWithoutSecondFlash(t *testi
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = device.Close() })
-	rawURL, err := url.Parse(device.RawOTAURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	firmwareRawOTAPort = rawURL.Port()
 	releaseHTTPClient = &http.Client{Timeout: time.Second}
 
 	if _, err := captureStdout(t, func() error {

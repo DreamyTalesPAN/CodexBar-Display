@@ -45,6 +45,11 @@ var installingThemeSpec = json.RawMessage(`{"v":1,"id":"installing","rev":1,"p":
 type FirmwareUpdater func(ctx context.Context, target, manifestURL string) error
 type PairTokenStore func(target, token string) error
 
+type CableInstallOptions struct {
+	Capabilities protocol.DeviceCapabilities
+	Upload       func(context.Context, string, []byte, string) error
+}
+
 type Options struct {
 	// Slot is themepack.UsageLive or themepack.UsageScreensaver. Empty means
 	// the live theme slot.
@@ -67,6 +72,7 @@ type Options struct {
 	UploadSettleDelay   time.Duration
 	Now                 func() time.Time
 	FetchLiveFrame      func(context.Context) (protocol.Frame, error)
+	Cable               *CableInstallOptions
 }
 
 type Result struct {
@@ -176,6 +182,9 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		themeName = pack.Manifest.ID
 	}
 	fmt.Fprintf(out, "Preparing theme: %s\n", themeName)
+	if opts.Cable != nil {
+		return installCablePack(ctx, pack, slot, themeName, opts.Cable, out)
+	}
 	if opts.Verbose {
 		themeSource := resolvedPack
 		if opts.PackBytes == nil {
@@ -401,6 +410,56 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		ActivePath:        pack.ThemeSpecFile.Entry.Path,
 		ThemeRevision:     pack.ThemeSpec.ThemeRev,
 		CapabilitiesKnown: caps.Known,
+	}, nil
+}
+
+func installCablePack(
+	ctx context.Context,
+	pack *themepack.Pack,
+	slot,
+	themeName string,
+	cable *CableInstallOptions,
+	out io.Writer,
+) (Result, error) {
+	if cable == nil || cable.Upload == nil {
+		return Result{}, errors.New("cable theme transfer is unavailable")
+	}
+	if err := pack.ValidateAgainstCapabilities(cable.Capabilities); err != nil {
+		return Result{}, themePackCapabilitiesError(err)
+	}
+	if slot == themepack.UsageScreensaver && cable.Capabilities.Known && !cable.Capabilities.SupportsStandby {
+		return Result{}, &InstallError{
+			Op:   "theme-pack/capabilities",
+			Code: errcode.ProtocolThemeSpecIncompatible,
+			Err:  errors.New("VibeTV does not advertise a screensaver slot"),
+		}
+	}
+
+	fmt.Fprintln(out, "Uploading theme files by Cable...")
+	for _, asset := range pack.Assets {
+		if err := cable.Upload(ctx, asset.Entry.Path, asset.Data, ""); err != nil {
+			return Result{}, &InstallError{Op: "theme-pack/upload", Code: errcode.UpgradeFlashFirmware, Err: err}
+		}
+	}
+	activation := "theme"
+	if slot == themepack.UsageScreensaver {
+		activation = "screensaver"
+	}
+	// The Cable firmware owns the safe post-activation slot sweep because it
+	// alone can enumerate LittleFS while this serial transfer holds the device.
+	if err := cable.Upload(ctx, pack.ThemeSpecFile.Entry.Path, pack.ThemeSpecRaw, activation); err != nil {
+		return Result{}, &InstallError{Op: "theme-pack/activate", Code: errcode.UpgradeFlashFirmware, Err: err}
+	}
+	fmt.Fprintln(out, "Theme transferred and activated by Cable.")
+	return Result{
+		ThemeID:           pack.ThemeSpec.ThemeID,
+		PackID:            pack.Manifest.ID,
+		Name:              themeName,
+		Slot:              slot,
+		Target:            "cable://vibetv",
+		ActivePath:        pack.ThemeSpecFile.Entry.Path,
+		ThemeRevision:     pack.ThemeSpec.ThemeRev,
+		CapabilitiesKnown: cable.Capabilities.Known,
 	}, nil
 }
 

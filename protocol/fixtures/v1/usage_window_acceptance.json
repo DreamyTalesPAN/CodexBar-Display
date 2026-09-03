@@ -139,10 +139,10 @@
       "testFiles": ["companion/internal/companionapi/server_test.go"]
     },
     {
-      "id": "259-05-manual-refresh-rate-limit",
+      "id": "259-05-manual-refresh",
       "source": "#259",
-      "text": "Manual refresh returns fresh data or explicit still-refreshing/rate-limited state with blocked-until when active.",
-      "testFiles": ["companion/internal/companionapi/server_test.go", "apps/control-center/src/components/usage-screen.test.tsx"]
+      "text": "Manual refresh returns fresh data or an explicit still-refreshing state.",
+      "testFiles": ["companion/internal/companionapi/server_test.go"]
     },
     {
       "id": "259-06-collected-at",

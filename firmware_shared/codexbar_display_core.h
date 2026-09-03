@@ -722,6 +722,25 @@ inline bool ThemeSpecUsesUsageWindowResetBinding(const String& raw, size_t slotI
   return raw.indexOf(longName) >= 0 || raw.indexOf(indexedName) >= 0 || raw.indexOf(compactName) >= 0;
 }
 
+inline bool ThemeSpecUsesProviderSlotResetBinding(const String& raw, size_t slotIndex) {
+  char longName[28] = {0};
+  char compactName[8] = {0};
+  std::snprintf(longName, sizeof(longName), "providerSlot%uReset", static_cast<unsigned>(slotIndex + 1));
+  std::snprintf(compactName, sizeof(compactName), "pv%ur", static_cast<unsigned>(slotIndex + 1));
+  return raw.indexOf(longName) >= 0 || raw.indexOf(compactName) >= 0;
+}
+
+inline bool ThemeSpecSlotChanged(
+    const UsageWindow& previous,
+    const UsageWindow& next,
+    bool usesReset) {
+  return previous.id != next.id ||
+         previous.label != next.label ||
+         previous.percent != next.percent ||
+         previous.available != next.available ||
+         (usesReset && previous.resetSecs != next.resetSecs);
+}
+
 inline bool RemainingMinuteBucketChanged(int64_t remainingSecs, int64_t lastRenderedMinuteBucket) {
   return remainingSecs / 60 != lastRenderedMinuteBucket;
 }
@@ -742,7 +761,10 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
   bool providerSlotsChanged = false;
   for (size_t i = 0; i < kMaxProviderSlots; ++i) {
     if (ThemeSpecUsesProviderSlotBinding(raw, i) &&
-        UsageWindowChanged(previous.providerSlots[i], next.providerSlots[i])) {
+        ThemeSpecSlotChanged(
+            previous.providerSlots[i],
+            next.providerSlots[i],
+            ThemeSpecUsesProviderSlotResetBinding(raw, i))) {
       providerSlotsChanged = true;
     }
   }
@@ -761,7 +783,11 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
          (ThemeSpecUsesBinding(raw, "reset", "r") && previous.resetSecs != next.resetSecs) ||
          (usesUsageWindows && [&]() {
            for (size_t i = 0; i < kMaxUsageWindows; ++i) {
-             if (ThemeSpecUsesUsageWindowBinding(raw, i) && UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i])) {
+             if (ThemeSpecUsesUsageWindowBinding(raw, i) &&
+                 ThemeSpecSlotChanged(
+                     previous.usageWindows[i],
+                     next.usageWindows[i],
+                     ThemeSpecUsesUsageWindowResetBinding(raw, i))) {
                return true;
              }
            }
@@ -783,7 +809,10 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
 #endif
 }
 
-inline uint32_t ThemeSpecLiveChangedFields(const Frame& previous, const Frame& next) {
+inline uint32_t ThemeSpecLiveChangedFields(
+    const Frame& previous,
+    const Frame& next,
+    const String& themeSpecRaw) {
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
   uint32_t fields = 0;
   if (previous.provider != next.provider) {
@@ -798,16 +827,23 @@ inline uint32_t ThemeSpecLiveChangedFields(const Frame& previous, const Frame& n
   if (previous.weekly != next.weekly) {
     fields |= themespec::kThemeSpecFieldWeekly;
   }
-  if (previous.resetSecs != next.resetSecs) {
+  if (previous.resetSecs != next.resetSecs &&
+      ThemeSpecUsesBinding(themeSpecRaw, "reset", "r")) {
     fields |= themespec::kThemeSpecFieldReset;
   }
   for (size_t i = 0; i < kMaxUsageWindows; ++i) {
-    if (UsageWindowChanged(previous.usageWindows[i], next.usageWindows[i])) {
+    if (ThemeSpecSlotChanged(
+            previous.usageWindows[i],
+            next.usageWindows[i],
+            ThemeSpecUsesUsageWindowResetBinding(themeSpecRaw, i))) {
       fields |= ThemeSpecUsageWindowField(i);
     }
   }
   for (size_t i = 0; i < kMaxProviderSlots; ++i) {
-    if (UsageWindowChanged(previous.providerSlots[i], next.providerSlots[i])) {
+    if (ThemeSpecSlotChanged(
+            previous.providerSlots[i],
+            next.providerSlots[i],
+            ThemeSpecUsesProviderSlotResetBinding(themeSpecRaw, i))) {
       fields |= themespec::kThemeSpecFieldProviderSlots;
     }
   }
@@ -871,7 +907,7 @@ inline bool ThemeSpecCanUsePartialRender(
   if (previous.clearThemeSpec != next.clearThemeSpec) {
     return false;
   }
-  return ThemeSpecLiveChangedFields(previous, next) != 0;
+  return ThemeSpecLiveChangedFields(previous, next, themeSpecRaw) != 0;
 #else
   (void)previous;
   (void)next;
@@ -964,9 +1000,17 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   const DeserializationError err = deserializeJson(doc, line);
   if (err) {
     out = {};
-    out.hasError = true;
-    out.error = String("bad json: ") + err.c_str();
-    return true;
+    return false;
+  }
+
+  if (!doc["v"].is<int>()) {
+    out = {};
+    return false;
+  }
+  const int protocolVersion = doc["v"].as<int>();
+  if (protocolVersion != 1 && protocolVersion != 2) {
+    out = {};
+    return false;
   }
 
   bool hasThemeSpec = false;
@@ -1443,7 +1487,7 @@ inline bool ConsumeFrameLine(
   const String& themeSpecRaw = ThemeSpecRawForFrame(runtimeState, next);
   outEvent.visualChanged = !outEvent.hadFrame || FrameVisualChangedWithThemeSpecRaw(previous, next, themeSpecRaw) || outEvent.themeSpecChanged;
 #if CODEXBAR_DISPLAY_THEME_SPEC_RENDERER
-  outEvent.themeSpecChangedFields = ThemeSpecLiveChangedFields(previous, next);
+  outEvent.themeSpecChangedFields = ThemeSpecLiveChangedFields(previous, next, themeSpecRaw);
   outEvent.themeSpecPartialRender = ThemeSpecCanUsePartialRender(
       previous,
       next,
@@ -1462,18 +1506,14 @@ inline bool ConsumeFrameLine(
   return true;
 }
 
-inline bool ConsumeSerialByte(
+inline bool ConsumeLineByte(
     LineReaderState& lineState,
-    RuntimeState& runtimeState,
     char c,
-    unsigned long nowMillis,
-    SerialConsumeEvent& outEvent) {
-  outEvent = {};
-
+    const char*& outLine) {
+  outLine = nullptr;
   if (c == '\r') {
     return false;
   }
-
   if (c != '\n') {
     if (!lineState.overflowed && lineState.len + 1 < sizeof(lineState.buffer)) {
       lineState.buffer[lineState.len++] = c;
@@ -1484,13 +1524,28 @@ inline bool ConsumeSerialByte(
   }
 
   lineState.buffer[lineState.len] = '\0';
-  if (!lineState.overflowed && lineState.len > 0) {
-    (void)ConsumeFrameLine(runtimeState, lineState.buffer, nowMillis, outEvent);
+  const bool complete = !lineState.overflowed && lineState.len > 0;
+  if (complete) {
+    outLine = lineState.buffer;
   }
-
   lineState.len = 0;
   lineState.overflowed = false;
-  return outEvent.frameAccepted;
+  return complete;
+}
+
+inline bool ConsumeSerialByte(
+    LineReaderState& lineState,
+    RuntimeState& runtimeState,
+    char c,
+    unsigned long nowMillis,
+    SerialConsumeEvent& outEvent) {
+  outEvent = {};
+  const char* line = nullptr;
+  if (!ConsumeLineByte(lineState, c, line)) {
+    return false;
+  }
+  return ConsumeFrameLine(runtimeState, line, nowMillis, outEvent) &&
+         outEvent.frameAccepted;
 }
 
 }  // namespace core

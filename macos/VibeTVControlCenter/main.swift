@@ -1163,6 +1163,11 @@ func shouldRetryControlCenterNavigation(_ error: Error) -> Bool {
 
 enum InstallationStatusKind: Equatable {
     case standard
+    // The screen the customer meets at launch. It is the wizard's welcome
+    // step, drawn natively so the handover to the WebView is invisible: same
+    // brand, same running log, same background. Anything but a healthy start
+    // leaves it for one of the kinds below.
+    case welcome
     case backgroundApproval
     case serviceRestart
     case updateMismatch
@@ -1242,6 +1247,54 @@ private enum NativeSetupButtonVariant {
     case secondary
     case outline
     case plain
+}
+
+/// The Control Center design tokens the native screens share with the WebView.
+/// Kept as one list so the two halves of the launch screen cannot drift apart.
+extension NSColor {
+    /// --background #F9F9F9
+    static let vibetvBackground = NSColor(
+        srgbRed: 0.976, green: 0.976, blue: 0.976, alpha: 1
+    )
+    /// --foreground #1B1B1B
+    static let vibetvForeground = NSColor(
+        srgbRed: 0.106, green: 0.106, blue: 0.106, alpha: 1
+    )
+    /// --muted-foreground #444933
+    static let vibetvMutedForeground = NSColor(
+        srgbRed: 0.267, green: 0.286, blue: 0.200, alpha: 1
+    )
+    /// --vibetv-signal #CCFF00
+    static let vibetvSignal = NSColor(
+        srgbRed: 0.800, green: 1.000, blue: 0.000, alpha: 1
+    )
+}
+
+/// The terminal caret the setup log ends on, matching the WebView keyframes
+/// (1.1s, step-end): a hard on/off, never a fade.
+@MainActor
+private final class BlinkingCaretView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.vibetvForeground.cgColor
+        let blink = CAKeyframeAnimation(keyPath: "opacity")
+        blink.values = [1, 0]
+        blink.keyTimes = [0, 0.5]
+        blink.calculationMode = .discrete
+        blink.duration = 1.1
+        blink.repeatCount = .infinity
+        layer?.add(blink, forKey: "vibetv-caret-blink")
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 8, height: 14)
+    }
 }
 
 @MainActor
@@ -1380,7 +1433,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         presentInstallationStatus(
             title: "Starting Control Center",
             detail: "Checking the Mac App and your last connected VibeTV.",
-            failed: false
+            failed: false,
+            kind: .welcome
         )
         startRuntimePreparation()
     }
@@ -1444,7 +1498,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             presentInstallationStatus(
                 title: "Starting Control Center",
                 detail: "Checking the Mac App and your last connected VibeTV.",
-                failed: false
+                failed: false,
+                kind: .welcome
             )
         }
         Task { [weak self] in
@@ -2351,6 +2406,117 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         return button
     }
 
+    /// The wizard welcome step, drawn in AppKit.
+    ///
+    /// The WebView renders the same three elements on the same background, so
+    /// when it takes over there is nothing to see: one screen from launch,
+    /// not a handover between two that merely resemble each other.
+    ///
+    /// Only the first log line is native. Preparing the background service is
+    /// the only work this side of the app is doing, and claiming the WiFi scan
+    /// or the provider read had started would report work that has not begun.
+    private func installWelcomeContent(in container: NSView) {
+        let eyebrow = NSTextField(
+            labelWithAttributedString: NSAttributedString(
+                string: "WELCOME TO",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                    .foregroundColor: NSColor.vibetvMutedForeground,
+                    .kern: 3.6,
+                ]
+            )
+        )
+        eyebrow.alignment = .center
+
+        let brandFont = NSFont.systemFont(ofSize: 64, weight: .black)
+        let brandText = NSMutableAttributedString(
+            string: "VIBE",
+            attributes: [
+                .font: brandFont,
+                .foregroundColor: NSColor.vibetvForeground,
+            ]
+        )
+        brandText.append(
+            NSAttributedString(
+                string: "TV",
+                attributes: [
+                    .font: brandFont,
+                    .foregroundColor: NSColor.vibetvSignal,
+                ]
+            )
+        )
+        let brand = NSTextField(labelWithAttributedString: brandText)
+        brand.alignment = .center
+
+        let logLabel = NSTextField(labelWithString: "> starting background service")
+        logLabel.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        logLabel.textColor = .vibetvMutedForeground
+
+        let caret = BlinkingCaretView(
+            frame: NSRect(x: 0, y: 0, width: 8, height: 14)
+        )
+        let logLine = NSStackView(views: [logLabel, caret])
+        logLine.orientation = .horizontal
+        logLine.alignment = .centerY
+        logLine.spacing = 8
+
+        let stack = NSStackView(views: [eyebrow, brand, logLine])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 20
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
+
+        // Help stays reachable while the service is starting: this screen can
+        // be the last thing a customer sees if preparation never finishes.
+        let help = makeNativeSetupButton(
+            title: "Help",
+            action: #selector(showNativeHelpMenu(_:)),
+            symbolName: "questionmark.circle",
+            variant: .plain
+        )
+        help.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(help)
+
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            stack.leadingAnchor.constraint(
+                greaterThanOrEqualTo: container.leadingAnchor,
+                constant: 32
+            ),
+            stack.trailingAnchor.constraint(
+                lessThanOrEqualTo: container.trailingAnchor,
+                constant: -32
+            ),
+            help.trailingAnchor.constraint(
+                equalTo: container.trailingAnchor,
+                constant: -20
+            ),
+            help.bottomAnchor.constraint(
+                equalTo: container.bottomAnchor,
+                constant: -20
+            ),
+        ])
+    }
+
+    @objc private func showNativeHelpMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        for (title, action) in [
+            ("Create support report", #selector(createNativeSupportReport)),
+            ("Open support log", #selector(openSupportLog)),
+        ] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        menu.popUp(
+            positioning: nil,
+            at: NSPoint(x: 0, y: sender.bounds.height + 4),
+            in: sender
+        )
+    }
+
     private func presentInstallationStatus(
         title: String,
         detail: String,
@@ -2374,12 +2540,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         // the WebView once the local Control Center is available.
         container.appearance = NSAppearance(named: .aqua)
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor(
-            calibratedRed: 0.976,
-            green: 0.976,
-            blue: 0.976,
-            alpha: 1
-        ).cgColor
+        container.layer?.backgroundColor = NSColor.vibetvBackground.cgColor
+
+        if kind == .welcome, !failed {
+            installWelcomeContent(in: container)
+            presentStatusContainer(container, in: window)
+            return
+        }
 
         let brand = NSTextField(labelWithString: "VIBETV")
         brand.font = .systemFont(ofSize: 40, weight: .black)
@@ -2409,7 +2576,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             progress.startAnimation()
         }
 
-        let recoveryLayout = kind != .standard
+        let recoveryLayout = kind != .standard && kind != .welcome
         let support = makeNativeSetupButton(
             title: "Create report",
             action: #selector(createNativeSupportReport),
@@ -2500,7 +2667,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                         variant: .secondary
                     ),
                 ]
-            case .standard:
+            case .standard, .welcome:
                 recoveryButtons = []
             }
             recoveryButtons.first?.keyEquivalent = "\r"
@@ -2554,6 +2721,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             detailLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 620),
         ])
 
+        presentStatusContainer(container, in: window)
+    }
+
+    private func presentStatusContainer(_ container: NSView, in window: NSWindow) {
         window.contentView = container
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -3524,9 +3695,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 helperURL.path,
                 "daemon",
                 "--transport",
-                "wifi",
-                "--interval",
-                "30s",
+                "usb",
                 "--api-addr",
                 "127.0.0.1:47832",
                 "--api-dev-origin",

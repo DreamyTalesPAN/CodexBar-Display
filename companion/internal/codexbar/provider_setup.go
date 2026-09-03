@@ -47,6 +47,11 @@ type ProviderReadiness struct {
 	CollectedAt string `json:"collectedAt,omitempty"`
 	Detail      string `json:"detail,omitempty"`
 	NextAction  string `json:"nextAction,omitempty"`
+	// Reported is CodexBar's own provider error sentence. It stays internal so
+	// raw account paths, addresses and credentials never escape through
+	// /v1/status or retry responses; the preferences adapter redacts it before
+	// exposing it.
+	Reported string `json:"-"`
 }
 
 type ProviderSetup struct {
@@ -59,12 +64,8 @@ type ProviderSetup struct {
 
 var runConfigBootstrapCommandFn = runConfigBootstrapCommand
 var configBootstrapMu sync.Mutex
-var firstRunProviderSetupMu sync.Mutex
 
-const (
-	firstRunProviderSetupPendingState = "pending"
-	firstRunProviderSetupFailedState  = "failed"
-)
+const ()
 
 // EnsureConfig selects an existing CodexBar config without modifying it. If
 // none exists, CodexBar itself renders and validates its current default config
@@ -178,58 +179,15 @@ func initializeConfigFile(path, bin string) (bool, error) {
 	); err != nil {
 		return false, fmt.Errorf("validate CodexBar default config: %w", err)
 	}
-	// Publish the pending marker first. The collector consumes it only after its
-	// own authoritative usage request has applied every detected switch.
-	if err := writeFirstRunProviderSetupState(path, firstRunProviderSetupPendingState); err != nil {
-		return false, fmt.Errorf("mark first-run CodexBar provider setup: %w", err)
-	}
 	// A hard link publishes without replacing a config another process may
 	// have created while CodexBar was rendering its defaults.
 	if err := os.Link(stagedPath, path); err != nil {
 		if _, statErr := os.Stat(path); statErr == nil {
-			if removeErr := os.Remove(firstRunMarkerPath(path)); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-				return false, fmt.Errorf("discard first-run CodexBar provider setup marker: %w", removeErr)
-			}
 			return false, nil
 		}
 		return false, fmt.Errorf("publish CodexBar default config: %w", err)
 	}
 	return true, nil
-}
-
-func firstRunMarkerPath(configPath string) string {
-	return configPath + ".vibetv-first-run"
-}
-
-func firstRunProviderSetupPending(configPath string) bool {
-	_, err := os.Stat(firstRunMarkerPath(configPath))
-	return err == nil
-}
-
-func firstRunProviderSetupState(configPath string) string {
-	raw, err := os.ReadFile(firstRunMarkerPath(configPath))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(raw))
-}
-
-// FirstRunProviderSetupInProgress reports whether the initial complete
-// provider inventory is still running for this config.
-func FirstRunProviderSetupInProgress(configPath string) bool {
-	return firstRunProviderSetupState(configPath) == firstRunProviderSetupPendingState
-}
-
-func writeFirstRunProviderSetupState(configPath, state string) error {
-	return os.WriteFile(firstRunMarkerPath(configPath), []byte(strings.TrimSpace(state)+"\n"), 0o600)
-}
-
-// FirstRunProviderSetupPending tells the collector to use CodexBar's complete
-// inventory for its first authoritative usage request instead of the dashboard
-// snapshot, which still reflects the untouched default switches.
-func FirstRunProviderSetupPending() bool {
-	path, err := EnsureConfig("")
-	return err != nil || firstRunProviderSetupPending(path)
 }
 
 func runConfigBootstrapCommand(
@@ -305,9 +263,9 @@ func configPathFromContext(ctx context.Context) string {
 	return strings.TrimSpace(path)
 }
 
-// ProbeProviderSetup performs one bounded, read-only CodexBar usage probe.
-// It never returns provider error text verbatim because that text can contain
-// account identifiers, paths or tokens.
+// ProbeProviderSetup performs one bounded, read-only CodexBar usage probe. Raw
+// provider text stays in the internal json:"-" field so status and retry JSON
+// expose only the generic Detail until the preferences adapter redacts it.
 func ProbeProviderSetup(ctx context.Context, home string) ProviderSetup {
 	return probeProviderSetup(ctx, home, "")
 }
@@ -354,16 +312,6 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 		return result
 	}
 	result.Engine.Status = ProviderReady
-	if exactProvider == "" {
-		switch firstRunProviderSetupState(configPath) {
-		case firstRunProviderSetupPendingState:
-			result.Status = "checking"
-			return result
-		case firstRunProviderSetupFailedState:
-			result.Providers = []ProviderReadiness{providerResult("codexbar", ProviderEngineError)}
-			return result
-		}
-	}
 
 	probeCtx, cancel := context.WithTimeout(configuredCtx, 20*time.Second)
 	defer cancel()
@@ -527,12 +475,15 @@ func providerReadinessFromOutput(raw []byte, commandErr, contextErr error) []Pro
 			continue
 		}
 		status := ProviderReady
+		reported := ""
 		if providerPayloadHasError(payload) {
-			status = classifyProviderError(providerErrorText(payload))
+			reported = providerHealthErrorText(payload["error"])
+			status = classifyProviderError(reported)
 		} else if !providerPayloadHasUsage(payload) {
 			status = ProviderNoUsageAvailable
 		}
 		provider := providerResult(id, status)
+		provider.Reported = reported
 		provider.Source = safeProviderSource(firstString(payload, "source"))
 		if collectedAt := firstRFC3339AtPaths(payload, "usage.updatedAt", "updatedAt"); !collectedAt.IsZero() {
 			provider.CollectedAt = collectedAt.Format(time.RFC3339)
@@ -588,19 +539,6 @@ func providerPayloadHasUsage(payload map[string]any) bool {
 		}
 	}
 	return false
-}
-
-func providerErrorText(payload map[string]any) string {
-	raw := payload["error"]
-	switch value := raw.(type) {
-	case string:
-		return value
-	case map[string]any:
-		encoded, _ := json.Marshal(value)
-		return string(encoded)
-	default:
-		return fmt.Sprint(value)
-	}
 }
 
 func classifyProviderError(detail string) string {
